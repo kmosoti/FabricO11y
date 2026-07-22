@@ -1,0 +1,19 @@
+{
+  "api_version": "fabric.observation/v1",
+  "observation_id": "obs-0001",
+  "epistemic_class": "observed_fact",
+  "interpretation": {"kind": "observed_fact"},
+  "producer": {"producer_id": "checkout-api", "stream_id": "trace"},
+  "observed_at": "2026-07-20T14:00:00Z",
+  "observed_by_at": "2026-07-20T14:00:01Z",
+  "recorded_at": "2026-07-20T14:00:02Z",
+  "producer_sequence": 41,
+  "logical_time": {"clock_id": "checkout-api", "counter": 94},
+  "relations": {"parents": [], "links": ["obs-bootstrap"], "correlations": ["order-314"]},
+  "payload": {"event": "order.accepted", "order_id": "314"},
+  "payload_ref": "inline:obs-0001",
+  "integrity": {"algorithm": "sha256", "digest": "c0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ffeec0ff"},
+  "classification": "internal",
+  "origin": {"source_type": "application", "source_id": "checkout-api", "schema": "example.order-event/v1", "authority": "checkout emissions"},
+  "attributes": {"region": "us-central"}
+}

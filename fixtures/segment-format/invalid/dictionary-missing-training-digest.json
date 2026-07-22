@@ -1,0 +1,18 @@
+{
+  "api_version": "fabric.dictionary-registry/v1",
+  "registry_id": "registry-invalid",
+  "generated_at": "2026-07-20T15:00:00Z",
+  "entries": [
+    {
+      "family": "structured-evidence",
+      "version": 1,
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "byte_length": 8192,
+      "status": "active",
+      "activated_at": "2026-07-20T15:00:00Z",
+      "deprecated_at": null,
+      "retained_until": null
+    }
+  ],
+  "rollback_versions": []
+}

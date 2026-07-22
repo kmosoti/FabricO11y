@@ -1,0 +1,13 @@
+{
+  "api_version": "fabric.answer/v1",
+  "answer_id": "answer-invalid",
+  "evaluated_at": "2026-07-20T14:06:00Z",
+  "result": null,
+  "provenance": [],
+  "source_cutoff": {"recorded_at": "2026-07-20T14:05:01Z", "segment_ids": []},
+  "frontiers": [],
+  "missing_sources": [],
+  "assumptions": [],
+  "conflicts": [],
+  "derivation": {"name": "identity", "version": "1", "input_ids": [], "parameters": {}}
+}

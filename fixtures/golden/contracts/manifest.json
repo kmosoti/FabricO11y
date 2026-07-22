@@ -1,0 +1,22 @@
+{
+  "manifest_version": "fabric.fixture-manifest/v1",
+  "provenance": {
+    "work_package": "FO01",
+    "source": "normative v1 evidence contracts",
+    "regeneration": "manually reviewed; changes require a new compatibility review"
+  },
+  "valid": [
+    {"schema": "schemas/fabric.observation.v1.json", "fixture": "fixtures/golden/contracts/valid/observation.json"},
+    {"schema": "schemas/fabric.correction.v1.json", "fixture": "fixtures/golden/contracts/valid/correction.json"},
+    {"schema": "schemas/fabric.frontier.v1.json", "fixture": "fixtures/golden/contracts/valid/frontier.json"},
+    {"schema": "schemas/fabric.answer.v1.json", "fixture": "fixtures/golden/contracts/valid/answer.json"}
+  ],
+  "invalid": [
+    {"schema": "schemas/fabric.observation.v1.json", "fixture": "fixtures/golden/contracts/invalid/observation-mixed-class.json", "expected_validator": "const", "expected_path": "/interpretation/kind"},
+    {"schema": "schemas/fabric.observation.v1.json", "fixture": "fixtures/golden/contracts/invalid/observation-implicit-class.json", "expected_validator": "required", "expected_path": "/"},
+    {"schema": "schemas/fabric.correction.v1.json", "fixture": "fixtures/golden/contracts/invalid/correction-replacement-without-replacements.json", "expected_validator": "required", "expected_path": "/"},
+    {"schema": "schemas/fabric.correction.v1.json", "fixture": "fixtures/golden/contracts/invalid/correction-mixed-operation.json", "expected_validator": "not", "expected_path": "/"},
+    {"schema": "schemas/fabric.frontier.v1.json", "fixture": "fixtures/golden/contracts/invalid/frontier-sampled-without-rate.json", "expected_validator": "type", "expected_path": "/sampling/rate"},
+    {"schema": "schemas/fabric.answer.v1.json", "fixture": "fixtures/golden/contracts/invalid/answer-missing-coverage.json", "expected_validator": "required", "expected_path": "/"}
+  ]
+}

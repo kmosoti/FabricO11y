@@ -1,0 +1,13 @@
+{
+  "api_version": "fabric.frontier/v1",
+  "frontier_id": "frontier-invalid",
+  "producer": {"producer_id": "example", "stream_id": "events"},
+  "as_of_recorded_at": "2026-07-20T14:00:02Z",
+  "producer_sequence_through": 2,
+  "logical_time_through": null,
+  "known_gaps": [],
+  "retention_start": null,
+  "sampling": {"mode": "sampled", "rate": null},
+  "producer_state": "active",
+  "classification": "internal"
+}

@@ -1,6 +1,6 @@
 # Repository Layout
 
-FabricO11y uses a Rust workspace with isolated effect boundaries and a thin future Python surface.
+FabricO11y uses a Rust workspace with isolated effect boundaries and a thin Python surface.
 Directories are added when their owning work package begins; an absent planned directory is not an
 alternate implementation location.
 
@@ -16,6 +16,7 @@ FabricO11y/
 │   ├── fabric-ingest/     intake adapters
 │   ├── fabric-export/     export adapters
 │   ├── fabric-service/    optional daemon transport
+│   ├── fabric-sdk/        coarse effectful embedded engine and CLI
 │   └── fabric-py/         PyO3 conversion and exposure
 ├── python/
 │   └── fabrico11y/        typed Python API with no domain reducers
@@ -37,6 +38,8 @@ FabricO11y/
 - Core crates do not perform filesystem, database, network, process, or Python effects.
 - Storage crates implement typed ports defined by the semantic layer; they do not reinterpret
   evidence.
+- `fabric-sdk` coordinates admission, durable staging, segment sealing, catalog recovery, and
+  replay. It is a single-owner facade; multiple processes must externally serialize one data root.
 - Query code consumes the same correction and frontier semantics used during replay.
 - Ingestion, export, service, and Python crates are replaceable adapters.
 - JSON Schemas are public contracts. Rust types, Python types, fixtures, and documentation must
@@ -50,8 +53,8 @@ Dependencies point from adapters toward stable inner contracts. The Rust core mu
 PyO3, SQLite, Zstandard, an async runtime, an HTTP framework, Blackcell, or PraxisLedger.
 
 Third-party dependencies are introduced only with the work package that needs them and only after
-their boundary benefit is documented. Workspace-wide version policy, minimum Rust version, license,
-and release profile remain open decisions until their owning ADRs are written.
+their boundary benefit is documented. The MVP toolchain is pinned in `rust-toolchain.toml`; license
+and long-term release policy remain open decisions until their owning ADRs are written.
 
 ## Generated and local state
 

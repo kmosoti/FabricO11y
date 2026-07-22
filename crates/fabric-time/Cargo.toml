@@ -1,0 +1,11 @@
+[package]
+name = "fabric-time"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Partial-order and multi-axis time primitives for FabricO11y"
+
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+time.workspace = true

@@ -3,7 +3,8 @@
 Benchmarks measure both correctness and cost. A faster result is not valid if replayed state,
 correction propagation, frontier coverage, or answer provenance differs from the canonical oracle.
 
-The future harness will report:
+The MVP includes the checked [basic compression correctness check](basic-compression.md). A future
+evaluation harness will report:
 
 - replay determinism and throughput;
 - correction propagation latency versus full rebuild;

@@ -1,0 +1,27 @@
+{
+  "api_version": "fabric.segment.manifest/v1",
+  "format_version": 1,
+  "segment_id": "seg-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "created_at": "2026-07-20T15:00:00Z",
+  "schema_set_id": "fabric.evidence/v1",
+  "row_count": 2,
+  "frame_count": 1,
+  "ordering_bounds": {
+    "producer_sequences": [{"producer_id": "checkout-api", "stream_id": "trace", "min": 41, "max": 42}],
+    "logical_clocks": [{"clock_id": "checkout-api", "min": 94, "max": 95}],
+    "observed_at": {"min": "2026-07-20T14:00:00Z", "max": "2026-07-20T14:00:00Z"},
+    "observed_by_at": {"min": "2026-07-20T14:00:01Z", "max": "2026-07-20T14:05:00Z"},
+    "recorded_at": {"min": "2026-07-20T14:00:02Z", "max": "2026-07-20T14:05:01Z"}
+  },
+  "classifications": ["internal"],
+  "compression": {
+    "codec": "zstd",
+    "level": 3,
+    "dictionary": null,
+    "frames": [{"frame_index": 0, "payload_offset": 0, "compressed_bytes": 512, "uncompressed_bytes": 1024, "row_start": 0, "row_count": 2}]
+  },
+  "integrity": {
+    "payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "content_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  }
+}

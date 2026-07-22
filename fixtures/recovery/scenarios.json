@@ -1,0 +1,31 @@
+{
+  "fixture_version": "fabric.recovery-scenarios/v1",
+  "work_package": "FO04",
+  "scenarios": [
+    {
+      "id": "interrupted-before-rename",
+      "durable_state": ["staging.jsonl", "segments/.segment.partial"],
+      "expected": ["remove partial file", "retain and replay staging"]
+    },
+    {
+      "id": "interrupted-after-rename",
+      "durable_state": ["staging.jsonl", "segments/seg-content.fseg"],
+      "expected": ["validate segment", "register catalog idempotently", "clear matching staging"]
+    },
+    {
+      "id": "interrupted-after-catalog",
+      "durable_state": ["staging.jsonl", "segments/seg-content.fseg", "matching catalog row"],
+      "expected": ["verify catalog agreement", "clear matching staging"]
+    },
+    {
+      "id": "catalog-file-missing",
+      "durable_state": ["catalog row without immutable segment"],
+      "expected_error": "catalog_disagreement"
+    },
+    {
+      "id": "corrupt-or-truncated-segment",
+      "durable_state": ["catalog row", "unreadable immutable segment"],
+      "expected_error": "segment_invalid"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+[package]
+name = "fabric-segment"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Immutable Zstandard segment containers for FabricO11y"
+
+[dependencies]
+fabric-schema.workspace = true
+fabric-time.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+time.workspace = true
+zstd.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

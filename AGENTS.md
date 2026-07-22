@@ -17,6 +17,8 @@ observability suite, or dashboard-first product.
 - `crates/fabric-schema/` owns typed representations of the normative contracts in `schemas/`.
 - `crates/fabric-segment/` and `crates/fabric-catalog/` own storage effects behind typed
   interfaces; they do not redefine domain semantics.
+- `crates/fabric-sdk/` owns the single-owner effectful application facade, durable staging, and
+  recovery coordination.
 - `crates/fabric-query/` owns typed query planning and completeness-aware answer construction.
 - `crates/fabric-ingest/`, `crates/fabric-export/`, and `crates/fabric-service/` are adapters around
   the same engine.
@@ -56,12 +58,10 @@ contracts, ADRs, or requirements instead.
 
 ## Verification
 
-Run focused checks first, followed by the maintained repository gate once one exists. Until the
-first executable packages establish that gate, foundation-only changes must at least run:
+Run focused checks first, followed by the maintained repository gate:
 
 ```text
-cargo metadata --format-version 1 --no-deps
-git diff --check
+python scripts/verify.py
 ```
 
 Behavior changes require tests. Do not commit, push, tag, publish, deploy, or mutate remote metadata
