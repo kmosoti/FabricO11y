@@ -1,0 +1,15 @@
+{
+  "api_version": "fabric.correction/v1",
+  "correction_id": "corr-invalid-mixed",
+  "producer": {"producer_id": "example", "stream_id": "events"},
+  "observed_by_at": "2026-07-20T14:00:01Z",
+  "recorded_at": "2026-07-20T14:00:02Z",
+  "producer_sequence": 2,
+  "logical_time": null,
+  "operation": "retraction",
+  "targets": ["obs-0001"],
+  "qualification": "A retraction cannot also qualify its target.",
+  "reason": "Mixed operation fixture.",
+  "provenance": ["obs-0001"],
+  "classification": "internal"
+}

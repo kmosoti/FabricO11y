@@ -1,0 +1,15 @@
+[package]
+name = "fabric-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Deterministic evidence reducers for FabricO11y"
+
+[dependencies]
+fabric-schema.workspace = true
+fabric-time.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+serde_json.workspace = true

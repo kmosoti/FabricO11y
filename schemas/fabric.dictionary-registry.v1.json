@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fabrico11y.dev/schemas/fabric.dictionary-registry.v1.json",
+  "title": "FabricO11y Zstandard dictionary registry v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["api_version", "registry_id", "generated_at", "entries", "rollback_versions"],
+  "properties": {
+    "api_version": {"const": "fabric.dictionary-registry/v1"},
+    "registry_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "entries": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/entry"}
+    },
+    "rollback_versions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/locator"}
+    }
+  },
+  "$defs": {
+    "locator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["family", "version", "digest"],
+      "properties": {
+        "family": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{0,63}$"},
+        "version": {"type": "integer", "minimum": 1},
+        "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      }
+    },
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "family",
+        "version",
+        "digest",
+        "byte_length",
+        "training_corpus_digest",
+        "status",
+        "activated_at",
+        "deprecated_at",
+        "retained_until"
+      ],
+      "properties": {
+        "family": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{0,63}$"},
+        "version": {"type": "integer", "minimum": 1},
+        "digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "byte_length": {"type": "integer", "minimum": 1, "maximum": 104857600},
+        "training_corpus_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "status": {"enum": ["active", "deprecated", "retained"]},
+        "activated_at": {"type": "string", "format": "date-time"},
+        "deprecated_at": {"oneOf": [{"type": "string", "format": "date-time"}, {"type": "null"}]},
+        "retained_until": {"oneOf": [{"type": "string", "format": "date-time"}, {"type": "null"}]}
+      }
+    }
+  }
+}

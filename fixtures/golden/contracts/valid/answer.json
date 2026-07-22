@@ -1,0 +1,19 @@
+{
+  "api_version": "fabric.answer/v1",
+  "answer_id": "answer-0001",
+  "evaluated_at": "2026-07-20T14:06:00Z",
+  "result": {"accepted_orders": 1},
+  "provenance": [{"record_id": "obs-0001", "role": "support", "fields": ["payload.order_id"]}],
+  "source_cutoff": {"recorded_at": "2026-07-20T14:05:01Z", "segment_ids": ["segment-example"]},
+  "frontiers": [{"frontier_id": "frontier-checkout-42", "producer": {"producer_id": "checkout-api", "stream_id": "trace"}}],
+  "missing_sources": [],
+  "coverage": {
+    "status": "partial",
+    "requested_sources": [{"producer_id": "checkout-api", "stream_id": "trace"}],
+    "covered_sources": [{"producer_id": "checkout-api", "stream_id": "trace"}],
+    "notes": ["producer sequence gap 17..18 predates the requested event"]
+  },
+  "assumptions": [],
+  "conflicts": [],
+  "derivation": {"name": "count-active-observations", "version": "1", "input_ids": ["obs-0001"], "parameters": {"event": "order.accepted"}}
+}

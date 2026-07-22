@@ -1,15 +1,8 @@
 # Python Surface
 
 Python is a public API and packaging surface over the Rust engine, not a second semantic
-implementation.
+implementation. `fabric-py` owns coarse PyO3 conversion and `python/fabrico11y/` owns typed DTO
+ergonomics. Reducers, ordering, correction application, replay, catalog, integrity, and recovery
+remain in Rust.
 
-FO05 will add:
-
-- `crates/fabric-py/` for coarse PyO3 conversion and exposure;
-- `python/fabrico11y/` for typed Python-facing APIs and errors;
-- parity tests that execute the same operations through Rust and Python;
-- maturin packaging configuration.
-
-Reducers, ordering, correction application, replay semantics, and answer construction remain in
-Rust. The Python layer may validate ergonomic input shape, but normative validation belongs to the
-shared contract boundary.
+Build and clean-environment parity are maintained by `python scripts/verify_python_sdk.py`.

@@ -1,0 +1,13 @@
+{
+  "api_version": "fabric.frontier/v1",
+  "frontier_id": "frontier-checkout-42",
+  "producer": {"producer_id": "checkout-api", "stream_id": "trace"},
+  "as_of_recorded_at": "2026-07-20T14:05:01Z",
+  "producer_sequence_through": 42,
+  "logical_time_through": {"clock_id": "checkout-api", "counter": 95},
+  "known_gaps": [{"start": 17, "end": 18, "reason": "producer-declared retention loss"}],
+  "retention_start": "2026-07-01T00:00:00Z",
+  "sampling": {"mode": "complete", "rate": null},
+  "producer_state": "active",
+  "classification": "internal"
+}

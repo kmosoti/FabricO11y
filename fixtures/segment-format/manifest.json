@@ -1,0 +1,22 @@
+{
+  "manifest_version": "fabric.fixture-manifest/v1",
+  "provenance": {
+    "work_package": "FO03",
+    "source": "immutable segment format and dictionary registry",
+    "regeneration": "cargo run -p fabric-segment --example generate-fixtures -- fixtures/segment-format/binary"
+  },
+  "valid": [
+    {"schema": "schemas/fabric.segment.manifest.v1.json", "fixture": "fixtures/segment-format/valid/segment-manifest.json"},
+    {"schema": "schemas/fabric.dictionary-registry.v1.json", "fixture": "fixtures/segment-format/valid/dictionary-registry.json"}
+  ],
+  "invalid": [
+    {"schema": "schemas/fabric.segment.manifest.v1.json", "fixture": "fixtures/segment-format/invalid/segment-unsupported-version.json", "expected_validator": "const", "expected_path": "/format_version"},
+    {"schema": "schemas/fabric.dictionary-registry.v1.json", "fixture": "fixtures/segment-format/invalid/dictionary-missing-training-digest.json", "expected_validator": "required", "expected_path": "/entries/0"}
+  ],
+  "binary_cases": [
+    {"fixture": "fixtures/segment-format/binary/valid.hex", "expected": "valid"},
+    {"fixture": "fixtures/segment-format/binary/corrupt-payload.hex", "expected": "payload_checksum_mismatch"},
+    {"fixture": "fixtures/segment-format/binary/truncated.hex", "expected": "truncated"},
+    {"fixture": "fixtures/segment-format/binary/missing-dictionary.hex", "expected": "missing_dictionary"}
+  ]
+}

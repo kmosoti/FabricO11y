@@ -1,2 +1,12 @@
-*tmp* 
+*tmp*
 ./tmp/*
+
+# Rust and Python generated state
+/Cargo.lock
+/target/
+/dist/
+/.venv/
+/uv.lock
+**/__pycache__/
+*.py[cod]
+*.so

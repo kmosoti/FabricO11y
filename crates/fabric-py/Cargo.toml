@@ -1,0 +1,17 @@
+[package]
+name = "fabric-py"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Thin PyO3 conversion boundary for the FabricO11y embedded engine"
+publish = false
+
+[lib]
+name = "_fabrico11y"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+fabric-sdk.workspace = true
+pyo3.workspace = true
+serde.workspace = true
+serde_json.workspace = true

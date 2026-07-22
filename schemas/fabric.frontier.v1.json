@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fabrico11y.dev/schemas/fabric.frontier.v1.json",
+  "title": "FabricO11y frontier envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "api_version",
+    "frontier_id",
+    "producer",
+    "as_of_recorded_at",
+    "producer_sequence_through",
+    "logical_time_through",
+    "known_gaps",
+    "retention_start",
+    "sampling",
+    "producer_state",
+    "classification"
+  ],
+  "properties": {
+    "api_version": {"const": "fabric.frontier/v1"},
+    "frontier_id": {"$ref": "#/$defs/identifier"},
+    "producer": {"$ref": "#/$defs/producer"},
+    "as_of_recorded_at": {"$ref": "#/$defs/timestamp"},
+    "producer_sequence_through": {"oneOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]},
+    "logical_time_through": {"oneOf": [{"$ref": "#/$defs/logicalTime"}, {"type": "null"}]},
+    "known_gaps": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/gap"}
+    },
+    "retention_start": {"oneOf": [{"$ref": "#/$defs/timestamp"}, {"type": "null"}]},
+    "sampling": {"$ref": "#/$defs/sampling"},
+    "producer_state": {"enum": ["active", "paused", "retired", "unknown"]},
+    "classification": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{0,63}$"}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["producer_id", "stream_id"],
+      "properties": {
+        "producer_id": {"$ref": "#/$defs/identifier"},
+        "stream_id": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "logicalTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clock_id", "counter"],
+      "properties": {
+        "clock_id": {"$ref": "#/$defs/identifier"},
+        "counter": {"type": "integer", "minimum": 0}
+      }
+    },
+    "gap": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["start", "end", "reason"],
+      "properties": {
+        "start": {"type": "integer", "minimum": 0},
+        "end": {"type": "integer", "minimum": 0},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "sampling": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "rate"],
+      "properties": {
+        "mode": {"enum": ["complete", "sampled", "unknown"]},
+        "rate": {"oneOf": [{"type": "number", "exclusiveMinimum": 0, "maximum": 1}, {"type": "null"}]}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"mode": {"const": "sampled"}}},
+          "then": {"properties": {"rate": {"type": "number"}}},
+          "else": {"properties": {"rate": {"type": "null"}}}
+        }
+      ]
+    }
+  }
+}

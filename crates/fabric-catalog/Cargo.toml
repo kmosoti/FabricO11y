@@ -1,0 +1,18 @@
+[package]
+name = "fabric-catalog"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Transactional SQLite metadata catalog for FabricO11y"
+
+[dependencies]
+fabric-schema.workspace = true
+fabric-segment.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+fabric-time.workspace = true
+tempfile.workspace = true

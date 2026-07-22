@@ -1,0 +1,15 @@
+{
+  "api_version": "fabric.correction/v1",
+  "correction_id": "corr-0001",
+  "producer": {"producer_id": "checkout-api", "stream_id": "trace"},
+  "observed_by_at": "2026-07-20T14:05:00Z",
+  "recorded_at": "2026-07-20T14:05:01Z",
+  "producer_sequence": 42,
+  "logical_time": {"clock_id": "checkout-api", "counter": 95},
+  "operation": "qualification",
+  "targets": ["obs-0001"],
+  "qualification": "The event confirms acceptance, not downstream payment settlement.",
+  "reason": "Producer documentation clarified the emitted state.",
+  "provenance": ["obs-0001"],
+  "classification": "internal"
+}

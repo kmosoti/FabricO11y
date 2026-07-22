@@ -1,0 +1,25 @@
+[package]
+name = "fabric-sdk"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Coarse embedded application facade for FabricO11y"
+
+[dependencies]
+fabric-catalog.workspace = true
+fabric-core.workspace = true
+fabric-schema.workspace = true
+fabric-segment.workspace = true
+fabric-time.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+time.workspace = true
+
+[dev-dependencies]
+rusqlite.workspace = true
+tempfile.workspace = true
+
+[[bin]]
+name = "fabricctl"
+path = "src/bin/fabricctl.rs"

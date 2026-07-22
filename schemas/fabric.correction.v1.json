@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fabrico11y.dev/schemas/fabric.correction.v1.json",
+  "title": "FabricO11y correction envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "api_version",
+    "correction_id",
+    "producer",
+    "observed_by_at",
+    "recorded_at",
+    "producer_sequence",
+    "logical_time",
+    "operation",
+    "targets",
+    "reason",
+    "provenance",
+    "classification"
+  ],
+  "properties": {
+    "api_version": {"const": "fabric.correction/v1"},
+    "correction_id": {"$ref": "#/$defs/identifier"},
+    "producer": {"$ref": "#/$defs/producer"},
+    "observed_by_at": {"$ref": "#/$defs/timestamp"},
+    "recorded_at": {"$ref": "#/$defs/timestamp"},
+    "producer_sequence": {"oneOf": [{"type": "integer", "minimum": 0}, {"type": "null"}]},
+    "logical_time": {"oneOf": [{"$ref": "#/$defs/logicalTime"}, {"type": "null"}]},
+    "operation": {"enum": ["retraction", "replacement", "qualification", "deduplication"]},
+    "targets": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/identifier"}
+    },
+    "replacement_ids": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/identifier"}
+    },
+    "qualification": {"type": "string", "minLength": 1},
+    "reason": {"type": "string", "minLength": 1},
+    "provenance": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/identifier"}
+    },
+    "classification": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{0,63}$"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"operation": {"const": "retraction"}}},
+      "then": {"not": {"anyOf": [{"required": ["replacement_ids"]}, {"required": ["qualification"]}]}}
+    },
+    {
+      "if": {"properties": {"operation": {"const": "replacement"}}},
+      "then": {"required": ["replacement_ids"], "not": {"required": ["qualification"]}}
+    },
+    {
+      "if": {"properties": {"operation": {"const": "qualification"}}},
+      "then": {"required": ["qualification"], "not": {"required": ["replacement_ids"]}}
+    },
+    {
+      "if": {"properties": {"operation": {"const": "deduplication"}}},
+      "then": {
+        "required": ["replacement_ids"],
+        "properties": {"replacement_ids": {"maxItems": 1}},
+        "not": {"required": ["qualification"]}
+      }
+    }
+  ],
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["producer_id", "stream_id"],
+      "properties": {
+        "producer_id": {"$ref": "#/$defs/identifier"},
+        "stream_id": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "logicalTime": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["clock_id", "counter"],
+      "properties": {
+        "clock_id": {"$ref": "#/$defs/identifier"},
+        "counter": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

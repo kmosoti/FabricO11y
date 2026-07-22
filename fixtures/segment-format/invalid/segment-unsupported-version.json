@@ -1,0 +1,13 @@
+{
+  "api_version": "fabric.segment.manifest/v1",
+  "format_version": 2,
+  "segment_id": "seg-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "created_at": "2026-07-20T15:00:00Z",
+  "schema_set_id": "fabric.evidence/v1",
+  "row_count": 1,
+  "frame_count": 1,
+  "ordering_bounds": {"producer_sequences": [], "logical_clocks": [], "observed_at": null, "observed_by_at": null, "recorded_at": {"min": "2026-07-20T15:00:00Z", "max": "2026-07-20T15:00:00Z"}},
+  "classifications": ["internal"],
+  "compression": {"codec": "zstd", "level": 3, "dictionary": null, "frames": [{"frame_index": 0, "payload_offset": 0, "compressed_bytes": 10, "uncompressed_bytes": 20, "row_start": 0, "row_count": 1}]},
+  "integrity": {"payload_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "content_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
+}

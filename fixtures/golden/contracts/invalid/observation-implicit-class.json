@@ -1,0 +1,17 @@
+{
+  "api_version": "fabric.observation/v1",
+  "observation_id": "obs-invalid-implicit",
+  "interpretation": {"kind": "observed_fact"},
+  "producer": {"producer_id": "example", "stream_id": "events"},
+  "observed_at": null,
+  "observed_by_at": "2026-07-20T14:00:01Z",
+  "recorded_at": "2026-07-20T14:00:02Z",
+  "producer_sequence": null,
+  "logical_time": null,
+  "relations": {"parents": [], "links": [], "correlations": []},
+  "payload": {},
+  "integrity": {"algorithm": "sha256", "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},
+  "classification": "internal",
+  "origin": {"source_type": "test", "source_id": "example", "schema": "example/v1"},
+  "attributes": {}
+}

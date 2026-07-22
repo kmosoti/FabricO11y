@@ -1,0 +1,133 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fabrico11y.dev/schemas/fabric.answer.v1.json",
+  "title": "FabricO11y answer envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "api_version",
+    "answer_id",
+    "evaluated_at",
+    "result",
+    "provenance",
+    "source_cutoff",
+    "frontiers",
+    "missing_sources",
+    "coverage",
+    "assumptions",
+    "conflicts",
+    "derivation"
+  ],
+  "properties": {
+    "api_version": {"const": "fabric.answer/v1"},
+    "answer_id": {"$ref": "#/$defs/identifier"},
+    "evaluated_at": {"$ref": "#/$defs/timestamp"},
+    "result": true,
+    "provenance": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/provenanceItem"}
+    },
+    "source_cutoff": {"$ref": "#/$defs/sourceCutoff"},
+    "frontiers": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/frontierReference"}
+    },
+    "missing_sources": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/producer"}
+    },
+    "coverage": {"$ref": "#/$defs/coverage"},
+    "assumptions": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/assumption"}
+    },
+    "conflicts": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/conflict"}
+    },
+    "derivation": {"$ref": "#/$defs/derivation"}
+  },
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]{0,255}$"},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["producer_id", "stream_id"],
+      "properties": {
+        "producer_id": {"$ref": "#/$defs/identifier"},
+        "stream_id": {"$ref": "#/$defs/identifier"}
+      }
+    },
+    "provenanceItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["record_id", "role"],
+      "properties": {
+        "record_id": {"$ref": "#/$defs/identifier"},
+        "role": {"type": "string", "minLength": 1},
+        "fields": {"type": "array", "uniqueItems": true, "items": {"type": "string"}}
+      }
+    },
+    "sourceCutoff": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["recorded_at", "segment_ids"],
+      "properties": {
+        "recorded_at": {"$ref": "#/$defs/timestamp"},
+        "segment_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}}
+      }
+    },
+    "frontierReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frontier_id", "producer"],
+      "properties": {
+        "frontier_id": {"$ref": "#/$defs/identifier"},
+        "producer": {"$ref": "#/$defs/producer"}
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "requested_sources", "covered_sources", "notes"],
+      "properties": {
+        "status": {"enum": ["complete", "partial", "unknown"]},
+        "requested_sources": {"type": "array", "items": {"$ref": "#/$defs/producer"}},
+        "covered_sources": {"type": "array", "items": {"$ref": "#/$defs/producer"}},
+        "notes": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "assumption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["assumption_id", "statement"],
+      "properties": {
+        "assumption_id": {"$ref": "#/$defs/identifier"},
+        "statement": {"type": "string", "minLength": 1}
+      }
+    },
+    "conflict": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["conflict_id", "record_ids", "description"],
+      "properties": {
+        "conflict_id": {"$ref": "#/$defs/identifier"},
+        "record_ids": {"type": "array", "minItems": 2, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "description": {"type": "string", "minLength": 1}
+      }
+    },
+    "derivation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "version", "input_ids", "parameters"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "input_ids": {"type": "array", "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+        "parameters": {"type": "object"}
+      }
+    }
+  }
+}

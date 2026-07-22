@@ -1,0 +1,12 @@
+[package]
+name = "fabric-schema"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Typed normative evidence envelopes for FabricO11y"
+
+[dependencies]
+fabric-time.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true

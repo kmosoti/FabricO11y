@@ -75,14 +75,20 @@ Admission must classify and redact data before durable persistence. Payload bodi
 metadata may have different retention and authorization policies. Corrections and deletions leave
 auditable records; they must not silently rewrite historical evidence.
 
+## Implemented MVP kernel
+
+FO00 through FO05 establish normative JSON Schemas and fixtures, pure Rust time/schema/core crates,
+the immutable segment and dictionary contracts, a SQLite metadata catalog, deterministic
+admission/seal/replay/recovery, and embedded Rust/Python access to one engine.
+
 ## Deferred work
 
-The following remain outside the foundation work package:
+The following remain downstream work:
 
-- normative JSON Schemas and golden examples;
-- Rust semantic and time crates;
-- segment, dictionary, and SQLite catalog implementation;
-- Python bindings and transport adapters;
-- query algebra, maintained projections, and full-text search;
-- benchmark automation, CI, release packaging, and compatibility guarantees;
+- OTLP, JSONL, and CloudEvents-compatible ingestion adapters;
+- completeness-aware query algebra, full-text projections, and answer construction;
+- daemon transport and multi-process writer coordination;
+- interoperability exports and compatibility/release policy;
+- security and retention policy enforcement beyond the explicit pre-persistence admission hook;
+- performance evaluation beyond the checked compression correctness smoke test;
 - active evidence acquisition.
