@@ -1,0 +1,22 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--release",
+    "--offline",
+    "--locked",
+    "--manifest-path",
+    "tools/storage-probe/Cargo.toml",
+    "--test",
+    "prototype_cli",
+    "--test",
+    "prototype_selection",
+    "--",
+    "--nocapture"
+  ],
+  "cwd": "/tmp/fabric-cli-b",
+  "exit": 0,
+  "seconds": 2.3125011920928955,
+  "source_sha256": "4a8e0809ae4381010c72583a115bbdc1cf1f90f265745a75fd78b0b7d0261895",
+  "repair": "Deserialize original bytes after field-set check, so duplicate query fields cannot collapse through Value."
+}

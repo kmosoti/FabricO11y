@@ -1,0 +1,3 @@
+   Compiling storage-probe v0.1.0 (/tmp/fabric-collect-a/tools/storage-probe)
+    Finished `release` profile [optimized] target(s) in 0.81s
+     Running tests/collect_review.rs (tools/storage-probe/target/release/deps/collect_review-fbd439c074f7c4cc)

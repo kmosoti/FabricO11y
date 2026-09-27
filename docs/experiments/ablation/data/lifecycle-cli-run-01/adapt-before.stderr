@@ -1,0 +1,11 @@
+   Compiling storage-probe v0.1.0 (/tmp/fabric-cli-b/tools/storage-probe)
+    Finished `release` profile [optimized] target(s) in 2.61s
+     Running tests/prototype_collect.rs (tools/storage-probe/target/release/deps/prototype_collect-93ddec3dea185eac)
+
+thread 'offline_logs_reach_verified_complete_answer_across_processes' (747986) panicked at tests/prototype_collect.rs:12:5:
+assertion `left == right` failed: args=["adapt-otlp", "request.json", "config.json", "input.json"] stderr=unknown command: adapt-otlp
+
+  left: Some(2)
+ right: Some(0)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test prototype_collect`

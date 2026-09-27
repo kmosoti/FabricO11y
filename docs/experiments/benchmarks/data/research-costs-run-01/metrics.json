@@ -1,0 +1,4065 @@
+{
+  "definition": "Phase/resource medians across five measured trials; query values are medians of each trial nearest-rank p50/p99. Family ratios pair matching query indices across five trials; family page bytes are pooled within each fixed dataset/family. No cross-dataset gate pooling.",
+  "cells": {
+    "mixed-201-2048": {
+      "layouts": {
+        "json64": {
+          "publication": {
+            "median_wall_ns": 56088500,
+            "median_cpu_ns": 8991100
+          },
+          "file_read": {
+            "median_wall_ns": 214100,
+            "median_cpu_ns": 214500
+          },
+          "resources": {
+            "median_rss_kib": 16328,
+            "median_process_cpu_ns": 1718014200,
+            "kernel_io_medians": {
+              "rchar": 186803105,
+              "wchar": 723381,
+              "read_bytes": 0,
+              "write_bytes": 790528
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 5458200,
+              "median_trial_p50_cpu_ns": 5459000,
+              "median_trial_p99_wall_ns": 9991800,
+              "median_trial_p99_cpu_ns": 9994200
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 5426900,
+              "median_trial_p50_cpu_ns": 5428100,
+              "median_trial_p99_wall_ns": 9377600,
+              "median_trial_p99_cpu_ns": 9378700
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "1": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "2": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "3": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "4": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "5": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "6": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "7": {
+              "median": 1.0,
+              "p99": 1.0
+            }
+          }
+        },
+        "plain64": {
+          "publication": {
+            "median_wall_ns": 20234600,
+            "median_cpu_ns": 13876300
+          },
+          "file_read": {
+            "median_wall_ns": 300300,
+            "median_cpu_ns": 301000
+          },
+          "resources": {
+            "median_rss_kib": 23268,
+            "median_process_cpu_ns": 3029081200,
+            "kernel_io_medians": {
+              "rchar": 430101323,
+              "wchar": 1107096,
+              "read_bytes": 0,
+              "write_bytes": 1122304
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 11416000,
+              "median_trial_p50_cpu_ns": 11418300,
+              "median_trial_p99_wall_ns": 16955400,
+              "median_trial_p99_cpu_ns": 16957500
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 4943000,
+              "median_trial_p50_cpu_ns": 4944700,
+              "median_trial_p99_wall_ns": 6745400,
+              "median_trial_p99_cpu_ns": 6748000
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 4827100,
+              "median_trial_p50_cpu_ns": 4827000,
+              "median_trial_p99_wall_ns": 6076400,
+              "median_trial_p99_cpu_ns": 6078700
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.565825278078179,
+              "p99": 1.051011372914295
+            },
+            "1": {
+              "median": 0.8901313963955789,
+              "p99": 1.2376451742090508
+            },
+            "2": {
+              "median": 0.9200327553735788,
+              "p99": 1.3463115562039192
+            },
+            "3": {
+              "median": 0.8997965972384432,
+              "p99": 1.414925914925915
+            },
+            "4": {
+              "median": 0.9098278567975566,
+              "p99": 1.9089226352372317
+            },
+            "5": {
+              "median": 0.6647989420046581,
+              "p99": 0.9957417310358487
+            },
+            "6": {
+              "median": 0.9133041325327615,
+              "p99": 1.2854547310401143
+            },
+            "7": {
+              "median": 0.9195498115214893,
+              "p99": 1.2015093618647306
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 452100,
+            "median_cpu_ns": 454300
+          },
+          "index_publication": {
+            "median_wall_ns": 3793100,
+            "median_cpu_ns": 284400
+          }
+        },
+        "zstd64": {
+          "publication": {
+            "median_wall_ns": 17197000,
+            "median_cpu_ns": 12673300
+          },
+          "file_read": {
+            "median_wall_ns": 45100,
+            "median_cpu_ns": 45500
+          },
+          "resources": {
+            "median_rss_kib": 22488,
+            "median_process_cpu_ns": 1825130200,
+            "kernel_io_medians": {
+              "rchar": 73354724,
+              "wchar": 187646,
+              "read_bytes": 0,
+              "write_bytes": 200704
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 8778300,
+              "median_trial_p50_cpu_ns": 8780100,
+              "median_trial_p99_wall_ns": 13067200,
+              "median_trial_p99_cpu_ns": 13069600
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 1774000,
+              "median_trial_p50_cpu_ns": 1775100,
+              "median_trial_p99_wall_ns": 2507100,
+              "median_trial_p99_cpu_ns": 2509300
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 1696600,
+              "median_trial_p50_cpu_ns": 1697800,
+              "median_trial_p99_wall_ns": 2494300,
+              "median_trial_p99_cpu_ns": 2261400
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.20321408269499971,
+              "p99": 0.2625889766677016
+            },
+            "1": {
+              "median": 0.32052326203805104,
+              "p99": 0.529055708484784
+            },
+            "2": {
+              "median": 0.3240586598905402,
+              "p99": 0.4997425844521009
+            },
+            "3": {
+              "median": 0.33813704344510553,
+              "p99": 0.5632066728452271
+            },
+            "4": {
+              "median": 0.3411143194956104,
+              "p99": 0.5250854868546443
+            },
+            "5": {
+              "median": 0.23732741902932908,
+              "p99": 0.34819866114830145
+            },
+            "6": {
+              "median": 0.32724016357718044,
+              "p99": 0.528665542527744
+            },
+            "7": {
+              "median": 0.3237327550238602,
+              "p99": 0.4639239081494822
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 462300,
+            "median_cpu_ns": 464500
+          },
+          "index_publication": {
+            "median_wall_ns": 3709400,
+            "median_cpu_ns": 324000
+          }
+        },
+        "zstd256": {
+          "publication": {
+            "median_wall_ns": 14340000,
+            "median_cpu_ns": 9960400
+          },
+          "file_read": {
+            "median_wall_ns": 41100,
+            "median_cpu_ns": 41800
+          },
+          "resources": {
+            "median_rss_kib": 22580,
+            "median_process_cpu_ns": 1556491000,
+            "kernel_io_medians": {
+              "rchar": 54032326,
+              "wchar": 137848,
+              "read_bytes": 0,
+              "write_bytes": 151552
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 8092200,
+              "median_trial_p50_cpu_ns": 8094000,
+              "median_trial_p99_wall_ns": 12698700,
+              "median_trial_p99_cpu_ns": 12701000
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 1107100,
+              "median_trial_p50_cpu_ns": 1108500,
+              "median_trial_p99_wall_ns": 1679000,
+              "median_trial_p99_cpu_ns": 1681500
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 1028300,
+              "median_trial_p50_cpu_ns": 1029400,
+              "median_trial_p99_wall_ns": 1538200,
+              "median_trial_p99_cpu_ns": 1540600
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.12217937541718496,
+              "p99": 0.22074782951854774
+            },
+            "1": {
+              "median": 0.19021457333998204,
+              "p99": 0.3300963300963301
+            },
+            "2": {
+              "median": 0.194895135910162,
+              "p99": 0.3384424192212096
+            },
+            "3": {
+              "median": 0.2132954714592185,
+              "p99": 0.2858892418385702
+            },
+            "4": {
+              "median": 0.21478622577028342,
+              "p99": 0.47487658839649377
+            },
+            "5": {
+              "median": 0.14578302123466635,
+              "p99": 0.2740245689478081
+            },
+            "6": {
+              "median": 0.19548488842342432,
+              "p99": 0.37589858545257787
+            },
+            "7": {
+              "median": 0.19342921444640437,
+              "p99": 0.33430232558139533
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 470100,
+            "median_cpu_ns": 472200
+          },
+          "index_publication": {
+            "median_wall_ns": 4271500,
+            "median_cpu_ns": 304200
+          }
+        }
+      },
+      "receipt": {
+        "phases": {
+          "scalar_build": {
+            "median_wall_ns": 388100,
+            "median_cpu_ns": 389400
+          },
+          "sealed_build": {
+            "median_wall_ns": 3086700,
+            "median_cpu_ns": 3088600
+          },
+          "verify": {
+            "median_wall_ns": 274600,
+            "median_cpu_ns": 276300
+          },
+          "partial_resume_merge": {
+            "median_wall_ns": 5595800,
+            "median_cpu_ns": 5598500
+          },
+          "replay": {
+            "median_wall_ns": 343700,
+            "median_cpu_ns": 347500
+          }
+        },
+        "queries": {
+          "scalar": {
+            "median_trial_p50_wall_ns": 172400,
+            "median_trial_p50_cpu_ns": 172800,
+            "median_trial_p99_wall_ns": 3885900,
+            "median_trial_p99_cpu_ns": 3886800
+          },
+          "receipt": {
+            "median_trial_p50_wall_ns": 1086900,
+            "median_trial_p50_cpu_ns": 1087900,
+            "median_trial_p99_wall_ns": 4363100,
+            "median_trial_p99_cpu_ns": 4368300
+          }
+        },
+        "resources": {
+          "median_rss_kib": 16816,
+          "median_process_cpu_ns": 655521400,
+          "kernel_io_medians": {
+            "rchar": 722072,
+            "wchar": 0,
+            "read_bytes": 0,
+            "write_bytes": 0
+          },
+          "median_timer_wall_ns": 0.0,
+          "median_timer_cpu_ns": 300.0
+        },
+        "bytes": {
+          "full_page_bytes": 14306239,
+          "two_page_bytes": 367370,
+          "residual_bytes": 5111
+        },
+        "family_median_page_bytes": {
+          "0": 336959.0,
+          "1": 65436.0,
+          "2": 60944.0,
+          "3": 59222.0,
+          "4": 62687.0,
+          "5": 183608.0,
+          "6": 62675.0,
+          "7": 62605.0
+        }
+      },
+      "sidecar": {
+        "source-cost": {
+          "phase": {
+            "median_wall_ns": 8303200,
+            "median_cpu_ns": 8305400
+          },
+          "resources": {
+            "median_rss_kib": 4352,
+            "median_process_cpu_ns": 8647000,
+            "kernel_io_medians": {
+              "rchar": 722072,
+              "wchar": 32397,
+              "read_bytes": 0,
+              "write_bytes": 32768
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        "sidecar-baseline": {
+          "phase": {
+            "median_wall_ns": 10818600,
+            "median_cpu_ns": 10820300
+          },
+          "resources": {
+            "median_rss_kib": 7836,
+            "median_process_cpu_ns": 259131500,
+            "kernel_io_medians": {
+              "rchar": 1442564,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-valid": {
+          "phase": {
+            "median_wall_ns": 8739700,
+            "median_cpu_ns": 8740700
+          },
+          "resources": {
+            "median_rss_kib": 7808,
+            "median_process_cpu_ns": 234135500,
+            "kernel_io_medians": {
+              "rchar": 1474961,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            false,
+            false,
+            false,
+            false,
+            false
+          ]
+        },
+        "sidecar-absent": {
+          "phase": {
+            "median_wall_ns": 9354500,
+            "median_cpu_ns": 9356000
+          },
+          "resources": {
+            "median_rss_kib": 7680,
+            "median_process_cpu_ns": 227817600,
+            "kernel_io_medians": {
+              "rchar": 1442564,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-corrupt": {
+          "phase": {
+            "median_wall_ns": 8665400,
+            "median_cpu_ns": 8666400
+          },
+          "resources": {
+            "median_rss_kib": 7760,
+            "median_process_cpu_ns": 235159100,
+            "kernel_io_medians": {
+              "rchar": 1442571,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-stale": {
+          "phase": {
+            "median_wall_ns": 8871200,
+            "median_cpu_ns": 8872600
+          },
+          "resources": {
+            "median_rss_kib": 7700,
+            "median_process_cpu_ns": 229378600,
+            "kernel_io_medians": {
+              "rchar": 1442666,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-underinclusive": {
+          "phase": {
+            "median_wall_ns": 9586400,
+            "median_cpu_ns": 9587700
+          },
+          "resources": {
+            "median_rss_kib": 7768,
+            "median_process_cpu_ns": 236436700,
+            "kernel_io_medians": {
+              "rchar": 1477915,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        }
+      }
+    },
+    "mixed-202-2048": {
+      "layouts": {
+        "json64": {
+          "publication": {
+            "median_wall_ns": 50686400,
+            "median_cpu_ns": 8506300
+          },
+          "file_read": {
+            "median_wall_ns": 209500,
+            "median_cpu_ns": 210200
+          },
+          "resources": {
+            "median_rss_kib": 16464,
+            "median_process_cpu_ns": 1708799000,
+            "kernel_io_medians": {
+              "rchar": 186803105,
+              "wchar": 723381,
+              "read_bytes": 0,
+              "write_bytes": 790528
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 5480700,
+              "median_trial_p50_cpu_ns": 5481700,
+              "median_trial_p99_wall_ns": 8952600,
+              "median_trial_p99_cpu_ns": 8953900
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 5475400,
+              "median_trial_p50_cpu_ns": 5476300,
+              "median_trial_p99_wall_ns": 9378000,
+              "median_trial_p99_cpu_ns": 9379400
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "1": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "2": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "3": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "4": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "5": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "6": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "7": {
+              "median": 1.0,
+              "p99": 1.0
+            }
+          }
+        },
+        "plain64": {
+          "publication": {
+            "median_wall_ns": 20916200,
+            "median_cpu_ns": 14744800
+          },
+          "file_read": {
+            "median_wall_ns": 287800,
+            "median_cpu_ns": 288400
+          },
+          "resources": {
+            "median_rss_kib": 23276,
+            "median_process_cpu_ns": 3089063800,
+            "kernel_io_medians": {
+              "rchar": 430101324,
+              "wchar": 1107096,
+              "read_bytes": 0,
+              "write_bytes": 1122304
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 11819000,
+              "median_trial_p50_cpu_ns": 11821500,
+              "median_trial_p99_wall_ns": 17658000,
+              "median_trial_p99_cpu_ns": 17660900
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 5015900,
+              "median_trial_p50_cpu_ns": 5017400,
+              "median_trial_p99_wall_ns": 7877900,
+              "median_trial_p99_cpu_ns": 7857300
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 4981000,
+              "median_trial_p50_cpu_ns": 4976800,
+              "median_trial_p99_wall_ns": 7531798,
+              "median_trial_p99_cpu_ns": 7535100
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.5861593829260473,
+              "p99": 0.9329243288407404
+            },
+            "1": {
+              "median": 0.9093485082986382,
+              "p99": 1.6225892740230832
+            },
+            "2": {
+              "median": 0.9365206672229002,
+              "p99": 1.4058819920034837
+            },
+            "3": {
+              "median": 0.9328784367634915,
+              "p99": 1.7352899365066072
+            },
+            "4": {
+              "median": 0.9412515300452506,
+              "p99": 1.7448875997099347
+            },
+            "5": {
+              "median": 0.6905164151747276,
+              "p99": 1.4389580024077189
+            },
+            "6": {
+              "median": 0.9185456222507611,
+              "p99": 1.710299770261918
+            },
+            "7": {
+              "median": 0.927066653046084,
+              "p99": 1.4755182996219351
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 460000,
+            "median_cpu_ns": 461400
+          },
+          "index_publication": {
+            "median_wall_ns": 3359200,
+            "median_cpu_ns": 287200
+          }
+        },
+        "zstd64": {
+          "publication": {
+            "median_wall_ns": 16317800,
+            "median_cpu_ns": 13162300
+          },
+          "file_read": {
+            "median_wall_ns": 43300,
+            "median_cpu_ns": 43900
+          },
+          "resources": {
+            "median_rss_kib": 22876,
+            "median_process_cpu_ns": 1916671700,
+            "kernel_io_medians": {
+              "rchar": 73353156,
+              "wchar": 187632,
+              "read_bytes": 0,
+              "write_bytes": 200704
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 9216801,
+              "median_trial_p50_cpu_ns": 9220900,
+              "median_trial_p99_wall_ns": 14881102,
+              "median_trial_p99_cpu_ns": 14884400
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 1837000,
+              "median_trial_p50_cpu_ns": 1845400,
+              "median_trial_p99_wall_ns": 3098800,
+              "median_trial_p99_cpu_ns": 3101500
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 1768400,
+              "median_trial_p50_cpu_ns": 1770500,
+              "median_trial_p99_wall_ns": 2330100,
+              "median_trial_p99_cpu_ns": 2332500
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.2114256923237352,
+              "p99": 0.4677218372209956
+            },
+            "1": {
+              "median": 0.32483741394225824,
+              "p99": 0.6015777230603797
+            },
+            "2": {
+              "median": 0.3243374489212124,
+              "p99": 0.7106979650822169
+            },
+            "3": {
+              "median": 0.3428698128662663,
+              "p99": 0.4497710038291163
+            },
+            "4": {
+              "median": 0.3527824320498808,
+              "p99": 0.6523036988968203
+            },
+            "5": {
+              "median": 0.24287256939495785,
+              "p99": 0.46937722146407457
+            },
+            "6": {
+              "median": 0.32301816016373913,
+              "p99": 0.5796132682321941
+            },
+            "7": {
+              "median": 0.3282824836984188,
+              "p99": 0.6255242311276794
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 485000,
+            "median_cpu_ns": 488400
+          },
+          "index_publication": {
+            "median_wall_ns": 3528200,
+            "median_cpu_ns": 305800
+          }
+        },
+        "zstd256": {
+          "publication": {
+            "median_wall_ns": 14572195,
+            "median_cpu_ns": 9910700
+          },
+          "file_read": {
+            "median_wall_ns": 42600,
+            "median_cpu_ns": 43000
+          },
+          "resources": {
+            "median_rss_kib": 22860,
+            "median_process_cpu_ns": 1529152600,
+            "kernel_io_medians": {
+              "rchar": 54014472,
+              "wchar": 137798,
+              "read_bytes": 0,
+              "write_bytes": 151552
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 7954201,
+              "median_trial_p50_cpu_ns": 7956000,
+              "median_trial_p99_wall_ns": 12447500,
+              "median_trial_p99_cpu_ns": 12449600
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 1084100,
+              "median_trial_p50_cpu_ns": 1085400,
+              "median_trial_p99_wall_ns": 1483800,
+              "median_trial_p99_cpu_ns": 1485300
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 1011500,
+              "median_trial_p50_cpu_ns": 1012700,
+              "median_trial_p99_wall_ns": 1364000,
+              "median_trial_p99_cpu_ns": 1365600
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.12403482797608827,
+              "p99": 0.23719241629689392
+            },
+            "1": {
+              "median": 0.19063441555930197,
+              "p99": 0.38256866105951287
+            },
+            "2": {
+              "median": 0.1906558734148634,
+              "p99": 0.3756026631973674
+            },
+            "3": {
+              "median": 0.21932796721934572,
+              "p99": 0.6219896242027557
+            },
+            "4": {
+              "median": 0.21794645087240344,
+              "p99": 0.43724872513357815
+            },
+            "5": {
+              "median": 0.14906155691997383,
+              "p99": 0.25497230354762
+            },
+            "6": {
+              "median": 0.1925920547215536,
+              "p99": 0.41362209290699303
+            },
+            "7": {
+              "median": 0.19483557858619233,
+              "p99": 0.3173245695933077
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 458300,
+            "median_cpu_ns": 460000
+          },
+          "index_publication": {
+            "median_wall_ns": 3610400,
+            "median_cpu_ns": 262400
+          }
+        }
+      },
+      "receipt": {
+        "phases": {
+          "scalar_build": {
+            "median_wall_ns": 394400,
+            "median_cpu_ns": 395800
+          },
+          "sealed_build": {
+            "median_wall_ns": 2844701,
+            "median_cpu_ns": 2845800
+          },
+          "verify": {
+            "median_wall_ns": 241800,
+            "median_cpu_ns": 243000
+          },
+          "partial_resume_merge": {
+            "median_wall_ns": 4284800,
+            "median_cpu_ns": 4286100
+          },
+          "replay": {
+            "median_wall_ns": 250800,
+            "median_cpu_ns": 251400
+          }
+        },
+        "queries": {
+          "scalar": {
+            "median_trial_p50_wall_ns": 111200,
+            "median_trial_p50_cpu_ns": 112600,
+            "median_trial_p99_wall_ns": 3365300,
+            "median_trial_p99_cpu_ns": 3367000
+          },
+          "receipt": {
+            "median_trial_p50_wall_ns": 1049400,
+            "median_trial_p50_cpu_ns": 1050500,
+            "median_trial_p99_wall_ns": 3970300,
+            "median_trial_p99_cpu_ns": 3971800
+          }
+        },
+        "resources": {
+          "median_rss_kib": 16876,
+          "median_process_cpu_ns": 622710300,
+          "kernel_io_medians": {
+            "rchar": 722072,
+            "wchar": 0,
+            "read_bytes": 0,
+            "write_bytes": 0
+          },
+          "median_timer_wall_ns": 0.0,
+          "median_timer_cpu_ns": 200.0
+        },
+        "bytes": {
+          "full_page_bytes": 14300300,
+          "two_page_bytes": 367304,
+          "residual_bytes": 5116
+        },
+        "family_median_page_bytes": {
+          "0": 336968.0,
+          "1": 65362.0,
+          "2": 60874.5,
+          "3": 59158.0,
+          "4": 62612.0,
+          "5": 183602.0,
+          "6": 62600.0,
+          "7": 62530.0
+        }
+      },
+      "sidecar": {
+        "source-cost": {
+          "phase": {
+            "median_wall_ns": 6721700,
+            "median_cpu_ns": 6723700
+          },
+          "resources": {
+            "median_rss_kib": 4312,
+            "median_process_cpu_ns": 6935200,
+            "kernel_io_medians": {
+              "rchar": 722072,
+              "wchar": 32397,
+              "read_bytes": 0,
+              "write_bytes": 32768
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        "sidecar-baseline": {
+          "phase": {
+            "median_wall_ns": 8623800,
+            "median_cpu_ns": 8624800
+          },
+          "resources": {
+            "median_rss_kib": 7720,
+            "median_process_cpu_ns": 224543800,
+            "kernel_io_medians": {
+              "rchar": 1442564,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-valid": {
+          "phase": {
+            "median_wall_ns": 8989502,
+            "median_cpu_ns": 8991100
+          },
+          "resources": {
+            "median_rss_kib": 7756,
+            "median_process_cpu_ns": 231062700,
+            "kernel_io_medians": {
+              "rchar": 1474961,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "fallbacks": [
+            false,
+            false,
+            false,
+            false,
+            false
+          ]
+        },
+        "sidecar-absent": {
+          "phase": {
+            "median_wall_ns": 8775202,
+            "median_cpu_ns": 8776400
+          },
+          "resources": {
+            "median_rss_kib": 7860,
+            "median_process_cpu_ns": 232630100,
+            "kernel_io_medians": {
+              "rchar": 1442564,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-corrupt": {
+          "phase": {
+            "median_wall_ns": 8877001,
+            "median_cpu_ns": 8878700
+          },
+          "resources": {
+            "median_rss_kib": 7680,
+            "median_process_cpu_ns": 226570500,
+            "kernel_io_medians": {
+              "rchar": 1442571,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-stale": {
+          "phase": {
+            "median_wall_ns": 9011000,
+            "median_cpu_ns": 9012200
+          },
+          "resources": {
+            "median_rss_kib": 7720,
+            "median_process_cpu_ns": 238960100,
+            "kernel_io_medians": {
+              "rchar": 1442666,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-underinclusive": {
+          "phase": {
+            "median_wall_ns": 9214300,
+            "median_cpu_ns": 9215200
+          },
+          "resources": {
+            "median_rss_kib": 7760,
+            "median_process_cpu_ns": 229820200,
+            "kernel_io_medians": {
+              "rchar": 1477915,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        }
+      }
+    },
+    "mixed-203-2048": {
+      "layouts": {
+        "json64": {
+          "publication": {
+            "median_wall_ns": 52705604,
+            "median_cpu_ns": 8935600
+          },
+          "file_read": {
+            "median_wall_ns": 211700,
+            "median_cpu_ns": 212300
+          },
+          "resources": {
+            "median_rss_kib": 16336,
+            "median_process_cpu_ns": 1853191300,
+            "kernel_io_medians": {
+              "rchar": 186803105,
+              "wchar": 723381,
+              "read_bytes": 0,
+              "write_bytes": 790528
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 5821406,
+              "median_trial_p50_cpu_ns": 5822400,
+              "median_trial_p99_wall_ns": 10604209,
+              "median_trial_p99_cpu_ns": 10607600
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 5855405,
+              "median_trial_p50_cpu_ns": 5856600,
+              "median_trial_p99_wall_ns": 10312501,
+              "median_trial_p99_cpu_ns": 10314100
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "1": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "2": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "3": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "4": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "5": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "6": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "7": {
+              "median": 1.0,
+              "p99": 1.0
+            }
+          }
+        },
+        "plain64": {
+          "publication": {
+            "median_wall_ns": 20322403,
+            "median_cpu_ns": 15013100
+          },
+          "file_read": {
+            "median_wall_ns": 301500,
+            "median_cpu_ns": 302200
+          },
+          "resources": {
+            "median_rss_kib": 23184,
+            "median_process_cpu_ns": 3115000000,
+            "kernel_io_medians": {
+              "rchar": 430101321,
+              "wchar": 1107094,
+              "read_bytes": 0,
+              "write_bytes": 1122304
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 11939401,
+              "median_trial_p50_cpu_ns": 11941100,
+              "median_trial_p99_wall_ns": 17410001,
+              "median_trial_p99_cpu_ns": 17412500
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 5071400,
+              "median_trial_p50_cpu_ns": 5062300,
+              "median_trial_p99_wall_ns": 7152400,
+              "median_trial_p99_cpu_ns": 7155600
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 4990200,
+              "median_trial_p50_cpu_ns": 4993200,
+              "median_trial_p99_wall_ns": 8145498,
+              "median_trial_p99_cpu_ns": 8147800
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.5637244132335001,
+              "p99": 0.8446585890077706
+            },
+            "1": {
+              "median": 0.8907199461473514,
+              "p99": 1.5581943355533427
+            },
+            "2": {
+              "median": 0.8976067471072869,
+              "p99": 1.3939834359139986
+            },
+            "3": {
+              "median": 0.9022226475679462,
+              "p99": 1.757311850754191
+            },
+            "4": {
+              "median": 0.904394035413802,
+              "p99": 1.7235992513897103
+            },
+            "5": {
+              "median": 0.6810004464286399,
+              "p99": 1.274530267996
+            },
+            "6": {
+              "median": 0.9061055920499643,
+              "p99": 1.5409950715006953
+            },
+            "7": {
+              "median": 0.9029296630236391,
+              "p99": 1.6059618436616072
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 460700,
+            "median_cpu_ns": 462800
+          },
+          "index_publication": {
+            "median_wall_ns": 3536700,
+            "median_cpu_ns": 277900
+          }
+        },
+        "zstd64": {
+          "publication": {
+            "median_wall_ns": 17334600,
+            "median_cpu_ns": 12996300
+          },
+          "file_read": {
+            "median_wall_ns": 43800,
+            "median_cpu_ns": 44200
+          },
+          "resources": {
+            "median_rss_kib": 22612,
+            "median_process_cpu_ns": 1875608400,
+            "kernel_io_medians": {
+              "rchar": 73443190,
+              "wchar": 187876,
+              "read_bytes": 0,
+              "write_bytes": 200704
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 8877700,
+              "median_trial_p50_cpu_ns": 8880400,
+              "median_trial_p99_wall_ns": 13339001,
+              "median_trial_p99_cpu_ns": 13307100
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 1847199,
+              "median_trial_p50_cpu_ns": 1848500,
+              "median_trial_p99_wall_ns": 2467200,
+              "median_trial_p99_cpu_ns": 2469000
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 1771799,
+              "median_trial_p50_cpu_ns": 1773000,
+              "median_trial_p99_wall_ns": 2819800,
+              "median_trial_p99_cpu_ns": 2823500
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.20304408047478073,
+              "p99": 0.28719815714900543
+            },
+            "1": {
+              "median": 0.31915225290428584,
+              "p99": 0.4231668705476002
+            },
+            "2": {
+              "median": 0.32391173033262805,
+              "p99": 0.4011528576253989
+            },
+            "3": {
+              "median": 0.3409605847890563,
+              "p99": 0.4383508296647477
+            },
+            "4": {
+              "median": 0.3432119212726018,
+              "p99": 0.46427059778750934
+            },
+            "5": {
+              "median": 0.23855112932552702,
+              "p99": 0.3831333621232655
+            },
+            "6": {
+              "median": 0.32700136090066056,
+              "p99": 0.4253232383685155
+            },
+            "7": {
+              "median": 0.3239871798476859,
+              "p99": 0.616261710148173
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 460800,
+            "median_cpu_ns": 463500
+          },
+          "index_publication": {
+            "median_wall_ns": 3966000,
+            "median_cpu_ns": 274800
+          }
+        },
+        "zstd256": {
+          "publication": {
+            "median_wall_ns": 14952602,
+            "median_cpu_ns": 9954000
+          },
+          "file_read": {
+            "median_wall_ns": 34300,
+            "median_cpu_ns": 34700
+          },
+          "resources": {
+            "median_rss_kib": 22724,
+            "median_process_cpu_ns": 1620899200,
+            "kernel_io_medians": {
+              "rchar": 53938403,
+              "wchar": 137588,
+              "read_bytes": 0,
+              "write_bytes": 151552
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 8240202,
+              "median_trial_p50_cpu_ns": 8243000,
+              "median_trial_p99_wall_ns": 14063288,
+              "median_trial_p99_cpu_ns": 14065900
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 1113001,
+              "median_trial_p50_cpu_ns": 1114200,
+              "median_trial_p99_wall_ns": 1869300,
+              "median_trial_p99_cpu_ns": 1872200
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 1050200,
+              "median_trial_p50_cpu_ns": 1051200,
+              "median_trial_p99_wall_ns": 1699998,
+              "median_trial_p99_cpu_ns": 1701800
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.11932724532936151,
+              "p99": 0.1910195567933444
+            },
+            "1": {
+              "median": 0.18463564992893688,
+              "p99": 0.2864295419435293
+            },
+            "2": {
+              "median": 0.19422144355166926,
+              "p99": 0.4753508298388171
+            },
+            "3": {
+              "median": 0.2120209559060141,
+              "p99": 0.4190708432697997
+            },
+            "4": {
+              "median": 0.2195079806692912,
+              "p99": 0.4742858014305561
+            },
+            "5": {
+              "median": 0.1454687911403618,
+              "p99": 0.22777084737505945
+            },
+            "6": {
+              "median": 0.19088349143485148,
+              "p99": 0.23709997893066698
+            },
+            "7": {
+              "median": 0.19246510467694183,
+              "p99": 0.36810945453232735
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 450001,
+            "median_cpu_ns": 451600
+          },
+          "index_publication": {
+            "median_wall_ns": 3747700,
+            "median_cpu_ns": 297900
+          }
+        }
+      },
+      "receipt": {
+        "phases": {
+          "scalar_build": {
+            "median_wall_ns": 421200,
+            "median_cpu_ns": 422500
+          },
+          "sealed_build": {
+            "median_wall_ns": 3084200,
+            "median_cpu_ns": 3085500
+          },
+          "verify": {
+            "median_wall_ns": 239800,
+            "median_cpu_ns": 240900
+          },
+          "partial_resume_merge": {
+            "median_wall_ns": 4342400,
+            "median_cpu_ns": 4343700
+          },
+          "replay": {
+            "median_wall_ns": 266400,
+            "median_cpu_ns": 267000
+          }
+        },
+        "queries": {
+          "scalar": {
+            "median_trial_p50_wall_ns": 166000,
+            "median_trial_p50_cpu_ns": 167400,
+            "median_trial_p99_wall_ns": 4066500,
+            "median_trial_p99_cpu_ns": 4069200
+          },
+          "receipt": {
+            "median_trial_p50_wall_ns": 1139499,
+            "median_trial_p50_cpu_ns": 1139900,
+            "median_trial_p99_wall_ns": 4465401,
+            "median_trial_p99_cpu_ns": 4466700
+          }
+        },
+        "resources": {
+          "median_rss_kib": 16852,
+          "median_process_cpu_ns": 684024400,
+          "kernel_io_medians": {
+            "rchar": 722072,
+            "wchar": 0,
+            "read_bytes": 0,
+            "write_bytes": 0
+          },
+          "median_timer_wall_ns": 0.0,
+          "median_timer_cpu_ns": 300.0
+        },
+        "bytes": {
+          "full_page_bytes": 14285662,
+          "two_page_bytes": 367115,
+          "residual_bytes": 5128
+        },
+        "family_median_page_bytes": {
+          "0": 336921.0,
+          "1": 65206.0,
+          "2": 60729.0,
+          "3": 59010.0,
+          "4": 62470.0,
+          "5": 183594.0,
+          "6": 62458.0,
+          "7": 62388.0
+        }
+      },
+      "sidecar": {
+        "source-cost": {
+          "phase": {
+            "median_wall_ns": 7026400,
+            "median_cpu_ns": 7027900
+          },
+          "resources": {
+            "median_rss_kib": 4256,
+            "median_process_cpu_ns": 7233100,
+            "kernel_io_medians": {
+              "rchar": 722072,
+              "wchar": 32397,
+              "read_bytes": 0,
+              "write_bytes": 32768
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        "sidecar-baseline": {
+          "phase": {
+            "median_wall_ns": 9014293,
+            "median_cpu_ns": 9015600
+          },
+          "resources": {
+            "median_rss_kib": 7860,
+            "median_process_cpu_ns": 238274400,
+            "kernel_io_medians": {
+              "rchar": 1442564,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-valid": {
+          "phase": {
+            "median_wall_ns": 9099098,
+            "median_cpu_ns": 9100600
+          },
+          "resources": {
+            "median_rss_kib": 7812,
+            "median_process_cpu_ns": 227942000,
+            "kernel_io_medians": {
+              "rchar": 1474961,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            false,
+            false,
+            false,
+            false,
+            false
+          ]
+        },
+        "sidecar-absent": {
+          "phase": {
+            "median_wall_ns": 8737000,
+            "median_cpu_ns": 8729900
+          },
+          "resources": {
+            "median_rss_kib": 7828,
+            "median_process_cpu_ns": 224550700,
+            "kernel_io_medians": {
+              "rchar": 1442564,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-corrupt": {
+          "phase": {
+            "median_wall_ns": 8665899,
+            "median_cpu_ns": 8667100
+          },
+          "resources": {
+            "median_rss_kib": 7820,
+            "median_process_cpu_ns": 224655500,
+            "kernel_io_medians": {
+              "rchar": 1442571,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-stale": {
+          "phase": {
+            "median_wall_ns": 8618401,
+            "median_cpu_ns": 8619400
+          },
+          "resources": {
+            "median_rss_kib": 7880,
+            "median_process_cpu_ns": 229163200,
+            "kernel_io_medians": {
+              "rchar": 1442666,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-underinclusive": {
+          "phase": {
+            "median_wall_ns": 9424000,
+            "median_cpu_ns": 9426100
+          },
+          "resources": {
+            "median_rss_kib": 7716,
+            "median_process_cpu_ns": 234150600,
+            "kernel_io_medians": {
+              "rchar": 1477915,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        }
+      }
+    },
+    "shuffled_logs-201-2048": {
+      "layouts": {
+        "json64": {
+          "publication": {
+            "median_wall_ns": 52772498,
+            "median_cpu_ns": 8738500
+          },
+          "file_read": {
+            "median_wall_ns": 219000,
+            "median_cpu_ns": 219700
+          },
+          "resources": {
+            "median_rss_kib": 19772,
+            "median_process_cpu_ns": 1985770500,
+            "kernel_io_medians": {
+              "rchar": 213543561,
+              "wchar": 826626,
+              "read_bytes": 0,
+              "write_bytes": 921600
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 5776699,
+              "median_trial_p50_cpu_ns": 5774800,
+              "median_trial_p99_wall_ns": 10687900,
+              "median_trial_p99_cpu_ns": 10594300
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 5787699,
+              "median_trial_p50_cpu_ns": 5788500,
+              "median_trial_p99_wall_ns": 10624400,
+              "median_trial_p99_cpu_ns": 10626200
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "1": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "2": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "3": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "4": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "5": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "6": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "7": {
+              "median": 1.0,
+              "p99": 1.0
+            }
+          }
+        },
+        "plain64": {
+          "publication": {
+            "median_wall_ns": 22702800,
+            "median_cpu_ns": 16464400
+          },
+          "file_read": {
+            "median_wall_ns": 409500,
+            "median_cpu_ns": 410100
+          },
+          "resources": {
+            "median_rss_kib": 27456,
+            "median_process_cpu_ns": 3721856100,
+            "kernel_io_medians": {
+              "rchar": 536850252,
+              "wchar": 1381964,
+              "read_bytes": 0,
+              "write_bytes": 1396736
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 13270699,
+              "median_trial_p50_cpu_ns": 13272800,
+              "median_trial_p99_wall_ns": 20274199,
+              "median_trial_p99_cpu_ns": 20277100
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 6174499,
+              "median_trial_p50_cpu_ns": 6176700,
+              "median_trial_p99_wall_ns": 8989300,
+              "median_trial_p99_cpu_ns": 8992200
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 6052200,
+              "median_trial_p50_cpu_ns": 6055500,
+              "median_trial_p99_wall_ns": 9741099,
+              "median_trial_p99_cpu_ns": 9744300
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.6444148998270891,
+              "p99": 1.32189679663977
+            },
+            "1": {
+              "median": 1.0770005871040724,
+              "p99": 2.3497053981924365
+            },
+            "2": {
+              "median": 1.0919777889362146,
+              "p99": 2.436523827881841
+            },
+            "3": {
+              "median": 1.0771987205618183,
+              "p99": 2.381739241374774
+            },
+            "4": {
+              "median": 1.0729271222696273,
+              "p99": 2.3684890727620003
+            },
+            "5": {
+              "median": 0.6455247201602106,
+              "p99": 1.4379002132791947
+            },
+            "6": {
+              "median": 1.0886831279237503,
+              "p99": 2.3137048592154894
+            },
+            "7": {
+              "median": 1.0830667540353969,
+              "p99": 2.1006969606244112
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 769600,
+            "median_cpu_ns": 771900
+          },
+          "index_publication": {
+            "median_wall_ns": 4261200,
+            "median_cpu_ns": 333300
+          }
+        },
+        "zstd64": {
+          "publication": {
+            "median_wall_ns": 18629905,
+            "median_cpu_ns": 14362200
+          },
+          "file_read": {
+            "median_wall_ns": 57500,
+            "median_cpu_ns": 58100
+          },
+          "resources": {
+            "median_rss_kib": 26256,
+            "median_process_cpu_ns": 2055888900,
+            "kernel_io_medians": {
+              "rchar": 75027044,
+              "wchar": 191698,
+              "read_bytes": 0,
+              "write_bytes": 204800
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 9477799,
+              "median_trial_p50_cpu_ns": 9479600,
+              "median_trial_p99_wall_ns": 15027199,
+              "median_trial_p99_cpu_ns": 15029400
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 1960400,
+              "median_trial_p50_cpu_ns": 1961700,
+              "median_trial_p99_wall_ns": 2987200,
+              "median_trial_p99_cpu_ns": 2989400
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 1835300,
+              "median_trial_p50_cpu_ns": 1837500,
+              "median_trial_p99_wall_ns": 2773099,
+              "median_trial_p99_cpu_ns": 2777300
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.20333345671782085,
+              "p99": 0.7832690557022194
+            },
+            "1": {
+              "median": 0.3293320344159439,
+              "p99": 0.9456966967599987
+            },
+            "2": {
+              "median": 0.3340605753225332,
+              "p99": 0.9067162149714721
+            },
+            "3": {
+              "median": 0.36277161152635434,
+              "p99": 2.41129176798781
+            },
+            "4": {
+              "median": 0.3714202593277275,
+              "p99": 1.365486443941576
+            },
+            "5": {
+              "median": 0.205993778659942,
+              "p99": 1.2152994561324513
+            },
+            "6": {
+              "median": 0.33501734272708583,
+              "p99": 1.5459508021884274
+            },
+            "7": {
+              "median": 0.3301150275790097,
+              "p99": 1.0533209472615688
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 795300,
+            "median_cpu_ns": 797800
+          },
+          "index_publication": {
+            "median_wall_ns": 3689399,
+            "median_cpu_ns": 299300
+          }
+        },
+        "zstd256": {
+          "publication": {
+            "median_wall_ns": 15505997,
+            "median_cpu_ns": 11236500
+          },
+          "file_read": {
+            "median_wall_ns": 67300,
+            "median_cpu_ns": 67700
+          },
+          "resources": {
+            "median_rss_kib": 26212,
+            "median_process_cpu_ns": 1854311800,
+            "kernel_io_medians": {
+              "rchar": 57383116,
+              "wchar": 146214,
+              "read_bytes": 0,
+              "write_bytes": 159744
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 8963220,
+              "median_trial_p50_cpu_ns": 8964900,
+              "median_trial_p99_wall_ns": 19078943,
+              "median_trial_p99_cpu_ns": 19083400
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 1234703,
+              "median_trial_p50_cpu_ns": 1236000,
+              "median_trial_p99_wall_ns": 2111805,
+              "median_trial_p99_cpu_ns": 2114800
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 1138603,
+              "median_trial_p50_cpu_ns": 1141300,
+              "median_trial_p99_wall_ns": 2166101,
+              "median_trial_p99_cpu_ns": 2171500
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.12401298446915446,
+              "p99": 1.5170274338983372
+            },
+            "1": {
+              "median": 0.20463373461007212,
+              "p99": 0.544107236798706
+            },
+            "2": {
+              "median": 0.21211660931118376,
+              "p99": 2.379058177466928
+            },
+            "3": {
+              "median": 0.25187941963120775,
+              "p99": 2.6545909397237524
+            },
+            "4": {
+              "median": 0.24992889820523445,
+              "p99": 3.068385822123134
+            },
+            "5": {
+              "median": 0.12908702708174724,
+              "p99": 1.559035854137139
+            },
+            "6": {
+              "median": 0.20802373544859304,
+              "p99": 2.4379097252425166
+            },
+            "7": {
+              "median": 0.20790102033094032,
+              "p99": 2.5106335914631885
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 767300,
+            "median_cpu_ns": 769600
+          },
+          "index_publication": {
+            "median_wall_ns": 3973400,
+            "median_cpu_ns": 300700
+          }
+        }
+      },
+      "receipt": {
+        "phases": {
+          "scalar_build": {
+            "median_wall_ns": 706000,
+            "median_cpu_ns": 707900
+          },
+          "sealed_build": {
+            "median_wall_ns": 4529500,
+            "median_cpu_ns": 4532400
+          },
+          "verify": {
+            "median_wall_ns": 267300,
+            "median_cpu_ns": 271000
+          },
+          "partial_resume_merge": {
+            "median_wall_ns": 5583402,
+            "median_cpu_ns": 5586700
+          },
+          "replay": {
+            "median_wall_ns": 339800,
+            "median_cpu_ns": 341300
+          }
+        },
+        "queries": {
+          "scalar": {
+            "median_trial_p50_wall_ns": 110400,
+            "median_trial_p50_cpu_ns": 111700,
+            "median_trial_p99_wall_ns": 4245699,
+            "median_trial_p99_cpu_ns": 4247700
+          },
+          "receipt": {
+            "median_trial_p50_wall_ns": 1303600,
+            "median_trial_p50_cpu_ns": 1304500,
+            "median_trial_p99_wall_ns": 5164600,
+            "median_trial_p99_cpu_ns": 5167500
+          }
+        },
+        "resources": {
+          "median_rss_kib": 20040,
+          "median_process_cpu_ns": 851615600,
+          "kernel_io_medians": {
+            "rchar": 825317,
+            "wchar": 0,
+            "read_bytes": 0,
+            "write_bytes": 0
+          },
+          "median_timer_wall_ns": 0.0,
+          "median_timer_cpu_ns": 300.0
+        },
+        "bytes": {
+          "full_page_bytes": 17470387,
+          "two_page_bytes": 367455,
+          "residual_bytes": 5183
+        },
+        "family_median_page_bytes": {
+          "0": 337084.0,
+          "1": 35039.5,
+          "2": 76581.0,
+          "3": 68277.0,
+          "4": 79368.0,
+          "5": 337092.0,
+          "6": 79356.0,
+          "7": 79286.0
+        }
+      },
+      "sidecar": {
+        "source-cost": {
+          "phase": {
+            "median_wall_ns": 7436799,
+            "median_cpu_ns": 7437800
+          },
+          "resources": {
+            "median_rss_kib": 4564,
+            "median_process_cpu_ns": 7569300,
+            "kernel_io_medians": {
+              "rchar": 825317,
+              "wchar": 49118,
+              "read_bytes": 0,
+              "write_bytes": 49152
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        "sidecar-baseline": {
+          "phase": {
+            "median_wall_ns": 10366898,
+            "median_cpu_ns": 10367800
+          },
+          "resources": {
+            "median_rss_kib": 8804,
+            "median_process_cpu_ns": 318228300,
+            "kernel_io_medians": {
+              "rchar": 1649054,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-valid": {
+          "phase": {
+            "median_wall_ns": 11545699,
+            "median_cpu_ns": 11547000
+          },
+          "resources": {
+            "median_rss_kib": 8632,
+            "median_process_cpu_ns": 321488700,
+            "kernel_io_medians": {
+              "rchar": 1698172,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            false,
+            false,
+            false,
+            false,
+            false
+          ]
+        },
+        "sidecar-absent": {
+          "phase": {
+            "median_wall_ns": 11470498,
+            "median_cpu_ns": 11472200
+          },
+          "resources": {
+            "median_rss_kib": 8616,
+            "median_process_cpu_ns": 334063100,
+            "kernel_io_medians": {
+              "rchar": 1649054,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-corrupt": {
+          "phase": {
+            "median_wall_ns": 10772398,
+            "median_cpu_ns": 10773600
+          },
+          "resources": {
+            "median_rss_kib": 8760,
+            "median_process_cpu_ns": 357516100,
+            "kernel_io_medians": {
+              "rchar": 1649061,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-stale": {
+          "phase": {
+            "median_wall_ns": 11547499,
+            "median_cpu_ns": 11549300
+          },
+          "resources": {
+            "median_rss_kib": 8676,
+            "median_process_cpu_ns": 347363700,
+            "kernel_io_medians": {
+              "rchar": 1649156,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-underinclusive": {
+          "phase": {
+            "median_wall_ns": 11672098,
+            "median_cpu_ns": 11673900
+          },
+          "resources": {
+            "median_rss_kib": 8564,
+            "median_process_cpu_ns": 363427700,
+            "kernel_io_medians": {
+              "rchar": 1701900,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        }
+      }
+    },
+    "shuffled_logs-202-2048": {
+      "layouts": {
+        "json64": {
+          "publication": {
+            "median_wall_ns": 51223404,
+            "median_cpu_ns": 8607200
+          },
+          "file_read": {
+            "median_wall_ns": 224000,
+            "median_cpu_ns": 224600
+          },
+          "resources": {
+            "median_rss_kib": 19708,
+            "median_process_cpu_ns": 1936960400,
+            "kernel_io_medians": {
+              "rchar": 213543560,
+              "wchar": 826626,
+              "read_bytes": 0,
+              "write_bytes": 921600
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 5860100,
+              "median_trial_p50_cpu_ns": 5861100,
+              "median_trial_p99_wall_ns": 10807299,
+              "median_trial_p99_cpu_ns": 10809100
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 5859599,
+              "median_trial_p50_cpu_ns": 5861000,
+              "median_trial_p99_wall_ns": 11095700,
+              "median_trial_p99_cpu_ns": 11098200
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "1": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "2": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "3": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "4": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "5": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "6": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "7": {
+              "median": 1.0,
+              "p99": 1.0
+            }
+          }
+        },
+        "plain64": {
+          "publication": {
+            "median_wall_ns": 21530199,
+            "median_cpu_ns": 15975300
+          },
+          "file_read": {
+            "median_wall_ns": 391700,
+            "median_cpu_ns": 392200
+          },
+          "resources": {
+            "median_rss_kib": 27388,
+            "median_process_cpu_ns": 3648819000,
+            "kernel_io_medians": {
+              "rchar": 536850249,
+              "wchar": 1381962,
+              "read_bytes": 0,
+              "write_bytes": 1396736
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 13105000,
+              "median_trial_p50_cpu_ns": 13107900,
+              "median_trial_p99_wall_ns": 19054499,
+              "median_trial_p99_cpu_ns": 19056900
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 6141800,
+              "median_trial_p50_cpu_ns": 6144700,
+              "median_trial_p99_wall_ns": 8075200,
+              "median_trial_p99_cpu_ns": 8077500
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 6022500,
+              "median_trial_p50_cpu_ns": 6024600,
+              "median_trial_p99_wall_ns": 9259299,
+              "median_trial_p99_cpu_ns": 9262500
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.6517620037607658,
+              "p99": 1.553830419324989
+            },
+            "1": {
+              "median": 1.0822752310916062,
+              "p99": 1.7393558577118529
+            },
+            "2": {
+              "median": 1.1045597580954762,
+              "p99": 2.4658733461374305
+            },
+            "3": {
+              "median": 1.0847215859901242,
+              "p99": 2.3866375561353994
+            },
+            "4": {
+              "median": 1.0838837929161569,
+              "p99": 2.4696436205901167
+            },
+            "5": {
+              "median": 0.6478235850805116,
+              "p99": 1.6024989658386888
+            },
+            "6": {
+              "median": 1.1051183206376733,
+              "p99": 2.4367492408283864
+            },
+            "7": {
+              "median": 1.109197799869774,
+              "p99": 2.682246306117743
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 763200,
+            "median_cpu_ns": 765100
+          },
+          "index_publication": {
+            "median_wall_ns": 4645000,
+            "median_cpu_ns": 338200
+          }
+        },
+        "zstd64": {
+          "publication": {
+            "median_wall_ns": 19059592,
+            "median_cpu_ns": 14138300
+          },
+          "file_read": {
+            "median_wall_ns": 42400,
+            "median_cpu_ns": 42800
+          },
+          "resources": {
+            "median_rss_kib": 26412,
+            "median_process_cpu_ns": 2054055600,
+            "kernel_io_medians": {
+              "rchar": 75032088,
+              "wchar": 191711,
+              "read_bytes": 0,
+              "write_bytes": 204800
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 9389396,
+              "median_trial_p50_cpu_ns": 9391500,
+              "median_trial_p99_wall_ns": 14938599,
+              "median_trial_p99_cpu_ns": 14935800
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 1909700,
+              "median_trial_p50_cpu_ns": 1911500,
+              "median_trial_p99_wall_ns": 2834600,
+              "median_trial_p99_cpu_ns": 2836600
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 1853400,
+              "median_trial_p50_cpu_ns": 1854600,
+              "median_trial_p99_wall_ns": 2949599,
+              "median_trial_p99_cpu_ns": 2951700
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.20388593861979148,
+              "p99": 0.928224925102325
+            },
+            "1": {
+              "median": 0.33446512093219305,
+              "p99": 0.9203310823983978
+            },
+            "2": {
+              "median": 0.3370524128823592,
+              "p99": 0.9206368841450484
+            },
+            "3": {
+              "median": 0.3736118654657822,
+              "p99": 0.9438451884264442
+            },
+            "4": {
+              "median": 0.37370874063474574,
+              "p99": 0.7374399301004806
+            },
+            "5": {
+              "median": 0.20283817652663416,
+              "p99": 0.5141990861340052
+            },
+            "6": {
+              "median": 0.3381818845635418,
+              "p99": 0.8814482421698301
+            },
+            "7": {
+              "median": 0.34263988498948494,
+              "p99": 0.8913777720188072
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 776399,
+            "median_cpu_ns": 779400
+          },
+          "index_publication": {
+            "median_wall_ns": 5342800,
+            "median_cpu_ns": 407300
+          }
+        },
+        "zstd256": {
+          "publication": {
+            "median_wall_ns": 18442800,
+            "median_cpu_ns": 12918000
+          },
+          "file_read": {
+            "median_wall_ns": 100400,
+            "median_cpu_ns": 101400
+          },
+          "resources": {
+            "median_rss_kib": 25080,
+            "median_process_cpu_ns": 1813137400,
+            "kernel_io_medians": {
+              "rchar": 57370730,
+              "wchar": 146202,
+              "read_bytes": 0,
+              "write_bytes": 159744
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 9078001,
+              "median_trial_p50_cpu_ns": 9080200,
+              "median_trial_p99_wall_ns": 15868394,
+              "median_trial_p99_cpu_ns": 15872100
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 1205901,
+              "median_trial_p50_cpu_ns": 1207100,
+              "median_trial_p99_wall_ns": 2074599,
+              "median_trial_p99_cpu_ns": 2076500
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 1106599,
+              "median_trial_p50_cpu_ns": 1107800,
+              "median_trial_p99_wall_ns": 1579699,
+              "median_trial_p99_cpu_ns": 1581200
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.13038097538013116,
+              "p99": 0.2743206285813509
+            },
+            "1": {
+              "median": 0.21151982032380381,
+              "p99": 0.43550697723775667
+            },
+            "2": {
+              "median": 0.22173718262485137,
+              "p99": 0.46050185018133616
+            },
+            "3": {
+              "median": 0.25658897322137886,
+              "p99": 0.5844817416483458
+            },
+            "4": {
+              "median": 0.2589850313705747,
+              "p99": 0.7230324192941016
+            },
+            "5": {
+              "median": 0.12877492475809024,
+              "p99": 0.27502032540726096
+            },
+            "6": {
+              "median": 0.2099960439011274,
+              "p99": 0.4883909389016622
+            },
+            "7": {
+              "median": 0.22073695736113208,
+              "p99": 0.49195863906769005
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 836401,
+            "median_cpu_ns": 839100
+          },
+          "index_publication": {
+            "median_wall_ns": 4179500,
+            "median_cpu_ns": 347200
+          }
+        }
+      },
+      "receipt": {
+        "phases": {
+          "scalar_build": {
+            "median_wall_ns": 730800,
+            "median_cpu_ns": 732400
+          },
+          "sealed_build": {
+            "median_wall_ns": 4696900,
+            "median_cpu_ns": 4699400
+          },
+          "verify": {
+            "median_wall_ns": 236800,
+            "median_cpu_ns": 237600
+          },
+          "partial_resume_merge": {
+            "median_wall_ns": 5057900,
+            "median_cpu_ns": 5059200
+          },
+          "replay": {
+            "median_wall_ns": 264800,
+            "median_cpu_ns": 265500
+          }
+        },
+        "queries": {
+          "scalar": {
+            "median_trial_p50_wall_ns": 116900,
+            "median_trial_p50_cpu_ns": 117700,
+            "median_trial_p99_wall_ns": 4172600,
+            "median_trial_p99_cpu_ns": 4175400
+          },
+          "receipt": {
+            "median_trial_p50_wall_ns": 1241500,
+            "median_trial_p50_cpu_ns": 1242500,
+            "median_trial_p99_wall_ns": 4792601,
+            "median_trial_p99_cpu_ns": 4793700
+          }
+        },
+        "resources": {
+          "median_rss_kib": 19900,
+          "median_process_cpu_ns": 820233400,
+          "kernel_io_medians": {
+            "rchar": 825317,
+            "wchar": 0,
+            "read_bytes": 0,
+            "write_bytes": 0
+          },
+          "median_timer_wall_ns": 0.0,
+          "median_timer_cpu_ns": 300.0
+        },
+        "bytes": {
+          "full_page_bytes": 17465672,
+          "two_page_bytes": 367329,
+          "residual_bytes": 5138
+        },
+        "family_median_page_bytes": {
+          "0": 336965.0,
+          "1": 35013.5,
+          "2": 76574.0,
+          "3": 68267.0,
+          "4": 79361.0,
+          "5": 336973.0,
+          "6": 79349.0,
+          "7": 79279.0
+        }
+      },
+      "sidecar": {
+        "source-cost": {
+          "phase": {
+            "median_wall_ns": 7510600,
+            "median_cpu_ns": 7511700
+          },
+          "resources": {
+            "median_rss_kib": 4496,
+            "median_process_cpu_ns": 7651500,
+            "kernel_io_medians": {
+              "rchar": 825317,
+              "wchar": 49118,
+              "read_bytes": 0,
+              "write_bytes": 49152
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "fallbacks": [
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        "sidecar-baseline": {
+          "phase": {
+            "median_wall_ns": 11083800,
+            "median_cpu_ns": 11085900
+          },
+          "resources": {
+            "median_rss_kib": 8648,
+            "median_process_cpu_ns": 347881100,
+            "kernel_io_medians": {
+              "rchar": 1649054,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-valid": {
+          "phase": {
+            "median_wall_ns": 11003800,
+            "median_cpu_ns": 11005200
+          },
+          "resources": {
+            "median_rss_kib": 8780,
+            "median_process_cpu_ns": 324851100,
+            "kernel_io_medians": {
+              "rchar": 1698172,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            false,
+            false,
+            false,
+            false,
+            false
+          ]
+        },
+        "sidecar-absent": {
+          "phase": {
+            "median_wall_ns": 11529300,
+            "median_cpu_ns": 11531500
+          },
+          "resources": {
+            "median_rss_kib": 8776,
+            "median_process_cpu_ns": 340974900,
+            "kernel_io_medians": {
+              "rchar": 1649054,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-corrupt": {
+          "phase": {
+            "median_wall_ns": 11023000,
+            "median_cpu_ns": 11024500
+          },
+          "resources": {
+            "median_rss_kib": 8768,
+            "median_process_cpu_ns": 334180300,
+            "kernel_io_medians": {
+              "rchar": 1649061,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-stale": {
+          "phase": {
+            "median_wall_ns": 11304100,
+            "median_cpu_ns": 11313600
+          },
+          "resources": {
+            "median_rss_kib": 8676,
+            "median_process_cpu_ns": 326375300,
+            "kernel_io_medians": {
+              "rchar": 1649156,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-underinclusive": {
+          "phase": {
+            "median_wall_ns": 10987300,
+            "median_cpu_ns": 10980800
+          },
+          "resources": {
+            "median_rss_kib": 8680,
+            "median_process_cpu_ns": 323220200,
+            "kernel_io_medians": {
+              "rchar": 1701900,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        }
+      }
+    },
+    "shuffled_logs-203-2048": {
+      "layouts": {
+        "json64": {
+          "publication": {
+            "median_wall_ns": 51610004,
+            "median_cpu_ns": 8769600
+          },
+          "file_read": {
+            "median_wall_ns": 218500,
+            "median_cpu_ns": 219000
+          },
+          "resources": {
+            "median_rss_kib": 19704,
+            "median_process_cpu_ns": 1915036000,
+            "kernel_io_medians": {
+              "rchar": 213543560,
+              "wchar": 826626,
+              "read_bytes": 0,
+              "write_bytes": 921600
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 5748200,
+              "median_trial_p50_cpu_ns": 5762600,
+              "median_trial_p99_wall_ns": 10434800,
+              "median_trial_p99_cpu_ns": 10436200
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 5768200,
+              "median_trial_p50_cpu_ns": 5769900,
+              "median_trial_p99_wall_ns": 10398400,
+              "median_trial_p99_cpu_ns": 10400600
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "1": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "2": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "3": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "4": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "5": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "6": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "7": {
+              "median": 1.0,
+              "p99": 1.0
+            }
+          }
+        },
+        "plain64": {
+          "publication": {
+            "median_wall_ns": 22252800,
+            "median_cpu_ns": 16754300
+          },
+          "file_read": {
+            "median_wall_ns": 399400,
+            "median_cpu_ns": 400100
+          },
+          "resources": {
+            "median_rss_kib": 27452,
+            "median_process_cpu_ns": 3646257000,
+            "kernel_io_medians": {
+              "rchar": 536850252,
+              "wchar": 1381964,
+              "read_bytes": 0,
+              "write_bytes": 1396736
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 13167000,
+              "median_trial_p50_cpu_ns": 13169400,
+              "median_trial_p99_wall_ns": 21115700,
+              "median_trial_p99_cpu_ns": 21117800
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 6143100,
+              "median_trial_p50_cpu_ns": 6144700,
+              "median_trial_p99_wall_ns": 8410700,
+              "median_trial_p99_cpu_ns": 8400800
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 6069100,
+              "median_trial_p50_cpu_ns": 6070400,
+              "median_trial_p99_wall_ns": 8704000,
+              "median_trial_p99_cpu_ns": 8707000
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.6631357284309869,
+              "p99": 1.5147323529106944
+            },
+            "1": {
+              "median": 1.0861847818596897,
+              "p99": 1.5790328999734677
+            },
+            "2": {
+              "median": 1.108064136157365,
+              "p99": 1.5990853089415717
+            },
+            "3": {
+              "median": 1.08889558327173,
+              "p99": 1.5745882251530041
+            },
+            "4": {
+              "median": 1.1145317232852827,
+              "p99": 1.5783533290876433
+            },
+            "5": {
+              "median": 0.6577969901855614,
+              "p99": 1.2280293783408394
+            },
+            "6": {
+              "median": 1.1255186647371518,
+              "p99": 2.2249211531013113
+            },
+            "7": {
+              "median": 1.1162075042430244,
+              "p99": 1.8922407090654643
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 757900,
+            "median_cpu_ns": 760900
+          },
+          "index_publication": {
+            "median_wall_ns": 4376900,
+            "median_cpu_ns": 313900
+          }
+        },
+        "zstd64": {
+          "publication": {
+            "median_wall_ns": 18077901,
+            "median_cpu_ns": 14211400
+          },
+          "file_read": {
+            "median_wall_ns": 32700,
+            "median_cpu_ns": 33100
+          },
+          "resources": {
+            "median_rss_kib": 26112,
+            "median_process_cpu_ns": 2046382600,
+            "kernel_io_medians": {
+              "rchar": 75180309,
+              "wchar": 192097,
+              "read_bytes": 0,
+              "write_bytes": 204800
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 9290800,
+              "median_trial_p50_cpu_ns": 9292400,
+              "median_trial_p99_wall_ns": 14773400,
+              "median_trial_p99_cpu_ns": 14775500
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 1908800,
+              "median_trial_p50_cpu_ns": 1910500,
+              "median_trial_p99_wall_ns": 2593300,
+              "median_trial_p99_cpu_ns": 2596200
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 1808500,
+              "median_trial_p50_cpu_ns": 1809600,
+              "median_trial_p99_wall_ns": 2655300,
+              "median_trial_p99_cpu_ns": 2657300
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.1979008425597713,
+              "p99": 0.3950852616387268
+            },
+            "1": {
+              "median": 0.3237276294167838,
+              "p99": 0.5172598687251548
+            },
+            "2": {
+              "median": 0.3319559995603003,
+              "p99": 0.5087523840096683
+            },
+            "3": {
+              "median": 0.36575021926897733,
+              "p99": 0.4650468235889648
+            },
+            "4": {
+              "median": 0.3707268540375799,
+              "p99": 0.47261430880683475
+            },
+            "5": {
+              "median": 0.19788950364487295,
+              "p99": 0.27470057406040305
+            },
+            "6": {
+              "median": 0.33312711023824504,
+              "p99": 0.49102510697921004
+            },
+            "7": {
+              "median": 0.3349375787212753,
+              "p99": 0.771269491939883
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 762900,
+            "median_cpu_ns": 765600
+          },
+          "index_publication": {
+            "median_wall_ns": 4541400,
+            "median_cpu_ns": 341300
+          }
+        },
+        "zstd256": {
+          "publication": {
+            "median_wall_ns": 14926101,
+            "median_cpu_ns": 10885300
+          },
+          "file_read": {
+            "median_wall_ns": 76600,
+            "median_cpu_ns": 77100
+          },
+          "resources": {
+            "median_rss_kib": 26192,
+            "median_process_cpu_ns": 1744891200,
+            "kernel_io_medians": {
+              "rchar": 57347441,
+              "wchar": 146136,
+              "read_bytes": 0,
+              "write_bytes": 159744
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 8422000,
+              "median_trial_p50_cpu_ns": 8423600,
+              "median_trial_p99_wall_ns": 14353401,
+              "median_trial_p99_cpu_ns": 14355400
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 1140800,
+              "median_trial_p50_cpu_ns": 1142100,
+              "median_trial_p99_wall_ns": 1747700,
+              "median_trial_p99_cpu_ns": 1750200
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 1066600,
+              "median_trial_p50_cpu_ns": 1067800,
+              "median_trial_p99_wall_ns": 1639100,
+              "median_trial_p99_cpu_ns": 1641000
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.1191718320751215,
+              "p99": 0.19885234812324923
+            },
+            "1": {
+              "median": 0.19122691925526872,
+              "p99": 0.23473516202071193
+            },
+            "2": {
+              "median": 0.198806749505527,
+              "p99": 0.2793076578742311
+            },
+            "3": {
+              "median": 0.24003457304519515,
+              "p99": 0.5142608387211196
+            },
+            "4": {
+              "median": 0.2466135220586107,
+              "p99": 0.3319692699490662
+            },
+            "5": {
+              "median": 0.12093257311673902,
+              "p99": 0.19086299892920747
+            },
+            "6": {
+              "median": 0.19950279538812105,
+              "p99": 0.3016447812967464
+            },
+            "7": {
+              "median": 0.1975612971769392,
+              "p99": 0.2670367113651352
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 750200,
+            "median_cpu_ns": 752500
+          },
+          "index_publication": {
+            "median_wall_ns": 3898400,
+            "median_cpu_ns": 301800
+          }
+        }
+      },
+      "receipt": {
+        "phases": {
+          "scalar_build": {
+            "median_wall_ns": 704900,
+            "median_cpu_ns": 706800
+          },
+          "sealed_build": {
+            "median_wall_ns": 4429300,
+            "median_cpu_ns": 4430100
+          },
+          "verify": {
+            "median_wall_ns": 236300,
+            "median_cpu_ns": 237400
+          },
+          "partial_resume_merge": {
+            "median_wall_ns": 4648500,
+            "median_cpu_ns": 4649600
+          },
+          "replay": {
+            "median_wall_ns": 239700,
+            "median_cpu_ns": 240300
+          }
+        },
+        "queries": {
+          "scalar": {
+            "median_trial_p50_wall_ns": 116900,
+            "median_trial_p50_cpu_ns": 118100,
+            "median_trial_p99_wall_ns": 4032300,
+            "median_trial_p99_cpu_ns": 4033900
+          },
+          "receipt": {
+            "median_trial_p50_wall_ns": 1262800,
+            "median_trial_p50_cpu_ns": 1263800,
+            "median_trial_p99_wall_ns": 4617400,
+            "median_trial_p99_cpu_ns": 4618900
+          }
+        },
+        "resources": {
+          "median_rss_kib": 19980,
+          "median_process_cpu_ns": 822999700,
+          "kernel_io_medians": {
+            "rchar": 825317,
+            "wchar": 0,
+            "read_bytes": 0,
+            "write_bytes": 0
+          },
+          "median_timer_wall_ns": 0.0,
+          "median_timer_cpu_ns": 200.0
+        },
+        "bytes": {
+          "full_page_bytes": 17474477,
+          "two_page_bytes": 367458,
+          "residual_bytes": 5147
+        },
+        "family_median_page_bytes": {
+          "0": 337045.0,
+          "1": 35084.0,
+          "2": 76627.5,
+          "3": 68310.0,
+          "4": 79410.0,
+          "5": 337053.0,
+          "6": 79398.0,
+          "7": 79328.0
+        }
+      },
+      "sidecar": {
+        "source-cost": {
+          "phase": {
+            "median_wall_ns": 7214701,
+            "median_cpu_ns": 7215800
+          },
+          "resources": {
+            "median_rss_kib": 4648,
+            "median_process_cpu_ns": 7348900,
+            "kernel_io_medians": {
+              "rchar": 825317,
+              "wchar": 49118,
+              "read_bytes": 0,
+              "write_bytes": 49152
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "fallbacks": [
+            null,
+            null,
+            null,
+            null,
+            null
+          ]
+        },
+        "sidecar-baseline": {
+          "phase": {
+            "median_wall_ns": 10304000,
+            "median_cpu_ns": 10305100
+          },
+          "resources": {
+            "median_rss_kib": 8756,
+            "median_process_cpu_ns": 320939300,
+            "kernel_io_medians": {
+              "rchar": 1649054,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 250.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-valid": {
+          "phase": {
+            "median_wall_ns": 10736901,
+            "median_cpu_ns": 10738100
+          },
+          "resources": {
+            "median_rss_kib": 8668,
+            "median_process_cpu_ns": 327015200,
+            "kernel_io_medians": {
+              "rchar": 1698172,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "fallbacks": [
+            false,
+            false,
+            false,
+            false,
+            false
+          ]
+        },
+        "sidecar-absent": {
+          "phase": {
+            "median_wall_ns": 10470700,
+            "median_cpu_ns": 10471900
+          },
+          "resources": {
+            "median_rss_kib": 8764,
+            "median_process_cpu_ns": 319340500,
+            "kernel_io_medians": {
+              "rchar": 1649054,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-corrupt": {
+          "phase": {
+            "median_wall_ns": 10295100,
+            "median_cpu_ns": 10296200
+          },
+          "resources": {
+            "median_rss_kib": 8704,
+            "median_process_cpu_ns": 320670900,
+            "kernel_io_medians": {
+              "rchar": 1649061,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-stale": {
+          "phase": {
+            "median_wall_ns": 10503699,
+            "median_cpu_ns": 10505000
+          },
+          "resources": {
+            "median_rss_kib": 8652,
+            "median_process_cpu_ns": 318950400,
+            "kernel_io_medians": {
+              "rchar": 1649156,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        },
+        "sidecar-underinclusive": {
+          "phase": {
+            "median_wall_ns": 11223100,
+            "median_cpu_ns": 11224500
+          },
+          "resources": {
+            "median_rss_kib": 8616,
+            "median_process_cpu_ns": 318834000,
+            "kernel_io_medians": {
+              "rchar": 1701900,
+              "wchar": 0,
+              "read_bytes": 0,
+              "write_bytes": 0
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "fallbacks": [
+            true,
+            true,
+            true,
+            true,
+            true
+          ]
+        }
+      }
+    },
+    "mixed-201-8192": {
+      "layouts": {
+        "json64": {
+          "publication": {
+            "median_wall_ns": 212453799,
+            "median_cpu_ns": 35887000
+          },
+          "file_read": {
+            "median_wall_ns": 862600,
+            "median_cpu_ns": 863600
+          },
+          "resources": {
+            "median_rss_kib": 148456,
+            "median_process_cpu_ns": 27441050000,
+            "kernel_io_medians": {
+              "rchar": 2967965221,
+              "wchar": 2898507,
+              "read_bytes": 0,
+              "write_bytes": 3158016
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 22143300,
+              "median_trial_p50_cpu_ns": 22133500,
+              "median_trial_p99_wall_ns": 38172600,
+              "median_trial_p99_cpu_ns": 38174700
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 22184499,
+              "median_trial_p50_cpu_ns": 22185500,
+              "median_trial_p99_wall_ns": 37742900,
+              "median_trial_p99_cpu_ns": 37744800
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "1": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "2": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "3": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "4": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "5": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "6": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "7": {
+              "median": 1.0,
+              "p99": 1.0
+            }
+          }
+        },
+        "plain64": {
+          "publication": {
+            "median_wall_ns": 63326302,
+            "median_cpu_ns": 54625200
+          },
+          "file_read": {
+            "median_wall_ns": 774800,
+            "median_cpu_ns": 775700
+          },
+          "resources": {
+            "median_rss_kib": 162092,
+            "median_process_cpu_ns": 49299011600,
+            "kernel_io_medians": {
+              "rchar": 6829040744,
+              "wchar": 4433060,
+              "read_bytes": 0,
+              "write_bytes": 4448256
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 47473100,
+              "median_trial_p50_cpu_ns": 47475600,
+              "median_trial_p99_wall_ns": 79015301,
+              "median_trial_p99_cpu_ns": 79017900
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 19984700,
+              "median_trial_p50_cpu_ns": 19987300,
+              "median_trial_p99_wall_ns": 29129200,
+              "median_trial_p99_cpu_ns": 29132300
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 19879000,
+              "median_trial_p50_cpu_ns": 19882400,
+              "median_trial_p99_wall_ns": 27221501,
+              "median_trial_p99_cpu_ns": 27223800
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.5752861620659249,
+              "p99": 0.8829546996306625
+            },
+            "1": {
+              "median": 0.9186107194727537,
+              "p99": 1.4908490717393532
+            },
+            "2": {
+              "median": 0.9152737757193947,
+              "p99": 1.573418995741924
+            },
+            "3": {
+              "median": 0.9159062618441849,
+              "p99": 1.4695354401037455
+            },
+            "4": {
+              "median": 0.919246297106269,
+              "p99": 1.6369235486139917
+            },
+            "5": {
+              "median": 0.6749969493143573,
+              "p99": 1.14945666864897
+            },
+            "6": {
+              "median": 0.9230250435224683,
+              "p99": 1.4560681009898067
+            },
+            "7": {
+              "median": 0.9254754528840484,
+              "p99": 1.3989402005211007
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 1765300,
+            "median_cpu_ns": 1768000
+          },
+          "index_publication": {
+            "median_wall_ns": 5348900,
+            "median_cpu_ns": 367200
+          }
+        },
+        "zstd64": {
+          "publication": {
+            "median_wall_ns": 56720101,
+            "median_cpu_ns": 48085900
+          },
+          "file_read": {
+            "median_wall_ns": 519700,
+            "median_cpu_ns": 520500
+          },
+          "resources": {
+            "median_rss_kib": 159220,
+            "median_process_cpu_ns": 31070098000,
+            "kernel_io_medians": {
+              "rchar": 1151687544,
+              "wchar": 746481,
+              "read_bytes": 0,
+              "write_bytes": 761856
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 200.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 36991500,
+              "median_trial_p50_cpu_ns": 36994000,
+              "median_trial_p99_wall_ns": 80823600,
+              "median_trial_p99_cpu_ns": 80827300
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 7211000,
+              "median_trial_p50_cpu_ns": 7214500,
+              "median_trial_p99_wall_ns": 15409600,
+              "median_trial_p99_cpu_ns": 15415800
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 6895300,
+              "median_trial_p50_cpu_ns": 6897400,
+              "median_trial_p99_wall_ns": 15115800,
+              "median_trial_p99_cpu_ns": 15119400
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.20477779736178828,
+              "p99": 0.42261300539351454
+            },
+            "1": {
+              "median": 0.319521976489083,
+              "p99": 0.6902928977020673
+            },
+            "2": {
+              "median": 0.32347963229766885,
+              "p99": 0.6911290261119738
+            },
+            "3": {
+              "median": 0.33937657111795044,
+              "p99": 0.7551035032560306
+            },
+            "4": {
+              "median": 0.34416198059859454,
+              "p99": 0.7446367263491606
+            },
+            "5": {
+              "median": 0.24005318297479833,
+              "p99": 0.5812882985897323
+            },
+            "6": {
+              "median": 0.32296446218095487,
+              "p99": 0.7583838723382401
+            },
+            "7": {
+              "median": 0.3232538089287772,
+              "p99": 0.6382951223789851
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 1807400,
+            "median_cpu_ns": 1809900
+          },
+          "index_publication": {
+            "median_wall_ns": 4104700,
+            "median_cpu_ns": 317400
+          }
+        },
+        "zstd256": {
+          "publication": {
+            "median_wall_ns": 45290800,
+            "median_cpu_ns": 37605800
+          },
+          "file_read": {
+            "median_wall_ns": 71300,
+            "median_cpu_ns": 71900
+          },
+          "resources": {
+            "median_rss_kib": 158960,
+            "median_process_cpu_ns": 24618417100,
+            "kernel_io_medians": {
+              "rchar": 843337937,
+              "wchar": 546236,
+              "read_bytes": 0,
+              "write_bytes": 561152
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 32044200,
+              "median_trial_p50_cpu_ns": 32045900,
+              "median_trial_p99_wall_ns": 66786100,
+              "median_trial_p99_cpu_ns": 66790000
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 4041800,
+              "median_trial_p50_cpu_ns": 4043200,
+              "median_trial_p99_wall_ns": 7980900,
+              "median_trial_p99_cpu_ns": 7983700
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 3873700,
+              "median_trial_p50_cpu_ns": 3874900,
+              "median_trial_p99_wall_ns": 7420200,
+              "median_trial_p99_cpu_ns": 7422900
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.11639637716407142,
+              "p99": 0.24696660051930613
+            },
+            "1": {
+              "median": 0.1811484908569274,
+              "p99": 0.38494232941363943
+            },
+            "2": {
+              "median": 0.1821028392503522,
+              "p99": 0.41591894179201483
+            },
+            "3": {
+              "median": 0.20647651182584564,
+              "p99": 0.4542802927113374
+            },
+            "4": {
+              "median": 0.208803037693438,
+              "p99": 0.43356602875306055
+            },
+            "5": {
+              "median": 0.13774416108940635,
+              "p99": 0.2319826241846286
+            },
+            "6": {
+              "median": 0.1836060376574417,
+              "p99": 0.3893813921353016
+            },
+            "7": {
+              "median": 0.18360546068655823,
+              "p99": 0.40511509448635197
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 1936200,
+            "median_cpu_ns": 1938800
+          },
+          "index_publication": {
+            "median_wall_ns": 5012300,
+            "median_cpu_ns": 365900
+          }
+        }
+      }
+    },
+    "shuffled_logs-201-8192": {
+      "layouts": {
+        "json64": {
+          "publication": {
+            "median_wall_ns": 281640300,
+            "median_cpu_ns": 59644900
+          },
+          "file_read": {
+            "median_wall_ns": 1161300,
+            "median_cpu_ns": 1162500
+          },
+          "resources": {
+            "median_rss_kib": 193312,
+            "median_process_cpu_ns": 50322261300,
+            "kernel_io_medians": {
+              "rchar": 3393805642,
+              "wchar": 3313152,
+              "read_bytes": 0,
+              "write_bytes": 3682304
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 400.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 39819500,
+              "median_trial_p50_cpu_ns": 39821100,
+              "median_trial_p99_wall_ns": 116120900,
+              "median_trial_p99_cpu_ns": 109811400
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 39193900,
+              "median_trial_p50_cpu_ns": 39196800,
+              "median_trial_p99_wall_ns": 112970700,
+              "median_trial_p99_cpu_ns": 110051900
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "1": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "2": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "3": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "4": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "5": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "6": {
+              "median": 1.0,
+              "p99": 1.0
+            },
+            "7": {
+              "median": 1.0,
+              "p99": 1.0
+            }
+          }
+        },
+        "plain64": {
+          "publication": {
+            "median_wall_ns": 137027198,
+            "median_cpu_ns": 118859300
+          },
+          "file_read": {
+            "median_wall_ns": 1472000,
+            "median_cpu_ns": 1473800
+          },
+          "resources": {
+            "median_rss_kib": 209236,
+            "median_process_cpu_ns": 95359162700,
+            "kernel_io_medians": {
+              "rchar": 8527194600,
+              "wchar": 5535574,
+              "read_bytes": 0,
+              "write_bytes": 5550080
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 500.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 89322700,
+              "median_trial_p50_cpu_ns": 89289100,
+              "median_trial_p99_wall_ns": 201708000,
+              "median_trial_p99_cpu_ns": 182066300
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 37444100,
+              "median_trial_p50_cpu_ns": 37357000,
+              "median_trial_p99_wall_ns": 80699300,
+              "median_trial_p99_cpu_ns": 73194500
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 37159600,
+              "median_trial_p50_cpu_ns": 37163000,
+              "median_trial_p99_wall_ns": 79086400,
+              "median_trial_p99_cpu_ns": 72509800
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.6640624449811847,
+              "p99": 1.8185657323097066
+            },
+            "1": {
+              "median": 1.1000220953296767,
+              "p99": 3.2902572583608967
+            },
+            "2": {
+              "median": 1.1659739565131324,
+              "p99": 3.4118039291380278
+            },
+            "3": {
+              "median": 1.1073463977783837,
+              "p99": 4.167168911926503
+            },
+            "4": {
+              "median": 1.0647889610895007,
+              "p99": 3.9619486879779653
+            },
+            "5": {
+              "median": 0.6687621455390107,
+              "p99": 1.827355100997675
+            },
+            "6": {
+              "median": 1.0667415456510778,
+              "p99": 4.69932530025038
+            },
+            "7": {
+              "median": 1.1254928877730759,
+              "p99": 3.60000923149274
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 7755300,
+            "median_cpu_ns": 7761600
+          },
+          "index_publication": {
+            "median_wall_ns": 6436300,
+            "median_cpu_ns": 567400
+          }
+        },
+        "zstd64": {
+          "publication": {
+            "median_wall_ns": 81572100,
+            "median_cpu_ns": 74802200
+          },
+          "file_read": {
+            "median_wall_ns": 651100,
+            "median_cpu_ns": 652100
+          },
+          "resources": {
+            "median_rss_kib": 201500,
+            "median_process_cpu_ns": 56421161100,
+            "kernel_io_medians": {
+              "rchar": 1178360802,
+              "wchar": 763606,
+              "read_bytes": 0,
+              "write_bytes": 778240
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 66150500,
+              "median_trial_p50_cpu_ns": 66135600,
+              "median_trial_p99_wall_ns": 177587600,
+              "median_trial_p99_cpu_ns": 149463400
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 11409900,
+              "median_trial_p50_cpu_ns": 11413500,
+              "median_trial_p99_wall_ns": 31253499,
+              "median_trial_p99_cpu_ns": 25510300
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 11181900,
+              "median_trial_p50_cpu_ns": 11185900,
+              "median_trial_p99_wall_ns": 28022400,
+              "median_trial_p99_cpu_ns": 23723300
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.1732630892707922,
+              "p99": 0.513798146190879
+            },
+            "1": {
+              "median": 0.28923626393056656,
+              "p99": 0.9133115228639997
+            },
+            "2": {
+              "median": 0.3034123680352421,
+              "p99": 0.925868746170267
+            },
+            "3": {
+              "median": 0.343783953570272,
+              "p99": 1.0712005482701439
+            },
+            "4": {
+              "median": 0.3287786731614494,
+              "p99": 1.1851114333640185
+            },
+            "5": {
+              "median": 0.17774179822652758,
+              "p99": 0.5590381485009153
+            },
+            "6": {
+              "median": 0.2966989654337191,
+              "p99": 0.841868853469803
+            },
+            "7": {
+              "median": 0.2909778950437542,
+              "p99": 0.848011229007668
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 6596900,
+            "median_cpu_ns": 6600600
+          },
+          "index_publication": {
+            "median_wall_ns": 4221000,
+            "median_cpu_ns": 399600
+          }
+        },
+        "zstd256": {
+          "publication": {
+            "median_wall_ns": 62676601,
+            "median_cpu_ns": 57671500
+          },
+          "file_read": {
+            "median_wall_ns": 276700,
+            "median_cpu_ns": 277400
+          },
+          "resources": {
+            "median_rss_kib": 201052,
+            "median_process_cpu_ns": 42719563600,
+            "kernel_io_medians": {
+              "rchar": 899134171,
+              "wchar": 582296,
+              "read_bytes": 0,
+              "write_bytes": 598016
+            },
+            "median_timer_wall_ns": 0.0,
+            "median_timer_cpu_ns": 300.0
+          },
+          "queries": {
+            "full": {
+              "median_trial_p50_wall_ns": 55818199,
+              "median_trial_p50_cpu_ns": 55820900,
+              "median_trial_p99_wall_ns": 157255503,
+              "median_trial_p99_cpu_ns": 132473700
+            },
+            "projected": {
+              "median_trial_p50_wall_ns": 6495800,
+              "median_trial_p50_cpu_ns": 6497500,
+              "median_trial_p99_wall_ns": 18515200,
+              "median_trial_p99_cpu_ns": 15860200
+            },
+            "postings": {
+              "median_trial_p50_wall_ns": 6137500,
+              "median_trial_p50_cpu_ns": 6140600,
+              "median_trial_p99_wall_ns": 15920700,
+              "median_trial_p99_cpu_ns": 15050500
+            }
+          },
+          "family_paired_projection_wall_ratios": {
+            "0": {
+              "median": 0.10959989110019966,
+              "p99": 0.28221654143104297
+            },
+            "1": {
+              "median": 0.1801070589646445,
+              "p99": 0.5817908812369377
+            },
+            "2": {
+              "median": 0.18403668172713475,
+              "p99": 0.4856448950930096
+            },
+            "3": {
+              "median": 0.2252208391941511,
+              "p99": 0.7012299720407125
+            },
+            "4": {
+              "median": 0.23217520436228029,
+              "p99": 0.7130011122773487
+            },
+            "5": {
+              "median": 0.10690549704089458,
+              "p99": 0.3551071648635955
+            },
+            "6": {
+              "median": 0.18711709424276718,
+              "p99": 0.6220970660116469
+            },
+            "7": {
+              "median": 0.1832992619496223,
+              "p99": 0.49432908033163486
+            }
+          },
+          "index_build": {
+            "median_wall_ns": 3860100,
+            "median_cpu_ns": 3864500
+          },
+          "index_publication": {
+            "median_wall_ns": 4470700,
+            "median_cpu_ns": 431500
+          }
+        }
+      }
+    }
+  }
+}

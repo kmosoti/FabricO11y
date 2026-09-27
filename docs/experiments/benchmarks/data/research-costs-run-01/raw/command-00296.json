@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/home/kmosoti/projects/fabric_o11y/tools/storage-probe/target/release/receipt-cost",
+    "formal",
+    "shuffled_logs",
+    "202",
+    "-1",
+    "/home/kmosoti/projects/fabric_o11y/target/research-costs/run-01/shuffled_logs-202-2048-source.json",
+    "/home/kmosoti/projects/fabric_o11y/target/research-costs/run-01/shuffled_logs-202-2048--1-receipt.json"
+  ],
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": "",
+  "whole_process_user_ns": 820692000,
+  "whole_process_system_ns": 4003000,
+  "whole_process_cpu_ns": 824695000,
+  "whole_process_max_rss_kib": 24600
+}

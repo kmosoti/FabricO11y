@@ -1,0 +1,1532 @@
+{
+  "correctness": "valid CSV; probe and independent contract tests must also pass",
+  "gate_failures": [],
+  "limitations": [
+    "Candidate rows are logical work, not physical bytes read.",
+    "Warm-cache mixed-query latency is descriptive and selects no latency winner.",
+    "Logical summary bytes exclude container and allocator overhead."
+  ],
+  "status": "advances",
+  "workloads": {
+    "clustered_logs": {
+      "42": {
+        "build": {
+          "build_ns": 1030900,
+          "events": 2048,
+          "peak_rss_kib": 4744,
+          "raw_bytes": 575130,
+          "replay_ns": 21044700,
+          "seed": 42,
+          "summary_bytes": 16896,
+          "write_ns": 7749117798
+        },
+        "cases": {
+          "0": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "1": {
+            "pruned_rows": 9920,
+            "pruned_to_scan_ratio": 0.060546875,
+            "row_reduction": 0.939453125,
+            "scan_rows": 163840
+          },
+          "2": {
+            "pruned_rows": 10240,
+            "pruned_to_scan_ratio": 0.0625,
+            "row_reduction": 0.9375,
+            "scan_rows": 163840
+          },
+          "3": {
+            "pruned_rows": 40960,
+            "pruned_to_scan_ratio": 0.25,
+            "row_reduction": 0.75,
+            "scan_rows": 163840
+          },
+          "4": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "5": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "6": {
+            "pruned_rows": 320,
+            "pruned_to_scan_ratio": 0.001953125,
+            "row_reduction": 0.998046875,
+            "scan_rows": 163840
+          },
+          "7": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          }
+        },
+        "latency": {
+          "pruned": {
+            "median_trial_p50_ns": 900,
+            "median_trial_p99_ns": 113300,
+            "trials": [
+              {
+                "p50_ns": 900,
+                "p99_ns": 111400,
+                "trial": 0
+              },
+              {
+                "p50_ns": 900,
+                "p99_ns": 125200,
+                "trial": 1
+              },
+              {
+                "p50_ns": 900,
+                "p99_ns": 113300,
+                "trial": 2
+              },
+              {
+                "p50_ns": 800,
+                "p99_ns": 104900,
+                "trial": 3
+              },
+              {
+                "p50_ns": 800,
+                "p99_ns": 156100,
+                "trial": 4
+              }
+            ]
+          },
+          "scan": {
+            "median_trial_p50_ns": 18500,
+            "median_trial_p99_ns": 463200,
+            "trials": [
+              {
+                "p50_ns": 8700,
+                "p99_ns": 459100,
+                "trial": 0
+              },
+              {
+                "p50_ns": 14100,
+                "p99_ns": 463200,
+                "trial": 1
+              },
+              {
+                "p50_ns": 31500,
+                "p99_ns": 491300,
+                "trial": 2
+              },
+              {
+                "p50_ns": 18500,
+                "p99_ns": 444900,
+                "trial": 3
+              },
+              {
+                "p50_ns": 19100,
+                "p99_ns": 713400,
+                "trial": 4
+              }
+            ]
+          }
+        }
+      },
+      "43": {
+        "build": {
+          "build_ns": 2206500,
+          "events": 2048,
+          "peak_rss_kib": 4744,
+          "raw_bytes": 575130,
+          "replay_ns": 22433900,
+          "seed": 43,
+          "summary_bytes": 16896,
+          "write_ns": 7984299141
+        },
+        "cases": {
+          "0": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "1": {
+            "pruned_rows": 9920,
+            "pruned_to_scan_ratio": 0.060546875,
+            "row_reduction": 0.939453125,
+            "scan_rows": 163840
+          },
+          "2": {
+            "pruned_rows": 10240,
+            "pruned_to_scan_ratio": 0.0625,
+            "row_reduction": 0.9375,
+            "scan_rows": 163840
+          },
+          "3": {
+            "pruned_rows": 40960,
+            "pruned_to_scan_ratio": 0.25,
+            "row_reduction": 0.75,
+            "scan_rows": 163840
+          },
+          "4": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "5": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "6": {
+            "pruned_rows": 320,
+            "pruned_to_scan_ratio": 0.001953125,
+            "row_reduction": 0.998046875,
+            "scan_rows": 163840
+          },
+          "7": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          }
+        },
+        "latency": {
+          "pruned": {
+            "median_trial_p50_ns": 1900,
+            "median_trial_p99_ns": 237500,
+            "trials": [
+              {
+                "p50_ns": 2600,
+                "p99_ns": 302700,
+                "trial": 0
+              },
+              {
+                "p50_ns": 1400,
+                "p99_ns": 213600,
+                "trial": 1
+              },
+              {
+                "p50_ns": 2200,
+                "p99_ns": 256700,
+                "trial": 2
+              },
+              {
+                "p50_ns": 1000,
+                "p99_ns": 170300,
+                "trial": 3
+              },
+              {
+                "p50_ns": 1900,
+                "p99_ns": 237500,
+                "trial": 4
+              }
+            ]
+          },
+          "scan": {
+            "median_trial_p50_ns": 24400,
+            "median_trial_p99_ns": 1155000,
+            "trials": [
+              {
+                "p50_ns": 72100,
+                "p99_ns": 1823200,
+                "trial": 0
+              },
+              {
+                "p50_ns": 22700,
+                "p99_ns": 908300,
+                "trial": 1
+              },
+              {
+                "p50_ns": 48000,
+                "p99_ns": 1155000,
+                "trial": 2
+              },
+              {
+                "p50_ns": 22000,
+                "p99_ns": 863000,
+                "trial": 3
+              },
+              {
+                "p50_ns": 24400,
+                "p99_ns": 5019500,
+                "trial": 4
+              }
+            ]
+          }
+        }
+      },
+      "44": {
+        "build": {
+          "build_ns": 928500,
+          "events": 2048,
+          "peak_rss_kib": 4744,
+          "raw_bytes": 575130,
+          "replay_ns": 11195600,
+          "seed": 44,
+          "summary_bytes": 16896,
+          "write_ns": 7916381168
+        },
+        "cases": {
+          "0": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "1": {
+            "pruned_rows": 9920,
+            "pruned_to_scan_ratio": 0.060546875,
+            "row_reduction": 0.939453125,
+            "scan_rows": 163840
+          },
+          "2": {
+            "pruned_rows": 10240,
+            "pruned_to_scan_ratio": 0.0625,
+            "row_reduction": 0.9375,
+            "scan_rows": 163840
+          },
+          "3": {
+            "pruned_rows": 40960,
+            "pruned_to_scan_ratio": 0.25,
+            "row_reduction": 0.75,
+            "scan_rows": 163840
+          },
+          "4": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "5": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "6": {
+            "pruned_rows": 320,
+            "pruned_to_scan_ratio": 0.001953125,
+            "row_reduction": 0.998046875,
+            "scan_rows": 163840
+          },
+          "7": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          }
+        },
+        "latency": {
+          "pruned": {
+            "median_trial_p50_ns": 1100,
+            "median_trial_p99_ns": 198800,
+            "trials": [
+              {
+                "p50_ns": 1100,
+                "p99_ns": 198800,
+                "trial": 0
+              },
+              {
+                "p50_ns": 900,
+                "p99_ns": 193900,
+                "trial": 1
+              },
+              {
+                "p50_ns": 1500,
+                "p99_ns": 218400,
+                "trial": 2
+              },
+              {
+                "p50_ns": 1400,
+                "p99_ns": 224800,
+                "trial": 3
+              },
+              {
+                "p50_ns": 900,
+                "p99_ns": 129200,
+                "trial": 4
+              }
+            ]
+          },
+          "scan": {
+            "median_trial_p50_ns": 12600,
+            "median_trial_p99_ns": 804800,
+            "trials": [
+              {
+                "p50_ns": 11700,
+                "p99_ns": 804800,
+                "trial": 0
+              },
+              {
+                "p50_ns": 10400,
+                "p99_ns": 794100,
+                "trial": 1
+              },
+              {
+                "p50_ns": 18800,
+                "p99_ns": 1079900,
+                "trial": 2
+              },
+              {
+                "p50_ns": 36000,
+                "p99_ns": 879300,
+                "trial": 3
+              },
+              {
+                "p50_ns": 12600,
+                "p99_ns": 521600,
+                "trial": 4
+              }
+            ]
+          }
+        }
+      }
+    },
+    "gauge": {
+      "42": {
+        "build": {
+          "build_ns": 145800,
+          "events": 2048,
+          "peak_rss_kib": 3800,
+          "raw_bytes": 303104,
+          "replay_ns": 12627900,
+          "seed": 42,
+          "summary_bytes": 16896,
+          "write_ns": 8415831285
+        },
+        "cases": {
+          "0": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "1": {
+            "pruned_rows": 9920,
+            "pruned_to_scan_ratio": 0.060546875,
+            "row_reduction": 0.939453125,
+            "scan_rows": 163840
+          },
+          "2": {
+            "pruned_rows": 40960,
+            "pruned_to_scan_ratio": 0.25,
+            "row_reduction": 0.75,
+            "scan_rows": 163840
+          },
+          "3": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "4": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "5": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "6": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "7": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          }
+        },
+        "latency": {
+          "pruned": {
+            "median_trial_p50_ns": 300,
+            "median_trial_p99_ns": 10200,
+            "trials": [
+              {
+                "p50_ns": 400,
+                "p99_ns": 10200,
+                "trial": 0
+              },
+              {
+                "p50_ns": 300,
+                "p99_ns": 10600,
+                "trial": 1
+              },
+              {
+                "p50_ns": 300,
+                "p99_ns": 10100,
+                "trial": 2
+              },
+              {
+                "p50_ns": 300,
+                "p99_ns": 10700,
+                "trial": 3
+              },
+              {
+                "p50_ns": 300,
+                "p99_ns": 10000,
+                "trial": 4
+              }
+            ]
+          },
+          "scan": {
+            "median_trial_p50_ns": 6300,
+            "median_trial_p99_ns": 10200,
+            "trials": [
+              {
+                "p50_ns": 6300,
+                "p99_ns": 10400,
+                "trial": 0
+              },
+              {
+                "p50_ns": 6300,
+                "p99_ns": 10200,
+                "trial": 1
+              },
+              {
+                "p50_ns": 6300,
+                "p99_ns": 10200,
+                "trial": 2
+              },
+              {
+                "p50_ns": 6300,
+                "p99_ns": 22900,
+                "trial": 3
+              },
+              {
+                "p50_ns": 6300,
+                "p99_ns": 10200,
+                "trial": 4
+              }
+            ]
+          }
+        }
+      },
+      "43": {
+        "build": {
+          "build_ns": 43000,
+          "events": 2048,
+          "peak_rss_kib": 4028,
+          "raw_bytes": 303104,
+          "replay_ns": 12697600,
+          "seed": 43,
+          "summary_bytes": 16896,
+          "write_ns": 8436880389
+        },
+        "cases": {
+          "0": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "1": {
+            "pruned_rows": 9920,
+            "pruned_to_scan_ratio": 0.060546875,
+            "row_reduction": 0.939453125,
+            "scan_rows": 163840
+          },
+          "2": {
+            "pruned_rows": 40960,
+            "pruned_to_scan_ratio": 0.25,
+            "row_reduction": 0.75,
+            "scan_rows": 163840
+          },
+          "3": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "4": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "5": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "6": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "7": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          }
+        },
+        "latency": {
+          "pruned": {
+            "median_trial_p50_ns": 400,
+            "median_trial_p99_ns": 10900,
+            "trials": [
+              {
+                "p50_ns": 400,
+                "p99_ns": 10900,
+                "trial": 0
+              },
+              {
+                "p50_ns": 400,
+                "p99_ns": 10900,
+                "trial": 1
+              },
+              {
+                "p50_ns": 400,
+                "p99_ns": 10700,
+                "trial": 2
+              },
+              {
+                "p50_ns": 400,
+                "p99_ns": 12200,
+                "trial": 3
+              },
+              {
+                "p50_ns": 400,
+                "p99_ns": 11600,
+                "trial": 4
+              }
+            ]
+          },
+          "scan": {
+            "median_trial_p50_ns": 7100,
+            "median_trial_p99_ns": 11100,
+            "trials": [
+              {
+                "p50_ns": 7100,
+                "p99_ns": 11100,
+                "trial": 0
+              },
+              {
+                "p50_ns": 7000,
+                "p99_ns": 11000,
+                "trial": 1
+              },
+              {
+                "p50_ns": 7000,
+                "p99_ns": 11000,
+                "trial": 2
+              },
+              {
+                "p50_ns": 7300,
+                "p99_ns": 24400,
+                "trial": 3
+              },
+              {
+                "p50_ns": 7300,
+                "p99_ns": 12000,
+                "trial": 4
+              }
+            ]
+          }
+        }
+      },
+      "44": {
+        "build": {
+          "build_ns": 39300,
+          "events": 2048,
+          "peak_rss_kib": 4040,
+          "raw_bytes": 303104,
+          "replay_ns": 11357900,
+          "seed": 44,
+          "summary_bytes": 16896,
+          "write_ns": 9172851996
+        },
+        "cases": {
+          "0": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "1": {
+            "pruned_rows": 9920,
+            "pruned_to_scan_ratio": 0.060546875,
+            "row_reduction": 0.939453125,
+            "scan_rows": 163840
+          },
+          "2": {
+            "pruned_rows": 40960,
+            "pruned_to_scan_ratio": 0.25,
+            "row_reduction": 0.75,
+            "scan_rows": 163840
+          },
+          "3": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "4": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "5": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "6": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "7": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          }
+        },
+        "latency": {
+          "pruned": {
+            "median_trial_p50_ns": 400,
+            "median_trial_p99_ns": 10900,
+            "trials": [
+              {
+                "p50_ns": 400,
+                "p99_ns": 10800,
+                "trial": 0
+              },
+              {
+                "p50_ns": 400,
+                "p99_ns": 11200,
+                "trial": 1
+              },
+              {
+                "p50_ns": 400,
+                "p99_ns": 10900,
+                "trial": 2
+              },
+              {
+                "p50_ns": 400,
+                "p99_ns": 11000,
+                "trial": 3
+              },
+              {
+                "p50_ns": 400,
+                "p99_ns": 10600,
+                "trial": 4
+              }
+            ]
+          },
+          "scan": {
+            "median_trial_p50_ns": 7000,
+            "median_trial_p99_ns": 10900,
+            "trials": [
+              {
+                "p50_ns": 7000,
+                "p99_ns": 11200,
+                "trial": 0
+              },
+              {
+                "p50_ns": 7000,
+                "p99_ns": 10500,
+                "trial": 1
+              },
+              {
+                "p50_ns": 7000,
+                "p99_ns": 10900,
+                "trial": 2
+              },
+              {
+                "p50_ns": 7000,
+                "p99_ns": 24500,
+                "trial": 3
+              },
+              {
+                "p50_ns": 7000,
+                "p99_ns": 10800,
+                "trial": 4
+              }
+            ]
+          }
+        }
+      }
+    },
+    "mixed": {
+      "42": {
+        "build": {
+          "build_ns": 918300,
+          "events": 2048,
+          "peak_rss_kib": 4612,
+          "raw_bytes": 439117,
+          "replay_ns": 21532500,
+          "seed": 42,
+          "summary_bytes": 16896,
+          "write_ns": 6264627622
+        },
+        "cases": {
+          "0": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "1": {
+            "pruned_rows": 9920,
+            "pruned_to_scan_ratio": 0.060546875,
+            "row_reduction": 0.939453125,
+            "scan_rows": 163840
+          },
+          "2": {
+            "pruned_rows": 10240,
+            "pruned_to_scan_ratio": 0.0625,
+            "row_reduction": 0.9375,
+            "scan_rows": 163840
+          },
+          "3": {
+            "pruned_rows": 20480,
+            "pruned_to_scan_ratio": 0.125,
+            "row_reduction": 0.875,
+            "scan_rows": 163840
+          },
+          "4": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "5": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "6": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "7": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          }
+        },
+        "latency": {
+          "pruned": {
+            "median_trial_p50_ns": 1300,
+            "median_trial_p99_ns": 72500,
+            "trials": [
+              {
+                "p50_ns": 800,
+                "p99_ns": 43000,
+                "trial": 0
+              },
+              {
+                "p50_ns": 1000,
+                "p99_ns": 52900,
+                "trial": 1
+              },
+              {
+                "p50_ns": 1500,
+                "p99_ns": 74600,
+                "trial": 2
+              },
+              {
+                "p50_ns": 1300,
+                "p99_ns": 72500,
+                "trial": 3
+              },
+              {
+                "p50_ns": 1500,
+                "p99_ns": 85500,
+                "trial": 4
+              }
+            ]
+          },
+          "scan": {
+            "median_trial_p50_ns": 15100,
+            "median_trial_p99_ns": 514300,
+            "trials": [
+              {
+                "p50_ns": 8700,
+                "p99_ns": 324800,
+                "trial": 0
+              },
+              {
+                "p50_ns": 12200,
+                "p99_ns": 514300,
+                "trial": 1
+              },
+              {
+                "p50_ns": 45600,
+                "p99_ns": 761800,
+                "trial": 2
+              },
+              {
+                "p50_ns": 17800,
+                "p99_ns": 506300,
+                "trial": 3
+              },
+              {
+                "p50_ns": 15100,
+                "p99_ns": 1151900,
+                "trial": 4
+              }
+            ]
+          }
+        }
+      },
+      "43": {
+        "build": {
+          "build_ns": 1015000,
+          "events": 2048,
+          "peak_rss_kib": 4612,
+          "raw_bytes": 439117,
+          "replay_ns": 18872302,
+          "seed": 43,
+          "summary_bytes": 16896,
+          "write_ns": 7890243512
+        },
+        "cases": {
+          "0": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "1": {
+            "pruned_rows": 9920,
+            "pruned_to_scan_ratio": 0.060546875,
+            "row_reduction": 0.939453125,
+            "scan_rows": 163840
+          },
+          "2": {
+            "pruned_rows": 10240,
+            "pruned_to_scan_ratio": 0.0625,
+            "row_reduction": 0.9375,
+            "scan_rows": 163840
+          },
+          "3": {
+            "pruned_rows": 20480,
+            "pruned_to_scan_ratio": 0.125,
+            "row_reduction": 0.875,
+            "scan_rows": 163840
+          },
+          "4": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "5": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "6": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "7": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          }
+        },
+        "latency": {
+          "pruned": {
+            "median_trial_p50_ns": 900,
+            "median_trial_p99_ns": 35100,
+            "trials": [
+              {
+                "p50_ns": 1400,
+                "p99_ns": 74400,
+                "trial": 0
+              },
+              {
+                "p50_ns": 1200,
+                "p99_ns": 60700,
+                "trial": 1
+              },
+              {
+                "p50_ns": 900,
+                "p99_ns": 35100,
+                "trial": 2
+              },
+              {
+                "p50_ns": 700,
+                "p99_ns": 31100,
+                "trial": 3
+              },
+              {
+                "p50_ns": 700,
+                "p99_ns": 31100,
+                "trial": 4
+              }
+            ]
+          },
+          "scan": {
+            "median_trial_p50_ns": 8700,
+            "median_trial_p99_ns": 409200,
+            "trials": [
+              {
+                "p50_ns": 27800,
+                "p99_ns": 527800,
+                "trial": 0
+              },
+              {
+                "p50_ns": 13000,
+                "p99_ns": 2499301,
+                "trial": 1
+              },
+              {
+                "p50_ns": 8700,
+                "p99_ns": 409200,
+                "trial": 2
+              },
+              {
+                "p50_ns": 7000,
+                "p99_ns": 270200,
+                "trial": 3
+              },
+              {
+                "p50_ns": 8100,
+                "p99_ns": 274800,
+                "trial": 4
+              }
+            ]
+          }
+        }
+      },
+      "44": {
+        "build": {
+          "build_ns": 516600,
+          "events": 2048,
+          "peak_rss_kib": 4612,
+          "raw_bytes": 439117,
+          "replay_ns": 11581301,
+          "seed": 44,
+          "summary_bytes": 16896,
+          "write_ns": 7931631359
+        },
+        "cases": {
+          "0": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "1": {
+            "pruned_rows": 9920,
+            "pruned_to_scan_ratio": 0.060546875,
+            "row_reduction": 0.939453125,
+            "scan_rows": 163840
+          },
+          "2": {
+            "pruned_rows": 10240,
+            "pruned_to_scan_ratio": 0.0625,
+            "row_reduction": 0.9375,
+            "scan_rows": 163840
+          },
+          "3": {
+            "pruned_rows": 20480,
+            "pruned_to_scan_ratio": 0.125,
+            "row_reduction": 0.875,
+            "scan_rows": 163840
+          },
+          "4": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "5": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "6": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "7": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          }
+        },
+        "latency": {
+          "pruned": {
+            "median_trial_p50_ns": 800,
+            "median_trial_p99_ns": 47500,
+            "trials": [
+              {
+                "p50_ns": 700,
+                "p99_ns": 28500,
+                "trial": 0
+              },
+              {
+                "p50_ns": 800,
+                "p99_ns": 51300,
+                "trial": 1
+              },
+              {
+                "p50_ns": 1000,
+                "p99_ns": 48500,
+                "trial": 2
+              },
+              {
+                "p50_ns": 900,
+                "p99_ns": 47500,
+                "trial": 3
+              },
+              {
+                "p50_ns": 700,
+                "p99_ns": 29200,
+                "trial": 4
+              }
+            ]
+          },
+          "scan": {
+            "median_trial_p50_ns": 14100,
+            "median_trial_p99_ns": 384400,
+            "trials": [
+              {
+                "p50_ns": 23100,
+                "p99_ns": 268100,
+                "trial": 0
+              },
+              {
+                "p50_ns": 9500,
+                "p99_ns": 385300,
+                "trial": 1
+              },
+              {
+                "p50_ns": 14100,
+                "p99_ns": 835500,
+                "trial": 2
+              },
+              {
+                "p50_ns": 11200,
+                "p99_ns": 384400,
+                "trial": 3
+              },
+              {
+                "p50_ns": 23100,
+                "p99_ns": 252400,
+                "trial": 4
+              }
+            ]
+          }
+        }
+      }
+    },
+    "shuffled_logs": {
+      "42": {
+        "build": {
+          "build_ns": 1022400,
+          "events": 2048,
+          "peak_rss_kib": 4732,
+          "raw_bytes": 575130,
+          "replay_ns": 18910600,
+          "seed": 42,
+          "summary_bytes": 16896,
+          "write_ns": 8178475841
+        },
+        "cases": {
+          "0": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "1": {
+            "pruned_rows": 161920,
+            "pruned_to_scan_ratio": 0.98828125,
+            "row_reduction": 0.01171875,
+            "scan_rows": 163840
+          },
+          "2": {
+            "pruned_rows": 10240,
+            "pruned_to_scan_ratio": 0.0625,
+            "row_reduction": 0.9375,
+            "scan_rows": 163840
+          },
+          "3": {
+            "pruned_rows": 40960,
+            "pruned_to_scan_ratio": 0.25,
+            "row_reduction": 0.75,
+            "scan_rows": 163840
+          },
+          "4": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "5": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "6": {
+            "pruned_rows": 2560,
+            "pruned_to_scan_ratio": 0.015625,
+            "row_reduction": 0.984375,
+            "scan_rows": 163840
+          },
+          "7": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          }
+        },
+        "latency": {
+          "pruned": {
+            "median_trial_p50_ns": 5400,
+            "median_trial_p99_ns": 184300,
+            "trials": [
+              {
+                "p50_ns": 5600,
+                "p99_ns": 122800,
+                "trial": 0
+              },
+              {
+                "p50_ns": 5300,
+                "p99_ns": 184300,
+                "trial": 1
+              },
+              {
+                "p50_ns": 5400,
+                "p99_ns": 192700,
+                "trial": 2
+              },
+              {
+                "p50_ns": 5100,
+                "p99_ns": 116400,
+                "trial": 3
+              },
+              {
+                "p50_ns": 5500,
+                "p99_ns": 236300,
+                "trial": 4
+              }
+            ]
+          },
+          "scan": {
+            "median_trial_p50_ns": 12200,
+            "median_trial_p99_ns": 804200,
+            "trials": [
+              {
+                "p50_ns": 8200,
+                "p99_ns": 506200,
+                "trial": 0
+              },
+              {
+                "p50_ns": 12100,
+                "p99_ns": 804200,
+                "trial": 1
+              },
+              {
+                "p50_ns": 25700,
+                "p99_ns": 1318000,
+                "trial": 2
+              },
+              {
+                "p50_ns": 25400,
+                "p99_ns": 481400,
+                "trial": 3
+              },
+              {
+                "p50_ns": 12200,
+                "p99_ns": 1097900,
+                "trial": 4
+              }
+            ]
+          }
+        }
+      },
+      "43": {
+        "build": {
+          "build_ns": 1000700,
+          "events": 2048,
+          "peak_rss_kib": 4732,
+          "raw_bytes": 575130,
+          "replay_ns": 15059200,
+          "seed": 43,
+          "summary_bytes": 16896,
+          "write_ns": 7786993539
+        },
+        "cases": {
+          "0": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "1": {
+            "pruned_rows": 161920,
+            "pruned_to_scan_ratio": 0.98828125,
+            "row_reduction": 0.01171875,
+            "scan_rows": 163840
+          },
+          "2": {
+            "pruned_rows": 10240,
+            "pruned_to_scan_ratio": 0.0625,
+            "row_reduction": 0.9375,
+            "scan_rows": 163840
+          },
+          "3": {
+            "pruned_rows": 40960,
+            "pruned_to_scan_ratio": 0.25,
+            "row_reduction": 0.75,
+            "scan_rows": 163840
+          },
+          "4": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "5": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "6": {
+            "pruned_rows": 2560,
+            "pruned_to_scan_ratio": 0.015625,
+            "row_reduction": 0.984375,
+            "scan_rows": 163840
+          },
+          "7": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          }
+        },
+        "latency": {
+          "pruned": {
+            "median_trial_p50_ns": 5600,
+            "median_trial_p99_ns": 188100,
+            "trials": [
+              {
+                "p50_ns": 5300,
+                "p99_ns": 129800,
+                "trial": 0
+              },
+              {
+                "p50_ns": 5400,
+                "p99_ns": 188100,
+                "trial": 1
+              },
+              {
+                "p50_ns": 5600,
+                "p99_ns": 211600,
+                "trial": 2
+              },
+              {
+                "p50_ns": 8800,
+                "p99_ns": 230500,
+                "trial": 3
+              },
+              {
+                "p50_ns": 5700,
+                "p99_ns": 175100,
+                "trial": 4
+              }
+            ]
+          },
+          "scan": {
+            "median_trial_p50_ns": 13700,
+            "median_trial_p99_ns": 898200,
+            "trials": [
+              {
+                "p50_ns": 12000,
+                "p99_ns": 475500,
+                "trial": 0
+              },
+              {
+                "p50_ns": 14600,
+                "p99_ns": 911100,
+                "trial": 1
+              },
+              {
+                "p50_ns": 12400,
+                "p99_ns": 898200,
+                "trial": 2
+              },
+              {
+                "p50_ns": 18200,
+                "p99_ns": 932000,
+                "trial": 3
+              },
+              {
+                "p50_ns": 13700,
+                "p99_ns": 838900,
+                "trial": 4
+              }
+            ]
+          }
+        }
+      },
+      "44": {
+        "build": {
+          "build_ns": 735500,
+          "events": 2048,
+          "peak_rss_kib": 4736,
+          "raw_bytes": 575130,
+          "replay_ns": 8724800,
+          "seed": 44,
+          "summary_bytes": 16896,
+          "write_ns": 7542051632
+        },
+        "cases": {
+          "0": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "1": {
+            "pruned_rows": 161600,
+            "pruned_to_scan_ratio": 0.986328125,
+            "row_reduction": 0.013671875,
+            "scan_rows": 163840
+          },
+          "2": {
+            "pruned_rows": 10240,
+            "pruned_to_scan_ratio": 0.0625,
+            "row_reduction": 0.9375,
+            "scan_rows": 163840
+          },
+          "3": {
+            "pruned_rows": 40960,
+            "pruned_to_scan_ratio": 0.25,
+            "row_reduction": 0.75,
+            "scan_rows": 163840
+          },
+          "4": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          },
+          "5": {
+            "pruned_rows": 163840,
+            "pruned_to_scan_ratio": 1.0,
+            "row_reduction": 0.0,
+            "scan_rows": 163840
+          },
+          "6": {
+            "pruned_rows": 2560,
+            "pruned_to_scan_ratio": 0.015625,
+            "row_reduction": 0.984375,
+            "scan_rows": 163840
+          },
+          "7": {
+            "pruned_rows": 0,
+            "pruned_to_scan_ratio": 0.0,
+            "row_reduction": 1.0,
+            "scan_rows": 163840
+          }
+        },
+        "latency": {
+          "pruned": {
+            "median_trial_p50_ns": 4000,
+            "median_trial_p99_ns": 133200,
+            "trials": [
+              {
+                "p50_ns": 4000,
+                "p99_ns": 133200,
+                "trial": 0
+              },
+              {
+                "p50_ns": 3800,
+                "p99_ns": 152200,
+                "trial": 1
+              },
+              {
+                "p50_ns": 4100,
+                "p99_ns": 156700,
+                "trial": 2
+              },
+              {
+                "p50_ns": 3900,
+                "p99_ns": 91600,
+                "trial": 3
+              },
+              {
+                "p50_ns": 4100,
+                "p99_ns": 83600,
+                "trial": 4
+              }
+            ]
+          },
+          "scan": {
+            "median_trial_p50_ns": 14200,
+            "median_trial_p99_ns": 608800,
+            "trials": [
+              {
+                "p50_ns": 21300,
+                "p99_ns": 608800,
+                "trial": 0
+              },
+              {
+                "p50_ns": 26800,
+                "p99_ns": 882400,
+                "trial": 1
+              },
+              {
+                "p50_ns": 14200,
+                "p99_ns": 706600,
+                "trial": 2
+              },
+              {
+                "p50_ns": 8700,
+                "p99_ns": 408500,
+                "trial": 3
+              },
+              {
+                "p50_ns": 5700,
+                "p99_ns": 372500,
+                "trial": 4
+              }
+            ]
+          }
+        }
+      }
+    }
+  }
+}

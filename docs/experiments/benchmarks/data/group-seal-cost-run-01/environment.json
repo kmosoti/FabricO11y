@@ -1,0 +1,63 @@
+{
+  "utc": "2026-09-27T12:11:26Z",
+  "python": "3.13.5 (main, Jul 15 2026, 20:25:40) [GCC 14.2.0]",
+  "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.41",
+  "source_sha256": {
+    "tools/seal-probe/bench.py": "9c91df1a72602da6e2c065007939e8156b211ddba34d2f440db2f8b5d8b10a27",
+    "tools/seal-probe/candidate.py": "cc6fccf118fcc35cf31f981b6a5256800668bdb6bb470291e0f258101732a1db",
+    "tools/seal-probe/oracle_support.py": "072b2fd468a673444dca729ba12933b95ff19721d7f407589ba6da8caa645892",
+    "tools/seal-probe/CONTRACT.md": "fc99a0e76275023b591cf4086a8f7c718ad394e3013bced4ed29173cf519df60",
+    "docs/experiments/benchmarks/group-seal-cost-protocol.md": "4334dbf56591937a57b362232206452cc182853dd60e5e67168a60ee768e00c5"
+  },
+  "git_head": {
+    "command": [
+      "git",
+      "rev-parse",
+      "HEAD"
+    ],
+    "exit_code": 0,
+    "stdout": "a82111cc8a7354da8a9ad3a4f4e1ea1df51ab751\n",
+    "stderr": ""
+  },
+  "git_status": {
+    "command": [
+      "git",
+      "status",
+      "--short"
+    ],
+    "exit_code": 0,
+    "stdout": " M Cargo.toml\n M docs/CURRENT.md\n M docs/LEARNING_PATH.md\n M docs/architecture/storage.md\n M docs/decisions/README.md\n M docs/experiments/README.md\n M examples/local_log_probe.rs\n M src/log.rs\n M tools/storage-probe/Cargo.lock\n M tools/storage-probe/Cargo.toml\n?? docs/decisions/ADR-0008-bind-residuals-to-immutable-snapshots.md\n?? docs/experiments/ablation/data/resume-e3-run-01/\n?? docs/experiments/ablation/data/seal-e2-run-01/\n?? docs/experiments/ablation/durable-snapshot-s2-protocol.md\n?? docs/experiments/ablation/end-to-end-prototype.md\n?? docs/experiments/ablation/resume-e3-protocol.md\n?? docs/experiments/ablation/seal-e2-run-01.md\n?? docs/experiments/benchmarks/append-attribution-s0.md\n?? docs/experiments/benchmarks/data/append-attribution-s0-run-01/\n?? docs/experiments/benchmarks/data/group-seal-cost-run-01/\n?? docs/experiments/benchmarks/group-seal-cost-protocol.md\n?? tests/append_attribution.rs\n?? tools/bench/append_attribution.py\n?? tools/bench/run_resume_e3.py\n?? tools/bench/test_append_attribution.py\n?? tools/seal-probe/\n?? tools/storage-probe/DISK_API.md\n?? tools/storage-probe/RESUME_API.md\n?? tools/storage-probe/tests/resume_contract.rs\n?? tools/storage-probe/tests/resume_e3.rs\n?? tools/storage-probe/tests/resume_selection.rs\n",
+    "stderr": ""
+  },
+  "mount": {
+    "command": [
+      "findmnt",
+      "-T",
+      "/home/kmosoti/projects/fabric_o11y",
+      "-o",
+      "SOURCE,FSTYPE,OPTIONS",
+      "-n"
+    ],
+    "exit_code": 0,
+    "stdout": "/dev/sdd ext4 rw,relatime,discard,errors=remount-ro,data=ordered\n",
+    "stderr": ""
+  },
+  "cpu": {
+    "command": [
+      "lscpu"
+    ],
+    "exit_code": 0,
+    "stdout": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           39 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  12\nOn-line CPU(s) list:                     0-11\nVendor ID:                               GenuineIntel\nModel name:                              Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz\nCPU family:                              6\nModel:                                   165\nThread(s) per core:                      2\nCore(s) per socket:                      6\nSocket(s):                               1\nStepping:                                2\nBogoMIPS:                                5184.02\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ss ht syscall nx pdpe1gb rdtscp lm arch_perfmon rep_good nopl xtopology cpuid tsc_known_freq pni pclmulqdq vmx ssse3 fma cx16 pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm abm 3dnowprefetch ssbd ibrs ibpb stibp ibrs_enhanced tpr_shadow ept vpid ept_ad fsgsbase bmi1 avx2 smep bmi2 erms invpcid rdseed adx smap clflushopt xsaveopt xsavec xgetbv1 xsaves vnmi md_clear flush_l1d arch_capabilities\nVirtualization:                          VT-x\nHypervisor vendor:                       Microsoft\nVirtualization type:                     full\nL1d cache:                               192 KiB (6 instances)\nL1i cache:                               192 KiB (6 instances)\nL2 cache:                                1.5 MiB (6 instances)\nL3 cache:                                12 MiB (1 instance)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-11\nVulnerability Gather data sampling:      Unknown: Dependent on hypervisor status\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Mitigation; Aligned branch/return thunks\nVulnerability Itlb multihit:             KVM: Mitigation: Split huge pages\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Vulnerable: Clear CPU buffers attempted, no microcode; SMT Host state unknown\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Mitigation; Enhanced IBRS\nVulnerability Spec rstack overflow:      Not affected\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS SW sequence; BHI SW loop, KVM SW loop\nVulnerability Srbds:                     Unknown: Dependent on hypervisor status\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Not affected\n",
+    "stderr": ""
+  },
+  "process_names": {
+    "command": [
+      "ps",
+      "-eo",
+      "comm="
+    ],
+    "exit_code": 0,
+    "stdout": "systemd\ninit-systemd(De\ninit\nsystemd-journal\nsystemd-udevd\ncron\ndbus-daemon\nsystemd-logind\ntailscaled\nagetty\nsystemd\n(sd-pam)\ndtach\nclaude\nSessionLeader\nRelay(312)\nbash\nlogin\nbash\nuv\ngh-projects-mcp\nclaude\nuv\ngh-projects-mcp\nSessionLeader\nRelay(4385)\nsh\nsh\nsh\nMainThread\nSessionLeader\nRelay(4411)\nMainThread\nSessionLeader\nRelay(4427)\nMainThread\nMainThread\nMainThread\nMainThread\nMainThread\ncodex\nbash\nclaude\nuv\ngh-projects-mcp\ndbus-daemon\nxdg-desktop-por\nat-spi-bus-laun\nxdg-permission-\nxdg-document-po\nfusermount3\nxdg-desktop-por\ndbus-daemon\nat-spi2-registr\ncodex-code-mode\nMainThread\nSessionLeader\nRelay(421277)\nbash\ncodex\ncodex\ncodex-code-mode\ncodex\ncargo\nbash\ncargo\nresume_e3-d6dd8\nresume_e3-845d2\nsccache\nbash\nserver\nflock\nnpm exec playwr\nsh\nMainThread\nMainThread\nchrome\nchrome_crashpad\nchrome_crashpad\nchrome\nchrome\nchrome\nchrome\nchrome\nchrome\nchrome\nbash\npython3\npython3\nps\n",
+    "stderr": ""
+  }
+}

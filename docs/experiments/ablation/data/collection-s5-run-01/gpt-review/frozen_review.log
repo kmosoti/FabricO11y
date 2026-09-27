@@ -1,0 +1,41 @@
+    Blocking waiting for file lock on package cache
+   Compiling version_check v0.9.5
+   Compiling cfg-if v1.0.5
+   Compiling libc v0.2.189
+   Compiling proc-macro2 v1.0.107
+   Compiling rand_core v0.10.1
+   Compiling quote v1.0.47
+   Compiling unicode-ident v1.0.26
+   Compiling getrandom v0.4.3
+   Compiling typenum v1.20.1
+   Compiling serde_core v1.0.228
+   Compiling cpufeatures v0.3.1
+   Compiling crc32fast v1.5.2
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.228
+   Compiling serde_json v1.0.150
+   Compiling chacha20 v0.10.2
+   Compiling deunicode v1.6.2
+   Compiling memchr v2.8.3
+   Compiling cpufeatures v0.2.17
+   Compiling itoa v1.0.18
+   Compiling generic-array v0.14.7
+   Compiling syn v2.0.119
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling rand v0.10.3
+   Compiling sha2 v0.10.9
+   Compiling fake v5.1.0
+   Compiling serde_derive v1.0.228
+   Compiling fabric_o11y v0.1.0 (/tmp/fabric-collect-a)
+   Compiling storage-probe v0.1.0 (/tmp/fabric-collect-a/tools/storage-probe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 22.71s
+     Running tests/collect_review.rs (/tmp/fabric-collect-a/tools/storage-probe/target/debug/deps/collect_review-5175462a8280cc16)
+
+running 2 tests
+test duplicate_object_members_are_rejected_at_each_layer ... ok
+test explicit_null_and_numeric_extensions_are_rejected ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

@@ -1,0 +1,36 @@
+{
+  "resourceLogs": [
+    {
+      "scopeLogs": [
+        {
+          "logRecords": [
+            {
+              "timeUnixNano": "10",
+              "body": {
+                "stringValue": "rare first"
+              }
+            },
+            {
+              "timeUnixNano": "5",
+              "body": {
+                "stringValue": "ordinary"
+              }
+            },
+            {
+              "timeUnixNano": "10",
+              "body": {
+                "stringValue": "rare last"
+              }
+            },
+            {
+              "timeUnixNano": "1",
+              "body": {
+                "stringValue": "rare late arrival"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

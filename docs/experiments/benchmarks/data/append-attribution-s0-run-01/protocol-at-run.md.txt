@@ -1,0 +1,70 @@
+# S0: attribute the existing two-sync append cost
+
+Status: registered before instrumentation or measured trials. This follows the
+[Stage 6 baseline](local-log-stage6.md) and contributes to the
+[end-to-end research contract](../ablation/end-to-end-prototype.md).
+
+## Hypothesis and fixed semantics
+
+Hypothesis: file synchronization dominates this machine's per-event append cost.
+Measure it; do not infer a storage-format decision from this workload. The FOL2
+bytes, two file syncs, commit boundary, poisoning on I/O failure, and borrowed-event
+ownership remain unchanged. No one-sync candidate enters this experiment.
+
+An optional `append-attribution` feature exposes the last successful append's five
+wall-clock phase durations: encode/header/CRC/offset/marker preparation; data
+seek/write; data sync; marker write; marker sync. Clear the sample before each
+attempt, including rejected attempts. Failed appends produce no successful sample.
+Use conditional compilation so default builds retain the uninstrumented path.
+Timer sampling has cost, measured by a paired control below. Durations are elapsed
+time, not CPU utilization or device latency.
+
+## Registered workload and comparison
+
+Use the existing `local_log_probe` on the repository filesystem, seed 42, 2,000
+Gauge events, FIFO capacity 256, drain batch 64. Each trial uses a fresh log. Build
+release/offline default and feature binaries separately with the same locked
+dependencies. Warm each binary once, then run five measured pairs, alternating
+default/feature order by pair. Run one process at a time, with separate-process
+exact replay after every write. Keep raw CSV, commands, exits, source hashes,
+environment/mount details and file hashes. Do not silently rerun an outlier.
+
+The outer append timer remains the existing call boundary. The five phase values
+must sum to no more than that outer duration. Phase samples and outer samples are
+preallocated; print only after the timed ingest interval. The feature's extra
+sample capture participates in pipeline cost. Open/recovery and CSV formatting
+are outside pipeline timing; generation, buffering and final append are inside.
+
+Report per-trial ingest events/s, outer append P50/P99, phase totals and their
+fraction of total outer append duration, file size and peak RSS. Quantiles use
+nearest rank. Compare median paired relative pipeline elapsed-time change; above
+10% in magnitude flags materially perturbed attribution, requiring that limitation
+beside results rather than an unqualified cost claim. Phase dominance means the
+two sync phases together exceed 50% of summed outer append time in each measured
+feature trial. Report all five trials even if the hypothesis fails. Equal event
+counts, bit-exact replay and identical file hashes are correctness gates.
+
+Run the existing allocation feature once with and once without attribution,
+separately from timing trials, to report requested allocations and peak RSS.
+Record process CPU and I/O counters where available; do not invent device IOPS,
+network costs or energy measurements. This is one WSL filesystem/workload, not a
+representative production distribution or physical power-loss test.
+
+## Checks
+
+Existing root tests must pass both with default features and all features. Add
+focused checks that a successful sample exists, an invalid oversized record clears
+it without poisoning the log, and the next valid append succeeds. Check byte and
+replay equality across binaries. The CSV validator must reject representative
+missing phase, duplicate phase, and phase-sum-over-outer defects; preserve those
+real failures. Instrumentation must introduce no new log writes or flushes.
+
+## Run-01 host-load note, before timing
+
+The two fixed E3R correctness workers remain CPU-bound on this shared workstation.
+Run-01 keeps the benchmark writers and replay processes serialized, and records
+those background workers explicitly. The paired alternating control tests timer
+perturbation under that observed load; the run does not estimate an otherwise idle
+machine. Preserve a process-name/CPU snapshot at start and finish without command
+arguments. Do not compare its absolute throughput to the earlier Stage 6 day as
+though load, filesystem state and scheduling were held constant.

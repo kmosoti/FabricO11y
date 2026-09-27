@@ -1,0 +1,52 @@
+{
+  "candidate": "/tmp/fabric-cli-b",
+  "source_sha256": {
+    "cli_contract": {
+      "path": "/home/kmosoti/projects/fabric_o11y/tools/storage-probe/CLI_API.md",
+      "sha256": "ed795db6cfd600290a745733e20f9cfccc69b3824184365e2c4eef26b1b27c82"
+    },
+    "collect_contract": {
+      "path": "/home/kmosoti/projects/fabric_o11y/tools/storage-probe/COLLECT_API.md",
+      "sha256": "666041bc485a415b43c38ceac94f7a5a5365c0b862b6d1c025190f0e0d201283"
+    },
+    "selected_collect_source": {
+      "path": "/tmp/fabric-collect-a/tools/storage-probe/src/collect.rs",
+      "sha256": "17299a704eb5612fc55bf84c2101be682c2734b93814fe40dcec58049a04afe0"
+    },
+    "candidate_collect": {
+      "path": "/tmp/fabric-cli-b/tools/storage-probe/src/collect.rs",
+      "sha256": "17299a704eb5612fc55bf84c2101be682c2734b93814fe40dcec58049a04afe0"
+    },
+    "candidate_lib": {
+      "path": "/tmp/fabric-cli-b/tools/storage-probe/src/lib.rs",
+      "sha256": "0b5094d928d80d209e99f26d4e2432cad9c00b5c42bf645ae5cb794324cda84a"
+    },
+    "candidate_cli": {
+      "path": "/tmp/fabric-cli-b/tools/storage-probe/src/bin/fabric-research.rs",
+      "sha256": "cc3a7b0f779d5476e24e29e7e83e5141d36f9ca3f08191d0d446c29181ffaac8"
+    },
+    "frozen_collect_test": {
+      "path": "/tmp/fabric-cli-b/tools/storage-probe/tests/prototype_collect.rs",
+      "sha256": "ff8f65790d601243fb4fcb42cda01b4495ee5b11e418f89a5f3bf6922992a325"
+    }
+  },
+  "changed_paths_by_agent": [
+    "tools/storage-probe/src/bin/fabric-research.rs",
+    "tools/storage-probe/src/collect.rs",
+    "tools/storage-probe/src/lib.rs"
+  ],
+  "checks": [
+    {
+      "command": "cargo test --release --offline --locked --manifest-path tools/storage-probe/Cargo.toml --test prototype_cli --test prototype_selection --test prototype_collect -- --nocapture",
+      "cwd": "/tmp/fabric-cli-b",
+      "exit_code": 0,
+      "raw_output": "   Compiling storage-probe v0.1.0 (/tmp/fabric-cli-b/tools/storage-probe)\n    Finished `release` profile [optimized] target(s) in 18.69s\n     Running tests/prototype_cli.rs (tools/storage-probe/target/release/deps/prototype_cli-409ed125bc7eda90)\n\nrunning 3 tests\ntest generate_is_a_fresh_convenience_source ... ok\ntest malformed_inputs_missing_log_and_successor_reject_old_checkpoint ... ok\ntest process_lifecycle_preserves_roots_and_restarts_from_partial_history ... ok\n\ntest result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s\n\n     Running tests/prototype_collect.rs (tools/storage-probe/target/release/deps/prototype_collect-93ddec3dea185eac)\n\nrunning 1 test\ntest offline_logs_reach_verified_complete_answer_across_processes ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s\n\n     Running tests/prototype_selection.rs (tools/storage-probe/target/release/deps/prototype_selection-ea71e42c37de2d7b)\n\nrunning 2 tests\ntest duplicate_query_fields_are_rejected_before_checkpoint_creation ... ok\ntest tail_is_fully_drained_for_every_capacity_batch_relation ... ok\n\ntest result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.20s\n\n"
+    },
+    {
+      "command": "cargo fmt --all --manifest-path tools/storage-probe/Cargo.toml -- --check",
+      "cwd": "/tmp/fabric-cli-b",
+      "exit_code": 0,
+      "raw_output": ""
+    }
+  ]
+}

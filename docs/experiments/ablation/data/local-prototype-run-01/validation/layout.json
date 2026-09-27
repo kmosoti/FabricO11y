@@ -1,0 +1,14 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--release",
+    "--offline",
+    "--locked",
+    "--manifest-path",
+    "tools/layout-probe/Cargo.toml"
+  ],
+  "cwd": "/home/kmosoti/projects/fabric_o11y",
+  "exit": 0,
+  "seconds": 89.08140516281128
+}

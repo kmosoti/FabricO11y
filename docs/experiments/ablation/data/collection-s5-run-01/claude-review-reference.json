@@ -1,0 +1,6 @@
+{
+  "review": "../lifecycle-cli-run-01/claude-initial/stdout.json",
+  "adapter_sha256": "17299a704eb5612fc55bf84c2101be682c2734b93814fe40dcec58049a04afe0",
+  "verdict": "APPROVE",
+  "independent_tests": 9
+}

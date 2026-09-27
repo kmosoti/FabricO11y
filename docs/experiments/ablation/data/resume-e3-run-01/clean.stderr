@@ -1,0 +1,23 @@
+   Compiling cfg-if v1.0.5
+   Compiling version_check v0.9.5
+   Compiling libc v0.2.189
+   Compiling typenum v1.20.1
+   Compiling rand_core v0.10.1
+   Compiling getrandom v0.4.3
+   Compiling cpufeatures v0.3.1
+   Compiling crc32fast v1.5.2
+   Compiling deunicode v1.6.2
+   Compiling cpufeatures v0.2.17
+   Compiling chacha20 v0.10.2
+   Compiling generic-array v0.14.7
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling digest v0.10.7
+   Compiling rand v0.10.3
+   Compiling sha2 v0.10.9
+   Compiling fake v5.1.0
+   Compiling fabric_o11y v0.1.0 (/tmp/fabric-resume-mutations)
+   Compiling storage-probe v0.1.0 (/tmp/fabric-resume-mutations/tools/storage-probe)
+    Finished `release` profile [optimized] target(s) in 7.90s
+     Running tests/resume_contract.rs (tools/storage-probe/target/release/deps/resume_contract-1181a239de2a5339)
+     Running tests/resume_selection.rs (tools/storage-probe/target/release/deps/resume_selection-f760aed35bcd512d)

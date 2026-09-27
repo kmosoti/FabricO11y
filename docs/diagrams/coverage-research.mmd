@@ -1,0 +1,13 @@
+flowchart LR
+    Rows[Owned immutable events] --> Builder[Validate summaries and seal blocks]
+    Builder --> Anchor[Independently retained snapshot anchor]
+    Builder --> Executor[Trusted exact query executor]
+    Query[Bound query] --> Executor
+    Available[Modeled block availability] --> Executor
+    Executor --> Receipt[Scanned or excluded or unavailable per block]
+    Anchor --> Verify[Metadata-only receipt verifier]
+    Query --> Verify
+    Receipt --> Verify
+    Verify --> Status[Complete or incomplete or invalid]
+    Rows --> Oracle[Independent full-scan test oracle]
+    Executor --> Oracle

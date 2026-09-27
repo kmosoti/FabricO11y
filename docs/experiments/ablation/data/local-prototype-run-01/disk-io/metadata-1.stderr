@@ -1,0 +1,5 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running tests/disk_io_fault.rs (tools/storage-probe/target/debug/deps/disk_io_fault-bb19e9b7ed0b52f6)
+injected short metadata read: 64 bytes
+injected EIO after 64 metadata bytes
+manifest_size=608 metadata_bytes=672 raw_files=0

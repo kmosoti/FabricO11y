@@ -3,6 +3,8 @@
 use fabric_o11y::Event;
 use fabric_o11y::buffer::EventBuffer;
 use fabric_o11y::generator::{EventGenerator, WorkloadConfig};
+#[cfg(feature = "append-attribution")]
+use fabric_o11y::log::AppendPhases;
 use fabric_o11y::log::{EventLog, same_record_contents};
 use std::fs::{self, OpenOptions};
 use std::io;
@@ -128,6 +130,7 @@ fn append_batch(
     batch: Vec<Event>,
     pipeline_start: Instant,
     append_ns: &mut Vec<u128>,
+    #[cfg(feature = "append-attribution")] phase_samples: &mut Vec<AppendPhases>,
     last_append_ns: &mut u128,
     total_events: usize,
     allocations: &mut alloc_probe::Guard,
@@ -138,6 +141,11 @@ fn append_batch(
         let append_start = Instant::now();
         log.append(&event)?;
         let append_end = Instant::now();
+        #[cfg(feature = "append-attribution")]
+        phase_samples.push(
+            log.last_append_phases()
+                .expect("successful append has phase durations"),
+        );
         allocations.finish_event(append_ns.len() + 1, total_events);
         append_ns.push(append_end.duration_since(append_start).as_nanos());
         *last_append_ns = append_end.duration_since(pipeline_start).as_nanos();
@@ -159,6 +167,8 @@ fn write(path: &Path, config: WorkloadConfig) -> io::Result<()> {
     let mut buffer = EventBuffer::new(NonZeroUsize::new(CAPACITY).unwrap());
     let batch_size = NonZeroUsize::new(BATCH_SIZE).unwrap();
     let mut append_ns = Vec::with_capacity(config.events as usize);
+    #[cfg(feature = "append-attribution")]
+    let mut phase_samples = Vec::with_capacity(config.events as usize);
     let mut full_rejections = 0_u64;
     let mut last_append_ns = 0_u128;
     let generator = EventGenerator::new(config);
@@ -175,6 +185,8 @@ fn write(path: &Path, config: WorkloadConfig) -> io::Result<()> {
                 buffer.take_batch(batch_size),
                 pipeline_start,
                 &mut append_ns,
+                #[cfg(feature = "append-attribution")]
+                &mut phase_samples,
                 &mut last_append_ns,
                 config.events as usize,
                 &mut allocations,
@@ -190,6 +202,8 @@ fn write(path: &Path, config: WorkloadConfig) -> io::Result<()> {
             buffer.take_batch(batch_size),
             pipeline_start,
             &mut append_ns,
+            #[cfg(feature = "append-attribution")]
+            &mut phase_samples,
             &mut last_append_ns,
             config.events as usize,
             &mut allocations,
@@ -215,6 +229,19 @@ fn write(path: &Path, config: WorkloadConfig) -> io::Result<()> {
     println!("{CSV_HEADER}");
     for (index, elapsed_ns) in append_ns.into_iter().enumerate() {
         println!("append,{},{elapsed_ns},,,,,,", index + 1);
+        #[cfg(feature = "append-attribution")]
+        {
+            let phases = phase_samples[index];
+            for (phase, elapsed_ns) in [
+                ("encode", phases.encode_ns),
+                ("data_write", phases.data_write_ns),
+                ("data_sync", phases.data_sync_ns),
+                ("marker_write", phases.marker_write_ns),
+                ("marker_sync", phases.marker_sync_ns),
+            ] {
+                println!("{phase},{},{elapsed_ns},,,,,,", index + 1);
+            }
+        }
     }
     println!(
         "ingest,,{last_append_ns},{},{full_rejections},{file_bytes},{peak_rss},{alloc_calls},{alloc_requested_bytes}",

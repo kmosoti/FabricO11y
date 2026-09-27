@@ -1,0 +1,4 @@
+   Compiling storage-probe v0.1.0 (/tmp/fabric-disk-mutations/tools/storage-probe)
+    Finished `release` profile [optimized] target(s) in 8.79s
+     Running tests/disk_contract.rs (tools/storage-probe/target/release/deps/disk_contract-df8042978401cca1)
+error: test failed, to rerun pass `--test disk_contract`

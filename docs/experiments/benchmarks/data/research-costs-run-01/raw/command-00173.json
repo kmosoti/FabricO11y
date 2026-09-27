@@ -1,0 +1,20 @@
+{
+  "command": [
+    "/home/kmosoti/projects/fabric_o11y/tools/layout-probe/target/release/layout-cost",
+    "formal",
+    "mixed",
+    "203",
+    "2048",
+    "0",
+    "zstd256",
+    "/home/kmosoti/projects/fabric_o11y/target/research-costs/run-01/mixed-203-2048-source.json",
+    "/home/kmosoti/projects/fabric_o11y/target/research-costs/run-01/mixed-203-2048-0-zstd256"
+  ],
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": "",
+  "whole_process_user_ns": 1601354000,
+  "whole_process_system_ns": 32027000,
+  "whole_process_cpu_ns": 1633381000,
+  "whole_process_max_rss_kib": 23192
+}

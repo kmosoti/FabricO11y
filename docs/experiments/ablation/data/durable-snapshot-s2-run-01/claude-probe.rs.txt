@@ -1,0 +1,403 @@
+//! Independent adversarial probes for candidate A's disk.rs (S2), written
+//! against tools/storage-probe/DISK_API.md. Not derived from
+//! tests/disk_contract.rs, tests/disk_restart.rs or tests/disk_support/mod.rs
+//! (read only for orientation). resume_e3 is never run.
+//!
+//! Stated assumptions (per DISK_API.md and prior E1/E3 review): trusted E1
+//! summary builder, SHA-256 collision resistance, trusted exact evaluator,
+//! and an externally retained I/O-error witness. No physical power-loss claim
+//! is made or tested here -- only userspace file-level behavior on a healthy
+//! local filesystem.
+
+use fabric_o11y::{
+    Attribute, Event, EventId, EventTime, ObservedTime, Payload, ResourceId, Scalar, SourceId,
+    TenantId,
+};
+use std::{
+    fs,
+    num::NonZeroUsize,
+    path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
+    thread,
+};
+use storage_probe::{
+    Query,
+    coverage::{self, Disposition},
+    disk::{self, DiskSnapshot},
+    resume::{self, Binding},
+};
+
+static NEXT: AtomicU64 = AtomicU64::new(0);
+
+struct Scratch(PathBuf);
+impl Scratch {
+    fn new() -> Self {
+        let path = std::env::temp_dir().join(format!(
+            "disk-review-probe-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed)
+        ));
+        fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+}
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+fn event(id: u64, time: i64, payload: Payload) -> Event {
+    Event {
+        id: EventId(id),
+        tenant: TenantId(1),
+        source: SourceId(2),
+        resource: ResourceId(3),
+        event_time: EventTime(time),
+        observed_time: ObservedTime(time),
+        attributes: vec![],
+        payload,
+    }
+}
+
+fn log(id: u64, time: i64, body: &str) -> Event {
+    event(id, time, Payload::Log { body: body.into() })
+}
+
+fn block_rows() -> NonZeroUsize {
+    NonZeroUsize::new(4).unwrap()
+}
+
+fn q_all() -> Query {
+    Query { start_ns: i64::MIN, end_ns: i64::MAX, tenant: None, token: None }
+}
+
+fn binding(anchor: coverage::Anchor, query: Query) -> Binding {
+    Binding {
+        anchor,
+        query,
+        tokenizer_version: resume::TOKENIZER_VERSION,
+        order_version: resume::ORDER_VERSION,
+    }
+}
+
+// === A) Exact raw-read metric accounting, including failed reads ===========
+
+#[test]
+fn exact_raw_files_and_raw_bytes_across_missing_corrupt_and_good_blocks() {
+    let scratch = Scratch::new();
+    let dir = scratch.0.join("snapshot");
+    // 3 blocks of 4 rows each (block_rows=4), 12 rows total.
+    let rows: Vec<Event> = (0..12).map(|i| log(i, i as i64, "x")).collect();
+    let publication = disk::publish(rows, block_rows(), 9001, &dir).unwrap();
+    let block_count = publication.anchor.block_count;
+    assert_eq!(block_count, 3);
+
+    // Capture the good block's on-disk size BEFORE corrupting anything, so we
+    // can independently compute the expected raw_bytes total.
+    let good_block_len = fs::metadata(dir.join("block-0.json")).unwrap().len();
+
+    // Block 1: missing entirely (no hot, no cold) -> 2 failed open attempts,
+    // 0 bytes.
+    fs::remove_file(dir.join("block-1.json")).unwrap();
+
+    // Block 2: corrupt hot (bytes ARE read successfully, but decode/digest
+    // fails), no cold copy -> 2 attempts, but only the hot attempt's byte
+    // count (11 bytes of "broken JSON") should be counted.
+    let broken: &[u8] = b"broken JSON";
+    fs::write(dir.join("block-2.json"), broken).unwrap();
+
+    let opened = DiskSnapshot::open(&dir, publication.clone()).unwrap();
+    let b = binding(publication.anchor.clone(), q_all());
+    let answer = opened.query(&b, &vec![true; block_count]).unwrap();
+
+    // Independently recomputed expectation:
+    // block 0: 1 attempt (hot succeeds), good_block_len bytes.
+    // block 1: 2 attempts (hot + cold, both fail to open), 0 bytes.
+    // block 2: 2 attempts (hot succeeds as bytes but fails validation, cold
+    //          fails to open), broken.len() bytes.
+    let expected_raw_files = 1 + 2 + 2;
+    let expected_raw_bytes = good_block_len + broken.len() as u64;
+    assert_eq!(
+        answer.reads.raw_files, expected_raw_files,
+        "raw_files must count every open ATTEMPT, including both failed \
+         attempts for the missing block and both attempts for the corrupt \
+         block (hot succeeds as bytes, cold fails to open)"
+    );
+    assert_eq!(
+        answer.reads.raw_bytes, expected_raw_bytes,
+        "raw_bytes must count only bytes actually read: the good block's \
+         full size, the corrupt hot copy's byte length (read successfully \
+         even though content validation failed), and zero for the entirely \
+         missing block"
+    );
+    assert_eq!(answer.reads.unavailable, vec![1, 2]);
+}
+
+// === B) False availability alone (no metadata exclusion) opens no files ====
+
+#[test]
+fn false_availability_without_exclusion_opens_zero_raw_files() {
+    let scratch = Scratch::new();
+    let dir = scratch.0.join("snapshot");
+    let rows: Vec<Event> = (0..8).map(|i| log(i, i as i64, "present")).collect();
+    let publication = disk::publish(rows, block_rows(), 9002, &dir).unwrap();
+    let opened = DiskSnapshot::open(&dir, publication.clone()).unwrap();
+    // Query token "present" matches every row's body, so no block's summary
+    // excludes it; every block is genuinely availability-gated, not
+    // metadata-excluded. This isolates false-availability from exclusion,
+    // unlike the frozen exclusions_and_false_availability_open_no_raw_file
+    // test, which uses a token that ALSO metadata-excludes every block.
+    let q = Query { start_ns: i64::MIN, end_ns: i64::MAX, tenant: None, token: Some("present".into()) };
+    let b = binding(publication.anchor.clone(), q);
+    let n = publication.anchor.block_count;
+    let answer = opened.query(&b, &vec![false; n]).unwrap();
+    assert_eq!(answer.reads.raw_files, 0, "no raw file should be opened when availability is false");
+    assert_eq!(answer.reads.raw_bytes, 0);
+    assert!(answer.page.rows.is_empty());
+    for block in &answer.page.receipt.blocks {
+        assert!(
+            matches!(block.disposition, Disposition::Unavailable),
+            "a matching-token, unavailable block must be Unavailable, not Excluded or Scanned"
+        );
+    }
+}
+
+// === B2) DISK_API.md: "`unavailable` records ascending raw candidate       ===
+// === ordinals that could not be scanned; exclusions are not unavailable."  ===
+// The ONLY stated carve-out from ReadMetrics.unavailable is exclusion. A
+// block that is Disposition::Unavailable purely because the caller's own
+// availability bit was false (never attempted, not excluded) is still a
+// block "that could not be scanned" and is not an exclusion -- so by the
+// literal contract text it belongs in `unavailable` too.
+
+#[test]
+fn unavailable_metric_must_include_false_availability_blocks_not_only_failed_reads() {
+    let scratch = Scratch::new();
+    let dir = scratch.0.join("snapshot");
+    // 3 blocks; query matches everything, so no block is metadata-excluded.
+    let rows: Vec<Event> = (0..12).map(|i| log(i, i as i64, "present")).collect();
+    let publication = disk::publish(rows, block_rows(), 9003, &dir).unwrap();
+    let opened = DiskSnapshot::open(&dir, publication.clone()).unwrap();
+    let b = binding(publication.anchor.clone(), q_all());
+
+    // Block 0: available=false (never attempted; not excluded).
+    // Block 1: available=true, genuinely missing on disk (attempted, failed).
+    // Block 2: available=true, present and valid (Scanned).
+    fs::remove_file(dir.join("block-1.json")).unwrap();
+    let answer = opened.query(&b, &[false, true, true]).unwrap();
+
+    assert!(matches!(answer.page.receipt.blocks[0].disposition, Disposition::Unavailable));
+    assert!(matches!(answer.page.receipt.blocks[1].disposition, Disposition::Unavailable));
+    assert!(matches!(answer.page.receipt.blocks[2].disposition, Disposition::Scanned));
+
+    // Both block 0 (false availability) and block 1 (failed raw read) are
+    // Unavailable and neither is an exclusion, so per DISK_API.md's stated
+    // carve-out ("exclusions are not unavailable" -- the ONLY exception
+    // named) both ordinals belong in reads.unavailable, ascending.
+    assert_eq!(
+        answer.reads.unavailable,
+        vec![0, 1],
+        "ReadMetrics.unavailable must record every non-excluded Unavailable \
+         block ordinal, including blocks whose availability bit was simply \
+         false and were never attempted -- not only blocks where a raw read \
+         was attempted and failed. DISK_API.md names exclusion as the ONLY \
+         carve-out from this metric; a silent second carve-out for \
+         false-availability blocks is an unavailable-metric undercount, \
+         hiding real outstanding work from a caller inspecting ReadMetrics \
+         alone."
+    );
+}
+
+// === C) Concurrent publishers at thread granularity =========================
+
+#[test]
+fn concurrent_thread_publishers_exactly_one_wins_and_output_is_uncorrupted() {
+    let scratch = Scratch::new();
+    let dir = scratch.0.join("shared");
+    let rows_a: Vec<Event> = (0..6).map(|i| log(i, i as i64, "a")).collect();
+    let rows_b: Vec<Event> = (0..6).map(|i| log(i, i as i64, "b")).collect();
+    let dir_a = dir.clone();
+    let dir_b = dir.clone();
+    let handle_a = thread::spawn(move || disk::publish(rows_a, block_rows(), 9101, &dir_a));
+    let handle_b = thread::spawn(move || disk::publish(rows_b, block_rows(), 9102, &dir_b));
+    let result_a = handle_a.join().unwrap();
+    let result_b = handle_b.join().unwrap();
+    let outcomes = [result_a.is_ok(), result_b.is_ok()];
+    assert_eq!(
+        outcomes.iter().filter(|ok| **ok).count(),
+        1,
+        "exactly one of two same-process, same-final-name concurrent publishers must win: got {outcomes:?}"
+    );
+    // The manifest on disk must correspond to EXACTLY the winner's snapshot_id
+    // (9101 or 9102), not a mix, and must independently re-open and verify.
+    let winning_id = if result_a.is_ok() { 9101 } else { 9102 };
+    let winning_publication = result_a.unwrap_or_else(|_| result_b.unwrap());
+    assert_eq!(winning_publication.anchor.snapshot_id, winning_id);
+    let opened = DiskSnapshot::open(&dir, winning_publication.clone()).unwrap();
+    let b = binding(winning_publication.anchor.clone(), q_all());
+    let n = winning_publication.anchor.block_count;
+    let answer = opened.query(&b, &vec![true; n]).unwrap();
+    assert_eq!(answer.page.rows.len(), 6);
+    // No stray stage/lock directories should remain (best-effort structural
+    // sanity: the winner's dir plus at most the OS-visible lock file, already
+    // removed by PublishLock's Drop by the time both threads have returned).
+    let entries: Vec<_> = fs::read_dir(&scratch.0)
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    for name in &entries {
+        let name = name.to_string_lossy();
+        assert!(
+            !name.contains(".stage.") && !name.contains(".publish.lock"),
+            "leftover publish artifact after both threads completed: {name}"
+        );
+    }
+}
+
+// === D) Failed publish leaves no final directory and is retryable ==========
+
+#[test]
+fn publish_failure_leaves_no_final_directory_and_a_fresh_attempt_succeeds() {
+    let scratch = Scratch::new();
+    let dir = scratch.0.join("snapshot");
+    // An event whose Log body alone exceeds MAX_FILE makes encode_events fail
+    // partway through publish() (after the lock is acquired, before any
+    // block/manifest file is written).
+    let huge = log(1, 0, &"x".repeat(64 * 1024 * 1024 + 1));
+    let result = disk::publish(vec![huge], block_rows(), 9201, &dir);
+    assert!(result.is_err(), "oversized encode must fail publish()");
+    assert!(!dir.exists(), "a failed publish must never create the final directory");
+    // The lock must have been released (Drop ran even on the error path), so
+    // a fresh, valid publish to the SAME final name must now succeed.
+    let good: Vec<Event> = (0..4).map(|i| log(i, i as i64, "ok")).collect();
+    let publication = disk::publish(good, block_rows(), 9202, &dir).unwrap();
+    assert_eq!(publication.anchor.snapshot_id, 9202);
+    let opened = DiskSnapshot::open(&dir, publication.clone()).unwrap();
+    let b = binding(publication.anchor.clone(), q_all());
+    let n = publication.anchor.block_count;
+    assert_eq!(opened.query(&b, &vec![true; n]).unwrap().page.rows.len(), 4);
+}
+
+// === E) Lossless float-bit round trip across IEEE-754 extremes =============
+
+#[test]
+fn float_bit_patterns_round_trip_exactly_including_nan_and_subnormals() {
+    let bit_patterns: Vec<u64> = vec![
+        0.0_f64.to_bits(),
+        (-0.0_f64).to_bits(),
+        f64::NAN.to_bits(),
+        0x7ff8_0000_0000_0001, // quiet NaN, nonstandard payload
+        0xfff8_0000_0000_0001, // negative quiet NaN
+        0x7ff0_0000_0000_0001, // signaling NaN
+        f64::INFINITY.to_bits(),
+        f64::NEG_INFINITY.to_bits(),
+        f64::MIN_POSITIVE.to_bits(), // smallest normal
+        1u64,                        // smallest positive subnormal
+        (1u64 << 63) | 1,            // smallest negative subnormal
+        f64::MAX.to_bits(),
+        f64::MIN.to_bits(),
+        f64::EPSILON.to_bits(),
+    ];
+    for bits in bit_patterns {
+        let e = event(1, 0, Payload::Gauge {
+            name: "g".into(),
+            value: f64::from_bits(bits),
+            unit: "u".into(),
+        });
+        let encoded = disk::encode_events(&[e]).unwrap();
+        let decoded = disk::decode_events(&encoded).unwrap();
+        assert_eq!(decoded.len(), 1);
+        let Payload::Gauge { value, .. } = decoded[0].payload else { panic!("expected gauge") };
+        assert_eq!(
+            value.to_bits(), bits,
+            "bit pattern {bits:016x} did not round-trip exactly (got {:016x})",
+            value.to_bits()
+        );
+        // Also exercise the attribute-scalar path with the same bit pattern.
+        let mut e2 = event(2, 0, Payload::Log { body: "b".into() });
+        e2.attributes.push(Attribute { key: "f".into(), value: Scalar::F64(f64::from_bits(bits)) });
+        let encoded2 = disk::encode_events(&[e2]).unwrap();
+        let decoded2 = disk::decode_events(&encoded2).unwrap();
+        let Scalar::F64(attr_value) = decoded2[0].attributes[0].value else { panic!("expected f64 attribute") };
+        assert_eq!(attr_value.to_bits(), bits);
+    }
+}
+
+// === F) Hex-encoding boundary rejection =====================================
+
+#[test]
+fn float_hex_rejects_wrong_length_and_case_and_non_hex() {
+    let source = disk::encode_events(&[event(1, 0, Payload::Gauge {
+        name: "n".into(),
+        value: 1.0,
+        unit: "u".into(),
+    })]).unwrap();
+    let original: serde_json::Value = serde_json::from_slice(&source).unwrap();
+    let bad_values = [
+        "3ff000000000000",   // 15 chars, too short
+        "3ff00000000000000", // 17 chars, too long
+        "3FF0000000000000",  // uppercase
+        "3Ff0000000000000",  // mixed case
+        "3ff000000000000g",  // non-hex char
+        "",                  // empty
+        " 3ff0000000000000", // leading space
+    ];
+    for bad in bad_values {
+        let mut value = original.clone();
+        value["events"][0]["payload"]["value_bits"] = serde_json::json!(bad);
+        let bytes = serde_json::to_vec(&value).unwrap();
+        assert!(
+            disk::decode_events(&bytes).is_err(),
+            "accepted malformed float hex {bad:?}"
+        );
+    }
+}
+
+// === H) rebuild_manifest fails closed on same-length, wrong-content blocks =
+
+#[test]
+fn rebuild_manifest_rejects_same_length_wrong_content_block() {
+    let scratch = Scratch::new();
+    let dir = scratch.0.join("snapshot");
+    let rows: Vec<Event> = (0..8).map(|i| log(i, i as i64, "x")).collect();
+    let publication = disk::publish(rows, block_rows(), 9301, &dir).unwrap();
+
+    // Corrupt block-0's content (change one event id) while keeping the
+    // SAME row COUNT, so a length-only check would not catch it; only the
+    // full recomputed-anchor-vs-expected-anchor comparison can.
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&fs::read(dir.join("block-0.json")).unwrap()).unwrap();
+    value["events"][0]["id"] = serde_json::json!(999999u64);
+    fs::write(dir.join("block-0.json"), serde_json::to_vec(&value).unwrap()).unwrap();
+
+    // Force rebuild by removing the (still-valid otherwise) manifest.
+    fs::remove_file(dir.join("manifest.json")).unwrap();
+
+    let result = disk::rebuild_manifest(&dir, &publication);
+    assert!(
+        result.is_err(),
+        "rebuild_manifest must fail closed when a raw block has the correct \
+         row count but content that does not match the original independent \
+         anchor -- got {result:?}"
+    );
+    assert!(
+        !dir.join("manifest.rebuilt.json").exists(),
+        "a failed rebuild must not leave a manifest.rebuilt.json behind"
+    );
+}
+
+#[test]
+fn rebuild_manifest_accepts_genuinely_matching_blocks_after_manifest_loss() {
+    let scratch = Scratch::new();
+    let dir = scratch.0.join("snapshot");
+    let rows: Vec<Event> = (0..8).map(|i| log(i, i as i64, "x")).collect();
+    let publication = disk::publish(rows, block_rows(), 9302, &dir).unwrap();
+    fs::remove_file(dir.join("manifest.json")).unwrap();
+    let rebuilt_path = disk::rebuild_manifest(&dir, &publication).unwrap();
+    assert_eq!(rebuilt_path, dir.join("manifest.rebuilt.json"));
+    let opened = DiskSnapshot::open(&dir, publication.clone()).unwrap();
+    let b = binding(publication.anchor.clone(), q_all());
+    let n = publication.anchor.block_count;
+    assert_eq!(opened.query(&b, &vec![true; n]).unwrap().page.rows.len(), 8);
+}

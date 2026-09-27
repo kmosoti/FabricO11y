@@ -1,0 +1,161 @@
+use std::num::NonZeroUsize;
+use fabric_o11y::{Event, EventId, EventTime, ObservedTime, Payload, ResourceId, SourceId, TenantId};
+use storage_probe::{Query, coverage::{CoverageStatus, Disposition, SealedSnapshot}, resume::{self, Accumulator, Binding, MatchedRow, Page, Residual, ResumeError}};
+
+fn ev(id: u64, body: &str) -> Event {
+    Event { id: EventId(id), tenant: TenantId(4), source: SourceId(5), resource: ResourceId(6),
+        event_time: EventTime(id as i64), observed_time: ObservedTime(id as i64), attributes: vec![],
+        payload: Payload::Log { body: body.into() } }
+}
+fn snap(rows: Vec<Event>, id: u64, block_size: usize) -> SealedSnapshot {
+    SealedSnapshot::new(rows, NonZeroUsize::new(block_size).unwrap(), id, None).unwrap()
+}
+fn q(token: Option<&str>) -> Query { Query { start_ns: i64::MIN, end_ns: i64::MAX, tenant: None, token: token.map(str::to_owned) } }
+fn bind(s: &SealedSnapshot, query: Query) -> Binding { Binding { anchor: s.anchor().clone(), query, tokenizer_version: 1, order_version: 1 } }
+fn assert_state(acc: &Accumulator, rows: &[MatchedRow], remaining: &[usize]) {
+    assert_eq!(acc.rows(), rows);
+    assert_eq!(acc.residual().blocks.iter().map(|c| c.ordinal).collect::<Vec<_>>(), remaining);
+    assert_eq!(acc.status(), if remaining.is_empty() { CoverageStatus::Complete } else { CoverageStatus::Incomplete { unavailable: remaining.to_vec() } });
+}
+
+#[test]
+fn atomic_conflict_with_formerly_empty_block_and_new_progress() {
+    // Block 0 is scanned and empty; block 1 is unavailable; block 2 matches.
+    let s = snap(vec![ev(0,"miss"), ev(1,"hit"), ev(2,"hit")], 314, 1);
+    let b = bind(&s, q(Some("hit")));
+    let first = resume::execute(&s, &b, &[true,false,true]).unwrap();
+    assert!(matches!(first.receipt.blocks[0].disposition, Disposition::Excluded(_)));
+    // Force a valid scanned-empty page to exercise empty result identity, while preserving proof.
+    let mut first = first;
+    first.receipt.blocks[0].disposition = Disposition::Scanned;
+    let original_rows = first.rows.clone();
+    let mut acc = Accumulator::new(b.clone(), first.clone()).unwrap();
+    assert_state(&acc, &original_rows, &[1]);
+    let mut incoming = resume::execute(&s, &b, &[true,true,true]).unwrap();
+    incoming.receipt.blocks[0].disposition = Disposition::Scanned;
+    incoming.rows.insert(0, MatchedRow { block: 0, offset: 0, digest: s.row_digest_at(0).unwrap() });
+    assert_eq!(acc.merge(incoming), Err(ResumeError::Conflict));
+    assert_state(&acc, &original_rows, &[1]);
+    // A genuine retry can still resolve the outstanding block.
+    let valid = resume::execute(&s, &b, &[false,true,false]).unwrap();
+    acc.merge(valid).unwrap();
+    assert_eq!(acc.positions(), vec![1,2]);
+    assert_state(&acc, &acc.rows(), &[]);
+}
+
+#[test]
+fn omitted_requested_blocks_do_not_erase_outstanding_work_and_duplicate_positions_survive() {
+    let s = snap(vec![ev(7,"same"),ev(7,"same"),ev(8,"other")], 315, 1);
+    let b = bind(&s,q(None));
+    let initial = resume::execute(&s,&b,&[false,false,false]).unwrap();
+    let mut acc = Accumulator::new(b.clone(),initial).unwrap();
+    assert_state(&acc,&[],&[0,1,2]);
+    let initial_residual = acc.residual();
+    let one = Residual { binding: b.clone(), blocks: vec![initial_residual.blocks[1].clone()] };
+    let page = resume::resume(&s,&one,&[true,true,true]).unwrap();
+    assert_eq!(page.rows.iter().map(|r|(r.block,r.offset)).collect::<Vec<_>>(),vec![(1,0)]);
+    acc.merge(page.clone()).unwrap();
+    acc.merge(page).unwrap();
+    assert_state(&acc,&acc.rows(),&[0,2]);
+    let all = resume::resume(&s,&acc.residual(),&[true,true,true]).unwrap();
+    acc.merge(all).unwrap();
+    assert_eq!(acc.positions(),vec![0,1,2]);
+    assert_eq!(acc.rows()[0].digest,acc.rows()[1].digest);
+    assert_state(&acc,&acc.rows(),&[]);
+}
+
+#[test]
+fn every_binding_field_and_genuine_residual_commitment_are_required() {
+    let s = snap(vec![ev(0,"a"),ev(1,"b")], 316, 1);
+    let b = bind(&s,q(None));
+    let p = resume::execute(&s,&b,&[false,false]).unwrap();
+    let mut acc = Accumulator::new(b.clone(),p.clone()).unwrap();
+    let alternate = snap(vec![ev(0,"a"),ev(1,"changed")],316,1);
+    assert_ne!(s.anchor(),alternate.anchor());
+    assert_eq!(resume::execute(&alternate,&b,&[true,true]),Err(ResumeError::WrongBinding));
+    assert_eq!(resume::resume(&alternate,&acc.residual(),&[true,true]),Err(ResumeError::WrongBinding));
+    for mutation in 0..6 {
+        let mut bad = p.clone();
+        match mutation { 0=>bad.binding.query.token=Some("x".into()), 1=>bad.binding.anchor.root[0]^=1,
+            2=>bad.binding.anchor.row_count+=1, 3=>bad.binding.anchor.block_count+=1,
+            4=>bad.binding.tokenizer_version+=1, _=>bad.binding.order_version+=1 }
+        assert_eq!(acc.merge(bad),Err(ResumeError::WrongBinding),"mutation {mutation}");
+        assert_state(&acc,&[],&[0,1]);
+    }
+    let mut bad = acc.residual(); bad.blocks[0].summary_digest[0]^=1;
+    assert_eq!(resume::resume(&s,&bad,&[true,true]),Err(ResumeError::InvalidResidual));
+    let mut bad = acc.residual(); bad.blocks.reverse();
+    assert_eq!(resume::resume(&s,&bad,&[true,true]),Err(ResumeError::InvalidResidual));
+    let mut bad = acc.residual(); bad.blocks.push(bad.blocks[0].clone());
+    assert_eq!(resume::resume(&s,&bad,&[true,true]),Err(ResumeError::InvalidResidual));
+    assert!(resume::execute(&s,&b,&[true]).is_err());
+    assert!(resume::resume(&s,&acc.residual(),&[true]).is_err());
+}
+
+#[test]
+fn malformed_rows_and_layout_reject_without_mutation() {
+    let s = snap(vec![ev(0,"a"),ev(1,"a")],317,2);
+    let b = bind(&s,q(None));
+    let valid = resume::execute(&s,&b,&[true]).unwrap();
+    let mut acc = Accumulator::new(b.clone(),valid.clone()).unwrap();
+    let mut bad_pages: Vec<Page> = vec![];
+    let mut p=valid.clone(); p.rows[0].offset=2; bad_pages.push(p);
+    let mut p=valid.clone(); p.rows[0].block=1; bad_pages.push(p);
+    let mut p=valid.clone(); p.rows.swap(0,1); bad_pages.push(p);
+    let mut p=valid.clone(); p.rows.push(p.rows[1].clone()); bad_pages.push(p);
+    let mut p=valid.clone(); p.receipt.blocks[0].disposition=Disposition::Unavailable; bad_pages.push(p);
+    let mut p=valid.clone(); p.receipt.blocks[0].commitment.start=1; bad_pages.push(p);
+    let mut p=valid.clone(); p.receipt.blocks[0].commitment.rows_digest[0]^=1; bad_pages.push(p);
+    let mut p=valid.clone(); p.receipt.blocks[0].proof.push([0;32]); bad_pages.push(p);
+    let mut p=valid.clone(); p.receipt.query.token=Some("x".into()); bad_pages.push(p);
+    for (i,p) in bad_pages.into_iter().enumerate() {
+        assert!(acc.merge(p).is_err(),"malformed case {i}");
+        assert_eq!(acc.rows(),valid.rows,"malformed case {i}");
+        assert_eq!(acc.status(),CoverageStatus::Complete,"malformed case {i}");
+    }
+}
+
+#[test]
+fn all_three_block_mask_pairs_commute_and_preserve_unresolved() {
+    let s = snap(vec![ev(0,"x"),ev(1,"x"),ev(2,"x")],318,1);
+    let b = bind(&s,q(None));
+    for left in 0u8..8 {
+        for right in 0u8..8 {
+            let bits = |mask: u8| [mask & 1 != 0, mask & 2 != 0, mask & 4 != 0];
+            let lp = resume::execute(&s,&b,&bits(left)).unwrap();
+            let rp = resume::execute(&s,&b,&bits(right)).unwrap();
+            let mut lr = Accumulator::new(b.clone(),lp.clone()).unwrap();
+            lr.merge(rp.clone()).unwrap();
+            let mut rl = Accumulator::new(b.clone(),rp).unwrap();
+            rl.merge(lp).unwrap();
+            let expected_positions: Vec<usize> = (0..3).filter(|i| (left | right) & (1 << i) != 0).collect();
+            let expected_outstanding: Vec<usize> = (0..3).filter(|i| (left | right) & (1 << i) == 0).collect();
+            assert_eq!(lr.positions(),expected_positions,"masks {left:03b}/{right:03b}");
+            assert_eq!(rl.positions(),expected_positions,"reverse masks {left:03b}/{right:03b}");
+            assert_eq!(lr.rows(),rl.rows());
+            assert_eq!(lr.residual(),rl.residual());
+            assert_state(&lr,&lr.rows(),&expected_outstanding);
+        }
+    }
+}
+
+#[test]
+fn safe_summary_exclusion_closes_unavailable_block_and_empty_snapshot_closes() {
+    let s = snap(vec![ev(0,"needle"),ev(1,"hay")],319,1);
+    let b = bind(&s,q(Some("needle")));
+    let page = resume::execute(&s,&b,&[false,false]).unwrap();
+    assert!(matches!(page.receipt.blocks[0].disposition,Disposition::Unavailable));
+    assert!(matches!(page.receipt.blocks[1].disposition,Disposition::Excluded(_)));
+    let mut acc = Accumulator::new(b.clone(),page).unwrap();
+    assert_state(&acc,&[],&[0]);
+    let retry = resume::resume(&s,&acc.residual(),&[true,false]).unwrap();
+    acc.merge(retry).unwrap();
+    assert_eq!(acc.positions(),vec![0]);
+    assert_state(&acc,&acc.rows(),&[]);
+
+    let empty = snap(vec![],320,2);
+    let empty_binding = bind(&empty,q(None));
+    let page = resume::execute(&empty,&empty_binding,&[]).unwrap();
+    let acc = Accumulator::new(empty_binding,page).unwrap();
+    assert_state(&acc,&[],&[]);
+}

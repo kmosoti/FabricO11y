@@ -1,0 +1,22 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--release",
+    "--offline",
+    "--locked",
+    "--manifest-path",
+    "tools/storage-probe/Cargo.toml",
+    "--test",
+    "prototype_collect",
+    "--",
+    "--nocapture"
+  ],
+  "cwd": "/tmp/fabric-cli-b",
+  "exit": 101,
+  "sha256": {
+    "tools/storage-probe/tests/prototype_collect.rs": "ff8f65790d601243fb4fcb42cda01b4495ee5b11e418f89a5f3bf6922992a325",
+    "tools/storage-probe/COLLECT_API.md": "666041bc485a415b43c38ceac94f7a5a5365c0b862b6d1c025190f0e0d201283"
+  },
+  "state": "Before adapt-otlp command implementation"
+}

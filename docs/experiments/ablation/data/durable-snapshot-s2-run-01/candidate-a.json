@@ -1,0 +1,60 @@
+{
+  "candidate": "fabric-disk-a",
+  "worktree": "/tmp/fabric-disk-a",
+  "scope": "S2 disk persistence candidate; source files only; no commit",
+  "source_sha256": {
+    "tools/storage-probe/src/disk.rs": "be437b92256fc260cb2000afd80ef77b2fdc7164a2585286b739af4c7d2f2e65",
+    "tools/storage-probe/src/lib.rs": "999dde45e7e3dad1aff53c35179e8c18e7e6e2edaf96dc4590f8ab7520196183",
+    "tools/storage-probe/src/coverage.rs": "c0cbcd788c93ba18a89a4e168a6a0d5ff883e254a96ef79107a0d83ef08b4ba9",
+    "tools/storage-probe/src/resume.rs": "9ec6cb57ab5fc77d2724b9c417fb4aa03799461ae17bd089a43ffaafe0bdbb83"
+  },
+  "candidate_source_files": [
+    "tools/storage-probe/src/disk.rs",
+    "tools/storage-probe/src/lib.rs",
+    "tools/storage-probe/src/coverage.rs",
+    "tools/storage-probe/src/resume.rs"
+  ],
+  "checks": [
+    {
+      "command": "cargo check --offline --locked --manifest-path tools/storage-probe/Cargo.toml",
+      "exit_code": 0,
+      "output": "Checking storage-probe v0.1.0 (/tmp/fabric-disk-a/tools/storage-probe)\nFinished `dev` profile [unoptimized + debuginfo] target(s) in 0.54s"
+    },
+    {
+      "command": "cargo fmt --manifest-path tools/storage-probe/Cargo.toml -- --check",
+      "exit_code": 0,
+      "output": "(no output)"
+    },
+    {
+      "command": "cargo test --release --offline --locked --manifest-path tools/storage-probe/Cargo.toml --test disk_contract --test disk_restart --test resume_contract -- --nocapture",
+      "exit_code": 0,
+      "raw_log_path": "/tmp/fabric-disk-a-oracle-final.log",
+      "raw_log": "   Compiling storage-probe v0.1.0 (/tmp/fabric-disk-a/tools/storage-probe)\n    Finished `release` profile [optimized] target(s) in 7.93s\n     Running tests/disk_contract.rs (tools/storage-probe/target/release/deps/disk_contract-6c4f75f6113bac54)\n\nrunning 11 tests\ntest codec_rejects_wrong_event_scalar_and_payload_shapes ... ok\ntest event_codec_preserves_every_field_and_float_bits ... ok\ntest binding_availability_and_residual_fail_before_raw_reads ... ok\ntest exclusions_and_false_availability_open_no_raw_file ... ok\ntest trusted_publication_file_rejects_wrong_version_and_shape ... ok\ntest rebuild_refuses_missing_or_corrupt_rows_and_unpublished_stages ... ok\ntest manifest_tampering_wrong_root_and_rebuild_preserve_evidence ... ok\ntest missing_corrupt_and_cold_raw_keep_exact_outstanding_work ... ok\ntest well_formed_but_changed_raw_rows_are_unavailable ... ok\ntest publish_reopen_and_query_match_independent_oracle ... ok\ntest codec_rejects_malformed_envelopes_and_bounded_files ... ok\n\ntest result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.29s\n\n     Running tests/disk_restart.rs (tools/storage-probe/target/release/deps/disk_restart-9806882313aba08c)\n\nrunning 6 tests\ntest subprocess_publish_worker ... ok\ntest subprocess_restart_worker ... ok\ntest checkpoint_rejects_wrong_digest_binding_history_and_tampering ... ok\n\nrunning 1 test\n\nrunning 1 test\n\nrunning 1 test\ntest subprocess_publish_worker ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s\n\ntest checkpoint_round_trip_replays_partial_history_and_resumes ... ok\ntest subprocess_restart_worker ... ok\n\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s\n\ntest two_subprocesses_cannot_publish_or_replace_one_final_name ... ok\ntest checkpoint_survives_a_real_process_restart ... ok\n\ntest result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n     Running tests/resume_contract.rs (tools/storage-probe/target/release/deps/resume_contract-857133284bb06c46)\n\nrunning 6 tests\ntest added_row_conflicts_even_when_coordinates_are_well_formed ... ok\ntest bindings_layout_and_residual_validation ... ok\ntest empty_snapshot_and_inverted_query ... ok\ntest distinct_identical_rows_and_entire_block_conflicts ... ok\ntest safe_empty_scanned_and_excluded_agree_but_faulty_summary_trust_remains_limited ... ok\ntest exact_adapters_resume_and_permanent_outstanding ... ok\n\ntest result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n",
+      "suite_results": {
+        "disk_contract": "11 passed, 0 failed",
+        "disk_restart": "6 passed, 0 failed",
+        "resume_contract": "6 passed, 0 failed"
+      }
+    }
+  ],
+  "limits": [
+    "The separately running resume_e3 corpus was intentionally not run.",
+    "The test evidence covers ordinary process restart and userspace bytes, not physical power loss or device-level I/O."
+  ],
+  "worktree_status": [
+    " M tools/storage-probe/Cargo.lock",
+    " M tools/storage-probe/Cargo.toml",
+    " M tools/storage-probe/src/coverage.rs",
+    " M tools/storage-probe/src/lib.rs",
+    "?? SCAFFOLD.md",
+    "?? docs/experiments/ablation/durable-snapshot-s2-protocol.md",
+    "?? tools/storage-probe/DISK_API.md",
+    "?? tools/storage-probe/RESUME_API.md",
+    "?? tools/storage-probe/src/disk.rs",
+    "?? tools/storage-probe/src/resume.rs",
+    "?? tools/storage-probe/tests/disk_contract.rs",
+    "?? tools/storage-probe/tests/disk_restart.rs",
+    "?? tools/storage-probe/tests/disk_support/",
+    "?? tools/storage-probe/tests/resume_contract.rs"
+  ]
+}

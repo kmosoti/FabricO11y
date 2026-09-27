@@ -1,0 +1,50 @@
+{
+  "verdict": "APPROVE",
+  "scope": "Read-only verification of counted-read repair in candidate A; original report.json and probes preserved",
+  "candidate_git_head": "a82111cc8a7354da8a9ad3a4f4e1ea1df51ab751",
+  "source_sha256": {
+    "tools/storage-probe/src/disk.rs": "098fe61d92899cef17920048d9dad3898ec94f64f082f5f30920db237b0db97c",
+    "tools/storage-probe/DISK_API.md": "fa1bf53cc7a6d39f1ea4993615734085acb071913418bb18190b690c7ee68485",
+    "tests/probes.rs": "f0298a0c2b08a48656a1a1c3b99167ae9b24fb2927e614137f0a4ac5ff705a5c",
+    "tests/partial_io.rs": "5b15624e64406defddf6643607517773d0c505874199b67d4314df6b75eaa378",
+    "tests/partial_metadata.rs": "61ca660cfeaac254f5810cdc167704a4de7d6db471c4ad5aaaa05c3029617e87",
+    "partial_read.c": "b1a4aada671ab24ce6bd95db860e0788ddcdd698af3fe6743fc8628d3b658d3d",
+    "partial_read_metadata.c": "145e8ec2b3a38f6e29144f8ac7f465712a4dac3cbcd37fb0e571d023cd19dc02"
+  },
+  "commands": [
+    {
+      "command": "env LD_PRELOAD=/tmp/fabric-disk-gpt-review/partial_read.so INJECT_PARTIAL_RAW=1 cargo test --offline --manifest-path /tmp/fabric-disk-gpt-review/Cargo.toml --test partial_io -- --nocapture",
+      "exit_code": 0,
+      "result": "1 passed; injected short raw read 64 bytes then EIO; raw_files=2, raw_bytes=64, unavailable=[0]"
+    },
+    {
+      "command": "gcc -shared -fPIC -o /tmp/fabric-disk-gpt-review/partial_read_metadata.so /tmp/fabric-disk-gpt-review/partial_read_metadata.c -ldl",
+      "exit_code": 0
+    },
+    {
+      "command": "env LD_PRELOAD=/tmp/fabric-disk-gpt-review/partial_read_metadata.so cargo test --offline --manifest-path /tmp/fabric-disk-gpt-review/Cargo.toml --test partial_metadata -- --nocapture",
+      "exit_code": 0,
+      "result": "1 passed; primary manifest returned 64 bytes then EIO, valid rebuilt manifest had 608 bytes; metadata_bytes=672, raw_files=0"
+    },
+    {
+      "command": "cargo test --offline --locked --manifest-path /tmp/fabric-disk-a/tools/storage-probe/Cargo.toml --test disk_contract --test disk_restart",
+      "exit_code": 0,
+      "result": "11 disk_contract and 6 disk_restart tests passed, including subprocess publication and checkpoint restart"
+    },
+    {
+      "command": "cargo test --offline --manifest-path /tmp/fabric-disk-gpt-review/Cargo.toml --test probes -- --skip rebuild_uses_valid_cold_copy_after_shape_correct_corrupt_hot",
+      "exit_code": 0,
+      "result": "4 passed, 1 filtered; filtered case is the previously documented fail-closed rebuild recoverability limitation"
+    },
+    {
+      "command": "git -C /tmp/fabric-disk-a diff --check",
+      "exit_code": 0
+    }
+  ],
+  "finding_status": "The original confirmed raw-byte accounting failure is fixed. The parallel metadata fault probe shows partial primary-manifest bytes are also counted on successful fallback. No new repair-specific failure found.",
+  "limits": [
+    "Injected short reads and EIO are userspace fault probes, not power-loss evidence.",
+    "The shape-correct corrupt hot block plus valid cold copy remains a fail-closed rebuild recoverability limitation, not a proven registered contract violation.",
+    "No candidate or main repository source files were edited. No E3 full corpus was run."
+  ]
+}

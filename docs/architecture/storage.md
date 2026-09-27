@@ -2,6 +2,8 @@
 
 ## Purpose and boundary
 
+The separate [S1 storage/query experiment](../experiments/ablation/storage-query-s1-run-01.md) uses this unchanged log for a verified replay-to-memory baseline. Its optional summaries are private in-memory structures. A later [research prototype](research-prototype.md) replays FOL2 into immutable JSON blocks with an external publication anchor and persistent checkpoints. The [layout probe](../../tools/layout-probe/README.md) implements a separate hybrid Parquet comparison; neither changes this log or selects a format winner.
+
 Stage 5 adds a single-file [event log](../../src/log.rs) inside the Rust library. The optional `write` command drains the existing [buffer](../../src/buffer.rs) into this log; `replay` opens the file again and streams decoded events. The default command still prints batches without storing them. There is no network receiver or external ACK protocol.
 
 `EventLog::append(&Event)` borrows the caller's event. It writes an event frame and syncs it, then writes a commit marker and syncs again. It returns `Ok(())` only after both syncs succeed. That return is the **local commit boundary** under the filesystem assumptions below. An error leaves the value with the caller, but a failed storage sync makes the file's durability uncertain. A later open cannot turn visible bytes into proof of durability; recovery after a storage I/O error needs an independent trusted copy on healthy storage.
@@ -68,3 +70,21 @@ The payload limit is 16 MiB. The encoder covers every current `Scalar` and `Payl
 - Each append performs two file syncs. The [Stage 6 baseline](../experiments/benchmarks/local-log-stage6.md) measures one fixed local workload, but no comparative result selects this format as a throughput choice. A storage writeback error may cast doubt on earlier data too; the model assumes successful syncs establish durable copies and does not model failing hardware. No byte limit is imposed on the in-memory buffer, and replay output is still Debug text rather than a query API.
 
 The [Stage 4 ownership model](../../formal/delivery/README.md) calls the successful append a `Commit`. `write` prints `committed event N` only after that point; this is a local acknowledgement observation, not a network ACK. The model's upstream copy corresponds here to a caller-owned `Event` before success and, for the CLI demonstration, to a reproducible seed/count source on restart. The general sender-retention and stable-global-identity assumptions remain open. See the [implementation checks](../experiments/formal/delivery-rust-stage5.md), [delivery view](delivery.md), and [learning path](../LEARNING_PATH.md).
+
+## Current cost investigation
+
+The optional `append-attribution` feature adds wall-clock samples around encoding,
+data writes, each sync and marker write. It clears the sample before every attempt
+and exposes one only after success; default builds contain no phase timers. It does
+not change the FOL2 bytes, sync order or error/ownership contract. The
+[S0 result](../experiments/benchmarks/append-attribution-s0.md) records exact replay,
+paired controls and the material perturbation limit.
+
+The [E2R group-seal model](../experiments/ablation/seal-e2-run-01.md) is separate
+Python research tooling. It tests sector subsets, corruption and an external
+failed-I/O witness; it is not an application durability change. Its cost comparison
+and any physical storage validation are separate gates.
+
+## Research snapshot boundary
+
+The [S2 disk module](../../tools/storage-probe/DISK_API.md) publishes fresh JSON blocks and authenticated metadata, then retains a `Publication` outside the snapshot. An independently retained publication is the query root; metadata loss can be repaired only from raw copies that reproduce that same root. Missing or corrupt candidate rows fail closed as incomplete. A valid local cold copy may substitute for a hot copy. This is separate from FOL2's append commit and does not prove device power-loss durability. The [S2 run](../experiments/ablation/durable-snapshot-s2-run-01.md) checked restart and injected read failures; [registered layout and sidecar costs](../experiments/benchmarks/research-costs-run-01.md) are measured separately.

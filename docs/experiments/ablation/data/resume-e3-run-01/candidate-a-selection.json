@@ -1,0 +1,18 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--release",
+    "--offline",
+    "--locked",
+    "--manifest-path",
+    "tools/storage-probe/Cargo.toml",
+    "--test",
+    "resume_selection",
+    "--",
+    "--nocapture"
+  ],
+  "cwd": "/tmp/fabric-resume-a",
+  "exit_code": 0,
+  "source_sha256": "4c0b39eec33229ecbcbcc94ec0657b4e7e9214594ae70fe248d1a66b5cef0731"
+}

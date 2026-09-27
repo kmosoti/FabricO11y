@@ -1,0 +1,82 @@
+[
+  {
+    "name": "clean",
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "--offline",
+      "--locked",
+      "--manifest-path",
+      "tools/storage-probe/Cargo.toml",
+      "--test",
+      "resume_contract",
+      "--test",
+      "resume_selection"
+    ],
+    "cwd": "/tmp/fabric-resume-mutations",
+    "exit_code": 0,
+    "expected_gate": true,
+    "source_sha256": "6621d9c44dde31cce5c4f85bc01cb7265c55c7dd0fe6768a4590054bf5f509a0"
+  },
+  {
+    "name": "omit-expected-binding",
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "--offline",
+      "--locked",
+      "--manifest-path",
+      "tools/storage-probe/Cargo.toml",
+      "--test",
+      "resume_contract",
+      "--test",
+      "resume_selection"
+    ],
+    "cwd": "/tmp/fabric-resume-mutations",
+    "exit_code": 101,
+    "expected_gate": true,
+    "source_sha256": "4dee2f9b3e5a8fe386485c53759f7912096ad4d00d6cecb4c90dbee05efb644d"
+  },
+  {
+    "name": "ignore-conflict",
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "--offline",
+      "--locked",
+      "--manifest-path",
+      "tools/storage-probe/Cargo.toml",
+      "--test",
+      "resume_contract",
+      "--test",
+      "resume_selection"
+    ],
+    "cwd": "/tmp/fabric-resume-mutations",
+    "exit_code": 101,
+    "expected_gate": true,
+    "source_sha256": "db721b6fa09abac3575326b24a1b5164659c01b8b932fbf6fc7143c944ae04f9"
+  },
+  {
+    "name": "deduplicate-digest",
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "--offline",
+      "--locked",
+      "--manifest-path",
+      "tools/storage-probe/Cargo.toml",
+      "--test",
+      "resume_contract",
+      "--test",
+      "resume_selection"
+    ],
+    "cwd": "/tmp/fabric-resume-mutations",
+    "exit_code": 101,
+    "expected_gate": true,
+    "source_sha256": "95e3dbf7e343e7f7058dc20eac0912ef65a277ff23c0c4851594bb454400accb"
+  }
+]

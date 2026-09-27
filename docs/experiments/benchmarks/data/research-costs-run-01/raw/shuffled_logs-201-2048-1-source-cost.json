@@ -1,0 +1,431 @@
+{
+  "schema": 1,
+  "benchmark": "sidecar",
+  "role": "source",
+  "mode": "formal",
+  "shape": "shuffled_logs",
+  "seed": 201,
+  "trial": 1,
+  "query_count": 0,
+  "source_sha256": "ddc9430cf336ff9b14af7a7b041e52fa658f19f7e26fb62810b8a5a3eac54e93",
+  "anchor_root": null,
+  "hint_bytes": 49118,
+  "source_bytes": 823737,
+  "phase": {
+    "wall_ns": 11415498,
+    "cpu_ns": 11417600
+  },
+  "calibration": [
+    {
+      "wall_ns": 200,
+      "cpu_ns": 7300
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 500
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 500
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 500
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 300
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 0,
+      "cpu_ns": 400
+    },
+    {
+      "wall_ns": 100,
+      "cpu_ns": 300
+    }
+  ],
+  "rss_kib": 4564,
+  "process_cpu_ns": 11694100,
+  "kernel_io_delta": {
+    "rchar": 825317,
+    "wchar": 49118,
+    "read_bytes": 0,
+    "write_bytes": 49152
+  },
+  "checks_ok": true,
+  "fallback": null,
+  "validation_boundary": "Source phase reads and decodes retained source, builds summaries, serializes and writes hints. Server phase reads and decodes source and hints, validates hints against every raw block, and builds the immutable root. Independent 128-query equality and root comparison run afterward."
+}

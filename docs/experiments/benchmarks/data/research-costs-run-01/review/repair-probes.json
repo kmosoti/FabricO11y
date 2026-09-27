@@ -1,0 +1,112 @@
+[
+  {
+    "probe": "derived p50",
+    "input": "p50_projected_ns=100000000",
+    "outcome": "rejected",
+    "message": "derived p50_projected_ns differs from raw samples"
+  },
+  {
+    "probe": "duplicate sample",
+    "input": "samples[127]=samples[0]",
+    "outcome": "rejected",
+    "message": "duplicate or invalid sample mode/index"
+  },
+  {
+    "probe": "negative wall",
+    "input": "samples[0].timing.wall_ns=-999",
+    "outcome": "rejected",
+    "message": "invalid full[0].wall_ns: -999"
+  },
+  {
+    "probe": "wrong match count",
+    "input": "samples[0].matches+=1",
+    "outcome": "rejected",
+    "message": "sample matches exceed events"
+  },
+  {
+    "probe": "bad family",
+    "input": "samples[0].family=7",
+    "outcome": "rejected",
+    "message": "invalid sample index/family"
+  },
+  {
+    "probe": "missing mode",
+    "input": "samples[0].mode=projected",
+    "outcome": "rejected",
+    "message": "duplicate or invalid sample mode/index"
+  },
+  {
+    "probe": "untouched persisted artifacts",
+    "outcome": "accepted"
+  },
+  {
+    "probe": "same-length mutation table-anchor.json",
+    "outcome": "rejected",
+    "message": "Expecting ',' delimiter: line 1 column 155 (char 154)"
+  },
+  {
+    "probe": "same-length mutation postings-digest.txt",
+    "outcome": "rejected",
+    "message": "index digest mismatch"
+  },
+  {
+    "probe": "anchor file sync",
+    "input": {
+      "FAIL_FSYNC_AT": 4,
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/layout-probe/target/release/layout-cost",
+        "smoke",
+        "mixed",
+        "201",
+        "2048",
+        "204",
+        "zstd64",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/projects/fabric_o11y/target/cost-review/repair-fsync-4"
+      ]
+    },
+    "exit_code": 1,
+    "stderr": "layout-cost: Input/output error (os error 5)",
+    "result_exists": false
+  },
+  {
+    "probe": "index digest file sync",
+    "input": {
+      "FAIL_FSYNC_AT": 7,
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/layout-probe/target/release/layout-cost",
+        "smoke",
+        "mixed",
+        "201",
+        "2048",
+        "207",
+        "zstd64",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/projects/fabric_o11y/target/cost-review/repair-fsync-7"
+      ]
+    },
+    "exit_code": 1,
+    "stderr": "layout-cost: Input/output error (os error 5)",
+    "result_exists": false
+  },
+  {
+    "probe": "index parent sync",
+    "input": {
+      "FAIL_FSYNC_AT": 8,
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/layout-probe/target/release/layout-cost",
+        "smoke",
+        "mixed",
+        "201",
+        "2048",
+        "208",
+        "zstd64",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/projects/fabric_o11y/target/cost-review/repair-fsync-8"
+      ]
+    },
+    "exit_code": 1,
+    "stderr": "layout-cost: Input/output error (os error 5)",
+    "result_exists": false
+  }
+]

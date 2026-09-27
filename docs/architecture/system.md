@@ -19,6 +19,8 @@ See the [rendered system diagram](../README.md) and its [canonical source](../di
 
 ## Execution and ownership
 
+A separate [storage/query probe](../../tools/storage-probe/README.md) depends on the library. It replays experiment-owned logs into immutable snapshots and compares exact scans with optional summaries. It is not called by the application CLI, and its in-memory query boundary is shown in the [S1 research projection](../experiments/ablation/storage-query-s1-run-01.md). The [query research view](query.md) describes the separate coverage experiment and its trusted-builder/anchor boundary. The [storage research agenda](../experiments/ablation/observability-storage-research.md) links that original cell to the implemented [local research lifecycle](research-prototype.md) and the separately measured columnar comparison.
+
 1. `main` accepts no arguments (seed `42`, count `3`), a `u64` seed and `u32` count, `write <PATH> <SEED> <EVENTS>`, or `replay <PATH>`. Invalid argument shape or numeric values produce a usage message and status `2`; log I/O or workload-prefix mismatches return failure status `1`.
 2. `main` iterates `EventGenerator`, which creates one owned synthetic `Gauge` event per call to `next`.
 3. `main` calls `EventBuffer::try_push`. A successful call transfers ownership to the buffer. A full buffer returns the same event to `main` and keeps existing queue contents unchanged.
@@ -46,4 +48,4 @@ The [blueprint](../architecture.md) sketches mostly `u128` IDs, schema and signa
 
 ## Open questions
 
-The next increment in the [learning path](../LEARNING_PATH.md) is to separate encoding, writes, and syncs inside `EventLog::append` after the first [local-log baseline](../experiments/benchmarks/local-log-stage6.md). Workload representativeness, identities across multiple generators, a general retry/deduplication rule, a byte-level memory budget, and performance targets remain open. The [generator library ablation](../experiments/benchmarks/generator-library-stage3.md) is an exploratory measurement, not a performance recommendation. A deployment view becomes useful when more than one local process exists.
+The [S0 attribution](../experiments/benchmarks/append-attribution-s0.md) now separates encoding, writes and syncs inside `EventLog::append`, with an 11.017% perturbation flag. The [learning path](../LEARNING_PATH.md) keeps the completed local research prototype separate from future application services. Workload representativeness, identities across multiple generators, a general retry/deduplication rule, a byte-level memory budget, and performance targets remain open. The [generator library ablation](../experiments/benchmarks/generator-library-stage3.md) is an exploratory measurement, not a performance recommendation. A deployment view becomes useful when processes become independently deployed services; the research CLI currently runs sequential local processes.

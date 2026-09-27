@@ -1,0 +1,12 @@
+{
+  "utc": "2026-09-27T12:37:21.627725+00:00",
+  "status": "before implementation",
+  "preimplementation_compile_exit": 101,
+  "rustfmt_exit": 0,
+  "files": {
+    "tools/layout-probe/API.md": "2166f0674390991f9ba3dc4cd6396f3fc1d2d1b9d0c900de775f854b0cbec56f",
+    "tools/layout-probe/tests/layout_contract.rs": "e027a6a782a76ecbbae058d6e7385e0d05839d3d46b3dde1d9286711be880563",
+    "tools/layout-probe/tests/OPEN_QUESTIONS.md": "f0e0472176925f049713a6874a3a92dc359e31e4f349cddc3fad27f43fb449a0",
+    "docs/experiments/benchmarks/columnar-selective-s3-s4-protocol.md": "8d2047c9459c73f82511aeaecf9e62887379c1f1b4a362f212f9248ddca26cb1"
+  }
+}

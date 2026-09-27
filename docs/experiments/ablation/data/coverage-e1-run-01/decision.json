@@ -1,0 +1,9 @@
+{
+  "selected": "b",
+  "candidates": 2,
+  "oracle_passes": 2,
+  "observed_pass_fraction": "2/2 (not a population reliability estimate)",
+  "selection_utc": "2026-09-27T10:34:20.987843+00:00",
+  "reason": "Both pass frozen oracle and independent review probes. B validates generated and supplied summaries in one path; A validates supplied summaries but relies on summarize for generated summaries. B also computes tree root and paths from the same levels. No performance selection.",
+  "source_sha256": "e53a10a3fd8c25bb4e6f9d19bcb31228709cbacee694fdefb5615f81a3b03397"
+}

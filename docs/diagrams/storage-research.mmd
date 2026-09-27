@@ -1,0 +1,13 @@
+flowchart LR
+    Source[Deterministic research events] -->|append with existing contract| Log[(FOL2 local log)]
+    Log -->|reopen and verify every row| Rows[Owned immutable snapshot]
+    Rows -->|derive| Summaries[Optional time and Bloom summaries]
+    Query[Fixed query corpus] --> Scan[Full scan]
+    Query --> Prune[Conservative block selection]
+    Rows --> Scan
+    Summaries -->|absent means scan| Prune
+    Prune --> Exact[Exact predicate on candidate rows]
+    Rows --> Exact
+    Scan --> Compare[Ordered position equality]
+    Exact --> Compare
+    Compare --> Evidence[Timing and logical-work evidence]

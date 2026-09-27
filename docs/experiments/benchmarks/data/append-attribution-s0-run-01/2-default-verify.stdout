@@ -1,0 +1,3 @@
+phase,event_index,elapsed_ns,events,full_rejections,file_bytes,peak_rss_kib,alloc_calls,alloc_requested_bytes
+open,,8512700,2000,,296000,,,
+replay,,8069101,2000,,296000,,,

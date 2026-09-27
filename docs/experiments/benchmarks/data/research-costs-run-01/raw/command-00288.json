@@ -1,0 +1,21 @@
+{
+  "command": [
+    "/home/kmosoti/projects/fabric_o11y/tools/storage-probe/target/release/sidecar-cost",
+    "server",
+    "formal",
+    "shuffled_logs",
+    "201",
+    "4",
+    "/home/kmosoti/projects/fabric_o11y/target/research-costs/run-01/shuffled_logs-201-2048-source.json",
+    "/home/kmosoti/projects/fabric_o11y/target/research-costs/run-01/shuffled_logs-201-2048-4-corrupt-hint.json",
+    "/home/kmosoti/projects/fabric_o11y/target/research-costs/run-01/shuffled_logs-201-2048-4-sidecar-corrupt.json",
+    "corrupt"
+  ],
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": "",
+  "whole_process_user_ns": 334518000,
+  "whole_process_system_ns": 3982000,
+  "whole_process_cpu_ns": 338500000,
+  "whole_process_max_rss_kib": 24600
+}

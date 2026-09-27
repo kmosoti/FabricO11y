@@ -1,0 +1,56 @@
+{
+  "subject": "/tmp/fabric-layout-a/tools/layout-probe/src/lib.rs",
+  "verdict": "APPROVE",
+  "findings": [],
+  "scope": "API.md and registered S3/S4 protocol; no storage resume_e3 corpus",
+  "source_sha256": {
+    "lib_rs": "0ec0c5be928706d182f9c6d09381fe16b3153966713997db0cba118ffb69a525",
+    "api_md": "2166f0674390991f9ba3dc4cd6396f3fc1d2d1b9d0c900de775f854b0cbec56f",
+    "layout_contract_rs": "e027a6a782a76ecbbae058d6e7385e0d05839d3d46b3dde1d9286711be880563",
+    "layout_review_rs": "d2eaade6312723f96113eb9d945ad1e5bde1e8257345aea8b32c089b2e0bfcac",
+    "adversarial_rs": "8a442f75a1592ab079cd978f857529d22f3773dae415f9f65c3e8d5511d9b062"
+  },
+  "checks": [
+    {
+      "command": "cargo test --offline --test layout_contract --test layout_review --test adversarial > /tmp/fabric-layout-review/baseline.log 2>&1",
+      "cwd": "/tmp/fabric-layout-review/work/tools/layout-probe",
+      "exit_code": 0,
+      "result": "10 tests passed: frozen 6, supplemental 2, independent 2",
+      "log": "/tmp/fabric-layout-review/baseline.log"
+    },
+    {
+      "command": "cargo test --offline --test layout_contract table_authentication_rejects_wrong_anchor_and_damaged_files_everywhere > /tmp/fabric-layout-review/mutation_hash.log 2>&1",
+      "cwd": "/tmp/fabric-layout-review/work/tools/layout-probe",
+      "mutation": "In scratch only, changed sha(bytes) != expected.sha256 to false && sha(bytes) != expected.sha256",
+      "exit_code": 101,
+      "result": "Expected failure: wrong-hash input reached decode without rejection",
+      "log": "/tmp/fabric-layout-review/mutation_hash.log"
+    },
+    {
+      "command": "cargo test --offline --test layout_review malformed_postings_with_matching_hash_still_fall_back > /tmp/fabric-layout-review/mutation_fallback.log 2>&1",
+      "cwd": "/tmp/fabric-layout-review/work/tools/layout-probe",
+      "mutation": "In scratch only, returned empty hits when optional postings failed parsing",
+      "exit_code": 101,
+      "result": "Expected failure: malformed index returned [] while scalar result had positions [0,2,4,6,8]",
+      "log": "/tmp/fabric-layout-review/mutation_fallback.log"
+    }
+  ],
+  "independent_probes": [
+    {
+      "name": "float_bits_survive_without_digest_as_proxy",
+      "input": "Seven IEEE-754 patterns including signaling and quiet NaNs with signs, positive and negative zero, infinities; each in Gauge value and duplicate-key F64 attributes; Plain and Zstd, row group 2",
+      "observation": "Every decoded variant, duplicate key, and raw f64 bit matched directly"
+    },
+    {
+      "name": "query_matrix_including_empty_and_unregistered_token",
+      "input": "55 physical rows including duplicate ID, Gauge with token in name, Unicode whitespace, case variants, empty body; 7 starts x 6 ends x 5 tenants x 6 tokens x 2 codecs = 2520 queries",
+      "observation": "Full, projected, and postings paths each matched the independent scalar oracle for all 2520 queries, including reversed time ranges and registered/unregistered tokens"
+    }
+  ],
+  "limitations": [
+    "The anchor and postings digest are assumed independently retained from trusted builders, as API.md specifies. A caller that remints a hash for malicious replacement bytes is outside this verdict.",
+    "No explicit byte or row resource cap is contracted; large-input denial of service was not evaluated.",
+    "The benchmark's performance gates and durable publication measurements are outside this source review."
+  ],
+  "reviewed_source_unchanged": true
+}

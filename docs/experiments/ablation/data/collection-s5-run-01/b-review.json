@@ -1,0 +1,19 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--release",
+    "--offline",
+    "--locked",
+    "--manifest-path",
+    "tools/storage-probe/Cargo.toml",
+    "--test",
+    "collect_review",
+    "--",
+    "--nocapture"
+  ],
+  "cwd": "/tmp/fabric-collect-b",
+  "exit": 0,
+  "seconds": 0.6980352401733398,
+  "test_sha256": "ab789393825e28c42db41b139865c693a3ddcbb6bfa846829288b678df8b516a"
+}

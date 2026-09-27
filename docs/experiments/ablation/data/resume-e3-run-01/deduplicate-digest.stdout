@@ -1,0 +1,25 @@
+
+running 6 tests
+test added_row_conflicts_even_when_coordinates_are_well_formed ... ok
+test empty_snapshot_and_inverted_query ... ok
+test distinct_identical_rows_and_entire_block_conflicts ... FAILED
+test bindings_layout_and_residual_validation ... ok
+test safe_empty_scanned_and_excluded_agree_but_faulty_summary_trust_remains_limited ... ok
+test exact_adapters_resume_and_permanent_outstanding ... ok
+
+failures:
+
+---- distinct_identical_rows_and_entire_block_conflicts stdout ----
+
+thread 'distinct_identical_rows_and_entire_block_conflicts' (696114) panicked at tests/resume_contract.rs:135:5:
+assertion `left == right` failed
+  left: [MatchedRow { block: 0, offset: 0, digest: [84, 132, 161, 224, 80, 40, 50, 194, 83, 75, 112, 234, 133, 35, 72, 216, 84, 11, 118, 64, 52, 222, 165, 244, 70, 65, 184, 228, 107, 8, 32, 164] }, MatchedRow { block: 1, offset: 0, digest: [216, 77, 156, 174, 127, 53, 24, 57, 20, 124, 4, 234, 241, 175, 27, 205, 55, 102, 162, 26, 128, 52, 73, 51, 99, 230, 107, 229, 83, 10, 154, 179] }]
+ right: [MatchedRow { block: 0, offset: 0, digest: [84, 132, 161, 224, 80, 40, 50, 194, 83, 75, 112, 234, 133, 35, 72, 216, 84, 11, 118, 64, 52, 222, 165, 244, 70, 65, 184, 228, 107, 8, 32, 164] }, MatchedRow { block: 0, offset: 1, digest: [84, 132, 161, 224, 80, 40, 50, 194, 83, 75, 112, 234, 133, 35, 72, 216, 84, 11, 118, 64, 52, 222, 165, 244, 70, 65, 184, 228, 107, 8, 32, 164] }, MatchedRow { block: 1, offset: 0, digest: [216, 77, 156, 174, 127, 53, 24, 57, 20, 124, 4, 234, 241, 175, 27, 205, 55, 102, 162, 26, 128, 52, 73, 51, 99, 230, 107, 229, 83, 10, 154, 179] }]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    distinct_identical_rows_and_entire_block_conflicts
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

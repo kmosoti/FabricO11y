@@ -1,0 +1,23 @@
+{
+  "a-selection.json": "fc3fc2f9f4b52bf02d4cb9f54843e0753f8fb25d9f4167dab787b6a15c03120b",
+  "a-selection.stderr": "12b94bd1a6443677f57e45465598a76de285758223490ca92a1973095b111c8a",
+  "a-selection.stdout": "0dbfcb6adec6b34e7ff757a067126297e0d0580fb670cc734dd607b0346d40a8",
+  "b-selection.json": "d302a258e1ffc3e0372b07133d99a7e24c463d9000d96dbfe4e0278fb981e1ca",
+  "b-selection.stderr": "35217f5581a5d8bf0cde57e097da53ed7a4cec5264f7fab0cddba8f101f6211a",
+  "b-selection.stdout": "0dbfcb6adec6b34e7ff757a067126297e0d0580fb670cc734dd607b0346d40a8",
+  "candidate-a.json": "a34ea4771a59d8b8822357323687d340570ade29f7d01de23917a4b236deda86",
+  "candidate-b.json": "22c7b498768e9c3f93ab5a11d6fc52234abdc6072e2fc1ee1475fcc04270adf2",
+  "claude-review/command.json": "3125073f622d53909d68aeb94cb87c27f77bf519783b267fef018defdbd5281e",
+  "claude-review/exit.json": "81868a6e94ffc0178bf833deb1c9013d9fab4ee95ddb876a5e8ec4f1d26376d2",
+  "claude-review/probe.rs": "3c55636ab919055164be10a5f5d1ae22772837765e278f4575a36e19150133bb",
+  "claude-review/source-hashes.json": "c4d9cf6f59548b6b1420fe8b2e22e6e175b22d959310b267178edb967fad59f7",
+  "claude-review/stderr.txt": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "claude-review/stdout.json": "938f11a40e93a8dbbe9752a6dfe7ef6b270dae979a91f1f42b388e8d5dbb426b",
+  "gpt-review/adversarial.rs": "8a442f75a1592ab079cd978f857529d22f3773dae415f9f65c3e8d5511d9b062",
+  "gpt-review/baseline.log": "80342a24666580bef153f45f83278d6a3924cf37d4b0ebd630e230b1652f33d7",
+  "gpt-review/mutation_fallback.log": "1dcf27f12009d45bb2c432cb43445e6f3a5f9a01bed0ebfcb60239a2bfe1ec76",
+  "gpt-review/mutation_hash.log": "c9a27904660a0c2ff6d5c26035e457356c3c4a9f14e15e394f9c9c086c1055a9",
+  "gpt-review/original-lib.rs": "0ec0c5be928706d182f9c6d09381fe16b3153966713997db0cba118ffb69a525",
+  "gpt-review/report.json": "dfd88729ef0df62ad3e83e483c2b64d49a8850786d7d533c5b78328b29e4944b",
+  "oracle-freeze.json": "de60ef6d4c8aa09bc7604fc7d0812124a03bd45366ce88cc3141cbca404365c6"
+}

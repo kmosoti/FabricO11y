@@ -1,0 +1,251 @@
+"""Independent adversarial probe for tools/seal-probe/candidate.py (E2R).
+
+Deliberately does NOT import oracle_support.py or test_oracle.py: this is an
+independently re-derived encoder built only from CONTRACT.md's prose, used to
+cross-check the selected candidate from a second, separately-written source of
+truth. No repository files are modified. Read-only against the repo; writes
+only live under /tmp/fabric-seal-review.
+"""
+import importlib.util
+import random
+import struct
+import sys
+from hashlib import sha256
+from pathlib import Path
+
+CANDIDATE_PATH = Path("/home/kmosoti/projects/fabric_o11y/tools/seal-probe/candidate.py")
+DOMAIN = b"Fabric-E2R-seal-v1\0"
+assert DOMAIN[-1:] == b"\0" and DOMAIN[:-1] == b"Fabric-E2R-seal-v1"
+
+
+def load_candidate():
+    spec = importlib.util.spec_from_file_location("seal_candidate_probe", CANDIDATE_PATH)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+# ---- independently re-derived encoder (not copied from oracle_support.py) ----
+
+def enc_descriptor(group_id, lengths, sector):
+    body = (b"FGD1" + struct.pack("<Q", group_id) + struct.pack("<I", len(lengths))
+            + struct.pack("<6I", *(tuple(lengths) + (0,) * (6 - len(lengths)))))
+    return body + bytes(sector - len(body))
+
+
+def enc_frame(index, body, sector):
+    raw = b"FGF1" + struct.pack("<I", index) + struct.pack("<I", len(body)) + body
+    pad = (-len(raw)) % sector
+    return raw + bytes(pad)
+
+
+def enc_seal(group_id, frame_count, descriptor, frame_sectors, sector, domain=DOMAIN, corrupt_digest=False):
+    head = b"FGS1" + struct.pack("<Q", group_id) + struct.pack("<I", frame_count)
+    covered = descriptor + b"".join(frame_sectors)
+    digest = sha256(domain + head + covered).digest()
+    if corrupt_digest:
+        digest = bytes([digest[0] ^ 1]) + digest[1:]
+    body = head + digest
+    return body + bytes(sector - len(body))
+
+
+def enc_group(group_id, bodies_, sector):
+    lengths = [len(b) for b in bodies_]
+    descriptor = enc_descriptor(group_id, lengths, sector)
+    frame_sectors = [enc_frame(i, b, sector) for i, b in enumerate(bodies_)]
+    seal = enc_seal(group_id, len(bodies_), descriptor, frame_sectors, sector)
+    return descriptor + b"".join(frame_sectors) + seal
+
+
+def enc_image(groups, sector):
+    return b"".join(enc_group(gid, bodies_, sector) for gid, bodies_ in enumerate(groups))
+
+
+def rng_body(n, seed):
+    r = random.Random(seed)
+    return bytes(r.randrange(256) for _ in range(n))
+
+
+failures = []
+checks = 0
+
+
+def check(name, cond, detail=""):
+    global checks
+    checks += 1
+    if not cond:
+        failures.append((name, detail))
+
+
+# ---------------------------------------------------------------------------
+impl = load_candidate()
+
+# 1) Independent encoder must byte-match the candidate's own encoder, and the
+#    candidate must accept its cross-encoded image as fully valid.
+for sector in (512, 4096):
+    groups = (
+        (rng_body(57, 101),),
+        (rng_body(57, 101), rng_body(4096, 102), rng_body(509, 103)),
+    )
+    mine = enc_image(groups, sector)
+    theirs = impl.encode_groups(groups, sector)
+    check(f"cross_encoder_matches[{sector}]", mine == theirs,
+          f"len mine={len(mine)} theirs={len(theirs)}")
+    result = impl.recover(mine, sector)
+    check(f"cross_encoded_image_accepted[{sector}]", result == ("ok", groups, len(mine)))
+
+# 2) The exact failure mode described for the rejected candidate: a corrupted
+#    IN-RANGE descriptor length field on the in-flight (second) group must
+#    NOT be silently treated as an absent seal / dropped group. It must fail
+#    closed, preserving every byte, and must NOT return ("ok", (), 0) or any
+#    result that omits the already-ACKed first group.
+for sector in (512, 4096):
+    prior_bodies = (rng_body(57, 201),)
+    inflight_bodies = (rng_body(509, 202), rng_body(1023, 203))
+    prior = enc_group(0, prior_bodies, sector)
+    inflight = enc_group(1, inflight_bodies, sector)
+    clean = prior + inflight
+
+    # Corrupt only a body-length field (offset 16, first u32) of the in-flight
+    # descriptor to another value that is still in [57,4096] range, so a
+    # bounds-only check would not catch it; only content/digest checks can.
+    descriptor_offset = len(prior)
+    corrupted = bytearray(clean)
+    original_len = struct.unpack_from("<I", corrupted, descriptor_offset + 16)[0]
+    new_len = 4096 if original_len != 4096 else 57
+    struct.pack_into("<I", corrupted, descriptor_offset + 16, new_len)
+    corrupted = bytes(corrupted)
+
+    result = impl.recover(corrupted, sector)
+    check(f"corrupted_length_not_treated_as_absent[{sector}]",
+          result == ("error", corrupted),
+          f"got {result[0]!r}; must fail closed with all bytes preserved, "
+          f"never silently drop group 0")
+    # Explicitly rule out the described bug: the ACKed group must not vanish.
+    check(f"corrupted_length_does_not_report_zero_groups[{sector}]",
+          not (result[0] == "ok" and result[1] == tuple()),
+          f"candidate returned ok with zero groups: {result!r}")
+
+    # Also corrupt the frame-count field (offset 12) to another in-range
+    # value (still 1..6) that mismatches the actual frame layout.
+    corrupted2 = bytearray(clean)
+    original_count = struct.unpack_from("<I", corrupted2, descriptor_offset + 12)[0]
+    new_count = 1 if original_count != 1 else 2
+    struct.pack_into("<I", corrupted2, descriptor_offset + 12, new_count)
+    corrupted2 = bytes(corrupted2)
+    result2 = impl.recover(corrupted2, sector)
+    check(f"corrupted_frame_count_not_treated_as_absent[{sector}]",
+          result2 == ("error", corrupted2), f"got {result2[0]!r}")
+
+# 3) Complete-seal mismatch: seal sector has correct magic/group_id/frame_count
+#    (a "complete" seal per CONTRACT.md) but wrong digest, while its
+#    descriptor is itself missing (all-zero). This is the explicit
+#    "seal-only subset errors" case; must never be read as an absent seal.
+for sector in (512, 4096):
+    prior_bodies = (rng_body(57, 301),)
+    inflight_bodies = (rng_body(57, 302),)
+    prior = enc_group(0, prior_bodies, sector)
+    inflight_lengths = [len(b) for b in inflight_bodies]
+    descriptor = enc_descriptor(1, inflight_lengths, sector)
+    frame_sectors = [enc_frame(i, b, sector) for i, b in enumerate(inflight_bodies)]
+    seal = enc_seal(1, len(inflight_bodies), descriptor, frame_sectors, sector, corrupt_digest=True)
+    seal_only_image = prior + bytes(sector) + b"".join(bytes(len(f)) for f in frame_sectors) + seal
+    result = impl.recover(seal_only_image, sector)
+    check(f"seal_only_complete_but_wrong_digest_errors[{sector}]",
+          result == ("error", seal_only_image), f"got {result[0]!r}")
+
+# 4) Domain-separation: a seal computed with a DIFFERENT (but plausible)
+#    domain string must be rejected as a digest mismatch, not accepted.
+for sector in (512,):
+    bodies_ = (rng_body(57, 401),)
+    lengths = [len(b) for b in bodies_]
+    descriptor = enc_descriptor(0, lengths, sector)
+    frame_sectors = [enc_frame(i, b, sector) for i, b in enumerate(bodies_)]
+    wrong_domain = b"Fabric-E2R-seal-v2\0"  # off-by-one version string
+    seal = enc_seal(0, len(bodies_), descriptor, frame_sectors, sector, domain=wrong_domain)
+    image = descriptor + b"".join(frame_sectors) + seal
+    result = impl.recover(image, sector)
+    check("wrong_domain_seal_rejected", result == ("error", image), f"got {result[0]!r}")
+
+# 5) Non-sector-aligned image length must fail immediately without exception.
+for sector in (512, 4096):
+    bodies_ = (rng_body(57, 501),)
+    image = enc_group(0, bodies_, sector) + b"\x00" * 17
+    result = impl.recover(image, sector)
+    check(f"misaligned_length_errors[{sector}]", result == ("error", image), f"got {result[0]!r}")
+
+# 6) Group id out of sequence (skips id 1, jumps straight to id 5) must error.
+for sector in (512,):
+    prior_bodies = (rng_body(57, 601),)
+    prior = enc_group(0, prior_bodies, sector)
+    bad_next_bodies = (rng_body(57, 602),)
+    bad_next = enc_group(5, bad_next_bodies, sector)  # wrong group_id
+    image = prior + bad_next
+    result = impl.recover(image, sector)
+    check("out_of_sequence_group_id_errors", result == ("error", image), f"got {result[0]!r}")
+
+# 7) Random-byte corpus: recover() must never raise, and on random garbage
+#    the only legal outcomes are ("error", image) or, in the vanishingly
+#    unlikely case the garbage forms a valid zero-descriptor prefix,
+#    ("ok", (), some_offset). It must never return a nonempty groups tuple
+#    from pure random bytes (SHA-256 collision would be required).
+rng = random.Random(999)
+random_ok_with_groups = 0
+random_exceptions = []
+for trial in range(4000):
+    sector = 512 if trial % 2 == 0 else 4096
+    n_sectors = 1 + (trial % 9)
+    image = bytes(rng.randrange(256) for _ in range(n_sectors * sector))
+    try:
+        result = impl.recover(image, sector)
+    except Exception as exc:  # noqa: BLE001
+        random_exceptions.append((trial, repr(exc)))
+        continue
+    check_pass = (result[0] == "error" and result[1] is image) or \
+                 (result[0] == "ok")
+    if result[0] == "ok" and result[1]:
+        random_ok_with_groups += 1
+    check(f"random_corpus_no_exception_trial{trial}", check_pass, f"got {result!r}"[:200])
+check("random_corpus_no_group_from_garbage", random_ok_with_groups == 0,
+      f"{random_ok_with_groups} random images produced nonempty committed groups")
+check("random_corpus_raised_no_exceptions", not random_exceptions, str(random_exceptions[:5]))
+
+# 8) recover() must not mutate its input and must return the *same* object
+#    (or at least byte-identical) on error, per "must not modify the input"
+#    and "return ... every input byte".
+for sector in (512,):
+    bodies_ = (rng_body(509, 801),)
+    image = enc_group(0, bodies_, sector)
+    tampered = bytearray(image)
+    tampered[0] = 0  # break magic -> forces error path
+    tampered = bytes(tampered)
+    before = tampered
+    result = impl.recover(tampered, sector)
+    check("recover_returns_identical_bytes_on_error", result == ("error", before))
+    check("recover_input_unaltered_after_call", tampered == before)
+
+# 9) Boundary error witness vs identical bytes, re-derived independently of
+#    oracle_support.py's logical_append, using the candidate's own
+#    append_logical plus our independent recover cross-check.
+for sector in (512,):
+    previous = enc_group(0, (rng_body(57, 901),), sector)
+    bodies_ = (rng_body(127, 902), rng_body(513, 903))
+    clean = impl.append_logical(previous, 1, bodies_, sector, None)
+    failed_sync = impl.append_logical(previous, 1, bodies_, sector, "sync")
+    check("sync_failure_same_bytes_as_success", clean[0] == failed_sync[0])
+    check("sync_failure_differs_in_ack_poison_witness",
+          (clean[1], clean[2], clean[3]) != (failed_sync[1], failed_sync[2], failed_sync[3]))
+    scan_clean = impl.recover(clean[0], sector)
+    scan_failed = impl.recover(failed_sync[0], sector)
+    check("identical_bytes_scan_identically", scan_clean == scan_failed)
+    check("supervisor_differs_on_identical_scan",
+          impl.supervise(False, scan_clean) != impl.supervise(True, scan_failed))
+    # And independently re-verify against our own encoder for this fixture.
+    check("clean_append_matches_independent_encoder",
+          clean[0] == previous + enc_group(1, bodies_, sector))
+
+# ---------------------------------------------------------------------------
+print(f"checks={checks} failures={len(failures)}")
+for name, detail in failures:
+    print(f"FAIL {name}: {detail}")
+sys.exit(1 if failures else 0)

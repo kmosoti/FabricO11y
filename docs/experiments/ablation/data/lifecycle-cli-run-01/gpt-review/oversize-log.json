@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "publish",
+    "/home/kmosoti/fabric-cli-review-big/big-over64.fol2",
+    "/home/kmosoti/fabric-cli-review-big/big-snap",
+    "/home/kmosoti/fabric-cli-review-big/big-trust.json",
+    "1",
+    "999"
+  ],
+  "log_bytes": 75498948,
+  "input_bytes": 8388921,
+  "exit": 0,
+  "stdout": "{\"publication\":\"/home/kmosoti/fabric-cli-review-big/big-trust.json\",\"snapshot\":\"/home/kmosoti/fabric-cli-review-big/big-snap\"}\n",
+  "stderr": "",
+  "snapshot_exists": true,
+  "trusted_exists": true
+}

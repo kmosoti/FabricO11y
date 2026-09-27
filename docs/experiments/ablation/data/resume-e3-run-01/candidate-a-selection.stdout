@@ -1,0 +1,8 @@
+
+running 3 tests
+test conflict_after_new_work_does_not_partially_update_state ... ok
+test genuinely_different_snapshot_with_identical_layout_is_rejected ... ok
+test each_registered_binding_rejects_faults_atomically ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.07s
+

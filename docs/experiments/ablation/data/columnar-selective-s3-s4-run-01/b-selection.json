@@ -1,0 +1,18 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--release",
+    "--offline",
+    "--locked",
+    "--manifest-path",
+    "tools/layout-probe/Cargo.toml",
+    "--test",
+    "layout_review",
+    "--",
+    "--nocapture"
+  ],
+  "cwd": "/tmp/fabric-layout-b",
+  "exit_code": 0,
+  "source_sha256": "3702e887934bccb7b6198fb1b178463b2a90611ca90a2e08ae5f477662709a66"
+}

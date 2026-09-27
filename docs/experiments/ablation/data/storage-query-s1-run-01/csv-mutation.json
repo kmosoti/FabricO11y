@@ -1,0 +1,13 @@
+{
+  "defect": "first measured query row equal flag changed from 1 to 0 in copied CSV",
+  "command": [
+    "python3",
+    "-B",
+    "tools/bench/summarize_storage_s1.py",
+    "/tmp/fabric-s1-csv-defect-gwxbh624"
+  ],
+  "actual_exit": 1,
+  "stdout": "",
+  "stderr": "/tmp/fabric-s1-csv-defect-gwxbh624/queries.csv:2: result equality failed\n",
+  "original_queries_sha256": "81bb211ef7b586e636a6f165f5e0afa50ef5a3f17f4af1eb809279a9d8ec6254"
+}

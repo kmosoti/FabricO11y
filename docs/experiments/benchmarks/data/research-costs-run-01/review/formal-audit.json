@@ -1,0 +1,2974 @@
+{
+  "status": "audited",
+  "mode": "formal",
+  "cells": {
+    "mixed-201-2048": {
+      "source_sha256": "7c98ec5b8e5582a470e60b6c1ba6f9c68fbff6e73f6be82b31e32b7a06ff7c19",
+      "events": 2048,
+      "measured_trials": 5,
+      "layouts": {
+        "json64": {
+          "median_bytes": 723381,
+          "median_bytes_with_index": 723381,
+          "median_projected_query_ns": 5426900,
+          "byte_ratio_to_json": 1.0,
+          "projected_ratio_to_json": 1.0,
+          "registered_layout_gate": null,
+          "rare_postings_median_saving_ns": null,
+          "postings_build_median_ns": null,
+          "postings_publication_median_ns": null,
+          "postings_build_plus_publication_median_ns": null,
+          "measured_break_even_queries": null,
+          "projected_families": {
+            "0": {
+              "p50_ns": 8569200,
+              "p99_ns": 12683100
+            },
+            "1": {
+              "p50_ns": 5347600,
+              "p99_ns": 8238000
+            },
+            "2": {
+              "p50_ns": 5256400,
+              "p99_ns": 8776700
+            },
+            "3": {
+              "p50_ns": 5515700,
+              "p99_ns": 9026601
+            },
+            "4": {
+              "p50_ns": 5464600,
+              "p99_ns": 8215400
+            },
+            "5": {
+              "p50_ns": 7297700,
+              "p99_ns": 10542600
+            },
+            "6": {
+              "p50_ns": 5267600,
+              "p99_ns": 7529100
+            },
+            "7": {
+              "p50_ns": 5248900,
+              "p99_ns": 8951900
+            }
+          }
+        },
+        "plain64": {
+          "median_bytes": 1106800,
+          "median_bytes_with_index": 1107096,
+          "median_projected_query_ns": 4943000,
+          "byte_ratio_to_json": 1.5300374214971086,
+          "projected_ratio_to_json": 0.9108330722880466,
+          "registered_layout_gate": false,
+          "rare_postings_median_saving_ns": 241650.0,
+          "postings_build_median_ns": 452100,
+          "postings_publication_median_ns": 3793100,
+          "postings_build_plus_publication_median_ns": 4199500,
+          "measured_break_even_queries": 18,
+          "projected_families": {
+            "0": {
+              "p50_ns": 4876300,
+              "p99_ns": 9139700
+            },
+            "1": {
+              "p50_ns": 4818000,
+              "p99_ns": 6180800
+            },
+            "2": {
+              "p50_ns": 4878800,
+              "p99_ns": 6829300
+            },
+            "3": {
+              "p50_ns": 5010800,
+              "p99_ns": 8575300
+            },
+            "4": {
+              "p50_ns": 5052600,
+              "p99_ns": 10106600
+            },
+            "5": {
+              "p50_ns": 4887200,
+              "p99_ns": 7038500
+            },
+            "6": {
+              "p50_ns": 4837000,
+              "p99_ns": 6296800
+            },
+            "7": {
+              "p50_ns": 4817500,
+              "p99_ns": 6288700
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 4820800,
+              "p99_ns": 6097600
+            },
+            "1": {
+              "p50_ns": 4772200,
+              "p99_ns": 5797600
+            },
+            "2": {
+              "p50_ns": 4887800,
+              "p99_ns": 6872300
+            },
+            "3": {
+              "p50_ns": 4811700,
+              "p99_ns": 8713400
+            },
+            "4": {
+              "p50_ns": 5012600,
+              "p99_ns": 9453000
+            },
+            "5": {
+              "p50_ns": 4864700,
+              "p99_ns": 6663800
+            },
+            "6": {
+              "p50_ns": 4778000,
+              "p99_ns": 5799200
+            },
+            "7": {
+              "p50_ns": 4789700,
+              "p99_ns": 5782800
+            }
+          }
+        },
+        "zstd64": {
+          "median_bytes": 187350,
+          "median_bytes_with_index": 187646,
+          "median_projected_query_ns": 1774000,
+          "byte_ratio_to_json": 0.25899214936527226,
+          "projected_ratio_to_json": 0.32689012143212515,
+          "registered_layout_gate": true,
+          "rare_postings_median_saving_ns": 198300.0,
+          "postings_build_median_ns": 462300,
+          "postings_publication_median_ns": 3709400,
+          "postings_build_plus_publication_median_ns": 4188900,
+          "measured_break_even_queries": 22,
+          "projected_families": {
+            "0": {
+              "p50_ns": 1748500,
+              "p99_ns": 2427100
+            },
+            "1": {
+              "p50_ns": 1704700,
+              "p99_ns": 3478700
+            },
+            "2": {
+              "p50_ns": 1723400,
+              "p99_ns": 2566800
+            },
+            "3": {
+              "p50_ns": 1893001,
+              "p99_ns": 3038500
+            },
+            "4": {
+              "p50_ns": 1877300,
+              "p99_ns": 2810100
+            },
+            "5": {
+              "p50_ns": 1741700,
+              "p99_ns": 2507100
+            },
+            "6": {
+              "p50_ns": 1747200,
+              "p99_ns": 2696300
+            },
+            "7": {
+              "p50_ns": 1710200,
+              "p99_ns": 2472900
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 1704800,
+              "p99_ns": 2107300
+            },
+            "1": {
+              "p50_ns": 1680300,
+              "p99_ns": 2494300
+            },
+            "2": {
+              "p50_ns": 1682100,
+              "p99_ns": 2539500
+            },
+            "3": {
+              "p50_ns": 1685300,
+              "p99_ns": 2679400
+            },
+            "4": {
+              "p50_ns": 1833800,
+              "p99_ns": 2264300
+            },
+            "5": {
+              "p50_ns": 1716000,
+              "p99_ns": 2259300
+            },
+            "6": {
+              "p50_ns": 1666700,
+              "p99_ns": 2571800
+            },
+            "7": {
+              "p50_ns": 1677100,
+              "p99_ns": 3277300
+            }
+          }
+        },
+        "zstd256": {
+          "median_bytes": 137551,
+          "median_bytes_with_index": 137848,
+          "median_projected_query_ns": 1107100,
+          "byte_ratio_to_json": 0.19015014217957066,
+          "projected_ratio_to_json": 0.20400228491403932,
+          "registered_layout_gate": true,
+          "rare_postings_median_saving_ns": 191750.0,
+          "postings_build_median_ns": 470100,
+          "postings_publication_median_ns": 4271500,
+          "postings_build_plus_publication_median_ns": 4684000,
+          "measured_break_even_queries": 25,
+          "projected_families": {
+            "0": {
+              "p50_ns": 1053100,
+              "p99_ns": 1790000
+            },
+            "1": {
+              "p50_ns": 1023300,
+              "p99_ns": 1701100
+            },
+            "2": {
+              "p50_ns": 1071500,
+              "p99_ns": 2104000
+            },
+            "3": {
+              "p50_ns": 1173700,
+              "p99_ns": 1494000
+            },
+            "4": {
+              "p50_ns": 1180600,
+              "p99_ns": 2530000
+            },
+            "5": {
+              "p50_ns": 1070500,
+              "p99_ns": 2000900
+            },
+            "6": {
+              "p50_ns": 1039900,
+              "p99_ns": 1945200
+            },
+            "7": {
+              "p50_ns": 1028400,
+              "p99_ns": 1679000
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 1023100,
+              "p99_ns": 1834000
+            },
+            "1": {
+              "p50_ns": 983000,
+              "p99_ns": 1538200
+            },
+            "2": {
+              "p50_ns": 1003200,
+              "p99_ns": 1949500
+            },
+            "3": {
+              "p50_ns": 990700,
+              "p99_ns": 1444600
+            },
+            "4": {
+              "p50_ns": 1181400,
+              "p99_ns": 2434000
+            },
+            "5": {
+              "p50_ns": 1005900,
+              "p99_ns": 1580800
+            },
+            "6": {
+              "p50_ns": 1014000,
+              "p99_ns": 1685100
+            },
+            "7": {
+              "p50_ns": 988800,
+              "p99_ns": 1705500
+            }
+          }
+        }
+      },
+      "receipt": {
+        "median_ratio_by_family": {
+          "0": 1.1737167433825748,
+          "1": 12.880913002554793,
+          "2": 75.93281300813008,
+          "3": 4.091588727184079,
+          "4": 5.36929010752371,
+          "5": 1.2562015961756081,
+          "6": 91.91291859324647,
+          "7": 131.42158605974396
+        },
+        "p99_ratio_by_family": {
+          "0": 1.6641321525479322,
+          "1": 23.4093567251462,
+          "2": 129.85294117647058,
+          "3": 6.204150308468873,
+          "4": 7.570912841670965,
+          "5": 1.6688683696164992,
+          "6": 220.46511627906978,
+          "7": 364.3888888888889
+        },
+        "scalar_families": {
+          "0": {
+            "p50_ns": 3269000,
+            "p99_ns": 4797600
+          },
+          "1": {
+            "p50_ns": 85300,
+            "p99_ns": 246300
+          },
+          "2": {
+            "p50_ns": 12500,
+            "p99_ns": 43300
+          },
+          "3": {
+            "p50_ns": 246300,
+            "p99_ns": 486300
+          },
+          "4": {
+            "p50_ns": 193900,
+            "p99_ns": 493800
+          },
+          "5": {
+            "p50_ns": 1951700,
+            "p99_ns": 4008400
+          },
+          "6": {
+            "p50_ns": 11600,
+            "p99_ns": 66600
+          },
+          "7": {
+            "p50_ns": 7800,
+            "p99_ns": 50400
+          }
+        },
+        "receipt_families": {
+          "0": {
+            "p50_ns": 3801500,
+            "p99_ns": 5581000
+          },
+          "1": {
+            "p50_ns": 1093900,
+            "p99_ns": 2031700
+          },
+          "2": {
+            "p50_ns": 989600,
+            "p99_ns": 1712100
+          },
+          "3": {
+            "p50_ns": 1025200,
+            "p99_ns": 2030800
+          },
+          "4": {
+            "p50_ns": 1060200,
+            "p99_ns": 2807500
+          },
+          "5": {
+            "p50_ns": 2422200,
+            "p99_ns": 4952200
+          },
+          "6": {
+            "p50_ns": 1035800,
+            "p99_ns": 2265100
+          },
+          "7": {
+            "p50_ns": 1028700,
+            "p99_ns": 2423300
+          }
+        }
+      },
+      "sidecar": {
+        "median_server_cpu_ratio": 0.8482871782482208,
+        "median_total_cpu_ratio": 1.6688948879461798,
+        "registered_server_gate": true,
+        "registered_total_gate": false
+      }
+    },
+    "mixed-202-2048": {
+      "source_sha256": "fed0eea9a559c2ff899718fd6a334616a911f6d826aa44247653e85e348f18c7",
+      "events": 2048,
+      "measured_trials": 5,
+      "layouts": {
+        "json64": {
+          "median_bytes": 723381,
+          "median_bytes_with_index": 723381,
+          "median_projected_query_ns": 5475400,
+          "byte_ratio_to_json": 1.0,
+          "projected_ratio_to_json": 1.0,
+          "registered_layout_gate": null,
+          "rare_postings_median_saving_ns": null,
+          "postings_build_median_ns": null,
+          "postings_publication_median_ns": null,
+          "postings_build_plus_publication_median_ns": null,
+          "measured_break_even_queries": null,
+          "projected_families": {
+            "0": {
+              "p50_ns": 8606302,
+              "p99_ns": 12680000
+            },
+            "1": {
+              "p50_ns": 5398900,
+              "p99_ns": 11375700
+            },
+            "2": {
+              "p50_ns": 5381600,
+              "p99_ns": 6606400
+            },
+            "3": {
+              "p50_ns": 5552201,
+              "p99_ns": 9620402
+            },
+            "4": {
+              "p50_ns": 5494800,
+              "p99_ns": 7326100
+            },
+            "5": {
+              "p50_ns": 7291800,
+              "p99_ns": 9183400
+            },
+            "6": {
+              "p50_ns": 5405601,
+              "p99_ns": 8522900
+            },
+            "7": {
+              "p50_ns": 5351800,
+              "p99_ns": 7423600
+            }
+          }
+        },
+        "plain64": {
+          "median_bytes": 1106800,
+          "median_bytes_with_index": 1107096,
+          "median_projected_query_ns": 5015900,
+          "byte_ratio_to_json": 1.5300374214971086,
+          "projected_ratio_to_json": 0.9160791905614202,
+          "registered_layout_gate": false,
+          "rare_postings_median_saving_ns": 263200.0,
+          "postings_build_median_ns": 460000,
+          "postings_publication_median_ns": 3359200,
+          "postings_build_plus_publication_median_ns": 3854200,
+          "measured_break_even_queries": 15,
+          "projected_families": {
+            "0": {
+              "p50_ns": 5025900,
+              "p99_ns": 7937601
+            },
+            "1": {
+              "p50_ns": 4984201,
+              "p99_ns": 8674200
+            },
+            "2": {
+              "p50_ns": 5012999,
+              "p99_ns": 7102797
+            },
+            "3": {
+              "p50_ns": 5120000,
+              "p99_ns": 9977402
+            },
+            "4": {
+              "p50_ns": 5183700,
+              "p99_ns": 9624800
+            },
+            "5": {
+              "p50_ns": 5080401,
+              "p99_ns": 10424101
+            },
+            "6": {
+              "p50_ns": 4988100,
+              "p99_ns": 9084601
+            },
+            "7": {
+              "p50_ns": 5001300,
+              "p99_ns": 7799001
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 4946301,
+              "p99_ns": 7379601
+            },
+            "1": {
+              "p50_ns": 4944200,
+              "p99_ns": 8807000
+            },
+            "2": {
+              "p50_ns": 4959800,
+              "p99_ns": 6668501
+            },
+            "3": {
+              "p50_ns": 4936400,
+              "p99_ns": 9460902
+            },
+            "4": {
+              "p50_ns": 5097698,
+              "p99_ns": 8360900
+            },
+            "5": {
+              "p50_ns": 5019700,
+              "p99_ns": 7881402
+            },
+            "6": {
+              "p50_ns": 4969201,
+              "p99_ns": 7629101
+            },
+            "7": {
+              "p50_ns": 4915101,
+              "p99_ns": 6668201
+            }
+          }
+        },
+        "zstd64": {
+          "median_bytes": 187341,
+          "median_bytes_with_index": 187632,
+          "median_projected_query_ns": 1837000,
+          "byte_ratio_to_json": 0.25897970778884155,
+          "projected_ratio_to_json": 0.3355006026956935,
+          "registered_layout_gate": true,
+          "rare_postings_median_saving_ns": 215150.0,
+          "postings_build_median_ns": 485000,
+          "postings_publication_median_ns": 3528200,
+          "postings_build_plus_publication_median_ns": 3984100,
+          "measured_break_even_queries": 19,
+          "projected_families": {
+            "0": {
+              "p50_ns": 1857000,
+              "p99_ns": 4279000
+            },
+            "1": {
+              "p50_ns": 1798400,
+              "p99_ns": 3217900
+            },
+            "2": {
+              "p50_ns": 1780700,
+              "p99_ns": 3639200
+            },
+            "3": {
+              "p50_ns": 1944800,
+              "p99_ns": 3098800
+            },
+            "4": {
+              "p50_ns": 1978700,
+              "p99_ns": 3518200
+            },
+            "5": {
+              "p50_ns": 1819700,
+              "p99_ns": 3294700
+            },
+            "6": {
+              "p50_ns": 1812700,
+              "p99_ns": 2991500
+            },
+            "7": {
+              "p50_ns": 1764300,
+              "p99_ns": 3221700
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 1765799,
+              "p99_ns": 2563500
+            },
+            "1": {
+              "p50_ns": 1725900,
+              "p99_ns": 3088600
+            },
+            "2": {
+              "p50_ns": 1743900,
+              "p99_ns": 3299800
+            },
+            "3": {
+              "p50_ns": 1745800,
+              "p99_ns": 2451200
+            },
+            "4": {
+              "p50_ns": 1890800,
+              "p99_ns": 3434900
+            },
+            "5": {
+              "p50_ns": 1770200,
+              "p99_ns": 3083400
+            },
+            "6": {
+              "p50_ns": 1742601,
+              "p99_ns": 2495800
+            },
+            "7": {
+              "p50_ns": 1729700,
+              "p99_ns": 2975500
+            }
+          }
+        },
+        "zstd256": {
+          "median_bytes": 137503,
+          "median_bytes_with_index": 137798,
+          "median_projected_query_ns": 1084100,
+          "byte_ratio_to_json": 0.1900837871052737,
+          "projected_ratio_to_json": 0.19799466705628813,
+          "registered_layout_gate": true,
+          "rare_postings_median_saving_ns": 201950.5,
+          "postings_build_median_ns": 458300,
+          "postings_publication_median_ns": 3610400,
+          "postings_build_plus_publication_median_ns": 4056700,
+          "measured_break_even_queries": 21,
+          "projected_families": {
+            "0": {
+              "p50_ns": 1087600,
+              "p99_ns": 2058000
+            },
+            "1": {
+              "p50_ns": 1039000,
+              "p99_ns": 1972500
+            },
+            "2": {
+              "p50_ns": 1039900,
+              "p99_ns": 1963200
+            },
+            "3": {
+              "p50_ns": 1219700,
+              "p99_ns": 3344998
+            },
+            "4": {
+              "p50_ns": 1228200,
+              "p99_ns": 2512300
+            },
+            "5": {
+              "p50_ns": 1106600,
+              "p99_ns": 1855000
+            },
+            "6": {
+              "p50_ns": 1059699,
+              "p99_ns": 2079800
+            },
+            "7": {
+              "p50_ns": 1050800,
+              "p99_ns": 1700400
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 1025300,
+              "p99_ns": 1936500
+            },
+            "1": {
+              "p50_ns": 1002100,
+              "p99_ns": 1809400
+            },
+            "2": {
+              "p50_ns": 1011400,
+              "p99_ns": 2015100
+            },
+            "3": {
+              "p50_ns": 1015400,
+              "p99_ns": 2554899
+            },
+            "4": {
+              "p50_ns": 1174401,
+              "p99_ns": 2385999
+            },
+            "5": {
+              "p50_ns": 1026800,
+              "p99_ns": 1572600
+            },
+            "6": {
+              "p50_ns": 1021000,
+              "p99_ns": 2174700
+            },
+            "7": {
+              "p50_ns": 1012500,
+              "p99_ns": 1680200
+            }
+          }
+        }
+      },
+      "receipt": {
+        "median_ratio_by_family": {
+          "0": 1.1714158623339666,
+          "1": 12.942444614376571,
+          "2": 74.81298449612403,
+          "3": 4.145343423457455,
+          "4": 5.384181562216606,
+          "5": 1.2566246240231973,
+          "6": 92.00797607178464,
+          "7": 164.2843303695471
+        },
+        "p99_ratio_by_family": {
+          "0": 1.369308047610588,
+          "1": 21.591433278418453,
+          "2": 132.0909090909091,
+          "3": 4.977850629613547,
+          "4": 6.326600985221675,
+          "5": 1.4024279210925645,
+          "6": 221.20454545454547,
+          "7": 286.86486486486484
+        },
+        "scalar_families": {
+          "0": {
+            "p50_ns": 3216900,
+            "p99_ns": 3587400
+          },
+          "1": {
+            "p50_ns": 82200,
+            "p99_ns": 125100
+          },
+          "2": {
+            "p50_ns": 12800,
+            "p99_ns": 34300
+          },
+          "3": {
+            "p50_ns": 242700,
+            "p99_ns": 370800
+          },
+          "4": {
+            "p50_ns": 194500,
+            "p99_ns": 281500
+          },
+          "5": {
+            "p50_ns": 1969800,
+            "p99_ns": 2259100
+          },
+          "6": {
+            "p50_ns": 10900,
+            "p99_ns": 44500
+          },
+          "7": {
+            "p50_ns": 6000,
+            "p99_ns": 28000
+          }
+        },
+        "receipt_families": {
+          "0": {
+            "p50_ns": 3746199,
+            "p99_ns": 4645100
+          },
+          "1": {
+            "p50_ns": 1069299,
+            "p99_ns": 1540700
+          },
+          "2": {
+            "p50_ns": 988400,
+            "p99_ns": 1300700
+          },
+          "3": {
+            "p50_ns": 986300,
+            "p99_ns": 1146399
+          },
+          "4": {
+            "p50_ns": 1039500,
+            "p99_ns": 1316700
+          },
+          "5": {
+            "p50_ns": 2485400,
+            "p99_ns": 2857500
+          },
+          "6": {
+            "p50_ns": 1030400,
+            "p99_ns": 1327401
+          },
+          "7": {
+            "p50_ns": 1018000,
+            "p99_ns": 1271100
+          }
+        }
+      },
+      "sidecar": {
+        "median_server_cpu_ratio": 1.0276247514115253,
+        "median_total_cpu_ratio": 1.808555046140497,
+        "registered_server_gate": false,
+        "registered_total_gate": false
+      }
+    },
+    "mixed-203-2048": {
+      "source_sha256": "9da45a12ad9d8b8d63e3e471bc9eed688d23ee01da8ab931fe1acc74b5b76d04",
+      "events": 2048,
+      "measured_trials": 5,
+      "layouts": {
+        "json64": {
+          "median_bytes": 723381,
+          "median_bytes_with_index": 723381,
+          "median_projected_query_ns": 5855405,
+          "byte_ratio_to_json": 1.0,
+          "projected_ratio_to_json": 1.0,
+          "registered_layout_gate": null,
+          "rare_postings_median_saving_ns": null,
+          "postings_build_median_ns": null,
+          "postings_publication_median_ns": null,
+          "postings_build_plus_publication_median_ns": null,
+          "measured_break_even_queries": null,
+          "projected_families": {
+            "0": {
+              "p50_ns": 8877400,
+              "p99_ns": 17186900
+            },
+            "1": {
+              "p50_ns": 5496399,
+              "p99_ns": 10264101
+            },
+            "2": {
+              "p50_ns": 5480705,
+              "p99_ns": 12317900
+            },
+            "3": {
+              "p50_ns": 5691299,
+              "p99_ns": 12241098
+            },
+            "4": {
+              "p50_ns": 5632600,
+              "p99_ns": 10977501
+            },
+            "5": {
+              "p50_ns": 7429007,
+              "p99_ns": 15373800
+            },
+            "6": {
+              "p50_ns": 5415504,
+              "p99_ns": 12862201
+            },
+            "7": {
+              "p50_ns": 5413499,
+              "p99_ns": 12783300
+            }
+          }
+        },
+        "plain64": {
+          "median_bytes": 1106799,
+          "median_bytes_with_index": 1107094,
+          "median_projected_query_ns": 5071400,
+          "byte_ratio_to_json": 1.5300360390997276,
+          "projected_ratio_to_json": 0.866105760404276,
+          "registered_layout_gate": false,
+          "rare_postings_median_saving_ns": 319550.0,
+          "postings_build_median_ns": 460700,
+          "postings_publication_median_ns": 3536700,
+          "postings_build_plus_publication_median_ns": 3997801,
+          "measured_break_even_queries": 13,
+          "projected_families": {
+            "0": {
+              "p50_ns": 5077500,
+              "p99_ns": 7780301
+            },
+            "1": {
+              "p50_ns": 4973804,
+              "p99_ns": 8536108
+            },
+            "2": {
+              "p50_ns": 5020000,
+              "p99_ns": 7302806
+            },
+            "3": {
+              "p50_ns": 5232300,
+              "p99_ns": 9349609
+            },
+            "4": {
+              "p50_ns": 5146605,
+              "p99_ns": 9895709
+            },
+            "5": {
+              "p50_ns": 5132704,
+              "p99_ns": 9774509
+            },
+            "6": {
+              "p50_ns": 5075299,
+              "p99_ns": 7899301
+            },
+            "7": {
+              "p50_ns": 4978701,
+              "p99_ns": 8343301
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 4949099,
+              "p99_ns": 9510109
+            },
+            "1": {
+              "p50_ns": 4926200,
+              "p99_ns": 8145498
+            },
+            "2": {
+              "p50_ns": 5030200,
+              "p99_ns": 8873908
+            },
+            "3": {
+              "p50_ns": 4968600,
+              "p99_ns": 8335999
+            },
+            "4": {
+              "p50_ns": 5087100,
+              "p99_ns": 10387610
+            },
+            "5": {
+              "p50_ns": 5083000,
+              "p99_ns": 10037509
+            },
+            "6": {
+              "p50_ns": 4962400,
+              "p99_ns": 10553800
+            },
+            "7": {
+              "p50_ns": 4991800,
+              "p99_ns": 8647000
+            }
+          }
+        },
+        "zstd64": {
+          "median_bytes": 187579,
+          "median_bytes_with_index": 187876,
+          "median_projected_query_ns": 1847199,
+          "byte_ratio_to_json": 0.2593087183655639,
+          "projected_ratio_to_json": 0.31546904099716416,
+          "registered_layout_gate": true,
+          "rare_postings_median_saving_ns": 216351.0,
+          "postings_build_median_ns": 460800,
+          "postings_publication_median_ns": 3966000,
+          "postings_build_plus_publication_median_ns": 4444400,
+          "measured_break_even_queries": 21,
+          "projected_families": {
+            "0": {
+              "p50_ns": 1810700,
+              "p99_ns": 2488400
+            },
+            "1": {
+              "p50_ns": 1782799,
+              "p99_ns": 2352300
+            },
+            "2": {
+              "p50_ns": 1783099,
+              "p99_ns": 2206800
+            },
+            "3": {
+              "p50_ns": 1971400,
+              "p99_ns": 2588900
+            },
+            "4": {
+              "p50_ns": 1953300,
+              "p99_ns": 2537100
+            },
+            "5": {
+              "p50_ns": 1814500,
+              "p99_ns": 2708600
+            },
+            "6": {
+              "p50_ns": 1779400,
+              "p99_ns": 2624500
+            },
+            "7": {
+              "p50_ns": 1768600,
+              "p99_ns": 3302300
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 1770201,
+              "p99_ns": 2412901
+            },
+            "1": {
+              "p50_ns": 1758200,
+              "p99_ns": 2925100
+            },
+            "2": {
+              "p50_ns": 1727800,
+              "p99_ns": 2491000
+            },
+            "3": {
+              "p50_ns": 1761500,
+              "p99_ns": 3029500
+            },
+            "4": {
+              "p50_ns": 1928100,
+              "p99_ns": 2463001
+            },
+            "5": {
+              "p50_ns": 1780100,
+              "p99_ns": 2905400
+            },
+            "6": {
+              "p50_ns": 1753500,
+              "p99_ns": 2838100
+            },
+            "7": {
+              "p50_ns": 1741300,
+              "p99_ns": 3325800
+            }
+          }
+        },
+        "zstd256": {
+          "median_bytes": 137300,
+          "median_bytes_with_index": 137588,
+          "median_projected_query_ns": 1113001,
+          "byte_ratio_to_json": 0.18980316043689288,
+          "projected_ratio_to_json": 0.19008095938709618,
+          "registered_layout_gate": true,
+          "rare_postings_median_saving_ns": 200600.0,
+          "postings_build_median_ns": 450001,
+          "postings_publication_median_ns": 3747700,
+          "postings_build_plus_publication_median_ns": 4212700,
+          "measured_break_even_queries": 22,
+          "projected_families": {
+            "0": {
+              "p50_ns": 1097299,
+              "p99_ns": 1869300
+            },
+            "1": {
+              "p50_ns": 1050800,
+              "p99_ns": 1538900
+            },
+            "2": {
+              "p50_ns": 1064100,
+              "p99_ns": 2394200
+            },
+            "3": {
+              "p50_ns": 1221800,
+              "p99_ns": 2337200
+            },
+            "4": {
+              "p50_ns": 1253700,
+              "p99_ns": 2581300
+            },
+            "5": {
+              "p50_ns": 1099500,
+              "p99_ns": 1746799
+            },
+            "6": {
+              "p50_ns": 1055299,
+              "p99_ns": 1270500
+            },
+            "7": {
+              "p50_ns": 1069400,
+              "p99_ns": 2039400
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 1041600,
+              "p99_ns": 1646900
+            },
+            "1": {
+              "p50_ns": 1012299,
+              "p99_ns": 1419200
+            },
+            "2": {
+              "p50_ns": 1019299,
+              "p99_ns": 2123800
+            },
+            "3": {
+              "p50_ns": 1012099,
+              "p99_ns": 2016200
+            },
+            "4": {
+              "p50_ns": 1191400,
+              "p99_ns": 1920000
+            },
+            "5": {
+              "p50_ns": 1070099,
+              "p99_ns": 1297299
+            },
+            "6": {
+              "p50_ns": 1009300,
+              "p99_ns": 1316900
+            },
+            "7": {
+              "p50_ns": 1023300,
+              "p99_ns": 1651400
+            }
+          }
+        }
+      },
+      "receipt": {
+        "median_ratio_by_family": {
+          "0": 1.1707211812430867,
+          "1": 12.942740511915268,
+          "2": 67.5251481402156,
+          "3": 4.027596765882833,
+          "4": 5.251777928710384,
+          "5": 1.2528366374473698,
+          "6": 78.74047937984496,
+          "7": 100.26536531986532
+        },
+        "p99_ratio_by_family": {
+          "0": 1.9512075979910777,
+          "1": 19.60559405940594,
+          "2": 121.32896774193549,
+          "3": 5.2558862727676585,
+          "4": 7.358532110091743,
+          "5": 1.93611252995953,
+          "6": 130.80722891566265,
+          "7": 279.99976744186046
+        },
+        "scalar_families": {
+          "0": {
+            "p50_ns": 3467501,
+            "p99_ns": 6377800
+          },
+          "1": {
+            "p50_ns": 92700,
+            "p99_ns": 246400
+          },
+          "2": {
+            "p50_ns": 16300,
+            "p99_ns": 78100
+          },
+          "3": {
+            "p50_ns": 265300,
+            "p99_ns": 491100
+          },
+          "4": {
+            "p50_ns": 221200,
+            "p99_ns": 466200
+          },
+          "5": {
+            "p50_ns": 2119501,
+            "p99_ns": 3919201
+          },
+          "6": {
+            "p50_ns": 14600,
+            "p99_ns": 35700
+          },
+          "7": {
+            "p50_ns": 10900,
+            "p99_ns": 61800
+          }
+        },
+        "receipt_families": {
+          "0": {
+            "p50_ns": 4051600,
+            "p99_ns": 7321501
+          },
+          "1": {
+            "p50_ns": 1186300,
+            "p99_ns": 2176300
+          },
+          "2": {
+            "p50_ns": 1051300,
+            "p99_ns": 1880599
+          },
+          "3": {
+            "p50_ns": 1057901,
+            "p99_ns": 1866100
+          },
+          "4": {
+            "p50_ns": 1125800,
+            "p99_ns": 2183400
+          },
+          "5": {
+            "p50_ns": 2650500,
+            "p99_ns": 4927600
+          },
+          "6": {
+            "p50_ns": 1120600,
+            "p99_ns": 2212200
+          },
+          "7": {
+            "p50_ns": 1092801,
+            "p99_ns": 1949600
+          }
+        }
+      },
+      "sidecar": {
+        "median_server_cpu_ratio": 1.0448571854565591,
+        "median_total_cpu_ratio": 1.815383021821195,
+        "registered_server_gate": false,
+        "registered_total_gate": false
+      }
+    },
+    "shuffled_logs-201-2048": {
+      "source_sha256": "ddc9430cf336ff9b14af7a7b041e52fa658f19f7e26fb62810b8a5a3eac54e93",
+      "events": 2048,
+      "measured_trials": 5,
+      "layouts": {
+        "json64": {
+          "median_bytes": 826626,
+          "median_bytes_with_index": 826626,
+          "median_projected_query_ns": 5787699,
+          "byte_ratio_to_json": 1.0,
+          "projected_ratio_to_json": 1.0,
+          "registered_layout_gate": null,
+          "rare_postings_median_saving_ns": null,
+          "postings_build_median_ns": null,
+          "postings_publication_median_ns": null,
+          "postings_build_plus_publication_median_ns": null,
+          "measured_break_even_queries": null,
+          "projected_families": {
+            "0": {
+              "p50_ns": 9539400,
+              "p99_ns": 18632498
+            },
+            "1": {
+              "p50_ns": 5719000,
+              "p99_ns": 11139698
+            },
+            "2": {
+              "p50_ns": 5599799,
+              "p99_ns": 8839398
+            },
+            "3": {
+              "p50_ns": 6025899,
+              "p99_ns": 9166199
+            },
+            "4": {
+              "p50_ns": 5986900,
+              "p99_ns": 9057400
+            },
+            "5": {
+              "p50_ns": 9584099,
+              "p99_ns": 13722298
+            },
+            "6": {
+              "p50_ns": 5617899,
+              "p99_ns": 11079399
+            },
+            "7": {
+              "p50_ns": 5641000,
+              "p99_ns": 9645299
+            }
+          }
+        },
+        "plain64": {
+          "median_bytes": 1381655,
+          "median_bytes_with_index": 1381964,
+          "median_projected_query_ns": 6174499,
+          "byte_ratio_to_json": 1.6714390788579117,
+          "projected_ratio_to_json": 1.0668313953438144,
+          "registered_layout_gate": false,
+          "rare_postings_median_saving_ns": 404100.0,
+          "postings_build_median_ns": 769600,
+          "postings_publication_median_ns": 4261200,
+          "postings_build_plus_publication_median_ns": 5099100,
+          "measured_break_even_queries": 13,
+          "projected_families": {
+            "0": {
+              "p50_ns": 6201799,
+              "p99_ns": 12345986
+            },
+            "1": {
+              "p50_ns": 6120900,
+              "p99_ns": 12862285
+            },
+            "2": {
+              "p50_ns": 6164800,
+              "p99_ns": 13695698
+            },
+            "3": {
+              "p50_ns": 6445900,
+              "p99_ns": 13795984
+            },
+            "4": {
+              "p50_ns": 6434399,
+              "p99_ns": 13391198
+            },
+            "5": {
+              "p50_ns": 6272199,
+              "p99_ns": 13132485
+            },
+            "6": {
+              "p50_ns": 6198699,
+              "p99_ns": 12938698
+            },
+            "7": {
+              "p50_ns": 6167799,
+              "p99_ns": 11996186
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 6128399,
+              "p99_ns": 13046398
+            },
+            "1": {
+              "p50_ns": 6035399,
+              "p99_ns": 12162898
+            },
+            "2": {
+              "p50_ns": 6077299,
+              "p99_ns": 13247785
+            },
+            "3": {
+              "p50_ns": 6118200,
+              "p99_ns": 12352688
+            },
+            "4": {
+              "p50_ns": 6481299,
+              "p99_ns": 14051683
+            },
+            "5": {
+              "p50_ns": 6195701,
+              "p99_ns": 15191282
+            },
+            "6": {
+              "p50_ns": 6157599,
+              "p99_ns": 12750198
+            },
+            "7": {
+              "p50_ns": 6058699,
+              "p99_ns": 12971285
+            }
+          }
+        },
+        "zstd64": {
+          "median_bytes": 191389,
+          "median_bytes_with_index": 191698,
+          "median_projected_query_ns": 1960400,
+          "byte_ratio_to_json": 0.23153034141195655,
+          "projected_ratio_to_json": 0.33871837495350055,
+          "registered_layout_gate": true,
+          "rare_postings_median_saving_ns": 381249.5,
+          "postings_build_median_ns": 795300,
+          "postings_publication_median_ns": 3689399,
+          "postings_build_plus_publication_median_ns": 4469099,
+          "measured_break_even_queries": 12,
+          "projected_families": {
+            "0": {
+              "p50_ns": 1938101,
+              "p99_ns": 7531992
+            },
+            "1": {
+              "p50_ns": 1884500,
+              "p99_ns": 5248994
+            },
+            "2": {
+              "p50_ns": 1863199,
+              "p99_ns": 4951395
+            },
+            "3": {
+              "p50_ns": 2219700,
+              "p99_ns": 13655384
+            },
+            "4": {
+              "p50_ns": 2221500,
+              "p99_ns": 8394190
+            },
+            "5": {
+              "p50_ns": 1956801,
+              "p99_ns": 12042886
+            },
+            "6": {
+              "p50_ns": 1899800,
+              "p99_ns": 8837890
+            },
+            "7": {
+              "p50_ns": 1891200,
+              "p99_ns": 6175093
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 1867200,
+              "p99_ns": 11427487
+            },
+            "1": {
+              "p50_ns": 1830799,
+              "p99_ns": 5618893
+            },
+            "2": {
+              "p50_ns": 1823101,
+              "p99_ns": 5305794
+            },
+            "3": {
+              "p50_ns": 1841900,
+              "p99_ns": 5742200
+            },
+            "4": {
+              "p50_ns": 2194001,
+              "p99_ns": 6647193
+            },
+            "5": {
+              "p50_ns": 1882600,
+              "p99_ns": 5400994
+            },
+            "6": {
+              "p50_ns": 1822900,
+              "p99_ns": 6147793
+            },
+            "7": {
+              "p50_ns": 1825400,
+              "p99_ns": 5239594
+            }
+          }
+        },
+        "zstd256": {
+          "median_bytes": 145910,
+          "median_bytes_with_index": 146214,
+          "median_projected_query_ns": 1234703,
+          "byte_ratio_to_json": 0.1765127155448776,
+          "projected_ratio_to_json": 0.21333227591828807,
+          "registered_layout_gate": true,
+          "rare_postings_median_saving_ns": 386701.0,
+          "postings_build_median_ns": 767300,
+          "postings_publication_median_ns": 3973400,
+          "postings_build_plus_publication_median_ns": 4699200,
+          "measured_break_even_queries": 13,
+          "projected_families": {
+            "0": {
+              "p50_ns": 1234100,
+              "p99_ns": 13831798
+            },
+            "1": {
+              "p50_ns": 1171800,
+              "p99_ns": 2944599
+            },
+            "2": {
+              "p50_ns": 1194003,
+              "p99_ns": 13636997
+            },
+            "3": {
+              "p50_ns": 1559501,
+              "p99_ns": 15366097
+            },
+            "4": {
+              "p50_ns": 1561603,
+              "p99_ns": 17229597
+            },
+            "5": {
+              "p50_ns": 1259900,
+              "p99_ns": 14693598
+            },
+            "6": {
+              "p50_ns": 1178300,
+              "p99_ns": 12892398
+            },
+            "7": {
+              "p50_ns": 1214303,
+              "p99_ns": 13551898
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 1161201,
+              "p99_ns": 6893399
+            },
+            "1": {
+              "p50_ns": 1138603,
+              "p99_ns": 12436698
+            },
+            "2": {
+              "p50_ns": 1137703,
+              "p99_ns": 3710899
+            },
+            "3": {
+              "p50_ns": 1164500,
+              "p99_ns": 7229598
+            },
+            "4": {
+              "p50_ns": 1494604,
+              "p99_ns": 7530998
+            },
+            "5": {
+              "p50_ns": 1207500,
+              "p99_ns": 14272697
+            },
+            "6": {
+              "p50_ns": 1183701,
+              "p99_ns": 5693299
+            },
+            "7": {
+              "p50_ns": 1150003,
+              "p99_ns": 6282799
+            }
+          }
+        }
+      },
+      "receipt": {
+        "median_ratio_by_family": {
+          "0": 1.1509642502031665,
+          "1": 6.36258079362856,
+          "2": 98.19107783564814,
+          "3": 2.930202048262708,
+          "4": 3.5444993928401622,
+          "5": 1.152123831968189,
+          "6": 84.60646862295214,
+          "7": 151.03596037898365
+        },
+        "p99_ratio_by_family": {
+          "0": 3.6533448988174952,
+          "1": 9.094866071428571,
+          "2": 169.81744525547444,
+          "3": 4.673569996658871,
+          "4": 11.14638423846468,
+          "5": 1.4687817647621586,
+          "6": 181.2560485651214,
+          "7": 334.1903571428571
+        },
+        "scalar_families": {
+          "0": {
+            "p50_ns": 3915399,
+            "p99_ns": 17842397
+          },
+          "1": {
+            "p50_ns": 86700,
+            "p99_ns": 278900
+          },
+          "2": {
+            "p50_ns": 13500,
+            "p99_ns": 61200
+          },
+          "3": {
+            "p50_ns": 419800,
+            "p99_ns": 1302100
+          },
+          "4": {
+            "p50_ns": 373400,
+            "p99_ns": 1117400
+          },
+          "5": {
+            "p50_ns": 3986600,
+            "p99_ns": 10873998
+          },
+          "6": {
+            "p50_ns": 17400,
+            "p99_ns": 54000
+          },
+          "7": {
+            "p50_ns": 11700,
+            "p99_ns": 46200
+          }
+        },
+        "receipt_families": {
+          "0": {
+            "p50_ns": 4533401,
+            "p99_ns": 34216494
+          },
+          "1": {
+            "p50_ns": 551100,
+            "p99_ns": 1534700
+          },
+          "2": {
+            "p50_ns": 1318500,
+            "p99_ns": 7351698
+          },
+          "3": {
+            "p50_ns": 1237300,
+            "p99_ns": 3478499
+          },
+          "4": {
+            "p50_ns": 1306000,
+            "p99_ns": 10918998
+          },
+          "5": {
+            "p50_ns": 4648001,
+            "p99_ns": 12785597
+          },
+          "6": {
+            "p50_ns": 1355600,
+            "p99_ns": 8210899
+          },
+          "7": {
+            "p50_ns": 1305600,
+            "p99_ns": 3726600
+          }
+        }
+      },
+      "sidecar": {
+        "median_server_cpu_ratio": 1.0397717380791178,
+        "median_total_cpu_ratio": 1.744781893800174,
+        "registered_server_gate": false,
+        "registered_total_gate": false
+      }
+    },
+    "shuffled_logs-202-2048": {
+      "source_sha256": "bcbaf1c25140b0517abdd4113f614abad18dc6a704320737dad53642b45048ec",
+      "events": 2048,
+      "measured_trials": 5,
+      "layouts": {
+        "json64": {
+          "median_bytes": 826626,
+          "median_bytes_with_index": 826626,
+          "median_projected_query_ns": 5859599,
+          "byte_ratio_to_json": 1.0,
+          "projected_ratio_to_json": 1.0,
+          "registered_layout_gate": null,
+          "rare_postings_median_saving_ns": null,
+          "postings_build_median_ns": null,
+          "postings_publication_median_ns": null,
+          "postings_build_plus_publication_median_ns": null,
+          "measured_break_even_queries": null,
+          "projected_families": {
+            "0": {
+              "p50_ns": 9433800,
+              "p99_ns": 15409400
+            },
+            "1": {
+              "p50_ns": 5617700,
+              "p99_ns": 8053200
+            },
+            "2": {
+              "p50_ns": 5485500,
+              "p99_ns": 6763600
+            },
+            "3": {
+              "p50_ns": 5849900,
+              "p99_ns": 10130300
+            },
+            "4": {
+              "p50_ns": 5891100,
+              "p99_ns": 10306800
+            },
+            "5": {
+              "p50_ns": 9526700,
+              "p99_ns": 13828700
+            },
+            "6": {
+              "p50_ns": 5526700,
+              "p99_ns": 8583100
+            },
+            "7": {
+              "p50_ns": 5518100,
+              "p99_ns": 10716600
+            }
+          }
+        },
+        "plain64": {
+          "median_bytes": 1381654,
+          "median_bytes_with_index": 1381962,
+          "median_projected_query_ns": 6141800,
+          "byte_ratio_to_json": 1.671437869120981,
+          "projected_ratio_to_json": 1.048160462857612,
+          "registered_layout_gate": false,
+          "rare_postings_median_saving_ns": 285350.0,
+          "postings_build_median_ns": 763200,
+          "postings_publication_median_ns": 4645000,
+          "postings_build_plus_publication_median_ns": 5440500,
+          "measured_break_even_queries": 20,
+          "projected_families": {
+            "0": {
+              "p50_ns": 6127100,
+              "p99_ns": 15952400
+            },
+            "1": {
+              "p50_ns": 6080900,
+              "p99_ns": 10131400
+            },
+            "2": {
+              "p50_ns": 6072001,
+              "p99_ns": 13866099
+            },
+            "3": {
+              "p50_ns": 6340000,
+              "p99_ns": 14852700
+            },
+            "4": {
+              "p50_ns": 6450900,
+              "p99_ns": 15827699
+            },
+            "5": {
+              "p50_ns": 6227000,
+              "p99_ns": 15724199
+            },
+            "6": {
+              "p50_ns": 6109800,
+              "p99_ns": 17814099
+            },
+            "7": {
+              "p50_ns": 6105400,
+              "p99_ns": 15332600
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 6095700,
+              "p99_ns": 14579700
+            },
+            "1": {
+              "p50_ns": 6018000,
+              "p99_ns": 12796900
+            },
+            "2": {
+              "p50_ns": 5971401,
+              "p99_ns": 14930300
+            },
+            "3": {
+              "p50_ns": 6036498,
+              "p99_ns": 14381100
+            },
+            "4": {
+              "p50_ns": 6433801,
+              "p99_ns": 15186900
+            },
+            "5": {
+              "p50_ns": 6062997,
+              "p99_ns": 21890600
+            },
+            "6": {
+              "p50_ns": 6079701,
+              "p99_ns": 15061000
+            },
+            "7": {
+              "p50_ns": 6025000,
+              "p99_ns": 14697699
+            }
+          }
+        },
+        "zstd64": {
+          "median_bytes": 191402,
+          "median_bytes_with_index": 191711,
+          "median_projected_query_ns": 1909700,
+          "byte_ratio_to_json": 0.23154606799205446,
+          "projected_ratio_to_json": 0.3259096740237685,
+          "registered_layout_gate": true,
+          "rare_postings_median_saving_ns": 351399.5,
+          "postings_build_median_ns": 776399,
+          "postings_publication_median_ns": 5342800,
+          "postings_build_plus_publication_median_ns": 6170100,
+          "measured_break_even_queries": 18,
+          "projected_families": {
+            "0": {
+              "p50_ns": 1932000,
+              "p99_ns": 8799201
+            },
+            "1": {
+              "p50_ns": 1900299,
+              "p99_ns": 5192600
+            },
+            "2": {
+              "p50_ns": 1855700,
+              "p99_ns": 5209700
+            },
+            "3": {
+              "p50_ns": 2181199,
+              "p99_ns": 5565100
+            },
+            "4": {
+              "p50_ns": 2205399,
+              "p99_ns": 4895200
+            },
+            "5": {
+              "p50_ns": 1948601,
+              "p99_ns": 4816400
+            },
+            "6": {
+              "p50_ns": 1872299,
+              "p99_ns": 4871500
+            },
+            "7": {
+              "p50_ns": 1892599,
+              "p99_ns": 4815401
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 1875300,
+              "p99_ns": 6265800
+            },
+            "1": {
+              "p50_ns": 1805600,
+              "p99_ns": 5393700
+            },
+            "2": {
+              "p50_ns": 1810300,
+              "p99_ns": 4611900
+            },
+            "3": {
+              "p50_ns": 1832900,
+              "p99_ns": 4791900
+            },
+            "4": {
+              "p50_ns": 2181700,
+              "p99_ns": 3867600
+            },
+            "5": {
+              "p50_ns": 1873400,
+              "p99_ns": 6011200
+            },
+            "6": {
+              "p50_ns": 1827900,
+              "p99_ns": 4697500
+            },
+            "7": {
+              "p50_ns": 1841400,
+              "p99_ns": 4458000
+            }
+          }
+        },
+        "zstd256": {
+          "median_bytes": 145888,
+          "median_bytes_with_index": 146202,
+          "median_projected_query_ns": 1205901,
+          "byte_ratio_to_json": 0.17648610133240425,
+          "projected_ratio_to_json": 0.20579923643239068,
+          "registered_layout_gate": true,
+          "rare_postings_median_saving_ns": 413750.0,
+          "postings_build_median_ns": 836401,
+          "postings_publication_median_ns": 4179500,
+          "postings_build_plus_publication_median_ns": 5016100,
+          "measured_break_even_queries": 13,
+          "projected_families": {
+            "0": {
+              "p50_ns": 1249700,
+              "p99_ns": 2527700
+            },
+            "1": {
+              "p50_ns": 1184900,
+              "p99_ns": 2679500
+            },
+            "2": {
+              "p50_ns": 1190600,
+              "p99_ns": 2501400
+            },
+            "3": {
+              "p50_ns": 1503700,
+              "p99_ns": 3270000
+            },
+            "4": {
+              "p50_ns": 1513700,
+              "p99_ns": 4224100
+            },
+            "5": {
+              "p50_ns": 1223599,
+              "p99_ns": 2740000
+            },
+            "6": {
+              "p50_ns": 1174400,
+              "p99_ns": 3003100
+            },
+            "7": {
+              "p50_ns": 1194800,
+              "p99_ns": 2621500
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 1154300,
+              "p99_ns": 2560300
+            },
+            "1": {
+              "p50_ns": 1136300,
+              "p99_ns": 2632600
+            },
+            "2": {
+              "p50_ns": 1136099,
+              "p99_ns": 2331100
+            },
+            "3": {
+              "p50_ns": 1101300,
+              "p99_ns": 2472000
+            },
+            "4": {
+              "p50_ns": 1456899,
+              "p99_ns": 4145500
+            },
+            "5": {
+              "p50_ns": 1153000,
+              "p99_ns": 2654900
+            },
+            "6": {
+              "p50_ns": 1117300,
+              "p99_ns": 2910900
+            },
+            "7": {
+              "p50_ns": 1106599,
+              "p99_ns": 2742000
+            }
+          }
+        }
+      },
+      "receipt": {
+        "median_ratio_by_family": {
+          "0": 1.160934338758275,
+          "1": 6.410357605301791,
+          "2": 100.06521739130434,
+          "3": 2.9143122104979913,
+          "4": 3.612804215806089,
+          "5": 1.1553165307345274,
+          "6": 86.4038259038259,
+          "7": 183.84566176470588
+        },
+        "p99_ratio_by_family": {
+          "0": 1.5913373613908373,
+          "1": 9.285500747384155,
+          "2": 127.85263157894737,
+          "3": 3.612207851145904,
+          "4": 4.098875442739079,
+          "5": 1.8259298061812468,
+          "6": 172.17142857142858,
+          "7": 415.3783783783784
+        },
+        "scalar_families": {
+          "0": {
+            "p50_ns": 3838801,
+            "p99_ns": 6821300
+          },
+          "1": {
+            "p50_ns": 84900,
+            "p99_ns": 231200
+          },
+          "2": {
+            "p50_ns": 13300,
+            "p99_ns": 39800
+          },
+          "3": {
+            "p50_ns": 410800,
+            "p99_ns": 795600
+          },
+          "4": {
+            "p50_ns": 353100,
+            "p99_ns": 730500
+          },
+          "5": {
+            "p50_ns": 3876500,
+            "p99_ns": 7009200
+          },
+          "6": {
+            "p50_ns": 15400,
+            "p99_ns": 30200
+          },
+          "7": {
+            "p50_ns": 6800,
+            "p99_ns": 22500
+          }
+        },
+        "receipt_families": {
+          "0": {
+            "p50_ns": 4477899,
+            "p99_ns": 6874100
+          },
+          "1": {
+            "p50_ns": 546700,
+            "p99_ns": 1445600
+          },
+          "2": {
+            "p50_ns": 1258100,
+            "p99_ns": 2460600
+          },
+          "3": {
+            "p50_ns": 1190800,
+            "p99_ns": 2321100
+          },
+          "4": {
+            "p50_ns": 1278500,
+            "p99_ns": 2366600
+          },
+          "5": {
+            "p50_ns": 4505000,
+            "p99_ns": 8092900
+          },
+          "6": {
+            "p50_ns": 1302100,
+            "p99_ns": 2275100
+          },
+          "7": {
+            "p50_ns": 1270000,
+            "p99_ns": 2391200
+          }
+        }
+      },
+      "sidecar": {
+        "median_server_cpu_ratio": 0.992206316131302,
+        "median_total_cpu_ratio": 1.6697967688685629,
+        "registered_server_gate": false,
+        "registered_total_gate": false
+      }
+    },
+    "shuffled_logs-203-2048": {
+      "source_sha256": "c552cb22adbc752b550618ca158f5902453b2ad6f64621915dfc00c495d77b1d",
+      "events": 2048,
+      "measured_trials": 5,
+      "layouts": {
+        "json64": {
+          "median_bytes": 826626,
+          "median_bytes_with_index": 826626,
+          "median_projected_query_ns": 5768200,
+          "byte_ratio_to_json": 1.0,
+          "projected_ratio_to_json": 1.0,
+          "registered_layout_gate": null,
+          "rare_postings_median_saving_ns": null,
+          "postings_build_median_ns": null,
+          "postings_publication_median_ns": null,
+          "postings_build_plus_publication_median_ns": null,
+          "measured_break_even_queries": null,
+          "projected_families": {
+            "0": {
+              "p50_ns": 9436200,
+              "p99_ns": 10751501
+            },
+            "1": {
+              "p50_ns": 5626900,
+              "p99_ns": 9269601
+            },
+            "2": {
+              "p50_ns": 5546200,
+              "p99_ns": 9381500
+            },
+            "3": {
+              "p50_ns": 5907900,
+              "p99_ns": 7794501
+            },
+            "4": {
+              "p50_ns": 5886300,
+              "p99_ns": 7356300
+            },
+            "5": {
+              "p50_ns": 9491101,
+              "p99_ns": 14041801
+            },
+            "6": {
+              "p50_ns": 5492300,
+              "p99_ns": 7930400
+            },
+            "7": {
+              "p50_ns": 5487900,
+              "p99_ns": 8017001
+            }
+          }
+        },
+        "plain64": {
+          "median_bytes": 1381655,
+          "median_bytes_with_index": 1381964,
+          "median_projected_query_ns": 6143100,
+          "byte_ratio_to_json": 1.6714390788579117,
+          "projected_ratio_to_json": 1.064994278977844,
+          "registered_layout_gate": false,
+          "rare_postings_median_saving_ns": 328250.0,
+          "postings_build_median_ns": 757900,
+          "postings_publication_median_ns": 4376900,
+          "postings_build_plus_publication_median_ns": 5137100,
+          "measured_break_even_queries": 16,
+          "projected_families": {
+            "0": {
+              "p50_ns": 6243200,
+              "p99_ns": 14615501
+            },
+            "1": {
+              "p50_ns": 6079400,
+              "p99_ns": 9522200
+            },
+            "2": {
+              "p50_ns": 6087800,
+              "p99_ns": 9097300
+            },
+            "3": {
+              "p50_ns": 6386200,
+              "p99_ns": 9133399
+            },
+            "4": {
+              "p50_ns": 6463700,
+              "p99_ns": 10044800
+            },
+            "5": {
+              "p50_ns": 6185400,
+              "p99_ns": 11670700
+            },
+            "6": {
+              "p50_ns": 6108700,
+              "p99_ns": 12063300
+            },
+            "7": {
+              "p50_ns": 6074700,
+              "p99_ns": 10952100
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 6065600,
+              "p99_ns": 8895400
+            },
+            "1": {
+              "p50_ns": 6025500,
+              "p99_ns": 10680900
+            },
+            "2": {
+              "p50_ns": 6003100,
+              "p99_ns": 9421901
+            },
+            "3": {
+              "p50_ns": 6063600,
+              "p99_ns": 8705800
+            },
+            "4": {
+              "p50_ns": 6397400,
+              "p99_ns": 11067400
+            },
+            "5": {
+              "p50_ns": 6140701,
+              "p99_ns": 11403400
+            },
+            "6": {
+              "p50_ns": 6113100,
+              "p99_ns": 9634900
+            },
+            "7": {
+              "p50_ns": 6003000,
+              "p99_ns": 9136701
+            }
+          }
+        },
+        "zstd64": {
+          "median_bytes": 191786,
+          "median_bytes_with_index": 192097,
+          "median_projected_query_ns": 1908800,
+          "byte_ratio_to_json": 0.23201060697340756,
+          "projected_ratio_to_json": 0.33091779064526194,
+          "registered_layout_gate": true,
+          "rare_postings_median_saving_ns": 346700.0,
+          "postings_build_median_ns": 762900,
+          "postings_publication_median_ns": 4541400,
+          "postings_build_plus_publication_median_ns": 5304300,
+          "measured_break_even_queries": 16,
+          "projected_families": {
+            "0": {
+              "p50_ns": 1869500,
+              "p99_ns": 3786300
+            },
+            "1": {
+              "p50_ns": 1816800,
+              "p99_ns": 2797600
+            },
+            "2": {
+              "p50_ns": 1825900,
+              "p99_ns": 2694200
+            },
+            "3": {
+              "p50_ns": 2137200,
+              "p99_ns": 3121300
+            },
+            "4": {
+              "p50_ns": 2179001,
+              "p99_ns": 2694800
+            },
+            "5": {
+              "p50_ns": 1880100,
+              "p99_ns": 2549100
+            },
+            "6": {
+              "p50_ns": 1843800,
+              "p99_ns": 2656500
+            },
+            "7": {
+              "p50_ns": 1819100,
+              "p99_ns": 4100300
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 1817301,
+              "p99_ns": 3147000
+            },
+            "1": {
+              "p50_ns": 1771500,
+              "p99_ns": 3327900
+            },
+            "2": {
+              "p50_ns": 1776500,
+              "p99_ns": 3314400
+            },
+            "3": {
+              "p50_ns": 1794600,
+              "p99_ns": 2470700
+            },
+            "4": {
+              "p50_ns": 2112900,
+              "p99_ns": 3095901
+            },
+            "5": {
+              "p50_ns": 1819800,
+              "p99_ns": 3458300
+            },
+            "6": {
+              "p50_ns": 1789500,
+              "p99_ns": 2313400
+            },
+            "7": {
+              "p50_ns": 1761100,
+              "p99_ns": 2848700
+            }
+          }
+        },
+        "zstd256": {
+          "median_bytes": 145825,
+          "median_bytes_with_index": 146136,
+          "median_projected_query_ns": 1140800,
+          "byte_ratio_to_json": 0.176409887905776,
+          "projected_ratio_to_json": 0.19777400228840886,
+          "registered_layout_gate": true,
+          "rare_postings_median_saving_ns": 358050.0,
+          "postings_build_median_ns": 750200,
+          "postings_publication_median_ns": 3898400,
+          "postings_build_plus_publication_median_ns": 4731700,
+          "measured_break_even_queries": 14,
+          "projected_families": {
+            "0": {
+              "p50_ns": 1111700,
+              "p99_ns": 1885200
+            },
+            "1": {
+              "p50_ns": 1078000,
+              "p99_ns": 1291600
+            },
+            "2": {
+              "p50_ns": 1106800,
+              "p99_ns": 1684700
+            },
+            "3": {
+              "p50_ns": 1407700,
+              "p99_ns": 3189600
+            },
+            "4": {
+              "p50_ns": 1435900,
+              "p99_ns": 1955299
+            },
+            "5": {
+              "p50_ns": 1140800,
+              "p99_ns": 1811500
+            },
+            "6": {
+              "p50_ns": 1087700,
+              "p99_ns": 1747700
+            },
+            "7": {
+              "p50_ns": 1089400,
+              "p99_ns": 1514700
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 1072100,
+              "p99_ns": 1928400
+            },
+            "1": {
+              "p50_ns": 1034500,
+              "p99_ns": 1326200
+            },
+            "2": {
+              "p50_ns": 1037400,
+              "p99_ns": 1582600
+            },
+            "3": {
+              "p50_ns": 1052900,
+              "p99_ns": 2835700
+            },
+            "4": {
+              "p50_ns": 1390100,
+              "p99_ns": 1734000
+            },
+            "5": {
+              "p50_ns": 1092200,
+              "p99_ns": 1717800
+            },
+            "6": {
+              "p50_ns": 1046400,
+              "p99_ns": 1597700
+            },
+            "7": {
+              "p50_ns": 1037500,
+              "p99_ns": 1833700
+            }
+          }
+        }
+      },
+      "receipt": {
+        "median_ratio_by_family": {
+          "0": 1.1477850503715192,
+          "1": 6.526687820318394,
+          "2": 98.54918032786885,
+          "3": 2.944888776317489,
+          "4": 3.6104328646807087,
+          "5": 1.1575881641831955,
+          "6": 89.450512214342,
+          "7": 183.1235080988917
+        },
+        "p99_ratio_by_family": {
+          "0": 1.3557046979865772,
+          "1": 9.985806451612904,
+          "2": 143.05555555555554,
+          "3": 5.1763830315058295,
+          "4": 4.545939537640782,
+          "5": 1.5765756438462535,
+          "6": 140.6705882352941,
+          "7": 341.50025
+        },
+        "scalar_families": {
+          "0": {
+            "p50_ns": 3767500,
+            "p99_ns": 4937900
+          },
+          "1": {
+            "p50_ns": 80300,
+            "p99_ns": 219400
+          },
+          "2": {
+            "p50_ns": 13000,
+            "p99_ns": 44900
+          },
+          "3": {
+            "p50_ns": 396100,
+            "p99_ns": 690700
+          },
+          "4": {
+            "p50_ns": 345300,
+            "p99_ns": 572900
+          },
+          "5": {
+            "p50_ns": 3807800,
+            "p99_ns": 4144400
+          },
+          "6": {
+            "p50_ns": 14200,
+            "p99_ns": 47300
+          },
+          "7": {
+            "p50_ns": 6800,
+            "p99_ns": 23700
+          }
+        },
+        "receipt_families": {
+          "0": {
+            "p50_ns": 4360900,
+            "p99_ns": 5171200
+          },
+          "1": {
+            "p50_ns": 512400,
+            "p99_ns": 943600
+          },
+          "2": {
+            "p50_ns": 1212900,
+            "p99_ns": 2380000
+          },
+          "3": {
+            "p50_ns": 1153400,
+            "p99_ns": 2086600
+          },
+          "4": {
+            "p50_ns": 1254100,
+            "p99_ns": 2006700
+          },
+          "5": {
+            "p50_ns": 4415999,
+            "p99_ns": 6091100
+          },
+          "6": {
+            "p50_ns": 1258100,
+            "p99_ns": 1692500
+          },
+          "7": {
+            "p50_ns": 1248900,
+            "p99_ns": 1431400
+          }
+        }
+      },
+      "sidecar": {
+        "median_server_cpu_ratio": 1.0257305913608186,
+        "median_total_cpu_ratio": 1.72077142576011,
+        "registered_server_gate": false,
+        "registered_total_gate": false
+      }
+    },
+    "mixed-201-8192": {
+      "source_sha256": "f140e25f7be2ea23b42a9c3b382d2ab42354a5a022f11d6226a29abe1102d258",
+      "events": 8192,
+      "measured_trials": 5,
+      "layouts": {
+        "json64": {
+          "median_bytes": 2898507,
+          "median_bytes_with_index": 2898507,
+          "median_projected_query_ns": 22184499,
+          "byte_ratio_to_json": 1.0,
+          "projected_ratio_to_json": 1.0,
+          "registered_layout_gate": null,
+          "rare_postings_median_saving_ns": null,
+          "postings_build_median_ns": null,
+          "postings_publication_median_ns": null,
+          "postings_build_plus_publication_median_ns": null,
+          "measured_break_even_queries": null,
+          "projected_families": {
+            "0": {
+              "p50_ns": 34372100,
+              "p99_ns": 75564299
+            },
+            "1": {
+              "p50_ns": 21490201,
+              "p99_ns": 46258900
+            },
+            "2": {
+              "p50_ns": 21401000,
+              "p99_ns": 50180200
+            },
+            "3": {
+              "p50_ns": 22180901,
+              "p99_ns": 48735299
+            },
+            "4": {
+              "p50_ns": 22081700,
+              "p99_ns": 52328400
+            },
+            "5": {
+              "p50_ns": 29123900,
+              "p99_ns": 61500999
+            },
+            "6": {
+              "p50_ns": 21392600,
+              "p99_ns": 41595299
+            },
+            "7": {
+              "p50_ns": 21310500,
+              "p99_ns": 51171400
+            }
+          }
+        },
+        "plain64": {
+          "median_bytes": 4432712,
+          "median_bytes_with_index": 4433060,
+          "median_projected_query_ns": 19984700,
+          "byte_ratio_to_json": 1.5293087096218847,
+          "projected_ratio_to_json": 0.9008407176560534,
+          "registered_layout_gate": false,
+          "rare_postings_median_saving_ns": 658450.5,
+          "postings_build_median_ns": 1765300,
+          "postings_publication_median_ns": 5348900,
+          "postings_build_plus_publication_median_ns": 7143500,
+          "measured_break_even_queries": 11,
+          "projected_families": {
+            "0": {
+              "p50_ns": 19834400,
+              "p99_ns": 30828000
+            },
+            "1": {
+              "p50_ns": 19736200,
+              "p99_ns": 33309701
+            },
+            "2": {
+              "p50_ns": 19638401,
+              "p99_ns": 33591200
+            },
+            "3": {
+              "p50_ns": 20331900,
+              "p99_ns": 31852500
+            },
+            "4": {
+              "p50_ns": 20383199,
+              "p99_ns": 36305000
+            },
+            "5": {
+              "p50_ns": 19808500,
+              "p99_ns": 32925300
+            },
+            "6": {
+              "p50_ns": 19813000,
+              "p99_ns": 30789800
+            },
+            "7": {
+              "p50_ns": 19810700,
+              "p99_ns": 31211600
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 19831200,
+              "p99_ns": 39450100
+            },
+            "1": {
+              "p50_ns": 19634101,
+              "p99_ns": 37376901
+            },
+            "2": {
+              "p50_ns": 19540400,
+              "p99_ns": 28446100
+            },
+            "3": {
+              "p50_ns": 19683200,
+              "p99_ns": 29006700
+            },
+            "4": {
+              "p50_ns": 20298800,
+              "p99_ns": 34582500
+            },
+            "5": {
+              "p50_ns": 19795301,
+              "p99_ns": 29838200
+            },
+            "6": {
+              "p50_ns": 19815700,
+              "p99_ns": 30710300
+            },
+            "7": {
+              "p50_ns": 19737800,
+              "p99_ns": 29102100
+            }
+          }
+        },
+        "zstd64": {
+          "median_bytes": 746126,
+          "median_bytes_with_index": 746481,
+          "median_projected_query_ns": 7211000,
+          "byte_ratio_to_json": 0.25741735314077213,
+          "projected_ratio_to_json": 0.3250467815387672,
+          "registered_layout_gate": true,
+          "rare_postings_median_saving_ns": 786000.0,
+          "postings_build_median_ns": 1807400,
+          "postings_publication_median_ns": 4104700,
+          "postings_build_plus_publication_median_ns": 5916200,
+          "measured_break_even_queries": 8,
+          "projected_families": {
+            "0": {
+              "p50_ns": 7060000,
+              "p99_ns": 15188700
+            },
+            "1": {
+              "p50_ns": 6893800,
+              "p99_ns": 15450501
+            },
+            "2": {
+              "p50_ns": 6913100,
+              "p99_ns": 14958000
+            },
+            "3": {
+              "p50_ns": 7536600,
+              "p99_ns": 16859800
+            },
+            "4": {
+              "p50_ns": 7576600,
+              "p99_ns": 17134000
+            },
+            "5": {
+              "p50_ns": 7041400,
+              "p99_ns": 17067200
+            },
+            "6": {
+              "p50_ns": 6939700,
+              "p99_ns": 16266100
+            },
+            "7": {
+              "p50_ns": 6938500,
+              "p99_ns": 14803000
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 6871500,
+              "p99_ns": 16444900
+            },
+            "1": {
+              "p50_ns": 6711900,
+              "p99_ns": 15593800
+            },
+            "2": {
+              "p50_ns": 6708900,
+              "p99_ns": 14433700
+            },
+            "3": {
+              "p50_ns": 6788000,
+              "p99_ns": 16997900
+            },
+            "4": {
+              "p50_ns": 7447200,
+              "p99_ns": 15716000
+            },
+            "5": {
+              "p50_ns": 6876701,
+              "p99_ns": 17701800
+            },
+            "6": {
+              "p50_ns": 6799000,
+              "p99_ns": 16755400
+            },
+            "7": {
+              "p50_ns": 6741200,
+              "p99_ns": 14899700
+            }
+          }
+        },
+        "zstd256": {
+          "median_bytes": 545890,
+          "median_bytes_with_index": 546236,
+          "median_projected_query_ns": 4041800,
+          "byte_ratio_to_json": 0.1883348910318312,
+          "projected_ratio_to_json": 0.18219027619239903,
+          "registered_layout_gate": true,
+          "rare_postings_median_saving_ns": 722250.0,
+          "postings_build_median_ns": 1936200,
+          "postings_publication_median_ns": 5012300,
+          "postings_build_plus_publication_median_ns": 6981100,
+          "measured_break_even_queries": 10,
+          "projected_families": {
+            "0": {
+              "p50_ns": 4028900,
+              "p99_ns": 8654600
+            },
+            "1": {
+              "p50_ns": 3905000,
+              "p99_ns": 9011200
+            },
+            "2": {
+              "p50_ns": 3918800,
+              "p99_ns": 8895300
+            },
+            "3": {
+              "p50_ns": 4569799,
+              "p99_ns": 9961000
+            },
+            "4": {
+              "p50_ns": 4613900,
+              "p99_ns": 10310600
+            },
+            "5": {
+              "p50_ns": 4034600,
+              "p99_ns": 7353700
+            },
+            "6": {
+              "p50_ns": 3959300,
+              "p99_ns": 8128000
+            },
+            "7": {
+              "p50_ns": 3940100,
+              "p99_ns": 8932500
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 3922600,
+              "p99_ns": 8677900
+            },
+            "1": {
+              "p50_ns": 3794700,
+              "p99_ns": 8658300
+            },
+            "2": {
+              "p50_ns": 3798100,
+              "p99_ns": 7502099
+            },
+            "3": {
+              "p50_ns": 3875200,
+              "p99_ns": 8287700
+            },
+            "4": {
+              "p50_ns": 4491200,
+              "p99_ns": 9551299
+            },
+            "5": {
+              "p50_ns": 3914800,
+              "p99_ns": 8161800
+            },
+            "6": {
+              "p50_ns": 3871000,
+              "p99_ns": 7991600
+            },
+            "7": {
+              "p50_ns": 3780500,
+              "p99_ns": 9318100
+            }
+          }
+        }
+      }
+    },
+    "shuffled_logs-201-8192": {
+      "source_sha256": "299853fcb64d17177a05908bf2acf9f34e901ec808fe5103370f30dadcc46876",
+      "events": 8192,
+      "measured_trials": 5,
+      "layouts": {
+        "json64": {
+          "median_bytes": 3313152,
+          "median_bytes_with_index": 3313152,
+          "median_projected_query_ns": 39193900,
+          "byte_ratio_to_json": 1.0,
+          "projected_ratio_to_json": 1.0,
+          "registered_layout_gate": null,
+          "rare_postings_median_saving_ns": null,
+          "postings_build_median_ns": null,
+          "postings_publication_median_ns": null,
+          "postings_build_plus_publication_median_ns": null,
+          "measured_break_even_queries": null,
+          "projected_families": {
+            "0": {
+              "p50_ns": 63749504,
+              "p99_ns": 131742180
+            },
+            "1": {
+              "p50_ns": 34877401,
+              "p99_ns": 79750397
+            },
+            "2": {
+              "p50_ns": 34187600,
+              "p99_ns": 88000698
+            },
+            "3": {
+              "p50_ns": 37201201,
+              "p99_ns": 81460288
+            },
+            "4": {
+              "p50_ns": 38345400,
+              "p99_ns": 90745397
+            },
+            "5": {
+              "p50_ns": 61140299,
+              "p99_ns": 127904900
+            },
+            "6": {
+              "p50_ns": 35606699,
+              "p99_ns": 84489100
+            },
+            "7": {
+              "p50_ns": 36586600,
+              "p99_ns": 85957800
+            }
+          }
+        },
+        "plain64": {
+          "median_bytes": 5535144,
+          "median_bytes_with_index": 5535574,
+          "median_projected_query_ns": 37444100,
+          "byte_ratio_to_json": 1.6706580319888735,
+          "projected_ratio_to_json": 0.9553552976356015,
+          "registered_layout_gate": false,
+          "rare_postings_median_saving_ns": 1982044.0,
+          "postings_build_median_ns": 7755300,
+          "postings_publication_median_ns": 6436300,
+          "postings_build_plus_publication_median_ns": 14253900,
+          "measured_break_even_queries": 8,
+          "projected_families": {
+            "0": {
+              "p50_ns": 37225600,
+              "p99_ns": 102035901
+            },
+            "1": {
+              "p50_ns": 37777499,
+              "p99_ns": 126407802
+            },
+            "2": {
+              "p50_ns": 37483998,
+              "p99_ns": 135346101
+            },
+            "3": {
+              "p50_ns": 40623400,
+              "p99_ns": 146005093
+            },
+            "4": {
+              "p50_ns": 40292485,
+              "p99_ns": 141204101
+            },
+            "5": {
+              "p50_ns": 37805500,
+              "p99_ns": 123629909
+            },
+            "6": {
+              "p50_ns": 37429900,
+              "p99_ns": 137026608
+            },
+            "7": {
+              "p50_ns": 38186800,
+              "p99_ns": 128365002
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 37786900,
+              "p99_ns": 86239401
+            },
+            "1": {
+              "p50_ns": 38310416,
+              "p99_ns": 132278001
+            },
+            "2": {
+              "p50_ns": 37562700,
+              "p99_ns": 129896994
+            },
+            "3": {
+              "p50_ns": 38124698,
+              "p99_ns": 136596163
+            },
+            "4": {
+              "p50_ns": 40070400,
+              "p99_ns": 135596209
+            },
+            "5": {
+              "p50_ns": 38640100,
+              "p99_ns": 124708414
+            },
+            "6": {
+              "p50_ns": 38155800,
+              "p99_ns": 127551789
+            },
+            "7": {
+              "p50_ns": 38593500,
+              "p99_ns": 142065701
+            }
+          }
+        },
+        "zstd64": {
+          "median_bytes": 763175,
+          "median_bytes_with_index": 763606,
+          "median_projected_query_ns": 11409900,
+          "byte_ratio_to_json": 0.23034711356436408,
+          "projected_ratio_to_json": 0.2911141784818556,
+          "registered_layout_gate": true,
+          "rare_postings_median_saving_ns": 1855000.0,
+          "postings_build_median_ns": 6596900,
+          "postings_publication_median_ns": 4221000,
+          "postings_build_plus_publication_median_ns": 10817900,
+          "measured_break_even_queries": 6,
+          "projected_families": {
+            "0": {
+              "p50_ns": 9880100,
+              "p99_ns": 24534800
+            },
+            "1": {
+              "p50_ns": 9960600,
+              "p99_ns": 28241900
+            },
+            "2": {
+              "p50_ns": 10106300,
+              "p99_ns": 38112575
+            },
+            "3": {
+              "p50_ns": 11591700,
+              "p99_ns": 32188000
+            },
+            "4": {
+              "p50_ns": 11858000,
+              "p99_ns": 40755611
+            },
+            "5": {
+              "p50_ns": 10331400,
+              "p99_ns": 36083109
+            },
+            "6": {
+              "p50_ns": 10051500,
+              "p99_ns": 30703800
+            },
+            "7": {
+              "p50_ns": 9757800,
+              "p99_ns": 27507200
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 9911200,
+              "p99_ns": 36829096
+            },
+            "1": {
+              "p50_ns": 9872800,
+              "p99_ns": 29171200
+            },
+            "2": {
+              "p50_ns": 9903500,
+              "p99_ns": 28022400
+            },
+            "3": {
+              "p50_ns": 10003900,
+              "p99_ns": 26415200
+            },
+            "4": {
+              "p50_ns": 11618801,
+              "p99_ns": 43049300
+            },
+            "5": {
+              "p50_ns": 10056400,
+              "p99_ns": 33649609
+            },
+            "6": {
+              "p50_ns": 10199000,
+              "p99_ns": 28684007
+            },
+            "7": {
+              "p50_ns": 9705100,
+              "p99_ns": 29168401
+            }
+          }
+        },
+        "zstd256": {
+          "median_bytes": 581862,
+          "median_bytes_with_index": 582296,
+          "median_projected_query_ns": 6495800,
+          "byte_ratio_to_json": 0.1756218851414001,
+          "projected_ratio_to_json": 0.16573497406484172,
+          "registered_layout_gate": true,
+          "rare_postings_median_saving_ns": 1708500.0,
+          "postings_build_median_ns": 3860100,
+          "postings_publication_median_ns": 4470700,
+          "postings_build_plus_publication_median_ns": 8136500,
+          "measured_break_even_queries": 5,
+          "projected_families": {
+            "0": {
+              "p50_ns": 6148800,
+              "p99_ns": 14048100
+            },
+            "1": {
+              "p50_ns": 5967700,
+              "p99_ns": 14576599
+            },
+            "2": {
+              "p50_ns": 6094700,
+              "p99_ns": 12315300
+            },
+            "3": {
+              "p50_ns": 7843600,
+              "p99_ns": 21852900
+            },
+            "4": {
+              "p50_ns": 8114700,
+              "p99_ns": 22377501
+            },
+            "5": {
+              "p50_ns": 6309099,
+              "p99_ns": 23478101
+            },
+            "6": {
+              "p50_ns": 6302200,
+              "p99_ns": 18515200
+            },
+            "7": {
+              "p50_ns": 6239400,
+              "p99_ns": 14513301
+            }
+          },
+          "postings_families": {
+            "0": {
+              "p50_ns": 6066600,
+              "p99_ns": 19102100
+            },
+            "1": {
+              "p50_ns": 5992600,
+              "p99_ns": 18505300
+            },
+            "2": {
+              "p50_ns": 6019000,
+              "p99_ns": 12975200
+            },
+            "3": {
+              "p50_ns": 6198300,
+              "p99_ns": 15193899
+            },
+            "4": {
+              "p50_ns": 7946400,
+              "p99_ns": 21422300
+            },
+            "5": {
+              "p50_ns": 6238600,
+              "p99_ns": 19080100
+            },
+            "6": {
+              "p50_ns": 6099200,
+              "p99_ns": 19590200
+            },
+            "7": {
+              "p50_ns": 6025400,
+              "p99_ns": 14050700
+            }
+          }
+        }
+      }
+    }
+  },
+  "source_code_sha256": {
+    "tools/storage-probe/src/bin/common/mod.rs": "256380c9c638bb4dc09e65d9cd9af9fa6add4dfd367007b0261456592045a0fc",
+    "tools/storage-probe/src/bin/receipt-cost.rs": "b227f52b4c4e6f8c9b2f58427774372e4a40402dca54a902200cc542a4fb97c7",
+    "tools/storage-probe/src/bin/sidecar-cost.rs": "a345938085f7e216b7895cca3bb0055fd7a6fb6bfc7d786201fb52e8209aab66",
+    "tools/layout-probe/src/bin/layout-cost.rs": "1f59ddf64b7146cf03ef1dff0cca105ae02c76f12578b9ecb7305ef1a394c58f",
+    "tools/bench/run_research_costs.py": "ff531c7b6dd6a12c652fc9faf4c2be350e93e678e30ef914861cc51cd40da04e",
+    "tools/bench/test_research_costs.py": "0aca64af1cfc8ca0ec71eed038ed966ff3534f77c999061c6a8c65e1d1e125b6"
+  },
+  "checks": {
+    "commands": 490,
+    "zero_exit_commands": 490,
+    "preserved_artifact_hashes": 4436
+  },
+  "limits": [
+    "Performance interpretation requires the formal run exit result and documented host/load context."
+  ]
+}

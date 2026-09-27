@@ -15,6 +15,8 @@ use crate::{
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::Path;
+#[cfg(feature = "append-attribution")]
+use std::time::Instant;
 
 const MAGIC: [u8; 4] = *b"FOL2";
 const COMMIT_MAGIC: [u8; 4] = *b"FOC2";
@@ -24,6 +26,17 @@ const COMMIT_BYTES: usize = 16;
 // smallest payload: Log tag plus a 4-byte empty body length.
 const MIN_RECORD_BYTES: usize = 57;
 pub const MAX_RECORD_BYTES: usize = 16 * 1024 * 1024;
+
+/// Elapsed time in each nonoverlapping phase of a successful append.
+#[cfg(feature = "append-attribution")]
+#[derive(Clone, Copy, Debug)]
+pub struct AppendPhases {
+    pub encode_ns: u128,
+    pub data_write_ns: u128,
+    pub data_sync_ns: u128,
+    pub marker_write_ns: u128,
+    pub marker_sync_ns: u128,
+}
 
 /// Compare exactly the bytes that this log format would persist for two events.
 ///
@@ -42,6 +55,8 @@ pub struct EventLog {
     file: File,
     end: u64,
     poisoned: bool,
+    #[cfg(feature = "append-attribution")]
+    last_append_phases: Option<AppendPhases>,
 }
 
 impl EventLog {
@@ -72,7 +87,15 @@ impl EventLog {
             file,
             end,
             poisoned: false,
+            #[cfg(feature = "append-attribution")]
+            last_append_phases: None,
         })
+    }
+
+    /// Return phase durations for the most recent successful append attempt.
+    #[cfg(feature = "append-attribution")]
+    pub fn last_append_phases(&self) -> Option<AppendPhases> {
+        self.last_append_phases
     }
 
     /// Commit one event. Success is the local acknowledgement boundary.
@@ -83,7 +106,13 @@ impl EventLog {
     /// alone does not establish their durability. Recover from an independent
     /// trusted copy on a healthy storage path before retrying the event.
     pub fn append(&mut self, event: &Event) -> io::Result<()> {
+        #[cfg(feature = "append-attribution")]
+        {
+            self.last_append_phases = None;
+        }
         self.ensure_healthy()?;
+        #[cfg(feature = "append-attribution")]
+        let encode_start = Instant::now();
         let payload = encode_event(event)?;
         let len = u32::try_from(payload.len()).expect("encoded record is bounded to 16 MiB");
         let mut header = [0_u8; HEADER_BYTES];
@@ -100,20 +129,54 @@ impl EventLog {
             .checked_add(COMMIT_BYTES as u64)
             .ok_or_else(|| invalid_input("log offset overflow"))?;
         let marker = commit_marker(data_end);
+        #[cfg(feature = "append-attribution")]
+        let encode_ns = encode_start.elapsed().as_nanos();
 
         let result = (|| {
+            #[cfg(feature = "append-attribution")]
+            let data_write_start = Instant::now();
             self.file.seek(SeekFrom::Start(self.end))?;
             self.file.write_all(&header)?;
             self.file.write_all(&payload)?;
+            #[cfg(feature = "append-attribution")]
+            let data_write_ns = data_write_start.elapsed().as_nanos();
+            #[cfg(feature = "append-attribution")]
+            let data_sync_start = Instant::now();
             self.file.sync_all()?;
+            #[cfg(feature = "append-attribution")]
+            let data_sync_ns = data_sync_start.elapsed().as_nanos();
+            #[cfg(feature = "append-attribution")]
+            let marker_write_start = Instant::now();
             self.file.write_all(&marker)?;
+            #[cfg(feature = "append-attribution")]
+            let marker_write_ns = marker_write_start.elapsed().as_nanos();
+            #[cfg(feature = "append-attribution")]
+            let marker_sync_start = Instant::now();
             self.file.sync_all()?;
-            Ok(())
+            #[cfg(feature = "append-attribution")]
+            let marker_sync_ns = marker_sync_start.elapsed().as_nanos();
+            #[cfg(feature = "append-attribution")]
+            let phases = AppendPhases {
+                encode_ns,
+                data_write_ns,
+                data_sync_ns,
+                marker_write_ns,
+                marker_sync_ns,
+            };
+            #[cfg(not(feature = "append-attribution"))]
+            let phases = ();
+            Ok(phases)
         })();
 
         match result {
-            Ok(()) => {
+            Ok(phases) => {
                 self.end = committed_end;
+                #[cfg(feature = "append-attribution")]
+                {
+                    self.last_append_phases = Some(phases);
+                }
+                #[cfg(not(feature = "append-attribution"))]
+                let _ = phases;
                 Ok(())
             }
             Err(error) => {

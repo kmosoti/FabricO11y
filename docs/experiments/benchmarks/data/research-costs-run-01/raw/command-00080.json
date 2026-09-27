@@ -1,0 +1,21 @@
+{
+  "command": [
+    "/home/kmosoti/projects/fabric_o11y/tools/storage-probe/target/release/sidecar-cost",
+    "server",
+    "formal",
+    "mixed",
+    "202",
+    "-1",
+    "/home/kmosoti/projects/fabric_o11y/target/research-costs/run-01/mixed-202-2048-source.json",
+    "/home/kmosoti/projects/fabric_o11y/target/research-costs/run-01/mixed-202-2048--1-hint.json",
+    "/home/kmosoti/projects/fabric_o11y/target/research-costs/run-01/mixed-202-2048--1-sidecar-baseline.json",
+    "baseline"
+  ],
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": "",
+  "whole_process_user_ns": 228430000,
+  "whole_process_system_ns": 4007000,
+  "whole_process_cpu_ns": 232437000,
+  "whole_process_max_rss_kib": 22868
+}

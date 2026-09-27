@@ -8,6 +8,9 @@
 | [ADR-0004: Use `fake` for synthetic workload values](ADR-0004-use-fake-for-synthetic-values.md) | Accepted for the local workload | Seeded generation dependency and Fabric adapter |
 | [ADR-0005: Acknowledge only after durable commit](ADR-0005-ack-after-durable-commit.md) | Accepted; local receiver commit implemented | Delivery ownership and ACK ordering |
 | [ADR-0006: Use a framed local event log](ADR-0006-use-framed-local-log.md) | Accepted for Stage 5 | Storage format, commit, and recovery |
+| [ADR-0007: Experiment with authenticated block coverage](ADR-0007-experiment-with-coverage-receipts.md) | Experimental | Research-only trusted builder, snapshot anchor and metadata verification |
+| [ADR-0008: Bind residual answers to immutable snapshots](ADR-0008-bind-residuals-to-immutable-snapshots.md) | Experimental | Research retry binding, physical identity and atomic per-block joins |
+| [ADR-0009: Isolate durable research snapshots](ADR-0009-isolate-durable-research-snapshots.md) | Experimental | Fresh immutable publication, external trust and checkpoint history |
 
 This first record captures an existing, explicitly documented choice. It does not claim that storage engines, ID widths, or performance strategies have been compared. Record further decisions when they materially affect architecture; use the [ADR format in AGENTS.md](../../AGENTS.md#12-architecture-decision-records) and the next unused four-digit number.
 

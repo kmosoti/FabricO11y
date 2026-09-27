@@ -1,0 +1,13 @@
+{
+  "command": [
+    "python3",
+    "-B",
+    "tools/bench/check_disk_io.py",
+    "target/disk-io/mutation",
+    "/tmp/fabric-disk-mutations"
+  ],
+  "exit_code": 101,
+  "stdout": "raw step 1: exit 101\n",
+  "stderr": "",
+  "expected_nonzero": true
+}

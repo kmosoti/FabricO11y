@@ -1,0 +1,12 @@
+   Compiling libc v0.2.189
+   Compiling cfg-if v1.0.5
+   Compiling rand_core v0.10.1
+   Compiling getrandom v0.4.3
+   Compiling cpufeatures v0.3.1
+   Compiling crc32fast v1.5.2
+   Compiling deunicode v1.6.2
+   Compiling chacha20 v0.10.2
+   Compiling rand v0.10.3
+   Compiling fake v5.1.0
+   Compiling fabric_o11y v0.1.0 (/home/kmosoti/projects/fabric_o11y)
+    Finished `release` profile [optimized] target(s) in 4.40s

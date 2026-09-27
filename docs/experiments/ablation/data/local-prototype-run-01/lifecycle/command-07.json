@@ -1,0 +1,16 @@
+{
+  "command": [
+    "/home/kmosoti/projects/fabric_o11y/tools/storage-probe/target/release/fabric-research",
+    "ingest",
+    "input.json",
+    "events.fol",
+    "1",
+    "2"
+  ],
+  "cwd": "/home/kmosoti/projects/fabric_o11y/target/prototype-integrated",
+  "exit_code": 0,
+  "expected_exit": 0,
+  "elapsed_ns": 2827700,
+  "stdout": "{\"already_committed\":3,\"appended\":0,\"batch\":2,\"buffer_retries\":0,\"capacity\":1,\"input_events\":3,\"log_bytes\":521,\"peak_buffer_events\":0}\n",
+  "stderr": ""
+}

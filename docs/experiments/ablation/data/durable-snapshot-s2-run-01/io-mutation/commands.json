@@ -1,0 +1,42 @@
+[
+  {
+    "command": [
+      "cc",
+      "-shared",
+      "-fPIC",
+      "-o",
+      "/home/kmosoti/projects/fabric_o11y/target/disk-io/mutation/raw.so",
+      "/tmp/fabric-disk-mutations/tools/storage-probe/tests/io_fault_support/partial_read.c",
+      "-ldl"
+    ],
+    "cwd": "/tmp/fabric-disk-mutations",
+    "exit_code": 0,
+    "injected": false,
+    "variable": null,
+    "activation": null,
+    "source_sha256": "b1a4aada671ab24ce6bd95db860e0788ddcdd698af3fe6743fc8628d3b658d3d"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--manifest-path",
+      "tools/storage-probe/Cargo.toml",
+      "--test",
+      "disk_io_fault",
+      "raw::",
+      "--",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "cwd": "/tmp/fabric-disk-mutations",
+    "exit_code": 101,
+    "injected": true,
+    "variable": "INJECT_PARTIAL_RAW",
+    "activation": "runner",
+    "source_sha256": "b1a4aada671ab24ce6bd95db860e0788ddcdd698af3fe6743fc8628d3b658d3d"
+  }
+]

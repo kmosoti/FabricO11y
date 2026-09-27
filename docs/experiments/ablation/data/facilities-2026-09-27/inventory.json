@@ -1,0 +1,25 @@
+{
+  "utc": "2026-09-27T12:35:24.813644+00:00",
+  "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.41",
+  "cpu_count": 12,
+  "infiniband_devices": [],
+  "network_interfaces": [
+    "eth1",
+    "tailscale0",
+    "loopback0",
+    "lo",
+    "eth2",
+    "eth0"
+  ],
+  "commands": {
+    "docker": null,
+    "clickhouse": null,
+    "loki": null,
+    "quickwit": null,
+    "splunk": null,
+    "nvidia-smi": "/usr/lib/wsl/lib/nvidia-smi",
+    "ibv_devinfo": null,
+    "dpdk-testpmd": null
+  },
+  "limits": "Read-only local inventory. No external database service, cluster, privileged NIC offload or remote credentials were used. Command presence alone does not establish a runnable equivalent-semantic comparison."
+}

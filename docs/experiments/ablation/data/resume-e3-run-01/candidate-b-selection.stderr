@@ -1,0 +1,4 @@
+    Blocking waiting for file lock on package cache
+   Compiling storage-probe v0.1.0 (/tmp/fabric-resume-b/tools/storage-probe)
+    Finished `release` profile [optimized] target(s) in 1.25s
+     Running tests/resume_selection.rs (tools/storage-probe/target/release/deps/resume_selection-2fd04612b2799ed3)

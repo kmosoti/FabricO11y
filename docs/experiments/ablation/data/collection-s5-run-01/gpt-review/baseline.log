@@ -1,0 +1,22 @@
+    Blocking waiting for file lock on package cache
+   Compiling collect-adversarial-review v0.1.0 (/tmp/fabric-collect-review/probes)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.56s
+     Running unittests src/lib.rs (/tmp/fabric-collect-review/probes/target/debug/deps/collect_adversarial_review-b9d13853b2091736)
+
+running 7 tests
+test tests::duplicate_members_at_every_object_depth_fail_but_array_duplicates_pass ... ok
+test tests::identity_is_checked_by_physical_position_and_batch_is_atomic ... ok
+test tests::unknowns_at_all_nine_levels_and_escaped_duplicate_members_fail ... ok
+test tests::ordered_duplicate_attributes_survive_across_layers ... ok
+test tests::malformed_and_multi_resource_batches_fail ... ok
+test tests::scalar_and_timestamp_numeric_boundaries ... ok
+test tests::empty_envelopes_and_exact_cap ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.31s
+
+   Doc-tests collect_adversarial_review
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
