@@ -1,0 +1,7 @@
+# Event log
+
+The event log is the local receiver's append-only sequence of framed `Event` records. [EventLog](../../src/log.rs) owns an open file and an advisory writer lock. It accepts a borrowed event, encodes and writes one frame, syncs those bytes, writes a commit marker, then syncs again. Only then does it return success. That success is the local commit boundary; it does not consume the caller's Rust value or send a network ACK.
+
+On reopen, the log validates frame-marker pairs and removes an unmarked final event with a plausible partial header or marker, even if its frame is complete. It streams recovered committed events in file order. Detected damage in checked header and marker fields or a complete payload is an error. Partial payload bytes are not decoded before truncation. The [storage architecture](../architecture/storage.md) specifies framing, recovery, and filesystem assumptions; the [delivery concept](delivery-ownership.md) explains the sender-side responsibility.
+
+The log is neither a query index nor a general write-ahead log for another storage engine. There is no compaction, retention policy, or global event deduplication. The current CLI can resume its particular deterministic generator by checking the stored prefix after ordinary process termination when no storage I/O error occurred. A prior failed sync cannot be detected from visible file bytes; after one, the log must be rebuilt from an independent trusted source on healthy storage. Other producers need their own identity and retry rule.

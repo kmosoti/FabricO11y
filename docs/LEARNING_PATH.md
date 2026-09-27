@@ -1,0 +1,81 @@
+# Learning path
+
+This project is deliberately split into short stages. Finish one stage, run it, and be able to explain its contract before moving on. The longer-term architecture is in [`architecture.md`](architecture.md); this page is the route through it.
+
+Read [current project state](CURRENT.md) for what actually exists and [system architecture](architecture/system.md) for its boundaries. Stage 4 is a checked target model, Stage 5 has a local log and replay path, Stage 6 has its first measured baseline, and Stage 7 remains planned work.
+
+## Stage 1 — Describe an observation
+
+**Status: complete for this first version.** The Rust library defines distinct ID and time types plus an `Event`. Stage 2 uses them to make repeated examples.
+
+Questions to answer while reading:
+
+- Why is `EventId` a different type from `SourceId` if both contain an integer?
+- Why do event time and observed time have separate types?
+- What meaning does an event keep regardless of how it is stored?
+
+Read [the event model](../src/lib.rs) and [the event concept](concepts/event.md). Try changing a field in the generator and running `cargo test`. Avoid optimizing this data model before we have a workload to measure.
+
+## Stage 2 — Make repeatable input
+
+**Status: implemented as a first synthetic workload.** [The generator](../src/generator.rs) accepts a `u64` seed and `u32` event count. It yields owned Gauge events one at a time. The [`fake` crate](https://docs.rs/fake/5.1.0/fake/) supplies seeded range values through a named ChaCha8 RNG; a small adapter assigns Fabric's IDs, times, and event shape. Given the same seed, count, and locked dependency versions, it produces the same sequence; the first three events for seed `42` are pinned in a test. This gives us repeatable input for later stages, though its fixed shape does not yet represent real traffic.
+
+Run `cargo run -- 42 3` twice, then try `cargo run -- 43 3`. The first two runs should match; the changed seed should change tenant IDs or gauge values. Run `cargo test` to check the sequence contract. Read [the generator concept](concepts/generator.md) and trace `EventGenerator::next`.
+
+Learn: iterators, ownership, seeded library data generation, workload shape, and how to define an experiment. Read [ADR-0004](decisions/ADR-0004-use-fake-for-synthetic-values.md) to see why the adapter remains small.
+
+## Stage 3 — Buffer and batch
+
+**Status: implemented as a single-threaded baseline.** The [buffer](../src/buffer.rs) uses `VecDeque<Event>` with a positive logical capacity. On a full push it returns the owned event to the caller. `take_batch` removes up to a positive limit in FIFO order; the final batch may be short. The [demo](../src/main.rs) uses capacity `2` and batch size `2`: `cargo run -- 42 3` shows event 3 returned, a two-event batch drained, and event 3 retried.
+
+Trace [the data and control flow](architecture/ingestion.md), then run `cargo test`. Explain why the buffer cannot silently lose the rejected event and why the demo can retry after draining. [ADR-0002](decisions/ADR-0002-reject-full-buffer.md) compares reject, block, and drop under the current one-thread assumption. Run the [current batch-size probe](experiments/benchmarks/generator-library-stage3.md) to see the measured limits of this baseline; the [original probe](experiments/benchmarks/batch-size-stage3.md) remains as historical evidence.
+
+Learn: collection choices, bounded memory, API contracts, state transitions, and backpressure. Measure several batch sizes against the same workload.
+
+## Stage 4 — Model the ownership guarantee
+
+**Status: target protocol modeled and checked; receiver-side local commit implemented in Stage 5.** The [delivery architecture](architecture/delivery.md) describes the handoff. The [TLA+ model](../formal/delivery/README.md) tracks an upstream copy, a volatile receiver copy, a durable receiver copy, and an ACK received upstream. Its safety rule is “an acknowledged event has a durable owner.” The [TLC investigation](experiments/formal/delivery-ownership.md) checks two events and records early-ACK counterexamples.
+
+Run `bash formal/delivery/check.sh` with `TLA_JAR` set as in the model README. It should report one safe model and two expected counterexamples. Follow `Receive → Commit → Acknowledge → Forget` in the [spec](../formal/delivery/DeliveryOwnership.tla), then ask what happens if the receiver crashes after each step. Compare the model's volatile set with [EventBuffer](../src/buffer.rs): `try_push` moves an owned Rust value into memory, but it does not make a durable commit. A failing trace would have an ACK or forgotten upstream copy without a durable receiver copy.
+
+Learn: states, actions, invariants, safety versus liveness, and counterexamples. TLA+ explores behavior over time; Z3 can later answer a different question, such as whether tenant quotas fit a memory budget. The Stage 4 model uses TLC through a Java runtime; it adds no Rust dependency.
+
+## Stage 5 — Preserve ownership on disk
+
+**Status: local receiver boundary implemented and checked.** [EventLog](../src/log.rs) frames each event with a length and CRC32, syncs its bytes, then writes and syncs a commit marker. The optional `write` command prints `committed event N` only after both syncs succeed. `replay` opens the file, validates committed frame-marker pairs, removes an unmarked final event, and prints recovered events. Repeating `write` with the same seed and a count at least as large verifies and skips the existing generator prefix.
+
+From the repository root, run:
+
+```sh
+cargo run --offline -- write target/learning-events.log 42 3
+cargo run --offline -- replay target/learning-events.log
+cargo run --offline -- write target/learning-events.log 42 3
+```
+
+The first command should report three committed events. The separate replay process should print three events. The final command should report three already committed events and append none. Inspect the [storage architecture](architecture/storage.md), then trace `EventLog::append`, `recover`, and `run_write`. Run `cargo test --offline --locked --test log --test cli_log` to exercise incomplete-tail and corruption cases. If the path already contains another workload, use a fresh path.
+
+The sender may release its value only after successful append under the storage assumptions in the [storage view](architecture/storage.md). An append error can leave a partial event, a complete unmarked event, or a visible marker after an ambiguous marker sync. Recovery discards unmarked tails with plausible partial headers or markers; it does not decode partial payloads. Visible bytes after a failed storage sync do not prove durability. After a storage I/O error, rebuild from an independent trusted source on healthy storage instead of automatically resuming the path. The CLI reconstructs only its deterministic source on an ordinary manual restart. There is no general sender, network ACK, or power-loss test. A record missing after a successful append and process restart, or damage to checked fields silently skipped by recovery, would falsify the intended local behavior under its assumptions.
+
+Learn: file I/O, framing, checksums, partial writes, crash recovery, and the difference between “written” and “durable.”
+
+## Stage 6 — Measure and challenge the baseline
+
+**Status: first baseline measured; no alternative selected.** The [local-log baseline](experiments/benchmarks/local-log-stage6.md) fixes one Gauge workload, defines each timing boundary, and preserves five release trials with exact separate-process replay. Run the [small probe](../examples/local_log_probe.rs) using the commands in that record, then explain why a successful `EventLog::append` includes both syncs and why a full-buffer rejection still leaves the caller owning its event. Compare the pipeline interval with the append samples: nearly all measured time was inside append, which includes encoding and both syncs. The next lesson separates those phases before testing a ring buffer, different encoding, SQLite, Arrow, or concurrent producers.
+
+Learn: benchmarking, ablation, experimental controls, and how optimizations move costs instead of making them disappear.
+
+## Stage 7 — Add the application edges
+
+Once the core pipeline has understandable behavior, add ingestion protocols, a query path, an API, and a UI in small slices. Keep external formats and storage engines at the edges of the domain model. Before selecting a network ingestion mechanism, work through the [Homa/SIRD receiver-driven transport study](experiments/ablation/receiver-driven-transport.md). Its first [H1 packet-slot ablation](experiments/ablation/receiver-credit-h1-run-01.md) compares fixed sender windows with receiver credits; the [finite model](experiments/formal/transport-credit-ownership.md) checks that credit permission and durable ACK ownership remain distinct. Try the tiny simulator tests, then read the raw result: receiver credits lower modeled switch peaks while increasing sender waiting. The priority, active-grant, sender/core feedback, sink-limited, and real-host cells remain to be built. There is no application network transport to benchmark yet.
+
+From the repository root, run `cargo test --offline --locked --manifest-path tools/transport-sim/Cargo.toml one_message_serialization_and_propagation`. In that small test, M0 sends its first packet at tick `0`, finishes the three-packet message at tick `7`, and receives the modeled durable ACK at tick `11`. M1 waits for an announcement and credit, first sends at tick `8`, finishes at tick `15`, and gets its ACK at tick `19`. Trace the `Event` enum and `MessageState` in [the simulator](../tools/transport-sim/src/lib.rs): `Option<u64>` records which milestones have actually occurred, and `Result` stops a run that violates a cap or invariant. The simulation owns packet copies in its queues; the sender's retained message remains its retry responsibility until the durable ACK event.
+
+## Working rule
+
+For each new component, answer these in plain language before coding:
+
+1. What does it receive and produce?
+2. What promise does it make?
+3. Who owns the data before and after it runs?
+4. What can fail, and how will that failure be visible?
+5. What measurement or model could prove the design wrong?

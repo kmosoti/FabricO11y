@@ -1,1 +1,4 @@
 /target
+/tools/docs/node_modules/
+__pycache__/
+/.local/

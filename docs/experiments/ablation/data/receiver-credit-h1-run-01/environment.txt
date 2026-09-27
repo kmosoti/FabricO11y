@@ -1,0 +1,20 @@
+UTC run completion: 2026-09-27 00:57:34 UTC
+Command: bash tools/bench/run_transport_h1.sh target/transport-h1/run-01
+Git HEAD: 39664057b9bbaec02c36a845b611e005f6cfeaad
+Rust: rustc 1.98.0 (88d9e12ae 2026-08-18)
+Cargo: cargo 1.98.0 (797e8a9bc 2026-08-05)
+Kernel: Linux KenRazerL 6.18.33.2-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC Thu Jun 18 21:54:43 UTC 2026 x86_64 GNU/Linux
+RUSTFLAGS: <unset>
+
+CPU:
+CPU(s):                                  12
+Model name:                              Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz
+
+Source hashes:
+4ded023e333ea622df088e9eb855d25e10ee570bded1027c7691babdd616b13b  tools/transport-sim/Cargo.toml
+9fe39285d6e066d18607d76279429f97624dce62a51afe20671a08cea454fb7e  tools/transport-sim/Cargo.lock
+b640d3f6e9312a081482ec7d5cd04884ffbb0d899cc205c89a1ddb3d340cbf9a  tools/transport-sim/src/lib.rs
+724a20081fbc536e22f846bcc3be8f2cc507c71aae69b661ebf1c4bfd2531540  tools/transport-sim/src/main.rs
+2163feea64f0b0d5128f0cb8d12a49775517ab48b91b27b873253ffd4234b8fb  tools/bench/summarize_transport_h1.py
+f0e03089cc9040414a3931e87222123a4d851bf0899a6ccdc8cae8d46f043280  docs/experiments/ablation/receiver-credit-h1-run-01.md
+ea9ab4cbf503fd3915010fb519060f9327fbcadcb56ff087b14103296ddb2360  formal/transport/TransportOwnership.tla

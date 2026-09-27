@@ -1,0 +1,11 @@
+flowchart LR
+    Generator[Synthetic generator] -->|owned Event| Driver[Demo or write loop]
+    Driver -->|owned Event or retry| Buffer[Bounded FIFO buffer]
+    Buffer -->|rejected Event or FIFO batch| Driver
+    Driver -->|default mode| Printer[print_batch function]
+    Printer -->|Debug text| Stdout[Standard output]
+    Driver -->|write mode: borrowed Event| Log[EventLog append]
+    Log -->|framed, synced record| Disk[(Local log file)]
+    Disk -->|replay| Reader[EventLog replay]
+    Reader -->|owned Event| Replay[Replay command]
+    Replay -->|Debug text| Stdout
