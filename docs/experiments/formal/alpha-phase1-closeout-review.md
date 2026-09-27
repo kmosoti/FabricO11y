@@ -1,6 +1,6 @@
 # Phase-1 close-out review and repairs
 
-Status: one executable review returned REQUEST_CHANGES on 2026-09-27 for head `8703847`. All six findings were reproduced in the current code, repaired with regressions, and each regression fails on a mutant that restores the defect. A re-review of the repairs is pending. Phase 1 is not promoted.
+Status: the first executable review returned REQUEST_CHANGES for head `8703847` with six findings. The re-review of head `b140bd2` confirmed all six repaired and found three more, all repaired below. Each regression fails on a mutant that restores its defect. A final re-review of the second round is pending. Phase 1 is not promoted.
 
 ## Reviewers
 
@@ -22,6 +22,18 @@ The [review contract](../benchmarks/data/alpha-review/phase1-closeout/contract.m
 | SIGTERM during startup replay ended the process by signal | minor | The stop handler is installed before the spool is opened, and a stop during startup exits 0 | covered by the existing SIGTERM child-process test; no separate startup-timing regression |
 
 A failure that follows an already-reported notice now starts a new interval, so the second failure is not hidden behind the first notice.
+
+## Re-review of `b140bd2`
+
+The same reviewer reran its reproductions against binaries built from `b140bd2` (`fabric-node` SHA-256 `169ca99e3cc6ca122793b037d4924f36b7a81691ff00d00b9f00b14361c32b84`). All six repairs held, including a new 44-case sweep of EIO at every reopen step after kills at six append points, 1,200 double kills and 48 append kill points. It found three new defects, one a regression from the spool rotation added in the same range. Its new probes are under [claude-shim-probes-rereview](../benchmarks/data/alpha-review/phase1-closeout/claude-shim-probes-rereview/).
+
+| Finding | Severity | Repair | Regression and mutant |
+| --- | --- | --- | --- |
+| During rotation the writer's lock stayed on the renamed file, so a second writer that opened in the window created and locked a new active file; the first writer then quarantined the spool | major | The exclusive writer lock is held on `writer.lock`, which is never renamed; inspection takes its shared lock on the same file | `second_writer_is_refused_while_the_active_file_is_renamed_away`; fails when open does not lock `writer.lock` |
+| After a kill between the rotation rename and creation of the new active file, inspection failed with "No such file or directory" | minor | Inspection treats sealed files without an active file as an interrupted rotation when no writer holds the lock, and retries when one does | same test, inspection half |
+| An I/O error before the coverage marker's rename left only the staged file, and the next batch carried no notice | minor | A leftover `coverage-unknown.tmp` also means coverage is unknown, reported as "since an unrecorded time"; clearing removes both files | `staged_marker_left_by_a_failed_write_still_reports_unknown_coverage`; fails when the staged file is ignored |
+
+Not probed separately: a failure that follows an already-reported notice replacing the marker, which needs an in-process append failure that does not quarantine the spool.
 
 ## Remaining limits
 

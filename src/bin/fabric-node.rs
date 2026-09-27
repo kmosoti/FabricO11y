@@ -7,6 +7,8 @@ use std::time::{Duration, Instant};
 static STOP: AtomicBool = AtomicBool::new(false);
 const MIN_BACKOFF: Duration = Duration::from_millis(250);
 const MAX_BACKOFF: Duration = Duration::from_secs(5);
+/// How often `run` reads configured logs between metric samples.
+const LOG_POLL: Duration = Duration::from_secs(1);
 
 extern "C" fn request_stop(_signal: libc::c_int) {
     // An atomic store is async-signal-safe; the loop checks it between cycles.
@@ -42,8 +44,8 @@ fn delivery_line(attempt: &Attempt) -> String {
     };
     let through = through.map_or(String::new(), |t| format!(" committed_through={t}"));
     format!(
-        "delivery sequence={} sha256={} status={status}{through}",
-        attempt.sequence, attempt.sha256
+        "delivery sequence={} sha256={} status={status}{through} elapsed_us={}",
+        attempt.sequence, attempt.sha256, attempt.elapsed_us
     )
 }
 
@@ -71,35 +73,49 @@ fn main() -> ExitCode {
         }
         let mut backoff = MIN_BACKOFF;
         let mut last_error: Option<String> = None;
+        let mut retry_at = Instant::now();
+        let mut next_metrics = Instant::now();
+        let mut next_logs = Instant::now() + LOG_POLL;
         loop {
-            let started = Instant::now();
-            let cycle = node.collect_once()?;
-            println!(
-                "batch={} metrics={} logs={} gaps={} spool_bytes={} log_backlog_bytes={} acked_through={}",
-                cycle.batch_sequence,
-                cycle.metric_points,
-                cycle.log_records,
-                cycle.gaps,
-                cycle.spool_bytes,
-                cycle.log_backlog_bytes,
-                node.acked_through()
-            );
+            // Metrics on their interval boundary; logs every LOG_POLL so a
+            // line is committed and sent within about a second.
+            let now = Instant::now();
+            let cycle = if now >= next_metrics {
+                while next_metrics <= now {
+                    next_metrics += interval;
+                }
+                next_logs = now + LOG_POLL;
+                Some(node.collect_once()?)
+            } else if now >= next_logs {
+                next_logs = now + LOG_POLL;
+                node.collect_logs()?
+            } else {
+                None
+            };
+            if let Some(cycle) = cycle {
+                println!(
+                    "batch={} metrics={} logs={} gaps={} spool_bytes={} log_backlog_bytes={} acked_through={}",
+                    cycle.batch_sequence,
+                    cycle.metric_points,
+                    cycle.log_records,
+                    cycle.gaps,
+                    cycle.spool_bytes,
+                    cycle.log_backlog_bytes,
+                    node.acked_through()
+                );
+            }
             if mode == "collect" {
                 break;
             }
-            // Until the next interval boundary: deliver while batches are
-            // pending, back off after a failed attempt, and honour a stop
-            // request within 100 ms. Cycle time does not add drift.
-            let deadline = started + interval;
-            let mut retry_at = Instant::now();
+            // Until the next poll: deliver while batches are pending, back off
+            // after a failed attempt, and honour a stop request within 100 ms.
+            let deadline = next_metrics.min(next_logs);
             while !STOP.load(Ordering::SeqCst) && Instant::now() < deadline {
                 let now = Instant::now();
                 if now >= retry_at {
                     // Stdout is line buffered: each line is written before
                     // the ACK it reports is persisted.
-                    let report = node.deliver(deadline.min(now + Duration::from_secs(1)), |a| {
-                        println!("{}", delivery_line(a))
-                    })?;
+                    let report = node.deliver(deadline, |a| println!("{}", delivery_line(a)))?;
                     match report.error {
                         Some(error) => {
                             if last_error.as_deref() != Some(error.as_str()) {
@@ -118,6 +134,7 @@ fn main() -> ExitCode {
                             if !report.caught_up {
                                 continue;
                             }
+                            // Nothing pending until the next poll commits.
                             retry_at = deadline;
                         }
                     }

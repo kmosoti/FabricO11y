@@ -435,6 +435,9 @@ pub struct Attempt {
     pub sequence: u64,
     pub sha256: String,
     pub outcome: Delivery,
+    /// Request start to answer; for an `ack` this includes the server's
+    /// durable commit.
+    pub elapsed_us: u64,
 }
 
 /// What one delivery call achieved.
@@ -523,8 +526,11 @@ impl Node {
                 break;
             };
             report.sent += 1;
+            let started = std::time::Instant::now();
             let outcome = sender.send(&bytes);
+            let elapsed_us = started.elapsed().as_micros() as u64;
             on_attempt(&Attempt {
+                elapsed_us,
                 sequence,
                 sha256: sha2::Sha256::digest(&bytes)
                     .iter()
@@ -567,7 +573,20 @@ impl Node {
         Ok(report)
     }
 
+    /// One full cycle: host metrics and every configured log. Always commits
+    /// a batch (metrics, lines or at least a gap).
     pub fn collect_once(&mut self) -> io::Result<Cycle> {
+        self.collect(true)?
+            .ok_or_else(|| io::Error::other("metrics cycle produced no batch"))
+    }
+
+    /// Read configured logs only. Commits a batch only when there are new
+    /// lines or gaps, so a quiet poll writes nothing to the spool.
+    pub fn collect_logs(&mut self) -> io::Result<Option<Cycle>> {
+        self.collect(false)
+    }
+
+    fn collect(&mut self, include_metrics: bool) -> io::Result<Option<Cycle>> {
         let now = now_ns()?;
         let mut gaps = Vec::new();
         // A prior cycle could not commit. Its interval is reported as a gap in
@@ -578,12 +597,16 @@ impl Node {
         {
             gaps.push(unknown.notice());
         }
-        let sampled = match host::sample(&self.host_paths) {
-            Ok(snapshot) => Some(snapshot),
-            Err(error) => {
-                gaps.push(bounded_gap(format!("host metrics unavailable: {error}")));
-                None
+        let sampled = if include_metrics {
+            match host::sample(&self.host_paths) {
+                Ok(snapshot) => Some(snapshot),
+                Err(error) => {
+                    gaps.push(bounded_gap(format!("host metrics unavailable: {error}")));
+                    None
+                }
             }
+        } else {
+            None
         };
         let (metrics, updated_history, metric_points) = if let Some(snapshot) = sampled.as_ref() {
             let (bytes, history, count) = metric_request(snapshot, now, &self.history)?;
@@ -630,9 +653,18 @@ impl Node {
             }
         }
         debug_assert!(gaps.len() <= MAX_GAPS_PER_BATCH);
-        let (hostname, boot_id) = sampled
+        if !include_metrics && lines.is_empty() && gaps.is_empty() {
+            // Nothing new. Cursor progress through an oversized line is not
+            // committed here; the next poll repeats it within the scan bound.
+            return Ok(None);
+        }
+        let identity = match sampled.as_ref() {
+            Some(s) => Some((s.hostname.clone(), s.boot_id.clone())),
+            None => host::identity(&self.host_paths).ok(),
+        };
+        let (hostname, boot_id) = identity
             .as_ref()
-            .map(|s| (s.hostname.as_str(), s.boot_id.as_str()))
+            .map(|(h, b)| (h.as_str(), b.as_str()))
             .unwrap_or(("unknown", "unknown"));
         let logs = if lines.is_empty() {
             Vec::new()
@@ -681,18 +713,19 @@ impl Node {
                 self.unknown_reported = None;
             }
         }
-        Ok(Cycle {
+        Ok(Some(Cycle {
             batch_sequence: sequence,
             metric_points,
             log_records: lines.len(),
             gaps: gap_count,
             spool_bytes: self.journal.used_bytes(),
             log_backlog_bytes,
-        })
+        }))
     }
 }
 
 const UNKNOWN_MARKER: &str = "coverage-unknown";
+const UNKNOWN_STAGED: &str = "coverage-unknown.tmp";
 
 /// Start of an interval whose collection did not commit.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -725,7 +758,7 @@ fn mark_unknown(dir: &Path, since_ns: u64, replace: bool) -> io::Result<()> {
     if path.exists() && !replace {
         return Ok(());
     }
-    let staged = dir.join("coverage-unknown.tmp");
+    let staged = dir.join(UNKNOWN_STAGED);
     let mut file = OpenOptions::new()
         .write(true)
         .create(true)
@@ -737,11 +770,18 @@ fn mark_unknown(dir: &Path, since_ns: u64, replace: bool) -> io::Result<()> {
     File::open(dir)?.sync_all()
 }
 
-/// Any marker that exists means coverage is unknown, readable or not.
+/// Any marker that exists means coverage is unknown, readable or not. A
+/// staged marker left by a failed write means the same: `mark_unknown` runs
+/// only after a cycle failed to commit.
 fn read_unknown(dir: &Path) -> Option<Unknown> {
     let file = match File::open(dir.join(UNKNOWN_MARKER)) {
         Ok(file) => file,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return None,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return dir
+                .join(UNKNOWN_STAGED)
+                .exists()
+                .then_some(Unknown::UnrecordedTime);
+        }
         Err(_) => return Some(Unknown::UnrecordedTime),
     };
     let mut text = String::new();
@@ -757,7 +797,13 @@ fn read_unknown(dir: &Path) -> Option<Unknown> {
 
 /// Called only after the batch carrying the gap notice has committed.
 fn clear_unknown(dir: &Path) -> io::Result<()> {
-    std::fs::remove_file(dir.join(UNKNOWN_MARKER))?;
+    for name in [UNKNOWN_MARKER, UNKNOWN_STAGED] {
+        match std::fs::remove_file(dir.join(name)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
     File::open(dir)?.sync_all()
 }
 
@@ -774,6 +820,10 @@ pub struct Report {
     pub coverage_unknown: bool,
     pub recovery_required: bool,
     pub interrupted_append: bool,
+    /// The next batch sequence the spool will assign.
+    pub next_sequence: u64,
+    /// Highest sequence the server has durably acknowledged.
+    pub acked_through: u64,
     /// Bytes in configured logs after their last committed cursors; a file
     /// with a different identity counts in full, a missing file as zero.
     pub log_backlog_bytes: u64,
@@ -844,6 +894,8 @@ pub fn inspect(config: &Config) -> io::Result<Report> {
         coverage_unknown,
         recovery_required: info.recovery_required,
         interrupted_append: info.interrupted_append,
+        next_sequence: info.next_sequence,
+        acked_through: info.acked_through,
         log_backlog_bytes,
     })
 }

@@ -21,7 +21,7 @@ A stream is `(node_id, generation)`. The node sends at most one batch per stream
 | `s > l + 1` | `gap`, `committed_through = l`; the node resends from `l + 1` |
 | bad credential, malformed, oversize, commit queue full | unauthorized, bad request, too large, unavailable; nothing committed |
 
-An `ack` is sent only after the group containing that batch, or the earlier batch it acknowledges, has completed data sync and marker sync. The node persists its ACK cursor by synced rename and deletes a closed spool file only when every batch in it is at or below the cursor. A `conflict` quarantines that stream on the node.
+An `ack` is sent only after the group containing that batch, or the earlier batch it acknowledges, has completed data sync and marker sync. The node persists its ACK cursor by synced rename and deletes a closed spool file only when every batch in it is at or below the cursor. A `conflict` or `gap` stops delivery for that attempt and is reported on the node's standard error; the node retries with backoff, so an unresolved conflict stays visible and nothing on either side is overwritten.
 
 The server groups commits: one frame holds up to 1 MiB of batches or whatever arrived within 50 ms, followed by one data sync and one marker sync. The individual mode is a group of one, so both modes have identical durability semantics.
 

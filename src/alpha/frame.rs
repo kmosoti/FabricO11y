@@ -25,6 +25,9 @@ pub const HEADER_BYTES: u64 = 16;
 pub const MARKER_BYTES: u64 = 16;
 pub const FRAME_OVERHEAD: u64 = HEADER_BYTES + MARKER_BYTES;
 pub const ACTIVE: &str = "batches.faj";
+/// Holds the single-writer lock. Never renamed, so rotation cannot open a
+/// window in which a second writer finds no locked file.
+pub const WRITER_LOCK: &str = "writer.lock";
 pub const IN_PROGRESS: &str = "append-in-progress";
 pub const RECOVERY_REQUIRED: &str = "recovery-required";
 const SEALED_PREFIX: &str = "sealed-";
@@ -67,6 +70,7 @@ struct Sealed {
 
 pub struct FrameLog {
     dir: PathBuf,
+    lock: File,
     active: File,
     active_end: u64,
     sealed: Vec<Sealed>,
@@ -87,8 +91,17 @@ pub struct Snapshot {
 // thread would otherwise keep the lock alive until that child execs.
 impl Drop for FrameLog {
     fn drop(&mut self) {
-        let _ = self.active.unlock();
+        let _ = self.lock.unlock();
     }
+}
+
+fn open_lock(dir: &Path) -> io::Result<File> {
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(dir.join(WRITER_LOCK))
 }
 
 struct SharedLock<'a>(&'a File);
@@ -311,13 +324,14 @@ impl FrameLog {
         };
         // A sealed file may exist without an active one only after a rotation
         // was interrupted between rename and create; creating it is safe.
+        let lock = open_lock(dir)?;
+        lock.try_lock()?;
         let active = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(false)
             .open(dir.join(ACTIVE))?;
-        active.try_lock()?;
         sync_dir(dir).map_err(known)?;
         let listed = list_sealed(dir)?;
         let active_len = active.metadata()?.len();
@@ -350,6 +364,7 @@ impl FrameLog {
         .map_err(known)?;
         Ok(Self {
             dir: dir.to_owned(),
+            lock,
             active,
             active_end: end,
             sealed,
@@ -368,14 +383,24 @@ impl FrameLog {
         mut visit: impl FnMut(&[u8], FramePos) -> io::Result<()>,
     ) -> io::Result<Snapshot> {
         let known_failure = dir.join(RECOVERY_REQUIRED);
-        let active = File::open(dir.join(ACTIVE))?;
-        let active_meta = active.metadata()?;
+        let lock = File::open(dir.join(WRITER_LOCK)).ok();
+        let active = match File::open(dir.join(ACTIVE)) {
+            Ok(file) => Some(file),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error),
+        };
+        let active_meta = active.as_ref().map(File::metadata).transpose()?;
         let listed = list_sealed(dir)?;
+        if active.is_none() && listed.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::NotFound,
+                "no log in directory",
+            ));
+        }
+        let active_len = active_meta.as_ref().map_or(0, |m| m.len());
         let file_bytes = listed
             .iter()
-            .try_fold(active_meta.len(), |sum, (_, bytes, _)| {
-                sum.checked_add(*bytes)
-            })
+            .try_fold(active_len, |sum, (_, bytes, _)| sum.checked_add(*bytes))
             .ok_or_else(|| invalid("log size overflow"))?;
         if file_bytes > max_bytes {
             return Err(invalid("log exceeds configured byte cap"));
@@ -389,29 +414,38 @@ impl FrameLog {
                 interrupted_append: false,
             });
         }
-        if listed.iter().any(|(_, _, ino)| *ino == active_meta.ino()) {
+        if let Some(meta) = &active_meta
+            && listed.iter().any(|(_, _, ino)| *ino == meta.ino())
+        {
             return Err(retry("log rotated during inspection; retry"));
         }
         let in_progress = dir.join(IN_PROGRESS);
         let mut interrupted_append = false;
-        // Held until inspection returns, so the scan below sees a stable file.
+        // Held until inspection returns, so the scan below sees a stable log.
         let mut _shared = None;
-        if in_progress.exists() {
-            // A live writer holds the exclusive lock; retry rather than report a
-            // normal append as interrupted.
-            _shared = Some(match active.try_lock_shared() {
-                Ok(()) => SharedLock(&active),
-                Err(fs::TryLockError::WouldBlock) => {
-                    return Err(retry("log append in progress; retry inspection"));
-                }
-                Err(error) => return Err(error.into()),
-            });
-            if !in_progress.exists() {
+        if in_progress.exists() || active.is_none() {
+            // A live writer holds the exclusive lock during an append or a
+            // rotation; retry rather than report normal work as interrupted.
+            if let Some(lock) = &lock {
+                _shared = Some(match lock.try_lock_shared() {
+                    Ok(()) => SharedLock(lock),
+                    Err(fs::TryLockError::WouldBlock) => {
+                        return Err(retry(
+                            "log append or rotation in progress; retry inspection",
+                        ));
+                    }
+                    Err(error) => return Err(error.into()),
+                });
+            }
+            let still_interrupted =
+                in_progress.exists() || (active.is_none() && !dir.join(ACTIVE).exists());
+            if !still_interrupted {
                 return Err(retry("log append completed during inspection; retry"));
             }
             if known_failure.exists() {
                 return Err(retry("log failure recorded during inspection; retry"));
             }
+            // A dead writer left an append or a rotation for reopen to settle.
             interrupted_append = true;
         }
         let mut committed_bytes = 0_u64;
@@ -426,20 +460,24 @@ impl FrameLog {
             scan_sealed(&file, *label, *bytes, max_payload, &mut visit)?;
             committed_bytes += bytes;
         }
-        committed_bytes += scan_active(&active, active_meta.len(), max_payload, &mut visit)?;
+        if let Some(active) = &active {
+            committed_bytes += scan_active(active, active_len, max_payload, &mut visit)?;
+        }
         let relisted: Vec<u64> = list_sealed(dir)?
             .iter()
             .map(|(label, _, _)| *label)
             .collect();
-        let still_active = fs::metadata(dir.join(ACTIVE))
-            .map(|m| m.ino() == active_meta.ino())
-            .unwrap_or(false);
+        let active_unchanged = match (&active_meta, fs::metadata(dir.join(ACTIVE))) {
+            (Some(before), Ok(now)) => now.ino() == before.ino(),
+            (None, Err(error)) => error.kind() == io::ErrorKind::NotFound,
+            _ => false,
+        };
         if relisted
             != listed
                 .iter()
                 .map(|(label, _, _)| *label)
                 .collect::<Vec<_>>()
-            || !still_active
+            || !active_unchanged
         {
             return Err(retry("log rotated or reclaimed during inspection; retry"));
         }
@@ -584,7 +622,6 @@ impl FrameLog {
                 .write(true)
                 .create_new(true)
                 .open(self.dir.join(ACTIVE))?;
-            fresh.try_lock()?;
             sync_dir(&self.dir)?;
             Ok::<File, io::Error>(fresh)
         })();
@@ -592,8 +629,7 @@ impl FrameLog {
             Ok(fresh) => fresh,
             Err(error) => return Err(self.quarantine(error)),
         };
-        let old = std::mem::replace(&mut self.active, fresh);
-        let _ = old.unlock();
+        self.active = fresh;
         self.sealed.push(Sealed {
             label,
             bytes: self.active_end,
@@ -766,5 +802,38 @@ mod tests {
             );
             fs::remove_dir_all(&dir).unwrap();
         }
+    }
+
+    #[test]
+    fn second_writer_is_refused_while_the_active_file_is_renamed_away() {
+        let dir = scratch("rotate-lock");
+        let mut first = FrameLog::open(&dir, 1 << 20, 1024, |_, _| Ok(())).unwrap();
+        first.append(b"one").unwrap();
+        // The window inside rotate(): active renamed, successor not yet created.
+        fs::rename(dir.join(ACTIVE), dir.join(sealed_name(1))).unwrap();
+        let second = FrameLog::open(&dir, 1 << 20, 1024, |_, _| Ok(()));
+        assert_eq!(
+            second.err().map(|e| e.kind()),
+            Some(io::ErrorKind::WouldBlock)
+        );
+        // Inspection sees a live writer mid-rotation and asks for a retry.
+        let live = FrameLog::inspect(&dir, 1 << 20, 1024, |_, _| Ok(()));
+        assert_eq!(
+            live.err().map(|e| e.kind()),
+            Some(io::ErrorKind::WouldBlock)
+        );
+        drop(first);
+        // With the writer gone the same state is an interrupted rotation.
+        let mut seen = 0;
+        let snapshot = FrameLog::inspect(&dir, 1 << 20, 1024, |_, _| {
+            seen += 1;
+            Ok(())
+        })
+        .unwrap();
+        assert!(snapshot.interrupted_append && !snapshot.recovery_required);
+        assert_eq!(seen, 1);
+        let mut reopened = FrameLog::open(&dir, 1 << 20, 1024, |_, _| Ok(())).unwrap();
+        reopened.append(b"two").unwrap();
+        fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -138,12 +138,18 @@ fn filesystem_bytes(path: &Path) -> io::Result<(u64, u64)> {
     Ok((total, available))
 }
 
-pub fn sample(paths: &Paths) -> io::Result<Snapshot> {
+/// Host name and boot ID, the resource identity of every batch.
+pub fn identity(paths: &Paths) -> io::Result<(String, String)> {
     let hostname = read_text(&paths.hostname, 256)?.trim().to_owned();
     let boot_id = read_text(&paths.boot_id, 128)?.trim().to_owned();
     if hostname.is_empty() || hostname.len() > 255 || boot_id.len() != 36 {
         return Err(bad("invalid host identity"));
     }
+    Ok((hostname, boot_id))
+}
+
+pub fn sample(paths: &Paths) -> io::Result<Snapshot> {
+    let (hostname, boot_id) = identity(paths)?;
     let mut points = Vec::with_capacity(200);
     let stat = read_text(&paths.proc_stat, MAX_PROC_BYTES)?;
     let cpu = stat.lines().next().ok_or_else(|| bad("missing CPU line"))?;

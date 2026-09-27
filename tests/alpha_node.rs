@@ -737,3 +737,47 @@ fn inspect_backlog_counts_a_truncated_same_inode_file_in_full() {
     fs::write(&log, b"FIRST LINE OF THE FILE\nsecond line\nmore\n").unwrap();
     assert_eq!(inspect(&cfg).unwrap().log_backlog_bytes, 40);
 }
+
+#[test]
+fn log_poll_commits_only_new_lines_and_writes_nothing_when_quiet() {
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
+    fs::write(scratch.path("selected.log"), b"one\n").unwrap();
+    let cfg = config(&scratch.0, 1024 * 1024);
+    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    assert_eq!(node.collect_once().unwrap().log_records, 1);
+    let used = inspect(&cfg).unwrap().committed_bytes;
+    assert!(node.collect_logs().unwrap().is_none());
+    assert_eq!(inspect(&cfg).unwrap().committed_bytes, used);
+    let mut file = OpenOptions::new()
+        .append(true)
+        .open(scratch.path("selected.log"))
+        .unwrap();
+    file.write_all(b"two\n").unwrap();
+    let poll = node.collect_logs().unwrap().unwrap();
+    assert_eq!((poll.metric_points, poll.log_records), (0, 1));
+    let stored = batches(&cfg);
+    let last = stored.last().unwrap();
+    assert!(last.metrics.is_empty() && !last.logs.is_empty());
+    let request = ExportLogsServiceRequest::decode(last.logs.as_slice()).unwrap();
+    let resource = request.resource_logs[0].resource.as_ref().unwrap();
+    assert!(resource.attributes.iter().any(|a| a.key == "host.name"
+        && matches!(a.value.as_ref().and_then(|v| v.value.as_ref()),
+            Some(any_value::Value::StringValue(h)) if h == "fixture-host")));
+}
+
+#[test]
+fn staged_marker_left_by_a_failed_write_still_reports_unknown_coverage() {
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
+    fs::write(scratch.path("selected.log"), b"one\n").unwrap();
+    let cfg = config(&scratch.0, 1024 * 1024);
+    fs::create_dir_all(&cfg.spool).unwrap();
+    // mark_unknown failed after staging but before its rename.
+    fs::write(cfg.spool.join("coverage-unknown.tmp"), b"17").unwrap();
+    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    assert_eq!(node.collect_once().unwrap().gaps, 1);
+    assert!(gap_texts(&cfg)[0][0].starts_with("coverage unknown since an unrecorded time"));
+    assert!(!cfg.spool.join("coverage-unknown.tmp").exists());
+    assert_eq!(node.collect_once().unwrap().gaps, 0);
+}

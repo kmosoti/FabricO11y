@@ -7,7 +7,7 @@ default-run = "fabric_o11y"
 [workspace]
 members = ["crates/fabric-server"]
 # Research packages keep their own manifests, lockfiles and commands.
-exclude = ["tools"]
+exclude = ["tools", "target"]
 
 [features]
 append-attribution = []
