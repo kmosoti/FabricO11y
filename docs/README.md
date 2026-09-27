@@ -40,7 +40,7 @@ The canonical source is [system.mmd](diagrams/system.mmd). The documentation che
 5. [Delivery ownership](architecture/delivery.md): the Stage 4 model and its mapping to the local log.
 6. [Concepts](concepts/README.md) and [glossary](glossary.md): the meaning of current types and the handoff.
 7. [Architecture decisions](decisions/README.md): recorded rationale and its limits.
-8. [Experiments](experiments/README.md): batch-size and local-log measurements, scoped formal and implementation checks, and the first H1 simulation within the broader Homa/SIRD transport study.
+8. [Experiments](experiments/README.md): batch-size and local-log measurements, scoped formal and implementation checks, and H1/M2 simulation cells within the broader Homa/SIRD transport study.
 
 The [learning path](LEARNING_PATH.md) organizes future increments. The [original architecture blueprint](architecture.md) is a proposal and research agenda; its pipelines, guarantees, and example results do not describe completed work. Add further architecture views when their components exist or a concrete design task needs them.
 

@@ -2,7 +2,7 @@
 
 ## Purpose and boundaries
 
-The current program demonstrates a typed claim about a resource, repeatable synthetic input, a bounded local queue, and an optional local append-only log. It is a local Rust executable with a library target in the same package. The event types, generator, buffer, and log are separate modules in that library, not separate services. There are no network listeners or deployment manifests. A separate [packet-slot simulator](../../tools/transport-sim/README.md) is research tooling outside this application boundary.
+The current program demonstrates a typed claim about a resource, repeatable synthetic input, a bounded local queue, and an optional local append-only log. It is a local Rust executable with a library target in the same package. The event types, generator, buffer, and log are separate modules in that library, not separate services. There are no network listeners or deployment manifests. A separate [packet-slot simulator](../../tools/transport-sim/README.md) is research tooling outside this application boundary; it currently has H1 and one-packet M2 cells.
 
 | Boundary | Responsibility | Repository evidence |
 | --- | --- | --- |

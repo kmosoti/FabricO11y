@@ -30,6 +30,7 @@ These terms describe the current [event model](../src/lib.rs), [local log](archi
 | Durable owner | A receiver with a committed record that can be replayed after the modeled crash. The local log provides this under its filesystem assumptions; this is not a network delivery guarantee. |
 | Acknowledgement, ACK (target protocol) | A confirmation received by a sender after durable commit. Only then may it discard its retryable copy. The CLI prints a local commit line but sends no ACK. |
 | Receiver credit (H1 simulation) | Permission for one scheduled data packet in the [packet-slot model](experiments/ablation/receiver-credit-h1-run-01.md). Issuing or consuming CREDIT does not acknowledge durable storage. |
+| Unscheduled prefix (M2 simulation) | The first DATA packet of a message sent before receiver credit. It carries at most 1,468 payload bytes plus a 32-byte announcement in one 1,500-byte wire slot. The receiver can grant the remaining packets only after that first packet is delivered. See the [M2 comparison](experiments/ablation/unscheduled-prefix-m2-run-01.md). |
 | Packet receipt ACK (H1 simulation) | A flow-control signal that frees one M0 sender-window slot after a packet reaches the modeled receiver. It is separate from the modeled post-commit durable ACK for the whole message. |
 | Stable message identity (transport research) | The pair `(producer, sequence)` used by the synthetic transport trace and finite model for deduplication questions. The application has no corresponding network identity or deduplication implementation yet. |
 

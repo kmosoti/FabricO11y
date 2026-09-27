@@ -1,4 +1,4 @@
-//! Deterministic packet-slot model for the registered H1 incast cell.
+//! Deterministic packet-slot model for the registered H1 and M2 cells.
 //! This is experimental network scheduling tooling, not a transport service.
 
 use std::collections::VecDeque;
@@ -7,6 +7,7 @@ use std::collections::VecDeque;
 pub enum Variant {
     M0,
     M1,
+    M2,
 }
 
 impl Variant {
@@ -14,6 +15,7 @@ impl Variant {
         match self {
             Self::M0 => "M0",
             Self::M1 => "M1",
+            Self::M2 => "M2",
         }
     }
 }
@@ -27,6 +29,7 @@ pub struct Config {
     pub data_delay_ticks: u64,
     pub control_delay_ticks: u64,
     pub bdp_packets: usize,
+    pub unscheduled_prefix_packets: usize,
     pub sender_queue_cap_bytes: usize,
     pub switch_queue_cap_bytes: usize,
     pub injection_interval_ticks: u64,
@@ -45,6 +48,7 @@ impl Config {
             data_delay_ticks: 4,
             control_delay_ticks: 4,
             bdp_packets: 9,
+            unscheduled_prefix_packets: 0,
             sender_queue_cap_bytes: 131_072,
             switch_queue_cap_bytes: 512 * 1_500,
             injection_interval_ticks: 1_760_000,
@@ -52,6 +56,31 @@ impl Config {
             nominal_burst_spacing_ticks: 1_760,
             jitter_magnitude_ticks: 400,
         }
+    }
+
+    pub fn m2_small() -> Self {
+        Self {
+            producers: 8,
+            bursts: 1_000,
+            message_bytes: 148,
+            packet_size: 1_500,
+            data_delay_ticks: 4,
+            control_delay_ticks: 4,
+            bdp_packets: 9,
+            unscheduled_prefix_packets: 1,
+            sender_queue_cap_bytes: 592,
+            switch_queue_cap_bytes: 512 * 1_500,
+            injection_interval_ticks: 10_000,
+            drain_deadline_ticks: 11_000,
+            nominal_burst_spacing_ticks: 10,
+            jitter_magnitude_ticks: 3,
+        }
+    }
+
+    pub fn m2_incast() -> Self {
+        let mut config = Self::h1();
+        config.unscheduled_prefix_packets = 1;
+        config
     }
 
     fn validate(&self) -> Result<(), String> {
@@ -83,11 +112,34 @@ impl Config {
         self.message_bytes.div_ceil(self.packet_size)
     }
 
-    fn packet_bytes(&self, packet_index: usize) -> usize {
-        let offset = packet_index * self.packet_size;
-        (self.message_bytes - offset).min(self.packet_size)
+    fn packets_for(&self, variant: Variant) -> usize {
+        if variant == Variant::M2 {
+            1 + self
+                .message_bytes
+                .saturating_sub(self.packet_size - EMBEDDED_ANNOUNCEMENT_BYTES)
+                .div_ceil(self.packet_size)
+        } else {
+            self.packets_per_message()
+        }
+    }
+
+    fn packet_payload_bytes(&self, variant: Variant, packet_index: usize) -> usize {
+        if variant == Variant::M2 {
+            let first_payload = self.packet_size - EMBEDDED_ANNOUNCEMENT_BYTES;
+            if packet_index == 0 {
+                self.message_bytes.min(first_payload)
+            } else {
+                let offset = first_payload + (packet_index - 1) * self.packet_size;
+                (self.message_bytes - offset).min(self.packet_size)
+            }
+        } else {
+            let offset = packet_index * self.packet_size;
+            (self.message_bytes - offset).min(self.packet_size)
+        }
     }
 }
+
+const EMBEDDED_ANNOUNCEMENT_BYTES: usize = 32;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MessageSpec {
@@ -185,6 +237,10 @@ pub struct Summary {
     pub control_messages: u64,
     pub control_bytes: u64,
     pub data_packets_sent: u64,
+    pub unscheduled_packets_sent: u64,
+    pub scheduled_packets_sent: u64,
+    pub embedded_metadata_bytes: u64,
+    pub data_wire_bytes_sent: u64,
     pub data_packets_delivered: u64,
     pub modeled_commits: usize,
     pub sender_peak_bytes: usize,
@@ -219,7 +275,9 @@ pub struct Run {
 #[derive(Clone, Copy, Debug)]
 struct Packet {
     message: usize,
-    bytes: usize,
+    payload_bytes: usize,
+    wire_bytes: usize,
+    scheduled: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -353,7 +411,7 @@ impl<'a> Simulator<'a> {
                 self.states[message].available_credits += 1;
             }
             Event::DataToSwitch(packet) => {
-                let new_bytes = self.switch_queued_bytes + packet.bytes;
+                let new_bytes = self.switch_queued_bytes + packet.wire_bytes;
                 if new_bytes > self.config.switch_queue_cap_bytes {
                     self.summary.cap_overflow_count += 1;
                     return Err(format!(
@@ -367,23 +425,28 @@ impl<'a> Simulator<'a> {
             Event::ReceiverDelivery(packet) => {
                 let state = &mut self.states[packet.message];
                 state.delivered_packets += 1;
-                state.delivered_bytes += packet.bytes;
+                state.delivered_bytes += packet.payload_bytes;
                 self.summary.data_packets_delivered += 1;
-                if self.variant == Variant::M0 {
+                if packet.scheduled {
+                    self.grants_outstanding = self
+                        .grants_outstanding
+                        .checked_sub(1)
+                        .ok_or("delivered packet without an outstanding receiver grant")?;
+                } else if self.variant == Variant::M0 {
                     self.control();
                     let producer = self.trace.messages[packet.message].producer;
                     self.schedule(
                         tick + self.config.control_delay_ticks,
                         Event::PacketReceiptAck(producer),
                     );
+                } else if self.variant == Variant::M2 && state.delivered_packets == 1 {
+                    // The embedded announcement becomes visible only at delivery.
+                    state.announced = true;
                 } else {
-                    self.grants_outstanding = self
-                        .grants_outstanding
-                        .checked_sub(1)
-                        .ok_or("delivered packet without an outstanding receiver grant")?;
+                    return Err("unexpected uncredited data packet delivery".into());
                 }
                 if self.states[packet.message].delivered_packets
-                    == self.config.packets_per_message()
+                    == self.config.packets_for(self.variant)
                 {
                     if self.states[packet.message].delivered_bytes != self.config.message_bytes {
                         return Err(format!(
@@ -450,7 +513,8 @@ impl<'a> Simulator<'a> {
                 let messages = &self.producer_messages[producer];
                 while self.grant_cursor[producer] < messages.len()
                     && self.states[messages[self.grant_cursor[producer]]].granted_packets
-                        == self.config.packets_per_message()
+                        == self.config.packets_for(self.variant)
+                            - usize::from(self.variant == Variant::M2)
                 {
                     self.grant_cursor[producer] += 1;
                 }
@@ -486,7 +550,7 @@ impl<'a> Simulator<'a> {
             let messages = &self.producer_messages[producer];
             while self.send_cursor[producer] < messages.len()
                 && self.states[messages[self.send_cursor[producer]]].sent_packets
-                    == self.config.packets_per_message()
+                    == self.config.packets_for(self.variant)
             {
                 self.send_cursor[producer] += 1;
             }
@@ -496,6 +560,9 @@ impl<'a> Simulator<'a> {
             if self.trace.messages[message].release_tick > tick {
                 continue;
             }
+            let packet_index = self.states[message].sent_packets;
+            let scheduled =
+                self.variant == Variant::M1 || (self.variant == Variant::M2 && packet_index > 0);
             if self.variant == Variant::M0 {
                 if self.sender_window_outstanding[producer] >= self.config.bdp_packets {
                     continue;
@@ -505,27 +572,46 @@ impl<'a> Simulator<'a> {
                     .summary
                     .max_sender_window_outstanding_packets
                     .max(self.sender_window_outstanding[producer]);
-            } else {
+            } else if scheduled {
                 if self.states[message].available_credits == 0 {
                     continue;
                 }
                 self.states[message].available_credits -= 1;
             }
-            let packet_index = self.states[message].sent_packets;
-            let bytes = self.config.packet_bytes(packet_index);
+            let payload_bytes = self.config.packet_payload_bytes(self.variant, packet_index);
+            let wire_bytes = payload_bytes
+                + if self.variant == Variant::M2 && packet_index == 0 {
+                    EMBEDDED_ANNOUNCEMENT_BYTES
+                } else {
+                    0
+                };
             self.states[message].sent_packets += 1;
             self.states[message]
                 .result
                 .first_send_tick
                 .get_or_insert(tick);
             self.sender_queued[producer] = self.sender_queued[producer]
-                .checked_sub(bytes)
+                .checked_sub(payload_bytes)
                 .ok_or("sender queue byte accounting underflow")?;
-            self.total_sender_queued -= bytes;
+            self.total_sender_queued -= payload_bytes;
             self.summary.data_packets_sent += 1;
+            self.summary.data_wire_bytes_sent += wire_bytes as u64;
+            if scheduled {
+                self.summary.scheduled_packets_sent += 1;
+            } else {
+                self.summary.unscheduled_packets_sent += 1;
+            }
+            if self.variant == Variant::M2 && packet_index == 0 {
+                self.summary.embedded_metadata_bytes += EMBEDDED_ANNOUNCEMENT_BYTES as u64;
+            }
             self.schedule(
                 tick + self.config.data_delay_ticks,
-                Event::DataToSwitch(Packet { message, bytes }),
+                Event::DataToSwitch(Packet {
+                    message,
+                    payload_bytes,
+                    wire_bytes,
+                    scheduled,
+                }),
             );
         }
         Ok(())
@@ -565,7 +651,7 @@ impl<'a> Simulator<'a> {
 
     fn transmit_one(&mut self, tick: u64) {
         if let Some(packet) = self.switch.pop_front() {
-            self.switch_queued_bytes -= packet.bytes;
+            self.switch_queued_bytes -= packet.wire_bytes;
             // One egress slot is consumed over [tick, tick + 1); delivery is at tick + 1.
             self.schedule(tick + 1, Event::ReceiverDelivery(packet));
         }
@@ -583,7 +669,7 @@ impl<'a> Simulator<'a> {
             for event in due {
                 self.receive_event(tick, event)?;
             }
-            if self.variant == Variant::M1 {
+            if self.variant != Variant::M0 {
                 self.grant_available(tick)?;
             }
             // All scheduled data arrivals are already in the switch queue. Sample
@@ -653,6 +739,12 @@ pub fn simulate(
     variant: Variant,
 ) -> Result<Run, String> {
     config.validate()?;
+    if variant == Variant::M2
+        && (config.unscheduled_prefix_packets != 1
+            || config.packet_size <= EMBEDDED_ANNOUNCEMENT_BYTES)
+    {
+        return Err("M2 needs one unscheduled prefix packet with payload room".into());
+    }
     if trace.releases.len() != config.bursts
         || trace.messages.len() != config.bursts * config.producers
     {
@@ -692,6 +784,7 @@ mod tests {
             data_delay_ticks: 4,
             control_delay_ticks: 4,
             bdp_packets: 9,
+            unscheduled_prefix_packets: 0,
             sender_queue_cap_bytes: bytes * 2,
             switch_queue_cap_bytes: 512 * 1_500,
             injection_interval_ticks: 100_000,
