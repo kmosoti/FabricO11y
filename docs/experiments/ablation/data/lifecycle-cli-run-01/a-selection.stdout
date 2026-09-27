@@ -1,0 +1,13 @@
+
+running 2 tests
+test duplicate_query_fields_are_rejected_before_checkpoint_creation ... FAILED
+test tail_is_fully_drained_for_every_capacity_batch_relation ... FAILED
+
+failures:
+
+failures:
+    duplicate_query_fields_are_rejected_before_checkpoint_creation
+    tail_is_fully_drained_for_every_capacity_batch_relation
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+

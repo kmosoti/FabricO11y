@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 use std::num::NonZeroUsize;
 
 use fabric_o11y::{Attribute, Event, Payload, Scalar};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
 use crate::Query;
@@ -16,7 +17,8 @@ pub type Digest = [u8; 32];
 
 const VERSION: &[u8] = b"fabric-o11y-coverage-v1";
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Summary {
     pub min_time: i64,
     pub max_time: i64,
@@ -24,7 +26,8 @@ pub struct Summary {
     pub tokens: BTreeSet<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BlockCommitment {
     pub ordinal: usize,
     pub start: usize,
@@ -33,7 +36,8 @@ pub struct BlockCommitment {
     pub summary_digest: Digest,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Anchor {
     pub snapshot_id: u64,
     pub block_count: usize,
@@ -41,21 +45,24 @@ pub struct Anchor {
     pub root: Digest,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub enum Disposition {
     Scanned,
     Excluded(Summary),
     Unavailable,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct BlockReceipt {
     pub commitment: BlockCommitment,
     pub proof: Vec<Digest>,
     pub disposition: Disposition,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Receipt {
     pub snapshot_id: u64,
     pub query: Query,
@@ -301,6 +308,13 @@ impl SealedSnapshot {
 
     pub fn anchor(&self) -> &Anchor {
         &self.anchor
+    }
+
+    /// Digest one immutable row using the same complete-event encoding as its block.
+    pub fn row_digest_at(&self, position: usize) -> Option<Digest> {
+        self.rows
+            .get(position)
+            .map(|event| rows_digest(std::slice::from_ref(event)))
     }
 
     /// Evaluate exact matches and emit one authenticated disposition per block.

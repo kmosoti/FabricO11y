@@ -1,0 +1,17 @@
+{
+  "body_equivalence_after_removing_serde_import_derives_attributes": true,
+  "corpus_source_sha256": "6621d9c44dde31cce5c4f85bc01cb7265c55c7dd0fe6768a4590054bf5f509a0",
+  "integrated_source_sha256": "9ec6cb57ab5fc77d2724b9c417fb4aa03799461ae17bd089a43ffaafe0bdbb83",
+  "full_corpus_status": "selected candidate B full fixed corpus passed; exit 0; integrated Serde-only form was not separately rerun through the full corpus",
+  "final_gate": {
+    "receipt": "candidate-b-full.json",
+    "output": "candidate-b-full.stdout",
+    "candidate_source_sha256": "6621d9c44dde31cce5c4f85bc01cb7265c55c7dd0fe6768a4590054bf5f509a0",
+    "exit_code": 0,
+    "cases": 768000,
+    "retries": 1535994,
+    "permanent_cases": 24450,
+    "contract_violations": 0
+  },
+  "original_full_package_sessions": "candidate A and B sessions lost final exits; neither counted as pass"
+}

@@ -1,12 +1,23 @@
 # Experiments
 
-The active [end-to-end completion contract](ablation/end-to-end-prototype.md) tracks
-remaining gates. [E3R](ablation/resume-e3-protocol.md) registers snapshot-bound retries;
-[S0](benchmarks/append-attribution-s0.md) registers append phase attribution.
-The [E2R result](ablation/seal-e2-run-01.md) records the checked sector/error model,
-counterexamples and repair; its [cost result](benchmarks/group-seal-cost-run-01.md) reports mixed CPU/throughput
-gates under the separate [protocol](benchmarks/group-seal-cost-protocol.md). [S2](ablation/durable-snapshot-s2-protocol.md) registers the next durable
-snapshot/checkpoint boundary.
+The [local prototype completion contract](ablation/end-to-end-prototype.md) is closed
+with linked evidence. [Claude's hypothesis study](ablation/claude-hypotheses.md) traces
+the original proposals and counterexamples to the later registered experiments.
+[E3R](ablation/resume-e3-run-01.md) checks snapshot-bound retries;
+[S0](benchmarks/append-attribution-s0.md) measures append attribution with a perturbation
+flag. The [E2R model](ablation/seal-e2-run-01.md) and
+[cost result](benchmarks/group-seal-cost-run-01.md) preserve its repaired contract and
+mixed CPU/throughput gates.
+
+[S2](ablation/durable-snapshot-s2-run-01.md) checks durable snapshot/checkpoint behavior.
+The [local lifecycle](ablation/local-prototype-run-01.md) checks offline collection,
+bounded ingestion and separate-process query/resume. [S3/S4 correctness](ablation/columnar-selective-s3-s4-run-01.md)
+checks hybrid layout and postings. [Measured receipt/layout/sidecar costs](benchmarks/research-costs-run-01.md)
+include favorable and unfavorable results under the registered
+[receipt](benchmarks/receipt-resume-cost-protocol.md),
+[layout](benchmarks/columnar-selective-s3-s4-protocol.md) and
+[sidecar](benchmarks/collection-sidecar-s5-protocol.md) protocols. JSON remains the
+prototype lifecycle baseline; these synthetic results select no production format.
 
 The [observability storage agenda](ablation/observability-storage-research.md) contains the corrected survey and staged storage/query experiments. [S1](ablation/storage-query-s1-run-01.md) implements an exact scan oracle and optional block summaries over a replayed in-memory snapshot; its [protocol](ablation/storage-query-s1-protocol.md) fixes workloads and gates. It does not migrate storage or measure disk pruning. The [E1R coverage result](ablation/coverage-e1-run-01.md) records a separate metadata-authentication correctness cell, its [protocol](ablation/coverage-e1-protocol.md), independent oracle and failing mutations. It distinguishes query completeness from raw retention.
 

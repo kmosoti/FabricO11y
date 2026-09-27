@@ -2,7 +2,7 @@
 
 ## Purpose and boundaries
 
-The current input is the [synthetic generator](../../src/generator.rs); there is no network collector. The [buffer](../../src/buffer.rs) holds events in one process and one thread. The [executable](../../src/main.rs) drives both the producer and consumer: default mode prints drained batches, while `write` mode commits them through [EventLog](../../src/log.rs). These are separate code roles, not separate services.
+The application's current input is the [synthetic generator](../../src/generator.rs); there is no network collector. The [buffer](../../src/buffer.rs) holds events in one process and one thread. The [executable](../../src/main.rs) drives both the producer and consumer: default mode prints drained batches, while `write` mode commits them through [EventLog](../../src/log.rs). These are separate code roles, not separate services. A separate [research CLI](research-prototype.md) accepts caller-owned Event JSON or adapts a strict offline OTLP/JSON Logs subset before bounded ingestion.
 
 ## Data flow
 
@@ -63,3 +63,5 @@ For capacity `C > 0`, successful push requires `len < C`, rejection does not cha
 These are in-memory rules. A caller can discard a rejected event, and an event printed to standard output has no durable owner. The optional [local log](storage.md) adds a commit boundary after the buffer; [delivery ownership](delivery.md) explains how that corresponds to the modeled `Commit`. The [current batch-size measurements](../experiments/benchmarks/generator-library-stage3.md) used the pre-storage pipeline and do not establish a representative throughput target.
 
 See the [buffer concept](../concepts/buffer.md), [buffer tests](../../tests/buffer.rs), and [current project state](../CURRENT.md).
+
+The research adapter validates a complete capped request before creating output, maps a single resource group's Log records to ordered Events, and preserves duplicate attribute keys. Trusted caller configuration supplies tenant, source, resource and the first ID. Its 64 MiB input cap limits file bytes; `EventBuffer` separately caps queued event count. `fabric-research ingest` compares the committed FOL2 prefix with the supplied input and appends only the missing suffix. A full-buffer return preserves the Event for retry. This is an offline local path, with no network transport, authentication or general OTLP compatibility claim. See the [registered profile](../../tools/storage-probe/COLLECT_API.md).

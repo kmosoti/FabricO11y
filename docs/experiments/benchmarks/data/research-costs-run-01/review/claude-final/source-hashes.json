@@ -1,0 +1,8 @@
+{
+  "/home/kmosoti/fabric-cost-repair/tools/storage-probe/src/bin/common/mod.rs": "256380c9c638bb4dc09e65d9cd9af9fa6add4dfd367007b0261456592045a0fc",
+  "/home/kmosoti/fabric-cost-repair/tools/storage-probe/src/bin/receipt-cost.rs": "b227f52b4c4e6f8c9b2f58427774372e4a40402dca54a902200cc542a4fb97c7",
+  "/home/kmosoti/fabric-cost-repair/tools/storage-probe/src/bin/sidecar-cost.rs": "a345938085f7e216b7895cca3bb0055fd7a6fb6bfc7d786201fb52e8209aab66",
+  "/home/kmosoti/fabric-cost-repair/tools/layout-probe/src/bin/layout-cost.rs": "1f59ddf64b7146cf03ef1dff0cca105ae02c76f12578b9ecb7305ef1a394c58f",
+  "/home/kmosoti/fabric-cost-repair/tools/bench/run_research_costs.py": "ff531c7b6dd6a12c652fc9faf4c2be350e93e678e30ef914861cc51cd40da04e",
+  "/home/kmosoti/fabric-cost-repair/tools/bench/test_research_costs.py": "0aca64af1cfc8ca0ec71eed038ed966ff3534f77c999061c6a8c65e1d1e125b6"
+}

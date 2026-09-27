@@ -1,0 +1,12 @@
+
+running 1 test
+test registered_e3_full_mask_query_product ... E3_JSON {"shape":"mixed","seed":201,"rows":2048,"blocks":32,"queries":128,"masks_per_query":1000,"cases":128000,"retries":255999,"permanent_cases":4000,"conflicts":80,"successors":50,"adapter_cases":128,"contract_violations":0}
+E3_JSON {"shape":"mixed","seed":202,"rows":2048,"blocks":32,"queries":128,"masks_per_query":1000,"cases":128000,"retries":255999,"permanent_cases":4000,"conflicts":80,"successors":50,"adapter_cases":128,"contract_violations":0}
+E3_JSON {"shape":"mixed","seed":203,"rows":2048,"blocks":32,"queries":128,"masks_per_query":1000,"cases":128000,"retries":255999,"permanent_cases":4000,"conflicts":80,"successors":50,"adapter_cases":128,"contract_violations":0}
+E3_JSON {"shape":"shuffled_logs","seed":201,"rows":2048,"blocks":32,"queries":128,"masks_per_query":1000,"cases":128000,"retries":255999,"permanent_cases":4250,"conflicts":80,"successors":50,"adapter_cases":128,"contract_violations":0}
+E3_JSON {"shape":"shuffled_logs","seed":202,"rows":2048,"blocks":32,"queries":128,"masks_per_query":1000,"cases":128000,"retries":255999,"permanent_cases":4150,"conflicts":80,"successors":50,"adapter_cases":128,"contract_violations":0}
+E3_JSON {"shape":"shuffled_logs","seed":203,"rows":2048,"blocks":32,"queries":128,"masks_per_query":1000,"cases":128000,"retries":255999,"permanent_cases":4050,"conflicts":80,"successors":50,"adapter_cases":128,"contract_violations":0}
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4019.68s
+

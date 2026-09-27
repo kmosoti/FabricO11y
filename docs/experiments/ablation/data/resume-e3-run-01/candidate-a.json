@@ -1,0 +1,32 @@
+{
+  "candidate": "resume-a",
+  "workspace": "/tmp/fabric-resume-a",
+  "source_hashes_sha256": {
+    "tools/storage-probe/src/resume.rs": "4c0b39eec33229ecbcbcc94ec0657b4e7e9214594ae70fe248d1a66b5cef0731",
+    "tools/storage-probe/src/lib.rs": "8dedfe116a757e26c07f6959e592c1e2f62e95a290154dc16266af929645087f",
+    "tools/storage-probe/src/coverage.rs": "cd9bf5553042c9b34217f8104933a45cff7088ebf4dafb9e02526ddd008f27d2"
+  },
+  "checks": [
+    {
+      "command": "cargo test --release --offline --manifest-path tools/storage-probe/Cargo.toml --test resume_contract",
+      "exit_code": 0,
+      "stdout": "Compiling cfg-if v1.0.5\nCompiling version_check v0.9.5\nCompiling libc v0.2.189\nCompiling getrandom v0.4.3\nCompiling typenum v1.20.1\nCompiling rand_core v0.10.1\nCompiling cpufeatures v0.3.1\nCompiling crc32fast v1.5.2\nCompiling deunicode v1.6.2\nCompiling cpufeatures v0.2.17\nCompiling chacha20 v0.10.1\nCompiling generic-array v0.14.7\nCompiling block-buffer v0.10.4\nCompiling crypto-common v0.1.7\nCompiling digest v0.10.7\nCompiling rand v0.10.3\nCompiling sha2 v0.10.9\nCompiling fake v5.1.0\nCompiling fabric_o11y v0.1.0 (/tmp/fabric-resume-a)\nCompiling storage-probe v0.1.0 (/tmp/fabric-resume-a/tools/storage-probe)\nFinished `release` profile [optimized] target(s) in 5.46s\nRunning tests/resume_contract.rs (tools/storage-probe/target/release/deps/resume_contract-f805df4202e4f2ff)\nrunning 6 tests\ntest added_row_conflicts_even_when_coordinates_are_well_formed ... ok\ntest empty_snapshot_and_inverted_query ... ok\ntest bindings_layout_and_residual_validation ... ok\ntest distinct_identical_rows_and_entire_block_conflicts ... ok\ntest safe_empty_scanned_and_excluded_agree_but_faulty_summary_trust_remains_limited ... ok\ntest exact_adapters_resume_and_permanent_outstanding ... ok\ntest result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+      "stderr": "",
+      "duration_seconds": 5.46
+    },
+    {
+      "command": "cargo test --release --offline --manifest-path tools/storage-probe/Cargo.toml",
+      "status": "session_lost",
+      "exit_code": null,
+      "session_id": 52210,
+      "start_time_utc": null,
+      "end_time_utc": null,
+      "duration_seconds": null,
+      "stdout_captured_so_far": "warning: unused import: `Residual`\n --> tests/resume_e3.rs:8:75\n  |\n8 | use storage_probe::resume::{self, Accumulator, Binding, MatchedRow, Page, Residual};\n  |                                                                           ^^^^^^^^\n  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default\nwarning: `storage-probe` (test `resume_e3`) generated 1 warning (run `cargo fix --test `resume_e3` -p storage-probe` to apply 1 suggestion)\nFinished `release` profile [optimized] target(s) in 1.50s\nRunning unittests src/lib.rs (tools/storage-probe/target/release/deps/storage_probe-e1c0efcae8908e78)\nrunning 0 tests\nRunning unittests src/main.rs (tools/storage-probe/target/release/deps/storage_probe-60a284739e94dd6b)\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\nrunning 0 tests\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\nRunning tests/contract.rs\nrunning 7 tests: all passed; 0 failed; finished in 0.12s\nRunning tests/coverage_contract.rs\nrunning 8 tests: all passed; 0 failed; finished in 0.00s\nRunning tests/coverage_e1.rs\nrunning 1 test: registered_e1_corpus_and_fault_matrix ... ok; finished in 2.86s\nRunning tests/coverage_review.rs\nrunning 3 tests: all passed; finished in 0.00s\nRunning tests/resume_contract.rs\nrunning 6 tests: all passed; finished in 0.00s\nRunning tests/resume_e3.rs\nrunning 1 test: registered_e3_full_mask_query_product has been running for over 60 seconds",
+      "stderr": "warning: unused import: `Residual` in tests/resume_e3.rs:8:75 (shown by cargo output stream)",
+      "note": "The original full package process ended, but the tool session no longer exposes its completion output or exit code. No tests were restarted. Output/counters and final E3 result remain unknown.",
+      "session_poll_result": "Unknown process id 52210"
+    }
+  ],
+  "artifact_status": "full_package_session_lost_exit_unknown"
+}

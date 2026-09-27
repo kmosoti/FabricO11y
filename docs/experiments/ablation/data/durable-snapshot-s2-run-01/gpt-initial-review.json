@@ -1,0 +1,70 @@
+{
+  "verdict": "REQUEST_CHANGES",
+  "scope": "Read-only independent S2 review of /tmp/fabric-disk-a against DISK_API.md and durable-snapshot-s2-protocol.md",
+  "environment": {
+    "os": "Linux 6.18.33.2-microsoft-standard-WSL2",
+    "rustc": "1.98.0 (88d9e12ae 2026-08-18)",
+    "cargo": "1.98.0 (797e8a9bc 2026-08-05)",
+    "candidate_git_head": "a82111cc8a7354da8a9ad3a4f4e1ea1df51ab751",
+    "candidate_disk_sha256": "be437b92256fc260cb2000afd80ef77b2fdc7164a2585286b739af4c7d2f2e65",
+    "disk_api_sha256": "fa1bf53cc7a6d39f1ea4993615734085acb071913418bb18190b690c7ee68485",
+    "s2_protocol_sha256": "400d25cfbd86a35a7358102f2f02dbd0b9ed0d10cf22a01fff916e43cc91159e"
+  },
+  "probe_sources": {
+    "tests/probes.rs": "f0298a0c2b08a48656a1a1c3b99167ae9b24fb2927e614137f0a4ac5ff705a5c",
+    "tests/partial_io.rs": "5b15624e64406defddf6643607517773d0c505874199b67d4314df6b75eaa378",
+    "partial_read.c": "b1a4aada671ab24ce6bd95db860e0788ddcdd698af3fe6743fc8628d3b658d3d",
+    "partial_read.so": "519d383370b68a3cae677839fc85cc7806dff93ac56a6d3f28fac0ab32c66b7a"
+  },
+  "commands": [
+    {
+      "command": "cargo test --offline --manifest-path /tmp/fabric-disk-gpt-review/Cargo.toml --test probes -- --nocapture",
+      "exit_code": 101,
+      "outcome": "4 passed, 1 failed; the failing rebuild probe records a recovery limitation, not a proven contract violation"
+    },
+    {
+      "command": "gcc -shared -fPIC -o /tmp/fabric-disk-gpt-review/partial_read.so /tmp/fabric-disk-gpt-review/partial_read.c -ldl",
+      "exit_code": 0
+    },
+    {
+      "command": "env LD_PRELOAD=/tmp/fabric-disk-gpt-review/partial_read.so INJECT_PARTIAL_RAW=1 cargo test --offline --manifest-path /tmp/fabric-disk-gpt-review/Cargo.toml --test partial_io -- --nocapture",
+      "exit_code": 101,
+      "outcome": "0 passed, 1 failed; shim logged a 64-byte read then EIO; answer reported raw_files=2, raw_bytes=0, unavailable=[0]"
+    }
+  ],
+  "findings": [
+    {
+      "severity": "low",
+      "title": "Read metrics omit bytes successfully read before a later file error",
+      "contract": "ReadMetrics.raw_bytes counts actual userspace bytes successfully read from raw candidates, including failed candidate copies.",
+      "input": "Fault shim limits the first read of block-0.json to 64 bytes and returns EIO on the next read; cold/block-0.json is absent.",
+      "expected": "The block is Unavailable and raw_bytes is 64.",
+      "actual": "The block is Unavailable; raw_files=2 but raw_bytes=0. Shim output confirms 64 bytes returned before EIO.",
+      "probe": "tests/partial_io.rs::partial_successful_raw_read_is_counted_even_when_later_read_fails; partial_read.c",
+      "candidate_lines": "tools/storage-probe/src/disk.rs:447-458,601-611",
+      "cause": "read_bounded discards its partial Vec on read_to_end error, and read_block increments raw_bytes only for Ok(bytes). The same helper also hides partial metadata reads from metadata_bytes during manifest fallback."
+    }
+  ],
+  "passing_probes": [
+    "Query uses valid cold copy after invalid hot and counts both complete file reads.",
+    "Open uses valid rebuilt manifest after malformed primary and counts both complete manifest reads.",
+    "Publication rejects a preexisting dangling final-name symlink on this Linux filesystem.",
+    "Codec rejects duplicate scalar and payload kind tags."
+  ],
+  "limits": [
+    "No candidate or main repository files were edited.",
+    "Fault injection models a short successful userspace read followed by EIO; it is not a power-loss test.",
+    "This review assumes the trusted local filesystem namespace, without hostile concurrent path swaps."
+  ],
+  "observations": [
+    {
+      "title": "Rebuild cannot recover automatically when a shape-correct hot copy differs from an intact cold copy",
+      "classification": "recovery limitation; not a proven contract violation",
+      "input": "Three rows in two blocks; copy block-0.json to cold/block-0.json; change only events[0].id in hot block-0.json from 1 to 999; remove manifest.json; call rebuild_manifest with the original independent Publication.",
+      "actual": "rebuild_manifest returned InvalidData('rebuilt rows do not match independent anchor') and did not create manifest.rebuilt.json.",
+      "probe": "tests/probes.rs::rebuild_uses_valid_cold_copy_after_shape_correct_corrupt_hot",
+      "candidate_lines": "tools/storage-probe/src/disk.rs:666-683",
+      "reason": "The API explicitly requires valid-cold fallback for Query, not rebuild. After the manifest is lost, only the full Anchor remains; rebuild has no independent per-block digest for selecting one of multiple shape-correct copies. It fails closed rather than publishing the wrong root. Restoring the raw block from trusted source or removing the corrupt hot copy permits retry."
+    }
+  ]
+}

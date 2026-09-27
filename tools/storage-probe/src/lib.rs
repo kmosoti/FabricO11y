@@ -1,6 +1,11 @@
 //! Conservative block pruning for immutable, replayed research snapshots.
 //! See the S1 protocol; this is not an application query or persistence API.
+pub mod collect;
 pub mod coverage;
+pub mod disk;
+pub mod resume;
+
+use serde::{Deserialize, Serialize};
 
 use std::num::NonZeroUsize;
 
@@ -15,7 +20,8 @@ pub enum Mode {
     Pruned,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Query {
     pub start_ns: i64,
     pub end_ns: i64,

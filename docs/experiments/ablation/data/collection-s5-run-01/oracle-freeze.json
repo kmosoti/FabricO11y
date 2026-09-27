@@ -1,0 +1,13 @@
+{
+  "utc": "2026-09-27T12:55:50.344888+00:00",
+  "status": "before implementation",
+  "rustfmt_exit": 0,
+  "preimplementation_compile_exit": 101,
+  "spec_stub_compile_exit": 0,
+  "drop_all_rows_mutant_exit": 101,
+  "files": {
+    "tools/storage-probe/COLLECT_API.md": "00920bd716d96e42b831436a31d2af445407e71109916e6a4e9033111682eeeb",
+    "tools/storage-probe/tests/collect_contract.rs": "abd40eb0c4cc81ed1f72df22d48c00c1121d05fe91a5ecd182af2fcdaac96288",
+    "docs/experiments/benchmarks/collection-sidecar-s5-protocol.md": "0fdd0b92d350a85621b926299709689e94d237f3c9fc775ffcbf128450fe195c"
+  }
+}

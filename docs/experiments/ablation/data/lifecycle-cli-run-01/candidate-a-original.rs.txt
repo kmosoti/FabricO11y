@@ -1,0 +1,470 @@
+use fabric_o11y::{
+    Event, Payload,
+    buffer::EventBuffer,
+    generator::{EventGenerator, WorkloadConfig},
+    log::{EventLog, same_record_contents},
+};
+use serde_json::{Value, json};
+use std::{
+    env,
+    fs::{self, File, OpenOptions},
+    io::{self, Read, Write},
+    num::NonZeroUsize,
+    path::{Path, PathBuf},
+    process::ExitCode,
+};
+use storage_probe::{
+    Query,
+    coverage::{CoverageStatus, SealedSnapshot},
+    disk::{self, DiskSnapshot, Publication},
+    resume::{self, Accumulator, Binding},
+};
+
+const MAX_INPUT: u64 = 64 * 1024 * 1024;
+
+fn invalid(message: impl Into<String>) -> io::Error {
+    io::Error::new(io::ErrorKind::InvalidInput, message.into())
+}
+
+fn read_bounded(path: &Path) -> io::Result<Vec<u8>> {
+    let file = File::open(path)?;
+    if file.metadata()?.len() > MAX_INPUT {
+        return Err(invalid("file exceeds 64 MiB"));
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_INPUT + 1).read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > MAX_INPUT {
+        return Err(invalid("file exceeds 64 MiB"));
+    }
+    Ok(bytes)
+}
+
+fn write_fresh(path: &Path, bytes: &[u8]) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    if !parent.is_dir() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "output parent must exist",
+        ));
+    }
+    let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    File::open(parent)?.sync_all()
+}
+
+fn parse_num<T: std::str::FromStr>(value: &str, name: &str) -> io::Result<T> {
+    value
+        .parse()
+        .map_err(|_| invalid(format!("invalid {name}")))
+}
+
+fn nonzero(value: &str, name: &str) -> io::Result<NonZeroUsize> {
+    let n: usize = parse_num(value, name)?;
+    NonZeroUsize::new(n).ok_or_else(|| invalid(format!("{name} must be greater than zero")))
+}
+
+fn json_input(path: &Path) -> io::Result<Vec<Event>> {
+    disk::decode_events(&read_bounded(path)?)
+}
+
+fn parse_query(path: &Path) -> io::Result<Query> {
+    let bytes = read_bounded(path)?;
+    let value: Value = serde_json::from_slice(&bytes).map_err(|e| invalid(e.to_string()))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| invalid("query must be an object"))?;
+    let keys = ["start_ns", "end_ns", "tenant", "token"];
+    if object.len() != keys.len() || keys.iter().any(|key| !object.contains_key(*key)) {
+        return Err(invalid(
+            "query must contain exactly start_ns, end_ns, tenant, token",
+        ));
+    }
+    if !object["start_ns"].is_i64() || !object["end_ns"].is_i64() {
+        return Err(invalid("query bounds must be i64"));
+    }
+    if !object["tenant"].is_null() && !object["tenant"].is_u64() {
+        return Err(invalid("query tenant must be null or u64"));
+    }
+    if !object["token"].is_null() && !object["token"].is_string() {
+        return Err(invalid("query token must be null or string"));
+    }
+    serde_json::from_value(value).map_err(|e| invalid(e.to_string()))
+}
+
+fn availability(value: &str, count: usize) -> io::Result<Vec<bool>> {
+    match value {
+        "all" => Ok(vec![true; count]),
+        "none" => Ok(vec![false; count]),
+        bits if bits.len() == count && bits.bytes().all(|b| b == b'0' || b == b'1') => {
+            Ok(bits.bytes().map(|b| b == b'1').collect())
+        }
+        _ => Err(invalid(
+            "availability must be all, none, or one 0/1 bit per block",
+        )),
+    }
+}
+
+fn digest_arg(value: &str) -> io::Result<[u8; 32]> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    {
+        return Err(invalid(
+            "checkpoint digest must be 64 lowercase hexadecimal characters",
+        ));
+    }
+    let mut digest = [0; 32];
+    for (i, byte) in digest.iter_mut().enumerate() {
+        *byte =
+            u8::from_str_radix(&value[i * 2..i * 2 + 2], 16).map_err(|e| invalid(e.to_string()))?;
+    }
+    Ok(digest)
+}
+
+fn digest_hex(digest: &[u8]) -> String {
+    digest.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn binding(publication: &Publication, query: Query) -> Binding {
+    Binding {
+        anchor: publication.anchor.clone(),
+        query,
+        tokenizer_version: resume::TOKENIZER_VERSION,
+        order_version: resume::ORDER_VERSION,
+    }
+}
+
+fn canonical_parent_target(path: &Path) -> io::Result<PathBuf> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let parent = parent.canonicalize()?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| invalid("path must have a final name"))?;
+    Ok(parent.join(name))
+}
+
+fn is_within(path: &Path, directory: &Path) -> bool {
+    path == directory || path.strip_prefix(directory).is_ok()
+}
+
+fn do_generate(args: &[String]) -> io::Result<Value> {
+    if args.len() != 3 {
+        return Err(invalid("usage"));
+    }
+    let seed: u64 = parse_num(&args[0], "seed")?;
+    let count: u32 = parse_num(&args[1], "count")?;
+    let mut events: Vec<_> = EventGenerator::new(WorkloadConfig {
+        seed,
+        events: count,
+    })
+    .collect();
+    for (position, event) in events.iter_mut().enumerate() {
+        if position % 2 == 0 {
+            let suffix = if position % 7 == 0 { " rare" } else { "" };
+            event.payload = Payload::Log {
+                body: format!("common request{position}{suffix}"),
+            };
+        }
+    }
+    let path = Path::new(&args[2]);
+    write_fresh(path, &disk::encode_events(&events)?)?;
+    Ok(json!({"input":path.to_string_lossy(), "input_events":events.len()}))
+}
+
+fn do_ingest(args: &[String]) -> io::Result<Value> {
+    if args.len() != 4 {
+        return Err(invalid("usage"));
+    }
+    let input = json_input(Path::new(&args[0]))?;
+    let capacity = nonzero(&args[2], "capacity")?;
+    let batch = nonzero(&args[3], "batch")?;
+    let mut log = EventLog::open(&args[1])?;
+    let mut stored = Vec::new();
+    log.replay(|event| {
+        stored.push(event);
+        Ok(())
+    })?;
+    if stored.len() > input.len() {
+        return Err(invalid("stored log has rows beyond input prefix"));
+    }
+    for (position, existing) in stored.iter().enumerate() {
+        if !same_record_contents(existing, &input[position])? {
+            return Err(invalid(format!(
+                "stored log differs from input at position {position}"
+            )));
+        }
+    }
+    let already_committed = stored.len();
+    let mut buffer = EventBuffer::new(capacity);
+    let mut retries = 0u64;
+    let mut peak = 0usize;
+    let mut appended = 0usize;
+    for event in input.into_iter().skip(already_committed) {
+        let mut pending = event;
+        loop {
+            match buffer.try_push(pending) {
+                Ok(()) => {
+                    peak = peak.max(buffer.len());
+                    break;
+                }
+                Err(event) => {
+                    retries += 1;
+                    pending = event;
+                    for queued in buffer.take_batch(batch) {
+                        log.append(&queued).map_err(|e| io::Error::other(format!("{e}; rebuild from the independent source on healthy storage before retrying this path")))?;
+                        appended += 1;
+                    }
+                }
+            }
+        }
+    }
+    for queued in buffer.take_batch(batch) {
+        log.append(&queued).map_err(|e| io::Error::other(format!("{e}; rebuild from the independent source on healthy storage before retrying this path")))?;
+        appended += 1;
+    }
+    drop(log);
+    let log_bytes = fs::metadata(&args[1])?.len();
+    Ok(json!({
+        "input_events": already_committed + appended,
+        "already_committed": already_committed,
+        "appended": appended,
+        "buffer_retries": retries,
+        "peak_buffer_events": peak,
+        "capacity": capacity.get(),
+        "batch": batch.get(),
+        "log_bytes": log_bytes
+    }))
+}
+
+fn do_publish(args: &[String]) -> io::Result<Value> {
+    if args.len() != 5 {
+        return Err(invalid("usage"));
+    }
+    let log_path = Path::new(&args[0]);
+    if !log_path.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            "LOG must already exist",
+        ));
+    }
+    let snapshot = Path::new(&args[1]);
+    let publication_path = Path::new(&args[2]);
+    if publication_path.exists() {
+        return Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "trusted publication output must be fresh",
+        ));
+    }
+    let final_snapshot = canonical_parent_target(snapshot)?;
+    let trusted_target = canonical_parent_target(publication_path)?;
+    if is_within(&trusted_target, &final_snapshot) {
+        return Err(invalid(
+            "trusted publication must be outside the snapshot directory",
+        ));
+    }
+    let block_rows = nonzero(&args[3], "block_rows")?;
+    let snapshot_id: u64 = parse_num(&args[4], "snapshot_id")?;
+    let mut log = EventLog::open(log_path)?;
+    let mut events = Vec::new();
+    log.replay(|event| {
+        events.push(event);
+        Ok(())
+    })?;
+    drop(log);
+    let publication = disk::publish(events, block_rows, snapshot_id, snapshot)?;
+    disk::save_publication(publication_path, &publication)?;
+    Ok(
+        json!({"publication":publication_path.to_string_lossy(), "snapshot":snapshot.to_string_lossy()}),
+    )
+}
+
+fn output_page(
+    acc: &Accumulator,
+    reads: &disk::ReadMetrics,
+    checkpoint: &Path,
+    digest: &[u8; 32],
+    history: usize,
+) -> Value {
+    let (complete, unavailable) = match acc.status() {
+        CoverageStatus::Complete => (true, Vec::new()),
+        CoverageStatus::Incomplete { unavailable } => (false, unavailable),
+    };
+    json!({
+        "binding": {"anchor":acc.residual().binding.anchor, "query":acc.residual().binding.query,
+                    "tokenizer_version":acc.residual().binding.tokenizer_version,
+                    "order_version":acc.residual().binding.order_version},
+        "complete":complete,
+        "unavailable":unavailable,
+        "rows":acc.rows(),
+        "positions":acc.positions(),
+        "reads":{"metadata_bytes":reads.metadata_bytes,"raw_bytes":reads.raw_bytes,
+                 "raw_files":reads.raw_files,"unavailable":reads.unavailable},
+        "checkpoint_sha256":digest_hex(digest),
+        "checkpoint":checkpoint.to_string_lossy(),
+        "history_pages":history
+    })
+}
+
+fn do_query(args: &[String]) -> io::Result<Value> {
+    if args.len() != 5 {
+        return Err(invalid("usage"));
+    }
+    let publication = disk::load_publication(Path::new(&args[1]))?;
+    let query = parse_query(Path::new(&args[2]))?;
+    let binding = binding(&publication, query);
+    let available = availability(&args[3], publication.anchor.block_count)?;
+    let snapshot = DiskSnapshot::open(Path::new(&args[0]), publication)?;
+    let answer = snapshot.query(&binding, &available)?;
+    let acc = Accumulator::new(binding.clone(), answer.page.clone())
+        .map_err(|e| invalid(format!("page validation: {e:?}")))?;
+    let digest = disk::save_checkpoint(Path::new(&args[4]), &binding, &[answer.page])?;
+    Ok(output_page(
+        &acc,
+        &answer.reads,
+        Path::new(&args[4]),
+        &digest,
+        1,
+    ))
+}
+
+fn do_resume(args: &[String]) -> io::Result<Value> {
+    if args.len() != 7 {
+        return Err(invalid("usage"));
+    }
+    let publication = disk::load_publication(Path::new(&args[1]))?;
+    let binding = binding(&publication, parse_query(Path::new(&args[2]))?);
+    let checkpoint_digest = digest_arg(&args[4])?;
+    let (mut acc, mut pages) =
+        disk::load_checkpoint(Path::new(&args[3]), &binding, checkpoint_digest)?;
+    let available = availability(&args[5], publication.anchor.block_count)?;
+    let snapshot = DiskSnapshot::open(Path::new(&args[0]), publication)?;
+    let answer = snapshot.resume(&acc.residual(), &available)?;
+    acc.merge(answer.page.clone())
+        .map_err(|e| invalid(format!("page merge: {e:?}")))?;
+    pages.push(answer.page);
+    let digest = disk::save_checkpoint(Path::new(&args[6]), &binding, &pages)?;
+    Ok(output_page(
+        &acc,
+        &answer.reads,
+        Path::new(&args[6]),
+        &digest,
+        pages.len(),
+    ))
+}
+
+fn scalar_matches(event: &Event, query: &Query) -> bool {
+    if event.event_time.0 < query.start_ns || event.event_time.0 > query.end_ns {
+        return false;
+    }
+    if query.tenant.is_some_and(|tenant| tenant != event.tenant.0) {
+        return false;
+    }
+    match (&query.token, &event.payload) {
+        (None, _) => true,
+        (Some(token), Payload::Log { body }) => body.split_whitespace().any(|word| word == token),
+        (Some(_), Payload::Gauge { .. }) => false,
+    }
+}
+
+fn do_verify(args: &[String]) -> io::Result<Value> {
+    if args.len() != 5 {
+        return Err(invalid("usage"));
+    }
+    let events = json_input(Path::new(&args[0]))?;
+    let input_events = events.len();
+    let publication = disk::load_publication(Path::new(&args[1]))?;
+    let query = parse_query(Path::new(&args[2]))?;
+    let mut expected_positions = Vec::new();
+    let mut expected_digests = Vec::new();
+    for (position, event) in events.iter().enumerate() {
+        if scalar_matches(event, &query) {
+            expected_positions.push(position);
+            expected_digests.push(coverage_digest(event));
+        }
+    }
+    let independent = SealedSnapshot::new(
+        events,
+        NonZeroUsize::new(publication.block_rows).ok_or_else(|| invalid("invalid block_rows"))?,
+        publication.anchor.snapshot_id,
+        None,
+    )
+    .map_err(|e| invalid(format!("input anchor: {e:?}")))?;
+    if independent.anchor() != &publication.anchor {
+        return Err(invalid("input does not match trusted publication anchor"));
+    }
+    let binding = binding(&publication, query.clone());
+    let (acc, _) = disk::load_checkpoint(Path::new(&args[3]), &binding, digest_arg(&args[4])?)?;
+    if acc.status() != CoverageStatus::Complete {
+        return Err(invalid("checkpoint is incomplete"));
+    }
+    let actual_rows = acc.rows();
+    let actual_positions = acc.positions();
+    let actual_digests: Vec<_> = actual_rows.iter().map(|row| row.digest).collect();
+    if actual_positions != expected_positions || actual_digests != expected_digests {
+        return Err(invalid(
+            "checkpoint result differs from independent scalar evaluation",
+        ));
+    }
+    Ok(json!({"verified":true,"matched":expected_positions.len(),"input_events":input_events}))
+}
+
+fn coverage_digest(event: &Event) -> [u8; 32] {
+    storage_probe::coverage::rows_digest(std::slice::from_ref(event))
+}
+
+fn do_rebuild(args: &[String]) -> io::Result<Value> {
+    if args.len() != 2 {
+        return Err(invalid("usage"));
+    }
+    let publication = disk::load_publication(Path::new(&args[1]))?;
+    let manifest = disk::rebuild_manifest(Path::new(&args[0]), &publication)?;
+    Ok(json!({"manifest":manifest.to_string_lossy()}))
+}
+
+fn run() -> io::Result<()> {
+    let mut args: Vec<String> = env::args().skip(1).collect();
+    let Some(command) = args.first().cloned() else {
+        return Err(invalid("usage"));
+    };
+    args.remove(0);
+    let result = match command.as_str() {
+        "generate" => do_generate(&args),
+        "ingest" => do_ingest(&args),
+        "publish" => do_publish(&args),
+        "query" => do_query(&args),
+        "resume" => do_resume(&args),
+        "verify" => do_verify(&args),
+        "rebuild" => do_rebuild(&args),
+        _ => Err(invalid("usage")),
+    }?;
+    println!(
+        "{}",
+        serde_json::to_string(&result).map_err(|e| invalid(e.to_string()))?
+    );
+    Ok(())
+}
+
+fn main() -> ExitCode {
+    match run() {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(error) => {
+            let usage = error.kind() == io::ErrorKind::InvalidInput && error.to_string() == "usage";
+            if usage {
+                eprintln!(
+                    "usage: fabric-research generate|ingest|publish|query|resume|verify|rebuild ..."
+                );
+            } else {
+                eprintln!("fabric-research failed: {error}");
+            }
+            ExitCode::from(if usage { 2 } else { 1 })
+        }
+    }
+}

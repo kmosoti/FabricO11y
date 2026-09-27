@@ -1,0 +1,48 @@
+{
+  "candidate": "layout-a",
+  "scratch_path": "/tmp/fabric-layout-a",
+  "implementation": "/tmp/fabric-layout-a/tools/layout-probe/src/lib.rs",
+  "implementation_sha256": "0ec0c5be928706d182f9c6d09381fe16b3153966713997db0cba118ffb69a525",
+  "sources": [
+    {
+      "path": "tools/layout-probe/API.md",
+      "sha256": "2166f0674390991f9ba3dc4cd6396f3fc1d2d1b9d0c900de775f854b0cbec56f"
+    },
+    {
+      "path": "docs/experiments/benchmarks/columnar-selective-s3-s4-protocol.md",
+      "sha256": "8d2047c9459c73f82511aeaecf9e62887379c1f1b4a362f212f9248ddca26cb1"
+    },
+    {
+      "path": "tools/layout-probe/tests/layout_contract.rs",
+      "sha256": "e027a6a782a76ecbbae058d6e7385e0d05839d3d46b3dde1d9286711be880563"
+    },
+    {
+      "path": "tools/layout-probe/tests/OPEN_QUESTIONS.md",
+      "sha256": "f0e0472176925f049713a6874a3a92dc359e31e4f349cddc3fad27f43fb449a0"
+    },
+    {
+      "path": "tools/layout-probe/Cargo.lock",
+      "sha256": "77588e8fe1e2279e585347c3e6c239157c033354a905c02bfe1544644e94c146"
+    }
+  ],
+  "checks": [
+    {
+      "command": "rustfmt tools/layout-probe/src/lib.rs",
+      "exit_code": 0,
+      "output": ""
+    },
+    {
+      "command": "cargo test --release --offline --locked --manifest-path tools/layout-probe/Cargo.toml",
+      "exit_code": 0,
+      "log": "/tmp/fabric-layout-a-cargo.log",
+      "result": "6 layout contract tests passed; 0 failed; unit tests and doc tests had 0 tests and passed."
+    }
+  ],
+  "notes": [
+    "The table SHA-256 is checked before Parquet metadata or results are used.",
+    "Projected queries use a Parquet projection mask for event_time, tenant, payload_kind, log_body, and row_digest; raw_event is not decoded.",
+    "Full decoding validates each raw event's E1 digest and its projected fields.",
+    "Postings JSON parsing rejects duplicate token-map keys, unknown or missing fields, noncanonical token order, bad bindings, and invalid positions; invalid indexes fall back to projected scanning.",
+    "No performance measurements or winner claims were made."
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "command": [
+    "/home/kmosoti/projects/fabric_o11y/tools/storage-probe/target/release/fabric-research",
+    "resume",
+    "snapshot",
+    "trusted.json",
+    "query.json",
+    "still-partial.json",
+    "9e2a4df5a747ffc64fb1c66c4f821209e04c8b39cda4f9cc7524cfe22c13ef54",
+    "all",
+    "complete.json"
+  ],
+  "cwd": "/home/kmosoti/projects/fabric_o11y/target/prototype-integrated",
+  "exit_code": 0,
+  "expected_exit": 0,
+  "elapsed_ns": 4090400,
+  "stdout": "{\"binding\":{\"anchor\":{\"block_count\":3,\"root\":[97,18,91,213,38,196,34,11,221,128,131,197,122,165,241,209,84,30,77,163,158,21,111,146,236,201,203,82,222,239,57,206],\"row_count\":3,\"snapshot_id\":41},\"order_version\":1,\"query\":{\"end_ns\":20,\"start_ns\":0,\"tenant\":7,\"token\":\"rare\"},\"tokenizer_version\":1},\"checkpoint\":\"complete.json\",\"checkpoint_sha256\":\"f8e04f6cd1ab2417793b96d93c8470d95e1ad38e878aa0765f8764e907a197e9\",\"complete\":true,\"history_pages\":3,\"positions\":[0,2],\"reads\":{\"metadata_bytes\":2105,\"raw_bytes\":325,\"raw_files\":1,\"unavailable\":[0]},\"rows\":[{\"block\":0,\"digest\":[44,43,181,191,43,65,180,204,109,174,146,31,133,249,250,53,236,168,207,8,34,135,76,69,24,98,188,171,64,116,127,170],\"offset\":0},{\"block\":2,\"digest\":[35,228,238,13,203,3,4,199,30,122,3,138,216,44,43,127,81,250,229,125,53,149,252,185,156,144,189,171,35,97,177,120],\"offset\":0}],\"unavailable\":[]}\n",
+  "stderr": ""
+}

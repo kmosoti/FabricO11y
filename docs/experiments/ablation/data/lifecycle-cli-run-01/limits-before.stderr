@@ -1,0 +1,9 @@
+   Compiling storage-probe v0.1.0 (/tmp/fabric-cli-b/tools/storage-probe)
+    Finished `release` profile [optimized] target(s) in 0.76s
+     Running tests/prototype_limits.rs (tools/storage-probe/target/release/deps/prototype_limits-095911bae32f4228)
+
+thread 'log_size_is_checked_before_publish_or_existing_log_ingest' (783028) panicked at tests/prototype_limits.rs:60:5:
+size check must precede log parsing: fabric-research ingest failed: stored log contains rows beyond the supplied source
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+error: test failed, to rerun pass `--test prototype_limits`

@@ -2,7 +2,7 @@
 
 ## Status
 
-Experimental; implementation and independent checks are in progress.
+Experimental; the finite E3R correctness gate passed for selected candidate B. This does not select a performance strategy or add an application query service.
 
 ## Context
 
@@ -56,16 +56,22 @@ or checkpoint durability property follows from it.
 The [E3R protocol](../experiments/ablation/resume-e3-protocol.md) fixes six snapshots,
 768 query bindings, 1,000 masks per binding, retries, conflicting rows, successor
 snapshots and permanent-unavailability cases. Independent tests were frozen before
-implementation. Candidate selection, mutation failures and cross-family review
-must be recorded before this increment is treated as checked.
+implementation. The [run 01 result](../experiments/ablation/resume-e3-run-01.md)
+records candidate B's full-corpus exit 0: 768,000 cases, 1,535,994 retries,
+24,450 permanent-unavailable cases and zero contract violations. Three injected
+defects failed their tests; independent GPT and Claude probes approved B. Original
+candidate A/B full-package sessions had no recoverable final exits and are not
+evidence of a pass. The main package adds only Serde wire derives and attributes to
+B's Rust body, as checked in the run's integration artifact.
 
 ## Consequences
 
 Retries can retain exact partial progress with explicit unresolved work. Keeping
 resolved lists costs memory proportional to result size and retaining full metadata
 costs memory proportional to block count. Receipt and merge costs still need
-measurement. A durable prototype needs a separate anchor/publication and checkpoint
-lifecycle; this decision alone introduces neither.
+measurement. The separate S2 research prototype adds an external publication and
+checkpoint lifecycle; this E3 decision alone establishes neither disk durability nor
+raw retention.
 
 ## Related
 

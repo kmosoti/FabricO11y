@@ -1,0 +1,1 @@
+//! Empty library target; all probes live in tests/probe.rs.

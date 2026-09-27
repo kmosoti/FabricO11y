@@ -1,0 +1,33 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling collect-adversarial-review v0.1.0 (/tmp/fabric-collect-review/probes_loss)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.40s
+     Running unittests src/lib.rs (/tmp/fabric-collect-review/probes_loss/target/debug/deps/collect_adversarial_review-816b8566fa7d033a)
+
+running 7 tests
+
+thread 'tests::ordered_duplicate_attributes_survive_across_layers' (761865) panicked at src/lib.rs:57:143:
+wrong type
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test tests::malformed_and_multi_resource_batches_fail ... ok
+test tests::ordered_duplicate_attributes_survive_across_layers ... FAILED
+test tests::identity_is_checked_by_physical_position_and_batch_is_atomic ... ok
+test tests::scalar_and_timestamp_numeric_boundaries ... ok
+
+thread 'tests::duplicate_members_at_every_object_depth_fail_but_array_duplicates_pass' (761861) panicked at src/lib.rs:50:9:
+assertion `left == right` failed
+  left: 3
+ right: 4
+test tests::duplicate_members_at_every_object_depth_fail_but_array_duplicates_pass ... FAILED
+test tests::unknowns_at_all_nine_levels_and_escaped_duplicate_members_fail ... ok
+test tests::empty_envelopes_and_exact_cap ... ok
+
+failures:
+
+failures:
+    tests::duplicate_members_at_every_object_depth_fail_but_array_duplicates_pass
+    tests::ordered_duplicate_attributes_survive_across_layers
+
+test result: FAILED. 5 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.62s
+
+error: test failed, to rerun pass `--lib`

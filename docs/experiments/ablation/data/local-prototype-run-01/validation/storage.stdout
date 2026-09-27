@@ -1,0 +1,192 @@
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 11 tests
+test empty_envelopes_yield_no_events ... ok
+test event_id_addition_is_checked_at_the_last_position ... ok
+test explicitly_present_empty_optional_strings_and_zero_numbers_are_preserved ... ok
+test json_integer_boundary_and_unicode_keys_preserve_their_source_spelling ... ok
+test maps_every_supported_layer_and_scalar_in_registered_order ... ok
+test omitted_metadata_and_timestamps_are_distinct_from_explicit_zero ... ok
+test one_invalid_later_record_rejects_the_whole_batch ... ok
+test rejects_bad_shapes_ranges_and_unsupported_values_atomically ... ok
+test traversal_uses_physical_resource_scope_log_position ... ok
+test trusted_config_sets_identity_and_telemetry_cannot_override_tenant ... ok
+test input_cap_is_checked_before_json_parsing ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.06s
+
+
+running 2 tests
+test duplicate_object_members_are_rejected_at_each_layer ... ok
+test explicit_null_and_numeric_extensions_are_rejected ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 7 tests
+test empty_and_partial_blocks_preserve_positions ... ok
+test selective_time_query_prunes_complete_and_partial_blocks ... ok
+test unsorted_block_extrema_are_used_for_safe_time_pruning ... ok
+test saturated_token_sets_can_over_scan_but_cannot_omit_matches ... ok
+test varied_seeded_data_matches_independent_evaluator ... ok
+test exhaustive_predicate_combinations_match_independent_evaluator ... ok
+test dense_single_block_retains_inserted_tokens_and_extreme_tenants ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.12s
+
+
+running 8 tests
+test authenticated_dishonest_builder_is_visible_only_to_row_oracle ... ok
+test authenticated_malformed_layouts_still_fail_verification ... ok
+test builder_rejects_omissions_and_accepts_conservative_summaries ... ok
+test dispositions_and_unavailability ... ok
+test empty_single_and_odd_trees ... ok
+test exact_positional_scan_unicode_and_empty_tokens ... ok
+test row_digest_binds_every_event_field_and_float_bits ... ok
+test receipt_authentication_binding_and_layout_errors ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 1 test
+test registered_e1_corpus_and_fault_matrix ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.57s
+
+
+running 3 tests
+test canonical_digest_preserves_field_boundaries_order_and_signed_zero ... ok
+test self_authentication_cannot_replace_an_independent_anchor ... ok
+test empty_anchor_and_excess_proof_nodes_are_checked ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 11 tests
+test codec_rejects_wrong_event_scalar_and_payload_shapes ... ok
+test event_codec_preserves_every_field_and_float_bits ... ok
+test exclusions_and_false_availability_open_no_raw_file ... ok
+test binding_availability_and_residual_fail_before_raw_reads ... ok
+test rebuild_refuses_missing_or_corrupt_rows_and_unpublished_stages ... ok
+test well_formed_but_changed_raw_rows_are_unavailable ... ok
+test missing_corrupt_and_cold_raw_keep_exact_outstanding_work ... ok
+test trusted_publication_file_rejects_wrong_version_and_shape ... ok
+test manifest_tampering_wrong_root_and_rebuild_preserve_evidence ... ok
+test publish_reopen_and_query_match_independent_oracle ... ok
+test codec_rejects_malformed_envelopes_and_bounded_files ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.22s
+
+
+running 2 tests
+test metadata::partial_primary_manifest_read_is_counted_on_valid_fallback ... ignored, requires the Linux preload fault shim; run tools/bench/check_disk_io.py
+test raw::partial_successful_raw_read_is_counted_even_when_later_read_fails ... ignored, requires the Linux preload fault shim; run tools/bench/check_disk_io.py
+
+test result: ok. 0 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 6 tests
+test subprocess_publish_worker ... ok
+test subprocess_restart_worker ... ok
+
+running 1 test
+
+running 1 test
+test subprocess_publish_worker ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.04s
+
+test checkpoint_rejects_wrong_digest_binding_history_and_tampering ... ok
+test checkpoint_round_trip_replays_partial_history_and_resumes ... ok
+test two_subprocesses_cannot_publish_or_replace_one_final_name ... ok
+
+running 1 test
+test subprocess_restart_worker ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+test checkpoint_survives_a_real_process_restart ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+
+running 6 tests
+test codec_rejects_duplicate_variant_tags ... ok
+test publish_rejects_preexisting_dangling_symlink_name ... ok
+test invalid_manifest_fallback_counts_both_metadata_files ... ok
+test invalid_hot_falls_back_to_valid_cold_and_counts_both_copies ... ok
+test false_availability_and_failed_reads_both_remain_unavailable ... ok
+test ambiguous_rebuild_fails_closed_until_bad_hot_copy_is_removed ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+
+running 3 tests
+test generate_is_a_fresh_convenience_source ... ok
+test process_lifecycle_preserves_roots_and_restarts_from_partial_history ... ok
+test malformed_inputs_missing_log_and_successor_reject_old_checkpoint ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s
+
+
+running 1 test
+test offline_logs_reach_verified_complete_answer_across_processes ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+
+running 1 test
+test log_size_is_checked_before_publish_or_existing_log_ingest ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.28s
+
+
+running 2 tests
+test duplicate_query_fields_are_rejected_before_checkpoint_creation ... ok
+test tail_is_fully_drained_for_every_capacity_batch_relation ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.49s
+
+
+running 6 tests
+test added_row_conflicts_even_when_coordinates_are_well_formed ... ok
+test bindings_layout_and_residual_validation ... ok
+test distinct_identical_rows_and_entire_block_conflicts ... ok
+test empty_snapshot_and_inverted_query ... ok
+test safe_empty_scanned_and_excluded_agree_but_faulty_summary_trust_remains_limited ... ok
+test exact_adapters_resume_and_permanent_outstanding ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+
+running 3 tests
+test conflict_after_new_work_does_not_partially_update_state ... ok
+test genuinely_different_snapshot_with_identical_layout_is_rejected ... ok
+test each_registered_binding_rejects_faults_atomically ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.72s
+
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

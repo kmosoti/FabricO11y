@@ -1,0 +1,21 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on build directory
+   Compiling storage-probe v0.1.0 (/tmp/fabric-collect-a/tools/storage-probe)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 23.63s
+     Running tests/collect_contract.rs (/tmp/fabric-collect-a/tools/storage-probe/target/debug/deps/collect_contract-4ee2cd9245913af1)
+
+running 11 tests
+test rejects_bad_shapes_ranges_and_unsupported_values_atomically ... ok
+test event_id_addition_is_checked_at_the_last_position ... ok
+test traversal_uses_physical_resource_scope_log_position ... ok
+test explicitly_present_empty_optional_strings_and_zero_numbers_are_preserved ... ok
+test one_invalid_later_record_rejects_the_whole_batch ... ok
+test empty_envelopes_yield_no_events ... ok
+test maps_every_supported_layer_and_scalar_in_registered_order ... ok
+test json_integer_boundary_and_unicode_keys_preserve_their_source_spelling ... ok
+test omitted_metadata_and_timestamps_are_distinct_from_explicit_zero ... ok
+test trusted_config_sets_identity_and_telemetry_cannot_override_tenant ... ok
+test input_cap_is_checked_before_json_parsing ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s
+

@@ -1,0 +1,28 @@
+
+running 11 tests
+test codec_rejects_wrong_event_scalar_and_payload_shapes ... ok
+test binding_availability_and_residual_fail_before_raw_reads ... ok
+test event_codec_preserves_every_field_and_float_bits ... ok
+test manifest_tampering_wrong_root_and_rebuild_preserve_evidence ... FAILED
+test rebuild_refuses_missing_or_corrupt_rows_and_unpublished_stages ... ok
+test exclusions_and_false_availability_open_no_raw_file ... ok
+test missing_corrupt_and_cold_raw_keep_exact_outstanding_work ... ok
+test publish_reopen_and_query_match_independent_oracle ... ok
+test well_formed_but_changed_raw_rows_are_unavailable ... ok
+test trusted_publication_file_rejects_wrong_version_and_shape ... ok
+test codec_rejects_malformed_envelopes_and_bounded_files ... ok
+
+failures:
+
+---- manifest_tampering_wrong_root_and_rebuild_preserve_evidence stdout ----
+
+thread 'manifest_tampering_wrong_root_and_rebuild_preserve_evidence' (711541) panicked at tests/disk_contract.rs:375:5:
+assertion failed: DiskSnapshot::open(&dir, wrong).is_err()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    manifest_tampering_wrong_root_and_rebuild_preserve_evidence
+
+test result: FAILED. 10 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.26s
+

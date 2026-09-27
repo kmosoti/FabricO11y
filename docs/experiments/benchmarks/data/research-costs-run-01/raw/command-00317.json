@@ -1,0 +1,20 @@
+{
+  "command": [
+    "/home/kmosoti/projects/fabric_o11y/tools/layout-probe/target/release/layout-cost",
+    "formal",
+    "shuffled_logs",
+    "202",
+    "2048",
+    "0",
+    "plain64",
+    "/home/kmosoti/projects/fabric_o11y/target/research-costs/run-01/shuffled_logs-202-2048-source.json",
+    "/home/kmosoti/projects/fabric_o11y/target/research-costs/run-01/shuffled_logs-202-2048-0-plain64"
+  ],
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": "",
+  "whole_process_user_ns": 3539135000,
+  "whole_process_system_ns": 52046000,
+  "whole_process_cpu_ns": 3591181000,
+  "whole_process_max_rss_kib": 27224
+}

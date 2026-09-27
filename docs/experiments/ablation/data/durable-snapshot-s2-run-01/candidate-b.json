@@ -1,0 +1,53 @@
+{
+  "candidate": "disk-b",
+  "worktree": "/tmp/fabric-disk-b",
+  "implementation_files": [
+    "tools/storage-probe/src/disk.rs",
+    "tools/storage-probe/src/lib.rs",
+    "tools/storage-probe/src/coverage.rs",
+    "tools/storage-probe/src/resume.rs"
+  ],
+  "source_sha256": {
+    "tools/storage-probe/src/disk.rs": "c186708f908d8c5b0f84a15edabf6f2a1d0fbd3d3c753a50b0e0c09b775cee05",
+    "tools/storage-probe/src/lib.rs": "e05ce061ec3c98a77cad37d943b8517e0f46a859c027cb26f0ffc71a6422cbe7",
+    "tools/storage-probe/src/coverage.rs": "79968acda4fe49775c3f1b7ca2c698ebd61340071a28198d083dc56b1250be44",
+    "tools/storage-probe/src/resume.rs": "98d8f1e5bd2435ea2a1d12391b95bf2b0819f6f078e37732cb0540c60cdae609"
+  },
+  "checks": [
+    {
+      "command": "rustfmt --edition 2024 tools/storage-probe/src/disk.rs tools/storage-probe/src/lib.rs tools/storage-probe/src/coverage.rs tools/storage-probe/src/resume.rs",
+      "exit": 0,
+      "output": "No output."
+    },
+    {
+      "command": "cargo test --release --offline --locked --manifest-path tools/storage-probe/Cargo.toml --test disk_contract --test disk_restart --test resume_contract -- --nocapture",
+      "exit": 0,
+      "output": "Finished release profile in 7.91s. disk_contract: 11 passed, 0 failed; disk_restart: 6 passed, 0 failed (including real-process restart and competing-publisher subprocess cases); resume_contract: 6 passed, 0 failed. All named test binaries passed."
+    },
+    {
+      "command": "rustfmt --check --edition 2024 tools/storage-probe/src/disk.rs tools/storage-probe/src/lib.rs tools/storage-probe/src/coverage.rs tools/storage-probe/src/resume.rs",
+      "exit": 0,
+      "output": "No output."
+    },
+    {
+      "command": "git diff --check -- tools/storage-probe/src/disk.rs tools/storage-probe/src/lib.rs tools/storage-probe/src/coverage.rs tools/storage-probe/src/resume.rs",
+      "exit": 0,
+      "output": "No output."
+    }
+  ],
+  "oracle_test_log": [
+    "disk_contract: event_codec_preserves_every_field_and_float_bits; codec_rejects_malformed_envelopes_and_bounded_files; codec_rejects_wrong_event_scalar_and_payload_shapes; publish_reopen_and_query_match_independent_oracle; missing_corrupt_and_cold_raw_keep_exact_outstanding_work; well_formed_but_changed_raw_rows_are_unavailable; trusted_publication_file_rejects_wrong_version_and_shape; exclusions_and_false_availability_open_no_raw_file; binding_availability_and_residual_fail_before_raw_reads; manifest_tampering_wrong_root_and_rebuild_preserve_evidence; rebuild_refuses_missing_or_corrupt_rows_and_unpublished_stages — all passed.",
+    "disk_restart: checkpoint_round_trip_replays_partial_history_and_resumes; checkpoint_rejects_wrong_digest_binding_history_and_tampering; subprocess_publish_worker; two_subprocesses_cannot_publish_or_replace_one_final_name; subprocess_restart_worker; checkpoint_survives_a_real_process_restart — all passed.",
+    "resume_contract: added_row_conflicts_even_when_coordinates_are_well_formed; bindings_layout_and_residual_validation; empty_snapshot_and_inverted_query; safe_empty_scanned_and_excluded_agree_but_faulty_summary_trust_remains_limited; distinct_identical_rows_and_entire_block_conflicts; exact_adapters_resume_and_permanent_outstanding — all passed."
+  ],
+  "limitations": [
+    "This verifies offline process-level behavior only; it is not physical power-loss or device-durability evidence.",
+    "The format depends on the documented filesystem behavior for file and directory sync and rename; after a known storage I/O error the caller must rebuild from the independent trusted source.",
+    "A process crash while holding the create-new publisher lock can leave a stale lock sidecar; it fails closed and may require operator cleanup before retrying that name.",
+    "The S2 library oracle was run; the expensive resume_e3 corpus and the follow-up end-to-end CLI were intentionally not run or implemented in this candidate."
+  ],
+  "scope_notes": [
+    "No tests, API specification, protocol, dependency manifest, or root runtime implementation was edited by this candidate.",
+    "The scratch worktree already contained the S2 scaffold/spec/tests/dependency changes at task start; those were preserved."
+  ]
+}

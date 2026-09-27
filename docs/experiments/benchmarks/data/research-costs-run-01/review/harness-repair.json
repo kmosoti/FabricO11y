@@ -1,0 +1,693 @@
+{
+  "status": "repaired_smoke_verified",
+  "formal_measurements_run": false,
+  "worktree": "/home/kmosoti/fabric-cost-repair",
+  "changed_paths": [
+    "tools/storage-probe/src/bin/common/mod.rs",
+    "tools/storage-probe/src/bin/sidecar-cost.rs",
+    "tools/layout-probe/src/bin/layout-cost.rs",
+    "tools/bench/run_research_costs.py",
+    "tools/bench/test_research_costs.py"
+  ],
+  "all_six_reviewed_paths": [
+    "tools/storage-probe/src/bin/common/mod.rs",
+    "tools/storage-probe/src/bin/receipt-cost.rs",
+    "tools/storage-probe/src/bin/sidecar-cost.rs",
+    "tools/layout-probe/src/bin/layout-cost.rs",
+    "tools/bench/run_research_costs.py",
+    "tools/bench/test_research_costs.py"
+  ],
+  "sha256": {
+    "tools/storage-probe/src/bin/common/mod.rs": "256380c9c638bb4dc09e65d9cd9af9fa6add4dfd367007b0261456592045a0fc",
+    "tools/storage-probe/src/bin/receipt-cost.rs": "b227f52b4c4e6f8c9b2f58427774372e4a40402dca54a902200cc542a4fb97c7",
+    "tools/storage-probe/src/bin/sidecar-cost.rs": "a345938085f7e216b7895cca3bb0055fd7a6fb6bfc7d786201fb52e8209aab66",
+    "tools/layout-probe/src/bin/layout-cost.rs": "1f59ddf64b7146cf03ef1dff0cca105ae02c76f12578b9ecb7305ef1a394c58f",
+    "tools/bench/run_research_costs.py": "ff531c7b6dd6a12c652fc9faf4c2be350e93e678e30ef914861cc51cd40da04e",
+    "tools/bench/test_research_costs.py": "0aca64af1cfc8ca0ec71eed038ed966ff3534f77c999061c6a8c65e1d1e125b6"
+  },
+  "smoke_output": "/home/kmosoti/fabric-cost-repair-smoke-20260927-c",
+  "smoke_filesystem": "/dev/sdd ext4 /",
+  "smoke_host_load_start": {
+    "loadavg_1_5_15": [
+      1.94873046875,
+      4.2041015625,
+      7.3798828125
+    ],
+    "processes_pid_comm_etime_pcpu": [
+      "      1 systemd            13:38:49  0.0",
+      "      2 init-systemd(De    13:38:49  0.0",
+      "      7 init               13:38:49  0.0",
+      "     37 systemd-journal    13:38:49  0.0",
+      "     76 systemd-udevd      13:38:49  0.0",
+      "    164 cron               13:38:49  0.0",
+      "    166 dbus-daemon        13:38:49  0.0",
+      "    169 systemd-logind     13:38:49  0.0",
+      "    172 tailscaled         13:38:49  0.9",
+      "    225 agetty             13:38:48  0.0",
+      "    227 systemd            13:38:48  0.0",
+      "    229 (sd-pam)           13:38:48  0.0",
+      "    260 dtach              13:38:48  0.0",
+      "    266 claude             13:38:48  0.4",
+      "    294 SessionLeader      13:38:48  0.0",
+      "    309 Relay(312)         13:38:48  0.0",
+      "    312 bash               13:38:48  0.0",
+      "    313 login              13:38:48  0.0",
+      "    332 bash               13:38:48  0.0",
+      "    512 uv                 13:38:47  0.0",
+      "    534 gh-projects-mcp    13:38:47  0.0",
+      "   3661 claude             13:28:28  4.6",
+      "   3754 uv                 13:28:23  0.0",
+      "   3767 gh-projects-mcp    13:28:23  0.0",
+      "   4383 SessionLeader      13:25:44  0.0",
+      "   4384 Relay(4385)        13:25:44  0.0",
+      "   4385 sh                 13:25:44  0.0",
+      "   4386 sh                 13:25:44  0.0",
+      "   4392 sh                 13:25:44  0.0",
+      "   4396 MainThread         13:25:44  0.0",
+      "   4409 SessionLeader      13:25:44  0.0",
+      "   4410 Relay(4411)        13:25:44  0.0",
+      "   4411 MainThread         13:25:44  0.0",
+      "   4423 SessionLeader      13:25:44  0.0",
+      "   4424 Relay(4427)        13:25:44  0.0",
+      "   4427 MainThread         13:25:44  0.0",
+      "   4442 MainThread         13:25:43  0.0",
+      "   4475 MainThread         13:25:43  4.0",
+      "   4495 MainThread         13:25:42  0.0",
+      "   4519 MainThread         13:25:41  0.0",
+      "   4573 codex              13:25:40  0.8",
+      "   4710 bash               13:25:38  0.0",
+      "   4967 claude             13:24:53  0.3",
+      "   5019 uv                 13:24:52  0.0",
+      "   5030 gh-projects-mcp    13:24:52  0.0",
+      "   5736 dbus-daemon        13:23:46  0.0",
+      "   5775 xdg-desktop-por    13:23:46  0.0",
+      "   5779 at-spi-bus-laun    13:23:46  0.0",
+      "   5789 xdg-permission-    13:23:46  0.0",
+      "   5794 xdg-document-po    13:23:46  0.0",
+      "   5802 fusermount3        13:23:46  0.0",
+      "   5819 xdg-desktop-por    13:23:46  0.0",
+      "   5851 dbus-daemon        13:23:46  0.0",
+      "   5853 at-spi2-registr    13:23:46  0.0",
+      "   6057 codex-code-mode    13:23:37  0.0",
+      "  51290 MainThread         12:52:23  0.0",
+      " 421270 SessionLeader      05:37:36  0.0",
+      " 421272 Relay(421277)      05:37:36  0.0",
+      " 421277 bash               05:37:36  0.0",
+      " 440787 codex              05:32:39  4.1",
+      " 440873 codex              05:32:38  0.0",
+      " 441399 codex-code-mode    05:31:41  0.0",
+      " 443711 codex              05:26:22  0.1",
+      " 677759 server             01:29:17  9.6",
+      " 697391 bash               01:03:23  0.0",
+      " 697401 python3            01:03:23  0.0",
+      " 697413 cargo              01:03:23  0.0",
+      " 697425 resume_e3-845d2    01:03:23 93.5",
+      " 749898 sccache               23:51  2.4",
+      " 809018 bash                  08:06  0.0",
+      " 816172 sleep                 00:06  0.0",
+      " 816207 python3               00:00 62.5",
+      " 816209 python3               00:00 60.0",
+      " 816215 ps                    00:00  0.0"
+    ]
+  },
+  "smoke_host_load_end": {
+    "loadavg_1_5_15": [
+      1.96728515625,
+      4.02587890625,
+      7.23583984375
+    ],
+    "processes_pid_comm_etime_pcpu": [
+      "      1 systemd            13:39:13  0.0",
+      "      2 init-systemd(De    13:39:13  0.0",
+      "      7 init               13:39:13  0.0",
+      "     37 systemd-journal    13:39:13  0.0",
+      "     76 systemd-udevd      13:39:13  0.0",
+      "    164 cron               13:39:13  0.0",
+      "    166 dbus-daemon        13:39:13  0.0",
+      "    169 systemd-logind     13:39:13  0.0",
+      "    172 tailscaled         13:39:13  0.9",
+      "    225 agetty             13:39:12  0.0",
+      "    227 systemd            13:39:12  0.0",
+      "    229 (sd-pam)           13:39:12  0.0",
+      "    260 dtach              13:39:12  0.0",
+      "    266 claude             13:39:12  0.4",
+      "    294 SessionLeader      13:39:12  0.0",
+      "    309 Relay(312)         13:39:12  0.0",
+      "    312 bash               13:39:12  0.0",
+      "    313 login              13:39:12  0.0",
+      "    332 bash               13:39:12  0.0",
+      "    512 uv                 13:39:11  0.0",
+      "    534 gh-projects-mcp    13:39:11  0.0",
+      "   3661 claude             13:28:52  4.6",
+      "   3754 uv                 13:28:47  0.0",
+      "   3767 gh-projects-mcp    13:28:47  0.0",
+      "   4383 SessionLeader      13:26:08  0.0",
+      "   4384 Relay(4385)        13:26:08  0.0",
+      "   4385 sh                 13:26:08  0.0",
+      "   4386 sh                 13:26:08  0.0",
+      "   4392 sh                 13:26:08  0.0",
+      "   4396 MainThread         13:26:08  0.0",
+      "   4409 SessionLeader      13:26:08  0.0",
+      "   4410 Relay(4411)        13:26:08  0.0",
+      "   4411 MainThread         13:26:08  0.0",
+      "   4423 SessionLeader      13:26:08  0.0",
+      "   4424 Relay(4427)        13:26:08  0.0",
+      "   4427 MainThread         13:26:08  0.0",
+      "   4442 MainThread         13:26:08  0.0",
+      "   4475 MainThread         13:26:07  4.0",
+      "   4495 MainThread         13:26:06  0.0",
+      "   4519 MainThread         13:26:05  0.0",
+      "   4573 codex              13:26:04  0.8",
+      "   4710 bash               13:26:02  0.0",
+      "   4967 claude             13:25:17  0.3",
+      "   5019 uv                 13:25:16  0.0",
+      "   5030 gh-projects-mcp    13:25:16  0.0",
+      "   5736 dbus-daemon        13:24:10  0.0",
+      "   5775 xdg-desktop-por    13:24:10  0.0",
+      "   5779 at-spi-bus-laun    13:24:10  0.0",
+      "   5789 xdg-permission-    13:24:10  0.0",
+      "   5794 xdg-document-po    13:24:10  0.0",
+      "   5802 fusermount3        13:24:10  0.0",
+      "   5819 xdg-desktop-por    13:24:10  0.0",
+      "   5851 dbus-daemon        13:24:10  0.0",
+      "   5853 at-spi2-registr    13:24:10  0.0",
+      "   6057 codex-code-mode    13:24:01  0.0",
+      "  51290 MainThread         12:52:47  0.0",
+      " 421270 SessionLeader      05:38:00  0.0",
+      " 421272 Relay(421277)      05:38:00  0.0",
+      " 421277 bash               05:38:00  0.0",
+      " 440787 codex              05:33:03  4.1",
+      " 440873 codex              05:33:02  0.0",
+      " 441399 codex-code-mode    05:32:05  0.0",
+      " 443711 codex              05:26:46  0.1",
+      " 677759 server             01:29:41  9.6",
+      " 697391 bash               01:03:47  0.0",
+      " 697401 python3            01:03:47  0.0",
+      " 697413 cargo              01:03:47  0.0",
+      " 697425 resume_e3-845d2    01:03:47 93.5",
+      " 749898 sccache               24:15  2.4",
+      " 809018 bash                  08:31  0.0",
+      " 816207 python3               00:24  0.5",
+      " 816364 sleep                 00:00  0.0",
+      " 816365 ps                    00:00  0.0"
+    ]
+  },
+  "checks": [
+    {
+      "command": [
+        "python3",
+        "-B",
+        "tools/bench/run_research_costs.py",
+        "--smoke",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "",
+      "child_commands_recorded_below": 27
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--offline",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "tools/storage-probe/Cargo.toml",
+        "--bin",
+        "receipt-cost",
+        "--bin",
+        "sidecar-cost"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "    Finished `release` profile [optimized] target(s) in 0.03s\n"
+    },
+    {
+      "command": [
+        "cargo",
+        "build",
+        "--offline",
+        "--locked",
+        "--release",
+        "--manifest-path",
+        "tools/layout-probe/Cargo.toml",
+        "--bin",
+        "layout-cost"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": "    Finished `release` profile [optimized] target(s) in 0.06s\n"
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/receipt-cost",
+        "fixture",
+        "mixed",
+        "201",
+        "2048",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/receipt-cost",
+        "smoke",
+        "mixed",
+        "201",
+        "-1",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-receipt.json"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/sidecar-cost",
+        "source",
+        "smoke",
+        "mixed",
+        "201",
+        "-1",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-hint.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-source-cost.json",
+        "valid"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/sidecar-cost",
+        "server",
+        "smoke",
+        "mixed",
+        "201",
+        "-1",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-hint.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-sidecar-valid.json",
+        "valid"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/sidecar-cost",
+        "server",
+        "smoke",
+        "mixed",
+        "201",
+        "-1",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-hint.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-sidecar-baseline.json",
+        "baseline"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/sidecar-cost",
+        "server",
+        "smoke",
+        "mixed",
+        "201",
+        "-1",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-absent-hint.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-sidecar-absent.json",
+        "absent"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/sidecar-cost",
+        "server",
+        "smoke",
+        "mixed",
+        "201",
+        "-1",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-corrupt-hint.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-sidecar-corrupt.json",
+        "corrupt"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/sidecar-cost",
+        "server",
+        "smoke",
+        "mixed",
+        "201",
+        "-1",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-stale-hint.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-sidecar-stale.json",
+        "stale"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/sidecar-cost",
+        "server",
+        "smoke",
+        "mixed",
+        "201",
+        "-1",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-underinclusive-hint.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-sidecar-underinclusive.json",
+        "underinclusive"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/layout-probe/target/release/layout-cost",
+        "smoke",
+        "mixed",
+        "201",
+        "2048",
+        "-1",
+        "zstd256",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-zstd256"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/layout-probe/target/release/layout-cost",
+        "smoke",
+        "mixed",
+        "201",
+        "2048",
+        "-1",
+        "zstd64",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-zstd64"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/layout-probe/target/release/layout-cost",
+        "smoke",
+        "mixed",
+        "201",
+        "2048",
+        "-1",
+        "plain64",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-plain64"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/layout-probe/target/release/layout-cost",
+        "smoke",
+        "mixed",
+        "201",
+        "2048",
+        "-1",
+        "json64",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048--1-json64"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/receipt-cost",
+        "smoke",
+        "mixed",
+        "201",
+        "0",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-receipt.json"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/sidecar-cost",
+        "source",
+        "smoke",
+        "mixed",
+        "201",
+        "0",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-hint.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-source-cost.json",
+        "valid"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/sidecar-cost",
+        "server",
+        "smoke",
+        "mixed",
+        "201",
+        "0",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-hint.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-sidecar-baseline.json",
+        "baseline"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/sidecar-cost",
+        "server",
+        "smoke",
+        "mixed",
+        "201",
+        "0",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-hint.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-sidecar-valid.json",
+        "valid"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/sidecar-cost",
+        "server",
+        "smoke",
+        "mixed",
+        "201",
+        "0",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-absent-hint.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-sidecar-absent.json",
+        "absent"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/sidecar-cost",
+        "server",
+        "smoke",
+        "mixed",
+        "201",
+        "0",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-corrupt-hint.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-sidecar-corrupt.json",
+        "corrupt"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/sidecar-cost",
+        "server",
+        "smoke",
+        "mixed",
+        "201",
+        "0",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-stale-hint.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-sidecar-stale.json",
+        "stale"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/storage-probe/target/release/sidecar-cost",
+        "server",
+        "smoke",
+        "mixed",
+        "201",
+        "0",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-underinclusive-hint.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-sidecar-underinclusive.json",
+        "underinclusive"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/layout-probe/target/release/layout-cost",
+        "smoke",
+        "mixed",
+        "201",
+        "2048",
+        "0",
+        "json64",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-json64"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/layout-probe/target/release/layout-cost",
+        "smoke",
+        "mixed",
+        "201",
+        "2048",
+        "0",
+        "plain64",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-plain64"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/layout-probe/target/release/layout-cost",
+        "smoke",
+        "mixed",
+        "201",
+        "2048",
+        "0",
+        "zstd64",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-zstd64"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/home/kmosoti/fabric-cost-repair/tools/layout-probe/target/release/layout-cost",
+        "smoke",
+        "mixed",
+        "201",
+        "2048",
+        "0",
+        "zstd256",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-source.json",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c/mixed-201-2048-0-zstd256"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "python3",
+        "-B",
+        "tools/bench/test_research_costs.py",
+        "/home/kmosoti/fabric-cost-repair-smoke-20260927-c"
+      ],
+      "exit_code": 0,
+      "stdout": "source hash mutation: rejected (source hash mismatch across methods)\npaired answer hash mutation: rejected (answer hash mismatch across methods)\ncorrupted result: rejected (invalid /tmp/fabric-cost-validator-5u9gb4db/bad.json: checks_ok=False, wanted True)\nfailed child: rejected (child failed, exit 1: ['/bin/false'])\nchanged p50 flips layout gate: rejected (derived p50_projected_ns differs from raw samples)\nduplicate/missing sample: rejected (duplicate or invalid sample mode/index)\nnegative timing: rejected (invalid full[0].wall_ns: -999)\nwrong matched count: rejected (wrong matched count across variants)\nboolean timing: rejected (invalid full[0].wall_ns: True)\npersisted anchor byte mutation: rejected (Parquet anchor byte mismatch)\nsummary rejects changed p50: rejected (derived p50_projected_ns differs from raw samples)\nresearch cost validator probes passed\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "python3",
+        "-B",
+        "-c",
+        "compile(open(\"tools/bench/run_research_costs.py\").read(),\"tools/bench/run_research_costs.py\",\"exec\"); compile(open(\"tools/bench/test_research_costs.py\").read(),\"tools/bench/test_research_costs.py\",\"exec\")"
+      ],
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "initial_build_failure": {
+    "command": [
+      "cargo",
+      "build",
+      "--offline",
+      "--locked",
+      "--release",
+      "--manifest-path",
+      "tools/layout-probe/Cargo.toml",
+      "--bin",
+      "layout-cost"
+    ],
+    "exit_code": 101,
+    "output_summary": "error[E0283]: type annotations needed at src/bin/layout-cost.rs:231:72 for Sha256::digest(&bytes).into(); fixed with an explicitly typed coverage::Digest, then rebuilt successfully."
+  },
+  "notes": [
+    "Smoke includes one trial=-1 warmup and one trial=0, mixed seed 201 and 2048 events; it is not formal evidence.",
+    "Only the five changed paths listed above were edited in this repair worktree; receipt-cost.rs was hashed but unchanged.",
+    "Protocol and library files already present in the prepared worktree were not edited."
+  ]
+}

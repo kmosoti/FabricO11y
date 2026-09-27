@@ -1,0 +1,16 @@
+flowchart LR
+    Request[Caller-owned OTLP JSON or Event JSON] --> Adapter[Strict offline adapter]
+    Adapter --> Input[Version-1 Event input]
+    Request --> Input
+    Input --> Ingest[Bounded ingest CLI]
+    Ingest --> FOL2[(FOL2 log)]
+    FOL2 --> Publish[Immutable snapshot publisher]
+    Publish --> Blocks[(JSON blocks and metadata)]
+    Publish --> Root[External trusted Publication]
+    Blocks --> Query[Query and residual executor]
+    Root --> Query
+    Query --> Checkpoint[Checkpoint plus external digest]
+    Checkpoint --> Query
+    Input --> Verify[Independent scalar verifier]
+    Root --> Verify
+    Checkpoint --> Verify

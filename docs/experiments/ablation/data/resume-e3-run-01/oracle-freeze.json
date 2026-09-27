@@ -1,0 +1,11 @@
+{
+  "phase": "before implementation",
+  "files": {
+    "tools/storage-probe/RESUME_API.md": "61f68143f32653f57cfb3b3360bdc2c0cfd35ba0a27bdce36c237d63030b174c",
+    "docs/experiments/ablation/resume-e3-protocol.md": "d0a51503c47c3869c59e1f3441bd6f87e2c7274368b069ec2f30bd24b75a27ba",
+    "tools/storage-probe/tests/resume_contract.rs": "927d478242f52ba749ac0d4fb3619c12f60c425f970221caba51f3d8c6af33e4",
+    "tools/storage-probe/tests/resume_e3.rs": "c592fb915ea8b2f41bef074175a68ad7ad0e6e85a9d2712515fc79529c22164d"
+  },
+  "preimplementation_exit": 101,
+  "expected_failure": "unresolved storage_probe::resume"
+}

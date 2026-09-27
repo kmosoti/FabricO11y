@@ -1,0 +1,47 @@
+{
+  "source_sha256": "a75d6e6585649d2c75172085a3e4c7761db4741e22f90198798f7a98628fc2ba",
+  "log_bytes": 75498948,
+  "old_outputs_preserved": true,
+  "fresh_outputs_absent": true,
+  "source_and_log_hashes_unchanged": true,
+  "checks": [
+    {
+      "label": "publish-valid-over64",
+      "argv": [
+        "publish",
+        "/home/kmosoti/fabric-cli-review-big/big-over64.fol2",
+        "/home/kmosoti/fabric-cli-review-big/repair-snap",
+        "/home/kmosoti/fabric-cli-review-big/repair-trust.json",
+        "1",
+        "999"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research publish failed: LOG exceeds 64 MiB input limit"
+    },
+    {
+      "label": "ingest-existing-valid-over64",
+      "argv": [
+        "ingest",
+        "/home/kmosoti/fabric-cli-review-big/big-input.json",
+        "/home/kmosoti/fabric-cli-review-big/big-over64.fol2",
+        "1",
+        "1"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research ingest failed: LOG exceeds 64 MiB input limit"
+    }
+  ],
+  "release_build": {
+    "command": "cargo build --offline --locked --release --bin fabric-research",
+    "exit": 0
+  },
+  "smoke": {
+    "probe": "/tmp/fabric-cli-review/repair_smoke.py",
+    "report": "/tmp/fabric-cli-review/repair-smoke.json",
+    "process_checks": 48,
+    "exit": 0
+  },
+  "verdict": "APPROVE"
+}

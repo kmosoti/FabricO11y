@@ -1,0 +1,19 @@
+{
+  "command": [
+    "cargo",
+    "build",
+    "--release",
+    "--offline",
+    "--locked",
+    "--manifest-path",
+    "tools/storage-probe/Cargo.toml",
+    "--bin",
+    "fabric-research"
+  ],
+  "cwd": "/home/kmosoti/projects/fabric_o11y",
+  "exit_code": 0,
+  "expected_exit": 0,
+  "elapsed_ns": 74577503,
+  "stdout": "",
+  "stderr": "    Finished `release` profile [optimized] target(s) in 0.05s\n"
+}

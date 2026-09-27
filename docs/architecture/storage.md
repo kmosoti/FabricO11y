@@ -2,7 +2,7 @@
 
 ## Purpose and boundary
 
-The separate [S1 storage/query experiment](../experiments/ablation/storage-query-s1-run-01.md) uses this unchanged log for a verified replay-to-memory baseline. Its optional summaries are private in-memory research structures, not persisted indexes or a new log format. The [research agenda](../experiments/ablation/observability-storage-research.md) keeps disk blocks and Parquet as future comparisons.
+The separate [S1 storage/query experiment](../experiments/ablation/storage-query-s1-run-01.md) uses this unchanged log for a verified replay-to-memory baseline. Its optional summaries are private in-memory structures. A later [research prototype](research-prototype.md) replays FOL2 into immutable JSON blocks with an external publication anchor and persistent checkpoints. The [layout probe](../../tools/layout-probe/README.md) implements a separate hybrid Parquet comparison; neither changes this log or selects a format winner.
 
 Stage 5 adds a single-file [event log](../../src/log.rs) inside the Rust library. The optional `write` command drains the existing [buffer](../../src/buffer.rs) into this log; `replay` opens the file again and streams decoded events. The default command still prints batches without storing them. There is no network receiver or external ACK protocol.
 
@@ -84,3 +84,7 @@ The [E2R group-seal model](../experiments/ablation/seal-e2-run-01.md) is separat
 Python research tooling. It tests sector subsets, corruption and an external
 failed-I/O witness; it is not an application durability change. Its cost comparison
 and any physical storage validation are separate gates.
+
+## Research snapshot boundary
+
+The [S2 disk module](../../tools/storage-probe/DISK_API.md) publishes fresh JSON blocks and authenticated metadata, then retains a `Publication` outside the snapshot. An independently retained publication is the query root; metadata loss can be repaired only from raw copies that reproduce that same root. Missing or corrupt candidate rows fail closed as incomplete. A valid local cold copy may substitute for a hot copy. This is separate from FOL2's append commit and does not prove device power-loss durability. The [S2 run](../experiments/ablation/durable-snapshot-s2-run-01.md) checked restart and injected read failures; [registered layout and sidecar costs](../experiments/benchmarks/research-costs-run-01.md) are measured separately.

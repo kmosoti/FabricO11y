@@ -1,0 +1,18 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--release",
+    "--offline",
+    "--locked",
+    "--manifest-path",
+    "tools/storage-probe/Cargo.toml",
+    "--test",
+    "prototype_selection",
+    "--",
+    "--nocapture"
+  ],
+  "cwd": "/tmp/fabric-cli-b",
+  "exit_code": 101,
+  "source_sha256": "cffa78b04447ece02ce7427a1b5f1a96a6d6c8586ba440d16077edb7025216ba"
+}

@@ -1,0 +1,19 @@
+--- /tmp/fabric-collect-a/tools/storage-probe/src/collect.rs
++++ /tmp/fabric-collect-review/tenant_authority/src/collect.rs
+@@ -433,7 +433,15 @@
+         .ok_or_else(|| invalid("EventId addition overflow"))?;
+     Ok(Event {
+         id: EventId(id),
+-        tenant: TenantId(config.tenant),
++        tenant: TenantId(mapped.iter().find_map(|attr| {
++            if attr.key == "otel.log.attr.tenant" || attr.key == "otel.resource.attr.tenant" {
++                match &attr.value {
++                    Scalar::I64(value) => u64::try_from(*value).ok(),
++                    Scalar::U64(value) => Some(*value),
++                    _ => None,
++                }
++            } else { None }
++        }).unwrap_or(config.tenant)),
+         source: SourceId(config.source),
+         resource: ResourceId(config.resource),
+         event_time: EventTime(event_time),

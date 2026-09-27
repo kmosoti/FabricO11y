@@ -1,0 +1,53 @@
+
+running 11 tests
+test codec_rejects_wrong_event_scalar_and_payload_shapes ... ok
+test binding_availability_and_residual_fail_before_raw_reads ... ok
+test event_codec_preserves_every_field_and_float_bits ... ok
+test exclusions_and_false_availability_open_no_raw_file ... ok
+test missing_corrupt_and_cold_raw_keep_exact_outstanding_work ... ok
+test manifest_tampering_wrong_root_and_rebuild_preserve_evidence ... ok
+test rebuild_refuses_missing_or_corrupt_rows_and_unpublished_stages ... ok
+test trusted_publication_file_rejects_wrong_version_and_shape ... ok
+test well_formed_but_changed_raw_rows_are_unavailable ... ok
+test publish_reopen_and_query_match_independent_oracle ... ok
+test codec_rejects_malformed_envelopes_and_bounded_files ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.37s
+
+
+running 6 tests
+test subprocess_publish_worker ... ok
+test subprocess_restart_worker ... ok
+test checkpoint_rejects_wrong_digest_binding_history_and_tampering ... FAILED
+
+running 1 test
+
+running 1 test
+
+running 1 test
+test checkpoint_round_trip_replays_partial_history_and_resumes ... ok
+test subprocess_publish_worker ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+test subprocess_restart_worker ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+test checkpoint_survives_a_real_process_restart ... ok
+test two_subprocesses_cannot_publish_or_replace_one_final_name ... ok
+
+failures:
+
+---- checkpoint_rejects_wrong_digest_binding_history_and_tampering stdout ----
+
+thread 'checkpoint_rejects_wrong_digest_binding_history_and_tampering' (712183) panicked at tests/disk_restart.rs:107:5:
+assertion failed: disk::load_checkpoint(&checkpoint, &b, wrong_digest).is_err()
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    checkpoint_rejects_wrong_digest_binding_history_and_tampering
+
+test result: FAILED. 5 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+

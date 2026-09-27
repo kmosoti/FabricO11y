@@ -1,0 +1,82 @@
+[
+  {
+    "command": [
+      "cc",
+      "-shared",
+      "-fPIC",
+      "-o",
+      "/home/kmosoti/projects/fabric_o11y/target/disk-io/integrated/raw.so",
+      "/home/kmosoti/projects/fabric_o11y/tools/storage-probe/tests/io_fault_support/partial_read.c",
+      "-ldl"
+    ],
+    "cwd": "/home/kmosoti/projects/fabric_o11y",
+    "exit_code": 0,
+    "injected": false,
+    "variable": null,
+    "activation": null,
+    "source_sha256": "b1a4aada671ab24ce6bd95db860e0788ddcdd698af3fe6743fc8628d3b658d3d"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--manifest-path",
+      "tools/storage-probe/Cargo.toml",
+      "--test",
+      "disk_io_fault",
+      "raw::",
+      "--",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "cwd": "/home/kmosoti/projects/fabric_o11y",
+    "exit_code": 0,
+    "injected": true,
+    "variable": "INJECT_PARTIAL_RAW",
+    "activation": "runner",
+    "source_sha256": "b1a4aada671ab24ce6bd95db860e0788ddcdd698af3fe6743fc8628d3b658d3d"
+  },
+  {
+    "command": [
+      "cc",
+      "-shared",
+      "-fPIC",
+      "-o",
+      "/home/kmosoti/projects/fabric_o11y/target/disk-io/integrated/metadata.so",
+      "/home/kmosoti/projects/fabric_o11y/tools/storage-probe/tests/io_fault_support/partial_read_metadata.c",
+      "-ldl"
+    ],
+    "cwd": "/home/kmosoti/projects/fabric_o11y",
+    "exit_code": 0,
+    "injected": false,
+    "variable": null,
+    "activation": null,
+    "source_sha256": "b849f1e5e5a0fd38359ac207f8925a91c838fed090d5782c2f3b631c275c5392"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--offline",
+      "--locked",
+      "--manifest-path",
+      "tools/storage-probe/Cargo.toml",
+      "--test",
+      "disk_io_fault",
+      "metadata::",
+      "--",
+      "--ignored",
+      "--nocapture",
+      "--test-threads=1"
+    ],
+    "cwd": "/home/kmosoti/projects/fabric_o11y",
+    "exit_code": 0,
+    "injected": true,
+    "variable": "INJECT_PARTIAL_METADATA",
+    "activation": "fixture",
+    "source_sha256": "b849f1e5e5a0fd38359ac207f8925a91c838fed090d5782c2f3b631c275c5392"
+  }
+]

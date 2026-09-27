@@ -1,0 +1,34 @@
+{
+  "candidate": "B",
+  "files": [
+    {
+      "path": "/tmp/fabric-layout-b/tools/layout-probe/src/lib.rs",
+      "sha256": "3702e887934bccb7b6198fb1b178463b2a90611ca90a2e08ae5f477662709a66"
+    }
+  ],
+  "checks": [
+    {
+      "command": "cargo test --release --offline --locked --manifest-path tools/layout-probe/Cargo.toml",
+      "exit_code": 0,
+      "output": "    Finished `release` profile [optimized] target(s) in 0.20s\n     Running unittests src/lib.rs (tools/layout-probe/target/release/deps/layout_probe-0682c87b3e395191)\n\nrunning 0 tests\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n     Running tests/layout_contract.rs (tools/layout-probe/target/release/deps/layout_contract-a6f691c19be40d91)\n\nrunning 6 tests\ntest postings_cannot_hide_missing_or_wrong_raw_table ... ok\ntest duplicate_events_keep_distinct_physical_positions ... ok\ntest table_authentication_rejects_wrong_anchor_and_damaged_files_everywhere ... ok\ntest parquet_schema_metadata_and_row_group_limit_match_registered_layout ... ok\ntest postings_are_deterministic_exact_and_invalid_optional_indexes_fall_back ... ok\ntest round_trip_and_three_query_paths_match_scalar_oracle ... ok\ntest result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.13s\n\n   Doc-tests layout_probe\n\nrunning 0 tests\ntest result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n"
+    },
+    {
+      "command": "rustfmt --edition 2024 --check tools/layout-probe/src/lib.rs",
+      "exit_code": 0,
+      "output": ""
+    }
+  ],
+  "earlier_attempts": [
+    {
+      "command": "rustfmt --edition 2024 tools/layout-probe/src/lib.rs && cargo test --release --offline --locked --manifest-path tools/layout-probe/Cargo.toml",
+      "exit_code": 101,
+      "output": "error[E0432]: unresolved import `arrow_array::FixedSizeBinaryBuilder`\nerror[E0603]: struct `ProjectionMask` is private\nerror[E0119]: conflicting implementations of trait `Deserialize<'_>` for type `ParsedPostings`\nerror: could not compile `layout-probe` (lib) due to 3 previous errors"
+    },
+    {
+      "command": "rustfmt --edition 2024 tools/layout-probe/src/lib.rs && cargo test --release --offline --locked --manifest-path tools/layout-probe/Cargo.toml",
+      "exit_code": 101,
+      "output": "error[E0382]: borrow of moved value: `builder` at src/lib.rs:336:9\nerror: could not compile `layout-probe` (lib) due to 1 previous error"
+    }
+  ],
+  "final": "Implemented the S3/S4 layout candidate in the sole source file. Final locked offline release contract tests passed: 6 passed, 0 failed; rustfmt check passed. No benchmark was run."
+}

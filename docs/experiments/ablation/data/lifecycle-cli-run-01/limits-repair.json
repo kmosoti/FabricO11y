@@ -1,0 +1,25 @@
+{
+  "command": [
+    "cargo",
+    "test",
+    "--release",
+    "--offline",
+    "--locked",
+    "--manifest-path",
+    "tools/storage-probe/Cargo.toml",
+    "--test",
+    "prototype_limits",
+    "--test",
+    "prototype_cli",
+    "--test",
+    "prototype_selection",
+    "--test",
+    "prototype_collect",
+    "--",
+    "--nocapture"
+  ],
+  "cwd": "/tmp/fabric-cli-b",
+  "TMPDIR": "/home/kmosoti/projects/fabric_o11y/target",
+  "exit": 0,
+  "source_sha256": "a75d6e6585649d2c75172085a3e4c7761db4741e22f90198798f7a98628fc2ba"
+}

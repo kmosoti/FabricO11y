@@ -1,0 +1,20 @@
+{
+  "command": [
+    "cargo",
+    "build",
+    "--offline",
+    "--locked",
+    "--release",
+    "--manifest-path",
+    "tools/layout-probe/Cargo.toml",
+    "--bin",
+    "layout-cost"
+  ],
+  "exit_code": 0,
+  "stdout": "",
+  "stderr": "   Compiling layout-probe v0.1.0 (/home/kmosoti/projects/fabric_o11y/tools/layout-probe)\n    Finished `release` profile [optimized] target(s) in 1.19s\n",
+  "whole_process_user_ns": 3479467000,
+  "whole_process_system_ns": 215991000,
+  "whole_process_cpu_ns": 3695458000,
+  "whole_process_max_rss_kib": 243084
+}

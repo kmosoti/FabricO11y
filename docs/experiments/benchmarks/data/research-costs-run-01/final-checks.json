@@ -1,0 +1,112 @@
+[
+  {
+    "command": [
+      "cargo",
+      "fmt",
+      "--all",
+      "--check"
+    ],
+    "exit_code": 0,
+    "stdout": "final-check-00.stdout",
+    "stderr": "final-check-00.stderr"
+  },
+  {
+    "command": [
+      "cargo",
+      "fmt",
+      "--manifest-path",
+      "tools/storage-probe/Cargo.toml",
+      "--check"
+    ],
+    "exit_code": 0,
+    "stdout": "final-check-01.stdout",
+    "stderr": "final-check-01.stderr"
+  },
+  {
+    "command": [
+      "cargo",
+      "fmt",
+      "--manifest-path",
+      "tools/layout-probe/Cargo.toml",
+      "--check"
+    ],
+    "exit_code": 0,
+    "stdout": "final-check-02.stdout",
+    "stderr": "final-check-02.stderr"
+  },
+  {
+    "command": [
+      "cargo",
+      "test",
+      "--release",
+      "--offline",
+      "--locked",
+      "--manifest-path",
+      "tools/layout-probe/Cargo.toml"
+    ],
+    "exit_code": 0,
+    "stdout": "final-check-03.stdout",
+    "stderr": "final-check-03.stderr"
+  },
+  {
+    "command": [
+      "bun",
+      "tools/docs/check.mjs"
+    ],
+    "exit_code": 0,
+    "stdout": "final-check-04.stdout",
+    "stderr": "final-check-04.stderr"
+  },
+  {
+    "command": [
+      "git",
+      "diff",
+      "--check"
+    ],
+    "exit_code": 0,
+    "stdout": "final-check-05.stdout",
+    "stderr": "final-check-05.stderr"
+  },
+  {
+    "command": [
+      "git",
+      "diff",
+      "--cached",
+      "--check"
+    ],
+    "exit_code": 2,
+    "expected_exit": 2,
+    "note": "Raw captured transcripts end with blank lines; preserved unified diff contains blank context lines. Historical artifact bytes intentionally unchanged.",
+    "stdout": "final-check-06.stdout",
+    "stderr": "final-check-06.stderr"
+  },
+  {
+    "command": [
+      "git",
+      "diff",
+      "--cached",
+      "--check",
+      "--",
+      ".",
+      ":(glob,exclude)docs/experiments/**/data/**/*.stdout",
+      ":(glob,exclude)docs/experiments/**/data/**/*.log",
+      ":(glob,exclude)docs/experiments/**/data/**/*.diff"
+    ],
+    "exit_code": 0,
+    "expected_exit": 0,
+    "note": "Checks source and prose, excluding only verbatim raw stdout/log/patch artifacts.",
+    "stdout": "final-check-07.stdout",
+    "stderr": "final-check-07.stderr"
+  },
+  {
+    "command": [
+      "bun",
+      "tools/docs/check.mjs"
+    ],
+    "exit_code": 0,
+    "expected_exit": 0,
+    "note": "Final prose changes after source tests; no source edits.",
+    "stdout": "final-check-08.stdout",
+    "stderr": "final-check-08.stderr"
+  }
+]

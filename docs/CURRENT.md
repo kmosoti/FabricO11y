@@ -2,13 +2,24 @@
 
 ## Active work
 
-The [end-to-end research completion contract](experiments/ablation/end-to-end-prototype.md)
-tracks the active prototype goal. E3R retry candidates are being checked against a
-frozen oracle; [S0 attribution](experiments/benchmarks/append-attribution-s0.md) is measured with
-an 11.017% perturbation flag; the [E2R sector/error model](experiments/ablation/seal-e2-run-01.md)
-is checked and reviewed; its [cost trials](experiments/benchmarks/group-seal-cost-run-01.md)
-passed replay, with a mixed CPU/throughput result. Passing a research library cell does
-not close the durable ingest/publication/query/resume goal.
+The [scoped local research completion contract](experiments/ablation/end-to-end-prototype.md)
+is complete. The [local research lifecycle](architecture/research-prototype.md)
+composes offline collection, FOL2 ingest, immutable JSON publication, partial query,
+checkpoint resume, independent verification and same-root rebuild across separate
+processes. The [E3 result](experiments/ablation/resume-e3-run-01.md) passed 768,000
+availability cases with zero contract violations under its stated trust assumptions.
+
+The [registered cost results](experiments/benchmarks/research-costs-run-01.md) measure
+receipt/retry overhead, four physical layouts and conservative sidecar hints. Receipts
+are costly for cheap predicates; compressed hybrid layouts pass the registered
+synthetic-workload gates; source-side hints fail the total-CPU benefit gate. The
+research lifecycle retains JSON as its baseline. The
+[Claude hypothesis study](experiments/ablation/claude-hypotheses.md) preserves the idea
+lineage, killed claims and narrow surviving contracts; it establishes no novelty proof.
+[S0 attribution](experiments/benchmarks/append-attribution-s0.md) retains its 11.017%
+perturbation flag. The [E2 model](experiments/ablation/seal-e2-run-01.md) and
+[cost trials](experiments/benchmarks/group-seal-cost-run-01.md) have a mixed result.
+Network ingestion, external platforms and hardware offload remain conditional work.
 
 The Rust application implements Stage 5: typed events, repeatable synthetic input, a bounded local FIFO buffer, and an optional framed local log with replay. Stage 4's checked [delivery ownership model](../formal/delivery/README.md) remains the target contract; Stage 5 implements its local receiver commit boundary. Stage 6 now has one measured local baseline; the [append attribution](experiments/benchmarks/append-attribution-s0.md) locates most measured time in the two syncs, with a material instrumentation/host-load limitation.
 
@@ -16,7 +27,7 @@ The [WSL recovery audit and resume plan](RESUME.md) records the checks rerun aft
 
 ## Implemented
 
-The [storage/query research agenda](experiments/ablation/observability-storage-research.md) corrects the external survey against current code and primary sources. Its [S1 experiment](experiments/ablation/storage-query-s1-run-01.md) measured exact full scans versus optional time/Bloom summaries over immutable replayed events in a separate [research package](../tools/storage-probe/README.md). All 15,360 timed query results matched the reference. Clustered narrow-time queries avoided 93.945% of rows and absent-token queries avoided 100%; shuffled-time queries avoided only 1.172–1.367%. These are in-memory work reductions. Later disk blocks, Parquet, sidecars, adaptive indexes and hardware cells remain proposed. This is separate from append-phase attribution and adds no application query service.
+The [storage/query research agenda](experiments/ablation/observability-storage-research.md) corrects the external survey against current code and primary sources. Its [S1 experiment](experiments/ablation/storage-query-s1-run-01.md) measured exact full scans versus optional time/Bloom summaries over immutable replayed events in a separate [research package](../tools/storage-probe/README.md). All 15,360 timed query results matched the reference. Clustered narrow-time queries avoided 93.945% of rows and absent-token queries avoided 100%; shuffled-time queries avoided only 1.172–1.367%. These are in-memory work reductions. The later [S2 disk result](experiments/ablation/durable-snapshot-s2-run-01.md) checks JSON blocks, publication and persistent progress. A separate [layout probe](../tools/layout-probe/README.md) implements hybrid Arrow/Parquet projection and postings, with [measured cost comparisons](experiments/benchmarks/research-costs-run-01.md). This is separate from append-phase attribution and adds no application query service.
 
 The [E1R coverage experiment](experiments/ablation/coverage-e1-run-01.md) adds a research-only
 validated summary builder, independently retained snapshot anchor and metadata receipt verifier.
@@ -24,8 +35,8 @@ All 1,536 clean results matched the independent positional oracle; 1,536 availab
 8,832 metadata-fault cases met their expectations. Two source mutations failed the intended tests,
 and cross-family review approved the unchanged implementation. The verifier distinguishes complete,
 incomplete and invalid receipts but relies on a correct builder and exact scan executor. It does
-not establish raw retention. Snapshot-bound residual answers and overhead measurements are next;
-there is no application query service or durability change.
+not establish raw retention. The later research CLI adds snapshot-bound residual answers;
+[overhead measurements](experiments/benchmarks/research-costs-run-01.md) are complete. There is no application query service or durability change.
 
 - The application is one Rust 2024 package, `fabric_o11y`, with a library and a binary. It depends on `fake` for synthetic workload values and `crc32fast` for log integrity checks. A separate dependency-free [transport simulation package](../tools/transport-sim/README.md) is research tooling.
 - Four `u64` ID types, two `i64` time types, five `Scalar` variants, `Attribute`, `Payload::{Log, Gauge}`, and `Event` in [src/lib.rs](../src/lib.rs).
@@ -38,7 +49,7 @@ there is no application query service or durability change.
 
 Optional [agent telemetry tooling](architecture/agent-telemetry.md) records typed Codex hook observations and replays JSON snapshots without feeding activity into model context. Its [formal check](experiments/formal/agent-telemetry-merge.md) covers evidence merging and bounded implementation traces, not delivery or filesystem behavior. Hook activation requires runtime trust; the dashboard and structured project-context interface remain planned.
 
-The Rust application has a local append-only event log and process-restart recovery, but no separate upstream sender, network ACK protocol, query engine, API, UI, or concurrent ingestion mechanism. The [packet-slot simulator](../tools/transport-sim/README.md) models H1 and one-packet M2 research cells without real network or disk I/O. The [blueprint](architecture.md) describes other future possibilities.
+The Rust application has a local append-only event log and process-restart recovery, but no separate upstream sender, network ACK protocol, application query engine, API, UI, or concurrent ingestion mechanism. The research CLI has local query/resume and a strict offline OTLP/JSON Logs adapter, not a network collector. The [packet-slot simulator](../tools/transport-sim/README.md) models H1 and one-packet M2 research cells without real network or disk I/O. The [blueprint](architecture.md) describes other future possibilities.
 
 ## Assumptions and unresolved questions
 

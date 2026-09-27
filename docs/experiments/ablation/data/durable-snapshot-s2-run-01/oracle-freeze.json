@@ -1,0 +1,16 @@
+{
+  "time_utc": "2026-09-27T12:20:41.824693+00:00",
+  "status": "Frozen before disk implementation",
+  "oracle_author": "/root/disk_oracle",
+  "checks": {
+    "rustfmt": 0,
+    "preimplementation_compile": 101
+  },
+  "files": {
+    "tools/storage-probe/tests/disk_contract.rs": "1e6d5308064a4ffdf371576019d5a563ef4384ee382cc2f13514b4d58de4e853",
+    "tools/storage-probe/tests/disk_restart.rs": "e54ffd664c8dd0b5145442aa22b2be67c421d4c6dcbe3df749f6f6f9db4e4925",
+    "tools/storage-probe/tests/disk_support/mod.rs": "f134e92ae80b64257c951fefd87e61bba6933f1f11c24653b634254fe6b17fb7",
+    "tools/storage-probe/DISK_API.md": "fa1bf53cc7a6d39f1ea4993615734085acb071913418bb18190b690c7ee68485",
+    "docs/experiments/ablation/durable-snapshot-s2-protocol.md": "400d25cfbd86a35a7358102f2f02dbd0b9ed0d10cf22a01fff916e43cc91159e"
+  }
+}

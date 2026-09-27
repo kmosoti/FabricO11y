@@ -2,11 +2,21 @@
 
 ## Scope and evidence
 
-This branch turns the supplied observability survey into falsifiable experiments. The first deliverable is a corrected survey, a sequenced roadmap, and S1: a small replay-to-query prototype with optional summaries. Later rows below are proposed work, not implemented capabilities. The starting revision is updated `main`, `40fa467`.
+This branch turns the supplied observability survey into falsifiable experiments.
+The starting revision is updated `main`, `40fa467`. The corrected survey led to S1,
+authenticated coverage and retry experiments, and a separate runnable
+[local prototype](local-prototype-run-01.md). The
+[completion contract](end-to-end-prototype.md) distinguishes the scoped local work
+from conditional external-system and hardware experiments below.
 
 The supplied audit inferred async ingestion, custom indexes, unspecified storage, and correction/completeness machinery from the project description. Inspection gives a smaller baseline: [typed events](../../../src/lib.rs), a seeded Gauge [generator](../../../src/generator.rs), a bounded single-threaded [buffer](../../../src/buffer.rs), and a versioned two-sync [local log](../../../src/log.rs). There is no Tokio dependency, ingestion listener, query service, index, correction engine, clustering, or OpenTelemetry adapter in the application. [ADR-0006](../../decisions/ADR-0006-use-framed-local-log.md) already defines the initial storage format. Its interoperability and performance remain open; its existence does not.
 
-The [Stage 6 baseline](../benchmarks/local-log-stage6.md) found almost all pipeline time inside append for one Gauge workload. It did not separate encoding, writes and syncs. That remains the next ingestion measurement. S1 separately establishes an exact query oracle and conservative pruning over replayed rows. It does not explain or improve append performance.
+The [Stage 6 baseline](../benchmarks/local-log-stage6.md) found almost all pipeline
+time inside append for one Gauge workload. The subsequent
+[S0 attribution](../benchmarks/append-attribution-s0.md) separates encoding, writes
+and syncs, with an 11.017% instrumentation perturbation flag. S1 separately establishes
+an exact query oracle and conservative pruning over replayed rows. It does not
+explain or improve append performance.
 
 ## Corrected landscape
 
@@ -46,6 +56,9 @@ Assumptions: correct Rust execution, complete immutable input, matching token/ha
 
 ## Coverage follow-up
 
+The [Claude hypothesis study](claude-hypotheses.md) records the repaired coverage,
+seal and residual proposals, their counterexamples and later experiment lineage.
+
 The [E1R protocol](coverage-e1-protocol.md) and [executed result](coverage-e1-run-01.md) challenge S1's assumption of a complete block set
 using authenticated metadata and an independently retained anchor. This is a separate in-memory
 correctness cell with exact summary sets; it does not add persisted blocks or resumable queries.
@@ -63,15 +76,31 @@ Each row requires a separate preregistration before measurement. Implementing ev
 
 | Cell | Fixed comparison and implementation boundary | Evidence needed to finish | State |
 | --- | --- | --- | --- |
-| S0: append attribution | Same FOL2 bytes and two-sync contract; instrument encoding, writes, event sync, marker sync | Reconcile phase totals with uninstrumented overhead; repeated ext4 trials, resource costs, exact replay | Existing Stage 6 follow-up, still proposed |
+| S0: append attribution | Same FOL2 bytes and two-sync contract; instrument encoding, writes, event sync, marker sync | Reconcile phase totals with uninstrumented overhead; repeated ext4 trials, resource costs, exact replay | [Measured](../benchmarks/append-attribution-s0.md), with material perturbation flag |
 | S1: conservative summaries | Full scan versus time/tenant/token summaries over the same replayed snapshot | Exact independent oracle, missing-summary fallback, deliberate-defect detection, build cost and query samples; named logical-work gate | Implemented research tooling; [fixed protocol](storage-query-s1-protocol.md) and [result record](storage-query-s1-run-01.md) |
-| S2: immutable disk blocks | Existing log retained as baseline; block manifest and disposable checked metadata | Round-trip equality, interrupted publication/rebuild/corruption cases, complete coverage, measured physical/logical reads; time partitioning tested with late arrivals | Proposed, depends on S1 and a written publication contract |
-| S3: columnar projection | Same event/query corpus, row blocks versus Arrow batches + Parquet files, with codec/row-group size varied one at a time | All scalar/payload edge cases, schema/version/null policy, cold/warm queries, bytes written incl. indexes, CPU, RSS, freshness; commit semantics matched | Proposed; no migration selected |
-| S4: selective terms / late materialization | Scan baseline versus optional postings or projected columns; adaptive eviction only after static costs understood | Exact result equality under index loss/rebuild, build/storage cost, parse cost, amortization by query frequency, update/correction semantics | Proposed |
-| S5: collection / sidecar | Same end-to-end retained events via specified OTel receiver; enrichment before lossy filtering | Backpressure/ownership, rejects observable, tenant isolation, source+server CPU/network cost and full-result equality; privacy/access contract | Proposed; sidecars cannot discard raw evidence solely on probabilistic filters |
-| S6: external systems / hardware | Equivalent queries and durability on version-pinned backends; host transport baseline before offload | Reproducible deployment/config/dataset, latency and cost intervals, error rates, hardware inventory; NIC/DPDK/RDMA work only with facilities | Proposed; link to existing transport study, no simulator-to-hardware claim |
+| S2: immutable disk blocks | Existing log retained as baseline; block manifest and disposable checked metadata | Round-trip equality, interrupted publication/rebuild/corruption cases, complete coverage, measured read accounting; late arrivals | [Implemented and checked](durable-snapshot-s2-run-01.md); fixed arrival-order blocks, as refined below |
+| S3: columnar projection | Same event/query corpus, row blocks versus Arrow batches + Parquet files, with codec/row-group size varied one at a time | All scalar/payload edge cases, schema/version/null policy, bytes including trust metadata, CPU, RSS, publication; commit semantics matched | [Correctness checked](columnar-selective-s3-s4-run-01.md); [costs measured](../benchmarks/research-costs-run-01.md) |
+| S4: selective terms / late materialization | Scan baseline versus optional postings or projected columns; adaptive eviction only after static costs understood | Exact result equality under index loss/rebuild, build/storage cost, parse cost, amortization by query frequency, snapshot replacement semantics | [Static postings and projection checked](columnar-selective-s3-s4-run-01.md); [costs measured](../benchmarks/research-costs-run-01.md) |
+| S5: collection / sidecar | Same retained events via a specified offline OTLP Logs profile; conservative hints before any lossy filtering | Backpressure/ownership, visible rejection, tenant assignment, source+server CPU and logical transfer bytes, full-result equality | [Adapter and lifecycle checked](local-prototype-run-01.md); [sidecar costs measured](../benchmarks/research-costs-run-01.md), benefit gate failed |
+| S6: external systems / hardware | Equivalent queries and durability on version-pinned backends; host transport baseline before offload | Reproducible deployment/config/dataset, latency and cost intervals, error rates, hardware inventory; NIC/DPDK/RDMA work only with facilities | Conditional future work; [available facilities](data/facilities-2026-09-27/inventory.json), no hardware or external-backend measurement |
 
-S2 includes time buckets and a local cold-directory prototype before any object-store dependency. A move between directories is not a test of S3 latency, consistency or durability. Disk pruning must handle event time independently of arrival time. S3 compares physical layouts; it does not require choosing DataFusion or Tantivy in advance. S4 may later investigate materialized aggregates, but corrections, aggregate semantics and recomputation must be specified first. GPU/DPU/FPGA, memory-first searchable state, clustering and automatic indexing remain conditional hypotheses rather than quick wins.
+The initial S2 sketch proposed event-time buckets. The registered
+[disk contract](../../../tools/storage-probe/DISK_API.md) instead fixes arrival-order
+row blocks with authenticated time bounds, preserving physical coordinates for
+retry. Out-of-order timestamps and a late-event successor are checked; changing
+event-time partition layouts remains future work. A local cold-directory move is
+not a test of object-store latency, consistency or durability. Rebuilding must
+reproduce the independently retained root.
+
+S3 measures process-cold queries on a shared host without dropping OS caches; no
+cold-device claim follows. S5 deliberately implements a bounded offline Logs
+adapter and measures logical file-transfer sizes, not a conformant network receiver
+or real network overhead. S4 may later investigate materialized aggregates, but
+corrections, aggregate semantics and recomputation must be specified first.
+GPU/DPU/FPGA, memory-first searchable state, clustering and automatic indexing remain
+conditional hypotheses rather than quick wins. The host inventory found no usable
+RDMA interface or installed comparative backends; an available GPU utility alone
+does not establish an offload testbed.
 
 ## Measurement policy
 

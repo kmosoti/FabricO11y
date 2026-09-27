@@ -3,8 +3,7 @@
 ## Purpose and components
 
 The application has no query service. The separate [storage probe](../../tools/storage-probe/README.md)
-contains two research boundaries: S1's in-memory scan/Bloom comparison and E1R's
-[coverage protocol](../experiments/ablation/coverage-e1-protocol.md). Neither changes FOL2 or its CLI.
+contains S1's in-memory scan/Bloom comparison, E1R's [coverage protocol](../experiments/ablation/coverage-e1-protocol.md), and a local disk query/resume CLI. The [layout probe](../../tools/layout-probe/README.md) compares Parquet projection and optional postings. Neither changes the application CLI or FOL2.
 
 S1 owns rows and optional summaries together. E1R separates a trusted builder and
 scan executor from a verifier that receives only metadata. The builder owns immutable
@@ -55,10 +54,7 @@ Retention auditing is a separate, unimplemented question.
 - The trusted exact executor remains responsible for scanned results. A marker is not a proof of execution.
 - An incorrect summary can be authentically sealed by a faulty builder. The negative control demonstrates why the builder is a separate trust assumption.
 
-The Merkle/summary encoding is experimental and in memory. Anchors are not persisted or
-published across processes. Availability is a supplied vector, not detected physical loss.
-There is no malicious-server proof, concurrent publication, compaction, wire parser, retry
-merge, byte-level I/O saving or performance result from this correctness cell.
+E1R itself is an in-memory correctness cell. The later [research lifecycle](research-prototype.md) persists JSON blocks, an external Publication and checkpoint history, and uses E3 residual merge. Availability remains a caller mask plus local file checks, not detected physical loss. This does not establish a malicious-server proof, compaction, or a performance winner.
 
 ## Decisions and evidence
 
@@ -67,5 +63,4 @@ choice and its conditional partition argument. The [fixed API](../../tools/stora
 separates the builder, commitment utility, query executor and verifier. The [E1R result](../experiments/ablation/coverage-e1-run-01.md) preserves the independent positional oracle, fault injections and cross-family reviews; its finite corpus cannot establish an unbounded guarantee. [S1's measured result](../experiments/ablation/storage-query-s1-run-01.md)
 remains a separate logical-pruning result.
 
-Resumable answers, an external anchor lifecycle, persisted metadata and overhead measurements
-are subsequent decisions, not properties inferred from receipt verification.
+The external anchor lifecycle and persisted retry are implemented in the research probe and have their own [S2 evidence](../experiments/ablation/durable-snapshot-s2-run-01.md). The [E3 finite corpus](../experiments/ablation/resume-e3-run-01.md) passed for selected candidate B under its stated trust assumptions. Registered [receipt/resume costs](../experiments/benchmarks/research-costs-run-01.md) are measured, including substantial overhead on cheap predicates.

@@ -1,0 +1,26 @@
+{
+  "repository": "/home/kmosoti/projects/fabric_o11y",
+  "commands": [
+    {
+      "command": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "exit_code": 0,
+      "stdout": "b429a4d0bfa170e6186a041ae937d5a79aa968a1\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "status",
+        "--short",
+        "--branch"
+      ],
+      "exit_code": 0,
+      "stdout": "## research/storage-query-ablation\n",
+      "stderr": ""
+    }
+  ]
+}

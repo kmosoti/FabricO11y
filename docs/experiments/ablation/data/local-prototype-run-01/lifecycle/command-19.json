@@ -1,0 +1,19 @@
+{
+  "command": [
+    "/home/kmosoti/projects/fabric_o11y/tools/storage-probe/target/release/fabric-research",
+    "resume",
+    "successor",
+    "successor-trusted.json",
+    "query.json",
+    "complete.json",
+    "f8e04f6cd1ab2417793b96d93c8470d95e1ad38e878aa0765f8764e907a197e9",
+    "all",
+    "wrong-snapshot.json"
+  ],
+  "cwd": "/home/kmosoti/projects/fabric_o11y/target/prototype-integrated",
+  "exit_code": 1,
+  "expected_exit": 1,
+  "elapsed_ns": 1455300,
+  "stdout": "",
+  "stderr": "fabric-research resume failed: checkpoint binding or version mismatch\n"
+}

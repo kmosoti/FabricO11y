@@ -119,7 +119,9 @@ file-open attempts, including failed/corrupt candidate copies, for that operatio
 to that DiskSnapshot; each answer reports that acquisition cost explicitly rather
 than hiding it. `raw_bytes` is userspace file bytes, **not physical device reads**.
 No physical-I/O claim follows from page-cache hits. `unavailable` records ascending
-raw candidate ordinals that could not be scanned; exclusions are not unavailable.
+raw candidate ordinals that could not be scanned, including false availability bits;
+exclusions are not unavailable. This describes the returned page, not previously
+accumulated progress; derive retry work from Accumulator::residual.
 False availability bits do not open raw files. Reject a wrong availability length,
 changed binding, unsupported tokenizer/order or invalid residual before raw reads.
 
@@ -147,3 +149,14 @@ inside the same replaceable checkpoint would not protect against coherent change
 This is integrity and restart validation under the trusted executor assumptions,
 not proof that a malicious executor scanned rows. The final CLI must make the
 publication and checkpoint trust boundaries explicit and reproducible.
+
+## Rebuild ambiguity after metadata loss
+
+Review clarification: query has authenticated per-block commitments and therefore
+tries a valid cold copy after a digest-mismatching hot copy. Rebuild after complete
+metadata loss has only the independently retained whole-snapshot root. If both
+locations decode to the expected count but contain different rows, the current
+rebuild tries hot first and fails when the reconstructed root differs; it does not
+search every combination of alternatives. This is a fail-closed recoverability
+limit, not a Complete answer. Restore from the independent source or remove the
+identified bad hot copy before rebuilding. No root is replaced to hide a mismatch.

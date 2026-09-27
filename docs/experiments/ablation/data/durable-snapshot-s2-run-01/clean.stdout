@@ -1,0 +1,52 @@
+
+running 11 tests
+test binding_availability_and_residual_fail_before_raw_reads ... ok
+test codec_rejects_wrong_event_scalar_and_payload_shapes ... ok
+test event_codec_preserves_every_field_and_float_bits ... ok
+test exclusions_and_false_availability_open_no_raw_file ... ok
+test trusted_publication_file_rejects_wrong_version_and_shape ... ok
+test rebuild_refuses_missing_or_corrupt_rows_and_unpublished_stages ... ok
+test missing_corrupt_and_cold_raw_keep_exact_outstanding_work ... ok
+test manifest_tampering_wrong_root_and_rebuild_preserve_evidence ... ok
+test well_formed_but_changed_raw_rows_are_unavailable ... ok
+test publish_reopen_and_query_match_independent_oracle ... ok
+test codec_rejects_malformed_envelopes_and_bounded_files ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+
+running 6 tests
+test subprocess_publish_worker ... ok
+test subprocess_restart_worker ... ok
+test checkpoint_rejects_wrong_digest_binding_history_and_tampering ... ok
+
+running 1 test
+
+running 1 test
+test checkpoint_round_trip_replays_partial_history_and_resumes ... ok
+running 1 test
+
+test subprocess_publish_worker ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+test subprocess_restart_worker ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+test two_subprocesses_cannot_publish_or_replace_one_final_name ... ok
+test checkpoint_survives_a_real_process_restart ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 6 tests
+test added_row_conflicts_even_when_coordinates_are_well_formed ... ok
+test bindings_layout_and_residual_validation ... ok
+test distinct_identical_rows_and_entire_block_conflicts ... ok
+test empty_snapshot_and_inverted_query ... ok
+test safe_empty_scanned_and_excluded_agree_but_faulty_summary_trust_remains_limited ... ok
+test exact_adapters_resume_and_permanent_outstanding ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+

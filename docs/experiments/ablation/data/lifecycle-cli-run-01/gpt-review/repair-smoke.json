@@ -1,0 +1,646 @@
+{
+  "source_sha256": "a75d6e6585649d2c75172085a3e4c7761db4741e22f90198798f7a98628fc2ba",
+  "checks": [
+    {
+      "label": "adapt",
+      "argv": [
+        "adapt-otlp",
+        "/tmp/fabric-cli-review/cases-repair/request.json",
+        "/tmp/fabric-cli-review/cases-repair/config.json",
+        "/tmp/fabric-cli-review/cases-repair/input.json"
+      ],
+      "exit": 0,
+      "stdout": "{\"adapted_events\":4,\"output\":\"/tmp/fabric-cli-review/cases-repair/input.json\"}",
+      "stderr": ""
+    },
+    {
+      "label": "adapt-existing",
+      "argv": [
+        "adapt-otlp",
+        "/tmp/fabric-cli-review/cases-repair/request.json",
+        "/tmp/fabric-cli-review/cases-repair/config.json",
+        "/tmp/fabric-cli-review/cases-repair/input.json"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research adapt-otlp failed: output already exists"
+    },
+    {
+      "label": "dup-config",
+      "argv": [
+        "adapt-otlp",
+        "/tmp/fabric-cli-review/cases-repair/request.json",
+        "/tmp/fabric-cli-review/cases-repair/dup-config.json",
+        "/tmp/fabric-cli-review/cases-repair/dup-config.out"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research adapt-otlp failed: invalid source configuration: duplicate field `tenant` at line 1 column 20"
+    },
+    {
+      "label": "string-config",
+      "argv": [
+        "adapt-otlp",
+        "/tmp/fabric-cli-review/cases-repair/request.json",
+        "/tmp/fabric-cli-review/cases-repair/string-config.json",
+        "/tmp/fabric-cli-review/cases-repair/string-config.out"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research adapt-otlp failed: invalid source configuration: invalid type: string \"4\", expected u64 at line 1 column 13"
+    },
+    {
+      "label": "unknown-config",
+      "argv": [
+        "adapt-otlp",
+        "/tmp/fabric-cli-review/cases-repair/request.json",
+        "/tmp/fabric-cli-review/cases-repair/unknown-config.json",
+        "/tmp/fabric-cli-review/cases-repair/unknown-config.out"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research adapt-otlp failed: invalid source configuration: unknown field `x`, expected one of `tenant`, `source`, `resource`, `first_event_id` at line 1 column 59"
+    },
+    {
+      "label": "duplicate-member",
+      "argv": [
+        "adapt-otlp",
+        "/tmp/fabric-cli-review/cases-repair/duplicate-member.json",
+        "/tmp/fabric-cli-review/cases-repair/config.json",
+        "/tmp/fabric-cli-review/cases-repair/duplicate-member.out"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research adapt-otlp failed: duplicate JSON object member \"resourceLogs\" at line 1 column 37"
+    },
+    {
+      "label": "lost",
+      "argv": [
+        "adapt-otlp",
+        "/tmp/fabric-cli-review/cases-repair/lost.json",
+        "/tmp/fabric-cli-review/cases-repair/config.json",
+        "/tmp/fabric-cli-review/cases-repair/lost.out"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research adapt-otlp failed: LogRecord.droppedAttributesCount reports dropped attributes"
+    },
+    {
+      "label": "bad-body",
+      "argv": [
+        "adapt-otlp",
+        "/tmp/fabric-cli-review/cases-repair/bad-body.json",
+        "/tmp/fabric-cli-review/cases-repair/config.json",
+        "/tmp/fabric-cli-review/cases-repair/bad-body.out"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research adapt-otlp failed: unknown body field \"intValue\""
+    },
+    {
+      "label": "ingest-1-1",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/input.json",
+        "/tmp/fabric-cli-review/cases-repair/log-1-1.fol2",
+        "1",
+        "1"
+      ],
+      "exit": 0,
+      "stdout": "{\"already_committed\":0,\"appended\":4,\"batch\":1,\"buffer_retries\":3,\"capacity\":1,\"input_events\":4,\"log_bytes\":815,\"peak_buffer_events\":1}",
+      "stderr": ""
+    },
+    {
+      "label": "retry-1-1",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/input.json",
+        "/tmp/fabric-cli-review/cases-repair/log-1-1.fol2",
+        "1",
+        "1"
+      ],
+      "exit": 0,
+      "stdout": "{\"already_committed\":4,\"appended\":0,\"batch\":1,\"buffer_retries\":0,\"capacity\":1,\"input_events\":4,\"log_bytes\":815,\"peak_buffer_events\":0}",
+      "stderr": ""
+    },
+    {
+      "label": "wrong-prefix-1-1",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/wrong.json",
+        "/tmp/fabric-cli-review/cases-repair/log-1-1.fol2",
+        "1",
+        "1"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research ingest failed: stored log is not an exact prefix of the supplied source"
+    },
+    {
+      "label": "ingest-1-7",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/input.json",
+        "/tmp/fabric-cli-review/cases-repair/log-1-7.fol2",
+        "1",
+        "7"
+      ],
+      "exit": 0,
+      "stdout": "{\"already_committed\":0,\"appended\":4,\"batch\":7,\"buffer_retries\":3,\"capacity\":1,\"input_events\":4,\"log_bytes\":815,\"peak_buffer_events\":1}",
+      "stderr": ""
+    },
+    {
+      "label": "retry-1-7",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/input.json",
+        "/tmp/fabric-cli-review/cases-repair/log-1-7.fol2",
+        "1",
+        "7"
+      ],
+      "exit": 0,
+      "stdout": "{\"already_committed\":4,\"appended\":0,\"batch\":7,\"buffer_retries\":0,\"capacity\":1,\"input_events\":4,\"log_bytes\":815,\"peak_buffer_events\":0}",
+      "stderr": ""
+    },
+    {
+      "label": "wrong-prefix-1-7",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/wrong.json",
+        "/tmp/fabric-cli-review/cases-repair/log-1-7.fol2",
+        "1",
+        "7"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research ingest failed: stored log is not an exact prefix of the supplied source"
+    },
+    {
+      "label": "ingest-2-1",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/input.json",
+        "/tmp/fabric-cli-review/cases-repair/log-2-1.fol2",
+        "2",
+        "1"
+      ],
+      "exit": 0,
+      "stdout": "{\"already_committed\":0,\"appended\":4,\"batch\":1,\"buffer_retries\":2,\"capacity\":2,\"input_events\":4,\"log_bytes\":815,\"peak_buffer_events\":2}",
+      "stderr": ""
+    },
+    {
+      "label": "retry-2-1",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/input.json",
+        "/tmp/fabric-cli-review/cases-repair/log-2-1.fol2",
+        "2",
+        "1"
+      ],
+      "exit": 0,
+      "stdout": "{\"already_committed\":4,\"appended\":0,\"batch\":1,\"buffer_retries\":0,\"capacity\":2,\"input_events\":4,\"log_bytes\":815,\"peak_buffer_events\":0}",
+      "stderr": ""
+    },
+    {
+      "label": "wrong-prefix-2-1",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/wrong.json",
+        "/tmp/fabric-cli-review/cases-repair/log-2-1.fol2",
+        "2",
+        "1"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research ingest failed: stored log is not an exact prefix of the supplied source"
+    },
+    {
+      "label": "ingest-2-7",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/input.json",
+        "/tmp/fabric-cli-review/cases-repair/log-2-7.fol2",
+        "2",
+        "7"
+      ],
+      "exit": 0,
+      "stdout": "{\"already_committed\":0,\"appended\":4,\"batch\":7,\"buffer_retries\":1,\"capacity\":2,\"input_events\":4,\"log_bytes\":815,\"peak_buffer_events\":2}",
+      "stderr": ""
+    },
+    {
+      "label": "retry-2-7",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/input.json",
+        "/tmp/fabric-cli-review/cases-repair/log-2-7.fol2",
+        "2",
+        "7"
+      ],
+      "exit": 0,
+      "stdout": "{\"already_committed\":4,\"appended\":0,\"batch\":7,\"buffer_retries\":0,\"capacity\":2,\"input_events\":4,\"log_bytes\":815,\"peak_buffer_events\":0}",
+      "stderr": ""
+    },
+    {
+      "label": "wrong-prefix-2-7",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/wrong.json",
+        "/tmp/fabric-cli-review/cases-repair/log-2-7.fol2",
+        "2",
+        "7"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research ingest failed: stored log is not an exact prefix of the supplied source"
+    },
+    {
+      "label": "ingest-3-2",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/input.json",
+        "/tmp/fabric-cli-review/cases-repair/log-3-2.fol2",
+        "3",
+        "2"
+      ],
+      "exit": 0,
+      "stdout": "{\"already_committed\":0,\"appended\":4,\"batch\":2,\"buffer_retries\":1,\"capacity\":3,\"input_events\":4,\"log_bytes\":815,\"peak_buffer_events\":3}",
+      "stderr": ""
+    },
+    {
+      "label": "retry-3-2",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/input.json",
+        "/tmp/fabric-cli-review/cases-repair/log-3-2.fol2",
+        "3",
+        "2"
+      ],
+      "exit": 0,
+      "stdout": "{\"already_committed\":4,\"appended\":0,\"batch\":2,\"buffer_retries\":0,\"capacity\":3,\"input_events\":4,\"log_bytes\":815,\"peak_buffer_events\":0}",
+      "stderr": ""
+    },
+    {
+      "label": "wrong-prefix-3-2",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/wrong.json",
+        "/tmp/fabric-cli-review/cases-repair/log-3-2.fol2",
+        "3",
+        "2"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research ingest failed: stored log is not an exact prefix of the supplied source"
+    },
+    {
+      "label": "publish-missing-log",
+      "argv": [
+        "publish",
+        "/tmp/fabric-cli-review/cases-repair/absent.fol2",
+        "/tmp/fabric-cli-review/cases-repair/no-snap",
+        "/tmp/fabric-cli-review/cases-repair/no-trust.json",
+        "2",
+        "901"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research publish failed: No such file or directory (os error 2)"
+    },
+    {
+      "label": "trust-inside",
+      "argv": [
+        "publish",
+        "/tmp/fabric-cli-review/cases-repair/log-1-7.fol2",
+        "/tmp/fabric-cli-review/cases-repair/snap",
+        "/tmp/fabric-cli-review/cases-repair/snap/inside.json",
+        "2",
+        "901"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research publish failed: No such file or directory (os error 2)"
+    },
+    {
+      "label": "trust-dotdot",
+      "argv": [
+        "publish",
+        "/tmp/fabric-cli-review/cases-repair/log-1-7.fol2",
+        "/tmp/fabric-cli-review/cases-repair/alias/snap",
+        "/tmp/fabric-cli-review/cases-repair/alias/snap/../trusted.json",
+        "2",
+        "901"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research publish failed: No such file or directory (os error 2)"
+    },
+    {
+      "label": "trust-symlink-existing",
+      "argv": [
+        "publish",
+        "/tmp/fabric-cli-review/cases-repair/log-1-7.fol2",
+        "/tmp/fabric-cli-review/cases-repair/snap",
+        "/tmp/fabric-cli-review/cases-repair/trusted-link.json",
+        "2",
+        "901"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research publish failed: output already exists"
+    },
+    {
+      "label": "publish",
+      "argv": [
+        "publish",
+        "/tmp/fabric-cli-review/cases-repair/log-1-7.fol2",
+        "/tmp/fabric-cli-review/cases-repair/snap",
+        "/tmp/fabric-cli-review/cases-repair/trusted.json",
+        "2",
+        "901"
+      ],
+      "exit": 0,
+      "stdout": "{\"publication\":\"/tmp/fabric-cli-review/cases-repair/trusted.json\",\"snapshot\":\"/tmp/fabric-cli-review/cases-repair/snap\"}",
+      "stderr": ""
+    },
+    {
+      "label": "query",
+      "argv": [
+        "query",
+        "/tmp/fabric-cli-review/cases-repair/snap",
+        "/tmp/fabric-cli-review/cases-repair/trusted.json",
+        "/tmp/fabric-cli-review/cases-repair/query.json",
+        "all",
+        "/tmp/fabric-cli-review/cases-repair/cp.json"
+      ],
+      "exit": 0,
+      "stdout": "{\"binding\":{\"anchor\":{\"block_count\":2,\"root\":[55,183,194,32,197,175,83,152,249,44,142,191,169,34,142,186,59,132,184,217,45,188,203,98,11,239,18,79,124,132,152,63],\"row_count\":4,\"snapshot_id\":901},\"order_version\":1,\"query\":{\"end_ns\":9,\"start_ns\":0,\"tenant\":4,\"token\":\"same\"},\"tokenizer_version\":1},\"checkpoint\":\"/tmp/fabric-cli-review/cases-repair/cp.json\",\"checkpoint_sha256\":\"8fd59faabe137ca9a5ad7ba0f95fd46b56b60504220b3c539b545b0d26dbf0f4\",\"complete\":true,\"history_pages\":1,\"positions\":[0,1,3],\"reads\":{\"metadata_bytes\":1248,\"raw_bytes\":1515,\"raw_files\":2,\"unavailable\":[]},\"rows\":[{\"block\":0,\"digest\":[223,223,126,74,206,228,79,95,190,1,85,246,156,191,46,230,41,5,147,79,132,129,66,84,30,1,164,133,216,35,16,48],\"offset\":0},{\"block\":0,\"digest\":[83,149,25,201,53,181,29,148,129,121,184,39,37,117,1",
+      "stderr": ""
+    },
+    {
+      "label": "verify",
+      "argv": [
+        "verify",
+        "/tmp/fabric-cli-review/cases-repair/input.json",
+        "/tmp/fabric-cli-review/cases-repair/trusted.json",
+        "/tmp/fabric-cli-review/cases-repair/query.json",
+        "/tmp/fabric-cli-review/cases-repair/cp.json",
+        "8fd59faabe137ca9a5ad7ba0f95fd46b56b60504220b3c539b545b0d26dbf0f4"
+      ],
+      "exit": 0,
+      "stdout": "{\"input_events\":4,\"matched\":3,\"verified\":true}",
+      "stderr": ""
+    },
+    {
+      "label": "dup-query",
+      "argv": [
+        "query",
+        "/tmp/fabric-cli-review/cases-repair/snap",
+        "/tmp/fabric-cli-review/cases-repair/trusted.json",
+        "/tmp/fabric-cli-review/cases-repair/dup-query.json",
+        "all",
+        "/tmp/fabric-cli-review/cases-repair/dup-query.cp"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research query failed: invalid query fields"
+    },
+    {
+      "label": "unknown-query",
+      "argv": [
+        "query",
+        "/tmp/fabric-cli-review/cases-repair/snap",
+        "/tmp/fabric-cli-review/cases-repair/trusted.json",
+        "/tmp/fabric-cli-review/cases-repair/unknown-query.json",
+        "all",
+        "/tmp/fabric-cli-review/cases-repair/unknown-query.cp"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research query failed: query must contain exactly start_ns, end_ns, tenant, and token"
+    },
+    {
+      "label": "missing-query",
+      "argv": [
+        "query",
+        "/tmp/fabric-cli-review/cases-repair/snap",
+        "/tmp/fabric-cli-review/cases-repair/trusted.json",
+        "/tmp/fabric-cli-review/cases-repair/missing-query.json",
+        "all",
+        "/tmp/fabric-cli-review/cases-repair/missing-query.cp"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research query failed: query must contain exactly start_ns, end_ns, tenant, and token"
+    },
+    {
+      "label": "verify-wrong-digest",
+      "argv": [
+        "verify",
+        "/tmp/fabric-cli-review/cases-repair/input.json",
+        "/tmp/fabric-cli-review/cases-repair/trusted.json",
+        "/tmp/fabric-cli-review/cases-repair/query.json",
+        "/tmp/fabric-cli-review/cases-repair/cp.json",
+        "0fd59faabe137ca9a5ad7ba0f95fd46b56b60504220b3c539b545b0d26dbf0f4"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research verify failed: checkpoint digest mismatch"
+    },
+    {
+      "label": "verify-wrong-source",
+      "argv": [
+        "verify",
+        "/tmp/fabric-cli-review/cases-repair/wrong.json",
+        "/tmp/fabric-cli-review/cases-repair/trusted.json",
+        "/tmp/fabric-cli-review/cases-repair/query.json",
+        "/tmp/fabric-cli-review/cases-repair/cp.json",
+        "8fd59faabe137ca9a5ad7ba0f95fd46b56b60504220b3c539b545b0d26dbf0f4"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research verify failed: independent input does not match trusted publication anchor"
+    },
+    {
+      "label": "verify-wrong-query",
+      "argv": [
+        "verify",
+        "/tmp/fabric-cli-review/cases-repair/input.json",
+        "/tmp/fabric-cli-review/cases-repair/trusted.json",
+        "/tmp/fabric-cli-review/cases-repair/q2.json",
+        "/tmp/fabric-cli-review/cases-repair/cp.json",
+        "8fd59faabe137ca9a5ad7ba0f95fd46b56b60504220b3c539b545b0d26dbf0f4"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research verify failed: checkpoint binding or version mismatch"
+    },
+    {
+      "label": "query-incomplete",
+      "argv": [
+        "query",
+        "/tmp/fabric-cli-review/cases-repair/snap",
+        "/tmp/fabric-cli-review/cases-repair/trusted.json",
+        "/tmp/fabric-cli-review/cases-repair/query.json",
+        "10",
+        "/tmp/fabric-cli-review/cases-repair/partial.json"
+      ],
+      "exit": 0,
+      "stdout": "{\"binding\":{\"anchor\":{\"block_count\":2,\"root\":[55,183,194,32,197,175,83,152,249,44,142,191,169,34,142,186,59,132,184,217,45,188,203,98,11,239,18,79,124,132,152,63],\"row_count\":4,\"snapshot_id\":901},\"order_version\":1,\"query\":{\"end_ns\":9,\"start_ns\":0,\"tenant\":4,\"token\":\"same\"},\"tokenizer_version\":1},\"checkpoint\":\"/tmp/fabric-cli-review/cases-repair/partial.json\",\"checkpoint_sha256\":\"723871030600c62f3a8b373ba3ecf7b8563449713b42dc3499c25168debb5076\",\"complete\":false,\"history_pages\":1,\"positions\":[0,1],\"reads\":{\"metadata_bytes\":1248,\"raw_bytes\":760,\"raw_files\":1,\"unavailable\":[1]},\"rows\":[{\"block\":0,\"digest\":[223,223,126,74,206,228,79,95,190,1,85,246,156,191,46,230,41,5,147,79,132,129,66,84,30,1,164,133,216,35,16,48],\"offset\":0},{\"block\":0,\"digest\":[83,149,25,201,53,181,29,148,129,121,184,39,37,1",
+      "stderr": ""
+    },
+    {
+      "label": "verify-incomplete",
+      "argv": [
+        "verify",
+        "/tmp/fabric-cli-review/cases-repair/input.json",
+        "/tmp/fabric-cli-review/cases-repair/trusted.json",
+        "/tmp/fabric-cli-review/cases-repair/query.json",
+        "/tmp/fabric-cli-review/cases-repair/partial.json",
+        "723871030600c62f3a8b373ba3ecf7b8563449713b42dc3499c25168debb5076"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research verify failed: checkpoint query is incomplete"
+    },
+    {
+      "label": "verify-mutated-checkpoint",
+      "argv": [
+        "verify",
+        "/tmp/fabric-cli-review/cases-repair/input.json",
+        "/tmp/fabric-cli-review/cases-repair/trusted.json",
+        "/tmp/fabric-cli-review/cases-repair/query.json",
+        "/tmp/fabric-cli-review/cases-repair/cp-tampered.json",
+        "044ab3bccc77eedeb68ac2112c8c30628dc5396a5fa6884ac7be9873f70ddbb8"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research verify failed: checkpoint row position or full-event digest mismatch"
+    },
+    {
+      "label": "append-late",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/late.json",
+        "/tmp/fabric-cli-review/cases-repair/log-1-7.fol2",
+        "1",
+        "9"
+      ],
+      "exit": 0,
+      "stdout": "{\"already_committed\":4,\"appended\":1,\"batch\":9,\"buffer_retries\":0,\"capacity\":1,\"input_events\":5,\"log_bytes\":1015,\"peak_buffer_events\":1}",
+      "stderr": ""
+    },
+    {
+      "label": "publish-successor",
+      "argv": [
+        "publish",
+        "/tmp/fabric-cli-review/cases-repair/log-1-7.fol2",
+        "/tmp/fabric-cli-review/cases-repair/snap2",
+        "/tmp/fabric-cli-review/cases-repair/trust2.json",
+        "2",
+        "902"
+      ],
+      "exit": 0,
+      "stdout": "{\"publication\":\"/tmp/fabric-cli-review/cases-repair/trust2.json\",\"snapshot\":\"/tmp/fabric-cli-review/cases-repair/snap2\"}",
+      "stderr": ""
+    },
+    {
+      "label": "verify-old-on-successor",
+      "argv": [
+        "verify",
+        "/tmp/fabric-cli-review/cases-repair/input.json",
+        "/tmp/fabric-cli-review/cases-repair/trust2.json",
+        "/tmp/fabric-cli-review/cases-repair/query.json",
+        "/tmp/fabric-cli-review/cases-repair/cp.json",
+        "8fd59faabe137ca9a5ad7ba0f95fd46b56b60504220b3c539b545b0d26dbf0f4"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research verify failed: independent input does not match trusted publication anchor"
+    },
+    {
+      "label": "resume-old-on-successor",
+      "argv": [
+        "resume",
+        "/tmp/fabric-cli-review/cases-repair/snap2",
+        "/tmp/fabric-cli-review/cases-repair/trust2.json",
+        "/tmp/fabric-cli-review/cases-repair/query.json",
+        "/tmp/fabric-cli-review/cases-repair/cp.json",
+        "8fd59faabe137ca9a5ad7ba0f95fd46b56b60504220b3c539b545b0d26dbf0f4",
+        "all",
+        "/tmp/fabric-cli-review/cases-repair/cp2.json"
+      ],
+      "exit": 1,
+      "stdout": "",
+      "stderr": "fabric-research resume failed: checkpoint binding or version mismatch"
+    },
+    {
+      "label": "adapt-empty",
+      "argv": [
+        "adapt-otlp",
+        "/tmp/fabric-cli-review/cases-repair/empty-request.json",
+        "/tmp/fabric-cli-review/cases-repair/config.json",
+        "/tmp/fabric-cli-review/cases-repair/empty-input.json"
+      ],
+      "exit": 0,
+      "stdout": "{\"adapted_events\":0,\"output\":\"/tmp/fabric-cli-review/cases-repair/empty-input.json\"}",
+      "stderr": ""
+    },
+    {
+      "label": "ingest-empty",
+      "argv": [
+        "ingest",
+        "/tmp/fabric-cli-review/cases-repair/empty-input.json",
+        "/tmp/fabric-cli-review/cases-repair/empty.fol2",
+        "1",
+        "4"
+      ],
+      "exit": 0,
+      "stdout": "{\"already_committed\":0,\"appended\":0,\"batch\":4,\"buffer_retries\":0,\"capacity\":1,\"input_events\":0,\"log_bytes\":0,\"peak_buffer_events\":0}",
+      "stderr": ""
+    },
+    {
+      "label": "publish-empty",
+      "argv": [
+        "publish",
+        "/tmp/fabric-cli-review/cases-repair/empty.fol2",
+        "/tmp/fabric-cli-review/cases-repair/empty-snap",
+        "/tmp/fabric-cli-review/cases-repair/empty-trust.json",
+        "1",
+        "903"
+      ],
+      "exit": 0,
+      "stdout": "{\"publication\":\"/tmp/fabric-cli-review/cases-repair/empty-trust.json\",\"snapshot\":\"/tmp/fabric-cli-review/cases-repair/empty-snap\"}",
+      "stderr": ""
+    },
+    {
+      "label": "query-empty",
+      "argv": [
+        "query",
+        "/tmp/fabric-cli-review/cases-repair/empty-snap",
+        "/tmp/fabric-cli-review/cases-repair/empty-trust.json",
+        "/tmp/fabric-cli-review/cases-repair/query.json",
+        "",
+        "/tmp/fabric-cli-review/cases-repair/empty-cp.json"
+      ],
+      "exit": 0,
+      "stdout": "{\"binding\":{\"anchor\":{\"block_count\":0,\"root\":[160,203,157,37,194,67,197,74,68,56,124,94,155,147,62,6,205,149,115,14,89,75,213,23,19,63,10,23,125,106,150,98],\"row_count\":0,\"snapshot_id\":903},\"order_version\":1,\"query\":{\"end_ns\":9,\"start_ns\":0,\"tenant\":4,\"token\":\"same\"},\"tokenizer_version\":1},\"checkpoint\":\"/tmp/fabric-cli-review/cases-repair/empty-cp.json\",\"checkpoint_sha256\":\"4a27f1dcecc68208c19c39aca50603258bd5af45218d613f9deccdfce1702273\",\"complete\":true,\"history_pages\":1,\"positions\":[],\"reads\":{\"metadata_bytes\":218,\"raw_bytes\":0,\"raw_files\":0,\"unavailable\":[]},\"rows\":[],\"unavailable\":[]}",
+      "stderr": ""
+    },
+    {
+      "label": "verify-empty",
+      "argv": [
+        "verify",
+        "/tmp/fabric-cli-review/cases-repair/empty-input.json",
+        "/tmp/fabric-cli-review/cases-repair/empty-trust.json",
+        "/tmp/fabric-cli-review/cases-repair/query.json",
+        "/tmp/fabric-cli-review/cases-repair/empty-cp.json",
+        "4a27f1dcecc68208c19c39aca50603258bd5af45218d613f9deccdfce1702273"
+      ],
+      "exit": 0,
+      "stdout": "{\"input_events\":0,\"matched\":0,\"verified\":true}",
+      "stderr": ""
+    }
+  ],
+  "verdict": "APPROVE",
+  "assertions": "all process assertions passed"
+}
