@@ -73,6 +73,7 @@ fn config(root: &Path, bytes: u64) -> Config {
         logs: vec![root.join("selected.log")],
         interval_s: 15,
         spool_bytes: bytes,
+        server: None,
     }
 }
 
@@ -643,4 +644,96 @@ fn failed_log_read_carries_its_committed_cursor_into_the_next_batch() {
     let carried = &stored[1].cursors;
     assert_eq!(carried.len(), 1);
     assert_eq!(carried[0], stored[0].cursors[0]);
+}
+
+fn gap_texts(cfg: &Config) -> Vec<Vec<String>> {
+    batches(cfg)
+        .into_iter()
+        .map(|b| b.collection_gaps)
+        .collect()
+}
+
+#[test]
+fn empty_coverage_marker_is_reported_as_unknown_time_and_collection_continues() {
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
+    fs::write(scratch.path("selected.log"), b"one\n").unwrap();
+    let cfg = config(&scratch.0, 1024 * 1024);
+    fs::create_dir_all(&cfg.spool).unwrap();
+    // State left by an older binary killed between create and write.
+    fs::write(cfg.spool.join("coverage-unknown"), b"").unwrap();
+    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    assert_eq!(node.collect_once().unwrap().gaps, 1);
+    assert_eq!(node.collect_once().unwrap().gaps, 0);
+    assert!(gap_texts(&cfg)[0][0].starts_with("coverage unknown since an unrecorded time"));
+    assert!(!cfg.spool.join("coverage-unknown").exists());
+}
+
+#[test]
+fn unremovable_marker_is_reported_once_and_committed_lines_are_not_collected_twice() {
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
+    fs::write(scratch.path("selected.log"), b"one\ntwo\n").unwrap();
+    let cfg = config(&scratch.0, 1024 * 1024);
+    fs::create_dir_all(cfg.spool.join("coverage-unknown")).unwrap();
+    // A directory cannot be read as a marker or removed as a file.
+    fs::write(cfg.spool.join("coverage-unknown").join("keep"), b"x").unwrap();
+    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let first = node.collect_once().unwrap();
+    assert_eq!((first.log_records, first.gaps), (2, 1));
+    let second = node.collect_once().unwrap();
+    assert_eq!((second.log_records, second.gaps), (0, 0));
+    assert_eq!(inspect(&cfg).unwrap().log_records, 2);
+}
+
+#[test]
+fn marker_left_after_its_notice_committed_is_not_reported_again() {
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
+    fs::write(
+        scratch.path("selected.log"),
+        [vec![b'a'; 4000], b"\n".to_vec()].concat(),
+    )
+    .unwrap();
+    let small = config(&scratch.0, 8192);
+    let mut node = Node::open_with_paths(small, host_paths(&scratch.0)).unwrap();
+    assert!(node.collect_once().is_err());
+    drop(node);
+    let marker = fs::read(scratch.path("spool").join("coverage-unknown")).unwrap();
+    let cfg = config(&scratch.0, 1024 * 1024);
+    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    assert_eq!(node.collect_once().unwrap().gaps, 1);
+    drop(node);
+    // A kill between the commit and the marker's removal leaves it behind.
+    fs::write(cfg.spool.join("coverage-unknown"), &marker).unwrap();
+    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    assert!(!cfg.spool.join("coverage-unknown").exists());
+    assert_eq!(node.collect_once().unwrap().gaps, 0);
+    let notices = gap_texts(&cfg)
+        .concat()
+        .into_iter()
+        .filter(|g| g.starts_with("coverage unknown since "))
+        .count();
+    assert_eq!(notices, 1);
+}
+
+#[test]
+fn inspect_backlog_counts_a_truncated_same_inode_file_in_full() {
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
+    let log = scratch.path("selected.log");
+    fs::write(&log, b"first line of the file\nsecond line\n").unwrap();
+    let cfg = config(&scratch.0, 1024 * 1024);
+    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    node.collect_once().unwrap();
+    assert_eq!(inspect(&cfg).unwrap().log_backlog_bytes, 0);
+    // Rewrite in place: same inode, shorter than the committed offset.
+    let file = OpenOptions::new().write(true).open(&log).unwrap();
+    file.set_len(0).unwrap();
+    drop(file);
+    fs::write(&log, b"new\n").unwrap();
+    assert_eq!(inspect(&cfg).unwrap().log_backlog_bytes, 4);
+    // Same length or longer, but a different witnessed prefix.
+    fs::write(&log, b"FIRST LINE OF THE FILE\nsecond line\nmore\n").unwrap();
+    assert_eq!(inspect(&cfg).unwrap().log_backlog_bytes, 40);
 }

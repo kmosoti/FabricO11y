@@ -33,6 +33,55 @@ fn issue(kind: &str, path: &str) -> String {
     format!("{kind}: {path}")
 }
 
+/// Whether a committed cursor still describes this open file: same device
+/// and inode, not shorter, and the same witnessed consumed prefix. Leaves the
+/// file position after the prefix when it checks one.
+fn cursor_still_valid(
+    file: &mut std::fs::File,
+    metadata: &std::fs::Metadata,
+    old: &Cursor,
+) -> io::Result<bool> {
+    if old.device != metadata.dev() || old.inode != metadata.ino() || metadata.len() < old.offset {
+        return Ok(false);
+    }
+    if old.offset > 0 && old.prefix_len == 0 {
+        return Ok(false); // Old cursors without a witness cannot silently skip a recreated file.
+    }
+    if old.prefix_len == 0 {
+        return Ok(true);
+    }
+    if old.prefix_len as usize > PREFIX_BYTES || u64::from(old.prefix_len) > old.offset {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid log cursor prefix",
+        ));
+    }
+    let mut prefix = vec![0; old.prefix_len as usize];
+    file.seek(SeekFrom::Start(0))?;
+    file.read_exact(&mut prefix)?;
+    Ok(crc32fast::hash(&prefix) == old.prefix_crc)
+}
+
+/// Bytes the reader would still have to read: after the cursor when it is
+/// still valid, otherwise the whole file (it would restart from zero).
+pub fn unread_bytes(path: &Path, prior: Option<&Cursor>) -> io::Result<u64> {
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NONBLOCK)
+        .open(path)?;
+    let metadata = file.metadata()?;
+    if !metadata.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "log source is not a regular file",
+        ));
+    }
+    Ok(match prior {
+        Some(old) if cursor_still_valid(&mut file, &metadata, old)? => metadata.len() - old.offset,
+        _ => metadata.len(),
+    })
+}
+
 pub fn read_lines(
     path: &Path,
     prior: Option<&Cursor>,
@@ -57,23 +106,7 @@ pub fn read_lines(
     let mut gaps = Vec::new();
     let (start, mut oversize) = match prior {
         Some(old) if old.device == device && old.inode == inode && metadata.len() >= old.offset => {
-            let changed = if old.offset > 0 && old.prefix_len == 0 {
-                true // Old cursors without a witness cannot silently skip a recreated file.
-            } else if old.prefix_len > 0 {
-                if old.prefix_len as usize > PREFIX_BYTES || u64::from(old.prefix_len) > old.offset
-                {
-                    return Err(io::Error::new(
-                        io::ErrorKind::InvalidData,
-                        "invalid log cursor prefix",
-                    ));
-                }
-                let mut prefix = vec![0; old.prefix_len as usize];
-                file.read_exact(&mut prefix)?;
-                crc32fast::hash(&prefix) != old.prefix_crc
-            } else {
-                false
-            };
-            if changed {
+            if !cursor_still_valid(&mut file, &metadata, old)? {
                 gaps.push(issue(
                     "log consumed prefix changed; previous tail unknown",
                     name,

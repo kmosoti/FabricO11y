@@ -26,6 +26,12 @@ stateDiagram-v2
 
 The diagram shows the primary path for one event in the target protocol. The [TLA+ model](../../formal/delivery/DeliveryOwnership.tla) also allows a retry after a receiver crash or lost acknowledgement. In the model, an ACK is an acknowledgement *received by the sender*; a missing or lost ACK leaves the sender's copy in place. The local CLI has no network step corresponding to ACK delivery.
 
+## Alpha network path (phase 2, in progress)
+
+Implemented: `fabric-node run` sends the oldest unacknowledged spool batch, as its exact stored bytes, to the [Fabric Server](../../crates/fabric-server/src/lib.rs) over HTTPS with a bearer token. The server's single commit thread applies the [ADR-0013](../decisions/ADR-0013-deliver-batches-in-order-with-bounded-dedup.md) rule, appends new batches to its own [frame log](../../src/alpha/frame.rs) as one grouped frame (50 ms or 1 MiB), and answers only after that frame's data and marker syncs. The node then writes its ACK cursor by synced rename and may delete sealed spool files at or below it. A lost ACK is a retry of the same identity and bytes, which the server acknowledges again without a second record. The same identity with different bytes is refused and never replaces the committed batch. A credential label binds to one node identity on its first commit.
+
+[Fault runs](../experiments/formal/alpha-phase2-delivery-faults.md) graded by the [delivery oracle](../../tools/alpha/DELIVERY_ORACLE.md) pass for three nodes under server kills, node kills and an outage. Not yet established: ten real node processes, ACK latency, and the grouped-versus-individual comparison. The [phase ledger](../ALPHA.md#phase-ledger) records their status.
+
 ## Model-to-code mapping
 
 | Model action | Current Rust counterpart | Limit |

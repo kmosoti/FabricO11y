@@ -267,7 +267,19 @@ impl FrameLog {
         dir: &Path,
         max_bytes: u64,
         max_payload: usize,
+        visit: impl FnMut(&[u8], FramePos) -> io::Result<()>,
+    ) -> io::Result<Self> {
+        Self::open_with(dir, max_bytes, max_payload, visit, || Ok(()))
+    }
+
+    /// `before_settle_sync` lets tests inject a reported error while open
+    /// settles the tail. It is not a runtime configuration.
+    fn open_with(
+        dir: &Path,
+        max_bytes: u64,
+        max_payload: usize,
         mut visit: impl FnMut(&[u8], FramePos) -> io::Result<()>,
+        mut before_settle_sync: impl FnMut() -> io::Result<()>,
     ) -> io::Result<Self> {
         if max_bytes < FRAME_OVERHEAD + 64 {
             return Err(io::Error::new(
@@ -280,6 +292,23 @@ impl FrameLog {
                 "recovery required: a log write or sync reported an error; rebuild from retained source",
             ));
         }
+        // With an interrupted append pending, open is settling the durability
+        // of a tail. Any error while doing so is a reported error on that tail,
+        // so it takes the known-failure path (ADR-0011) instead of letting a
+        // later open trust the same readable bytes.
+        let settling = dir.join(IN_PROGRESS).exists();
+        let known = |error: io::Error| -> io::Error {
+            if !settling {
+                return error;
+            }
+            match record_failure(dir) {
+                Ok(()) => error,
+                Err(record) => io::Error::new(
+                    error.kind(),
+                    format!("{error}; recording {RECOVERY_REQUIRED} also failed: {record}"),
+                ),
+            }
+        };
         // A sealed file may exist without an active one only after a rotation
         // was interrupted between rename and create; creating it is safe.
         let active = OpenOptions::new()
@@ -289,7 +318,7 @@ impl FrameLog {
             .truncate(false)
             .open(dir.join(ACTIVE))?;
         active.try_lock()?;
-        sync_dir(dir)?;
+        sync_dir(dir).map_err(known)?;
         let listed = list_sealed(dir)?;
         let active_len = active.metadata()?.len();
         let total = listed
@@ -306,15 +335,19 @@ impl FrameLog {
             sealed.push(Sealed { label, bytes });
         }
         let end = scan_active(&active, active_len, max_payload, &mut visit)?;
-        if end < active_len {
-            active.set_len(end)?;
-        }
-        active.sync_all()?;
-        match fs::remove_file(dir.join(IN_PROGRESS)) {
-            Ok(()) => sync_dir(dir)?,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
-        }
+        (|| {
+            if end < active_len {
+                active.set_len(end)?;
+            }
+            before_settle_sync()?;
+            active.sync_all()?;
+            match fs::remove_file(dir.join(IN_PROGRESS)) {
+                Ok(()) => sync_dir(dir),
+                Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error),
+            }
+        })()
+        .map_err(known)?;
         Ok(Self {
             dir: dir.to_owned(),
             active,
@@ -690,6 +723,48 @@ impl FrameLog {
                 file: FileRef::Active,
                 offset: 0,
             },
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("target")
+            .join(format!("alpha-frame-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&path);
+        fs::create_dir_all(&path).unwrap();
+        path
+    }
+
+    #[test]
+    fn reported_error_while_settling_an_interrupted_append_is_recorded() {
+        for (interrupted, expect_recorded) in [(true, true), (false, false)] {
+            let dir = scratch(&format!("settle-{interrupted}"));
+            let mut log = FrameLog::open(&dir, 1 << 20, 1024, |_, _| Ok(())).unwrap();
+            log.append(b"committed").unwrap();
+            drop(log);
+            if interrupted {
+                fs::write(dir.join(IN_PROGRESS), b"x").unwrap();
+            }
+            let failed = FrameLog::open_with(
+                &dir,
+                1 << 20,
+                1024,
+                |_, _| Ok(()),
+                || Err(io::Error::other("injected fsync error")),
+            );
+            assert!(failed.is_err());
+            assert_eq!(dir.join(RECOVERY_REQUIRED).exists(), expect_recorded);
+            // A recorded failure keeps refusing; without one, a clean open works.
+            assert_eq!(
+                FrameLog::open(&dir, 1 << 20, 1024, |_, _| Ok(())).is_err(),
+                expect_recorded
+            );
+            fs::remove_dir_all(&dir).unwrap();
         }
     }
 }

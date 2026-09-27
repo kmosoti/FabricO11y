@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2024"
 default-run = "fabric_o11y"
 
+[workspace]
+members = ["crates/fabric-server"]
+# Research packages keep their own manifests, lockfiles and commands.
+exclude = ["tools"]
+
 [features]
 append-attribution = []
 stage6-alloc-probe = []
@@ -14,3 +19,7 @@ fake = { version = "=5.1.0", default-features = false }
 libc = "=0.2.189"
 opentelemetry-proto = { version = "=0.33.0", default-features = false, features = ["gen-tonic-messages", "logs", "metrics"] }
 prost = "=0.14.4"
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
+serde_json = "=1.0.150"
+sha2 = "=0.10.9"
+ureq = { version = "=3.3.0", default-features = false, features = ["rustls-no-provider"] }

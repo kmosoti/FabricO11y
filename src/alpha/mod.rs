@@ -4,3 +4,4 @@ pub mod host;
 pub mod journal;
 pub mod log_source;
 pub mod node;
+pub mod sender;

@@ -3,6 +3,7 @@
 use crate::alpha::host::{self, Kind, Paths, Value};
 use crate::alpha::journal::{Batch, Cursor, Journal, MAX_GAP_BYTES, MAX_GAPS_PER_BATCH};
 use crate::alpha::log_source;
+use crate::alpha::sender::{Delivery, Sender, ServerTarget};
 use opentelemetry_proto::tonic::collector::{
     logs::v1::ExportLogsServiceRequest, metrics::v1::ExportMetricsServiceRequest,
 };
@@ -14,6 +15,7 @@ use opentelemetry_proto::tonic::metrics::v1::{
 };
 use opentelemetry_proto::tonic::resource::v1::Resource;
 use prost::Message;
+use sha2::Digest;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
@@ -38,6 +40,8 @@ pub struct Config {
     pub logs: Vec<PathBuf>,
     pub interval_s: u64,
     pub spool_bytes: u64,
+    /// Delivery target; `None` keeps every batch local.
+    pub server: Option<ServerTarget>,
 }
 
 impl Config {
@@ -55,7 +59,9 @@ impl Config {
             logs: Vec::new(),
             interval_s: 15,
             spool_bytes: 256 * 1024 * 1024,
+            server: None,
         };
+        let (mut url, mut ca, mut token_file) = (None, None, None);
         let mut seen_spool = false;
         let mut seen_interval = false;
         let mut seen_bytes = false;
@@ -86,9 +92,25 @@ impl Config {
                         .map_err(|_| invalid("invalid spool byte ceiling"))?;
                     seen_bytes = true;
                 }
+                "server_url" if url.is_none() => url = Some(value.to_owned()),
+                "server_ca" if ca.is_none() => ca = Some(PathBuf::from(value)),
+                "token_file" if token_file.is_none() => token_file = Some(PathBuf::from(value)),
                 _ => return Err(invalid("unknown or duplicate node config key")),
             }
         }
+        result.server = match (url, ca, token_file) {
+            (None, None, None) => None,
+            (Some(url), Some(ca), Some(token_file)) => Some(ServerTarget {
+                url,
+                ca,
+                token_file,
+            }),
+            _ => {
+                return Err(invalid(
+                    "server_url, server_ca and token_file must be set together",
+                ));
+            }
+        };
         result.validate()?;
         result.logs.sort();
         result.logs.dedup();
@@ -109,6 +131,9 @@ impl Config {
             || self.spool_bytes > 256 * 1024 * 1024
         {
             return Err(invalid("node config outside local profile"));
+        }
+        if let Some(server) = &self.server {
+            server.validate()?;
         }
         Ok(())
     }
@@ -399,6 +424,28 @@ pub struct Node {
     cursors: BTreeMap<String, Cursor>,
     history: History,
     host_paths: Paths,
+    sender: Option<Sender>,
+    /// A coverage-unknown notice already committed while its marker remains.
+    unknown_reported: Option<Unknown>,
+}
+
+/// One send attempt: the sequence, SHA-256 of the exact bytes sent, and the answer.
+#[derive(Debug)]
+pub struct Attempt {
+    pub sequence: u64,
+    pub sha256: String,
+    pub outcome: Delivery,
+}
+
+/// What one delivery call achieved.
+#[derive(Debug)]
+pub struct DeliveryReport {
+    pub sent: usize,
+    pub acked_through: u64,
+    /// No unacknowledged batch remains.
+    pub caught_up: bool,
+    /// Why delivery stopped early, if it did.
+    pub error: Option<String>,
 }
 
 impl Node {
@@ -418,14 +465,106 @@ impl Node {
             .iter()
             .map(|path| path.to_string_lossy().to_string())
             .collect();
-        journal.replay(|batch| absorb(batch, &allowed_logs, &mut cursors, &mut history))?;
+        let mut newest_gaps = Vec::new();
+        journal.replay(|batch| {
+            newest_gaps.clone_from(&batch.collection_gaps);
+            absorb(batch, &allowed_logs, &mut cursors, &mut history)
+        })?;
+        let sender = config.server.as_ref().map(Sender::new).transpose()?;
+        // A kill between committing a notice and removing its marker leaves
+        // the marker behind. A timestamped notice is unique, so if the newest
+        // batch already carries it, it has been reported.
+        let mut unknown_reported = None;
+        if let Some(unknown @ Unknown::Since(_)) = read_unknown(&config.spool)
+            && newest_gaps.contains(&unknown.notice())
+        {
+            unknown_reported = Some(unknown);
+            if clear_unknown(&config.spool).is_ok() {
+                unknown_reported = None;
+            }
+        }
         Ok(Self {
             config,
             journal,
             cursors,
             history,
             host_paths,
+            sender,
+            unknown_reported,
         })
+    }
+
+    pub fn acked_through(&self) -> u64 {
+        self.journal.acked_through()
+    }
+
+    /// Send unacknowledged batches in order until caught up, `until` passes,
+    /// or the server does not acknowledge. Without a server this is a no-op.
+    /// `on_attempt` sees each answer before any ACK cursor is persisted, so an
+    /// observer's record of acknowledgements never trails the spool's cursor.
+    pub fn deliver(
+        &mut self,
+        until: std::time::Instant,
+        mut on_attempt: impl FnMut(&Attempt),
+    ) -> io::Result<DeliveryReport> {
+        let mut report = DeliveryReport {
+            sent: 0,
+            acked_through: self.journal.acked_through(),
+            caught_up: false,
+            error: None,
+        };
+        let Some(sender) = self.sender.as_ref() else {
+            report.caught_up = true;
+            return Ok(report);
+        };
+        while std::time::Instant::now() < until {
+            let Some((sequence, bytes)) = self.journal.next_unacked()? else {
+                report.caught_up = true;
+                break;
+            };
+            report.sent += 1;
+            let outcome = sender.send(&bytes);
+            on_attempt(&Attempt {
+                sequence,
+                sha256: sha2::Sha256::digest(&bytes)
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect(),
+                outcome: outcome.clone(),
+            });
+            match outcome {
+                Delivery::Ack(through) if through >= sequence => {
+                    // Beyond our last committed sequence is an error from
+                    // record_ack; the spool is left unchanged.
+                    self.journal.record_ack(through)?;
+                    report.acked_through = through;
+                }
+                Delivery::Ack(through) => {
+                    report.error = Some(format!(
+                        "server acknowledged {through}, below sent sequence {sequence}"
+                    ));
+                    break;
+                }
+                Delivery::Conflict(through) => {
+                    report.error = Some(format!(
+                        "server holds different bytes for sequence {sequence} (committed through {through}); delivery stopped"
+                    ));
+                    break;
+                }
+                Delivery::Gap(through) => {
+                    report.error = Some(format!(
+                        "server committed only through {through}, below this node's acknowledged {}; delivery stopped",
+                        self.journal.acked_through()
+                    ));
+                    break;
+                }
+                Delivery::Rejected(why) | Delivery::Retry(why) => {
+                    report.error = Some(why);
+                    break;
+                }
+            }
+        }
+        Ok(report)
     }
 
     pub fn collect_once(&mut self) -> io::Result<Cycle> {
@@ -433,11 +572,11 @@ impl Node {
         let mut gaps = Vec::new();
         // A prior cycle could not commit. Its interval is reported as a gap in
         // the next committed batch rather than halting collection for good.
-        let unknown_since = read_unknown(&self.config.spool)?;
-        if let Some(since) = unknown_since {
-            gaps.push(format!(
-                "coverage unknown since {since} ns: an earlier collection did not commit"
-            ));
+        let unknown = read_unknown(&self.config.spool);
+        if let Some(unknown) = unknown
+            && self.unknown_reported != Some(unknown)
+        {
+            gaps.push(unknown.notice());
         }
         let sampled = match host::sample(&self.host_paths) {
             Ok(snapshot) => Some(snapshot),
@@ -515,24 +654,33 @@ impl Node {
             Err(error) => {
                 // The candidate and source cursor remain ours on failure.
                 // Coverage cannot be called delivered; persist unknown state.
-                if let Err(marker) = mark_unknown(&self.config.spool, now) {
+                let replace = self.unknown_reported.is_some();
+                if let Err(marker) = mark_unknown(&self.config.spool, now, replace) {
                     return Err(io::Error::new(
                         error.kind(),
                         format!("{error}; writing coverage-unknown also failed: {marker}"),
                     ));
                 }
+                self.unknown_reported = None;
                 return Err(error);
             }
         };
-        if unknown_since.is_some() {
-            clear_unknown(&self.config.spool)?;
-        }
+        // Update in-memory state first: the batch is committed, and a caller
+        // that retries after a later error must not collect the same lines.
         let sequence = committed.sequence;
         let gap_count = committed.collection_gaps.len();
         for cursor in committed.cursors {
             self.cursors.insert(cursor.path.clone(), cursor);
         }
         self.history = updated_history;
+        if let Some(unknown) = unknown {
+            // The notice is committed. If removing the marker fails, remember
+            // that it was reported and retry the removal next cycle.
+            self.unknown_reported = Some(unknown);
+            if clear_unknown(&self.config.spool).is_ok() {
+                self.unknown_reported = None;
+            }
+        }
         Ok(Cycle {
             batch_sequence: sequence,
             metric_points,
@@ -546,32 +694,65 @@ impl Node {
 
 const UNKNOWN_MARKER: &str = "coverage-unknown";
 
-/// Keep the earliest failed attempt; later failures extend the same interval.
-fn mark_unknown(dir: &Path, since_ns: u64) -> io::Result<()> {
-    let path = dir.join(UNKNOWN_MARKER);
-    match OpenOptions::new().write(true).create_new(true).open(path) {
-        Ok(mut file) => {
-            writeln!(file, "{since_ns}")?;
-            file.sync_all()?;
-            File::open(dir)?.sync_all()?;
-        }
-        Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {}
-        Err(error) => return Err(error),
-    }
-    Ok(())
+/// Start of an interval whose collection did not commit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Unknown {
+    Since(u64),
+    /// The marker exists but its time cannot be read (torn by an older
+    /// binary, or corrupted). Coverage is still unknown.
+    UnrecordedTime,
 }
 
-fn read_unknown(dir: &Path) -> io::Result<Option<u64>> {
-    let mut text = String::new();
-    match File::open(dir.join(UNKNOWN_MARKER)) {
-        Ok(file) => file.take(32).read_to_string(&mut text)?,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error),
+impl Unknown {
+    fn notice(self) -> String {
+        match self {
+            Unknown::Since(ns) => {
+                format!("coverage unknown since {ns} ns: an earlier collection did not commit")
+            }
+            Unknown::UnrecordedTime => {
+                "coverage unknown since an unrecorded time: an earlier collection did not commit"
+                    .to_owned()
+            }
+        }
+    }
+}
+
+/// Keep the earliest failed attempt; later failures extend the same interval.
+/// `replace` starts a new interval over a marker whose notice was already
+/// committed. Written by synced rename so a kill never leaves a torn marker.
+fn mark_unknown(dir: &Path, since_ns: u64, replace: bool) -> io::Result<()> {
+    let path = dir.join(UNKNOWN_MARKER);
+    if path.exists() && !replace {
+        return Ok(());
+    }
+    let staged = dir.join("coverage-unknown.tmp");
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&staged)?;
+    writeln!(file, "{since_ns}")?;
+    file.sync_all()?;
+    std::fs::rename(&staged, &path)?;
+    File::open(dir)?.sync_all()
+}
+
+/// Any marker that exists means coverage is unknown, readable or not.
+fn read_unknown(dir: &Path) -> Option<Unknown> {
+    let file = match File::open(dir.join(UNKNOWN_MARKER)) {
+        Ok(file) => file,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return None,
+        Err(_) => return Some(Unknown::UnrecordedTime),
     };
-    text.trim()
-        .parse()
-        .map(Some)
-        .map_err(|_| corrupt("invalid coverage-unknown marker"))
+    let mut text = String::new();
+    match file.take(32).read_to_string(&mut text) {
+        Ok(_) => Some(
+            text.trim()
+                .parse()
+                .map_or(Unknown::UnrecordedTime, Unknown::Since),
+        ),
+        Err(_) => Some(Unknown::UnrecordedTime),
+    }
 }
 
 /// Called only after the batch carrying the gap notice has committed.
@@ -644,16 +825,11 @@ pub fn inspect(config: &Config) -> io::Result<Report> {
     let coverage_unknown = config.spool.join(UNKNOWN_MARKER).exists();
     let mut log_backlog_bytes = 0_u64;
     for path in &config.logs {
-        use std::os::unix::fs::MetadataExt;
-        let Ok(metadata) = std::fs::metadata(path) else {
-            continue;
-        };
-        let consumed = last_cursors
-            .get(path.to_string_lossy().as_ref())
-            .filter(|c| c.device == metadata.dev() && c.inode == metadata.ino())
-            .map_or(0, |c| c.offset);
-        log_backlog_bytes =
-            log_backlog_bytes.saturating_add(metadata.len().saturating_sub(consumed));
+        let prior = last_cursors.get(path.to_string_lossy().as_ref());
+        // A missing or unreadable file contributes nothing it could deliver.
+        if let Ok(unread) = log_source::unread_bytes(path, prior) {
+            log_backlog_bytes = log_backlog_bytes.saturating_add(unread);
+        }
     }
     Ok(Report {
         node_id: info.node_id,
