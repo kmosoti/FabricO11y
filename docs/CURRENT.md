@@ -12,8 +12,10 @@ host/log reads and a durable local spool. Its [three native trials](experiments/
 passed on pre-repair binaries. Cross-family review found four defects in public
 config validation, aggregate log gaps, same-inode file replacement and live
 inspection. Focused code, regressions and copied [executable probes](experiments/formal/alpha-phase1-review-checkpoint.md)
-now pass at a stopping checkpoint; final phase-1 acceptance needs parent
-re-review and a decision about post-repair native qualification.
+now pass at a stopping checkpoint, and both reviewers approved those four repairs.
+An open [Unicode gap-text counterexample](experiments/formal/alpha-phase1-review-checkpoint.md#re-review-outcome-and-open-counterexample)
+and the post-repair native qualification remain before phase-1 promotion; the
+[completion plan](ALPHA-PLAN.md) orders that work and phases 2 to 5.
 An [independent log-reader review](experiments/formal/alpha-log-reader-repair.md)
 found oversized-line and FIFO defects, repaired with passing independent probes.
 Fleet qualification targets are registered, not achieved.

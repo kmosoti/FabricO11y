@@ -1,7 +1,8 @@
 # Architecture documentation
 
 The [controlled Linux alpha contract and phase ledger](ALPHA.md) tracks the
-approved application work and its unpassed gates.
+approved application work and its unpassed gates. The [completion plan](ALPHA-PLAN.md)
+orders the remaining phases and open decisions.
 
 The original Fabric O11y demo generates repeatable synthetic events, buffers them, and prints or commits them to FOL2. Phase 1 now also has a local [native node and inspect path](architecture/node.md) under qualification. One Rust package provides these components; there is no network ingestion or query service. This diagram shows the original implemented demo boundary.
 

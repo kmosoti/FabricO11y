@@ -1,0 +1,63 @@
+{
+  "build": {
+    "command": "CARGO_TARGET_DIR=target/alpha-oracle-build CARGO_HOME=target/alpha-cargo cargo build --offline --manifest-path target/alpha-log-review/Cargo.toml",
+    "exit": 0
+  },
+  "fifo": {
+    "child_exit": 0,
+    "command": "Python subprocess.Popen(binary fifo path, start_new_session=True).communicate(timeout=0.5); on timeout killpg(SIGKILL), communicate/reap",
+    "error_kind": "InvalidInput",
+    "timed_out": false,
+    "wrapper_exit": 0
+  },
+  "oversize": {
+    "attempts": [
+      {
+        "cursor": 262144,
+        "gaps": [
+          "oversize log line skipped"
+        ],
+        "lines": [],
+        "skipping_oversize": true
+      },
+      {
+        "cursor": 262162,
+        "gaps": [],
+        "lines": [
+          "normal"
+        ],
+        "skipping_oversize": false
+      },
+      {
+        "cursor": 262162,
+        "gaps": [],
+        "lines": [],
+        "skipping_oversize": false
+      }
+    ],
+    "command": "target/alpha-oracle-build/debug/alpha-log-reader-review oversize target/alpha-log-review/oversize.log",
+    "exit": 0,
+    "input": "262154 X bytes + newline + normal newline",
+    "no_false_suffix": true,
+    "rehydrated_cursor_between_calls": true
+  },
+  "probe_adapter": "Cargo scratch dependency libc =0.2.189; Cursor stub gained skipping_oversize: bool; oversize assertion additionally checks skip state and absence of false suffix, reconstructing Cursor between calls. Valid/FIFO behavioral assertions unchanged.",
+  "scope": "repaired log-reader component only; not whole phase1",
+  "source_hashes_after": {
+    "src/alpha/journal.rs": "ba3ff8f8fef1d031512e5a029dab410c9bbc533e30098866ea310ba49ca5fbfd",
+    "src/alpha/log_source.rs": "f47f4f1de872cb1e27626f879e1ea7591cfcd735f0226a06a390f3035d0dc797"
+  },
+  "source_hashes_before": {
+    "src/alpha/journal.rs": "ba3ff8f8fef1d031512e5a029dab410c9bbc533e30098866ea310ba49ca5fbfd",
+    "src/alpha/log_source.rs": "f47f4f1de872cb1e27626f879e1ea7591cfcd735f0226a06a390f3035d0dc797"
+  },
+  "valid": {
+    "command": "target/alpha-oracle-build/debug/alpha-log-reader-review valid target/alpha-log-review/valid.log",
+    "exit": 0,
+    "first_body": "ok",
+    "first_cursor": 3,
+    "second_body": "partial",
+    "second_cursor": 11
+  },
+  "verdict": "APPROVE for log-reader component repair"
+}

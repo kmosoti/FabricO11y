@@ -1,0 +1,17 @@
+{
+  "phase": 0,
+  "status": "approved",
+  "time_utc": "2026-09-27T17:48:30.585228+00:00",
+  "source_sha256": {
+    "tools/alpha/runner.py": "2425e95028edd13a4a43e49fc99904ce695b0b98aafe6d277124b1b169b5c49d",
+    "tools/alpha/rate_oracle.py": "afb3a535fe95dc99cba444a401730a8d79a69f2aabf1c9b7bf3e5c2724c603c6",
+    "tools/alpha/workload.py": "3b01fd5bced3ca6d67bd946e7c24ed0a4998292da222da2be7a69c771f341457"
+  },
+  "gpt_review": "target/alpha-harness-review-gpt/review-summary.json",
+  "gpt_verdict": "APPROVE; 16/16 probes plus duplicate-key and retained-size checks; commands exit0",
+  "claude_review": "target/alpha-implementation/claude-phase0-rereview.json",
+  "claude_session": "b440d37a-da17-42a0-9bae-6cf5192f1725",
+  "claude_verdict": "APPROVE; executed repair probes, hashes stable, CLI exit0",
+  "claude_open_item_resolution": "Parent process scan exit0: no live FABRIC_ALPHA_INVOCATION processes; scratch directories remain ignored and bounded. Tool permission denials are reported in Claude JSON; concrete verdict probes ran.",
+  "directive": "Proceed phase1 per phase1.md. Archive compact same-bytes review evidence in phase0 review response and update ledger; no need baseline rerun. All remaining phases and fleet gates still required. Exact Unix user/group fabricolly; keep scope minimal."
+}

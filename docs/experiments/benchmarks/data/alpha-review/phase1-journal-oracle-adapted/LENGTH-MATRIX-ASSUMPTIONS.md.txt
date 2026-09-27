@@ -1,0 +1,27 @@
+# Frozen length-bit matrix and replay oracle
+
+This is a new, standalone test. The original six public API tests and the ten-case corruption test are unchanged. Inputs are the user-supplied journal contract, public `Journal::replay` signature, and byte observations from only this oracle's own fresh directory. No alpha implementation source or private format description is read.
+
+## Property and assumptions
+
+Two successful `append` calls followed by clean close acknowledge two exact canonical `Batch` values under successful-sync and intact ancestor-namespace assumptions. Reopening an unmodified original and an independent exact copy must keep identity and next sequence, and `replay` must return those two batches in order, including exact OTLP metrics/logs bytes, cursors, collection gaps, node ID, generation, sequence and version.
+
+For each single-bit mutation of an acknowledged frame, `Journal::open` may reject corruption or recovery-required state. If it returns a handle, identity and next sequence must remain unchanged and `replay` must succeed with exactly the two original `Batch` values. A successful open followed by a replay error, missing batch, changed field or backward sequence is a counterexample. Error wording is not assumed.
+
+The test identifies exactly one append-bearing regular file by snapshots before/after each append and append-only growth. It finds each returned `Batch`'s exact `prost` encoding once in its observed append range. It infers exactly one four-byte little-endian length equal to that encoding's length before each encoding. If identification is ambiguous, the test stops with a missing-seam finding. This is an external format observation, not a hardcoded filename or offset.
+
+For each of the two observed length fields, the matrix flips each of 8 bits in each of 4 bytes: 64 one-byte cases. It adds the prior payload and trailing-byte controls, two of each per frame: 8 more cases, 72 total. Cases are ordered by byte offset then bit index; the first failing mutation is retained. A preflight requires at least one mutated declared length to exceed the observed remaining file bytes while staying at or below the 1 MiB encoded-batch cap. The journal capacity is 2 MiB, so such a case is not simply over the configured byte cap. A corrupted acknowledged length must not be accepted as an unacknowledged torn tail and silently truncate committed history.
+
+Before each mutation the test retains an exact independent golden copy, records source file size, SHA256, offset, bit, original and changed bytes, mutated declared length and observed remaining bytes in a synced manifest, and mutates only a separate copy. It writes exactly one changed byte with XOR of one bit. Passing disposable copies are removed. The golden copy and manifest remain; on failure the first exact mutant remains too. A 9 MiB live-data guard and 110 s internal wall guard keep the run below the requested 10 MiB and 120 s ceilings. No performance measurement, syscall fault injection, process killing or product edit is part of this test.
+
+## Reproduction
+
+From `target/alpha-journal-oracle`:
+
+```sh
+CARGO_HOME=/home/kmosoti/projects/fabric_o11y/target/alpha-cargo \
+CARGO_TARGET_DIR=/home/kmosoti/projects/fabric_o11y/target/alpha-oracle-build \
+cargo test --offline --locked --test length_matrix_replay -- --nocapture
+```
+
+`SHA256SUMS.length-matrix` freezes this document and test source before first execution. Compiler diagnostics must be filtered to avoid alpha implementation source excerpts.

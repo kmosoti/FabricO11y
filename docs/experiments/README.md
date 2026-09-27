@@ -10,7 +10,9 @@ phase-1 workload and metrics before [three measured local trials](benchmarks/alp
 The [log-reader repair](formal/alpha-log-reader-repair.md) records independent
 oversized-line and FIFO counterexamples and their executable controls.
 The [phase-1 review checkpoint](formal/alpha-phase1-review-checkpoint.md) records
-the later focused repairs, executable probes, and pending final review.
+the later focused repairs, executable probes, the approved re-review and the open
+counterexample. Frozen reviewer probes, verdicts and parent notes are kept under
+[data/alpha-review](benchmarks/data/alpha-review/README.md).
 
 The [local prototype completion contract](ablation/end-to-end-prototype.md) is closed
 with linked evidence. [Claude's hypothesis study](ablation/claude-hypotheses.md) traces

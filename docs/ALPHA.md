@@ -1,6 +1,6 @@
 # Controlled Linux alpha: implementation contract
 
-Status: approved implementation in progress. This page is a gate ledger, not a release claim. The existing FOL2 demo remains supported. The [blueprint](architecture.md) is background, not evidence of implemented behavior.
+Status: approved implementation in progress. This page is a gate ledger, not a release claim. The [completion plan](ALPHA-PLAN.md) orders the remaining phases and records the design decisions this contract leaves open. The existing FOL2 demo remains supported. The [blueprint](architecture.md) is background, not evidence of implemented behavior.
 
 ## Product and qualification boundary
 
@@ -43,7 +43,7 @@ Measure both individual and grouped commits using **identical durability semanti
 | Phase | Deliverable and gate | Current state |
 | --- | --- | --- |
 | 0 Contracts and harness | Frozen delivery, telemetry, recovery, workload/metrics; Rust CI; seeded bounded runner and failing negative controls; new measured journal baseline | Approved by independent GPT and Claude executable review on stable harness hashes; see [review response](experiments/benchmarks/alpha-phase0-review-response.md) and [legacy baseline](experiments/benchmarks/alpha-phase0-baseline.md). |
-| 1 Local collection | Native node, durable byte-bounded spool, CLI inspect, source/cursor/reset/failure tests, CPU/RSS/bytes/restart measurement | [Focused review repairs](experiments/formal/alpha-phase1-review-checkpoint.md), regressions and copied executable probes pass. [Three earlier trials](experiments/benchmarks/alpha-phase1-native-run-01.md) retain pre-repair hashes. Final cross-family review and post-repair qualification decision pending; do not promote. |
+| 1 Local collection | Native node, durable byte-bounded spool, CLI inspect, source/cursor/reset/failure tests, CPU/RSS/bytes/restart measurement | [Focused review repairs](experiments/formal/alpha-phase1-review-checkpoint.md), regressions and copied executable probes pass. [Three earlier trials](experiments/benchmarks/alpha-phase1-native-run-01.md) retain pre-repair hashes. Both reviewers approved the four repairs; an open [Unicode gap-text counterexample](experiments/formal/alpha-phase1-review-checkpoint.md#re-review-outcome-and-open-counterexample) and the post-repair qualification remain; do not promote. |
 | 2 Network delivery | TLS authenticated node/server, durable ACK/retry/dedup, 10 real local node processes, faults and independent recovered-record oracle, equal-semantics commit comparison | Pending. |
 | 3 Central control | Enrollment, inventory, configuration, pause/resume/revoke, desired/applied tracking, 10/100/1000 identities, healthy apply ≤ 30 s | Pending. |
 | 4 Retained history | Immutable Zstd Parquet, retention, exact query fallback, fixed-snapshot pagination, independent scans and crash/corruption tests | Pending. |

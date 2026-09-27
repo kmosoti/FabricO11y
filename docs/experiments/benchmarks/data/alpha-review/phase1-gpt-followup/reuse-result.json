@@ -1,0 +1,71 @@
+{
+  "case": "reuse",
+  "frozen_hashes": {
+    "bin/alpha_native_dump": "f660cf3a73fee5ec5d37e6c9c1a8c5058270e2eedbfca2e570bc74146b13c883",
+    "bin/fabric-node": "193b1676e4d403216476487e870e2f8f5b71af200c5f8180250e4c9e2313ef7a",
+    "bin/fabricctl": "9da07efb06991e8bbbf0075ca6b3efd3b48af88455a2f098fe82ffb711986658",
+    "source/journal.rs": "cca0d42a16dafb0edcdc5bb1610e03be9553e72909fba36adcd717f28f6762b7",
+    "source/log_source.rs": "9f28eb01da68f9d45b5a6d8a0eda6d119ab3684ac9cb1ce7e924bf683e95f76b",
+    "source/node.rs": "94f081934bbd23ecd6d17a32ac38a479c5725618b62aea65084c65e937c87b45"
+  },
+  "result": {
+    "attempts": 1,
+    "available": true,
+    "dump_exit": 0,
+    "first_exit": 0,
+    "first_output": "batch=1 metrics=75 logs=10 gaps=0 spool_bytes=9086",
+    "inode": 868968,
+    "inspect": {
+      "batches": "2",
+      "committed_bytes": "18187",
+      "coverage_unknown": "false",
+      "file_bytes": "18187",
+      "gaps": "0",
+      "generation": "1",
+      "log_records": "20",
+      "metric_points": "150",
+      "node_id": "4238cd0783949af7ab9831e89b7cd941",
+      "otlp_payload_bytes": "17874",
+      "recovery_required": "false"
+    },
+    "inspect_error": "",
+    "inspect_exit": 0,
+    "missing_new": [
+      "new-00",
+      "new-01",
+      "new-02",
+      "new-03",
+      "new-04",
+      "new-05",
+      "new-06",
+      "new-07",
+      "new-08",
+      "new-09"
+    ],
+    "replayed_bodies": [
+      "old-00",
+      "old-01",
+      "old-02",
+      "old-03",
+      "old-04",
+      "old-05",
+      "old-06",
+      "old-07",
+      "old-08",
+      "old-09",
+      "new-10",
+      "new-11",
+      "new-12",
+      "new-13",
+      "new-14",
+      "new-15",
+      "new-16",
+      "new-17",
+      "new-18",
+      "new-19"
+    ],
+    "second_exit": 0,
+    "second_output": "batch=2 metrics=75 logs=10 gaps=0 spool_bytes=18187",
+    "silent_loss": true
+  }
+}

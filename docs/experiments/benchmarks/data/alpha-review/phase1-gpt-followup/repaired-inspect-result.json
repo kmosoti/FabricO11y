@@ -1,0 +1,37 @@
+{
+  "case": "inspect",
+  "repair_ok": true,
+  "repaired_hashes": {
+    "src/alpha/journal.rs": "7b2b45aa81a227ab1a194a7c9b4ed32e6d5080de7a62d7ca5f61d7b6d81f0ba9",
+    "src/alpha/log_source.rs": "729417d357b55ef1998b3829c51907785fcba50eee52ac44b81b0fad3b408476",
+    "src/alpha/node.rs": "8f14fad6079ed6de12f574943f22ffc7552f0486d360dc02b07b578af4217a9e",
+    "target/release/examples/alpha_native_dump": "ef3ee29ecdc215585f78bf30e9e01eeb0be4ec6d4e2f356217c53933f38edb2f",
+    "target/release/fabric-node": "74ecabe907c467acae6173aefe6e04d3399875479df793b589c52eb9834a2d8f",
+    "target/release/fabricctl": "467ed5f38854f013afd401d9c63ed50c4eb5b9dae9ccf1b74f94b8e5cb00a080"
+  },
+  "result": {
+    "calls": 5296,
+    "clean_after_false_while_writer_alive": null,
+    "false_status_count": 0,
+    "first_false_status": [],
+    "healthy_false_alarm": false,
+    "marker_after_stop": false,
+    "node_exit": -15,
+    "retryable_errors": 46,
+    "settled_error": "",
+    "settled_inspect": {
+      "batches": "8",
+      "committed_bytes": "51848",
+      "coverage_unknown": "false",
+      "file_bytes": "51848",
+      "gaps": "0",
+      "generation": "1",
+      "log_records": "0",
+      "metric_points": "600",
+      "node_id": "01204c31b19620d47a3565186e042b73",
+      "otlp_payload_bytes": "51376",
+      "recovery_required": "false"
+    },
+    "settled_inspect_exit": 0
+  }
+}
