@@ -134,6 +134,23 @@ pub struct Journal {
     poisoned: bool,
 }
 
+// Unlock explicitly: a descriptor duplicated into a forked child of another
+// thread would otherwise keep the lock alive until that child execs.
+impl Drop for Journal {
+    fn drop(&mut self) {
+        let _ = self.file.unlock();
+    }
+}
+
+/// Releases inspection's shared lock on every return path.
+struct SharedLock<'a>(&'a File);
+
+impl Drop for SharedLock<'_> {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+
 pub struct Inspection {
     pub node_id: [u8; 16],
     pub generation: u64,
@@ -158,7 +175,7 @@ impl Journal {
             return Err(invalid("missing journal identity"));
         }
         let (node_id, generation) = read_identity(dir)?;
-        let mut file = File::open(dir.join("batches.faj"))?;
+        let file = File::open(dir.join("batches.faj"))?;
         let len = file.metadata()?.len();
         if len > max_bytes {
             return Err(invalid("journal exceeds configured spool cap"));
@@ -179,12 +196,14 @@ impl Journal {
         }
         let in_progress = dir.join(IN_PROGRESS);
         let mut interrupted_append = false;
+        // Held until inspection returns, so the scan below sees a stable file.
+        let mut _shared = None;
         if in_progress.exists() {
             // A live writer holds the exclusive lock; retry rather than report a
             // normal append as interrupted. Under our shared lock no writer can
             // open, so the scan below sees a stable file.
-            match file.try_lock_shared() {
-                Ok(()) => {}
+            _shared = Some(match file.try_lock_shared() {
+                Ok(()) => SharedLock(&file),
                 Err(fs::TryLockError::WouldBlock) => {
                     return Err(io::Error::new(
                         io::ErrorKind::WouldBlock,
@@ -192,7 +211,7 @@ impl Journal {
                     ));
                 }
                 Err(error) => return Err(error.into()),
-            }
+            });
             if !in_progress.exists() {
                 return Err(io::Error::new(
                     io::ErrorKind::WouldBlock,
@@ -210,7 +229,7 @@ impl Journal {
         let mut at = 0;
         let mut next_sequence = 1_u64;
         while at < len {
-            let Some((batch, next)) = read_frame(&mut file, at, len)? else {
+            let Some((batch, next)) = read_frame(&file, at, len)? else {
                 break;
             };
             if batch.node_id != node_id
@@ -272,7 +291,7 @@ impl Journal {
                 "recovery required: a journal write or sync reported an error; rebuild from retained source",
             ));
         }
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
@@ -288,7 +307,7 @@ impl Journal {
             return Err(invalid("journal exceeds configured spool cap"));
         }
         while end < len {
-            match read_frame(&mut file, end, len)? {
+            match read_frame(&file, end, len)? {
                 Some((batch, next)) => {
                     if batch.node_id != node_id
                         || batch.generation != generation
@@ -437,7 +456,7 @@ impl Journal {
         let mut at = 0;
         let mut count = 0;
         while at < self.end {
-            let (batch, next) = read_frame(&mut self.file, at, self.end)?
+            let (batch, next) = read_frame(&self.file, at, self.end)?
                 .ok_or_else(|| invalid("committed frame changed"))?;
             visit(batch)?;
             count += 1;
@@ -496,7 +515,7 @@ fn read_identity(dir: &Path) -> io::Result<([u8; 16], u64)> {
     Ok((id, generation))
 }
 
-fn read_frame(file: &mut File, at: u64, len: u64) -> io::Result<Option<(Batch, u64)>> {
+fn read_frame(mut file: &File, at: u64, len: u64) -> io::Result<Option<(Batch, u64)>> {
     if len - at < HEADER_BYTES {
         return Ok(None);
     }

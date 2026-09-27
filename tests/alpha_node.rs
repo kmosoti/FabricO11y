@@ -617,7 +617,7 @@ fn busy_first_log_cannot_starve_a_later_log_and_backlog_is_visible() {
             _ => None,
         })
         .collect();
-    assert!(bodies.iter().any(|b| *b == quiet_body), "quiet log starved");
+    assert!(bodies.contains(&quiet_body), "quiet log starved");
     assert_eq!(
         inspect(&cfg).unwrap().log_backlog_bytes,
         second.log_backlog_bytes
