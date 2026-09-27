@@ -1,0 +1,266 @@
+"""Independent adversarial probe for tools/seal-probe/bench.py (E2R cost harness).
+
+Cross-checks against docs/experiments/benchmarks/group-seal-cost-protocol.md
+using the already-produced smoke run (from the exact allowed smoke command)
+plus synthetic in-process checks of summarize()'s analysis gates. Does NOT
+run full timing (no `bench.py run`). Read-only against the repo; writes only
+under /tmp/fabric-seal-review. Does not modify the archived probe.py.
+"""
+import hashlib
+import importlib.util
+import json
+import struct
+import subprocess
+import sys
+from pathlib import Path
+
+SEAL_PROBE = Path("/home/kmosoti/projects/fabric_o11y/tools/seal-probe")
+SMOKE_OUT = Path("/tmp/fabric-seal-cost-claude-run01")
+
+sys.path.insert(0, str(SEAL_PROBE))
+spec = importlib.util.spec_from_file_location("bench_probe", SEAL_PROBE / "bench.py")
+bench = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(bench)
+
+failures = []
+checks = 0
+
+
+def check(name, cond, detail=""):
+    global checks
+    checks += 1
+    if not cond:
+        failures.append((name, detail))
+
+
+def sha256_bytes(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+# === 1) Smoke run artifacts must already exist (produced by the exact
+#        allowed smoke command run before this probe). =====================
+check("smoke_output_exists", SMOKE_OUT.is_dir())
+trials = json.loads((SMOKE_OUT / "trials.json").read_text())
+smoke_summary = json.loads((SMOKE_OUT / "smoke.json").read_text())
+check("smoke_produced_four_trials", len(trials) == 4, f"got {len(trials)}")
+check("smoke_no_full_summary_json", not (SMOKE_OUT / "summary.json").exists(),
+      "smoke must not run the full-timing analysis path")
+check("smoke_json_reports_corruption_rejected", smoke_summary.get("corruption_rejected") is True)
+
+# === 2) Independent byte parse: derive group count / sync expectation from
+#        raw file bytes only (own parser, not trusting bench's self-report),
+#        and confirm boundary that the LAST sector of every group is exactly
+#        the seal (FGS1) sector -- i.e. the write:[:-sector] / [-sector:]
+#        split used by bench.write_trial is structurally correct. ===========
+
+def independent_group_count(data: bytes, sector: int) -> int:
+    """Count FGD1-headed groups by walking descriptor lengths, verifying the
+    sector immediately before each next descriptor (or EOF) starts FGS1."""
+    offset = 0
+    count = 0
+    while offset < len(data):
+        descriptor = data[offset:offset + sector]
+        if descriptor[:4] != b"FGD1":
+            raise ValueError(f"expected FGD1 at {offset}, got {descriptor[:4]!r}")
+        frame_count = struct.unpack_from("<I", descriptor, 12)[0]
+        lengths = struct.unpack_from("<6I", descriptor, 16)[:frame_count]
+        pos = offset + sector
+        for body_len in lengths:
+            span = ((12 + body_len + sector - 1) // sector) * sector
+            frame_head = data[pos:pos + 4]
+            if frame_head != b"FGF1":
+                raise ValueError(f"expected FGF1 at {pos}, got {frame_head!r}")
+            pos += span
+        seal = data[pos:pos + sector]
+        if seal[:4] != b"FGS1":
+            raise ValueError(f"expected FGS1 (seal as last sector of group) at {pos}, got {seal[:4]!r}")
+        pos += sector
+        offset = pos
+        count += 1
+    return count
+
+
+for t in trials:
+    path = SMOKE_OUT / t["file"]
+    data = path.read_bytes()
+    sector = t["sector"]
+    try:
+        parsed_groups = independent_group_count(data, sector)
+        parse_error = None
+    except ValueError as exc:
+        parsed_groups = None
+        parse_error = str(exc)
+    check(f"independent_parse_succeeds[{t['file']}]", parse_error is None, parse_error)
+    check(f"independent_group_count_matches_reported[{t['file']}]",
+          parsed_groups == t["write"]["groups"],
+          f"parsed={parsed_groups} reported={t['write']['groups']}")
+    expected_syncs = parsed_groups * (1 if t["variant"] == "one" else 2)
+    check(f"successful_fsyncs_matches_independent_group_count[{t['file']}]",
+          t["write"]["successful_fsyncs"] == expected_syncs,
+          f"reported={t['write']['successful_fsyncs']} expected={expected_syncs}")
+    # Own sha256, not trusting bench's self-reported hash.
+    check(f"own_sha256_matches_reported[{t['file']}]",
+          sha256_bytes(data) == t["verify"]["sha256"])
+
+# === 3) Identical bytes across the one-sync/two-sync pair for each config,
+#        using our own hashing (paired-file-hash-equality gate). ===========
+by_config = {}
+for t in trials:
+    by_config.setdefault((t["sector"], t["group_size"]), {})[t["variant"]] = t
+for (sector, size), variants in by_config.items():
+    check(f"both_variants_present[{sector},{size}]", set(variants) == {"one", "two"})
+    a = (SMOKE_OUT / variants["one"]["file"]).read_bytes()
+    b = (SMOKE_OUT / variants["two"]["file"]).read_bytes()
+    check(f"identical_bytes_one_vs_two[{sector},{size}]", sha256_bytes(a) == sha256_bytes(b),
+          f"file bytes differ between sync-placement variants for sector={sector} size={size}")
+
+# === 4) Timing-boundary sanity from already-collected smoke JSON (no new
+#        timing run): encoding time must be a genuine subset of pipeline
+#        wall time, and CPU time must be positive and of the same order. ===
+for t in trials:
+    w = t["write"]
+    check(f"encoding_subset_of_wall[{t['file']}]", 0 <= w["encoding_ns"] <= w["pipeline_wall_ns"],
+          f"encoding_ns={w['encoding_ns']} wall_ns={w['pipeline_wall_ns']}")
+    check(f"commit_samples_sum_le_wall[{t['file']}]",
+          sum(w["commit_elapsed_ns"]) <= w["pipeline_wall_ns"] * 1.05,
+          "commit samples should not wildly exceed the outer pipeline interval "
+          "(small tolerance for perf_counter granularity, not a hard <= claim)")
+    check(f"cpu_ns_positive[{t['file']}]", w["pipeline_cpu_ns"] > 0)
+
+# === 5) Failed-trial propagation: invoking _write against a path that
+#        already exists (O_EXCL) must fail closed, exit nonzero, and leave
+#        the pre-existing file's bytes untouched -- errors abort the trial
+#        and "retain the source" rather than silently overwriting/continuing.
+existing_path = SMOKE_OUT / trials[0]["file"]
+before = existing_path.read_bytes()
+result = subprocess.run(
+    [sys.executable, str(SEAL_PROBE / "bench.py"), "_write", str(existing_path), "512", "1", "12", "one"],
+    cwd=str(SEAL_PROBE.parents[1]), capture_output=True, text=True)
+after = existing_path.read_bytes()
+check("write_to_existing_path_fails_closed", result.returncode != 0, f"exit={result.returncode}")
+check("write_to_existing_path_retains_source", before == after,
+      "a failed write must not have mutated the pre-existing file")
+check("write_to_existing_path_reports_error_on_stderr",
+      "Error" in result.stderr or "Traceback" in result.stderr, result.stderr[:200])
+
+# Corrupt-input propagation through _verify (separate process): a truncated
+# file (not just a bit flip) must also fail closed via a separate process.
+truncated_path = SMOKE_OUT / "cost-probe-truncated.seal"
+full = (SMOKE_OUT / trials[0]["file"]).read_bytes()
+truncated_path.write_bytes(full[:-1])  # break sector alignment
+result2 = subprocess.run(
+    [sys.executable, str(SEAL_PROBE / "bench.py"), "_verify", str(truncated_path), "512", "1", "12"],
+    cwd=str(SEAL_PROBE.parents[1]), capture_output=True, text=True)
+check("truncated_verify_fails_closed", result2.returncode != 0, f"exit={result2.returncode}")
+
+# === 6) Separate-process independent fixture verify: confirm each trial's
+#        writer and verifier were launched as genuinely distinct subprocess
+#        invocations (own argv, own stdout/stderr files), and that verify
+#        used the frozen oracle fixture (fixture_sha256 present and equal
+#        to the on-disk hash, per bench.verify_trial's own comparison, that
+#        we already independently re-hashed above). ========================
+for t in trials:
+    check(f"writer_and_verifier_are_distinct_commands[{t['file']}]",
+          t["writer"]["command"][2] == "_write" and t["verifier"]["command"][2] == "_verify")
+    check(f"writer_verifier_distinct_stdio[{t['file']}]",
+          t["writer"]["stdout"] != t["verifier"]["stdout"])
+    check(f"verify_used_fixture_and_matched[{t['file']}]",
+          t["verify"]["sha256"] == t["verify"]["fixture_sha256"])
+
+# === 7) Analysis gates: exercise bench.summarize() directly with synthetic
+#        trial records (no real timing run) covering pass/fail of the
+#        group-size-1 material-benefit gate and the structural gates
+#        (incomplete pair, paired-hash mismatch). ==========================
+
+def synth_trial(sector, size, pair, variant, eps, cpu_ns, file_hash):
+    return {"sector": sector, "group_size": size, "pair": pair, "variant": variant,
+            "write": {"events_per_second": eps, "pipeline_cpu_ns": cpu_ns},
+            "verify": {"sha256": file_hash}}
+
+
+# 7a) A clearly passing group-size-1 case: one-sync 15% faster, CPU ratio 1.0.
+passing = []
+for pair in range(1, 6):
+    passing.append(synth_trial(512, 1, pair, "one", 1150.0, 1_000_000, "H"))
+    passing.append(synth_trial(512, 1, pair, "two", 1000.0, 1_000_000, "H"))
+for size in (2, 4, 6):
+    for pair in range(1, 6):
+        passing.append(synth_trial(512, size, pair, "one", 1000.0, 1_000_000, "H2"))
+        passing.append(synth_trial(512, size, pair, "two", 1000.0, 1_000_000, "H2"))
+for size in (1, 2, 4, 6):
+    for pair in range(1, 6):
+        passing.append(synth_trial(4096, size, pair, "one", 1000.0, 1_000_000, "H3"))
+        passing.append(synth_trial(4096, size, pair, "two", 1000.0, 1_000_000, "H3"))
+summary = bench.summarize(passing, 1200)
+g1 = next(c for c in summary["configurations"] if c["sector"] == 512 and c["group_size"] == 1)
+check("gate_passes_when_10pct_faster_and_cpu_equal", g1["material_benefit_gate"] is True,
+      f"gain={g1['median_throughput_gain']} cpu_ratio={g1['median_pipeline_cpu_ratio']}")
+
+# 7b) A borderline-failing case: only 5% faster -- gate must be False.
+failing = []
+for pair in range(1, 6):
+    failing.append(synth_trial(512, 1, pair, "one", 1050.0, 1_000_000, "H"))
+    failing.append(synth_trial(512, 1, pair, "two", 1000.0, 1_000_000, "H"))
+for size in (2, 4, 6):
+    for pair in range(1, 6):
+        failing.append(synth_trial(512, size, pair, "one", 1000.0, 1_000_000, "H2"))
+        failing.append(synth_trial(512, size, pair, "two", 1000.0, 1_000_000, "H2"))
+for size in (1, 2, 4, 6):
+    for pair in range(1, 6):
+        failing.append(synth_trial(4096, size, pair, "one", 1000.0, 1_000_000, "H3"))
+        failing.append(synth_trial(4096, size, pair, "two", 1000.0, 1_000_000, "H3"))
+summary_fail = bench.summarize(failing, 1200)
+g1_fail = next(c for c in summary_fail["configurations"] if c["sector"] == 512 and c["group_size"] == 1)
+check("gate_fails_when_only_5pct_faster", g1_fail["material_benefit_gate"] is False,
+      f"gain={g1_fail['median_throughput_gain']}")
+
+# 7c) A case where one-sync is faster but CPU ratio exceeds 110% -- gate
+#     must still be False (both conditions are required, not either/or).
+cpu_over = []
+for pair in range(1, 6):
+    cpu_over.append(synth_trial(512, 1, pair, "one", 1150.0, 1_200_000, "H"))
+    cpu_over.append(synth_trial(512, 1, pair, "two", 1000.0, 1_000_000, "H"))
+for size in (2, 4, 6):
+    for pair in range(1, 6):
+        cpu_over.append(synth_trial(512, size, pair, "one", 1000.0, 1_000_000, "H2"))
+        cpu_over.append(synth_trial(512, size, pair, "two", 1000.0, 1_000_000, "H2"))
+for size in (1, 2, 4, 6):
+    for pair in range(1, 6):
+        cpu_over.append(synth_trial(4096, size, pair, "one", 1000.0, 1_000_000, "H3"))
+        cpu_over.append(synth_trial(4096, size, pair, "two", 1000.0, 1_000_000, "H3"))
+summary_cpu = bench.summarize(cpu_over, 1200)
+g1_cpu = next(c for c in summary_cpu["configurations"] if c["sector"] == 512 and c["group_size"] == 1)
+check("gate_fails_when_cpu_ratio_over_110pct", g1_cpu["material_benefit_gate"] is False,
+      f"gain={g1_cpu['median_throughput_gain']} cpu_ratio={g1_cpu['median_pipeline_cpu_ratio']}")
+
+# 7d) Structural gate: a paired file-hash mismatch between one/two variants
+#     of the same pair must raise, not silently proceed.
+mismatched = list(passing)
+# Corrupt one of pair 1's verify hashes for sector=512,size=1.
+for rec in mismatched:
+    if rec["sector"] == 512 and rec["group_size"] == 1 and rec["pair"] == 1 and rec["variant"] == "two":
+        rec["verify"] = {"sha256": "DIFFERENT"}
+        break
+try:
+    bench.summarize(mismatched, 1200)
+    hash_mismatch_raised = False
+except ValueError:
+    hash_mismatch_raised = True
+check("gate_raises_on_paired_hash_mismatch", hash_mismatch_raised)
+
+# 7e) Structural gate: an incomplete pair (missing the "two" variant) must
+#     raise, not silently compute a gain from partial data.
+incomplete = [t for t in passing
+              if not (t["sector"] == 512 and t["group_size"] == 1 and t["pair"] == 1 and t["variant"] == "two")]
+try:
+    bench.summarize(incomplete, 1200)
+    incomplete_raised = False
+except ValueError:
+    incomplete_raised = True
+check("gate_raises_on_incomplete_pair", incomplete_raised)
+
+# ---------------------------------------------------------------------------
+print(f"checks={checks} failures={len(failures)}")
+for name, detail in failures:
+    print(f"FAIL {name}: {detail}")
+sys.exit(1 if failures else 0)

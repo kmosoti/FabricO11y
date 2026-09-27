@@ -1,0 +1,154 @@
+"""Independent S0 review probe: exercises tools/bench/append_attribution.py's
+validate() against synthetic CSVs not present in the repo's own test suite, to
+check detector non-vacuity beyond the three mutations already covered there.
+
+Imports the module directly (no subprocess, no repository file writes).
+"""
+import csv
+import importlib.util
+import io
+import sys
+import tempfile
+from pathlib import Path
+
+ROOT = Path("/home/kmosoti/projects/fabric_o11y")
+MODULE_PATH = ROOT / "tools" / "bench" / "append_attribution.py"
+
+spec = importlib.util.spec_from_file_location("attribution", MODULE_PATH)
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+
+PHASES = module.PHASES
+HEADER = module.HEADER
+
+failures = []
+passes = []
+
+
+def check(name, expect_ok, fn):
+    try:
+        result = fn()
+        ok = True
+    except Exception as exc:  # noqa: BLE001 - probe wants to see any failure mode
+        ok = False
+        result = exc
+    if ok == expect_ok:
+        passes.append(name)
+    else:
+        failures.append((name, expect_ok, ok, result))
+
+
+def write_csv(rows):
+    tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, newline="")
+    writer = csv.writer(tmp)
+    writer.writerow(HEADER)
+    writer.writerows(rows)
+    tmp.close()
+    return Path(tmp.name)
+
+
+def base_rows(count=2, instrumented=True):
+    rows = []
+    for i in range(1, count + 1):
+        rows.append(["append", i, 100, "", "", "", "", "", ""])
+        if instrumented:
+            rows.extend([[phase, i, 10, "", "", "", "", "", ""] for phase in PHASES])
+    ingest_elapsed = 100 * count + 50
+    rows.append(["ingest", "", ingest_elapsed, count, 0, 296, 100, "", ""])
+    return rows
+
+
+# 1) Clean instrumented CSV validates and reports correct sync_fraction.
+path = write_csv(base_rows(2, True))
+check("clean_instrumented_validates", True, lambda: module.validate(path, True, 2))
+
+# 2) Clean non-instrumented CSV (no phase rows) validates.
+path = write_csv(base_rows(2, False))
+check("clean_default_validates", True, lambda: module.validate(path, False, 2))
+
+# 3) Non-instrumented CSV that DOES carry phase rows must be rejected: the
+#    'allowed' phase set excludes PHASES when instrumented=False.
+rows = base_rows(2, True)
+path = write_csv(rows)
+check("phase_rows_rejected_when_not_instrumented", False, lambda: module.validate(path, False, 2))
+
+# 4) Negative elapsed_ns must be rejected.
+rows = base_rows(2, True)
+for r in rows:
+    if r[0] == "encode" and r[1] == 1:
+        r[2] = -5
+path = write_csv(rows)
+check("negative_elapsed_rejected", False, lambda: module.validate(path, True, 2))
+
+# 5) Wrong ingest event count must be rejected.
+rows = base_rows(2, True)
+for r in rows:
+    if r[0] == "ingest":
+        r[3] = 3  # events field says 3 but only 2 append rows exist
+path = write_csv(rows)
+check("wrong_ingest_count_rejected", False, lambda: module.validate(path, True, 2))
+
+# 6) Missing ingest row entirely must be rejected.
+rows = [r for r in base_rows(2, True) if r[0] != "ingest"]
+path = write_csv(rows)
+check("missing_ingest_row_rejected", False, lambda: module.validate(path, True, 2))
+
+# 7) Duplicate ingest row must be rejected.
+rows = base_rows(2, True)
+rows.append(rows[-1])
+path = write_csv(rows)
+check("duplicate_ingest_row_rejected", False, lambda: module.validate(path, True, 2))
+
+# 8) Out-of-order event_index (e.g. 2 then 1) for a phase must be rejected.
+rows = base_rows(2, True)
+encode_rows = [r for r in rows if r[0] == "encode"]
+assert len(encode_rows) == 2
+encode_rows[0][1], encode_rows[1][1] = encode_rows[1][1], encode_rows[0][1]
+path = write_csv(rows)
+check("out_of_order_index_rejected", False, lambda: module.validate(path, True, 2))
+
+# 9) Sum of append durations exceeding ingest_ns (pipeline interval) must be
+#    rejected -- a defect type not exercised by the repo's own test file.
+rows = base_rows(2, True)
+for r in rows:
+    if r[0] == "ingest":
+        r[2] = 50  # smaller than the two append rows (100 each) summed
+path = write_csv(rows)
+check("append_sum_exceeds_pipeline_rejected", False, lambda: module.validate(path, True, 2))
+
+# 10) Zero or negative ingest_ns must be rejected.
+rows = base_rows(2, True)
+for r in rows:
+    if r[0] == "ingest":
+        r[2] = 0
+path = write_csv(rows)
+check("zero_ingest_ns_rejected", False, lambda: module.validate(path, True, 2))
+
+# 11) Boundary: phase sum exactly equal to outer append duration is ALLOWED
+#     (spec says "no more than"), i.e. this must validate, not fail.
+rows = base_rows(1, True)
+# 5 phases * 10ns = 50; set outer append to exactly 50 (spec: sum <= outer).
+for r in rows:
+    if r[0] == "append":
+        r[2] = 50
+    if r[0] == "ingest":
+        r[2] = 50
+path = write_csv(rows)
+check("phase_sum_equal_outer_is_allowed", True, lambda: module.validate(path, True, 1))
+
+# 12) Wrong CSV schema (extra column) must be rejected.
+tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, newline="")
+writer = csv.writer(tmp)
+writer.writerow(HEADER + ["extra"])
+writer.writerow(["append", 1, 100, "", "", "", "", "", "", "x"])
+writer.writerow(["ingest", "", 100, 1, 0, 296, 100, "", "", "x"])
+tmp.close()
+check("wrong_schema_rejected", False, lambda: module.validate(Path(tmp.name), False, 1))
+
+print(f"PASS: {len(passes)}  FAIL: {len(failures)}")
+for name in passes:
+    print(f"  ok  {name}")
+for name, expect_ok, got_ok, result in failures:
+    print(f"  BAD {name}: expected_ok={expect_ok} got_ok={got_ok} result={result!r}")
+
+sys.exit(1 if failures else 0)

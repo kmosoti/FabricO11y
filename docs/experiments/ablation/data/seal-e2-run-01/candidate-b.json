@@ -1,0 +1,7 @@
+{
+  "command": "python3 -B -m unittest discover -s /tmp/fabric-seal-b -p test_oracle.py -v",
+  "stdout": "reference workload: 309456 subset cases; 33 exhaustive fixtures; 3 sampled fixtures; 294 injected write/sync boundaries; 6000 covered-byte flips\n",
+  "stderr": "test_clean_encode_and_recover (test_oracle.CandidateChecks.test_clean_encode_and_recover) ... ok\ntest_committed_covered_byte_flips (test_oracle.CandidateChecks.test_committed_covered_byte_flips) ... ok\ntest_error_boundaries_and_external_witness (test_oracle.CandidateChecks.test_error_boundaries_and_external_witness) ... ok\ntest_persisted_sector_subsets (test_oracle.CandidateChecks.test_persisted_sector_subsets) ... ok\ntest_fixture_shape_and_counts (test_oracle.ReferenceChecks.test_fixture_shape_and_counts) ... ok\ntest_frozen_fixture_hashes (test_oracle.ReferenceChecks.test_frozen_fixture_hashes) ... ok\ntest_non_vacuity_probes (test_oracle.ReferenceChecks.test_non_vacuity_probes) ... ok\n\n----------------------------------------------------------------------\nRan 7 tests in 12.432s\n\nOK\n",
+  "exit_code": 0,
+  "source_sha256": "31c26a93b4cd86cd9b90e45f9e463bf44427f159ad813b5bb6bca21e115fe809"
+}

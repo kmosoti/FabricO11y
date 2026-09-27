@@ -1,0 +1,6 @@
+{
+  "input": "group_bytes(0,bodies(1,11),512), flip byte17 ^=8; original length57, corrupted2105",
+  "expected": "error with every input byte",
+  "actual": "('ok', (), 0)",
+  "violation": true
+}

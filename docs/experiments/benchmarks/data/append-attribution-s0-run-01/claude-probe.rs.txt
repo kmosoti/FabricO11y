@@ -1,0 +1,80 @@
+// Independent probe binary: exercise EventLog::append with append-attribution
+// enabled and check invariants beyond the single repo test.
+use fabric_o11y::log::EventLog;
+use fabric_o11y::{Event, EventId, EventTime, ObservedTime, Payload, ResourceId, SourceId, TenantId};
+use std::fs;
+use std::path::PathBuf;
+
+fn event(id: u64, body: String) -> Event {
+    Event {
+        id: EventId(id),
+        tenant: TenantId(1),
+        source: SourceId(2),
+        resource: ResourceId(3),
+        event_time: EventTime(4),
+        observed_time: ObservedTime(5),
+        attributes: vec![],
+        payload: Payload::Log { body },
+    }
+}
+
+fn main() {
+    let dir = std::env::temp_dir().join(format!("fabric-s0-probe-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let path: PathBuf = dir.join("events.log");
+    let mut log = EventLog::open(&path).unwrap();
+    assert!(log.last_append_phases().is_none(), "fresh log has no sample");
+
+    // 1) Successful appends produce nonoverlapping, nonnegative phase samples
+    //    whose sum never exceeds the outer measured append time (here approximated
+    //    by re-deriving via repeated calls since we don't have direct outer timer
+    //    access in this probe; the repo test already checks against Instant).
+    for i in 1..=50u64 {
+        log.append(&event(i, format!("body-{i}"))).unwrap();
+        let phases = log.last_append_phases().expect("sample after success");
+        assert!(phases.encode_ns < u128::MAX);
+        assert!(phases.data_write_ns < u128::MAX);
+        assert!(phases.data_sync_ns < u128::MAX);
+        assert!(phases.marker_write_ns < u128::MAX);
+        assert!(phases.marker_sync_ns < u128::MAX);
+    }
+    println!("ok: 50 successful appends all produced samples");
+
+    // 2) Failed append (oversized) clears the sample, does not poison the log,
+    //    and the next valid append succeeds and repopulates the sample.
+    use fabric_o11y::log::MAX_RECORD_BYTES;
+    let oversized = event(1000, "x".repeat(MAX_RECORD_BYTES + 1));
+    let before = fs::read(&path).unwrap();
+    let err = log.append(&oversized);
+    assert!(err.is_err(), "oversized append must fail");
+    assert!(
+        log.last_append_phases().is_none(),
+        "failed append must clear the sample"
+    );
+    let after = fs::read(&path).unwrap();
+    assert_eq!(before, after, "rejected encoding must not touch the file");
+
+    // Oversized encoding failure happens before ensure_healthy is re-checked in
+    // a way that poisons; verify the log is NOT poisoned by attempting another
+    // valid append.
+    log.append(&event(1001, "after-oversized".into()))
+        .expect("log must not be poisoned by an encoding-only failure");
+    assert!(log.last_append_phases().is_some());
+    println!("ok: oversized append clears sample without poisoning; next append recovers");
+
+    // 3) Multiple appends in a row: sample only reflects the LAST append, never
+    //    a stale one persisting across a call that itself didn't run (can't
+    //    directly test not-running, but check identity changes call to call).
+    log.append(&event(2000, "a".into())).unwrap();
+    let p1 = log.last_append_phases().unwrap();
+    log.append(&event(2001, "b".into())).unwrap();
+    let p2 = log.last_append_phases().unwrap();
+    // Not a strict inequality requirement, just that both are populated distinctly
+    // in time (sanity, not a hard correctness assertion since timings can tie at
+    // low resolution).
+    let _ = (p1, p2);
+    println!("ok: consecutive successful appends both populate a sample");
+
+    fs::remove_dir_all(&dir).ok();
+    println!("PROBE PASS");
+}

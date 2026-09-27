@@ -1,0 +1,12 @@
+{
+  "command": [
+    "python3",
+    "-B",
+    "tools/seal-probe/test_selection.py",
+    "/tmp/fabric-seal-a/candidate.py"
+  ],
+  "exit": 1,
+  "stdout": "",
+  "stderr": "F\n======================================================================\nFAIL: test_single_acked_group_metadata_bit_flips_preserve_all_bytes (__main__.MetadataCorruption.test_single_acked_group_metadata_bit_flips_preserve_all_bytes)\n----------------------------------------------------------------------\nTraceback (most recent call last):\n  File \"/home/kmosoti/projects/fabric_o11y/tools/seal-probe/test_selection.py\", line 24, in test_single_acked_group_metadata_bit_flips_preserve_all_bytes\n    self.assertEqual(actual,('error',changed),\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^\n        f'ACKed group discarded: sector={sector}, count={count}, offset={offset}, bit={bit}; result={actual[:1]}')\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: Tuples differ: ('ok', (), 0) != ('error', b'FGD1\\x00\\x00\\x00\\x00\\x00\\x00\\x0[5964 chars]x00')\n\nFirst differing element 0:\n'ok'\n'error'\n\nFirst tuple contains 1 additional elements.\nFirst extra element 2:\n0\n\nDiff is 6685 characters long. Set self.maxDiff to None to see it. : ACKed group discarded: sector=512, count=1, offset=17, bit=1; result=('ok',)\n\n----------------------------------------------------------------------\nRan 1 test in 0.003s\n\nFAILED (failures=1)\n",
+  "candidate_sha256": "423cd9309e598c53a30f260d8cd0c4453ba25da866600d1b451982beea07a353"
+}

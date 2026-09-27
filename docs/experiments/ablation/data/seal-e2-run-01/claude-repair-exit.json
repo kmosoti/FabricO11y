@@ -1,0 +1,33 @@
+{
+  "command": [
+    "claude",
+    "-p",
+    "--resume",
+    "d756107f-c6d6-4d10-9f13-d5e484a8db17",
+    "--model",
+    "sonnet",
+    "--effort",
+    "medium",
+    "--max-budget-usd",
+    "5",
+    "--output-format",
+    "json",
+    "--permission-mode",
+    "dontAsk",
+    "--add-dir",
+    "/tmp/fabric-seal-review",
+    "--tools",
+    "Read,Glob,Grep,Bash,Write",
+    "--allowedTools",
+    "Read",
+    "Glob",
+    "Grep",
+    "Write",
+    "Bash(python3 -B -m unittest discover -s tools/seal-probe -p test_oracle.py -v)",
+    "Bash(python3 -B tools/seal-probe/test_selection.py tools/seal-probe/candidate.py)",
+    "Bash(python3 -B /tmp/fabric-seal-review/probe.py)",
+    "--",
+    "Targeted repair re-review of E2R: independent GPT review found append_logical acknowledged nonsequential group_id although recovery rejected its output. Parent added a failing regression before fix (docs/experiments/ablation/data/seal-e2-run-01/pre-repair-regression.json). candidate.py now validates previous through recover, requires ok/full-prefix-length and group_id==number of committed groups before encoding/writes/ACK. CONTRACT clarifies invalid prefix/id raises ValueError, and caller still must respect external failed-I/O witness. test_selection.py includes duplicate/gap IDs, zero tail, corrupt prefix and valid control. Review only this repair against your previously reviewed source, execute regression plus relevant boundary oracle and your scratch probe if useful. Exact previously allowed commands still available; do not append shell pipes/redirects. No repo edits; optional scratch Write only /tmp/fabric-seal-review. Return approval or failure with real exits and changed source hashes. Previous hash31c26a93 was superseded by repair. No agents."
+  ],
+  "exit": 0
+}

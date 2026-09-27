@@ -70,3 +70,17 @@ The payload limit is 16 MiB. The encoder covers every current `Scalar` and `Payl
 - Each append performs two file syncs. The [Stage 6 baseline](../experiments/benchmarks/local-log-stage6.md) measures one fixed local workload, but no comparative result selects this format as a throughput choice. A storage writeback error may cast doubt on earlier data too; the model assumes successful syncs establish durable copies and does not model failing hardware. No byte limit is imposed on the in-memory buffer, and replay output is still Debug text rather than a query API.
 
 The [Stage 4 ownership model](../../formal/delivery/README.md) calls the successful append a `Commit`. `write` prints `committed event N` only after that point; this is a local acknowledgement observation, not a network ACK. The model's upstream copy corresponds here to a caller-owned `Event` before success and, for the CLI demonstration, to a reproducible seed/count source on restart. The general sender-retention and stable-global-identity assumptions remain open. See the [implementation checks](../experiments/formal/delivery-rust-stage5.md), [delivery view](delivery.md), and [learning path](../LEARNING_PATH.md).
+
+## Current cost investigation
+
+The optional `append-attribution` feature adds wall-clock samples around encoding,
+data writes, each sync and marker write. It clears the sample before every attempt
+and exposes one only after success; default builds contain no phase timers. It does
+not change the FOL2 bytes, sync order or error/ownership contract. The
+[S0 result](../experiments/benchmarks/append-attribution-s0.md) records exact replay,
+paired controls and the material perturbation limit.
+
+The [E2R group-seal model](../experiments/ablation/seal-e2-run-01.md) is separate
+Python research tooling. It tests sector subsets, corruption and an external
+failed-I/O witness; it is not an application durability change. Its cost comparison
+and any physical storage validation are separate gates.

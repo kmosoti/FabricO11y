@@ -1,0 +1,72 @@
+{
+  "source_hashes_sha256": {
+    "tools/seal-probe/bench.py": "9c91df1a72602da6e2c065007939e8156b211ddba34d2f440db2f8b5d8b10a27",
+    "tools/seal-probe/candidate.py": "cc6fccf118fcc35cf31f981b6a5256800668bdb6bb470291e0f258101732a1db",
+    "tools/seal-probe/oracle_support.py": "072b2fd468a673444dca729ba12933b95ff19721d7f407589ba6da8caa645892",
+    "tools/seal-probe/CONTRACT.md": "fc99a0e76275023b591cf4086a8f7c718ad394e3013bced4ed29173cf519df60",
+    "docs/experiments/benchmarks/group-seal-cost-protocol.md": "4334dbf56591937a57b362232206452cc182853dd60e5e67168a60ee768e00c5"
+  },
+  "checks": [
+    {
+      "command": "python3 -B tools/seal-probe/bench.py smoke /tmp/fabric-s0-e2-verify/cost-smoke-01",
+      "exit": 0,
+      "result": "4 clean write+separate-verify trials; one deliberate corrupt verify exited 1 and was recognized"
+    },
+    {
+      "command": "python3 -B /tmp/fabric-s0-e2-verify/cost-probe.py",
+      "exit": 0,
+      "result": "6 checks: equal logical write boundaries, expected fsync order/count, exact bytes, injected EIO abort before seal, failed child propagation, corrupt sync counter rejected"
+    }
+  ],
+  "smoke_commands_exit_codes": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    1
+  ],
+  "smoke_pairs": [
+    {
+      "sector": 512,
+      "group_size": 1,
+      "variant": "one",
+      "successful_fsyncs": 12,
+      "file_bytes": 30720,
+      "sha256": "f270b4bb47ee73cf7abdb2971b3cb980d9fa18a0b1168c185fb9b2780ebea3d9"
+    },
+    {
+      "sector": 512,
+      "group_size": 1,
+      "variant": "two",
+      "successful_fsyncs": 24,
+      "file_bytes": 30720,
+      "sha256": "f270b4bb47ee73cf7abdb2971b3cb980d9fa18a0b1168c185fb9b2780ebea3d9"
+    },
+    {
+      "sector": 4096,
+      "group_size": 6,
+      "variant": "one",
+      "successful_fsyncs": 2,
+      "file_bytes": 73728,
+      "sha256": "91cec34ea8564e301464d143f38165ceae4d1aa3c6337a9f4772d2d3e5196dc9"
+    },
+    {
+      "sector": 4096,
+      "group_size": 6,
+      "variant": "two",
+      "successful_fsyncs": 4,
+      "file_bytes": 73728,
+      "sha256": "91cec34ea8564e301464d143f38165ceae4d1aa3c6337a9f4772d2d3e5196dc9"
+    }
+  ],
+  "smoke_output": "/tmp/fabric-s0-e2-verify/cost-smoke-01",
+  "probe_source": "/tmp/fabric-s0-e2-verify/cost-probe.py",
+  "full_timing_run": false,
+  "reviewed_repo_edited": false,
+  "verdict": "APPROVE",
+  "scope_limit": "Cost harness mechanics only; smoke timings are not experiment results or a durability test."
+}
