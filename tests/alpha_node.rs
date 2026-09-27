@@ -481,3 +481,29 @@ fn same_inode_rewrite_with_longer_new_file_reports_gap_and_reads_from_zero() {
     assert_eq!(bodies.first(), Some(&"new-00"));
     assert_eq!(bodies.last(), Some(&"new-19"));
 }
+
+#[test]
+fn multibyte_missing_log_path_commits_a_byte_bounded_gap() {
+    // Frozen checkpoint counterexample: gap text truncated by characters
+    // exceeded the 256-byte batch cap and halted collection for good.
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "00000000-0000-0000-0000-000000000001", 1, 8);
+    let base = scratch.path("m-").to_string_lossy().len() + ".log".len();
+    let fill = (230 - base) / 2;
+    let missing = scratch.path(&format!("m-{}.log", "é".repeat(fill)));
+    assert!(missing.as_os_str().len() <= 240);
+    let mut cfg = config(&scratch.0, 1024 * 1024);
+    cfg.logs = vec![missing];
+    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let first = node.collect_once().unwrap();
+    assert_eq!(first.gaps, 1);
+    let second = node.collect_once().unwrap();
+    assert_eq!(second.gaps, 1);
+    let stored = batches(&cfg);
+    assert_eq!(stored.len(), 2);
+    for gap in stored.iter().flat_map(|b| &b.collection_gaps) {
+        assert!(gap.len() <= 256, "gap has {} bytes", gap.len());
+        assert!(gap.starts_with("log source unavailable"));
+    }
+    assert!(!inspect(&cfg).unwrap().coverage_unknown);
+}

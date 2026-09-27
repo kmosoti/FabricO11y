@@ -48,7 +48,7 @@ Rotate the node journal into fixed-size files (`batches.000001.faj`, closed at 8
 
 | Step | Work | Deciding check | Role |
 | --- | --- | --- | --- |
-| P1.1 | Truncate gap text to at most 256 bytes on a character boundary in `bounded_gap`; regression built from the frozen counterexample | `cargo test`; the copied checkpoint probe exits 0 with one gap | worker |
+| P1.1 (done) | Truncate gap text to at most 256 bytes on a character boundary in `bounded_gap`; regression built from the frozen counterexample | `cargo test`; the copied checkpoint probe exits 0 with one gap | worker |
 | P1.2 | D1 and D2 if approved: two sidecars, tail verification on reopen, directory sync after unlink, SIGTERM handling, marker-to-gap conversion, regressions for each; rerun the adapted journal oracle and the fault tests | oracle and fault tests exit 0; `kill -TERM` during `run` leaves a reopenable spool | implementer; prover for the reopen property |
 | P1.3 | Register the log budget in the [node view](architecture/node.md): 64 KiB of bodies per cycle and 128 lines per file per pass in sorted order; report per-file unread bytes in the cycle line and inspect so lag is visible | docs check; a test with a busy first file shows the second still progresses | worker |
 | P1.4 | Post-repair native run 02: same protocol, three seeds, final binaries | runner exit 0; VmHWM at most 64 MiB; exact replay | runner |

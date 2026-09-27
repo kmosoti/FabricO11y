@@ -1,7 +1,7 @@
 //! One-process native collector. Each cycle owns a candidate until journal commit.
 
 use crate::alpha::host::{self, Kind, Paths, Value};
-use crate::alpha::journal::{Batch, Cursor, Journal, MAX_GAPS_PER_BATCH};
+use crate::alpha::journal::{Batch, Cursor, Journal, MAX_GAP_BYTES, MAX_GAPS_PER_BATCH};
 use crate::alpha::log_source;
 use opentelemetry_proto::tonic::collector::{
     logs::v1::ExportLogsServiceRequest, metrics::v1::ExportMetricsServiceRequest,
@@ -284,8 +284,14 @@ fn encoded_logs(lines: &[log_source::Line], hostname: &str, boot_id: &str, now: 
     .encode_to_vec()
 }
 
+/// Truncate to the journal's per-gap byte cap on a UTF-8 character boundary.
 fn bounded_gap(message: impl AsRef<str>) -> String {
-    message.as_ref().chars().take(240).collect()
+    let message = message.as_ref();
+    let mut end = message.len().min(MAX_GAP_BYTES);
+    while !message.is_char_boundary(end) {
+        end -= 1;
+    }
+    message[..end].to_owned()
 }
 
 fn supported_counter(name: &str) -> bool {

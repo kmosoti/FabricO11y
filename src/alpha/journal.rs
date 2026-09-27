@@ -15,6 +15,7 @@ const COMMIT_MAGIC: &[u8; 4] = b"FAC1";
 const MAX_BATCH: usize = 1024 * 1024;
 // One host failure plus eight bounded gaps from each of sixteen log sources.
 pub(crate) const MAX_GAPS_PER_BATCH: usize = 1 + 16 * 8;
+pub(crate) const MAX_GAP_BYTES: usize = 256;
 const HEADER_BYTES: u64 = 16;
 const FRAME_OVERHEAD: u64 = HEADER_BYTES + 16;
 pub const DEFAULT_SPOOL_BYTES: u64 = 256 * 1024 * 1024;
@@ -81,7 +82,10 @@ impl Batch {
                     || u64::from(cursor.prefix_len) > cursor.offset
             })
             || self.collection_gaps.len() > MAX_GAPS_PER_BATCH
-            || self.collection_gaps.iter().any(|gap| gap.len() > 256)
+            || self
+                .collection_gaps
+                .iter()
+                .any(|gap| gap.len() > MAX_GAP_BYTES)
         {
             return Err(invalid("Fabric batch field exceeds local profile cap"));
         }
