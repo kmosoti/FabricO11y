@@ -29,7 +29,7 @@ flowchart LR
     Log -->|framed records and sync| Disk[(Local log file)]
 ```
 
-The canonical source is [system.mmd](diagrams/system.mmd). The documentation check detects differences between that file and this copy.
+The canonical source is [system.mmd](diagrams/system.mmd). The documentation check detects differences between that file and this copy. The [packet-slot transport simulator](../tools/transport-sim/README.md) is experimental tooling outside this application diagram.
 
 ## Read in this order
 

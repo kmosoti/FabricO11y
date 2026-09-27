@@ -8,7 +8,7 @@ The [WSL recovery audit and resume plan](RESUME.md) records the checks rerun aft
 
 ## Implemented
 
-- One Rust 2024 package, `fabric_o11y`, with a library and a binary. It depends on `fake` for synthetic workload values and `crc32fast` for log integrity checks.
+- The application is one Rust 2024 package, `fabric_o11y`, with a library and a binary. It depends on `fake` for synthetic workload values and `crc32fast` for log integrity checks. A separate dependency-free [transport simulation package](../tools/transport-sim/README.md) is research tooling.
 - Four `u64` ID types, two `i64` time types, five `Scalar` variants, `Attribute`, `Payload::{Log, Gauge}`, and `Event` in [src/lib.rs](../src/lib.rs).
 - A deterministic, streaming Gauge generator in [src/generator.rs](../src/generator.rs). `fake` samples ranges with a named seeded ChaCha8 RNG; the locked versions, seed, and `u32` count determine the event sequence. Each event owns its strings and attributes.
 - A single-threaded [event buffer](../src/buffer.rs) with a positive logical capacity. Full pushes return the owned event; draining transfers FIFO batches to the caller.

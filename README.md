@@ -41,4 +41,4 @@ generated events → bounded buffer → batches → local log → replay
 
 We will track correctness and resource costs together: throughput, latency, memory, allocations, disk use, loss, and recovery time. “Faster” only counts when the workload and trade-offs are stated.
 
-A proposed [Homa/SIRD transport research track](docs/experiments/ablation/receiver-driven-transport.md) will test receiver-driven scheduling ideas after the local baseline and a network boundary exist. It has no Fabric O11y results yet.
+The [Homa/SIRD transport research track](docs/experiments/ablation/receiver-driven-transport.md) has one [receiver-credit packet-slot result](docs/experiments/ablation/receiver-credit-h1-run-01.md). That synthetic model shows lower switch queue peaks and more sender waiting under receiver credits. It is separate from the application; no network ingestion or real-host transport result exists yet.
