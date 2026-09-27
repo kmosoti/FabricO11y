@@ -2,6 +2,29 @@
 
 ## Active work
 
+The approved [controlled Linux alpha contract and phase ledger](ALPHA.md) is being
+implemented on the `alpha/controlled-linux-collection` branch. Phase-0 contracts,
+seeded source, bounded runner, failing controls, Rust CI wiring and a [fresh FOL2
+baseline](experiments/benchmarks/alpha-phase0-baseline.md) passed local checks and
+independent GPT/Claude executable [re-review](experiments/benchmarks/alpha-phase0-review-response.md).
+Phase 0 is approved. Phase-1 `fabric-node`/`fabricctl inspect` has bounded
+host/log reads and a durable local spool. Its [three native trials](experiments/benchmarks/alpha-phase1-native-run-01.md)
+passed on pre-repair binaries. Cross-family review found four defects in public
+config validation, aggregate log gaps, same-inode file replacement and live
+inspection. Focused code, regressions and copied [executable probes](experiments/formal/alpha-phase1-review-checkpoint.md)
+now pass at a stopping checkpoint; final phase-1 acceptance needs parent
+re-review and a decision about post-repair native qualification.
+An [independent log-reader review](experiments/formal/alpha-log-reader-repair.md)
+found oversized-line and FIFO defects, repaired with passing independent probes.
+Fleet qualification targets are registered, not achieved.
+The [planned Linux deployment](architecture/deployment.md) now fixes the static
+`fabricolly` user/group, two systemd services and one aggregate slice for phase 5;
+no unit, installer or runtime installation gate has been implemented or passed.
+A `FAB1` batch journal has a [checked length-corruption repair](experiments/formal/alpha-journal-length-repair.md),
+local sync-fault quarantine tests and local node use, but no network path.
+FOL2 and the separate
+research packages remain the operational baseline.
+
 The [scoped local research completion contract](experiments/ablation/end-to-end-prototype.md)
 is complete. The [local research lifecycle](architecture/research-prototype.md)
 composes offline collection, FOL2 ingest, immutable JSON publication, partial query,
@@ -38,7 +61,7 @@ incomplete and invalid receipts but relies on a correct builder and exact scan e
 not establish raw retention. The later research CLI adds snapshot-bound residual answers;
 [overhead measurements](experiments/benchmarks/research-costs-run-01.md) are complete. There is no application query service or durability change.
 
-- The application is one Rust 2024 package, `fabric_o11y`, with a library and a binary. It depends on `fake` for synthetic workload values and `crc32fast` for log integrity checks. A separate dependency-free [transport simulation package](../tools/transport-sim/README.md) is research tooling.
+- The application is one Rust 2024 package, `fabric_o11y`, with a library, demo binary and phase-1 node/CLI binaries. It depends on `fake` for synthetic workload values and `crc32fast` for FOL2 integrity checks. The local alpha node adds pinned `opentelemetry-proto`, `prost` and `libc` for generated OTLP types and bounded Linux reads. A separate dependency-free [transport simulation package](../tools/transport-sim/README.md) is research tooling.
 - Four `u64` ID types, two `i64` time types, five `Scalar` variants, `Attribute`, `Payload::{Log, Gauge}`, and `Event` in [src/lib.rs](../src/lib.rs).
 - A deterministic, streaming Gauge generator in [src/generator.rs](../src/generator.rs). `fake` samples ranges with a named seeded ChaCha8 RNG; the locked versions, seed, and `u32` count determine the event sequence. Each event owns its strings and attributes.
 - A single-threaded [event buffer](../src/buffer.rs) with a positive logical capacity. Full pushes return the owned event; draining transfers FIFO batches to the caller.

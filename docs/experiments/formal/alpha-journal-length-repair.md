@@ -1,0 +1,22 @@
+# Alpha journal length-corruption repair
+
+Status: the framing repair and local sync-fault controls pass; phase-1 qualification also requires the linked native-node result. The independent frozen oracle's original failure and exact 349-byte source/pre-open/post-open files remain under ignored `target/alpha-journal-oracle/data/length-matrix-181-0`; this record does not overwrite them.
+
+## Property, defect and repair
+
+Given two successfully appended batches under successful sync assumptions, a single-bit mutation of a framing length must either make reopen reject or preserve **both exact acknowledged batches** and next sequence. The original `FAB1` draft stored a payload CRC but no checksum on the four-byte length. Flipping byte offset 5 changed the first declared payload length from 146 to 402, below the 1 MiB cap but beyond the 349-byte file. `open` interpreted that as an incomplete tail, returned next sequence 1 instead of 3, and truncated both acknowledged batches. The pre-open SHA-256 was `9d374064c52d4ad67aebdef473b93140c9aeae153e972d50868ef017332920d5`.
+
+The journal now stores a CRC32 of its eight-byte magic-plus-length prefix in a 16-byte header, followed by the independent payload CRC32. Recovery validates the prefix checksum **before** trusting the length or considering an incomplete tail. The Rust ownership idea is that `append` borrows caller data and returns its committed `Batch` only after data sync and marker sync; the caller still owns responsibility when append fails. The four extra header bytes and one checksum per batch buy detection of ordinary accidental length changes. CRC32 is not authentication and cannot prove absence of collision or physical power-loss safety. The earlier unshipped draft format has no compatibility promise.
+
+## Executed checks
+
+With `CARGO_HOME=$PWD/target/alpha-cargo` and `CARGO_TARGET_DIR=$PWD/target/alpha-oracle-build`, both commands below exited `0` on 2026-09-27:
+
+```sh
+cargo test --offline --locked --manifest-path target/alpha-journal-oracle/Cargo.toml --test length_matrix_replay -- --nocapture
+cargo test --offline --locked --manifest-path target/alpha-journal-oracle/Cargo.toml --test journal_contract -- --nocapture
+```
+
+The frozen matrix source SHA-256 was `95fe5608d9a0a4f1bd319153eb3fcb86229b120e1070e5af7f8fafb06952d504`; it ran all 72 selected one-bit cases: **72 rejected, zero accepted with changed replay**. Clean original and copied replays matched the exact two acknowledged `Batch` values. Its new disposable evidence is `target/alpha-journal-oracle/data/length-matrix-316-0`; console output is retained separately at `target/alpha-implementation/journal-repair-matrix-02.log`. The frozen six-test public API file SHA-256 was `9a3383c49f8b6490f9c6acfa06dfa6b4c6085843eb88afdc77d672364b6bceb2`; all six passed, with output at `target/alpha-implementation/journal-repair-contract-02.log`. Earlier compile attempts failed exit `101` on a Rust borrow-check error; their separate `journal-repair-{matrix,contract}.log` files are preserved, and the error was fixed before these passing runs. The tracked [regression](../../../tests/alpha_journal.rs) additionally checks clean exact replay, the mutated-length rejection and byte-for-byte preservation after failed open; `cargo test --offline --locked --test alpha_journal` exited `0` (one test).
+
+The copied independent oracle at `target/alpha-journal-oracle-adapted/` added the new cursor skip field and borrowed append arguments so its original assertions compile against the current API. Its `journal-oracle-adapted-05.log` rerun exited `0`: ten selected one-bit corruptions, all six public API cases and all 72 length-matrix mutations passed (72 rejected, zero changed replay). The preceding rerun `04` exited `101` solely because its retained scratch directory reused a process ID; that failed log was preserved and the old disposable data moved aside before `05`. The tracked journal tests now include missing-journal refusal. Private deterministic fault tests inject reported errors after data sync, marker sync and the last directory sync before sidecar removal; every case quarantines the writer, leaves the recovery witness, hides readable frames from inspection and rejects reopen. A separate interrupted-tail test retains the acknowledged prefix. These tests do not prove physical power-loss behavior or recovery after arbitrary media loss; rebuilding after a known storage error requires a separate retained source. The [alpha contract](../../ALPHA.md) states the remaining delivery gates.

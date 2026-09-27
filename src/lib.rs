@@ -4,6 +4,7 @@
 //! it is encoded, buffered, transported, or stored. The generator and buffer
 //! modules use those types without changing their meaning.
 
+pub mod alpha;
 pub mod buffer;
 pub mod generator;
 pub mod log;

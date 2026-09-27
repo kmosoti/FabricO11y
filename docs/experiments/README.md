@@ -1,5 +1,17 @@
 # Experiments
 
+The [Linux alpha phase-0 FOL2 baseline](benchmarks/alpha-phase0-baseline.md) records
+fresh local commands and limits. The [alpha contract](../ALPHA.md) keeps later
+fleet thresholds pending.
+The [alpha draft journal length repair](formal/alpha-journal-length-repair.md) records a
+frozen corruption counterexample and its narrow rerun; it is not phase-1 qualification.
+The [native-node protocol](benchmarks/alpha-phase1-native-protocol.md) registers the
+phase-1 workload and metrics before [three measured local trials](benchmarks/alpha-phase1-native-run-01.md).
+The [log-reader repair](formal/alpha-log-reader-repair.md) records independent
+oversized-line and FIFO counterexamples and their executable controls.
+The [phase-1 review checkpoint](formal/alpha-phase1-review-checkpoint.md) records
+the later focused repairs, executable probes, and pending final review.
+
 The [local prototype completion contract](ablation/end-to-end-prototype.md) is closed
 with linked evidence. [Claude's hypothesis study](ablation/claude-hypotheses.md) traces
 the original proposals and counterexamples to the later registered experiments.

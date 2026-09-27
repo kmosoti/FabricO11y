@@ -1,6 +1,9 @@
 # Architecture documentation
 
-Fabric O11y generates a repeatable stream of synthetic events, buffers them in a bounded local queue, and either prints batches or commits them to a local append-only log. A separate command replays that file after restart. One Rust package provides these components; there is no network ingestion or query service. This diagram shows implemented boundaries.
+The [controlled Linux alpha contract and phase ledger](ALPHA.md) tracks the
+approved application work and its unpassed gates.
+
+The original Fabric O11y demo generates repeatable synthetic events, buffers them, and prints or commits them to FOL2. Phase 1 now also has a local [native node and inspect path](architecture/node.md) under qualification. One Rust package provides these components; there is no network ingestion or query service. This diagram shows the original implemented demo boundary.
 
 <!-- diagram: diagrams/system.mmd -->
 ```mermaid
@@ -36,6 +39,7 @@ The canonical source is [system.mmd](diagrams/system.mmd). The documentation che
 1. [Current project state](CURRENT.md): implemented behavior, assumptions, and open work.
 2. [System architecture](architecture/system.md): boundaries, execution, and evidence.
    [Architecture views](architecture/README.md) links the application and research projections.
+   [Planned Linux deployment](architecture/deployment.md) records the accepted phase-5 service boundary.
 3. [Local input and batching](architecture/ingestion.md): data flow, full-buffer control flow, and ownership.
 4. [Local storage](architecture/storage.md): frame format, commit point, and recovery limits.
 5. [Delivery ownership](architecture/delivery.md): the Stage 4 model and its mapping to the local log.

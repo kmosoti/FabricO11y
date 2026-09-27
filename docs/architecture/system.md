@@ -2,7 +2,9 @@
 
 ## Purpose and boundaries
 
-The current program demonstrates a typed claim about a resource, repeatable synthetic input, a bounded local queue, and an optional local append-only log. It is a local Rust executable with a library target in the same package. The event types, generator, buffer, and log are separate modules in that library, not separate services. There are no network listeners or deployment manifests. A separate [packet-slot simulator](../../tools/transport-sim/README.md) is research tooling outside this application boundary; it currently has H1 and one-packet M2 cells.
+The original demo demonstrates a typed claim about a resource, repeatable synthetic input, a bounded local queue, and an optional local append-only log. It remains a Rust executable with a library target in the same package. Phase 1 additionally has local `fabric-node` collection and `fabricctl inspect` binaries backed by a separate `FAB1` spool, described in the [node view](node.md). The event types, generator, buffer, and FOL2 log remain the demo path. There are no network listeners or deployment manifests. A separate [packet-slot simulator](../../tools/transport-sim/README.md) is research tooling outside this application boundary; it currently has H1 and one-packet M2 cells.
+
+The approved [Linux alpha plan](../ALPHA.md) has a phase-0 harness and an implemented local `fabric-node` calling [FAB1](../../src/alpha/journal.rs). The journal stores versioned envelopes around generated OpenTelemetry protobuf request types. The [phase-1 native trials](../experiments/benchmarks/alpha-phase1-native-run-01.md) passed on pre-repair binaries; [review repairs](../experiments/formal/alpha-phase1-review-checkpoint.md) now pass focused checks, with final parent review pending. No server receives the batches. The canonical system diagram below shows only the original demo; the [node diagram](../diagrams/alpha-node.mmd) shows the new local path. FOL2's encoding and replay remain supported. The [phase-0 FOL2 measurement](../experiments/benchmarks/alpha-phase0-baseline.md) is a legacy local baseline, not evidence that alpha delivery is working.
 
 | Boundary | Responsibility | Repository evidence |
 | --- | --- | --- |
@@ -13,7 +15,7 @@ The current program demonstrates a typed claim about a resource, repeatable synt
 | Executable | Default print demo; optional `write` and `replay` commands | [src/main.rs](../../src/main.rs) |
 | Rust standard output | Receive the formatted debug text | `println!` in [src/main.rs](../../src/main.rs) |
 | Local file | Hold versioned framed records after a successful sync | [storage view](storage.md) |
-| Package | Build library and executable using Rust edition 2024; depend on `fake` for synthetic values and `crc32fast` for record checksums | [Cargo.toml](../../Cargo.toml), [Cargo.lock](../../Cargo.lock) |
+| Package | Build the library, demo and local alpha binaries using Rust edition 2024; depend on `fake` for synthetic values, `crc32fast` for checksums, pinned `opentelemetry-proto`/`prost` for batches, and `libc` for bounded Linux host reads | [Cargo.toml](../../Cargo.toml), [Cargo.lock](../../Cargo.lock) |
 
 See the [rendered system diagram](../README.md) and its [canonical source](../diagrams/system.mmd). The diagram's domain node is a type boundary, not a separately running service.
 

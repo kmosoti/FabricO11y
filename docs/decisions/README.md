@@ -11,6 +11,7 @@
 | [ADR-0007: Experiment with authenticated block coverage](ADR-0007-experiment-with-coverage-receipts.md) | Experimental | Research-only trusted builder, snapshot anchor and metadata verification |
 | [ADR-0008: Bind residual answers to immutable snapshots](ADR-0008-bind-residuals-to-immutable-snapshots.md) | Experimental | Research retry binding, physical identity and atomic per-block joins |
 | [ADR-0009: Isolate durable research snapshots](ADR-0009-isolate-durable-research-snapshots.md) | Experimental | Fresh immutable publication, external trust and checkpoint history |
+| [ADR-0010: Use static systemd services for the Linux alpha](ADR-0010-use-static-systemd-services-for-alpha.md) | Accepted design, pending installation | Static `fabricolly` identity, two services and one aggregate slice |
 
 This first record captures an existing, explicitly documented choice. It does not claim that storage engines, ID widths, or performance strategies have been compared. Record further decisions when they materially affect architecture; use the [ADR format in AGENTS.md](../../AGENTS.md#12-architecture-decision-records) and the next unused four-digit number.
 
