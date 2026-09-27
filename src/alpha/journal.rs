@@ -1,6 +1,12 @@
 //! Version-one Fabric batch spool. The payload contains actual OTLP protobuf messages.
-//! The dirty sidecar makes a process killed during an append require an independent
-//! source-side recovery decision; a completed frame alone cannot settle a failed sync.
+//!
+//! Two sidecars separate an interrupted append from a known failure. `append-in-progress`
+//! is synced before any frame byte is written and removed after the commit; if a process
+//! dies while it exists, reopen keeps only frames with a valid commit marker and truncates
+//! the rest, exactly as for an unmarked tail. Because the data sync completes before the
+//! commit marker is written, a persisted marker implies persisted data. `recovery-required`
+//! is written only after a write or sync call reports an error. Readable bytes cannot clear
+//! that state, so reopen refuses until the spool is rebuilt from a retained source.
 
 use opentelemetry_proto::tonic::collector::{
     logs::v1::ExportLogsServiceRequest, metrics::v1::ExportMetricsServiceRequest,
@@ -13,8 +19,9 @@ use std::path::{Path, PathBuf};
 const DATA_MAGIC: &[u8; 4] = b"FAB1";
 const COMMIT_MAGIC: &[u8; 4] = b"FAC1";
 const MAX_BATCH: usize = 1024 * 1024;
-// One host failure plus eight bounded gaps from each of sixteen log sources.
-pub(crate) const MAX_GAPS_PER_BATCH: usize = 1 + 16 * 8;
+// One coverage-unknown notice, one host failure, and eight bounded gaps from
+// each of sixteen log sources.
+pub(crate) const MAX_GAPS_PER_BATCH: usize = 2 + 16 * 8;
 pub(crate) const MAX_GAP_BYTES: usize = 256;
 const HEADER_BYTES: u64 = 16;
 const FRAME_OVERHEAD: u64 = HEADER_BYTES + 16;
@@ -110,7 +117,11 @@ enum SyncStage {
     Data,
     Marker,
     DirectoryBeforeClear,
+    AfterClear,
 }
+
+const IN_PROGRESS: &str = "append-in-progress";
+const RECOVERY_REQUIRED: &str = "recovery-required";
 
 pub struct Journal {
     dir: PathBuf,
@@ -130,6 +141,8 @@ pub struct Inspection {
     pub committed_bytes: u64,
     pub file_bytes: u64,
     pub recovery_required: bool,
+    /// A dead writer left `append-in-progress`; counts are what reopen will keep.
+    pub interrupted_append: bool,
 }
 
 impl Journal {
@@ -150,11 +163,26 @@ impl Journal {
         if len > max_bytes {
             return Err(invalid("journal exceeds configured spool cap"));
         }
-        // Readable bytes are not a durability witness while an append is
-        // unresolved. On a crashed writer, expose recovery-required status
-        // without presenting even an apparently complete marker as committed.
-        let dirty = dir.join("recovery-required");
-        if dirty.exists() {
+        // A reported failure is final for read-only inspection: readable bytes
+        // are not a durability witness, so nothing is counted as committed.
+        let known_failure = dir.join(RECOVERY_REQUIRED);
+        if known_failure.exists() {
+            return Ok(Inspection {
+                node_id,
+                generation,
+                next_sequence: 1,
+                committed_bytes: 0,
+                file_bytes: len,
+                recovery_required: true,
+                interrupted_append: false,
+            });
+        }
+        let in_progress = dir.join(IN_PROGRESS);
+        let mut interrupted_append = false;
+        if in_progress.exists() {
+            // A live writer holds the exclusive lock; retry rather than report a
+            // normal append as interrupted. Under our shared lock no writer can
+            // open, so the scan below sees a stable file.
             match file.try_lock_shared() {
                 Ok(()) => {}
                 Err(fs::TryLockError::WouldBlock) => {
@@ -165,20 +193,19 @@ impl Journal {
                 }
                 Err(error) => return Err(error.into()),
             }
-            if !dirty.exists() {
+            if !in_progress.exists() {
                 return Err(io::Error::new(
                     io::ErrorKind::WouldBlock,
                     "journal append completed during inspection; retry",
                 ));
             }
-            return Ok(Inspection {
-                node_id,
-                generation,
-                next_sequence: 1,
-                committed_bytes: 0,
-                file_bytes: len,
-                recovery_required: true,
-            });
+            if known_failure.exists() {
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "journal failure recorded during inspection; retry",
+                ));
+            }
+            interrupted_append = true;
         }
         let mut at = 0;
         let mut next_sequence = 1_u64;
@@ -198,7 +225,7 @@ impl Journal {
                 .checked_add(1)
                 .ok_or_else(|| invalid("sequence exhausted"))?;
         }
-        if dirty.exists() {
+        if known_failure.exists() || (!interrupted_append && in_progress.exists()) {
             return Err(io::Error::new(
                 io::ErrorKind::WouldBlock,
                 "journal append in progress or recovery required; retry inspection",
@@ -211,6 +238,7 @@ impl Journal {
             committed_bytes: at,
             file_bytes: len,
             recovery_required: false,
+            interrupted_append,
         })
     }
 
@@ -225,18 +253,25 @@ impl Journal {
         fs::create_dir_all(&dir)?;
         let dir = dir.canonicalize()?;
         let identity_exists = dir.join("identity").exists();
-        let journal_exists = dir.join("batches.faj").exists();
-        if identity_exists != journal_exists {
+        let journal_len = match fs::metadata(dir.join("batches.faj")) {
+            Ok(metadata) => Some(metadata.len()),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error),
+        };
+        // First open creates the journal file, then publishes the identity by
+        // rename. A process killed in between leaves an empty journal and no
+        // identity, which is still a fresh spool. Any other mismatch is loss.
+        let fresh_interrupted = !identity_exists && journal_len == Some(0);
+        if identity_exists != journal_len.is_some() && !fresh_interrupted {
             return Err(io::Error::other(
                 "recovery required: identity or journal missing; rebuild from retained source",
             ));
         }
-        if dir.join("recovery-required").exists() {
+        if dir.join(RECOVERY_REQUIRED).exists() {
             return Err(io::Error::other(
-                "recovery required: journal write may not be durable; rebuild from retained source",
+                "recovery required: a journal write or sync reported an error; rebuild from retained source",
             ));
         }
-        let (node_id, generation) = read_or_create_identity(&dir)?;
         let mut file = OpenOptions::new()
             .read(true)
             .write(true)
@@ -245,6 +280,7 @@ impl Journal {
             .open(dir.join("batches.faj"))?;
         file.try_lock()?;
         File::open(&dir)?.sync_all()?;
+        let (node_id, generation) = read_or_create_identity(&dir)?;
         let mut end = 0;
         let mut next_sequence = 1_u64;
         let len = file.metadata()?.len();
@@ -273,6 +309,12 @@ impl Journal {
             }
         }
         file.sync_all()?;
+        // The tail has been verified and synced; an interrupted append is resolved.
+        match fs::remove_file(dir.join(IN_PROGRESS)) {
+            Ok(()) => File::open(&dir)?.sync_all()?,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
         Ok(Self {
             dir,
             file,
@@ -329,19 +371,20 @@ impl Journal {
             .checked_add(16)
             .ok_or_else(|| invalid("offset overflow"))?;
         if commit_end > self.max_bytes {
-            return Err(io::Error::other(
-                "spool full: collection must stop; coverage unknown until source is retried",
+            return Err(io::Error::new(
+                io::ErrorKind::StorageFull,
+                "spool full: collection must stop; coverage unknown until space is reclaimed",
             ));
         }
-        // The sidecar is synced before any data mutation. On a crash while it
-        // exists, automatic recovery stops, including when bytes look intact.
-        let dirty = self.dir.join("recovery-required");
+        // The in-progress sidecar is synced before any frame byte. A process
+        // that dies while it exists leaves a tail that reopen verifies.
+        let in_progress = self.dir.join(IN_PROGRESS);
         let result = (|| {
             let mut marker = OpenOptions::new()
                 .write(true)
                 .create_new(true)
-                .open(&dirty)?;
-            marker.write_all(b"append in progress; source rebuild required if interrupted\n")?;
+                .open(&in_progress)?;
+            marker.write_all(b"append in progress; reopen verifies the tail\n")?;
             marker.sync_all()?;
             File::open(&self.dir)?.sync_all()?;
             self.file.seek(SeekFrom::Start(self.end))?;
@@ -364,16 +407,23 @@ impl Journal {
                 .write_all(&crc32fast::hash(&crc_input).to_le_bytes())?;
             self.file.sync_all()?;
             after_sync(SyncStage::Marker)?;
-            // The last sync precedes removing the recovery witness. If this
-            // sync reports an error, reopen still sees the dirty sidecar.
             File::open(&self.dir)?.sync_all()?;
             after_sync(SyncStage::DirectoryBeforeClear)?;
-            fs::remove_file(&dirty)?;
+            fs::remove_file(&in_progress)?;
+            after_sync(SyncStage::AfterClear)?;
+            File::open(&self.dir)?.sync_all()?;
             Ok(())
         })();
         if let Err(error) = result {
+            // Every error above came from a write, sync or sidecar call on the
+            // spool, so its durability is unknown. Record that before reporting.
             self.poisoned = true;
-            return Err(error);
+            return Err(match record_failure(&self.dir) {
+                Ok(()) => error,
+                Err(record) => io::Error::other(format!(
+                    "{error}; recording {RECOVERY_REQUIRED} also failed: {record}"
+                )),
+            });
         }
         self.end = commit_end;
         self.next_sequence += 1;
@@ -397,19 +447,36 @@ impl Journal {
     }
 }
 
+/// Persist a known write or sync failure. If this also fails, only the
+/// caller's error report carries the knowledge; see the storage view.
+fn record_failure(dir: &Path) -> io::Result<()> {
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(dir.join(RECOVERY_REQUIRED))?;
+    file.write_all(b"journal write or sync reported an error; rebuild from retained source\n")?;
+    file.sync_all()?;
+    File::open(dir)?.sync_all()
+}
+
 fn read_or_create_identity(dir: &Path) -> io::Result<([u8; 16], u64)> {
     let path = dir.join("identity");
     if !path.exists() {
+        // Write, sync and rename so a killed process never leaves a torn identity.
         let mut id = [0_u8; 16];
         File::open("/dev/urandom")?.read_exact(&mut id)?;
+        let staged = dir.join("identity.tmp");
         let mut out = OpenOptions::new()
             .write(true)
-            .create_new(true)
-            .open(&path)?;
+            .create(true)
+            .truncate(true)
+            .open(&staged)?;
         out.write_all(b"FAI1")?;
         out.write_all(&id)?;
         out.write_all(&1_u64.to_le_bytes())?;
         out.sync_all()?;
+        fs::rename(&staged, &path)?;
         File::open(dir)?.sync_all()?;
     }
     read_identity(dir)
@@ -508,12 +575,23 @@ mod tests {
         }
     }
 
+    fn inspect_counts(dir: &Path) -> (Inspection, usize) {
+        let mut visible = 0;
+        let status = Journal::inspect(dir, 64 * 1024, |_| {
+            visible += 1;
+            Ok(())
+        })
+        .unwrap();
+        (status, visible)
+    }
+
     #[test]
-    fn reported_sync_errors_quarantine_and_preserve_recovery_witness() {
+    fn reported_sync_errors_quarantine_and_record_known_failure() {
         for stage in [
             SyncStage::Data,
             SyncStage::Marker,
             SyncStage::DirectoryBeforeClear,
+            SyncStage::AfterClear,
         ] {
             let scratch = Scratch::new();
             let mut journal = Journal::open(&scratch.0, 64 * 1024).unwrap();
@@ -530,26 +608,82 @@ mod tests {
             assert_eq!(journal.next_sequence(), prior);
             assert!(journal.append(&batch()).is_err());
             assert!(journal.replay(|_| Ok(())).is_err());
-            assert!(scratch.0.join("recovery-required").exists());
-            assert_eq!(
-                Journal::inspect(&scratch.0, 64 * 1024, |_| Ok(()))
-                    .err()
-                    .unwrap()
-                    .kind(),
-                io::ErrorKind::WouldBlock
-            );
+            assert!(scratch.0.join(RECOVERY_REQUIRED).exists());
+            // The known failure is visible even while the quarantined writer lives.
+            let (live, live_visible) = inspect_counts(&scratch.0);
+            assert!(live.recovery_required);
+            assert_eq!((live.committed_bytes, live_visible), (0, 0));
             drop(journal);
-            let mut visible = 0;
-            let inspected = Journal::inspect(&scratch.0, 64 * 1024, |_| {
-                visible += 1;
-                Ok(())
-            })
-            .unwrap();
+            let (inspected, visible) = inspect_counts(&scratch.0);
             assert!(inspected.recovery_required);
-            assert_eq!(inspected.committed_bytes, 0);
-            assert_eq!(visible, 0);
+            assert_eq!((inspected.committed_bytes, visible), (0, 0));
             assert!(Journal::open(&scratch.0, 64 * 1024).is_err());
         }
+    }
+
+    #[test]
+    fn process_death_at_each_append_stage_reopens_to_a_verified_prefix() {
+        // A panic unwinds past the error branch, so no failure is recorded:
+        // the on-disk state is what a killed process leaves behind.
+        for (stage, kept) in [
+            (SyncStage::Data, false),
+            (SyncStage::Marker, true),
+            (SyncStage::DirectoryBeforeClear, true),
+            (SyncStage::AfterClear, true),
+        ] {
+            let scratch = Scratch::new();
+            let mut journal = Journal::open(&scratch.0, 64 * 1024).unwrap();
+            let first = journal.append(&batch()).unwrap();
+            let first_end = journal.used_bytes();
+            let died = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                journal
+                    .append_inner(batch(), |at| {
+                        if at == stage {
+                            panic!("simulated process death");
+                        }
+                        Ok(())
+                    })
+                    .unwrap();
+            }));
+            assert!(died.is_err());
+            drop(journal);
+            assert!(!scratch.0.join(RECOVERY_REQUIRED).exists());
+            let in_progress = scratch.0.join(IN_PROGRESS).exists();
+            assert_eq!(in_progress, stage != SyncStage::AfterClear);
+            let (status, visible) = inspect_counts(&scratch.0);
+            assert!(!status.recovery_required);
+            assert_eq!(status.interrupted_append, in_progress);
+            assert_eq!(visible, if kept { 2 } else { 1 });
+            let mut reopened = Journal::open(&scratch.0, 64 * 1024).unwrap();
+            assert!(!scratch.0.join(IN_PROGRESS).exists());
+            let mut replayed = Vec::new();
+            reopened
+                .replay(|b| {
+                    replayed.push(b);
+                    Ok(())
+                })
+                .unwrap();
+            assert_eq!(replayed[0], first);
+            assert_eq!(replayed.len(), if kept { 2 } else { 1 });
+            if !kept {
+                assert_eq!(reopened.used_bytes(), first_end);
+            }
+            let next = reopened.append(&batch()).unwrap();
+            assert_eq!(next.sequence, replayed.len() as u64 + 1);
+        }
+    }
+
+    #[test]
+    fn first_open_killed_before_identity_publication_is_still_fresh() {
+        let scratch = Scratch::new();
+        fs::write(scratch.0.join("batches.faj"), b"").unwrap();
+        fs::write(scratch.0.join("identity.tmp"), b"FAI1torn").unwrap();
+        let mut journal = Journal::open(&scratch.0, 64 * 1024).unwrap();
+        assert_eq!(journal.append(&batch()).unwrap().sequence, 1);
+        drop(journal);
+        // A non-empty journal without its identity is still refused.
+        fs::remove_file(scratch.0.join("identity")).unwrap();
+        assert!(Journal::open(&scratch.0, 64 * 1024).is_err());
     }
 
     #[test]

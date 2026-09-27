@@ -13,19 +13,19 @@ Building blocks that exist: the `Batch` envelope and journal in [journal.rs](../
 
 ## 2. Design decisions the contract leaves open
 
-### D1. Crash during an append (owner)
+### D1. Crash during an append (accepted; implemented in P1.2, [ADR-0011](decisions/ADR-0011-separate-interrupted-append-from-known-failure.md))
 
 Today the `recovery-required` sidecar is written before any frame bytes, and reopen refuses while it exists ([journal.rs](../src/alpha/journal.rs)). A SIGKILL, an OOM kill, power loss or a plain SIGTERM inside the few-millisecond append window therefore makes the spool unopenable, although the node never advanced its cursor for that batch and nothing was acknowledged. Recommendation: split the sidecar in two. `append-in-progress` is resolved on reopen by verifying the tail exactly as reopen already does without a sidecar: a frame with a valid marker is kept, an unmarked tail is truncated. `recovery-required` is written only when a write or sync call has reported an error, which is the case the contract calls a known failure. Add a directory sync after removing the in-progress marker, and handle SIGTERM in `fabric-node` so a stop finishes the in-flight cycle. This revises one sentence of the [safety contract](ALPHA.md#safety-contract): readable bytes cannot clear a *reported* error. The journal oracle's assertions stay. Alternative: keep the current rule and add a manual `fabricctl recover` doing the same tail check. Same code, worse availability, and the phase-5 restart gate becomes timing dependent.
 
-### D2. Clearing coverage-unknown (owner)
+### D2. Clearing coverage-unknown (accepted; implemented in P1.2)
 
 Any append failure writes `coverage-unknown`, and every later cycle refuses with no operator path back ([node.rs](../src/alpha/node.rs)). Recommendation: a cycle that finds the marker proceeds and adds one gap entry, "coverage unknown since <marker time>", to its batch; a successful commit removes the marker with a directory sync. A full spool keeps refusing until phase-2 reclaim frees space, then the next commit records the gap. Missed data is still never called delivered, and no command or option is added.
 
-### D3. Package layout and dependencies (recommended; record as ADR-0011 when phase 2 starts)
+### D3. Package layout and dependencies (recommended; record as ADR-0012 when phase 2 starts)
 
 Use a Cargo workspace. The root package stays as it is: domain types, FOL2, the demo, the `alpha` module and the `fabric-node` and `fabricctl` binaries. Add `crates/fabric-server`. Server dependencies: tokio 1.53.1, axum 0.8.9, axum-server 0.7.3 with rustls 0.23.45, prost 0.14.4, and in phase 4 parquet 60.0.0 with zstd. Node and CLI HTTP client: ureq 3.3.0 with rustls, synchronous, so the node gains no async runtime and keeps its 64 MiB RSS margin. Every version is pinned exactly and is already in the local cargo cache. No SQLite: control state for at most 1,000 nodes is one atomically replaced, synced protobuf file, and dedup state is rebuilt from journal replay. TLS material is operator-provided PEM; qualification generates it with `openssl`. No `rcgen`, no watcher framework, no plugin boundary.
 
-### D4. Delivery and dedup rule (recommended; record as ADR-0012)
+### D4. Delivery and dedup rule (recommended; record as ADR-0013)
 
 One batch in flight per node, sent in sequence order as the exact stored bytes. Per (node identity, generation) the server keeps the last committed sequence and the SHA-256 of its bytes, durable because both are replayed from the server journal. Rules:
 
@@ -49,7 +49,7 @@ Rotate the node journal into fixed-size files (`batches.000001.faj`, closed at 8
 | Step | Work | Deciding check | Role |
 | --- | --- | --- | --- |
 | P1.1 (done) | Truncate gap text to at most 256 bytes on a character boundary in `bounded_gap`; regression built from the frozen counterexample | `cargo test`; the copied checkpoint probe exits 0 with one gap | worker |
-| P1.2 | D1 and D2 if approved: two sidecars, tail verification on reopen, directory sync after unlink, SIGTERM handling, marker-to-gap conversion, regressions for each; rerun the adapted journal oracle and the fault tests | oracle and fault tests exit 0; `kill -TERM` during `run` leaves a reopenable spool | implementer; prover for the reopen property |
+| P1.2 (done) | D1 and D2: two sidecars, tail verification on reopen, directory sync after unlink, SIGTERM handling, marker-to-gap conversion, regressions for each; rerun the adapted journal oracle and the fault tests | oracle and fault tests exit 0; `kill -TERM` during `run` leaves a reopenable spool | implementer; prover for the reopen property |
 | P1.3 | Register the log budget in the [node view](architecture/node.md): 64 KiB of bodies per cycle and 128 lines per file per pass in sorted order; report per-file unread bytes in the cycle line and inspect so lag is visible | docs check; a test with a busy first file shows the second still progresses | worker |
 | P1.4 | Post-repair native run 02: same protocol, three seeds, final binaries | runner exit 0; VmHWM at most 64 MiB; exact replay | runner |
 | P1.5 | Cross-family re-review on the final hashes: Claude verifier now, GPT after 2026-10-03 or Gemini; then mark phase 1 promoted in the ledger | both verdicts recorded with hashes | verifier |
@@ -67,7 +67,7 @@ Order inside the phase: oracle first, then implementation, then verifier probes,
 | 2.4 | Node sender: after each cycle send the oldest unacknowledged batch, one in flight, bounded backoff; ACK cursor and reclaim per D5; credential file; keep collecting through an outage | 30 minutes buffered at the registered rate drains within 10 minutes after reconnect | implementer |
 | 2.5 | Fault seams, test-only like the journal's: server drops the ACK after commit; node dies between commit and cursor write; torn server tail; injected I/O errors; harness SIGKILLs | the 2.0 oracle reports zero mismatches on recovered records | verifier probes |
 | 2.6 | Ten real node processes under the runner with the registered source shape; ACK p50 and p99, CPU, RSS, all live bytes; grouped and individual commit measured with identical durability | ACK p99 at most 1 s; no growing backlog; queues byte-bounded | runner |
-| 2.7 | Docs: delivery view gains the real ACK path, data-flow diagram, ADR-0011 and ADR-0012, ledger and current state | docs check | worker |
+| 2.7 | Docs: delivery view gains the real ACK path, data-flow diagram, ADR-0012 and ADR-0013, ledger and current state | docs check | worker |
 | 2.8 | Cross-family gate review on recorded hashes | both verdicts | verifier plus GPT or Gemini |
 
 ## 5. Phase 3: central control
@@ -120,6 +120,6 @@ Order inside the phase: oracle first, then implementation, then verifier probes,
 ## 10. Sequence and checkpoints
 
 1. Owner answers D1 and D2. P1.1 to P1.3 land in one commit each, then P1.4 and P1.5 close phase 1.
-2. Phase 2 in the order 2.0 to 2.8; the workspace change and ADR-0011 are the first commit.
+2. Phase 2 in the order 2.0 to 2.8; the workspace change and ADR-0012 are the first commit.
 3. Phase 3, then phase 4 with the 4.1 spike first, then phase 5.
 4. Each phase ends with a checkpoint like the current one: ledger row, evidence copied, cross-family verdicts recorded, before the next phase's oracle is written.

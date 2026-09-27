@@ -19,7 +19,7 @@ fn main() -> ExitCode {
     match result {
         Ok(report) => {
             println!(
-                "node_id={} generation={} batches={} metric_points={} log_records={} gaps={} otlp_payload_bytes={} committed_bytes={} file_bytes={} coverage_unknown={} recovery_required={}",
+                "node_id={} generation={} batches={} metric_points={} log_records={} gaps={} otlp_payload_bytes={} committed_bytes={} file_bytes={} coverage_unknown={} recovery_required={} interrupted_append={}",
                 hex_id(&report.node_id),
                 report.generation,
                 report.batches,
@@ -30,7 +30,8 @@ fn main() -> ExitCode {
                 report.committed_bytes,
                 report.file_bytes,
                 report.coverage_unknown,
-                report.recovery_required
+                report.recovery_required,
+                report.interrupted_append
             );
             ExitCode::SUCCESS
         }

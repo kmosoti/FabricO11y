@@ -427,13 +427,16 @@ impl Node {
     }
 
     pub fn collect_once(&mut self) -> io::Result<Cycle> {
-        if self.config.spool.join("coverage-unknown").exists() {
-            return Err(io::Error::other(
-                "coverage unknown after prior uncommitted collection",
-            ));
-        }
         let now = now_ns()?;
         let mut gaps = Vec::new();
+        // A prior cycle could not commit. Its interval is reported as a gap in
+        // the next committed batch rather than halting collection for good.
+        let unknown_since = read_unknown(&self.config.spool)?;
+        if let Some(since) = unknown_since {
+            gaps.push(format!(
+                "coverage unknown since {since} ns: an earlier collection did not commit"
+            ));
+        }
         let sampled = match host::sample(&self.host_paths) {
             Ok(snapshot) => Some(snapshot),
             Err(error) => {
@@ -491,10 +494,18 @@ impl Node {
             Err(error) => {
                 // The candidate and source cursor remain ours on failure.
                 // Coverage cannot be called delivered; persist unknown state.
-                mark_unknown(&self.config.spool)?;
+                if let Err(marker) = mark_unknown(&self.config.spool, now) {
+                    return Err(io::Error::new(
+                        error.kind(),
+                        format!("{error}; writing coverage-unknown also failed: {marker}"),
+                    ));
+                }
                 return Err(error);
             }
         };
+        if unknown_since.is_some() {
+            clear_unknown(&self.config.spool)?;
+        }
         let sequence = committed.sequence;
         let gap_count = committed.collection_gaps.len();
         for cursor in committed.cursors {
@@ -511,11 +522,14 @@ impl Node {
     }
 }
 
-fn mark_unknown(dir: &Path) -> io::Result<()> {
-    let path = dir.join("coverage-unknown");
+const UNKNOWN_MARKER: &str = "coverage-unknown";
+
+/// Keep the earliest failed attempt; later failures extend the same interval.
+fn mark_unknown(dir: &Path, since_ns: u64) -> io::Result<()> {
+    let path = dir.join(UNKNOWN_MARKER);
     match OpenOptions::new().write(true).create_new(true).open(path) {
         Ok(mut file) => {
-            file.write_all(b"collection could not commit; coverage unknown\n")?;
+            writeln!(file, "{since_ns}")?;
             file.sync_all()?;
             File::open(dir)?.sync_all()?;
         }
@@ -523,6 +537,25 @@ fn mark_unknown(dir: &Path) -> io::Result<()> {
         Err(error) => return Err(error),
     }
     Ok(())
+}
+
+fn read_unknown(dir: &Path) -> io::Result<Option<u64>> {
+    let mut text = String::new();
+    match File::open(dir.join(UNKNOWN_MARKER)) {
+        Ok(file) => file.take(32).read_to_string(&mut text)?,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    text.trim()
+        .parse()
+        .map(Some)
+        .map_err(|_| corrupt("invalid coverage-unknown marker"))
+}
+
+/// Called only after the batch carrying the gap notice has committed.
+fn clear_unknown(dir: &Path) -> io::Result<()> {
+    std::fs::remove_file(dir.join(UNKNOWN_MARKER))?;
+    File::open(dir)?.sync_all()
 }
 
 pub struct Report {
@@ -537,6 +570,7 @@ pub struct Report {
     pub file_bytes: u64,
     pub coverage_unknown: bool,
     pub recovery_required: bool,
+    pub interrupted_append: bool,
 }
 
 pub fn inspect(config: &Config) -> io::Result<Report> {
@@ -578,7 +612,7 @@ pub fn inspect(config: &Config) -> io::Result<Report> {
         }
         Ok(())
     })?;
-    let coverage_unknown = config.spool.join("coverage-unknown").exists();
+    let coverage_unknown = config.spool.join(UNKNOWN_MARKER).exists();
     Ok(Report {
         node_id: info.node_id,
         generation: info.generation,
@@ -591,6 +625,7 @@ pub fn inspect(config: &Config) -> io::Result<Report> {
         file_bytes: info.file_bytes,
         coverage_unknown,
         recovery_required: info.recovery_required,
+        interrupted_append: info.interrupted_append,
     })
 }
 

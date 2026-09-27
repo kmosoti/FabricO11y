@@ -433,11 +433,14 @@ fn maximum_source_gap_count_fits_one_bounded_batch() {
         fs::write(path, [b"\xff\n".repeat(8), b"good\n".to_vec()].concat()).unwrap();
     }
     fs::remove_file(scratch.path("meminfo")).unwrap();
+    // Worst case also carries the notice for an earlier uncommitted cycle.
+    fs::create_dir_all(&cfg.spool).unwrap();
+    fs::write(cfg.spool.join("coverage-unknown"), "1\n").unwrap();
     let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     let first = node.collect_once().unwrap();
     assert_eq!(
         (first.metric_points, first.log_records, first.gaps),
-        (0, 0, 129)
+        (0, 0, 130)
     );
     write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
     let second = node.collect_once().unwrap();
@@ -506,4 +509,76 @@ fn multibyte_missing_log_path_commits_a_byte_bounded_gap() {
         assert!(gap.starts_with("log source unavailable"));
     }
     assert!(!inspect(&cfg).unwrap().coverage_unknown);
+}
+
+#[test]
+fn failed_cycle_is_reported_as_a_gap_by_the_next_committed_batch() {
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
+    fs::write(
+        scratch.path("selected.log"),
+        [vec![b'a'; 4000], b"\n".to_vec()].concat(),
+    )
+    .unwrap();
+    let small = config(&scratch.0, 8192);
+    let mut node = Node::open_with_paths(small.clone(), host_paths(&scratch.0)).unwrap();
+    let full = node.collect_once().err().unwrap();
+    assert_eq!(full.kind(), std::io::ErrorKind::StorageFull);
+    assert!(inspect(&small).unwrap().coverage_unknown);
+    drop(node);
+    // The operator raises the ceiling; the next commit carries the notice.
+    let larger = config(&scratch.0, 1024 * 1024);
+    let mut node = Node::open_with_paths(larger.clone(), host_paths(&scratch.0)).unwrap();
+    let cycle = node.collect_once().unwrap();
+    assert_eq!((cycle.log_records, cycle.gaps), (1, 1));
+    let stored = batches(&larger);
+    assert!(stored[0].collection_gaps[0].starts_with("coverage unknown since "));
+    let report = inspect(&larger).unwrap();
+    assert!(!report.coverage_unknown);
+    assert_eq!(node.collect_once().unwrap().gaps, 0);
+}
+
+#[test]
+fn sigterm_stops_run_between_cycles_and_leaves_a_reopenable_spool() {
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
+    let scratch = Scratch::new();
+    fs::write(scratch.path("selected.log"), b"one\n").unwrap();
+    let conf = scratch.path("node.conf");
+    fs::write(
+        &conf,
+        format!(
+            "spool_dir={}\nlog={}\nmetric_interval_s=1\nspool_bytes=1048576\n",
+            scratch.path("spool").display(),
+            scratch.path("selected.log").display()
+        ),
+    )
+    .unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_fabric-node"))
+        .args(["run", conf.to_str().unwrap()])
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    assert!(lines.next().unwrap().unwrap().starts_with("batch=1 "));
+    // SAFETY: kill with a valid child pid and signal number.
+    assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGTERM) }, 0);
+    let started = std::time::Instant::now();
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if started.elapsed() > std::time::Duration::from_secs(5) {
+            child.kill().unwrap();
+            panic!("fabric-node ignored SIGTERM");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    };
+    assert!(status.success(), "{status:?}");
+    let cfg = Config::load(&conf).unwrap();
+    let report = inspect(&cfg).unwrap();
+    assert!(!report.interrupted_append && !report.recovery_required);
+    assert_eq!(report.log_records, 1);
+    let mut node = Node::open(cfg).unwrap();
+    assert!(node.collect_once().is_ok());
 }
