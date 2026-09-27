@@ -7,6 +7,7 @@ The [alpha draft journal length repair](formal/alpha-journal-length-repair.md) r
 frozen corruption counterexample and its narrow rerun; it is not phase-1 qualification.
 The [native-node protocol](benchmarks/alpha-phase1-native-protocol.md) registers the
 phase-1 workload and metrics before [three measured local trials](benchmarks/alpha-phase1-native-run-01.md).
+The [post-repair native run 02](benchmarks/alpha-phase1-native-run-02.md) supersedes run 01 as phase-1 native evidence.
 The [log-reader repair](formal/alpha-log-reader-repair.md) records independent
 oversized-line and FIFO counterexamples and their executable controls.
 The [phase-1 review checkpoint](formal/alpha-phase1-review-checkpoint.md) records

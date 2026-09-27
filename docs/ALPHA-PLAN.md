@@ -51,7 +51,7 @@ Rotate the node journal into fixed-size files (`batches.000001.faj`, closed at 8
 | P1.1 (done) | Truncate gap text to at most 256 bytes on a character boundary in `bounded_gap`; regression built from the frozen counterexample | `cargo test`; the copied checkpoint probe exits 0 with one gap | worker |
 | P1.2 (done) | D1 and D2: two sidecars, tail verification on reopen, directory sync after unlink, SIGTERM handling, marker-to-gap conversion, regressions for each; rerun the adapted journal oracle and the fault tests | oracle and fault tests exit 0; `kill -TERM` during `run` leaves a reopenable spool | implementer; prover for the reopen property |
 | P1.3 (done) | Register the log budget in the [node view](architecture/node.md): 64 KiB of bodies per cycle and 128 lines per file per pass in sorted order; report per-file unread bytes in the cycle line and inspect so lag is visible | docs check; a test with a busy first file shows the second still progresses | worker |
-| P1.4 | Post-repair native run 02: same protocol, three seeds, final binaries | runner exit 0; VmHWM at most 64 MiB; exact replay | runner |
+| P1.4 (done, [run 02](experiments/benchmarks/alpha-phase1-native-run-02.md)) | Post-repair native run 02: same protocol, three seeds, final binaries | runner exit 0; VmHWM at most 64 MiB; exact replay | runner |
 | P1.5 | Cross-family re-review on the final hashes: Claude verifier now, GPT after 2026-10-03 or Gemini; then mark phase 1 promoted in the ledger | both verdicts recorded with hashes | verifier |
 
 ## 4. Phase 2: network delivery
