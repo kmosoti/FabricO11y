@@ -1,0 +1,6 @@
+flowchart LR
+    Runtime[Codex runtime] -->|hook JSON| Observer[Python observer]
+    Observer -->|validated typed events| Journal[Per-session JSONL journal]
+    Observer -->|recording errors| Diagnostic[Local diagnostic log]
+    Journal -->|explicit replay| Reducer[Deterministic reducer]
+    Reducer -->|JSON snapshot| Consumer[CLI consumer]

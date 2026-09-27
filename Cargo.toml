@@ -3,4 +3,9 @@ name = "fabric_o11y"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+stage6-alloc-probe = []
+
 [dependencies]
+crc32fast = "=1.5.2"
+fake = { version = "=5.1.0", default-features = false }

@@ -1,0 +1,8 @@
+{
+  "recommendations": [
+    "foam.foam-vscode",
+    "vstirbu.vscode-mermaid-preview",
+    "orhymed.mermaid-visual-diff",
+    "vsls-contrib.codetour"
+  ]
+}

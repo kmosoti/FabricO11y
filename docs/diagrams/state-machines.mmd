@@ -1,0 +1,12 @@
+stateDiagram-v2
+    [*] --> Held
+    state "Upstream retains copy" as Held
+    state "Upstream + volatile receiver" as Buffered
+    state "Upstream + durable receiver" as Committed
+    state "ACK received; upstream still retains" as Acked
+    state "Durable receiver only" as Released
+    Held --> Buffered: receive
+    Buffered --> Held: receiver crash
+    Buffered --> Committed: durable commit
+    Committed --> Acked: ACK received
+    Acked --> Released: upstream forgets

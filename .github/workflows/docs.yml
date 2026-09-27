@@ -1,0 +1,36 @@
+name: Documentation
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  documentation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Install documentation dependencies
+        run: bun install --cwd tools/docs --frozen-lockfile
+      - name: Check repository documentation
+        run: bun tools/docs/check.mjs
+      - name: Exercise validator with valid and broken fixtures
+        run: bun tools/docs/check.test.mjs
+      - name: Exercise Codex hook behavior
+        run: python3 -B tools/docs/test_hooks.py
+      - name: Exercise passive telemetry contract
+        run: python3 -B tools/telemetry/test_contract.py
+      - name: Exercise silent telemetry observer
+        run: python3 -B tools/telemetry/test_cli.py
+      - name: Cross-check the telemetry JSON Schema
+        run: |
+          python3 -m venv /tmp/fabric-telemetry-schema
+          /tmp/fabric-telemetry-schema/bin/pip install -r tools/telemetry/requirements-test.txt
+          /tmp/fabric-telemetry-schema/bin/python -B tools/telemetry/test_schema.py
+      - name: Check agent telemetry evidence laws
+        run: |
+          /tmp/fabric-telemetry-schema/bin/pip install -r formal/agent-telemetry/requirements.txt
+          /tmp/fabric-telemetry-schema/bin/python -B formal/agent-telemetry/check.py

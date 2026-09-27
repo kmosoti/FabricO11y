@@ -1,0 +1,424 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "turn_id": {
+          "type": "null"
+        },
+        "operation_id": {
+          "type": "null"
+        },
+        "source": {
+          "const": "runtime_observer"
+        },
+        "observed_at": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "format": "date-time"
+        },
+        "type": {
+          "const": "session.ended"
+        },
+        "data": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "data",
+        "event_id",
+        "observed_at",
+        "operation_id",
+        "schema_version",
+        "session_id",
+        "source",
+        "turn_id",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "turn_id": {
+          "type": "null"
+        },
+        "operation_id": {
+          "type": "null"
+        },
+        "source": {
+          "const": "runtime_observer"
+        },
+        "observed_at": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "format": "date-time"
+        },
+        "type": {
+          "const": "session.started"
+        },
+        "data": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "data",
+        "event_id",
+        "observed_at",
+        "operation_id",
+        "schema_version",
+        "session_id",
+        "source",
+        "turn_id",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "turn_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source": {
+          "const": "runtime_observer"
+        },
+        "observed_at": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "format": "date-time"
+        },
+        "type": {
+          "const": "tool.finished"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "tool_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            },
+            "exit_code": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "tool_name",
+            "exit_code"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "data",
+        "event_id",
+        "observed_at",
+        "operation_id",
+        "schema_version",
+        "session_id",
+        "source",
+        "turn_id",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "turn_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "operation_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "source": {
+          "const": "runtime_observer"
+        },
+        "observed_at": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "format": "date-time"
+        },
+        "type": {
+          "const": "tool.started"
+        },
+        "data": {
+          "type": "object",
+          "properties": {
+            "tool_name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128
+            }
+          },
+          "required": [
+            "tool_name"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "data",
+        "event_id",
+        "observed_at",
+        "operation_id",
+        "schema_version",
+        "session_id",
+        "source",
+        "turn_id",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "turn_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "operation_id": {
+          "type": "null"
+        },
+        "source": {
+          "const": "runtime_observer"
+        },
+        "observed_at": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "format": "date-time"
+        },
+        "type": {
+          "const": "turn.interrupted"
+        },
+        "data": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "data",
+        "event_id",
+        "observed_at",
+        "operation_id",
+        "schema_version",
+        "session_id",
+        "source",
+        "turn_id",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "turn_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "operation_id": {
+          "type": "null"
+        },
+        "source": {
+          "const": "runtime_observer"
+        },
+        "observed_at": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "format": "date-time"
+        },
+        "type": {
+          "const": "turn.started"
+        },
+        "data": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "data",
+        "event_id",
+        "observed_at",
+        "operation_id",
+        "schema_version",
+        "session_id",
+        "source",
+        "turn_id",
+        "type"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "event_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "session_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "turn_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "operation_id": {
+          "type": "null"
+        },
+        "source": {
+          "const": "runtime_observer"
+        },
+        "observed_at": {
+          "type": "string",
+          "maxLength": 64,
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})$",
+          "format": "date-time"
+        },
+        "type": {
+          "const": "turn.stop_requested"
+        },
+        "data": {
+          "type": "object",
+          "properties": {},
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "data",
+        "event_id",
+        "observed_at",
+        "operation_id",
+        "schema_version",
+        "session_id",
+        "source",
+        "turn_id",
+        "type"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

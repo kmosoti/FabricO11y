@@ -1,0 +1,204 @@
+{
+  "implementation_check": {
+    "explicit_accepted": 3,
+    "explicit_cases": 5,
+    "explicit_rejected": 2,
+    "mutation_controls_detected": [
+      "empty projection",
+      "aliased turn IDs",
+      "RuntimeError on rejected trace"
+    ],
+    "passed": true,
+    "pool_accepted": 2549,
+    "pool_rejected": 2132,
+    "pool_traces": 4681
+  },
+  "laws": [
+    {
+      "assumptions": "sat",
+      "expected": "unsat",
+      "name": "identity",
+      "negated_property": "unsat",
+      "passed": true
+    },
+    {
+      "assumptions": "sat",
+      "expected": "unsat",
+      "name": "idempotence",
+      "negated_property": "unsat",
+      "passed": true
+    },
+    {
+      "assumptions": "sat",
+      "expected": "unsat",
+      "name": "commutativity",
+      "negated_property": "unsat",
+      "passed": true
+    },
+    {
+      "assumptions": "sat",
+      "expected": "unsat",
+      "name": "associativity",
+      "negated_property": "unsat",
+      "passed": true
+    },
+    {
+      "assumptions": "sat",
+      "expected": "unsat",
+      "name": "closed_well_formed",
+      "negated_property": "unsat",
+      "passed": true
+    },
+    {
+      "assumptions": "sat",
+      "expected": "unsat",
+      "name": "preserve_known_code",
+      "negated_property": "unsat",
+      "passed": true
+    },
+    {
+      "assumptions": "sat",
+      "expected": "unsat",
+      "name": "no_fabricated_code",
+      "negated_property": "unsat",
+      "passed": true
+    },
+    {
+      "assumptions": "sat",
+      "expected": "unsat",
+      "name": "reject_conflicting_codes",
+      "negated_property": "unsat",
+      "passed": true
+    },
+    {
+      "assumptions": "sat",
+      "expected": "unsat",
+      "name": "reject_conflicting_names",
+      "negated_property": "unsat",
+      "passed": true
+    },
+    {
+      "assumptions": "sat",
+      "expected": "unsat",
+      "name": "flags_monotonic",
+      "negated_property": "unsat",
+      "passed": true
+    },
+    {
+      "assumptions": "sat",
+      "expected": "unsat",
+      "name": "rejection_absorbing",
+      "negated_property": "unsat",
+      "passed": true
+    },
+    {
+      "assumptions": "sat",
+      "expected": "unsat",
+      "name": "no_false_rejection",
+      "negated_property": "unsat",
+      "passed": true
+    },
+    {
+      "assumptions": "sat",
+      "expected": "unsat",
+      "name": "other_operation_unchanged",
+      "negated_property": "unsat",
+      "passed": true
+    }
+  ],
+  "negative_controls": [
+    {
+      "assumptions": "sat",
+      "counterexample": {
+        "a.code": "0",
+        "a.code_known": "True",
+        "a.finished": "True",
+        "a.name": "0",
+        "a.name_known": "True",
+        "a.rejected": "False",
+        "a.started": "False",
+        "b.code": "0",
+        "b.code_known": "False",
+        "b.finished": "False",
+        "b.name": "0",
+        "b.name_known": "False",
+        "b.rejected": "False",
+        "b.started": "False"
+      },
+      "expected": "sat",
+      "name": "mutant_overwrite_unknown",
+      "negated_property": "sat",
+      "passed": true
+    },
+    {
+      "assumptions": "sat",
+      "counterexample": {
+        "a.code": "2",
+        "a.code_known": "True",
+        "a.finished": "True",
+        "a.name": "0",
+        "a.name_known": "True",
+        "a.rejected": "False",
+        "a.started": "False",
+        "b.code": "3",
+        "b.code_known": "True",
+        "b.finished": "True",
+        "b.name": "0",
+        "b.name_known": "True",
+        "b.rejected": "False",
+        "b.started": "False"
+      },
+      "expected": "sat",
+      "name": "mutant_suppress_conflict",
+      "negated_property": "sat",
+      "passed": true
+    },
+    {
+      "assumptions": "sat",
+      "counterexample": {
+        "a.code": "3",
+        "a.code_known": "False",
+        "a.finished": "False",
+        "a.name": "0",
+        "a.name_known": "False",
+        "a.rejected": "False",
+        "a.started": "False",
+        "b.code": "2",
+        "b.code_known": "False",
+        "b.finished": "False",
+        "b.name": "0",
+        "b.name_known": "False",
+        "b.rejected": "False",
+        "b.started": "False"
+      },
+      "expected": "sat",
+      "name": "mutant_fabricate_zero",
+      "negated_property": "sat",
+      "passed": true
+    },
+    {
+      "assumptions": "sat",
+      "counterexample": {
+        "aliased_states": "K(Int, 6)",
+        "new_value": "5",
+        "op_a": "4",
+        "op_b": "4",
+        "turn_a": "2",
+        "turn_b": "3"
+      },
+      "expected": "sat",
+      "name": "mutant_key_only_by_operation",
+      "negated_property": "sat",
+      "passed": true
+    }
+  ],
+  "passed": true,
+  "python_version": "3.13.5",
+  "source_sha256": {
+    "formal/agent-telemetry/check.py": "cbc79d6ff2f9f013c45fe2c50a155aef6babf930da49735b26496cb71749fb57",
+    "formal/agent-telemetry/check_implementation.py": "00ee125d446443825832b29f1355f803d26f97323099d3531f6175f4d14eb143",
+    "formal/agent-telemetry/requirements.txt": "f887dc59ed4d768603d77335e415551db30c79d71702d2acb5fc1cdd2da28492",
+    "tools/telemetry/telemetry.py": "93a88591243504c010a9aeb3f6d70ce02d081738bdb07631360c798897fc5322"
+  },
+  "z3_version": "4.13.3"
+}
