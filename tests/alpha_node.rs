@@ -623,3 +623,24 @@ fn busy_first_log_cannot_starve_a_later_log_and_backlog_is_visible() {
         second.log_backlog_bytes
     );
 }
+
+#[test]
+fn failed_log_read_carries_its_committed_cursor_into_the_next_batch() {
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
+    fs::write(scratch.path("selected.log"), b"one\n").unwrap();
+    let cfg = config(&scratch.0, 1024 * 1024);
+    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    node.collect_once().unwrap();
+    let path = scratch.path("selected.log");
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
+    let denied = node.collect_once().unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+    if denied.gaps == 0 {
+        return; // running as root: permission denial cannot be observed
+    }
+    let stored = batches(&cfg);
+    let carried = &stored[1].cursors;
+    assert_eq!(carried.len(), 1);
+    assert_eq!(carried[0], stored[0].cursors[0]);
+}

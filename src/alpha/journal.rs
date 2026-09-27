@@ -1,31 +1,31 @@
-//! Version-one Fabric batch spool. The payload contains actual OTLP protobuf messages.
+//! Version-one Fabric batch spool on the shared [frame log](super::frame).
 //!
-//! Two sidecars separate an interrupted append from a known failure. `append-in-progress`
-//! is synced before any frame byte is written and removed after the commit; if a process
-//! dies while it exists, reopen keeps only frames with a valid commit marker and truncates
-//! the rest, exactly as for an unmarked tail. Because the data sync completes before the
-//! commit marker is written, a persisted marker implies persisted data. `recovery-required`
-//! is written only after a write or sync call reports an error. Readable bytes cannot clear
-//! that state, so reopen refuses until the spool is rebuilt from a retained source.
+//! Each frame holds one encoded `Batch`; its sequence equals its position in
+//! the stream. The spool keeps a durable ACK cursor. Batches at or below it
+//! have been acknowledged by the server after its own durable commit, so whole
+//! sealed files wholly at or below it can be deleted. The node sends the batch
+//! after the cursor as the exact stored bytes. Crash and failure semantics are
+//! those of the frame log ([ADR-0011](../../docs/decisions/ADR-0011-separate-interrupted-append-from-known-failure.md));
+//! delivery follows [ADR-0013](../../docs/decisions/ADR-0013-deliver-batches-in-order-with-bounded-dedup.md).
 
+use crate::alpha::frame::{FileRef, FrameLog, FramePos, SyncStage};
 use opentelemetry_proto::tonic::collector::{
     logs::v1::ExportLogsServiceRequest, metrics::v1::ExportMetricsServiceRequest,
 };
 use prost::Message;
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
-const DATA_MAGIC: &[u8; 4] = b"FAB1";
-const COMMIT_MAGIC: &[u8; 4] = b"FAC1";
-const MAX_BATCH: usize = 1024 * 1024;
+pub(crate) const MAX_BATCH: usize = 1024 * 1024;
 // One coverage-unknown notice, one host failure, and eight bounded gaps from
 // each of sixteen log sources.
 pub(crate) const MAX_GAPS_PER_BATCH: usize = 2 + 16 * 8;
 pub(crate) const MAX_GAP_BYTES: usize = 256;
-const HEADER_BYTES: u64 = 16;
-const FRAME_OVERHEAD: u64 = HEADER_BYTES + 16;
 pub const DEFAULT_SPOOL_BYTES: u64 = 256 * 1024 * 1024;
+/// Seal the active file once it reaches this size, at the next metrics batch.
+const ROTATE_BYTES: u64 = 8 * 1024 * 1024;
+const ACKED: &str = "acked";
 
 #[derive(Clone, PartialEq, Message)]
 pub struct Cursor {
@@ -112,43 +112,18 @@ fn invalid(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.into())
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum SyncStage {
-    Data,
-    Marker,
-    DirectoryBeforeClear,
-    AfterClear,
-}
-
-const IN_PROGRESS: &str = "append-in-progress";
-const RECOVERY_REQUIRED: &str = "recovery-required";
-
 pub struct Journal {
     dir: PathBuf,
-    file: File,
+    log: FrameLog,
     node_id: [u8; 16],
     generation: u64,
-    end: u64,
     next_sequence: u64,
-    max_bytes: u64,
-    poisoned: bool,
-}
-
-// Unlock explicitly: a descriptor duplicated into a forked child of another
-// thread would otherwise keep the lock alive until that child execs.
-impl Drop for Journal {
-    fn drop(&mut self) {
-        let _ = self.file.unlock();
-    }
-}
-
-/// Releases inspection's shared lock on every return path.
-struct SharedLock<'a>(&'a File);
-
-impl Drop for SharedLock<'_> {
-    fn drop(&mut self) {
-        let _ = self.0.unlock();
-    }
+    acked: u64,
+    /// Position of batch `acked + 1`, or the log end when none is pending.
+    send_pos: FramePos,
+    /// Sequence of the first batch in the active file (or the next one).
+    active_first: u64,
+    rotate_bytes: u64,
 }
 
 pub struct Inspection {
@@ -160,11 +135,125 @@ pub struct Inspection {
     pub recovery_required: bool,
     /// A dead writer left `append-in-progress`; counts are what reopen will keep.
     pub interrupted_append: bool,
+    /// Batches at or below this sequence have been acknowledged.
+    pub acked_through: u64,
+}
+
+/// Checks identity and sequence continuity while a spool is scanned, and
+/// records where the first unacknowledged batch and the active file start.
+struct Scan {
+    node_id: [u8; 16],
+    generation: u64,
+    acked: u64,
+    first: Option<u64>,
+    next: u64,
+    send_pos: Option<FramePos>,
+    active_first: Option<u64>,
+    last_file: Option<FileRef>,
+}
+
+impl Scan {
+    fn new(node_id: [u8; 16], generation: u64, acked: u64) -> Self {
+        Self {
+            node_id,
+            generation,
+            acked,
+            first: None,
+            next: 0,
+            send_pos: None,
+            active_first: None,
+            last_file: None,
+        }
+    }
+
+    fn visit(&mut self, payload: &[u8], pos: FramePos) -> io::Result<Batch> {
+        let batch = Batch::decode(payload).map_err(|e| invalid(e.to_string()))?;
+        batch.validate()?;
+        if batch.node_id != self.node_id || batch.generation != self.generation {
+            return Err(invalid("journal identity mismatch"));
+        }
+        match self.first {
+            None => {
+                self.first = Some(batch.sequence);
+            }
+            Some(_) if batch.sequence != self.next => {
+                return Err(invalid("journal sequence mismatch"));
+            }
+            Some(_) => {}
+        }
+        // A sealed file's label is the sequence of its first batch.
+        if self.last_file != Some(pos.file) {
+            match pos.file {
+                FileRef::Sealed(label) if label != batch.sequence || pos.offset != 0 => {
+                    return Err(invalid("sealed log label does not match its first batch"));
+                }
+                FileRef::Active => self.active_first = Some(batch.sequence),
+                FileRef::Sealed(_) => {}
+            }
+            self.last_file = Some(pos.file);
+        }
+        if batch.sequence == self.acked + 1 {
+            self.send_pos = Some(pos);
+        }
+        self.next = batch
+            .sequence
+            .checked_add(1)
+            .ok_or_else(|| invalid("sequence exhausted"))?;
+        Ok(batch)
+    }
+
+    /// Next sequence after the scan, checking the ACK cursor against it.
+    fn finish(&self) -> io::Result<u64> {
+        match self.first {
+            None => Ok(self.acked + 1),
+            Some(first) => {
+                if first > self.acked + 1 {
+                    return Err(invalid(
+                        "spool lost unacknowledged batches; rebuild from retained source",
+                    ));
+                }
+                if self.acked >= self.next {
+                    return Err(invalid("ACK cursor is beyond the committed spool"));
+                }
+                Ok(self.next)
+            }
+        }
+    }
+}
+
+fn read_acked(dir: &Path, generation: u64) -> io::Result<u64> {
+    let bytes = match fs::read(dir.join(ACKED)) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(0),
+        Err(error) => return Err(error),
+    };
+    if bytes.len() != 20 || &bytes[..4] != b"FAK1" {
+        return Err(invalid("invalid ACK cursor"));
+    }
+    if u64::from_le_bytes(bytes[4..12].try_into().unwrap()) != generation {
+        return Err(invalid("ACK cursor belongs to another generation"));
+    }
+    Ok(u64::from_le_bytes(bytes[12..20].try_into().unwrap()))
+}
+
+fn write_acked(dir: &Path, generation: u64, through: u64) -> io::Result<()> {
+    let staged = dir.join("acked.tmp");
+    let mut out = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&staged)?;
+    out.write_all(b"FAK1")?;
+    out.write_all(&generation.to_le_bytes())?;
+    out.write_all(&through.to_le_bytes())?;
+    out.sync_all()?;
+    fs::rename(&staged, dir.join(ACKED))?;
+    File::open(dir)?.sync_all()
 }
 
 impl Journal {
-    /// Read a bounded, approximate snapshot without taking the writer lock or
-    /// repairing a tail. A concurrent append may leave an incomplete suffix.
+    /// Read a bounded snapshot without taking the writer lock or repairing a
+    /// tail. A concurrent append, rotation or reclaim makes it retryable.
     pub fn inspect(
         dir: impl AsRef<Path>,
         max_bytes: u64,
@@ -175,174 +264,82 @@ impl Journal {
             return Err(invalid("missing journal identity"));
         }
         let (node_id, generation) = read_identity(dir)?;
-        let file = File::open(dir.join("batches.faj"))?;
-        let len = file.metadata()?.len();
-        if len > max_bytes {
-            return Err(invalid("journal exceeds configured spool cap"));
-        }
-        // A reported failure is final for read-only inspection: readable bytes
-        // are not a durability witness, so nothing is counted as committed.
-        let known_failure = dir.join(RECOVERY_REQUIRED);
-        if known_failure.exists() {
-            return Ok(Inspection {
-                node_id,
-                generation,
-                next_sequence: 1,
-                committed_bytes: 0,
-                file_bytes: len,
-                recovery_required: true,
-                interrupted_append: false,
-            });
-        }
-        let in_progress = dir.join(IN_PROGRESS);
-        let mut interrupted_append = false;
-        // Held until inspection returns, so the scan below sees a stable file.
-        let mut _shared = None;
-        if in_progress.exists() {
-            // A live writer holds the exclusive lock; retry rather than report a
-            // normal append as interrupted. Under our shared lock no writer can
-            // open, so the scan below sees a stable file.
-            _shared = Some(match file.try_lock_shared() {
-                Ok(()) => SharedLock(&file),
-                Err(fs::TryLockError::WouldBlock) => {
-                    return Err(io::Error::new(
-                        io::ErrorKind::WouldBlock,
-                        "journal append in progress; retry inspection",
-                    ));
-                }
-                Err(error) => return Err(error.into()),
-            });
-            if !in_progress.exists() {
-                return Err(io::Error::new(
-                    io::ErrorKind::WouldBlock,
-                    "journal append completed during inspection; retry",
-                ));
-            }
-            if known_failure.exists() {
-                return Err(io::Error::new(
-                    io::ErrorKind::WouldBlock,
-                    "journal failure recorded during inspection; retry",
-                ));
-            }
-            interrupted_append = true;
-        }
-        let mut at = 0;
-        let mut next_sequence = 1_u64;
-        while at < len {
-            let Some((batch, next)) = read_frame(&file, at, len)? else {
-                break;
-            };
-            if batch.node_id != node_id
-                || batch.generation != generation
-                || batch.sequence != next_sequence
-            {
-                return Err(invalid("journal identity or sequence mismatch"));
-            }
-            visit(batch)?;
-            at = next;
-            next_sequence = next_sequence
-                .checked_add(1)
-                .ok_or_else(|| invalid("sequence exhausted"))?;
-        }
-        if known_failure.exists() || (!interrupted_append && in_progress.exists()) {
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "journal append in progress or recovery required; retry inspection",
-            ));
-        }
+        let acked = read_acked(dir, generation)?;
+        let mut scan = Scan::new(node_id, generation, acked);
+        let snapshot = FrameLog::inspect(dir, max_bytes, MAX_BATCH, |payload, pos| {
+            visit(scan.visit(payload, pos)?)
+        })?;
+        let next_sequence = if snapshot.recovery_required {
+            1
+        } else {
+            scan.finish()?
+        };
         Ok(Inspection {
             node_id,
             generation,
             next_sequence,
-            committed_bytes: at,
-            file_bytes: len,
-            recovery_required: false,
-            interrupted_append,
+            committed_bytes: snapshot.committed_bytes,
+            file_bytes: snapshot.file_bytes,
+            recovery_required: snapshot.recovery_required,
+            interrupted_append: snapshot.interrupted_append,
+            acked_through: acked,
         })
     }
 
     pub fn open(dir: impl AsRef<Path>, max_bytes: u64) -> io::Result<Self> {
-        if max_bytes < FRAME_OVERHEAD + 64 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "spool byte cap too small",
-            ));
-        }
+        Self::open_rotating(dir, max_bytes, ROTATE_BYTES)
+    }
+
+    fn open_rotating(dir: impl AsRef<Path>, max_bytes: u64, rotate_bytes: u64) -> io::Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         fs::create_dir_all(&dir)?;
         let dir = dir.canonicalize()?;
         let identity_exists = dir.join("identity").exists();
-        let journal_len = match fs::metadata(dir.join("batches.faj")) {
-            Ok(metadata) => Some(metadata.len()),
-            Err(error) if error.kind() == io::ErrorKind::NotFound => None,
-            Err(error) => return Err(error),
-        };
+        let (active_len, sealed) = FrameLog::present(&dir)?;
         // First open creates the journal file, then publishes the identity by
         // rename. A process killed in between leaves an empty journal and no
         // identity, which is still a fresh spool. Any other mismatch is loss.
-        let fresh_interrupted = !identity_exists && journal_len == Some(0);
-        if identity_exists != journal_len.is_some() && !fresh_interrupted {
+        let has_frames = active_len.unwrap_or(0) > 0 || sealed > 0;
+        let log_exists = active_len.is_some() || sealed > 0;
+        if (identity_exists && !log_exists) || (!identity_exists && has_frames) {
             return Err(io::Error::other(
                 "recovery required: identity or journal missing; rebuild from retained source",
             ));
         }
-        if dir.join(RECOVERY_REQUIRED).exists() {
-            return Err(io::Error::other(
-                "recovery required: a journal write or sync reported an error; rebuild from retained source",
-            ));
-        }
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(dir.join("batches.faj"))?;
-        file.try_lock()?;
-        File::open(&dir)?.sync_all()?;
-        let (node_id, generation) = read_or_create_identity(&dir)?;
-        let mut end = 0;
-        let mut next_sequence = 1_u64;
-        let len = file.metadata()?.len();
-        if len > max_bytes {
-            return Err(invalid("journal exceeds configured spool cap"));
-        }
-        while end < len {
-            match read_frame(&file, end, len)? {
-                Some((batch, next)) => {
-                    if batch.node_id != node_id
-                        || batch.generation != generation
-                        || batch.sequence != next_sequence
-                    {
-                        return Err(invalid("journal identity or sequence mismatch"));
-                    }
-                    end = next;
-                    next_sequence = next_sequence
-                        .checked_add(1)
-                        .ok_or_else(|| invalid("sequence exhausted"))?;
-                }
-                None => {
-                    file.set_len(end)?;
-                    file.sync_all()?;
-                    break;
-                }
+        let identity = if identity_exists {
+            Some(read_identity(&dir)?)
+        } else {
+            None
+        };
+        let (node_id, generation) = identity.unwrap_or(([0; 16], 1));
+        let acked = if identity_exists {
+            read_acked(&dir, generation)?
+        } else {
+            0
+        };
+        let mut scan = Scan::new(node_id, generation, acked);
+        let log = FrameLog::open(&dir, max_bytes, MAX_BATCH, |payload, pos| {
+            if identity.is_none() {
+                return Err(invalid("journal frames without identity"));
             }
-        }
-        file.sync_all()?;
-        // The tail has been verified and synced; an interrupted append is resolved.
-        match fs::remove_file(dir.join(IN_PROGRESS)) {
-            Ok(()) => File::open(&dir)?.sync_all()?,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error),
-        }
+            scan.visit(payload, pos).map(|_| ())
+        })?;
+        let (node_id, generation) = match identity {
+            Some(identity) => identity,
+            None => read_or_create_identity(&dir)?,
+        };
+        let next_sequence = scan.finish()?;
+        let send_pos = scan.send_pos.unwrap_or_else(|| log.end_pos());
         Ok(Self {
             dir,
-            file,
+            active_first: scan.active_first.unwrap_or(next_sequence),
+            log,
             node_id,
             generation,
-            end,
             next_sequence,
-            max_bytes,
-            poisoned: false,
+            acked,
+            send_pos,
+            rotate_bytes,
         })
     }
 
@@ -353,7 +350,10 @@ impl Journal {
         self.next_sequence
     }
     pub fn used_bytes(&self) -> u64 {
-        self.end
+        self.log.used_bytes()
+    }
+    pub fn acked_through(&self) -> u64 {
+        self.acked
     }
 
     pub fn append(&mut self, batch: &Batch) -> io::Result<Batch> {
@@ -361,13 +361,13 @@ impl Journal {
     }
 
     // The private callback lets unit tests simulate a reported sync failure
-    // while the bytes can still be read. It is not a runtime configuration.
+    // or a process death after each stage. It is not a runtime configuration.
     fn append_inner(
         &mut self,
         mut batch: Batch,
-        mut after_sync: impl FnMut(SyncStage) -> io::Result<()>,
+        after_sync: impl FnMut(SyncStage) -> io::Result<()>,
     ) -> io::Result<Batch> {
-        if self.poisoned {
+        if self.log.is_poisoned() {
             return Err(io::Error::other("journal quarantined after write error"));
         }
         batch.version = 1;
@@ -382,101 +382,89 @@ impl Journal {
                 "batch exceeds 1 MiB",
             ));
         }
-        let data_end = self
-            .end
-            .checked_add(HEADER_BYTES + bytes.len() as u64)
-            .ok_or_else(|| invalid("offset overflow"))?;
-        let commit_end = data_end
-            .checked_add(16)
-            .ok_or_else(|| invalid("offset overflow"))?;
-        if commit_end > self.max_bytes {
-            return Err(io::Error::new(
-                io::ErrorKind::StorageFull,
-                "spool full: collection must stop; coverage unknown until space is reclaimed",
-            ));
+        // Rotate only before a metrics batch, so every retained file begins
+        // with one and replay after reclaim still sees counter start state.
+        if !batch.metrics.is_empty() && self.log.active_bytes() >= self.rotate_bytes {
+            let old_end = self.log.active_bytes();
+            self.log.rotate(self.active_first)?;
+            self.send_pos = FrameLog::remap(self.send_pos, self.active_first, old_end);
+            self.active_first = batch.sequence;
         }
-        // The in-progress sidecar is synced before any frame byte. A process
-        // that dies while it exists leaves a tail that reopen verifies.
-        let in_progress = self.dir.join(IN_PROGRESS);
-        let result = (|| {
-            let mut marker = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&in_progress)?;
-            marker.write_all(b"append in progress; reopen verifies the tail\n")?;
-            marker.sync_all()?;
-            File::open(&self.dir)?.sync_all()?;
-            self.file.seek(SeekFrom::Start(self.end))?;
-            let mut header = [0_u8; HEADER_BYTES as usize];
-            header[..4].copy_from_slice(DATA_MAGIC);
-            header[4..8].copy_from_slice(&(bytes.len() as u32).to_le_bytes());
-            let header_crc = crc32fast::hash(&header[..8]);
-            header[8..12].copy_from_slice(&header_crc.to_le_bytes());
-            header[12..16].copy_from_slice(&crc32fast::hash(&bytes).to_le_bytes());
-            self.file.write_all(&header)?;
-            self.file.write_all(&bytes)?;
-            self.file.sync_all()?;
-            after_sync(SyncStage::Data)?;
-            self.file.write_all(COMMIT_MAGIC)?;
-            self.file.write_all(&data_end.to_le_bytes())?;
-            let mut crc_input = [0_u8; 12];
-            crc_input[..4].copy_from_slice(COMMIT_MAGIC);
-            crc_input[4..].copy_from_slice(&data_end.to_le_bytes());
-            self.file
-                .write_all(&crc32fast::hash(&crc_input).to_le_bytes())?;
-            self.file.sync_all()?;
-            after_sync(SyncStage::Marker)?;
-            File::open(&self.dir)?.sync_all()?;
-            after_sync(SyncStage::DirectoryBeforeClear)?;
-            fs::remove_file(&in_progress)?;
-            after_sync(SyncStage::AfterClear)?;
-            File::open(&self.dir)?.sync_all()?;
-            Ok(())
-        })();
-        if let Err(error) = result {
-            // Every error above came from a write, sync or sidecar call on the
-            // spool, so its durability is unknown. Record that before reporting.
-            self.poisoned = true;
-            return Err(match record_failure(&self.dir) {
-                Ok(()) => error,
-                Err(record) => io::Error::other(format!(
-                    "{error}; recording {RECOVERY_REQUIRED} also failed: {record}"
-                )),
-            });
+        let pos = self.log.append_with(&bytes, after_sync)?;
+        if self.acked + 1 == batch.sequence {
+            self.send_pos = pos;
         }
-        self.end = commit_end;
+        if pos.offset == 0 {
+            // First frame of an empty active file: after first open or rotation.
+            self.active_first = batch.sequence;
+        }
         self.next_sequence += 1;
         Ok(batch)
     }
 
     pub fn replay(&mut self, mut visit: impl FnMut(Batch) -> io::Result<()>) -> io::Result<usize> {
-        if self.poisoned {
-            return Err(io::Error::other("journal quarantined"));
-        }
-        let mut at = 0;
+        let mut pos = self.log.start_pos();
         let mut count = 0;
-        while at < self.end {
-            let (batch, next) = read_frame(&self.file, at, self.end)?
-                .ok_or_else(|| invalid("committed frame changed"))?;
-            visit(batch)?;
+        while let Some((payload, next)) = self.log.read_at(pos)? {
+            visit(Batch::decode(payload.as_slice()).map_err(|e| invalid(e.to_string()))?)?;
             count += 1;
-            at = next;
+            pos = next;
         }
         Ok(count)
     }
-}
 
-/// Persist a known write or sync failure. If this also fails, only the
-/// caller's error report carries the knowledge; see the storage view.
-fn record_failure(dir: &Path) -> io::Result<()> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(dir.join(RECOVERY_REQUIRED))?;
-    file.write_all(b"journal write or sync reported an error; rebuild from retained source\n")?;
-    file.sync_all()?;
-    File::open(dir)?.sync_all()
+    /// The oldest unacknowledged batch as its exact stored bytes.
+    pub fn next_unacked(&self) -> io::Result<Option<(u64, Vec<u8>)>> {
+        match self.log.read_at(self.send_pos)? {
+            None => Ok(None),
+            Some((payload, _)) => {
+                let batch =
+                    Batch::decode(payload.as_slice()).map_err(|e| invalid(e.to_string()))?;
+                if batch.sequence != self.acked + 1 {
+                    return Err(invalid("send cursor does not match ACK cursor"));
+                }
+                Ok(Some((batch.sequence, payload)))
+            }
+        }
+    }
+
+    /// Record a durable server acknowledgement through `through`, then delete
+    /// sealed files that hold only acknowledged batches.
+    pub fn record_ack(&mut self, through: u64) -> io::Result<()> {
+        if through <= self.acked {
+            return Ok(());
+        }
+        if through >= self.next_sequence {
+            return Err(invalid(
+                "server acknowledged a sequence this spool never committed",
+            ));
+        }
+        write_acked(&self.dir, self.generation, through)?;
+        let mut pos = self.send_pos;
+        let mut seq = self.acked + 1;
+        while seq <= through {
+            let (_, next) = self
+                .log
+                .read_at(pos)?
+                .ok_or_else(|| invalid("send cursor ran past committed spool"))?;
+            pos = next;
+            seq += 1;
+        }
+        self.acked = through;
+        self.send_pos = self.log.normalize(pos);
+        loop {
+            let labels = self.log.sealed_labels();
+            let Some(_) = labels.first() else {
+                break;
+            };
+            let successor = labels.get(1).copied().unwrap_or(self.active_first);
+            if successor > through + 1 {
+                break;
+            }
+            self.log.remove_oldest_sealed()?;
+        }
+        Ok(())
+    }
 }
 
 fn read_or_create_identity(dir: &Path) -> io::Result<([u8; 16], u64)> {
@@ -515,51 +503,10 @@ fn read_identity(dir: &Path) -> io::Result<([u8; 16], u64)> {
     Ok((id, generation))
 }
 
-fn read_frame(mut file: &File, at: u64, len: u64) -> io::Result<Option<(Batch, u64)>> {
-    if len - at < HEADER_BYTES {
-        return Ok(None);
-    }
-    file.seek(SeekFrom::Start(at))?;
-    let mut header = [0_u8; HEADER_BYTES as usize];
-    file.read_exact(&mut header)?;
-    if &header[..4] != DATA_MAGIC {
-        return Err(invalid(format!("bad alpha frame at {at}")));
-    }
-    if crc32fast::hash(&header[..8]) != u32::from_le_bytes(header[8..12].try_into().unwrap()) {
-        return Err(invalid("alpha frame header checksum mismatch"));
-    }
-    let size = u32::from_le_bytes(header[4..8].try_into().unwrap()) as usize;
-    if size == 0 || size > MAX_BATCH {
-        return Err(invalid("invalid alpha frame length"));
-    }
-    let data_end = at + HEADER_BYTES + size as u64;
-    if data_end > len {
-        return Ok(None);
-    }
-    let mut payload = vec![0; size];
-    file.read_exact(&mut payload)?;
-    if crc32fast::hash(&payload) != u32::from_le_bytes(header[12..16].try_into().unwrap()) {
-        return Err(invalid("alpha frame checksum mismatch"));
-    }
-    let batch = Batch::decode(payload.as_slice()).map_err(|e| invalid(e.to_string()))?;
-    batch.validate()?;
-    if data_end + 16 > len {
-        return Ok(None);
-    }
-    let mut marker = [0_u8; 16];
-    file.read_exact(&mut marker)?;
-    if &marker[..4] != COMMIT_MAGIC
-        || u64::from_le_bytes(marker[4..12].try_into().unwrap()) != data_end
-        || crc32fast::hash(&marker[..12]) != u32::from_le_bytes(marker[12..16].try_into().unwrap())
-    {
-        return Err(invalid("alpha commit marker mismatch"));
-    }
-    Ok(Some((batch, data_end + 16)))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::alpha::frame::{IN_PROGRESS, RECOVERY_REQUIRED};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -745,7 +692,7 @@ mod tests {
             .append(true)
             .open(scratch.0.join("batches.faj"))
             .unwrap();
-        file.write_all(&DATA_MAGIC[..2]).unwrap();
+        file.write_all(&b"FAB1"[..2]).unwrap();
         file.sync_all().unwrap();
         drop(file);
         let mut reopened = Journal::open(&scratch.0, 64 * 1024).unwrap();
@@ -762,5 +709,125 @@ mod tests {
             1
         );
         assert_eq!(batches, vec![committed]);
+    }
+
+    fn metrics_batch() -> Batch {
+        use opentelemetry_proto::tonic::metrics::v1::ResourceMetrics;
+        let mut b = batch();
+        b.collection_gaps.clear();
+        b.metrics = ExportMetricsServiceRequest {
+            resource_metrics: vec![ResourceMetrics::default()],
+        }
+        .encode_to_vec();
+        b
+    }
+
+    fn sealed_on_disk(dir: &Path) -> Vec<u64> {
+        let mut labels: Vec<u64> = fs::read_dir(dir)
+            .unwrap()
+            .filter_map(|e| {
+                let name = e.unwrap().file_name().into_string().unwrap();
+                name.strip_prefix("sealed-")?
+                    .strip_suffix(".faj")?
+                    .parse()
+                    .ok()
+            })
+            .collect();
+        labels.sort_unstable();
+        labels
+    }
+
+    #[test]
+    fn acknowledged_prefix_is_sent_in_order_then_reclaimed_by_whole_files() {
+        let scratch = Scratch::new();
+        let mut journal = Journal::open_rotating(&scratch.0, 1024 * 1024, 150).unwrap();
+        let mut committed = Vec::new();
+        for n in 0..10 {
+            let next = if n % 3 == 2 { batch() } else { metrics_batch() };
+            committed.push(journal.append(&next).unwrap());
+        }
+        let labels = sealed_on_disk(&scratch.0);
+        assert!(labels.len() >= 2, "rotation expected, got {labels:?}");
+        // The first unacknowledged batch is sent as its exact stored bytes.
+        let (seq, bytes) = journal.next_unacked().unwrap().unwrap();
+        assert_eq!((seq, bytes), (1, committed[0].encode_to_vec()));
+        journal.record_ack(3).unwrap();
+        assert_eq!(journal.next_unacked().unwrap().unwrap().0, 4);
+        // Every retained sealed file still holds a batch above the cursor.
+        let retained = sealed_on_disk(&scratch.0);
+        let mut bounds = retained.clone();
+        bounds.push(journal.active_first);
+        for pair in bounds.windows(2) {
+            assert!(
+                pair[1] > 4,
+                "file {} holds only acknowledged batches",
+                pair[0]
+            );
+        }
+        assert!(retained.len() < labels.len());
+        drop(journal);
+
+        let mut reopened = Journal::open_rotating(&scratch.0, 1024 * 1024, 150).unwrap();
+        assert_eq!(reopened.acked_through(), 3);
+        assert_eq!(reopened.next_sequence(), 11);
+        let (seq, bytes) = reopened.next_unacked().unwrap().unwrap();
+        assert_eq!((seq, bytes), (4, committed[3].encode_to_vec()));
+        let mut replayed = Vec::new();
+        reopened
+            .replay(|b| {
+                replayed.push(b.sequence);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(*replayed.last().unwrap(), 10);
+        assert!(replayed[0] <= 4);
+        assert!(reopened.record_ack(11).is_err());
+        reopened.record_ack(10).unwrap();
+        assert!(reopened.next_unacked().unwrap().is_none());
+        assert_eq!(reopened.append(&batch()).unwrap().sequence, 11);
+        assert_eq!(reopened.next_unacked().unwrap().unwrap().0, 11);
+        drop(reopened);
+        let status = Journal::inspect(&scratch.0, 1024 * 1024, |_| Ok(())).unwrap();
+        assert_eq!((status.acked_through, status.next_sequence), (10, 12));
+    }
+
+    #[test]
+    fn missing_unacknowledged_sealed_file_refuses_reopen() {
+        let scratch = Scratch::new();
+        let mut journal = Journal::open_rotating(&scratch.0, 1024 * 1024, 100).unwrap();
+        for _ in 0..6 {
+            journal.append(&metrics_batch()).unwrap();
+        }
+        drop(journal);
+        let oldest = sealed_on_disk(&scratch.0)[0];
+        fs::remove_file(scratch.0.join(format!("sealed-{oldest:020}.faj"))).unwrap();
+        assert!(Journal::open_rotating(&scratch.0, 1024 * 1024, 100).is_err());
+    }
+
+    #[test]
+    fn rotation_interrupted_after_rename_reopens_with_a_fresh_active_file() {
+        let scratch = Scratch::new();
+        let mut journal = Journal::open_rotating(&scratch.0, 1024 * 1024, 1 << 30).unwrap();
+        journal.append(&metrics_batch()).unwrap();
+        journal.append(&metrics_batch()).unwrap();
+        drop(journal);
+        // State left by a process killed between rename and create.
+        fs::rename(
+            scratch.0.join("batches.faj"),
+            scratch.0.join(format!("sealed-{:020}.faj", 1)),
+        )
+        .unwrap();
+        let mut reopened = Journal::open_rotating(&scratch.0, 1024 * 1024, 1 << 30).unwrap();
+        assert_eq!(reopened.next_sequence(), 3);
+        assert_eq!(reopened.append(&metrics_batch()).unwrap().sequence, 3);
+        assert_eq!(reopened.replay(|_| Ok(())).unwrap(), 3);
+        // A sealed label that does not match its first batch is corruption.
+        drop(reopened);
+        fs::rename(
+            scratch.0.join(format!("sealed-{:020}.faj", 1)),
+            scratch.0.join(format!("sealed-{:020}.faj", 2)),
+        )
+        .unwrap();
+        assert!(Journal::open_rotating(&scratch.0, 1024 * 1024, 1 << 30).is_err());
     }
 }

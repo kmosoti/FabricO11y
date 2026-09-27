@@ -477,9 +477,17 @@ impl Node {
                     pending_cursors.push(read.cursor);
                     gaps.extend(read.gaps.into_iter().map(bounded_gap));
                 }
-                Err(error) => gaps.push(bounded_gap(format!(
-                    "log source unavailable {name}: {error}"
-                ))),
+                Err(error) => {
+                    gaps.push(bounded_gap(format!(
+                        "log source unavailable {name}: {error}"
+                    )));
+                    // Carry the committed cursor forward so the newest batch
+                    // always holds every configured cursor, even after older
+                    // spool files are reclaimed.
+                    if let Some(previous) = self.cursors.get(&name) {
+                        pending_cursors.push(previous.clone());
+                    }
+                }
             }
         }
         debug_assert!(gaps.len() <= MAX_GAPS_PER_BATCH);
