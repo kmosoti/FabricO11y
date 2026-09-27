@@ -25,6 +25,8 @@ pub struct ReadResult {
     pub lines: Vec<Line>,
     pub cursor: Cursor,
     pub gaps: Vec<String>,
+    /// Bytes after the returned cursor at the time of the read.
+    pub backlog_bytes: u64,
 }
 
 fn issue(kind: &str, path: &str) -> String {
@@ -149,6 +151,7 @@ pub fn read_lines(
         // any suffix of the discarded oversized line as a new record.
         committed = at;
     }
+    let backlog_bytes = metadata.len().saturating_sub(committed);
     let prefix_len = committed.min(PREFIX_BYTES as u64) as usize;
     let prefix_crc = if prefix_len == 0 {
         0
@@ -170,5 +173,6 @@ pub fn read_lines(
             prefix_crc,
         },
         gaps,
+        backlog_bytes,
     })
 }

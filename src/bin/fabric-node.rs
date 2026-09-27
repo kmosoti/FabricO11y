@@ -15,7 +15,8 @@ extern "C" fn request_stop(_signal: libc::c_int) {
 fn install_stop_handler() -> std::io::Result<()> {
     for signal in [libc::SIGTERM, libc::SIGINT] {
         // SAFETY: the handler only performs an atomic store.
-        let previous = unsafe { libc::signal(signal, request_stop as *const () as libc::sighandler_t) };
+        let previous =
+            unsafe { libc::signal(signal, request_stop as *const () as libc::sighandler_t) };
         if previous == libc::SIG_ERR {
             return Err(std::io::Error::last_os_error());
         }
@@ -44,12 +45,13 @@ fn main() -> ExitCode {
             let started = Instant::now();
             let cycle = node.collect_once()?;
             println!(
-                "batch={} metrics={} logs={} gaps={} spool_bytes={}",
+                "batch={} metrics={} logs={} gaps={} spool_bytes={} log_backlog_bytes={}",
                 cycle.batch_sequence,
                 cycle.metric_points,
                 cycle.log_records,
                 cycle.gaps,
-                cycle.spool_bytes
+                cycle.spool_bytes,
+                cycle.log_backlog_bytes
             );
             if mode == "collect" {
                 break;

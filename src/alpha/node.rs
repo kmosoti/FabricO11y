@@ -389,6 +389,8 @@ pub struct Cycle {
     pub log_records: usize,
     pub gaps: usize,
     pub spool_bytes: u64,
+    /// Unread bytes across configured logs after this cycle's reads.
+    pub log_backlog_bytes: u64,
 }
 
 pub struct Node {
@@ -453,10 +455,21 @@ impl Node {
         let mut lines = Vec::new();
         let mut pending_cursors = Vec::new();
         let mut remaining = LOG_BODY_BUDGET;
-        for path in &self.config.logs {
+        let mut log_backlog_bytes = 0_u64;
+        // The shared per-cycle body budget is spent in path order, starting at a
+        // different path each batch, so one busy file cannot starve the others.
+        let count = self.config.logs.len();
+        let first = if count == 0 {
+            0
+        } else {
+            (self.journal.next_sequence() % count as u64) as usize
+        };
+        for index in 0..count {
+            let path = &self.config.logs[(first + index) % count];
             let name = path.to_string_lossy().to_string();
             match log_source::read_lines(path, self.cursors.get(&name), remaining) {
                 Ok(read) => {
+                    log_backlog_bytes = log_backlog_bytes.saturating_add(read.backlog_bytes);
                     remaining = remaining.saturating_sub(
                         read.lines.iter().map(|line| line.body.len()).sum::<usize>(),
                     );
@@ -518,6 +531,7 @@ impl Node {
             log_records: lines.len(),
             gaps: gap_count,
             spool_bytes: self.journal.used_bytes(),
+            log_backlog_bytes,
         })
     }
 }
@@ -571,6 +585,9 @@ pub struct Report {
     pub coverage_unknown: bool,
     pub recovery_required: bool,
     pub interrupted_append: bool,
+    /// Bytes in configured logs after their last committed cursors; a file
+    /// with a different identity counts in full, a missing file as zero.
+    pub log_backlog_bytes: u64,
 }
 
 pub fn inspect(config: &Config) -> io::Result<Report> {
@@ -580,8 +597,12 @@ pub fn inspect(config: &Config) -> io::Result<Report> {
     let mut log_records = 0;
     let mut otlp_payload_bytes = 0_u64;
     let mut gaps = 0;
+    let mut last_cursors = BTreeMap::new();
     let info = Journal::inspect(&config.spool, config.journal_cap(), |batch| {
         batches += 1;
+        for cursor in &batch.cursors {
+            last_cursors.insert(cursor.path.clone(), cursor.clone());
+        }
         gaps += batch.collection_gaps.len();
         otlp_payload_bytes = otlp_payload_bytes
             .checked_add((batch.metrics.len() + batch.logs.len()) as u64)
@@ -613,6 +634,19 @@ pub fn inspect(config: &Config) -> io::Result<Report> {
         Ok(())
     })?;
     let coverage_unknown = config.spool.join(UNKNOWN_MARKER).exists();
+    let mut log_backlog_bytes = 0_u64;
+    for path in &config.logs {
+        use std::os::unix::fs::MetadataExt;
+        let Ok(metadata) = std::fs::metadata(path) else {
+            continue;
+        };
+        let consumed = last_cursors
+            .get(path.to_string_lossy().as_ref())
+            .filter(|c| c.device == metadata.dev() && c.inode == metadata.ino())
+            .map_or(0, |c| c.offset);
+        log_backlog_bytes =
+            log_backlog_bytes.saturating_add(metadata.len().saturating_sub(consumed));
+    }
     Ok(Report {
         node_id: info.node_id,
         generation: info.generation,
@@ -626,6 +660,7 @@ pub fn inspect(config: &Config) -> io::Result<Report> {
         coverage_unknown,
         recovery_required: info.recovery_required,
         interrupted_append: info.interrupted_append,
+        log_backlog_bytes,
     })
 }
 

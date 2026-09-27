@@ -582,3 +582,44 @@ fn sigterm_stops_run_between_cycles_and_leaves_a_reopenable_spool() {
     let mut node = Node::open(cfg).unwrap();
     assert!(node.collect_once().is_ok());
 }
+
+#[test]
+fn busy_first_log_cannot_starve_a_later_log_and_backlog_is_visible() {
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
+    let busy = scratch.path("a-busy.log");
+    let quiet = scratch.path("b-quiet.log");
+    // 600-byte lines exhaust the 64 KiB body budget before the 128-line cap,
+    // and the quiet line is longer than what the busy file leaves over.
+    let line = [vec![b'x'; 599], b"\n".to_vec()].concat();
+    fs::write(&busy, line.repeat(1000)).unwrap();
+    let quiet_body = format!("quiet {}", "q".repeat(994));
+    fs::write(&quiet, format!("{quiet_body}\n")).unwrap();
+    let mut cfg = config(&scratch.0, 16 * 1024 * 1024);
+    cfg.logs = vec![busy, quiet];
+    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let first = node.collect_once().unwrap();
+    let second = node.collect_once().unwrap();
+    assert!(first.log_backlog_bytes > 0);
+    assert!(second.log_backlog_bytes < first.log_backlog_bytes);
+    let bodies: Vec<String> = batches(&cfg)
+        .iter()
+        .filter(|b| !b.logs.is_empty())
+        .flat_map(|b| {
+            ExportLogsServiceRequest::decode(b.logs.as_slice())
+                .unwrap()
+                .resource_logs
+        })
+        .flat_map(|r| r.scope_logs)
+        .flat_map(|s| s.log_records)
+        .filter_map(|r| match r.body?.value? {
+            any_value::Value::StringValue(s) => Some(s),
+            _ => None,
+        })
+        .collect();
+    assert!(bodies.iter().any(|b| *b == quiet_body), "quiet log starved");
+    assert_eq!(
+        inspect(&cfg).unwrap().log_backlog_bytes,
+        second.log_backlog_bytes
+    );
+}
