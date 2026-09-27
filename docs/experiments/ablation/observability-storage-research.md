@@ -44,6 +44,19 @@ The correctness argument needs no new formal tool:
 
 Assumptions: correct Rust execution, complete immutable input, matching token/hash definitions, and no undetected memory corruption. CRC or Bloom filters are not authentication. An exhaustive small corpus and adversarial tests check implementation cases; they do not prove every possible Rust execution. The first experiment injects an omitted matching block to establish that its oracle can fail.
 
+## Coverage follow-up
+
+The [E1R protocol](coverage-e1-protocol.md) and [executed result](coverage-e1-run-01.md) challenge S1's assumption of a complete block set
+using authenticated metadata and an independently retained anchor. This is a separate in-memory
+correctness cell with exact summary sets; it does not add persisted blocks or resumable queries.
+[ADR-0007](../../decisions/ADR-0007-experiment-with-coverage-receipts.md) records the trust decision.
+
+It refines the blanket missing-raw rule above for this query-completeness experiment: a block
+whose validated, authenticated summary proves exclusion need not be readable for that query.
+An unavailable candidate must remain explicit and prevents completeness. This establishes no
+retention guarantee: proving absence of matches in a snapshot and proving continued possession
+of its raw data are different contracts. S1's existing behavior is unchanged.
+
 ## Sequenced experiments and completion gates
 
 Each row requires a separate preregistration before measurement. Implementing every row at once would confound the source of an improvement.

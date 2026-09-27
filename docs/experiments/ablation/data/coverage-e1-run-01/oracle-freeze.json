@@ -1,0 +1,16 @@
+{
+  "frozen_utc": "2026-09-27T10:28:17.176283+00:00",
+  "base_revision": "b429a4d0bfa170e6186a041ae937d5a79aa968a1",
+  "sha256": {
+    "docs/experiments/ablation/coverage-e1-protocol.md": "70140de70bdd419a0408d0cc2b4707abaed7af10699dc51fcad427c7b190e50c",
+    "tools/storage-probe/COVERAGE_API.md": "bbb87af2746f35c5edb5a88fea136f4b3411b4fe8bf09732fb53ce9bb98a5371",
+    "tools/storage-probe/tests/coverage_contract.rs": "de80dd4de55d86ebe0741f39449b12f38bfdb9b79d00bc0d8fed1cb7db6a14fa",
+    "tools/storage-probe/tests/coverage_e1.rs": "5a16de4c70f20991c8683ee950ced3d28ece6ab1af51521727bb2ae9a31a8594"
+  },
+  "initial_check": {
+    "command": "cargo test --offline --locked --manifest-path tools/storage-probe/Cargo.toml --test coverage_contract --test coverage_e1",
+    "exit_code": 101,
+    "reason": "coverage module not implemented; oracle authored before implementation",
+    "reported_by": "independent oracle author"
+  }
+}

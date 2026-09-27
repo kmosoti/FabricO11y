@@ -6,3 +6,4 @@ publish = false
 
 [dependencies]
 fabric_o11y = { path = "../.." }
+sha2 = "=0.10.9"

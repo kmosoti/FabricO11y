@@ -1,0 +1,12 @@
+{
+  "verified_utc": "2026-09-27T10:41:02.956955+00:00",
+  "source_hashes_matched": 19,
+  "frozen_hashes_matched": 4,
+  "raw_corpora": 12,
+  "summary_recomputed": true,
+  "selected_sha256": "e53a10a3fd8c25bb4e6f9d19bcb31228709cbacee694fdefb5615f81a3b03397",
+  "documentation_check_exit": 0,
+  "research_format_check_exit": 0,
+  "diff_check_exit": 0,
+  "archive_format": "Raw stdout, stderr and tracked diff preserved losslessly as JSON strings; decoded text equality checked."
+}

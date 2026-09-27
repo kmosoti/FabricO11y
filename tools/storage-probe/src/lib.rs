@@ -1,5 +1,7 @@
 //! Conservative block pruning for immutable, replayed research snapshots.
 //! See the S1 protocol; this is not an application query or persistence API.
+pub mod coverage;
+
 use std::num::NonZeroUsize;
 
 use fabric_o11y::{Event, Payload};
@@ -13,7 +15,7 @@ pub enum Mode {
     Pruned,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Query {
     pub start_ns: i64,
     pub end_ns: i64,

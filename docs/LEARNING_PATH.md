@@ -66,6 +66,14 @@ Learn: benchmarking, ablation, experimental controls, and how optimizations move
 
 The parallel [storage/query research agenda](experiments/ablation/observability-storage-research.md) now has an [S1 probe](../tools/storage-probe/README.md): replay the existing log, move rows into a private immutable snapshot, and compare full scans with optional block summaries. Run `cargo test --offline --locked --manifest-path tools/storage-probe/Cargo.toml`. Explain why a missing Bloom filter means “scan,” why duplicate event IDs do not collapse row positions, and why reducing rows inspected in RAM does not establish reduced disk I/O. Read the [S1 result](experiments/ablation/storage-query-s1-run-01.md) before planning disk blocks or Parquet. This is Stage 6 research tooling; Stage 7's application query/API remains unimplemented, and append-phase attribution is still open.
 
+The completed coverage increment within Stage 6 is [E1R](experiments/ablation/coverage-e1-run-01.md), with its [registered protocol](experiments/ablation/coverage-e1-protocol.md).
+Trace `SealedSnapshot::new`, `query`, and `verify` in the [coverage module](../tools/storage-probe/src/coverage.rs).
+Explain why owned private rows prevent post-validation mutation, why `Result<CoverageStatus, CoverageError>`
+separates incomplete evidence from invalid metadata, and why the metadata-only verifier cannot detect
+an honestly sealed bad summary. Run the independent coverage tests before adding resumable answers.
+The [experimental decision](decisions/ADR-0007-experiment-with-coverage-receipts.md) states the trust boundary;
+this work does not advance the application to Stage 7.
+
 ## Stage 7 — Add the application edges
 
 Once the core pipeline has understandable behavior, add ingestion protocols, a query path, an API, and a UI in small slices. Keep external formats and storage engines at the edges of the domain model. Before selecting a network ingestion mechanism, work through the [Homa/SIRD receiver-driven transport study](experiments/ablation/receiver-driven-transport.md). Its first [H1 packet-slot ablation](experiments/ablation/receiver-credit-h1-run-01.md) compares fixed sender windows with receiver credits; the [finite model](experiments/formal/transport-credit-ownership.md) checks that credit permission and durable ACK ownership remain distinct. Try the tiny simulator tests, then read the raw result: receiver credits lower modeled switch peaks while increasing sender waiting. The priority, active-grant, sender/core feedback, sink-limited, and real-host cells remain to be built. There is no application network transport to benchmark yet.
