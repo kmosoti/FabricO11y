@@ -8,6 +8,8 @@ The [WSL recovery audit and resume plan](RESUME.md) records the checks rerun aft
 
 ## Implemented
 
+The [storage/query research agenda](experiments/ablation/observability-storage-research.md) corrects the external survey against current code and primary sources. Its [S1 experiment](experiments/ablation/storage-query-s1-run-01.md) measured exact full scans versus optional time/Bloom summaries over immutable replayed events in a separate [research package](../tools/storage-probe/README.md). All 15,360 timed query results matched the reference. Clustered narrow-time queries avoided 93.945% of rows and absent-token queries avoided 100%; shuffled-time queries avoided only 1.172–1.367%. These are in-memory work reductions. Later disk blocks, Parquet, sidecars, adaptive indexes and hardware cells remain proposed. This is separate from append-phase attribution and adds no application query service.
+
 - The application is one Rust 2024 package, `fabric_o11y`, with a library and a binary. It depends on `fake` for synthetic workload values and `crc32fast` for log integrity checks. A separate dependency-free [transport simulation package](../tools/transport-sim/README.md) is research tooling.
 - Four `u64` ID types, two `i64` time types, five `Scalar` variants, `Attribute`, `Payload::{Log, Gauge}`, and `Event` in [src/lib.rs](../src/lib.rs).
 - A deterministic, streaming Gauge generator in [src/generator.rs](../src/generator.rs). `fake` samples ranges with a named seeded ChaCha8 RNG; the locked versions, seed, and `u32` count determine the event sequence. Each event owns its strings and attributes.

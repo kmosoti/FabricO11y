@@ -2,6 +2,8 @@
 
 ## Purpose and boundary
 
+The separate [S1 storage/query experiment](../experiments/ablation/storage-query-s1-run-01.md) uses this unchanged log for a verified replay-to-memory baseline. Its optional summaries are private in-memory research structures, not persisted indexes or a new log format. The [research agenda](../experiments/ablation/observability-storage-research.md) keeps disk blocks and Parquet as future comparisons.
+
 Stage 5 adds a single-file [event log](../../src/log.rs) inside the Rust library. The optional `write` command drains the existing [buffer](../../src/buffer.rs) into this log; `replay` opens the file again and streams decoded events. The default command still prints batches without storing them. There is no network receiver or external ACK protocol.
 
 `EventLog::append(&Event)` borrows the caller's event. It writes an event frame and syncs it, then writes a commit marker and syncs again. It returns `Ok(())` only after both syncs succeed. That return is the **local commit boundary** under the filesystem assumptions below. An error leaves the value with the caller, but a failed storage sync makes the file's durability uncertain. A later open cannot turn visible bytes into proof of durability; recovery after a storage I/O error needs an independent trusted copy on healthy storage.

@@ -19,6 +19,8 @@ See the [rendered system diagram](../README.md) and its [canonical source](../di
 
 ## Execution and ownership
 
+A separate [storage/query probe](../../tools/storage-probe/README.md) depends on the library. It replays experiment-owned logs into immutable snapshots and compares exact scans with optional summaries. It is not called by the application CLI, and its in-memory query boundary is shown in the [S1 research projection](../experiments/ablation/storage-query-s1-run-01.md). The [storage research agenda](../experiments/ablation/observability-storage-research.md) distinguishes that cell from proposed disk and columnar work.
+
 1. `main` accepts no arguments (seed `42`, count `3`), a `u64` seed and `u32` count, `write <PATH> <SEED> <EVENTS>`, or `replay <PATH>`. Invalid argument shape or numeric values produce a usage message and status `2`; log I/O or workload-prefix mismatches return failure status `1`.
 2. `main` iterates `EventGenerator`, which creates one owned synthetic `Gauge` event per call to `next`.
 3. `main` calls `EventBuffer::try_push`. A successful call transfers ownership to the buffer. A full buffer returns the same event to `main` and keeps existing queue contents unchanged.

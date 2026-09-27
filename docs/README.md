@@ -46,4 +46,6 @@ The [learning path](LEARNING_PATH.md) organizes future increments. The [original
 
 The optional [agent telemetry view](architecture/agent-telemetry.md) describes development tooling outside the Rust application.
 
+The [observability storage research agenda](experiments/ablation/observability-storage-research.md) contains a sourced survey, the [S1 scan/pruning experiment](experiments/ablation/storage-query-s1-run-01.md), and proposed next cells. Its query probe is research tooling outside the application diagram.
+
 Use the [contributor guide](CONTRIBUTING.md) for skills, hooks, documentation validation, and editor recommendations. [AGENTS.md](../AGENTS.md) contains the repository instructions and full documentation policy.
