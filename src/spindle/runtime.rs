@@ -1,9 +1,9 @@
 //! One-process native collector. Each cycle owns a candidate until journal commit.
 
-use crate::alpha::host::{self, Kind, Paths, Value};
-use crate::alpha::journal::{Batch, Cursor, Journal, MAX_GAP_BYTES, MAX_GAPS_PER_BATCH};
-use crate::alpha::log_source;
-use crate::alpha::sender::{Delivery, RemoteView, Sender, ServerTarget};
+use crate::spindle::host::{self, Kind, Paths, Value};
+use crate::spindle::log_source;
+use crate::spindle::sender::{Delivery, RemoteView, Sender, ServerTarget};
+use crate::spindle::spool::{Batch, Cursor, MAX_GAP_BYTES, MAX_GAPS_PER_BATCH, Spool};
 use opentelemetry_proto::tonic::collector::{
     logs::v1::ExportLogsServiceRequest, metrics::v1::ExportMetricsServiceRequest,
 };
@@ -424,7 +424,7 @@ pub struct Node {
     base: Config,
     applied: Option<RemoteView>,
     config_error: Option<String>,
-    journal: Journal,
+    journal: Spool,
     cursors: BTreeMap<String, Cursor>,
     history: History,
     host_paths: Paths,
@@ -526,7 +526,7 @@ impl Node {
                 }
             }
         }
-        let mut journal = Journal::open(&config.spool, config.journal_cap())?;
+        let mut journal = Spool::open(&config.spool, config.journal_cap())?;
         let mut cursors = BTreeMap::new();
         let mut history = History::new();
         let allowed_logs: BTreeSet<String> = config
@@ -973,7 +973,7 @@ pub fn inspect(config: &Config) -> io::Result<Report> {
     let mut otlp_payload_bytes = 0_u64;
     let mut gaps = 0;
     let mut last_cursors = BTreeMap::new();
-    let info = Journal::inspect(&config.spool, config.journal_cap(), |batch| {
+    let info = Spool::inspect(&config.spool, config.journal_cap(), |batch| {
         batches += 1;
         for cursor in &batch.cursors {
             last_cursors.insert(cursor.path.clone(), cursor.clone());

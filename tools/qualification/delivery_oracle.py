@@ -10,7 +10,7 @@ implementation. Identity <-> bytes mapping comes only from the transcript's
 own base64 bytes; no hidden decoding is performed.
 
 CLI:
-    python3 -B tools/alpha/delivery_oracle.py <transcript.jsonl>
+    python3 -B tools/qualification/delivery_oracle.py <transcript.jsonl>
 
 Prints one JSON object to stdout and exits 0 (pass), 1 (violation) or
 2 (malformed input). Importable as `check(lines) -> Verdict`.

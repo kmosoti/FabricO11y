@@ -101,7 +101,7 @@ def trial():
                 return time.monotonic() - started, pages
             body["page"] = page["next_page"]
 
-    sim = subprocess.Popen(["taskset", "-c", f"4-{cpus - 1}", str(bins / "examples" / "alpha_node_sim"),
+    sim = subprocess.Popen(["taskset", "-c", f"4-{cpus - 1}", str(bins / "examples" / "spindle_sim"),
                             "--server-url", f"https://127.0.0.1:{port}", "--ca", str(root / "ca.pem"),
                             "--tokens", str(root / "tokens"), "--seed", hex(args.seed),
                             "--seconds", str(args.seconds), "--workers", "128", "--out", str(root / "sim")],

@@ -1,5 +1,5 @@
-use fabric_o11y::alpha::node::{Attempt, Config, Node};
-use fabric_o11y::alpha::sender::Delivery;
+use fabric_o11y::spindle::runtime::{Attempt, Config, Node};
+use fabric_o11y::spindle::sender::Delivery;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};

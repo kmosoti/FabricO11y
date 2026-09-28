@@ -6,11 +6,11 @@ docs/architecture/retained-history.md. It decodes the Fabric `Batch`
 protobuf itself with a minimal hand-written wire-format decoder (see
 ``parse_fields`` below) and never imports code from this repository's Rust
 crates or any other implementation. Field numbers are hard coded from the
-vendored ``opentelemetry-proto`` crate sources and ``src/alpha/journal.rs``;
+vendored ``opentelemetry-proto`` crate sources and ``crates/fabric-frame/src/envelope.rs``;
 see QUERY_ORACLE.md for the exact numbers used and their provenance.
 
 CLI:
-    python3 -B tools/alpha/query_oracle.py --records R --query Q --answer A \
+    python3 -B tools/qualification/query_oracle.py --records R --query Q --answer A \
         [--unavailable U]
 
 R is a JSONL file of records (see ``load_records_jsonl``), Q and A and U are
@@ -22,7 +22,7 @@ optional unavailable-declaration array). Prints one JSON verdict:
 
 Exit 0 pass, 1 fail (a rule was violated), 2 malformed input (see
 QUERY_ORACLE.md for the exact malformed-input list; this follows the same
-strict-schema convention as tools/alpha/DELIVERY_ORACLE.md: unknown fields,
+strict-schema convention as tools/qualification/DELIVERY_ORACLE.md: unknown fields,
 duplicate JSON keys, wrong fixed types, and NaN/Infinity are all malformed).
 
 Importable API: ``expected(records, query, unavailable=None)`` and
@@ -68,7 +68,7 @@ class ProtoError(MalformedInput):
 # --------------------------------------------------------------------------
 #
 # Field numbers used below, verified against the vendored
-# opentelemetry-proto-0.33.0 crate sources and src/alpha/journal.rs (see
+# opentelemetry-proto-0.33.0 crate sources and crates/fabric-frame/src/envelope.rs (see
 # QUERY_ORACLE.md "Field numbers"). Unknown fields are ignored, as required.
 
 

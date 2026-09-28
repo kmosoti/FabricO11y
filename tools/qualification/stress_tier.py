@@ -127,7 +127,7 @@ def trial():
     ctx = ssl.create_default_context(cafile=str(root / "ca.pem"))
     query = AdminClient(port, root / "ca.pem", admin_token)
     query.base = f"https://127.0.0.1:{port}/v1/admin/query"
-    sim = subprocess.Popen(["taskset", "-c", f"4-{cpus - 1}", str(bins / "examples" / "alpha_node_sim"),
+    sim = subprocess.Popen(["taskset", "-c", f"4-{cpus - 1}", str(bins / "examples" / "spindle_sim"),
                             "--server-url", f"https://127.0.0.1:{port}", "--ca", str(root / "ca.pem"),
                             "--tokens", str(root / "tokens"), "--seed", hex(args.seed),
                             "--seconds", str(SECONDS), "--workers", "128", "--out", str(root / "sim"),

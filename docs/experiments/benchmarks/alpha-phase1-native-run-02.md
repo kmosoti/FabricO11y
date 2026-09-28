@@ -4,7 +4,7 @@ Status: three registered trials passed on 2026-09-27 on the final phase-1 binari
 
 ## Method and environment
 
-Unchanged from the [registered protocol](alpha-phase1-native-protocol.md) and run 01: three seeds, 15 s warmup plus 120 s measured, 2 offered newline logs/s of exactly 512 body bytes, a 15 s metric interval, sequential trials under the frozen [runner](../../../tools/alpha/runner.py) with 180 s, 300 MiB and 1 MiB limits. The runner and [native harness](../../../tools/alpha/native_phase1.py) SHA-256 values equal the frozen phase-0 and run-01 values, so the harness did not change. Environment: Debian GNU/Linux 13, WSL2 kernel `6.18.33.2-microsoft-standard-WSL2`, x86_64, 12 logical CPUs, target filesystem reported as `ext2/ext3`, Rust 1.98.0. The binaries were built from commit `c51d3a8a38151f0fe2a067415f312a18ca545622` with `cargo build --offline --locked --release --bins --example alpha_native_dump`, exit `0`.
+Unchanged from the [registered protocol](alpha-phase1-native-protocol.md) and run 01: three seeds, 15 s warmup plus 120 s measured, 2 offered newline logs/s of exactly 512 body bytes, a 15 s metric interval, sequential trials under the frozen [runner](../../../tools/qualification/runner.py) with 180 s, 300 MiB and 1 MiB limits. The runner and [native harness](../../../tools/qualification/native_phase1.py) SHA-256 values equal the frozen phase-0 and run-01 values, so the harness did not change. Environment: Debian GNU/Linux 13, WSL2 kernel `6.18.33.2-microsoft-standard-WSL2`, x86_64, 12 logical CPUs, target filesystem reported as `ext2/ext3`, Rust 1.98.0. The binaries were built from commit `c51d3a8a38151f0fe2a067415f312a18ca545622` with `cargo build --offline --locked --release --bins --example alpha_native_dump`, exit `0`.
 
 | Artifact | SHA-256 |
 | --- | --- |
@@ -36,4 +36,4 @@ The highest VmHWM is 2736 KiB, below the registered 64 MiB gate. Measured CPU ro
 
 ## Limits
 
-This is one native process on one host. It does not measure network delivery, ACK latency, observation-to-query freshness or fleet tiers. The crash-recovery behavior is covered separately by the [kill probe](../../../tools/alpha/kill_probe.py) and unit tests recorded in [ADR-0011](../../decisions/ADR-0011-separate-interrupted-append-from-known-failure.md).
+This is one native process on one host. It does not measure network delivery, ACK latency, observation-to-query freshness or fleet tiers. The crash-recovery behavior is covered separately by the [kill probe](../../../tools/qualification/kill_probe.py) and unit tests recorded in [ADR-0011](../../decisions/ADR-0011-separate-interrupted-append-from-known-failure.md).

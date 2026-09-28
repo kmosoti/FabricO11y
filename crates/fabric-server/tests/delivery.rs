@@ -1,9 +1,9 @@
 //! End-to-end delivery over TLS between a real node spool and a real server.
 
-use fabric_o11y::alpha::host::Paths;
-use fabric_o11y::alpha::journal::{Batch, Journal};
-use fabric_o11y::alpha::node::{Config as NodeConfig, Node};
-use fabric_o11y::alpha::sender::{Delivery, Sender, ServerTarget};
+use fabric_o11y::spindle::host::Paths;
+use fabric_o11y::spindle::runtime::{Config as NodeConfig, Node};
+use fabric_o11y::spindle::sender::{Delivery, Sender, ServerTarget};
+use fabric_o11y::spindle::spool::{Batch, Spool};
 use fabric_server::config::Config;
 use fabric_server::control::{Control, DesiredConfig};
 use fabric_server::store::{CommitMode, Store};
@@ -24,7 +24,7 @@ impl Scratch {
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../target")
-            .join(format!("alpha-delivery-test-{}-{id}", std::process::id()));
+            .join(format!("delivery-test-{}-{id}", std::process::id()));
         fs::create_dir_all(&path).unwrap();
         Self(path.canonicalize().unwrap())
     }
@@ -253,7 +253,7 @@ fn recovered(root: &Path) -> Vec<Vec<u8>> {
 
 fn spool_bytes(spool: &Path) -> Vec<Vec<u8>> {
     let mut out = Vec::new();
-    Journal::inspect(spool, 16 * 1024 * 1024, |batch| {
+    Spool::inspect(spool, 16 * 1024 * 1024, |batch| {
         out.push(batch.encode_to_vec());
         Ok(())
     })
@@ -303,7 +303,7 @@ fn node_delivers_exact_bytes_and_both_sides_survive_restart() {
 
 /// Real batches with this spool's identity, as stored bytes.
 fn batches(spool: &Path, count: usize) -> Vec<Vec<u8>> {
-    let mut journal = Journal::open(spool, 16 * 1024 * 1024).unwrap();
+    let mut journal = Spool::open(spool, 16 * 1024 * 1024).unwrap();
     let template = Batch {
         version: 1,
         node_id: vec![],

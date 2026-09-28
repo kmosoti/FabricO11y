@@ -126,7 +126,7 @@ def trial():
     (root / "tokens").write_text("\n".join(tokens) + "\n")
     sim_out = root / "sim"
     workers = min(128, args.tier)
-    sim = subprocess.Popen(["taskset", "-c", f"4-{cpus - 1}", str(bins / "examples" / "alpha_node_sim"),
+    sim = subprocess.Popen(["taskset", "-c", f"4-{cpus - 1}", str(bins / "examples" / "spindle_sim"),
                             "--server-url", f"https://127.0.0.1:{port}", "--ca", str(root / "ca.pem"),
                             "--tokens", str(root / "tokens"), "--seed", hex(args.seed),
                             "--seconds", str(TOTAL), "--workers", str(workers), "--out", str(sim_out)],

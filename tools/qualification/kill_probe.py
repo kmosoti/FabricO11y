@@ -27,7 +27,7 @@ def main() -> int:
     args = parser.parse_args()
     node = os.path.join(args.bin_dir, "fabric-node")
     ctl = os.path.join(args.bin_dir, "fabricctl")
-    dump = os.path.join(args.bin_dir, "examples", "alpha_native_dump")
+    dump = os.path.join(args.bin_dir, "examples", "native_dump")
     root = os.path.abspath(f"target/alpha-kill-probe-{args.seed}")
     if os.path.islink(root):
         raise SystemExit("refusing symlinked probe root")

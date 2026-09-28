@@ -17,8 +17,8 @@
 //! with Unix nanosecond times), `transcript.jsonl` for the delivery oracle
 //! with bytes projected to their SHA-256, and `sim-summary.json`.
 
-use fabric_o11y::alpha::journal::Batch;
-use fabric_o11y::alpha::sender::{Delivery, Sender, ServerTarget};
+use fabric_o11y::spindle::sender::{Delivery, Sender, ServerTarget};
+use fabric_o11y::spindle::spool::Batch;
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{AnyValue, KeyValue, any_value};
@@ -283,14 +283,14 @@ fn main() -> ExitCode {
     let args = match parse() {
         Ok(args) => args,
         Err(error) => {
-            eprintln!("alpha_node_sim: {error}");
+            eprintln!("spindle_sim: {error}");
             return ExitCode::from(2);
         }
     };
     match run(args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(error) => {
-            eprintln!("alpha_node_sim: {error}");
+            eprintln!("spindle_sim: {error}");
             ExitCode::FAILURE
         }
     }
@@ -518,7 +518,7 @@ mod tests {
                 joined.push_str(&body);
             }
         }
-        // sha256 of the same six bodies from tools/alpha/workload.py.
+        // sha256 of the same six bodies from tools/qualification/workload.py.
         assert_eq!(
             hex(&Sha256::digest(joined.as_bytes())),
             "5c1ecbdbd540dc9cea7b9f63227d423df0143972e2dc54d928c717378e5469aa"

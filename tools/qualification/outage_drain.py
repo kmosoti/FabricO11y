@@ -138,7 +138,7 @@ def trial():
     node_exit = node.wait(timeout=60)
     server_exit = server.stop()
 
-    records = [json.loads(l) for l in subprocess.run([str(bins / "examples" / "alpha_spool_dump"), str(conf)],
+    records = [json.loads(l) for l in subprocess.run([str(bins / "examples" / "spool_dump"), str(conf)],
                                                       capture_output=True, text=True, timeout=300,
                                                       check=True).stdout.splitlines() if l]
     sources = {r["sequence"]: r for r in records if r["type"] == "source"}

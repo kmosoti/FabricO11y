@@ -2,8 +2,8 @@
 //! independent Python oracle, crash recovery of sealing, retention, stream
 //! checkpoints and incomplete answers.
 
-use fabric_o11y::alpha::journal::{Batch, Journal};
-use fabric_o11y::alpha::sender::{Delivery, Sender, ServerTarget, agent};
+use fabric_o11y::spindle::sender::{Delivery, Sender, ServerTarget, agent};
+use fabric_o11y::spindle::spool::{Batch, Spool};
 use fabric_server::config::Config;
 use fabric_server::control::{Control, DesiredConfig};
 use fabric_server::store::{CommitMode, Store};
@@ -32,7 +32,7 @@ impl Scratch {
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../target")
-            .join(format!("alpha-history-test-{}-{id}", std::process::id()));
+            .join(format!("history-test-{}-{id}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).unwrap();
         Self(path.canonicalize().unwrap())
@@ -280,7 +280,7 @@ fn payload(t0: u64, n: u64, counter: i64, start: u64) -> Batch {
 
 /// Commit `count` batches to a node spool and deliver them.
 fn deliver(spool: &Path, sender: &Sender, first: u64, count: u64) {
-    let mut journal = Journal::open(spool, 64 * 1024 * 1024).unwrap();
+    let mut journal = Spool::open(spool, 64 * 1024 * 1024).unwrap();
     for k in first..first + count {
         let start = if k < 20 { 1_000 } else { 5_000 }; // one counter reset
         let counter = (k as i64 % 20) * 1000 + 17;
@@ -377,7 +377,10 @@ fn oracle(
     .unwrap();
     let mut cmd = Command::new("python3");
     cmd.arg("-B")
-        .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tools/alpha/query_oracle.py"))
+        .arg(
+            PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../tools/qualification/query_oracle.py"),
+        )
         .arg("--records")
         .arg(scratch.path("records.jsonl"))
         .arg("--query")

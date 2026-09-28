@@ -11,13 +11,13 @@ With ten real `fabric-node` processes and one `fabric-server` on one host, under
 - Ten node processes, each with its own spool and its own log file. Each log is offered 2 lines/s of exactly 512 body bytes, alternating `R` × 512 and the phase-0 `entropy_body(seed, node, tick)`. Metrics are sampled every 15 s from the real host; the actual point count is reported, not the fleet fixture's 32. The node reads its log every second and commits a logs-only batch when new lines exist. This cadence was added to the node before any trial ran; it is recorded here as a protocol amendment, not a change after results.
 - Seeds `0xA11FA001`, `0xA11FA002`, `0xA11FA003`, one trial per seed and commit mode, 15 s warmup plus 120 s measured, trials sequential.
 - Commit modes, both through the same shared frame log with a data sync and a marker sync per frame: **grouped** (one frame per 50 ms or 1 MiB of batches) and **individual** (one frame per batch).
-- TLS on loopback with throwaway certificates. Each trial runs under the frozen [runner](../../../tools/alpha/runner.py) with a 300 s duration limit, 1 GiB live-data limit and 1 MiB evidence limit.
+- TLS on loopback with throwaway certificates. Each trial runs under the frozen [runner](../../../tools/qualification/runner.py) with a 300 s duration limit, 1 GiB live-data limit and 1 MiB evidence limit.
 
 ## Metrics
 
 - **ACK latency:** per acknowledged attempt, request start to answer as measured by the node (`elapsed_us`), which includes the server's durable commit. p50 and p99 over attempts started in the measured window.
 - **Backlog:** every 5 s in the measured window, each node's committed sequence minus its acknowledged sequence, from its delivery lines and `fabricctl inspect`. Reported as the maximum per sample.
-- **Correctness:** at the end, the [delivery oracle](../../../tools/alpha/DELIVERY_ORACLE.md) grades a transcript built as in the [fault runs](../formal/alpha-phase2-delivery-faults.md).
+- **Correctness:** at the end, the [delivery oracle](../../../tools/qualification/DELIVERY_ORACLE.md) grades a transcript built as in the [fault runs](../formal/alpha-phase2-delivery-faults.md).
 - **Resources:** server and maximum node VmHWM; server and total node CPU seconds over the measured window from `/proc/<pid>/stat`; all live bytes in server state, spools and source logs at the end.
 - **Commit cost:** frames written per mode, from the server journal.
 

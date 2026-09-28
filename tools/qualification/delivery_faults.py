@@ -6,7 +6,7 @@ it), `node-kill` (SIGKILL each node at random points and restart it), and
 `outage` (server down for 10 s while nodes keep collecting). The transcript
 is assembled only from observations the oracle's adapter contract allows:
 
-- `source` and `node_state` records come from `alpha_spool_dump`, run while
+- `source` and `node_state` records come from `spool_dump`, run while
   the node process is stopped (after a kill, and at the end);
 - `attempt` and `response` records come from the node's own delivery lines,
   which carry the SHA-256 of the exact bytes sent; an attempt whose hash does
@@ -164,7 +164,7 @@ def main() -> int:
     args = parser.parse_args()
     bins = Path(args.bin_dir).resolve()
     node_bin, server_bin = bins / "fabric-node", bins / "fabric-server"
-    spool_dump, server_dump = bins / "examples" / "alpha_spool_dump", bins / "examples" / "server_dump"
+    spool_dump, server_dump = bins / "examples" / "spool_dump", bins / "examples" / "server_dump"
     root = Path(f"target/alpha-delivery-{args.scenario}-{args.seed}").resolve()
     if root.is_symlink():
         raise SystemExit("refusing symlinked root")

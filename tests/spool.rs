@@ -1,4 +1,4 @@
-use fabric_o11y::alpha::journal::{Batch, Journal};
+use fabric_o11y::spindle::spool::{Batch, Spool};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -12,10 +12,7 @@ impl Scratch {
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
         let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("target")
-            .join(format!(
-                "alpha-journal-regression-{}-{id}",
-                std::process::id()
-            ));
+            .join(format!("spool-regression-{}-{id}", std::process::id()));
         fs::create_dir(&root).expect("create unique owned journal scratch root");
         Self(root)
     }
@@ -43,12 +40,12 @@ fn fixture(label: &str) -> Batch {
 #[test]
 fn changed_length_cannot_erase_two_committed_batches_on_reopen() {
     let scratch = Scratch::new();
-    let mut writer = Journal::open(&scratch.0, 2 * 1024 * 1024).unwrap();
+    let mut writer = Spool::open(&scratch.0, 2 * 1024 * 1024).unwrap();
     let first = writer.append(&fixture("first")).unwrap();
     let second = writer.append(&fixture("second")).unwrap();
     drop(writer);
 
-    let mut clean = Journal::open(&scratch.0, 2 * 1024 * 1024).unwrap();
+    let mut clean = Spool::open(&scratch.0, 2 * 1024 * 1024).unwrap();
     let mut replayed = Vec::new();
     assert_eq!(
         clean
@@ -69,20 +66,20 @@ fn changed_length_cannot_erase_two_committed_batches_on_reopen() {
     // but larger than the remaining file. It must be corruption, not a tail.
     committed[5] ^= 1;
     fs::write(&path, &committed).unwrap();
-    assert!(Journal::open(&scratch.0, 2 * 1024 * 1024).is_err());
+    assert!(Spool::open(&scratch.0, 2 * 1024 * 1024).is_err());
     assert_eq!(fs::read(&path).unwrap(), committed);
 }
 
 #[test]
 fn missing_append_file_with_persistent_identity_requires_rebuild() {
     let scratch = Scratch::new();
-    let mut journal = Journal::open(&scratch.0, 2 * 1024 * 1024).unwrap();
+    let mut journal = Spool::open(&scratch.0, 2 * 1024 * 1024).unwrap();
     journal.append(&fixture("committed")).unwrap();
     drop(journal);
     let append_file = scratch.0.join("batches.faj");
     let original = fs::read(&append_file).unwrap();
     fs::remove_file(&append_file).unwrap();
-    assert!(Journal::open(&scratch.0, 2 * 1024 * 1024).is_err());
+    assert!(Spool::open(&scratch.0, 2 * 1024 * 1024).is_err());
     assert!(!append_file.exists());
     // Restore only the test's owned copy so Drop removes a complete fixture.
     fs::write(&append_file, original).unwrap();

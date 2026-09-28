@@ -4,10 +4,10 @@
 //! it is encoded, buffered, transported, or stored. The generator and buffer
 //! modules use those types without changing their meaning.
 
-pub mod alpha;
 pub mod buffer;
 pub mod generator;
 pub mod log;
+pub mod spindle;
 
 /// Identifies one event. The newtype keeps it distinct from other numeric IDs.
 #[derive(Debug, PartialEq, Eq, Hash)]

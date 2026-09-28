@@ -1,4 +1,4 @@
-use fabric_o11y::alpha::log_source::read_lines;
+use fabric_o11y::spindle::log_source::read_lines;
 use std::ffi::CString;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
@@ -15,7 +15,7 @@ impl Scratch {
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("target")
-            .join(format!("alpha-log-regression-{}-{id}", std::process::id()));
+            .join(format!("log-source-regression-{}-{id}", std::process::id()));
         fs::create_dir(&path).unwrap();
         Self(path)
     }
@@ -106,7 +106,7 @@ fn recreated_file_with_reused_identity_is_detected_by_consumed_prefix() {
 
 #[test]
 fn fifo_probe_child() {
-    let Ok(path) = std::env::var("FABRIC_ALPHA_FIFO_PROBE") else {
+    let Ok(path) = std::env::var("FABRIC_FIFO_PROBE") else {
         return;
     };
     let result = read_lines(Path::new(&path), None, 100);
@@ -123,7 +123,7 @@ fn fifo_without_writer_fails_promptly() {
     let mut child = Command::new(std::env::current_exe().unwrap())
         .arg("--exact")
         .arg("fifo_probe_child")
-        .env("FABRIC_ALPHA_FIFO_PROBE", &path)
+        .env("FABRIC_FIFO_PROBE", &path)
         .spawn()
         .unwrap();
     let deadline = Instant::now() + Duration::from_secs(1);

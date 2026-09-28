@@ -6,7 +6,7 @@ Accepted on 2026-09-27 for the alpha `FAB1` journal (plan decision D1). This rev
 
 ## Context
 
-The phase-1 journal synced one `recovery-required` sidecar before writing any frame byte and removed it after commit; reopen refused while it existed. Any process death inside the append window therefore made the spool unopenable, although the node had not advanced its source cursor and nothing had been sent. A [kill probe](../../tools/alpha/kill_probe.py) reproduced this on the checkpoint binary at its second killed iteration. The same probe found that a kill between creating the identity file and the journal file on first open left a permanently refused spool. Phase 5 requires graceful restart and retained spool, and systemd can deliver SIGKILL after a stop timeout.
+The phase-1 journal synced one `recovery-required` sidecar before writing any frame byte and removed it after commit; reopen refused while it existed. Any process death inside the append window therefore made the spool unopenable, although the node had not advanced its source cursor and nothing had been sent. A [kill probe](../../tools/qualification/kill_probe.py) reproduced this on the checkpoint binary at its second killed iteration. The same probe found that a kill between creating the identity file and the journal file on first open left a permanently refused spool. Phase 5 requires graceful restart and retained spool, and systemd can deliver SIGKILL after a stop timeout.
 
 ## Decision
 

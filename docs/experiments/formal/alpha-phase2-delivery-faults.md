@@ -1,10 +1,10 @@
 # Phase-2 delivery under process faults, run 01
 
-Status: all eight fault runs passed the frozen [delivery oracle](../../../tools/alpha/DELIVERY_ORACLE.md) on 2026-09-27, and both negative controls failed as intended. This covers three nodes and one server on one host. It is not the ten-process, latency or commit-mode gate of phase 2.
+Status: all eight fault runs passed the frozen [delivery oracle](../../../tools/qualification/DELIVERY_ORACLE.md) on 2026-09-27, and both negative controls failed as intended. This covers three nodes and one server on one host. It is not the ten-process, latency or commit-mode gate of phase 2.
 
 ## Method
 
-[`delivery_faults.py`](../../../tools/alpha/delivery_faults.py) starts one `fabric-server` over TLS with throwaway `openssl` certificates and three `fabric-node run` processes. Each node collects metrics every second and a writer appends ten 83-byte log lines per second. Runs last 20 s, then writers stop, nodes get 3 s to drain and are stopped with SIGTERM, and the server is stopped with SIGTERM. Scenarios:
+[`delivery_faults.py`](../../../tools/qualification/delivery_faults.py) starts one `fabric-server` over TLS with throwaway `openssl` certificates and three `fabric-node run` processes. Each node collects metrics every second and a writer appends ten 83-byte log lines per second. Runs last 20 s, then writers stop, nodes get 3 s to drain and are stopped with SIGTERM, and the server is stopped with SIGTERM. Scenarios:
 
 - `clean`: no fault.
 - `server-kill`: SIGKILL the server at three random times and restart it after 0.5 to 2 s.

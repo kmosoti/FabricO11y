@@ -1,9 +1,9 @@
 //! Central control end to end: admin API, node polling, pause, revoke,
 //! validation before activation and last-valid configuration offline.
 
-use fabric_o11y::alpha::host::Paths;
-use fabric_o11y::alpha::node::{Config as NodeConfig, Node};
-use fabric_o11y::alpha::sender::{ServerTarget, agent};
+use fabric_o11y::spindle::host::Paths;
+use fabric_o11y::spindle::runtime::{Config as NodeConfig, Node};
+use fabric_o11y::spindle::sender::{ServerTarget, agent};
 use fabric_server::config::Config;
 use fabric_server::store::CommitMode;
 use serde_json::{Value, json};
@@ -23,7 +23,7 @@ impl Scratch {
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../target")
-            .join(format!("alpha-control-test-{}-{id}", std::process::id()));
+            .join(format!("control-test-{}-{id}", std::process::id()));
         fs::create_dir_all(&path).unwrap();
         Self(path.canonicalize().unwrap())
     }
@@ -241,7 +241,7 @@ fn host_paths(root: &Path) -> Paths {
 
 fn gaps(spool: &Path) -> Vec<String> {
     let mut out = Vec::new();
-    fabric_o11y::alpha::journal::Journal::inspect(spool, 16 * 1024 * 1024, |b| {
+    fabric_o11y::spindle::spool::Spool::inspect(spool, 16 * 1024 * 1024, |b| {
         out.extend(b.collection_gaps);
         Ok(())
     })

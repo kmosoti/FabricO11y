@@ -20,7 +20,7 @@ invalid base64, a `node_id` that is not 32 lowercase hex characters, a
 non-integer/negative/>2^64-1 `sequence` or `generation`, empty `bytes`, any
 record after `end`, or a transcript missing `end` are all malformed input:
 the CLI exits 2. A stream is identified by `(node_id, generation)`, matching
-the `Batch` envelope identity in [journal.rs](../../src/alpha/journal.rs)
+the `Batch` envelope identity in [envelope.rs](../../crates/fabric-frame/src/envelope.rs)
 (`node_id`: 16 bytes / 32 hex chars; `generation`, `sequence`: `u64`).
 
 | type | fields | meaning |

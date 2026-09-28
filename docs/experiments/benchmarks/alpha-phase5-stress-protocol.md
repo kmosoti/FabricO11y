@@ -8,12 +8,12 @@ Under 1,000 simulated identities, with a 5× burst, rejected credentials, malfor
 
 ## Method
 
-[`stress_tier.py`](../../../tools/alpha/stress_tier.py) runs one `fabric-server` pinned to CPUs 0 to 3 and the fleet [simulator](../../../examples/alpha_node_sim.rs) on the other CPUs for 180 s with the frozen workload, except that seconds 60 to 79 offer five times the log rate. Concurrently:
+[`stress_tier.py`](../../../tools/qualification/stress_tier.py) runs one `fabric-server` pinned to CPUs 0 to 3 and the fleet [simulator](../../../examples/spindle_sim.rs) on the other CPUs for 180 s with the frozen workload, except that seconds 60 to 79 offer five times the log rate. Concurrently:
 
 - **rejection:** 200 times, one valid batch under a revoked node token, the same batch under an unknown token, and a malformed body under a valid token, all with fresh node identities;
 - **management:** every 0.5 s, an inventory listing, a configuration change for a random identity, and a 30 s log query for a random node.
 
-Seeds `0xA11FA001` to `0xA11FA003`, one trial each, under the frozen [runner](../../../tools/alpha/runner.py) with a 1,500 s duration limit, 5 GiB live-data limit and 1 MiB evidence limit.
+Seeds `0xA11FA001` to `0xA11FA003`, one trial each, under the frozen [runner](../../../tools/qualification/runner.py) with a 1,500 s duration limit, 5 GiB live-data limit and 1 MiB evidence limit.
 
 ## Decision rule
 

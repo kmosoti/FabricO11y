@@ -18,9 +18,9 @@ jobs:
         run: cargo fmt --all --check
       - name: Check locked application tests
         run: cargo test --locked --workspace --all-features
-      - name: Check alpha runner negative controls
-        run: python3 -B tools/alpha/test_runner.py
-      - name: Check alpha seeded workload and rate oracle
-        run: python3 -B tools/alpha/test_workload.py
+      - name: Check qualification runner negative controls
+        run: python3 -B tools/qualification/test_runner.py
+      - name: Check the seeded workload and rate oracle
+        run: python3 -B tools/qualification/test_workload.py
       - name: Check the delivery oracle and its mutation controls
-        run: python3 -B tools/alpha/test_delivery_oracle.py
+        run: python3 -B tools/qualification/test_delivery_oracle.py

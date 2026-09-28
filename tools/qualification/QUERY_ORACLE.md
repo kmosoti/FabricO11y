@@ -12,7 +12,7 @@ read to write this tool.
 ## Field numbers (verified, no disagreement found)
 
 Checked against the vendored `opentelemetry-proto-0.33.0` crate sources and
-`src/alpha/journal.rs`. Every number matches the task's list exactly:
+`crates/fabric-frame/src/envelope.rs`. Every number matches the task's list exactly:
 `Batch` 1..8 as given; `ExportLogsServiceRequest.resource_logs=1`,
 `ResourceLogs.scope_logs=2`, `ScopeLogs.log_records=2`, `LogRecord`
 `time_unix_nano=1`, `observed_time_unix_nano=11`, `body=5`, `attributes=6`;
@@ -26,7 +26,7 @@ as_int=6, attributes=7`.
 ## CLI
 
 ```
-python3 -B tools/alpha/query_oracle.py --records R --query Q --answer A [--unavailable U]
+python3 -B tools/qualification/query_oracle.py --records R --query Q --answer A [--unavailable U]
 ```
 
 `R` is a JSONL file (one record object per line), `Q`/`A`/`U` are JSON

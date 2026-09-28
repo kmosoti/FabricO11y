@@ -94,7 +94,7 @@ def main():
         rows.append(measure(probe, prefix, f"trial-{index}", seed))
     files = ["Cargo.toml", "Cargo.lock", "src/lib.rs", "src/generator.rs",
              "src/buffer.rs", "src/log.rs", "examples/local_log_probe.rs",
-             "tools/alpha/runner.py", "tools/alpha/run_baseline.py"]
+             "tools/qualification/runner.py", "tools/qualification/run_baseline.py"]
     result = {"kind": "current FOL2 baseline", "warmup": rows[0], "trials": rows[1:],
               "source_sha256": {name: digest(ROOT / name) for name in files},
               "rustc": subprocess.check_output(["rustc", "--version"], text=True).strip(),

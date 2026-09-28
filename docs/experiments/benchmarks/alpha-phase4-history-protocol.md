@@ -10,7 +10,7 @@ Status: registered on 2026-09-28 before any phase-4 measurement (plan steps 4.5 
 
 ## Fixture and workload
 
-The fleet [simulator](../../../examples/alpha_node_sim.rs) drives 1,000 enrolled identities with the frozen workload (two 512-byte log records per identity per second and 32 metric points every 15 s) for 250 s, about 1,033,000 records in 250,000 batches. Seeds `0xA11FA001` to `0xA11FA003`, one trial each, in **segment** mode (journal files sealed at 64 MiB into Zstd Parquet segments). One further trial with seed `0xA11FA001` runs in **journal-only** mode (journal file size above the fixture, so nothing is sealed). The server is pinned to logical CPUs 0 to 3 with `taskset`, the simulator to the rest. Each trial runs under the frozen [runner](../../../tools/alpha/runner.py) with a 1,800 s duration limit, 5 GiB live-data limit and 1 MiB evidence limit.
+The fleet [simulator](../../../examples/spindle_sim.rs) drives 1,000 enrolled identities with the frozen workload (two 512-byte log records per identity per second and 32 metric points every 15 s) for 250 s, about 1,033,000 records in 250,000 batches. Seeds `0xA11FA001` to `0xA11FA003`, one trial each, in **segment** mode (journal files sealed at 64 MiB into Zstd Parquet segments). One further trial with seed `0xA11FA001` runs in **journal-only** mode (journal file size above the fixture, so nothing is sealed). The server is pinned to logical CPUs 0 to 3 with `taskset`, the simulator to the rest. Each trial runs under the frozen [runner](../../../tools/qualification/runner.py) with a 1,800 s duration limit, 5 GiB live-data limit and 1 MiB evidence limit.
 
 ## Freshness
 
@@ -26,7 +26,7 @@ After the simulator ends and, in segment mode, after every sealed journal file h
 - **fleet metrics:** one metric name across all nodes in a 60 s window, limit 10,000, following every page;
 - **rate:** the gauge metric name used by the simulator, which has no monotonic sums, so the answer is empty and the cost is the scan.
 
-Latency is request start to full answer, including every page of a paginated query. Correctness: one instance of each query is graded by the frozen [query oracle](../../../tools/alpha/QUERY_ORACLE.md) over the server's retained records.
+Latency is request start to full answer, including every page of a paginated query. Correctness: one instance of each query is graded by the frozen [query oracle](../../../tools/qualification/QUERY_ORACLE.md) over the server's retained records.
 
 ## Decision rule
 

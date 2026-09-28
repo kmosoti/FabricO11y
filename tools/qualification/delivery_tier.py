@@ -108,7 +108,7 @@ def trial() -> int:
     bins = Path(args.bin_dir).resolve(strict=True)
     node_bin, ctl_bin = bins / "fabric-node", bins / "fabricctl"
     server_bin = bins / "examples" / "server_mode"
-    spool_dump, server_dump = bins / "examples" / "alpha_spool_dump", bins / "examples" / "server_dump"
+    spool_dump, server_dump = bins / "examples" / "spool_dump", bins / "examples" / "server_dump"
     make_certs(root)
     port = free_port()
     creds = []

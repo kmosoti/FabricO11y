@@ -14,9 +14,9 @@ found six defects, all repaired with discriminating regressions; its re-review i
 pending. That reviewer is same-model for this author, the Gemini CLI run was denied
 shell commands, and GPT review is unavailable until 2026-10-03.
 
-Phase 2 is in progress. A frozen [delivery oracle](../tools/alpha/DELIVERY_ORACLE.md)
+Phase 2 is in progress. A frozen [delivery oracle](../tools/qualification/DELIVERY_ORACLE.md)
 predates the server. The node spool and a new [Fabric Server](../crates/fabric-server/src/lib.rs)
-share one rotating [frame log](../src/alpha/frame.rs). The node sends its oldest
+share one rotating [frame log](../crates/fabric-frame/src/frame.rs). The node sends its oldest
 unacknowledged batch over TLS and keeps a durable ACK cursor; the server commits grouped
 frames before answering under the [ADR-0013](decisions/ADR-0013-deliver-batches-in-order-with-bounded-dedup.md)
 rule. End-to-end tests pass and fail on two injected server defects, and
@@ -26,7 +26,7 @@ commit-mode comparison remain. Ten real nodes pass the [registered delivery run]
 in both commit modes. Phase 3 has [central control](architecture/control-plane.md): enrollment,
 desired and applied configuration, pause, resume and revoke, and a fleet simulator; the
 [registered fleet trials](experiments/benchmarks/alpha-phase3-fleet-run-01.md) pass at 10, 100 and 1,000 identities. Phase 4 has Zstd Parquet segments, retention and exact queries whose tests are graded by
-a [query oracle](../tools/alpha/QUERY_ORACLE.md) frozen before the implementation; its
+a [query oracle](../tools/qualification/QUERY_ORACLE.md) frozen before the implementation; its
 latency and freshness measurements are pending. Phase 5
 is unimplemented; the [planned deployment](architecture/deployment.md) is unchanged.
 FOL2 and the research packages remain supported.

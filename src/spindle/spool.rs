@@ -24,7 +24,7 @@ fn invalid(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.into())
 }
 
-pub struct Journal {
+pub struct Spool {
     dir: PathBuf,
     log: FrameLog,
     node_id: [u8; 16],
@@ -163,7 +163,7 @@ fn write_acked(dir: &Path, generation: u64, through: u64) -> io::Result<()> {
     File::open(dir)?.sync_all()
 }
 
-impl Journal {
+impl Spool {
     /// Read a bounded snapshot without taking the writer lock or repairing a
     /// tail. A concurrent append, rotation or reclaim makes it retryable.
     pub fn inspect(
@@ -455,7 +455,7 @@ mod tests {
 
     fn inspect_counts(dir: &Path) -> (Inspection, usize) {
         let mut visible = 0;
-        let status = Journal::inspect(dir, 64 * 1024, |_| {
+        let status = Spool::inspect(dir, 64 * 1024, |_| {
             visible += 1;
             Ok(())
         })
@@ -472,7 +472,7 @@ mod tests {
             SyncStage::AfterClear,
         ] {
             let scratch = Scratch::new();
-            let mut journal = Journal::open(&scratch.0, 64 * 1024).unwrap();
+            let mut journal = Spool::open(&scratch.0, 64 * 1024).unwrap();
             journal.append(&batch()).unwrap();
             let prior = journal.next_sequence();
             let failed = journal.append_inner(batch(), |at| {
@@ -495,7 +495,7 @@ mod tests {
             let (inspected, visible) = inspect_counts(&scratch.0);
             assert!(inspected.recovery_required);
             assert_eq!((inspected.committed_bytes, visible), (0, 0));
-            assert!(Journal::open(&scratch.0, 64 * 1024).is_err());
+            assert!(Spool::open(&scratch.0, 64 * 1024).is_err());
         }
     }
 
@@ -510,7 +510,7 @@ mod tests {
             (SyncStage::AfterClear, true),
         ] {
             let scratch = Scratch::new();
-            let mut journal = Journal::open(&scratch.0, 64 * 1024).unwrap();
+            let mut journal = Spool::open(&scratch.0, 64 * 1024).unwrap();
             let first = journal.append(&batch()).unwrap();
             let first_end = journal.used_bytes();
             let died = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -532,7 +532,7 @@ mod tests {
             assert!(!status.recovery_required);
             assert_eq!(status.interrupted_append, in_progress);
             assert_eq!(visible, if kept { 2 } else { 1 });
-            let mut reopened = Journal::open(&scratch.0, 64 * 1024).unwrap();
+            let mut reopened = Spool::open(&scratch.0, 64 * 1024).unwrap();
             assert!(!scratch.0.join(IN_PROGRESS).exists());
             let mut replayed = Vec::new();
             reopened
@@ -556,23 +556,23 @@ mod tests {
         let scratch = Scratch::new();
         fs::write(scratch.0.join("batches.faj"), b"").unwrap();
         fs::write(scratch.0.join("identity.tmp"), b"FAI1torn").unwrap();
-        let mut journal = Journal::open(&scratch.0, 64 * 1024).unwrap();
+        let mut journal = Spool::open(&scratch.0, 64 * 1024).unwrap();
         assert_eq!(journal.append(&batch()).unwrap().sequence, 1);
         drop(journal);
         // A non-empty journal without its identity is still refused.
         fs::remove_file(scratch.0.join("identity")).unwrap();
-        assert!(Journal::open(&scratch.0, 64 * 1024).is_err());
+        assert!(Spool::open(&scratch.0, 64 * 1024).is_err());
     }
 
     #[test]
     fn live_writer_marker_is_retryable_then_completed_batch_is_visible() {
         let scratch = Scratch::new();
-        let mut journal = Journal::open(&scratch.0, 64 * 1024).unwrap();
+        let mut journal = Spool::open(&scratch.0, 64 * 1024).unwrap();
         let committed = journal
             .append_inner(batch(), |stage| {
                 if stage == SyncStage::Data {
                     assert_eq!(
-                        Journal::inspect(&scratch.0, 64 * 1024, |_| Ok(()))
+                        Spool::inspect(&scratch.0, 64 * 1024, |_| Ok(()))
                             .err()
                             .unwrap()
                             .kind(),
@@ -583,7 +583,7 @@ mod tests {
             })
             .unwrap();
         let mut visible = Vec::new();
-        let status = Journal::inspect(&scratch.0, 64 * 1024, |item| {
+        let status = Spool::inspect(&scratch.0, 64 * 1024, |item| {
             visible.push(item);
             Ok(())
         })
@@ -596,7 +596,7 @@ mod tests {
     #[test]
     fn plausible_interrupted_tail_truncates_only_uncommitted_bytes() {
         let scratch = Scratch::new();
-        let mut journal = Journal::open(&scratch.0, 64 * 1024).unwrap();
+        let mut journal = Spool::open(&scratch.0, 64 * 1024).unwrap();
         let committed = journal.append(&batch()).unwrap();
         let end = journal.used_bytes();
         drop(journal);
@@ -607,7 +607,7 @@ mod tests {
         file.write_all(&b"FAB1"[..2]).unwrap();
         file.sync_all().unwrap();
         drop(file);
-        let mut reopened = Journal::open(&scratch.0, 64 * 1024).unwrap();
+        let mut reopened = Spool::open(&scratch.0, 64 * 1024).unwrap();
         assert_eq!(reopened.used_bytes(), end);
         assert_eq!(reopened.next_sequence(), 2);
         let mut batches = Vec::new();
@@ -653,7 +653,7 @@ mod tests {
     #[test]
     fn acknowledged_prefix_is_sent_in_order_then_reclaimed_by_whole_files() {
         let scratch = Scratch::new();
-        let mut journal = Journal::open_rotating(&scratch.0, 1024 * 1024, 150).unwrap();
+        let mut journal = Spool::open_rotating(&scratch.0, 1024 * 1024, 150).unwrap();
         let mut committed = Vec::new();
         for n in 0..10 {
             let next = if n % 3 == 2 { batch() } else { metrics_batch() };
@@ -680,7 +680,7 @@ mod tests {
         assert!(retained.len() < labels.len());
         drop(journal);
 
-        let mut reopened = Journal::open_rotating(&scratch.0, 1024 * 1024, 150).unwrap();
+        let mut reopened = Spool::open_rotating(&scratch.0, 1024 * 1024, 150).unwrap();
         assert_eq!(reopened.acked_through(), 3);
         assert_eq!(reopened.next_sequence(), 11);
         let (seq, bytes) = reopened.next_unacked().unwrap().unwrap();
@@ -700,27 +700,27 @@ mod tests {
         assert_eq!(reopened.append(&batch()).unwrap().sequence, 11);
         assert_eq!(reopened.next_unacked().unwrap().unwrap().0, 11);
         drop(reopened);
-        let status = Journal::inspect(&scratch.0, 1024 * 1024, |_| Ok(())).unwrap();
+        let status = Spool::inspect(&scratch.0, 1024 * 1024, |_| Ok(())).unwrap();
         assert_eq!((status.acked_through, status.next_sequence), (10, 12));
     }
 
     #[test]
     fn missing_unacknowledged_sealed_file_refuses_reopen() {
         let scratch = Scratch::new();
-        let mut journal = Journal::open_rotating(&scratch.0, 1024 * 1024, 100).unwrap();
+        let mut journal = Spool::open_rotating(&scratch.0, 1024 * 1024, 100).unwrap();
         for _ in 0..6 {
             journal.append(&metrics_batch()).unwrap();
         }
         drop(journal);
         let oldest = sealed_on_disk(&scratch.0)[0];
         fs::remove_file(scratch.0.join(format!("sealed-{oldest:020}.faj"))).unwrap();
-        assert!(Journal::open_rotating(&scratch.0, 1024 * 1024, 100).is_err());
+        assert!(Spool::open_rotating(&scratch.0, 1024 * 1024, 100).is_err());
     }
 
     #[test]
     fn rotation_interrupted_after_rename_reopens_with_a_fresh_active_file() {
         let scratch = Scratch::new();
-        let mut journal = Journal::open_rotating(&scratch.0, 1024 * 1024, 1 << 30).unwrap();
+        let mut journal = Spool::open_rotating(&scratch.0, 1024 * 1024, 1 << 30).unwrap();
         journal.append(&metrics_batch()).unwrap();
         journal.append(&metrics_batch()).unwrap();
         drop(journal);
@@ -730,7 +730,7 @@ mod tests {
             scratch.0.join(format!("sealed-{:020}.faj", 1)),
         )
         .unwrap();
-        let mut reopened = Journal::open_rotating(&scratch.0, 1024 * 1024, 1 << 30).unwrap();
+        let mut reopened = Spool::open_rotating(&scratch.0, 1024 * 1024, 1 << 30).unwrap();
         assert_eq!(reopened.next_sequence(), 3);
         assert_eq!(reopened.append(&metrics_batch()).unwrap().sequence, 3);
         assert_eq!(reopened.replay(|_| Ok(())).unwrap(), 3);
@@ -741,6 +741,6 @@ mod tests {
             scratch.0.join(format!("sealed-{:020}.faj", 2)),
         )
         .unwrap();
-        assert!(Journal::open_rotating(&scratch.0, 1024 * 1024, 1 << 30).is_err());
+        assert!(Spool::open_rotating(&scratch.0, 1024 * 1024, 1 << 30).is_err());
     }
 }

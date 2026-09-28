@@ -1,6 +1,6 @@
 //! Development-only exact log-body replay for the registered native trial.
-use fabric_o11y::alpha::journal::Journal;
-use fabric_o11y::alpha::node::Config;
+use fabric_o11y::spindle::runtime::Config;
+use fabric_o11y::spindle::spool::Spool;
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::common::v1::any_value;
 use prost::Message;
@@ -10,13 +10,13 @@ fn main() -> io::Result<()> {
     let path = std::env::args().nth(1).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
-            "usage: alpha_native_dump <CONFIG_PATH>",
+            "usage: native_dump <CONFIG_PATH>",
         )
     })?;
     let config = Config::load(path)?;
     let stdout = io::stdout();
     let mut output = stdout.lock();
-    Journal::inspect(&config.spool, config.spool_bytes - 4096, |batch| {
+    Spool::inspect(&config.spool, config.spool_bytes - 4096, |batch| {
         if batch.logs.is_empty() {
             return Ok(());
         }

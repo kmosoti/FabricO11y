@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for tools/alpha/query_oracle.py.
+"""Tests for tools/qualification/query_oracle.py.
 
 Builds protobuf `Batch` fixtures with a small hand-written encoder (never
 importing any implementation code), then exercises `expected()`/`check()`
@@ -8,7 +8,7 @@ behavior). Mutation controls: starting from one correct multi-page answer,
 each mutant changes exactly one thing and must fail with the rule the
 mutation targets; the unmutated original must pass.
 
-Run: python3 -B tools/alpha/test_query_oracle.py
+Run: python3 -B tools/qualification/test_query_oracle.py
 """
 
 import base64

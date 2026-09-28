@@ -4,7 +4,7 @@ Status: all nine registered trials passed on 2026-09-28 (plan step 3.5). The sim
 
 ## Method
 
-As registered in the [fleet protocol](alpha-phase3-fleet-protocol.md): one `fabric-server` pinned to logical CPUs 0 to 3, one [simulator](../../../examples/alpha_node_sim.rs) process on CPUs 4 to 11 driving 10, 100 or 1,000 enrolled identities, 15 s warmup plus 120 s measured, three seeds per tier, grouped commit, and one configuration change to every identity at 60 s. Binaries and harness were frozen from commit `4921e5eac1b7b8e3c0f0a1af0dad4ba5ea42bb53`; SHA-256 values are in [hashes.txt](data/alpha-phase3/hashes.txt). During the run a storage-probe research test ran pinned to CPU 11, which the simulator shares; the server's CPUs were not shared. For each tier `T` and `N=1,2,3`:
+As registered in the [fleet protocol](alpha-phase3-fleet-protocol.md): one `fabric-server` pinned to logical CPUs 0 to 3, one [simulator](../../../examples/spindle_sim.rs) process on CPUs 4 to 11 driving 10, 100 or 1,000 enrolled identities, 15 s warmup plus 120 s measured, three seeds per tier, grouped commit, and one configuration change to every identity at 60 s. Binaries and harness were frozen from commit `4921e5eac1b7b8e3c0f0a1af0dad4ba5ea42bb53`; SHA-256 values are in [hashes.txt](data/alpha-phase3/hashes.txt). During the run a storage-probe research test ran pinned to CPU 11, which the simulator shares; the server's CPUs were not shared. For each tier `T` and `N=1,2,3`:
 
 ```sh
 python3 -B tools/alpha/runner.py --out target/alpha-p3-fleet-T-seedN --duration-s 900 --disk-bytes 5368709120 --max-output-bytes 1048576 -- python3 -B target/alpha-p3-frozen/tools/fleet_tier.py --tier T --seed 0xA11FA00N --bin-dir target/alpha-p3-frozen

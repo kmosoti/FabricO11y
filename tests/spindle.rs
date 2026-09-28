@@ -1,6 +1,6 @@
-use fabric_o11y::alpha::host::Paths;
-use fabric_o11y::alpha::journal::{Batch, Journal};
-use fabric_o11y::alpha::node::{Config, Node, inspect};
+use fabric_o11y::spindle::host::Paths;
+use fabric_o11y::spindle::runtime::{Config, Node, inspect};
+use fabric_o11y::spindle::spool::{Batch, Spool};
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
 use opentelemetry_proto::tonic::common::v1::any_value;
@@ -20,7 +20,7 @@ impl Scratch {
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("target")
-            .join(format!("alpha-node-test-{}-{id}", std::process::id()));
+            .join(format!("spindle-test-{}-{id}", std::process::id()));
         fs::create_dir(&path).unwrap();
         Self(path)
     }
@@ -79,7 +79,7 @@ fn config(root: &Path, bytes: u64) -> Config {
 
 fn batches(config: &Config) -> Vec<Batch> {
     let mut result = Vec::new();
-    Journal::inspect(&config.spool, config.spool_bytes - 4096, |batch| {
+    Spool::inspect(&config.spool, config.spool_bytes - 4096, |batch| {
         result.push(batch);
         Ok(())
     })

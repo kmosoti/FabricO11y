@@ -1,6 +1,6 @@
 //! One bounded pass over an explicitly selected newline log file.
 
-use crate::alpha::journal::Cursor;
+use crate::spindle::spool::Cursor;
 use std::fs::OpenOptions;
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};

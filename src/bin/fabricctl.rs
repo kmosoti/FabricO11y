@@ -1,5 +1,5 @@
-use fabric_o11y::alpha::node::{Config, inspect};
-use fabric_o11y::alpha::sender::{agent, read_token};
+use fabric_o11y::spindle::runtime::{Config, inspect};
+use fabric_o11y::spindle::sender::{agent, read_token};
 use std::io::{self, Read};
 use std::path::PathBuf;
 use std::process::ExitCode;

@@ -1,6 +1,6 @@
 # Retained history and query (phase 4 contract)
 
-Status: contract for phase 4, written before implementation; an independent [exact-scan oracle](../../tools/alpha/QUERY_ORACLE.md) was built from it first. The [server](../../crates/fabric-server/src/query.rs) implements it and its integration tests are graded by that oracle; qualification at the fleet tiers is recorded in the [phase ledger](../ALPHA.md#phase-ledger). The [alpha contract](../ALPHA.md#safety-contract) owns the gates.
+Status: contract for phase 4, written before implementation; an independent [exact-scan oracle](../../tools/qualification/QUERY_ORACLE.md) was built from it first. The [server](../../crates/fabric-server/src/query.rs) implements it and its integration tests are graded by that oracle; qualification at the fleet tiers is recorded in the [phase ledger](../ALPHA.md#phase-ledger). The [alpha contract](../ALPHA.md#safety-contract) owns the gates.
 
 ## Data model
 
