@@ -1,0 +1,22 @@
+ENV systemd 257 debian 13.7 kernel 6.18.44-fc-v37
+ENV cgroup tmpfs controllers: 
+ACCEPT A1 PASS temporary root: fabricolly:x:999:999:Fabric O11y service:/:/usr/sbin/nologin
+ACCEPT A2a PASS human account uid 1500 refused, nothing unpacked
+ACCEPT A2b PASS non-system group gid 1600 refused, nothing unpacked
+ACCEPT A3 PASS installed twice; fabricolly:x:996:996:Fabric O11y service:/:/usr/sbin/nologin
+ACCEPT A3b PASS /etc/fabrico11y 750 root:fabricolly
+ACCEPT A4 PASS exit 0
+ACCEPT A5 PASS untrusted client exit 60; CA-verified 200
+ACCEPT A6 PASS  fabrico11y-node:uid=996,gid=996,CapEff=0000000000000000,NoNewPrivs=1 fabrico11y-server:uid=996,gid=996,CapEff=0000000000000000,NoNewPrivs=1
+ACCEPT A7 PASS  /var/lib/fabrico11y/node=700 fabricolly:fabricolly /var/lib/fabrico11y/server=700 fabricolly:fabricolly /run/fabrico11y/node=700 fabricolly:fabricolly /run/fabrico11y/server=700 fabricolly:fabricolly
+ACCEPT A8 FAIL  fabrico11y-node.service:cgroup=/system.slice/system-fabrico11y.slice/fabrico11y-node.service EffectiveMemoryHigh=134217728 EffectiveMemoryMax=3489660928 EffectiveTasksMax=128 MemoryCurrent=1880064 TasksCurrent=1 kernel-memory-max=9223372036854771712 kernel-pids-max=128 fabrico11y-server.service:cgroup=/system.slice/system-fabrico11y.slice/fabrico11y-server.service EffectiveMemoryHigh=2684354560 EffectiveMemoryMax=3221225472 EffectiveTasksMax=512 MemoryCurrent=2424832 TasksCurrent=9 kernel-memory-max=3221225472 kernel-pids-max=512 slice kernel-memory-max=3489660928 kernel-pids-max=640
+ACCEPT A8h NOT-RUN legacy cgroup hierarchy: MemoryHigh has no kernel counterpart (systemd reports the value only)
+REPORT IOReadBytes node=[not set] (I/O accounting and weights are reported, never counted as enforcement)
+ACCEPT A9 PASS system.memory.available points and the authorized log line delivered
+ACCEPT A10 PASS gap: log source unavailable /var/log/fabric-accept/denied.log: Permission denied (os error 13)
+ACCEPT A11 PASS server stop Result=success; node restart Result=success; spool files=5; outage line delivered after restart; earlier line retained
+ACCEPT A12 PASS service-limit hog: signal/9 peak=268435456 limit=268435456; slice-limit hog: signal/9 peak=3457400832 limit=3489660928; task tree peaked at TasksCurrent=128 with 5 fork-failure lines; services active, NRestarts unchanged, delivery continued
+ACCEPT A13a PASS remove: binaries gone, services 'inactive inactive ', state, configuration and account kept
+ACCEPT A13b PASS purge: /var/lib/fabrico11y and /etc/fabrico11y removed
+RESULT fails=1 not_run=1
+exit 1

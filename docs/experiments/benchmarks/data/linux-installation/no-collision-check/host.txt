@@ -1,0 +1,2 @@
+host cgroup hierarchy: legacy (tmpfs)
+6.18.44-fc-v37
