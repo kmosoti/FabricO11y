@@ -2,7 +2,7 @@
 
 ## Active work
 
-Milestone **delivery and recovery qualification** ([record](milestones/delivery-recovery.md)): the registered outage protocol, stress revision 2 and a newly registered soak, run on a four-CPU host. Merged: the [architecture foundation](milestones/architecture-foundation.md), the [verification foundation](milestones/verification-foundation.md), the [semantic kernels](milestones/semantic-kernels.md) and the [history qualification](milestones/history-qualification.md). Later milestones are in the [roadmap](ROADMAP.md).
+Milestone **Linux installation qualification** ([record](milestones/linux-installation.md)): the registered running-installation acceptance in a disposable Debian 13 systemd container. Merged: the [architecture foundation](milestones/architecture-foundation.md), the [verification foundation](milestones/verification-foundation.md), the [semantic kernels](milestones/semantic-kernels.md) and the [history qualification](milestones/history-qualification.md); the [delivery and recovery qualification](milestones/delivery-recovery.md) is in review. Later milestones are in the [roadmap](ROADMAP.md).
 
 ## Implemented
 
@@ -38,7 +38,7 @@ Crates: `fabric-core` (core), `fabric-ports` (ports), `fabric-app` (app), `fabri
 
 ## Outstanding qualification
 
-From the [capability ledger](QUALIFICATION.md#capability-ledger): history query latency, freshness and journal-versus-Segment comparison **measured and passing** under [revision 2](experiments/benchmarks/history-protocol-r2.md) on a four-CPU host ([history run 01](experiments/benchmarks/history-run-01.md)), not qualified on the target profile; outage and drain **measured and passing** ([outage run 01](experiments/benchmarks/outage-run-01.md)); burst, rejection and concurrent management **measured and passing** under [stress revision 2](experiments/benchmarks/stress-protocol-r2.md) ([stress run 01](experiments/benchmarks/stress-run-01.md)); soak **failed** its RSS-growth gate ([soak run 01](experiments/benchmarks/soak-run-01.md)); running installation **not run** (needs root on a disposable host); release **not performed**, no tag. No capability is qualified on the target profile.
+From the [capability ledger](QUALIFICATION.md#capability-ledger): history query latency, freshness and journal-versus-Segment comparison **measured and passing** under [revision 2](experiments/benchmarks/history-protocol-r2.md) on a four-CPU host ([history run 01](experiments/benchmarks/history-run-01.md)), not qualified on the target profile; outage and drain **measured and passing** ([outage run 01](experiments/benchmarks/outage-run-01.md)); burst, rejection and concurrent management **measured and passing** under [stress revision 2](experiments/benchmarks/stress-protocol-r2.md) ([stress run 01](experiments/benchmarks/stress-run-01.md)); soak **failed** its RSS-growth gate ([soak run 01](experiments/benchmarks/soak-run-01.md)); running installation **inconclusive** ([installation acceptance run 01](experiments/formal/installation-acceptance-run-01.md): every check but `MemoryHigh` enforcement passed in a Debian 13 container on a legacy cgroup hierarchy); release **not performed**, no tag. No capability is qualified on the target profile.
 
 ## Next validation steps
 
@@ -46,3 +46,5 @@ From the [capability ledger](QUALIFICATION.md#capability-ledger): history query 
 - [ ] History revision 1 on the 12-CPU target host.
 - [x] Outage, stress (revision 2) and soak run on a four-CPU host ([milestone record](milestones/delivery-recovery.md)).
 - [ ] Bound the sealer's working set, then rerun the registered soak unchanged ([soak run 01](experiments/benchmarks/soak-run-01.md)).
+- [x] Running-installation acceptance in a container ([milestone record](milestones/linux-installation.md)): inconclusive.
+- [ ] Running-installation acceptance on a host with the unified cgroup hierarchy (decides `MemoryHigh` enforcement).

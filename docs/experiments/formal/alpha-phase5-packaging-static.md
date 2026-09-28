@@ -2,6 +2,8 @@
 
 Status: the static and unprivileged parts of plan steps 5.1 and 5.2 passed on 2026-09-28. The running-install acceptance in the [installation contract](../../PRODUCT-CONTRACT.md#linux-installation-contract) is **unrun**: it creates a system account and system units and needs root on a disposable systemd host. It must not be recorded as passed.
 
+Later record: the running-install acceptance ran in the Linux-installation milestone; see [installation acceptance run 01](installation-acceptance-run-01.md).
+
 ## What exists
 
 [`packaging/`](../../../packaging/) holds the vendor sysusers file (`g fabricolly -`, then `u! fabricolly -:fabricolly "Fabric O11y service" - /usr/sbin/nologin`), `fabrico11y-node.service`, `fabrico11y-server.service` and `system-fabrico11y.slice` with exactly the contract's identity, directories, hardening and resource directives, example configurations, Debian maintainer scripts, and [`build-deb.sh`](../../../packaging/build-deb.sh). The `preinst` script refuses an existing `fabricolly` account or group that is not the expected non-login system identity before any file is unpacked. `postinst` runs `systemd-sysusers` and creates `/etc/fabrico11y` as `0750 root:fabricolly`. Remove keeps state, configuration and the account; purge removes `/var/lib/fabrico11y` and `/etc/fabrico11y`.

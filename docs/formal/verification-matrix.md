@@ -60,5 +60,5 @@ These are operating-profile claims; none is qualified on the current head. A mea
 | QUAL-FRESH | Freshness | observation to query p99 ≤ 5 s at 1,000 identities | history run 01 under revision 2, four-CPU host (`63bbeac`): p99 ≤ 1.78 s | Measured on `63bbeac` (not target profile) |
 | QUAL-QLAT | Query latency | p99 ≤ 2 s over 1,000,000 records | history run 01 under revision 2, four-CPU host (`63bbeac`): p99 ≤ 481 ms Segments, ≤ 1,515 ms journal-only | Measured on `63bbeac` (not target profile) |
 | QUAL-DRAIN | Outage drain | 30 min buffered, drained ≤ 10 min | outage run 01 (`bb8d06d`, four-CPU host): drain ≤ 99 s, oracle exact | Measured on `bb8d06d` (not target profile) |
-| QUAL-INSTALL | Installation behavior | running-installation acceptance | static packaging checks only | Not run |
+| QUAL-INSTALL | Installation behavior | running-installation acceptance | [installation acceptance run 01](../experiments/formal/installation-acceptance-run-01.md) (`bbd2dd5`, container on a legacy cgroup hierarchy): 16 of 17 checks passed, three mutations rejected, `MemoryHigh` not run | Inconclusive |
 | QUAL-H | Harness correctness | runner limits, rate oracle | test suites | Tested |
