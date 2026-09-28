@@ -1,23 +1,23 @@
 # Experiments
 
-The [Linux alpha phase-0 FOL2 baseline](benchmarks/alpha-phase0-baseline.md) records
-fresh local commands and limits. The [alpha contract](../ALPHA.md) keeps later
-fleet thresholds pending.
-The [alpha draft journal length repair](formal/alpha-journal-length-repair.md) records a
-frozen corruption counterexample and its narrow rerun; it is not phase-1 qualification.
-The [native-node protocol](benchmarks/alpha-phase1-native-protocol.md) registers the
-phase-1 workload and metrics before [three measured local trials](benchmarks/alpha-phase1-native-run-01.md).
-The [phase-3 fleet run](benchmarks/alpha-phase3-fleet-run-01.md) qualifies 10, 100 and 1,000 simulated identities against the registered gates.
-The [ten-node delivery run](benchmarks/alpha-phase2-delivery-run-01.md) compares grouped and individual commits under the registered protocol.
-The [phase-2 delivery fault runs](formal/alpha-phase2-delivery-faults.md) grade real server and node processes with the frozen delivery oracle.
-The [phase-1 close-out review](formal/alpha-phase1-closeout-review.md) records six fault-injection findings and their repairs.
-The [post-repair native run 02](benchmarks/alpha-phase1-native-run-02.md) supersedes run 01 as phase-1 native evidence.
-The [log-reader repair](formal/alpha-log-reader-repair.md) records independent
-oversized-line and FIFO counterexamples and their executable controls.
-The [phase-1 review checkpoint](formal/alpha-phase1-review-checkpoint.md) records
-the later focused repairs, executable probes, the approved re-review and the open
-counterexample. Frozen reviewer probes, verdicts and parent notes are kept under
-[data/alpha-review](benchmarks/data/alpha-review/README.md).
+Product evidence is indexed by capability. Record file names keep their historical `alpha-phase*` prefixes (the release-stage and phase names they were written under); the capability column is the current classification, and the [qualification ledger](../QUALIFICATION.md#capability-ledger) says what each record establishes and for which revision.
+
+| Capability | Registered protocols | Results and formal records |
+| --- | --- | --- |
+| Harness | — | [FOL2 baseline](benchmarks/alpha-phase0-baseline.md), [harness review response](benchmarks/alpha-phase0-review-response.md) |
+| Spindle local collection | [native protocol](benchmarks/alpha-phase1-native-protocol.md) | [native run 01](benchmarks/alpha-phase1-native-run-01.md) (superseded), [native run 02](benchmarks/alpha-phase1-native-run-02.md), [journal length repair](formal/alpha-journal-length-repair.md), [log-reader repair](formal/alpha-log-reader-repair.md), [review checkpoint](formal/alpha-phase1-review-checkpoint.md), [close-out review](formal/alpha-phase1-closeout-review.md) |
+| Delivery | [delivery protocol](benchmarks/alpha-phase2-delivery-protocol.md) | [fault runs](formal/alpha-phase2-delivery-faults.md), [ten-process run](benchmarks/alpha-phase2-delivery-run-01.md) |
+| Control and fleet | [fleet protocol](benchmarks/alpha-phase3-fleet-protocol.md) | [fleet run 01](benchmarks/alpha-phase3-fleet-run-01.md) |
+| Retained history and query | [history protocol](benchmarks/alpha-phase4-history-protocol.md) | not run |
+| Recovery and stress | [outage protocol](benchmarks/alpha-phase5-outage-protocol.md), [stress protocol](benchmarks/alpha-phase5-stress-protocol.md) | outage interrupted without a result; stress not run |
+| Packaging and installation | — | [static packaging checks](formal/alpha-phase5-packaging-static.md); running installation not run |
+| Architecture | — | [no_std core experiment](formal/core-no-std.md); fault rerun and mutant results in the [milestone record](../milestones/architecture-foundation.md) |
+
+Frozen reviewer probes, verdicts and parent notes from earlier language-model reviews are kept under [data/alpha-review](benchmarks/data/alpha-review/README.md) as historical evidence; review is no longer a gate ([ADR-0018](../decisions/ADR-0018-accept-work-on-executable-evidence.md)).
+
+## Research
+
+Research results do not become product behavior without an ADR.
 
 The [local prototype completion contract](ablation/end-to-end-prototype.md) is closed
 with linked evidence. [Claude's hypothesis study](ablation/claude-hypotheses.md) traces

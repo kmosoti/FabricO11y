@@ -1,7 +1,7 @@
 # Phase-2 delivery oracle
 
 `delivery_oracle.py` is an implementation-independent checker for the D4
-delivery/dedup rule and the safety contract in [ALPHA.md](../../docs/ALPHA.md).
+delivery/dedup rule and the safety contract in the [product contract](../../docs/PRODUCT-CONTRACT.md).
 It knows nothing about the Rust wire format or any server code; it only
 compares exact bytes the transcript itself asserts, using SHA-256-grade
 byte equality (Python `bytes.__eq__`), never a parser from the

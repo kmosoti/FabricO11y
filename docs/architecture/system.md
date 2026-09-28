@@ -1,53 +1,114 @@
-# Current system
+# System architecture
 
-## Purpose and boundaries
+## Purpose
 
-The original demo demonstrates a typed claim about a resource, repeatable synthetic input, a bounded local queue, and an optional local append-only log. It remains a Rust executable with a library target in the same package. Phase 1 additionally has local `fabric-node` collection and `fabricctl inspect` binaries backed by a separate `FAB1` spool, described in the [node view](node.md). The event types, generator, buffer, and FOL2 log remain the demo path. There are no network listeners or deployment manifests. A separate [packet-slot simulator](../../tools/transport-sim/README.md) is research tooling outside this application boundary; it currently has H1 and one-packet M2 cells.
+FabricO11y collects host observations with a Spindle, keeps custody of them in a durable Spool, delivers them over TLS to Fabric Server, commits them before acknowledging, retains them as a journal and immutable Segments, and answers queries that report completeness, freshness and gaps. The [product contract](../PRODUCT-CONTRACT.md) states the promises; this page states how the code is arranged to keep them. Status words follow the [evidence states](../QUALIFICATION.md#evidence-states): the components below are implemented and tested; qualification of the operating profile is outstanding.
 
-The approved [Linux alpha plan](../ALPHA.md) has a phase-0 harness and an implemented local `fabric-node` calling [FAB1](../../src/spindle/spool.rs). The journal stores versioned envelopes around generated OpenTelemetry protobuf request types. The [phase-1 native trials](../experiments/benchmarks/alpha-phase1-native-run-01.md) passed on pre-repair binaries; [review repairs](../experiments/formal/alpha-phase1-review-checkpoint.md) now pass focused checks, with final parent review pending. A phase-2 [Fabric Server](../../crates/fabric-server/src/lib.rs) in a second workspace crate receives them over TLS and commits them durably before acknowledging; its fault and fleet qualification are pending. The canonical system diagram below shows only the original demo; the [node diagram](../diagrams/alpha-node.mmd) shows the new local path. FOL2's encoding and replay remain supported. The [phase-0 FOL2 measurement](../experiments/benchmarks/alpha-phase0-baseline.md) is a legacy local baseline, not evidence that alpha delivery is working.
+## Runtime components
 
-| Boundary | Responsibility | Repository evidence |
+<!-- diagram: ../diagrams/system.mmd -->
+```mermaid
+flowchart LR
+    subgraph Host[Linux host]
+        Sources[procfs, statvfs and selected log files]
+        Spindle[Spindle: fabric-node]
+        Spool[(Spool: FAB1 frame log)]
+        Sources -->|bounded reads| Spindle
+        Spindle -->|Batch committed before cursor moves| Spool
+    end
+    subgraph Central[Fabric Server]
+        Intake[HTTPS intake]
+        Commit[Commit thread: delivery use case]
+        Journal[(Server journal: FAB1)]
+        Sealer[Sealer and retention]
+        Segments[(Zstd Parquet Segments)]
+        Query[Query]
+        Control[(Control state)]
+        Intake -->|exact bytes| Commit
+        Commit -->|grouped two-sync append| Journal
+        Journal -->|sealed files| Sealer
+        Sealer -->|manifest last| Segments
+        Journal -->|unsealed tail| Query
+        Segments -->|snapshot-bound reads| Query
+    end
+    Spool -->|oldest unacknowledged Batch over TLS| Intake
+    Commit -->|ACK after durable commit| Spindle
+    Control -->|desired configuration poll| Spindle
+    CLI[fabricctl] -->|admin HTTPS| Control
+    CLI -->|admin query| Query
+    CLI -->|local inspect| Spool
+```
+
+The canonical source is [system.mmd](../diagrams/system.mmd).
+
+| Component | Responsibility | Code | View |
+| --- | --- | --- | --- |
+| Spindle (`fabric-node`) | Bounded host and log collection, Batch construction, Spool custody, delivery, applying validated configuration | [src/spindle](../../src/spindle/mod.rs), [src/bin/fabric-node.rs](../../src/bin/fabric-node.rs) | [Spindle](spindle.md) |
+| Spool | Durable `FAB1` frame log of Batches with an ACK cursor and whole-file reclaim | [src/spindle/spool.rs](../../src/spindle/spool.rs), [fabric-frame](../../crates/fabric-frame/src/frame.rs) | [storage](storage.md) |
+| Delivery | One Batch in flight per Strand, exact stored bytes, ACK only after durable commit | [fabric-core delivery](../../crates/fabric-core/src/delivery.rs), [fabric-app delivery](../../crates/fabric-app/src/delivery.rs), [store](../../crates/fabric-server/src/store.rs) | [delivery](delivery.md) |
+| Server journal | Grouped two-sync commits, Strand and binding state by replay, checkpoint before reclaim | [store](../../crates/fabric-server/src/store.rs) | [storage](storage.md) |
+| Retained history | Zstd Parquet Segments, sealing off the commit path, retention by age and bytes | [segment](../../crates/fabric-server/src/segment.rs), [sealer](../../crates/fabric-server/src/sealer.rs) | [retained history](retained-history.md) |
+| Query | Log, metric and rate queries with completeness, freshness, gaps and snapshot-bound pages | [query](../../crates/fabric-server/src/query.rs) | [retained history](retained-history.md) |
+| Control | Enrollment, desired and applied configuration, pause, resume, revoke | [control](../../crates/fabric-server/src/control.rs) | [control](control-plane.md) |
+| `fabricctl` | Local Spool inspection and the admin HTTPS client | [src/bin/fabricctl.rs](../../src/bin/fabricctl.rs) | [operations](../operations.md) |
+
+## Layers
+
+[ADR-0015](../decisions/ADR-0015-adopt-a-hexagonal-architecture.md) sets the dependency rule: domain semantics point inward, effects point outward. [layers.json](layers.json) assigns each crate a layer and `cargo xtask check-layers` enforces it.
+
+<!-- diagram: ../diagrams/layers.mmd -->
+```mermaid
+flowchart TB
+    subgraph Roots[Composition roots]
+        Node[fabric-node, fabricctl: root package]
+        Server[fabric-server]
+    end
+    App[fabric-app: use cases]
+    Ports[fabric-ports: DurableJournal, Clock]
+    Support[fabric-frame: FAB1 frame log, Batch envelope]
+    Core[fabric-core: Strand identity, delivery decision]
+    Node -->|wires| Support
+    Server -->|calls| App
+    Server -->|implements ports with| Support
+    Server -->|implements| Ports
+    App -->|performs effects through| Ports
+    App -->|asks for decisions| Core
+    Ports -->|types from| Core
+    Support -.->|may depend on| Core
+```
+
+The canonical source is [layers.mmd](../diagrams/layers.mmd).
+
+| Crate | Layer | Holds |
 | --- | --- | --- |
-| Event types in the library | Describe event identity, time, context, and payload | [src/lib.rs](../../src/lib.rs) |
-| Synthetic event generator | Use `fake` and a seeded ChaCha8 RNG for values; assign Fabric IDs and times; yield owned Gauge events | [src/generator.rs](../../src/generator.rs) |
-| Bounded event buffer | Accept events up to a positive logical capacity, return full-buffer rejections, and drain FIFO batches | [src/buffer.rs](../../src/buffer.rs) |
-| Local event log | Encode, frame, sync event and marker, recover, and stream stored events with one advisory writer lock | [src/log.rs](../../src/log.rs) |
-| Executable | Default print demo; optional `write` and `replay` commands | [src/main.rs](../../src/main.rs) |
-| Rust standard output | Receive the formatted debug text | `println!` in [src/main.rs](../../src/main.rs) |
-| Local file | Hold versioned framed records after a successful sync | [storage view](storage.md) |
-| Package | A Cargo workspace ([ADR-0012](../decisions/ADR-0012-add-a-server-crate-in-a-workspace.md)). The root package builds the library, demo and node binaries with `fake`, `crc32fast`, pinned `opentelemetry-proto`/`prost`, `libc`, and a synchronous `ureq`/`rustls` client. `crates/fabric-server` adds tokio, axum and rustls. Research packages under `tools/` stay outside the workspace | [Cargo.toml](../../Cargo.toml), [Cargo.lock](../../Cargo.lock) |
+| [fabric-core](../../crates/fabric-core/src/lib.rs) | core | `SpindleId`, `StrandId`, `next_sequence`, the delivery decision and group plan. `no_std`, no dependencies ([ADR-0016](../decisions/ADR-0016-keep-a-pure-semantic-core.md)) |
+| [fabric-ports](../../crates/fabric-ports/src/lib.rs) | ports | `DurableJournal`, `Clock` |
+| [fabric-app](../../crates/fabric-app/src/lib.rs) | app | `commit_group`: the delivery use case |
+| [fabric-frame](../../crates/fabric-frame/src/lib.rs) | adapter support | the `FAB1` rotating frame log and the version-one `Batch` envelope |
+| [fabric-server](../../crates/fabric-server/src/lib.rs) | composition root | HTTP/TLS, the journal adapter, control, segments, sealer, query, and `main` |
+| root package `fabric_o11y` | composition root | the Spindle runtime and its Linux, Spool and HTTP-client adapters; `fabric-node`, `fabricctl`; the FOL2 demonstration |
+| [xtask](../../xtask/src/main.rs) | tooling | layer, purity, check-registry and mutant runners |
 
-See the [rendered system diagram](../README.md) and its [canonical source](../diagrams/system.mmd). The diagram's domain node is a type boundary, not a separately running service.
+Both composition roots still contain adapters and some domain policy (control transitions, query and rate semantics, retention eligibility, collection cursor rules). The layer gate sees crates, not modules, so that policy is not yet protected; extracting it is the [semantic-kernels milestone](../ROADMAP.md). One documented exception remains: `fabric-server`'s end-to-end tests depend on the root package (development dependency only) to run a real Spindle.
 
-## Execution and ownership
+## Invariants
 
-A separate [storage/query probe](../../tools/storage-probe/README.md) depends on the library. It replays experiment-owned logs into immutable snapshots and compares exact scans with optional summaries. It is not called by the application CLI, and its in-memory query boundary is shown in the [S1 research projection](../experiments/ablation/storage-query-s1-run-01.md). The [query research view](query.md) describes the separate coverage experiment and its trusted-builder/anchor boundary. The [storage research agenda](../experiments/ablation/observability-storage-research.md) links that original cell to the implemented [local research lifecycle](research-prototype.md) and the separately measured columnar comparison.
+- The core performs no I/O and reads no ambient state; decisions are data.
+- An ACK follows a durable commit of the Batch or of the earlier Batch it acknowledges.
+- The Spindle never forgets an unacknowledged Batch; it moves a source cursor only in the same commit as the collected lines.
+- Query execution never mutates stored telemetry.
+- Wire and persisted bytes (`FOL2`, `FAB1`, envelope field numbers, checkpoint format) do not change with a type move.
 
-1. `main` accepts no arguments (seed `42`, count `3`), a `u64` seed and `u32` count, `write <PATH> <SEED> <EVENTS>`, or `replay <PATH>`. Invalid argument shape or numeric values produce a usage message and status `2`; log I/O or workload-prefix mismatches return failure status `1`.
-2. `main` iterates `EventGenerator`, which creates one owned synthetic `Gauge` event per call to `next`.
-3. `main` calls `EventBuffer::try_push`. A successful call transfers ownership to the buffer. A full buffer returns the same event to `main` and keeps existing queue contents unchanged.
-4. On rejection, `main` drains a batch of at most two oldest events, processes it, then retries the returned event. After the generator ends, it drains the remainder. Default mode prints each batch; those events are then dropped without a durable owner.
-5. `write` mode opens and validates an [EventLog](../../src/log.rs), compares recovered events with its deterministic generator prefix, then appends the remaining events. `append` borrows each event, syncs its frame, then writes and syncs a commit marker. Only after both syncs does the command print `committed event N` and release the value. `replay` opens the file, removes an unmarked tail if present, and prints committed events in order.
+## Boundaries not in this system
 
-The executable reads only command-line settings and samples no clock. The apparent telemetry is synthetic, not an observation collected from a live service. Debug output has no stable serialization or protocol contract. Printing and per-record sync make the commands unsuitable as throughput benchmarks; the [earlier generator and batch-size probe](../experiments/benchmarks/generator-library-stage3.md) omits output and storage during timing.
+No general OTLP receiver, traces, UI, plugin boundary, or async runtime in the Spindle. Research packages under `tools/` (storage, layout, transport and seal probes) and the agent-telemetry tooling are outside the product; see [architecture views](README.md).
 
-## Enforced properties and limits
+## Related decisions
 
-- Rust distinguishes `EventId`, `TenantId`, `SourceId`, and `ResourceId`; a value of one type cannot be passed as another without explicit construction or conversion. All currently wrap `u64`.
-- `EventTime` and `ObservedTime` are distinct `i64` wrappers documented as Unix nanoseconds. The code does not check units, clock relationships, or ordering.
-- A `Payload` is exactly one of `Log` or `Gauge`. It carries its variant, so there is no separate signal tag to keep synchronized.
-- Fields and tuple constructors are public. The generator assigns sequential IDs within one sequence, but other callers may reuse them. Attributes may repeat keys, strings may be empty, and floating-point values may be non-finite when constructed outside the generator.
-- A config with seed and count yields the same sequence with the locked dependency versions. The [tests](../../tests/generator.rs) pin seed `42` and check replay, seed variation, zero count, prefix stability, and streaming of a large count. This fixed synthetic workload has not been measured against production traffic.
-- The buffer has positive capacity and never accepts an event when full. It drains oldest events first. The [buffer tests](../../tests/buffer.rs) check rejection, retry, order, and logical occupancy. Event byte size and `VecDeque` allocation overhead are not bounded by a fixed byte budget.
-- Buffer acceptance means only temporary in-memory ownership. `EventLog::append(&Event)` provides a local commit after syncing the event frame and its commit marker; it does not consume the caller's event on error. Open scans committed pairs, removes an unmarked tail with a plausible partial header or marker, and refuses detected malformed checked fields or complete payloads. The [storage view](storage.md) states the filesystem assumptions and remaining failure modes.
-- There is no network ACK or general upstream sender. The CLI's repeatable seed/count reconstructs an upstream sequence on ordinary manual restart and verifies it against the stored prefix. It cannot infer a previous storage sync failure from the file, so the operator must rebuild from an independent trusted source instead of rerunning against that path after one. The broader TLA+ sender-retention guarantee is not implemented for arbitrary callers, and `EventId` is not globally unique. No power-loss test or general throughput guarantee has been established; the [Stage 6 baseline](../experiments/benchmarks/local-log-stage6.md) measures one synthetic local workload.
-
-## Design provenance
-
-[ADR-0001](../decisions/ADR-0001-keep-domain-independent.md) records the separation between event meaning and infrastructure mechanisms. [ADR-0002](../decisions/ADR-0002-reject-full-buffer.md) records the full-buffer ownership rule. [ADR-0004](../decisions/ADR-0004-use-fake-for-synthetic-values.md) records the generator library choice. [ADR-0005](../decisions/ADR-0005-ack-after-durable-commit.md) sets the delivery rule, and [ADR-0006](../decisions/ADR-0006-use-framed-local-log.md) records the first local storage format. The [input view](ingestion.md) and [storage view](storage.md) trace their current boundaries separately.
-
-The [blueprint](../architecture.md) sketches mostly `u128` IDs, schema and signal fields, more scalar types, and additional signals. Those are proposals. The current implementation is smaller; the repository contains no experiment selecting `u64` over `u128`. This documentation records the discrepancy without changing either design or code.
+[ADR-0005](../decisions/ADR-0005-ack-after-durable-commit.md), [ADR-0010](../decisions/ADR-0010-use-static-systemd-services-for-alpha.md), [ADR-0011](../decisions/ADR-0011-separate-interrupted-append-from-known-failure.md), [ADR-0012](../decisions/ADR-0012-add-a-server-crate-in-a-workspace.md), [ADR-0013](../decisions/ADR-0013-deliver-batches-in-order-with-bounded-dedup.md), [ADR-0014](../decisions/ADR-0014-manage-nodes-through-server-control-state.md), [ADR-0015](../decisions/ADR-0015-adopt-a-hexagonal-architecture.md) to [ADR-0019](../decisions/ADR-0019-keep-release-maturity-in-tags.md).
 
 ## Open questions
 
-The [S0 attribution](../experiments/benchmarks/append-attribution-s0.md) now separates encoding, writes and syncs inside `EventLog::append`, with an 11.017% perturbation flag. The [learning path](../LEARNING_PATH.md) keeps the completed local research prototype separate from future application services. Workload representativeness, identities across multiple generators, a general retry/deduplication rule, a byte-level memory budget, and performance targets remain open. The [generator library ablation](../experiments/benchmarks/generator-library-stage3.md) is an exploratory measurement, not a performance recommendation. A deployment view becomes useful when processes become independently deployed services; the research CLI currently runs sequential local processes.
+- Whether control, query and retention kernels stay `no_std` once floating-point rate arithmetic moves into the core.
+- When to rename the `fabric-node` executable to `fabric-spindle` ([ADR-0017](../decisions/ADR-0017-name-the-spindle-and-the-strand.md)).
+- How to map fault-harness transcripts onto the delivery TLA+ actions ([verification strategy](../formal/verification-strategy.md)).

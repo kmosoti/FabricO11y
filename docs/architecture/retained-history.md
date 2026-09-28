@@ -1,6 +1,6 @@
-# Retained history and query (phase 4 contract)
+# Retained history and query
 
-Status: contract for phase 4, written before implementation; an independent [exact-scan oracle](../../tools/qualification/QUERY_ORACLE.md) was built from it first. The [server](../../crates/fabric-server/src/query.rs) implements it and its integration tests are graded by that oracle; qualification at the fleet tiers is recorded in the [phase ledger](../ALPHA.md#phase-ledger). The [alpha contract](../ALPHA.md#safety-contract) owns the gates.
+Status: this contract was written before implementation, and an independent [exact-scan oracle](../../tools/qualification/QUERY_ORACLE.md) was built from it first. The [server](../../crates/fabric-server/src/query.rs) implements it and its integration tests are graded by that oracle. Latency, freshness and journal-versus-Segment measurements are not run ([capability ledger](../QUALIFICATION.md#capability-ledger)). The [product contract](../PRODUCT-CONTRACT.md#completeness-contract) owns the promises. Query, rate and retention decisions are not yet in `fabric-core`.
 
 ## Data model
 

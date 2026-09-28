@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 2026-09-27 for the alpha `FAB1` journal (plan decision D1). This revises one sentence of the [alpha safety contract](../ALPHA.md#safety-contract). FOL2 is unchanged.
+Accepted on 2026-09-27 for the alpha `FAB1` journal (plan decision D1). This revises one sentence of the [alpha safety contract](../PRODUCT-CONTRACT.md#custody-and-safety-contract). FOL2 is unchanged.
 
 ## Context
 
@@ -33,4 +33,4 @@ Falsify by a reopen that keeps a frame whose data sync reported an error, a reop
 
 ## Related
 
-[Storage view](../architecture/storage.md), [node view](../architecture/node.md), [ADR-0006](ADR-0006-use-framed-local-log.md), [completion plan](../ALPHA-PLAN.md).
+[Storage view](../architecture/storage.md), [node view](../architecture/spindle.md), [ADR-0006](ADR-0006-use-framed-local-log.md), [completion plan](../ROADMAP.md).

@@ -1,7 +1,7 @@
 # FabricO11y
 
 > [!NOTE]
-> This is the original architecture proposal and research agenda. Its code sketches, guarantees, and numerical examples are not claims about implemented behavior or measured results. See [current project state](CURRENT.md) and [system architecture](architecture/system.md) for the repository today.
+> This is the original architecture proposal and research agenda, the lowest entry in the [source-of-truth order](README.md#source-of-truth). Its code sketches, guarantees, and numerical examples are not claims about implemented behavior or measured results. See [current project state](CURRENT.md), the [product contract](PRODUCT-CONTRACT.md) and [system architecture](architecture/system.md) for the repository today.
 
 ## First-Principles Architecture, Fundamental Units, and Ablation Plan
 

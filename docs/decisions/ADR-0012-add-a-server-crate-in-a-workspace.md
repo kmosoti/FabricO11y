@@ -37,4 +37,4 @@ The server crate can depend on infrastructure freely; the root library stays fre
 
 ## Related
 
-[Completion plan](../ALPHA-PLAN.md), [ADR-0013](ADR-0013-deliver-batches-in-order-with-bounded-dedup.md), [alpha contract](../ALPHA.md).
+[Completion plan](../ROADMAP.md), [ADR-0013](ADR-0013-deliver-batches-in-order-with-bounded-dedup.md), [alpha contract](../PRODUCT-CONTRACT.md).

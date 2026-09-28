@@ -1,6 +1,6 @@
 # Phase-5 packaging: reproducible build and static checks
 
-Status: the static and unprivileged parts of plan steps 5.1 and 5.2 passed on 2026-09-28. The running-install acceptance in the [installation contract](../../ALPHA.md#linux-installation-contract-phase-5-not-yet-implemented) is **unrun**: it creates a system account and system units and needs root on a disposable systemd host. It must not be recorded as passed.
+Status: the static and unprivileged parts of plan steps 5.1 and 5.2 passed on 2026-09-28. The running-install acceptance in the [installation contract](../../PRODUCT-CONTRACT.md#linux-installation-contract) is **unrun**: it creates a system account and system units and needs root on a disposable systemd host. It must not be recorded as passed.
 
 ## What exists
 

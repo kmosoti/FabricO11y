@@ -32,4 +32,4 @@ Phase-3 tests: invalid and stale configurations are refused and reported; a node
 
 ## Related
 
-[Completion plan](../ALPHA-PLAN.md#5-phase-3-central-control), [ADR-0013](ADR-0013-deliver-batches-in-order-with-bounded-dedup.md), [alpha contract](../ALPHA.md).
+[Completion plan](../ROADMAP.md#work-carried-from-the-completion-plan), [ADR-0013](ADR-0013-deliver-batches-in-order-with-bounded-dedup.md), [alpha contract](../PRODUCT-CONTRACT.md).

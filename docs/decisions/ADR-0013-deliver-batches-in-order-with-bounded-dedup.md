@@ -6,7 +6,7 @@ Accepted on 2026-09-27 for alpha phase 2 (plan decisions D4 and D5). Implementat
 
 ## Context
 
-The [alpha safety contract](../ALPHA.md#safety-contract) requires: identity and bytes durable before first send; retries reuse both; the server syncs data and dedup state before ACK; equal identity with equal bytes is one logical commit; equal identity with different bytes is an error; equal content at another sequence is distinct. [ADR-0005](ADR-0005-ack-after-durable-commit.md) says the sender forgets only after an ACK that follows a durable commit. The server must hold bounded state for up to 1,000 node identities.
+The [alpha safety contract](../PRODUCT-CONTRACT.md#custody-and-safety-contract) requires: identity and bytes durable before first send; retries reuse both; the server syncs data and dedup state before ACK; equal identity with equal bytes is one logical commit; equal identity with different bytes is an error; equal content at another sequence is distinct. [ADR-0005](ADR-0005-ack-after-durable-commit.md) says the sender forgets only after an ACK that follows a durable commit. The server must hold bounded state for up to 1,000 node identities.
 
 ## Decision
 
@@ -45,4 +45,4 @@ Falsify by an ACKed batch missing after server restart, a duplicate logical reco
 
 ## Related
 
-[ADR-0012](ADR-0012-add-a-server-crate-in-a-workspace.md), [delivery view](../architecture/delivery.md), [completion plan](../ALPHA-PLAN.md#d4-delivery-and-dedup-rule-recommended-record-as-adr-0013).
+[ADR-0012](ADR-0012-add-a-server-crate-in-a-workspace.md), [delivery view](../architecture/delivery.md), [completion plan](../ROADMAP.md#work-carried-from-the-completion-plan).

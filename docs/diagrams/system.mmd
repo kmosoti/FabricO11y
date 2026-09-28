@@ -1,23 +1,29 @@
 flowchart LR
-    subgraph Process[Fabric O11y demo process]
-        Demo[Demo executable]
-        Generator[Synthetic event generator]
-        Fake[fake crate and seeded RNG]
-        Domain[Event types]
-        Buffer[Bounded event buffer]
-        Printer[Batch printing function]
-        Log[EventLog]
-        Replay[Replay command]
-        Demo -->|uses| Generator
-        Generator -->|samples values from| Fake
-        Demo -->|uses| Buffer
-        Demo -->|calls| Printer
-        Demo -->|write mode: append| Log
-        Replay -->|reads through| Log
-        Generator -->|builds| Domain
-        Buffer -->|holds| Domain
-        Log -->|encodes and decodes| Domain
+    subgraph Host[Linux host]
+        Sources[procfs, statvfs and selected log files]
+        Spindle[Spindle: fabric-node]
+        Spool[(Spool: FAB1 frame log)]
+        Sources -->|bounded reads| Spindle
+        Spindle -->|Batch committed before cursor moves| Spool
     end
-    Printer -->|writes Debug text to| Stdout[Standard output]
-    Replay -->|writes Debug text to| Stdout
-    Log -->|framed records and sync| Disk[(Local log file)]
+    subgraph Central[Fabric Server]
+        Intake[HTTPS intake]
+        Commit[Commit thread: delivery use case]
+        Journal[(Server journal: FAB1)]
+        Sealer[Sealer and retention]
+        Segments[(Zstd Parquet Segments)]
+        Query[Query]
+        Control[(Control state)]
+        Intake -->|exact bytes| Commit
+        Commit -->|grouped two-sync append| Journal
+        Journal -->|sealed files| Sealer
+        Sealer -->|manifest last| Segments
+        Journal -->|unsealed tail| Query
+        Segments -->|snapshot-bound reads| Query
+    end
+    Spool -->|oldest unacknowledged Batch over TLS| Intake
+    Commit -->|ACK after durable commit| Spindle
+    Control -->|desired configuration poll| Spindle
+    CLI[fabricctl] -->|admin HTTPS| Control
+    CLI -->|admin query| Query
+    CLI -->|local inspect| Spool

@@ -1,6 +1,60 @@
 # Glossary
 
-These terms describe the current [event model](../src/lib.rs), [local log](architecture/storage.md), and [delivery design](architecture/delivery.md). Terms that still require a protocol are marked as proposed.
+Terms mean one thing each across code, documents, diagrams and experiments. When a term changes meaning, update this page and the affected pages together. Two themed terms are canonical, Spindle and Strand ([ADR-0017](decisions/ADR-0017-name-the-spindle-and-the-strand.md)); everything else has a functional name.
+
+## Product
+
+| Term | Meaning here |
+| --- | --- |
+| Spindle | The host-resident collection and runtime role: observes one host, reads configured sources, builds Batches, keeps collection state, retains unacknowledged Batches in its Spool, applies validated configuration and delivers to Fabric Server. Run by the `fabric-node` executable; code in `src/spindle`. Not a synonym for any process, worker or remote machine. |
+| Spindle ID | `SpindleId`: the Spindle's stable 16-byte identity. On the wire and on disk it is the envelope's `node_id` field. |
+| Node (persisted name) | The spelling used by existing routes (`/v1/admin/nodes`), JSON keys, configuration files, the `fabric-node` binary and systemd unit. It names a Spindle or its enrollment; it is kept for compatibility, not as a separate concept. |
+| Generation | A non-zero counter in the Spindle identity file. A new generation starts a new Strand at sequence 1. |
+| Strand | One ordered telemetry lineage of one Spindle generation: `StrandId = (SpindleId, generation)`. The scope of sequence ordering, duplicate-retry identity, gap detection, deduplication and acknowledged progress. Not a connection, session, thread, file, Segment or query result. Called a "stream" in older code and records. |
+| Sequence | A Batch's position on its Strand: 1, 2, 3, ... Sequence 0 does not exist; no sequence follows `u64::MAX`. |
+| Batch | The version-one Fabric envelope: Strand identity, sequence, exact encoded OTLP metrics and logs bytes, source cursors and collection gaps (`fabric_frame::envelope::Batch`). Retries send its exact stored bytes. |
+| Spool | The Spindle's durable `FAB1` frame log of Batches with an ACK cursor; whole sealed files at or below the cursor are reclaimed. |
+| Delivery | Transfer of custody of a Batch from the Spool to the server: one Batch in flight per Strand, oldest unacknowledged first ([ADR-0013](decisions/ADR-0013-deliver-batches-in-order-with-bounded-dedup.md)). |
+| Custody | Responsibility for preserving telemetry. The Spindle holds it until an ACK that follows the server's durable commit. |
+| ACK | The server's answer `ack` with `committed_through`, sent only after the group holding the Batch (or the earlier Batch it acknowledges) completed data and marker syncs. |
+| Server journal | The server's `FAB1` frame log of committed groups of Batches, replayed to rebuild Strand and binding state. |
+| Segment | An immutable directory of Zstd Parquet files plus a manifest written last, covering a contiguous range of journal groups. |
+| Retention | Deleting whole Segments, oldest first, when the age or byte limit is exceeded; the retained window is reported with every answer. |
+| Snapshot | The group range a query answer was computed from; a page token binds it. |
+| Completeness | Whether every Segment and journal file that could hold matching rows was read and verified (`complete`), with the unavailable ones listed. |
+| Freshness | Per Spindle, the newest observation or point time retained, reported with every answer. |
+| Collection gap | A recorded interval or source failure during which telemetry was not collected, carried in a Batch; never silently omitted. |
+| Control | Enrollment, desired and applied configuration revisions, pause, resume and revoke ([ADR-0014](decisions/ADR-0014-manage-nodes-through-server-control-state.md)). |
+
+## Architecture
+
+| Term | Meaning here |
+| --- | --- |
+| Core | `fabric-core`: pure, deterministic, `no_std` domain decisions over explicit inputs; effects are returned as data ([ADR-0016](decisions/ADR-0016-keep-a-pure-semantic-core.md)). |
+| Port | An effect contract an application use case needs, such as `DurableJournal` or `Clock` (`fabric-ports`). A port is an effect boundary, not a pure function. |
+| Application use case | Orchestration in `fabric-app` that calls core decisions and ports, never a concrete adapter. |
+| Adapter | An implementation of a port that performs effects: Linux, filesystem, HTTP/TLS, Parquet, clock. |
+| Adapter support | Infrastructure shared by adapters that is not domain semantics, such as the `FAB1` frame log and the envelope codec (`fabric-frame`). |
+| Composition root | A binary or library that wires adapters into use cases; today `fabric-server` and the root package, which still contain adapters. |
+| Layer gate | `cargo xtask check-layers` over [layers.json](architecture/layers.json). |
+| Purity gate | `cargo xtask check-core-purity` over [core-purity.json](architecture/core-purity.json). |
+
+## Verification
+
+| Term | Meaning here |
+| --- | --- |
+| Independent oracle | A checker implemented separately from the product (here in Python, frozen before the code it grades) that decides correctness of observed behavior. A test generated with an implementation is not one. |
+| Negative control | A representative defect a checker must reject, proving it can fail. |
+| Semantic mutant | A hand-written incorrect variant of product code tied to one contract and one named checker ([xtask/mutants.json](../xtask/mutants.json)). |
+| Counterexample fixture | A minimized failing case kept as a deterministic regression with its origin and fix. |
+| Trust-boundary change | A change to the product contract, an oracle, a negative-control expectation, a formal invariant, a registered protocol or verification policy; made in its own commit. |
+| Verification receipt | The JSON record `cargo xtask checks` writes per check; unsigned, so it proves structure, not execution. |
+| Evidence states | Implemented, Tested, Measured, Qualified, Not run, Interrupted, Failed, Inconclusive ([qualification](QUALIFICATION.md#evidence-states)). |
+| Milestone | A stable engineering objective with a `milestone/<capability>` branch ([roadmap](ROADMAP.md)). Release maturity is a tag, not a milestone. |
+
+## FOL2 demonstration and research
+
+These terms describe the original [event model](../src/lib.rs), [local log](architecture/storage.md), the [delivery design](architecture/delivery.md) and research tooling. Terms that still require a protocol are marked as proposed.
 
 | Term | Meaning here |
 | --- | --- |
@@ -19,7 +73,7 @@ These terms describe the current [event model](../src/lib.rs), [local log](archi
 | Workload config | The generator's `seed: u64` and `events: u32` settings. They determine the sequence emitted by this version of the generator. |
 | Event generator | An iterator that builds one owned synthetic Gauge event per call to `next`, until it has emitted the configured count. It is not a collector of real telemetry. |
 | Event buffer | The local, single-threaded `EventBuffer` that holds at most a configured positive number of events in FIFO order. Its event-count bound is not a byte bound. |
-| Batch | An owned `Vec<Event>` removed from the front of the buffer, containing up to the requested positive number of events. The final batch may be shorter. |
+| Event batch (demo) | An owned `Vec<Event>` removed from the front of the demo buffer, containing up to the requested positive number of events. Distinct from a product Batch. |
 | Rejection | A full-buffer `try_push` result of `Err(event)` that gives the same owned event back to the caller without changing the queue. It does not mean the event was dropped. |
 | Event log | The local append-only file of framed `Event` records managed by `EventLog`. It is separate from the volatile event buffer. |
 | Frame | One versioned event header and encoded event payload in the log. It is replayable only when followed by a valid commit marker. |

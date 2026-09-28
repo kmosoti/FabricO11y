@@ -1,6 +1,6 @@
-# Operating the Fabric O11y alpha
+# Operating FabricO11y
 
-This guide is for an operator of one controlled Linux installation. It describes what the code does today; the [phase ledger](ALPHA.md#phase-ledger) says which gates have passed. The package's running-install acceptance has **not** been run, so treat installation as untested.
+This guide is for an operator of one controlled Linux installation. It describes what the code does today; the [capability ledger](QUALIFICATION.md#capability-ledger) says which gates have passed. The package's running-install acceptance has **not** been run, so treat installation as untested.
 
 ## Build and install
 
@@ -63,4 +63,4 @@ Stopping either service with `systemctl stop` finishes the work in progress: the
 
 ## Limits
 
-One operator-controlled installation, TLS with operator-provided certificates, no UI and no general OTLP receiver. Physical power loss has not been tested. See the [alpha contract](ALPHA.md) for the qualification gates and their status.
+One operator-controlled installation, TLS with operator-provided certificates, no UI and no general OTLP receiver. Physical power loss has not been tested. See the [product contract](PRODUCT-CONTRACT.md) and [qualification](QUALIFICATION.md) for the gates and their status.
