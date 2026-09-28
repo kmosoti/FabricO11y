@@ -1,6 +1,6 @@
 # Retained history and query
 
-Status: this contract was written before implementation, and an independent [exact-scan oracle](../../tools/qualification/QUERY_ORACLE.md) was built from it first. The [server](../../crates/fabric-server/src/query.rs) implements it and its integration tests are graded by that oracle. Latency, freshness and journal-versus-Segment measurements are not run ([capability ledger](../QUALIFICATION.md#capability-ledger)). The [product contract](../PRODUCT-CONTRACT.md#completeness-contract) owns the promises. Query, rate and retention decisions are not yet in `fabric-core`.
+Status: this contract was written before implementation, and an independent [exact-scan oracle](../../tools/qualification/QUERY_ORACLE.md) was built from it first. The [server](../../crates/fabric-server/src/query.rs) implements it and its integration tests are graded by that oracle. Latency, freshness and journal-versus-Segment measurements are not run ([capability ledger](../QUALIFICATION.md#capability-ledger)). The [product contract](../PRODUCT-CONTRACT.md#completeness-contract) owns the promises. The window, page, snapshot, completeness and counter-step rules are [`fabric_core::query`](../../crates/fabric-core/src/query.rs); retention eligibility is [`fabric_core::retention`](../../crates/fabric-core/src/retention.rs), applied by the `apply_retention` use case over the `SegmentStore` port.
 
 ## Data model
 

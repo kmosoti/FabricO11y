@@ -1,6 +1,6 @@
 # Milestone: verification foundation
 
-Status: complete pending CI and merge. Base: `main` at `6521e06` (architecture foundation merged). This milestone adds verification machinery; it changes no product behavior and is not qualification.
+Status: complete; merged into `main` by PR #20 (`04dbfe4`) with Rust, Documentation and Extended verification CI green on the head `81b738b`. Base: `main` at `6521e06` (architecture foundation merged). This milestone adds verification machinery; it changes no product behavior and is not qualification.
 
 ## Acceptance criteria
 

@@ -4,10 +4,14 @@ flowchart TB
         Server[fabric-server]
     end
     App[fabric-app: use cases]
-    Ports[fabric-ports: DurableJournal, Clock]
+    Ports[fabric-ports: DurableJournal, Clock, SegmentStore]
     Support[fabric-frame: FAB1 frame log, Batch envelope]
-    Core[fabric-core: Strand identity, delivery decision]
+    Linux[fabric-adapter-linux: host and log reads]
+    Core[fabric-core: delivery, control, query, retention and collection decisions]
     Node -->|wires| Support
+    Node -->|wires| Linux
+    Linux -->|cursor rule from| Core
+    Linux -->|Cursor from| Support
     Server -->|calls| App
     Server -->|implements ports with| Support
     Server -->|implements| Ports

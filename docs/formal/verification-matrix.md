@@ -26,8 +26,8 @@ Specification sources: **PC** = [product contract](../PRODUCT-CONTRACT.md), **AD
 
 | ID | Contract | Spec | Production implementation | Verification | Independent oracle | Negative control | Formal model | Fault test | Status | Unchecked |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| CTRL-1 | An invalid desired configuration does not become active | PC control; ADR-0014 | Spindle `effective` + `Config::validate`; server `check_desired` | `admin_api_configures_pauses_and_revokes_a_polling_node` | — | M-CTRL-INVALID | — | — | Tested | Control decisions are not yet in the core |
-| CTRL-2 | A revoked identity cannot continue sending | PC control; ADR-0014 | `Control::change`, `authenticate` | same end-to-end test | — | M-CTRL-REVOKE | — | — | Tested | Revocation latency under load |
+| CTRL-1 | An invalid desired configuration does not become active | PC control; ADR-0014 | Spindle `effective` + `Config::validate`; server `check_desired` | `admin_api_configures_pauses_and_revokes_a_polling_node` | — | M-CTRL-INVALID | — | — | Tested | Spindle-side validation (`Config::validate`) is not in the core; server shape checks are (`fabric_core::control::check_desired`) |
+| CTRL-2 | A revoked identity cannot continue sending, and revocation is terminal | PC control; ADR-0014 | `fabric_core::control` (`authorizes`, `set_status`); `Control::change`, `authenticate` | same end-to-end test; kernel truth tests; differential against the base | — | M-CTRL-REVOKE, M-CTRL-TERMINAL | — | — | Tested | Revocation latency under load |
 | CTRL-3 | The last valid local configuration survives disconnection and restart | PC product boundary | `applied-config.json`, `read_applied` | same end-to-end test (offline restart) | — | none registered | — | — | Tested | No mutant yet |
 
 ## History and query
@@ -38,8 +38,8 @@ Specification sources: **PC** = [product contract](../PRODUCT-CONTRACT.md), **AD
 | HIST-2 | Sealing does not change a query result | RH | sealer + `History` | the same test, before and after sealing; crash-state test | query oracle | M-HIST-SEGMENT | — | sealing crash states | Tested | Sealing concurrent with retention |
 | HIST-3 | A missing or corrupt Segment never yields a complete answer | PC completeness; RH | `History::run` `unavailable` | `a_corrupt_segment_makes_the_answer_incomplete` | query oracle `complete` rule | M-HIST-CORRUPT; oracle completeness mutants | — | truncated segment | Tested | Silent bit rot inside a readable Parquet page (whole-file SHA-256 not checked per query) |
 | HIST-4 | Pagination stays bound to one snapshot | RH | page token `(oldest, newest, key)` | `sealed_history_answers_exactly_and_pages_are_stable` | query oracle pagination rules | oracle pagination mutants | — | — | Tested | — |
-| HIST-5 | Retention produces correct Gone and incomplete semantics | RH | `History::run`, sealer retention | `retention_removes_old_segments_and_stream_state_survives_it` | query oracle | M-HIST-GONE | — | — | Tested | Retention under the 20 GiB byte limit at scale |
-| HIST-6 | Counter resets produce reset markers, not rates | RH; PC fidelity | `rate_rows` | history rate query graded by the oracle | query/rate oracle | M-HIST-RESET; oracle rate mutants | — | — | Tested | Rate semantics are not yet in the core |
+| HIST-5 | Retention produces correct Gone and incomplete semantics | RH | `fabric_core::retention`, `fabric_app::retention::apply_retention`; `fabric_core::query::page_snapshot_retained` | `retention_removes_old_segments_and_stream_state_survives_it` | query oracle | M-HIST-GONE, M-RET-AGE | — | — | Tested | Retention under the 20 GiB byte limit at scale |
+| HIST-6 | Counter resets produce reset markers, not rates | RH; PC fidelity | `fabric_core::query::counter_step`, used by `rates` | history rate query graded by the oracle; bit-exact differential against the base rule | query/rate oracle | M-HIST-RESET; oracle rate mutants | — | — | Tested | Series grouping and ordering stay in the server |
 
 ## Architecture
 

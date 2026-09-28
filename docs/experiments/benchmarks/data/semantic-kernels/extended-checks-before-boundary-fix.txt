@@ -1,0 +1,21 @@
+semantic-mutants         passed                     235250 ms  cargo xtask mutants
+delivery-faults          passed                     314442 ms  sh -c cargo build --release --locked --workspace --bins --examples && for s in clean server-kill node-kill outage; do for seed in 1 2; do python3 -B tools/qualification/delivery_faults.py --scenario $s --seed $seed --seconds 20 --keep || exit 1; TLA_JAR="$PWD/target/tools/tla2tools.jar" python3 -B formal/delivery/trace_check.py target/alpha-delivery-$s-$seed/transcript.jsonl || exit 1; rm -rf target/alpha-delivery-$s-$seed; done; done && ! python3 -B tools/qualification/delivery_faults.py --scenario clean --seed 3 --seconds 8 --mutate drop-recovered
+tla-delivery             passed                       2786 ms  sh -c TLA_JAR="$PWD/target/tools/tla2tools.jar" bash formal/delivery/check.sh
+tla-transport            passed                       4183 ms  sh -c TLA_JAR="$PWD/target/tools/tla2tools.jar" bash formal/transport/check.sh
+trace-model              passed                       6532 ms  sh -c TLA_JAR="$PWD/target/tools/tla2tools.jar" python3 -B formal/delivery/test_trace_check.py
+cargo-mutants            failed                    1414946 ms  cargo xtask cargo-mutants
+    | Found 165 mutants to test
+    | ok       Unmutated baseline in 1s build + 19s test
+    | TIMEOUT  crates/fabric-core/src/collection.rs:96:11: delete ! in bounded_text in 0s build + 97s test
+    | MISSED   crates/fabric-core/src/control.rs:85:24: replace > with == in check_desired in 0s build + 20s test
+    | MISSED   crates/fabric-core/src/control.rs:85:24: replace > with >= in check_desired in 0s build + 23s test
+    | MISSED   crates/fabric-core/src/control.rs:91:23: replace > with >= in check_desired in 0s build + 19s test
+    | MISSED   crates/fabric-core/src/delivery.rs:95:24: replace < with <= in decide_delivery in 0s build + 20s test
+    | 165 mutants tested in 24m: 4 missed, 151 caught, 9 unviable, 1 timeouts
+    | MUTANT_SURVIVED crates/fabric-core/src/collection.rs: delete ! in bounded_text: not caught and not listed as equivalent
+    | MUTANT_SURVIVED crates/fabric-core/src/control.rs: replace > with == in check_desired: not caught and not listed as equivalent
+    | MUTANT_SURVIVED crates/fabric-core/src/control.rs: replace > with >= in check_desired: not caught and not listed as equivalent
+    | cargo-mutants: FAILED with 3 violation(s)
+    |  INFO Auto-set test timeout to 97s
+checks: FAILED; receipts in target/verification/receipts-extended
+EXT=1

@@ -42,3 +42,7 @@ Only the delivery kernel exists in the core today. Control, query, retention and
 ## Decision impact
 
 [ADR-0016](../../decisions/ADR-0016-keep-a-pure-semantic-core.md) adopts `no_std` for `fabric-core`.
+
+## Addendum: semantic kernels
+
+In the [semantic-kernels milestone](../../milestones/semantic-kernels.md) the control, query, retention and collection kernels joined the delivery kernel in the same `no_std` crate with no new dependency. The counter step needs only `f64` subtraction, division and comparison, which `core` provides; no `libm` function was needed. String checks (names, desired paths, gap text on a character boundary) use `core::str`. Clippy's `arithmetic_side_effects` restriction forced explicit `saturating_*` or `checked_*` arithmetic in retention and revision counting, which surfaced one counterexample: the base computed a control revision as `revision + 1`, which panics at `u64::MAX` in a debug build; the kernel refuses instead. The purity gate and Clippy pass unchanged.
