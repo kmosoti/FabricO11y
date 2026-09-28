@@ -21,6 +21,17 @@ fn read(path: &Path) -> Result<Value, String> {
 /// Every counterexample names a reproducer test that exists in its file and
 /// a fix commit that exists in the repository.
 pub fn check_counterexamples(root: &Path, registry: &Path) -> Result<Vec<Violation>, String> {
+    let shallow = Command::new("git")
+        .args(["rev-parse", "--is-shallow-repository"])
+        .current_dir(root)
+        .output()
+        .map_err(|e| format!("cannot run git: {e}"))?;
+    if String::from_utf8_lossy(&shallow.stdout).trim() != "false" {
+        return Err(
+            "shallow clone or no git history: fix commits cannot be resolved; fetch full history"
+                .into(),
+        );
+    }
     let json = read(registry)?;
     let entries = json
         .get("counterexamples")

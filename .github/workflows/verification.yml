@@ -27,6 +27,9 @@ jobs:
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
+        with:
+          # Full history: the counterexample registry names fix commits.
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.98.0
