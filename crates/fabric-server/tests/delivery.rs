@@ -5,6 +5,7 @@ use fabric_o11y::alpha::journal::{Batch, Journal};
 use fabric_o11y::alpha::node::{Config as NodeConfig, Node};
 use fabric_o11y::alpha::sender::{Delivery, Sender, ServerTarget};
 use fabric_server::config::Config;
+use fabric_server::control::{Control, DesiredConfig};
 use fabric_server::store::{CommitMode, Store};
 use prost::Message;
 use sha2::{Digest, Sha256};
@@ -69,6 +70,10 @@ fn make_certs(dir: &Path) {
             "2",
             "-subj",
             "/CN=fabric test CA",
+            "-addext",
+            "basicConstraints=critical,CA:TRUE",
+            "-addext",
+            "keyUsage=critical,keyCertSign,cRLSign",
         ],
         dir,
     );
@@ -89,7 +94,7 @@ fn make_certs(dir: &Path) {
         ],
         dir,
     );
-    fs::write(dir.join("san.ext"), "subjectAltName=IP:127.0.0.1\n").unwrap();
+    fs::write(dir.join("san.ext"), "subjectAltName=IP:127.0.0.1\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\n").unwrap();
     openssl(
         &[
             "x509",
@@ -138,7 +143,7 @@ fn server_config(root: &Path) -> Config {
         tls_cert: root.join("server.pem"),
         tls_key: root.join("server.key"),
         state_dir: root.join("server-state"),
-        node_credentials: root.join("credentials"),
+        admin_token_file: root.join("admin-token"),
         journal_bytes: 64 * 1024 * 1024,
     }
 }
@@ -207,18 +212,27 @@ fn host_paths(root: &Path) -> Paths {
 fn setup() -> Scratch {
     let scratch = Scratch::new();
     make_certs(&scratch.0);
-    fs::write(scratch.path("token-a"), "token-a-secret\n").unwrap();
-    fs::write(scratch.path("token-b"), "token-b-secret\n").unwrap();
-    fs::write(scratch.path("token-bad"), "not-enrolled\n").unwrap();
     fs::write(
-        scratch.path("credentials"),
-        format!(
-            "{} node-a\n{} node-b\n",
-            sha_hex("token-a-secret"),
-            sha_hex("token-b-secret")
-        ),
+        scratch.path("admin-token"),
+        format!("{}\n", sha_hex("admin")),
     )
     .unwrap();
+    fs::write(scratch.path("token-bad"), "not-enrolled\n").unwrap();
+    // Enroll before the server starts; the server reads the same state.
+    let mut control = Control::open(&server_config(&scratch.0).state_dir).unwrap();
+    for name in ["node-a", "node-b"] {
+        let desired = DesiredConfig {
+            logs: vec![scratch.path("app.log").to_string_lossy().into_owned()],
+            metric_interval_s: 15,
+        };
+        let (_, token) = control.enroll(name, desired).unwrap();
+        let file = if name == "node-a" {
+            "token-a"
+        } else {
+            "token-b"
+        };
+        fs::write(scratch.path(file), format!("{token}\n")).unwrap();
+    }
     write_host(&scratch.0);
     scratch
 }

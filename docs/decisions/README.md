@@ -15,6 +15,7 @@
 | [ADR-0011: Separate an interrupted append from a known journal failure](ADR-0011-separate-interrupted-append-from-known-failure.md) | Accepted | Alpha `FAB1` reopen after process death; known failures still refuse |
 | [ADR-0012: Add the Fabric Server as a workspace crate](ADR-0012-add-a-server-crate-in-a-workspace.md) | Accepted | Workspace member, synchronous node client, ring provider, no SQLite |
 | [ADR-0013: Deliver batches in order with bounded dedup](ADR-0013-deliver-batches-in-order-with-bounded-dedup.md) | Accepted | One in flight per stream, per-stream last sequence and hash, grouped two-sync commits |
+| [ADR-0014: Manage nodes through server control state and node polling](ADR-0014-manage-nodes-through-server-control-state.md) | Proposed | Admin token, enrollment, desired and applied revisions, 5 s polls |
 
 This first record captures an existing, explicitly documented choice. It does not claim that storage engines, ID widths, or performance strategies have been compared. Record further decisions when they materially affect architecture; use the [ADR format in AGENTS.md](../../AGENTS.md#12-architecture-decision-records) and the next unused four-digit number.
 

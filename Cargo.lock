@@ -241,6 +241,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tokio",
+ "ureq",
 ]
 
 [[package]]
@@ -253,6 +254,7 @@ dependencies = [
  "opentelemetry-proto",
  "prost",
  "rustls",
+ "serde",
  "serde_json",
  "sha2",
  "ureq",

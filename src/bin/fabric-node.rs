@@ -9,6 +9,8 @@ const MIN_BACKOFF: Duration = Duration::from_millis(250);
 const MAX_BACKOFF: Duration = Duration::from_secs(5);
 /// How often `run` reads configured logs between metric samples.
 const LOG_POLL: Duration = Duration::from_secs(1);
+/// How often `run` asks the server for configuration (ADR-0014).
+const CONFIG_POLL: Duration = Duration::from_secs(5);
 
 extern "C" fn request_stop(_signal: libc::c_int) {
     // An atomic store is async-signal-safe; the loop checks it between cycles.
@@ -66,7 +68,6 @@ fn main() -> ExitCode {
             install_stop_handler()?;
         }
         let config = Config::load(config_path)?;
-        let interval = Duration::from_secs(config.interval_s);
         let mut node = Node::open(config)?;
         if STOP.load(Ordering::SeqCst) {
             return Ok(());
@@ -76,11 +77,38 @@ fn main() -> ExitCode {
         let mut retry_at = Instant::now();
         let mut next_metrics = Instant::now();
         let mut next_logs = Instant::now() + LOG_POLL;
+        let mut next_config = Instant::now();
+        let mut last_config_error: Option<String> = None;
         loop {
-            // Metrics on their interval boundary; logs every LOG_POLL so a
-            // line is committed and sent within about a second.
             let now = Instant::now();
-            let cycle = if now >= next_metrics {
+            if mode == "run" && now >= next_config {
+                next_config = now + CONFIG_POLL;
+                let poll = node.poll_config()?;
+                if poll.changed {
+                    // Confirm at once so the server sees the applied revision
+                    // without waiting a full poll interval.
+                    next_config = now;
+                    println!(
+                        "config revision={} paused={} interval_s={}",
+                        node.applied_revision(),
+                        node.paused(),
+                        node.interval_s()
+                    );
+                }
+                if poll.error != last_config_error {
+                    if let Some(error) = &poll.error {
+                        eprintln!("fabric-node: configuration: {error}");
+                    }
+                    last_config_error = poll.error;
+                }
+            }
+            // Metrics on their interval boundary; logs every LOG_POLL so a
+            // line is committed and sent within about a second. Nothing is
+            // collected while the server has paused this node.
+            let cycle = if node.paused() {
+                None
+            } else if now >= next_metrics {
+                let interval = Duration::from_secs(node.interval_s());
                 while next_metrics <= now {
                     next_metrics += interval;
                 }
@@ -109,7 +137,7 @@ fn main() -> ExitCode {
             }
             // Until the next poll: deliver while batches are pending, back off
             // after a failed attempt, and honour a stop request within 100 ms.
-            let deadline = next_metrics.min(next_logs);
+            let deadline = next_metrics.min(next_logs).min(next_config);
             while !STOP.load(Ordering::SeqCst) && Instant::now() < deadline {
                 let now = Instant::now();
                 if now >= retry_at {

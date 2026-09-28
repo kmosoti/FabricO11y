@@ -22,8 +22,11 @@ frames before answering under the [ADR-0013](decisions/ADR-0013-deliver-batches-
 rule. End-to-end tests pass and fail on two injected server defects, and
 [oracle-graded fault runs](experiments/formal/alpha-phase2-delivery-faults.md) pass under
 server kills, node kills and an outage. Ten real node processes, latency and the
-commit-mode comparison remain. Phases 3
-to 5 are unimplemented; the [planned deployment](architecture/deployment.md) is unchanged.
+commit-mode comparison remain. Ten real nodes pass the [registered delivery run](experiments/benchmarks/alpha-phase2-delivery-run-01.md)
+in both commit modes. Phase 3 has [central control](architecture/control-plane.md): enrollment,
+desired and applied configuration, pause, resume and revoke, and a fleet simulator whose
+registered trials are pending. Phases 4
+and 5 are unimplemented; the [planned deployment](architecture/deployment.md) is unchanged.
 FOL2 and the research packages remain supported.
 
 The [scoped local research completion contract](experiments/ablation/end-to-end-prototype.md)

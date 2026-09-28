@@ -61,7 +61,18 @@ pub enum Delivery {
 pub struct Sender {
     agent: ureq::Agent,
     endpoint: String,
+    config_endpoint: String,
     authorization: String,
+}
+
+/// The configuration a server wants this node to run.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RemoteView {
+    pub revision: u64,
+    pub paused: bool,
+    pub logs: Vec<String>,
+    pub metric_interval_s: u64,
 }
 
 fn read_bounded(path: &Path, cap: u64) -> io::Result<Vec<u8>> {
@@ -78,36 +89,89 @@ fn read_bounded(path: &Path, cap: u64) -> io::Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// An HTTPS client that trusts only the CA certificates in `ca`, with the
+/// ring provider and a bounded request time. Statuses are returned, not errors.
+pub fn agent(ca: &Path) -> io::Result<ureq::Agent> {
+    let pem = read_bounded(ca, MAX_CA_BYTES)?;
+    let ca = Certificate::from_pem(&pem)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
+    let tls = TlsConfig::builder()
+        .root_certs(RootCerts::Specific(Arc::new(vec![ca])))
+        .unversioned_rustls_crypto_provider(Arc::new(rustls::crypto::ring::default_provider()))
+        .build();
+    Ok(ureq::Agent::config_builder()
+        .tls_config(tls)
+        .http_status_as_error(false)
+        .timeout_global(Some(REQUEST_TIMEOUT))
+        .build()
+        .new_agent())
+}
+
+/// Read a bearer token file: trimmed printable ASCII.
+pub fn read_token(path: &Path) -> io::Result<String> {
+    let token = String::from_utf8(read_bounded(path, MAX_TOKEN_BYTES)?)
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "token is not UTF-8"))?;
+    let token = token.trim().to_owned();
+    if token.is_empty() || !token.bytes().all(|b| b.is_ascii_graphic()) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "token must be printable ASCII",
+        ));
+    }
+    Ok(token)
+}
+
 impl Sender {
     pub fn new(target: &ServerTarget) -> io::Result<Self> {
         target.validate()?;
-        let token = String::from_utf8(read_bounded(&target.token_file, MAX_TOKEN_BYTES)?)
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "token is not UTF-8"))?;
-        let token = token.trim();
-        if token.is_empty() || !token.bytes().all(|b| b.is_ascii_graphic()) {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "token must be printable ASCII",
-            ));
-        }
-        let pem = read_bounded(&target.ca, MAX_CA_BYTES)?;
-        let ca = Certificate::from_pem(&pem)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
-        let tls = TlsConfig::builder()
-            .root_certs(RootCerts::Specific(Arc::new(vec![ca])))
-            .unversioned_rustls_crypto_provider(Arc::new(rustls::crypto::ring::default_provider()))
-            .build();
-        let agent = ureq::Agent::config_builder()
-            .tls_config(tls)
-            .http_status_as_error(false)
-            .timeout_global(Some(REQUEST_TIMEOUT))
-            .build()
-            .new_agent();
+        let token = read_token(&target.token_file)?;
+        let agent = agent(&target.ca)?;
         Ok(Self {
             agent,
             endpoint: format!("{}/v1/batches", target.url),
+            config_endpoint: format!("{}/v1/config", target.url),
             authorization: format!("Bearer {token}"),
         })
+    }
+
+    /// Poll for configuration, reporting what this node runs. `Ok(None)`
+    /// means the server's view equals `applied_revision`.
+    pub fn fetch_config(
+        &self,
+        applied_revision: u64,
+        config_error: Option<&str>,
+    ) -> Result<Option<RemoteView>, String> {
+        let mut request = self
+            .agent
+            .get(&self.config_endpoint)
+            .header("authorization", &self.authorization)
+            .header("x-fabric-applied-revision", applied_revision.to_string())
+            .header("if-none-match", format!("\"{applied_revision}\""));
+        if let Some(error) = config_error {
+            let printable: String = error
+                .chars()
+                .filter(|c| c.is_ascii_graphic() || *c == ' ')
+                .take(240)
+                .collect();
+            request = request.header("x-fabric-config-error", printable);
+        }
+        let mut response = request.call().map_err(|e| format!("transport: {e}"))?;
+        let status = response.status().as_u16();
+        if status == 304 {
+            return Ok(None);
+        }
+        let body = response
+            .body_mut()
+            .with_config()
+            .limit(64 * 1024)
+            .read_to_string()
+            .map_err(|e| format!("read: {e}"))?;
+        if status != 200 {
+            return Err(format!("HTTP {status}: {body}"));
+        }
+        serde_json::from_str(&body)
+            .map(Some)
+            .map_err(|e| format!("invalid configuration answer: {e}"))
     }
 
     /// Send one batch's exact bytes and classify the answer.

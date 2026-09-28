@@ -3,7 +3,7 @@
 use crate::alpha::host::{self, Kind, Paths, Value};
 use crate::alpha::journal::{Batch, Cursor, Journal, MAX_GAP_BYTES, MAX_GAPS_PER_BATCH};
 use crate::alpha::log_source;
-use crate::alpha::sender::{Delivery, Sender, ServerTarget};
+use crate::alpha::sender::{Delivery, RemoteView, Sender, ServerTarget};
 use opentelemetry_proto::tonic::collector::{
     logs::v1::ExportLogsServiceRequest, metrics::v1::ExportMetricsServiceRequest,
 };
@@ -419,7 +419,11 @@ pub struct Cycle {
 }
 
 pub struct Node {
+    /// The configuration in force: the local base with any applied remote view.
     config: Config,
+    base: Config,
+    applied: Option<RemoteView>,
+    config_error: Option<String>,
     journal: Journal,
     cursors: BTreeMap<String, Cursor>,
     history: History,
@@ -427,6 +431,51 @@ pub struct Node {
     sender: Option<Sender>,
     /// A coverage-unknown notice already committed while its marker remains.
     unknown_reported: Option<Unknown>,
+}
+
+/// What one configuration poll did.
+#[derive(Debug, Default)]
+pub struct ConfigPoll {
+    /// A new configuration was validated, stored and activated.
+    pub changed: bool,
+    /// Why the poll or the new configuration was not used.
+    pub error: Option<String>,
+}
+
+const APPLIED: &str = "applied-config.json";
+
+/// The local base with a remote view's log paths and interval, validated by
+/// the same rules as a local file.
+fn effective(base: &Config, view: &RemoteView) -> io::Result<Config> {
+    let mut config = base.clone();
+    config.logs = view.logs.iter().map(PathBuf::from).collect();
+    config.interval_s = view.metric_interval_s;
+    config.validate()?;
+    config.logs.sort();
+    config.logs.dedup();
+    Ok(config)
+}
+
+fn read_applied(dir: &Path) -> Option<RemoteView> {
+    let file = File::open(dir.join(APPLIED)).ok()?;
+    let mut text = String::new();
+    file.take(MAX_CONFIG_BYTES).read_to_string(&mut text).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+/// Stored by synced rename before activation, so a restart runs it too.
+fn write_applied(dir: &Path, view: &RemoteView) -> io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let staged = dir.join("applied-config.json.tmp");
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&staged)?;
+    file.write_all(&serde_json::to_vec(view).map_err(|e| io::Error::other(e.to_string()))?)?;
+    file.sync_all()?;
+    std::fs::rename(&staged, dir.join(APPLIED))?;
+    File::open(dir)?.sync_all()
 }
 
 /// One send attempt: the sequence, SHA-256 of the exact bytes sent, and the answer.
@@ -460,6 +509,23 @@ impl Node {
         config.validate()?;
         config.logs.sort();
         config.logs.dedup();
+        // The local file is the base: spool, ceiling and server target. The
+        // last configuration applied from the server, if still valid against
+        // that base, replaces its log paths and interval (ADR-0014).
+        let base = config.clone();
+        let mut applied = None;
+        let mut config_error = None;
+        if let Some(view) = read_applied(&config.spool) {
+            match effective(&base, &view) {
+                Ok(effective) => {
+                    config = effective;
+                    applied = Some(view);
+                }
+                Err(error) => {
+                    config_error = Some(format!("stored revision {}: {error}", view.revision));
+                }
+            }
+        }
         let mut journal = Journal::open(&config.spool, config.journal_cap())?;
         let mut cursors = BTreeMap::new();
         let mut history = History::new();
@@ -488,6 +554,9 @@ impl Node {
         }
         Ok(Self {
             config,
+            base,
+            applied,
+            config_error,
             journal,
             cursors,
             history,
@@ -499,6 +568,67 @@ impl Node {
 
     pub fn acked_through(&self) -> u64 {
         self.journal.acked_through()
+    }
+
+    pub fn paused(&self) -> bool {
+        self.applied.as_ref().is_some_and(|v| v.paused)
+    }
+
+    pub fn interval_s(&self) -> u64 {
+        self.config.interval_s
+    }
+
+    pub fn applied_revision(&self) -> u64 {
+        self.applied.as_ref().map_or(0, |v| v.revision)
+    }
+
+    /// Ask the server for configuration and activate a new valid view.
+    /// Transport and validation problems are reported, never fatal: the node
+    /// keeps running its last applied configuration.
+    pub fn poll_config(&mut self) -> io::Result<ConfigPoll> {
+        let Some(sender) = self.sender.as_ref() else {
+            return Ok(ConfigPoll::default());
+        };
+        let view = match sender.fetch_config(self.applied_revision(), self.config_error.as_deref())
+        {
+            Ok(Some(view)) => view,
+            Ok(None) => return Ok(ConfigPoll::default()),
+            Err(error) => {
+                return Ok(ConfigPoll {
+                    changed: false,
+                    error: Some(error),
+                });
+            }
+        };
+        let effective = match effective(&self.base, &view) {
+            Ok(effective) => effective,
+            Err(error) => {
+                let message = format!("revision {}: {error}", view.revision);
+                self.config_error = Some(message.clone());
+                return Ok(ConfigPoll {
+                    changed: false,
+                    error: Some(message),
+                });
+            }
+        };
+        write_applied(&self.config.spool, &view)?;
+        if view.paused && !self.paused() {
+            // The paused interval is a collection gap; the next batch after
+            // resume reports it through the coverage-unknown path.
+            mark_unknown(
+                &self.config.spool,
+                now_ns()?,
+                self.unknown_reported.is_some(),
+            )?;
+            self.unknown_reported = None;
+        }
+        self.config = effective;
+        self.applied = Some(view);
+        self.config_error = None;
+        Ok(ConfigPoll {
+            changed: true,
+            error: None,
+        })
     }
 
     /// Send unacknowledged batches in order until caught up, `until` passes,
@@ -576,6 +706,9 @@ impl Node {
     /// One full cycle: host metrics and every configured log. Always commits
     /// a batch (metrics, lines or at least a gap).
     pub fn collect_once(&mut self) -> io::Result<Cycle> {
+        if self.paused() {
+            return Err(io::Error::other("collection is paused by the server"));
+        }
         self.collect(true)?
             .ok_or_else(|| io::Error::other("metrics cycle produced no batch"))
     }
@@ -587,6 +720,9 @@ impl Node {
     }
 
     fn collect(&mut self, include_metrics: bool) -> io::Result<Option<Cycle>> {
+        if self.paused() {
+            return Ok(None);
+        }
         let now = now_ns()?;
         let mut gaps = Vec::new();
         // A prior cycle could not commit. Its interval is reported as a gap in
@@ -740,10 +876,10 @@ impl Unknown {
     fn notice(self) -> String {
         match self {
             Unknown::Since(ns) => {
-                format!("coverage unknown since {ns} ns: an earlier collection did not commit")
+                format!("coverage unknown since {ns} ns: collection was paused or did not commit")
             }
             Unknown::UnrecordedTime => {
-                "coverage unknown since an unrecorded time: an earlier collection did not commit"
+                "coverage unknown since an unrecorded time: collection was paused or did not commit"
                     .to_owned()
             }
         }

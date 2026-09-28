@@ -20,8 +20,8 @@ pub struct Config {
     pub tls_cert: PathBuf,
     pub tls_key: PathBuf,
     pub state_dir: PathBuf,
-    /// Lines of `<sha256 hex of token> <label>`; phase 3 replaces this with enrollment.
-    pub node_credentials: PathBuf,
+    /// Root-owned file holding the administrator's bearer token.
+    pub admin_token_file: PathBuf,
     pub journal_bytes: u64,
 }
 
@@ -55,7 +55,7 @@ impl Config {
                     | "tls_cert"
                     | "tls_key"
                     | "state_dir"
-                    | "node_credentials"
+                    | "admin_token_file"
                     | "journal_bytes"
             ) {
                 return Err(invalid("unknown server config key"));
@@ -84,7 +84,7 @@ impl Config {
             tls_cert: path("tls_cert")?,
             tls_key: path("tls_key")?,
             state_dir: path("state_dir")?,
-            node_credentials: path("node_credentials")?,
+            admin_token_file: path("admin_token_file")?,
             journal_bytes: match values.get("journal_bytes") {
                 Some(v) => v.parse().map_err(|_| invalid("invalid journal_bytes"))?,
                 None => DEFAULT_JOURNAL_BYTES,
@@ -97,40 +97,38 @@ impl Config {
     }
 }
 
-/// Credentials: SHA-256 of a bearer token (lowercase hex) to a node label.
-pub fn load_credentials(path: &Path) -> io::Result<HashMap<[u8; 32], String>> {
-    let text = read_bounded(path)?;
-    let mut map = HashMap::new();
-    for line in text.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-        let (hash, label) = line
-            .split_once(' ')
-            .ok_or_else(|| invalid("credential line must be '<sha256 hex> <label>'"))?;
-        let label = label.trim();
-        if hash.len() != 64
-            || !hash
-                .bytes()
-                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
-            || label.is_empty()
-            || label.len() > 64
-            || !label
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.')
-        {
-            return Err(invalid("invalid credential line"));
-        }
-        let mut digest = [0_u8; 32];
-        for (i, chunk) in hash.as_bytes().chunks(2).enumerate() {
-            digest[i] = u8::from_str_radix(std::str::from_utf8(chunk).unwrap(), 16).unwrap();
-        }
-        if map.insert(digest, label.to_owned()).is_some()
-            || map.values().filter(|l| *l == label).count() > 1
-        {
-            return Err(invalid("duplicate credential or label"));
-        }
+/// The administrator token: printable ASCII, at least 32 bytes.
+pub fn load_admin_token(path: &Path) -> io::Result<String> {
+    let token = read_bounded(path)?.trim().to_owned();
+    if token.len() < 32 || token.len() > 256 || !token.bytes().all(|b| b.is_ascii_graphic()) {
+        return Err(invalid("admin token must be 32-256 printable ASCII bytes"));
     }
-    Ok(map)
+    Ok(token)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_complete_file_loads_and_unknown_or_duplicate_keys_are_refused() {
+        let dir = std::env::temp_dir().join(format!("fabric-server-config-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("server.conf");
+        let good = "listen=127.0.0.1:7443\ntls_cert=/c.pem\ntls_key=/k.pem\nstate_dir=/s\nadmin_token_file=/a\n";
+        std::fs::write(&path, good).unwrap();
+        let config = Config::load(&path).unwrap();
+        assert_eq!(config.admin_token_file, PathBuf::from("/a"));
+        assert_eq!(config.journal_bytes, DEFAULT_JOURNAL_BYTES);
+        for bad in [
+            format!("{good}node_credentials=/x\n"),
+            format!("{good}listen=127.0.0.1:1\n"),
+            good.replace("admin_token_file=/a\n", ""),
+            good.replace("state_dir=/s", "state_dir=relative"),
+        ] {
+            std::fs::write(&path, bad).unwrap();
+            assert!(Config::load(&path).is_err());
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

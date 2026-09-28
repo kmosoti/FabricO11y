@@ -68,10 +68,12 @@ def openssl(root: Path, *args: str) -> None:
 
 def make_certs(root: Path) -> None:
     openssl(root, "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256",
-            "-nodes", "-keyout", "ca.key", "-out", "ca.pem", "-days", "2", "-subj", "/CN=fabric test CA")
+            "-nodes", "-keyout", "ca.key", "-out", "ca.pem", "-days", "2", "-subj", "/CN=fabric test CA",
+            "-addext", "basicConstraints=critical,CA:TRUE", "-addext", "keyUsage=critical,keyCertSign,cRLSign")
     openssl(root, "req", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:P-256", "-nodes",
             "-keyout", "server.key", "-out", "server.csr", "-subj", "/CN=127.0.0.1")
-    (root / "san.ext").write_text("subjectAltName=IP:127.0.0.1\n")
+    (root / "san.ext").write_text("subjectAltName=IP:127.0.0.1\nbasicConstraints=critical,CA:FALSE\n"
+                                  "keyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\n")
     openssl(root, "x509", "-req", "-in", "server.csr", "-CA", "ca.pem", "-CAkey", "ca.key",
             "-CAcreateserial", "-out", "server.pem", "-days", "2", "-extfile", "san.ext")
 
@@ -171,18 +173,24 @@ def main() -> int:
     rng = random.Random(args.seed)
     make_certs(root)
     port = free_port()
-    creds = []
-    for i in range(args.nodes):
-        token = f"node{i}-{rng.getrandbits(64):016x}"
-        (root / f"token{i}").write_text(token + "\n")
-        creds.append(f"{hashlib.sha256(token.encode()).hexdigest()} node{i}")
-    (root / "credentials").write_text("\n".join(creds) + "\n")
+    (root / "admin-token").write_text(f"{rng.getrandbits(256):064x}\n")
     server_conf = root / "server.conf"
     server_conf.write_text(
         f"listen=127.0.0.1:{port}\ntls_cert={root}/server.pem\ntls_key={root}/server.key\n"
-        f"state_dir={root}/server-state\nnode_credentials={root}/credentials\njournal_bytes=268435456\n")
+        f"state_dir={root}/server-state\nadmin_token_file={root}/admin-token\njournal_bytes=268435456\n")
     server = Server(server_bin, server_conf, port, root / "server.log")
     server.start()
+    admin_conf = root / "admin.conf"
+    admin_conf.write_text(f"server_url=https://127.0.0.1:{port}\nserver_ca={root}/ca.pem\n"
+                          f"admin_token_file={root}/admin-token\n")
+    for i in range(args.nodes):
+        log = root / f"app{i}.log"
+        out = subprocess.run([str(bins / "fabricctl"), "admin", str(admin_conf), "node", "add", f"node{i}",
+                              "--log", str(log), "--interval", "1"],
+                             capture_output=True, text=True, timeout=30)
+        if out.returncode != 0:
+            raise RuntimeError(f"enroll node{i}: {out.stdout} {out.stderr}")
+        (root / f"token{i}").write_text(json.loads(out.stdout)["token"] + "\n")
     nodes, stops, threads, transcript = [], [], [], []
     for i in range(args.nodes):
         conf = root / f"node{i}.conf"

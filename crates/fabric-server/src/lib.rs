@@ -1,11 +1,13 @@
 //! Fabric Server: authenticated, durable batch intake for Fabric Nodes.
 pub mod config;
+pub mod control;
 pub mod http;
 pub mod store;
 
 use axum_server::tls_rustls::RustlsConfig;
+use sha2::{Digest, Sha256};
 use std::io;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 /// Install the ring provider once; rustls is built without a default.
 pub fn install_crypto_provider() {
@@ -20,13 +22,15 @@ pub async fn serve(
 ) -> io::Result<()> {
     install_crypto_provider();
     std::fs::create_dir_all(&config.state_dir)?;
-    let credentials = Arc::new(config::load_credentials(&config.node_credentials)?);
+    let admin = config::load_admin_token(&config.admin_token_file)?;
+    let control = Arc::new(Mutex::new(control::Control::open(&config.state_dir)?));
     let store = store::Store::open(&config.state_dir, config.journal_bytes, mode)?;
     let intake = store.spawn()?;
     let tls = RustlsConfig::from_pem_file(&config.tls_cert, &config.tls_key).await?;
     let app = http::router(http::AppState {
         intake,
-        credentials,
+        control,
+        admin_token_sha256: Sha256::digest(admin.as_bytes()).into(),
     });
     axum_server::bind_rustls(config.listen, tls)
         .handle(handle)
