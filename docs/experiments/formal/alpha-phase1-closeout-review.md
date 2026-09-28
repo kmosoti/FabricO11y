@@ -1,6 +1,6 @@
 # Phase-1 close-out review and repairs
 
-Status: the first executable review returned REQUEST_CHANGES for head `8703847` with six findings. The re-review of head `b140bd2` confirmed all six repaired and found three more, all repaired below. Each regression fails on a mutant that restores its defect. A final re-review of the second round is pending. Phase 1 is not promoted.
+Status: the first executable review returned REQUEST_CHANGES for head `8703847` with six findings. The re-review of head `b140bd2` confirmed all six repaired and found three more, all repaired below. Each regression fails on a mutant that restores its defect. The final re-review of `71fef99` returned APPROVE with no findings. That approval is same-model review; the independent-family review is still pending, so phase 1 is not promoted.
 
 ## Reviewers
 
@@ -34,6 +34,10 @@ The same reviewer reran its reproductions against binaries built from `b140bd2` 
 | An I/O error before the coverage marker's rename left only the staged file, and the next batch carried no notice | minor | A leftover `coverage-unknown.tmp` also means coverage is unknown, reported as "since an unrecorded time"; clearing removes both files | `staged_marker_left_by_a_failed_write_still_reports_unknown_coverage`; fails when the staged file is ignored |
 
 Not probed separately: a failure that follows an already-reported notice replacing the marker, which needs an in-process append failure that does not quarantine the spool.
+
+## Final re-review of `71fef99`
+
+Verdict APPROVE, no findings, on `fabric-node` SHA-256 `dac2603c9c68560664c1c08bd408eb9909bcd4a4311f8773525fd9abd5030911` (the reviewer's own build). Writer B was refused at every one of rotation events 11 to 17 while writer A was delayed, and A never quarantined; all 2,240 lines replayed exactly. Kills that left only sealed files gave `interrupted_append=true` and exact replay at all 12 points. The staged-marker rows now carry an unrecorded-time notice. For the one-second log poll, a quiet run committed only its metrics batch, a partial line was committed only after its newline, and 50 random SIGKILLs of `run` left inspection clean with an exact 978-line replay. `cargo test --offline --locked --workspace --all-features` exited 0. The added probes `rotrace5.py` and `runkill.py` are kept with the others.
 
 ## Remaining limits
 

@@ -52,7 +52,7 @@ Rotate the node journal into fixed-size files (`batches.000001.faj`, closed at 8
 | P1.2 (done) | D1 and D2: two sidecars, tail verification on reopen, directory sync after unlink, SIGTERM handling, marker-to-gap conversion, regressions for each; rerun the adapted journal oracle and the fault tests | oracle and fault tests exit 0; `kill -TERM` during `run` leaves a reopenable spool | implementer; prover for the reopen property |
 | P1.3 (done) | Register the log budget in the [node view](architecture/node.md): 64 KiB of bodies per cycle and 128 lines per file per pass in sorted order; report per-file unread bytes in the cycle line and inspect so lag is visible | docs check; a test with a busy first file shows the second still progresses | worker |
 | P1.4 (done, [run 02](experiments/benchmarks/alpha-phase1-native-run-02.md)) | Post-repair native run 02: same protocol, three seeds, final binaries | runner exit 0; VmHWM at most 64 MiB; exact replay | runner |
-| P1.5 (in progress: [review](experiments/formal/alpha-phase1-closeout-review.md) found six defects, all repaired; re-review pending) | Cross-family re-review on the final hashes: Claude verifier now, GPT after 2026-10-03 or Gemini; then mark phase 1 promoted in the ledger | both verdicts recorded with hashes | verifier |
+| P1.5 (same-model review APPROVE after two repair rounds, [record](experiments/formal/alpha-phase1-closeout-review.md); independent family pending) | Cross-family re-review on the final hashes: Claude verifier now, GPT after 2026-10-03 or Gemini; then mark phase 1 promoted in the ledger | both verdicts recorded with hashes | verifier |
 
 ## 4. Phase 2: network delivery
 
@@ -66,7 +66,7 @@ Order inside the phase: oracle first, then implementation, then verifier probes,
 | 2.3 | Dedup and ACK per D4; state rebuilt by replay | restart tests over 10 identities; the TLA+ extension passes | implementer, prover |
 | 2.4 (spool part done: shared frame log, rotation, ACK cursor, reclaim) | Node sender: after each cycle send the oldest unacknowledged batch, one in flight, bounded backoff; ACK cursor and reclaim per D5; credential file; keep collecting through an outage | 30 minutes buffered at the registered rate drains within 10 minutes after reconnect | implementer |
 | 2.5 (process faults done, [run 01](experiments/formal/alpha-phase2-delivery-faults.md)) | Fault seams, test-only like the journal's: server drops the ACK after commit; node dies between commit and cursor write; torn server tail; injected I/O errors; harness SIGKILLs | the 2.0 oracle reports zero mismatches on recovered records | verifier probes |
-| 2.6 | Ten real node processes under the runner with the registered source shape; ACK p50 and p99, CPU, RSS, all live bytes; grouped and individual commit measured with identical durability | ACK p99 at most 1 s; no growing backlog; queues byte-bounded | runner |
+| 2.6 (done, [run 01](experiments/benchmarks/alpha-phase2-delivery-run-01.md)) | Ten real node processes under the runner with the registered source shape; ACK p50 and p99, CPU, RSS, all live bytes; grouped and individual commit measured with identical durability | ACK p99 at most 1 s; no growing backlog; queues byte-bounded | runner |
 | 2.7 | Docs: delivery view gains the real ACK path, data-flow diagram, ADR-0012 and ADR-0013, ledger and current state | docs check | worker |
 | 2.8 | Cross-family gate review on recorded hashes | both verdicts | verifier plus GPT or Gemini |
 
