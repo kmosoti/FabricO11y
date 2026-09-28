@@ -82,6 +82,8 @@ States are for the revision named in each linked record, not for the current hea
 | Running installation | The installation acceptance list in the [product contract](PRODUCT-CONTRACT.md#linux-installation-contract) | **Inconclusive** on `bbd2dd5`: in a Debian 13 / systemd 257 container on a legacy cgroup hierarchy, 16 of 17 checks passed and every negative-control mutation was rejected; `MemoryHigh` enforcement not run (no unified hierarchy available). A unified-hierarchy host decides the gate | [installation acceptance protocol](experiments/formal/installation-acceptance-protocol.md), [installation acceptance run 01](experiments/formal/installation-acceptance-run-01.md) |
 | Release readiness | Every gate above has a recorded command, exit and evidence | Not performed | [roadmap](ROADMAP.md) |
 
+The runs still needed on the target host are listed, with commands and pass rules, in the [qualification runbook](qualification-runbook.md).
+
 Promote a capability only after recording the command, exit status and evidence for every gate. If a gate fails, preserve a concise counterexample and the next action in a linked record. No language-model review is a gate ([ADR-0018](decisions/ADR-0018-accept-work-on-executable-evidence.md)); earlier review records remain historical evidence of the defects they found.
 
 ## Fast checks versus qualification
