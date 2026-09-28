@@ -405,7 +405,6 @@ dependencies = [
  "arrow-schema",
  "axum",
  "axum-server",
- "bytes",
  "fabric_o11y",
  "opentelemetry-proto",
  "parquet",

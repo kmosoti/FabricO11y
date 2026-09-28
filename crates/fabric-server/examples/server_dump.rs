@@ -28,12 +28,27 @@ fn b64(bytes: &[u8]) -> String {
 }
 
 fn main() -> ExitCode {
-    let Some(path) = std::env::args().nth(1) else {
-        eprintln!("usage: server_dump <SERVER_CONFIG>");
-        return ExitCode::from(2);
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let (path, records) = match args.as_slice() {
+        [path] => (path.clone(), false),
+        [path, flag] if flag == "--records" => (path.clone(), true),
+        _ => {
+            eprintln!("usage: server_dump <SERVER_CONFIG> [--records]");
+            return ExitCode::from(2);
+        }
     };
     let result = Config::load(&path).and_then(|config| {
         Store::replay(&config.state_dir, config.journal_bytes, |entry| {
+            if records {
+                // The query oracle's record format.
+                println!(
+                    "{{\"label\":\"{}\",\"received_ns\":{},\"bytes\":\"{}\"}}",
+                    entry.label,
+                    entry.received_unix_nano,
+                    b64(&entry.batch)
+                );
+                return Ok(());
+            }
             let ((node, generation), sequence) = identify(&entry.batch)?;
             println!(
                 "{{\"type\":\"recovered\",\"node_id\":\"{}\",\"generation\":{generation},\"sequence\":{sequence},\"bytes\":\"{}\"}}",

@@ -14,7 +14,6 @@ use arrow_array::{
     StringArray, UInt32Array, UInt64Array,
 };
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
-use bytes::Bytes;
 use fabric_o11y::alpha::frame::read_frame;
 use parquet::arrow::ArrowWriter;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
@@ -441,16 +440,17 @@ fn open_table(
     manifest: &Manifest,
     name: &str,
     schema: &SchemaRef,
-) -> io::Result<ParquetRecordBatchReaderBuilder<Bytes>> {
+) -> io::Result<ParquetRecordBatchReaderBuilder<File>> {
     let expected = manifest
         .files
         .get(name)
         .ok_or_else(|| invalid(format!("manifest lacks {name}")))?;
-    let bytes = fs::read(dir.join(name))?;
-    if bytes.len() as u64 != expected.bytes {
+    // Read through the file so pruned row groups are never loaded.
+    let file = File::open(dir.join(name))?;
+    if file.metadata()?.len() != expected.bytes {
         return Err(invalid(format!("{name} size differs from its manifest")));
     }
-    let builder = ParquetRecordBatchReaderBuilder::try_new(Bytes::from(bytes)).map_err(err)?;
+    let builder = ParquetRecordBatchReaderBuilder::try_new(file).map_err(err)?;
     if builder.schema().fields() != schema.fields()
         || builder.metadata().file_metadata().num_rows() as u64 != expected.rows
     {
@@ -461,7 +461,7 @@ fn open_table(
 
 /// Row groups whose `column` (Int64) range overlaps `[from, to)`.
 fn prune(
-    builder: &ParquetRecordBatchReaderBuilder<Bytes>,
+    builder: &ParquetRecordBatchReaderBuilder<File>,
     column: usize,
     from: u64,
     to: u64,
