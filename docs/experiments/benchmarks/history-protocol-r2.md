@@ -31,3 +31,16 @@ python3 -B tools/qualification/runner.py --out target/alpha-p4r2-<mode>-seed<N> 
   python3 -B target/alpha-p4r2-frozen/tools/history_tier.py --seed 0xA11FA00<N> --mode <mode> \
   --bin-dir target/alpha-p4r2-frozen --server-cpus 0-1 --sim-cpus 2-3
 ```
+
+## Erratum (before any measurement)
+
+The runner starts its child with the owned output directory as the working directory, so the relative paths in the command above cannot resolve. The first attempt at 2026-09-28T15:07:49Z started all four trials with those paths; each child exited 2 within 0.03 s, before starting a server, and nothing was measured. The procedure uses absolute paths to the frozen harness and binaries instead:
+
+```sh
+python3 -B tools/qualification/runner.py --out target/alpha-p4r2-<mode>-seed<N> --duration-s 1800 \
+  --disk-bytes 5368709120 --max-output-bytes 1048576 -- \
+  python3 -B "$PWD/target/alpha-p4r2-frozen/tools/history_tier.py" --seed 0xA11FA00<N> --mode <mode> \
+  --bin-dir "$PWD/target/alpha-p4r2-frozen" --server-cpus 0-1 --sim-cpus 2-3
+```
+
+Nothing else changes.
