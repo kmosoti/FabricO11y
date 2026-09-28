@@ -2,7 +2,7 @@
 
 ## Active work
 
-Milestone **history qualification** ([record](milestones/history-qualification.md)): the registered history protocol under [revision 2](experiments/benchmarks/history-protocol-r2.md) on a four-CPU host, and [ADR-0020](decisions/ADR-0020-store-sealed-history-as-parquet-segments.md) for the Segment format. Merged: the [architecture foundation](milestones/architecture-foundation.md), the [verification foundation](milestones/verification-foundation.md) and the [semantic kernels](milestones/semantic-kernels.md). Later milestones are in the [roadmap](ROADMAP.md).
+Milestone **delivery and recovery qualification** ([record](milestones/delivery-recovery.md)): the registered outage protocol, stress revision 2 and a newly registered soak, run on a four-CPU host. Merged: the [architecture foundation](milestones/architecture-foundation.md), the [verification foundation](milestones/verification-foundation.md), the [semantic kernels](milestones/semantic-kernels.md) and the [history qualification](milestones/history-qualification.md). Later milestones are in the [roadmap](ROADMAP.md).
 
 ## Implemented
 
@@ -33,13 +33,16 @@ Crates: `fabric-core` (core), `fabric-ports` (ports), `fabric-app` (app), `fabri
 
 - Qualification is outstanding (below); earlier passing measurements belong to earlier revisions.
 - One host runs server, simulator and harness in fleet tiers; CPU contention distorts p99.
+- The server's sealer holds about ten times a journal file in memory while it builds a Segment, and the allocator keeps it: server RSS plateaus near 536 MiB after the first seal at 100 identities ([soak run 01](experiments/benchmarks/soak-run-01.md)).
 - An ineffective I/O controller on WSL must be reported, never counted as enforcement.
 
 ## Outstanding qualification
 
-From the [capability ledger](QUALIFICATION.md#capability-ledger): history query latency, freshness and journal-versus-Segment comparison **measured and passing** under [revision 2](experiments/benchmarks/history-protocol-r2.md) on a four-CPU host ([history run 01](experiments/benchmarks/history-run-01.md)), not qualified on the target profile; outage and drain **interrupted** (first trial stopped mid-run, no result); stress/burst **not run**; soak **not run** and unregistered; running installation **not run** (needs root on a disposable host); release **not performed**, no tag. No capability is qualified on the target profile.
+From the [capability ledger](QUALIFICATION.md#capability-ledger): history query latency, freshness and journal-versus-Segment comparison **measured and passing** under [revision 2](experiments/benchmarks/history-protocol-r2.md) on a four-CPU host ([history run 01](experiments/benchmarks/history-run-01.md)), not qualified on the target profile; outage and drain **measured and passing** ([outage run 01](experiments/benchmarks/outage-run-01.md)); burst, rejection and concurrent management **measured and passing** under [stress revision 2](experiments/benchmarks/stress-protocol-r2.md) ([stress run 01](experiments/benchmarks/stress-run-01.md)); soak **failed** its RSS-growth gate ([soak run 01](experiments/benchmarks/soak-run-01.md)); running installation **not run** (needs root on a disposable host); release **not performed**, no tag. No capability is qualified on the target profile.
 
 ## Next validation steps
 
 - [x] History measurement under revision 2 on a four-CPU host ([milestone record](milestones/history-qualification.md)).
 - [ ] History revision 1 on the 12-CPU target host.
+- [x] Outage, stress (revision 2) and soak run on a four-CPU host ([milestone record](milestones/delivery-recovery.md)).
+- [ ] Bound the sealer's working set, then rerun the registered soak unchanged ([soak run 01](experiments/benchmarks/soak-run-01.md)).
