@@ -9,7 +9,7 @@ Product evidence is indexed by capability. Record file names keep their historic
 | Delivery | [delivery protocol](benchmarks/alpha-phase2-delivery-protocol.md) | [fault runs](formal/alpha-phase2-delivery-faults.md), [ten-process run](benchmarks/alpha-phase2-delivery-run-01.md) |
 | Control and fleet | [fleet protocol](benchmarks/alpha-phase3-fleet-protocol.md) | [fleet run 01](benchmarks/alpha-phase3-fleet-run-01.md) |
 | Retained history and query | [history protocol](benchmarks/alpha-phase4-history-protocol.md), [revision 2 for a four-CPU host](benchmarks/history-protocol-r2.md) | [history run 01](benchmarks/history-run-01.md) (revision 2, four-CPU host; not target-profile qualification) |
-| Recovery and stress | [outage protocol](benchmarks/alpha-phase5-outage-protocol.md), [stress protocol](benchmarks/alpha-phase5-stress-protocol.md) | outage interrupted without a result; stress not run |
+| Recovery and stress | [outage protocol](benchmarks/alpha-phase5-outage-protocol.md), [stress protocol](benchmarks/alpha-phase5-stress-protocol.md), [stress revision 2 for a four-CPU host](benchmarks/stress-protocol-r2.md), [soak protocol](benchmarks/soak-protocol.md) | [outage run 01](benchmarks/outage-run-01.md) (registered protocol, four-CPU host); [stress run 01](benchmarks/stress-run-01.md) (revision 2); [soak run 01](benchmarks/soak-run-01.md) (failed: RSS growth gate) |
 | Packaging and installation | — | [static packaging checks](formal/alpha-phase5-packaging-static.md); running installation not run |
 | Architecture | — | [no_std core experiment](formal/core-no-std.md); fault rerun and mutant results in the [milestone record](../milestones/architecture-foundation.md) |
 

@@ -50,15 +50,15 @@ Specification sources: **PC** = [product contract](../PRODUCT-CONTRACT.md), **AD
 
 ## Qualification
 
-These are operating-profile claims; none is qualified on the current head. A measurement names the revision it ran on: the history measurements ran on `63bbeac`, and the later commits of that milestone changed only documentation. See the [capability ledger](../QUALIFICATION.md#capability-ledger).
+These are operating-profile claims; none is qualified on the current head. A measurement names the revision whose frozen binaries it ran. The history, outage, stress and soak runs used byte-identical builds of the Rust sources at `63bbeac`, the SHA-256 values in their records. See the [capability ledger](../QUALIFICATION.md#capability-ledger).
 
 | ID | Claim | Gate | Latest measurement | Status on current head |
 | --- | --- | --- | --- | --- |
-| QUAL-MEM | Memory bound | native RSS ≤ 64 MiB; central RSS ≤ 2 GiB | native run 02 (`c51d3a8`); fleet run 01 (`4921e5e`) | Not run |
+| QUAL-MEM | Memory bound | native RSS ≤ 64 MiB; central RSS ≤ 2 GiB | native run 02 (`c51d3a8`); fleet run 01 (`4921e5e`); outage run 01 (node ≤ 5.2 MiB); stress run 01 and soak run 01 (server ≤ 648 MiB). The soak's own RSS-growth gate failed ([soak run 01](../experiments/benchmarks/soak-run-01.md)) | Measured on `2b5c939` (not target profile) |
 | QUAL-DISK | Disk bound | 5 GiB live data per invocation; Spool and retention limits | fleet run 01 live bytes | Not run |
-| QUAL-ACK | Delivery latency | ACK p99 ≤ 1 s | delivery run 01 (`71fef99`); fleet run 01 | Not run |
+| QUAL-ACK | Delivery latency | ACK p99 ≤ 1 s | delivery run 01 (`71fef99`); fleet run 01; soak run 01 (`2b5c939`, four-CPU host): ACK p99 ≤ 63.6 ms in every 600 s window over 91 min | Measured on `2b5c939` (not target profile) |
 | QUAL-FRESH | Freshness | observation to query p99 ≤ 5 s at 1,000 identities | history run 01 under revision 2, four-CPU host (`63bbeac`): p99 ≤ 1.78 s | Measured on `63bbeac` (not target profile) |
 | QUAL-QLAT | Query latency | p99 ≤ 2 s over 1,000,000 records | history run 01 under revision 2, four-CPU host (`63bbeac`): p99 ≤ 481 ms Segments, ≤ 1,515 ms journal-only | Measured on `63bbeac` (not target profile) |
-| QUAL-DRAIN | Outage drain | 30 min buffered, drained ≤ 10 min | first trial interrupted, no result | Interrupted |
+| QUAL-DRAIN | Outage drain | 30 min buffered, drained ≤ 10 min | outage run 01 (`bb8d06d`, four-CPU host): drain ≤ 99 s, oracle exact | Measured on `bb8d06d` (not target profile) |
 | QUAL-INSTALL | Installation behavior | running-installation acceptance | static packaging checks only | Not run |
 | QUAL-H | Harness correctness | runner limits, rate oracle | test suites | Tested |

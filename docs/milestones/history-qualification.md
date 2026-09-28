@@ -1,6 +1,6 @@
 # Milestone: history qualification
 
-Status: complete pending CI and merge. Base: the semantic-kernels milestone at `5a3e289`.
+Status: complete and merged into `main` (`d54db38`); CI green on `0f6da9e` (Rust, Documentation, Extended verification). Base: the semantic-kernels milestone at `5a3e289`.
 
 This milestone runs the registered history protocol. Only one host is available, with four CPUs, so it first registers [revision 2](../experiments/benchmarks/history-protocol-r2.md), before any run. Its results are therefore **measurements on a four-CPU host, not a target-profile qualification**. It changes no wire format, persisted format, oracle or product-contract gate.
 
