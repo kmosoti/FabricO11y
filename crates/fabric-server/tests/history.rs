@@ -629,3 +629,85 @@ fn a_corrupt_segment_makes_the_answer_incomplete() {
     assert_eq!(answer["unavailable"].as_array().unwrap().len(), 1);
     server.stop();
 }
+
+/// What a query answer means, without the parts that legitimately differ
+/// between two snapshots of the same history: page tokens, the snapshot
+/// name, the newest receive time, and the freshness of `exclude`.
+fn meaning(pages: &[Value], exclude: &str) -> Value {
+    let rows: Vec<Value> = pages
+        .iter()
+        .flat_map(|p| p["rows"].as_array().cloned().unwrap_or_default())
+        .collect();
+    let mut freshness = pages[0]["freshness"].clone();
+    if let Some(map) = freshness.as_object_mut() {
+        map.remove(exclude);
+    }
+    json!({
+        "rows": rows,
+        "complete": pages.iter().all(|p| p["complete"] == true),
+        "unavailable": pages.iter().map(|p| p["unavailable"].clone()).collect::<Vec<_>>(),
+        "gaps": pages.iter().map(|p| p["gaps"].clone()).collect::<Vec<_>>(),
+        "freshness": freshness,
+        "retained_from_ns": pages[0]["retained_from_ns"],
+    })
+}
+
+/// Metamorphic relations HIST-1 and HIST-2 (verification strategy): the same
+/// committed history answers the same whether it is read from the journal
+/// alone or from a sealed Segment, and sealing does not change an answer.
+/// The first server never seals; after a restart with a small journal file
+/// size, one extra Batch from another Spindle, outside every queried range,
+/// rotates the journal and the sealer turns the old file into a Segment.
+#[test]
+fn journal_and_segment_representations_answer_identically() {
+    let scratch = Scratch::new();
+    make_certs(&scratch.0);
+    let tokens = enroll(&scratch, &["node-a", "node-b", "node-c"]);
+    let unsealed = config(&scratch.0, 1 << 30, 1 << 30);
+    let server = start(unsealed.clone());
+    let a = sender(&scratch.0, server.addr, &tokens[0]);
+    let b = sender(&scratch.0, server.addr, &tokens[1]);
+    deliver(&scratch.path("spool-a"), &a, 0, 30);
+    deliver(&scratch.path("spool-b"), &b, 0, 30);
+    let queries = [
+        json!({"kind": "logs", "from_ns": 1_000_000, "to_ns": 1_050_000, "limit": 97}),
+        json!({"kind": "logs", "node": "node-b", "from_ns": 1_000_000, "to_ns": 1_050_000, "contains": "needle", "limit": 41}),
+        json!({"kind": "metrics", "name": "system.network.receive.bytes", "from_ns": 0, "to_ns": 1_050_000, "limit": 7}),
+        json!({"kind": "rate", "name": "system.network.receive.bytes", "from_ns": 0, "to_ns": 1_050_000}),
+    ];
+    let journal_only: Vec<Value> = queries
+        .iter()
+        .map(|q| meaning(&all_pages(&scratch.0, server.addr, q.clone()), "node-c"))
+        .collect();
+    assert_eq!(
+        fabric_server::segment::list(&unsealed.state_dir)
+            .unwrap()
+            .len(),
+        0,
+        "the first server must answer from the journal alone"
+    );
+    server.stop();
+
+    let sealing = config(&scratch.0, 16 * 1024, 1 << 30);
+    let server = start(sealing.clone());
+    let c = sender(&scratch.0, server.addr, &tokens[2]);
+    deliver(&scratch.path("spool-c"), &c, 1000, 1);
+    wait_for_segments(&sealing.state_dir, 1);
+    let from_segments: Vec<Value> = queries
+        .iter()
+        .map(|q| meaning(&all_pages(&scratch.0, server.addr, q.clone()), "node-c"))
+        .collect();
+    server.stop();
+
+    for ((q, before), after) in queries.iter().zip(&journal_only).zip(&from_segments) {
+        assert!(
+            !before["rows"].as_array().unwrap().is_empty(),
+            "query {q} must return rows"
+        );
+        assert_eq!(before["complete"], true, "query {q}");
+        assert_eq!(
+            before, after,
+            "query {q} changed when its history was sealed"
+        );
+    }
+}
