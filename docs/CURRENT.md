@@ -2,7 +2,7 @@
 
 ## Active work
 
-Milestone **Linux installation qualification** ([record](milestones/linux-installation.md)): the registered running-installation acceptance in a disposable Debian 13 systemd container. Merged: the [architecture foundation](milestones/architecture-foundation.md), the [verification foundation](milestones/verification-foundation.md), the [semantic kernels](milestones/semantic-kernels.md) and the [history qualification](milestones/history-qualification.md); the [delivery and recovery qualification](milestones/delivery-recovery.md) is in review. Later milestones are in the [roadmap](ROADMAP.md).
+Milestone **Linux installation qualification** ([record](milestones/linux-installation.md)): the registered running-installation acceptance in a disposable Debian 13 systemd container. Merged: the [architecture foundation](milestones/architecture-foundation.md), the [verification foundation](milestones/verification-foundation.md), the [semantic kernels](milestones/semantic-kernels.md), the [history qualification](milestones/history-qualification.md) and the [delivery and recovery qualification](milestones/delivery-recovery.md). Later milestones are in the [roadmap](ROADMAP.md).
 
 ## Implemented
 
