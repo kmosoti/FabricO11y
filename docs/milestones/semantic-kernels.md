@@ -1,6 +1,6 @@
 # Milestone: semantic kernel extraction
 
-Status: complete pending CI and merge. Base: `main` at `04dbfe4` (verification foundation merged). This milestone moves domain decisions into `fabric-core` without changing behavior; it changes no wire or persisted format and is not qualification.
+Status: complete and merged into `main` (`6951e18`); CI green on `5a3e289` (Rust, Documentation, Extended verification). Base: `main` at `04dbfe4` (verification foundation merged). This milestone moves domain decisions into `fabric-core` without changing behavior; it changes no wire or persisted format and is not qualification.
 
 ## Acceptance criteria
 
