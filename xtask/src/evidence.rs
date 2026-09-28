@@ -94,17 +94,8 @@ pub fn check_counterexamples(root: &Path, registry: &Path) -> Result<Vec<Violati
     Ok(violations)
 }
 
-/// `path:line:col: description` without the position, which moves with edits.
-fn without_position(line: &str) -> String {
-    let mut parts = line.splitn(4, ':');
-    match (parts.next(), parts.next(), parts.next(), parts.next()) {
-        (Some(file), Some(_), Some(_), Some(rest)) => format!("{file}:{rest}"),
-        _ => line.to_owned(),
-    }
-}
-
 /// Run cargo-mutants on core and app with both packages' tests, then compare
-/// survivors and timeouts with the equivalence list.
+/// missed mutants with the equivalence list. Timeouts count as detected.
 pub fn cargo_mutants(root: &Path, equivalent: &Path) -> Result<Vec<Violation>, String> {
     let json = read(equivalent)?;
     let allowed: BTreeSet<String> = json
@@ -144,10 +135,23 @@ pub fn cargo_mutants(root: &Path, equivalent: &Path) -> Result<Vec<Violation>, S
     if !matches!(status.code(), Some(0 | 2 | 3)) {
         return Err(format!("cargo mutants failed: {status}"));
     }
-    let mut survivors = BTreeSet::new();
-    for list in ["missed.txt", "timeout.txt"] {
-        let text = std::fs::read_to_string(out.join("mutants.out").join(list)).unwrap_or_default();
-        survivors.extend(text.lines().filter(|l| !l.is_empty()).map(without_position));
+    // A survivor is named with its position, so two mutants with the same
+    // description on different lines stay distinct; an equivalence entry
+    // whose code moved is reported as stale and must be re-argued.
+    let read = |list: &str| -> BTreeSet<String> {
+        std::fs::read_to_string(out.join("mutants.out").join(list))
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(str::to_owned)
+            .collect()
+    };
+    let survivors = read("missed.txt");
+    // A timeout means the tests never finished: an infinite loop or a
+    // pathological slowdown, which CI observes as a failure. It counts as
+    // detected and is printed so it stays visible.
+    for timeout in read("timeout.txt") {
+        println!("detected by timeout: {timeout}");
     }
     let mut violations = Vec::new();
     for survivor in &survivors {
