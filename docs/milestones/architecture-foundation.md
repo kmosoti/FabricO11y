@@ -1,6 +1,6 @@
 # Milestone: architecture foundation
 
-Status: in progress. This record is the milestone's baseline, migration map and
+Status: complete on this branch, pending the owner's review and merge. This record is the milestone's baseline, migration map and
 completion report. It is not a release record and is not qualification evidence.
 
 ## Baseline
@@ -138,3 +138,92 @@ Registry: [xtask/mutants.json](../../xtask/mutants.json). Runs are kept under [d
 
 - Run 01 (`semantic-mutants-run-01.txt`): 7 caught, 3 caught elsewhere, 2 inconclusive. The non-caught rows were runner defects: the copied tree had no `target/` directory for test scratch files, and Cargo stopped at the first failing test binary before the named test ran. Both were fixed in the runner.
 - Run 02 (`semantic-mutants-run-02.txt`): 11 caught; **`M-SPOOL-RECLAIM` survived**. Deleting the sealed Spool file that holds the first unacknowledged Batch passed every existing test because no test put a file boundary at `through + 1`. The regression test `reclaim_keeps_the_file_holding_the_first_unacknowledged_batch` now kills it (caught, and only that test fails).
+- Run 03 (`semantic-mutants-run-03.txt`), after the fix: all 12 caught by their named test; `cargo xtask mutants` exit 0.
+
+`cargo-mutants` 27.1.0 calibration on `fabric-core` and `fabric-app`: 34 mutants, 27 caught, 6 unviable, 1 missed and classified **equivalent** (`sequence < last` to `<=` after the `sequence == last` branch). Details in the [verification strategy](../formal/verification-strategy.md#mutation-policy).
+
+## Completion report
+
+| Item | Value |
+| --- | --- |
+| Source branch | `alpha/controlled-linux-collection` (kept; not deleted) |
+| Base SHA | `9b3a2b43f8780f8e5a00f8aa832f453eda42a4c1` |
+| Working branch | `claude/fabrico11y-architecture-foundation-iqbw82` (the session's designated branch, standing in for `milestone/architecture-foundation`) |
+| Final SHA | the head of the working branch that contains this record; see `git log` |
+
+### Gates
+
+| Command | Exit | Result |
+| --- | --- | --- |
+| `cargo xtask check-layers` | 0 | passed, declared and resolved metadata |
+| `cargo xtask check-core-purity` | 0 | passed, declared and resolved metadata |
+| `no_std` experiment | — | `fabric-core` builds as `no_std` with no dependencies; see the [record](../experiments/formal/core-no-std.md) |
+
+### Verification commands executed on the final tree
+
+`cargo xtask checks --profile fast` exited 0 with all fifteen checks passed (rustc 1.94.1, Python 3.11.15, Bun 1.4.0 installed locally for the hook test). Receipts: [receipts-fast](../experiments/benchmarks/data/architecture-foundation/receipts/test.json).
+
+| Check | Command | Exit |
+| --- | --- | --- |
+| fmt | `cargo fmt --all --check` | 0 |
+| check | `cargo check --workspace --locked --all-targets` | 0 |
+| test | `cargo test --workspace --locked --all-features` (111 tests) | 0 |
+| clippy on core, ports, app | `cargo clippy -p fabric-core -p fabric-ports -p fabric-app --locked -- -D warnings` | 0 |
+| layers, core purity | `cargo xtask check-layers`, `cargo xtask check-core-purity` | 0, 0 |
+| qualification runner | `python3 -B tools/qualification/test_runner.py` (18 tests) | 0 |
+| workload and rate oracle | `python3 -B tools/qualification/test_workload.py` (5 tests) | 0 |
+| delivery oracle | `python3 -B tools/qualification/test_delivery_oracle.py` (40 tests) | 0 |
+| query oracle | `python3 -B tools/qualification/test_query_oracle.py` (49 tests) | 0 |
+| docs, checker probes, hooks | `bun tools/docs/check.mjs`, `bun tools/docs/check.test.mjs`, `python3 -B tools/docs/test_hooks.py` | 0, 0, 0 |
+| telemetry | `test_contract.py`, `test_cli.py` | 0, 0 |
+| TLA+ delivery (extended) | `cargo xtask checks --only tla-delivery` with TLC v1.7.1 (SHA-256 verified) | 0: Safe passes; EarlyAck and LostCopy give their expected counterexamples |
+| TLA+ transport (extended) | `cargo xtask checks --only tla-transport` | 0 |
+| delivery fault harness (extended) | eight scenarios and one negative control, above | 0 each; negative control 1 as intended |
+| semantic mutants (extended) | `cargo xtask mutants` | 0: 12 of 12 caught by the named test |
+
+### Negative controls executed
+
+- Layer gate fixtures: core to adapter, core to app, ports to adapter, app to adapter, renamed, optional feature-activated, target-specific, build, development and transitive forbidden edges; unassigned member and stale policy entry; a dev-only exception that must not excuse a normal edge. Each fails with its category.
+- Purity gate fixtures: `rand` (randomness), `tokio` (async runtime), renamed `ureq` (HTTP client), unreviewed crate, unreviewed dev crate, build script, feature, missing `#![no_std]`, `extern crate std`, static atomic, a wrapper crate linking `tokio` (transitive); an allowlisted pure crate passes.
+- Repository-level: `ureq` injected into `fabric-core` fails the purity gate (`PURITY_DENIED_DEPENDENCY`); `fabric-server` injected into `fabric-core` fails the layer gate (`LAYER_FORBIDDEN_EDGE`); `std::time::SystemTime` in the core fails to compile; `extern crate std` compiles but fails the purity gate.
+- Oracle mutation controls (unchanged, in the suites above): delivery oracle `test_mutant_drop_one_acked_recovered_record`, `test_mutant_duplicate_one_recovered_record`, `test_mutant_replace_one_recovered_bytes`, `test_mutant_node_forgets_unacked_batch_early`; query oracle `TestPaginationMutants`, `TestRateMutants` (for example `test_wrong_rate_at_reset`); rate oracle `test_rate_oracle_rejects_overrun_and_balance`.
+- Fault harness `--mutate drop-recovered` fails with `ACKED-DURABLE`.
+
+### Oracle revisions
+
+The oracles' logic is unchanged; their files moved and changed only in path strings and link targets. At the final tree: `delivery_oracle.py` blob `5d27dfb`, `query_oracle.py` blob `ac04517`, `rate_oracle.py` blob `53c94f2` (identical to base).
+
+### Historical evidence
+
+No experiment record, run output, hash list or review archive was rewritten; only Markdown link targets were updated. Historical results remain attributed to the revisions they name, and the [capability ledger](../QUALIFICATION.md#capability-ledger) does not relabel them as evidence for this branch.
+
+### Qualification that remains outstanding
+
+History query latency, freshness and journal-versus-Segment comparison (not run); outage and drain (interrupted, no result); stress and burst (not run); soak (not run, unregistered); running installation (not run); release readiness (not performed).
+
+### Known architectural limitations
+
+- Both composition roots still contain adapters and domain policy: control transitions, query and rate semantics, retention eligibility and collection cursor rules are not in the core, so the layer gate cannot protect them.
+- One documented exception: `fabric-server` end-to-end tests depend on the root package (dev only).
+- The purity gate's source guard is syntactic.
+- Receipts are unsigned and written locally or by CI; they prove structure, not execution.
+- The fault-harness transcript is not yet mapped to TLA+ actions.
+
+### Known surviving mutations
+
+None unexplained. One `cargo-mutants` survivor is classified equivalent (above). The semantic mutant `M-SPOOL-RECLAIM` survived once and is now caught by a new regression test.
+
+### Unchecked behavior
+
+Physical power loss and device fsync honesty; direct journal/Segment and before/after-seal metamorphic comparisons; property-based tests; multi-host networks; everything listed as not run in the ledger. The [verification matrix](../formal/verification-matrix.md) lists unchecked behavior per claim.
+
+### Future milestones
+
+Verification foundation, semantic kernels, history qualification, delivery and recovery qualification, Linux installation qualification, release readiness ([roadmap](../ROADMAP.md)).
+
+### Statements
+
+- Architecture foundation: **COMPLETE** for the scope of this milestone (the remaining kernel extractions are assigned to the semantic-kernels milestone).
+- Behavioral regression checks: **PASS**.
+- Qualification: **OUTSTANDING**.
+- Release: **NOT PERFORMED**. No tag was created, nothing was merged, and the source branch was not deleted.

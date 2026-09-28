@@ -396,7 +396,7 @@ milestone (updated after the digest was drafted), not a new guarantee. Anything 
 | State the independence assumptions per oracle (author, inputs seen, written before or after the implementation) | proposed | Zhao et al.; McKeeman |
 | At least one negative control per contract: hand-written semantic mutants that the oracle or tests must reject | current practice: oracle mutation controls and the semantic-mutant registry (`xtask/mutants.json`), not yet per clause | Vikram et al.; Foster et al. |
 | One argued non-equivalent semantic mutant per contract clause | proposed | Foster et al. |
-| Generic mutation testing (cargo-mutants) on the pure semantic core | not adopted | cargo-mutants |
+| Generic mutation testing (cargo-mutants) on the pure semantic core | calibrated once on core and app (see the [verification strategy](../formal/verification-strategy.md#mutation-policy)); not in routine CI | cargo-mutants |
 | Retain counterexamples from oracles and TLC as permanent fixtures | current practice ([ADR-0018](../decisions/ADR-0018-accept-work-on-executable-evidence.md)) | Jha et al.; Csmith |
 | Protect oracle, TLA+ specification and fixture files from implementation patches; review any diff that touches both as suspicious | current practice as a rule ([ADR-0018](../decisions/ADR-0018-accept-work-on-executable-evidence.md) trust-boundary changes); not mechanically enforced | ImpossibleBench; Lean proof validation |
 | Record TLC configuration (constants, constraints, checked properties) with each model-check claim | proposed | Lean proof validation |

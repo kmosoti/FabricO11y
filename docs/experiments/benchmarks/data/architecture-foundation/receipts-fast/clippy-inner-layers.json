@@ -1,0 +1,43 @@
+{
+  "bounds": null,
+  "candidate_commit": "a820c86198f986d4e7ee2b29091e8df68acfdb38",
+  "check_id": "clippy-inner-layers",
+  "command": [
+    "cargo",
+    "clippy",
+    "-p",
+    "fabric-core",
+    "-p",
+    "fabric-ports",
+    "-p",
+    "fabric-app",
+    "--locked",
+    "--",
+    "-D",
+    "warnings"
+  ],
+  "duration_ms": 172,
+  "exit_code": 0,
+  "expected": "exit 0",
+  "fixtures": null,
+  "negative_controls": null,
+  "oracle_revision": "none",
+  "output_sha256": "4cf86278c1e6d659943a46a3d7e3da429ac15be90f0f17742e24ef85228e7d3e",
+  "profile": "fast",
+  "property_ids": [
+    "ARCH-2"
+  ],
+  "receipt_version": 1,
+  "result": "passed",
+  "scope": "Clippy on core, ports and app, including the core's panic and unchecked-arithmetic restrictions",
+  "specification_revision": "c355a2c111a8ae98238e9206bd2bf9a8a7d306c2",
+  "toolchain": {
+    "bun": "1.4.0",
+    "cargo": "cargo 1.94.1 (29ea6fb6a 2026-03-24)",
+    "python3": "Python 3.11.15",
+    "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "Adapters and composition roots are not held to the core's restrictions.",
+  "worktree_dirty": false
+}
