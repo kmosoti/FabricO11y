@@ -56,7 +56,7 @@ TLS protects Spindle and admin traffic. Spindle credentials are revocable and di
 
 ## Linux installation contract
 
-Status: packaging exists and passes static checks; running installation acceptance has not been run ([ledger](QUALIFICATION.md#capability-ledger)).
+Status: packaging exists and passes static checks; the running-installation acceptance ran in a Debian 13 systemd container and is inconclusive, because `MemoryHigh` enforcement needs a unified cgroup hierarchy ([ledger](QUALIFICATION.md#capability-ledger)).
 
 Ship only `fabrico11y-node.service`, `fabrico11y-server.service`, `fabricctl`, and one `system-fabrico11y.slice` for their aggregate resource bound. The slice name deliberately places it beneath `system.slice`; both services set `Slice=system-fabrico11y.slice`. The package installs `/usr/lib/sysusers.d/fabrico11y.conf` with `g fabricolly -` followed by `u! fabricolly -:fabricolly "Fabric O11y service" - /usr/sbin/nologin`. The static system user **and primary group** are exactly `fabricolly`. Both units explicitly set `User=fabricolly` and `Group=fabricolly`. Package installation must inspect an existing account/group for the expected non-login service identity and primary group, refusing a collision instead of silently commandeering it. Vendor files live under `/usr/lib`; administrator overrides live under `/etc`. The Rust daemons never create accounts, chown installation paths, or manage cgroups. [Debian's systemd 257 sysusers documentation](https://manpages.debian.org/trixie/systemd/sysusers.d.5.en.html) specifies these entries and the vendor/administrator precedence.
 

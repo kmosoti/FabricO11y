@@ -1,6 +1,6 @@
 # Milestone: delivery and recovery qualification
 
-Status: complete pending CI and merge. Base: the history-qualification milestone, merged at `d54db38`.
+Status: complete and merged into `main` (`2d67cc4`); CI green on `e89c965` (Rust, Documentation, Extended verification). Base: the history-qualification milestone, merged at `d54db38`.
 
 This milestone runs the registered outage protocol, registers and runs [stress revision 2](../experiments/benchmarks/stress-protocol-r2.md), and registers and runs a [soak](../experiments/benchmarks/soak-protocol.md). Every run is on a four-CPU host, so no result is a target-profile qualification. The soak **failed** one gate, and that result is recorded as it is. The milestone changes no product code, wire format, persisted format or oracle.
 
