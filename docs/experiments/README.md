@@ -7,6 +7,7 @@ The [alpha draft journal length repair](formal/alpha-journal-length-repair.md) r
 frozen corruption counterexample and its narrow rerun; it is not phase-1 qualification.
 The [native-node protocol](benchmarks/alpha-phase1-native-protocol.md) registers the
 phase-1 workload and metrics before [three measured local trials](benchmarks/alpha-phase1-native-run-01.md).
+The [phase-3 fleet run](benchmarks/alpha-phase3-fleet-run-01.md) qualifies 10, 100 and 1,000 simulated identities against the registered gates.
 The [ten-node delivery run](benchmarks/alpha-phase2-delivery-run-01.md) compares grouped and individual commits under the registered protocol.
 The [phase-2 delivery fault runs](formal/alpha-phase2-delivery-faults.md) grade real server and node processes with the frozen delivery oracle.
 The [phase-1 close-out review](formal/alpha-phase1-closeout-review.md) records six fault-injection findings and their repairs.

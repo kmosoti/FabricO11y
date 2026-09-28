@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed on 2026-09-27 for alpha phase 3 (central control). It becomes Accepted when the phase-3 checks pass.
+Accepted on 2026-09-28 for alpha phase 3, after the end-to-end control test and the [fleet trials](../experiments/benchmarks/alpha-phase3-fleet-run-01.md) passed.
 
 ## Context
 

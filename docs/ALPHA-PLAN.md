@@ -78,13 +78,13 @@ Order inside the phase: oracle first, then implementation, then verifier probes,
 | 3.2 | Node configuration poll on every cycle with the revision as ETag; validate with the existing `Config::validate`; write `applied.conf` atomically; keep the last valid configuration on any error; report the applied revision with the next batch. Pause stops collection and sending and records a gap on resume | invalid, stale, offline and server-restart tests; live reconfiguration | implementer |
 | 3.3 | `fabricctl` node add, list, config set, pause, resume, revoke over HTTPS; inspect stays local | CLI tests against a live server | worker |
 | 3.4 | `node-sim` example: one process speaking the real protocol for N identities with the registered open-loop workload, reused for every fleet tier later | 10, 100 and 1,000 identities enroll and apply a change | implementer |
-| 3.5 | Gate: healthy apply at most 30 s at each tier; docs and ADR if the state-file choice needs one | measured under the runner | runner, verifier |
+| 3.5 (done, [run 01](experiments/benchmarks/alpha-phase3-fleet-run-01.md)) | Gate: healthy apply at most 30 s at each tier; docs and ADR if the state-file choice needs one | measured under the runner | runner, verifier |
 
 ## 6. Phase 4: retained history
 
 | Step | Work | Deciding check | Role |
 | --- | --- | --- | --- |
-| 4.0 | Exact-scan oracle: an independent reader of the raw batches table that answers the registered queries by full scan | its own mutation controls | oracle-author |
+| 4.0 (done, [spec](../tools/alpha/QUERY_ORACLE.md)) | Exact-scan oracle: an independent reader of the raw batches table that answers the registered queries by full scan | its own mutation controls | oracle-author |
 | 4.1 | Segment format: one Zstd Parquet `batches` table (identity, sequence, received time, hash, exact envelope bytes) for reconstruction, plus projected `logs` and `metrics` tables; a manifest with per-file SHA-256 written last with directory sync. A spike measures server RSS with parquet before committing to the layout | manifest-less directories are removed at startup; the spike stays under the 2 GiB gate | implementer |
 | 4.2 | Sealing: a background task seals a contiguous journal range every 60 s or at 64 MiB; journal files are deleted only after the manifest is durable | crash-during-seal test | implementer |
 | 4.3 | Retention: keep the newer of 24 h and 20 GiB; delete whole segments; report the actual retained boundary in every query answer | retention test within the live-data budget | worker |
