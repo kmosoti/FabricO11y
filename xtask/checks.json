@@ -213,6 +213,27 @@
       "fixtures": "seed 0xA11FA001, ten identities, two seconds; SHA-256 a6e5fca6..."
     },
     {
+      "id": "soak-decision-rule",
+      "profile": "fast",
+      "command": [
+        "python3",
+        "-B",
+        "tools/qualification/test_soak_tier.py"
+      ],
+      "scope": "The soak protocol's decision rule, with one injected defect per gate that must fail exactly that gate",
+      "requires": [
+        "python3"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "QUAL-H"
+      ],
+      "unchecked": "The harness's measurement collection; exercised only by a soak run.",
+      "oracles": [
+        "tools/qualification/soak_tier.py"
+      ]
+    },
+    {
       "id": "delivery-oracle",
       "profile": "fast",
       "command": [
