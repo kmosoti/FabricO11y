@@ -125,11 +125,17 @@ fn resource(index: usize) -> Resource {
     }
 }
 
-/// The registered offer for one identity in one second.
-fn offer(seed: u64, index: usize, second: u64, now: u64) -> (Vec<u8>, Vec<u8>) {
-    let records = (0..2)
+/// The registered offer for one identity in one second; `factor` > 1 is a
+/// burst of that many times the registered log rate.
+fn offer(seed: u64, index: usize, second: u64, now: u64, factor: u64) -> (Vec<u8>, Vec<u8>) {
+    let records = (0..2 * factor)
         .map(|half| {
-            let tick = second * 2 + half;
+            // Registered ticks for the first two; burst extras get distinct ticks.
+            let tick = if half < 2 {
+                second * 2 + half
+            } else {
+                1_000_000 + second * 100 + half
+            };
             let body = if tick.is_multiple_of(2) {
                 "R".repeat(512)
             } else {
@@ -230,6 +236,8 @@ struct Args {
     seconds: u64,
     workers: usize,
     out: PathBuf,
+    /// Seconds `[from, to)` offered at `factor` times the log rate.
+    burst: Option<(u64, u64, u64)>,
 }
 
 fn parse() -> Result<Args, String> {
@@ -255,6 +263,19 @@ fn parse() -> Result<Args, String> {
         seconds: get("seconds")?.parse().map_err(|_| "bad --seconds")?,
         workers: get("workers")?.parse().map_err(|_| "bad --workers")?,
         out: PathBuf::from(get("out")?),
+        burst: match (
+            map.get("burst-from"),
+            map.get("burst-to"),
+            map.get("burst-factor"),
+        ) {
+            (None, None, None) => None,
+            (Some(a), Some(b), Some(f)) => Some((
+                a.parse().map_err(|_| "bad --burst-from")?,
+                b.parse().map_err(|_| "bad --burst-to")?,
+                f.parse().map_err(|_| "bad --burst-factor")?,
+            )),
+            _ => return Err("--burst-from, --burst-to and --burst-factor go together".into()),
+        },
     })
 }
 
@@ -323,7 +344,7 @@ fn run(args: Args) -> std::io::Result<()> {
     for mut slice in slices {
         let shared = Arc::clone(&shared);
         let stop = Arc::clone(&stop);
-        let (seed, seconds) = (args.seed, args.seconds);
+        let (seed, seconds, burst) = (args.seed, args.seconds, args.burst);
         handles.push(std::thread::spawn(move || {
             let mut next_second = 0_u64;
             loop {
@@ -332,7 +353,11 @@ fn run(args: Args) -> std::io::Result<()> {
                 while next_second < seconds && elapsed >= Duration::from_secs(next_second) {
                     let now = unix_ns();
                     for id in &mut slice {
-                        let (logs, metrics) = offer(seed, id.index, next_second, now);
+                        let factor = match burst {
+                            Some((from, to, f)) if (from..to).contains(&next_second) => f,
+                            _ => 1,
+                        };
+                        let (logs, metrics) = offer(seed, id.index, next_second, now, factor);
                         let batch = Batch {
                             version: 1,
                             node_id: id.node_id.to_vec(),
