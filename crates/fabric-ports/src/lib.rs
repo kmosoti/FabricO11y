@@ -6,6 +6,7 @@
 
 use fabric_core::StrandId;
 use fabric_core::delivery::{BindingState, CommittedStrand};
+use fabric_core::retention::SegmentFacts;
 use fabric_core::strand::SpindleId;
 
 /// The server's durable journal of committed Batches, with the Strand and
@@ -36,3 +37,16 @@ pub struct CommitFailed;
 pub trait Clock {
     fn now_unix_nano(&self) -> u64;
 }
+
+/// The server's sealed history, as retention sees it.
+pub trait SegmentStore {
+    /// Sealed Segments, oldest first: their label and what retention needs.
+    fn sealed(&self) -> Result<Vec<(u64, SegmentFacts)>, StoreFailed>;
+
+    /// Delete one whole Segment durably. Called oldest first.
+    fn delete(&mut self, label: u64) -> Result<(), StoreFailed>;
+}
+
+/// An effect on stored history failed; the message says which.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoreFailed(pub String);

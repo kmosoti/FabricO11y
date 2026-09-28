@@ -3,3 +3,4 @@
 //! adapter (checked by `cargo xtask check-layers`).
 
 pub mod delivery;
+pub mod retention;

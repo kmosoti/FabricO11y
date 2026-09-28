@@ -548,7 +548,7 @@ impl Store {
 }
 
 /// Wall clock for the receipt time recorded with each committed group.
-struct SystemClock;
+pub(crate) struct SystemClock;
 
 impl Clock for SystemClock {
     fn now_unix_nano(&self) -> u64 {
