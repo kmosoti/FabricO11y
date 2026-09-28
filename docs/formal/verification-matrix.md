@@ -50,15 +50,15 @@ Specification sources: **PC** = [product contract](../PRODUCT-CONTRACT.md), **AD
 
 ## Qualification
 
-These are operating-profile claims; none is qualified on the current head. See the [capability ledger](../QUALIFICATION.md#capability-ledger).
+These are operating-profile claims; none is qualified on the current head. A measurement names the revision it ran on: the history measurements ran on `63bbeac`, and the later commits of that milestone changed only documentation. See the [capability ledger](../QUALIFICATION.md#capability-ledger).
 
 | ID | Claim | Gate | Latest measurement | Status on current head |
 | --- | --- | --- | --- | --- |
 | QUAL-MEM | Memory bound | native RSS ≤ 64 MiB; central RSS ≤ 2 GiB | native run 02 (`c51d3a8`); fleet run 01 (`4921e5e`) | Not run |
 | QUAL-DISK | Disk bound | 5 GiB live data per invocation; Spool and retention limits | fleet run 01 live bytes | Not run |
 | QUAL-ACK | Delivery latency | ACK p99 ≤ 1 s | delivery run 01 (`71fef99`); fleet run 01 | Not run |
-| QUAL-FRESH | Freshness | observation to query p99 ≤ 5 s at 1,000 identities | none | Not run |
-| QUAL-QLAT | Query latency | p99 ≤ 2 s over 1,000,000 records | none | Not run |
+| QUAL-FRESH | Freshness | observation to query p99 ≤ 5 s at 1,000 identities | history run 01 under revision 2, four-CPU host (`63bbeac`): p99 ≤ 1.78 s | Measured on `63bbeac` (not target profile) |
+| QUAL-QLAT | Query latency | p99 ≤ 2 s over 1,000,000 records | history run 01 under revision 2, four-CPU host (`63bbeac`): p99 ≤ 481 ms Segments, ≤ 1,515 ms journal-only | Measured on `63bbeac` (not target profile) |
 | QUAL-DRAIN | Outage drain | 30 min buffered, drained ≤ 10 min | first trial interrupted, no result | Interrupted |
 | QUAL-INSTALL | Installation behavior | running-installation acceptance | static packaging checks only | Not run |
 | QUAL-H | Harness correctness | runner limits, rate oracle | test suites | Tested |

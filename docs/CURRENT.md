@@ -2,7 +2,7 @@
 
 ## Active work
 
-Milestone **semantic kernels** ([record](milestones/semantic-kernels.md)): control, query, retention and collection decisions as `no_std` kernels, retention as a use case over a port, and the Spindle's Linux reads in `fabric-adapter-linux`. Merged: the [architecture foundation](milestones/architecture-foundation.md) and the [verification foundation](milestones/verification-foundation.md). Later milestones are in the [roadmap](ROADMAP.md).
+Milestone **history qualification** ([record](milestones/history-qualification.md)): the registered history protocol under [revision 2](experiments/benchmarks/history-protocol-r2.md) on a four-CPU host, and [ADR-0020](decisions/ADR-0020-store-sealed-history-as-parquet-segments.md) for the Segment format. Merged: the [architecture foundation](milestones/architecture-foundation.md), the [verification foundation](milestones/verification-foundation.md) and the [semantic kernels](milestones/semantic-kernels.md). Later milestones are in the [roadmap](ROADMAP.md).
 
 ## Implemented
 
@@ -20,7 +20,7 @@ Crates: `fabric-core` (core), `fabric-ports` (ports), `fabric-app` (app), `fabri
 ## Current assumptions
 
 - ACKs rely on successful sync calls being honored by the filesystem; physical power loss is untested.
-- WSL2 on ext4 is the only exercised environment.
+- WSL2 on ext4 was the environment of the earlier measurements; the history measurements ran in a four-CPU Ubuntu 24.04 Firecracker VM on ext4. Neither is the target profile.
 - Batch identity for duplicate detection is the SHA-256 of the exact bytes; collisions are assumed infeasible.
 - The layer gate sees crates, not modules: the adapters inside the two composition roots are protected only by tests, oracles and mutants; their decisions are kernels in the core.
 
@@ -37,8 +37,9 @@ Crates: `fabric-core` (core), `fabric-ports` (ports), `fabric-app` (app), `fabri
 
 ## Outstanding qualification
 
-From the [capability ledger](QUALIFICATION.md#capability-ledger): history query latency, freshness and journal-versus-Segment comparison **not run**; outage and drain **interrupted** (first trial stopped mid-run, no result); stress/burst **not run**; soak **not run** and unregistered; running installation **not run** (needs root on a disposable host); release **not performed**, no tag. This milestone reran bounded fault runs and oracle suites only; it is not qualification.
+From the [capability ledger](QUALIFICATION.md#capability-ledger): history query latency, freshness and journal-versus-Segment comparison **measured and passing** under [revision 2](experiments/benchmarks/history-protocol-r2.md) on a four-CPU host ([history run 01](experiments/benchmarks/history-run-01.md)), not qualified on the target profile; outage and drain **interrupted** (first trial stopped mid-run, no result); stress/burst **not run**; soak **not run** and unregistered; running installation **not run** (needs root on a disposable host); release **not performed**, no tag. No capability is qualified on the target profile.
 
 ## Next validation steps
 
-- [ ] History qualification under the registered protocol.
+- [x] History measurement under revision 2 on a four-CPU host ([milestone record](milestones/history-qualification.md)).
+- [ ] History revision 1 on the 12-CPU target host.

@@ -52,6 +52,10 @@ def trial():
     parser.add_argument("--bin-dir", required=True)
     # Registered trials use the default; a shorter run is a smoke test only.
     parser.add_argument("--seconds", type=int, default=SECONDS)
+    # CPU placement. The defaults are revision 1 (server 0-3, simulator the
+    # rest); revision 2 (four-CPU host) passes 0-1 and 2-3.
+    parser.add_argument("--server-cpus", default="0-3")
+    parser.add_argument("--sim-cpus", default=None)
     args = parser.parse_args()
     if args.seed not in SEEDS:
         raise SystemExit("unregistered seed")
@@ -60,6 +64,7 @@ def trial():
         raise SystemExit("history trial must run inside a runner-owned directory")
     bins = Path(args.bin_dir).resolve(strict=True)
     cpus = os.cpu_count() or 1
+    sim_cpus = args.sim_cpus or f"4-{cpus - 1}"
     rng = random.Random(args.seed)
     make_certs(root)
     port = free_port()
@@ -71,7 +76,7 @@ def trial():
         f"listen=127.0.0.1:{port}\ntls_cert={root}/server.pem\ntls_key={root}/server.key\n"
         f"state_dir={root}/server-state\nadmin_token_file={root}/admin-token\n"
         f"journal_bytes=4294967296\njournal_file_bytes={file_bytes}\n")
-    server = subprocess.Popen(["taskset", "-c", "0-3", str(bins / "fabric-server"), "serve", str(server_conf)],
+    server = subprocess.Popen(["taskset", "-c", args.server_cpus, str(bins / "fabric-server"), "serve", str(server_conf)],
                               stdout=open(root / "server.log", "wb"), stderr=subprocess.STDOUT)
     CHILDREN.append(server)
     admin = AdminClient(port, root / "ca.pem", admin_token)
@@ -101,7 +106,7 @@ def trial():
                 return time.monotonic() - started, pages
             body["page"] = page["next_page"]
 
-    sim = subprocess.Popen(["taskset", "-c", f"4-{cpus - 1}", str(bins / "examples" / "spindle_sim"),
+    sim = subprocess.Popen(["taskset", "-c", sim_cpus, str(bins / "examples" / "spindle_sim"),
                             "--server-url", f"https://127.0.0.1:{port}", "--ca", str(root / "ca.pem"),
                             "--tokens", str(root / "tokens"), "--seed", hex(args.seed),
                             "--seconds", str(args.seconds), "--workers", "128", "--out", str(root / "sim")],
@@ -196,6 +201,7 @@ def trial():
         gates["freshness_p99_le_5s"] = bool(freshness) and percentile(freshness, 0.99) <= 5
     summary = {
         "seed": args.seed, "mode": args.mode, "seconds": args.seconds, "passed": all(gates.values()), "gates": gates,
+        "server_cpus": args.server_cpus, "sim_cpus": sim_cpus,
         "records_batches": len(records), "graded_rows": rows, "oracle": verdicts, "queries": per_kind,
         "freshness_samples": len(freshness), "freshness_p50_s": percentile(freshness, 0.5),
         "freshness_p99_s": percentile(freshness, 0.99), "freshness_max_s": max(freshness) if freshness else None,

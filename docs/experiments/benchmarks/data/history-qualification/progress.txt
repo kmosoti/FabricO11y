@@ -1,0 +1,9 @@
+== 2026-09-28T15:09:50Z start segment seed 1
+== 2026-09-28T15:16:16Z end segment seed 1 exit 0
+== 2026-09-28T15:16:16Z start segment seed 2
+== 2026-09-28T15:22:46Z end segment seed 2 exit 0
+== 2026-09-28T15:22:46Z start segment seed 3
+== 2026-09-28T15:29:04Z end segment seed 3 exit 0
+== 2026-09-28T15:29:05Z start journal seed 1
+== 2026-09-28T15:37:02Z end journal seed 1 exit 0
+== all done
