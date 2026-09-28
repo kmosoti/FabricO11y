@@ -6,6 +6,7 @@ default-run = "fabric_o11y"
 
 [workspace]
 members = [
+    "crates/fabric-adapter-linux",
     "crates/fabric-app",
     "crates/fabric-core",
     "crates/fabric-frame",
@@ -22,6 +23,7 @@ stage6-alloc-probe = []
 
 [dependencies]
 crc32fast = "=1.5.2"
+fabric-adapter-linux = { path = "crates/fabric-adapter-linux" }
 fabric-core = { path = "crates/fabric-core" }
 fabric-frame = { path = "crates/fabric-frame" }
 fake = { version = "=5.1.0", default-features = false }

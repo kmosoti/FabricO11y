@@ -1,7 +1,7 @@
 //! One bounded pass over an explicitly selected newline log file.
 
-use crate::spindle::spool::Cursor;
 use fabric_core::collection::{CursorCheck, CursorFacts, FileFacts, InvalidCursor, check_cursor};
+use fabric_frame::envelope::Cursor;
 use std::fs::OpenOptions;
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};

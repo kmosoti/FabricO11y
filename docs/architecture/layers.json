@@ -15,6 +15,7 @@
     "fabric-ports": "ports",
     "fabric-app": "app",
     "fabric-frame": "adapter-support",
+    "fabric-adapter-linux": "adapter",
     "fabric_o11y": "composition-root",
     "fabric-server": "composition-root",
     "xtask": "tooling"
