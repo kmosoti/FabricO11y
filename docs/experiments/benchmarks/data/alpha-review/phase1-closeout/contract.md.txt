@@ -1,0 +1,19 @@
+# Review contract: Fabric O11y phase-1 close-out (commits af5b7bc..8703847)
+
+Repository head under review: 8703847 on branch alpha/controlled-linux-collection. The earlier four phase-1 repairs at af5b7bc were already approved by GPT and Claude; review ONLY the changes after af5b7bc: `git diff af5b7bc..8703847 -- src tests tools/alpha/kill_probe.py`, plus the contract docs docs/ALPHA.md (Safety contract), docs/decisions/ADR-0011-separate-interrupted-append-from-known-failure.md, docs/architecture/node.md and docs/architecture/storage.md (FAB1 paragraph).
+
+Do not edit tracked files. Write probes and scratch data only under target/alpha-p15-<you>-*/ inside your checkout (ignored). Keep each probe under 120 s and 50 MiB. Build with `cargo build --offline --locked --release --bins --example alpha_native_dump`; run tests with `cargo test --offline --locked --all-features`.
+
+## Claims to verify by execution (each needs a probe or command with its real exit code)
+1. P1.1: collection gap text is truncated to at most 256 bytes on a UTF-8 boundary; a missing configured log path with multibyte characters commits a visible gap and collection continues (no permanent coverage-unknown halt).
+2. P1.2/D1 (ADR-0011): a process killed at any point during an append (no reported I/O error) leaves a spool that reopens to a verified prefix: every frame with a valid commit marker is kept, an incomplete suffix is truncated, the `append-in-progress` sidecar is removed. A reported write/sync error writes `recovery-required`, quarantines the writer, and reopen refuses; inspection counts nothing as committed. Readable bytes must never clear a reported error. First open killed between creating the journal file and publishing the identity must not leave a permanently refused spool, while a non-empty journal without an identity must still be refused.
+3. P1.2/D2: a cycle that fails to commit writes `coverage-unknown`; the next committed batch carries exactly one "coverage unknown since" gap and the marker is removed only after that commit. Missed data is never reported as delivered. Worst-case gaps per batch = 130 and fit validation.
+4. P1.2: `fabric-node run` stops between cycles on SIGTERM/SIGINT with exit 0 and a reopenable spool.
+5. P1.3: the log body budget starts at a different file each batch so a busy file cannot starve another; `log_backlog_bytes` in the cycle line and in `fabricctl inspect` reports unread bytes accurately.
+6. Lock fix: EventLog and Journal unlock on drop; inspection's shared lock is held for its whole scan. No regression in single-writer exclusion (a second concurrent writer must still be refused).
+7. Invariants that must still hold: a source cursor moves only with its committed batch; no logical duplicate log record after restart or kill; FOL2 behavior unchanged; `cargo test --offline --locked --all-features` passes.
+
+Useful tools already in the tree: `tools/alpha/kill_probe.py --seed N` (SIGKILLs `collect` 300 times and checks exact replay); `target/release/examples/alpha_native_dump <config>` prints persisted log bodies.
+
+## Required output
+Return JSON with: `verdict` ("APPROVE" or "REQUEST_CHANGES"), `head` (git rev-parse HEAD you tested), `binary_sha256` for fabric-node, and `findings`: a list of {claim (1-7 or "other"), severity ("blocker"|"major"|"minor"), summary, reproduction (exact command), observed, expected}. Also `probes`: a list of {command, exit, result}. A finding without an executed reproduction does not count. Report any command you could not run.

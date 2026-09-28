@@ -2,6 +2,19 @@
 name = "fabric_o11y"
 version = "0.1.0"
 edition = "2024"
+default-run = "fabric_o11y"
+
+[workspace]
+members = [
+    "crates/fabric-app",
+    "crates/fabric-core",
+    "crates/fabric-frame",
+    "crates/fabric-ports",
+    "crates/fabric-server",
+    "xtask",
+]
+# Research packages keep their own manifests, lockfiles and commands.
+exclude = ["tools", "target", "xtask/fixtures"]
 
 [features]
 append-attribution = []
@@ -9,4 +22,13 @@ stage6-alloc-probe = []
 
 [dependencies]
 crc32fast = "=1.5.2"
+fabric-frame = { path = "crates/fabric-frame" }
 fake = { version = "=5.1.0", default-features = false }
+libc = "=0.2.189"
+opentelemetry-proto = { version = "=0.33.0", default-features = false, features = ["gen-tonic-messages", "logs", "metrics"] }
+prost = "=0.14.4"
+rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
+serde = { version = "=1.0.228", features = ["derive"] }
+serde_json = "=1.0.150"
+sha2 = "=0.10.9"
+ureq = { version = "=3.3.0", default-features = false, features = ["rustls-no-provider"] }

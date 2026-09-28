@@ -1,10 +1,24 @@
 # Architecture views
 
-- [Current application system](system.md): Rust demo and FOL2 boundary.
-- [Local input and batching](ingestion.md): event ownership and full-buffer retry.
-- [Local storage](storage.md): FOL2 commit and recovery.
-- [Query research](query.md): coverage and exact predicates.
-- [Local research prototype](research-prototype.md): offline adapter, immutable snapshot, external root and checkpoint resume.
-- [Delivery ownership](delivery.md): modeled ACK rule and local commit.
+Product architecture (current behavior; status words follow the [evidence states](../QUALIFICATION.md#evidence-states)):
 
-The [documentation landing page](../README.md) separates application behavior from research tooling. The [current state](../CURRENT.md) records checks and open gates.
+- [System](system.md): runtime components, crate layers and the dependency rule.
+- [Spindle](spindle.md): host collection, Spool custody, gaps and bounds.
+- [Delivery](delivery.md): the ACK rule, the delivery kernel and its layer split.
+- [Central control](control-plane.md): enrollment, desired and applied configuration, pause, resume and revoke.
+- [Storage](storage.md): `FAB1` frame log, Spool and server journal, and the FOL2 log format.
+- [Retained history and query](retained-history.md): Segments, retention, exact queries, completeness, freshness and pages.
+- [Linux deployment](deployment.md): service identity and systemd boundary; installation not yet run.
+- Machine-readable policy: [layers.json](layers.json) and [core-purity.json](core-purity.json), enforced by `cargo xtask`.
+
+Legacy demonstration:
+
+- [FOL2 demonstration](fol2-demo.md) and [local input and batching](ingestion.md): the original single-process pipeline.
+
+Research, outside the product:
+
+- [Query research](query.md): coverage receipts and exact predicates.
+- [Local research prototype](research-prototype.md): offline adapter, immutable snapshot, external root and checkpoint resume.
+- [Agent telemetry](agent-telemetry.md): development-workflow observation.
+
+The [documentation landing page](../README.md) gives the reading order and the source-of-truth hierarchy.

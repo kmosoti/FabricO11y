@@ -1,0 +1,46 @@
+{
+  "build": {
+    "command": "CARGO_TARGET_DIR=target/alpha-oracle-build CARGO_HOME=target/alpha-cargo cargo build --offline --manifest-path target/alpha-log-review/Cargo.toml",
+    "exit": 0
+  },
+  "fifo": {
+    "child_exit": -9,
+    "command": "Python subprocess.Popen(binary fifo path, start_new_session=True).communicate(timeout=0.5); on timeout killpg(SIGKILL), communicate/reap",
+    "input": "FIFO with no writer",
+    "timed_out": true,
+    "wrapper_exit": 1
+  },
+  "findings": [
+    "Oversized line past MAX_SCAN prevents cursor progress and later complete lines forever",
+    "FIFO blocks at File::open before regular-file validation"
+  ],
+  "oversize": {
+    "attempts": 3,
+    "command": "target/alpha-oracle-build/debug/alpha-log-reader-review oversize target/alpha-log-review/oversize.log",
+    "cursors": [
+      0,
+      0,
+      0
+    ],
+    "exit": 1,
+    "gap": "log scan cap reached; incomplete line retained",
+    "input": "262154 X bytes + newline + normal newline",
+    "lines": [
+      0,
+      0,
+      0
+    ]
+  },
+  "scope": "preparatory component review; no phase1 approval",
+  "sha256_after": "2c7265fa3f0e865a54d5ed60ca922d6fd55d8f3a6ab8147140853eeebae095db",
+  "sha256_before": "2c7265fa3f0e865a54d5ed60ca922d6fd55d8f3a6ab8147140853eeebae095db",
+  "source": "src/alpha/log_source.rs",
+  "valid": {
+    "command": "target/alpha-oracle-build/debug/alpha-log-reader-review valid target/alpha-log-review/valid.log",
+    "exit": 0,
+    "first_body": "ok",
+    "first_cursor": 3,
+    "second_body": "partial",
+    "second_cursor": 11
+  }
+}

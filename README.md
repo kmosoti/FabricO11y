@@ -1,51 +1,37 @@
-# Fabric O11y
+# FabricO11y
 
-Fabric O11y is an experimental observability system built in Rust. Its goal is to collect observations about running systems, preserve them through failures, and make them available for investigation. It is also a learning project: each step should leave a runnable system whose behavior and trade-offs can be explained.
+FabricO11y is an observability system in Rust built around one question: *what did reality tell us, what happened to that evidence, and how much of it can we truthfully claim to know?* It collects host telemetry, preserves its meaning and custody across failures, retains it under explicit policy, and answers queries without hiding missing coverage or uncertainty.
 
-## The idea
+## Current product
 
-An observation has an identity, a time, a value, and context. As it moves from a collector toward storage, someone must remain responsible for preserving it. A full queue, a crashed process, or an uncertain write should have an explicit outcome.
+- **Spindle** (`fabric-node`): collects CPU, memory, filesystem, disk, network and selected log files on one Linux host as OpenTelemetry protobuf inside versioned Batches, and keeps them in a durable local **Spool** until the server acknowledges them. Unreadable sources and full disks become visible gaps.
+- **Delivery**: authenticated TLS; one Batch in flight per **Strand** (one Spindle generation's ordered lineage); the server acknowledges only after a durable commit, deduplicates retries and rejects conflicting bytes.
+- **Fabric Server**: a durable journal, immutable Zstd Parquet **Segments**, retention by age and size, and log, metric and counter-rate **queries** whose answers report completeness, freshness, collection gaps and the retained window, with snapshot-bound pages.
+- **Central control**: enrollment, desired and applied configuration, pause, resume and revoke through `fabricctl` and an admin HTTP API.
 
-Fabric starts with those contracts. Rust types and ownership make responsibilities visible in the code; tests and small formal models challenge correctness claims; measured experiments compare the cost of different mechanisms. Collection protocols, queues, encodings, and storage engines are choices to investigate as the system grows.
+Maturity: implemented and tested; the target operating profile (one controlled Debian 13 / WSL2 installation, up to 1,000 simulated identities) is **not yet qualified**. Several registered measurements passed on earlier revisions; history latency, freshness, outage/drain, stress, soak and running installation are outstanding, and no release has been tagged. See [qualification](docs/QUALIFICATION.md).
 
-The guiding question for every component is: **what does it promise, what happens when it fails, and what evidence supports that promise?**
+## The main idea
 
-## What runs today
+A pure, `no_std` semantic core decides what a transition means (for example, whether a Batch commits, duplicates, conflicts or reveals a gap); ports describe effects; adapters perform them; independent verification decides whether the implementation deserves the claim. The dependency rule and the core's purity are checked by `cargo xtask`, and independent Python oracles grade delivery and query behavior.
 
-The current prototype is a single-process local pipeline:
+## Build and run
 
-```text
-synthetic events → bounded FIFO buffer → batches → local event log → replay
-```
-
-It has typed events, repeatable generated input, a buffer that returns rejected events to their caller, and a checksummed append-only log with process-restart recovery. A successful append follows separate event-data and commit-marker syncs, subject to the [storage assumptions](docs/architecture/storage.md).
-
-This is an early research prototype. Real collectors, network ingestion, a query engine, an API, and a UI remain future work. Separate transport simulations explore scheduling trade-offs; they are research tools, not the application's transport. Collector and storage strategy experiments are the next research focus.
-
-## Try it
-
-With a recent Rust toolchain, run the repeatable three-event demo:
+With Rust 1.85 or newer (CI pins 1.98.0):
 
 ```sh
-cargo run -- 42 3
+cargo test --workspace --locked            # tests, including the architecture gates
+cargo xtask checks --profile fast          # every required fast check, with receipts
+cargo build --release --locked             # fabric-node, fabric-server, fabricctl
 ```
 
-The demo shows a full buffer returning an event, draining a batch, and retrying. To write the same input to a fresh local log and replay it in a separate process:
+[Operating FabricO11y](docs/operations.md) covers configuration, enrollment and recovery. The original single-process **FOL2 demonstration** still runs with `cargo run -- 42 3` ([FOL2 demonstration](docs/architecture/fol2-demo.md)); it is a legacy learning path, not the product.
 
-```sh
-cargo run -- write target/learning-events.log 42 3
-cargo run -- replay target/learning-events.log
-```
+## Explore
 
-Repeating `write` with the same seed and count verifies the existing prefix and appends nothing after an ordinary process exit. Use a fresh path for a different workload; see the [storage guide](docs/architecture/storage.md) before retrying after a storage I/O error.
-
-Run the application checks with `cargo test --locked`.
-
-## Explore the project
-
-- [Architecture documentation](docs/README.md) — how the implemented pieces fit together.
-- [Current project state](docs/CURRENT.md) — progress, assumptions, and unresolved questions.
-- [Learning path](docs/LEARNING_PATH.md) — follow the Rust concepts and system contracts step by step.
-- [Experiments and evidence](docs/experiments/README.md) — workloads, measurements, model checks, and their limits.
-- [Contributing](docs/CONTRIBUTING.md) — repository workflows and validation.
-- [Long-term blueprint](docs/architecture.md) — the broader proposal and research agenda.
+- [Architecture documentation](docs/README.md): landing page, source-of-truth order and reading order.
+- [Current state](docs/CURRENT.md) and [roadmap](docs/ROADMAP.md).
+- [Product contract](docs/PRODUCT-CONTRACT.md) and [qualification](docs/QUALIFICATION.md).
+- [Verification strategy](docs/formal/verification-strategy.md) and [verification matrix](docs/formal/verification-matrix.md).
+- [Experiments](docs/experiments/README.md): registered protocols, results and research tooling (research is not product behavior).
+- [Learning path](docs/LEARNING_PATH.md) and [contributing](docs/CONTRIBUTING.md).

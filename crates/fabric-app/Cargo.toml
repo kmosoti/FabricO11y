@@ -1,0 +1,10 @@
+[package]
+name = "fabric-app"
+version = "0.1.0"
+edition = "2024"
+description = "FabricO11y application use cases: core decisions orchestrated over ports"
+publish = false
+
+[dependencies]
+fabric-core = { path = "../fabric-core" }
+fabric-ports = { path = "../fabric-ports" }

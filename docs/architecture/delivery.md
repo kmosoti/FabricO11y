@@ -26,6 +26,23 @@ stateDiagram-v2
 
 The diagram shows the primary path for one event in the target protocol. The [TLA+ model](../../formal/delivery/DeliveryOwnership.tla) also allows a retry after a receiver crash or lost acknowledgement. In the model, an ACK is an acknowledgement *received by the sender*; a missing or lost ACK leaves the sender's copy in place. The local CLI has no network step corresponding to ACK delivery.
 
+## Network delivery path
+
+Implemented: `fabric-node run` (the Spindle) sends the oldest unacknowledged Spool batch, as its exact stored bytes, to the [Fabric Server](../../crates/fabric-server/src/lib.rs) over HTTPS with a bearer token. The server's single commit thread applies the [ADR-0013](../decisions/ADR-0013-deliver-batches-in-order-with-bounded-dedup.md) rule, appends new batches to its own [frame log](../../crates/fabric-frame/src/frame.rs) as one grouped frame (50 ms or 1 MiB), and answers only after that frame's data and marker syncs. The Spindle then writes its ACK cursor by synced rename and may delete sealed Spool files at or below it. A lost ACK is a retry of the same identity and bytes, which the server acknowledges again without a second record. The same Strand and sequence with different bytes is refused and never replaces the committed batch. A credential label binds to one Spindle identity on its first commit.
+
+The commit path is split by layer ([ADR-0015](../decisions/ADR-0015-adopt-a-hexagonal-architecture.md)):
+
+| Layer | Code | Responsibility |
+| --- | --- | --- |
+| core | [`fabric_core::delivery`](../../crates/fabric-core/src/delivery.rs) | `decide_delivery` maps committed Strand state, the incoming Batch and the binding state to `Commit`, `Duplicate`, `Stale`, `Conflict`, `Gap` or `Forbidden`; `GroupPlan` applies it in order within one commit group |
+| ports | [`DurableJournal`, `Clock`](../../crates/fabric-ports/src/lib.rs) | what the use case needs from storage and time |
+| app | [`commit_group`](../../crates/fabric-app/src/delivery.rs) | decide every offer, commit accepted offers once, and turn every non-forbidden answer into `Unavailable` if nothing became durable |
+| adapter / composition root | [`Store`](../../crates/fabric-server/src/store.rs) | SHA-256 of the exact bytes, the frame append and syncs, replayed Strand and binding state, the system clock, the HTTP answer |
+
+The extraction is guarded by an exhaustive differential test against a frozen transcription of the base decision loop ([crates/fabric-app/tests/delivery.rs](../../crates/fabric-app/tests/delivery.rs)). One counterexample was kept: at the base, `last + 1` overflowed for a Strand at `u64::MAX`; the kernel uses `next_sequence`, so an exhausted Strand accepts no successor.
+
+[Fault runs](../experiments/formal/alpha-phase2-delivery-faults.md) graded by the [delivery oracle](../../tools/qualification/DELIVERY_ORACLE.md) pass for three Spindles under server kills, Spindle kills and an outage; the [ten-process run](../experiments/benchmarks/alpha-phase2-delivery-run-01.md) measured ACK latency in both commit modes. Those records belong to the revisions they name.
+
 ## Model-to-code mapping
 
 | Model action | Current Rust counterpart | Limit |

@@ -1,0 +1,103 @@
+{
+  "scope": "Stopping checkpoint: four original phase-1 repairs; not phase-1 or release qualification",
+  "source_and_binary_sha256": {
+    "src/alpha/journal.rs": "7b2b45aa81a227ab1a194a7c9b4ed32e6d5080de7a62d7ca5f61d7b6d81f0ba9",
+    "src/alpha/log_source.rs": "729417d357b55ef1998b3829c51907785fcba50eee52ac44b81b0fad3b408476",
+    "src/alpha/node.rs": "8f14fad6079ed6de12f574943f22ffc7552f0486d360dc02b07b578af4217a9e",
+    "target/release/examples/alpha_native_dump": "ef3ee29ecdc215585f78bf30e9e01eeb0be4ec6d4e2f356217c53933f38edb2f",
+    "target/release/fabric-node": "74ecabe907c467acae6173aefe6e04d3399875479df793b589c52eb9834a2d8f",
+    "target/release/fabricctl": "467ed5f38854f013afd401d9c63ed50c4eb5b9dae9ccf1b74f94b8e5cb00a080"
+  },
+  "gpt": {
+    "verdict": "APPROVE scoped repairs",
+    "commands": {
+      "api": {
+        "command": "CARGO_HOME=target/alpha-cargo CARGO_TARGET_DIR=target/alpha-oracle-build cargo run --offline --manifest-path target/alpha-phase1-gpt-api/Cargo.toml",
+        "exit": 0,
+        "observed": "zero spool, u64::MAX spool, zero interval, 17 logs all rejected; Config::load zero-spool control rejected"
+      },
+      "reuse": {
+        "command": "python3 -B target/alpha-phase1-gpt-followup/repaired_probe.py reuse",
+        "exit": 0,
+        "repair_ok": true,
+        "result_file": "repaired-reuse-result.json"
+      },
+      "gaps": {
+        "command": "python3 -B target/alpha-phase1-gpt-followup/repaired_probe.py gaps",
+        "exit": 0,
+        "repair_ok": true,
+        "result_file": "repaired-gaps-result.json"
+      },
+      "inspect": {
+        "command": "python3 -B target/alpha-phase1-gpt-followup/repaired_probe.py inspect",
+        "exit": 0,
+        "repair_ok": true,
+        "result_file": "repaired-inspect-result.json"
+      }
+    },
+    "inspect_calls": 5296,
+    "false_recovery_statuses": 0,
+    "retryable_inspections": 46
+  },
+  "claude": {
+    "verdict": "APPROVE scoped repairs",
+    "api_probe_exit": 0,
+    "valid_api_control": "accepted",
+    "three_log_probe": {
+      "first_exit": 0,
+      "gaps": 24,
+      "second_exit": 0,
+      "logs": 3
+    },
+    "sixteen_log_probe": {
+      "gaps": 128,
+      "later_logs": 16
+    },
+    "inode_reuse": {
+      "exit": 0,
+      "new_logs": 20,
+      "gaps": 1,
+      "ordinary_append_control_logs": 1
+    },
+    "inspection": {
+      "normal_reports": 5683,
+      "retryable_errors": 48,
+      "false_recovery_statuses": 0,
+      "abandoned_marker_inspect_exit": 0,
+      "abandoned_marker_collect_exit": 1
+    },
+    "unavailable_check": "One git -C diff --stat command denied by the narrow tool allowlist; source reads and all executable repair probes completed."
+  },
+  "open_counterexample": {
+    "name": "Unicode gap text exceeds byte cap",
+    "function": "src/alpha/node.rs bounded_gap",
+    "description": "Character-count truncation can leave more than 256 UTF-8 bytes in a collection gap. A permitted missing Unicode path halts collection instead of committing a visible source gap.",
+    "config": {
+      "spool_bytes": 1048576,
+      "path_bytes": 222,
+      "missing_log": true
+    },
+    "control": {
+      "suffix": "x repeated 140 times",
+      "exit": 0,
+      "gaps": 1
+    },
+    "defect": {
+      "suffix": "é repeated 70 times",
+      "exit": 1,
+      "stderr": "fabric-node: Fabric batch field exceeds local profile cap"
+    },
+    "probe_exit": 1,
+    "source_and_binary_sha256": {
+      "src/alpha/node.rs": "8f14fad6079ed6de12f574943f22ffc7552f0486d360dc02b07b578af4217a9e",
+      "src/alpha/journal.rs": "7b2b45aa81a227ab1a194a7c9b4ed32e6d5080de7a62d7ca5f61d7b6d81f0ba9",
+      "src/alpha/log_source.rs": "729417d357b55ef1998b3829c51907785fcba50eee52ac44b81b0fad3b408476",
+      "target/release/fabric-node": "74ecabe907c467acae6173aefe6e04d3399875479df793b589c52eb9834a2d8f"
+    }
+  },
+  "remaining": [
+    "Fix the Unicode gap byte cap and add a regression before phase-1 acceptance.",
+    "Run and review native qualification for the final binary; preserved three trials predate these repairs.",
+    "Phases 2–5 remain unimplemented; no alpha release or tag."
+  ]
+}

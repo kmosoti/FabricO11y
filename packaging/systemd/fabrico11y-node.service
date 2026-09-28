@@ -1,0 +1,44 @@
+[Unit]
+Description=Fabric O11y node
+Documentation=https://github.com/kmosoti/FabricO11y/blob/main/docs/architecture/deployment.md
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+# Type=exec until the daemon sends sd_notify READY=1.
+Type=exec
+ExecStart=/usr/bin/fabric-node run /etc/fabrico11y/node.conf
+User=fabricolly
+Group=fabricolly
+Slice=system-fabrico11y.slice
+StateDirectory=fabrico11y/node
+StateDirectoryMode=0700
+RuntimeDirectory=fabrico11y/node
+RuntimeDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGTERM
+TimeoutStopSec=30s
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+Delegate=no
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryAccounting=yes
+TasksAccounting=yes
+IOAccounting=yes
+MemoryHigh=128M
+MemoryMax=256M
+TasksMax=128
+CPUWeight=100
+IOWeight=100
+
+[Install]
+WantedBy=multi-user.target

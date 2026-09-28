@@ -1,54 +1,68 @@
 # Architecture documentation
 
-Fabric O11y generates a repeatable stream of synthetic events, buffers them in a bounded local queue, and either prints batches or commits them to a local append-only log. A separate command replays that file after restart. One Rust package provides these components; there is no network ingestion or query service. This diagram shows implemented boundaries.
+FabricO11y is a Rust observability system: a Spindle on each Linux host collects metrics and logs into a durable Spool and delivers them over TLS to Fabric Server, which commits before acknowledging, retains history as a journal and Parquet Segments, and answers queries that report what is complete, fresh and missing. The architecture is hexagonal: a pure `no_std` semantic core, effect ports, application use cases, adapters and thin composition roots, with the dependency rule checked by `cargo xtask`.
 
 <!-- diagram: diagrams/system.mmd -->
 ```mermaid
 flowchart LR
-    subgraph Process[Fabric O11y demo process]
-        Demo[Demo executable]
-        Generator[Synthetic event generator]
-        Fake[fake crate and seeded RNG]
-        Domain[Event types]
-        Buffer[Bounded event buffer]
-        Printer[Batch printing function]
-        Log[EventLog]
-        Replay[Replay command]
-        Demo -->|uses| Generator
-        Generator -->|samples values from| Fake
-        Demo -->|uses| Buffer
-        Demo -->|calls| Printer
-        Demo -->|write mode: append| Log
-        Replay -->|reads through| Log
-        Generator -->|builds| Domain
-        Buffer -->|holds| Domain
-        Log -->|encodes and decodes| Domain
+    subgraph Host[Linux host]
+        Sources[procfs, statvfs and selected log files]
+        Spindle[Spindle: fabric-node]
+        Spool[(Spool: FAB1 frame log)]
+        Sources -->|bounded reads| Spindle
+        Spindle -->|Batch committed before cursor moves| Spool
     end
-    Printer -->|writes Debug text to| Stdout[Standard output]
-    Replay -->|writes Debug text to| Stdout
-    Log -->|framed records and sync| Disk[(Local log file)]
+    subgraph Central[Fabric Server]
+        Intake[HTTPS intake]
+        Commit[Commit thread: delivery use case]
+        Journal[(Server journal: FAB1)]
+        Sealer[Sealer and retention]
+        Segments[(Zstd Parquet Segments)]
+        Query[Query]
+        Control[(Control state)]
+        Intake -->|exact bytes| Commit
+        Commit -->|grouped two-sync append| Journal
+        Journal -->|sealed files| Sealer
+        Sealer -->|manifest last| Segments
+        Journal -->|unsealed tail| Query
+        Segments -->|snapshot-bound reads| Query
+    end
+    Spool -->|oldest unacknowledged Batch over TLS| Intake
+    Commit -->|ACK after durable commit| Spindle
+    Control -->|desired configuration poll| Spindle
+    CLI[fabricctl] -->|admin HTTPS| Control
+    CLI -->|admin query| Query
+    CLI -->|local inspect| Spool
 ```
 
-The canonical source is [system.mmd](diagrams/system.mmd). The documentation check detects differences between that file and this copy. The [packet-slot transport simulator](../tools/transport-sim/README.md) is experimental tooling outside this application diagram.
+The canonical source is [system.mmd](diagrams/system.mmd); the documentation check detects differences between it and this copy.
+
+## Source of truth
+
+When documents disagree, the higher entry wins and the lower one is corrected:
+
+| Priority | Source |
+| --- | --- |
+| 1 | [Product contract](PRODUCT-CONTRACT.md) |
+| 2 | Accepted [architecture decisions](decisions/README.md) |
+| 3 | Current [architecture views](architecture/README.md) |
+| 4 | Registered experiment protocols and results under [experiments](experiments/README.md), and [qualification](QUALIFICATION.md) |
+| 5 | [Current state](CURRENT.md) |
+| 6 | Exploratory research: the [blueprint](architecture.md), the [generator-verifier digest](research/generator-verifier.md) and research experiments |
+
+Implementation is evidence of what exists; none of these documents overrides it silently. A disagreement between code and a document is reconciled explicitly ([documentation policy](documentation-policy.md#19-relationship-between-code-and-documentation)).
 
 ## Read in this order
 
-1. [Current project state](CURRENT.md): implemented behavior, assumptions, and open work.
-2. [System architecture](architecture/system.md): boundaries, execution, and evidence.
-   [Architecture views](architecture/README.md) links the application and research projections.
-3. [Local input and batching](architecture/ingestion.md): data flow, full-buffer control flow, and ownership.
-4. [Local storage](architecture/storage.md): frame format, commit point, and recovery limits.
-5. [Delivery ownership](architecture/delivery.md): the Stage 4 model and its mapping to the local log.
-6. [Concepts](concepts/README.md) and [glossary](glossary.md): the meaning of current types and the handoff.
-7. [Architecture decisions](decisions/README.md): recorded rationale and its limits.
-8. [Experiments](experiments/README.md): batch-size and local-log measurements, scoped formal and implementation checks, and H1/M2 simulation cells within the broader Homa/SIRD transport study.
+1. [Current state](CURRENT.md): what is implemented, what is outstanding, and the known risks.
+2. [Product contract](PRODUCT-CONTRACT.md) and [qualification](QUALIFICATION.md): the promises, the registered gates and the capability ledger.
+3. [System](architecture/system.md), then the [architecture views](architecture/README.md).
+4. [Verification strategy](formal/verification-strategy.md) and [verification matrix](formal/verification-matrix.md): which technique checks which claim.
+5. [Concepts](concepts/README.md) and [glossary](glossary.md).
+6. [Architecture decisions](decisions/README.md).
+7. [Experiments](experiments/README.md): registered protocols, results, formal checks and research.
+8. [Roadmap](ROADMAP.md) and the [milestone records](milestones/architecture-foundation.md).
 
-The [learning path](LEARNING_PATH.md) organizes future increments. The [original architecture blueprint](architecture.md) is a proposal and research agenda; its pipelines, guarantees, and example results do not describe completed work. Add further architecture views when their components exist or a concrete design task needs them.
+[Operating FabricO11y](operations.md) covers install, configuration, the admin CLI and recovery states. The [learning path](LEARNING_PATH.md) follows the Rust ideas and system contracts step by step. The [blueprint](architecture.md) is a proposal and research agenda; its pipelines, guarantees and example numbers do not describe completed work.
 
-The optional [agent telemetry view](architecture/agent-telemetry.md) describes development tooling outside the Rust application.
-
-The [observability storage research agenda](experiments/ablation/observability-storage-research.md) contains a sourced survey, the [S1 scan/pruning experiment](experiments/ablation/storage-query-s1-run-01.md), and proposed next cells. Its query probe is research tooling outside the application diagram. The [query research view](architecture/query.md) adds the coverage protocol and its separate trust assumptions.
-
-The [local research prototype](architecture/research-prototype.md) now composes an offline Logs adapter, bounded FOL2 ingestion, immutable JSON snapshot publication, and root-bound query/resume. Its canonical [diagram](diagrams/research-prototype.mmd) is separate from the application system diagram. The [hybrid layout probe](../tools/layout-probe/README.md) compares Arrow/Parquet projection and postings under a separately registered protocol; no format winner is selected. The application still has no network ingestion or query service.
-
-Use the [contributor guide](CONTRIBUTING.md) for skills, hooks, documentation validation, and editor recommendations. [AGENTS.md](../AGENTS.md) contains the repository instructions and full documentation policy.
+Use the [contributor guide](CONTRIBUTING.md) for workflows and checks. [AGENTS.md](../AGENTS.md) is the operational contract for coding agents; the full [documentation policy](documentation-policy.md) applies to everyone.

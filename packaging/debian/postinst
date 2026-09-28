@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+if [ "$1" = configure ]; then
+  systemd-sysusers /usr/lib/sysusers.d/fabrico11y.conf
+  install -d -m 0750 -o root -g fabricolly /etc/fabrico11y
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  echo "fabrico11y: copy an example from /usr/share/doc/fabrico11y/examples to /etc/fabrico11y, then enable fabrico11y-node.service or fabrico11y-server.service"
+fi
+exit 0

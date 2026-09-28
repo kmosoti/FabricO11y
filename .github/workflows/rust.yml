@@ -1,0 +1,35 @@
+name: Rust
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  fast-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.0
+          components: rustfmt, clippy
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Install documentation dependencies
+        run: bun install --cwd tools/docs --frozen-lockfile
+      # Every check in xtask/checks.json with profile "fast": formatting,
+      # locked compilation, workspace tests, clippy on the inner layers, the
+      # layer and core-purity gates, the qualification-runner, workload/rate,
+      # delivery-oracle and query-oracle suites, and documentation integrity.
+      # A missing tool yields INCOMPLETE (exit 3), which fails the job.
+      - name: Run the fast check registry
+        run: cargo xtask checks --profile fast
+      - name: Keep the verification receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-receipts
+          path: target/verification/receipts/
+          if-no-files-found: warn

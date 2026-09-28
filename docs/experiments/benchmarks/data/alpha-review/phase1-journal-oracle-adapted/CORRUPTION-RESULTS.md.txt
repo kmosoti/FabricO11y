@@ -1,0 +1,36 @@
+# Black-box corruption/reopen result
+
+Status: **passed for the selected external byte mutations only**. This is phase-1 preparation, not alpha phase promotion. No implementation or repository documentation was edited, and no product source was read.
+
+## Frozen sources and commands
+
+The first preregistered source/assumption hashes are retained in `SHA256SUMS.corruption.v1`. Its run passed 10 cases but discarded the per-case manifest after success. The evidence-retention-only revision was frozen before its second run in `SHA256SUMS.corruption`:
+
+```text
+753cc8afbe19e64086a05956a07702d05a2556bf37ba35661e28e8d9826ddc2a  tests/corruption_reopen.rs
+27f77737d801c95b5f0751ca16ef57623efe095ccc03888ec463be0ceb6d2dcd  CORRUPTION-ASSUMPTIONS.md
+```
+
+From `target/alpha-journal-oracle`, both runs used:
+
+```sh
+CARGO_HOME=/home/kmosoti/projects/fabric_o11y/target/alpha-cargo CARGO_TARGET_DIR=/home/kmosoti/projects/fabric_o11y/target/alpha-oracle-build cargo test --offline --locked --message-format=json --test corruption_reopen -- --nocapture
+```
+
+- v1 command: exit `0`; 1 test passed; 10 one-bit cases passed. Captures: `corruption-cargo-test.jsonl` and `corruption-cargo-stderr.txt`.
+- Frozen evidence-retention revision: exit `0`; 1 test passed; 10 one-bit cases passed. Captures: `corruption-v2-cargo-test.jsonl` and `corruption-v2-cargo-stderr.txt`.
+- `sha256sum -c SHA256SUMS.corruption` and the original `sha256sum -c SHA256SUMS` each exited `0` after the second run.
+
+The source journal was closed after two successful appends. Clean reopening of both the original and a byte-identical copy was a positive control. A single file grew by append-only extension at both appends; its observed name was `batches.faj`. The exact canonical `Batch` encodings were found once per appended range, and each header had one unambiguous little-endian encoded-batch length. Each range had trailing bytes. These are external observations, not implementation-source assumptions.
+
+## Retained evidence
+
+The exact unmutated copy and [mutation manifest](data/corruption-182-0/mutations.tsv) are under [data/corruption-182-0](data/corruption-182-0). The append-bearing source was 349 bytes, SHA256 `3f4da49bedb9eace6cf11cf665e8c3a01af2f796025c98f01899dde201445bf5`. The separate identity file was 28 bytes, SHA256 `5885a11855d413d9051cd9a2003c77ea0c01b4b617b89506a7736980b737af60`.
+
+The ten one-byte, one-bit cases targeted offsets `4, 111, 119, 158, 173, 178, 285, 294, 333, 348` in the 349-byte source. These cover both observed header-length fields, two known OTLP body positions in each append, and the first and last trailing bytes of each append. The manifest records the original and flipped byte for every case before the mutation. Each mutation was applied only to a copy; successful disposable copies were removed. The complete standalone scratch package occupied 178,727 bytes after the run, below the 10 MiB ceiling. The command completed below the 120 s limit. No latency or throughput metric was collected.
+
+There is **no counterexample** among these selected positions. An open error counted as explicit rejection. If a mutated copy opened, the oracle required the original `next_sequence`; for body mutations it also required restoration of the original body byte in the stored wire encoding. The supplied public API cannot directly replay or inspect already committed batches, so exact post-reopen semantic content remains a limited inference from raw bytes. This result does not establish behavior for all possible byte offsets or multi-byte damage.
+
+## Remaining fault seam
+
+An integrator-provided frozen format or test I/O seam is still needed to inject a short write, failed data sync, failed marker sync, failed recovery-required-sidecar clear, and an interrupted partial append at known points. Those probes must verify that a known storage error quarantines the writer and that readable bytes do not silently authorize reopening. Physical power loss and server retry/dedup remain outside this journal oracle.

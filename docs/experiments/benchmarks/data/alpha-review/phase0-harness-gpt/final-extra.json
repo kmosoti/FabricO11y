@@ -1,0 +1,11 @@
+{
+  "actual_evidence": 485,
+  "actual_live_before_source": 508,
+  "child_exit": 0,
+  "duplicate_error": "invalid offer record 1: duplicate JSON field: node",
+  "duplicate_rejected": true,
+  "report_passed": true,
+  "reported_evidence": 485,
+  "reported_live": 508,
+  "runner_passed": true
+}

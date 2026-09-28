@@ -7,6 +7,7 @@
 pub mod buffer;
 pub mod generator;
 pub mod log;
+pub mod spindle;
 
 /// Identifies one event. The newtype keeps it distinct from other numeric IDs.
 #[derive(Debug, PartialEq, Eq, Hash)]

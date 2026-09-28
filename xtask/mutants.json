@@ -1,0 +1,230 @@
+{
+  "version": 1,
+  "description": "Hand-written semantic mutants, each tied to a verification-matrix contract. Run with `cargo xtask mutants`; every mutant must be caught by its named test. Changing an entry's expected checker is a trust-boundary change.",
+  "mutants": [
+    {
+      "id": "M-DEL-ACK",
+      "contract": "DEL-1 commit precedes ACK",
+      "incorrect_behavior": "ACK the group even when the durable append failed",
+      "file": "crates/fabric-app/src/delivery.rs",
+      "find": "journal.commit(&accepted, received).is_ok()",
+      "replace": "{ let _ = journal.commit(&accepted, received); true }",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-core",
+        "-p",
+        "fabric-app"
+      ],
+      "expect_failing": "ack_is_returned_only_after_a_successful_commit"
+    },
+    {
+      "id": "M-DEL-BYTES",
+      "contract": "DEL-3 same Strand and sequence with different bytes is rejected",
+      "incorrect_behavior": "accept a same-sequence retry whose bytes differ as a duplicate",
+      "file": "crates/fabric-core/src/delivery.rs",
+      "find": "Some(c) if c.digest == incoming.digest =>",
+      "replace": "Some(_) =>",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-core",
+        "-p",
+        "fabric-app"
+      ],
+      "expect_failing": "adr_0013_truth_table"
+    },
+    {
+      "id": "M-DEL-GAP",
+      "contract": "DEL-4 a sequence gap is detected",
+      "incorrect_behavior": "commit any sequence above the last one, hiding the gap",
+      "file": "crates/fabric-core/src/delivery.rs",
+      "find": "if next_sequence(last) == Some(sequence) {",
+      "replace": "if sequence > last {",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-core",
+        "-p",
+        "fabric-app"
+      ],
+      "expect_failing": "adr_0013_truth_table"
+    },
+    {
+      "id": "M-DEL-BIND",
+      "contract": "DEL-5 credential and Spindle binding cannot silently change",
+      "incorrect_behavior": "drop the binding check",
+      "file": "crates/fabric-core/src/delivery.rs",
+      "find": "    if !binding.permits(incoming.strand.spindle()) {",
+      "replace": "    if false && !binding.permits(incoming.strand.spindle()) {",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-core",
+        "-p",
+        "fabric-app"
+      ],
+      "expect_failing": "binding_disagreement_in_either_direction_forbids_before_sequencing"
+    },
+    {
+      "id": "M-DEL-GROUP",
+      "contract": "DEL-5 binding holds within one commit group",
+      "incorrect_behavior": "ignore bindings staged earlier in the same group",
+      "file": "crates/fabric-core/src/delivery.rs",
+      "find": "                    .any(|(c, s)| *c != credential && *s == spindle),",
+      "replace": "                    .any(|(c, s)| *c != credential && *s == spindle && false),",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-app"
+      ],
+      "expect_failing": "extraction_agrees_with_the_base_decision_loop_on_every_small_group"
+    },
+    {
+      "id": "M-SPOOL-RECLAIM",
+      "contract": "SPOOL-2 reclaim removes only acknowledged closed files",
+      "incorrect_behavior": "delete a sealed file that still holds the first unacknowledged Batch",
+      "file": "src/spindle/spool.rs",
+      "find": "if successor > through + 1 {",
+      "replace": "if successor > through + 2 {",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric_o11y",
+        "--lib"
+      ],
+      "expect_failing": "reclaim_keeps_the_file_holding_the_first_unacknowledged_batch"
+    },
+    {
+      "id": "M-SPOOL-KNOWN",
+      "contract": "SPOOL-3 interrupted-append recovery does not clear a known I/O failure",
+      "incorrect_behavior": "reopen a journal whose writer reported a sync error",
+      "file": "crates/fabric-frame/src/frame.rs",
+      "find": "        if dir.join(RECOVERY_REQUIRED).exists() {",
+      "replace": "        if false && dir.join(RECOVERY_REQUIRED).exists() {",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric_o11y",
+        "--lib"
+      ],
+      "expect_failing": "reported_sync_errors_quarantine_and_record_known_failure"
+    },
+    {
+      "id": "M-CTRL-REVOKE",
+      "contract": "CTRL-2 a revoked identity cannot continue sending",
+      "incorrect_behavior": "keep a revoked credential's token authorized",
+      "file": "crates/fabric-server/src/control.rs",
+      "find": "        if after.status != Status::Revoked {\n            self.by_token",
+      "replace": "        if true {\n            self.by_token",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-server",
+        "--test",
+        "control"
+      ],
+      "expect_failing": "admin_api_configures_pauses_and_revokes_a_polling_node"
+    },
+    {
+      "id": "M-CTRL-INVALID",
+      "contract": "CTRL-1 an invalid desired configuration does not become active",
+      "incorrect_behavior": "activate a remote configuration that fails local validation",
+      "file": "src/spindle/runtime.rs",
+      "find": "    config.interval_s = view.metric_interval_s;\n    config.validate()?;",
+      "replace": "    config.interval_s = view.metric_interval_s;\n    let _ = config.validate();",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-server",
+        "--test",
+        "control"
+      ],
+      "expect_failing": "admin_api_configures_pauses_and_revokes_a_polling_node"
+    },
+    {
+      "id": "M-HIST-CORRUPT",
+      "contract": "HIST-3 a missing or corrupt Segment never yields a complete answer",
+      "incorrect_behavior": "report a query complete although a Segment could not be read",
+      "file": "crates/fabric-server/src/query.rs",
+      "find": "\"complete\": unavailable.is_empty(),",
+      "replace": "\"complete\": true,",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-server",
+        "--test",
+        "history"
+      ],
+      "expect_failing": "a_corrupt_segment_makes_the_answer_incomplete"
+    },
+    {
+      "id": "M-HIST-GONE",
+      "contract": "HIST-5 a page whose snapshot is no longer retained answers Gone",
+      "incorrect_behavior": "serve a later page after retention removed part of its snapshot",
+      "file": "crates/fabric-server/src/query.rs",
+      "find": "if floor.is_some_and(|f| sources.oldest_group > f) {",
+      "replace": "if floor.is_some_and(|f| sources.oldest_group > f && false) {",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-server",
+        "--test",
+        "history"
+      ],
+      "expect_failing": "retention_removes_old_segments_and_stream_state_survives_it"
+    },
+    {
+      "id": "M-HIST-RESET",
+      "contract": "HIST-6 counter resets produce reset markers, not rates",
+      "incorrect_behavior": "compute a rate across a counter reset",
+      "file": "crates/fabric-server/src/query.rs",
+      "find": "if a.start_ns == b.start_ns && as_f64(b.value) >= as_f64(a.value) && b.time_ns > a.time_ns {",
+      "replace": "if b.time_ns > a.time_ns {",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-server",
+        "--test",
+        "history"
+      ],
+      "expect_failing": "sealed_history_answers_exactly_and_pages_are_stable"
+    }
+  ]
+}

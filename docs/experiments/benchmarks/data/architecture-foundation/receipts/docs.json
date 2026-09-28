@@ -1,0 +1,31 @@
+{
+  "bounds": null,
+  "candidate_commit": "a820c86198f986d4e7ee2b29091e8df68acfdb38",
+  "check_id": "docs",
+  "command": [
+    "bun",
+    "tools/docs/check.mjs"
+  ],
+  "duration_ms": 1219,
+  "exit_code": 0,
+  "expected": "exit 0",
+  "fixtures": null,
+  "negative_controls": null,
+  "oracle_revision": "none",
+  "output_sha256": "ab1fbcf1c93cd55f385149bf1c995a2792e8b277a63057e99e56bdae540dc5e9",
+  "profile": "fast",
+  "property_ids": [],
+  "receipt_version": 1,
+  "result": "passed",
+  "scope": "Relative links, heading fragments, Mermaid syntax, marked diagram copies, JSON syntax, duplicate ADR numbers",
+  "specification_revision": "none",
+  "toolchain": {
+    "bun": "1.4.0",
+    "cargo": "cargo 1.94.1 (29ea6fb6a 2026-03-24)",
+    "python3": "Python 3.11.15",
+    "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "Whether prose is true.",
+  "worktree_dirty": false
+}

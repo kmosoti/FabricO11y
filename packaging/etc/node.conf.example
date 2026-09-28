@@ -1,0 +1,11 @@
+# Fabric O11y node. Copy to /etc/fabrico11y/node.conf (root-owned, 0644).
+spool_dir=/var/lib/fabrico11y/node/spool
+metric_interval_s=15
+spool_bytes=268435456
+# Selected logs need a narrow read ACL for fabricolly, for example:
+#   setfacl -m u:fabricolly:r /var/log/app.log
+# log=/var/log/app.log
+# Delivery target; all three together. The token file is 0640 root:fabricolly.
+# server_url=https://fabric-server.example:7443
+# server_ca=/etc/fabrico11y/ca.pem
+# token_file=/etc/fabrico11y/node-token

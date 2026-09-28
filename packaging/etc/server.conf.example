@@ -1,0 +1,10 @@
+# Fabric O11y server. Copy to /etc/fabrico11y/server.conf (root-owned, 0644).
+listen=0.0.0.0:7443
+# Key and admin token: 0640 root:fabricolly.
+tls_cert=/etc/fabrico11y/server.pem
+tls_key=/etc/fabrico11y/server.key
+admin_token_file=/etc/fabrico11y/admin-token
+state_dir=/var/lib/fabrico11y/server
+journal_bytes=21474836480
+retention_s=86400
+retention_bytes=21474836480

@@ -59,6 +59,15 @@ pub struct EventLog {
     last_append_phases: Option<AppendPhases>,
 }
 
+// A forked child of another thread holds a duplicate of this descriptor until
+// it execs. An explicit unlock releases the lock for every duplicate, so a
+// later open in another process does not see a stale lock after drop.
+impl Drop for EventLog {
+    fn drop(&mut self) {
+        let _ = self.file.unlock();
+    }
+}
+
 impl EventLog {
     /// Open or create a log, validate its records, and remove an incomplete tail.
     /// A record with a valid header and fully present but malformed payload is

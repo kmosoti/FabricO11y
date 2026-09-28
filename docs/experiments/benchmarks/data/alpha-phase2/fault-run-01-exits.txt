@@ -1,0 +1,9 @@
+clean seed 1 EXIT: 0
+clean seed 2 EXIT: 0
+server-kill seed 1 EXIT: 0
+server-kill seed 2 EXIT: 0
+node-kill seed 1 EXIT: 0
+node-kill seed 2 EXIT: 0
+outage seed 1 EXIT: 0
+outage seed 2 EXIT: 0
+clean seed 3 drop-recovered (control) EXIT: 1

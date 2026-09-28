@@ -1,5 +1,24 @@
 # Experiments
 
+Product evidence is indexed by capability. Record file names keep their historical `alpha-phase*` prefixes (the release-stage and phase names they were written under); the capability column is the current classification, and the [qualification ledger](../QUALIFICATION.md#capability-ledger) says what each record establishes and for which revision.
+
+| Capability | Registered protocols | Results and formal records |
+| --- | --- | --- |
+| Harness | — | [FOL2 baseline](benchmarks/alpha-phase0-baseline.md), [harness review response](benchmarks/alpha-phase0-review-response.md) |
+| Spindle local collection | [native protocol](benchmarks/alpha-phase1-native-protocol.md) | [native run 01](benchmarks/alpha-phase1-native-run-01.md) (superseded), [native run 02](benchmarks/alpha-phase1-native-run-02.md), [journal length repair](formal/alpha-journal-length-repair.md), [log-reader repair](formal/alpha-log-reader-repair.md), [review checkpoint](formal/alpha-phase1-review-checkpoint.md), [close-out review](formal/alpha-phase1-closeout-review.md) |
+| Delivery | [delivery protocol](benchmarks/alpha-phase2-delivery-protocol.md) | [fault runs](formal/alpha-phase2-delivery-faults.md), [ten-process run](benchmarks/alpha-phase2-delivery-run-01.md) |
+| Control and fleet | [fleet protocol](benchmarks/alpha-phase3-fleet-protocol.md) | [fleet run 01](benchmarks/alpha-phase3-fleet-run-01.md) |
+| Retained history and query | [history protocol](benchmarks/alpha-phase4-history-protocol.md) | not run |
+| Recovery and stress | [outage protocol](benchmarks/alpha-phase5-outage-protocol.md), [stress protocol](benchmarks/alpha-phase5-stress-protocol.md) | outage interrupted without a result; stress not run |
+| Packaging and installation | — | [static packaging checks](formal/alpha-phase5-packaging-static.md); running installation not run |
+| Architecture | — | [no_std core experiment](formal/core-no-std.md); fault rerun and mutant results in the [milestone record](../milestones/architecture-foundation.md) |
+
+Frozen reviewer probes, verdicts and parent notes from earlier language-model reviews are kept under [data/alpha-review](benchmarks/data/alpha-review/README.md) as historical evidence; review is no longer a gate ([ADR-0018](../decisions/ADR-0018-accept-work-on-executable-evidence.md)).
+
+## Research
+
+Research results do not become product behavior without an ADR.
+
 The [local prototype completion contract](ablation/end-to-end-prototype.md) is closed
 with linked evidence. [Claude's hypothesis study](ablation/claude-hypotheses.md) traces
 the original proposals and counterexamples to the later registered experiments.

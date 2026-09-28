@@ -1,0 +1,11 @@
+[package]
+name = "fx-root"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+fx-app = { path = "../app" }
+fx-adapter = { path = "../adapter" }
+fx-core = { path = "../core" }
+fx-ports = { path = "../ports" }

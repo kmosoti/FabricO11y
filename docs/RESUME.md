@@ -1,5 +1,8 @@
 # Resume after the WSL interruption
 
+> [!NOTE]
+> Historical recovery record from 2026-09-26, kept as evidence. It is not the current state; see [CURRENT.md](CURRENT.md).
+
 Recovery audit: 2026-09-26. The first section records what survived the interruption; the resume sequence below tracks subsequent work, including the first [Stage 6 measurement](experiments/benchmarks/local-log-stage6.md). See [current state](CURRENT.md) and the [learning path](LEARNING_PATH.md).
 
 ## Where work stopped

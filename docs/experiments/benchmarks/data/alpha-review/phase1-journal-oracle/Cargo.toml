@@ -1,0 +1,9 @@
+[package]
+name = "alpha-journal-oracle"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+fabric_o11y = { path = "../../" }
+opentelemetry-proto = { version = "=0.33.0", default-features = false, features = ["gen-tonic-messages", "logs", "metrics"] }
+prost = "=0.14.4"

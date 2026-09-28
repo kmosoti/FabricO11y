@@ -1,0 +1,309 @@
+{
+  "all_passed": true,
+  "cases": [
+    {
+      "case": "rate-positive",
+      "expected_passed": true,
+      "input": {
+        "csv": "0,20,320,340,0,340,0",
+        "mutation": "valid"
+      },
+      "ok": true,
+      "result": {
+        "exit_code": 0,
+        "passed": true,
+        "process_group_cleanup_ok": true,
+        "rate_contract_error": null,
+        "retained_live_bytes": 41575,
+        "source_seed": 2703204353,
+        "stop_reason": null
+      }
+    },
+    {
+      "case": "rate-skip",
+      "expected_passed": false,
+      "input": {
+        "csv": "0,20,320,340,0,340,0",
+        "mutation": "skip"
+      },
+      "ok": true,
+      "result": {
+        "exit_code": 0,
+        "passed": false,
+        "process_group_cleanup_ok": true,
+        "rate_contract_error": "missing offers at end of source",
+        "retained_live_bytes": 41038,
+        "source_seed": null,
+        "stop_reason": "rate_contract"
+      }
+    },
+    {
+      "case": "rate-extra",
+      "expected_passed": false,
+      "input": {
+        "csv": "0,20,320,340,0,340,0",
+        "mutation": "extra"
+      },
+      "ok": true,
+      "result": {
+        "exit_code": 0,
+        "passed": false,
+        "process_group_cleanup_ok": true,
+        "rate_contract_error": "invalid offer record 341: duplicate offer identity",
+        "retained_live_bytes": 42199,
+        "source_seed": null,
+        "stop_reason": "rate_contract"
+      }
+    },
+    {
+      "case": "rate-wrong_node",
+      "expected_passed": false,
+      "input": {
+        "csv": "0,20,320,340,0,340,0",
+        "mutation": "wrong_node"
+      },
+      "ok": true,
+      "result": {
+        "exit_code": 0,
+        "passed": false,
+        "process_group_cleanup_ok": true,
+        "rate_contract_error": "invalid offer record 1: invalid offer identity",
+        "retained_live_bytes": 41632,
+        "source_seed": null,
+        "stop_reason": "rate_contract"
+      }
+    },
+    {
+      "case": "rate-wrong_kind",
+      "expected_passed": false,
+      "input": {
+        "csv": "0,20,320,340,0,340,0",
+        "mutation": "wrong_kind"
+      },
+      "ok": true,
+      "result": {
+        "exit_code": 0,
+        "passed": false,
+        "process_group_cleanup_ok": true,
+        "rate_contract_error": "invalid offer record 1: 'point'",
+        "retained_live_bytes": 41617,
+        "source_seed": null,
+        "stop_reason": "rate_contract"
+      }
+    },
+    {
+      "case": "rate-wrong_entropy",
+      "expected_passed": false,
+      "input": {
+        "csv": "0,20,320,340,0,340,0",
+        "mutation": "wrong_entropy"
+      },
+      "ok": true,
+      "result": {
+        "exit_code": 0,
+        "passed": false,
+        "process_group_cleanup_ok": true,
+        "rate_contract_error": "invalid offer record 11: seeded entropy body mismatch",
+        "retained_live_bytes": 41640,
+        "source_seed": null,
+        "stop_reason": "rate_contract"
+      }
+    },
+    {
+      "case": "rate-wrong_metric",
+      "expected_passed": false,
+      "input": {
+        "csv": "0,20,320,340,0,340,0",
+        "mutation": "wrong_metric"
+      },
+      "ok": true,
+      "result": {
+        "exit_code": 0,
+        "passed": false,
+        "process_group_cleanup_ok": true,
+        "rate_contract_error": "invalid offer record 21: seeded metric value mismatch",
+        "retained_live_bytes": 41639,
+        "source_seed": null,
+        "stop_reason": "rate_contract"
+      }
+    },
+    {
+      "case": "rate-extra_field",
+      "expected_passed": false,
+      "input": {
+        "csv": "0,20,320,340,0,340,0",
+        "mutation": "extra_field"
+      },
+      "ok": true,
+      "result": {
+        "exit_code": 0,
+        "passed": false,
+        "process_group_cleanup_ok": true,
+        "rate_contract_error": "invalid offer record 1: unexpected offer fields",
+        "retained_live_bytes": 41656,
+        "source_seed": null,
+        "stop_reason": "rate_contract"
+      }
+    },
+    {
+      "case": "runner-positive",
+      "expected_passed": true,
+      "input": {
+        "code": "print('ok')",
+        "disk_bytes": 100000,
+        "evidence_bytes": 20000
+      },
+      "ok": true,
+      "result": {
+        "exit_code": 0,
+        "passed": true,
+        "process_group_cleanup_ok": true,
+        "rate_contract_error": null,
+        "retained_live_bytes": 508,
+        "source_seed": null,
+        "stop_reason": null
+      }
+    },
+    {
+      "case": "fast-disk-negative",
+      "expected_passed": false,
+      "input": {
+        "code": "open('large','wb').write(b'x'*100000)",
+        "disk_bytes": 1000,
+        "evidence_bytes": 1000
+      },
+      "ok": true,
+      "result": {
+        "exit_code": 0,
+        "passed": false,
+        "process_group_cleanup_ok": true,
+        "rate_contract_error": null,
+        "retained_live_bytes": 100546,
+        "source_seed": null,
+        "stop_reason": "disk_limit"
+      }
+    },
+    {
+      "case": "evidence-disposable-data",
+      "expected_passed": true,
+      "input": {
+        "disk_bytes": 500000,
+        "evidence_bytes": 20000,
+        "seconds": 1,
+        "source_bytes": 37876,
+        "tier": 10
+      },
+      "ok": true,
+      "result": {
+        "exit_code": 0,
+        "passed": true,
+        "process_group_cleanup_ok": true,
+        "rate_contract_error": null,
+        "retained_live_bytes": 38900,
+        "source_seed": 2703204353,
+        "stop_reason": null
+      }
+    },
+    {
+      "case": "stale-fixtures-and-result",
+      "first": {
+        "exit_code": 0,
+        "passed": true,
+        "process_group_cleanup_ok": true,
+        "rate_contract_error": null,
+        "retained_live_bytes": 41575,
+        "source_seed": 2703204353,
+        "stop_reason": null
+      },
+      "input": "valid rate run followed by no-op command in same owned root",
+      "ok": true,
+      "second": {
+        "exit_code": 0,
+        "passed": false,
+        "process_group_cleanup_ok": true,
+        "rate_contract_error": "missing, linked or oversized rate file",
+        "retained_live_bytes": 545,
+        "source_seed": null,
+        "stop_reason": "rate_contract"
+      },
+      "stale_files": [
+        false,
+        false
+      ]
+    },
+    {
+      "case": "temp-file-churn",
+      "expected_passed": true,
+      "input": "1000 create/write/unlink cycles in owned TMPDIR",
+      "ok": true,
+      "result": {
+        "exit_code": 0,
+        "passed": true,
+        "process_group_cleanup_ok": true,
+        "rate_contract_error": null,
+        "retained_live_bytes": 658,
+        "source_seed": null,
+        "stop_reason": null
+      }
+    },
+    {
+      "case": "detached-descendant",
+      "expected_passed": false,
+      "input": {
+        "child": "new session; sleep 0.2s; write late.txt"
+      },
+      "late_file_after_result": false,
+      "ok": true,
+      "result": {
+        "exit_code": 0,
+        "passed": false,
+        "process_group_cleanup_ok": true,
+        "rate_contract_error": null,
+        "retained_live_bytes": 772,
+        "source_seed": null,
+        "stop_reason": "orphan_descendant"
+      }
+    },
+    {
+      "case": "detached-ignores-term",
+      "child_alive_after_result": false,
+      "input": "setsid child ignores SIGTERM, then sleeps and writes late.txt",
+      "late_file_after_result": false,
+      "ok": true,
+      "result": {
+        "exit_code": 0,
+        "passed": false,
+        "process_group_cleanup_ok": true,
+        "rate_contract_error": null,
+        "retained_live_bytes": 924,
+        "source_seed": null,
+        "stop_reason": "orphan_descendant"
+      }
+    },
+    {
+      "case": "nan-duration-negative",
+      "input": "duration_s=NaN",
+      "ok": true,
+      "rejected": true
+    }
+  ],
+  "command": "python3 target/alpha-harness-review-gpt/probe.py",
+  "probe_exit_code": 0,
+  "source_hashes_after": {
+    "docs/ALPHA.md": "2ce6e5fb6c1861874414bc0d569def2de60633119e646313d4f20d299c8135b2",
+    "tools/alpha/rate_oracle.py": "afb3a535fe95dc99cba444a401730a8d79a69f2aabf1c9b7bf3e5c2724c603c6",
+    "tools/alpha/runner.py": "2425e95028edd13a4a43e49fc99904ce695b0b98aafe6d277124b1b169b5c49d",
+    "tools/alpha/test_runner.py": "9b291a567beb98ec371845d253aab3793a42dff4fb958ae1d135a73a6240a345",
+    "tools/alpha/test_workload.py": "413ec4ff8de3ba7cccab8523409a4c16cc121e79b670a18193f189525d0a9668",
+    "tools/alpha/workload.py": "3b01fd5bced3ca6d67bd946e7c24ed0a4998292da222da2be7a69c771f341457"
+  },
+  "source_hashes_before": {
+    "docs/ALPHA.md": "2ce6e5fb6c1861874414bc0d569def2de60633119e646313d4f20d299c8135b2",
+    "tools/alpha/rate_oracle.py": "afb3a535fe95dc99cba444a401730a8d79a69f2aabf1c9b7bf3e5c2724c603c6",
+    "tools/alpha/runner.py": "2425e95028edd13a4a43e49fc99904ce695b0b98aafe6d277124b1b169b5c49d",
+    "tools/alpha/test_runner.py": "9b291a567beb98ec371845d253aab3793a42dff4fb958ae1d135a73a6240a345",
+    "tools/alpha/test_workload.py": "413ec4ff8de3ba7cccab8523409a4c16cc121e79b670a18193f189525d0a9668",
+    "tools/alpha/workload.py": "3b01fd5bced3ca6d67bd946e7c24ed0a4998292da222da2be7a69c771f341457"
+  },
+  "sources_stable": true
+}

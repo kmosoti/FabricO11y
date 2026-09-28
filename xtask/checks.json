@@ -1,0 +1,545 @@
+{
+  "version": 1,
+  "description": "Required repository checks. `cargo xtask checks --profile fast` runs the CI set; `extended` needs release builds, openssl, java or time; `qualification` entries point at registered protocols and never report success from the runner. See docs/formal/verification-strategy.md.",
+  "checks": [
+    {
+      "id": "fmt",
+      "profile": "fast",
+      "command": [
+        "cargo",
+        "fmt",
+        "--all",
+        "--check"
+      ],
+      "scope": "Rust formatting of the workspace",
+      "requires": [
+        "cargo"
+      ],
+      "expected": "exit 0",
+      "contracts": [],
+      "unchecked": "Formatting only."
+    },
+    {
+      "id": "check",
+      "profile": "fast",
+      "command": [
+        "cargo",
+        "check",
+        "--workspace",
+        "--locked",
+        "--all-targets"
+      ],
+      "scope": "Locked compilation of every workspace target",
+      "requires": [
+        "cargo"
+      ],
+      "expected": "exit 0",
+      "contracts": [],
+      "unchecked": "Research packages under tools/ are separate workspaces and not compiled."
+    },
+    {
+      "id": "test",
+      "profile": "fast",
+      "command": [
+        "cargo",
+        "test",
+        "--workspace",
+        "--locked",
+        "--all-features"
+      ],
+      "scope": "Workspace unit, integration and end-to-end tests, including the delivery-kernel differential test, the gate fixtures and server tests graded by the Python query oracle",
+      "requires": [
+        "cargo",
+        "python3",
+        "openssl"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "DEL-1",
+        "DEL-2",
+        "DEL-3",
+        "DEL-4",
+        "DEL-5",
+        "SPOOL-1",
+        "SPOOL-2",
+        "SPOOL-3",
+        "CTRL-1",
+        "CTRL-2",
+        "CTRL-3",
+        "HIST-1",
+        "HIST-2",
+        "HIST-3",
+        "HIST-4",
+        "HIST-5",
+        "HIST-6",
+        "ARCH-1",
+        "ARCH-2"
+      ],
+      "unchecked": "Excluded research packages; physical power loss; multi-host networks; qualification workloads.",
+      "specification": [
+        "docs/PRODUCT-CONTRACT.md",
+        "docs/architecture/retained-history.md"
+      ],
+      "oracles": [
+        "tools/qualification/query_oracle.py"
+      ],
+      "negative_controls": "xtask/tests/gates.rs fixture defects; see xtask/mutants.json for code mutants"
+    },
+    {
+      "id": "clippy-inner-layers",
+      "profile": "fast",
+      "command": [
+        "cargo",
+        "clippy",
+        "-p",
+        "fabric-core",
+        "-p",
+        "fabric-ports",
+        "-p",
+        "fabric-app",
+        "--locked",
+        "--",
+        "-D",
+        "warnings"
+      ],
+      "scope": "Clippy on core, ports and app, including the core's panic and unchecked-arithmetic restrictions",
+      "requires": [
+        "cargo"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "ARCH-2"
+      ],
+      "unchecked": "Adapters and composition roots are not held to the core's restrictions.",
+      "specification": [
+        "docs/architecture/layers.json",
+        "docs/architecture/core-purity.json",
+        "docs/decisions/ADR-0015-adopt-a-hexagonal-architecture.md",
+        "docs/decisions/ADR-0016-keep-a-pure-semantic-core.md"
+      ]
+    },
+    {
+      "id": "layers",
+      "profile": "fast",
+      "command": [
+        "cargo",
+        "xtask",
+        "check-layers"
+      ],
+      "scope": "Hexagonal dependency rule over declared and resolved cargo metadata",
+      "requires": [
+        "cargo"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "ARCH-1"
+      ],
+      "unchecked": "Module-level structure inside a crate; composition roots that still contain adapters.",
+      "specification": [
+        "docs/architecture/layers.json",
+        "docs/architecture/core-purity.json",
+        "docs/decisions/ADR-0015-adopt-a-hexagonal-architecture.md",
+        "docs/decisions/ADR-0016-keep-a-pure-semantic-core.md"
+      ],
+      "negative_controls": "xtask/tests/gates.rs"
+    },
+    {
+      "id": "core-purity",
+      "profile": "fast",
+      "command": [
+        "cargo",
+        "xtask",
+        "check-core-purity"
+      ],
+      "scope": "Core dependency allowlist, denied categories, build script, features, required attributes, syntactic guards, transitive closure",
+      "requires": [
+        "cargo"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "ARCH-2"
+      ],
+      "unchecked": "Determinism of individual functions; block comments and strings in the source guard.",
+      "specification": [
+        "docs/architecture/layers.json",
+        "docs/architecture/core-purity.json",
+        "docs/decisions/ADR-0015-adopt-a-hexagonal-architecture.md",
+        "docs/decisions/ADR-0016-keep-a-pure-semantic-core.md"
+      ],
+      "negative_controls": "xtask/tests/gates.rs"
+    },
+    {
+      "id": "qualification-runner",
+      "profile": "fast",
+      "command": [
+        "python3",
+        "-B",
+        "tools/qualification/test_runner.py"
+      ],
+      "scope": "The qualification runner's limits, ownership marker and negative controls",
+      "requires": [
+        "python3"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "QUAL-H"
+      ],
+      "unchecked": "Hard filesystem quotas; environment-scrubbing children.",
+      "oracles": [
+        "tools/qualification/runner.py"
+      ]
+    },
+    {
+      "id": "workload-rate-oracle",
+      "profile": "fast",
+      "command": [
+        "python3",
+        "-B",
+        "tools/qualification/test_workload.py"
+      ],
+      "scope": "Seeded source and the independent rate oracle, with injected overrate, corruption and missing-source controls",
+      "requires": [
+        "python3"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "QUAL-H"
+      ],
+      "unchecked": "Real Spindle offer timing and end-to-end admission.",
+      "oracles": [
+        "tools/qualification/rate_oracle.py",
+        "tools/qualification/workload.py"
+      ],
+      "fixtures": "seed 0xA11FA001, ten identities, two seconds; SHA-256 a6e5fca6..."
+    },
+    {
+      "id": "delivery-oracle",
+      "profile": "fast",
+      "command": [
+        "python3",
+        "-B",
+        "tools/qualification/test_delivery_oracle.py"
+      ],
+      "scope": "The independent delivery oracle and its mutation controls",
+      "requires": [
+        "python3"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "DEL-1",
+        "DEL-2",
+        "DEL-3",
+        "SPOOL-1"
+      ],
+      "unchecked": "The oracle's own adapter contract: it grades transcripts, not processes.",
+      "specification": [
+        "tools/qualification/DELIVERY_ORACLE.md"
+      ],
+      "oracles": [
+        "tools/qualification/delivery_oracle.py"
+      ],
+      "negative_controls": "dropped ACKed record, duplicate, replaced bytes, early forget"
+    },
+    {
+      "id": "query-oracle",
+      "profile": "fast",
+      "command": [
+        "python3",
+        "-B",
+        "tools/qualification/test_query_oracle.py"
+      ],
+      "scope": "The independent query and rate oracle and its pagination, rate and completeness mutants",
+      "requires": [
+        "python3"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "HIST-3",
+        "HIST-4",
+        "HIST-5",
+        "HIST-6"
+      ],
+      "unchecked": "Latency and freshness; the oracle is exact-scan only.",
+      "specification": [
+        "tools/qualification/QUERY_ORACLE.md"
+      ],
+      "oracles": [
+        "tools/qualification/query_oracle.py"
+      ]
+    },
+    {
+      "id": "docs",
+      "profile": "fast",
+      "command": [
+        "bun",
+        "tools/docs/check.mjs"
+      ],
+      "scope": "Relative links, heading fragments, Mermaid syntax, marked diagram copies, JSON syntax, duplicate ADR numbers",
+      "requires": [
+        "bun"
+      ],
+      "expected": "exit 0",
+      "contracts": [],
+      "unchecked": "Whether prose is true.",
+      "requires_paths": [
+        "tools/docs/node_modules"
+      ]
+    },
+    {
+      "id": "docs-checker-probes",
+      "profile": "fast",
+      "command": [
+        "bun",
+        "tools/docs/check.test.mjs"
+      ],
+      "scope": "The documentation checker's valid and broken fixtures",
+      "requires": [
+        "bun"
+      ],
+      "expected": "exit 0",
+      "contracts": [],
+      "unchecked": "Checker coverage beyond its fixtures.",
+      "requires_paths": [
+        "tools/docs/node_modules"
+      ]
+    },
+    {
+      "id": "hooks",
+      "profile": "fast",
+      "command": [
+        "python3",
+        "-B",
+        "tools/docs/test_hooks.py"
+      ],
+      "scope": "Codex hook behavior",
+      "requires": [
+        "python3",
+        "bun"
+      ],
+      "expected": "exit 0",
+      "contracts": [],
+      "unchecked": "Live hook activation and trust.",
+      "requires_paths": [
+        "tools/docs/node_modules"
+      ]
+    },
+    {
+      "id": "telemetry-contract",
+      "profile": "fast",
+      "command": [
+        "python3",
+        "-B",
+        "tools/telemetry/test_contract.py"
+      ],
+      "scope": "Agent-telemetry record contract",
+      "requires": [
+        "python3"
+      ],
+      "expected": "exit 0",
+      "contracts": [],
+      "unchecked": "Development tooling only; no product claim."
+    },
+    {
+      "id": "telemetry-cli",
+      "profile": "fast",
+      "command": [
+        "python3",
+        "-B",
+        "tools/telemetry/test_cli.py"
+      ],
+      "scope": "Agent-telemetry observer CLI",
+      "requires": [
+        "python3"
+      ],
+      "expected": "exit 0",
+      "contracts": [],
+      "unchecked": "Development tooling only; no product claim."
+    },
+    {
+      "id": "semantic-mutants",
+      "profile": "extended",
+      "command": [
+        "cargo",
+        "xtask",
+        "mutants"
+      ],
+      "scope": "Every registered semantic mutant must be caught by its named checker",
+      "requires": [
+        "cargo",
+        "python3",
+        "openssl"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "DEL-1",
+        "DEL-2",
+        "DEL-3",
+        "DEL-4",
+        "DEL-5",
+        "SPOOL-1",
+        "SPOOL-3",
+        "CTRL-1",
+        "CTRL-3",
+        "HIST-3",
+        "HIST-4",
+        "HIST-5"
+      ],
+      "unchecked": "Mutants not in the registry; see cargo-mutants calibration.",
+      "negative_controls": "xtask/mutants.json"
+    },
+    {
+      "id": "delivery-faults",
+      "profile": "extended",
+      "command": [
+        "sh",
+        "-c",
+        "cargo build --release --locked --workspace --bins --examples && for s in clean server-kill node-kill outage; do for seed in 1 2; do python3 -B tools/qualification/delivery_faults.py --scenario $s --seed $seed --seconds 20 || exit 1; done; done && ! python3 -B tools/qualification/delivery_faults.py --scenario clean --seed 3 --seconds 8 --mutate drop-recovered"
+      ],
+      "scope": "Real server and Spindle processes under SIGKILL and outage, graded by the delivery oracle, plus the drop-recovered negative control",
+      "requires": [
+        "cargo",
+        "python3",
+        "openssl"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "DEL-1",
+        "DEL-2",
+        "SPOOL-1"
+      ],
+      "unchecked": "Physical power loss; more than three Spindles; latency.",
+      "oracles": [
+        "tools/qualification/delivery_oracle.py"
+      ],
+      "negative_controls": "--mutate drop-recovered must fail",
+      "bounds": "three Spindles, 20 s per scenario, seeds 1 and 2"
+    },
+    {
+      "id": "tla-delivery",
+      "profile": "extended",
+      "command": [
+        "sh",
+        "-c",
+        "TLA_JAR=\"$PWD/target/tools/tla2tools.jar\" bash formal/delivery/check.sh"
+      ],
+      "scope": "TLC over the delivery ownership model: Safe passes, EarlyAck and LostCopy produce counterexamples",
+      "requires": [
+        "java"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "DEL-1"
+      ],
+      "unchecked": "The model is not the Rust code; no trace mapping yet.",
+      "requires_paths": [
+        "target/tools/tla2tools.jar"
+      ],
+      "specification": [
+        "formal/delivery/DeliveryOwnership.tla"
+      ]
+    },
+    {
+      "id": "tla-transport",
+      "profile": "extended",
+      "command": [
+        "sh",
+        "-c",
+        "TLA_JAR=\"$PWD/target/tools/tla2tools.jar\" bash formal/transport/check.sh"
+      ],
+      "scope": "TLC over the research transport credit model",
+      "requires": [
+        "java"
+      ],
+      "expected": "exit 0",
+      "contracts": [],
+      "unchecked": "Research model only.",
+      "requires_paths": [
+        "target/tools/tla2tools.jar"
+      ]
+    },
+    {
+      "id": "history-tiers",
+      "profile": "qualification",
+      "command": [
+        "sh",
+        "-c",
+        "echo 'qualification protocol: run by hand under explicit scope (see the protocol; runner.py with history_tier.py)' >&2; exit 3"
+      ],
+      "scope": "Registered qualification: docs/experiments/benchmarks/alpha-phase4-history-protocol.md",
+      "requires": [
+        "sh"
+      ],
+      "expected": "a run record under the registered protocol; this entry never reports success",
+      "contracts": [
+        "QUAL"
+      ],
+      "unchecked": "Everything until a run record exists.",
+      "specification": [
+        "docs/experiments/benchmarks/alpha-phase4-history-protocol.md"
+      ]
+    },
+    {
+      "id": "outage-drain",
+      "profile": "qualification",
+      "command": [
+        "sh",
+        "-c",
+        "echo 'qualification protocol: run by hand under explicit scope (see the protocol; runner.py with outage_drain.py)' >&2; exit 3"
+      ],
+      "scope": "Registered qualification: docs/experiments/benchmarks/alpha-phase5-outage-protocol.md",
+      "requires": [
+        "sh"
+      ],
+      "expected": "a run record under the registered protocol; this entry never reports success",
+      "contracts": [
+        "QUAL"
+      ],
+      "unchecked": "Everything until a run record exists.",
+      "specification": [
+        "docs/experiments/benchmarks/alpha-phase5-outage-protocol.md"
+      ]
+    },
+    {
+      "id": "stress-burst",
+      "profile": "qualification",
+      "command": [
+        "sh",
+        "-c",
+        "echo 'qualification protocol: run by hand under explicit scope (see the protocol; runner.py with stress_tier.py)' >&2; exit 3"
+      ],
+      "scope": "Registered qualification: docs/experiments/benchmarks/alpha-phase5-stress-protocol.md",
+      "requires": [
+        "sh"
+      ],
+      "expected": "a run record under the registered protocol; this entry never reports success",
+      "contracts": [
+        "QUAL"
+      ],
+      "unchecked": "Everything until a run record exists.",
+      "specification": [
+        "docs/experiments/benchmarks/alpha-phase5-stress-protocol.md"
+      ]
+    },
+    {
+      "id": "install-acceptance",
+      "profile": "qualification",
+      "command": [
+        "sh",
+        "-c",
+        "echo 'qualification protocol: run by hand under explicit scope (needs root on a disposable systemd host)' >&2; exit 3"
+      ],
+      "scope": "Registered qualification: docs/PRODUCT-CONTRACT.md",
+      "requires": [
+        "sh"
+      ],
+      "expected": "a run record under the registered protocol; this entry never reports success",
+      "contracts": [
+        "QUAL"
+      ],
+      "unchecked": "Everything until a run record exists.",
+      "specification": [
+        "docs/PRODUCT-CONTRACT.md"
+      ]
+    }
+  ]
+}

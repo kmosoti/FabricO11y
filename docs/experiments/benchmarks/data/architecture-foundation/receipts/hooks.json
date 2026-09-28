@@ -1,0 +1,32 @@
+{
+  "bounds": null,
+  "candidate_commit": "a820c86198f986d4e7ee2b29091e8df68acfdb38",
+  "check_id": "hooks",
+  "command": [
+    "python3",
+    "-B",
+    "tools/docs/test_hooks.py"
+  ],
+  "duration_ms": 1961,
+  "exit_code": 0,
+  "expected": "exit 0",
+  "fixtures": null,
+  "negative_controls": null,
+  "oracle_revision": "none",
+  "output_sha256": "52b7092f6621553be22782c3b6e22ece023f80f4bbff3f6e9d4988547cac1a09",
+  "profile": "fast",
+  "property_ids": [],
+  "receipt_version": 1,
+  "result": "passed",
+  "scope": "Codex hook behavior",
+  "specification_revision": "none",
+  "toolchain": {
+    "bun": "1.4.0",
+    "cargo": "cargo 1.94.1 (29ea6fb6a 2026-03-24)",
+    "python3": "Python 3.11.15",
+    "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "Live hook activation and trust.",
+  "worktree_dirty": false
+}
