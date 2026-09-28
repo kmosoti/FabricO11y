@@ -2,7 +2,7 @@
 //! validation before activation and last-valid configuration offline.
 
 use fabric_o11y::spindle::host::Paths;
-use fabric_o11y::spindle::runtime::{Config as NodeConfig, Node};
+use fabric_o11y::spindle::runtime::{Config as NodeConfig, Spindle};
 use fabric_o11y::spindle::sender::{ServerTarget, agent};
 use fabric_server::config::Config;
 use fabric_server::store::CommitMode;
@@ -308,7 +308,7 @@ fn admin_api_configures_pauses_and_revokes_a_polling_node() {
             token_file: scratch.path("token"),
         }),
     };
-    let mut node = Node::open_with_paths(base.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(base.clone(), host_paths(&scratch.0)).unwrap();
     assert!(node.poll_config().unwrap().changed);
     assert_eq!(node.applied_revision(), 1);
     assert!(
@@ -394,7 +394,7 @@ fn admin_api_configures_pauses_and_revokes_a_polling_node() {
 
     // Server restart keeps the inventory; a node restarted while the server
     // is down runs its last applied configuration.
-    let node = Node::open_with_paths(base.clone(), host_paths(&scratch.0)).unwrap();
+    let node = Spindle::open_with_paths(base.clone(), host_paths(&scratch.0)).unwrap();
     assert_eq!((node.applied_revision(), node.interval_s()), (4, 2));
     drop(node);
     let server = start(&scratch.0);
@@ -410,6 +410,6 @@ fn admin_api_configures_pauses_and_revokes_a_polling_node() {
         r#"{"revision":9,"paused":false,"logs":["relative.log"],"metric_interval_s":2}"#,
     )
     .unwrap();
-    let node = Node::open_with_paths(base, host_paths(&scratch.0)).unwrap();
+    let node = Spindle::open_with_paths(base, host_paths(&scratch.0)).unwrap();
     assert_eq!((node.applied_revision(), node.interval_s()), (0, 15));
 }

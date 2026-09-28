@@ -18,6 +18,7 @@
 | [ADR-0014: Manage nodes through server control state and node polling](ADR-0014-manage-nodes-through-server-control-state.md) | Accepted | Admin token, enrollment, desired and applied revisions, 5 s polls |
 | [ADR-0015: Adopt a hexagonal architecture with a checked dependency rule](ADR-0015-adopt-a-hexagonal-architecture.md) | Accepted | Core, ports, app, adapter support, adapters, composition roots; `cargo xtask check-layers` |
 | [ADR-0016: Keep the semantic core pure, deterministic and `no_std`](ADR-0016-keep-a-pure-semantic-core.md) | Accepted | Explicit inputs, effects as data, `no_std`, `cargo xtask check-core-purity` |
+| [ADR-0017: Name the Spindle and the Strand, and nothing else thematically](ADR-0017-name-the-spindle-and-the-strand.md) | Accepted | Two canonical themed terms; wire names and the `fabric-node` binary unchanged |
 
 This first record captures an existing, explicitly documented choice. It does not claim that storage engines, ID widths, or performance strategies have been compared. Record further decisions when they materially affect architecture; use the [ADR format in AGENTS.md](../../AGENTS.md#12-architecture-decision-records) and the next unused four-digit number.
 

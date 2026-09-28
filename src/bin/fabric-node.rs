@@ -1,4 +1,4 @@
-use fabric_o11y::spindle::runtime::{Attempt, Config, Node};
+use fabric_o11y::spindle::runtime::{Attempt, Config, Spindle};
 use fabric_o11y::spindle::sender::Delivery;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -68,7 +68,7 @@ fn main() -> ExitCode {
             install_stop_handler()?;
         }
         let config = Config::load(config_path)?;
-        let mut node = Node::open(config)?;
+        let mut node = Spindle::open(config)?;
         if STOP.load(Ordering::SeqCst) {
             return Ok(());
         }

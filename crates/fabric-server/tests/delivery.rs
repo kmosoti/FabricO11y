@@ -1,7 +1,7 @@
 //! End-to-end delivery over TLS between a real node spool and a real server.
 
 use fabric_o11y::spindle::host::Paths;
-use fabric_o11y::spindle::runtime::{Config as NodeConfig, Node};
+use fabric_o11y::spindle::runtime::{Config as NodeConfig, Spindle};
 use fabric_o11y::spindle::sender::{Delivery, Sender, ServerTarget};
 use fabric_o11y::spindle::spool::{Batch, Spool};
 use fabric_server::config::Config;
@@ -273,7 +273,8 @@ fn node_delivers_exact_bytes_and_both_sides_survive_restart() {
         spool_bytes: 16 * 1024 * 1024,
         server: Some(target(&scratch.0, addr, "token-a")),
     };
-    let mut node = Node::open_with_paths(node_config(server.addr), host_paths(&scratch.0)).unwrap();
+    let mut node =
+        Spindle::open_with_paths(node_config(server.addr), host_paths(&scratch.0)).unwrap();
     for _ in 0..3 {
         node.collect_once().unwrap();
     }
@@ -289,7 +290,8 @@ fn node_delivers_exact_bytes_and_both_sides_survive_restart() {
     // Restart both; the node resumes after its durable ACK cursor.
     let server = start(server_config(&scratch.0));
     fs::write(scratch.path("app.log"), "one\ntwo\nthree\n").unwrap();
-    let mut node = Node::open_with_paths(node_config(server.addr), host_paths(&scratch.0)).unwrap();
+    let mut node =
+        Spindle::open_with_paths(node_config(server.addr), host_paths(&scratch.0)).unwrap();
     assert_eq!(node.acked_through(), 3);
     node.collect_once().unwrap();
     let report = node

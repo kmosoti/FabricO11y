@@ -418,7 +418,8 @@ pub struct Cycle {
     pub log_backlog_bytes: u64,
 }
 
-pub struct Node {
+/// The Spindle runtime: one host's collection state, Spool and delivery client.
+pub struct Spindle {
     /// The configuration in force: the local base with any applied remote view.
     config: Config,
     base: Config,
@@ -500,7 +501,7 @@ pub struct DeliveryReport {
     pub error: Option<String>,
 }
 
-impl Node {
+impl Spindle {
     pub fn open(config: Config) -> io::Result<Self> {
         Self::open_with_paths(config, Paths::default())
     }

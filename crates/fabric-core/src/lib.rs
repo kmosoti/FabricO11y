@@ -24,3 +24,7 @@
 )]
 
 extern crate alloc;
+
+pub mod strand;
+
+pub use strand::{SpindleId, StrandId, next_sequence};

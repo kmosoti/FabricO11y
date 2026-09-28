@@ -1,5 +1,5 @@
 use fabric_o11y::spindle::host::Paths;
-use fabric_o11y::spindle::runtime::{Config, Node, inspect};
+use fabric_o11y::spindle::runtime::{Config, Spindle, inspect};
 use fabric_o11y::spindle::spool::{Batch, Spool};
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
@@ -112,14 +112,14 @@ fn restart_rotation_truncation_incomplete_and_oversize_are_explicit() {
     fs::write(scratch.path("selected.log"), b"one\npartial").unwrap();
     let cfg = config(&scratch.0, 1024 * 1024);
     let paths = host_paths(&scratch.0);
-    let mut node = Node::open_with_paths(cfg.clone(), paths.clone()).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), paths.clone()).unwrap();
     let first = node.collect_once().unwrap();
     assert_eq!(
         (first.metric_points, first.log_records, first.gaps),
         (11, 1, 0)
     );
     drop(node);
-    let mut node = Node::open_with_paths(cfg.clone(), paths).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), paths).unwrap();
     OpenOptions::new()
         .append(true)
         .open(scratch.path("selected.log"))
@@ -158,7 +158,7 @@ fn counters_preserve_start_then_reset_on_decrease_and_boot_change() {
     write_host(&scratch.0, boot_a, 1000, 4);
     fs::write(scratch.path("selected.log"), b"").unwrap();
     let cfg = config(&scratch.0, 1024 * 1024);
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     node.collect_once().unwrap();
     write_host(&scratch.0, boot_a, 1000, 8);
     node.collect_once().unwrap();
@@ -187,7 +187,7 @@ fn counters_preserve_start_then_reset_on_decrease_and_boot_change() {
     assert_eq!(value_a, 2048);
     assert_eq!(disk_read(&first_two[1]), (start_a, 4096));
     drop(node);
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     write_host(&scratch.0, boot_a, 1000, 1);
     node.collect_once().unwrap();
     let after_reset = batches(&cfg);
@@ -211,14 +211,14 @@ fn oversized_skip_is_committed_and_resumed_after_node_restart() {
     bytes.extend_from_slice(b"\nnormal\n");
     fs::write(scratch.path("selected.log"), &bytes).unwrap();
     let cfg = config(&scratch.0, 1024 * 1024);
-    let mut first = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut first = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     let cycle = first.collect_once().unwrap();
     assert_eq!((cycle.log_records, cycle.gaps), (0, 1));
     drop(first);
     let saved = batches(&cfg);
     assert_eq!(saved[0].cursors[0].offset, 256 * 1024);
     assert!(saved[0].cursors[0].skipping_oversize);
-    let mut resumed = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut resumed = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     assert_eq!(resumed.collect_once().unwrap().log_records, 1);
     let saved = batches(&cfg);
     assert_eq!(saved[1].cursors[0].offset, bytes.len() as u64);
@@ -265,7 +265,7 @@ fn source_failure_and_full_spool_leave_visible_gap_or_unknown_coverage() {
     write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
     fs::write(scratch.path("selected.log"), b"ok\n").unwrap();
     let cfg = config(&scratch.0, 1024 * 1024);
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     fs::remove_file(scratch.path("meminfo")).unwrap();
     let cycle = node.collect_once().unwrap();
     assert_eq!(
@@ -285,13 +285,13 @@ fn source_failure_and_full_spool_leave_visible_gap_or_unknown_coverage() {
     )
     .unwrap();
     let small = config(&full.0, 8192);
-    let mut limited = Node::open_with_paths(small.clone(), host_paths(&full.0)).unwrap();
+    let mut limited = Spindle::open_with_paths(small.clone(), host_paths(&full.0)).unwrap();
     assert!(limited.collect_once().is_err());
     assert_eq!(inspect(&small).unwrap().batches, 0);
     assert!(inspect(&small).unwrap().coverage_unknown);
     drop(limited);
     assert!(
-        Node::open_with_paths(small, host_paths(&full.0))
+        Spindle::open_with_paths(small, host_paths(&full.0))
             .unwrap()
             .collect_once()
             .is_err()
@@ -310,7 +310,7 @@ fn denied_host_and_log_sources_report_gaps_then_recover() {
         fs::set_permissions(scratch.path(name), fs::Permissions::from_mode(0o000)).unwrap();
     }
     let cfg = config(&scratch.0, 1024 * 1024);
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     let denied = node.collect_once().unwrap();
     assert_eq!(
         (denied.metric_points, denied.log_records, denied.gaps),
@@ -336,7 +336,7 @@ fn public_config_uses_the_file_loaded_limits_before_opening_spool() {
         let mut invalid = base.clone();
         invalid.spool_bytes = bytes;
         assert_eq!(
-            Node::open(invalid.clone()).err().unwrap().kind(),
+            Spindle::open(invalid.clone()).err().unwrap().kind(),
             std::io::ErrorKind::InvalidInput
         );
         assert_eq!(
@@ -347,7 +347,7 @@ fn public_config_uses_the_file_loaded_limits_before_opening_spool() {
     let mut invalid = base.clone();
     invalid.interval_s = 0;
     assert_eq!(
-        Node::open(invalid).err().unwrap().kind(),
+        Spindle::open(invalid).err().unwrap().kind(),
         std::io::ErrorKind::InvalidInput
     );
     let mut invalid = base.clone();
@@ -355,7 +355,7 @@ fn public_config_uses_the_file_loaded_limits_before_opening_spool() {
         .map(|n| scratch.path(&format!("source-{n}.log")))
         .collect();
     assert_eq!(
-        Node::open(invalid).err().unwrap().kind(),
+        Spindle::open(invalid).err().unwrap().kind(),
         std::io::ErrorKind::InvalidInput
     );
     assert!(
@@ -367,7 +367,7 @@ fn public_config_uses_the_file_loaded_limits_before_opening_spool() {
     fs::write(scratch.path("selected.log"), b"once\n").unwrap();
     let mut duplicate = base.clone();
     duplicate.logs.push(scratch.path("selected.log"));
-    let mut node = Node::open_with_paths(duplicate, host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(duplicate, host_paths(&scratch.0)).unwrap();
     assert_eq!(node.collect_once().unwrap().log_records, 1);
 }
 
@@ -382,14 +382,14 @@ fn all_three_malformed_sources_commit_gaps_and_later_good_lines() {
     for path in &cfg.logs {
         fs::write(path, [b"\xff\n".repeat(8), b"good\n".to_vec()].concat()).unwrap();
     }
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     let first = node.collect_once().unwrap();
     assert_eq!(
         (first.metric_points, first.log_records, first.gaps),
         (11, 0, 24)
     );
     drop(node);
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     let second = node.collect_once().unwrap();
     assert_eq!(
         (second.metric_points, second.log_records, second.gaps),
@@ -437,7 +437,7 @@ fn maximum_source_gap_count_fits_one_bounded_batch() {
     // Worst case also carries the notice for an earlier uncommitted cycle.
     fs::create_dir_all(&cfg.spool).unwrap();
     fs::write(cfg.spool.join("coverage-unknown"), "1\n").unwrap();
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     let first = node.collect_once().unwrap();
     assert_eq!(
         (first.metric_points, first.log_records, first.gaps),
@@ -460,7 +460,7 @@ fn same_inode_rewrite_with_longer_new_file_reports_gap_and_reads_from_zero() {
     let old = (0..10).map(|n| format!("old-{n:02}\n")).collect::<String>();
     fs::write(&path, old).unwrap();
     let cfg = config(&scratch.0, 1024 * 1024);
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     assert_eq!(node.collect_once().unwrap().log_records, 10);
     let newer = (0..20).map(|n| format!("new-{n:02}\n")).collect::<String>();
     fs::write(&path, newer).unwrap(); // same inode, length now beyond old offset
@@ -498,7 +498,7 @@ fn multibyte_missing_log_path_commits_a_byte_bounded_gap() {
     assert!(missing.as_os_str().len() <= 240);
     let mut cfg = config(&scratch.0, 1024 * 1024);
     cfg.logs = vec![missing];
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     let first = node.collect_once().unwrap();
     assert_eq!(first.gaps, 1);
     let second = node.collect_once().unwrap();
@@ -522,14 +522,14 @@ fn failed_cycle_is_reported_as_a_gap_by_the_next_committed_batch() {
     )
     .unwrap();
     let small = config(&scratch.0, 8192);
-    let mut node = Node::open_with_paths(small.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(small.clone(), host_paths(&scratch.0)).unwrap();
     let full = node.collect_once().err().unwrap();
     assert_eq!(full.kind(), std::io::ErrorKind::StorageFull);
     assert!(inspect(&small).unwrap().coverage_unknown);
     drop(node);
     // The operator raises the ceiling; the next commit carries the notice.
     let larger = config(&scratch.0, 1024 * 1024);
-    let mut node = Node::open_with_paths(larger.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(larger.clone(), host_paths(&scratch.0)).unwrap();
     let cycle = node.collect_once().unwrap();
     assert_eq!((cycle.log_records, cycle.gaps), (1, 1));
     let stored = batches(&larger);
@@ -580,7 +580,7 @@ fn sigterm_stops_run_between_cycles_and_leaves_a_reopenable_spool() {
     let report = inspect(&cfg).unwrap();
     assert!(!report.interrupted_append && !report.recovery_required);
     assert_eq!(report.log_records, 1);
-    let mut node = Node::open(cfg).unwrap();
+    let mut node = Spindle::open(cfg).unwrap();
     assert!(node.collect_once().is_ok());
 }
 
@@ -598,7 +598,7 @@ fn busy_first_log_cannot_starve_a_later_log_and_backlog_is_visible() {
     fs::write(&quiet, format!("{quiet_body}\n")).unwrap();
     let mut cfg = config(&scratch.0, 16 * 1024 * 1024);
     cfg.logs = vec![busy, quiet];
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     let first = node.collect_once().unwrap();
     let second = node.collect_once().unwrap();
     assert!(first.log_backlog_bytes > 0);
@@ -631,7 +631,7 @@ fn failed_log_read_carries_its_committed_cursor_into_the_next_batch() {
     write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
     fs::write(scratch.path("selected.log"), b"one\n").unwrap();
     let cfg = config(&scratch.0, 1024 * 1024);
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     node.collect_once().unwrap();
     let path = scratch.path("selected.log");
     fs::set_permissions(&path, fs::Permissions::from_mode(0o000)).unwrap();
@@ -662,7 +662,7 @@ fn empty_coverage_marker_is_reported_as_unknown_time_and_collection_continues() 
     fs::create_dir_all(&cfg.spool).unwrap();
     // State left by an older binary killed between create and write.
     fs::write(cfg.spool.join("coverage-unknown"), b"").unwrap();
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     assert_eq!(node.collect_once().unwrap().gaps, 1);
     assert_eq!(node.collect_once().unwrap().gaps, 0);
     assert!(gap_texts(&cfg)[0][0].starts_with("coverage unknown since an unrecorded time"));
@@ -678,7 +678,7 @@ fn unremovable_marker_is_reported_once_and_committed_lines_are_not_collected_twi
     fs::create_dir_all(cfg.spool.join("coverage-unknown")).unwrap();
     // A directory cannot be read as a marker or removed as a file.
     fs::write(cfg.spool.join("coverage-unknown").join("keep"), b"x").unwrap();
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     let first = node.collect_once().unwrap();
     assert_eq!((first.log_records, first.gaps), (2, 1));
     let second = node.collect_once().unwrap();
@@ -696,17 +696,17 @@ fn marker_left_after_its_notice_committed_is_not_reported_again() {
     )
     .unwrap();
     let small = config(&scratch.0, 8192);
-    let mut node = Node::open_with_paths(small, host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(small, host_paths(&scratch.0)).unwrap();
     assert!(node.collect_once().is_err());
     drop(node);
     let marker = fs::read(scratch.path("spool").join("coverage-unknown")).unwrap();
     let cfg = config(&scratch.0, 1024 * 1024);
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     assert_eq!(node.collect_once().unwrap().gaps, 1);
     drop(node);
     // A kill between the commit and the marker's removal leaves it behind.
     fs::write(cfg.spool.join("coverage-unknown"), &marker).unwrap();
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     assert!(!cfg.spool.join("coverage-unknown").exists());
     assert_eq!(node.collect_once().unwrap().gaps, 0);
     let notices = gap_texts(&cfg)
@@ -724,7 +724,7 @@ fn inspect_backlog_counts_a_truncated_same_inode_file_in_full() {
     let log = scratch.path("selected.log");
     fs::write(&log, b"first line of the file\nsecond line\n").unwrap();
     let cfg = config(&scratch.0, 1024 * 1024);
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     node.collect_once().unwrap();
     assert_eq!(inspect(&cfg).unwrap().log_backlog_bytes, 0);
     // Rewrite in place: same inode, shorter than the committed offset.
@@ -744,7 +744,7 @@ fn log_poll_commits_only_new_lines_and_writes_nothing_when_quiet() {
     write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
     fs::write(scratch.path("selected.log"), b"one\n").unwrap();
     let cfg = config(&scratch.0, 1024 * 1024);
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     assert_eq!(node.collect_once().unwrap().log_records, 1);
     let used = inspect(&cfg).unwrap().committed_bytes;
     assert!(node.collect_logs().unwrap().is_none());
@@ -775,7 +775,7 @@ fn staged_marker_left_by_a_failed_write_still_reports_unknown_coverage() {
     fs::create_dir_all(&cfg.spool).unwrap();
     // mark_unknown failed after staging but before its rename.
     fs::write(cfg.spool.join("coverage-unknown.tmp"), b"17").unwrap();
-    let mut node = Node::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     assert_eq!(node.collect_once().unwrap().gaps, 1);
     assert!(gap_texts(&cfg)[0][0].starts_with("coverage unknown since an unrecorded time"));
     assert!(!cfg.spool.join("coverage-unknown.tmp").exists());
