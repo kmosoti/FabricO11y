@@ -31,6 +31,14 @@ latency and freshness measurements are pending. Phase 5
 is unimplemented; the [planned deployment](architecture/deployment.md) is unchanged.
 FOL2 and the research packages remain supported.
 
+**Stopping point (2026-09-28).** Work was stopped at the owner's request. Not run or
+not finished: the registered phase-4 history trials, the phase-5 outage trials (the
+first was stopped mid-run and produced no result), the phase-5 stress trials, a Claude
+verifier review of the phase 2 to 4 server code (stopped before a verdict), the
+running-install acceptance (needs root on a disposable host), and every cross-family
+review of phases 2 to 5. The [completion plan](ALPHA-PLAN.md) and the registered
+protocols under [experiments](experiments/README.md) say how to resume.
+
 The [scoped local research completion contract](experiments/ablation/end-to-end-prototype.md)
 is complete. The [local research lifecycle](architecture/research-prototype.md)
 composes offline collection, FOL2 ingest, immutable JSON publication, partial query,
