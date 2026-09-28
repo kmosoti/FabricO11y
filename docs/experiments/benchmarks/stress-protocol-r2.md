@@ -48,3 +48,7 @@ python3 -B tools/qualification/runner.py --out target/alpha-p5r2-stress-seed<N> 
   python3 -B $PWD/target/alpha-p5r2-frozen/tools/stress_tier.py --seed 0xA11FA00<N> \
   --bin-dir $PWD/target/alpha-p5r2-frozen --server-cpus 0-1 --sim-cpus 2-3
 ```
+
+## Harness amendment (after stress run 01)
+
+Revision 1 says that latency during the burst is reported, not gated, but the registered `stress_tier.py` computed none. After stress run 01, the harness was amended to report ACK latency for attempts started in the 20 s before the burst and during it, as `ack_ms.before_burst` and `ack_ms.burst` (count, p50, p99 and maximum). The amendment adds a report and changes no gate, workload, placement or limit, so revisions 1 and 2 are otherwise unchanged. Stress run 01 predates it and has no such report. A 180 s smoke test of the amended harness (not a trial) reported p99 74 ms before the burst and 87 ms during it.

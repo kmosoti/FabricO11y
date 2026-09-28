@@ -48,7 +48,7 @@ On two server CPUs the server absorbed the burst with essentially no queueing. T
 
 ## Deviation from the registered report
 
-The protocol says latency during the burst is reported, not gated. The registered harness computes no burst-window latency: its summary gives only the backlog at four instants and the concurrent query p99. That metric is therefore not reported. Adding it now would change the harness after the run. The backlog at the end of the burst (79 s) stands in for it, and a later protocol revision should add the metric.
+The protocol says latency during the burst is reported, not gated. The registered harness computes no burst-window latency: its summary gives only the backlog at four instants and the concurrent query p99. That metric is therefore not reported. Adding it now would change the harness after the run. The backlog at the end of the burst (79 s) stands in for it. The harness has since been [amended](stress-protocol-r2.md#harness-amendment-after-stress-run-01) to report the metric in later runs.
 
 ## Limits
 
