@@ -1,0 +1,8 @@
+semantic-mutants         passed                     158888 ms  cargo xtask mutants
+delivery-faults          passed                     257629 ms  sh -c cargo build --release --locked --workspace --bins --examples && for s in clean server-kill node-kill outage; do for seed in 1 2; do python3 -B tools/qualification/delivery_faults.py --scenario $s --seed $seed --seconds 20 --keep || exit 1; TLA_JAR="$PWD/target/tools/tla2tools.jar" python3 -B formal/delivery/trace_check.py target/alpha-delivery-$s-$seed/transcript.jsonl || exit 1; rm -rf target/alpha-delivery-$s-$seed; done; done && ! python3 -B tools/qualification/delivery_faults.py --scenario clean --seed 3 --seconds 8 --mutate drop-recovered
+tla-delivery             passed                       2778 ms  sh -c TLA_JAR="$PWD/target/tools/tla2tools.jar" bash formal/delivery/check.sh
+tla-transport            passed                       4013 ms  sh -c TLA_JAR="$PWD/target/tools/tla2tools.jar" bash formal/transport/check.sh
+trace-model              passed                       6337 ms  sh -c TLA_JAR="$PWD/target/tools/tla2tools.jar" python3 -B formal/delivery/test_trace_check.py
+cargo-mutants            passed                      64246 ms  cargo xtask cargo-mutants
+checks: PASSED; receipts in target/verification/receipts-extended
+EXT=0

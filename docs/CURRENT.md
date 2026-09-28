@@ -2,7 +2,7 @@
 
 ## Active work
 
-Milestone **architecture foundation** ([record](milestones/architecture-foundation.md)): hexagonal layers with a checked dependency rule, a pure `no_std` core, the delivery kernel as the first extraction, capability-oriented documents and an evidence-based workflow. Next milestones are listed in the [roadmap](ROADMAP.md); none has started.
+Milestone **verification foundation** ([record](milestones/verification-foundation.md)): TLC trace validation of delivery fault runs, direct journal/Segment metamorphic tests, the counterexample registry, a `cargo-mutants` audit and scheduled extended verification. The **architecture foundation** is merged ([record](milestones/architecture-foundation.md)). Later milestones are in the [roadmap](ROADMAP.md).
 
 ## Implemented
 
@@ -42,6 +42,5 @@ From the [capability ledger](QUALIFICATION.md#capability-ledger): history query 
 
 ## Next validation steps
 
-- [ ] Verification foundation: receipts from CI, scheduled `cargo xtask mutants`, `cargo-mutants` on core and app, trace-to-model mapping.
 - [ ] Semantic kernels: control, query, retention and collection decisions into the core with differential tests against frozen behavior.
 - [ ] History qualification under the registered protocol.

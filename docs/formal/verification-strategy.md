@@ -10,10 +10,11 @@ Candidate generation may be stochastic; acceptance is reproducible verification 
 | Does a small finite decision algebra handle every case? | Exhaustive truth tables | ADR-0013 table in [`fabric_core::delivery`](../../crates/fabric-core/src/delivery.rs) |
 | Does optimized or production logic agree with an independent simple implementation? | Differential testing | the delivery kernel against a frozen transcription of the base loop ([crates/fabric-app/tests/delivery.rs](../../crates/fabric-app/tests/delivery.rs)); server queries against the Python [query oracle](../../tools/qualification/QUERY_ORACLE.md) |
 | Do algebraic laws hold over large generated spaces? | Property testing | not yet adopted; the exhaustive small-domain differential covers the delivery kernel |
-| Does behavior stay equivalent under meaning-preserving transformations? | Metamorphic testing | partially: oracle-graded answers across sealed and unsealed storage; the explicit relations below are planned |
+| Does behavior stay equivalent under meaning-preserving transformations? | Metamorphic testing | journal-only versus sealed-Segment answers compared directly (`journal_and_segment_representations_answer_identically`); other relations below |
 | Would the tests notice plausible incorrect logic? | Mutation testing | [semantic mutants](../../xtask/mutants.json) (`cargo xtask mutants`), oracle mutation controls, `cargo-mutants` calibration on core and app |
 | Do effects and recovery behave correctly under real failures? | Fault injection | frame-log sync-failure and process-death seams, [delivery fault harness](../../tools/qualification/delivery_faults.py), kill probe |
 | Can the modeled state machine violate its invariant within the explored model? | TLA+ model checking | [delivery ownership](../../formal/delivery/README.md), [transport credit](../../formal/transport/README.md) |
+| Did a real run do something the model forbids? | Trace validation with TLC | [trace_check.py](../../formal/delivery/trace_check.py) maps fault-run transcripts onto `DeliveryOwnership` actions |
 | Does the complete system satisfy the target operating profile? | Registered qualification | [qualification](../QUALIFICATION.md) |
 
 ## Oracle independence
@@ -22,16 +23,16 @@ The Python delivery, query and rate oracles were frozen before the Rust code the
 
 ## Metamorphic relations
 
-These relations are part of the plan; the matrix records which are checked today.
+The matrix records which relations are checked today.
 
 | Relation | Statement | Current check |
 | --- | --- | --- |
-| Journal/Segment equivalence | For the same retained committed history, `Query(Journal) = Query(Segments)` | indirect: oracle-graded answers across sealed and unsealed data; no direct comparison |
-| Seal invariance | If retention did not change, `Query(before seal) = Query(after seal)` | not checked directly |
+| Journal/Segment equivalence | For the same retained committed history, `Query(Journal) = Query(Segments)` | direct: `journal_and_segment_representations_answer_identically` answers log, filtered log, metric and rate queries from the journal alone, then again after a restart seals that journal into a Segment; rows, completeness, gaps and freshness must be equal. Mutant `M-HIST-SEGMENT` checks that the test can fail |
+| Seal invariance | If retention did not change, `Query(before seal) = Query(after seal)` | the same test |
 | Replay invariance | Durable observable state before restart equals state after replay, within the recovery semantics | delivery and control end-to-end restart tests; fault harness |
 | Duplicate retry invariance | One durable commit plus any number of identical retransmissions of the same Strand sequence yields one logical Batch | kernel truth table, differential test, delivery oracle |
 | Pagination composition | If all pages stay retained, `concat(Page_1..Page_n) = FullQuery` | history tests against the oracle |
-| Storage-representation invariance | Journal only, Segments only, and journal plus Segments give equal semantic answers | not checked directly |
+| Storage-representation invariance | Journal only, Segments only, and journal plus Segments give equal semantic answers | journal only versus Segments only: the same test; mixed journal and Segments: the oracle-graded history tests |
 | Irrelevant-environment invariance | Core functions do not change when irrelevant process environment changes | structural: `no_std` leaves the core no way to read it |
 
 ## Mutation policy
@@ -42,13 +43,23 @@ Semantic mutants in [xtask/mutants.json](../../xtask/mutants.json) each name the
 
 Calibration in the architecture-foundation milestone (`cargo-mutants` 27.1.0, `cargo mutants -p fabric-core -p fabric-app --test-package fabric-core --test-package fabric-app`): 34 mutants, 27 caught, 6 unviable (they return `Default::default()` for types without `Default`, or `Box` in the `no_std` crate), 1 missed. The missed mutant replaces `sequence < last` with `sequence <= last` in `decide_delivery`; it is **equivalent**, because the preceding branch already handles `sequence == last`. With only the core's own tests: 29 mutants, 23 caught, 5 unviable, the same 1 equivalent. Outcome lists are kept under [data/architecture-foundation/cargo-mutants](../experiments/benchmarks/data/architecture-foundation/cargo-mutants/missed.txt).
 
+Since the verification-foundation milestone, `cargo xtask cargo-mutants` runs that command and fails on any survivor or timeout not listed with a reason in [cargo-mutants-equivalent.json](../../xtask/cargo-mutants-equivalent.json), and on a listed entry that no longer survives. It runs in the extended profile.
+
 ## Counterexamples become fixtures
 
-Every material defect found by an oracle, mutant, property test, fuzzer, model checker, fault harness, review or incident is minimized where practical and kept as a deterministic regression fixture recording origin, original seed or trace, minimal reproducer, contract violated and fix commit. Random seeds alone are not enough; important minimized cases become named tests. Examples kept so far: the journal length checksum, the Unicode gap cap, interrupted-append recovery, the oversize-line and FIFO reader cases, and the `u64::MAX` Strand overflow found by the delivery extraction.
+Every material defect found by an oracle, mutant, property test, fuzzer, model checker, fault harness, review or incident is minimized where practical and kept as a deterministic regression fixture recording origin, original seed or trace, minimal reproducer, contract violated and fix commit. Random seeds alone are not enough; important minimized cases become named tests. The registry is [counterexamples.json](counterexamples.json); `cargo xtask check-counterexamples` (fast profile) fails if an entry lacks a field, if its reproducer test no longer exists in its file, or if its fix commit is unknown.
 
 ## Formal models and their limits
 
-The long-term aim for the delivery model is: implementation trace, abstracted to model actions (`Receive`, `Commit`, `Acknowledge`, `Forget`, `Retry`, `Crash`), checked for a legal modeled transition. The fault harness transcript already records attempts, responses, Spool state and recovered records; mapping those records to model actions is verification-foundation work and not implemented. Limits stay explicit: TLA+ does not prove the Rust code; Rust tests do not prove fsync hardware behavior; the delivery model does not prove query correctness; the query oracle does not prove retention hardware reliability.
+Delivery fault-run transcripts are validated against the unchanged `DeliveryOwnership` model by [trace_check.py](../../formal/delivery/trace_check.py). It generates a module that `INSTANCE`s the model and maps each observation to model actions:
+- an attempt is `Receive`;
+- an ACK through N is `Acknowledge` of every sourced identity up to N;
+- a Spool observation that no longer retains an identity is `Forget`;
+- the recovered set must equal `durable` at the end.
+
+`Commit` and `ReceiverCrash` are hidden steps allowed between observations. TLC searches for a model behavior that reaches the end of the trace while the model's `AckSafety` and `RetainedOrDurable` hold; the invariant `TraceNotAccepted` is violated exactly when such a behavior exists. A trace with no such behavior is rejected.
+
+Its controls ([test_trace_check.py](../../formal/delivery/test_trace_check.py)) accept a real server-kill transcript and a legal forget, and reject an early forget, an ACKed identity missing after recovery, and a resend after forget. The extended `delivery-faults` check validates every fault-run transcript this way. The model has no bytes, sequences or credentials, which the delivery oracle checks, and no node crash action, because it assumes the upstream copy survives. Limits stay explicit: TLA+ does not prove the Rust code; Rust tests do not prove fsync hardware behavior; the delivery model does not prove query correctness; the query oracle does not prove retention hardware reliability.
 
 ## Verification receipts
 
