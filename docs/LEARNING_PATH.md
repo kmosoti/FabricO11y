@@ -90,6 +90,16 @@ Once the core pipeline has understandable behavior, add ingestion protocols, a q
 
 From the repository root, run `cargo test --offline --locked --manifest-path tools/transport-sim/Cargo.toml one_message_serialization_and_propagation`. In that small test, M0 sends its first packet at tick `0`, finishes the three-packet message at tick `7`, and receives the modeled durable ACK at tick `11`. M1 waits for an announcement and credit, first sends at tick `8`, finishes at tick `15`, and gets its ACK at tick `19`. Trace the `Event` enum and `MessageState` in [the simulator](../tools/transport-sim/src/lib.rs): `Option<u64>` records which milestones have actually occurred, and `Result` stops a run that violates a cap or invariant. The simulation owns packet copies in its queues; the sender's retained message remains its retry responsibility until the durable ACK event.
 
+## Stage 8 — Deliver, control and retain
+
+**Delivery.** A node owns each batch until the server says it is durable. In [the node](../src/alpha/node.rs), `deliver` reads the oldest unacknowledged batch as its exact stored bytes, sends it, and calls `record_ack` only for an `ack`. On the server, one commit thread in [the store](../crates/fabric-server/src/store.rs) owns the journal: handlers pass a `Submission` holding the bytes and a reply channel, and the thread answers only after the group's data and marker syncs. Run `cargo test --offline --locked -p fabric-server --test delivery`, then `python3 -B tools/alpha/delivery_faults.py --scenario server-kill --seed 1` to watch the [delivery oracle](../tools/alpha/DELIVERY_ORACLE.md) grade real processes killed mid-flight. The idea: an ACK transfers responsibility, so it may follow durability, never precede it.
+
+**Control.** Configuration flows the other way. The server stores a desired revision per node; the node polls, validates with the same `Config::validate` as a local file, stores the view by synced rename, and only then activates it. Read [central control](architecture/control-plane.md) and run `cargo test --offline --locked -p fabric-server --test control`. The idea: validation and durability come before activation, so a restart never runs something it could not have accepted.
+
+**Retention.** Sealed journal files become immutable Parquet [segments](../crates/fabric-server/src/segment.rs); a directory rename is the commit point, and the commit thread writes a stream checkpoint before it deletes the journal file. Queries bind pages to a range of group numbers rather than to files, because records move from the journal into segments but never change group. Run `cargo test --offline --locked -p fabric-server --test history`; its answers are graded by an independent [query oracle](../tools/alpha/QUERY_ORACLE.md) written before the query code. The idea: an exact scan is the reference, and every optimization must agree with it.
+
+**Packaging.** [packaging/](../packaging/) turns the binaries into two sandboxed systemd services under one slice, running as the static `fabricolly` user. Run `packaging/build-deb.sh target/package-out` twice and compare the SHA-256 values to see a reproducible build.
+
 ## Working rule
 
 For each new component, answer these in plain language before coding:
