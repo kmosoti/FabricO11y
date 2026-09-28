@@ -38,6 +38,7 @@ The canonical source is [system.mmd](diagrams/system.mmd). The documentation che
 ## Read in this order
 
 1. [Current project state](CURRENT.md): implemented behavior, assumptions, and open work.
+   [Operating the alpha](operations.md) covers install, configuration, the admin CLI and recovery states.
 2. [System architecture](architecture/system.md): boundaries, execution, and evidence.
    [Architecture views](architecture/README.md) links the application and research projections.
    [Planned Linux deployment](architecture/deployment.md) records the accepted phase-5 service boundary.
