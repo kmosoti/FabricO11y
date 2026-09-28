@@ -40,3 +40,14 @@ TLA_JAR="$HOME/.cache/fabric_o11y/tla/tla2tools-v1.7.1.jar" bash formal/delivery
 If using that cached JRE, add `JAVA_BIN="$HOME/.cache/fabric_o11y/tla/jdk-21.0.12.1+1-jre/bin/java"` before `bash` in the same command.
 
 The [checker](check.sh) requires the safe configuration to finish with no invariant violations and all 64 expected reachable states. The two early-ack configurations must exit with TLC status `12`, report their expected invariants, and include the expected counterexample steps. It uses a temporary TLC metadata directory and removes it afterward. To inspect the full trace yourself, run TLC directly from `formal/delivery` with one of the three `.cfg` files. `-deadlock` permits completed states without requiring a liveness property. A successful finite-state run checks only the two-event abstraction and the transitions written here. It does not test fsync, filesystem recovery, network delivery, or the Rust executable.
+
+## Trace validation of real runs
+
+[trace_check.py](trace_check.py) checks a transcript from a real delivery fault run (the JSONL that [delivery_faults.py](../../tools/qualification/delivery_faults.py) writes with `--keep`) against this unchanged model. It generates a module that instantiates `DeliveryOwnership`, maps attempts to `Receive`, ACKs to `Acknowledge`, Spool observations to `Forget` and the recovered set to `durable`, allows hidden `Commit` and `ReceiverCrash` steps, and asks TLC whether some model behavior explains the whole trace:
+
+```sh
+TLA_JAR="$HOME/.cache/fabric_o11y/tla/tla2tools-v1.7.1.jar" python3 -B formal/delivery/trace_check.py target/alpha-delivery-server-kill-1/transcript.jsonl
+TLA_JAR="$HOME/.cache/fabric_o11y/tla/tla2tools-v1.7.1.jar" python3 -B formal/delivery/test_trace_check.py
+```
+
+The tests use [a real server-kill transcript](fixtures/server-kill-seed1.jsonl) with Batch bytes removed. It must be accepted, and three injected violations (an early forget, an ACKed identity missing after recovery, a resend after forget) must be rejected. This validates the runs it is given; it does not prove the Rust code.
