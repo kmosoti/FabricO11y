@@ -193,7 +193,9 @@ fn counters_preserve_start_then_reset_on_decrease_and_boot_change() {
     let after_reset = batches(&cfg);
     let (start_reset, value_reset) = disk_read(&after_reset[2]);
     assert_eq!(value_reset, 512);
-    assert!(start_reset >= start_a);
+    // A decrease starts a new series at this sample. `>=` here once let a
+    // mutant that kept the old start survive (semantic mutant M-COL-RESET).
+    assert!(start_reset > start_a, "{start_reset} after {start_a}");
     write_host(&scratch.0, boot_b, 2000, 2);
     node.collect_once().unwrap();
     let after_boot = batches(&cfg);

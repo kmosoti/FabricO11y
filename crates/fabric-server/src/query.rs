@@ -5,11 +5,15 @@
 //! segment, so a later page recomputes the same set from wherever the records
 //! now live. If retention removed part of the range, the page answers Gone.
 //! Rows are kept in a bounded heap of `limit + 1`, so memory does not grow
-//! with the number of matching rows.
+//! with the number of matching rows. What the window, page, snapshot and
+//! counter rules mean is decided by `fabric_core::query`.
 
 use crate::rows::{GapRow, LogRow, MetricRow, Number, Rows, extract};
 use crate::segment::{self, MAX_GROUP_PAYLOAD, Manifest};
 use crate::store::Group;
+use fabric_core::query::{
+    self as kernel, CounterPoint, CounterStep, QueryRejection, Snapshot, Window,
+};
 use fabric_frame::frame::read_frame;
 use prost::Message;
 use serde::Deserialize;
@@ -18,8 +22,6 @@ use std::collections::{BTreeMap, BinaryHeap};
 use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
-
-const MAX_LIMIT: u32 = 10_000;
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
@@ -68,7 +70,7 @@ impl From<io::Error> for QueryError {
     }
 }
 
-type Key = (u64, [u8; 16], u64, u32);
+type Key = kernel::RowKey;
 
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
@@ -290,13 +292,15 @@ impl History {
                 ..
             } => (node, *from_ns, *to_ns, None, None),
         };
-        if from >= to {
-            return Err(QueryError::Invalid("from_ns must be below to_ns".into()));
-        }
-        if let Some(limit) = limit
-            && !(1..=MAX_LIMIT).contains(&limit)
-        {
-            return Err(QueryError::Invalid("limit must be 1-10000".into()));
+        let rejected = |r: QueryRejection| {
+            QueryError::Invalid(match r {
+                QueryRejection::EmptyWindow => "from_ns must be below to_ns".into(),
+                QueryRejection::LimitOutOfRange => "limit must be 1-10000".into(),
+            })
+        };
+        let window = Window::new(from, to).map_err(rejected)?;
+        if let Some(limit) = limit {
+            kernel::check_limit(limit).map_err(rejected)?;
         }
         let fingerprint = {
             let mut q = serde_json::to_value(QueryShape(query)).unwrap();
@@ -329,9 +333,13 @@ impl History {
         };
         let sources = self.sources(floor, newest)?;
         let oldest = floor.unwrap_or(sources.oldest_group);
-        if floor.is_some_and(|f| sources.oldest_group > f) {
+        if floor.is_some_and(|f| !kernel::page_snapshot_retained(f, sources.oldest_group)) {
             return Err(QueryError::Gone);
         }
+        let snapshot = Snapshot {
+            oldest_group: oldest,
+            newest_group: newest,
+        };
         let node_ok = |n: &str| node.as_deref().is_none_or(|want| want == n);
 
         let mut unavailable = Vec::new();
@@ -377,11 +385,7 @@ impl History {
             }
         }
         gaps.retain(|g| {
-            node_ok(&g.node)
-                && g.received_ns >= from
-                && g.received_ns < to
-                && g.group >= oldest
-                && g.group <= newest
+            node_ok(&g.node) && window.contains(g.received_ns) && snapshot.contains(g.group)
         });
         gaps.sort_by_key(|g| (g.received_ns, g.node_id, g.sequence));
 
@@ -393,21 +397,19 @@ impl History {
                 let mut best = Smallest::new(*limit as usize + 1);
                 let keep = |r: &LogRow| {
                     node_ok(&r.node)
-                        && r.observed_ns >= from
-                        && r.observed_ns < to
-                        && r.group >= oldest
-                        && r.group <= newest
+                        && window.contains(r.observed_ns)
+                        && snapshot.contains(r.group)
                         && contains.as_deref().is_none_or(|c| r.body.contains(c))
                 };
                 let key = |r: &LogRow| (r.observed_ns, r.node_id, r.sequence, r.index);
                 for r in journal_rows.logs.iter().filter(|r| keep(r)) {
-                    if after.is_none_or(|a| key(r) > a) {
+                    if kernel::after_page(&key(r), after.as_ref()) {
                         best.offer(key(r), r.clone());
                     }
                 }
                 for (dir, manifest) in &sources.segments {
                     let scanned = segment::scan_logs(dir, manifest, from, to, |r| {
-                        if keep(&r) && after.is_none_or(|a| key(&r) > a) {
+                        if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
                             best.offer(key(&r), r);
                         }
                     });
@@ -440,20 +442,18 @@ impl History {
                 let keep = |r: &MetricRow| {
                     node_ok(&r.node)
                         && &r.name == name
-                        && r.time_ns >= from
-                        && r.time_ns < to
-                        && r.group >= oldest
-                        && r.group <= newest
+                        && window.contains(r.time_ns)
+                        && snapshot.contains(r.group)
                 };
                 let key = |r: &MetricRow| (r.time_ns, r.node_id, r.sequence, r.index);
                 for r in journal_rows.metrics.iter().filter(|r| keep(r)) {
-                    if after.is_none_or(|a| key(r) > a) {
+                    if kernel::after_page(&key(r), after.as_ref()) {
                         best.offer(key(r), r.clone());
                     }
                 }
                 for (dir, manifest) in &sources.segments {
                     let scanned = segment::scan_metrics(dir, manifest, from, to, |r| {
-                        if keep(&r) && after.is_none_or(|a| key(&r) > a) {
+                        if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
                             best.offer(key(&r), r);
                         }
                     });
@@ -488,10 +488,8 @@ impl History {
                         && &r.name == name
                         && r.sum
                         && r.monotonic
-                        && r.time_ns >= from
-                        && r.time_ns < to
-                        && r.group >= oldest
-                        && r.group <= newest
+                        && window.contains(r.time_ns)
+                        && snapshot.contains(r.group)
                 };
                 points.extend(journal_rows.metrics.iter().filter(|r| keep(r)).cloned());
                 for (dir, manifest) in &sources.segments {
@@ -522,7 +520,7 @@ impl History {
             (json!(received.0), json!(received.1))
         };
         Ok(json!({
-            "complete": unavailable.is_empty(),
+            "complete": kernel::complete(unavailable.len()),
             "unavailable": unavailable,
             "retained_from_ns": retained.0,
             "retained_to_ns": retained.1,
@@ -611,13 +609,20 @@ fn rates(mut points: Vec<MetricRow>) -> Vec<Value> {
         }
         let base = json!({"node": b.node, "name": b.name, "attributes": b.attributes, "time_ns": b.time_ns});
         let mut row = base.as_object().unwrap().clone();
-        if a.start_ns == b.start_ns && as_f64(b.value) >= as_f64(a.value) && b.time_ns > a.time_ns {
-            let rate = (as_f64(b.value) - as_f64(a.value)) / ((b.time_ns - a.time_ns) as f64 / 1e9);
-            row.insert("reset".into(), json!(false));
-            row.insert("rate".into(), json!(rate));
-        } else {
-            row.insert("reset".into(), json!(true));
-            row.insert("rate".into(), Value::Null);
+        let point = |r: &MetricRow| CounterPoint {
+            start_ns: r.start_ns,
+            time_ns: r.time_ns,
+            value: as_f64(r.value),
+        };
+        match kernel::counter_step(point(a), point(b)) {
+            CounterStep::Rate(rate) => {
+                row.insert("reset".into(), json!(false));
+                row.insert("rate".into(), json!(rate));
+            }
+            CounterStep::Reset => {
+                row.insert("reset".into(), json!(true));
+                row.insert("rate".into(), Value::Null);
+            }
         }
         out.push(Value::Object(row));
     }

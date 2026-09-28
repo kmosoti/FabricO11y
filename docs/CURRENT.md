@@ -2,7 +2,7 @@
 
 ## Active work
 
-Milestone **verification foundation** ([record](milestones/verification-foundation.md)): TLC trace validation of delivery fault runs, direct journal/Segment metamorphic tests, the counterexample registry, a `cargo-mutants` audit and scheduled extended verification. The **architecture foundation** is merged ([record](milestones/architecture-foundation.md)). Later milestones are in the [roadmap](ROADMAP.md).
+Milestone **semantic kernels** ([record](milestones/semantic-kernels.md)): control, query, retention and collection decisions as `no_std` kernels, retention as a use case over a port, and the Spindle's Linux reads in `fabric-adapter-linux`. Merged: the [architecture foundation](milestones/architecture-foundation.md) and the [verification foundation](milestones/verification-foundation.md). Later milestones are in the [roadmap](ROADMAP.md).
 
 ## Implemented
 
@@ -15,18 +15,17 @@ Milestone **verification foundation** ([record](milestones/verification-foundati
 
 ## Architecture currently affected
 
-Crates: `fabric-core` (core), `fabric-ports` (ports), `fabric-app` (app), `fabric-frame` (adapter support), `fabric-server` and the root package (composition roots that still contain adapters and some domain policy). See the [system view](architecture/system.md).
+Crates: `fabric-core` (core), `fabric-ports` (ports), `fabric-app` (app), `fabric-frame` (adapter support), `fabric-adapter-linux` (adapter), `fabric-server` and the root package (composition roots that still contain their adapters). See the [system view](architecture/system.md).
 
 ## Current assumptions
 
 - ACKs rely on successful sync calls being honored by the filesystem; physical power loss is untested.
 - WSL2 on ext4 is the only exercised environment.
 - Batch identity for duplicate detection is the SHA-256 of the exact bytes; collisions are assumed infeasible.
-- The layer gate sees crates, not modules: policy inside the two composition roots is protected only by tests, oracles and mutants.
+- The layer gate sees crates, not modules: the adapters inside the two composition roots are protected only by tests, oracles and mutants; their decisions are kernels in the core.
 
 ## Unresolved questions
 
-- Whether control, query, rate and retention kernels fit naturally in a `no_std` core (floating point, maps).
 - How to map fault-harness transcripts onto the TLA+ delivery actions.
 - When, if ever, to rename the `fabric-node` executable ([ADR-0017](decisions/ADR-0017-name-the-spindle-and-the-strand.md)).
 
@@ -42,5 +41,4 @@ From the [capability ledger](QUALIFICATION.md#capability-ledger): history query 
 
 ## Next validation steps
 
-- [ ] Semantic kernels: control, query, retention and collection decisions into the core with differential tests against frozen behavior.
 - [ ] History qualification under the registered protocol.

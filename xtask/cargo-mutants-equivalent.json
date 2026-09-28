@@ -1,9 +1,9 @@
 {
   "version": 1,
-  "description": "cargo-mutants survivors on fabric-core and fabric-app that are equivalent to the original code, with the argument. `cargo xtask cargo-mutants` fails on any other survivor or timeout, and on an entry that no longer survives. Adding an entry is a trust-boundary change.",
+  "description": "cargo-mutants survivors on fabric-core and fabric-app that are equivalent to the original code, named with their position, with the argument. `cargo xtask cargo-mutants` fails on any other missed mutant and on an entry that no longer survives (for example because the code moved). Timeouts count as detected. Adding an entry is a trust-boundary change.",
   "equivalent": [
     {
-      "mutant": "crates/fabric-core/src/delivery.rs: replace < with <= in decide_delivery",
+      "mutant": "crates/fabric-core/src/delivery.rs:95:24: replace < with <= in decide_delivery",
       "reason": "The comparison is reached only after the branch for sequence == last, so sequence < last and sequence <= last agree on every reachable input."
     }
   ]

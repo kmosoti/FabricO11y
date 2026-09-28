@@ -398,6 +398,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-adapter-linux"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "fabric-core",
+ "fabric-frame",
+ "libc",
+]
+
+[[package]]
 name = "fabric-app"
 version = "0.1.0"
 dependencies = [
@@ -454,6 +464,8 @@ name = "fabric_o11y"
 version = "0.1.0"
 dependencies = [
  "crc32fast",
+ "fabric-adapter-linux",
+ "fabric-core",
  "fabric-frame",
  "fake",
  "libc",

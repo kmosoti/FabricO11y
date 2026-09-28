@@ -1,0 +1,20 @@
+mutant         result             expected failing test              contract
+M-DEL-ACK      caught             ack_is_returned_only_after_a_successful_commit DEL-1 commit precedes ACK
+M-DEL-BYTES    caught             adr_0013_truth_table               DEL-3 same Strand and sequence with different bytes is rejected
+M-DEL-GAP      caught             adr_0013_truth_table               DEL-4 a sequence gap is detected
+M-DEL-BIND     caught             binding_disagreement_in_either_direction_forbids_before_sequencing DEL-5 credential and Spindle binding cannot silently change
+M-DEL-GROUP    caught             extraction_agrees_with_the_base_decision_loop_on_every_small_group DEL-5 binding holds within one commit group
+M-SPOOL-RECLAIM caught             reclaim_keeps_the_file_holding_the_first_unacknowledged_batch SPOOL-2 reclaim removes only acknowledged closed files
+M-SPOOL-KNOWN  caught             reported_sync_errors_quarantine_and_record_known_failure SPOOL-3 interrupted-append recovery does not clear a known I/O failure
+M-CTRL-REVOKE  caught             admin_api_configures_pauses_and_revokes_a_polling_node CTRL-2 a revoked identity cannot continue sending
+M-CTRL-INVALID caught             admin_api_configures_pauses_and_revokes_a_polling_node CTRL-1 an invalid desired configuration does not become active
+M-HIST-CORRUPT caught             a_corrupt_segment_makes_the_answer_incomplete HIST-3 a missing or corrupt Segment never yields a complete answer
+M-HIST-GONE    caught             retention_removes_old_segments_and_stream_state_survives_it HIST-5 a page whose snapshot is no longer retained answers Gone
+M-HIST-RESET   caught             sealed_history_answers_exactly_and_pages_are_stable HIST-6 counter resets produce reset markers, not rates
+M-HIST-SEGMENT caught             journal_and_segment_representations_answer_identically HIST-1 journal and Segment representations answer identically
+M-CTRL-TERMINAL caught             revocation_is_terminal_for_every_request CTRL-2 revocation is terminal
+M-RET-AGE      caught             retention_matches_the_base_on_every_small_history HIST-5 retention deletes only Segments older than the age limit
+M-COL-RESET    survived           counters_preserve_start_then_reset_on_decrease_and_boot_change SPOOL-1 fidelity: a counter decrease starts a new series
+M-COL-CURSOR   caught             cursor_checks_match_the_base_for_every_small_case SPOOL-1 a cursor without a witness never skips a recreated file
+mutants: NOT all caught; see the table
+EXIT=1

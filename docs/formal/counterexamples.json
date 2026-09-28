@@ -133,6 +133,18 @@
         "test": "reclaim_keeps_the_file_holding_the_first_unacknowledged_batch"
       },
       "fix_commit": "a9cd37d"
+    },
+    {
+      "id": "CX-COUNTER-RESET-ASSERTION",
+      "origin": "semantic mutant M-COL-RESET survived (semantic-kernels milestone, first mutant run)",
+      "defect": "The Spindle counter test accepted an unchanged start time after a counter decrease, so keeping the old start went unnoticed",
+      "seed_or_trace": "disk read counter 4096 then 512 on the same boot",
+      "contract": "SPOOL-1",
+      "reproducer": {
+        "file": "tests/spindle.rs",
+        "test": "counters_preserve_start_then_reset_on_decrease_and_boot_change"
+      },
+      "fix_commit": "1a2ad39"
     }
   ]
 }

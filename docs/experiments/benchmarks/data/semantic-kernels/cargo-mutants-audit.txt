@@ -1,0 +1,9 @@
+Found 165 mutants to test
+ok       Unmutated baseline in 1s build + 19s test
+ INFO Auto-set test timeout to 96s
+TIMEOUT  crates/fabric-core/src/collection.rs:96:11: delete ! in bounded_text in 0s build + 96s test
+MISSED   crates/fabric-core/src/delivery.rs:95:24: replace < with <= in decide_delivery in 0s build + 18s test
+165 mutants tested in 23m: 1 missed, 154 caught, 9 unviable, 1 timeouts
+detected by timeout: crates/fabric-core/src/collection.rs:96:11: delete ! in bounded_text
+cargo-mutants: passed
+EXIT=0

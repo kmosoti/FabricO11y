@@ -1,6 +1,6 @@
 # Central control
 
-Status: implemented and tested end to end; the [fleet protocol](../experiments/benchmarks/alpha-phase3-fleet-protocol.md) at 10, 100 and 1,000 identities passed on an earlier revision ([run 01](../experiments/benchmarks/alpha-phase3-fleet-run-01.md)). Control decisions are not yet in `fabric-core`; extracting them is [semantic-kernels](../ROADMAP.md) work. "Node" in routes, JSON and state files is the persisted name of a Spindle enrollment. [ADR-0014](../decisions/ADR-0014-manage-nodes-through-server-control-state.md) records the design.
+Status: implemented and tested end to end; the [fleet protocol](../experiments/benchmarks/alpha-phase3-fleet-protocol.md) at 10, 100 and 1,000 identities passed on an earlier revision ([run 01](../experiments/benchmarks/alpha-phase3-fleet-run-01.md)). What a request means (revocation is terminal, revisions advance by one and never wrap, name and shape limits) is decided by [`fabric_core::control`](../../crates/fabric-core/src/control.rs); the server persists it. "Node" in routes, JSON and state files is the persisted name of a Spindle enrollment. [ADR-0014](../decisions/ADR-0014-manage-nodes-through-server-control-state.md) records the design.
 
 ## Responsibilities
 

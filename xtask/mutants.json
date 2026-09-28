@@ -135,9 +135,9 @@
       "id": "M-CTRL-REVOKE",
       "contract": "CTRL-2 a revoked identity cannot continue sending",
       "incorrect_behavior": "keep a revoked credential's token authorized",
-      "file": "crates/fabric-server/src/control.rs",
-      "find": "        if after.status != Status::Revoked {\n            self.by_token",
-      "replace": "        if true {\n            self.by_token",
+      "file": "crates/fabric-core/src/control.rs",
+      "find": "    !matches!(status, Status::Revoked)\n",
+      "replace": "    true\n",
       "command": [
         "cargo",
         "test",
@@ -173,9 +173,9 @@
       "id": "M-HIST-CORRUPT",
       "contract": "HIST-3 a missing or corrupt Segment never yields a complete answer",
       "incorrect_behavior": "report a query complete although a Segment could not be read",
-      "file": "crates/fabric-server/src/query.rs",
-      "find": "\"complete\": unavailable.is_empty(),",
-      "replace": "\"complete\": true,",
+      "file": "crates/fabric-core/src/query.rs",
+      "find": "    unavailable == 0\n",
+      "replace": "    true\n",
       "command": [
         "cargo",
         "test",
@@ -192,9 +192,9 @@
       "id": "M-HIST-GONE",
       "contract": "HIST-5 a page whose snapshot is no longer retained answers Gone",
       "incorrect_behavior": "serve a later page after retention removed part of its snapshot",
-      "file": "crates/fabric-server/src/query.rs",
-      "find": "if floor.is_some_and(|f| sources.oldest_group > f) {",
-      "replace": "if floor.is_some_and(|f| sources.oldest_group > f && false) {",
+      "file": "crates/fabric-core/src/query.rs",
+      "find": "    oldest_retained <= page_floor\n",
+      "replace": "    true\n",
       "command": [
         "cargo",
         "test",
@@ -211,9 +211,9 @@
       "id": "M-HIST-RESET",
       "contract": "HIST-6 counter resets produce reset markers, not rates",
       "incorrect_behavior": "compute a rate across a counter reset",
-      "file": "crates/fabric-server/src/query.rs",
-      "find": "if a.start_ns == b.start_ns && as_f64(b.value) >= as_f64(a.value) && b.time_ns > a.time_ns {",
-      "replace": "if b.time_ns > a.time_ns {",
+      "file": "crates/fabric-core/src/query.rs",
+      "find": "    if previous.start_ns == next.start_ns\n        && next.value >= previous.value\n        && next.time_ns > previous.time_ns\n",
+      "replace": "    if next.time_ns > previous.time_ns\n",
       "command": [
         "cargo",
         "test",
@@ -244,6 +244,80 @@
         "history"
       ],
       "expect_failing": "journal_and_segment_representations_answer_identically"
+    },
+    {
+      "id": "M-CTRL-TERMINAL",
+      "contract": "CTRL-2 revocation is terminal",
+      "incorrect_behavior": "let a revoked enrollment be paused or resumed",
+      "file": "crates/fabric-core/src/control.rs",
+      "find": "        Status::Revoked => Err(ControlRejection::Revoked),\n        _ => Ok(target),",
+      "replace": "        _ => Ok(target),",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-core"
+      ],
+      "expect_failing": "revocation_is_terminal_for_every_request"
+    },
+    {
+      "id": "M-RET-AGE",
+      "contract": "HIST-5 retention deletes only Segments older than the age limit",
+      "incorrect_behavior": "delete a Segment whose newest record is exactly at the cutoff",
+      "file": "crates/fabric-core/src/retention.rs",
+      "find": "if segment.received_max_ns >= cutoff && total <= retention.max_bytes {",
+      "replace": "if segment.received_max_ns > cutoff && total <= retention.max_bytes {",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-core",
+        "--test",
+        "legacy_kernels"
+      ],
+      "expect_failing": "retention_matches_the_base_on_every_small_history"
+    },
+    {
+      "id": "M-COL-RESET",
+      "contract": "SPOOL-1 fidelity: a counter decrease starts a new series",
+      "incorrect_behavior": "keep the old start time after a counter decrease",
+      "file": "crates/fabric-core/src/collection.rs",
+      "find": "        Some(_) => now_ns,",
+      "replace": "        Some((_, prior_start)) => prior_start,",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric_o11y",
+        "--test",
+        "spindle"
+      ],
+      "expect_failing": "counters_preserve_start_then_reset_on_decrease_and_boot_change"
+    },
+    {
+      "id": "M-COL-CURSOR",
+      "contract": "SPOOL-1 a cursor without a witness never skips a recreated file",
+      "incorrect_behavior": "continue an unwitnessed cursor at a non-zero offset",
+      "file": "crates/fabric-core/src/collection.rs",
+      "find": "    if old.offset > 0 && old.prefix_len == 0 {",
+      "replace": "    if false && old.offset > 0 && old.prefix_len == 0 {",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-core",
+        "--test",
+        "legacy_kernels"
+      ],
+      "expect_failing": "cursor_checks_match_the_base_for_every_small_case"
     }
   ]
 }

@@ -64,10 +64,14 @@ flowchart TB
         Server[fabric-server]
     end
     App[fabric-app: use cases]
-    Ports[fabric-ports: DurableJournal, Clock]
+    Ports[fabric-ports: DurableJournal, Clock, SegmentStore]
     Support[fabric-frame: FAB1 frame log, Batch envelope]
-    Core[fabric-core: Strand identity, delivery decision]
+    Linux[fabric-adapter-linux: host and log reads]
+    Core[fabric-core: delivery, control, query, retention and collection decisions]
     Node -->|wires| Support
+    Node -->|wires| Linux
+    Linux -->|cursor rule from| Core
+    Linux -->|Cursor from| Support
     Server -->|calls| App
     Server -->|implements ports with| Support
     Server -->|implements| Ports
@@ -81,15 +85,16 @@ The canonical source is [layers.mmd](../diagrams/layers.mmd).
 
 | Crate | Layer | Holds |
 | --- | --- | --- |
-| [fabric-core](../../crates/fabric-core/src/lib.rs) | core | `SpindleId`, `StrandId`, `next_sequence`, the delivery decision and group plan. `no_std`, no dependencies ([ADR-0016](../decisions/ADR-0016-keep-a-pure-semantic-core.md)) |
-| [fabric-ports](../../crates/fabric-ports/src/lib.rs) | ports | `DurableJournal`, `Clock` |
-| [fabric-app](../../crates/fabric-app/src/lib.rs) | app | `commit_group`: the delivery use case |
+| [fabric-core](../../crates/fabric-core/src/lib.rs) | core | `SpindleId`, `StrandId`, `next_sequence`; the delivery decision and group plan; control transitions and shape limits; query window, page, snapshot, completeness and counter-step rules; retention eligibility; counter start, log-cursor and gap-text rules. `no_std`, no dependencies ([ADR-0016](../decisions/ADR-0016-keep-a-pure-semantic-core.md)) |
+| [fabric-ports](../../crates/fabric-ports/src/lib.rs) | ports | `DurableJournal`, `Clock`, `SegmentStore` |
+| [fabric-app](../../crates/fabric-app/src/lib.rs) | app | `commit_group` (delivery) and `apply_retention` (retention) |
 | [fabric-frame](../../crates/fabric-frame/src/lib.rs) | adapter support | the `FAB1` rotating frame log and the version-one `Batch` envelope |
 | [fabric-server](../../crates/fabric-server/src/lib.rs) | composition root | HTTP/TLS, the journal adapter, control, segments, sealer, query, and `main` |
-| root package `fabric_o11y` | composition root | the Spindle runtime and its Linux, Spool and HTTP-client adapters; `fabric-node`, `fabricctl`; the FOL2 demonstration |
+| [fabric-adapter-linux](../../crates/fabric-adapter-linux/src/lib.rs) | adapter | bounded `/proc` and `statvfs` sampling and newline log reading for the Spindle |
+| root package `fabric_o11y` | composition root | the Spindle runtime, its Spool and HTTP client; `fabric-node`, `fabricctl`; the FOL2 demonstration |
 | [xtask](../../xtask/src/main.rs) | tooling | layer, purity, check-registry and mutant runners |
 
-Both composition roots still contain adapters and some domain policy (control transitions, query and rate semantics, retention eligibility, collection cursor rules). The layer gate sees crates, not modules, so that policy is not yet protected; extracting it is the [semantic-kernels milestone](../ROADMAP.md). One documented exception remains: `fabric-server`'s end-to-end tests depend on the root package (development dependency only) to run a real Spindle.
+The domain decisions the composition roots used to make inline (control transitions, query and rate semantics, retention eligibility, counter and cursor rules) are kernels in `fabric-core` since the [semantic-kernels milestone](../milestones/semantic-kernels.md), each guarded by a differential test against the code it replaced. The roots still contain their adapters: `fabric-server` holds the journal, Segment, control-persistence and query-read code, and the root package holds the Spindle runtime and Spool. The layer gate sees crates, not modules. One documented exception remains: `fabric-server`'s end-to-end tests depend on the root package (development dependency only) to run a real Spindle.
 
 ## Invariants
 

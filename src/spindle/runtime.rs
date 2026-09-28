@@ -4,6 +4,7 @@ use crate::spindle::host::{self, Kind, Paths, Value};
 use crate::spindle::log_source;
 use crate::spindle::sender::{Delivery, RemoteView, Sender, ServerTarget};
 use crate::spindle::spool::{Batch, Cursor, MAX_GAP_BYTES, MAX_GAPS_PER_BATCH, Spool};
+use fabric_core::collection::{CounterValue, bounded_text, counter_start};
 use opentelemetry_proto::tonic::collector::{
     logs::v1::ExportLogsServiceRequest, metrics::v1::ExportMetricsServiceRequest,
 };
@@ -200,11 +201,10 @@ fn value_from_point(value: &Value) -> io::Result<number_data_point::Value> {
     }
 }
 
-fn decreased(current: &Value, previous: &Value) -> bool {
-    match (current, previous) {
-        (Value::Int(a), Value::Int(b)) => a < b,
-        (Value::Double(a), Value::Double(b)) => a < b,
-        _ => true,
+fn counter_value(value: &Value) -> CounterValue {
+    match value {
+        Value::Int(v) => CounterValue::Int(*v),
+        Value::Double(v) => CounterValue::Double(*v),
     }
 }
 
@@ -222,11 +222,14 @@ fn metric_request(
     for point in &snapshot.points {
         let key = history_key(&snapshot.boot_id, point.name, &point.source);
         let start = if point.kind == Kind::Counter {
-            match history.get(&key) {
-                Some((old, prior_start)) if !decreased(&point.value, old) => *prior_start,
-                Some(_) => now,
-                None => point.known_start_ns.unwrap_or(now),
-            }
+            counter_start(
+                history
+                    .get(&key)
+                    .map(|(old, prior_start)| (counter_value(old), *prior_start)),
+                counter_value(&point.value),
+                point.known_start_ns,
+                now,
+            )
         } else {
             0
         };
@@ -311,12 +314,7 @@ fn encoded_logs(lines: &[log_source::Line], hostname: &str, boot_id: &str, now: 
 
 /// Truncate to the journal's per-gap byte cap on a UTF-8 character boundary.
 fn bounded_gap(message: impl AsRef<str>) -> String {
-    let message = message.as_ref();
-    let mut end = message.len().min(MAX_GAP_BYTES);
-    while !message.is_char_boundary(end) {
-        end -= 1;
-    }
-    message[..end].to_owned()
+    bounded_text(message.as_ref(), MAX_GAP_BYTES).to_owned()
 }
 
 fn supported_counter(name: &str) -> bool {
