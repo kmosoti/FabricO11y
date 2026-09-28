@@ -270,14 +270,12 @@ fn check_closure(
                 }
                 // A member's own dependencies are checked on their own.
                 continue;
-            } else if let Some(category) = policy.denied.get(&target.name) {
-                if !direct {
-                    violations.push(Violation::new(
-                        TRANSITIVE_DENIED,
-                        format!("{} -> {}", package.name, target.name),
-                        format!("category={category}; via {}", next.join(" -> ")),
-                    ));
-                }
+            } else if let Some(category) = policy.denied.get(&target.name).filter(|_| !direct) {
+                violations.push(Violation::new(
+                    TRANSITIVE_DENIED,
+                    format!("{} -> {}", package.name, target.name),
+                    format!("category={category}; via {}", next.join(" -> ")),
+                ));
             }
             queue.push_back((edge.to.clone(), next));
         }

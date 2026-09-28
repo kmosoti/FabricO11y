@@ -704,6 +704,28 @@ mod tests {
         assert_eq!((status.acked_through, status.next_sequence), (10, 12));
     }
 
+    /// Counterexample kept from the semantic-mutant run: the reclaim bound
+    /// `successor > through + 1` had no test at its boundary, so deleting the
+    /// file that holds batch `through + 1` survived every earlier test. With
+    /// one batch per file, that file is exactly the boundary case.
+    #[test]
+    fn reclaim_keeps_the_file_holding_the_first_unacknowledged_batch() {
+        let scratch = Scratch::new();
+        let mut spool = Spool::open_rotating(&scratch.0, 1024 * 1024, 1).unwrap();
+        let mut committed = Vec::new();
+        for _ in 0..6 {
+            committed.push(spool.append(&metrics_batch()).unwrap());
+        }
+        assert_eq!(sealed_on_disk(&scratch.0), vec![1, 2, 3, 4, 5]);
+        spool.record_ack(3).unwrap();
+        assert_eq!(sealed_on_disk(&scratch.0), vec![4, 5]);
+        let (seq, bytes) = spool.next_unacked().unwrap().unwrap();
+        assert_eq!((seq, bytes), (4, committed[3].encode_to_vec()));
+        drop(spool);
+        let reopened = Spool::open_rotating(&scratch.0, 1024 * 1024, 1).unwrap();
+        assert_eq!(reopened.next_unacked().unwrap().unwrap().0, 4);
+    }
+
     #[test]
     fn missing_unacknowledged_sealed_file_refuses_reopen() {
         let scratch = Scratch::new();

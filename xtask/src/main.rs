@@ -7,8 +7,11 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use xtask::metadata::Options;
 
-const USAGE: &str = "usage: cargo xtask <check-layers|check-core-purity> \
-[--manifest-path PATH] [--policy PATH] [--declared-only] [--offline]";
+const USAGE: &str = "usage:
+  cargo xtask check-layers      [--manifest-path PATH] [--policy PATH] [--declared-only] [--offline]
+  cargo xtask check-core-purity [--manifest-path PATH] [--policy PATH] [--declared-only] [--offline]
+  cargo xtask checks            [--profile fast|qualification] [--only ID] [--receipts DIR]
+  cargo xtask mutants           [--only ID]";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -20,6 +23,9 @@ fn main() -> ExitCode {
         .parent()
         .map(PathBuf::from)
         .unwrap_or_default();
+    if command == "checks" || command == "mutants" {
+        return registry(&command, &root, args.collect());
+    }
     let mut manifest = root.join("Cargo.toml");
     let mut policy = None;
     let mut options = Options {
@@ -76,6 +82,75 @@ fn main() -> ExitCode {
         }
         Err(error) => {
             eprintln!("{command}: NOT RUN: {error}");
+            ExitCode::from(2)
+        }
+    }
+}
+
+/// `checks` exits 0 when every selected check passed, 1 when any failed and 3
+/// when none failed but an environment was unavailable (incomplete, never a
+/// pass). `mutants` exits 0 only when every mutant was caught by its named test.
+fn registry(command: &str, root: &std::path::Path, args: Vec<String>) -> ExitCode {
+    let mut profile = "fast".to_owned();
+    let mut only = None;
+    let mut receipts = root.join("target/verification/receipts");
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--profile" => profile = args.next().unwrap_or_default(),
+            "--only" => only = args.next(),
+            "--receipts" => receipts = args.next().map(PathBuf::from).unwrap_or(receipts),
+            _ => {
+                eprintln!("unknown argument `{arg}`\n{USAGE}");
+                return ExitCode::from(2);
+            }
+        }
+    }
+    if command == "mutants" {
+        return match xtask::mutants::run_all(
+            root,
+            &root.join("xtask/mutants.json"),
+            only.as_deref(),
+        ) {
+            Ok(true) => {
+                println!("mutants: every mutant caught by its named checker");
+                ExitCode::SUCCESS
+            }
+            Ok(false) => {
+                println!("mutants: NOT all caught; see the table");
+                ExitCode::from(1)
+            }
+            Err(error) => {
+                eprintln!("mutants: NOT RUN: {error}");
+                ExitCode::from(2)
+            }
+        };
+    }
+    use xtask::checks::Status;
+    match xtask::checks::run(
+        root,
+        &root.join("xtask/checks.json"),
+        &profile,
+        only.as_deref(),
+        &receipts,
+    ) {
+        Ok(Status::Passed) => {
+            println!("checks: PASSED; receipts in {}", receipts.display());
+            ExitCode::SUCCESS
+        }
+        Ok(Status::Failed) => {
+            println!("checks: FAILED; receipts in {}", receipts.display());
+            ExitCode::from(1)
+        }
+        Ok(Status::EnvironmentUnavailable) => {
+            println!(
+                "checks: INCOMPLETE (environment unavailable); receipts in {}",
+                receipts.display()
+            );
+            ExitCode::from(3)
+        }
+        Err(error) => {
+            eprintln!("checks: NOT RUN: {error}");
             ExitCode::from(2)
         }
     }
