@@ -55,25 +55,25 @@
       ],
       "expected": "exit 0",
       "contracts": [
+        "ARCH-1",
+        "ARCH-2",
+        "CTRL-1",
+        "CTRL-2",
+        "CTRL-3",
         "DEL-1",
         "DEL-2",
         "DEL-3",
         "DEL-4",
         "DEL-5",
-        "SPOOL-1",
-        "SPOOL-2",
-        "SPOOL-3",
-        "CTRL-1",
-        "CTRL-2",
-        "CTRL-3",
         "HIST-1",
         "HIST-2",
         "HIST-3",
         "HIST-4",
         "HIST-5",
         "HIST-6",
-        "ARCH-1",
-        "ARCH-2"
+        "SPOOL-1",
+        "SPOOL-2",
+        "SPOOL-3"
       ],
       "unchecked": "Excluded research packages; physical power loss; multi-host networks; qualification workloads.",
       "specification": [
@@ -356,6 +356,32 @@
       "unchecked": "Development tooling only; no product claim."
     },
     {
+      "id": "counterexamples",
+      "profile": "fast",
+      "command": [
+        "cargo",
+        "xtask",
+        "check-counterexamples"
+      ],
+      "scope": "Every registered counterexample names a reproducer test that exists and a fix commit that exists",
+      "requires": [
+        "cargo",
+        "git"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "SPOOL-1",
+        "SPOOL-2",
+        "SPOOL-3",
+        "DEL-4"
+      ],
+      "unchecked": "Whether the reproducer still reproduces the original defect against the old code.",
+      "specification": [
+        "docs/formal/counterexamples.json"
+      ],
+      "negative_controls": "xtask/tests/evidence.rs"
+    },
+    {
       "id": "semantic-mutants",
       "profile": "extended",
       "command": [
@@ -393,13 +419,14 @@
       "command": [
         "sh",
         "-c",
-        "cargo build --release --locked --workspace --bins --examples && for s in clean server-kill node-kill outage; do for seed in 1 2; do python3 -B tools/qualification/delivery_faults.py --scenario $s --seed $seed --seconds 20 || exit 1; done; done && ! python3 -B tools/qualification/delivery_faults.py --scenario clean --seed 3 --seconds 8 --mutate drop-recovered"
+        "cargo build --release --locked --workspace --bins --examples && for s in clean server-kill node-kill outage; do for seed in 1 2; do python3 -B tools/qualification/delivery_faults.py --scenario $s --seed $seed --seconds 20 --keep || exit 1; TLA_JAR=\"$PWD/target/tools/tla2tools.jar\" python3 -B formal/delivery/trace_check.py target/alpha-delivery-$s-$seed/transcript.jsonl || exit 1; rm -rf target/alpha-delivery-$s-$seed; done; done && ! python3 -B tools/qualification/delivery_faults.py --scenario clean --seed 3 --seconds 8 --mutate drop-recovered"
       ],
-      "scope": "Real server and Spindle processes under SIGKILL and outage, graded by the delivery oracle, plus the drop-recovered negative control",
+      "scope": "Real server and Spindle processes under SIGKILL and outage, graded by the delivery oracle, and each transcript validated by TLC against the DeliveryOwnership model; plus the drop-recovered negative control",
       "requires": [
         "cargo",
         "python3",
-        "openssl"
+        "openssl",
+        "java"
       ],
       "expected": "exit 0",
       "contracts": [
@@ -412,7 +439,10 @@
         "tools/qualification/delivery_oracle.py"
       ],
       "negative_controls": "--mutate drop-recovered must fail",
-      "bounds": "three Spindles, 20 s per scenario, seeds 1 and 2"
+      "bounds": "three Spindles, 20 s per scenario, seeds 1 and 2",
+      "requires_paths": [
+        "target/tools/tla2tools.jar"
+      ]
     },
     {
       "id": "tla-delivery",
@@ -540,6 +570,60 @@
       "specification": [
         "docs/PRODUCT-CONTRACT.md"
       ]
+    },
+    {
+      "id": "trace-model",
+      "profile": "extended",
+      "command": [
+        "sh",
+        "-c",
+        "TLA_JAR=\"$PWD/target/tools/tla2tools.jar\" python3 -B formal/delivery/test_trace_check.py"
+      ],
+      "scope": "Trace validation of a real fault-run transcript against the DeliveryOwnership model, with early-forget, lost-ACKed-record and resend-after-forget controls that must be rejected",
+      "requires": [
+        "python3",
+        "java"
+      ],
+      "requires_paths": [
+        "target/tools/tla2tools.jar"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "DEL-1",
+        "SPOOL-1"
+      ],
+      "unchecked": "Sequences, bytes and credentials (the model has none); node process crashes (the model assumes the upstream copy survives).",
+      "specification": [
+        "formal/delivery/DeliveryOwnership.tla"
+      ],
+      "negative_controls": "formal/delivery/test_trace_check.py"
+    },
+    {
+      "id": "cargo-mutants",
+      "profile": "extended",
+      "command": [
+        "cargo",
+        "xtask",
+        "cargo-mutants"
+      ],
+      "scope": "cargo-mutants on fabric-core and fabric-app with both packages' tests; every survivor must be listed as equivalent with a reason",
+      "requires": [
+        "cargo",
+        "cargo-mutants"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "DEL-1",
+        "DEL-2",
+        "DEL-3",
+        "DEL-4",
+        "DEL-5"
+      ],
+      "unchecked": "Adapters and composition roots are not mutated.",
+      "specification": [
+        "xtask/cargo-mutants-equivalent.json"
+      ],
+      "negative_controls": "an empty equivalence list must fail (recorded in the milestone record)"
     }
   ]
 }

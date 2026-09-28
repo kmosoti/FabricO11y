@@ -1,0 +1,45 @@
+{
+  "bounds": null,
+  "candidate_commit": "6521e0644fd5f0a99fc138ad2b6f1832bbdc1b9c",
+  "check_id": "semantic-mutants",
+  "command": [
+    "cargo",
+    "xtask",
+    "mutants"
+  ],
+  "duration_ms": 158888,
+  "exit_code": 0,
+  "expected": "exit 0",
+  "fixtures": null,
+  "negative_controls": "xtask/mutants.json",
+  "oracle_revision": "none",
+  "output_sha256": "f251172cab5a9507d67e9a4c0aa1df820a9dffd73c5434c10e3bd3707e957698",
+  "profile": "extended",
+  "property_ids": [
+    "DEL-1",
+    "DEL-2",
+    "DEL-3",
+    "DEL-4",
+    "DEL-5",
+    "SPOOL-1",
+    "SPOOL-3",
+    "CTRL-1",
+    "CTRL-3",
+    "HIST-3",
+    "HIST-4",
+    "HIST-5"
+  ],
+  "receipt_version": 1,
+  "result": "passed",
+  "scope": "Every registered semantic mutant must be caught by its named checker",
+  "specification_revision": "none",
+  "toolchain": {
+    "bun": "1.3.11",
+    "cargo": "cargo 1.94.1 (29ea6fb6a 2026-03-24)",
+    "python3": "Python 3.11.15",
+    "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "Mutants not in the registry; see cargo-mutants calibration.",
+  "worktree_dirty": true
+}

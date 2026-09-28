@@ -1,0 +1,35 @@
+{
+  "bounds": null,
+  "candidate_commit": "6521e0644fd5f0a99fc138ad2b6f1832bbdc1b9c",
+  "check_id": "trace-model",
+  "command": [
+    "sh",
+    "-c",
+    "TLA_JAR=\"$PWD/target/tools/tla2tools.jar\" python3 -B formal/delivery/test_trace_check.py"
+  ],
+  "duration_ms": 6337,
+  "exit_code": 0,
+  "expected": "exit 0",
+  "fixtures": null,
+  "negative_controls": "formal/delivery/test_trace_check.py",
+  "oracle_revision": "none",
+  "output_sha256": "4cb159b73ac4a29faf2cf984c4312e03c01b36127014d0219bd23dfa5ac353ee",
+  "profile": "extended",
+  "property_ids": [
+    "DEL-1",
+    "SPOOL-1"
+  ],
+  "receipt_version": 1,
+  "result": "passed",
+  "scope": "Trace validation of a real fault-run transcript against the DeliveryOwnership model, with early-forget, lost-ACKed-record and resend-after-forget controls that must be rejected",
+  "specification_revision": "132a5360dd4834162ad8d6986ec53fab12043558",
+  "toolchain": {
+    "bun": "1.3.11",
+    "cargo": "cargo 1.94.1 (29ea6fb6a 2026-03-24)",
+    "python3": "Python 3.11.15",
+    "rustc": "rustc 1.94.1 (e408947bf 2026-03-25)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "Sequences, bytes and credentials (the model has none); node process crashes (the model assumes the upstream copy survives).",
+  "worktree_dirty": true
+}

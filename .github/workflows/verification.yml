@@ -1,0 +1,57 @@
+name: Extended verification
+
+# The extended profile of xtask/checks.json: semantic mutants, cargo-mutants
+# on core and app, TLA+ models, delivery fault runs with TLC trace
+# validation. Too slow for every pull request, so it runs weekly, on demand,
+# and on pull requests that touch the code or policy it verifies.
+on:
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "xtask/**"
+      - "crates/**"
+      - "src/spindle/**"
+      - "formal/**"
+      - "tools/qualification/**"
+      - "docs/formal/counterexamples.json"
+      - ".github/workflows/verification.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  extended:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # Full history: the counterexample registry names fix commits.
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.0
+          components: rustfmt, clippy
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Fetch the pinned TLA+ tools
+        run: |
+          mkdir -p target/tools
+          curl -fsSL -o target/tools/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.1/tla2tools.jar
+          echo "d532ba31aafe17afba1130f92410d9257454ff7393d1eb2fe032f0c07f352da5  target/tools/tla2tools.jar" | sha256sum --check
+      - name: Install cargo-mutants
+        run: cargo install cargo-mutants --version 27.1.0 --locked
+      # Exit 3 (INCOMPLETE: an environment was unavailable) fails the job too.
+      - name: Run the extended check registry
+        run: cargo xtask checks --profile extended
+      - name: Keep the verification receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: extended-verification-receipts
+          path: target/verification/receipts/
+          if-no-files-found: warn

@@ -225,6 +225,25 @@
         "history"
       ],
       "expect_failing": "sealed_history_answers_exactly_and_pages_are_stable"
+    },
+    {
+      "id": "M-HIST-SEGMENT",
+      "contract": "HIST-1 journal and Segment representations answer identically",
+      "incorrect_behavior": "drop log attributes when rows are read back from a Segment",
+      "file": "crates/fabric-server/src/segment.rs",
+      "find": "attributes: attrs_of(a.value(row))?,",
+      "replace": "attributes: Default::default(),",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-server",
+        "--test",
+        "history"
+      ],
+      "expect_failing": "journal_and_segment_representations_answer_identically"
     }
   ]
 }
