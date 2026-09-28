@@ -1,6 +1,6 @@
 # Planned Linux alpha deployment
 
-Status: accepted phase-5 contract; no service unit or installer is implemented yet. The [alpha contract](../ALPHA.md#linux-installation-contract-phase-5-not-yet-implemented) owns the exact installed defaults and acceptance gates. The [current system](system.md) remains one local demo executable.
+Status: accepted phase-5 contract. The units, slice, sysusers file and a reproducible Debian package now exist in [packaging/](../../packaging/) and pass [static checks](../experiments/formal/alpha-phase5-packaging-static.md); the running-install acceptance is unrun. The [alpha contract](../ALPHA.md#linux-installation-contract-phase-5-not-yet-implemented) owns the exact installed defaults and acceptance gates. The [current system](system.md) remains one local demo executable.
 
 The package will run one native node and one central server as distinct systemd services. Both use the static `fabricolly` user and primary group. `fabricctl` is an operator CLI, not a daemon. The two services belong to `system-fabrico11y.slice`, a child of `system.slice`, so systemd can enforce their aggregate memory/task bound while each service retains its own limits. There are no other alpha services or delegated cgroup managers. [systemd resource control](https://manpages.debian.org/trixie/systemd/systemd.resource-control.5.en.html) defines the slice hierarchy and effective limits.
 
