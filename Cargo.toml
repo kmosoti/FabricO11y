@@ -5,7 +5,14 @@ edition = "2024"
 default-run = "fabric_o11y"
 
 [workspace]
-members = ["crates/fabric-core", "crates/fabric-frame", "crates/fabric-server", "xtask"]
+members = [
+    "crates/fabric-app",
+    "crates/fabric-core",
+    "crates/fabric-frame",
+    "crates/fabric-ports",
+    "crates/fabric-server",
+    "xtask",
+]
 # Research packages keep their own manifests, lockfiles and commands.
 exclude = ["tools", "target", "xtask/fixtures"]
 

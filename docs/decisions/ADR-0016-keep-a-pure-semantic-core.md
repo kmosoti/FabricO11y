@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 2026-09-28 under the owner's architecture-foundation authorization. The `no_std` experiment is recorded with the first semantic extraction.
+Accepted on 2026-09-28 under the owner's architecture-foundation authorization. The `no_std` choice is the recorded result of the [no_std experiment](../experiments/formal/core-no-std.md).
 
 ## Context
 
@@ -29,7 +29,7 @@ Purity does not decide ownership: a CRC, a protobuf codec or a Parquet schema co
 
 ## Evidence
 
-Fixture tests in [`xtask/tests/gates.rs`](../../xtask/tests/gates.rs): core depending on `rand`, `tokio`, a renamed `ureq`, an unreviewed crate, a build script, a feature, a missing `#![no_std]`, `extern crate std`, a static atomic, or a wrapper crate that links `tokio` each fail with a named category; an allowlisted pure dependency passes.
+Fixture tests in [`xtask/tests/gates.rs`](../../xtask/tests/gates.rs): core depending on `rand`, `tokio`, a renamed `ureq`, an unreviewed crate, a build script, a feature, a missing `#![no_std]`, `extern crate std`, a static atomic, or a wrapper crate that links `tokio` each fail with a named category; an allowlisted pure dependency passes. The [no_std experiment](../experiments/formal/core-no-std.md) records what became unavailable and a compiler-level negative control.
 
 ## Consequences
 

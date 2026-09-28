@@ -1,5 +1,7 @@
 //! Durable batch intake: one commit thread, grouped two-sync commits, and the
-//! per-stream deduplication rule of ADR-0013.
+//! journal adapter for the delivery use case. The deduplication rule of
+//! ADR-0013 is decided by `fabric_core::delivery` and orchestrated by
+//! `fabric_app::delivery::commit_group`; this module performs the effects.
 //!
 //! Ownership: an HTTP handler hands a `Submission` (the exact batch bytes and a
 //! reply channel) to the commit thread and waits. The commit thread alone owns
@@ -8,13 +10,19 @@
 //! marker sync. A failed append quarantines the log; every later submission is
 //! answered `Unavailable` and restart refuses until the state is rebuilt.
 
+pub use fabric_app::delivery::Answer;
+use fabric_app::delivery::{Offer, commit_group};
+use fabric_core::delivery::{BatchDigest, BindingState, CommittedStrand, IncomingBatch};
+use fabric_core::strand::{SpindleId, StrandId, next_sequence};
 use fabric_frame::envelope::Batch;
 use fabric_frame::frame::FrameLog;
+use fabric_ports::{Clock, CommitFailed, DurableJournal};
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io;
+use std::num::NonZeroU64;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -59,24 +67,10 @@ struct StreamState {
     hash: [u8; 32],
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Answer {
-    /// Durable through this sequence.
-    Ack(u64),
-    /// Same sequence as the last committed batch with different bytes.
-    Conflict(u64),
-    /// Sequence beyond the next expected one.
-    Gap(u64),
-    /// The credential is bound to another node, or the node to another credential.
-    Forbidden,
-    /// Not committed: queue full, log full or quarantined. Retry later.
-    Unavailable,
-}
-
 pub struct Submission {
     pub label: String,
-    pub stream: StreamKey,
-    pub sequence: u64,
+    pub strand: StrandId,
+    pub sequence: NonZeroU64,
     pub bytes: Vec<u8>,
     pub reply: oneshot::Sender<Answer>,
 }
@@ -88,6 +82,20 @@ pub fn identify(bytes: &[u8]) -> io::Result<(StreamKey, u64)> {
     batch.validate()?;
     let node_id: [u8; 16] = batch.node_id.as_slice().try_into().unwrap();
     Ok(((node_id, batch.generation), batch.sequence))
+}
+
+/// `identify` as the core's validated types.
+pub fn identify_strand(bytes: &[u8]) -> io::Result<(StrandId, NonZeroU64)> {
+    let ((node, generation), sequence) = identify(bytes)?;
+    let invalid = || io::Error::new(io::ErrorKind::InvalidData, "invalid Strand identity");
+    Ok((
+        StrandId::new(SpindleId::new(node), generation).ok_or_else(invalid)?,
+        NonZeroU64::new(sequence).ok_or_else(invalid)?,
+    ))
+}
+
+fn stream_key(strand: &StrandId) -> StreamKey {
+    (*strand.spindle().as_bytes(), strand.generation())
 }
 
 fn digest(bytes: &[u8]) -> [u8; 32] {
@@ -216,7 +224,7 @@ impl State {
         for entry in &group.entries {
             let (stream, sequence) = identify(&entry.batch)?;
             let last = self.streams.get(&stream).map_or(0, |s| s.last);
-            if sequence != last + 1 {
+            if next_sequence(last) != Some(sequence) {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "server journal stream sequence mismatch",
@@ -234,12 +242,6 @@ impl State {
         }
         self.next_group += 1;
         Ok(())
-    }
-
-    /// Bind a credential label to one node identity, in both directions.
-    fn bound(&self, label: &str, node: &[u8; 16]) -> bool {
-        self.label_node.get(label).is_none_or(|n| n == node)
-            && self.node_label.get(node).is_none_or(|l| l == label)
     }
 }
 
@@ -496,96 +498,113 @@ impl Store {
         }
     }
 
-    /// Decide every submission against committed state plus earlier entries
-    /// of this group, append the new entries as one frame, then reply.
+    /// Decide and commit one group through the delivery use case, then reply.
     pub fn commit(&mut self, group: Vec<Submission>) {
-        let mut overlay: HashMap<StreamKey, StreamState> = HashMap::new();
-        let mut bindings: Vec<(String, [u8; 16])> = Vec::new();
-        let mut entries = Vec::new();
-        let mut answers = Vec::with_capacity(group.len());
-        let received = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos() as u64);
-        for submission in &group {
-            let node = submission.stream.0;
-            let staged_bound = bindings
-                .iter()
-                .all(|(l, n)| (l == &submission.label) == (n == &node));
-            if !self.state.bound(&submission.label, &node) || !staged_bound {
-                answers.push(Answer::Forbidden);
-                continue;
-            }
-            let current = overlay
-                .get(&submission.stream)
-                .or_else(|| self.state.streams.get(&submission.stream))
-                .copied();
-            let last = current.map_or(0, |s| s.last);
-            let s = submission.sequence;
-            let answer = if s == last + 1 {
-                let hash = digest(&submission.bytes);
-                overlay.insert(submission.stream, StreamState { last: s, hash });
-                bindings.push((submission.label.clone(), node));
-                entries.push(Entry {
-                    label: submission.label.clone(),
-                    batch: submission.bytes.clone(),
-                    received_unix_nano: received,
-                });
-                Answer::Ack(s)
-            } else if s == last && current.is_some_and(|c| c.hash == digest(&submission.bytes)) {
-                Answer::Ack(last)
-            } else if s == last {
-                Answer::Conflict(last)
-            } else if s < last {
-                Answer::Ack(last)
-            } else {
-                Answer::Gap(last)
-            };
-            answers.push(answer);
-        }
-        if !entries.is_empty() {
-            let group_record = Group {
-                group_sequence: self.state.next_group,
-                entries,
-            };
-            let payload = group_record.encode_to_vec();
-            let rotated = if self.log.active_bytes() >= self.rotate_bytes {
-                self.log.rotate(self.active_first_group)
-            } else {
-                Ok(())
-            };
-            let committed = rotated.and_then(|()| self.log.append(&payload));
-            match committed {
-                Ok(pos) => {
-                    if pos.offset == 0 {
-                        self.active_first_group = group_record.group_sequence;
-                    }
-                    // Replay-equivalent update: the frame is durable now.
-                    self.state
-                        .absorb(&group_record)
-                        .expect("group built from validated submissions");
-                }
-                Err(error) => {
-                    eprintln!("fabric-server: journal append failed: {error}");
-                    // Nothing in this group is durable; an ACK for an earlier
-                    // committed batch would still be true, but keep it simple
-                    // and let the node retry.
-                    for answer in &mut answers {
-                        if !matches!(answer, Answer::Forbidden) {
-                            *answer = Answer::Unavailable;
-                        }
-                    }
-                }
-            }
-        } else if self.log.is_poisoned() {
-            for answer in &mut answers {
-                if !matches!(answer, Answer::Forbidden) {
-                    *answer = Answer::Unavailable;
-                }
-            }
-        }
+        let offers: Vec<Offer<'_>> = group
+            .iter()
+            .map(|submission| Offer {
+                credential: &submission.label,
+                batch: IncomingBatch {
+                    strand: submission.strand,
+                    sequence: submission.sequence,
+                    digest: BatchDigest(digest(&submission.bytes)),
+                },
+            })
+            .collect();
+        let answers = commit_group(
+            &mut GroupJournal {
+                store: self,
+                group: &group,
+            },
+            &SystemClock,
+            &offers,
+        );
+        drop(offers);
         for (submission, answer) in group.into_iter().zip(answers) {
             let _ = submission.reply.send(answer);
         }
+    }
+
+    /// Append `entries` as the next group frame and absorb it once durable.
+    fn append_group(&mut self, entries: Vec<Entry>) -> io::Result<()> {
+        let group_record = Group {
+            group_sequence: self.state.next_group,
+            entries,
+        };
+        let payload = group_record.encode_to_vec();
+        if self.log.active_bytes() >= self.rotate_bytes {
+            self.log.rotate(self.active_first_group)?;
+        }
+        let pos = self.log.append(&payload)?;
+        if pos.offset == 0 {
+            self.active_first_group = group_record.group_sequence;
+        }
+        // Replay-equivalent update: the frame is durable now.
+        self.state
+            .absorb(&group_record)
+            .expect("group built from validated submissions");
+        Ok(())
+    }
+}
+
+/// Wall clock for the receipt time recorded with each committed group.
+struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now_unix_nano(&self) -> u64 {
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |d| d.as_nanos() as u64)
+    }
+}
+
+/// The server journal as the delivery use case's `DurableJournal` port, for
+/// one group of submissions.
+struct GroupJournal<'a> {
+    store: &'a mut Store,
+    group: &'a [Submission],
+}
+
+impl DurableJournal for GroupJournal<'_> {
+    fn committed(&self, strand: &StrandId) -> Option<CommittedStrand> {
+        self.store
+            .state
+            .streams
+            .get(&stream_key(strand))
+            .map(|s| CommittedStrand {
+                last: s.last,
+                digest: BatchDigest(s.hash),
+            })
+    }
+
+    fn binding(&self, credential: &str, spindle: &SpindleId) -> BindingState {
+        let state = &self.store.state;
+        BindingState {
+            credential_spindle: state.label_node.get(credential).map(|n| SpindleId::new(*n)),
+            spindle_bound_elsewhere: state
+                .node_label
+                .get(spindle.as_bytes())
+                .is_some_and(|label| label != credential),
+        }
+    }
+
+    fn is_quarantined(&self) -> bool {
+        self.store.log.is_poisoned()
+    }
+
+    fn commit(&mut self, accepted: &[usize], received_unix_nano: u64) -> Result<(), CommitFailed> {
+        let entries = accepted
+            .iter()
+            .map(|&i| Entry {
+                label: self.group[i].label.clone(),
+                batch: self.group[i].bytes.clone(),
+                received_unix_nano,
+            })
+            .collect();
+        self.store.append_group(entries).map_err(|error| {
+            eprintln!("fabric-server: journal append failed: {error}");
+            CommitFailed
+        })
     }
 }
 

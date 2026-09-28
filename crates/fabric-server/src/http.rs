@@ -6,7 +6,7 @@
 
 use crate::control::{Control, DesiredConfig, Status};
 use crate::query::{History, Query, QueryError};
-use crate::store::{Answer, Intake, MAX_BATCH_BYTES, Submission, identify};
+use crate::store::{Answer, Intake, MAX_BATCH_BYTES, Submission, identify_strand};
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path, State};
@@ -83,13 +83,13 @@ async fn batches(State(state): State<AppState>, headers: HeaderMap, body: Bytes)
     if body.len() > MAX_BATCH_BYTES {
         return reply(StatusCode::PAYLOAD_TOO_LARGE, "too_large", None);
     }
-    let Ok((stream, sequence)) = identify(&body) else {
+    let Ok((strand, sequence)) = identify_strand(&body) else {
         return reply(StatusCode::BAD_REQUEST, "bad_request", None);
     };
     let (tx, rx) = oneshot::channel();
     state.intake.submit(Submission {
         label,
-        stream,
+        strand,
         sequence,
         bytes: body.to_vec(),
         reply: tx,

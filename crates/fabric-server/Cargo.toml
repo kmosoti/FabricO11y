@@ -5,7 +5,10 @@ edition = "2024"
 description = "Fabric O11y central server: authenticated batch intake with durable ACK"
 
 [dependencies]
+fabric-app = { path = "../fabric-app" }
+fabric-core = { path = "../fabric-core" }
 fabric-frame = { path = "../fabric-frame" }
+fabric-ports = { path = "../fabric-ports" }
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "tokio", "json"] }
 axum-server = { version = "=0.7.3", features = ["tls-rustls-no-provider"] }
 arrow-array = "=60.0.0"

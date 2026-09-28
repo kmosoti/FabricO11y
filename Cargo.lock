@@ -398,6 +398,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-app"
+version = "0.1.0"
+dependencies = [
+ "fabric-core",
+ "fabric-ports",
+]
+
+[[package]]
 name = "fabric-core"
 version = "0.1.0"
 
@@ -411,6 +419,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "fabric-ports"
+version = "0.1.0"
+dependencies = [
+ "fabric-core",
+]
+
+[[package]]
 name = "fabric-server"
 version = "0.1.0"
 dependencies = [
@@ -418,7 +433,10 @@ dependencies = [
  "arrow-schema",
  "axum",
  "axum-server",
+ "fabric-app",
+ "fabric-core",
  "fabric-frame",
+ "fabric-ports",
  "fabric_o11y",
  "opentelemetry-proto",
  "parquet",
