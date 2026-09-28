@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "description": "Counterexamples kept as deterministic regression fixtures. `cargo xtask check-counterexamples` requires each reproducer test to exist in its file and each fix commit to exist. Removing an entry is a trust-boundary change.",
+  "counterexamples": [
+    {
+      "id": "CX-SPOOL-LENGTH",
+      "origin": "review of the Spool journal (see docs/experiments/formal/alpha-journal-length-repair.md)",
+      "defect": "A corrupted frame length made reopen truncate two committed Batches",
+      "seed_or_trace": "frozen byte-level corruption in the record",
+      "contract": "SPOOL-3",
+      "reproducer": {
+        "file": "tests/spool.rs",
+        "test": "changed_length_cannot_erase_two_committed_batches_on_reopen"
+      },
+      "fix_commit": "af5b7bc"
+    },
+    {
+      "id": "CX-GAP-UNICODE",
+      "origin": "review checkpoint (docs/experiments/formal/alpha-phase1-review-checkpoint.md)",
+      "defect": "A multibyte path in a gap text exceeded the byte cap",
+      "seed_or_trace": "checkpoint-review.json counterexample",
+      "contract": "SPOOL-1",
+      "reproducer": {
+        "file": "tests/spindle.rs",
+        "test": "multibyte_missing_log_path_commits_a_byte_bounded_gap"
+      },
+      "fix_commit": "fcdc12f"
+    },
+    {
+      "id": "CX-INTERRUPTED-APPEND",
+      "origin": "design decision D1 (ADR-0011)",
+      "defect": "A process killed mid-append made the Spool unopenable",
+      "seed_or_trace": "death injected at each sync stage",
+      "contract": "SPOOL-3",
+      "reproducer": {
+        "file": "src/spindle/spool.rs",
+        "test": "process_death_at_each_append_stage_reopens_to_a_verified_prefix"
+      },
+      "fix_commit": "902ee61"
+    },
+    {
+      "id": "CX-LOG-OVERSIZE",
+      "origin": "independent log-reader review (docs/experiments/formal/alpha-log-reader-repair.md)",
+      "defect": "An oversized line produced a false suffix after a cursor restart",
+      "seed_or_trace": "line longer than the bounded scan",
+      "contract": "SPOOL-1",
+      "reproducer": {
+        "file": "tests/log_source.rs",
+        "test": "oversized_line_progress_survives_cursor_restart_without_false_suffix"
+      },
+      "fix_commit": "af5b7bc"
+    },
+    {
+      "id": "CX-LOG-FIFO",
+      "origin": "independent log-reader review (docs/experiments/formal/alpha-log-reader-repair.md)",
+      "defect": "An unwritten FIFO stalled collection",
+      "seed_or_trace": "FIFO without a writer",
+      "contract": "SPOOL-1",
+      "reproducer": {
+        "file": "tests/log_source.rs",
+        "test": "fifo_without_writer_fails_promptly"
+      },
+      "fix_commit": "af5b7bc"
+    },
+    {
+      "id": "CX-LOG-INODE-REUSE",
+      "origin": "independent log-reader review (docs/experiments/formal/alpha-log-reader-repair.md)",
+      "defect": "A recreated file reusing an inode was read as a continuation",
+      "seed_or_trace": "same inode, different consumed prefix",
+      "contract": "SPOOL-1",
+      "reproducer": {
+        "file": "tests/log_source.rs",
+        "test": "recreated_file_with_reused_identity_is_detected_by_consumed_prefix"
+      },
+      "fix_commit": "af5b7bc"
+    },
+    {
+      "id": "CX-MARKER-EMPTY",
+      "origin": "close-out fault-injection review (docs/experiments/formal/alpha-phase1-closeout-review.md)",
+      "defect": "A torn or empty coverage-unknown marker halted collection",
+      "seed_or_trace": "empty marker file",
+      "contract": "SPOOL-1",
+      "reproducer": {
+        "file": "tests/spindle.rs",
+        "test": "empty_coverage_marker_is_reported_as_unknown_time_and_collection_continues"
+      },
+      "fix_commit": "b140bd2"
+    },
+    {
+      "id": "CX-MARKER-UNREMOVABLE",
+      "origin": "close-out fault-injection review (docs/experiments/formal/alpha-phase1-closeout-review.md)",
+      "defect": "An unremovable marker caused lines to be collected twice",
+      "seed_or_trace": "marker whose removal fails",
+      "contract": "SPOOL-1",
+      "reproducer": {
+        "file": "tests/spindle.rs",
+        "test": "unremovable_marker_is_reported_once_and_committed_lines_are_not_collected_twice"
+      },
+      "fix_commit": "b140bd2"
+    },
+    {
+      "id": "CX-MARKER-STAGED",
+      "origin": "close-out fault-injection review (docs/experiments/formal/alpha-phase1-closeout-review.md)",
+      "defect": "A staged marker left by a failed write was ignored",
+      "seed_or_trace": "leftover coverage-unknown.tmp",
+      "contract": "SPOOL-1",
+      "reproducer": {
+        "file": "tests/spindle.rs",
+        "test": "staged_marker_left_by_a_failed_write_still_reports_unknown_coverage"
+      },
+      "fix_commit": "71fef99"
+    },
+    {
+      "id": "CX-STRAND-OVERFLOW",
+      "origin": "delivery-kernel extraction (docs/milestones/architecture-foundation.md)",
+      "defect": "last + 1 overflowed for a Strand at u64::MAX (debug panic, release wrap)",
+      "seed_or_trace": "committed last = u64::MAX",
+      "contract": "DEL-4",
+      "reproducer": {
+        "file": "crates/fabric-core/src/delivery.rs",
+        "test": "an_exhausted_strand_accepts_no_successor"
+      },
+      "fix_commit": "c355a2c"
+    },
+    {
+      "id": "CX-SPOOL-RECLAIM-BOUNDARY",
+      "origin": "semantic mutant M-SPOOL-RECLAIM survived (semantic-mutants-run-02.txt)",
+      "defect": "No test put a Spool file boundary at through + 1, so deleting an unacknowledged file went unnoticed",
+      "seed_or_trace": "one Batch per sealed file, ACK through 3",
+      "contract": "SPOOL-2",
+      "reproducer": {
+        "file": "src/spindle/spool.rs",
+        "test": "reclaim_keeps_the_file_holding_the_first_unacknowledged_batch"
+      },
+      "fix_commit": "a9cd37d"
+    }
+  ]
+}

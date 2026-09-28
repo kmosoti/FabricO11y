@@ -11,7 +11,9 @@ const USAGE: &str = "usage:
   cargo xtask check-layers      [--manifest-path PATH] [--policy PATH] [--declared-only] [--offline]
   cargo xtask check-core-purity [--manifest-path PATH] [--policy PATH] [--declared-only] [--offline]
   cargo xtask checks            [--profile fast|qualification] [--only ID] [--receipts DIR]
-  cargo xtask mutants           [--only ID]";
+  cargo xtask mutants           [--only ID]
+  cargo xtask check-counterexamples
+  cargo xtask cargo-mutants";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -23,6 +25,33 @@ fn main() -> ExitCode {
         .parent()
         .map(PathBuf::from)
         .unwrap_or_default();
+    if command == "check-counterexamples" || command == "cargo-mutants" {
+        let result = if command == "cargo-mutants" {
+            xtask::evidence::cargo_mutants(&root, &root.join("xtask/cargo-mutants-equivalent.json"))
+        } else {
+            xtask::evidence::check_counterexamples(
+                &root,
+                &root.join("docs/formal/counterexamples.json"),
+            )
+        };
+        return match result {
+            Ok(violations) if violations.is_empty() => {
+                println!("{command}: passed");
+                ExitCode::SUCCESS
+            }
+            Ok(violations) => {
+                for violation in &violations {
+                    println!("{violation}");
+                }
+                println!("{command}: FAILED with {} violation(s)", violations.len());
+                ExitCode::from(1)
+            }
+            Err(error) => {
+                eprintln!("{command}: NOT RUN: {error}");
+                ExitCode::from(2)
+            }
+        };
+    }
     if command == "checks" || command == "mutants" {
         return registry(&command, &root, args.collect());
     }
