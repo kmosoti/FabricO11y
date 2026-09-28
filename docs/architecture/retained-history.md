@@ -1,6 +1,6 @@
 # Retained history and query (phase 4 contract)
 
-Status: proposed contract for phase 4, written before implementation so an independent exact-scan oracle can be built from it. Nothing here is implemented yet. The [alpha contract](../ALPHA.md#safety-contract) owns the gates.
+Status: contract for phase 4, written before implementation; an independent [exact-scan oracle](../../tools/alpha/QUERY_ORACLE.md) was built from it first. The [server](../../crates/fabric-server/src/query.rs) implements it and its integration tests are graded by that oracle; qualification at the fleet tiers is recorded in the [phase ledger](../ALPHA.md#phase-ledger). The [alpha contract](../ALPHA.md#safety-contract) owns the gates.
 
 ## Data model
 
@@ -38,6 +38,14 @@ Every answer carries, besides its rows:
 - `gaps`: the collection gaps of the queried nodes whose batch receive time lies in the query range, with node and sequence.
 - `snapshot`: an opaque token naming the segment set and journal end the answer was computed from.
 - `next_page`: for paginated queries, an opaque token or `null`. A page token binds the snapshot: later pages read the same segments and journal end, even if new data arrived or retention deleted segments, and answer `410 Gone` if a bound segment is no longer available.
+
+## Decisions adopted from the oracle
+
+Where this contract was silent, the implementation follows the oracle's documented narrowest readings: a non-string log body is the empty string; only string attributes are kept; a data point with no value reads as integer 0; histograms and summaries produce no rows; `node` filters on the label; two rate points with equal times count as a reset; rates pair only points inside the range; an empty retained set reports a window of `0` to `0`; `freshness` and the retained window cover all retained records, while `gaps` covers only the queried nodes. Gap entries carry `node`, `sequence`, `receive_ns` and `gap`; rate rows carry `node`, `name`, `attributes`, `time_ns`, `reset` and `rate`, which is `null` exactly when `reset` is true. `monotonic` appears only on sum rows.
+
+## Implementation notes
+
+Each sealed server journal file (64 MiB by default, `journal_file_bytes`) becomes one segment, built by a background sealer off the commit path. The commit thread then writes the stream checkpoint `streams.json` and deletes the journal file; on startup a journal file whose segment already exists is reclaimed before serving, and incomplete builds are removed. Queries read segments with Parquet row-group statistics on the time column and the journal tail by decoding frames, keep the `limit + 1` smallest rows in a bounded heap, and bind pages to the group range `[oldest retained, newest committed]`. A segment whose file size, schema or row count differs from its manifest, or that fails to decode, is reported in `unavailable`; whole-file SHA-256 checks are available through `segment::verify` rather than on every query. `fabricctl admin <ADMIN_CONFIG> query '<JSON>'` sends a query.
 
 ## Invariants
 

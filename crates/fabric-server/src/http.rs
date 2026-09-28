@@ -5,6 +5,7 @@
 //! Admin routes use the admin token and live under `/v1/admin/`.
 
 use crate::control::{Control, DesiredConfig, Status};
+use crate::query::{History, Query, QueryError};
 use crate::store::{Answer, Intake, MAX_BATCH_BYTES, Submission, identify};
 use axum::Router;
 use axum::body::Bytes;
@@ -23,6 +24,7 @@ pub struct AppState {
     pub intake: Intake,
     pub control: Arc<Mutex<Control>>,
     pub admin_token_sha256: [u8; 32],
+    pub history: Arc<History>,
 }
 
 pub fn router(state: AppState) -> Router {
@@ -33,6 +35,7 @@ pub fn router(state: AppState) -> Router {
         .route("/v1/admin/nodes", get(list_nodes).post(enroll))
         .route("/v1/admin/nodes/{name}/config", put(set_config))
         .route("/v1/admin/nodes/{name}/{action}", post(set_status))
+        .route("/v1/admin/query", post(run_query))
         .layer(DefaultBodyLimit::max(MAX_BATCH_BYTES + 1))
         .with_state(state)
 }
@@ -220,6 +223,27 @@ async fn set_status(
         _ => return error(StatusCode::NOT_FOUND, "unknown action"),
     };
     changed(state.control.lock().unwrap().set_status(&name, status))
+}
+
+/// Read-only query over retained history. Runs on a blocking thread so a
+/// long scan never stalls request handling.
+async fn run_query(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
+    if !is_admin(&state, &headers) {
+        return error(StatusCode::UNAUTHORIZED, "admin token required");
+    }
+    let query: Query = match serde_json::from_slice(&body) {
+        Ok(query) => query,
+        Err(e) => return error(StatusCode::BAD_REQUEST, e),
+    };
+    let committed = state.intake.committed_group();
+    let history = Arc::clone(&state.history);
+    match tokio::task::spawn_blocking(move || history.run(&query, committed)).await {
+        Ok(Ok(answer)) => (StatusCode::OK, axum::Json(answer)).into_response(),
+        Ok(Err(QueryError::Invalid(why))) => error(StatusCode::BAD_REQUEST, why),
+        Ok(Err(QueryError::Gone)) => error(StatusCode::GONE, "page snapshot no longer retained"),
+        Ok(Err(QueryError::Io(e))) => error(StatusCode::INTERNAL_SERVER_ERROR, e),
+        Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, e),
+    }
 }
 
 fn changed(result: std::io::Result<crate::control::NodeRecord>) -> Response {

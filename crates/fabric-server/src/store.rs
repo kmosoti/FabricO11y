@@ -11,6 +11,7 @@
 use fabric_o11y::alpha::frame::FrameLog;
 use fabric_o11y::alpha::journal::Batch;
 use prost::Message;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::io;
@@ -28,7 +29,6 @@ pub const GROUP_BYTES: usize = 1024 * 1024;
 const MAX_GROUP_PAYLOAD: usize = 4 * 1024 * 1024;
 /// Submissions waiting for the commit thread, by bytes. Beyond this, 503.
 const QUEUE_BYTES: u64 = 64 * 1024 * 1024;
-const ROTATE_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Clone, PartialEq, Message)]
 pub struct Entry {
@@ -100,10 +100,113 @@ struct State {
     label_node: HashMap<String, [u8; 16]>,
     node_label: HashMap<[u8; 16], String>,
     next_group: u64,
+    /// Groups below this were loaded from the stream checkpoint; a journal
+    /// file not yet reclaimed may still hold them.
+    checkpoint_next: u64,
 }
 
+/// Durable stream and binding state as of `next_group - 1`, written by synced
+/// rename before any journal file is reclaimed, so deduplication never
+/// depends on retained history.
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Checkpoint {
+    version: u32,
+    next_group: u64,
+    /// `(node_id hex, generation, last sequence, SHA-256 hex of its bytes)`.
+    streams: Vec<(String, u64, u64, String)>,
+    /// `(label, node_id hex)`.
+    bindings: Vec<(String, String)>,
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn unhex<const N: usize>(text: &str) -> io::Result<[u8; N]> {
+    let bad = || io::Error::new(io::ErrorKind::InvalidData, "invalid hex in checkpoint");
+    if text.len() != 2 * N {
+        return Err(bad());
+    }
+    let mut out = [0_u8; N];
+    for (i, chunk) in text.as_bytes().chunks(2).enumerate() {
+        out[i] = u8::from_str_radix(std::str::from_utf8(chunk).map_err(|_| bad())?, 16)
+            .map_err(|_| bad())?;
+    }
+    Ok(out)
+}
+
+const CHECKPOINT: &str = "streams.json";
+
 impl State {
+    fn load(state_dir: &Path) -> io::Result<Self> {
+        let mut state = State {
+            next_group: 1,
+            checkpoint_next: 1,
+            ..State::default()
+        };
+        let bytes = match std::fs::read(state_dir.join(CHECKPOINT)) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(state),
+            Err(error) => return Err(error),
+        };
+        let checkpoint: Checkpoint = serde_json::from_slice(&bytes)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+        if checkpoint.version != 1 || checkpoint.next_group == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid stream checkpoint",
+            ));
+        }
+        for (node, generation, last, hash) in checkpoint.streams {
+            state.streams.insert(
+                (unhex(&node)?, generation),
+                StreamState {
+                    last,
+                    hash: unhex(&hash)?,
+                },
+            );
+        }
+        for (label, node) in checkpoint.bindings {
+            let node = unhex(&node)?;
+            state.label_node.insert(label.clone(), node);
+            state.node_label.insert(node, label);
+        }
+        state.next_group = checkpoint.next_group;
+        state.checkpoint_next = checkpoint.next_group;
+        Ok(state)
+    }
+
+    fn save(&self, state_dir: &Path) -> io::Result<()> {
+        let checkpoint = Checkpoint {
+            version: 1,
+            next_group: self.next_group,
+            streams: self
+                .streams
+                .iter()
+                .map(|((node, generation), s)| (hex(node), *generation, s.last, hex(&s.hash)))
+                .collect(),
+            bindings: self
+                .label_node
+                .iter()
+                .map(|(label, node)| (label.clone(), hex(node)))
+                .collect(),
+        };
+        let staged = state_dir.join("streams.json.tmp");
+        let mut out = std::fs::File::create(&staged)?;
+        std::io::Write::write_all(
+            &mut out,
+            &serde_json::to_vec(&checkpoint).map_err(|e| io::Error::other(e.to_string()))?,
+        )?;
+        out.sync_all()?;
+        std::fs::rename(&staged, state_dir.join(CHECKPOINT))?;
+        std::fs::File::open(state_dir)?.sync_all()
+    }
+
     fn absorb(&mut self, group: &Group) -> io::Result<()> {
+        if group.group_sequence < self.checkpoint_next {
+            return Ok(()); // already in the checkpoint
+        }
         if group.group_sequence != self.next_group {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidData,
@@ -160,17 +263,27 @@ impl CommitMode {
 }
 
 pub struct Store {
+    state_dir: PathBuf,
+    rotate_bytes: u64,
     log: FrameLog,
     state: State,
     mode: CommitMode,
     active_first_group: u64,
+    committed_group: Arc<AtomicU64>,
 }
 
-/// Handle used by request handlers.
+enum Command {
+    Submit(Submission),
+    /// Remove sealed journal file `label` after its segment is committed.
+    Reclaim(u64, std::sync::mpsc::Sender<io::Result<()>>),
+}
+
+/// Handle used by request handlers and the sealer.
 #[derive(Clone)]
 pub struct Intake {
-    sender: SyncSender<Submission>,
+    sender: SyncSender<Command>,
     queued: Arc<AtomicU64>,
+    committed_group: Arc<AtomicU64>,
 }
 
 impl Intake {
@@ -183,13 +296,31 @@ impl Intake {
             let _ = submission.reply.send(Answer::Unavailable);
             return;
         }
-        match self.sender.try_send(submission) {
+        match self.sender.try_send(Command::Submit(submission)) {
             Ok(()) => {}
-            Err(TrySendError::Full(s)) | Err(TrySendError::Disconnected(s)) => {
+            Err(TrySendError::Full(Command::Submit(s)))
+            | Err(TrySendError::Disconnected(Command::Submit(s))) => {
                 self.queued.fetch_sub(size, Ordering::SeqCst);
                 let _ = s.reply.send(Answer::Unavailable);
             }
+            Err(_) => unreachable!("only submissions are sent here"),
         }
+    }
+
+    /// Ask the commit thread to checkpoint stream state and delete sealed
+    /// journal file `label`, which must be the oldest.
+    pub fn reclaim(&self, label: u64) -> io::Result<()> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.sender
+            .send(Command::Reclaim(label, tx))
+            .map_err(|_| io::Error::other("commit thread stopped"))?;
+        rx.recv()
+            .map_err(|_| io::Error::other("commit thread stopped"))?
+    }
+
+    /// The newest group whose data and marker syncs completed.
+    pub fn committed_group(&self) -> u64 {
+        self.committed_group.load(Ordering::SeqCst)
     }
 }
 
@@ -197,11 +328,18 @@ impl Store {
     /// Open the server journal under `state_dir/journal`, rebuilding stream
     /// and credential-binding state by replay.
     pub fn open(state_dir: &Path, max_bytes: u64, mode: CommitMode) -> io::Result<Self> {
+        Self::open_with(state_dir, max_bytes, 64 * 1024 * 1024, mode)
+    }
+
+    pub fn open_with(
+        state_dir: &Path,
+        max_bytes: u64,
+        rotate_bytes: u64,
+        mode: CommitMode,
+    ) -> io::Result<Self> {
+        crate::segment::cleanup(state_dir)?;
         let dir = journal_dir(state_dir)?;
-        let mut state = State {
-            next_group: 1,
-            ..State::default()
-        };
+        let mut state = State::load(state_dir)?;
         let mut active_first_group = None;
         let log = FrameLog::open(&dir, max_bytes, MAX_GROUP_PAYLOAD, |payload, pos| {
             let group = Group::decode(payload)
@@ -214,28 +352,76 @@ impl Store {
             state.absorb(&group)
         })?;
         let active_first_group = active_first_group.unwrap_or(state.next_group);
-        Ok(Self {
+        let committed_group = Arc::new(AtomicU64::new(state.next_group - 1));
+        let mut store = Self {
+            state_dir: state_dir.to_path_buf(),
+            rotate_bytes,
             log,
             state,
             mode,
             active_first_group,
-        })
+            committed_group,
+        };
+        // A segment committed before a crash may still have its journal file:
+        // reclaim it now so no record is served from both.
+        let segmented: std::collections::BTreeSet<u64> = crate::segment::list(state_dir)?
+            .into_iter()
+            .map(|(label, _)| label)
+            .collect();
+        while let Some(oldest) = store.log.sealed_labels().first().copied() {
+            if !segmented.contains(&oldest) {
+                break;
+            }
+            store.reclaim(oldest)?;
+        }
+        Ok(store)
     }
 
-    /// Replay every committed batch in commit order: `(label, received, bytes)`.
+    fn reclaim(&mut self, label: u64) -> io::Result<()> {
+        if self.log.sealed_labels().first() != Some(&label) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "only the oldest sealed journal file can be reclaimed",
+            ));
+        }
+        self.state.save(&self.state_dir)?;
+        self.log.remove_oldest_sealed()
+    }
+
+    /// Replay every retained committed batch in commit order, from segments
+    /// and then from journal files that have no segment yet.
     pub fn replay(
         state_dir: &Path,
         max_bytes: u64,
         mut visit: impl FnMut(&Entry) -> io::Result<()>,
     ) -> io::Result<()> {
+        let segments = crate::segment::list(state_dir)?;
+        let segments_dir = crate::segment::segments_dir(state_dir)?;
+        let mut last_segment_group = 0;
+        for (label, manifest) in &segments {
+            let mut result = Ok(());
+            crate::segment::scan_batches(
+                &segments_dir.join(crate::segment::segment_name(*label)),
+                manifest,
+                |_, entry| {
+                    if result.is_ok() {
+                        result = visit(&entry);
+                    }
+                },
+            )?;
+            result?;
+            last_segment_group = manifest.last_group;
+        }
         let dir = journal_dir(state_dir)?;
         let log = FrameLog::open(&dir, max_bytes, MAX_GROUP_PAYLOAD, |_, _| Ok(()))?;
         let mut pos = log.start_pos();
         while let Some((payload, next)) = log.read_at(pos)? {
             let group = Group::decode(payload.as_slice())
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-            for entry in &group.entries {
-                visit(entry)?;
+            if group.group_sequence > last_segment_group {
+                for entry in &group.entries {
+                    visit(entry)?;
+                }
             }
             pos = next;
         }
@@ -246,19 +432,40 @@ impl Store {
         self.state.streams.get(stream).map_or(0, |s| s.last)
     }
 
-    /// Start the commit thread and return the intake handle.
+    /// Start the commit thread and return the intake handle. The thread ends,
+    /// releasing the journal, when every `Intake` clone has been dropped.
     pub fn spawn(self) -> io::Result<Intake> {
+        self.spawn_joinable().map(|(intake, _)| intake)
+    }
+
+    pub fn spawn_joinable(self) -> io::Result<(Intake, std::thread::JoinHandle<()>)> {
         let (sender, receiver) = std::sync::mpsc::sync_channel(4096);
         let queued = Arc::new(AtomicU64::new(0));
         let counter = Arc::clone(&queued);
-        std::thread::Builder::new()
+        let committed_group = Arc::clone(&self.committed_group);
+        let handle = std::thread::Builder::new()
             .name("fabric-commit".into())
             .spawn(move || self.run(receiver, counter))?;
-        Ok(Intake { sender, queued })
+        Ok((
+            Intake {
+                sender,
+                queued,
+                committed_group,
+            },
+            handle,
+        ))
     }
 
-    fn run(mut self, receiver: Receiver<Submission>, queued: Arc<AtomicU64>) {
-        while let Ok(first) = receiver.recv() {
+    fn run(mut self, receiver: Receiver<Command>, queued: Arc<AtomicU64>) {
+        let mut reclaims = Vec::new();
+        while let Ok(command) = receiver.recv() {
+            let first = match command {
+                Command::Submit(first) => first,
+                Command::Reclaim(label, reply) => {
+                    let _ = reply.send(self.reclaim(label));
+                    continue;
+                }
+            };
             let mut group = vec![first];
             let mut bytes = group[0].bytes.len();
             let deadline = Instant::now() + self.mode.window;
@@ -268,10 +475,11 @@ impl Store {
                     break;
                 }
                 match receiver.recv_timeout(deadline - now) {
-                    Ok(next) => {
+                    Ok(Command::Submit(next)) => {
                         bytes += next.bytes.len();
                         group.push(next);
                     }
+                    Ok(Command::Reclaim(label, reply)) => reclaims.push((label, reply)),
                     Err(RecvTimeoutError::Timeout | RecvTimeoutError::Disconnected) => break,
                 }
             }
@@ -280,6 +488,11 @@ impl Store {
                 Ordering::SeqCst,
             );
             self.commit(group);
+            self.committed_group
+                .store(self.state.next_group - 1, Ordering::SeqCst);
+            for (label, reply) in reclaims.drain(..) {
+                let _ = reply.send(self.reclaim(label));
+            }
         }
     }
 
@@ -335,7 +548,7 @@ impl Store {
                 entries,
             };
             let payload = group_record.encode_to_vec();
-            let rotated = if self.log.active_bytes() >= ROTATE_BYTES {
+            let rotated = if self.log.active_bytes() >= self.rotate_bytes {
                 self.log.rotate(self.active_first_group)
             } else {
                 Ok(())

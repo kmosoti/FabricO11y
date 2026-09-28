@@ -9,7 +9,8 @@ const USAGE: &str = "usage:
   fabricctl admin <ADMIN_CONFIG> node list
   fabricctl admin <ADMIN_CONFIG> node add <NAME> [--log PATH]... [--interval SECONDS]
   fabricctl admin <ADMIN_CONFIG> node config <NAME> [--log PATH]... [--interval SECONDS]
-  fabricctl admin <ADMIN_CONFIG> node pause|resume|revoke <NAME>";
+  fabricctl admin <ADMIN_CONFIG> node pause|resume|revoke <NAME>
+  fabricctl admin <ADMIN_CONFIG> query '<QUERY_JSON>'";
 
 fn hex_id(id: &[u8; 16]) -> String {
     id.iter().map(|byte| format!("{byte:02x}")).collect()
@@ -106,6 +107,15 @@ fn admin(config_path: &str, words: &[String]) -> io::Result<bool> {
             .post(&url(&format!("/{name}/{action}")))
             .header("authorization", &auth)
             .send_empty(),
+        ["query", body] => {
+            serde_json::from_str::<serde_json::Value>(body)
+                .map_err(|e| invalid(&format!("query is not JSON: {e}")))?;
+            client
+                .post(&format!("{}/v1/admin/query", admin.url))
+                .header("authorization", &auth)
+                .header("content-type", "application/json")
+                .send(body.to_string())
+        }
         _ => return Err(invalid(USAGE)),
     };
     let mut response = result.map_err(|e| io::Error::other(format!("transport: {e}")))?;

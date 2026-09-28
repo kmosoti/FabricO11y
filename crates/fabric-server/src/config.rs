@@ -23,6 +23,11 @@ pub struct Config {
     /// Root-owned file holding the administrator's bearer token.
     pub admin_token_file: PathBuf,
     pub journal_bytes: u64,
+    /// Size at which the active journal file is sealed for segmenting.
+    pub journal_file_bytes: u64,
+    /// Retention: at most this age and at most this many segment bytes.
+    pub retention_s: u64,
+    pub retention_bytes: u64,
 }
 
 fn read_bounded(path: &Path) -> io::Result<String> {
@@ -57,6 +62,9 @@ impl Config {
                     | "state_dir"
                     | "admin_token_file"
                     | "journal_bytes"
+                    | "journal_file_bytes"
+                    | "retention_s"
+                    | "retention_bytes"
             ) {
                 return Err(invalid("unknown server config key"));
             }
@@ -77,6 +85,14 @@ impl Config {
             }
             Ok(value)
         };
+        let number = |key: &str, default: u64| -> io::Result<u64> {
+            match values.get(key) {
+                Some(v) => v
+                    .parse()
+                    .map_err(|_| invalid("invalid number in server config")),
+                None => Ok(default),
+            }
+        };
         let config = Config {
             listen: required("listen")?
                 .parse()
@@ -85,11 +101,19 @@ impl Config {
             tls_key: path("tls_key")?,
             state_dir: path("state_dir")?,
             admin_token_file: path("admin_token_file")?,
-            journal_bytes: match values.get("journal_bytes") {
-                Some(v) => v.parse().map_err(|_| invalid("invalid journal_bytes"))?,
-                None => DEFAULT_JOURNAL_BYTES,
-            },
+            journal_bytes: number("journal_bytes", DEFAULT_JOURNAL_BYTES)?,
+            journal_file_bytes: number("journal_file_bytes", 64 * 1024 * 1024)?,
+            retention_s: number("retention_s", 24 * 3600)?,
+            retention_bytes: number("retention_bytes", 20 * 1024 * 1024 * 1024)?,
         };
+        if config.journal_file_bytes < 64 * 1024
+            || config.journal_file_bytes > config.journal_bytes
+            || config.retention_s == 0
+        {
+            return Err(invalid(
+                "journal_file_bytes or retention outside allowed range",
+            ));
+        }
         if config.journal_bytes < 1024 * 1024 {
             return Err(invalid("journal_bytes below 1 MiB"));
         }

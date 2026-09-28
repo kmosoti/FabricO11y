@@ -135,6 +135,9 @@ fn start(root: &Path) -> Running {
         state_dir: root.join("server-state"),
         admin_token_file: root.join("admin-token"),
         journal_bytes: 64 * 1024 * 1024,
+        journal_file_bytes: 64 * 1024 * 1024,
+        retention_s: 86400,
+        retention_bytes: 1 << 30,
     };
     let handle = axum_server::Handle::new();
     let serving = handle.clone();
