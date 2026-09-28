@@ -25,7 +25,11 @@
 
 extern crate alloc;
 
+pub mod collection;
+pub mod control;
+pub mod delivery;
+pub mod query;
+pub mod retention;
 pub mod strand;
 
 pub use strand::{SpindleId, StrandId, next_sequence};
-pub mod delivery;

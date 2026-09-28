@@ -2,8 +2,11 @@
 //!
 //! Durable part: one JSON file replaced by synced rename on every
 //! administrative change. Observed part (last poll, applied revision,
-//! validation error): memory only, refreshed by each node poll.
+//! validation error): memory only, refreshed by each node poll. What a
+//! request means (revocation is terminal, revisions advance, name and shape
+//! limits) is decided by `fabric_core::control`; this module persists it.
 
+use fabric_core::control::{self as kernel, ControlRejection};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
@@ -22,6 +25,37 @@ pub enum Status {
     Active,
     Paused,
     Revoked,
+}
+
+impl From<Status> for kernel::Status {
+    fn from(status: Status) -> Self {
+        match status {
+            Status::Active => kernel::Status::Active,
+            Status::Paused => kernel::Status::Paused,
+            Status::Revoked => kernel::Status::Revoked,
+        }
+    }
+}
+
+impl From<kernel::Status> for Status {
+    fn from(status: kernel::Status) -> Self {
+        match status {
+            kernel::Status::Active => Status::Active,
+            kernel::Status::Paused => Status::Paused,
+            kernel::Status::Revoked => Status::Revoked,
+        }
+    }
+}
+
+fn rejected(rejection: ControlRejection) -> io::Error {
+    invalid(match rejection {
+        ControlRejection::Revoked => "node is revoked",
+        ControlRejection::RevisionExhausted => "node revision is exhausted",
+        ControlRejection::InvalidName => "node name must be 1-64 of [A-Za-z0-9._-]",
+        ControlRejection::InvalidDesired => {
+            "configuration needs 1-3600 s interval and at most 16 absolute log paths"
+        }
+    })
 }
 
 /// What an administrator wants a node to collect.
@@ -103,29 +137,13 @@ fn parse_hex32(hex: &str) -> Option<[u8; 32]> {
 }
 
 pub fn valid_name(name: &str) -> bool {
-    !name.is_empty()
-        && name.len() <= 64
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.')
+    kernel::valid_name(name)
 }
 
 /// Server-side shape checks. The node validates again with its own local
 /// profile before it activates anything.
 pub fn check_desired(desired: &DesiredConfig) -> io::Result<()> {
-    if desired.metric_interval_s == 0
-        || desired.metric_interval_s > 3600
-        || desired.logs.len() > 16
-        || desired
-            .logs
-            .iter()
-            .any(|p| !p.starts_with('/') || p.len() > 240 || p.contains('\n') || p.contains('\0'))
-    {
-        return Err(invalid(
-            "configuration needs 1-3600 s interval and at most 16 absolute log paths",
-        ));
-    }
-    Ok(())
+    kernel::check_desired(desired.metric_interval_s, &desired.logs).map_err(rejected)
 }
 
 impl Control {
@@ -170,7 +188,7 @@ impl Control {
                     "invalid or duplicate stored node name",
                 ));
             }
-            if record.status != Status::Revoked {
+            if kernel::authorizes(record.status.into()) {
                 control.by_token.insert(hash, record.name.clone());
             }
             control.nodes.insert(record.name.clone(), record);
@@ -211,14 +229,14 @@ impl Control {
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such node"))?;
         let mut after = before.clone();
         edit(&mut after)?;
-        after.revision = before.revision + 1;
+        after.revision = kernel::next_revision(before.revision).map_err(rejected)?;
         self.nodes.insert(name.to_owned(), after.clone());
         if let Err(error) = self.persist() {
             self.nodes.insert(name.to_owned(), before);
             return Err(error);
         }
         self.by_token.retain(|_, n| n != name);
-        if after.status != Status::Revoked {
+        if kernel::authorizes(after.status.into()) {
             self.by_token
                 .insert(parse_hex32(&after.token_sha256).unwrap(), name.to_owned());
         }
@@ -269,9 +287,7 @@ impl Control {
     pub fn set_config(&mut self, name: &str, desired: DesiredConfig) -> io::Result<NodeRecord> {
         check_desired(&desired)?;
         self.change(name, |r| {
-            if r.status == Status::Revoked {
-                return Err(invalid("node is revoked"));
-            }
+            kernel::may_set_config(r.status.into()).map_err(rejected)?;
             r.desired = desired;
             Ok(())
         })
@@ -279,10 +295,9 @@ impl Control {
 
     pub fn set_status(&mut self, name: &str, status: Status) -> io::Result<NodeRecord> {
         self.change(name, |r| {
-            if r.status == Status::Revoked {
-                return Err(invalid("node is revoked"));
-            }
-            r.status = status;
+            r.status = kernel::set_status(r.status.into(), status.into())
+                .map_err(rejected)?
+                .into();
             Ok(())
         })
     }
@@ -311,7 +326,7 @@ impl Control {
         );
         Some(NodeView {
             revision: record.revision,
-            paused: record.status == Status::Paused,
+            paused: kernel::is_paused(record.status.into()),
             logs: record.desired.logs.clone(),
             metric_interval_s: record.desired.metric_interval_s,
         })

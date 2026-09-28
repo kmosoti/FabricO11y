@@ -1,6 +1,7 @@
 //! One bounded pass over an explicitly selected newline log file.
 
 use crate::spindle::spool::Cursor;
+use fabric_core::collection::{CursorCheck, CursorFacts, FileFacts, InvalidCursor, check_cursor};
 use std::fs::OpenOptions;
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
@@ -41,25 +42,31 @@ fn cursor_still_valid(
     metadata: &std::fs::Metadata,
     old: &Cursor,
 ) -> io::Result<bool> {
-    if old.device != metadata.dev() || old.inode != metadata.ino() || metadata.len() < old.offset {
-        return Ok(false);
-    }
-    if old.offset > 0 && old.prefix_len == 0 {
-        return Ok(false); // Old cursors without a witness cannot silently skip a recreated file.
-    }
-    if old.prefix_len == 0 {
-        return Ok(true);
-    }
-    if old.prefix_len as usize > PREFIX_BYTES || u64::from(old.prefix_len) > old.offset {
-        return Err(io::Error::new(
+    let facts = CursorFacts {
+        device: old.device,
+        inode: old.inode,
+        offset: old.offset,
+        prefix_len: old.prefix_len,
+    };
+    let now = FileFacts {
+        device: metadata.dev(),
+        inode: metadata.ino(),
+        len: metadata.len(),
+    };
+    match check_cursor(facts, now) {
+        Ok(CursorCheck::Restart) => Ok(false),
+        Ok(CursorCheck::Continue) => Ok(true),
+        Ok(CursorCheck::VerifyPrefix { len }) => {
+            let mut prefix = vec![0; len as usize];
+            file.seek(SeekFrom::Start(0))?;
+            file.read_exact(&mut prefix)?;
+            Ok(crc32fast::hash(&prefix) == old.prefix_crc)
+        }
+        Err(InvalidCursor) => Err(io::Error::new(
             io::ErrorKind::InvalidData,
             "invalid log cursor prefix",
-        ));
+        )),
     }
-    let mut prefix = vec![0; old.prefix_len as usize];
-    file.seek(SeekFrom::Start(0))?;
-    file.read_exact(&mut prefix)?;
-    Ok(crc32fast::hash(&prefix) == old.prefix_crc)
 }
 
 /// Bytes the reader would still have to read: after the cursor when it is

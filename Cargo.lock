@@ -454,6 +454,7 @@ name = "fabric_o11y"
 version = "0.1.0"
 dependencies = [
  "crc32fast",
+ "fabric-core",
  "fabric-frame",
  "fake",
  "libc",

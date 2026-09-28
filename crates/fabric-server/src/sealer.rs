@@ -4,22 +4,20 @@
 //! after the segment is committed does the commit thread checkpoint stream
 //! state and delete the journal file. Retention then deletes whole segments,
 //! oldest first, while the newest record of the oldest segment is older than
-//! `retention_s` or segments exceed `retention_bytes` in total.
+//! `retention_s` or segments exceed `retention_bytes` in total. Which
+//! Segments go is decided by `fabric_core::retention`; this module deletes
+//! them.
 
 use crate::segment;
 use crate::store::Intake;
+pub use fabric_core::retention::Retention;
+use fabric_core::retention::{SegmentFacts, segments_to_delete};
 use std::collections::BTreeSet;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-
-#[derive(Clone, Copy, Debug)]
-pub struct Retention {
-    pub max_age_s: u64,
-    pub max_bytes: u64,
-}
 
 fn sealed_labels(journal: &Path) -> io::Result<Vec<u64>> {
     let mut labels: Vec<u64> = std::fs::read_dir(journal)?
@@ -57,24 +55,21 @@ pub fn pass(state_dir: &Path, intake: &Intake, retention: Retention) -> io::Resu
         intake.reclaim(label)?;
     }
     let segments_dir = segment::segments_dir(state_dir)?;
-    let mut segments = segment::list(state_dir)?;
-    let mut total: u64 = segments
+    let segments = segment::list(state_dir)?;
+    let facts: Vec<SegmentFacts> = segments
         .iter()
-        .map(|(_, m)| m.files.values().map(|f| f.bytes).sum::<u64>())
-        .sum();
-    let cutoff = now_ns().saturating_sub(retention.max_age_s.saturating_mul(1_000_000_000));
-    while let Some((label, manifest)) = segments.first() {
-        let bytes: u64 = manifest.files.values().map(|f| f.bytes).sum();
-        if manifest.received_max_ns >= cutoff && total <= retention.max_bytes {
-            break;
-        }
+        .map(|(_, m)| SegmentFacts {
+            received_max_ns: m.received_max_ns,
+            bytes: m.files.values().map(|f| f.bytes).sum(),
+        })
+        .collect();
+    let doomed = segments_to_delete(&facts, retention, now_ns());
+    for (label, _) in segments.iter().take(doomed) {
         let dir = segments_dir.join(segment::segment_name(*label));
-        let doomed = segments_dir.join(format!(".deleting-{label:020}"));
-        std::fs::rename(&dir, &doomed)?;
+        let deleting = segments_dir.join(format!(".deleting-{label:020}"));
+        std::fs::rename(&dir, &deleting)?;
         std::fs::File::open(&segments_dir)?.sync_all()?;
-        std::fs::remove_dir_all(&doomed)?;
-        total -= bytes;
-        segments.remove(0);
+        std::fs::remove_dir_all(&deleting)?;
     }
     Ok(())
 }
