@@ -10,7 +10,7 @@
 use crate::rows::{GapRow, LogRow, MetricRow, Number, Rows, extract};
 use crate::segment::{self, MAX_GROUP_PAYLOAD, Manifest};
 use crate::store::Group;
-use fabric_o11y::alpha::frame::read_frame;
+use fabric_frame::frame::read_frame;
 use prost::Message;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -211,7 +211,7 @@ impl History {
             })
             .collect();
         files.sort();
-        files.push(journal_dir.join(fabric_o11y::alpha::frame::ACTIVE));
+        files.push(journal_dir.join(fabric_frame::frame::ACTIVE));
         let mut journal = Vec::new();
         for path in files {
             let file = match File::open(&path) {

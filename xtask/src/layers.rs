@@ -23,8 +23,9 @@ pub struct Policy {
     pub layers: BTreeMap<String, BTreeSet<String>>,
     /// crate name -> layer.
     pub crates: BTreeMap<String, String>,
-    /// `(from crate, to crate)` edges allowed despite the layer rule.
-    pub exceptions: BTreeSet<(String, String)>,
+    /// `(from crate, to crate, dependency kind)` edges allowed despite the
+    /// layer rule. An exception names its kinds; omitting them means all.
+    pub exceptions: BTreeSet<(String, String, DepKind)>,
 }
 
 impl Policy {
@@ -77,7 +78,21 @@ impl Policy {
             };
             // An exception without a reason is not documented, so refuse it.
             field("reason")?;
-            exceptions.insert((field("from")?.to_owned(), field("to")?.to_owned()));
+            let kinds = match exception.get("kinds").and_then(Value::as_array) {
+                None => vec![DepKind::Normal, DepKind::Dev, DepKind::Build],
+                Some(kinds) => kinds
+                    .iter()
+                    .map(|k| match k.as_str() {
+                        Some("normal") => Ok(DepKind::Normal),
+                        Some("dev") => Ok(DepKind::Dev),
+                        Some("build") => Ok(DepKind::Build),
+                        _ => Err(format!("layer policy: unknown dependency kind {k}")),
+                    })
+                    .collect::<Result<_, _>>()?,
+            };
+            for kind in kinds {
+                exceptions.insert((field("from")?.to_owned(), field("to")?.to_owned(), kind));
+            }
         }
         Ok(Self {
             layers,
@@ -86,8 +101,11 @@ impl Policy {
         })
     }
 
-    fn allows(&self, from: &str, to: &str) -> bool {
-        if self.exceptions.contains(&(from.to_owned(), to.to_owned())) {
+    fn allows(&self, from: &str, to: &str, kind: DepKind) -> bool {
+        if self
+            .exceptions
+            .contains(&(from.to_owned(), to.to_owned(), kind))
+        {
             return true;
         }
         match (self.crates.get(from), self.crates.get(to)) {
@@ -133,7 +151,7 @@ pub fn check(metadata: &Metadata, policy: &Policy) -> Vec<Violation> {
             if dep.path.is_none() || !members.contains(&dep.name) {
                 continue;
             }
-            if !policy.allows(&package.name, &dep.name) {
+            if !policy.allows(&package.name, &dep.name, dep.kind) {
                 violations.push(Violation::new(
                     FORBIDDEN_EDGE,
                     format!(
@@ -149,7 +167,7 @@ pub fn check(metadata: &Metadata, policy: &Policy) -> Vec<Violation> {
     if let Some(graph) = &metadata.resolve {
         for package in metadata.member_packages() {
             for (reached, path) in members_reached_outside(metadata, graph, &package.id) {
-                if !policy.allows(&package.name, &reached) {
+                if !policy.allows(&package.name, &reached, DepKind::Normal) {
                     violations.push(Violation::new(
                         FORBIDDEN_TRANSITIVE_EDGE,
                         format!(

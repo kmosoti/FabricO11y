@@ -6,7 +6,7 @@
 //! and scope groups, so every row has a total order key.
 
 use crate::store::Entry;
-use fabric_o11y::alpha::journal::Batch;
+use fabric_frame::envelope::Batch;
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{KeyValue, any_value};

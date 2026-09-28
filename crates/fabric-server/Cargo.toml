@@ -5,7 +5,7 @@ edition = "2024"
 description = "Fabric O11y central server: authenticated batch intake with durable ACK"
 
 [dependencies]
-fabric_o11y = { path = "../.." }
+fabric-frame = { path = "../fabric-frame" }
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "tokio", "json"] }
 axum-server = { version = "=0.7.3", features = ["tls-rustls-no-provider"] }
 arrow-array = "=60.0.0"
@@ -20,4 +20,6 @@ sha2 = "=0.10.9"
 tokio = { version = "=1.53.1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal"] }
 
 [dev-dependencies]
+# End-to-end tests run a real Spindle against the server.
+fabric_o11y = { path = "../.." }
 ureq = { version = "=3.3.0", default-features = false, features = ["rustls-no-provider"] }

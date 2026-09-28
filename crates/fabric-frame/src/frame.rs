@@ -12,7 +12,7 @@
 //! in one is corruption. Only the active file may carry an uncommitted tail.
 //!
 //! Two sidecars separate an interrupted append from a known failure. See
-//! [ADR-0011](../../docs/decisions/ADR-0011-separate-interrupted-append-from-known-failure.md).
+//! [ADR-0011](../../../docs/decisions/ADR-0011-separate-interrupted-append-from-known-failure.md).
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
@@ -769,8 +769,8 @@ mod tests {
 
     fn scratch(name: &str) -> PathBuf {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("target")
-            .join(format!("alpha-frame-{name}-{}", std::process::id()));
+            .join("../../target")
+            .join(format!("frame-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).unwrap();
         path

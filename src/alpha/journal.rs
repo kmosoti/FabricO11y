@@ -1,4 +1,4 @@
-//! Version-one Fabric batch spool on the shared [frame log](super::frame).
+//! Version-one Fabric batch spool on the shared frame log (`fabric_frame::frame`).
 //!
 //! Each frame holds one encoded `Batch`; its sequence equals its position in
 //! the stream. The spool keeps a durable ACK cursor. Batches at or below it
@@ -8,105 +8,17 @@
 //! those of the frame log ([ADR-0011](../../docs/decisions/ADR-0011-separate-interrupted-append-from-known-failure.md));
 //! delivery follows [ADR-0013](../../docs/decisions/ADR-0013-deliver-batches-in-order-with-bounded-dedup.md).
 
-use crate::alpha::frame::{FileRef, FrameLog, FramePos, SyncStage};
-use opentelemetry_proto::tonic::collector::{
-    logs::v1::ExportLogsServiceRequest, metrics::v1::ExportMetricsServiceRequest,
-};
+pub use fabric_frame::envelope::{Batch, Cursor, MAX_BATCH, MAX_GAP_BYTES, MAX_GAPS_PER_BATCH};
+use fabric_frame::frame::{FileRef, FrameLog, FramePos, SyncStage};
 use prost::Message;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
-pub(crate) const MAX_BATCH: usize = 1024 * 1024;
-// One coverage-unknown notice, one host failure, and eight bounded gaps from
-// each of sixteen log sources.
-pub(crate) const MAX_GAPS_PER_BATCH: usize = 2 + 16 * 8;
-pub(crate) const MAX_GAP_BYTES: usize = 256;
 pub const DEFAULT_SPOOL_BYTES: u64 = 256 * 1024 * 1024;
 /// Seal the active file once it reaches this size, at the next metrics batch.
 const ROTATE_BYTES: u64 = 8 * 1024 * 1024;
 const ACKED: &str = "acked";
-
-#[derive(Clone, PartialEq, Message)]
-pub struct Cursor {
-    #[prost(string, tag = "1")]
-    pub path: String,
-    #[prost(uint64, tag = "2")]
-    pub device: u64,
-    #[prost(uint64, tag = "3")]
-    pub inode: u64,
-    #[prost(uint64, tag = "4")]
-    pub offset: u64,
-    #[prost(bool, tag = "5")]
-    pub skipping_oversize: bool,
-    #[prost(uint32, tag = "6")]
-    pub prefix_len: u32,
-    #[prost(uint32, tag = "7")]
-    pub prefix_crc: u32,
-}
-
-/// Versioned Fabric envelope. `metrics` and `logs` are serialized OTLP export
-/// requests, not Fabric's old Event format. A retry transmits the stored bytes.
-#[derive(Clone, PartialEq, Message)]
-pub struct Batch {
-    #[prost(uint32, tag = "1")]
-    pub version: u32,
-    #[prost(bytes, tag = "2")]
-    pub node_id: Vec<u8>,
-    #[prost(uint64, tag = "3")]
-    pub generation: u64,
-    #[prost(uint64, tag = "4")]
-    pub sequence: u64,
-    #[prost(bytes, tag = "5")]
-    pub metrics: Vec<u8>,
-    #[prost(bytes, tag = "6")]
-    pub logs: Vec<u8>,
-    #[prost(message, repeated, tag = "7")]
-    pub cursors: Vec<Cursor>,
-    #[prost(string, repeated, tag = "8")]
-    pub collection_gaps: Vec<String>,
-}
-
-impl Batch {
-    pub fn validate(&self) -> io::Result<()> {
-        if self.version != 1
-            || self.node_id.len() != 16
-            || self.generation == 0
-            || self.sequence == 0
-        {
-            return Err(invalid("invalid Fabric batch identity/version"));
-        }
-        if self.metrics.is_empty() && self.logs.is_empty() && self.collection_gaps.is_empty() {
-            return Err(invalid("empty Fabric batch"));
-        }
-        if self.metrics.len() > MAX_BATCH
-            || self.logs.len() > MAX_BATCH
-            || self.metrics.len().saturating_add(self.logs.len()) > MAX_BATCH
-            || self.cursors.len() > 16
-            || self.cursors.iter().any(|cursor| {
-                cursor.path.len() > 4096
-                    || cursor.prefix_len > 64
-                    || u64::from(cursor.prefix_len) > cursor.offset
-            })
-            || self.collection_gaps.len() > MAX_GAPS_PER_BATCH
-            || self
-                .collection_gaps
-                .iter()
-                .any(|gap| gap.len() > MAX_GAP_BYTES)
-        {
-            return Err(invalid("Fabric batch field exceeds local profile cap"));
-        }
-        if !self.metrics.is_empty() {
-            ExportMetricsServiceRequest::decode(self.metrics.as_slice())
-                .map_err(|e| invalid(e.to_string()))?;
-        }
-        if !self.logs.is_empty() {
-            ExportLogsServiceRequest::decode(self.logs.as_slice())
-                .map_err(|e| invalid(e.to_string()))?;
-        }
-        Ok(())
-    }
-}
 
 fn invalid(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.into())
@@ -506,7 +418,7 @@ fn read_identity(dir: &Path) -> io::Result<([u8; 16], u64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::alpha::frame::{IN_PROGRESS, RECOVERY_REQUIRED};
+    use fabric_frame::frame::{IN_PROGRESS, RECOVERY_REQUIRED};
     use std::sync::atomic::{AtomicU64, Ordering};
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -517,7 +429,7 @@ mod tests {
             let id = NEXT.fetch_add(1, Ordering::Relaxed);
             let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
                 .join("target")
-                .join(format!("alpha-journal-fault-{}-{id}", std::process::id()));
+                .join(format!("spool-fault-{}-{id}", std::process::id()));
             fs::create_dir(&path).unwrap();
             Self(path)
         }
@@ -712,6 +624,7 @@ mod tests {
     }
 
     fn metrics_batch() -> Batch {
+        use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
         use opentelemetry_proto::tonic::metrics::v1::ResourceMetrics;
         let mut b = batch();
         b.collection_gaps.clear();

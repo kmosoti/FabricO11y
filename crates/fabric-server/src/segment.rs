@@ -14,7 +14,7 @@ use arrow_array::{
     StringArray, UInt32Array, UInt64Array,
 };
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
-use fabric_o11y::alpha::frame::read_frame;
+use fabric_frame::frame::read_frame;
 use parquet::arrow::ArrowWriter;
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use parquet::basic::{Compression, ZstdLevel};

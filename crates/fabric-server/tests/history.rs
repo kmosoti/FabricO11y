@@ -498,13 +498,11 @@ fn crash_states_of_sealing_never_serve_a_record_twice() {
     .unwrap();
     let journal = cfg.state_dir.join("journal");
     fs::create_dir_all(scratch.path("rebuild")).unwrap();
-    let mut log = fabric_o11y::alpha::frame::FrameLog::open(
-        &scratch.path("rebuild"),
-        1 << 30,
-        4 << 20,
-        |_, _| Ok(()),
-    )
-    .unwrap();
+    let mut log =
+        fabric_frame::frame::FrameLog::open(&scratch.path("rebuild"), 1 << 30, 4 << 20, |_, _| {
+            Ok(())
+        })
+        .unwrap();
     for (g, entries) in &groups {
         log.append(
             &fabric_server::store::Group {

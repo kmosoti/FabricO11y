@@ -371,3 +371,22 @@ fn repository_policies_parse_and_name_real_members() {
         assert_eq!(violations, vec![], "{policy}");
     }
 }
+
+#[test]
+fn a_dev_only_exception_does_not_excuse_a_normal_edge() {
+    let policy = std::fs::read_to_string(Fixture::valid().0.join("layers.json"))
+        .unwrap()
+        .replace(
+            r#""exceptions": []"#,
+            r#""exceptions": [{"from": "fx-app", "to": "fx-adapter", "kinds": ["dev"], "reason": "fixture"}]"#,
+        );
+    let dev =
+        Fixture::valid()
+            .write("layers.json", &policy)
+            .dep("app", "dev-dependencies", ADAPTER);
+    assert_eq!(dev.layers(DECLARED), vec![]);
+    let normal = Fixture::valid()
+        .write("layers.json", &policy)
+        .dep("app", "dependencies", ADAPTER);
+    only(&normal.layers(DECLARED), layers::FORBIDDEN_EDGE);
+}

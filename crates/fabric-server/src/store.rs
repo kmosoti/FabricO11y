@@ -8,8 +8,8 @@
 //! marker sync. A failed append quarantines the log; every later submission is
 //! answered `Unavailable` and restart refuses until the state is rebuilt.
 
-use fabric_o11y::alpha::frame::FrameLog;
-use fabric_o11y::alpha::journal::Batch;
+use fabric_frame::envelope::Batch;
+use fabric_frame::frame::FrameLog;
 use prost::Message;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -344,7 +344,7 @@ impl Store {
         let log = FrameLog::open(&dir, max_bytes, MAX_GROUP_PAYLOAD, |payload, pos| {
             let group = Group::decode(payload)
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-            if matches!(pos.file, fabric_o11y::alpha::frame::FileRef::Active)
+            if matches!(pos.file, fabric_frame::frame::FileRef::Active)
                 && active_first_group.is_none()
             {
                 active_first_group = Some(group.group_sequence);

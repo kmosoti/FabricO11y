@@ -12,6 +12,7 @@
   },
   "crates": {
     "fabric-core": "core",
+    "fabric-frame": "adapter-support",
     "fabric_o11y": "composition-root",
     "fabric-server": "composition-root",
     "xtask": "tooling"
@@ -20,7 +21,8 @@
     {
       "from": "fabric-server",
       "to": "fabric_o11y",
-      "reason": "Temporary at the base: the server reaches FrameLog and Batch through the root package. Removed when the frame log moves into its own crate."
+      "kinds": ["dev"],
+      "reason": "End-to-end tests in crates/fabric-server/tests run a real Spindle (the root package) against a real server. Test-only; the server library and binary do not link the Spindle."
     }
   ]
 }

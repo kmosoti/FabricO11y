@@ -1,0 +1,11 @@
+[package]
+name = "fabric-frame"
+version = "0.1.0"
+edition = "2024"
+description = "Adapter support: the FAB1 rotating frame log and the version-one Batch envelope codec"
+publish = false
+
+[dependencies]
+crc32fast = "=1.5.2"
+opentelemetry-proto = { version = "=0.33.0", default-features = false, features = ["gen-tonic-messages", "logs", "metrics"] }
+prost = "=0.14.4"

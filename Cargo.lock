@@ -402,6 +402,15 @@ name = "fabric-core"
 version = "0.1.0"
 
 [[package]]
+name = "fabric-frame"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "opentelemetry-proto",
+ "prost",
+]
+
+[[package]]
 name = "fabric-server"
 version = "0.1.0"
 dependencies = [
@@ -409,6 +418,7 @@ dependencies = [
  "arrow-schema",
  "axum",
  "axum-server",
+ "fabric-frame",
  "fabric_o11y",
  "opentelemetry-proto",
  "parquet",
@@ -426,6 +436,7 @@ name = "fabric_o11y"
 version = "0.1.0"
 dependencies = [
  "crc32fast",
+ "fabric-frame",
  "fake",
  "libc",
  "opentelemetry-proto",
