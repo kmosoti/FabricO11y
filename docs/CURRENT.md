@@ -2,7 +2,7 @@
 
 ## Active work
 
-Milestone **Linux installation qualification** ([record](milestones/linux-installation.md)): the registered running-installation acceptance in a disposable Debian 13 systemd container. Merged: the [architecture foundation](milestones/architecture-foundation.md), the [verification foundation](milestones/verification-foundation.md), the [semantic kernels](milestones/semantic-kernels.md), the [history qualification](milestones/history-qualification.md) and the [delivery and recovery qualification](milestones/delivery-recovery.md). Later milestones are in the [roadmap](ROADMAP.md).
+No milestone is in progress. Merged: the [architecture foundation](milestones/architecture-foundation.md), [verification foundation](milestones/verification-foundation.md), [semantic kernels](milestones/semantic-kernels.md), [history qualification](milestones/history-qualification.md), [delivery and recovery qualification](milestones/delivery-recovery.md) and [Linux installation qualification](milestones/linux-installation.md). The remaining target-host runs are listed in the [qualification runbook](qualification-runbook.md); later milestones are in the [roadmap](ROADMAP.md).
 
 ## Implemented
 
@@ -26,7 +26,6 @@ Crates: `fabric-core` (core), `fabric-ports` (ports), `fabric-app` (app), `fabri
 
 ## Unresolved questions
 
-- How to map fault-harness transcripts onto the TLA+ delivery actions.
 - When, if ever, to rename the `fabric-node` executable ([ADR-0017](decisions/ADR-0017-name-the-spindle-and-the-strand.md)).
 
 ## Known risks

@@ -202,6 +202,9 @@ def trial():
 
     began_ns = json.loads((root / "sim" / "sim-summary.json").read_text())["began_unix_ns"]
     created, acked = {}, {}
+    # Reported, not gated: ACK latency (request start to ACK) for attempts
+    # started in the 20 s before the burst and during it.
+    ack_ms = {"before_burst": [], "burst": []}
     with open(root / "sim" / "events.jsonl") as events:
         for line in events:
             e = json.loads(line)
@@ -209,6 +212,11 @@ def trial():
                 created[(e["id"], e["seq"])] = e["t"]
             elif e["e"] == "attempt" and e["kind"] == "ack":
                 acked.setdefault((e["id"], e["seq"]), e["end"])
+                second = (e["start"] - began_ns) / 1e9
+                if BURST[0] - 20 <= second < BURST[0]:
+                    ack_ms["before_burst"].append((e["end"] - e["start"]) / 1e6)
+                elif BURST[0] <= second < BURST[1]:
+                    ack_ms["burst"].append((e["end"] - e["start"]) / 1e6)
     backlog = {}
     for second in (BURST[0] - 5, BURST[1] - 1, BURST[1] + 20, SECONDS - 5):
         t = began_ns + second * 10**9
@@ -233,6 +241,8 @@ def trial():
         "committed_rejected": committed_rejected,
         "management_ok": management["ok"], "management_failed": management["failed"],
         "concurrent_query_p99_s": percentile(management["query_s"], 0.99),
+        "ack_ms": {window: {"n": len(v), "p50": percentile(v, 0.5), "p99": percentile(v, 0.99),
+                            "max": max(v) if v else None} for window, v in ack_ms.items()},
         "server_vmhwm_kib": server_hwm, "server_rss_peak_sampled_kib": peak_rss[0],
         "sim_exit": sim_exit, "server_exit": server_exit,
         "server_cpus": args.server_cpus, "sim_cpus": sim_cpus,

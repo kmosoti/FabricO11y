@@ -1,6 +1,6 @@
 # Milestone: Linux installation qualification
 
-Status: complete pending CI and merge. Base: the delivery-and-recovery milestone (`e89c965`).
+Status: complete and merged into `main` (`71349fc`); CI green on `c08b96d` (Rust, Documentation, Extended verification). Base: the delivery-and-recovery milestone (`e89c965`).
 
 This milestone registers the running-installation acceptance list of the [installation contract](../PRODUCT-CONTRACT.md#linux-installation-contract) as checks with pass rules, then runs it in a disposable Debian 13 systemd container. The result is **Inconclusive**: the only host available has a legacy cgroup hierarchy, so `MemoryHigh` enforcement cannot be shown. The milestone changes no unit, directive, default, package script or product code.
 
