@@ -163,5 +163,14 @@ mod tests {
             check_desired(15, &seventeen),
             Err(ControlRejection::InvalidDesired)
         );
+        // Boundaries found by cargo-mutants: exactly the limits are accepted.
+        assert_eq!(check_desired(15, &["/l"; 16]), Ok(()));
+        let longest = alloc::format!("/{}", "p".repeat(MAX_DESIRED_PATH_BYTES - 1));
+        assert_eq!(check_desired(15, &[longest.as_str()]), Ok(()));
+        let too_long = alloc::format!("{longest}p");
+        assert_eq!(
+            check_desired(15, &[too_long.as_str()]),
+            Err(ControlRejection::InvalidDesired)
+        );
     }
 }
