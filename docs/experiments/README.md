@@ -8,7 +8,7 @@ Product evidence is indexed by capability. Record file names keep their historic
 | Spindle local collection | [native protocol](benchmarks/alpha-phase1-native-protocol.md) | [native run 01](benchmarks/alpha-phase1-native-run-01.md) (superseded), [native run 02](benchmarks/alpha-phase1-native-run-02.md), [journal length repair](formal/alpha-journal-length-repair.md), [log-reader repair](formal/alpha-log-reader-repair.md), [review checkpoint](formal/alpha-phase1-review-checkpoint.md), [close-out review](formal/alpha-phase1-closeout-review.md) |
 | Delivery | [delivery protocol](benchmarks/alpha-phase2-delivery-protocol.md) | [fault runs](formal/alpha-phase2-delivery-faults.md), [ten-process run](benchmarks/alpha-phase2-delivery-run-01.md) |
 | Control and fleet | [fleet protocol](benchmarks/alpha-phase3-fleet-protocol.md) | [fleet run 01](benchmarks/alpha-phase3-fleet-run-01.md) |
-| Retained history and query | [history protocol](benchmarks/alpha-phase4-history-protocol.md) | not run |
+| Retained history and query | [history protocol](benchmarks/alpha-phase4-history-protocol.md), [revision 2 for a four-CPU host](benchmarks/history-protocol-r2.md) | not run |
 | Recovery and stress | [outage protocol](benchmarks/alpha-phase5-outage-protocol.md), [stress protocol](benchmarks/alpha-phase5-stress-protocol.md) | outage interrupted without a result; stress not run |
 | Packaging and installation | — | [static packaging checks](formal/alpha-phase5-packaging-static.md); running installation not run |
 | Architecture | — | [no_std core experiment](formal/core-no-std.md); fault rerun and mutant results in the [milestone record](../milestones/architecture-foundation.md) |
