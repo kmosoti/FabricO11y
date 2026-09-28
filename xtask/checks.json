@@ -420,7 +420,7 @@
       "command": [
         "sh",
         "-c",
-        "TLA_JAR=\"$PWD/target/tools/tla2tools.jar\" formal/delivery/check.sh"
+        "TLA_JAR=\"$PWD/target/tools/tla2tools.jar\" bash formal/delivery/check.sh"
       ],
       "scope": "TLC over the delivery ownership model: Safe passes, EarlyAck and LostCopy produce counterexamples",
       "requires": [
@@ -444,7 +444,7 @@
       "command": [
         "sh",
         "-c",
-        "TLA_JAR=\"$PWD/target/tools/tla2tools.jar\" formal/transport/check.sh"
+        "TLA_JAR=\"$PWD/target/tools/tla2tools.jar\" bash formal/transport/check.sh"
       ],
       "scope": "TLC over the research transport credit model",
       "requires": [
