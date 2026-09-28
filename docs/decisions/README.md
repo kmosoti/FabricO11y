@@ -16,6 +16,8 @@
 | [ADR-0012: Add the Fabric Server as a workspace crate](ADR-0012-add-a-server-crate-in-a-workspace.md) | Accepted | Workspace member, synchronous node client, ring provider, no SQLite |
 | [ADR-0013: Deliver batches in order with bounded dedup](ADR-0013-deliver-batches-in-order-with-bounded-dedup.md) | Accepted | One in flight per stream, per-stream last sequence and hash, grouped two-sync commits |
 | [ADR-0014: Manage nodes through server control state and node polling](ADR-0014-manage-nodes-through-server-control-state.md) | Accepted | Admin token, enrollment, desired and applied revisions, 5 s polls |
+| [ADR-0015: Adopt a hexagonal architecture with a checked dependency rule](ADR-0015-adopt-a-hexagonal-architecture.md) | Accepted | Core, ports, app, adapter support, adapters, composition roots; `cargo xtask check-layers` |
+| [ADR-0016: Keep the semantic core pure, deterministic and `no_std`](ADR-0016-keep-a-pure-semantic-core.md) | Accepted | Explicit inputs, effects as data, `no_std`, `cargo xtask check-core-purity` |
 
 This first record captures an existing, explicitly documented choice. It does not claim that storage engines, ID widths, or performance strategies have been compared. Record further decisions when they materially affect architecture; use the [ADR format in AGENTS.md](../../AGENTS.md#12-architecture-decision-records) and the next unused four-digit number.
 

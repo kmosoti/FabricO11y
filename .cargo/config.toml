@@ -1,0 +1,3 @@
+[alias]
+# Repository checks written in Rust. See xtask/src/main.rs.
+xtask = "run --quiet --locked --package xtask --"

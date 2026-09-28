@@ -1,0 +1,10 @@
+[package]
+name = "fx-wrapper"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+tokio = { path = "../fake-tokio" }
+
+[workspace]
