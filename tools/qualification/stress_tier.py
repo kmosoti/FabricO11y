@@ -88,6 +88,10 @@ def trial():
     parser = argparse.ArgumentParser()
     parser.add_argument("--seed", type=lambda v: int(v, 0), required=True)
     parser.add_argument("--bin-dir", required=True)
+    # CPU placement. The defaults are revision 1 (server 0-3, simulator the
+    # rest); revision 2 (four-CPU host) passes 0-1 and 2-3.
+    parser.add_argument("--server-cpus", default="0-3")
+    parser.add_argument("--sim-cpus", default=None)
     args = parser.parse_args()
     if args.seed not in SEEDS:
         raise SystemExit("unregistered seed")
@@ -96,6 +100,7 @@ def trial():
         raise SystemExit("stress trial must run inside a runner-owned directory")
     bins = Path(args.bin_dir).resolve(strict=True)
     cpus = os.cpu_count() or 1
+    sim_cpus = args.sim_cpus or f"4-{cpus - 1}"
     rng = random.Random(args.seed)
     make_certs(root)
     port = free_port()
@@ -105,7 +110,7 @@ def trial():
     server_conf.write_text(
         f"listen=127.0.0.1:{port}\ntls_cert={root}/server.pem\ntls_key={root}/server.key\n"
         f"state_dir={root}/server-state\nadmin_token_file={root}/admin-token\njournal_bytes=4294967296\n")
-    server = subprocess.Popen(["taskset", "-c", "0-3", str(bins / "fabric-server"), "serve", str(server_conf)],
+    server = subprocess.Popen(["taskset", "-c", args.server_cpus, str(bins / "fabric-server"), "serve", str(server_conf)],
                               stdout=open(root / "server.log", "wb"), stderr=subprocess.STDOUT)
     CHILDREN.append(server)
     admin = AdminClient(port, root / "ca.pem", admin_token)
@@ -127,7 +132,7 @@ def trial():
     ctx = ssl.create_default_context(cafile=str(root / "ca.pem"))
     query = AdminClient(port, root / "ca.pem", admin_token)
     query.base = f"https://127.0.0.1:{port}/v1/admin/query"
-    sim = subprocess.Popen(["taskset", "-c", f"4-{cpus - 1}", str(bins / "examples" / "spindle_sim"),
+    sim = subprocess.Popen(["taskset", "-c", sim_cpus, str(bins / "examples" / "spindle_sim"),
                             "--server-url", f"https://127.0.0.1:{port}", "--ca", str(root / "ca.pem"),
                             "--tokens", str(root / "tokens"), "--seed", hex(args.seed),
                             "--seconds", str(SECONDS), "--workers", "128", "--out", str(root / "sim"),
@@ -230,6 +235,7 @@ def trial():
         "concurrent_query_p99_s": percentile(management["query_s"], 0.99),
         "server_vmhwm_kib": server_hwm, "server_rss_peak_sampled_kib": peak_rss[0],
         "sim_exit": sim_exit, "server_exit": server_exit,
+        "server_cpus": args.server_cpus, "sim_cpus": sim_cpus,
     }
     (root / "stress-summary.json").write_text(json.dumps(summary, sort_keys=True) + "\n")
     print(json.dumps(summary, sort_keys=True))
