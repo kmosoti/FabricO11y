@@ -1,0 +1,8 @@
+2026-09-28T22:10:03Z history segment seed1 start
+2026-09-28T22:15:55Z history segment seed1 exit 0
+2026-09-28T22:15:55Z history segment seed2 start
+2026-09-28T22:21:49Z history segment seed2 exit 0
+2026-09-28T22:21:49Z history segment seed3 start
+2026-09-28T22:27:42Z history segment seed3 exit 0
+2026-09-28T22:27:42Z history journal seed1 start
+2026-09-28T22:34:54Z history journal seed1 exit 0

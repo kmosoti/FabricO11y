@@ -1,0 +1,18 @@
+2026-09-29T01:58:51Z fleet 10 seed1 start
+2026-09-29T02:01:06Z fleet 10 seed1 exit 0
+2026-09-29T02:01:06Z fleet 10 seed2 start
+2026-09-29T02:03:20Z fleet 10 seed2 exit 0
+2026-09-29T02:03:20Z fleet 10 seed3 start
+2026-09-29T02:05:35Z fleet 10 seed3 exit 0
+2026-09-29T02:05:35Z fleet 100 seed1 start
+2026-09-29T02:07:51Z fleet 100 seed1 exit 0
+2026-09-29T02:07:51Z fleet 100 seed2 start
+2026-09-29T02:10:07Z fleet 100 seed2 exit 0
+2026-09-29T02:10:07Z fleet 100 seed3 start
+2026-09-29T02:12:23Z fleet 100 seed3 exit 0
+2026-09-29T02:12:23Z fleet 1000 seed1 start
+2026-09-29T02:14:57Z fleet 1000 seed1 exit 0
+2026-09-29T02:14:57Z fleet 1000 seed2 start
+2026-09-29T02:17:30Z fleet 1000 seed2 exit 0
+2026-09-29T02:17:30Z fleet 1000 seed3 start
+2026-09-29T02:20:04Z fleet 1000 seed3 exit 0

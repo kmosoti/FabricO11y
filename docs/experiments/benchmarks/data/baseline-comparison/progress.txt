@@ -1,0 +1,4 @@
+2026-09-29T02:21:32Z comparison start
+2026-09-29T02:25:58Z comparison exit 0
+2026-09-29T02:30:33Z commercial rerun start (adapter tie-order fix)
+2026-09-29T02:32:32Z commercial rerun exit 0
