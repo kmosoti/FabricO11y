@@ -6,7 +6,8 @@ Everything that still needs your hardware, in the order to run it, with exact co
 - the soak failed one gate;
 - the installation acceptance was inconclusive.
 
-No capability is **Qualified** yet. See the [capability ledger](QUALIFICATION.md#capability-ledger).
+> [!NOTE]
+> Runs 2 to 6 ran on the 12-CPU target host from binaries frozen at `e68d6ce` on 2026-09-28 and 29: history, stress, outage and fleet are **Qualified**, and the soak **Failed** `no_rss_growth` as expected ([soak run 02](experiments/benchmarks/soak-run-02.md)). Run 1 has not run: that host has no Docker and no passwordless root. What remains is run 1, and the soak after the sealer fix. See the [capability ledger](QUALIFICATION.md#capability-ledger).
 
 ## What is left
 

@@ -2,7 +2,7 @@
 
 ## Active work
 
-No milestone is in progress. Merged: the [architecture foundation](milestones/architecture-foundation.md), [verification foundation](milestones/verification-foundation.md), [semantic kernels](milestones/semantic-kernels.md), [history qualification](milestones/history-qualification.md), [delivery and recovery qualification](milestones/delivery-recovery.md) and [Linux installation qualification](milestones/linux-installation.md). The remaining target-host runs are listed in the [qualification runbook](qualification-runbook.md); later milestones are in the [roadmap](ROADMAP.md).
+Target-host qualification (`milestone/target-qualification`): the [qualification runbook](qualification-runbook.md) runs 2 to 6 ran on the 12-CPU target host from binaries frozen at `e68d6ce`, and a [comparison with established systems](experiments/benchmarks/baseline-comparison-protocol.md) is registered. Merged: the [architecture foundation](milestones/architecture-foundation.md), [verification foundation](milestones/verification-foundation.md), [semantic kernels](milestones/semantic-kernels.md), [history qualification](milestones/history-qualification.md), [delivery and recovery qualification](milestones/delivery-recovery.md) and [Linux installation qualification](milestones/linux-installation.md). Later milestones are in the [roadmap](ROADMAP.md).
 
 ## Implemented
 
@@ -20,7 +20,7 @@ Crates: `fabric-core` (core), `fabric-ports` (ports), `fabric-app` (app), `fabri
 ## Current assumptions
 
 - ACKs rely on successful sync calls being honored by the filesystem; physical power loss is untested.
-- WSL2 on ext4 was the environment of the earlier measurements; the history measurements ran in a four-CPU Ubuntu 24.04 Firecracker VM on ext4. Neither is the target profile.
+- The target-profile runs ran under WSL2 with systemd on a 12-CPU laptop, Debian 13 on ext4 with cgroup v2 ([host](experiments/benchmarks/data/target-qualification/alpha-q1-host.txt)); the earlier history, outage, stress and soak runs ran in a four-CPU Ubuntu 24.04 Firecracker VM on ext4.
 - Batch identity for duplicate detection is the SHA-256 of the exact bytes; collisions are assumed infeasible.
 - The layer gate sees crates, not modules: the adapters inside the two composition roots are protected only by tests, oracles and mutants; their decisions are kernels in the core.
 
@@ -30,20 +30,22 @@ Crates: `fabric-core` (core), `fabric-ports` (ports), `fabric-app` (app), `fabri
 
 ## Known risks
 
-- Qualification is outstanding (below); earlier passing measurements belong to earlier revisions.
+- The soak and the running installation are not qualified (below); every qualification belongs to `e68d6ce`.
 - One host runs server, simulator and harness in fleet tiers; CPU contention distorts p99.
-- The server's sealer holds about ten times a journal file in memory while it builds a Segment, and the allocator keeps it: server RSS plateaus near 536 MiB after the first seal at 100 identities ([soak run 01](experiments/benchmarks/soak-run-01.md)).
+- Server memory at 1,000 identities is now about 420 MiB where Segments seal, against about 48 MiB before sealing existed ([fleet run 02](experiments/benchmarks/fleet-run-02.md)); it is the same sealer working set.
+- The server's sealer holds about ten times a journal file in memory while it builds a Segment, and the allocator keeps it: server RSS plateaus near 536 MiB after the first seal at 100 identities, and near 538 MiB on the target host ([soak run 01](experiments/benchmarks/soak-run-01.md), [soak run 02](experiments/benchmarks/soak-run-02.md)).
 - An ineffective I/O controller on WSL must be reported, never counted as enforcement.
 
 ## Outstanding qualification
 
-From the [capability ledger](QUALIFICATION.md#capability-ledger): history query latency, freshness and journal-versus-Segment comparison **measured and passing** under [revision 2](experiments/benchmarks/history-protocol-r2.md) on a four-CPU host ([history run 01](experiments/benchmarks/history-run-01.md)), not qualified on the target profile; outage and drain **measured and passing** ([outage run 01](experiments/benchmarks/outage-run-01.md)); burst, rejection and concurrent management **measured and passing** under [stress revision 2](experiments/benchmarks/stress-protocol-r2.md) ([stress run 01](experiments/benchmarks/stress-run-01.md)); soak **failed** its RSS-growth gate ([soak run 01](experiments/benchmarks/soak-run-01.md)); running installation **inconclusive** ([installation acceptance run 01](experiments/formal/installation-acceptance-run-01.md): every check but `MemoryHigh` enforcement passed in a Debian 13 container on a legacy cgroup hierarchy); release **not performed**, no tag. No capability is qualified on the target profile.
+From the [capability ledger](QUALIFICATION.md#capability-ledger), on the target profile for `e68d6ce`: history query latency, freshness and the journal-versus-Segment comparison **qualified** ([history run 02](experiments/benchmarks/history-run-02.md)); outage and drain **qualified** ([outage run 02](experiments/benchmarks/outage-run-02.md)); burst, rejection and concurrent management **qualified** ([stress run 02](experiments/benchmarks/stress-run-02.md)); fleet delivery and control at 10, 100 and 1,000 identities **qualified** ([fleet run 02](experiments/benchmarks/fleet-run-02.md)); soak **failed** its RSS-growth gate again ([soak run 02](experiments/benchmarks/soak-run-02.md)). Running installation stays **inconclusive** ([installation acceptance run 01](experiments/formal/installation-acceptance-run-01.md)); the target-host rerun needs Docker and root and has not run. Release **not performed**, no tag.
 
 ## Next validation steps
 
 - [x] History measurement under revision 2 on a four-CPU host ([milestone record](milestones/history-qualification.md)).
-- [ ] History revision 1 on the 12-CPU target host.
+- [x] History revision 1 on the 12-CPU target host ([history run 02](experiments/benchmarks/history-run-02.md)).
 - [x] Outage, stress (revision 2) and soak run on a four-CPU host ([milestone record](milestones/delivery-recovery.md)).
+- [x] Outage, stress (revision 1) and soak on the target host ([outage run 02](experiments/benchmarks/outage-run-02.md), [stress run 02](experiments/benchmarks/stress-run-02.md), [soak run 02](experiments/benchmarks/soak-run-02.md)).
 - [ ] Bound the sealer's working set, then rerun the registered soak unchanged ([soak run 01](experiments/benchmarks/soak-run-01.md)).
 - [x] Running-installation acceptance in a container ([milestone record](milestones/linux-installation.md)): inconclusive.
 - [ ] Running-installation acceptance on a host with the unified cgroup hierarchy (decides `MemoryHigh` enforcement).
