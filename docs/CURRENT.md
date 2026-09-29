@@ -2,7 +2,7 @@
 
 ## Active work
 
-Target-host qualification (`milestone/target-qualification`): the [qualification runbook](qualification-runbook.md) runs 2 to 6 ran on the 12-CPU target host from binaries frozen at `e68d6ce`, and a [comparison with established systems](experiments/benchmarks/baseline-comparison-protocol.md) is registered. Merged: the [architecture foundation](milestones/architecture-foundation.md), [verification foundation](milestones/verification-foundation.md), [semantic kernels](milestones/semantic-kernels.md), [history qualification](milestones/history-qualification.md), [delivery and recovery qualification](milestones/delivery-recovery.md) and [Linux installation qualification](milestones/linux-installation.md). Later milestones are in the [roadmap](ROADMAP.md).
+Target-host qualification (`milestone/target-qualification`): the [qualification runbook](qualification-runbook.md) runs 2 to 6 ran on the 12-CPU target host from binaries frozen at `e68d6ce`, and a registered [comparison with established systems](experiments/benchmarks/baseline-comparison-protocol.md) ran ([run 01](experiments/benchmarks/baseline-comparison-run-01.md): every system exact; ClickHouse and Elasticsearch mostly an order of magnitude faster, Fabric the smallest memory). Merged: the [architecture foundation](milestones/architecture-foundation.md), [verification foundation](milestones/verification-foundation.md), [semantic kernels](milestones/semantic-kernels.md), [history qualification](milestones/history-qualification.md), [delivery and recovery qualification](milestones/delivery-recovery.md) and [Linux installation qualification](milestones/linux-installation.md). Later milestones are in the [roadmap](ROADMAP.md).
 
 ## Implemented
 
@@ -26,6 +26,7 @@ Crates: `fabric-core` (core), `fabric-ports` (ports), `fabric-app` (app), `fabri
 
 ## Unresolved questions
 
+- Why Fabric query latency has a floor near 220 ms at p50 for every query kind, even for one-row answers ([comparison run 01](experiments/benchmarks/baseline-comparison-run-01.md)); not investigated.
 - When, if ever, to rename the `fabric-node` executable ([ADR-0017](decisions/ADR-0017-name-the-spindle-and-the-strand.md)).
 
 ## Known risks
