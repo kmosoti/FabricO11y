@@ -1,0 +1,6 @@
+2026-09-28T22:45:12Z outage seed1 start
+2026-09-28T23:19:12Z outage seed1 exit 0
+2026-09-28T23:19:12Z outage seed2 start
+2026-09-28T23:53:12Z outage seed2 exit 0
+2026-09-28T23:53:12Z outage seed3 start
+2026-09-29T00:27:12Z outage seed3 exit 0
