@@ -185,7 +185,7 @@ impl EventLog {
                     self.last_append_phases = Some(phases);
                 }
                 #[cfg(not(feature = "append-attribution"))]
-                let _ = phases;
+                let () = phases;
                 Ok(())
             }
             Err(error) => {
