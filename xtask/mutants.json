@@ -267,8 +267,8 @@
       "contract": "HIST-5 retention deletes only Segments older than the age limit",
       "incorrect_behavior": "delete a Segment whose newest record is exactly at the cutoff",
       "file": "crates/fabric-core/src/retention.rs",
-      "find": "if segment.received_max_ns >= cutoff && total <= retention.max_bytes {",
-      "replace": "if segment.received_max_ns > cutoff && total <= retention.max_bytes {",
+      "find": "if segment.received_max_ns >= cutoff && total <= max_bytes {",
+      "replace": "if segment.received_max_ns > cutoff && total <= max_bytes {",
       "command": [
         "cargo",
         "test",
@@ -375,8 +375,8 @@
       "contract": "HIST-5 retention deletes only what the limits require",
       "incorrect_behavior": "treat a total exactly at the byte limit as over it",
       "file": "crates/fabric-core/src/retention.rs",
-      "find": "total <= retention.max_bytes",
-      "replace": "total < retention.max_bytes",
+      "find": "total <= max_bytes",
+      "replace": "total < max_bytes",
       "command": [
         "cargo",
         "test",
@@ -386,6 +386,45 @@
         "fabric-properties"
       ],
       "expect_failing": "retention_deletes_the_shortest_sufficient_oldest_prefix"
+    },
+    {
+      "id": "M-KANI-SEQ",
+      "contract": "DEL-4 no sequence follows u64::MAX on a Strand",
+      "incorrect_behavior": "wrap the successor of u64::MAX to 0",
+      "file": "crates/fabric-core/src/strand.rs",
+      "find": "last.checked_add(1)",
+      "replace": "Some(last.wrapping_add(1))",
+      "command": [
+        "bash",
+        "formal/kani/check.sh"
+      ],
+      "expect_failing": "proofs::next_sequence_is_one_more_or_none_at_the_end"
+    },
+    {
+      "id": "M-KANI-DUP",
+      "contract": "DEL-3 same Strand and sequence with different bytes is rejected",
+      "incorrect_behavior": "treat any retry of the last sequence as a duplicate",
+      "file": "crates/fabric-core/src/delivery.rs",
+      "find": "Some(c) if c.digest == incoming.digest =>",
+      "replace": "Some(c) if true || c.digest == incoming.digest =>",
+      "command": [
+        "bash",
+        "formal/kani/check.sh"
+      ],
+      "expect_failing": "proofs::delivery_decisions_follow_the_table"
+    },
+    {
+      "id": "M-KANI-RET-SATURATE",
+      "contract": "HIST-5 retention deletes until the remaining Segments fit the byte limit",
+      "incorrect_behavior": "reintroduce the saturating total (CX-RETENTION-SATURATED-TOTAL)",
+      "file": "crates/fabric-core/src/retention.rs",
+      "find": "let mut total: u128 = segments.iter().map(|s| u128::from(s.bytes)).sum();",
+      "replace": "let mut total: u128 = u128::from(segments.iter().fold(0_u64, |a, s| a.saturating_add(s.bytes)));",
+      "command": [
+        "bash",
+        "formal/kani/check.sh"
+      ],
+      "expect_failing": "proofs::retention_deletes_the_shortest_sufficient_prefix"
     }
   ]
 }
