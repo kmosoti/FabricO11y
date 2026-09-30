@@ -41,7 +41,8 @@ pub fn segments_to_delete(segments: &[SegmentFacts], retention: Retention, now_n
         if segment.received_max_ns >= cutoff && total <= max_bytes {
             break;
         }
-        total -= u128::from(segment.bytes);
+        // `total` includes this Segment, so this never saturates.
+        total = total.saturating_sub(u128::from(segment.bytes));
         deleted = deleted.saturating_add(1);
     }
     deleted
