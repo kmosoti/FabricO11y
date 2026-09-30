@@ -22,9 +22,30 @@ Acceptance rests on executable evidence, not on anyone's approval ([ADR-0018](de
 
 ## Checks
 
-`cargo xtask checks --profile fast` runs every required fast check listed in the [registry](../xtask/checks.json) and writes receipts under `target/verification/receipts`; a missing tool yields INCOMPLETE (exit 3), never a pass. The `extended` profile adds the semantic mutants, delivery fault runs and TLA+ models. Registered qualification protocols ([qualification](QUALIFICATION.md)) never run in CI; they need explicit scope. [Rust CI](../.github/workflows/rust.yml) and [documentation CI](../.github/workflows/docs.yml) run the fast set.
+`cargo xtask checks --profile fast` runs every required fast check listed in the [registry](../xtask/checks.json) and writes receipts under `target/verification/receipts`; a missing tool yields INCOMPLETE (exit 3), never a pass. The `extended` profile adds the semantic mutants, the cargo-mutants audit, delivery fault runs, TLA+ models, Kani proofs, a fuzz smoke run, the dependency policy and a coverage report; [extended CI](../.github/workflows/verification.yml) runs it. Registered qualification protocols ([qualification](QUALIFICATION.md)) never run in CI; they need explicit scope. [Rust CI](../.github/workflows/rust.yml) and [documentation CI](../.github/workflows/docs.yml) run the fast set.
 
 Documentation tooling needs Bun 1.4.0 and Python 3: `bun install --cwd tools/docs --frozen-lockfile`, then `bun tools/docs/check.mjs`. The [checker](../tools/docs/check.mjs) verifies relative links and heading fragments, Mermaid syntax, marked diagram copies, JSON syntax and duplicate ADR numbers; it performs no network access or writes and does not decide whether prose is true. Canonical diagrams live in `docs/diagrams/*.mmd`; a page may repeat one after a `<!-- diagram: relative/path.mmd -->` comment, and the checker requires the copy to match. When changing the checker or hooks, also run `bun tools/docs/check.test.mjs` and `python3 -B tools/docs/test_hooks.py`.
+
+## Verification tools
+
+Each tool answers one question ([verification strategy](formal/verification-strategy.md), [ADR-0021](decisions/ADR-0021-add-property-model-fuzz-and-simulation-checks.md)). Use the one that fits the change; every new check ships with a registered mutant or control that makes it fail.
+
+| When you change | Also run | Tool and where it lives |
+| --- | --- | --- |
+| a kernel in `fabric-core` | `cargo test -p fabric-properties`; `bash formal/kani/check.sh` | proptest in [fabric-properties](../crates/fabric-properties/tests/); Kani harnesses in [proofs.rs](../crates/fabric-core/src/proofs.rs), compiled only under `cfg(kani)` |
+| a decoder of untrusted bytes, or frame/journal recovery | `cargo test -p fabric-fuzz-targets --test corpus`; `bash fuzz/smoke.sh 60` | cargo-fuzz targets in [fuzz/](../fuzz/), bodies in [fabric-fuzz-targets](../crates/fabric-fuzz-targets/src/lib.rs) |
+| delivery, HTTP handlers or the commit path | `cargo test -p fabric-sim` | turmoil simulation in [fabric-sim](../crates/fabric-sim/tests/delivery.rs) |
+| `Cargo.toml` or `Cargo.lock` | `cargo deny --locked check` | cargo-deny policy in [deny.toml](../deny.toml) |
+| anything | `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` | Clippy on every crate |
+
+Rules for these tools:
+
+- **State properties from the contract, not the code.** A property that restates the implementation can only agree with it. Cite the ADR or view each property comes from.
+- **Keep test-only crates in the verification layer.** proptest, turmoil and HTTP clients go into `fabric-properties`, `fabric-fuzz-targets`, `fabric-sim` or a new crate assigned to `verification` in [layers.json](architecture/layers.json); never into a product crate, and never into `fabric-core`, whose dependency policy stays empty.
+- **Use stable Kani features only.** Write plain `#[kani::proof]` harnesses with `kani::any()`; do not use function contracts, autoharness or other `-Z` features until they stabilize. State each harness's bound when it has one.
+- **Keep what the tools find.** A fuzz crash goes into `fuzz/regressions/<target>/` with its fix, so the stable replay keeps it fixed. A Kani or property counterexample becomes a named regression test and an entry in [counterexamples.json](formal/counterexamples.json). Never widen a generator, lower a bound or loosen a property to make a failure go away.
+- **Coverage is a report.** `cargo llvm-cov --workspace --summary-only` shows what ran; do not add tests only to raise it.
+- **Tool setup.** `cargo install --locked cargo-deny cargo-llvm-cov cargo-fuzz kani-verifier && cargo kani setup`; fuzzing also needs `rustup toolchain install nightly`. The extended profile reports a missing tool as INCOMPLETE (exit 3), never as a pass.
 
 ## Skills and hooks
 

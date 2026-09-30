@@ -1,6 +1,6 @@
 # Milestone: verification tooling
 
-Status: complete pending CI and merge. Base: `main` at `e68d6ce`.
+Status: complete pending merge. Base: `main` at `e68d6ce`.
 
 This milestone adopts property testing, bounded model checking, coverage-guided fuzzing, network simulation, a dependency policy and a coverage report, as [ADR-0021](../decisions/ADR-0021-add-property-model-fuzz-and-simulation-checks.md) records. It also extends Clippy to every crate. Kani found two defects in the core, both fixed here.
 
@@ -49,6 +49,8 @@ Environment: a 4-CPU container with rustc 1.94.1, 1.98.0 (CI) and nightly. Tools
 | VT-9 | `cargo test -p fabric-core` | 0 | Both regression tests fail on the pre-fix code and pass on the fix |
 | VT-1 to VT-9 | `cargo xtask checks --profile fast` | 0 | 20 of 20 |
 | VT-3 to VT-7 | `cargo xtask checks --profile extended --only <id>` | 0 | `kani-core`, `fuzz-smoke`, `dependency-policy`, `coverage-report` each passed |
+| VT-1 to VT-9 | CI on `00fc002`: `fast-checks`, `documentation`, `extended` | 0 | All green. The extended profile passed every check: `kani-core` 83 s, `fuzz-smoke` 404 s, `dependency-policy` 1 s, `coverage-report` 103 s, and the existing semantic mutants, cargo-mutants audit, delivery faults and TLA+ models |
+| VT-10 | `bun tools/docs/check.mjs` | 0 | The contributor guide gains a *Verification tools* section, written after CI showed the tools stable, and `AGENTS.md` lists the commands |
 
 ## Defects found
 
