@@ -11,6 +11,7 @@ members = [
     "crates/fabric-core",
     "crates/fabric-frame",
     "crates/fabric-ports",
+    "crates/fabric-properties",
     "crates/fabric-server",
     "xtask",
 ]
