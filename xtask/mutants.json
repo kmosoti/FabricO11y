@@ -318,6 +318,74 @@
         "legacy_kernels"
       ],
       "expect_failing": "cursor_checks_match_the_base_for_every_small_case"
+    },
+    {
+      "id": "M-PROP-GROUP",
+      "contract": "DEL-5 bindings made earlier in a commit group bind later Batches of the same group",
+      "incorrect_behavior": "ignore a Spindle bound to another credential earlier in the same group",
+      "file": "crates/fabric-core/src/delivery.rs",
+      "find": ".any(|(c, s)| *c != credential && *s == spindle)",
+      "replace": ".any(|(c, s)| false && *c != credential && *s == spindle)",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-properties"
+      ],
+      "expect_failing": "a_commit_group_decides_like_one_batch_at_a_time"
+    },
+    {
+      "id": "M-PROP-PAGE",
+      "contract": "HIST-4 pages never repeat or skip a row within one snapshot",
+      "incorrect_behavior": "continue a page at its last key instead of strictly after it",
+      "file": "crates/fabric-core/src/query.rs",
+      "find": "after.is_none_or(|a| key > a)",
+      "replace": "after.is_none_or(|a| key >= a)",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-properties"
+      ],
+      "expect_failing": "pages_cover_every_row_once_in_order"
+    },
+    {
+      "id": "M-PROP-TEXT",
+      "contract": "SPOOL-1 gap texts stay within their byte bound",
+      "incorrect_behavior": "allow one byte more than the cap",
+      "file": "crates/fabric-core/src/collection.rs",
+      "find": "let mut end = message.len().min(cap);",
+      "replace": "let mut end = message.len().min(cap.saturating_add(1));",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-properties"
+      ],
+      "expect_failing": "bounded_text_is_the_longest_valid_prefix_within_the_cap"
+    },
+    {
+      "id": "M-PROP-RET-BYTES",
+      "contract": "HIST-5 retention deletes only what the limits require",
+      "incorrect_behavior": "treat a total exactly at the byte limit as over it",
+      "file": "crates/fabric-core/src/retention.rs",
+      "find": "total <= retention.max_bytes",
+      "replace": "total < retention.max_bytes",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-properties"
+      ],
+      "expect_failing": "retention_deletes_the_shortest_sufficient_oldest_prefix"
     }
   ]
 }
