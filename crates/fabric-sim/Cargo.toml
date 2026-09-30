@@ -1,0 +1,22 @@
+[package]
+name = "fabric-sim"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Deterministic network simulation (turmoil) of delivery against the real server router (verification layer)."
+
+[dependencies]
+
+[dev-dependencies]
+fabric-frame = { path = "../fabric-frame" }
+fabric-server = { path = "../fabric-server" }
+axum = { version = "=0.8.9", default-features = false, features = ["http1", "tokio", "json"] }
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+bytes = "1"
+prost = "=0.14.4"
+serde_json = "=1.0.150"
+sha2 = "=0.10.9"
+tokio = { version = "=1.53.1", features = ["rt", "macros", "time", "sync"] }
+turmoil = "=0.7.2"
