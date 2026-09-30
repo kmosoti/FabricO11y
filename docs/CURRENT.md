@@ -2,7 +2,7 @@
 
 ## Active work
 
-No milestone is in progress. Merged: the [architecture foundation](milestones/architecture-foundation.md), [verification foundation](milestones/verification-foundation.md), [semantic kernels](milestones/semantic-kernels.md), [history qualification](milestones/history-qualification.md), [delivery and recovery qualification](milestones/delivery-recovery.md) and [Linux installation qualification](milestones/linux-installation.md). The remaining target-host runs are listed in the [qualification runbook](qualification-runbook.md); later milestones are in the [roadmap](ROADMAP.md).
+Milestone **verification tooling** ([record](milestones/verification-tooling.md)): property tests, Kani proofs, fuzzing, turmoil network simulation, a dependency policy and a coverage report ([ADR-0021](decisions/ADR-0021-add-property-model-fuzz-and-simulation-checks.md)). Merged: the [architecture foundation](milestones/architecture-foundation.md), [verification foundation](milestones/verification-foundation.md), [semantic kernels](milestones/semantic-kernels.md), [history qualification](milestones/history-qualification.md), [delivery and recovery qualification](milestones/delivery-recovery.md) and [Linux installation qualification](milestones/linux-installation.md). The remaining target-host runs are in the [qualification runbook](qualification-runbook.md).
 
 ## Implemented
 
@@ -10,7 +10,7 @@ No milestone is in progress. Merged: the [architecture foundation](milestones/ar
 - **Delivery**: TLS, bearer credentials bound to one Spindle, one Batch in flight per Strand, ACK only after the server's grouped two-sync commit ([delivery view](architecture/delivery.md)). The decision is a pure kernel in `fabric-core`, orchestrated by `fabric-app` over the `DurableJournal` and `Clock` ports.
 - **Fabric Server**: journal with replayed Strand and binding state, stream checkpoint before reclaim, Zstd Parquet Segments sealed off the commit path, retention by age and bytes, log/metric/rate queries with completeness, freshness, gaps and snapshot-bound pages ([retained history](architecture/retained-history.md)), central control ([control](architecture/control-plane.md)).
 - **Packaging**: systemd units, slice, sysusers file and a reproducible `.deb` ([deployment](architecture/deployment.md)).
-- **Checks**: layer and purity gates with fixture negative controls; independent Python delivery, query and rate oracles; semantic-mutant registry; TLA+ delivery model; fault harness; check registry with receipts ([verification strategy](formal/verification-strategy.md)).
+- **Checks**: layer and purity gates with fixture negative controls; independent Python delivery, query and rate oracles; semantic-mutant registry; TLA+ delivery model with trace validation; fault harness; property tests, Kani proofs of the core, fuzzing, turmoil network simulation and a cargo-deny dependency policy; check registry with receipts ([verification strategy](formal/verification-strategy.md)).
 - **Legacy and research**: the FOL2 [demonstration](architecture/fol2-demo.md) remains supported; research packages under `tools/` stay outside the product.
 
 ## Architecture currently affected

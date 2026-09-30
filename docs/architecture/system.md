@@ -68,6 +68,7 @@ flowchart TB
     Support[fabric-frame: FAB1 frame log, Batch envelope]
     Linux[fabric-adapter-linux: host and log reads]
     Core[fabric-core: delivery, control, query, retention and collection decisions]
+    Verify[verification layer: fabric-properties, fabric-fuzz-targets, fabric-sim]
     Node -->|wires| Support
     Node -->|wires| Linux
     Linux -->|cursor rule from| Core
@@ -79,6 +80,8 @@ flowchart TB
     App -->|asks for decisions| Core
     Ports -->|types from| Core
     Support -.->|may depend on| Core
+    Verify -.->|tests, never depended on| Server
+    Verify -.->|properties of| Core
 ```
 
 The canonical source is [layers.mmd](../diagrams/layers.mmd).
@@ -93,6 +96,7 @@ The canonical source is [layers.mmd](../diagrams/layers.mmd).
 | [fabric-adapter-linux](../../crates/fabric-adapter-linux/src/lib.rs) | adapter | bounded `/proc` and `statvfs` sampling and newline log reading for the Spindle |
 | root package `fabric_o11y` | composition root | the Spindle runtime, its Spool and HTTP client; `fabric-node`, `fabricctl`; the FOL2 demonstration |
 | [xtask](../../xtask/src/main.rs) | tooling | layer, purity, check-registry and mutant runners |
+| [fabric-properties](../../crates/fabric-properties/src/lib.rs), [fabric-fuzz-targets](../../crates/fabric-fuzz-targets/src/lib.rs), [fabric-sim](../../crates/fabric-sim/src/lib.rs) | verification | property tests of the kernels, fuzz target bodies and corpus replay, and the turmoil network simulation; they may depend on any product crate and none depends on them ([ADR-0021](../decisions/ADR-0021-add-property-model-fuzz-and-simulation-checks.md)) |
 
 The domain decisions the composition roots used to make inline (control transitions, query and rate semantics, retention eligibility, counter and cursor rules) are kernels in `fabric-core` since the [semantic-kernels milestone](../milestones/semantic-kernels.md), each guarded by a differential test against the code it replaced. The roots still contain their adapters: `fabric-server` holds the journal, Segment, control-persistence and query-read code, and the root package holds the Spindle runtime and Spool. The layer gate sees crates, not modules. One documented exception remains: `fabric-server`'s end-to-end tests depend on the root package (development dependency only) to run a real Spindle.
 

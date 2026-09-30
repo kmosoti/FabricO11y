@@ -22,6 +22,7 @@
 | [ADR-0018: Accept work on executable evidence, not on model review](ADR-0018-accept-work-on-executable-evidence.md) | Accepted | Independent oracles, negative controls, trust-boundary changes, counterexample fixtures, receipts; no model-review gate |
 | [ADR-0019: Keep release maturity in tags, not in names](ADR-0019-keep-release-maturity-in-tags.md) | Accepted | No release-stage namespaces; historical evidence keeps its words |
 | [ADR-0020: Store sealed history as immutable Zstd Parquet Segments](ADR-0020-store-sealed-history-as-parquet-segments.md) | Accepted | One Segment per sealed journal file, manifest last, rename as commit, row-group statistics and exact scan, no token index |
+| [ADR-0021: Add property, bounded-model, fuzz and network-simulation checks](ADR-0021-add-property-model-fuzz-and-simulation-checks.md) | Accepted | proptest, Kani, cargo-fuzz, turmoil, cargo-deny, coverage report; a verification layer for test-only crates |
 
 This first record captures an existing, explicitly documented choice. It does not claim that storage engines, ID widths, or performance strategies have been compared. Record further decisions when they materially affect architecture; use the [ADR format](../documentation-policy.md#12-architecture-decision-records) and the next unused four-digit number.
 
