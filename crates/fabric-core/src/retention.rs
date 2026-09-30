@@ -32,15 +32,17 @@ pub const fn age_cutoff_ns(now_ns: u64, max_age_s: u64) -> u64 {
 /// exceeds the byte limit, delete it. Whole Segments only; never reorders.
 pub fn segments_to_delete(segments: &[SegmentFacts], retention: Retention, now_ns: u64) -> usize {
     let cutoff = age_cutoff_ns(now_ns, retention.max_age_s);
-    let mut total = segments
-        .iter()
-        .fold(0_u64, |sum, s| sum.saturating_add(s.bytes));
+    // Exact, not saturating: once a saturated total is reduced it undercounts
+    // what remains. A `u128` sum of `u64` sizes cannot overflow.
+    let mut total: u128 = segments.iter().map(|s| u128::from(s.bytes)).sum();
+    let max_bytes = u128::from(retention.max_bytes);
     let mut deleted: usize = 0;
     for segment in segments {
-        if segment.received_max_ns >= cutoff && total <= retention.max_bytes {
+        if segment.received_max_ns >= cutoff && total <= max_bytes {
             break;
         }
-        total = total.saturating_sub(segment.bytes);
+        // `total` includes this Segment, so this never saturates.
+        total = total.saturating_sub(u128::from(segment.bytes));
         deleted = deleted.saturating_add(1);
     }
     deleted
@@ -57,6 +59,27 @@ mod tests {
             received_max_ns,
             bytes,
         }
+    }
+
+    /// Counterexample found by Kani (CX-RETENTION-SATURATED-TOTAL): with a
+    /// saturating total, two Segments of `u64::MAX` bytes left the total at 0
+    /// after one deletion, so retention stopped while the remaining Segments
+    /// still exceeded the byte limit.
+    #[test]
+    fn totals_beyond_u64_are_counted_exactly() {
+        let huge = SegmentFacts {
+            received_max_ns: 10,
+            bytes: u64::MAX,
+        };
+        let small = SegmentFacts {
+            received_max_ns: 10,
+            bytes: 5,
+        };
+        let limits = Retention {
+            max_age_s: u64::MAX,
+            max_bytes: 5,
+        };
+        assert_eq!(segments_to_delete(&[huge, huge, small], limits, 10), 2);
     }
 
     #[test]
@@ -93,15 +116,18 @@ mod tests {
     }
 
     #[test]
-    fn saturating_limits_keep_everything_and_empty_input_deletes_nothing() {
+    fn saturating_age_keeps_everything_and_empty_input_deletes_nothing() {
         assert_eq!(age_cutoff_ns(5, u64::MAX), 0);
         let keep = Retention {
             max_age_s: u64::MAX,
             max_bytes: u64::MAX,
         };
+        assert_eq!(segments_to_delete(&[seg(0, u64::MAX)], keep, 0), 0);
+        // Two such Segments exceed even a `u64::MAX` byte limit; this used to
+        // expect 0 because the saturated total equalled the limit.
         assert_eq!(
             segments_to_delete(&[seg(0, u64::MAX), seg(0, u64::MAX)], keep, 0),
-            0
+            1
         );
         assert_eq!(
             segments_to_delete(

@@ -86,23 +86,20 @@
       "negative_controls": "xtask/tests/gates.rs fixture defects; see xtask/mutants.json for code mutants"
     },
     {
-      "id": "clippy-inner-layers",
+      "id": "clippy",
       "profile": "fast",
       "command": [
         "cargo",
         "clippy",
-        "-p",
-        "fabric-core",
-        "-p",
-        "fabric-ports",
-        "-p",
-        "fabric-app",
+        "--workspace",
+        "--all-targets",
+        "--all-features",
         "--locked",
         "--",
         "-D",
         "warnings"
       ],
-      "scope": "Clippy on core, ports and app, including the core's panic and unchecked-arithmetic restrictions",
+      "scope": "Clippy on every workspace crate and target with warnings denied, including the core's panic and unchecked-arithmetic restrictions",
       "requires": [
         "cargo"
       ],
@@ -110,7 +107,7 @@
       "contracts": [
         "ARCH-2"
       ],
-      "unchecked": "Adapters and composition roots are not held to the core's restrictions.",
+      "unchecked": "Research packages under tools/ and the nightly fuzz crate are outside the workspace.",
       "specification": [
         "docs/architecture/layers.json",
         "docs/architecture/core-purity.json",
@@ -403,6 +400,84 @@
       "negative_controls": "xtask/tests/evidence.rs"
     },
     {
+      "id": "kernel-properties",
+      "profile": "fast",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "fabric-properties"
+      ],
+      "scope": "proptest properties of every semantic kernel, stated from the ADRs and views independently of the code (2,000 cases each)",
+      "requires": [
+        "cargo"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "CTRL-1",
+        "CTRL-2",
+        "DEL-2",
+        "DEL-3",
+        "DEL-4",
+        "DEL-5",
+        "HIST-4",
+        "HIST-5",
+        "HIST-6",
+        "SPOOL-1"
+      ],
+      "unchecked": "Adapters and composition roots; inputs outside the generators' ranges (Kani covers the full integer ranges).",
+      "negative_controls": "M-PROP-GROUP, M-PROP-PAGE, M-PROP-TEXT, M-PROP-RET-BYTES in xtask/mutants.json"
+    },
+    {
+      "id": "fuzz-corpus",
+      "profile": "fast",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "fabric-fuzz-targets",
+        "--test",
+        "corpus"
+      ],
+      "scope": "Replays every committed fuzz corpus and regression input through the fuzz target bodies on stable Rust",
+      "requires": [
+        "cargo"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "DEL-5",
+        "HIST-4",
+        "SPOOL-3"
+      ],
+      "unchecked": "Only committed inputs; coverage-guided search is fuzz-smoke (extended).",
+      "negative_controls": "M-FUZZ-IDENTIFY in xtask/mutants.json"
+    },
+    {
+      "id": "network-simulation",
+      "profile": "fast",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "-p",
+        "fabric-sim"
+      ],
+      "scope": "turmoil simulation of delivery against the real server router and store under link failures, latency, partitions and lost answers (6 seeds)",
+      "requires": [
+        "cargo"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "DEL-1",
+        "DEL-2",
+        "DEL-4"
+      ],
+      "unchecked": "Process crashes (delivery-faults covers them); TLS; the commit thread runs on a real OS thread, so runs are not fully deterministic.",
+      "negative_controls": "M-SIM-DUPLICATE in xtask/mutants.json"
+    },
+    {
       "id": "semantic-mutants",
       "profile": "extended",
       "command": [
@@ -481,7 +556,7 @@
       "contracts": [
         "DEL-1"
       ],
-      "unchecked": "The model is not the Rust code; no trace mapping yet.",
+      "unchecked": "The model is not the Rust code; fault-run traces are validated against it by trace-model.",
       "requires_paths": [
         "target/tools/tla2tools.jar"
       ],
@@ -645,6 +720,95 @@
         "xtask/cargo-mutants-equivalent.json"
       ],
       "negative_controls": "an empty equivalence list must fail (recorded in the milestone record)"
+    },
+    {
+      "id": "kani-core",
+      "profile": "extended",
+      "command": [
+        "bash",
+        "formal/kani/check.sh"
+      ],
+      "scope": "Kani bounded model checking of the fabric-core proof harnesses (crates/fabric-core/src/proofs.rs), including panics and arithmetic overflow",
+      "requires": [
+        "cargo",
+        "cargo-kani"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "CTRL-2",
+        "DEL-3",
+        "DEL-4",
+        "HIST-5",
+        "HIST-6",
+        "SPOOL-1"
+      ],
+      "unchecked": "Results hold within each harness's unwinding bound; the retention harness covers up to three Segments and the gap-text harness 4-byte messages.",
+      "negative_controls": "M-KANI-SEQ, M-KANI-DUP, M-KANI-RET-SATURATE in xtask/mutants.json"
+    },
+    {
+      "id": "fuzz-smoke",
+      "profile": "extended",
+      "command": [
+        "bash",
+        "fuzz/smoke.sh",
+        "60"
+      ],
+      "scope": "cargo-fuzz (libFuzzer) for 60 s per target from the committed corpus: batch decoding, query requests, frame-log recovery",
+      "requires": [
+        "cargo",
+        "cargo-fuzz"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "DEL-5",
+        "HIST-4",
+        "SPOOL-3"
+      ],
+      "unchecked": "Time-boxed search; no crash in 60 s is not proof of absence.",
+      "negative_controls": "skipping batch validation crashes batch_identify on the empty input at once (recorded in the milestone record)"
+    },
+    {
+      "id": "dependency-policy",
+      "profile": "extended",
+      "command": [
+        "cargo",
+        "deny",
+        "--locked",
+        "check"
+      ],
+      "scope": "cargo-deny: RustSec advisories, yanked crates, licence allow-list, wildcard requirements and sources (deny.toml)",
+      "requires": [
+        "cargo",
+        "cargo-deny"
+      ],
+      "expected": "exit 0",
+      "contracts": [
+        "ARCH-1"
+      ],
+      "unchecked": "Advisories published after the run; duplicate versions are only reported.",
+      "specification": [
+        "deny.toml"
+      ],
+      "negative_controls": "the policy without ISC fails (exit 4; recorded in the milestone record)"
+    },
+    {
+      "id": "coverage-report",
+      "profile": "extended",
+      "command": [
+        "cargo",
+        "llvm-cov",
+        "--workspace",
+        "--locked",
+        "--summary-only"
+      ],
+      "scope": "Source-based line and region coverage of the workspace tests; a report, never a gate on a percentage",
+      "requires": [
+        "cargo",
+        "cargo-llvm-cov"
+      ],
+      "expected": "exit 0",
+      "contracts": [],
+      "unchecked": "Coverage says what ran, not what was asserted; binaries started as subprocesses are not instrumented."
     }
   ]
 }

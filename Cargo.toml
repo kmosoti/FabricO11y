@@ -3,6 +3,8 @@ name = "fabric_o11y"
 version = "0.1.0"
 edition = "2024"
 default-run = "fabric_o11y"
+# Shipped as a Debian package (packaging/), never to crates.io.
+publish = false
 
 [workspace]
 members = [
@@ -10,12 +12,15 @@ members = [
     "crates/fabric-app",
     "crates/fabric-core",
     "crates/fabric-frame",
+    "crates/fabric-fuzz-targets",
     "crates/fabric-ports",
+    "crates/fabric-properties",
     "crates/fabric-server",
+    "crates/fabric-sim",
     "xtask",
 ]
 # Research packages keep their own manifests, lockfiles and commands.
-exclude = ["tools", "target", "xtask/fixtures"]
+exclude = ["tools", "target", "xtask/fixtures", "fuzz"]
 
 [features]
 append-attribution = []

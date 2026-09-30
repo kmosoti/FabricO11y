@@ -102,12 +102,18 @@ pub fn counter_step(previous: CounterPoint, next: CounterPoint) -> CounterStep {
     if previous.start_ns == next.start_ns
         && next.value >= previous.value
         && next.time_ns > previous.time_ns
+        && previous.value.is_finite()
+        && next.value.is_finite()
     {
         let seconds = next.time_ns.saturating_sub(previous.time_ns) as f64 / 1e9;
-        CounterStep::Rate((next.value - previous.value) / seconds)
-    } else {
-        CounterStep::Reset
+        let rate = (next.value - previous.value) / seconds;
+        // Non-finite values (or an overflowing difference) give no number a
+        // rate row could carry; no rate is fabricated for the interval.
+        if rate.is_finite() {
+            return CounterStep::Rate(rate);
+        }
     }
+    CounterStep::Reset
 }
 
 #[cfg(test)]
@@ -182,5 +188,26 @@ mod tests {
             counter_step(p(1, 2, 10.0), p(1, 2, 20.0)),
             CounterStep::Reset
         );
+    }
+
+    /// Counterexample found by Kani (CX-RATE-NON-FINITE): two `+inf` counter
+    /// values gave `inf - inf = NaN` as a rate on a row that is not a reset,
+    /// which no answer can carry (a non-reset row needs a numeric rate).
+    #[test]
+    fn non_finite_rates_are_resets() {
+        let p = |time_ns, value| CounterPoint {
+            start_ns: 1,
+            time_ns,
+            value,
+        };
+        assert_eq!(
+            counter_step(p(1, f64::INFINITY), p(2, f64::INFINITY)),
+            CounterStep::Reset
+        );
+        assert_eq!(
+            counter_step(p(1, -f64::MAX), p(2, f64::MAX)),
+            CounterStep::Reset
+        );
+        assert_eq!(counter_step(p(1, 1.0), p(2, f64::NAN)), CounterStep::Reset);
     }
 }

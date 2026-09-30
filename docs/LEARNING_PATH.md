@@ -106,6 +106,31 @@ From the repository root, run `cargo test --offline --locked --manifest-path too
 
 Run `cargo test -p fabric-core -p fabric-app`, then read [the differential test](../crates/fabric-app/tests/delivery.rs): a frozen copy of the old loop is compared with the new kernel on millions of small groups. Run `cargo xtask check-layers` and `cargo xtask check-core-purity`, then add `ureq` to `crates/fabric-core/Cargo.toml` and run `target/debug/xtask check-core-purity --declared-only` to watch the gate reject it (undo the edit afterwards). Finally run `cargo xtask mutants --only M-DEL-ACK` and explain why a test that cannot fail proves nothing.
 
+## Stage 10 — Try to falsify the kernels
+
+**Status: verification-tooling milestone.** Example tests check the inputs someone thought of. Four tools search for the inputs nobody thought of:
+
+- **Property tests** state a contract for all inputs a generator can produce, and shrink any failure to a minimal case: [fabric-properties](../crates/fabric-properties/tests/kernels.rs).
+- **Kani** checks a contract for every value of the input types, within a bound, and also looks for panics and overflow: [proofs.rs](../crates/fabric-core/src/proofs.rs).
+- **Fuzzing** mutates bytes, keeps the ones that reach new code, and hunts for panics in decoders: [fuzz/](../fuzz/).
+- **turmoil** runs the real server on a simulated network, where partitions and lost answers happen on a seeded schedule: [fabric-sim](../crates/fabric-sim/tests/delivery.rs).
+
+The Rust ideas:
+
+- a crate in a separate layer can depend on the product while nothing depends on it;
+- `#[cfg(kani)]` compiles proof code only for the model checker;
+- a `u128` sum of `u64` sizes cannot overflow, where a saturating `u64` sum silently loses information.
+
+The system contract: a rate row is either a reset or carries a finite rate.
+
+The trade-off: every tool has a bound. A property is only as wide as its generator, Kani only as deep as its unwinding bound, and a fuzz run only as long as its time box.
+
+Try it:
+
+1. Run `cargo test -p fabric-properties` and `bash formal/kani/check.sh`.
+2. Read [CX-RETENTION-SATURATED-TOTAL](formal/counterexamples.json). Explain why proptest, whose generated sizes stay below 50 bytes, could not find it, and why Kani did.
+3. Run `cargo xtask mutants --only M-SIM-DUPLICATE`. Explain which lost answer makes the simulation fail.
+
 ## Working rule
 
 For each new component, answer these in plain language before coding:

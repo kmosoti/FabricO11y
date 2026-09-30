@@ -145,6 +145,30 @@
         "test": "counters_preserve_start_then_reset_on_decrease_and_boot_change"
       },
       "fix_commit": "1a2ad39"
+    },
+    {
+      "id": "CX-RETENTION-SATURATED-TOTAL",
+      "origin": "Kani harness retention_deletes_the_shortest_sufficient_prefix (verification-tooling milestone)",
+      "defect": "segments_to_delete summed sizes with saturation and subtracted from the saturated total, so it stopped deleting while the remaining Segments still exceeded the byte limit",
+      "seed_or_trace": "Segment sizes [u64::MAX, u64::MAX, 5], byte limit 5: deleted 1 instead of 2",
+      "contract": "HIST-5",
+      "reproducer": {
+        "file": "crates/fabric-core/src/retention.rs",
+        "test": "totals_beyond_u64_are_counted_exactly"
+      },
+      "fix_commit": "4a46b31"
+    },
+    {
+      "id": "CX-RATE-NON-FINITE",
+      "origin": "Kani harness rates_come_only_from_uninterrupted_series (verification-tooling milestone)",
+      "defect": "counter_step returned a NaN or infinite rate on a row that is not a reset, which no answer can carry",
+      "seed_or_trace": "two +inf values of one series (inf - inf = NaN); f64::MAX over one nanosecond (+inf)",
+      "contract": "HIST-6",
+      "reproducer": {
+        "file": "crates/fabric-core/src/query.rs",
+        "test": "non_finite_rates_are_resets"
+      },
+      "fix_commit": "4a46b31"
     }
   ]
 }

@@ -8,3 +8,7 @@ publish = false
 # Every dependency here is reviewed against docs/architecture/core-purity.json
 # and rejected by `cargo xtask check-core-purity` unless allowlisted.
 [dependencies]
+
+# `cargo kani` sets cfg(kani) to compile the proof harnesses in src/proofs.rs.
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(kani)"] }

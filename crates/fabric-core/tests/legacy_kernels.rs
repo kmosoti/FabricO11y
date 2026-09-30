@@ -103,6 +103,10 @@ fn counter_steps_match_the_base_bit_for_bit() {
                                     assert_eq!(n.to_bits(), o.to_bits())
                                 }
                                 (CounterStep::Reset, None) => {}
+                                // The one deliberate difference from the base
+                                // (CX-RATE-NON-FINITE): a rate that is not a
+                                // finite number is now a reset.
+                                (CounterStep::Reset, Some(o)) if !o.is_finite() => {}
                                 other => panic!(
                                     "disagree at {:?}: {other:?}",
                                     ((sa, ta, va), (sb, tb, vb))

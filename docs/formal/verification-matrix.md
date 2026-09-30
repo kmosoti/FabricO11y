@@ -48,6 +48,25 @@ Specification sources: **PC** = [product contract](../PRODUCT-CONTRACT.md), **AD
 | ARCH-1 | Dependencies point inward | ADR-0015 | `cargo xtask check-layers` | fixture defects in `xtask/tests/gates.rs` (every forbidden edge kind); repository-level injected edge | Tested | Module structure inside composition roots |
 | ARCH-2 | The semantic core is pure | ADR-0016 | `cargo xtask check-core-purity`; `no_std`; Clippy restrictions | fixture defects in `xtask/tests/gates.rs`; repository-level injected `ureq` and `extern crate std` | Tested | Per-function determinism beyond what the structure forbids |
 
+## Checks added in the verification-tooling milestone
+
+These run on the current head in addition to the Verification column above ([ADR-0021](../decisions/ADR-0021-add-property-model-fuzz-and-simulation-checks.md)). Check IDs refer to [xtask/checks.json](../../xtask/checks.json); mutant IDs to [xtask/mutants.json](../../xtask/mutants.json).
+
+| Contract | Property test (`kernel-properties`) | Kani proof (`kani-core`) | Fuzz (`fuzz-corpus`, `fuzz-smoke`) | Network simulation (`network-simulation`) | Negative controls |
+| --- | --- | --- | --- | --- | --- |
+| DEL-1 | — | — | — | acknowledged Batches are retained exactly once after lost answers | M-SIM-DUPLICATE |
+| DEL-2 | commit groups decide like one Batch at a time; contiguous immutable history | — | — | a retry after a lost answer is acknowledged | M-PROP-GROUP, M-SIM-DUPLICATE |
+| DEL-3 | the ADR-0013 table | the ADR-0013 table over every `u64` sequence | — | — | M-KANI-DUP |
+| DEL-4 | the ADR-0013 table | no successor of `u64::MAX` | — | sequences 1..n once each | M-KANI-SEQ |
+| DEL-5 | bindings within a commit group | — | an invalid Batch is refused before identification | — | M-PROP-GROUP, M-FUZZ-IDENTIFY |
+| SPOOL-1 | cursor identity, counter starts, bounded gap texts | the same, over full ranges | — | — | M-PROP-TEXT |
+| SPOOL-3 | — | — | frame-log recovery reaches a fixed point | — | — |
+| CTRL-1 | desired-configuration and name limits | — | — | — | — |
+| CTRL-2 | revocation is terminal over any request sequence | revocation is terminal | — | — | — |
+| HIST-4 | pages cover every row once, in order | — | query requests and page tokens never panic | — | M-PROP-PAGE |
+| HIST-5 | the shortest sufficient retention prefix | the same, up to three Segments over full ranges | — | — | M-PROP-RET-BYTES, M-KANI-RET-SATURATE |
+| HIST-6 | rates only from uninterrupted series | rates finite and non-negative | — | — | CX-RATE-NON-FINITE regression |
+
 ## Qualification
 
 These are operating-profile claims; none is qualified on the current head. A measurement names the revision whose frozen binaries it ran. The history, outage, stress and soak runs used byte-identical builds of the Rust sources at `63bbeac`, the SHA-256 values in their records. See the [capability ledger](../QUALIFICATION.md#capability-ledger).

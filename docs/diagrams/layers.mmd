@@ -8,6 +8,7 @@ flowchart TB
     Support[fabric-frame: FAB1 frame log, Batch envelope]
     Linux[fabric-adapter-linux: host and log reads]
     Core[fabric-core: delivery, control, query, retention and collection decisions]
+    Verify[verification layer: fabric-properties, fabric-fuzz-targets, fabric-sim]
     Node -->|wires| Support
     Node -->|wires| Linux
     Linux -->|cursor rule from| Core
@@ -19,3 +20,5 @@ flowchart TB
     App -->|asks for decisions| Core
     Ports -->|types from| Core
     Support -.->|may depend on| Core
+    Verify -.->|tests, never depended on| Server
+    Verify -.->|properties of| Core

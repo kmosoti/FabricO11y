@@ -125,6 +125,10 @@ mod alloc_probe {
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "research probe: one call site threads every measurement sink"
+)]
 fn append_batch(
     log: &mut EventLog,
     batch: Vec<Event>,

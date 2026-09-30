@@ -32,4 +32,7 @@ pub mod query;
 pub mod retention;
 pub mod strand;
 
+#[cfg(kani)]
+mod proofs;
+
 pub use strand::{SpindleId, StrandId, next_sequence};

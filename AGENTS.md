@@ -59,6 +59,7 @@ These need explicit task scope: protocol or wire-format changes, durability or s
 - Run the demonstration: `cargo run --offline`.
 - Fast checks with receipts: `cargo xtask checks --profile fast`.
 - Individual gates: `cargo xtask check-layers`, `cargo xtask check-core-purity`, `cargo xtask mutants`.
+- Verification tools ([contributor guide](docs/CONTRIBUTING.md#verification-tools)): `cargo test -p fabric-properties`, `bash formal/kani/check.sh`, `bash fuzz/smoke.sh 60`, `cargo test -p fabric-sim`, `cargo deny --locked check`; the extended profile runs them all: `cargo xtask checks --profile extended`.
 - Documentation tooling (once): `bun install --cwd tools/docs --frozen-lockfile`; then `bun tools/docs/check.mjs`, `bun tools/docs/check.test.mjs`, `python3 -B tools/docs/test_hooks.py`.
 
 Reusable workflows live in `.agents/skills`: [fabric-architecture](.agents/skills/fabric-architecture/SKILL.md), [fabric-lesson](.agents/skills/fabric-lesson/SKILL.md), [fabric-experiment](.agents/skills/fabric-experiment/SKILL.md). Hooks load context and check documentation; they do not decide whether prose is true.

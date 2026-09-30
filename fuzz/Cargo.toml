@@ -1,0 +1,38 @@
+[package]
+name = "fabric-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "cargo-fuzz targets (nightly). Bodies live in crates/fabric-fuzz-targets."
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "=0.4.13"
+fabric-fuzz-targets = { path = "../crates/fabric-fuzz-targets" }
+
+# Outside the main workspace: cargo-fuzz needs nightly and its own lockfile.
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "batch_identify"
+path = "fuzz_targets/batch_identify.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "query_request"
+path = "fuzz_targets/query_request.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "frame_recovery"
+path = "fuzz_targets/frame_recovery.rs"
+test = false
+doc = false
+bench = false
