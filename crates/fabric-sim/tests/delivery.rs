@@ -4,7 +4,8 @@
 //! seeded schedule.
 //!
 //! What is simulated: the network and tokio time. What is real: the server's
-//! HTTP handlers, commit thread, journal and fsync. The network schedule is
+//! HTTP handlers, commit thread (in individual-commit mode), journal and
+//! fsync. The network schedule is
 //! seeded, but the commit thread runs on an OS thread, so a run is not fully
 //! deterministic; the checked properties hold for every schedule. Process
 //! crashes are covered by the real-process fault harness
@@ -148,7 +149,12 @@ fn serve(sim: &mut turmoil::Sim<'_>, dir: PathBuf) {
         let dir = dir.clone();
         async move {
             let control = Arc::new(Mutex::new(Control::open(&dir)?));
-            let store = Store::open_with(&dir, 1 << 30, 64 << 20, CommitMode::GROUPED)?;
+            // Individual commits: the grouped mode waits up to 50 ms of real
+            // time for a group, and simulated time runs far faster than real
+            // time, so that wait became many simulated seconds and every
+            // attempt timed out on a fast CI host. Grouping is covered by the
+            // server's own delivery tests and the fault harness.
+            let store = Store::open_with(&dir, 1 << 30, 64 << 20, CommitMode::INDIVIDUAL)?;
             let (intake, _commit_thread) = store.spawn_joinable()?;
             let app = router(AppState {
                 intake,
