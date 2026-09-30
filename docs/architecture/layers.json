@@ -20,7 +20,8 @@
     "fabric_o11y": "composition-root",
     "fabric-server": "composition-root",
     "xtask": "tooling",
-    "fabric-properties": "verification"
+    "fabric-properties": "verification",
+    "fabric-fuzz-targets": "verification"
   },
   "exceptions": [
     {
