@@ -21,7 +21,8 @@
     "fabric-server": "composition-root",
     "xtask": "tooling",
     "fabric-properties": "verification",
-    "fabric-fuzz-targets": "verification"
+    "fabric-fuzz-targets": "verification",
+    "fabric-sim": "verification"
   },
   "exceptions": [
     {
