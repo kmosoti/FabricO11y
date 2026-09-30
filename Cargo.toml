@@ -10,13 +10,14 @@ members = [
     "crates/fabric-app",
     "crates/fabric-core",
     "crates/fabric-frame",
+    "crates/fabric-fuzz-targets",
     "crates/fabric-ports",
     "crates/fabric-properties",
     "crates/fabric-server",
     "xtask",
 ]
 # Research packages keep their own manifests, lockfiles and commands.
-exclude = ["tools", "target", "xtask/fixtures"]
+exclude = ["tools", "target", "xtask/fixtures", "fuzz"]
 
 [features]
 append-attribution = []
