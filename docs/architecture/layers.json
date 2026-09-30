@@ -8,6 +8,7 @@
     "adapter-support": { "may_depend_on": ["core"] },
     "adapter": { "may_depend_on": ["core", "ports", "adapter-support"] },
     "composition-root": { "may_depend_on": ["core", "ports", "app", "adapter-support", "adapter"] },
+    "verification": { "may_depend_on": ["core", "ports", "app", "adapter-support", "adapter", "composition-root", "verification"] },
     "tooling": { "may_depend_on": [] }
   },
   "crates": {
@@ -18,7 +19,8 @@
     "fabric-adapter-linux": "adapter",
     "fabric_o11y": "composition-root",
     "fabric-server": "composition-root",
-    "xtask": "tooling"
+    "xtask": "tooling",
+    "fabric-properties": "verification"
   },
   "exceptions": [
     {
