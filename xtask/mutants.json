@@ -444,6 +444,23 @@
         "corpus"
       ],
       "expect_failing": "batch_identify_corpus"
+    },
+    {
+      "id": "M-SIM-DUPLICATE",
+      "contract": "DEL-2 a retry after a lost ACK is acknowledged, not rejected",
+      "incorrect_behavior": "answer a byte-identical retry of the last committed Batch as a conflict",
+      "file": "crates/fabric-app/src/delivery.rs",
+      "find": "            DeliveryDecision::Duplicate { committed_through }\n            | DeliveryDecision::Stale { committed_through } => Answer::Ack(committed_through),",
+      "replace": "            DeliveryDecision::Duplicate { committed_through } => Answer::Conflict(committed_through),\n            DeliveryDecision::Stale { committed_through } => Answer::Ack(committed_through),",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-sim"
+      ],
+      "expect_failing": "delivery_survives_partitions_and_lost_answers"
     }
   ]
 }
