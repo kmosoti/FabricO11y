@@ -425,6 +425,25 @@
         "formal/kani/check.sh"
       ],
       "expect_failing": "proofs::retention_deletes_the_shortest_sufficient_prefix"
+    },
+    {
+      "id": "M-FUZZ-IDENTIFY",
+      "contract": "DEL-5 an invalid Batch is refused before it is identified or sequenced",
+      "incorrect_behavior": "identify a Batch without validating it (a short node id then panics the request)",
+      "file": "crates/fabric-server/src/store.rs",
+      "find": "    batch.validate()?;",
+      "replace": "    let _ = batch.validate();",
+      "command": [
+        "cargo",
+        "test",
+        "--no-fail-fast",
+        "--locked",
+        "-p",
+        "fabric-fuzz-targets",
+        "--test",
+        "corpus"
+      ],
+      "expect_failing": "batch_identify_corpus"
     }
   ]
 }
