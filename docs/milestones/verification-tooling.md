@@ -1,6 +1,6 @@
 # Milestone: verification tooling
 
-Status: complete pending merge. Base: `main` at `e68d6ce`.
+Status: complete and merged into `main` (`58b694d`); CI green on `c45f027` (Rust, Documentation, Extended verification). Base: `main` at `e68d6ce`.
 
 This milestone adopts property testing, bounded model checking, coverage-guided fuzzing, network simulation, a dependency policy and a coverage report, as [ADR-0021](../decisions/ADR-0021-add-property-model-fuzz-and-simulation-checks.md) records. It also extends Clippy to every crate. Kani found two defects in the core, both fixed here.
 
