@@ -47,6 +47,8 @@ Where this contract was silent, the implementation follows the oracle's document
 
 Each sealed server journal file (64 MiB by default, `journal_file_bytes`) becomes one segment, built by a background sealer off the commit path. The commit thread then writes the stream checkpoint `streams.json` and deletes the journal file; on startup a journal file whose segment already exists is reclaimed before serving, and incomplete builds are removed. Queries read segments with Parquet row-group statistics on the time column and the journal tail by decoding frames, keep the `limit + 1` smallest rows in a bounded heap, and bind pages to the group range `[oldest retained, newest committed]`. A segment whose file size, schema or row count differs from its manifest, or that fails to decode, is reported in `unavailable`; whole-file SHA-256 checks are available through `segment::verify` rather than on every query. `fabricctl admin <ADMIN_CONFIG> query '<JSON>'` sends a query.
 
+Today the sealer builds a Segment from the whole journal file in memory (a peak of about 5.5 times the file). [ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md) accepts a bounded external merge sort that produces the same Segment; the [sealer view](sealer.md) describes it. This contract does not change.
+
 ## Invariants
 
 - Query execution never mutates stored telemetry.

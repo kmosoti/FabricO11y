@@ -19,6 +19,8 @@ Terms mean one thing each across code, documents, diagrams and experiments. When
 | ACK | The server's answer `ack` with `committed_through`, sent only after the group holding the Batch (or the earlier Batch it acknowledges) completed data and marker syncs. |
 | Server journal | The server's `FAB1` frame log of committed groups of Batches, replayed to rebuild Strand and binding state. |
 | Segment | An immutable directory of Zstd Parquet files plus a manifest written last, covering a contiguous range of journal groups. |
+| Sealer | The server's background thread that turns each sealed journal file into a Segment, then lets the commit thread delete the file, and applies retention. It runs after ingestion and never sits on the ACK path. |
+| Run | A sorted batch of log rows or metric points, spilled to a scratch file while a Segment is built. Runs are merged into the final table and deleted before the Segment commits; they are not a durable format. |
 | Retention | Deleting whole Segments, oldest first, when the age or byte limit is exceeded; the retained window is reported with every answer. |
 | Snapshot | The group range a query answer was computed from; a page token binds it. |
 | Completeness | Whether every Segment and journal file that could hold matching rows was read and verified (`complete`), with the unavailable ones listed. |

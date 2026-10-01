@@ -2,7 +2,7 @@
 
 ## Active work
 
-Milestone **verification tooling** ([record](milestones/verification-tooling.md)): property tests, Kani proofs, fuzzing, turmoil network simulation, a dependency policy and a coverage report ([ADR-0021](decisions/ADR-0021-add-property-model-fuzz-and-simulation-checks.md)). Merged: the [architecture foundation](milestones/architecture-foundation.md), [verification foundation](milestones/verification-foundation.md), [semantic kernels](milestones/semantic-kernels.md), [history qualification](milestones/history-qualification.md), [delivery and recovery qualification](milestones/delivery-recovery.md) and [Linux installation qualification](milestones/linux-installation.md). The remaining target-host runs are in the [qualification runbook](qualification-runbook.md).
+Milestone **bounded sealer** ([record](milestones/bounded-sealer.md)): design accepted, implementation not started. The sealer will build each Segment by external merge sort, so its memory stops growing with the journal file ([ADR-0022](decisions/ADR-0022-build-segments-by-external-merge-sort.md), [sealer view](architecture/sealer.md)). Its acceptance protocol is registered; the comparison that chose the algorithm is an exploratory [study](experiments/benchmarks/sealer-study-run-01.md). Merged: the [architecture foundation](milestones/architecture-foundation.md), [verification foundation](milestones/verification-foundation.md), [semantic kernels](milestones/semantic-kernels.md), [history qualification](milestones/history-qualification.md), [delivery and recovery qualification](milestones/delivery-recovery.md), [Linux installation qualification](milestones/linux-installation.md) and [verification tooling](milestones/verification-tooling.md). The remaining target-host runs are in the [qualification runbook](qualification-runbook.md).
 
 ## Implemented
 
@@ -32,7 +32,7 @@ Crates: `fabric-core` (core), `fabric-ports` (ports), `fabric-app` (app), `fabri
 
 - Qualification is outstanding (below); earlier passing measurements belong to earlier revisions.
 - One host runs server, simulator and harness in fleet tiers; CPU contention distorts p99.
-- The server's sealer holds about ten times a journal file in memory while it builds a Segment, and the allocator keeps it: server RSS plateaus near 536 MiB after the first seal at 100 identities ([soak run 01](experiments/benchmarks/soak-run-01.md)).
+- The server's sealer holds about ten times a journal file in memory while it builds a Segment, and the allocator keeps it: server RSS plateaus near 536 MiB after the first seal at 100 identities ([soak run 01](experiments/benchmarks/soak-run-01.md)). [ADR-0022](decisions/ADR-0022-build-segments-by-external-merge-sort.md) accepts a bounded replacement; it is not implemented.
 - An ineffective I/O controller on WSL must be reported, never counted as enforcement.
 
 ## Outstanding qualification
@@ -44,6 +44,6 @@ From the [capability ledger](QUALIFICATION.md#capability-ledger): history query 
 - [x] History measurement under revision 2 on a four-CPU host ([milestone record](milestones/history-qualification.md)).
 - [ ] History revision 1 on the 12-CPU target host.
 - [x] Outage, stress (revision 2) and soak run on a four-CPU host ([milestone record](milestones/delivery-recovery.md)).
-- [ ] Bound the sealer's working set, then rerun the registered soak unchanged ([soak run 01](experiments/benchmarks/soak-run-01.md)).
+- [ ] Bound the sealer's working set, then rerun the registered soak unchanged ([soak run 01](experiments/benchmarks/soak-run-01.md); [bounded-sealer milestone](milestones/bounded-sealer.md)).
 - [x] Running-installation acceptance in a container ([milestone record](milestones/linux-installation.md)): inconclusive.
 - [ ] Running-installation acceptance on a host with the unified cgroup hierarchy (decides `MemoryHigh` enforcement).

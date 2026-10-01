@@ -67,6 +67,19 @@ These run on the current head in addition to the Verification column above ([ADR
 | HIST-5 | the shortest sufficient retention prefix | the same, up to three Segments over full ranges | — | — | M-PROP-RET-BYTES, M-KANI-RET-SATURATE |
 | HIST-6 | rates only from uninterrupted series | rates finite and non-negative | — | — | CX-RATE-NON-FINITE regression |
 
+## Sealer (design accepted, not implemented)
+
+Claims of the [sealer design](../architecture/sealer.md) ([ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md)). No check exists yet, so every status is **Not run**; the [milestone](../milestones/bounded-sealer.md) names the check each claim will get, and its mutants are registered in a policy commit before the implementation.
+
+| ID | Contract | Spec | Planned verification | Planned negative control | Status | Unchecked |
+| --- | --- | --- | --- | --- | --- | --- |
+| SEAL-1 | The Segment holds exactly the journal file's rows and records | S-1; HIST-1, HIST-2 | differential test against the current `segment::build`; query oracle on mixed answers | — | Not run | Real log bodies; files above 256 MiB |
+| SEAL-2 | Merged rows follow the contract's order key, so row-group time ranges do not overlap | S-2; RH query order | merge property test over any rows and run size; read amplification equal to the current build's | M-SEAL-MERGE-ORDER | Not run | — |
+| SEAL-3 | Peak heap is bounded and does not grow with the file | S-3 | counting-allocator test on four workloads; scale test from 64 to 256 MiB | M-SEAL-RETAIN-RUNS | Not run | Interaction with a live commit thread |
+| SEAL-4 | No run file or build directory outlives its build | S-4 | fault tests: injected read, write and out-of-space errors | M-SEAL-SPILL-LEFT | Not run | A crash during cleanup itself |
+| SEAL-5 | The journal file is deleted only after the Segment's rename, and a crash at any stage loses no record | S-5; HIST-2 | the crash-state test extended to the new stages | — | Not run | Physical power loss |
+| SEAL-6 | The same input gives the same files | S-6 | two builds compared by manifest hash | — | Not run | Different constants |
+
 ## Qualification
 
 These are operating-profile claims; none is qualified on the current head. A measurement names the revision whose frozen binaries it ran. The history, outage, stress and soak runs used byte-identical builds of the Rust sources at `63bbeac`, the SHA-256 values in their records. See the [capability ledger](../QUALIFICATION.md#capability-ledger).

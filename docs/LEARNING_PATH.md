@@ -131,6 +131,33 @@ Try it:
 2. Read [CX-RETENTION-SATURATED-TOTAL](formal/counterexamples.json). Explain why proptest, whose generated sizes stay below 50 bytes, could not find it, and why Kani did.
 3. Run `cargo xtask mutants --only M-SIM-DUPLICATE`. Explain which lost answer makes the simulation fail.
 
+## Stage 11 — Sort more data than fits in memory
+
+**Status: bounded-sealer milestone, design only.** The sealer turns a 64 MiB journal file into a Segment, and today it needs about 356 MiB to do it. The fix is an algorithm older than databases: sort in pieces, then merge.
+
+1. Read the file as a stream, a frame at a time, and cut the rows into **runs** of a fixed size.
+2. Sort each run in memory and write it to a scratch file.
+3. Open every run and keep only its front row in memory, in a min-heap. Pop the smallest, write it, and refill from the run it came from.
+
+Memory is one run plus one row per run, whatever the file's size. The [sealer view](architecture/sealer.md) has the diagram, the steps and a ten-row worked example.
+
+The Rust ideas:
+
+- an iterator yields one item at a time, so a stream never needs the whole collection;
+- `BinaryHeap<Reverse<T>>` is a min-heap, because the standard heap is a max-heap;
+- a type that wraps a writer and hashes each write (an adapter over `Write`) computes a checksum without a second pass;
+- a guard value with a `Drop` implementation can remove a scratch directory on every exit path.
+
+The system contract: a Segment answers every query as it did before, because its rows are in the same order and its row groups cover disjoint times.
+
+The trade-off: the merge costs disk. Spill is about 1.1 times the file, and the peak is about three times the file while a seal runs. Cheaper algorithms exist, and the [study](experiments/benchmarks/sealer-study-run-01.md) measured why each was rejected: sorting each chunk alone makes queries read up to 5.7 times more rows.
+
+Try it:
+
+1. Run the [worked example](architecture/sealer.md#a-worked-example) by hand with a run size of three. How many runs are there? How many rows does the merge hold at once?
+2. Read the [study's heap table](experiments/benchmarks/sealer-study-run-01.md#results). Why did a limit of 16,384 rows fail on 16 KiB rows, and what does the design count instead?
+3. After the milestone merges, run `cargo test -p fabric-server` and find the test that fails when a run is kept in memory.
+
 ## Working rule
 
 For each new component, answer these in plain language before coding:

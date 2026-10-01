@@ -9,6 +9,7 @@ Product architecture (current behavior; status words follow the [evidence states
 - [Storage](storage.md): `FAB1` frame log, Spool and server journal, and the FOL2 log format.
 - [Retained history and query](retained-history.md): Segments, retention, exact queries, completeness, freshness and pages.
 - [Linux deployment](deployment.md): service identity and systemd boundary; installation not yet run.
+- [Sealer](sealer.md): how a sealed journal file becomes a Segment. **Accepted design, not yet implemented** ([ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md)); the page also says what the sealer does today.
 - Machine-readable policy: [layers.json](layers.json) and [core-purity.json](core-purity.json), enforced by `cargo xtask`.
 
 Legacy demonstration:
