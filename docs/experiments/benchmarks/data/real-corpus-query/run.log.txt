@@ -1,0 +1,128 @@
+== tail-corpus
+   stock  logs_limit50_full         701.11 ms rows    50 body    6179
+   stock  logs_limit1000_full       723.19 ms rows  1000 body  127891
+   stock  logs_limit10000_full      819.91 ms rows 10000 body 1282108
+   stock  host_limit50_full         689.64 ms rows    50 body    6521
+   stock  metric_limit100_full      744.97 ms rows   100 body       0
+   stock  text_common_full          655.73 ms rows   100 body   12823
+   stock  text_mid_full             705.51 ms rows   100 body   14768
+   stock  text_rare_full            703.41 ms rows   100 body   28831
+   stock  text_none_full            720.78 ms rows     0 body       0
+   stock  text_none_60s             749.01 ms rows     0 body       0
+   stock  rate_full                 709.38 ms rows     0 body       0
+   stock  logs_last_10s             680.36 ms rows   100 body   12811
+   stock  host_last_60s             685.08 ms rows   100 body   12325
+   stock  empty_past                619.11 ms rows     0 body       0
+   stock  first 873.5 ms  random set 299.4 s  mem {'VmHWM': 278, 'VmRSS': 186}
+   walk   logs_limit50_full          38.21 ms rows    50 body    6179 [26/149585 stop true]
+   walk   logs_limit1000_full        53.45 ms rows  1000 body  127891 [502/149585 stop true]
+   walk   logs_limit10000_full      170.85 ms rows 10000 body 1282108 [5002/149585 stop true]
+   walk   host_limit50_full          16.01 ms rows    50 body    6521 [26/1496 stop true]
+   walk   metric_limit100_full       21.08 ms rows   100 body       0 [102/10000 stop true]
+   walk   text_common_full           42.09 ms rows   100 body   12823 [124/149585 stop true]
+   walk   text_mid_full              81.73 ms rows   100 body   14768 [4412/149585 stop true]
+   walk   text_rare_full            461.46 ms rows   100 body   28831 [50556/149585 stop true]
+   walk   text_none_full           1246.12 ms rows     0 body       0 [149585/149585 stop false]
+   walk   text_none_60s              62.44 ms rows     0 body       0 [5985/5985 stop false]
+   walk   rate_full                 289.19 ms rows     0 body       0 [10000/10000 stop false]
+   walk   logs_last_10s              18.56 ms rows   100 body   12811 [52/985 stop true]
+   walk   host_last_60s              18.17 ms rows   100 body   12325 [51/60 stop true]
+   walk   empty_past                 15.58 ms rows     0 body       0 [0/0 stop false]
+   walk   first 503.9 ms  random set 15.59 s  mem {'VmHWM': 76, 'VmRSS': 65}
+   differential stock vs walk: 0 mismatches
+== tail-steady
+   stock  logs_limit50_full         302.55 ms rows    50 body   25600
+   stock  logs_limit1000_full       283.90 ms rows  1000 body  512000
+   stock  logs_limit10000_full      379.85 ms rows 10000 body 5120000
+   stock  host_limit50_full         243.13 ms rows    50 body   25600
+   stock  metric_limit100_full      237.63 ms rows   100 body       0
+   stock  text_common_full          258.85 ms rows   100 body   51200
+   stock  text_mid_full             258.56 ms rows     3 body    1536
+   stock  text_rare_full            247.87 ms rows     1 body     512
+   stock  text_none_full            254.41 ms rows   100 body   51200
+   stock  text_none_60s             277.78 ms rows    10 body    5120
+   stock  rate_full                 250.63 ms rows     0 body       0
+   stock  logs_last_10s             277.84 ms rows   100 body   51200
+   stock  host_last_60s             289.32 ms rows   100 body   51200
+   stock  empty_past                255.84 ms rows     0 body       0
+   stock  first 332.3 ms  random set 107.86 s  mem {'VmHWM': 219, 'VmRSS': 219}
+   walk   logs_limit50_full          14.08 ms rows    50 body   25600 [26/55000 stop true]
+   walk   logs_limit1000_full        34.07 ms rows  1000 body  512000 [502/55000 stop true]
+   walk   logs_limit10000_full      196.15 ms rows 10000 body 5120000 [5002/55000 stop true]
+   walk   host_limit50_full           7.21 ms rows    50 body   25600 [26/550 stop true]
+   walk   metric_limit100_full       11.06 ms rows   100 body       0 [102/3700 stop true]
+   walk   text_common_full           14.21 ms rows   100 body   51200 [102/55000 stop true]
+   walk   text_mid_full             545.40 ms rows     3 body    1536 [55000/55000 stop false]
+   walk   text_rare_full            491.48 ms rows     1 body     512 [55000/55000 stop false]
+   walk   text_none_full            459.24 ms rows   100 body   51200 [50346/55000 stop true]
+   walk   text_none_60s              56.65 ms rows    10 body    5120 [5900/5900 stop false]
+   walk   rate_full                 110.28 ms rows     0 body       0 [3700/3700 stop false]
+   walk   logs_last_10s               7.73 ms rows   100 body   51200 [52/1000 stop true]
+   walk   host_last_60s               6.43 ms rows   100 body   51200 [50/59 stop true]
+   walk   empty_past                  4.96 ms rows     0 body       0 [0/0 stop false]
+   walk   first 181.1 ms  random set 9.72 s  mem {'VmHWM': 57, 'VmRSS': 57}
+   differential stock vs walk: 0 mismatches
+== seg-corpus64
+   stock  logs_limit50_full         130.39 ms rows    50 body    6179
+   stock  logs_limit1000_full       146.09 ms rows  1000 body  127891
+   stock  logs_limit10000_full      215.66 ms rows 10000 body 1282108
+   stock  host_limit50_full         118.52 ms rows    50 body    6521
+   stock  metric_limit100_full      131.31 ms rows   100 body       0
+   stock  text_common_full          125.83 ms rows   100 body   12823
+   stock  text_mid_full             133.59 ms rows   100 body   14768
+   stock  text_rare_full            120.43 ms rows   100 body   28831
+   stock  text_none_full            144.50 ms rows     0 body       0
+   stock  text_none_60s              13.51 ms rows     0 body       0
+   stock  rate_full                 121.58 ms rows     0 body       0
+   stock  logs_last_10s              11.84 ms rows   100 body   11962
+   stock  host_last_60s              14.37 ms rows   100 body   12575
+   stock  empty_past                  8.68 ms rows     0 body       0
+   stock  first 142.0 ms  random set 21.86 s  mem {'VmHWM': 51, 'VmRSS': 42}
+   walk   logs_limit50_full          10.41 ms rows    50 body    6179 [1/64 stop true]
+   walk   logs_limit1000_full        15.64 ms rows  1000 body  127891 [1/64 stop true]
+   walk   logs_limit10000_full      102.87 ms rows 10000 body 1282108 [3/64 stop true]
+   walk   host_limit50_full          11.31 ms rows    50 body    6521 [2/64 stop true]
+   walk   metric_limit100_full       11.20 ms rows   100 body       0 [1/64 stop true]
+   walk   text_common_full            9.61 ms rows   100 body   12823 [1/64 stop true]
+   walk   text_mid_full              14.56 ms rows   100 body   14768 [2/64 stop true]
+   walk   text_rare_full             49.81 ms rows   100 body   28831 [22/64 stop true]
+   walk   text_none_full            147.20 ms rows     0 body       0 [64/64 stop false]
+   walk   text_none_60s              16.88 ms rows     0 body       0 [3/3 stop false]
+   walk   rate_full                 133.45 ms rows     0 body       0 [64/64 stop false]
+   walk   logs_last_10s              13.27 ms rows   100 body   11962 [1/1 stop false]
+   walk   host_last_60s              15.23 ms rows   100 body   12575 [3/3 stop false]
+   walk   empty_past                  9.41 ms rows     0 body       0 [0/0 stop false]
+   walk   first 225.2 ms  random set 10.27 s  mem {'VmHWM': 37, 'VmRSS': 32}
+   differential stock vs walk: 0 mismatches
+== seg-steady64
+   stock  logs_limit50_full          98.53 ms rows    50 body   25600
+   stock  logs_limit1000_full       109.34 ms rows  1000 body  512000
+   stock  logs_limit10000_full      208.96 ms rows 10000 body 5120000
+   stock  host_limit50_full         104.13 ms rows    50 body   25600
+   stock  metric_limit100_full       69.48 ms rows   100 body       0
+   stock  text_common_full          114.77 ms rows   100 body   51200
+   stock  text_mid_full             100.24 ms rows     3 body    1536
+   stock  text_rare_full             90.62 ms rows     1 body     512
+   stock  text_none_full             94.66 ms rows   100 body   51200
+   stock  text_none_60s              16.03 ms rows    10 body    5120
+   stock  rate_full                  58.07 ms rows     0 body       0
+   stock  logs_last_10s               8.01 ms rows   100 body   51200
+   stock  host_last_60s              17.26 ms rows   100 body   51200
+   stock  empty_past                  9.08 ms rows     0 body       0
+   stock  first 127.6 ms  random set 16.07 s  mem {'VmHWM': 48, 'VmRSS': 35}
+   walk   logs_limit50_full          10.57 ms rows    50 body   25600 [1/64 stop true]
+   walk   logs_limit1000_full        19.44 ms rows  1000 body  512000 [1/64 stop true]
+   walk   logs_limit10000_full      135.81 ms rows 10000 body 5120000 [6/64 stop true]
+   walk   host_limit50_full          12.80 ms rows    50 body   25600 [4/64 stop true]
+   walk   metric_limit100_full       10.04 ms rows   100 body       0 [2/45 stop true]
+   walk   text_common_full            9.13 ms rows   100 body   51200 [1/64 stop true]
+   walk   text_mid_full              91.34 ms rows     3 body    1536 [64/64 stop false]
+   walk   text_rare_full            117.31 ms rows     1 body     512 [64/64 stop false]
+   walk   text_none_full             93.17 ms rows   100 body   51200 [59/64 stop true]
+   walk   text_none_60s              14.95 ms rows    10 body    5120 [7/7 stop false]
+   walk   rate_full                  52.60 ms rows     0 body       0 [45/45 stop false]
+   walk   logs_last_10s               8.89 ms rows   100 body   51200 [1/1 stop false]
+   walk   host_last_60s              16.02 ms rows   100 body   51200 [7/7 stop false]
+   walk   empty_past                  6.07 ms rows     0 body       0 [0/0 stop false]
+   walk   first 15.3 ms  random set 9.01 s  mem {'VmHWM': 48, 'VmRSS': 35}
+   differential stock vs walk: 0 mismatches

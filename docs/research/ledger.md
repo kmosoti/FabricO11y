@@ -30,7 +30,7 @@ The novelty firewall of the charter applies to every entry: before "novel", the 
 | L-18 | Query time and memory are proportional to the unsealed tail, unbounded by anything but `journal_bytes` | OBSERVED (run 01); bounded by L-03 and L-04 on the prototype | On real text the tail also holds 2.5 times the bytes of its Segment (uncompressed protobuf against Zstd Parquet). The bounded sealer keeps it short; L-03 and L-04 make queries over it cost their answers |
 | L-19 | Hash the custody table per row group instead of per Batch | CANDIDATE | 32 B per Batch is 3.6 % of a synthetic Segment and 17.6 % of a real-text one; a scratch sealer and a replay differential decide whether custody survives without the per-row check |
 | L-20 | A custody encoding that stores OTLP framing and repeated attributes once per Batch | HUNCH | On real text the raw copy costs twice the body column; the framing share is unmeasured. Measure it first |
-| L-21 | Real-corpus query run | CANDIDATE, ranked first among the storage questions | Every query figure so far is on synthetic lines; the real-text state exists; one run of the attribution shapes calibrates text search, body decode and L-06's open half |
+| L-21 | Real-corpus query run | FALSIFIED on the tail, held per entry; held on Segments within 2× except metrics | [Real-corpus query run 01](../experiments/benchmarks/real-corpus-query-run-01.md): the same 64 MiB of real text holds 2.7 times the entries, and the stock tail cost is 4.7 µs per entry on both; Segment shapes within 1.0 to 1.5×; the walk reads the same sources; text selectivity decides its gain (1 %: 706 to 82 ms); the walk's 8.3 µs per entry when nothing stops it is the cost to fix; 0 mismatches in 800 queries |
 | L-22 | Delta encodings for the metrics projection | DERIVED | Measured 16 to 29 % of a table that is 3 to 13 % of a Segment; a writer property and an ADR note when a consumer's metric volume makes it matter |
 | L-23 | Traces as a third projection of the same record spine | OUT OF CONTRACT (design held) | The [storage direction](storage-direction.md) says where spans, locators and a `trace_id` bloom would go; nothing runs until the contract changes |
 
@@ -50,11 +50,11 @@ L-03 ran next ([tail-index run 01](../experiments/benchmarks/tail-index-run-01.m
 L-04 ran next ([threshold run 01](../experiments/benchmarks/topk-run-01.md)): ordering sources by their minimum key and stopping at the heap's threshold makes a `limit` query cost its answer on disjoint history (26 entries read of 55,000; one row group of 64), keeps the server's memory flat where the index alone did not, changes no answer in 1,200 queries, and gains nothing at total overlap or for shapes that cannot fill the heap, which pay for the walk. After it:
 
 1. **L-05** ran ([budget run 01](../experiments/benchmarks/budget-run-01.md)): the boundary semantics hold and bound the shapes L-04 cannot, at a price in pages; it waits on a counter-bearing workload and a contract decision.
-2. **L-21**, the real-corpus query run: the [storage direction](storage-direction.md) found that the synthetic workload hides the storage costs; whether it also hides query costs decides every storage entry that follows.
-3. **L-19**, then **L-20**: the custody copy, measured as the largest removable cost of a Segment.
+2. **L-21** ran ([real-corpus query run 01](../experiments/benchmarks/real-corpus-query-run-01.md)): real text holds 2.7 times the entries per byte, so every per-entry cost weighs more; the walk's per-entry overhead when it cannot stop is now the query-side item to fix.
+3. **L-19**, then **L-20**: the custody copy, measured as the largest removable cost of a Segment and heavier per byte on real text.
 4. **L-07**, design work whose test exists; **L-03 and L-04's promotion** together under Q2 of the direction review, after the registered soak.
 
-Only one experiment runs at a time; L-21's is next.
+Only one experiment runs at a time; L-19's is next.
 
 ## Entries
 
@@ -328,6 +328,8 @@ Rows carry the node's clock, gaps and the retained window the server's, freshnes
 **Falsification test.** The hypothesis is that the synthetic figures transfer within a factor of two. False if a shape differs by more.
 
 **Promotion criterion.** None; it calibrates L-06, L-19 and L-20.
+
+**Result (run 01, 2026-10-02).** [Record](../experiments/benchmarks/real-corpus-query-run-01.md). On the unsealed tail every stock shape cost 2.2 to 3.1 times its synthetic figure, which falsifies the hypothesis as stated; the cause is entries per byte (149,585 against 55,000 in 64 MiB), and per entry the cost is the same 4.7 µs. The right unit for the tail's cost is the entry, not the megabyte. On Segments the log shapes transferred within 1.0 to 1.5 times; metric and rate shapes ran 1.9 to 2.5 times because real text packs 2.7 times the points into the same bytes. The walk prototype read the same sources on real as on synthetic text and its gain on a text search is set by selectivity (124 entries read at 35 %, 4,412 at 1 %, 50,556 at 0.1 %); when nothing stops it, it costs 8.3 µs per entry against the stock path's 4.8, so the file-order fallback and a cheaper per-entry extract are worth more than the synthetic figures suggested. 0 mismatches in 800 random queries with pages. What it decides for the storage entries: real text raises records per byte, so every per-record cost (the per-Batch hash of L-19, the custody framing of L-20, the walk's per-entry work) weighs more on real workloads than on the soak generator.
 
 ### L-22. Delta encodings for the metrics projection
 
