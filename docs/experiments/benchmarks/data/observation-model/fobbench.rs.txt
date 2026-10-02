@@ -19,7 +19,7 @@ fn rec(i: u64, kind: u8, body_len: usize, attrs: usize, distinct_attr_values: u6
 }
 
 fn main() {
-    println!("kind,n,body_len,attrs,distinct_values,jitter_ns,bytes_per_record,encode_ns_per_record,decode_ns_per_record");
+    println!("kind,n,body_len,attrs,distinct_values,jitter_ns,bytes_per_record,encode_ns_per_record,decode_ns_per_record,view_ns_per_record");
     let cases: Vec<(u8, usize, usize, usize, u64, u64)> = {
         let mut v = Vec::new();
         for &n in &[1usize, 16, 256, 4096, 65536] {
@@ -44,6 +44,11 @@ fn main() {
         for _ in 0..reps { back = decode(&bytes).unwrap(); }
         let dec = t.elapsed().as_nanos() as f64 / (reps * n) as f64;
         assert_eq!(back, block);
-        println!("{kind},{n},{body},{attrs},{dv},{j},{:.2},{enc:.0},{dec:.0}", bytes.len() as f64 / n as f64);
+        let t = Instant::now();
+        let mut seen = 0usize;
+        for _ in 0..reps { let v = decode_view(&bytes).unwrap(); seen += v.len(); }
+        let view = t.elapsed().as_nanos() as f64 / (reps * n) as f64;
+        assert_eq!(seen, reps * n);
+        println!("{kind},{n},{body},{attrs},{dv},{j},{:.2},{enc:.0},{dec:.0},{view:.0}", bytes.len() as f64 / n as f64);
     }
 }

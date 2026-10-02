@@ -4,7 +4,7 @@
 
 use fabric_observation::{
     Bits, Locators, MAX_SEVERITY, Number, Observation, PointKind, Signal, SpanKind, Status, Strand,
-    Value, decode, encode,
+    Value, decode, decode_view, encode,
 };
 use proptest::prelude::*;
 use std::collections::BTreeMap;
@@ -171,13 +171,17 @@ fn crc32fast_hash(data: &[u8]) -> u32 {
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(1_500))]
 
-    /// Every valid block decodes to itself and has exactly the bytes it had.
+    /// Every valid block decodes to itself and has exactly the bytes it had,
+    /// through the owned decoder and through the borrowing view.
     #[test]
     fn round_trip_is_identity(block in block()) {
         let bytes = encode(&block).unwrap();
         let back = decode(&bytes).unwrap();
         prop_assert_eq!(&back, &block);
-        prop_assert_eq!(encode(&back).unwrap(), bytes);
+        prop_assert_eq!(&encode(&back).unwrap(), &bytes);
+        let view = decode_view(&bytes).unwrap();
+        let owned: Vec<Observation> = view.iter().map(|r| r.to_owned()).collect();
+        prop_assert_eq!(&owned, &block);
     }
 
     /// Canonicality under mutation: with the CRC repaired, any accepted byte

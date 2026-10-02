@@ -12,6 +12,7 @@ use crate::bits::pack_le;
 use crate::bytes::{Cursor, DecodeError};
 use crate::dictionary::Lookup;
 use crate::{varint, zigzag};
+use alloc::borrow::ToOwned;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -57,6 +58,28 @@ pub enum Value {
     Double(Bits),
     Bool(bool),
     Bytes(Vec<u8>),
+}
+
+/// An attribute value borrowed from a block.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ValueRef<'a> {
+    Str(&'a str),
+    Int(i64),
+    Double(Bits),
+    Bool(bool),
+    Bytes(&'a [u8]),
+}
+
+impl ValueRef<'_> {
+    pub fn to_owned(self) -> Value {
+        match self {
+            ValueRef::Str(s) => Value::Str(s.to_owned()),
+            ValueRef::Int(i) => Value::Int(i),
+            ValueRef::Double(b) => Value::Double(b),
+            ValueRef::Bool(b) => Value::Bool(b),
+            ValueRef::Bytes(b) => Value::Bytes(b.to_vec()),
+        }
+    }
 }
 
 const NUMBER_INT: u8 = 0;
@@ -154,12 +177,14 @@ pub fn put_attributes(
     }
 }
 
-pub fn get_attributes(
-    cur: &mut Cursor<'_>,
-    strings: &mut Lookup<String>,
-) -> Result<Vec<(String, Value)>, DecodeError> {
+/// Reads one attribute list with keys and string values borrowed from the
+/// block's dictionary (itself borrowed from the input).
+pub fn get_attributes<'a>(
+    cur: &mut Cursor<'a>,
+    strings: &mut Lookup<&'a str>,
+) -> Result<Vec<(&'a str, ValueRef<'a>)>, DecodeError> {
     let count = varint::count(cur, 2)?;
-    let mut list: Vec<(String, Value)> = Vec::with_capacity(count);
+    let mut list: Vec<(&'a str, ValueRef<'a>)> = Vec::with_capacity(count);
     for _ in 0..count {
         let key_at = cur.position();
         let id = varint::get(cur)?;
@@ -172,20 +197,20 @@ pub fn get_attributes(
             VALUE_STR => {
                 let at = cur.position();
                 let id = varint::get(cur)?;
-                Value::Str(strings.get(cur, at, id)?)
+                ValueRef::Str(strings.get(cur, at, id)?)
             }
-            VALUE_INT => Value::Int(zigzag::decode(varint::get(cur)?)),
+            VALUE_INT => ValueRef::Int(zigzag::decode(varint::get(cur)?)),
             VALUE_DOUBLE => {
                 let at = cur.position();
                 let bits = Bits(cur.u64_le()?);
                 if let Err(reason) = check_double(bits) {
                     return cur.fail_at(at, reason);
                 }
-                Value::Double(bits)
+                ValueRef::Double(bits)
             }
-            VALUE_FALSE => Value::Bool(false),
-            VALUE_TRUE => Value::Bool(true),
-            VALUE_BYTES => Value::Bytes(varint::get_bytes(cur)?.to_vec()),
+            VALUE_FALSE => ValueRef::Bool(false),
+            VALUE_TRUE => ValueRef::Bool(true),
+            VALUE_BYTES => ValueRef::Bytes(varint::get_bytes(cur)?),
             _ => return cur.fail_at(tag_at, "unknown value tag"),
         };
         list.push((key, value));
@@ -242,8 +267,14 @@ mod tests {
             "the value \"a\" reuses the key's entry"
         );
         let mut cur = Cursor::new(&out);
-        let mut lookup = Lookup::new(&mut cur, strings.table().to_vec(), &[0; 5], "dup").unwrap();
-        assert_eq!(get_attributes(&mut cur, &mut lookup).unwrap(), attrs);
+        let table: Vec<&str> = strings.table().iter().map(String::as_str).collect();
+        let mut lookup = Lookup::new(&mut cur, table, &[0; 5], "dup").unwrap();
+        let got: Vec<(String, Value)> = get_attributes(&mut cur, &mut lookup)
+            .unwrap()
+            .into_iter()
+            .map(|(k, v)| (k.to_owned(), v.to_owned()))
+            .collect();
+        assert_eq!(got, attrs);
         assert!(lookup.all_used());
     }
 

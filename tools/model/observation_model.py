@@ -137,19 +137,27 @@ class Machine:
     # Least-squares fit on fobbench.csv (92 points; slicing-by-eight CRC, open-addressing
     # intern table, pre-sized buffers): median error about 15 % on both sides; the worst
     # points are one-record blocks. Earlier fits are kept in the model record.
-    enc_per_block_ns: float = 285.0          # six column buffers, two dictionaries, the output (650 before pre-sizing)
+    enc_per_block_ns: float = 410.0          # six column buffers, two dictionaries, the output (650 before pre-sizing)
     enc_base_ns: float = 135.0
     enc_per_byte_ns: float = 1.1             # two copies plus the CRC (3.0 with the bytewise CRC)
-    enc_per_attr_ns: float = 55.0            # a hash lookup per key and per value (105 with the BTreeMap)
+    enc_per_attr_ns: float = 65.0            # a hash lookup per key and per value (105 with the BTreeMap)
     enc_per_distinct_attr_ns: float = 50.0   # a table insert when the value is new (375 with the BTreeMap)
-    # decode (owned Strings; a borrowing decoder would remove most of the per-attribute cost)
-    dec_per_block_ns: float = 440.0
-    dec_base_ns: float = 100.0
+    # decode to owned records: the view below plus one String per string field
+    dec_per_block_ns: float = 365.0
+    dec_base_ns: float = 170.0
     dec_per_byte_ns: float = 0.9             # UTF-8 check, the CRC, one copy into a String (3.3 with the bytewise CRC)
-    dec_per_attr_ns: float = 235.0           # two String clones
-    dec_per_distinct_attr_ns: float = 190.0
-    dec_per_point_extra_ns: float = 160.0    # name and unit clones
-    dec_per_span_extra_ns: float = 65.0
+    dec_per_attr_ns: float = 150.0           # two String clones (235 before the view)
+    dec_per_distinct_attr_ns: float = 135.0
+    dec_per_point_extra_ns: float = 95.0     # name and unit clones
+    dec_per_span_extra_ns: float = 45.0
+    # decode to the borrowing view (decode_view): no string is copied
+    view_per_block_ns: float = 460.0
+    view_base_ns: float = 72.0
+    view_per_byte_ns: float = 0.8            # UTF-8 check and the CRC
+    view_per_attr_ns: float = 45.0           # two dictionary lookups
+    view_per_distinct_attr_ns: float = 115.0 # the distinctness check of a large table
+    view_per_point_extra_ns: float = 55.0
+    view_per_span_extra_ns: float = 55.0
     # compression stage (Zstd level 3 over a whole block of at least 1 MiB), by component.
     # Two measured points fit these (encoding run 01): they are structured, not independent.
     zstd_ratio_text: float = 9.0             # real log lines contiguous in the payload column (Parquet's body column, in smaller pages, reached 6.2)
@@ -179,6 +187,15 @@ def decode_ns(w: Workload, m: Machine) -> float:
     return m.dec_per_block_ns / w.records + m.dec_base_ns + m.dec_per_byte_ns * body \
         + w.attrs * (m.dec_per_attr_ns + heavy * m.dec_per_distinct_attr_ns) \
         + w.share_points * m.dec_per_point_extra_ns + w.share_spans * m.dec_per_span_extra_ns
+
+
+def view_ns(w: Workload, m: Machine) -> float:
+    """Decode to the borrowing view, which a verifier or re-encoder needs; no copies."""
+    body = w.share_lines * w.body_bytes
+    heavy = 1.0 if w.attr_distinct_values >= 1024 else 0.0
+    return m.view_per_block_ns / w.records + m.view_base_ns + m.view_per_byte_ns * body \
+        + w.attrs * (m.view_per_attr_ns + heavy * m.view_per_distinct_attr_ns) \
+        + w.share_points * m.view_per_point_extra_ns + w.share_spans * m.view_per_span_extra_ns
 
 
 def compressed_bytes_per_record(w: Workload, m: Machine, text_ratio: float | None = None) -> float:
@@ -218,9 +235,9 @@ def capabilities(w: Workload, m: Machine, f: Fleet) -> dict:
     comp = compressed_bytes_per_record(w, m)
     rs = f.records_s
     cycles_budget = m.ghz * 1e9 * m.cores_for_fabric * m.cpu_share_budget
-    enc = encode_ns(w, m); dec = decode_ns(w, m)
+    enc = encode_ns(w, m); dec = view_ns(w, m)
     zstd = m.zstd_ns_per_byte * raw
-    server_ns_per_record = dec + zstd            # the server decodes once (verify) and compresses once (seal)
+    server_ns_per_record = dec + zstd            # the server decodes to the view once (verify) and compresses once (seal)
     return {
         "raw_B_per_record": raw,
         "compressed_B_per_record": comp,
@@ -260,8 +277,11 @@ def calibrate() -> list[dict]:
             pb = bytes_per_record(w); mb = float(r["bytes_per_record"])
             pe = encode_ns(w, m); me = float(r["encode_ns_per_record"])
             pd = decode_ns(w, m); md = float(r["decode_ns_per_record"])
-            out.append({"source": "fobbench", "case": f"kind{kind} n{n} body{r['body_len']} attrs{attrs} dv{dv} jit{r['jitter_ns']}",
-                        "bytes": (pb, mb), "encode_ns": (pe, me), "decode_ns": (pd, md)})
+            rec = {"source": "fobbench", "case": f"kind{kind} n{n} body{r['body_len']} attrs{attrs} dv{dv} jit{r['jitter_ns']}",
+                   "bytes": (pb, mb), "encode_ns": (pe, me), "decode_ns": (pd, md)}
+            if "view_ns_per_record" in r:
+                rec["view_ns"] = (view_ns(w, m), float(r["view_ns_per_record"]))
+            out.append(rec)
     # the three journals of encoding run 01: records per file block, real and synthetic
     enc_dir = DATA / "observation-encoding"
     for name, w in [
@@ -290,7 +310,7 @@ def errors(rows: list[dict]) -> dict[str, list[float]]:
     """Relative errors per metric, as fractions."""
     out: dict[str, list[float]] = {}
     for r in rows:
-        for k in ("bytes", "compressed_bytes", "encode_ns", "decode_ns"):
+        for k in ("bytes", "compressed_bytes", "encode_ns", "decode_ns", "view_ns"):
             if k in r and r[k][1]:
                 out.setdefault(k, []).append((r[k][0] - r[k][1]) / r[k][1])
     return out
@@ -299,7 +319,7 @@ def errors(rows: list[dict]) -> dict[str, list[float]]:
 def _fmt_cal(rows: list[dict]) -> str:
     lines = [f"{'case':52} {'metric':17} {'predicted':>10} {'measured':>10} {'error':>7}"]
     for r in rows:
-        for k in ("bytes", "compressed_bytes", "encode_ns", "decode_ns"):
+        for k in ("bytes", "compressed_bytes", "encode_ns", "decode_ns", "view_ns"):
             if k in r:
                 p, mv = r[k]
                 err = (p - mv) / mv * 100 if mv else float("nan")
@@ -317,6 +337,7 @@ def _fmt_caps() -> str:
                      ("real text, 5 attrs, 1 µs jitter", Workload(body_bytes=130, attrs=5, time_jitter_ns=1_000_000, point_value_bytes=2)),
                      ("synthetic soak (512 B, random gauges)", Workload(body_bytes=512, attrs=1, time_jitter_ns=500_000_000, point_value_bytes=9.5))]:
         out.append(f"== {label}: {bytes_per_record(w):.1f} B/record raw, {compressed_bytes_per_record(w, m, m.zstd_ratio_synthetic if 'synthetic' in label else None):.1f} compressed, block of {w.records} records decodes to {decoded_block_bytes(w, m)/1048576:.1f} MiB")
+        out.append(f"   encode {encode_ns(w, m):.0f} ns, decode to view {view_ns(w, m):.0f} ns, to owned records {decode_ns(w, m):.0f} ns per record")
         out.append(f"   {'nodes':>7} {'rec/s':>9} {'journal MB/s':>12} {'segment MB/s':>12} {'retention h':>11} {'journal fill h':>14} {'server CPU':>10} {'node µs/s':>9}")
         for nodes in (100, 1_000, 10_000, 100_000):
             c = capabilities(w, m, Fleet(nodes=nodes))

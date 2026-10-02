@@ -60,11 +60,12 @@ pub mod zigzag;
 #[cfg(kani)]
 mod proofs;
 
-pub use block::{EncodeError, MAGIC, MAX_RECORDS, decode, encode};
+pub use block::{EncodeError, MAGIC, MAX_RECORDS, decode, decode_view, encode};
 pub use bytes::DecodeError;
-pub use cells::{Bits, Number, Value};
+pub use cells::{Bits, Number, Value, ValueRef};
 pub use record::{
-    Locators, MAX_SEVERITY, Observation, PointKind, Signal, SpanKind, Status, Strand, check,
+    Locators, MAX_SEVERITY, Observation, ObservationRef, PointKind, Signal, SignalRef, SpanKind,
+    Status, Strand, check,
 };
 
 #[cfg(test)]

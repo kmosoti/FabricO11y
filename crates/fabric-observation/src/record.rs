@@ -8,7 +8,8 @@
 //! keys, finite doubles, a severity in range. Everything else about a record
 //! is free, so the encoding stays total over the type.
 
-use crate::cells::{Number, Value, check_attributes, check_double};
+use crate::cells::{Number, Value, ValueRef, check_attributes, check_double};
+use alloc::borrow::ToOwned;
 use alloc::string::String;
 use alloc::vec::Vec;
 
@@ -111,5 +112,91 @@ pub fn check(record: &Observation) -> Result<(), &'static str> {
             ..
         } => check_double(crate::cells::Bits::from_f64(*d)),
         _ => Ok(()),
+    }
+}
+
+/// The signal-specific part of a record, borrowed from a block.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SignalRef<'a> {
+    Log {
+        severity: u8,
+        event: &'a str,
+        body: &'a str,
+    },
+    Point {
+        name: &'a str,
+        unit: &'a str,
+        kind: PointKind,
+        value: Number,
+    },
+    Span {
+        name: &'a str,
+        end_ns: u64,
+        status: Status,
+        kind: SpanKind,
+    },
+}
+
+/// One observation whose strings point into the block it was decoded from.
+/// The view is what a reader that only inspects, filters or re-encodes
+/// needs; [`ObservationRef::to_owned`] produces the owned [`Observation`].
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ObservationRef<'a> {
+    pub strand: Strand,
+    pub sequence: u64,
+    pub index: u32,
+    pub time_ns: u64,
+    pub locators: Option<Locators>,
+    pub attributes: Vec<(&'a str, ValueRef<'a>)>,
+    pub signal: SignalRef<'a>,
+}
+
+impl ObservationRef<'_> {
+    pub fn to_owned(&self) -> Observation {
+        Observation {
+            strand: self.strand,
+            sequence: self.sequence,
+            index: self.index,
+            time_ns: self.time_ns,
+            locators: self.locators,
+            attributes: self
+                .attributes
+                .iter()
+                .map(|(k, v)| ((*k).to_owned(), ValueRef::to_owned(*v)))
+                .collect(),
+            signal: match self.signal {
+                SignalRef::Log {
+                    severity,
+                    event,
+                    body,
+                } => Signal::Log {
+                    severity,
+                    event: event.to_owned(),
+                    body: body.to_owned(),
+                },
+                SignalRef::Point {
+                    name,
+                    unit,
+                    kind,
+                    value,
+                } => Signal::Point {
+                    name: name.to_owned(),
+                    unit: unit.to_owned(),
+                    kind,
+                    value,
+                },
+                SignalRef::Span {
+                    name,
+                    end_ns,
+                    status,
+                    kind,
+                } => Signal::Span {
+                    name: name.to_owned(),
+                    end_ns,
+                    status,
+                    kind,
+                },
+            },
+        }
     }
 }

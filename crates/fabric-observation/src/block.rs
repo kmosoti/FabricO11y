@@ -34,7 +34,8 @@ use crate::crc32;
 use crate::delta::{SecondOrderDecoder, SecondOrderEncoder, step, unstep};
 use crate::dictionary::{Intern, Lookup};
 use crate::record::{
-    Locators, MAX_SEVERITY, Observation, PointKind, Signal, SpanKind, Status, Strand, check,
+    Locators, MAX_SEVERITY, Observation, ObservationRef, PointKind, Signal, SignalRef, SpanKind,
+    Status, Strand, check,
 };
 use crate::varint;
 use alloc::string::String;
@@ -221,8 +222,19 @@ pub fn encode(records: &[Observation]) -> Result<Vec<u8>, EncodeError> {
     Ok(out)
 }
 
-/// Decodes an FOB1 block, accepting only its canonical form.
+/// Decodes an FOB1 block into owned records, accepting only its canonical
+/// form. The checks live in [`decode_view`]; this copies its strings out.
 pub fn decode(bytes: &[u8]) -> Result<Vec<Observation>, DecodeError> {
+    Ok(decode_view(bytes)?
+        .iter()
+        .map(ObservationRef::to_owned)
+        .collect())
+}
+
+/// Decodes an FOB1 block into records whose strings borrow from `bytes`,
+/// accepting only its canonical form. No string is copied: the dictionary
+/// and every body point into the input.
+pub fn decode_view(bytes: &[u8]) -> Result<Vec<ObservationRef<'_>>, DecodeError> {
     let fail = |offset: usize, reason: &'static str| Err(DecodeError { offset, reason });
     let Some(body_len) = bytes.len().checked_sub(4) else {
         return fail(0, "truncated");
@@ -260,11 +272,11 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<Observation>, DecodeError> {
         "duplicate node dictionary entry",
     )?;
     let string_count = varint::count(&mut cur, 1)?;
-    let mut string_table: Vec<String> = Vec::with_capacity(string_count);
+    let mut string_table: Vec<&str> = Vec::with_capacity(string_count);
     let mut string_starts = Vec::with_capacity(string_count);
     for _ in 0..string_count {
         string_starts.push(cur.position());
-        string_table.push(varint::get_string(&mut cur)?);
+        string_table.push(varint::get_str(&mut cur)?);
     }
     let mut strings = Lookup::new(
         &mut cur,
@@ -372,8 +384,8 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<Observation>, DecodeError> {
                 let at = cur.position();
                 let id = varint::get(&mut cur)?;
                 let event = strings.get(&mut cur, at, id)?;
-                let body = varint::get_string(&mut cur)?;
-                Signal::Log {
+                let body = varint::get_str(&mut cur)?;
+                SignalRef::Log {
                     severity,
                     event,
                     body,
@@ -396,7 +408,7 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<Observation>, DecodeError> {
                     _ => return cur.fail_at(at, "unknown point kind"),
                 };
                 let value = get_number(&mut cur)?;
-                Signal::Point {
+                SignalRef::Point {
                     name,
                     unit,
                     kind,
@@ -425,7 +437,7 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<Observation>, DecodeError> {
                     5 => SpanKind::Consumer,
                     _ => return cur.fail_at(at, "unknown span kind"),
                 };
-                Signal::Span {
+                SignalRef::Span {
                     name,
                     end_ns,
                     status,
@@ -433,7 +445,7 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<Observation>, DecodeError> {
                 }
             }
         };
-        records.push(Observation {
+        records.push(ObservationRef {
             strand,
             sequence,
             index,

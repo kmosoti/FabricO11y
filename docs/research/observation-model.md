@@ -36,16 +36,16 @@ Compression is modelled as three components under their own ratios, because they
 
 Time per record is a linear model fitted by least squares on 92 measured points ([fobbench.csv](../experiments/benchmarks/data/observation-model/fobbench.csv), [source](../experiments/benchmarks/data/observation-model/fobbench.rs.txt)): a per-block cost, a per-record base, a per-body-byte cost, a per-attribute cost, an extra per attribute whose value is new to the block, and extras for points and spans.
 
-| Constant | Encode | Decode | What it is |
-| --- | ---: | ---: | --- |
-| per block | 285 ns | 440 ns | six column buffers, two dictionaries, the output |
-| per record | 135 ns | 100 ns | the fixed columns |
-| per body byte | 1.1 ns | 0.9 ns | two copies and the CRC (3.0 and 3.3 before the slicing CRC, below) |
-| per attribute | 55 ns | 235 ns | a hash lookup per key and value; two `String` clones on decode |
-| per new string value | 50 ns | 190 ns | a table insert |
-| per point, per span | 0 | 160 ns, 65 ns | name and unit clones |
+| Constant | Encode | Decode to view | Decode to owned | What it is |
+| --- | ---: | ---: | ---: | --- |
+| per block | 410 ns | 460 ns | 365 ns | six column buffers, two dictionaries, the output; on decode the tables and their distinctness check |
+| per record | 135 ns | 72 ns | 170 ns | the fixed columns; the owned record's allocation |
+| per body byte | 1.1 ns | 0.8 ns | 0.9 ns | copies and the CRC on encode; UTF-8 check and the CRC on decode (3.0 and 3.3 before the slicing CRC) |
+| per attribute | 65 ns | 45 ns | 150 ns | hash lookups on encode; dictionary lookups on decode; two `String` clones for the owned record |
+| per new string value | 50 ns | 115 ns | 135 ns | a table insert on encode; a larger distinctness set on decode |
+| per point, per span | 0 | 55 ns | 95 ns, 45 ns | name and unit |
 
-Median error of the fit: 15 % on both sides; the worst points are one-record blocks, where the per-block cost dominates and varies most. The byte model is exact: 0.2 % median error over the same 92 points, 2 % and 8 % on the two journals of [encoding run 01](../experiments/benchmarks/observation-encoding-run-01.md), 3 % and 13 % after compression ([calibration.txt](../experiments/benchmarks/data/observation-model/calibration.txt)).
+Median error of the fit: 17 % encode, 17 % owned decode, 13 % view decode; the worst points are one-record blocks, where the per-block cost dominates and varies most. The byte model is exact: 0.2 % median error over the same 92 points, 2 % and 8 % on the two journals of [encoding run 01](../experiments/benchmarks/observation-encoding-run-01.md), 3 % and 13 % after compression ([calibration.txt](../experiments/benchmarks/data/observation-model/calibration.txt)).
 
 From these, with the registered profile (two cores for Fabric, here taken at 3 GHz), a 25 % CPU share for the codec stage, a 200 MB/s disk, the 4 GiB journal cap and 20 GiB retention: records per second, journal and Segment bytes per second, hours of retention and of journal fill, the server's CPU share (one decode to verify and one Zstd pass to seal per record), the node's microseconds per second, and the memory a decoded block occupies (200 bytes of struct per record plus its strings and attributes).
 
@@ -74,13 +74,27 @@ The second iteration took the terms the first left largest on the encode side: 6
 | 4,096 spans, 3 attributes | 414 | 218 | 729 | 730 |
 | 4,096 lines, 1,024 B | 1,084 | 1,051 | 997 | 1,067 |
 
-The per-block encode cost halved, the per-attribute encode cost halved, the new-value cost fell seven-fold, and the decode side did not move, as the model said it would not: its 235 ns per attribute is the clone of two `String`s, and the next iteration is a decoder that borrows from the block.
+The per-block encode cost halved, the per-attribute encode cost halved, the new-value cost fell seven-fold, and the decode side did not move, as the model said it would not: its 235 ns per attribute was the clone of two `String`s.
+
+The third iteration took that term: `decode_view` returns records whose strings point into the block, with no copy, and the owned `decode` is now a conversion of the view, so the canonicality checks live in one place ([before](../experiments/benchmarks/data/observation-model/fobbench-owned-decoder.csv), [after](../experiments/benchmarks/data/observation-model/fobbench.csv), 4,096-record blocks):
+
+| Case | owned decode before | owned after | view |
+| --- | ---: | ---: | ---: |
+| bare line | 106 ns | 122 ns | 78 ns |
+| 64-byte line, 2 attributes | 563 | 584 | 234 |
+| 64-byte line, 5 attributes | 1,113 | 832 | 321 |
+| 64-byte line, 10 attributes | 2,053 | 1,277 | 389 |
+| point, 1 attribute | 391 | 307 | 146 |
+| span, 3 attributes | 730 | 502 | 196 |
+| 1,024-byte line | 1,067 | 1,068 | 877 |
+
+The view decodes an attribute in 45 ns against 235 before, a point in 146 ns against 391, and even the owned decoder gained a third on attribute-rich records because it no longer clones through an owned dictionary. What remains per body byte (0.8 ns) is the UTF-8 check and the CRC; the view is the decoder a verifier or a re-encoder on the server would use, and the capacity table below now prices the server's verify stage with it.
 
 ## 4. What the model says about configuration
 
 - **Blocks of 256 records or more.** Below that the tables dominate; above 4,096 the gain is under one byte per record. A block per 1 MiB journal file (3,000 to 10,000 records on the measured workloads) is in the flat region; a block per Batch (two to thirty-four records) is not, which the per-Batch measurements of run 01 showed (94 against 79 bytes per record raw).
 - **The record cap.** `MAX_RECORDS` is 65,536. A decoded block of 4,096 real-text records with five attributes occupies about 2.7 MiB; 65,536 would occupy about 43 MiB, half the sealer's 80 MiB ceiling ([bounded sealer](../milestones/bounded-sealer.md)). A product cap of 8,192, the Parquet row-group size, keeps a decoded block under 6 MiB and loses nothing in bytes.
-- **Attributes shape the cost more than bodies do.** On real text a line's body costs 130 bytes raw and 14 compressed; five string attributes cost 15 bytes raw and about 1.5 µs of codec time, four fifths of it decode-side cloning. The Spindle's five `log.file.*` attributes should be two strings (path, and device as a string if it must) and three integers.
+- **Attributes shape the cost more than bodies do.** On real text a line's body costs 130 bytes raw and 14 compressed; five string attributes cost 15 bytes raw and about 0.7 µs of codec time through the view (1.3 µs to owned records). The Spindle's five `log.file.*` attributes should be two strings (path, and device as a string if it must) and three integers.
 - **Capacity on the two-CPU profile** ([capabilities.txt](../experiments/benchmarks/data/observation-model/capabilities.txt)), real text with one attribute, two lines and two points per node per second:
 
 | Nodes | Records/s | Journal MB/s | Segment MB/s | Retention at 20 GiB | Journal fill at 4 GiB | Server CPU share |

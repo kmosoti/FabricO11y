@@ -84,14 +84,19 @@ pub fn get_bytes<'a>(cur: &mut Cursor<'a>) -> Result<&'a [u8], DecodeError> {
     cur.take(n)
 }
 
-/// A length-prefixed UTF-8 string.
-pub fn get_string(cur: &mut Cursor<'_>) -> Result<String, DecodeError> {
+/// A length-prefixed UTF-8 string, borrowed from the input.
+pub fn get_str<'a>(cur: &mut Cursor<'a>) -> Result<&'a str, DecodeError> {
     let start = cur.position();
     let raw = get_bytes(cur)?;
     match core::str::from_utf8(raw) {
-        Ok(s) => Ok(s.to_owned()),
+        Ok(s) => Ok(s),
         Err(_) => cur.fail_at(start, "string is not UTF-8"),
     }
+}
+
+/// A length-prefixed UTF-8 string, owned.
+pub fn get_string(cur: &mut Cursor<'_>) -> Result<String, DecodeError> {
+    get_str(cur).map(str::to_owned)
 }
 
 #[cfg(test)]

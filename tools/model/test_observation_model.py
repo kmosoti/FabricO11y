@@ -31,6 +31,7 @@ class Calibration(unittest.TestCase):
         e = om.errors(self.bench(16))
         self.assertLessEqual(quantile([abs(x) for x in e["encode_ns"]], 0.5), 0.25)
         self.assertLessEqual(quantile([abs(x) for x in e["decode_ns"]], 0.5), 0.25)
+        self.assertLessEqual(quantile([abs(x) for x in e["view_ns"]], 0.5), 0.25)
 
     def test_journal_bytes_within_ten_percent(self):
         journal = [r for r in self.rows if r["source"] == "encoding run 01"]

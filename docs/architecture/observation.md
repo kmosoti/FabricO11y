@@ -44,7 +44,7 @@ The canonical source is [observation-tower.mmd](../diagrams/observation-tower.mm
 | 5 | [dictionary](../../crates/fabric-observation/src/dictionary.rs) | a table in first-use order with distinct entries, all used | an id referenced before its turn, a repeated entry, an unused entry | unit tests; properties; [CX-FOB1-DUPLICATE-DICTIONARY](../formal/counterexamples.json) |
 | 6 | [cells](../../crates/fabric-observation/src/cells.rs) | numbers and attribute values with one byte form each; attribute lists strictly sorted by key | NaN, unsorted or duplicate keys, unknown tags | unit tests |
 | 7 | [record](../../crates/fabric-observation/src/record.rs) | the Observation type and `check`, the rules a record meets to have an encoding | severity above 24 and the cell rules | unit negative controls |
-| 8 | [block](../../crates/fabric-observation/src/block.rs) | FOB1: the layout below; `decode(encode(b)) == b`, `encode(decode(x)) == x` | reserved tag bits, trailing bytes, CRC mismatch, every lower level's refusal | unit tests with mutation controls; properties `round_trip_is_identity`, `mutations_are_rejected_or_canonical`, `arbitrary_bytes_never_panic`; fuzz target `observation_block` |
+| 8 | [block](../../crates/fabric-observation/src/block.rs) | FOB1: the layout below; `decode(encode(b)) == b`, `encode(decode(x)) == x`; `decode_view` returns records whose strings borrow from the block and `decode` is its owned conversion, so the checks live once | reserved tag bits, trailing bytes, CRC mismatch, every lower level's refusal | unit tests with mutation controls; properties `round_trip_is_identity`, `mutations_are_rejected_or_canonical`, `arbitrary_bytes_never_panic`; fuzz target `observation_block` |
 
 ## The record
 

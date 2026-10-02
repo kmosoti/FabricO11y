@@ -1,24 +1,27 @@
 == real text, 1 attr, regular times: 83.9 B/record raw, 12.7 compressed, block of 4096 records decodes to 1.5 MiB
+   encode 272 ns, decode to view 197 ns, to owned records 426 ns per record
      nodes     rec/s journal MB/s segment MB/s retention h journal fill h server CPU node µs/s
        100       413         0.03         0.01      1153.6           35.2       0.0%       1.1
-      1000      4133         0.34         0.05       115.4            3.5       0.2%       1.1
-     10000     41333         3.38         0.52        11.5            0.4       1.7%       1.1
-    100000    413333        33.85         5.17         1.2            0.0      16.6%       1.1
-   at a 25% share of 2 cores the codec stage supports 150,858 nodes; the disk 512,572
+      1000      4133         0.34         0.05       115.4            3.5       0.1%       1.1
+     10000     41333         3.38         0.52        11.5            0.4       1.1%       1.1
+    100000    413333        33.85         5.17         1.2            0.0      10.8%       1.1
+   at a 25% share of 2 cores the codec stage supports 231,126 nodes; the disk 512,572
 == real text, 5 attrs, 1 µs jitter: 104.9 B/record raw, 18.0 compressed, block of 4096 records decodes to 2.7 MiB
+   encode 532 ns, decode to view 377 ns, to owned records 1026 ns per record
      nodes     rec/s journal MB/s segment MB/s retention h journal fill h server CPU node µs/s
-       100       413         0.04         0.01       812.6           28.1       0.0%       2.0
-      1000      4133         0.43         0.07        81.3            2.8       0.4%       2.0
-     10000     41333         4.25         0.73         8.1            0.3       3.8%       2.0
-    100000    413333        42.53         7.34         0.8            0.0      37.7%       2.0
-   at a 25% share of 2 cores the codec stage supports 66,252 nodes; the disk 401,053
+       100       413         0.04         0.01       812.6           28.1       0.0%       2.2
+      1000      4133         0.43         0.07        81.3            2.8       0.2%       2.2
+     10000     41333         4.25         0.73         8.1            0.3       1.6%       2.2
+    100000    413333        42.53         7.34         0.8            0.0      16.3%       2.2
+   at a 25% share of 2 cores the codec stage supports 153,633 nodes; the disk 401,053
 == synthetic soak (512 B, random gauges): 281.7 B/record raw, 108.4 compressed, block of 4096 records decodes to 2.2 MiB
+   encode 482 ns, decode to view 349 ns, to owned records 598 ns per record
      nodes     rec/s journal MB/s segment MB/s retention h journal fill h server CPU node µs/s
-       100       413         0.11         0.02       383.1           10.5       0.0%       1.9
-      1000      4133         1.13         0.16        38.3            1.1       0.4%       1.9
-     10000     41333        11.31         1.56         3.8            0.1       3.6%       1.9
-    100000    413333       113.09        15.57         0.4            0.0      35.9%       1.9
-   at a 25% share of 2 cores the codec stage supports 69,720 nodes; the disk 155,452
+       100       413         0.11         0.02       383.1           10.5       0.0%       2.0
+      1000      4133         1.13         0.16        38.3            1.1       0.3%       2.0
+     10000     41333        11.31         1.56         3.8            0.1       3.0%       2.0
+    100000    413333       113.09        15.57         0.4            0.0      29.7%       2.0
+   at a 25% share of 2 cores the codec stage supports 84,117 nodes; the disk 155,452
 == block size: bytes per record for real text, 1 attr
    N=     1    163.0 B/record  (overhead 98.0 beyond the body share)
    N=     2    136.0 B/record  (overhead 71.0 beyond the body share)
