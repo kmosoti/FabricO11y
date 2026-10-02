@@ -1,0 +1,72 @@
+diff --git a/crates/fabric-server/src/query.rs b/crates/fabric-server/src/query.rs
+index 0519f99..d2eef7c 100644
+--- a/crates/fabric-server/src/query.rs
++++ b/crates/fabric-server/src/query.rs
+@@ -341,6 +341,27 @@ impl History {
+             newest_group: newest,
+         };
+         let node_ok = |n: &str| node.as_deref().is_none_or(|want| want == n);
++        // Research prototype: Segment-level dispositions from manifest facts.
++        // FABRIC_PROTO_DISPOSITION = off | naive | sound. Not product code.
++        let mode = std::env::var("FABRIC_PROTO_DISPOSITION").unwrap_or_default();
++        let node_absent =
++            |m: &segment::Manifest| node.as_deref().is_some_and(|n| !m.freshness.contains_key(n));
++        let skip_rows = |m: &segment::Manifest| -> bool {
++            match mode.as_str() {
++                "naive" => m.received_max_ns < from || node_absent(m),
++                "sound" => {
++                    m.freshness.values().copied().max().is_none_or(|t| t < from) || node_absent(m)
++                }
++                _ => false,
++            }
++        };
++        let skip_gaps = |m: &segment::Manifest| -> bool {
++            match mode.as_str() {
++                "naive" => m.received_max_ns < from || node_absent(m),
++                "sound" => m.received_max_ns < from || m.received_min_ns >= to,
++                _ => false,
++            }
++        };
+ 
+         let mut unavailable = Vec::new();
+         let mut freshness: BTreeMap<String, u64> = BTreeMap::new();
+@@ -374,6 +395,9 @@ impl History {
+                 let f = freshness.entry(n.clone()).or_default();
+                 *f = (*f).max(*t);
+             }
++            if skip_gaps(manifest) {
++                continue;
++            }
+             if let Err(e) = segment::scan_gaps(dir, manifest, |g| gaps.push(g)) {
+                 if !dir.exists() {
+                     return Err(
+@@ -408,6 +432,9 @@ impl History {
+                     }
+                 }
+                 for (dir, manifest) in &sources.segments {
++                    if skip_rows(manifest) {
++                        continue;
++                    }
+                     let scanned = segment::scan_logs(dir, manifest, from, to, |r| {
+                         if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
+                             best.offer(key(&r), r);
+@@ -452,6 +479,9 @@ impl History {
+                     }
+                 }
+                 for (dir, manifest) in &sources.segments {
++                    if skip_rows(manifest) {
++                        continue;
++                    }
+                     let scanned = segment::scan_metrics(dir, manifest, from, to, |r| {
+                         if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
+                             best.offer(key(&r), r);
+@@ -493,6 +523,9 @@ impl History {
+                 };
+                 points.extend(journal_rows.metrics.iter().filter(|r| keep(r)).cloned());
+                 for (dir, manifest) in &sources.segments {
++                    if skip_rows(manifest) {
++                        continue;
++                    }
+                     let scanned = segment::scan_metrics(dir, manifest, from, to, |r| {
+                         if keep(&r) {
+                             points.push(r);
