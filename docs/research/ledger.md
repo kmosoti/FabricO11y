@@ -54,7 +54,7 @@ L-04 ran next ([threshold run 01](../experiments/benchmarks/topk-run-01.md)): or
 3. **L-19**, then **L-20**: the custody copy, measured as the largest removable cost of a Segment and heavier per byte on real text.
 4. **L-07**, design work whose test exists; **L-03 and L-04's promotion** together under Q2 of the direction review, after the registered soak.
 
-Only one experiment runs at a time; L-19's is next.
+The [hypothesis suite](hypotheses.md) states the next experiments with their nulls and decision rules and ranks them; B3 (a real stream's compression against the random draw) is next, then A1 and A4, then L-19 as B1.
 
 ## Entries
 
