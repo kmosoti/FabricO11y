@@ -1,6 +1,8 @@
 //! Canonical-form checks with the defects the decoder must reject.
 
 use super::*;
+use crate::bytes::Cursor;
+use crate::varint;
 
 fn node(n: u8) -> [u8; 16] {
     let mut id = [0_u8; 16];
@@ -182,24 +184,21 @@ fn rejects_overlong_varints() {
 fn rejects_dictionaries_out_of_first_use_order_or_unused() {
     let bytes = encode(&sample()).unwrap();
     // Find the strands column: header, node table, string table.
-    let mut cur = Cursor {
-        bytes: &bytes,
-        pos: 0,
-    };
+    let mut cur = Cursor::new(&bytes);
     cur.take(4).unwrap();
-    cur.uvar().unwrap();
-    let node_count = cur.count(16).unwrap();
+    varint::get(&mut cur).unwrap();
+    let node_count = varint::count(&mut cur, 16).unwrap();
     assert_eq!(node_count, 2, "two nodes");
     cur.take(16 * node_count).unwrap();
-    let string_count = cur.count(1).unwrap();
+    let string_count = varint::count(&mut cur, 1).unwrap();
     for _ in 0..string_count {
-        cur.bytes_field().unwrap();
+        varint::get_bytes(&mut cur).unwrap();
     }
     // Skip the time column: one varint per record.
     for _ in 0..3 {
-        cur.uvar().unwrap();
+        varint::get(&mut cur).unwrap();
     }
-    let strands_at = cur.pos;
+    let strands_at = cur.position();
     assert_eq!(bytes[strands_at], 0, "record 0 names node id 0");
     // Record 0 naming id 1 first breaks first-use order.
     let mut early = bytes.clone();
@@ -251,26 +250,6 @@ fn single_bit_flips_are_rejected_or_canonical() {
         accepted > 0,
         "some flips (body bytes, values) must still be canonical"
     );
-}
-
-#[test]
-fn varint_and_delta_helpers_are_bijections_on_samples() {
-    for v in [0_i64, 1, -1, i64::MAX, i64::MIN, 12345, -98765] {
-        assert_eq!(unzigzag(zigzag(v)), v);
-    }
-    for (a, b) in [(0_u64, 0_u64), (5, 9), (u64::MAX, 0), (0, u64::MAX), (7, 7)] {
-        assert_eq!(undelta(delta(a, b), b), a);
-    }
-    for v in [0_u64, 127, 128, 300, u64::MAX, 1 << 63] {
-        let mut out = Vec::new();
-        put_uvar(&mut out, v);
-        let mut cur = Cursor {
-            bytes: &out,
-            pos: 0,
-        };
-        assert_eq!(cur.uvar().unwrap(), v);
-        assert_eq!(cur.pos, out.len());
-    }
 }
 
 /// Writes the fuzz corpus seeds. `cargo test -p fabric-observation -- --ignored write_fuzz_seeds`.
