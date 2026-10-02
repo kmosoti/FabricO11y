@@ -45,7 +45,7 @@ H1: a tail held as FOB1 blocks answers the empty-window and no-match shapes in u
 Statistic: time for the empty-window, `limit 50` and no-match text shapes over a 64 MiB tail stored as FOB1 blocks of one journal frame each, read through `decode_view`, against the stock OTLP tail; same records. Reject H0 if all three shapes are under one fifth of stock and the differential is clean.
 Cost: a scratch journal reader over FOB1 frames and a converter from the existing tails, one week; the codec exists. Decides: whether ADR-0023 is a latency change as well as a bytes change, which is the strongest case for the wire decision.
 
-**A4. The walk's no-stop overhead is order, not work.**
+**A4. The walk's no-stop overhead is order, not work.** *Ran ([optimality run 01](../experiments/benchmarks/optimality-run-01.md)): H0 rejected, but the remedy is not the one H1 named. The overhead was frame re-decoding in key order; a 64-frame cache brings the no-match search from 1,246 to 556 ms, under stock, with the early stop kept; file order loses the stop. The cache is the prototype's default now.*
 H1: decoding the selected entries in file order (one pass over the frames) when the first pass over the bounds shows the heap cannot fill brings the no-match text shape to at most the stock time. H0: the walk's extra cost is in the per-entry extract and stays whatever the order.
 Statistic: no-match text and rate shapes on the real-text tail, walk with a file-order fallback against stock (today 1,246 against 721 ms). Reject H0 if the fallback is at or below stock on both shapes.
 Cost: a scratch change in the walk, one day. Decides: whether the walk can be promoted without a worst case worse than stock.
@@ -154,4 +154,4 @@ By information value per hour, with the dependency each unlocks:
 9. **B5**, **C1**, **D8**, **D9**: the Segment side at product size and the retention and durability checks no run has made.
 10. **B2**, **B4**, **C2**, **C3**, **C4**: each decided by the ones above or waiting on a capture.
 
-One experiment runs at a time. B3 has run; A1 is next, then A4 and D6 of this suite.
+One experiment runs at a time. B3 and A4 have run; A1 is next, then D6 of this suite.

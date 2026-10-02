@@ -1,6 +1,6 @@
 # Optimality run 01: stream order, block locality, one copy against the projections
 
-Status: **Exploratory.** Three measurements made on 2026-10-02 for the [optimality bounds](../../research/optimality-bounds.md): hypothesis B3 of the [suite](../../research/hypotheses.md) (a real stream against the random draw), the block locality of tokens in real streams, and the text-search half of hypothesis D3 (one canonical copy against the Parquet projections). No protocol was registered; nothing here is **Measured** in the [evidence-state](../../QUALIFICATION.md#evidence-states) sense. Scripts: [locality.py](data/optimality/locality.py.txt); the `fobscan` subcommand of the research generator ([tools/research](../../../tools/research/README.md)).
+Status: **Exploratory.** Four measurements made on 2026-10-02 for the [optimality bounds](../../research/optimality-bounds.md): hypothesis B3 of the [suite](../../research/hypotheses.md) (a real stream against the random draw), the block locality of tokens in real streams, and the text-search half of hypothesis D3 (one canonical copy against the Parquet projections). No protocol was registered; nothing here is **Measured** in the [evidence-state](../../QUALIFICATION.md#evidence-states) sense. Scripts: [locality.py](data/optimality/locality.py.txt); the `fobscan` subcommand of the research generator ([tools/research](../../../tools/research/README.md)).
 
 ## B3: a real stream against the random draw
 
@@ -52,9 +52,26 @@ Bytes read: FOB1 5.3 MiB for every record of both kinds (point values set to zer
 
 **Verdict.** One canonical copy answers a full text search within 1.2 to 1.4 times the projection's time, with identical hits, from a third of the bytes of the three tables it would replace (8.6 against 25.7 MiB with the random point values, 5.3 against 25.7 without them). The cost is almost entirely the fixed decompress-and-decode pass (133 to 152 ms); the search itself is about 10 ms. H0 of D3 ("some registered shape over 2× slower, or bytes over 70 %") is rejected for the text-search shape; the other thirteen shapes of D3 need block-level key bounds in a manifest and were not run.
 
+## A4: the walk's no-stop overhead
+
+The walk prototype with a 64-frame decode cache in place of its single cached frame, and with an optional file-order pass, against stock on the real-text 64 MiB tail (149,585 entries); eight repetitions, the median; a 100-query random differential with pages ([a4.json](data/optimality/a4.json), [a4.py](data/optimality/a4.py.txt)):
+
+| Shape | stock | walk, key order, 64-frame cache | walk, file order for text filters |
+| --- | ---: | ---: | ---: |
+| logs `limit 50` | 607 ms | 40 [26 of 149,585] | 44 |
+| text, 35 % of lines | 614 | 40 [124] | 575 [all] |
+| text, 1 % | 596 | 56 [4,412] | 584 [all] |
+| text, 0.1 % | 584 | 227 [50,556] | 568 [all] |
+| text, no match | 570 | 556 [all] | 579 [all] |
+| rate | 609 | 217 | 231 |
+| random set, 100 queries with pages | 134 s | 6.8 s | 9.8 s |
+| mismatches | | 0 | 0 |
+
+**Verdict.** The hypothesis named the order; the measurement names the cache. In key order consecutive entries interleave among a few frames, and the single-frame cache of runs L-04 and L-21 re-decoded a frame for nearly every entry (1,246 ms for the no-match search in run L-21); a 64-frame cache brings that to 556 ms, under the stock scan's 570, and halves the 0.1 % search (461 to 227 ms). File order removes the re-decoding too but forgoes the early stop, so a 35 % search that stops after 124 entries in key order reads everything in file order (575 ms). H0 of A4 (the overhead is per-entry work whatever the order) is rejected; H1 as stated (a file-order fallback brings the no-match shape to stock) is not the remedy; key order with a frame cache is, and it is the prototype's default from this run on.
+
 ## Limits
 
 - The samples are 2,000 lines each; stream order within a sample is real, the mix across samples is not, and the locality block is 100 lines.
 - The FOB1 conversion dropped point values; the time comparison stands for lines, the byte comparison is given both ways.
 - The Parquet scan materialises every row (`LogRow` with its allocations), as the stock path does; a projection reader that searched the body column without materialising would be faster than 117 ms, and so would a block search that stopped decoding at the body. Both sides have the same headroom.
-- One host, warm cache.
+- One host, warm cache. The stock figures in the A4 table are about 15 % below those of run L-21 on the same state (570 to 614 against 656 to 749 ms), within the variance seen between runs on this container.

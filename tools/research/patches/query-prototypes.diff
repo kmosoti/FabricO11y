@@ -1,5 +1,5 @@
 diff --git a/crates/fabric-server/src/query.rs b/crates/fabric-server/src/query.rs
-index 0519f99..0d44c9a 100644
+index 0519f99..2354c5d 100644
 --- a/crates/fabric-server/src/query.rs
 +++ b/crates/fabric-server/src/query.rs
 @@ -18,7 +18,8 @@ use fabric_frame::frame::read_frame;
@@ -385,7 +385,7 @@ index 0519f99..0d44c9a 100644
              if let Err(e) = segment::scan_gaps(dir, manifest, |g| gaps.push(g)) {
                  if !dir.exists() {
                      return Err(
-@@ -407,7 +716,73 @@ impl History {
+@@ -407,7 +716,84 @@ impl History {
                          best.offer(key(r), r.clone());
                      }
                  }
@@ -411,28 +411,39 @@ index 0519f99..0d44c9a 100644
 +                            }
 +                        }
 +                    }
-+                    items.sort_unstable_by_key(|(mn, _, _, _)| *mn);
++                    // A4 measured: the walk's overhead when nothing stops it was frame re-decoding
++                    // in key order, which the 64-frame cache removes (1,246 to 556 ms on the real
++                    // tail); file order forgoes the early stop and is kept only as a switch
++                    // (FABRIC_PROTO_WALK_ORDER=file) for measurement. Key order is the default.
++                    let order = std::env::var("FABRIC_PROTO_WALK_ORDER").unwrap_or_default();
++                    let file_order = order == "file";
++                    if file_order {
++                        items.sort_unstable_by_key(|(_, _, kind, idx)| (*kind, if *kind == 0 { let e = sources.tail_lazy[*idx]; (e.file_first, e.offset, e.index as u64) } else { (*idx as u64, 0, 0) }));
++                    } else {
++                        items.sort_unstable_by_key(|(mn, _, _, _)| *mn);
++                    }
 +                    let (mut processed, mut skipped_low, mut stopped) = (0usize, 0usize, false);
 +                    let mut last_mn: Option<u64> = None;
-+                    let mut frame: Option<(u64, u64, Group)> = None;
++                    let mut frames: HashMap<(u64, u64), Group> = HashMap::new();
 +                    for (mn, mx, kind, idx) in &items {
 +                        if after.as_ref().is_some_and(|a| *mx < a.0) { skipped_low += 1; continue; }
-+                        if best.threshold().is_some_and(|t| *mn > t.0) { stopped = true; break; }
-+                        if budget.is_some_and(|b| examined >= b) && after.as_ref().is_none_or(|a| *mn > a.0.saturating_add(1)) && last_mn.is_none_or(|l| *mn > l) { boundary = Some(*mn); break; }
++                        if !file_order && best.threshold().is_some_and(|t| *mn > t.0) { stopped = true; break; }
++                        if !file_order && budget.is_some_and(|b| examined >= b) && after.as_ref().is_none_or(|a| *mn > a.0.saturating_add(1)) && last_mn.is_none_or(|l| *mn > l) { boundary = Some(*mn); break; }
 +                        last_mn = Some(*mn);
 +                        processed += 1;
 +                        if *kind == 0 {
 +                            let e = sources.tail_lazy[*idx];
-+                            if frame.as_ref().is_none_or(|(f, o, _)| (*f, *o) != (e.file_first, e.offset)) {
++                            if !frames.contains_key(&(e.file_first, e.offset)) {
++                                if frames.len() >= 64 { frames.clear(); }
 +                                let path = sources.tail_paths.get(&e.file_first).ok_or_else(|| interrupted("journal moved"))?;
 +                                let file = match File::open(path) { Ok(f) => f, Err(err) if err.kind() == io::ErrorKind::NotFound => return Err(interrupted("journal moved").into()), Err(err) => return Err(err.into()) };
 +                                let len = file.metadata()?.len();
 +                                let Some((payload, _)) = read_frame(&file, e.offset, len, MAX_GROUP_PAYLOAD)? else { return Err(interrupted("journal moved").into()) };
 +                                let g = Group::decode(payload.as_slice()).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))?;
-+                                frame = Some((e.file_first, e.offset, g));
++                                frames.insert((e.file_first, e.offset), g);
 +                            }
 +                            let mut rows = Rows::default();
-+                            extract(e.group, &frame.as_ref().unwrap().2.entries[e.index as usize], &mut rows)?;
++                            extract(e.group, &frames[&(e.file_first, e.offset)].entries[e.index as usize], &mut rows)?;
 +                            examined += rows.logs.len() + rows.metrics.len();
 +                            for r in rows.logs.into_iter().filter(|r| keep(r)) {
 +                                if kernel::after_page(&key(&r), after.as_ref()) { best.offer(key(&r), r); }
@@ -450,7 +461,7 @@ index 0519f99..0d44c9a 100644
 +                            }
 +                        }
 +                    }
-+                    eprintln!("topk: table=logs items={} tail={} groups={} processed={} skipped_low={} stopped={} examined={} boundary={}", items.len(), sources.tail_lazy.len(), group_of.len(), processed, skipped_low, stopped, examined, boundary.map(|b| b.to_string()).unwrap_or_else(|| "none".into()));
++                    eprintln!("topk: table=logs items={} tail={} groups={} processed={} skipped_low={} stopped={} examined={} boundary={} order={}", items.len(), sources.tail_lazy.len(), group_of.len(), processed, skipped_low, stopped, examined, boundary.map(|b| b.to_string()).unwrap_or_else(|| "none".into()), if file_order { "file" } else { "key" });
 +                } else {
                  for (dir, manifest) in &sources.segments {
 +                    if skip_rows(manifest) {
@@ -459,7 +470,7 @@ index 0519f99..0d44c9a 100644
                      let scanned = segment::scan_logs(dir, manifest, from, to, |r| {
                          if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
                              best.offer(key(&r), r);
-@@ -426,7 +801,20 @@ impl History {
+@@ -426,7 +812,20 @@ impl History {
                          );
                      }
                  }
@@ -480,7 +491,7 @@ index 0519f99..0d44c9a 100644
                  if sorted.len() > *limit as usize {
                      sorted.truncate(*limit as usize);
                      let (k, _) = sorted.last().unwrap();
-@@ -451,7 +839,73 @@ impl History {
+@@ -451,7 +850,74 @@ impl History {
                          best.offer(key(r), r.clone());
                      }
                  }
@@ -509,7 +520,7 @@ index 0519f99..0d44c9a 100644
 +                    items.sort_unstable_by_key(|(mn, _, _, _)| *mn);
 +                    let (mut processed, mut skipped_low, mut stopped) = (0usize, 0usize, false);
 +                    let mut last_mn: Option<u64> = None;
-+                    let mut frame: Option<(u64, u64, Group)> = None;
++                    let mut frames: HashMap<(u64, u64), Group> = HashMap::new();
 +                    for (mn, mx, kind, idx) in &items {
 +                        if after.as_ref().is_some_and(|a| *mx < a.0) { skipped_low += 1; continue; }
 +                        if best.threshold().is_some_and(|t| *mn > t.0) { stopped = true; break; }
@@ -518,16 +529,17 @@ index 0519f99..0d44c9a 100644
 +                        processed += 1;
 +                        if *kind == 0 {
 +                            let e = sources.tail_lazy[*idx];
-+                            if frame.as_ref().is_none_or(|(f, o, _)| (*f, *o) != (e.file_first, e.offset)) {
++                            if !frames.contains_key(&(e.file_first, e.offset)) {
++                                if frames.len() >= 64 { frames.clear(); }
 +                                let path = sources.tail_paths.get(&e.file_first).ok_or_else(|| interrupted("journal moved"))?;
 +                                let file = match File::open(path) { Ok(f) => f, Err(err) if err.kind() == io::ErrorKind::NotFound => return Err(interrupted("journal moved").into()), Err(err) => return Err(err.into()) };
 +                                let len = file.metadata()?.len();
 +                                let Some((payload, _)) = read_frame(&file, e.offset, len, MAX_GROUP_PAYLOAD)? else { return Err(interrupted("journal moved").into()) };
 +                                let g = Group::decode(payload.as_slice()).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))?;
-+                                frame = Some((e.file_first, e.offset, g));
++                                frames.insert((e.file_first, e.offset), g);
 +                            }
 +                            let mut rows = Rows::default();
-+                            extract(e.group, &frame.as_ref().unwrap().2.entries[e.index as usize], &mut rows)?;
++                            extract(e.group, &frames[&(e.file_first, e.offset)].entries[e.index as usize], &mut rows)?;
 +                            examined += rows.logs.len() + rows.metrics.len();
 +                            for r in rows.metrics.into_iter().filter(|r| keep(r)) {
 +                                if kernel::after_page(&key(&r), after.as_ref()) { best.offer(key(&r), r); }
@@ -554,7 +566,7 @@ index 0519f99..0d44c9a 100644
                      let scanned = segment::scan_metrics(dir, manifest, from, to, |r| {
                          if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
                              best.offer(key(&r), r);
-@@ -470,7 +924,20 @@ impl History {
+@@ -470,7 +936,20 @@ impl History {
                          );
                      }
                  }
@@ -575,7 +587,7 @@ index 0519f99..0d44c9a 100644
                  if sorted.len() > *limit as usize {
                      sorted.truncate(*limit as usize);
                      let (k, _) = sorted.last().unwrap();
-@@ -492,7 +959,71 @@ impl History {
+@@ -492,7 +971,72 @@ impl History {
                          && snapshot.contains(r.group)
                  };
                  points.extend(journal_rows.metrics.iter().filter(|r| keep(r)).cloned());
@@ -602,23 +614,24 @@ index 0519f99..0d44c9a 100644
 +                    items.sort_unstable_by_key(|(mn, _, _, _)| *mn);
 +                    let mut processed = 0usize;
 +                    let mut last_mn: Option<u64> = None;
-+                    let mut frame: Option<(u64, u64, Group)> = None;
++                    let mut frames: HashMap<(u64, u64), Group> = HashMap::new();
 +                    for (mn, _mx, kind, idx) in &items {
 +                        if budget.is_some_and(|b| examined >= b) && last_mn.is_none_or(|l| *mn > l) { boundary = Some(*mn); break; }
 +                        last_mn = Some(*mn);
 +                        processed += 1;
 +                        if *kind == 0 {
 +                            let e = sources.tail_lazy[*idx];
-+                            if frame.as_ref().is_none_or(|(f, o, _)| (*f, *o) != (e.file_first, e.offset)) {
++                            if !frames.contains_key(&(e.file_first, e.offset)) {
++                                if frames.len() >= 64 { frames.clear(); }
 +                                let path = sources.tail_paths.get(&e.file_first).ok_or_else(|| interrupted("journal moved"))?;
 +                                let file = match File::open(path) { Ok(f) => f, Err(err) if err.kind() == io::ErrorKind::NotFound => return Err(interrupted("journal moved").into()), Err(err) => return Err(err.into()) };
 +                                let len = file.metadata()?.len();
 +                                let Some((payload, _)) = read_frame(&file, e.offset, len, MAX_GROUP_PAYLOAD)? else { return Err(interrupted("journal moved").into()) };
 +                                let g = Group::decode(payload.as_slice()).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))?;
-+                                frame = Some((e.file_first, e.offset, g));
++                                frames.insert((e.file_first, e.offset), g);
 +                            }
 +                            let mut rows = Rows::default();
-+                            extract(e.group, &frame.as_ref().unwrap().2.entries[e.index as usize], &mut rows)?;
++                            extract(e.group, &frames[&(e.file_first, e.offset)].entries[e.index as usize], &mut rows)?;
 +                            examined += rows.metrics.len();
 +                            points.extend(rows.metrics.into_iter().filter(|r| keep(r)));
 +                        } else {
@@ -647,7 +660,7 @@ index 0519f99..0d44c9a 100644
                      let scanned = segment::scan_metrics(dir, manifest, from, to, |r| {
                          if keep(&r) {
                              points.push(r);
-@@ -511,6 +1042,7 @@ impl History {
+@@ -511,6 +1055,7 @@ impl History {
                          );
                      }
                  }
