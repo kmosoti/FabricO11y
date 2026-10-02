@@ -38,14 +38,14 @@ Time per record is a linear model fitted by least squares on 92 measured points 
 
 | Constant | Encode | Decode | What it is |
 | --- | ---: | ---: | --- |
-| per block | 650 ns | 410 ns | six column buffers, two dictionaries, the output |
-| per record | 140 ns | 140 ns | the fixed columns |
-| per body byte | 1.0 ns | 0.9 ns | two copies and the CRC (3.0 and 3.3 before the slicing CRC, below) |
-| per attribute | 105 ns | 235 ns | an intern lookup per key and value; two `String` clones on decode |
-| per new string value | 375 ns | 200 ns | a table insert |
-| per point, per span | 0 | 150 ns | name and unit clones |
+| per block | 285 ns | 440 ns | six column buffers, two dictionaries, the output |
+| per record | 135 ns | 100 ns | the fixed columns |
+| per body byte | 1.1 ns | 0.9 ns | two copies and the CRC (3.0 and 3.3 before the slicing CRC, below) |
+| per attribute | 55 ns | 235 ns | a hash lookup per key and value; two `String` clones on decode |
+| per new string value | 50 ns | 190 ns | a table insert |
+| per point, per span | 0 | 160 ns, 65 ns | name and unit clones |
 
-Median error of the fit: 21 % encode, 17 % decode; the worst points are one-record blocks, where the per-block cost dominates and varies most. The byte model is exact: 0.2 % median error over the same 92 points, 2 % and 8 % on the two journals of [encoding run 01](../experiments/benchmarks/observation-encoding-run-01.md), 3 % and 13 % after compression ([calibration.txt](../experiments/benchmarks/data/observation-model/calibration.txt)).
+Median error of the fit: 15 % on both sides; the worst points are one-record blocks, where the per-block cost dominates and varies most. The byte model is exact: 0.2 % median error over the same 92 points, 2 % and 8 % on the two journals of [encoding run 01](../experiments/benchmarks/observation-encoding-run-01.md), 3 % and 13 % after compression ([calibration.txt](../experiments/benchmarks/data/observation-model/calibration.txt)).
 
 From these, with the registered profile (two cores for Fabric, here taken at 3 GHz), a 25 % CPU share for the codec stage, a 200 MB/s disk, the 4 GiB journal cap and 20 GiB retention: records per second, journal and Segment bytes per second, hours of retention and of journal fill, the server's CPU share (one decode to verify and one Zstd pass to seal per record), the node's microseconds per second, and the memory a decoded block occupies (200 bytes of struct per record plus its strings and attributes).
 
@@ -62,13 +62,25 @@ The fitted per-byte cost on the bytes-up tower was 3.3 ns, three times the earli
 | 64-byte line, 5 attributes | 700 | 470 | 1,390 | 1,327 |
 | point, 1 attribute | 189 | 113 | 487 | 376 |
 
-The per-byte term fell from 3.3 to 0.9 ns, as the model predicted a CRC change would, and the per-attribute term did not move, as it predicted it would not. That attribute term is now the largest cost for attribute-rich logs, and the model names the next iteration: a decoder that borrows strings from the block instead of cloning them removes most of the 235 ns per attribute, and attributes that are numbers (file offsets, sizes) should travel as integers, which cost 2 to 4 bytes and no table entry instead of 12 bytes and 375 ns.
+The per-byte term fell from 3.3 to 0.9 ns, as the model predicted a CRC change would, and the per-attribute term did not move, as it predicted it would not.
+
+The second iteration took the terms the first left largest on the encode side: 650 ns per block (unsized buffers) and 105 ns per attribute plus 375 ns per new value (a `BTreeMap` intern). The buffers are now sized from the records and the intern is an open-addressing table over an FNV-1a hash, both built in the crate so it stays on `core` and `alloc` ([before](../experiments/benchmarks/data/observation-model/fobbench-btree-intern.csv), [after](../experiments/benchmarks/data/observation-model/fobbench.csv)):
+
+| Case | encode before | after | decode before | after |
+| --- | ---: | ---: | ---: | ---: |
+| one bare line per block | 757 ns | 314 ns | 669 ns | 460 ns |
+| 4,096 lines, 64 B, 10 attributes | 1,051 | 508 | 2,062 | 2,053 |
+| 4,096 lines, 64 B, 3 attributes, every value new | 2,035 | 609 | 1,815 | 1,659 |
+| 4,096 spans, 3 attributes | 414 | 218 | 729 | 730 |
+| 4,096 lines, 1,024 B | 1,084 | 1,051 | 997 | 1,067 |
+
+The per-block encode cost halved, the per-attribute encode cost halved, the new-value cost fell seven-fold, and the decode side did not move, as the model said it would not: its 235 ns per attribute is the clone of two `String`s, and the next iteration is a decoder that borrows from the block.
 
 ## 4. What the model says about configuration
 
 - **Blocks of 256 records or more.** Below that the tables dominate; above 4,096 the gain is under one byte per record. A block per 1 MiB journal file (3,000 to 10,000 records on the measured workloads) is in the flat region; a block per Batch (two to thirty-four records) is not, which the per-Batch measurements of run 01 showed (94 against 79 bytes per record raw).
 - **The record cap.** `MAX_RECORDS` is 65,536. A decoded block of 4,096 real-text records with five attributes occupies about 2.7 MiB; 65,536 would occupy about 43 MiB, half the sealer's 80 MiB ceiling ([bounded sealer](../milestones/bounded-sealer.md)). A product cap of 8,192, the Parquet row-group size, keeps a decoded block under 6 MiB and loses nothing in bytes.
-- **Attributes shape the cost more than bodies do.** On real text a line's body costs 130 bytes raw and 14 compressed; five string attributes cost 15 bytes raw and about 1.2 µs of codec time, most of it decode-side cloning. The Spindle's five `log.file.*` attributes should be two strings (path, and device as a string if it must) and three integers.
+- **Attributes shape the cost more than bodies do.** On real text a line's body costs 130 bytes raw and 14 compressed; five string attributes cost 15 bytes raw and about 1.5 µs of codec time, four fifths of it decode-side cloning. The Spindle's five `log.file.*` attributes should be two strings (path, and device as a string if it must) and three integers.
 - **Capacity on the two-CPU profile** ([capabilities.txt](../experiments/benchmarks/data/observation-model/capabilities.txt)), real text with one attribute, two lines and two points per node per second:
 
 | Nodes | Records/s | Journal MB/s | Segment MB/s | Retention at 20 GiB | Journal fill at 4 GiB | Server CPU share |

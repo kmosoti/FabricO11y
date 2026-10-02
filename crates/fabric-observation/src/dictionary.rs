@@ -10,38 +10,111 @@
 //! would have many encodings (any permutation of the table, any padding).
 
 use crate::bytes::{Cursor, DecodeError};
-use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
+use core::hash::{Hash, Hasher};
 
-/// Interns values in first-use order while encoding.
-pub struct Intern<T: Ord + Clone> {
-    ids: BTreeMap<T, u64>,
-    order: Vec<T>,
+/// FNV-1a: a few instructions per byte, no randomness, no dependency. The
+/// encode-side dictionary hashes the producer's own strings, so flooding by
+/// an adversary is not a concern at this level.
+#[derive(Clone, Copy)]
+struct Fnv1a(u64);
+
+impl Hasher for Fnv1a {
+    fn finish(&self) -> u64 {
+        self.0
+    }
+    fn write(&mut self, bytes: &[u8]) {
+        let mut h = self.0;
+        for b in bytes {
+            h ^= u64::from(*b);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        self.0 = h;
+    }
 }
 
-impl<T: Ord + Clone> Default for Intern<T> {
+fn fnv<T: Hash + ?Sized>(value: &T) -> u64 {
+    let mut h = Fnv1a(0xcbf2_9ce4_8422_2325);
+    value.hash(&mut h);
+    h.finish()
+}
+
+/// Interns values in first-use order while encoding: the table of values and
+/// an open-addressing index over it (linear probing, power-of-two capacity,
+/// at most half full), built here so the crate stays on `core` and `alloc`.
+pub struct Intern<T: Hash + Eq + Clone> {
+    order: Vec<T>,
+    hashes: Vec<u64>,
+    /// Slot holds `id + 1`, or 0 when empty.
+    slots: Vec<u32>,
+}
+
+impl<T: Hash + Eq + Clone> Default for Intern<T> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<T: Ord + Clone> Intern<T> {
+impl<T: Hash + Eq + Clone> Intern<T> {
     pub fn new() -> Self {
         Self {
-            ids: BTreeMap::new(),
-            order: Vec::new(),
+            order: Vec::with_capacity(32),
+            hashes: Vec::with_capacity(32),
+            slots: alloc::vec![0; 64],
         }
     }
+
+    fn mask(&self) -> usize {
+        self.slots.len().wrapping_sub(1)
+    }
+
     /// The id of `value`, assigning the next id on first use.
     pub fn id(&mut self, value: &T) -> u64 {
-        if let Some(id) = self.ids.get(value) {
-            return *id;
+        let h = fnv(value);
+        let mut at = (h as usize) & self.mask();
+        loop {
+            let Some(slot) = self.slots.get(at).copied() else {
+                at = 0;
+                continue;
+            };
+            if slot == 0 {
+                break;
+            }
+            let idx = (slot as usize).wrapping_sub(1);
+            if self.hashes.get(idx) == Some(&h) && self.order.get(idx) == Some(value) {
+                return idx as u64;
+            }
+            at = at.wrapping_add(1) & self.mask();
         }
-        let id = self.order.len() as u64;
-        self.ids.insert(value.clone(), id);
+        let id = self.order.len();
         self.order.push(value.clone());
-        id
+        self.hashes.push(h);
+        if let Some(slot) = self.slots.get_mut(at) {
+            *slot = (id as u32).wrapping_add(1);
+        }
+        if self.order.len().saturating_mul(2) > self.slots.len() {
+            self.grow();
+        }
+        id as u64
     }
+
+    fn grow(&mut self) {
+        let new_len = self.slots.len().saturating_mul(2);
+        let mut slots = alloc::vec![0_u32; new_len];
+        let mask = new_len.wrapping_sub(1);
+        for (idx, h) in self.hashes.iter().enumerate() {
+            let mut at = (*h as usize) & mask;
+            while slots.get(at).is_some_and(|s| *s != 0) {
+                at = at.wrapping_add(1) & mask;
+            }
+            if let Some(slot) = slots.get_mut(at) {
+                *slot = (idx as u32).wrapping_add(1);
+            }
+        }
+        self.slots = slots;
+    }
+
     /// The table, in first-use order.
     pub fn table(&self) -> &[T] {
         &self.order
@@ -106,6 +179,21 @@ mod tests {
         assert_eq!(d.id(&"a"), 1);
         assert_eq!(d.id(&"b"), 0);
         assert_eq!(d.table(), &["b", "a"]);
+    }
+
+    #[test]
+    fn interning_survives_growth_and_collisions() {
+        // Far more entries than the initial 64 slots, interleaved with repeats.
+        let mut d = Intern::new();
+        let values: Vec<alloc::string::String> = (0..5_000_u32)
+            .map(|i| alloc::format!("v{}", i % 1_700))
+            .collect();
+        let ids: Vec<u64> = values.iter().map(|v| d.id(v)).collect();
+        assert_eq!(d.table().len(), 1_700);
+        for (v, id) in values.iter().zip(&ids) {
+            assert_eq!(&d.table()[*id as usize], v);
+            assert_eq!(d.id(v), *id, "stable after growth");
+        }
     }
 
     #[test]

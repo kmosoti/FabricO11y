@@ -134,21 +134,22 @@ class Machine:
     cores_for_fabric: float = 2.0            # the registered two-CPU profile
     cpu_share_budget: float = 0.25           # share of those cores the codec may take
     # encode: base per record, per body byte, per attribute, extra per high-cardinality attribute
-    # Least-squares fit on fobbench.csv (92 points, slicing-by-eight CRC): median error
-    # about 20 % encode, 15 % decode; the worst points are one-record blocks.
-    enc_per_block_ns: float = 650.0          # six column buffers, two dictionaries, the output
-    enc_base_ns: float = 140.0
-    enc_per_byte_ns: float = 1.0             # two copies plus the CRC (3.0 with the bytewise CRC)
-    enc_per_attr_ns: float = 105.0           # an intern lookup per key and per value
-    enc_per_distinct_attr_ns: float = 375.0  # a table insert when the value is new
+    # Least-squares fit on fobbench.csv (92 points; slicing-by-eight CRC, open-addressing
+    # intern table, pre-sized buffers): median error about 15 % on both sides; the worst
+    # points are one-record blocks. Earlier fits are kept in the model record.
+    enc_per_block_ns: float = 285.0          # six column buffers, two dictionaries, the output (650 before pre-sizing)
+    enc_base_ns: float = 135.0
+    enc_per_byte_ns: float = 1.1             # two copies plus the CRC (3.0 with the bytewise CRC)
+    enc_per_attr_ns: float = 55.0            # a hash lookup per key and per value (105 with the BTreeMap)
+    enc_per_distinct_attr_ns: float = 50.0   # a table insert when the value is new (375 with the BTreeMap)
     # decode (owned Strings; a borrowing decoder would remove most of the per-attribute cost)
-    dec_per_block_ns: float = 410.0
-    dec_base_ns: float = 140.0
+    dec_per_block_ns: float = 440.0
+    dec_base_ns: float = 100.0
     dec_per_byte_ns: float = 0.9             # UTF-8 check, the CRC, one copy into a String (3.3 with the bytewise CRC)
     dec_per_attr_ns: float = 235.0           # two String clones
-    dec_per_distinct_attr_ns: float = 200.0
-    dec_per_point_extra_ns: float = 150.0    # name and unit clones
-    dec_per_span_extra_ns: float = 150.0
+    dec_per_distinct_attr_ns: float = 190.0
+    dec_per_point_extra_ns: float = 160.0    # name and unit clones
+    dec_per_span_extra_ns: float = 65.0
     # compression stage (Zstd level 3 over a whole block of at least 1 MiB), by component.
     # Two measured points fit these (encoding run 01): they are structured, not independent.
     zstd_ratio_text: float = 9.0             # real log lines contiguous in the payload column (Parquet's body column, in smaller pages, reached 6.2)

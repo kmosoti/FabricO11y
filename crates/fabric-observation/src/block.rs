@@ -91,13 +91,21 @@ pub fn encode(records: &[Observation]) -> Result<Vec<u8>, EncodeError> {
     }
     let mut nodes: Intern<[u8; 16]> = Intern::new();
     let mut strings: Intern<String> = Intern::new();
+    let n = records.len();
+    let payload_hint: usize = records
+        .iter()
+        .map(|r| match &r.signal {
+            Signal::Log { body, .. } => body.len().saturating_add(4),
+            _ => 16,
+        })
+        .fold(0, usize::saturating_add);
 
-    let mut times = Vec::new();
+    let mut times = Vec::with_capacity(n.saturating_mul(2));
     let mut enc = SecondOrderEncoder::new();
     for r in records {
         varint::put(&mut times, enc.code(r.time_ns));
     }
-    let mut strands = Vec::new();
+    let mut strands = Vec::with_capacity(n.saturating_mul(5));
     let (mut pg, mut ps, mut pi) = (0_u64, 0_u64, 0_u64);
     for r in records {
         varint::put(&mut strands, nodes.id(&r.strand.node_id));
@@ -106,7 +114,7 @@ pub fn encode(records: &[Observation]) -> Result<Vec<u8>, EncodeError> {
         varint::put(&mut strands, step(u64::from(r.index), pi));
         (pg, ps, pi) = (r.strand.generation, r.sequence, u64::from(r.index));
     }
-    let mut tags = Vec::new();
+    let mut tags = Vec::with_capacity(n);
     for r in records {
         let mut tag = match r.signal {
             Signal::Log { .. } => 0,
@@ -129,11 +137,11 @@ pub fn encode(records: &[Observation]) -> Result<Vec<u8>, EncodeError> {
             locators.extend_from_slice(p);
         }
     }
-    let mut attributes = Vec::new();
+    let mut attributes = Vec::with_capacity(n.saturating_mul(4));
     for r in records {
         put_attributes(&mut attributes, &r.attributes, &mut strings);
     }
-    let mut payloads = Vec::new();
+    let mut payloads = Vec::with_capacity(payload_hint);
     for r in records {
         match &r.signal {
             Signal::Log {
@@ -189,7 +197,12 @@ pub fn encode(records: &[Observation]) -> Result<Vec<u8>, EncodeError> {
             }
         }
     }
-    let mut out = Vec::new();
+    let mut out = Vec::with_capacity(
+        [&times, &strands, &tags, &locators, &attributes, &payloads]
+            .iter()
+            .map(|c| c.len())
+            .fold(64, usize::saturating_add),
+    );
     out.extend_from_slice(MAGIC);
     varint::put(&mut out, records.len() as u64);
     varint::put(&mut out, nodes.table().len() as u64);
