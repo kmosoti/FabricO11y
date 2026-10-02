@@ -1,4 +1,4 @@
-//! Level 2: zigzag, the bijection between signed and unsigned 64-bit values.
+//! Level 3: zigzag, the bijection between signed and unsigned 64-bit values.
 //!
 //! `0, -1, 1, -2, 2, ...` map to `0, 1, 2, 3, 4, ...`, so a small magnitude
 //! of either sign becomes a short varint. The contract is that `encode` and

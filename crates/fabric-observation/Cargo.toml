@@ -2,11 +2,12 @@
 name = "fabric-observation"
 version = "0.1.0"
 edition = "2024"
-description = "Adapter support: the version-one Observation record for logs, metric points and spans, and its canonical FOB1 block encoding"
+description = "Adapter support: the version-one Observation record for logs, metric points and spans, and its canonical FOB1 block encoding, built from the bits up with no dependencies"
 publish = false
 
+# No dependencies: the tower starts at bit operations on machine words and
+# builds everything above them itself (see src/lib.rs).
 [dependencies]
-crc32fast = "=1.5.2"
 
 # `cargo kani` sets cfg(kani) to compile the proof harnesses in src/proofs.rs.
 [lints.rust]

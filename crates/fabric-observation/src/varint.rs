@@ -1,4 +1,4 @@
-//! Level 1: canonical unsigned varints (LEB128, shortest form).
+//! Level 2: canonical unsigned varints (LEB128, shortest form).
 //!
 //! Seven value bits per byte, low group first, the high bit set on every
 //! byte but the last. The contract that makes the level canonical: the
@@ -10,17 +10,21 @@
 //! Rejected: a continuation into a final zero byte (overlong), more than ten
 //! bytes, and a tenth byte above 1 (overflow past 64 bits).
 
+use crate::bits::{bit, lo7, shr7};
 use crate::bytes::{Cursor, DecodeError};
+use alloc::borrow::ToOwned;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 /// The longest encoding of a `u64`: ten bytes.
 pub const MAX_LEN: usize = 10;
 
 pub fn put(out: &mut Vec<u8>, mut v: u64) {
-    while v >= 0x80 {
-        out.push((v as u8) | 0x80);
-        v >>= 7;
+    while shr7(v) != 0 {
+        out.push(lo7(v) | 0x80);
+        v = shr7(v);
     }
-    out.push(v as u8);
+    out.push(lo7(v));
 }
 
 /// Bytes `put` would write for `v`.
@@ -35,12 +39,12 @@ pub fn get(cur: &mut Cursor<'_>) -> Result<u64, DecodeError> {
     let mut shift: u32 = 0;
     loop {
         let b = cur.byte()?;
-        let group = u64::from(b & 0x7f);
+        let group = u64::from(lo7(u64::from(b)));
         if shift == 63 && group > 1 {
             return cur.fail_at(start, "varint overflows 64 bits");
         }
         value |= group << shift;
-        if b & 0x80 == 0 {
+        if !bit(b, 7) {
             if b == 0 && cur.position().saturating_sub(start) > 1 {
                 return cur.fail_at(start, "overlong varint");
             }

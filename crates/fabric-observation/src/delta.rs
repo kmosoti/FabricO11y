@@ -1,4 +1,4 @@
-//! Level 3: deltas, the bijection that turns a monotone or slowly moving
+//! Level 4: deltas, the bijection that turns a monotone or slowly moving
 //! sequence of `u64` into small codes.
 //!
 //! `step(a, b)` is `a - b` taken wrapping and zigzagged, so it is total and
@@ -96,6 +96,7 @@ impl SecondOrderDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec::Vec;
 
     #[test]
     fn step_inverts_for_every_sample_pair() {

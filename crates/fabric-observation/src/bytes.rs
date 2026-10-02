@@ -1,12 +1,15 @@
-//! Level 0: bytes.
+//! Level 1: bytes.
 //!
 //! A bounded reader over a byte slice and the fixed-width little-endian
-//! primitives every level above is built from. The contract: every read is
+//! primitives every level above is built from, packed and unpacked with
+//! the shifts of level 0. The contract: every read is
 //! total (it returns the bytes or an error naming the offset, never panics,
 //! never reads past the slice), every error leaves the cursor at the byte
 //! where the problem starts, and a write is the exact inverse of its read.
 //! Nothing here knows what the bytes mean.
 
+use crate::bits::{pack_le, unpack_le};
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Why bytes could not be read. `offset` is where the decoder stopped: the
@@ -23,7 +26,7 @@ impl fmt::Display for DecodeError {
     }
 }
 
-impl std::error::Error for DecodeError {}
+impl core::error::Error for DecodeError {}
 
 /// A bounded reader: a slice and a position that never passes its end.
 #[derive(Clone, Copy, Debug)]
@@ -87,21 +90,21 @@ impl<'a> Cursor<'a> {
     }
 
     pub fn u32_le(&mut self) -> Result<u32, DecodeError> {
-        Ok(u32::from_le_bytes(self.array()?))
+        Ok(unpack_le(&self.array::<4>()?) as u32)
     }
 
     pub fn u64_le(&mut self) -> Result<u64, DecodeError> {
-        Ok(u64::from_le_bytes(self.array()?))
+        Ok(unpack_le(&self.array::<8>()?))
     }
 }
 
 /// The write side: plain appends, each the inverse of a `Cursor` read.
 pub fn put_u32_le(out: &mut Vec<u8>, v: u32) {
-    out.extend_from_slice(&v.to_le_bytes());
+    out.extend_from_slice(&pack_le::<4>(u64::from(v)));
 }
 
 pub fn put_u64_le(out: &mut Vec<u8>, v: u64) {
-    out.extend_from_slice(&v.to_le_bytes());
+    out.extend_from_slice(&pack_le::<8>(v));
 }
 
 #[cfg(test)]

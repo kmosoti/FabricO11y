@@ -1,4 +1,4 @@
-//! Level 6: the Observation record.
+//! Level 7: the Observation record.
 //!
 //! One record for a log line, a metric point or a span. Every record has the
 //! key the query kernel orders by (`time_ns`, `node_id`, `generation`,
@@ -9,6 +9,8 @@
 //! is free, so the encoding stays total over the type.
 
 use crate::cells::{Number, Value, check_attributes, check_double};
+use alloc::string::String;
+use alloc::vec::Vec;
 
 /// Severity numbers follow the OpenTelemetry log data model: 0 is unspecified, 1 to 24 are TRACE to FATAL4.
 pub const MAX_SEVERITY: u8 = 24;

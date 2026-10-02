@@ -1,4 +1,4 @@
-//! Level 4: dictionaries in first-use order.
+//! Level 5: dictionaries in first-use order.
 //!
 //! A repeated value (a node id, an attribute key, a metric name) is written
 //! once in a table and referenced by its index. The table has one canonical
@@ -10,7 +10,8 @@
 //! would have many encodings (any permutation of the table, any padding).
 
 use crate::bytes::{Cursor, DecodeError};
-use std::collections::{BTreeMap, BTreeSet};
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::vec::Vec;
 
 /// Interns values in first-use order while encoding.
 pub struct Intern<T: Ord + Clone> {

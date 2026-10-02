@@ -3,6 +3,8 @@
 use super::*;
 use crate::bytes::Cursor;
 use crate::varint;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 fn node(n: u8) -> [u8; 16] {
     let mut id = [0_u8; 16];
@@ -86,7 +88,7 @@ fn sample() -> Vec<Observation> {
 /// Recomputes the CRC after a structural mutation, so the structure is what gets tested.
 fn recrc(mut bytes: Vec<u8>) -> Vec<u8> {
     let n = bytes.len() - 4;
-    let crc = crc32fast::hash(&bytes[..n]);
+    let crc = crate::crc32::hash(&bytes[..n]);
     bytes.truncate(n);
     bytes.extend_from_slice(&crc.to_le_bytes());
     bytes

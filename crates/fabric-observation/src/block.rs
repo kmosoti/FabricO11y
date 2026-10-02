@@ -1,4 +1,4 @@
-//! Level 7: the FOB1 block.
+//! Level 8: the FOB1 block.
 //!
 //! A block is one to 65,536 records laid out column by column so that each
 //! column can use the level below that fits it: times through second-order
@@ -17,7 +17,7 @@
 //! column 4  locators:   per flagged record  trace id, span id, [parent span id]
 //! column 5  attributes: per record  count, then (key id, value tag, value)
 //! column 6  payloads:   per record  the signal's cells
-//! CRC-32 (IEEE) of everything above, little-endian
+//! CRC-32 (IEEE, level 1) of everything above, little-endian
 //! ```
 //!
 //! Canonicality is the sum of the levels' rules plus three of this level's
@@ -27,14 +27,18 @@
 //! block has one byte string and every accepted byte string is that
 //! encoding of its decoding.
 
+use crate::bits::unpack_le;
 use crate::bytes::{Cursor, DecodeError, put_u32_le};
 use crate::cells::{get_attributes, get_number, put_attributes, put_number};
+use crate::crc32;
 use crate::delta::{SecondOrderDecoder, SecondOrderEncoder, step, unstep};
 use crate::dictionary::{Intern, Lookup};
 use crate::record::{
     Locators, MAX_SEVERITY, Observation, PointKind, Signal, SpanKind, Status, Strand, check,
 };
 use crate::varint;
+use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt;
 
 /// Block magic: the format name and version.
@@ -72,7 +76,7 @@ impl fmt::Display for EncodeError {
     }
 }
 
-impl std::error::Error for EncodeError {}
+impl core::error::Error for EncodeError {}
 
 /// Encodes a block of records to its one canonical byte string.
 pub fn encode(records: &[Observation]) -> Result<Vec<u8>, EncodeError> {
@@ -199,7 +203,7 @@ pub fn encode(records: &[Observation]) -> Result<Vec<u8>, EncodeError> {
     for column in [&times, &strands, &tags, &locators, &attributes, &payloads] {
         out.extend_from_slice(column);
     }
-    let crc = crc32fast::hash(&out);
+    let crc = crc32::hash(&out);
     put_u32_le(&mut out, crc);
     Ok(out)
 }
@@ -217,9 +221,7 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<Observation>, DecodeError> {
     if cur.take(4)? != MAGIC {
         return cur.fail_at(0, "not an FOB1 block");
     }
-    let mut expected = [0_u8; 4];
-    expected.copy_from_slice(tail);
-    if crc32fast::hash(body) != u32::from_le_bytes(expected) {
+    if u64::from(crc32::hash(body)) != unpack_le(tail) {
         return fail(body_len, "CRC mismatch");
     }
     let n_at = cur.position();
@@ -245,7 +247,7 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<Observation>, DecodeError> {
         "duplicate node dictionary entry",
     )?;
     let string_count = varint::count(&mut cur, 1)?;
-    let mut string_table = Vec::with_capacity(string_count);
+    let mut string_table: Vec<String> = Vec::with_capacity(string_count);
     let mut string_starts = Vec::with_capacity(string_count);
     for _ in 0..string_count {
         string_starts.push(cur.position());

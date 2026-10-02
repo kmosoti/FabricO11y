@@ -1,4 +1,4 @@
-//! Level 5: typed cells.
+//! Level 6: typed cells.
 //!
 //! The small values a record is made of, each with one byte form: a number
 //! (integer or finite double), an attribute value, a sorted attribute list,
@@ -8,9 +8,12 @@
 //! lists are strictly sorted by key, which gives a set of attributes one
 //! list and makes duplicate keys impossible.
 
+use crate::bits::pack_le;
 use crate::bytes::{Cursor, DecodeError};
 use crate::dictionary::Lookup;
 use crate::{varint, zigzag};
+use alloc::string::String;
+use alloc::vec::Vec;
 
 /// An `f64` held by its bits, so that cells are `Eq` and the encoding is one-to-one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -99,7 +102,7 @@ pub fn put_number(out: &mut Vec<u8>, n: Number) {
         }
         Number::Double(d) => {
             out.push(NUMBER_DOUBLE);
-            out.extend_from_slice(&d.to_bits().to_le_bytes());
+            out.extend_from_slice(&pack_le::<8>(d.to_bits()));
         }
     }
 }
@@ -139,7 +142,7 @@ pub fn put_attributes(
             }
             Value::Double(b) => {
                 out.push(VALUE_DOUBLE);
-                out.extend_from_slice(&b.0.to_le_bytes());
+                out.extend_from_slice(&pack_le::<8>(b.0));
             }
             Value::Bool(false) => out.push(VALUE_FALSE),
             Value::Bool(true) => out.push(VALUE_TRUE),
@@ -194,6 +197,7 @@ pub fn get_attributes(
 mod tests {
     use super::*;
     use crate::dictionary::Intern;
+    use alloc::string::ToString;
 
     #[test]
     fn numbers_round_trip_and_nan_is_refused() {

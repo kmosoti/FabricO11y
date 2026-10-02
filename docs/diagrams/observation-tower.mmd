@@ -1,15 +1,18 @@
 flowchart BT
-    L0["Level 0: bytes<br/>bounded Cursor, offsets in errors, fixed-width LE"]
-    L1["Level 1: varint<br/>LEB128, shortest form only; bounded counts; UTF-8 strings"]
-    L2["Level 2: zigzag<br/>i64 ↔ u64 bijection"]
-    L3["Level 3: delta<br/>wrapping steps; second-order series"]
-    L4["Level 4: dictionary<br/>Intern (first-use order) / Lookup (distinct, in order, all used)"]
-    L5["Level 5: cells<br/>Number, Value, sorted attribute lists; no NaN"]
-    L6["Level 6: record<br/>Observation: key, locators, attributes, Log | Point | Span; check()"]
-    L7["Level 7: block<br/>FOB1: header, two dictionaries, six columns, CRC-32; encode / decode"]
-    L0 --> L1 --> L2 --> L3 --> L4 --> L5 --> L6 --> L7
-    L1 --> L4
-    L1 --> L5
-    L3 --> L7
-    V["verification<br/>unit tests + negative controls per level · proptest per level · Kani (levels 1–3) · fuzz target + corpus (level 7)"]
-    V -. states the contract of .-> L7
+    L0["Level 0: bits<br/>shifts and masks on machine words: lo7, shr7, mask, bit, pack_le, unpack_le"]
+    L1a["Level 1: bytes<br/>bounded Cursor, offsets in errors, fixed-width LE via level 0"]
+    L1b["Level 1: crc32<br/>IEEE polynomial; bit-serial definition and a const table proved equal"]
+    L2["Level 2: varint<br/>LEB128 from seven-bit groups, shortest form only; bounded counts; UTF-8 strings"]
+    L3["Level 3: zigzag<br/>i64 ↔ u64 bijection"]
+    L4["Level 4: delta<br/>wrapping steps; second-order series"]
+    L5["Level 5: dictionary<br/>Intern (first-use order) / Lookup (distinct, in order, all used)"]
+    L6["Level 6: cells<br/>Number, Value, sorted attribute lists; no NaN"]
+    L7["Level 7: record<br/>Observation: key, locators, attributes, Log | Point | Span; check()"]
+    L8["Level 8: block<br/>FOB1: header, two dictionaries, six columns, CRC-32; encode / decode"]
+    L0 --> L1a --> L2 --> L3 --> L4 --> L5 --> L6 --> L7 --> L8
+    L0 --> L1b --> L8
+    L2 --> L5
+    L2 --> L6
+    L4 --> L8
+    V["verification<br/>unit tests + negative controls per level · proptest per level · Kani (levels 0–4) · fuzz target + corpus (level 8)"]
+    V -. states the contract of .-> L8

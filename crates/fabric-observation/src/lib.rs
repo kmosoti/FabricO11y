@@ -1,17 +1,20 @@
 //! The version-one **Observation** record and its canonical **FOB1** block
-//! encoding, built as a tower of eight levels, each with its own contract,
-//! tests and negative controls, and each using only the level below:
+//! encoding, built from the bits up as a tower of nine levels, each with its
+//! own contract, tests and negative controls, each using only the levels
+//! below, with no dependencies and no standard library beyond `core` and
+//! `alloc`:
 //!
 //! | Level | Module | Gives the level above |
 //! | --- | --- | --- |
-//! | 0 | [`bytes`] | a bounded reader whose errors name an offset; fixed-width integers |
-//! | 1 | [`varint`] | unsigned integers in exactly one (shortest) form; bounded counts; strings |
-//! | 2 | [`zigzag`] | the bijection between signed and unsigned 64-bit values |
-//! | 3 | [`delta`] | first- and second-order differences, total and invertible under wrap |
-//! | 4 | [`dictionary`] | repeated values written once, in a table with one canonical order |
-//! | 5 | [`cells`] | numbers, attribute values and sorted attribute lists, each with one form |
-//! | 6 | [`record`] | the Observation: a line, a point or a span under one key |
-//! | 7 | [`block`] | FOB1: records as columns, two dictionaries, a CRC; `encode` and `decode` |
+//! | 0 | [`bits`] | shifts and masks on machine words: seven-bit groups, little-endian pack and unpack |
+//! | 1 | [`bytes`], [`crc32`] | a bounded reader whose errors name an offset; fixed-width integers; the IEEE CRC from its polynomial |
+//! | 2 | [`varint`] | unsigned integers in exactly one (shortest) form; bounded counts; strings |
+//! | 3 | [`zigzag`] | the bijection between signed and unsigned 64-bit values |
+//! | 4 | [`delta`] | first- and second-order differences, total and invertible under wrap |
+//! | 5 | [`dictionary`] | repeated values written once, in a table with one canonical order |
+//! | 6 | [`cells`] | numbers, attribute values and sorted attribute lists, each with one form |
+//! | 7 | [`record`] | the Observation: a line, a point or a span under one key |
+//! | 8 | [`block`] | FOB1: records as columns, two dictionaries, a CRC; `encode` and `decode` |
 //!
 //! The property that holds at every level and therefore at the top: a valid
 //! value has exactly one byte string, and an accepted byte string decodes to
@@ -23,6 +26,7 @@
 //!
 //! Nothing here performs an effect; the crate is a codec and belongs to
 //! adapter support ([layers](../../../docs/architecture/layers.json)).
+#![no_std]
 #![forbid(unsafe_code)]
 #![cfg_attr(
     not(test),
@@ -37,9 +41,16 @@
     )
 )]
 
+#[cfg_attr(test, macro_use)]
+extern crate alloc;
+#[cfg(test)]
+extern crate std;
+
+pub mod bits;
 pub mod block;
 pub mod bytes;
 pub mod cells;
+pub mod crc32;
 pub mod delta;
 pub mod dictionary;
 pub mod record;

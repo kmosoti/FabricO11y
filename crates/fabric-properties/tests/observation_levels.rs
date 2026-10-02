@@ -104,3 +104,37 @@ proptest! {
         prop_assert!(Lookup::new(&mut cur, repeated, &[], "dup").is_err());
     }
 }
+
+mod floor {
+    //! Levels 0 and 1: the shifts agree with the standard library for every
+    //! value tested, and the table-driven CRC is the bit-serial definition.
+    use fabric_observation::{bits, crc32};
+    use proptest::prelude::*;
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(3_000))]
+
+        #[test]
+        fn packing_agrees_with_the_standard_library(v in any::<u64>(), w in any::<u32>()) {
+            prop_assert_eq!(bits::pack_le::<8>(v), v.to_le_bytes());
+            prop_assert_eq!(bits::unpack_le(&v.to_le_bytes()), v);
+            prop_assert_eq!(bits::pack_le::<4>(u64::from(w)), w.to_le_bytes());
+            prop_assert_eq!(bits::unpack_le(&w.to_le_bytes()), u64::from(w));
+            prop_assert_eq!(u64::from(bits::lo7(v)), v & 0x7f);
+            prop_assert_eq!(bits::shr7(v), v >> 7);
+        }
+
+        #[test]
+        fn crc_table_equals_the_definition(data in proptest::collection::vec(any::<u8>(), 0..300)) {
+            prop_assert_eq!(crc32::hash(&data), crc32::bitwise(&data));
+        }
+
+        #[test]
+        fn crc_detects_any_single_bit_flip(data in proptest::collection::vec(any::<u8>(), 1..64), at in any::<usize>(), bit in 0_u8..8) {
+            let mut m = data.clone();
+            let i = at % m.len();
+            m[i] ^= 1 << bit;
+            prop_assert_ne!(crc32::hash(&m), crc32::hash(&data));
+        }
+    }
+}
