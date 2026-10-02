@@ -24,6 +24,7 @@
 | [ADR-0020: Store sealed history as immutable Zstd Parquet Segments](ADR-0020-store-sealed-history-as-parquet-segments.md) | Accepted | One Segment per sealed journal file, manifest last, rename as commit, row-group statistics and exact scan, no token index |
 | [ADR-0021: Add property, bounded-model, fuzz and network-simulation checks](ADR-0021-add-property-model-fuzz-and-simulation-checks.md) | Accepted | proptest, Kani, cargo-fuzz, turmoil, cargo-deny, coverage report; a verification layer for test-only crates |
 | [ADR-0022: Build Segments by external merge sort](ADR-0022-build-segments-by-external-merge-sort.md) | Accepted, pending implementation | Streamed journal read, byte-capped sorted runs spilled to scratch files, a k-way merge into the same Segment; memory flat in the file size |
+| [ADR-0023: Define an Observation record with a canonical block encoding](ADR-0023-define-an-observation-record-with-a-canonical-encoding.md) | Proposed | One record for a line, a point or a span, with the query key, locators and typed attributes; the FOB1 block encoding is one-to-one between valid blocks and accepted bytes; nothing emits or stores it yet |
 
 This first record captures an existing, explicitly documented choice. It does not claim that storage engines, ID widths, or performance strategies have been compared. Record further decisions when they materially affect architecture; use the [ADR format](../documentation-policy.md#12-architecture-decision-records) and the next unused four-digit number.
 

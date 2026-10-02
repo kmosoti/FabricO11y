@@ -19,6 +19,9 @@ Terms mean one thing each across code, documents, diagrams and experiments. When
 | ACK | The server's answer `ack` with `committed_through`, sent only after the group holding the Batch (or the earlier Batch it acknowledges) completed data and marker syncs. |
 | Server journal | The server's `FAB1` frame log of committed groups of Batches, replayed to rebuild Strand and binding state. |
 | Segment | An immutable directory of Zstd Parquet files plus a manifest written last, covering a contiguous range of journal groups. |
+| Observation | The proposed one record for a log line, a metric point or a span: the query key `(time_ns, node_id, generation, sequence, index)`, optional trace locators, typed attributes and one signal payload ([ADR-0023](decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md)). Not yet emitted or stored. |
+| FOB1 | The Observation's canonical block encoding: dictionaries in first-use order, delta-coded columns, a CRC trailer; one byte string per valid block and one block per accepted byte string, so a hash of the bytes is a hash of the records. |
+| Canonical encoding | An encoding in which `decode(encode(b)) == b` for every valid value and `encode(decode(x)) == x` for every accepted byte string; the decoder rejects every other form. |
 | Sealer | The server's background thread that turns each sealed journal file into a Segment, then lets the commit thread delete the file, and applies retention. It runs after ingestion and never sits on the ACK path. |
 | Run | A sorted batch of log rows or metric points, spilled to a scratch file while a Segment is built. Runs are merged into the final table and deleted before the Segment commits; they are not a durable format. |
 | Retention | Deleting whole Segments, oldest first, when the age or byte limit is exceeded; the retained window is reported with every answer. |

@@ -65,7 +65,7 @@ flowchart TB
     end
     App[fabric-app: use cases]
     Ports[fabric-ports: DurableJournal, Clock, SegmentStore]
-    Support[fabric-frame: FAB1 frame log, Batch envelope]
+    Support[fabric-frame: FAB1 frame log, Batch envelope; fabric-observation: Observation record, FOB1 codec]
     Linux[fabric-adapter-linux: host and log reads]
     Core[fabric-core: delivery, control, query, retention and collection decisions]
     Verify[verification layer: fabric-properties, fabric-fuzz-targets, fabric-sim]
@@ -92,6 +92,7 @@ The canonical source is [layers.mmd](../diagrams/layers.mmd).
 | [fabric-ports](../../crates/fabric-ports/src/lib.rs) | ports | `DurableJournal`, `Clock`, `SegmentStore` |
 | [fabric-app](../../crates/fabric-app/src/lib.rs) | app | `commit_group` (delivery) and `apply_retention` (retention) |
 | [fabric-frame](../../crates/fabric-frame/src/lib.rs) | adapter support | the `FAB1` rotating frame log and the version-one `Batch` envelope |
+| [fabric-observation](../../crates/fabric-observation/src/lib.rs) | adapter support | the version-one `Observation` record (line, point or span) and its canonical `FOB1` block codec; proposed in [ADR-0023](../decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md), not yet wired to anything |
 | [fabric-server](../../crates/fabric-server/src/lib.rs) | composition root | HTTP/TLS, the journal adapter, control, segments, sealer, query, and `main` |
 | [fabric-adapter-linux](../../crates/fabric-adapter-linux/src/lib.rs) | adapter | bounded `/proc` and `statvfs` sampling and newline log reading for the Spindle |
 | root package `fabric_o11y` | composition root | the Spindle runtime, its Spool and HTTP client; `fabric-node`, `fabricctl`; the FOL2 demonstration |

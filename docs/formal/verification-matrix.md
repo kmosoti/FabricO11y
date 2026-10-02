@@ -94,3 +94,12 @@ These are operating-profile claims; none is qualified on the current head. A mea
 | QUAL-DRAIN | Outage drain | 30 min buffered, drained ≤ 10 min | outage run 01 (`bb8d06d`, four-CPU host): drain ≤ 99 s, oracle exact | Measured on `bb8d06d` (not target profile) |
 | QUAL-INSTALL | Installation behavior | running-installation acceptance | [installation acceptance run 01](../experiments/formal/installation-acceptance-run-01.md) (`bbd2dd5`, container on a legacy cgroup hierarchy): 16 of 17 checks passed, three mutations rejected, `MemoryHigh` not run | Inconclusive |
 | QUAL-H | Harness correctness | runner limits, rate oracle | test suites | Tested |
+
+## Observation record (proposed, ADR-0023)
+
+Claims of the [fabric-observation](../../crates/fabric-observation/src/lib.rs) codec. Nothing in the product depends on it; the claims are not in the registered contract list of `xtask/checks.json`.
+
+| ID | Contract | Spec | Production implementation | Verification | Independent oracle | Negative control | Formal model | Fault test | Status | Unchecked |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| OBS-1 | Every valid block decodes to itself and has exactly one byte string | [ADR-0023](../decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md) | `fabric_observation::encode`, `decode` | `round_trip_all_three_signals`; property `round_trip_is_identity` (1,500 cases) | — | `rejects_non_canonical_records_before_encoding` (unsorted and duplicate keys, NaN, severity 25) | Kani harnesses for zigzag and delta (`cfg(kani)`, not in the registered check) | — | Tested | Blocks above 40 records in the property generator |
+| OBS-2 | Every accepted byte string is the canonical encoding of its decoding, and no input panics the decoder | ADR-0023 | `decode`'s canonicality checks | `single_bit_flips_are_rejected_or_canonical`; properties `mutations_are_rejected_or_canonical`, `arbitrary_bytes_never_panic`; fuzz target `observation_block` (corpus replay in `fuzz-corpus`) | — | `rejects_overlong_varints`, `rejects_dictionaries_out_of_first_use_order_or_unused`, `rejects_crc_mismatch_truncation_and_trailing_bytes` | — | — | Tested | Coverage-guided fuzzing beyond the committed corpus (needs the nightly `fuzz-smoke`) |

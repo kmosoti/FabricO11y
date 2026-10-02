@@ -158,6 +158,20 @@ Try it:
 2. Read the [study's heap table](experiments/benchmarks/sealer-study-run-01.md#results). Why did a limit of 16,384 rows fail on 16 KiB rows, and what does the design count instead?
 3. After the milestone merges, run `cargo test -p fabric-server` and find the test that fails when a run is kept in memory.
 
+## Stage 12 — One record for every signal
+
+**Status: proposed ([ADR-0023](decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md)); built, tested and measured; wired to nothing.** Fabric keeps two copies of every line: the node's exact OTLP bytes (custody) and a body column (query). [Storage layout run 01](experiments/benchmarks/storage-layout-run-01.md) measured that the pair is most of a Segment. The two cannot be one object because OTLP's protobuf is not canonical: the same observation has many byte strings, so the server can only vouch for the bytes it received, never for the records.
+
+The Rust idea: a **canonical encoding** is a pair of functions with `decode(encode(b)) == b` for every valid value *and* `encode(decode(x)) == x` for every accepted byte string. The second half is the hard one; the decoder has to reject every non-canonical form (an overlong varint, a dictionary entry nothing uses, an unsorted attribute) rather than tolerate it. Once both halves hold, a hash of the bytes is a hash of the records, and custody and query can share one copy. [fabric-observation](../crates/fabric-observation/src/lib.rs) does this for one record that covers a line, a point and a span under the query key the kernel already orders by.
+
+The contract: the crate is a pure codec in adapter support; it decides nothing about delivery or retention and performs no effect. The trade-off: strictness. A reader that accepts only canonical bytes refuses input a lenient one would take, by design; and the type is only useful once the node emits it, which is a wire-format decision this stage does not take.
+
+Try it:
+
+1. Run `cargo test -p fabric-observation` and read `single_bit_flips_are_rejected_or_canonical`. Why must the test repair the CRC before it can say anything about the structure?
+2. Run `cargo test -p fabric-properties --test observation`. Which property would a decoder that silently accepted an overlong varint fail, and why would a plain round-trip test not catch it?
+3. Read [observation encoding run 01](experiments/benchmarks/observation-encoding-run-01.md). Why does the encoding save a fifth on real text and nothing on the synthetic workload, and what does that say about which workload to measure storage on?
+
 ## Working rule
 
 For each new component, answer these in plain language before coding:

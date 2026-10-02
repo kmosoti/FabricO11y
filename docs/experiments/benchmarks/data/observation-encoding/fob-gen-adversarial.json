@@ -1,0 +1,24 @@
+{
+ "batches": 55315,
+ "bytes_per_record": {
+  "fob_per_batch": 282.9998209841506,
+  "fob_per_file": 268.72857267606867,
+  "fob_per_file_zstd": 109.69330218748635,
+  "raw": 285.8673972841986,
+  "raw_zstd_per_file": 108.82416277343579
+ },
+ "decode_ns_per_record": 449.61901497620397,
+ "encode_ns_per_record": 866.6102693970222,
+ "files": 64,
+ "fob_per_batch": 64815449,
+ "fob_per_batch_zstd_each": 31691087,
+ "fob_per_batch_zstd_per_file": 25909597,
+ "fob_per_file": 61546905,
+ "fob_per_file_zstd": 25123057,
+ "lines": 110630,
+ "points": 118400,
+ "raw_batch_bytes": 65472210,
+ "raw_batch_zstd_each": 31548082,
+ "raw_batch_zstd_per_file": 24923998,
+ "records": 229030
+}
