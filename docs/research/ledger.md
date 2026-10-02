@@ -32,6 +32,9 @@ The novelty firewall of the charter applies to every entry: before "novel", the 
 | L-20 | A custody encoding that stores OTLP framing and repeated attributes once per Batch | HUNCH | On real text the raw copy costs twice the body column; the framing share is unmeasured. Measure it first |
 | L-21 | Real-corpus query run | FALSIFIED on the tail, held per entry; held on Segments within 2× except metrics | [Real-corpus query run 01](../experiments/benchmarks/real-corpus-query-run-01.md): the same 64 MiB of real text holds 2.7 times the entries, and the stock tail cost is 4.7 µs per entry on both; Segment shapes within 1.0 to 1.5×; the walk reads the same sources; text selectivity decides its gain (1 %: 706 to 82 ms); the walk's 8.3 µs per entry when nothing stops it is the cost to fix; 0 mismatches in 800 queries |
 | L-22 | Delta encodings for the metrics projection | DERIVED | Measured 16 to 29 % of a table that is 3 to 13 % of a Segment; a writer property and an ADR note when a consumer's metric volume makes it matter |
+| L-24 | One canonical copy in place of the custody table and both projections (suite D3) | CANDIDATE, text search confirmed | [Optimality run 01](../experiments/benchmarks/optimality-run-01.md): a full text search over FOB1 blocks within 1.2 to 1.4× of the Parquet projection, identical hits, a third of the bytes; the other shapes need per-block key bounds |
+| L-25 | A text filter per row group reaches the block floor for rare tokens on real streams | DERIVED from the locality measurement | Real streams cluster: a token at a few percent of lines touches 5 to 60 % of blocks in stream order, nearly all shuffled; a contract question (an index beyond row-group statistics) |
+| L-26 | Real streams compress 1.1 to 1.7× better than the random draw (suite B3) | OBSERVED | Every random-draw storage figure is pessimistic; the fixture should be stream order |
 | L-23 | Traces as a third projection of the same record spine | OUT OF CONTRACT (design held) | The [storage direction](storage-direction.md) says where spans, locators and a `trace_id` bloom would go; nothing runs until the contract changes |
 
 ## Ranking of the next experiments
@@ -346,3 +349,17 @@ Rows carry the node's clock, gaps and the retained window the server's, freshnes
 **State:** OUT OF CONTRACT; design held in the [storage direction](storage-direction.md).
 
 **Claim.** A span is an observation with the same key (start time, node_id, sequence, index), locators (`trace_id`, `span_id`, `parent_span_id`) that logs and metric exemplars share as nullable columns, and a per-row-group bloom filter on `trace_id` for the "fetch one trace" shape. The wire `Batch` needs a traces payload slot (a wire change); the product contract names traces a non-goal; the contract allows no index beyond row-group statistics unless a gate fails. Nothing runs.
+
+### L-24. One canonical copy in place of the custody table and both projections
+
+**State:** CANDIDATE; the text-search shape confirmed in [optimality run 01](../experiments/benchmarks/optimality-run-01.md).
+
+**Claim.** With the record canonical (ADR-0023), a Segment can hold FOB1 blocks once and answer every registered shape from them through `decode_view`, with per-block key bounds in the manifest in place of Parquet row-group statistics, at a third of today's bytes. The text search, the shape that falsified L-06 against raw OTLP, runs within 1.2 to 1.4× of the projection: the per-byte cost of the view decode (0.8 ns) is what L-06 lacked. **Open:** the thirteen other shapes against block bounds (hypothesis D3 in full); the manifest version; replay from blocks.
+
+### L-25. A text filter per row group
+
+**State:** DERIVED. On real streams a token at a few percent of lines touches 5 to 60 % of 100-line blocks; a small n-gram set per row group would make a rare text search cost the blocks touched rather than the window. It is an index beyond row-group statistics, which the product contract allows only when a registered gate fails; the floor it reaches is stated in the [optimality bounds](optimality-bounds.md).
+
+### L-26. Stream order
+
+**State:** OBSERVED. Real lines in their own order compress 1.08 to 1.68× better than the same lines shuffled (1.34× lines-weighted); the random-draw corpus understates every storage figure by that much. The fixture decision is in the [consolidation](design-consolidation.md) (D8).

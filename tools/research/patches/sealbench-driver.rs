@@ -446,6 +446,7 @@ fn main() -> io::Result<()> {
     match a[1].as_str() {
         "gen" => generate(&a[2], Path::new(&a[3]), a[4].parse().unwrap(), a[5].parse().unwrap()),
         "fob" => fob(Path::new(&a[2]), a.get(3).map(|n| n.parse().unwrap()).unwrap_or(64)),
+        "fobscan" => fobscan(Path::new(&a[2]), Path::new(&a[3]), &a[4], a.get(5).map(|n| n.parse().unwrap()).unwrap_or(64)),
         "run" => run(&a[2], Path::new(&a[3]), &a[4..].iter().map(PathBuf::from).collect::<Vec<_>>()),
         "verify" => verify(Path::new(&a[2]), Path::new(&a[3])),
         _ => panic!("usage"),
@@ -506,6 +507,74 @@ fn fob(dir: &Path, n: usize) -> io::Result<()> {
         "fob_per_file": per_file, "fob_per_file_zstd": per_file_z,
         "bytes_per_record": {"raw": raw as f64 / recs as f64, "raw_zstd_per_file": raw_concat_z as f64 / recs as f64, "fob_per_batch": per_batch as f64 / recs as f64, "fob_per_file": per_file as f64 / recs as f64, "fob_per_file_zstd": per_file_z as f64 / recs as f64},
         "encode_ns_per_record": t_enc.as_nanos() as f64 / recs as f64, "decode_ns_per_record": t_dec.as_nanos() as f64 / recs as f64
+    }));
+    Ok(())
+}
+
+
+/// Text search over one compressed canonical copy (FOB1 blocks, one per journal
+/// file, Zstd 3) through `decode_view`, against the Parquet logs projection of the
+/// same records. Reports the median of eight passes and the bytes each layout reads.
+fn fobscan(journal_dir: &Path, segments_dir: &Path, token: &str, n: usize) -> io::Result<()> {
+    use fabric_observation as fo;
+    use fabric_server::rows::{Rows, extract};
+    use prost::Message as _;
+    let mut files: Vec<_> = std::fs::read_dir(journal_dir)?.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("sealed-") && n.ends_with(".faj"))).collect();
+    files.sort(); files.truncate(n);
+    // one block per file, compressed as a Segment would store it
+    let mut blocks: Vec<Vec<u8>> = Vec::new(); let mut raw_total = 0usize; let mut records = 0usize; let mut lines = 0usize;
+    for f in &files {
+        let groups = segment::read_sealed(f)?; let mut recs = Vec::new();
+        for g in &groups { for e in &g.entries {
+            let batch = fabric_frame::envelope::Batch::decode(e.batch.as_slice()).map_err(|x| io::Error::new(io::ErrorKind::InvalidData, x.to_string()))?;
+            let mut rows = Rows::default(); extract(g.group_sequence, e, &mut rows)?;
+            let strand = fo::Strand { node_id: batch.node_id.as_slice().try_into().unwrap(), generation: batch.generation };
+            for r in &rows.logs { lines += 1; recs.push(fo::Observation { strand, sequence: r.sequence, index: r.index, time_ns: r.observed_ns, locators: None, attributes: r.attributes.iter().map(|(k, v)| (k.clone(), fo::Value::Str(v.clone()))).collect(), signal: fo::Signal::Log { severity: 0, event: String::new(), body: r.body.clone() } }); }
+            for r in &rows.metrics { recs.push(fo::Observation { strand, sequence: r.sequence, index: r.index, time_ns: r.time_ns, locators: None, attributes: r.attributes.iter().map(|(k, v)| (k.clone(), fo::Value::Str(v.clone()))).collect(), signal: fo::Signal::Point { name: r.name.clone(), unit: r.unit.clone(), kind: fo::PointKind::Gauge, value: fo::Number::Int(0) } }); }
+        } }
+        records += recs.len();
+        for chunk in recs.chunks(fo::MAX_RECORDS) {
+            let bytes = fo::encode(chunk).map_err(|x| io::Error::new(io::ErrorKind::InvalidData, x.to_string()))?; raw_total += bytes.len();
+            blocks.push(zstd::bulk::compress(&bytes, 3)?);
+        }
+    }
+    let compressed_total: usize = blocks.iter().map(|b| b.len()).sum();
+    let median = |mut v: Vec<f64>| { v.sort_by(|a, b| a.partial_cmp(b).unwrap()); v[v.len() / 2] };
+    // FOB1: decompress, view-decode, substring over bodies
+    let mut fob_ms = Vec::new(); let mut fob_hits = 0usize;
+    for _ in 0..8 {
+        let t = std::time::Instant::now(); let mut hits = 0usize;
+        for b in &blocks {
+            let raw = zstd::bulk::decompress(b, 256 << 20)?;
+            let view = fo::decode_view(&raw).map_err(|x| io::Error::new(io::ErrorKind::InvalidData, x.to_string()))?;
+            for r in &view { if let fo::SignalRef::Log { body, .. } = r.signal { if body.contains(token) { hits += 1; } } }
+        }
+        fob_ms.push(t.elapsed().as_secs_f64() * 1e3); fob_hits = hits;
+    }
+    // FOB1, keys only: decompress and view-decode without the search (the fixed cost)
+    let mut fobkeys_ms = Vec::new();
+    for _ in 0..8 {
+        let t = std::time::Instant::now(); let mut n_rows = 0usize;
+        for b in &blocks { let raw = zstd::bulk::decompress(b, 256 << 20)?; n_rows += fo::decode_view(&raw).map_err(|x| io::Error::new(io::ErrorKind::InvalidData, x.to_string()))?.len(); }
+        assert_eq!(n_rows, records); fobkeys_ms.push(t.elapsed().as_secs_f64() * 1e3);
+    }
+    // Parquet projection: the stock scan over every Segment's logs table
+    let mut segs: Vec<_> = std::fs::read_dir(segments_dir)?.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("seg-"))).collect();
+    segs.sort(); segs.truncate(n);
+    let manifests: Vec<_> = segs.iter().map(|d| segment::read_manifest(d)).collect::<io::Result<_>>()?;
+    let parquet_bytes: u64 = segs.iter().map(|d| std::fs::metadata(d.join("logs.parquet")).map(|m| m.len()).unwrap_or(0)).sum();
+    let mut pq_ms = Vec::new(); let mut pq_hits = 0usize;
+    for _ in 0..8 {
+        let t = std::time::Instant::now(); let mut hits = 0usize;
+        for (d, m) in segs.iter().zip(&manifests) { segment::scan_logs(d, m, 0, u64::MAX, |r| { if r.body.contains(token) { hits += 1; } })?; }
+        pq_ms.push(t.elapsed().as_secs_f64() * 1e3); pq_hits = hits;
+    }
+    println!("{}", serde_json::json!({
+        "files": files.len(), "records": records, "lines": lines, "token": token,
+        "fob1_raw_bytes": raw_total, "fob1_zstd_bytes": compressed_total, "parquet_logs_bytes": parquet_bytes,
+        "fob1_search_ms": median(fob_ms.clone()), "fob1_search_min_ms": fob_ms.iter().cloned().fold(f64::MAX, f64::min),
+        "fob1_keys_only_ms": median(fobkeys_ms), "parquet_search_ms": median(pq_ms.clone()), "parquet_search_min_ms": pq_ms.iter().cloned().fold(f64::MAX, f64::min),
+        "fob1_hits": fob_hits, "parquet_hits": pq_hits
     }));
     Ok(())
 }

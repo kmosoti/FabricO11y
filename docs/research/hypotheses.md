@@ -62,7 +62,7 @@ H1: at least 60 % of the difference between a real-text Batch (77 bytes for two 
 Statistic: a field census of the real-text Batches (bytes per OTLP field over 150,010 Batches); then a scratch codec's size and an exact round-trip fuzz. Reject H0 if the census shows 60 % and the codec round-trips every Batch byte for byte at 25 % saving.
 Cost: the census is a script, one day; the codec a week. Decides: ledger L-20, or that the canonical record (A3) is the only way to one copy.
 
-**B3. A real stream compresses better than the random draw.**
+**B3. A real stream compresses better than the random draw.** *Ran ([optimality run 01](../experiments/benchmarks/optimality-run-01.md)): H0 rejected on seven of eight samples; the gain is 1.08 to 1.68×, 1.34× lines-weighted, below the 1.5× H1 asked for on six samples. Every random-draw storage figure is pessimistic by a fifth to two thirds.*
 H1: real log lines in their original order (bursts, repeats, templates in sequence) compress at least 1.5 times better under Zstd 3 per 1 MiB block than the same lines drawn at random. H0: the gain is under 1.1×.
 Statistic: bytes per line of the eight Loghub samples in file order against shuffled, in 1 MiB blocks. Reject H0 if the ratio is at least 1.5 on at least six of eight.
 Cost: a script, one hour. Decides: whether every storage figure measured so far is pessimistic, and by how much.
@@ -111,7 +111,7 @@ Statistic: row groups read and Segment bytes for the L-04 shapes on the adversar
 H1: merging four adjacent Segments into one globally sorted Segment (a second sealing level) removes their mutual overlap, so the walk reads a quarter of the row groups on overlapping workloads, at a write amplification under 2× over the retention window. H0: the query gain is under 2× or the amplification over 3×.
 Statistic: reads for `limit` shapes before and after a four-way merge on the outage workload; bytes written per byte retained over a simulated day. Oracle: HIST-1/2 on the merged Segment against the journal. Reject H0 if both bounds hold.
 
-**D3. The projections are not needed once the custody copy is a canonical block.**
+**D3. The projections are not needed once the custody copy is a canonical block.** *The text-search half ran ([optimality run 01](../experiments/benchmarks/optimality-run-01.md)): one FOB1 copy answers a whole-history substring search within 1.2 to 1.4× of the Parquet projection with identical hits, from a third of the bytes of the tables it replaces; the thirteen other shapes need block-level key bounds and are not run.*
 H1: a Segment that holds FOB1 blocks once, with per-block key bounds in the manifest and no `logs.parquet` or `metrics.parquet`, answers every registered shape within 2× of today's projections through `decode_view` (0.8 ns per byte, 72 ns per record), including the text search that falsified L-06 against raw OTLP, at no more than 60 % of today's bytes. H0: some registered shape is over 2× slower, or bytes are over 70 %.
 Statistic: the fourteen L-21 shapes on a real-text Segment state rebuilt as FOB1 blocks plus a manifest, against today's Parquet Segments; bytes of both. Oracle: the specification through HIST-1/2 equivalence for every shape; the Python oracle as diversity. Reject H0 if every shape is within 2× and bytes under 60 %. This is the hypothesis that would retire the sealer's projection build and the duplicate copy at once; it depends on A3.
 
@@ -154,4 +154,4 @@ By information value per hour, with the dependency each unlocks:
 9. **B5**, **C1**, **D8**, **D9**: the Segment side at product size and the retention and durability checks no run has made.
 10. **B2**, **B4**, **C2**, **C3**, **C4**: each decided by the ones above or waiting on a capture.
 
-One experiment runs at a time. B3 is next.
+One experiment runs at a time. B3 has run; A1 is next, then A4 and D6 of this suite.

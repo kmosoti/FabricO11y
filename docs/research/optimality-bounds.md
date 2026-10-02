@@ -1,0 +1,48 @@
+# Optimality bounds: how far the design is from the floors
+
+Status: **exploratory research**, tier 6 of the [source-of-truth order](../README.md#source-of-truth). "The most optimized storage and query possible" is a claim about distance from lower bounds, so this page states the bounds, the measured distance from each, what closes each gap, and where the result contradicts prior art's defaults. Every number has a record under [docs/experiments/benchmarks](../experiments/README.md); the bounds are stated under their assumptions, and a bound that depends on a workload parameter says so.
+
+## 1. Storage
+
+**The floor.** A Segment cannot be smaller than the information in its records. For the text, a general compressor over the lines in stream order is the practical proxy for that information: 8.8 bytes per line at Zstd 19, 11.9 at Zstd 3, lines-weighted over the eight real samples in their own order ([optimality run 01](../experiments/benchmarks/optimality-run-01.md)); template-aware compressors (CLP) report about twice gzip on such logs, which puts the information floor near 5 bytes per line. For a record's key, given that records are sorted, the information is the time step and the strand step: one to four bytes ([cost model](observation-model.md)). For a metric point, the value's information: a few bits for a slowly moving gauge, nothing for a constant, 63 bits for the generator's random integers.
+
+**Where the design stands**, per 64 MiB of real-text journal (300,020 lines, 320,320 points):
+
+| Layout | Bytes | Against the floor (text at 8.8 B per line plus keys at 3 B per record, about 4.3 MiB; the random point values add 3 MiB that no layout can remove) |
+| --- | ---: | --- |
+| Today's Segment (custody table with per-Batch hash, two projections, gaps, manifest) | 26.0 MiB | 3.6× with the random values counted, 6× without |
+| Today's tables minus the duplicate payload and the per-Batch hash (ledger L-19, L-20) | about 14 MiB | 2× |
+| One canonical copy, FOB1 blocks per file, Zstd 3 | 8.6 MiB (5.3 without the random values) | 1.2× with the random values, 1.25× without |
+| The same with Zstd 19 and stream order | about 6 to 7 MiB (model) | within 1.1× |
+
+The custody copy is the whole distance: once the record is canonical, the custody copy *is* the queryable copy, and the Segment sits within a quarter of the floor a general compressor sets. What remains above the floor is the compressor, and the gap between Zstd and a template-aware codec on log text (about 1.5 to 2×, CLP's own figures against gzip) is the only storage headroom left; at Fabric's retention (20 GiB) it is worth hours, not a design.
+
+**Against prior art.** Loki, Elasticsearch (`_source`) and today's Fabric keep the raw record beside the searchable projection because the raw record is not canonical. OTAP, Tempo and the ClickHouse stores keep per-kind tables because a wide row cannot encode metrics well. The measurement says both defaults are unnecessary here: one canonical columnar block holds lines and points (points as their own column group inside the block), is searched at the projection's speed, and is the custody object, because its encoding is one-to-one.
+
+## 2. Query
+
+A query's floor is the smallest amount of data that any algorithm must read to answer it correctly, under what the layout makes available. Each registered shape has one, and the measured reads of the prototypes stand beside it.
+
+| Shape | Floor | Measured (the walk, real text) | Distance | What closes it |
+| --- | --- | --- | --- | --- |
+| `limit k` over a wide window | `k + 1` rows plus the bounds of the sources that can hold them: Ω(k + S) with S sources overlapping the first k keys | 26 entries read for k = 50 (one source's worth), one row group of 64 on disjoint Segments | at the floor | nothing; under total overlap S is every source, which is the floor too (D1, D2 of the suite would reduce S by changing the layout) |
+| a short time window | the rows in the window plus a search for its position: Ω(rows + log N) | 52 of 985 entries; one row group of 64 | at the floor | nothing |
+| one node, wide window | without a node index, the rows of every source that holds the node: Ω(rows of the node) on the tail (the index knows labels), every overlapping row group on Segments | 26 of 1,496 entries on the tail; 2 to 4 row groups of 64 on Segments | tail at the floor; Segments read groups without the node | a node-presence set per row group in the manifest (ledger L-07), a few hundred bytes |
+| one metric, `limit k` | as `limit k` over the points table | 102 of 10,000 points; one group | at the floor | nothing |
+| text search, selectivity s | without a text index, every candidate body: Ω(bytes of bodies in the window / decompression bandwidth); with a block-level filter, Ω(blocks that hold the token) | a full pass is 117 to 163 ms per 64 MiB journal on either layout, about 2× the Zstd decompression floor of the bytes read; at s = 1 % the walk reads 4,412 of 149,585 entries, at 0.1 % a third | the scan is within 2× of decompression bandwidth; the walk's stop is at the floor for its selectivity | an n-gram filter per row group, which on real streams skips half to nineteen twentieths of the blocks for tokens below a few percent (optimality run 01); nothing on the random draw. A product-contract question: it is an index beyond row-group statistics |
+| text search, no match | a full pass, as above; with a block filter Ω(blocks) | 1,246 ms on the walk against 721 stock on the real tail: the walk pays 8.3 µs per entry in key order against 4.8 in file order | 1.7× above the stock scan, 10× above the decompression floor | the file-order fallback (A4); then the block filter |
+| rate over a window | the series' points in the window: Ω(points) | 10,000 of 10,000 points read | at the floor | nothing; a budget (L-05) bounds it per request |
+| empty window in the past | the metadata that proves emptiness: Ω(log S) with a sorted index of sources, Ω(S) without | 3 to 9 ms: every Segment's manifest opened (0.08 ms each) | Ω(S); 64 reads where 6 would do | a sorted in-memory table of Segment bounds, which the server can hold at start-up; small |
+| the unsealed tail, any query | the entries in the window: Ω(entries selected + log entries) with an index; Ω(all entries) without | stock: all entries at 4.7 µs each; index: the selected entries at 3.4 µs to build once | at the floor with the index for selective shapes; the decode floor itself is the format's (A2, A3) | a canonical block tail decodes at 72 ns per record plus 0.8 ns per byte (A3) |
+
+**Against prior art.** The threshold algorithm (Fagin) and block-max pruning (WAND) are the floors for `limit k` and the walk reaches them with one source's overshoot; what the literature does not state is the file-order fallback, which the measurements require because the per-entry overhead of key order exceeds the sequential decode when nothing stops. Inverted indexes (Quickwit, tokenbf in ClickHouse) are the standard answer to text search; the locality measurement says the floor they chase is reachable with a filter per row group, two orders of magnitude smaller than an inverted index, because real streams cluster. CLP's search over compressed archives without decompression is matched, at Fabric's sizes, by a view decode at 0.8 ns per byte over blocks that are decompressed anyway.
+
+## 3. The computational floor of the codec
+
+A record must be encoded at least once by the node and decoded at least once by the server. The floors are the per-byte work (one pass for the CRC, one for the UTF-8 check, one copy) and the per-record work (a few dictionary lookups). Measured after three model-driven iterations ([cost model](observation-model.md)): encode 135 ns per record plus 1.1 ns per byte; decode to the view 72 ns per record plus 0.8 ns per byte; an attribute 65 and 45 ns. At 0.8 ns per byte the decode is within 2× of a memcpy-plus-CRC bound on this host; the per-record 72 ns is a few cache misses and is at the floor for a columnar layout with dictionaries. No further codec iteration is worth a run.
+
+## 4. What "most optimized possible" means here, and what it does not
+
+Within the floors above, the design is at or within 2× of every bound except four, each with its mechanism named: the node-presence set per row group (L-07), the file-order fallback for the walk (A4), the block text filter (a contract question), and the canonical block tail (A3). None of the four is a new algorithm; each is a measured gap with a known closer.
+
+What this page does not claim: that the floors are tight against an adversary who changes the workload (total overlap makes every `limit` query a scan, by the floor itself); that the general-compressor floor is the information floor (a template codec would sit lower on log text); that any of it is product (every mechanism is a prototype or a plan under the [consolidation](design-consolidation.md)'s gates); or that the measurements transfer to the target host without refitting.
