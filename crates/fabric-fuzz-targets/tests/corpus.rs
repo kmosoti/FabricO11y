@@ -33,3 +33,8 @@ fn query_request_corpus() {
 fn frame_recovery_corpus() {
     replay("frame_recovery", fabric_fuzz_targets::frame_recovery);
 }
+
+#[test]
+fn observation_block_corpus() {
+    replay("observation_block", fabric_fuzz_targets::observation_block);
+}

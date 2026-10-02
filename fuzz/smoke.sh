@@ -13,7 +13,7 @@ if ! cargo +nightly --version >/dev/null 2>&1 || ! command -v cargo-fuzz >/dev/n
   exit 3
 fi
 status=0
-for target in batch_identify query_request frame_recovery; do
+for target in batch_identify query_request frame_recovery observation_block; do
   mkdir -p "target/fuzz-work/$target"
   if cargo +nightly fuzz run "$target" "target/fuzz-work/$target" "fuzz/corpus/$target" \
       -- -max_total_time="$seconds" -rss_limit_mb=2048 >"target/fuzz-work/$target.log" 2>&1; then

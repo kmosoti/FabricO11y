@@ -75,3 +75,13 @@ fn scratch(name: &str) -> PathBuf {
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }
+
+/// An FOB1 observation block is decoded from untrusted bytes. The decoder
+/// never panics, and whatever it accepts is canonical: re-encoding the
+/// decoded block yields the same bytes.
+pub fn observation_block(data: &[u8]) {
+    if let Ok(block) = fabric_observation::decode(data) {
+        let again = fabric_observation::encode(&block).expect("a decoded block is valid");
+        assert_eq!(again, data, "accepted bytes must be the canonical encoding");
+    }
+}
