@@ -292,4 +292,10 @@ fn write_fuzz_seeds() {
         many.push(r);
     }
     std::fs::write(dir.join("two-hundred-points.fob"), encode(&many).unwrap()).unwrap();
+    // CX-FOB1-DUPLICATE-DICTIONARY as a fuzz regression input: a repeated node entry, CRC repaired.
+    let reg = dir.join("../../regressions/observation_block");
+    std::fs::create_dir_all(&reg).unwrap();
+    let mut dup = encode(&sample()).unwrap();
+    dup.copy_within(6..22, 22);
+    std::fs::write(reg.join("duplicate-dictionary.fob"), recrc(dup)).unwrap();
 }
