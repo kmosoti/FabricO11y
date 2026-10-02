@@ -1,6 +1,6 @@
 # Optimality run 01: stream order, block locality, one copy against the projections, the row-group text filter
 
-Status: **Exploratory.** Five measurements made on 2026-10-02 for the [optimality bounds](../../research/optimality-bounds.md): hypothesis B3 of the [suite](../../research/hypotheses.md) (a real stream against the random draw), the block locality of tokens in real streams, the text-search half of hypothesis D3 (one canonical copy against the Parquet projections), the walk's no-stop overhead (A4) and a trigram filter per row group (L-25, hypothesis C5). No protocol was registered; nothing here is **Measured** in the [evidence-state](../../QUALIFICATION.md#evidence-states) sense. Scripts: [locality.py](data/optimality/locality.py.txt); the `fobscan` subcommand of the research generator ([tools/research](../../../tools/research/README.md)).
+Status: **Exploratory.** Six measurements made on 2026-10-02 for the [optimality bounds](../../research/optimality-bounds.md): hypothesis B3 of the [suite](../../research/hypotheses.md) (a real stream against the random draw), the block locality of tokens in real streams, the text-search half of hypothesis D3 (one canonical copy against the Parquet projections), the walk's no-stop overhead (A4), a trigram filter per row group (L-25, hypothesis C5) and the whole-tail decode of a canonical block tail (A3, the fixed-cost half). No protocol was registered; nothing here is **Measured** in the [evidence-state](../../QUALIFICATION.md#evidence-states) sense. Scripts: [locality.py](data/optimality/locality.py.txt); the `fobscan` subcommand of the research generator ([tools/research](../../../tools/research/README.md)).
 
 ## B3: a real stream against the random draw
 
@@ -97,6 +97,21 @@ Building the 64 filters cost 210 ms on the stream state and 251 ms on the random
 3. **The walk already made the present-token shapes cheap; the filter is for what the walk cannot stop.** With `limit 100` the walk stops after 1 to 3 groups for every token above 0.1 % of lines (10 to 15 ms against stock's 100 to 150, which reads all 64 groups), so the filter changes those shapes by a millisecond or two. Its value is the two shapes whose answer is small but whose candidates are everywhere: the rare token and the absent one.
 
 **Against prior art.** An inverted index over the same 300,140 lines would hold a posting per distinct token per line; the filter holds 1 to 2 bytes per row, is built at 0.8 µs per row with no tokenizer, and reaches the index's floor (read only blocks that can hold the token) exactly where real streams are local. Where they are not (the random draw), neither would help a present token at this grain, and only finer blocks would. The bloom's false-positive rate at 2^16 bits and two positions is about 7 % per group for a one-trigram needle at 10,000 distinct trigrams per group and falls geometrically with the needle's trigrams, which the 64-of-64 rejections of both absent needles show. The filter is an index beyond row-group statistics and so a product-contract question (ledger [L-25](../../research/ledger.md#l-25-a-text-filter-per-row-group)); this run says what it buys, not whether the contract should admit it.
+
+## A3, the fixed-cost half: the 64 MiB real tail as canonical blocks
+
+The real-text 64 MiB tail of run L-21 (149,585 journal entries: 619,570 records, 299,570 lines) converted by `fobscan` to ten FOB1 blocks of at most 65,536 records (point values dropped, as in the D3 half) and compressed with Zstd 3; eight passes, the median, CPUs 2 and 3 ([fobscan-tail.jsonl](data/optimality/fobscan-tail.jsonl)). The stock figures are the A4 table's full-tail shapes on the same journal, through the server on CPUs 0 and 1:
+
+| Pass over the whole tail | Bytes | Time |
+| --- | ---: | ---: |
+| stock server, logs `limit 50` (decodes every entry) | 64 MiB journal | 607 ms |
+| stock server, text with no match | 64 MiB | 570 ms |
+| FOB1 blocks: decompress and view-decode every record (keys only) | 4.1 MiB (46.4 MB raw) | 140 to 146 ms |
+| FOB1 blocks: the same plus a substring search over every body (`INFO`, `Exception`, `zq9`) | 4.1 MiB | 140 to 153 ms |
+
+**Verdict.** The decode of the whole tail is the fixed cost that every shape the walk cannot stop pays, and as canonical blocks it is 4.0 to 4.3× below the stock OTLP decode (and 3.7 to 4.0× below the walk's 556 ms no-match search with the frame cache). The [cost model](../../research/observation-model.md) predicts 82 ms for the view decode (619,570 records at 72 ns, 46.4 MB at 0.8 ns per byte) and about 45 ms for Zstd at 1 GB/s, 127 ms against 140 to 146 measured, within 15 %. The compressed tail is 16× smaller than the journal that holds the same records.
+
+What this half does not show, and why A3 stays open: these are decode passes in a process, not server answers; there is no key filter, heap, HTTP or JSON here, and the stock side carries all of them (the walk's `limit 50` answer on the same tail is 40 ms, so the answer's own cost is small against the decode's). A block tail would also have to be written by the server as it receives, which is the ADR-0023 wire question, and the budget of the A3 statistic (one fifth of stock on three shapes with a clean differential) needs the server path. The figure says the fifth is within reach: 146 of 607 is 0.24, before the server's early stop and the frame cache that A4 added to the walk apply to blocks too.
 
 ## Limits
 
