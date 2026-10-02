@@ -82,7 +82,13 @@ fn body(rng: &mut Rng, tick: u64) -> String {
         Err(_) => Vec::new(),
     });
     if !corpus.is_empty() {
-        return corpus[(rng.next() % corpus.len() as u64) as usize].clone();
+        // SEALBENCH_CORPUS_ORDER=stream: each caller walks the corpus in order from an
+        // offset drawn once per generator (locality as in a real stream); otherwise random.
+        static STREAM: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        static POS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let stream = *STREAM.get_or_init(|| std::env::var("SEALBENCH_CORPUS_ORDER").as_deref() == Ok("stream"));
+        let i = if stream { POS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + tick } else { rng.next() };
+        return corpus[(i % corpus.len() as u64) as usize].clone();
     }
     let n = BODY.load(Relaxed);
     if tick % 2 == 0 {
