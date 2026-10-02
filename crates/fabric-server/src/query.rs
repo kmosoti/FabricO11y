@@ -129,6 +129,9 @@ struct Sources {
     tail_paths: HashMap<u64, PathBuf>,
     tail_evidence: Option<((u64, u64), BTreeMap<String, u64>)>,
     bounds: Vec<Result<GroupBounds, String>>,
+    /// Walk plan, logs queries with a needle of three or more bytes: each Segment's
+    /// verified row-group text filters, if it has them (ADR-0024 part 2).
+    filters: Vec<Option<std::sync::Arc<Vec<crate::text_filter::GroupFilter>>>>,
 }
 
 /// One source of the walk: a tail entry, or a row group of a Segment.
@@ -324,6 +327,15 @@ impl History {
                     .map_err(|e| e.to_string())
             })
             .collect();
+        let needle = matches!(query, Query::Logs { contains: Some(c), .. } if c.len() >= 3);
+        let filters = if needle {
+            segments
+                .iter()
+                .map(|(dir, manifest)| state.filters(dir, manifest))
+                .collect()
+        } else {
+            Vec::new()
+        };
         drop(state);
         let mut reader = TailReader::new(&tail_paths);
         let mut journal: Vec<Group> = Vec::new();
@@ -350,6 +362,7 @@ impl History {
             tail_paths,
             tail_evidence: Some((received, freshness)),
             bounds,
+            filters,
         })
     }
 
@@ -360,6 +373,7 @@ impl History {
         sources: &Sources,
         window: &Window,
         kind: impl Fn(&TailEntry) -> (u64, u64),
+        needle: Option<&str>,
         unavailable: &mut Vec<Value>,
     ) -> io::Result<Vec<(u64, u64, Source)>> {
         let mut items: Vec<(u64, u64, Source)> = sources
@@ -373,8 +387,16 @@ impl History {
         {
             match bounds {
                 Ok(groups) => {
+                    // A row group whose verified filter lacks one of the needle's
+                    // trigrams holds no match (ADR-0024 part 2).
+                    let filter = sources.filters.get(si).and_then(|f| f.as_deref());
+                    let excluded = |rg: usize| {
+                        needle.zip(filter).is_some_and(|(n, f)| {
+                            f.get(rg).is_some_and(|g| !g.may_contain(n.as_bytes()))
+                        })
+                    };
                     for &(rg, min, max) in groups {
-                        if max >= window.from_ns && min < window.to_ns {
+                        if max >= window.from_ns && min < window.to_ns && !excluded(rg) {
                             items.push((min, max, Source::Group(si, rg)));
                         }
                     }
@@ -459,6 +481,7 @@ impl History {
             tail_paths: HashMap::new(),
             tail_evidence: None,
             bounds: Vec::new(),
+            filters: Vec::new(),
         })
     }
 
@@ -626,7 +649,13 @@ impl History {
                     }
                 }
                 if walking {
-                    let items = Self::walk_order(&sources, &window, |e| e.logs, &mut unavailable)?;
+                    let items = Self::walk_order(
+                        &sources,
+                        &window,
+                        |e| e.logs,
+                        contains.as_deref(),
+                        &mut unavailable,
+                    )?;
                     let mut reader = TailReader::new(&sources.tail_paths);
                     for (min, max, source) in items {
                         if after.as_ref().is_some_and(|a| max < a.0) {
@@ -721,7 +750,7 @@ impl History {
                 }
                 if walking {
                     let items =
-                        Self::walk_order(&sources, &window, |e| e.metrics, &mut unavailable)?;
+                        Self::walk_order(&sources, &window, |e| e.metrics, None, &mut unavailable)?;
                     let mut reader = TailReader::new(&sources.tail_paths);
                     for (min, max, source) in items {
                         if after.as_ref().is_some_and(|a| max < a.0) {
@@ -815,7 +844,7 @@ impl History {
                     // A rate has no limit, so nothing stops it; the walk reads only the
                     // tail entries and row groups whose bounds meet the window.
                     let items =
-                        Self::walk_order(&sources, &window, |e| e.metrics, &mut unavailable)?;
+                        Self::walk_order(&sources, &window, |e| e.metrics, None, &mut unavailable)?;
                     let mut reader = TailReader::new(&sources.tail_paths);
                     for (_, _, source) in items {
                         match source {

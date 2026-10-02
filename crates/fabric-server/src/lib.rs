@@ -8,6 +8,7 @@ pub mod sealer;
 pub mod segment;
 pub mod store;
 mod tail;
+pub mod text_filter;
 
 use axum_server::tls_rustls::RustlsConfig;
 use sha2::{Digest, Sha256};

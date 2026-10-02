@@ -914,3 +914,104 @@ fn a_walking_server_keeps_its_tail_index_exact_while_sealing() {
         );
     }
 }
+
+/// ADR-0024 part 2: every Segment carries a verified trigram filter per logs row
+/// group. A filter whose bytes no longer match the manifest is ignored and the walk
+/// scans exactly (the contract's rule for optional indexes); a filter that lies with
+/// a matching digest (a faulty sealer, the filter's trust assumption) makes the walk
+/// drop rows, and the equivalence check catches it.
+#[test]
+fn text_filters_skip_only_groups_without_the_needle_and_fall_back_when_corrupt() {
+    let scratch = Scratch::new();
+    make_certs(&scratch.0);
+    let tokens = enroll(&scratch, &["node-a", "node-b"]);
+    let cfg = config(&scratch.0, 16 * 1024, 1 << 30);
+    let server = start(cfg.clone());
+    let a = sender(&scratch.0, server.addr, &tokens[0]);
+    let b = sender(&scratch.0, server.addr, &tokens[1]);
+    deliver(&scratch.path("spool-a"), &a, 0, 40);
+    deliver(&scratch.path("spool-b"), &b, 0, 40);
+    wait_for_segments(&cfg.state_dir, 2);
+    server.stop();
+
+    let segments_dir = cfg.state_dir.join("segments");
+    let segments = fabric_server::segment::list(&cfg.state_dir).unwrap();
+    for (label, manifest) in &segments {
+        let dir = segments_dir.join(fabric_server::segment::segment_name(*label));
+        let filters =
+            fabric_server::segment::read_text_filter(&dir, manifest).expect("a verified filter");
+        let groups = fabric_server::segment::row_group_bounds(
+            &dir,
+            manifest,
+            fabric_server::segment::Table::Logs,
+        )
+        .unwrap();
+        assert_eq!(filters.len(), groups.len());
+        assert!(
+            filters
+                .iter()
+                .all(|g| g.may_contain(b"needle") && !g.may_contain(b"zq9"))
+        );
+    }
+
+    let queries: Vec<Value> = ["needle", "hay", "zq9", "+1 hay", "line 1000"]
+        .iter()
+        .flat_map(|t| {
+            [5, 1000].map(|limit| json!({"kind": "logs", "from_ns": 0, "to_ns": 1u64 << 40, "contains": t, "limit": limit}))
+        })
+        .collect();
+    let scan = History::new(&cfg.state_dir);
+    let expected: Vec<Vec<Value>> = queries
+        .iter()
+        .map(|q| pages_in_process(&scan, q.clone(), 1 << 40))
+        .collect();
+    let same = |history: &History| {
+        queries
+            .iter()
+            .zip(&expected)
+            .all(|(q, e)| &pages_in_process(history, q.clone(), 1 << 40) == e)
+    };
+    assert!(
+        same(&History::with_plan(&cfg.state_dir, Plan::Walk)),
+        "the filtered walk must answer as the scan"
+    );
+
+    // Zero every filter's bits on disk: the digest no longer matches, the filters
+    // are ignored, the answers stay exact.
+    let (label, manifest) = segments[0].clone();
+    let dir = segments_dir.join(fabric_server::segment::segment_name(label));
+    let path = dir.join(fabric_server::text_filter::FILE);
+    let original = fs::read(&path).unwrap();
+    let groups = fabric_server::text_filter::decode(&original).unwrap().len();
+    let mut zeroed = original.clone();
+    let header = 8 + 4 * groups;
+    zeroed[header..].fill(0);
+    fs::write(&path, &zeroed).unwrap();
+    assert!(fabric_server::segment::read_text_filter(&dir, &manifest).is_none());
+    assert!(
+        same(&History::with_plan(&cfg.state_dir, Plan::Walk)),
+        "a corrupt filter must fall back to the exact scan"
+    );
+
+    // Negative control: the same lying filter with its digest written into the
+    // manifest is believed, rows of that Segment are dropped, and the check sees it.
+    let mut lying = manifest.clone();
+    let entry = lying
+        .files
+        .get_mut(fabric_server::text_filter::FILE)
+        .unwrap();
+    entry.sha256 = Sha256::digest(&zeroed)
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect();
+    fs::write(
+        dir.join("manifest.json"),
+        serde_json::to_vec_pretty(&lying).unwrap(),
+    )
+    .unwrap();
+    assert!(fabric_server::segment::read_text_filter(&dir, &lying).is_some());
+    assert!(
+        !same(&History::with_plan(&cfg.state_dir, Plan::Walk)),
+        "a lying filter must be visible to the equivalence check"
+    );
+}

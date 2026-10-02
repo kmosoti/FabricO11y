@@ -197,6 +197,7 @@ Try it:
 1. Read `Smallest::threshold` and the stop line `if best.threshold().is_some_and(|t| min > t.0)` in query.rs. Why is it `>` and not `>=`? The test `walk_and_scan_plans_answer_identically` needed a third Spindle writing at the same instants before it could tell the two apart.
 2. Run `cargo test -p fabric-server --test history walk`.
 3. Read [query walk run 01](experiments/benchmarks/query-walk-run-01.md). Which shapes did the walk not speed up, and which part of ADR-0024 addresses each?
+4. Read [text_filter.rs](../crates/fabric-server/src/text_filter.rs) and the test `text_filters_skip_only_groups_without_the_needle_and_fall_back_when_corrupt`. A Bloom filter has no false negatives only while its bytes are the sealer's: what does the reader do to keep that true, and which failure does the last part of the test show it cannot catch?
 
 ## Working rule
 

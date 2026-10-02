@@ -25,7 +25,7 @@ flowchart LR
     Runs --> Merge
     Merge -->|rows in contract order| Writers
     Chunker --> Writers
-    Writers -->|four Parquet files, manifest last| Building
+    Writers -->|four Parquet files and the text filter, manifest last| Building
     Building -->|sync, then rename| Segment
     Segment -->|then| Reclaim
     Reclaim -->|deletes| Sealed

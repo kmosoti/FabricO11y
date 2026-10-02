@@ -19,12 +19,14 @@
 use crate::rows::{Rows, extract};
 use crate::segment::{self, GroupBounds, MAX_GROUP_PAYLOAD, Manifest, Table};
 use crate::store::Group;
+use crate::text_filter::GroupFilter;
 use fabric_frame::frame::read_frame;
 use prost::Message;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 pub(crate) fn interrupted(why: &str) -> io::Error {
     io::Error::new(io::ErrorKind::Interrupted, why.to_owned())
@@ -67,6 +69,9 @@ pub(crate) struct WalkState {
     pub entries: Vec<TailEntry>,
     manifests: HashMap<u64, Manifest>,
     bounds: HashMap<(u64, Table), GroupBounds>,
+    /// Verified text filters by label; `None` when a Segment has none or its digest
+    /// differs (a named Segment's bytes never change, so the verdict is kept).
+    filters: HashMap<u64, Option<Arc<Vec<GroupFilter>>>>,
 }
 
 impl WalkState {
@@ -193,6 +198,7 @@ impl WalkState {
         let live: HashSet<u64> = found.iter().map(|(l, _)| *l).collect();
         self.manifests.retain(|l, _| live.contains(l));
         self.bounds.retain(|(l, _), _| live.contains(l));
+        self.filters.retain(|l, _| live.contains(l));
         Ok(found)
     }
 
@@ -211,6 +217,16 @@ impl WalkState {
         let b = segment::row_group_bounds(dir, manifest, table)?;
         self.bounds.insert(key, b.clone());
         Ok(b)
+    }
+}
+
+impl WalkState {
+    /// The verified text filters of one Segment's logs row groups, read once per label.
+    pub fn filters(&mut self, dir: &Path, manifest: &Manifest) -> Option<Arc<Vec<GroupFilter>>> {
+        self.filters
+            .entry(manifest.journal_label)
+            .or_insert_with(|| segment::read_text_filter(dir, manifest).map(Arc::new))
+            .clone()
     }
 }
 

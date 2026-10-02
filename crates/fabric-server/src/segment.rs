@@ -293,6 +293,54 @@ fn write_table(path: &Path, batch: &RecordBatch) -> io::Result<FileEntry> {
     })
 }
 
+/// Write `text_filter.bin` beside a just-written `logs.parquet`: one filter per row
+/// group, the groups taken from the file's own metadata so they match the reader's.
+fn write_text_filter(building: &Path, logs: &[LogRow]) -> io::Result<FileEntry> {
+    let builder =
+        ParquetRecordBatchReaderBuilder::try_new(File::open(building.join("logs.parquet"))?)
+            .map_err(err)?;
+    let mut groups = Vec::new();
+    let mut at = 0_usize;
+    for rg in builder.metadata().row_groups() {
+        let n = usize::try_from(rg.num_rows()).map_err(err)?;
+        let rows = logs
+            .get(at..at + n)
+            .ok_or_else(|| invalid("logs row groups exceed rows"))?;
+        groups.push(crate::text_filter::GroupFilter::build(
+            rows.iter().map(|r| r.body.as_str()),
+        ));
+        at += n;
+    }
+    if at != logs.len() {
+        return Err(invalid("logs row groups do not cover the rows"));
+    }
+    let bytes = crate::text_filter::encode(&groups);
+    let mut file = File::create(building.join(crate::text_filter::FILE))?;
+    file.write_all(&bytes)?;
+    file.sync_all()?;
+    Ok(FileEntry {
+        sha256: hex(&Sha256::digest(&bytes)),
+        bytes: bytes.len() as u64,
+        rows: groups.len() as u64,
+    })
+}
+
+/// The row-group filters of a Segment's logs table if the Segment has them and their
+/// bytes match the manifest's digest and group count; `None` otherwise, and the
+/// caller scans exactly.
+pub fn read_text_filter(
+    dir: &Path,
+    manifest: &Manifest,
+) -> Option<Vec<crate::text_filter::GroupFilter>> {
+    let entry = manifest.files.get(crate::text_filter::FILE)?;
+    let bytes = fs::read(dir.join(crate::text_filter::FILE)).ok()?;
+    if bytes.len() as u64 != entry.bytes || hex(&Sha256::digest(&bytes)) != entry.sha256 {
+        return None;
+    }
+    let groups = crate::text_filter::decode(&bytes).ok()?;
+    (groups.len() as u64 == entry.rows).then_some(groups)
+}
+
 /// Read every group of one sealed journal file, in order.
 pub fn read_sealed(path: &Path) -> io::Result<Vec<Group>> {
     let file = File::open(path)?;
@@ -346,6 +394,10 @@ pub fn build(state_dir: &Path, label: u64, groups: &[Group]) -> io::Result<Manif
     files.insert(
         "logs.parquet".into(),
         write_table(&building.join("logs.parquet"), &logs_batch(&rows.logs)?)?,
+    );
+    files.insert(
+        crate::text_filter::FILE.into(),
+        write_text_filter(&building, &rows.logs)?,
     );
     files.insert(
         "metrics.parquet".into(),
