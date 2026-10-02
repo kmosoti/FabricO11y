@@ -1,0 +1,39 @@
+"""Real log lines (Loghub 2k samples): bytes per line under the encodings a storage design could choose."""
+import io, re, json, collections, zstandard as zstd, pyarrow as pa, pyarrow.parquet as pq
+from pathlib import Path
+import research_paths
+C = (research_paths.DATA / "corpus"); out = {}
+VAR = re.compile(r"(0x[0-9a-fA-F]+|\b\d+(?:\.\d+)*\b|\b[0-9a-fA-F]{8,}\b|(?:\d{1,3}\.){3}\d{1,3}(?::\d+)?|/[\w./-]+)")
+def pqsize(tbl, **kw):
+    b = io.BytesIO(); pq.write_table(tbl, b, compression="zstd", compression_level=3, row_group_size=8192, **kw); return b.getbuffer().nbytes
+for f in sorted(C.glob("*.log")):
+    lines = f.read_text(errors="replace").splitlines(); n = len(lines); raw = sum(len(l) + 1 for l in lines)
+    r = {"lines": n, "raw_B_per_line": raw / n}
+    r["zstd3_file"] = len(zstd.ZstdCompressor(level=3).compress("\n".join(lines).encode())) / n
+    r["zstd19_file"] = len(zstd.ZstdCompressor(level=19).compress("\n".join(lines).encode())) / n
+    # one body column
+    r["parquet_body"] = pqsize(pa.table({"body": lines})) / n
+    # Fabric today: body column plus the raw bytes again (approximate the batch copy by the same column again)
+    r["parquet_body_twice"] = 2 * r["parquet_body"]
+    # template + variables (CLP-style, crude tokenizer)
+    tmpl, vars_ = [], []
+    for l in lines:
+        vs = VAR.findall(l); tmpl.append(VAR.sub("\x11", l)); vars_.append("\x12".join(vs))
+    r["templates_distinct"] = len(set(tmpl))
+    r["parquet_template+vars"] = pqsize(pa.table({"template": tmpl, "vars": vars_})) / n
+    # typed variables: ints in an int64 list column, the rest strings
+    ints, strs = [], []
+    for v in vars_:
+        parts = v.split("\x12") if v else []; ii, ss = [], []
+        for p in parts:
+            if p.isdigit() and len(p) < 19: ii.append(int(p))
+            else: ss.append(p)
+        ints.append(ii); strs.append("\x12".join(ss))
+    r["parquet_template+typed_vars"] = pqsize(pa.table({"template": tmpl, "ints": pa.array(ints, pa.list_(pa.int64())), "strs": strs})) / n
+    # shared zstd dictionary trained on another file's lines (cross-corpus) is unfair; train on first half, measure second half
+    half = n // 2; d = zstd.train_dictionary(16384, [l.encode() for l in lines[:half]])
+    cz = zstd.ZstdCompressor(level=3, dict_data=d); r["zstd3_dict_per_line_second_half"] = sum(len(cz.compress(l.encode())) for l in lines[half:]) / (n - half)
+    r["zstd3_per_line_nodict"] = sum(len(zstd.ZstdCompressor(level=3).compress(l.encode())) for l in lines) / n
+    out[f.stem] = r
+    print(f"{f.stem:16} lines {n}  raw {r['raw_B_per_line']:6.1f}  zstd3 {r['zstd3_file']:5.1f}  zstd19 {r['zstd19_file']:5.1f}  pq.body {r['parquet_body']:5.1f}  body×2 {r['parquet_body_twice']:5.1f}  tmpl+vars {r['parquet_template+vars']:5.1f}  tmpl+typed {r['parquet_template+typed_vars']:5.1f}  templates {r['templates_distinct']:4}  perline {r['zstd3_per_line_nodict']:6.1f} dict {r['zstd3_dict_per_line_second_half']:5.1f}")
+json.dump(out, open(C / "corpus.json", "w"), indent=1)

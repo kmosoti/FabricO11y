@@ -1,0 +1,189 @@
+"""Exploratory: budget-bounded answers with a key boundary (ledger L-05).
+Usage: budget.py <out-root> <cpus> [state names...]  (states are hard-link copies of topk.py states)
+"""
+import http.client, json, os, random, shutil, signal, socket, ssl, subprocess, sys, time
+from pathlib import Path
+import research_paths
+from delivery_faults import free_port, make_certs
+
+BIN = research_paths.BIN
+ROOT = Path(sys.argv[1]).resolve(); ROOT.mkdir(parents=True, exist_ok=True); CPUS = sys.argv[2]
+TOPK = (research_paths.DATA / "topk/states"); TAILS = (research_paths.DATA / "tailbench")
+NAMES = sys.argv[3:] or ["tail-steady", "tail-outage", "seg-steady64", "seg-adversarial64"]
+MIB = 1048576; S = 1_000_000_000
+make_certs(ROOT); TOKEN = "ab" * 32; (ROOT / "admin-token").write_text(TOKEN + "\n")
+kids = []
+BUDGETS = ["none", "50000", "10000", "2000"]
+
+def pct(v, p):
+    v = sorted(v); k = (len(v) - 1) * p / 100; f = int(k); c = min(f + 1, len(v) - 1)
+    return v[f] + (v[c] - v[f]) * (k - f)
+def status(pid):
+    d = {}
+    for l in open(f"/proc/{pid}/status"):
+        if l.startswith(("VmHWM", "VmRSS")): d[l.split(":")[0]] = int(l.split()[1]) // 1024
+    return d
+
+class Q:
+    def __init__(self, port):
+        self.port = port; self.ctx = ssl.create_default_context(cafile=str(ROOT / "ca.pem")); self.conn = None
+    def post(self, body):
+        if self.conn is None: self.conn = http.client.HTTPSConnection("127.0.0.1", self.port, context=self.ctx, timeout=600)
+        self.conn.request("POST", "/v1/admin/query", body=json.dumps(body).encode(), headers={"authorization": f"Bearer {TOKEN}", "content-type": "application/json"})
+        r = self.conn.getresponse(); return r.status, json.loads(r.read())
+
+def server(which, state, budget="none"):
+    port = free_port(); tag = f"{which}-{budget}"; conf = state / f"{tag}.conf"
+    conf.write_text(f"listen=127.0.0.1:{port}\ntls_cert={ROOT}/server.pem\ntls_key={ROOT}/server.key\nstate_dir={state}\nadmin_token_file={ROOT}/admin-token\njournal_bytes=4294967296\njournal_file_bytes={1024 * MIB}\n")
+    env = dict(os.environ, FABRIC_PROTO_TAIL="off" if which == "stock" else "index", FABRIC_PROTO_TOPK="off" if which == "stock" else "on", FABRIC_PROTO_DISPOSITION="off")
+    if budget != "none": env["FABRIC_PROTO_BUDGET"] = budget
+    logp = state / f"{tag}.log"; log = open(logp, "wb"); t0 = time.monotonic()
+    p = subprocess.Popen(["taskset", "-c", CPUS, str(BIN / which / "fabric-server"), "serve", str(conf)], stdout=log, stderr=subprocess.STDOUT, env=env); kids.append(p)
+    while True:
+        try: socket.create_connection(("127.0.0.1", port), timeout=0.05).close(); break
+        except OSError:
+            if p.poll() is not None or time.monotonic() - t0 > 900: raise SystemExit(f"{which} did not start on {state}")
+            time.sleep(0.02)
+    return p, Q(port), logp
+def stop(p): p.send_signal(signal.SIGTERM); p.wait(timeout=600)
+
+def make_state(name):
+    state = ROOT / "states" / name; shutil.rmtree(state, ignore_errors=True)
+    if name.startswith("tail-"):
+        (state / "journal").mkdir(parents=True); os.link(TAILS / name / "batches.faj", state / "journal" / "batches.faj")
+    else:
+        src = TOPK / name
+        if not src.exists(): raise SystemExit(f"missing {src}")
+        subprocess.run(["cp", "-al", str(src), str(state)], check=True)
+        for f in list(state.glob("*.conf")) + list(state.glob("*.log")): f.unlink()
+    return state
+
+def window(q):
+    st, ans = q.post({"kind": "logs", "from_ns": 0, "to_ns": 2**63, "limit": 1, "page": None}); return ans["retained_from_ns"], ans["retained_to_ns"]
+
+def shapes(a, b):
+    lo, hi = max(0, a - 60 * S), b + 6 * S
+    return [
+        ("logs_limit10000_full", {"kind": "logs", "from_ns": lo, "to_ns": hi, "limit": 10000, "page": None}),
+        ("logs_limit50_full",    {"kind": "logs", "from_ns": lo, "to_ns": hi, "limit": 50, "page": None}),
+        ("text_rare_full",       {"kind": "logs", "from_ns": lo, "to_ns": hi, "contains": "zq9", "limit": 100, "page": None}),
+        ("metric_limit10000_full", {"kind": "metrics", "name": "sim.metric.3", "from_ns": lo, "to_ns": hi, "limit": 10000, "page": None}),
+        ("rate_full",            {"kind": "rate", "name": "sim.metric.0", "from_ns": lo, "to_ns": hi}),
+    ]
+
+def drain(q, body, cap=400):
+    """Follow every page. Returns pages [(status, answer, ms)]."""
+    pages = []; nxt = None
+    while True:
+        t = time.perf_counter(); st, ans = q.post(dict(body, page=nxt) if (nxt or "page" in body) else body); ms = (time.perf_counter() - t) * 1000
+        pages.append((st, ans, ms))
+        if st != 200: print(f"   non-200 page {len(pages)-1}: {st} {str(ans)[:200]} for {body}", flush=True)
+        if st != 200 or not ans.get("next_page") or len(pages) >= cap: break
+        if ans["next_page"] == nxt:
+            pages.append((599, {"error": "page token did not advance", "rows": []}, 0.0)); break
+        nxt = ans["next_page"]
+    return pages
+
+def budget_of(ans):
+    for u in ans.get("unavailable", []):
+        if isinstance(u, dict) and "budget" in u: return u["budget"]
+    return None
+
+def check_pages(pages, stock_rows, kind):
+    """Soundness of a budgeted drain against the stock concatenation."""
+    issues = []; rows = []
+    for i, (st, ans, _) in enumerate(pages):
+        if st != 200: issues.append(f"page {i} status {st}"); continue
+        bgt = budget_of(ans)
+        if bgt is None and ans["complete"] is not True: issues.append(f"page {i} incomplete without budget")
+        if bgt is not None:
+            if ans["complete"] is not False: issues.append(f"page {i} budget but complete")
+            m = bgt["boundary_ns"]; tkey = "observed_ns" if kind == "logs" else "time_ns"
+            if any(r[tkey] >= m for r in ans["rows"]): issues.append(f"page {i} row at or past boundary")
+            if ans["next_page"] is None: issues.append(f"page {i} budget boundary without next page")
+        rows.extend(ans["rows"])
+    if rows != stock_rows: issues.append(f"rows differ: {len(rows)} vs {len(stock_rows)}")
+    return issues
+
+def random_queries(a, b, labels, n=120, seed=31):
+    rng = random.Random(seed); out = []
+    for _ in range(n):
+        frm = rng.randint(a - 10 * S, b + 5 * S); to = frm + int(rng.choice([rng.uniform(0.5, 30), rng.uniform(30, 600), 10**6]) * S)
+        node = rng.choice([None, None, None, rng.choice(labels), "node-9999"])
+        kind = rng.choice(["logs", "logs", "metrics", "rate"]); body = {"kind": kind, "from_ns": frm, "to_ns": to}
+        if node: body["node"] = node
+        if kind == "logs":
+            body.update({"limit": rng.choice([1, 10, 50, 1000, 10000]), "page": None})
+            if rng.random() < 0.3: body["contains"] = rng.choice(["R", "zq9", "gap"])
+        elif kind == "metrics": body.update({"name": f"sim.metric.{rng.randrange(32)}", "limit": rng.choice([1, 10, 100, 10000]), "page": None})
+        else: body["name"] = f"sim.metric.{rng.randrange(32)}"
+        out.append(body)
+    return out
+
+result = {}
+try:
+    for name in NAMES:
+        print(f"== {name}", flush=True); state = make_state(name); r = {}
+        # reference: stock
+        p, q, _ = server("stock", state); a, b = window(q)
+        st, ans = q.post({"kind": "logs", "from_ns": 0, "to_ns": 2**63, "limit": 10000, "page": None}); labels = sorted({row["node"] for row in ans["rows"]})
+        ref = {}; reft = {}
+        for sname, body in shapes(a, b):
+            pages = drain(q, body); ref[sname] = [row for st, ans, _ in pages if st == 200 for row in ans["rows"]]
+            reft[sname] = {"pages": len(pages), "first_ms": round(pages[0][2], 1), "max_page_ms": round(max(ms for _, _, ms in pages), 1), "total_ms": round(sum(ms for _, _, ms in pages), 1), "rows": len(ref[sname])}
+            if sname == "rate_full": ref["rate_answer"] = pages[0][1]
+        rq = random_queries(a, b, labels); refr = [drain(q, body, cap=60) for body in rq]
+        r["stock"] = {"shapes": reft, "mem_MiB": status(p.pid)}; stop(p)
+        for k, v in reft.items(): print(f"   stock  {k:24} first {v['first_ms']:8.1f} max {v['max_page_ms']:8.1f} total {v['total_ms']:9.1f} pages {v['pages']:4} rows {v['rows']}", flush=True)
+        # budgets
+        for budget in BUDGETS:
+            p, q, logp = server("budget", state, budget); window(q); rb = {"shapes": {}, "issues": {}}
+            for sname, body in shapes(a, b):
+                pages = drain(q, body)
+                rec = {"pages": len(pages), "first_ms": round(pages[0][2], 1), "max_page_ms": round(max(ms for _, _, ms in pages), 1), "total_ms": round(sum(ms for _, _, ms in pages), 1), "rows": sum(len(ans.get("rows", [])) for _, ans, _ in pages), "bounded_pages": sum(1 for _, ans, _ in pages if budget_of(ans))}
+                if sname == "rate_full":
+                    bgt = budget_of(pages[0][1]); rec["boundary_ns"] = bgt and bgt["boundary_ns"]; rec["examined"] = bgt and bgt["rows_examined"]
+                    rb["rate_pages"] = pages
+                else:
+                    rec["issues"] = check_pages(pages, ref[sname], body["kind"])
+                rb["shapes"][sname] = rec
+            # random set: drain and compare concatenations; rates compared later against stock on [from, boundary)
+            t = time.perf_counter(); rr = [drain(q, body, cap=60) for body in rq]; rb["random_set_s"] = round(time.perf_counter() - t, 2)
+            rb["mem_MiB"] = status(p.pid); stop(p)
+            bad = []; rate_checks = []
+            for i, (body, pages, spages) in enumerate(zip(rq, rr, refr)):
+                if body["kind"] == "rate":
+                    bgt = budget_of(pages[0][1]) if pages[0][0] == 200 else None
+                    if bgt is None:
+                        if pages[0] [1] != spages[0][1]: bad.append({"index": i, "why": "rate differs without budget"})
+                    else: rate_checks.append((i, body, bgt["boundary_ns"], pages[0][1]))
+                else:
+                    srows = [row for st, ans, _ in spages if st == 200 for row in ans["rows"]]
+                    if spages[0][0] != 200:
+                        if pages[0][0] != spages[0][0]: bad.append({"index": i, "why": f"status {pages[0][0]} vs {spages[0][0]}"})
+                        continue
+                    iss = check_pages(pages, srows, body["kind"])
+                    if iss: bad.append({"index": i, "query": body, "issues": iss})
+            if rate_checks or "rate_pages" in rb:
+                p2, q2, _ = server("stock", state); window(q2)
+                for i, body, m, got in rate_checks:
+                    to = min(body["to_ns"], m)
+                    if to <= body["from_ns"]:
+                        # an empty window: the budgeted answer must then hold no rows
+                        if got["rows"]: bad.append({"index": i, "query": body, "why": "rows in an empty budgeted window"})
+                        continue
+                    st, want = q2.post(dict(body, to_ns=to))
+                    if st != 200 or want["rows"] != got["rows"]: bad.append({"index": i, "query": body, "why": f"rate rows differ from stock on [from, boundary) (status {st})"})
+                sh = rb["shapes"]["rate_full"]; got = rb.pop("rate_pages")[0][1]
+                if sh["boundary_ns"] is None: sh["issues"] = [] if got == ref["rate_answer"] else ["rate differs without budget"]
+                else:
+                    st, want = q2.post(dict(shapes(a, b)[4][1], to_ns=sh["boundary_ns"])); sh["issues"] = [] if want["rows"] == got["rows"] else ["rate rows differ on [from, boundary)"]
+                stop(p2)
+            rb["random_mismatches"] = bad; rb["random_rate_checked"] = len(rate_checks)
+            r[f"budget-{budget}"] = rb
+            for k, v in rb["shapes"].items(): print(f"   b={budget:5} {k:24} first {v['first_ms']:8.1f} max {v['max_page_ms']:8.1f} total {v['total_ms']:9.1f} pages {v['pages']:4} bounded {v['bounded_pages']:4} rows {v['rows']} issues {v.get('issues')}", flush=True)
+            print(f"   b={budget:5} random set {rb['random_set_s']} s mismatches {len(bad)} mem {rb['mem_MiB']}", flush=True)
+        result[name] = r; json.dump(result, open(ROOT / "budget.json", "w"), indent=1)
+finally:
+    for p in kids:
+        if p.poll() is None: p.kill(); p.wait(timeout=10)

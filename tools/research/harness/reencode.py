@@ -1,0 +1,43 @@
+"""Re-encode existing Segment tables with alternative Parquet settings; sizes only."""
+import sys
+import pyarrow as pa, pyarrow.parquet as pq, pyarrow.compute as pc, json, io, collections
+from pathlib import Path
+import research_paths
+def size(table, **kw):
+    buf = io.BytesIO(); pq.write_table(table, buf, **kw); return buf.getbuffer().nbytes
+out = {}
+for name in sys.argv[1:] or ["seg-steady64", "seg-adversarial64"]:
+    root = ((research_paths.DATA / "corpus-seal/states") if name == "seg-corpus64" else (research_paths.DATA / "topk/states")) / name / "segments"; segs = sorted(root.glob("seg-*"))
+    acc = collections.Counter(); meta = {}
+    for seg in segs:
+        for t in ["logs", "metrics", "batches"]:
+            f = seg / f"{t}.parquet"; tbl = pq.read_table(f); md = pq.read_metadata(f)
+            
+            if md.num_row_groups == 0: acc[(t, "on_disk")] += f.stat().st_size; continue
+            meta.setdefault(t, {"created_by": md.created_by, "codec": md.row_group(0).column(0).compression, "rg_rows": md.row_group(0).num_rows})
+            acc[(t, "on_disk")] += f.stat().st_size
+            base = dict(compression="zstd", compression_level=3, row_group_size=8192, use_dictionary=True, write_statistics=True)
+            acc[(t, "control zstd3 dict")] += size(tbl, **base)
+            acc[(t, "zstd9")] += size(tbl, **dict(base, compression_level=9))
+            if t in ("logs", "metrics"):
+                tcol = "observed_ns" if t == "logs" else "time_ns"
+                enc = {tcol: "DELTA_BINARY_PACKED", "group": "DELTA_BINARY_PACKED", "sequence": "DELTA_BINARY_PACKED"}
+                if t == "metrics": enc["value_int"] = "DELTA_BINARY_PACKED"
+                acc[(t, "delta ints")] += size(tbl, **dict(base, column_encoding=enc, use_dictionary=[c for c in tbl.column_names if c not in enc]))
+                # series-first order: node, (name), time
+                keys = [("node", "ascending")] + ([("name", "ascending")] if t == "metrics" else []) + [(tcol, "ascending")]
+                srt = tbl.sort_by(keys)
+                acc[(t, "series-first order")] += size(srt, **base)
+                acc[(t, "series-first + delta")] += size(srt, **dict(base, column_encoding=enc, use_dictionary=[c for c in tbl.column_names if c not in enc]))
+                # without body / without the key duplication
+                if t == "logs":
+                    acc[(t, "keys only (no body)")] += size(tbl.drop(["body"]), **base)
+                    acc[(t, "body only")] += size(tbl.select(["body"]), **base)
+            if t == "batches":
+                acc[(t, "without sha256")] += size(tbl.drop(["sha256"]), **base)
+                acc[(t, "batch bytes only")] += size(tbl.select(["batch"]), **base)
+    out[name] = {"meta": meta, "bytes": {f"{t}/{k}": v for (t, k), v in acc.items()}}
+    print(f"== {name} ({len(segs)} Segments)  {meta}")
+    for (t, k), v in sorted(acc.items()):
+        print(f"  {t:8} {k:24} {v/1048576:8.2f} MiB  {100*v/acc[(t,'on_disk')]:6.1f}% of on-disk")
+tag = "-".join(sys.argv[1:]) or "default"; json.dump(out, open(fstr(research_paths.DATA / "topk/reencode-{tag}.json"), "w"), indent=1)
