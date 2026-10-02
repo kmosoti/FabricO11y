@@ -77,6 +77,10 @@ CRC-32 (IEEE, level 1) of everything above, little-endian
 
 Columns rather than rows, so that each column uses the level that fits it and a general compressor sees runs of like values; one block per file or per Batch, as the producer chooses. Measured in [observation encoding run 01](../experiments/benchmarks/observation-encoding-run-01.md): on real log text 14.5 bytes per record under Zstd against 18.2 for the raw OTLP Batches, the same within 1 % on the synthetic workload; under a microsecond per record to encode and half that to decode.
 
+## The cost model
+
+[observation-model.md](../research/observation-model.md) prices the layout above as closed forms (the 10-byte floor per line, 3 bytes per repeated attribute, one byte per regular timestamp, the amortisation of the tables with block size) and fits the codec's time constants to measurement; its first use found the bytewise CRC's cost and led to the slicing-by-eight implementation at level 1.
+
 ## What is not decided
 
 Adopting the record anywhere is a separate decision: on the wire it is a new Batch payload slot or envelope version ([scope rule](../../AGENTS.md#scope-rule)); in a Segment it is a manifest version and a reader that keeps reading version 1 ([ADR-0020](../decisions/ADR-0020-store-sealed-history-as-parquet-segments.md)); a traces signal is a [product contract](../PRODUCT-CONTRACT.md) change. The Kani harnesses compile under `cfg(kani)` but are not in the registered `kani-core` check until that policy is extended in its own commit.

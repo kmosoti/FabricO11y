@@ -48,7 +48,7 @@ When documents disagree, the higher entry wins and the lower one is corrected:
 | 3 | Current [architecture views](architecture/README.md) |
 | 4 | Registered experiment protocols and results under [experiments](experiments/README.md), and [qualification](QUALIFICATION.md) |
 | 5 | [Current state](CURRENT.md) |
-| 6 | Exploratory research: the [blueprint](architecture.md), the [generator-verifier digest](research/generator-verifier.md), the [query-engine direction review](research/query-engine-direction.md), the [frontier map](research/frontier-map.md), the [research ledger](research/ledger.md), the [storage direction](research/storage-direction.md) with its [prior-art survey](research/storage-prior-art.md), and research experiments |
+| 6 | Exploratory research: the [blueprint](architecture.md), the [generator-verifier digest](research/generator-verifier.md), the [query-engine direction review](research/query-engine-direction.md), the [frontier map](research/frontier-map.md), the [research ledger](research/ledger.md), the [storage direction](research/storage-direction.md) with its [prior-art survey](research/storage-prior-art.md), the [observation cost model](research/observation-model.md), and research experiments |
 
 Implementation is evidence of what exists; none of these documents overrides it silently. A disagreement between code and a document is reconciled explicitly ([documentation policy](documentation-policy.md#19-relationship-between-code-and-documentation)).
 

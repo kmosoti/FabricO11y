@@ -22,6 +22,13 @@ fn level1_crc_table_is_the_definition_for_every_byte() {
 }
 
 #[kani::proof]
+#[kani::unwind(10)]
+fn level1_crc_slicing_is_the_definition_for_one_full_step() {
+    let bytes: [u8; 9] = kani::any();
+    assert_eq!(crc32::hash(&bytes), crc32::bitwise(&bytes));
+}
+
+#[kani::proof]
 fn level3_zigzag_is_a_bijection() {
     let v: i64 = kani::any();
     assert_eq!(zigzag::decode(zigzag::encode(v)), v);

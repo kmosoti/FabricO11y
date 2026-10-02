@@ -30,6 +30,7 @@ The crate is built from the bits up as nine levels (bits; bytes and crc32; varin
 - The decoder's canonicality checks make a block a thing that can be verified as well as read; they also mean an FOB1 reader refuses bytes a lenient protobuf reader would accept, by design.
 - Nothing changes until a later decision wires the type into the Spindle's Batch (a new payload slot or a new envelope version), the journal, or a Segment table. Each of those needs its own ADR, scope and compatibility story (version-1 readers keep reading version-1 bytes).
 - The mutation property earned its place on its first full run: it found a block with two equal dictionary entries that the decoder accepted and the encoder merged ([CX-FOB1-DUPLICATE-DICTIONARY](../formal/counterexamples.json)); the decoder now refuses repeated entries.
+- A [cost model](../research/observation-model.md) prices the layout and the codec from the block arithmetic and fitted constants, so that block size, attribute shape and capacity questions are answered before code changes; it already drove one change (the slicing CRC).
 - Verification gates: the crate's tests run under the workspace `test` check; the fuzz target's corpus replay runs under `fuzz-corpus`; its Kani harnesses compile under `cfg(kani)` but are not in the registered `kani-core` check until that policy is extended in its own commit.
 
 ## Alternatives considered

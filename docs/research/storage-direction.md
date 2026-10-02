@@ -14,7 +14,7 @@ What it lacks, by measured weight:
 2. **A fixed 32-byte hash per Batch** is 3.6 % of a synthetic Segment and 17.6 % of a real-text one, where Batches are small. The manifest already hashes every file.
 3. **The unsealed tail is the most expensive place a record can be**: uncompressed protobuf at 2.5 times the Segment's bytes on real text, decoded whole on every query until [L-03](ledger.md#l-03-a-memtable-of-keys-for-the-unsealed-tail) and [L-04](ledger.md#l-04-the-threshold-algorithm-over-source-bounds) land, and bounded only by `journal_bytes`.
 
-Everything else the survey recommends is either present (time-first sort with statistics, Zstd blocks, dictionary encoding of nodes and names), small (delta encoding takes 16 to 29 % off a metrics table that is 3 to 13 % of a Segment), or outside the contract (traces, typed attribute columns, template extraction). The synthetic workload hid all three findings, because its half-random lines compress 1.3:1; the real-text state is the one to measure against from now on.
+Everything else the survey recommends is either present (time-first sort with statistics, Zstd blocks, dictionary encoding of nodes and names), small (delta encoding takes 16 to 29 % off a metrics table that is 3 to 13 % of a Segment), or outside the contract (traces, typed attribute columns, template extraction). The synthetic workload hid all three findings, because its lines are half repeated bytes and half random and compress the same under any encoding; the real-text state is the one to measure against from now on.
 
 ## What exists
 
@@ -37,7 +37,7 @@ From [storage layout run 01](../experiments/benchmarks/storage-layout-run-01.md)
 | --- | ---: | ---: |
 | Journal in, Segments out | 64.2 MiB, 47.3 MiB | 64.1 MiB, 26.0 MiB |
 | raw Batch bytes | 48 % of the Segment, 2.8:1 | 43 %, 5.4:1 |
-| `body` column | 44 %, 1.3:1, 196 B per line | 20 %, 6.2:1, 18.5 B per line |
+| `body` column | 44 %, 2.6:1 against the raw text, 196 B per line | 20 %, 7:1, 18.5 B per line |
 | per-Batch `sha256` | 3.6 % | 17.6 % |
 | all key and time columns of all tables | about 3 B per row | about 3 B per row |
 | metrics table | 2.8 % | 12.6 % |

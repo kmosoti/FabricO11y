@@ -30,7 +30,7 @@ The question: where do a Segment's bytes go, how much of that is the synthetic w
 | of which raw `batch` bytes | 22.6 MiB, 428 B per Batch, 2.8:1 | 23.8 MiB, 2.6:1 | 11.1 MiB, 77 B per Batch, 5.4:1 |
 | of which `sha256` | 1.7 MiB (3.6 %), 32 B per Batch, uncompressible | 1.7 MiB | 4.6 MiB (17.6 %) |
 | `logs.parquet` | 21.1 MiB (45 %) | 21.8 MiB (43 %) | 6.3 MiB (24 %) |
-| of which `body` | 20.6 MiB, 196 B per line, 1.3:1 | 20.6 MiB | 5.3 MiB, 18.5 B per line, 6.2:1 |
+| of which `body` | 20.6 MiB, 196 B per line, 2.6:1 against the raw text | 20.6 MiB | 5.3 MiB, 18.5 B per line, 7:1 against the raw text |
 | of which the key columns (group, node, node_id, sequence, index, observed_ns) | 0.35 MiB, 3.3 B per row | 1.0 MiB, 9.5 B per row | 0.87 MiB, 3.0 B per row |
 | `metrics.parquet` | 1.3 MiB (2.8 %), 11.7 B per point | 2.4 MiB (4.7 %) | 3.3 MiB (12.6 %) |
 | of which `value_int` | 1.07 MiB, 9.5 B per point, 1.0:1 | 1.07 MiB | 2.9 MiB |
@@ -69,9 +69,11 @@ Rows: 55,315 Batches, 110,630 lines and 118,400 points in each synthetic state; 
 - **The hash is a fixed cost that real workloads make visible.** 32 bytes per Batch is 3.6 % of a synthetic Segment and 17.6 % of a real-text one, where Batches are small. The hash protects replay; whether it must be stored per Batch rather than per row group or per file is a design question, not a measurement.
 - **Encodings barely matter for logs; they matter for metrics.** Block compression already finds the templates: the Parquet body column is within 25 % of a whole-file Zstd stream, and a crude template split gains 0 to 15 % over the plain column. Delta encoding takes 16 to 29 % off the metrics table, which is 3 to 13 % of a Segment. Zstd level 9 gains 14 % on real-text logs and nothing on synthetic. Sort order does not change size on logs; series-first helps metrics only when nodes' clocks differ.
 - **Compressing records one at a time is the one layout that fails.** A line compressed alone costs as much as the raw line (90 to 164 B); with a trained dictionary 38 to 117 B; in a block 5 to 27 B. The journal tail is uncompressed protobuf, so on real text the tail costs 2.5 times the bytes of its Segment and, from [retention-scale run 01](retention-scale-run-01.md), about 3.2 ms per MiB per query: the unsealed tail is the most expensive place a record can be, in bytes and in time.
-- **The synthetic workload hides all of this.** Its half-random bodies compress 1.3:1, so encodings, templates and the hash look negligible; real lines compress 6:1 in the column and 5:1 in the raw Batch, and the layout questions appear. The sealer and query figures measured on the synthetic workload stay valid for time; the storage figures do not transfer.
+- **The synthetic workload hides all of this.** Its bodies are half repeated bytes (free to compress) and half random base64 (0.75), so the column compresses 2.6:1 against the raw text whatever the encoding, and templates and the hash look negligible; real lines compress about 7:1 in the column and 5:1 in the raw Batch, and the layout questions appear. The sealer and query figures measured on the synthetic workload stay valid for time; the storage figures do not transfer.
 
 ## Limits
+
+- The Parquet footer's "uncompressed" size counts dictionary-encoded pages, so a ratio read from the footer understates compression against the raw text when the column is dictionary-encoded; the body ratios above are stated against the raw text (lines times mean length), which is what a storage design pays for. An earlier version of this record read the synthetic body column as 1.3:1 from the footer.
 
 - Real lines were drawn at random from eight 2,000-line samples, so the mix has no temporal structure (bursts, repeated lines in sequence) and compresses somewhat worse than a real stream would; 1 MiB journal files make row groups three to five times smaller than a product Segment's, which also costs compression.
 - Sizes only; the read cost of each alternative (delta decode, dictionary lookups, a body fetched from the raw copy) was not measured.

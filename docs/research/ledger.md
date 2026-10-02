@@ -319,7 +319,7 @@ Rows carry the node's clock, gaps and the retained window the server's, freshnes
 
 **State:** CANDIDATE, ranked first among the storage questions.
 
-**Precise problem.** Every query figure in the ledger comes from synthetic lines that compress 1.3:1 and contain no templates; text-search selectivity, body decode and per-row cost may differ on real text, and the real-text state ([storage layout run 01](../experiments/benchmarks/storage-layout-run-01.md)) now exists.
+**Precise problem.** Every query figure in the ledger comes from synthetic lines (half repeated bytes, half random) that contain no templates; text-search selectivity, body decode and per-row cost may differ on real text, and the real-text state ([storage layout run 01](../experiments/benchmarks/storage-layout-run-01.md)) now exists.
 
 **Proposed experiment.** The attribution shapes and the L-04 shapes on the real-text state, stock server and the L-04 prototype; per-shape time and rows read; then the same with the tail unsealed. No code change.
 
