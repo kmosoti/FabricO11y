@@ -1,0 +1,200 @@
+[
+ {
+  "state": "tail-steady",
+  "mode": "budget-2000",
+  "index": 22,
+  "stock_pages": 64,
+  "budget_pages": 86,
+  "stock_rows": 63200,
+  "budget_rows": 63200,
+  "equal": true,
+  "issues": [],
+  "capped": false
+ },
+ {
+  "state": "tail-steady",
+  "mode": "budget-2000",
+  "index": 95,
+  "stock_pages": 81,
+  "budget_pages": 109,
+  "stock_rows": 80189,
+  "budget_rows": 80189,
+  "equal": true,
+  "issues": [],
+  "capped": false
+ },
+ {
+  "state": "tail-outage",
+  "mode": "budget-2000",
+  "index": 22,
+  "stock_pages": 64,
+  "budget_pages": 86,
+  "stock_rows": 63200,
+  "budget_rows": 63200,
+  "equal": true,
+  "issues": [],
+  "capped": false
+ },
+ {
+  "state": "tail-outage",
+  "mode": "budget-2000",
+  "index": 95,
+  "stock_pages": 81,
+  "budget_pages": 109,
+  "stock_rows": 80185,
+  "budget_rows": 80185,
+  "equal": true,
+  "issues": [],
+  "capped": false
+ },
+ {
+  "state": "tail-outage",
+  "mode": "budget-2000",
+  "index": 107,
+  "stock_pages": 41,
+  "budget_pages": 62,
+  "stock_rows": 41,
+  "budget_rows": 41,
+  "equal": true,
+  "issues": [],
+  "capped": false
+ },
+ {
+  "state": "seg-steady64",
+  "mode": "budget-2000",
+  "index": 14,
+  "stock_pages": 60,
+  "budget_pages": 61,
+  "stock_rows": 600,
+  "budget_rows": 600,
+  "equal": true,
+  "issues": [],
+  "capped": false
+ },
+ {
+  "state": "seg-steady64",
+  "mode": "budget-2000",
+  "index": 40,
+  "stock_pages": 80,
+  "budget_pages": 82,
+  "stock_rows": 800,
+  "budget_rows": 800,
+  "equal": true,
+  "issues": [],
+  "capped": false
+ },
+ {
+  "state": "seg-adversarial64",
+  "mode": "budget-50000",
+  "index": 2,
+  "stock_pages": 1705,
+  "budget_pages": 1731,
+  "stock_rows": 85234,
+  "budget_rows": 85234,
+  "equal": true,
+  "issues": [],
+  "capped": false
+ },
+ {
+  "state": "seg-adversarial64",
+  "mode": "budget-50000",
+  "index": 3,
+  "stock_pages": 5000,
+  "budget_pages": 5000,
+  "stock_rows": 50000,
+  "budget_rows": 49860,
+  "equal": false,
+  "issues": [
+   "rows differ: 49860 vs 50000"
+  ],
+  "capped": true
+ },
+ {
+  "state": "seg-adversarial64",
+  "mode": "budget-50000",
+  "index": 22,
+  "stock_pages": 61,
+  "budget_pages": 72,
+  "stock_rows": 60868,
+  "budget_rows": 60868,
+  "equal": true,
+  "issues": [],
+  "capped": false
+ },
+ {
+  "state": "seg-adversarial64",
+  "mode": "budget-50000",
+  "index": 28,
+  "stock_pages": 192,
+  "budget_pages": 202,
+  "stock_rows": 1913,
+  "budget_rows": 1913,
+  "equal": true,
+  "issues": [],
+  "capped": false
+ },
+ {
+  "state": "seg-adversarial64",
+  "mode": "budget-50000",
+  "index": 37,
+  "stock_pages": 5000,
+  "budget_pages": 5000,
+  "stock_rows": 5000,
+  "budget_rows": 4986,
+  "equal": false,
+  "issues": [
+   "rows differ: 4986 vs 5000"
+  ],
+  "capped": true
+ },
+ {
+  "state": "seg-adversarial64",
+  "mode": "budget-50000",
+  "index": 75,
+  "stock_pages": 3347,
+  "budget_pages": 3374,
+  "stock_rows": 3347,
+  "budget_rows": 3347,
+  "equal": true,
+  "issues": [],
+  "capped": false
+ },
+ {
+  "state": "seg-adversarial64",
+  "mode": "budget-50000",
+  "index": 92,
+  "stock_pages": 1883,
+  "budget_pages": 1894,
+  "stock_rows": 1883,
+  "budget_rows": 1883,
+  "equal": true,
+  "issues": [],
+  "capped": false
+ },
+ {
+  "state": "seg-adversarial64",
+  "mode": "budget-50000",
+  "index": 95,
+  "stock_pages": 79,
+  "budget_pages": 102,
+  "stock_rows": 78854,
+  "budget_rows": 78854,
+  "equal": true,
+  "issues": [],
+  "capped": false
+ },
+ {
+  "state": "seg-adversarial64",
+  "mode": "budget-50000",
+  "index": 102,
+  "stock_pages": 5000,
+  "budget_pages": 5000,
+  "stock_rows": 5000,
+  "budget_rows": 4986,
+  "equal": false,
+  "issues": [
+   "rows differ: 4986 vs 5000"
+  ],
+  "capped": true
+ }
+]

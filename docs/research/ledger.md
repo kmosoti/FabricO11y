@@ -14,7 +14,7 @@ The novelty firewall of the charter applies to every entry: before "novel", the 
 | L-02 | Sound Segment dispositions from manifest facts remove the per-Segment cost that grows with retention | DERIVED and confirmed sound; FALSIFIED as a material saving | [Retention-scale run 01](../experiments/benchmarks/retention-scale-run-01.md): the rule changes no answer, the two traps are real, the saving is tens of milliseconds at 319 Segments |
 | L-03 | A memtable of keys makes the unsealed tail selectable | CANDIDATE, confirmed on the prototype | [Tail-index run 01](../experiments/benchmarks/tail-index-run-01.md): selective shapes from about 220 ms to 4 to 13 ms, 0 mismatches in 1,500 queries, 95 B per entry; a whole-window query still materialises everything. Promotion needs the soak and the Q2 design |
 | L-04 | The threshold algorithm over row-group and entry bounds ends every `limit` scan early | CANDIDATE, confirmed on the prototype | [Threshold run 01](../experiments/benchmarks/topk-run-01.md): whole-window `limit 50` from 252 to 320 ms to 13 to 20 ms on 64 MiB tails, reading 26 entries of 55,000; one row group of 64 on disjoint Segments; no gain at total overlap; the server stays at 56 to 59 MiB where stock reached 242 to 257; 0 mismatches in 1,200 queries and pages. Shapes that cannot stop pay 20 to 80 % for the walk: fall back to file order when the heap cannot fill. Promotion with L-03 under Q2 |
-| L-05 | Budget-bounded answers that are exact for the sources read and name the rest | EXPERIMENTING | Prototype on the L-04 walk: a page ends at the first unread source's minimum key `m`, returns exactly the rows below `m`, names the boundary in `unavailable`, and resumes at `m`; run 01 in progress |
+| L-05 | Budget-bounded answers that are exact for the sources read and name the rest | CANDIDATE, confirmed on the prototype | [Budget run 01](../experiments/benchmarks/budget-run-01.md): a page ends at the first unread source's minimum key, returns exactly the rows below it, names the boundary and resumes there; drains equal the stock answer; rare text search from 243 to 516 ms a page to 14 to 35 ms, a whole-window rate to 7 to 13 ms, server memory 29 to 69 MiB against 414; no effect when every source starts at the same key; the price is pages. Promotion needs a counter-bearing workload for rates and a contract change in its own commit |
 | L-06 | Drop the projections and answer from raw bytes with a key sidecar | FALSIFIED for text search; UNRESOLVED for selective shapes | Measured on real text ([storage layout run 01](../experiments/benchmarks/storage-layout-run-01.md)): the duplicate payload is 63 % of a real-text Segment and the raw copy is the larger half. The remedy ranked first is now the other way round (L-19, L-20: shrink the custody copy, keep the projection) |
 | L-07 | Manifest facts for two-sided skipping: per-table key bounds, node presence that covers gaps | DERIVED | Decided by L-02's result; an amendment to ADR-0020 |
 | L-08 | Query-shaped sidecars that follow workload drift (charter H1) | PRIOR_ART | None until a registered gate fails |
@@ -49,12 +49,12 @@ L-03 ran next ([tail-index run 01](../experiments/benchmarks/tail-index-run-01.m
 
 L-04 ran next ([threshold run 01](../experiments/benchmarks/topk-run-01.md)): ordering sources by their minimum key and stopping at the heap's threshold makes a `limit` query cost its answer on disjoint history (26 entries read of 55,000; one row group of 64), keeps the server's memory flat where the index alone did not, changes no answer in 1,200 queries, and gains nothing at total overlap or for shapes that cannot fill the heap, which pay for the walk. After it:
 
-1. **L-05** is running: the budget that bounds the shapes L-04 cannot, with a boundary key that keeps every page exact.
+1. **L-05** ran ([budget run 01](../experiments/benchmarks/budget-run-01.md)): the boundary semantics hold and bound the shapes L-04 cannot, at a price in pages; it waits on a counter-bearing workload and a contract decision.
 2. **L-21**, the real-corpus query run: the [storage direction](storage-direction.md) found that the synthetic workload hides the storage costs; whether it also hides query costs decides every storage entry that follows.
 3. **L-19**, then **L-20**: the custody copy, measured as the largest removable cost of a Segment.
 4. **L-07**, design work whose test exists; **L-03 and L-04's promotion** together under Q2 of the direction review, after the registered soak.
 
-Only one experiment runs at a time; L-05's is in progress.
+Only one experiment runs at a time; L-21's is next.
 
 ## Entries
 
@@ -182,6 +182,8 @@ Only one experiment runs at a time; L-05's is in progress.
 **Baseline.** The unbounded path.
 
 **Promotion criterion.** The property holds; a consumer asks for budgets; a contract change in its own commit.
+
+**Result (run 01, 2026-10-02).** [Record](../experiments/benchmarks/budget-run-01.md). The prototype bounds a request by rows examined over the L-04 walk and answers exactly the rows below the first unread source's minimum key, `complete: false`, with the boundary named and a token that resumes there. On four states and three budgets, every bounded page obeyed the rule and every drain concatenated to the stock answer; the shapes the threshold cannot stop (a rare text search, a whole-window rate, `limit 10,000`) answered their first page in 7 to 35 ms where stock took 229 to 545 ms, at a cost in pages (12 become 113 at 2,000 rows). The harness found and the run kept a progress defect in the first boundary rule (a boundary one past the page start yields an empty page and no progress). What the budget cannot do: cut between sources that start at the same key (the overlapping state pays the full scan per page) or bound a rate's rows on a gauge-only workload, which left the rate oracle vacuous. Next: a counter-bearing workload; a boundary inside a source using the heap's threshold; then the contract change.
 
 ### L-06. Raw bytes plus a key sidecar, no projections
 
