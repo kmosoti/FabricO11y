@@ -9,12 +9,22 @@ Latency and capacity have different bottlenecks, and both sit on the storage sid
 - **Latency is set by the unsealed tail's representation.** The stock path pays 4.7 µs per tail entry on every query, because the tail is OTLP protobuf decoded whole ([real-corpus query run 01](../experiments/benchmarks/real-corpus-query-run-01.md)); real text holds 2.7 times the entries per byte, so a 64 MiB real tail costs about 700 ms per query and the 4 GiB `journal_bytes` allows about 45 s. The walk makes every shape that can stop cost its answer (10 to 50 ms) and leaves the shapes that cannot (a text search with no match, a rate) at 8.3 µs per entry. On Segments the query side is already within 10 to 20 ms where the data lets it stop ([threshold run 01](../experiments/benchmarks/topk-run-01.md)) and bounded by rows read elsewhere. No query algorithm removes a per-entry decode of a format that has to be decoded whole; what the tail holds is the lever.
 - **Capacity is set by the custody copy.** Retention hours follow bytes per record in a Segment, and 63 % of a real-text Segment is the payload stored twice plus the per-Batch hash ([storage layout run 01](../experiments/benchmarks/storage-layout-run-01.md)); the [cost model](observation-model.md) puts 20 GiB at 11.5 hours for 10,000 nodes of real text.
 
-The suite below tests that verdict rather than assuming it: the first group would overturn it if the tail's cost turned out to be in the query code; the second decides how much the storage levers are worth; the third keeps the query side honest where it still has terms to remove.
+The suite below tests that verdict rather than assuming it: the first group would overturn it if the tail's cost turned out to be in the query code; the second decides how much the storage levers are worth; the third keeps the query side honest where it still has terms to remove; the fourth questions the sealing and segmentation design itself, which every run so far has taken as given.
+
+## What counts as an oracle here
+
+Nothing in the current design is the oracle, the stock server included. A differential against it proves only that a prototype answers as today's code does, which is the right guard for a query prototype that must not change answers and the wrong one for a hypothesis about whether today's layout, sealer or Segment is the right design. The references are, in order:
+
+1. **The product contract** and the registered contracts (HIST-1 to HIST-6): a Segment answers every registered query exactly as the journal it was sealed from, rows and order; replay from Segments rebuilds the same state; rates follow the counter contract.
+2. **The journal through the independent Python oracles** ([query_oracle.py](../../tools/qualification/query_oracle.py), the delivery and rate oracles), which compute answers from the journal's bytes without the Rust code. A new layout is right when the oracle's answer over the journal equals the server's answer over the new layout.
+3. **The stock server**, as a regression reference only, for prototypes that claim to change nothing.
+
+Each hypothesis below names which of these it is judged by. A storage or sealing hypothesis is never judged by the stock server.
 
 ## Conventions
 
 - **Statistic.** Median of eight repetitions over one keep-alive connection unless stated; memory as the process high-water mark; bytes from file sizes. A ratio is the test figure divided by the baseline figure on the same state.
-- **Guard.** Every prototype runs the 200-query random differential with pages against the stock server; one mismatch fails the hypothesis whatever the figures say.
+- **Guard.** A query prototype runs the 200-query random differential with pages against the stock server; one mismatch fails it whatever the figures say. A layout or sealer prototype runs the Python query oracle over the journal against the server over the new layout, and the HIST-1/2 equivalence on the Segments it builds; one mismatch fails it.
 - **States.** The four of run L-21 (real-text and synthetic tails of 64 MiB; real-text and synthetic Segments, 64 of 1 MiB) unless stated; "64 MiB Segments" means the product's size, which no run has used yet.
 - **Decision.** The decision rule is written as the condition under which H0 is rejected. A result that rejects neither (noise, a broken run) is "inconclusive", not support.
 
@@ -89,16 +99,59 @@ H1: on a workload with monotonic counters, the budgeted rate over `[from, m)` eq
 Statistic: the L-05 oracle's rate half on a journal replayed from a captured counter series (B4's capture). Reject H0 if 0 mismatches over 100 random rate queries.
 Cost: the capture of B4 plus the L-05 run, half a day. Decides: the one half of L-05's oracle that run 01 could not exercise.
 
+## Group D: is the sealing and segmentation design right?
+
+Every run so far has measured inside the design of [ADR-0020](../decisions/ADR-0020-store-sealed-history-as-parquet-segments.md) and [ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md): a Segment per 64 MiB journal file, four Parquet tables, time-first sort, 8,192-row groups, a sealer thread that builds each Segment after the fact, retention by whole Segment. None of that is the oracle. These hypotheses are judged by the contract and the Python oracle over the journal, never by the stock server.
+
+**D1. The Segment's unit should be time, not journal bytes.**
+H1: Segments cut by a time span (every N minutes of receive time, bytes permitting) give every window query a contiguous Segment set and no cross-Segment overlap except from late arrivals, so the walk's floor on the overlapping workload falls below a tenth of today's reads. H0: cutting by time gains under 2× on reads, because late arrivals (outage drains) overlap whatever the cut, or costs more than 10 % in bytes from smaller files.
+Statistic: row groups read and Segment bytes for the L-04 shapes on the adversarial and outage workloads sealed both ways. Oracle: the Python query oracle over the journal. Reject H0 if reads fall by 10× on the adversarial state and bytes grow under 10 %.
+
+**D2. Cross-Segment merging (compaction) pays for itself.**
+H1: merging four adjacent Segments into one globally sorted Segment (a second sealing level) removes their mutual overlap, so the walk reads a quarter of the row groups on overlapping workloads, at a write amplification under 2× over the retention window. H0: the query gain is under 2× or the amplification over 3×.
+Statistic: reads for `limit` shapes before and after a four-way merge on the outage workload; bytes written per byte retained over a simulated day. Oracle: HIST-1/2 on the merged Segment against the journal. Reject H0 if both bounds hold.
+
+**D3. The projections are not needed once the custody copy is a canonical block.**
+H1: a Segment that holds FOB1 blocks once, with per-block key bounds in the manifest and no `logs.parquet` or `metrics.parquet`, answers every registered shape within 2× of today's projections through `decode_view` (0.8 ns per byte, 72 ns per record), including the text search that falsified L-06 against raw OTLP, at no more than 60 % of today's bytes. H0: some registered shape is over 2× slower, or bytes are over 70 %.
+Statistic: the fourteen L-21 shapes on a real-text Segment state rebuilt as FOB1 blocks plus a manifest, against today's Parquet Segments; bytes of both. Oracle: the Python query oracle over the journal for every shape. Reject H0 if every shape is within 2× and bytes under 60 %. This is the hypothesis that would retire the sealer's projection build and the duplicate copy at once; it depends on A3.
+
+**D4. 8,192 rows per group is too coarse for the selective shapes.**
+H1: 1,024-row groups cut the rows materialised by node- and short-window shapes by at least 4× for under 5 % more bytes and under 2× more footer time. H0: the footer and page overhead costs over 5 % in bytes or the per-Segment fixed cost doubles.
+Statistic: rows read and bytes for the attribution shapes at 1,024, 4,096 and 8,192 rows per group on the real-text state. Oracle: HIST-1/2 (identical rows and order); the Python oracle for answers. Reject H0 if 4× fewer rows and under 5 % bytes.
+
+**D5. A second-level sort by node inside a time bucket helps node shapes without hurting time shapes.**
+H1: sorting rows by (second, node, time) rather than (time, node) keeps row-group time statistics disjoint at the second and lets node-filtered shapes skip at least 4× more rows. H0: time shapes lose over 10 %, or the registered total order (time first) cannot be reconstructed for pages, which would be a contract change.
+Statistic: rows read for node and time shapes under both orders; page tokens checked against the Python oracle's order. Oracle: the Python query oracle. Reject H0 if node shapes gain 4× and time shapes lose under 10 % and every page is in contract order. This hypothesis is the one most likely to fail on the contract rather than the figures.
+
+**D6. ADR-0022's memory ceiling is a ceiling in bytes, not in records.**
+H1: the external merge sort's 80 MiB ceiling holds on real text, where a 64 MiB file carries 2.7 times the records, because runs are cut by bytes as well as rows. H0: peak memory on a real-text file exceeds the ceiling or the build takes over 2× the synthetic time.
+Statistic: peak RSS and build time of the sealer-study harness's merge-sort candidate on the real-text journal against the synthetic one. Oracle: HIST-1/2 on the output. Reject H0 if peak is under 80 MiB and time under 2×. This is a design check the sealer study never ran; it decides whether the accepted design was sized on the wrong workload.
+
+**D7. The sealer should re-block, not re-encode.**
+H1: if the node sends FOB1 blocks per Batch (two to thirty-four records), re-blocking them at seal time into per-file blocks recovers the 20 % the per-Batch layout loses (94 against 79 bytes per record) in under a third of the time of today's projection build. H0: re-blocking costs as much as building the projections.
+Statistic: bytes per record and sealing time for re-blocking against the projection build on the real-text journal converted to FOB1. Oracle: HIST-1/2 equivalent (every record of the input present once, in key order), checked by decoding both. Reject H0 if 20 % recovered in under a third of the time. Depends on A3.
+
+**D8. Whole-Segment retention is the right granularity.**
+H1: deleting whole Segments by age overshoots the configured retention by under one Segment's span (about 20 minutes of real text at 10,000 nodes) and never under-retains. H0: at the product's 64 MiB Segments and real-text rates the overshoot exceeds an hour, or a Segment that straddles the cut is deleted early.
+Statistic: retained span against configured span over a simulated day at three fleet sizes, from the retention kernel's own decisions. Oracle: the retention contract (HIST-4) and its kernel properties. Reject H0 if overshoot is under one Segment and under-retention never occurs.
+
+**D9. The open-time checks catch the corruptions that matter.**
+H1: the Segment reader's open checks (size, schema, row count against the manifest) refuse every fault-injected truncation and byte flip in a footer, and the sha256 in `verify` is needed only for flips in data pages. H0: a torn footer or a flipped page passes the open checks and answers wrongly.
+Statistic: fault injection over 1,000 Segment mutations (truncate, flip in footer, flip in page, flip in manifest). Oracle: the contract's refusal rule and the Python oracle for any answer the reader gives. Reject H0 if every corruption is refused or answered identically to the oracle.
+
 ## Ranking
 
 By information value per hour, with the dependency each unlocks:
 
 1. **B3** (one hour): tells whether every storage figure is pessimistic before any storage change is built.
 2. **A1** (one hour): fixes the unit of the tail's cost, on which A2 to A4 and the capacity model rest.
-3. **A4** (one day): decides whether the walk can be promoted; cheap, and its answer stands whatever A2 and A3 find.
-4. **B1** (three days): the largest measured removable cost with the smallest change; its negative control is the whole risk.
-5. **A2**, then **A3**: the two readings of the tail's cost; A3 is the strongest case either for or against the wire decision, and the most expensive.
-6. **B5** and **C1** (a day of generation each): the Segment side at product size, which no run has measured.
-7. **B2**, **B4**, **C2**, **C3**, **C4**: each decided by the ones above or waiting on a capture.
+3. **D6** (half a day; the harness exists): the accepted sealer design was sized on synthetic records, and real text carries 2.7 times as many; this decides whether ADR-0022 needs revision before implementation.
+4. **A4** (one day): decides whether the walk can be promoted; cheap, and its answer stands whatever A2 and A3 find.
+5. **D4** (one day): the cheapest segmentation change, and the one most likely to be worth taking regardless of the others.
+6. **B1** (three days): the largest measured removable cost with the smallest change; its negative control is the whole risk.
+7. **A2**, then **A3**, then **D3** and **D7**: the three readings of the tail's cost and the design that would follow from the third; D3 is the hypothesis that would retire the projection build and the duplicate copy together, and the most expensive to test.
+8. **D1**, **D2**, **D5**: the segmentation alternatives, each judged by the Python oracle because each changes what a Segment is; D5 may fail on the contract rather than on the figures.
+9. **B5**, **C1**, **D8**, **D9**: the Segment side at product size and the retention and durability checks no run has made.
+10. **B2**, **B4**, **C2**, **C3**, **C4**: each decided by the ones above or waiting on a capture.
 
 One experiment runs at a time. B3 is next.
