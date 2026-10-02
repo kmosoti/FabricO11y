@@ -2,7 +2,7 @@
 
 Status: **exploratory research**, tier 6 of the [source-of-truth order](../README.md#source-of-truth). This page is an audit of the retained-history path at `58b694d` (verification tooling merged) with the sealer design on top ([ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md), not implemented). It records what exists, what it costs, what checks it, what has not been measured, and where the same problems were solved elsewhere. It decides nothing. The hypotheses it leads to are in the [research ledger](ledger.md).
 
-Every component below carries one of the charter's states: **implemented** (code on `main` with a test), **partial**, **specified** (a contract or ADR says so; the code does not yet), **proposed** (a blueprint or review mentions it), **experimental** (research code outside the product), **obsolete**. A thing that only the [blueprint](architecture.md) mentions is proposed, however detailed the prose.
+Every component below carries one of the charter's states: **implemented** (code on `main` with a test), **partial**, **specified** (a contract or ADR says so; the code does not yet), **proposed** (a blueprint or review mentions it), **experimental** (research code outside the product), **obsolete**. A thing that only the [blueprint](../architecture.md) mentions is proposed, however detailed the prose.
 
 ## 1. Current representations
 
