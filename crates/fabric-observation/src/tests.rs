@@ -216,6 +216,11 @@ fn rejects_dictionaries_out_of_first_use_order_or_unused() {
         unused.insert(38 + i, *b);
     }
     assert_eq!(reason(&recrc(unused)), "unused node dictionary entry");
+    // Two equal table entries: found by the mutation property
+    // (CX-FOB1-DUPLICATE-DICTIONARY); the encoder would intern them as one.
+    let mut dup = bytes.clone();
+    dup.copy_within(6..22, 22);
+    assert_eq!(reason(&recrc(dup)), "duplicate node dictionary entry");
     // Swapping the two table entries is a different, still canonical, block.
     let mut swapped = bytes.clone();
     for i in 0..16 {

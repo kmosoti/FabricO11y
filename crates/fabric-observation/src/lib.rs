@@ -15,8 +15,8 @@
 //! valid `b`, and `encode(decode(x)) == x` for every accepted `x`. That is
 //! what lets a hash of the bytes stand for the records (custody) without a
 //! second, raw copy. The decoder rejects everything that is not canonical:
-//! overlong varints, dictionaries out of first-use order or with unused
-//! entries, unsorted or duplicate attribute keys, NaN, reserved bits,
+//! overlong varints, dictionaries with duplicate or unused entries or out of
+//! first-use order, unsorted or duplicate attribute keys, NaN, reserved bits,
 //! trailing bytes and a wrong CRC.
 //!
 //! The layout is columnar inside a block (times, strands, tags, locators,
@@ -39,7 +39,7 @@
 )]
 
 use core::fmt;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[cfg(kani)]
 mod proofs;
@@ -674,18 +674,34 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<Observation>, DecodeError> {
     if n > MAX_RECORDS {
         return cur.fail("too many records");
     }
+    // Dictionaries: every entry distinct (the encoder interns, so a duplicate
+    // entry would re-encode to a different table) and, checked as the columns
+    // are read, used in first-use order with nothing left over.
     let node_count = cur.count(16)?;
     let mut node_table = Vec::with_capacity(node_count);
+    let mut node_seen = BTreeSet::new();
     for _ in 0..node_count {
+        let at = cur.pos;
         let mut id = [0_u8; 16];
         id.copy_from_slice(cur.take(16)?);
+        if !node_seen.insert(id) {
+            cur.pos = at;
+            return cur.fail("duplicate node dictionary entry");
+        }
         node_table.push(id);
     }
     let mut nodes = Lookup::new(node_table);
     let string_count = cur.count(1)?;
     let mut string_table = Vec::with_capacity(string_count);
+    let mut string_seen = BTreeSet::new();
     for _ in 0..string_count {
-        string_table.push(cur.string()?);
+        let at = cur.pos;
+        let s = cur.string()?;
+        if !string_seen.insert(s.clone()) {
+            cur.pos = at;
+            return cur.fail("duplicate string dictionary entry");
+        }
+        string_table.push(s);
     }
     let mut strings = Lookup::new(string_table);
 
