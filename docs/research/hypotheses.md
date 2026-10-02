@@ -13,18 +13,18 @@ The suite below tests that verdict rather than assuming it: the first group woul
 
 ## What counts as an oracle here
 
-Nothing in the current design is the oracle, the stock server included. A differential against it proves only that a prototype answers as today's code does, which is the right guard for a query prototype that must not change answers and the wrong one for a hypothesis about whether today's layout, sealer or Segment is the right design. The references are, in order:
+Nothing in the current design is the oracle, the stock server included, and neither is the Python oracle: it is a second program, and two programs that agree share their assumptions. The reference is the **specification**: the query answer defined as a function in the pure core ([query::spec](../../crates/fabric-core/src/query/spec.rs); [the mathematics](../formal/query-semantics.md)), twenty lines a reader checks against the contract, with theorems about itself (pages partition, limits are prefixes, filters restrict, windows split, snapshots hide) stated as properties and bounded proofs, and the threshold walk and budget boundary defined in its terms and proved equal to it. In order:
 
-1. **The product contract** and the registered contracts (HIST-1 to HIST-6): a Segment answers every registered query exactly as the journal it was sealed from, rows and order; replay from Segments rebuilds the same state; rates follow the counter contract.
-2. **The journal through the independent Python oracles** ([query_oracle.py](../../tools/qualification/query_oracle.py), the delivery and rate oracles), which compute answers from the journal's bytes without the Rust code. A new layout is right when the oracle's answer over the journal equals the server's answer over the new layout.
+1. **The specification** and the registered contracts (HIST-1 to HIST-6): a layer is right when it refines the definition, that is, produces the same rows for the definition to filter, sort and cut.
+2. **The journal through the independent Python oracle** ([query_oracle.py](../../tools/qualification/query_oracle.py)), as a diversity check on the one part the specification leaves in prose: the derivation of rows from OTLP bytes.
 3. **The stock server**, as a regression reference only, for prototypes that claim to change nothing.
 
-Each hypothesis below names which of these it is judged by. A storage or sealing hypothesis is never judged by the stock server.
+Each hypothesis names which it is judged by. A storage or sealing hypothesis is judged by the specification through the equivalence checks (HIST-1/2, which compare rows, not servers) and never by the stock server.
 
 ## Conventions
 
 - **Statistic.** Median of eight repetitions over one keep-alive connection unless stated; memory as the process high-water mark; bytes from file sizes. A ratio is the test figure divided by the baseline figure on the same state.
-- **Guard.** A query prototype runs the 200-query random differential with pages against the stock server; one mismatch fails it whatever the figures say. A layout or sealer prototype runs the Python query oracle over the journal against the server over the new layout, and the HIST-1/2 equivalence on the Segments it builds; one mismatch fails it.
+- **Guard.** A query prototype runs the 200-query random differential with pages against the stock server (regression) and, where it implements a mechanism the specification defines, is a refinement of that mechanism (T7 for a walk, T8 for a budget). A layout or sealer prototype runs the HIST-1/2 equivalence on what it builds and the Python oracle over the journal as the diversity check on row derivation; one mismatch fails it.
 - **States.** The four of run L-21 (real-text and synthetic tails of 64 MiB; real-text and synthetic Segments, 64 of 1 MiB) unless stated; "64 MiB Segments" means the product's size, which no run has used yet.
 - **Decision.** The decision rule is written as the condition under which H0 is rejected. A result that rejects neither (noise, a broken run) is "inconclusive", not support.
 
@@ -105,7 +105,7 @@ Every run so far has measured inside the design of [ADR-0020](../decisions/ADR-0
 
 **D1. The Segment's unit should be time, not journal bytes.**
 H1: Segments cut by a time span (every N minutes of receive time, bytes permitting) give every window query a contiguous Segment set and no cross-Segment overlap except from late arrivals, so the walk's floor on the overlapping workload falls below a tenth of today's reads. H0: cutting by time gains under 2× on reads, because late arrivals (outage drains) overlap whatever the cut, or costs more than 10 % in bytes from smaller files.
-Statistic: row groups read and Segment bytes for the L-04 shapes on the adversarial and outage workloads sealed both ways. Oracle: the Python query oracle over the journal. Reject H0 if reads fall by 10× on the adversarial state and bytes grow under 10 %.
+Statistic: row groups read and Segment bytes for the L-04 shapes on the adversarial and outage workloads sealed both ways. Oracle: the specification through HIST-1/2 equivalence; the Python oracle as diversity on row derivation. Reject H0 if reads fall by 10× on the adversarial state and bytes grow under 10 %.
 
 **D2. Cross-Segment merging (compaction) pays for itself.**
 H1: merging four adjacent Segments into one globally sorted Segment (a second sealing level) removes their mutual overlap, so the walk reads a quarter of the row groups on overlapping workloads, at a write amplification under 2× over the retention window. H0: the query gain is under 2× or the amplification over 3×.
@@ -113,15 +113,15 @@ Statistic: reads for `limit` shapes before and after a four-way merge on the out
 
 **D3. The projections are not needed once the custody copy is a canonical block.**
 H1: a Segment that holds FOB1 blocks once, with per-block key bounds in the manifest and no `logs.parquet` or `metrics.parquet`, answers every registered shape within 2× of today's projections through `decode_view` (0.8 ns per byte, 72 ns per record), including the text search that falsified L-06 against raw OTLP, at no more than 60 % of today's bytes. H0: some registered shape is over 2× slower, or bytes are over 70 %.
-Statistic: the fourteen L-21 shapes on a real-text Segment state rebuilt as FOB1 blocks plus a manifest, against today's Parquet Segments; bytes of both. Oracle: the Python query oracle over the journal for every shape. Reject H0 if every shape is within 2× and bytes under 60 %. This is the hypothesis that would retire the sealer's projection build and the duplicate copy at once; it depends on A3.
+Statistic: the fourteen L-21 shapes on a real-text Segment state rebuilt as FOB1 blocks plus a manifest, against today's Parquet Segments; bytes of both. Oracle: the specification through HIST-1/2 equivalence for every shape; the Python oracle as diversity. Reject H0 if every shape is within 2× and bytes under 60 %. This is the hypothesis that would retire the sealer's projection build and the duplicate copy at once; it depends on A3.
 
 **D4. 8,192 rows per group is too coarse for the selective shapes.**
 H1: 1,024-row groups cut the rows materialised by node- and short-window shapes by at least 4× for under 5 % more bytes and under 2× more footer time. H0: the footer and page overhead costs over 5 % in bytes or the per-Segment fixed cost doubles.
-Statistic: rows read and bytes for the attribution shapes at 1,024, 4,096 and 8,192 rows per group on the real-text state. Oracle: HIST-1/2 (identical rows and order); the Python oracle for answers. Reject H0 if 4× fewer rows and under 5 % bytes.
+Statistic: rows read and bytes for the attribution shapes at 1,024, 4,096 and 8,192 rows per group on the real-text state. Oracle: HIST-1/2 (identical rows and order) against the specification. Reject H0 if 4× fewer rows and under 5 % bytes.
 
 **D5. A second-level sort by node inside a time bucket helps node shapes without hurting time shapes.**
 H1: sorting rows by (second, node, time) rather than (time, node) keeps row-group time statistics disjoint at the second and lets node-filtered shapes skip at least 4× more rows. H0: time shapes lose over 10 %, or the registered total order (time first) cannot be reconstructed for pages, which would be a contract change.
-Statistic: rows read for node and time shapes under both orders; page tokens checked against the Python oracle's order. Oracle: the Python query oracle. Reject H0 if node shapes gain 4× and time shapes lose under 10 % and every page is in contract order. This hypothesis is the one most likely to fail on the contract rather than the figures.
+Statistic: rows read for node and time shapes under both orders; page tokens checked against the Python oracle's order. Oracle: the specification (T2 for page order) through HIST-1/2. Reject H0 if node shapes gain 4× and time shapes lose under 10 % and every page is in contract order. This hypothesis is the one most likely to fail on the contract rather than the figures.
 
 **D6. ADR-0022's memory ceiling is a ceiling in bytes, not in records.**
 H1: the external merge sort's 80 MiB ceiling holds on real text, where a 64 MiB file carries 2.7 times the records, because runs are cut by bytes as well as rows. H0: peak memory on a real-text file exceeds the ceiling or the build takes over 2× the synthetic time.
@@ -137,7 +137,7 @@ Statistic: retained span against configured span over a simulated day at three f
 
 **D9. The open-time checks catch the corruptions that matter.**
 H1: the Segment reader's open checks (size, schema, row count against the manifest) refuse every fault-injected truncation and byte flip in a footer, and the sha256 in `verify` is needed only for flips in data pages. H0: a torn footer or a flipped page passes the open checks and answers wrongly.
-Statistic: fault injection over 1,000 Segment mutations (truncate, flip in footer, flip in page, flip in manifest). Oracle: the contract's refusal rule and the Python oracle for any answer the reader gives. Reject H0 if every corruption is refused or answered identically to the oracle.
+Statistic: fault injection over 1,000 Segment mutations (truncate, flip in footer, flip in page, flip in manifest). Oracle: the contract's refusal rule; any answer the reader gives is checked against the specification over the uncorrupted rows. Reject H0 if every corruption is refused or answered identically to the oracle.
 
 ## Ranking
 
