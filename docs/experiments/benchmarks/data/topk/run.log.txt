@@ -1,0 +1,118 @@
+== tail-steady
+   stock       logs_limit50_full           319.75 ms rows    50 page2 298.2
+   stock       logs_limit1000_full         292.86 ms rows  1000
+   stock       logs_limit10000_full        398.79 ms rows 10000
+   stock       host_limit50_full           305.97 ms rows    50
+   stock       metric_limit100_full        323.33 ms rows   100
+   stock       metric_limit10000_full      275.14 ms rows  3700
+   stock       text_rare_full              260.42 ms rows   100
+   stock       rate_full                   261.86 ms rows     0
+   stock       logs_last_10s               267.31 ms rows   100
+   stock       empty_past                  240.86 ms rows     0
+   stock       random set 168.96 s  mem {'VmHWM': 242, 'VmRSS': 242}
+   index       logs_limit50_full           300.48 ms rows    50 page2 324.7
+   index       logs_limit1000_full         297.02 ms rows  1000
+   index       logs_limit10000_full        409.95 ms rows 10000
+   index       host_limit50_full            11.04 ms rows    50
+   index       metric_limit100_full        103.63 ms rows   100
+   index       metric_limit10000_full      179.86 ms rows  3700
+   index       text_rare_full              309.24 ms rows   100
+   index       rate_full                   108.29 ms rows     0
+   index       logs_last_10s                10.41 ms rows   100
+   index       empty_past                    5.08 ms rows     0
+   index       random set 45.94 s  mem {'VmHWM': 398, 'VmRSS': 398}
+   index+topk  logs_limit50_full            19.98 ms rows    50 page2 20.3 [items 55000 processed 26 stopped true]
+   index+topk  logs_limit1000_full          34.51 ms rows  1000 [items 55000 processed 502 stopped true]
+   index+topk  logs_limit10000_full        178.35 ms rows 10000 [items 55000 processed 5002 stopped true]
+   index+topk  host_limit50_full             6.46 ms rows    50 [items 550 processed 26 stopped true]
+   index+topk  metric_limit100_full         10.52 ms rows   100 [items 3700 processed 102 stopped true]
+   index+topk  metric_limit10000_full      163.41 ms rows  3700 [items 3700 processed 3700 stopped false]
+   index+topk  text_rare_full              468.21 ms rows   100 [items 55000 processed 50346 stopped true]
+   index+topk  rate_full                   103.30 ms rows     0
+   index+topk  logs_last_10s                 8.87 ms rows   100 [items 1000 processed 52 stopped true]
+   index+topk  empty_past                    6.81 ms rows     0 [items 0 processed 0 stopped false]
+   index+topk  random set 13.82 s  mem {'VmHWM': 59, 'VmRSS': 56}
+   differential stock vs index+topk: 0 mismatches
+== tail-outage
+   stock       logs_limit50_full           252.33 ms rows    50 page2 360.2
+   stock       logs_limit1000_full         300.03 ms rows  1000
+   stock       logs_limit10000_full        375.96 ms rows 10000
+   stock       host_limit50_full           232.61 ms rows    50
+   stock       metric_limit100_full        254.19 ms rows   100
+   stock       metric_limit10000_full      325.61 ms rows  3700
+   stock       text_rare_full              280.76 ms rows   100
+   stock       rate_full                   273.03 ms rows     0
+   stock       logs_last_10s               263.72 ms rows   100
+   stock       empty_past                  281.47 ms rows     0
+   stock       random set 168.14 s  mem {'VmHWM': 257, 'VmRSS': 238}
+   index       logs_limit50_full           295.13 ms rows    50 page2 304.5
+   index       logs_limit1000_full         399.27 ms rows  1000
+   index       logs_limit10000_full        440.65 ms rows 10000
+   index       host_limit50_full            13.07 ms rows    50
+   index       metric_limit100_full         98.07 ms rows   100
+   index       metric_limit10000_full      161.86 ms rows  3700
+   index       text_rare_full              391.76 ms rows   100
+   index       rate_full                   114.96 ms rows     0
+   index       logs_last_10s                 8.48 ms rows   100
+   index       empty_past                    6.25 ms rows     0
+   index       random set 45.19 s  mem {'VmHWM': 414, 'VmRSS': 414}
+   index+topk  logs_limit50_full            13.07 ms rows    50 page2 12.7 [items 55000 processed 26 stopped true]
+   index+topk  logs_limit1000_full          27.36 ms rows  1000 [items 55000 processed 502 stopped true]
+   index+topk  logs_limit10000_full        216.09 ms rows 10000 [items 55000 processed 5002 stopped true]
+   index+topk  host_limit50_full             8.27 ms rows    50 [items 550 processed 26 stopped true]
+   index+topk  metric_limit100_full         13.72 ms rows   100 [items 3700 processed 102 stopped true]
+   index+topk  metric_limit10000_full      173.82 ms rows  3700 [items 3700 processed 3700 stopped false]
+   index+topk  text_rare_full              479.94 ms rows   100 [items 55000 processed 51454 stopped true]
+   index+topk  rate_full                   125.95 ms rows     0
+   index+topk  logs_last_10s                 6.33 ms rows   100 [items 1000 processed 52 stopped true]
+   index+topk  empty_past                    4.67 ms rows     0 [items 0 processed 0 stopped false]
+   index+topk  random set 14.87 s  mem {'VmHWM': 57, 'VmRSS': 57}
+   differential stock vs index+topk: 0 mismatches
+== seg-steady64
+   stock       logs_limit50_full            95.76 ms rows    50 page2 120.1
+   stock       logs_limit1000_full         128.45 ms rows  1000
+   stock       logs_limit10000_full        222.70 ms rows 10000
+   stock       host_limit50_full            96.52 ms rows    50
+   stock       metric_limit100_full         84.33 ms rows   100
+   stock       metric_limit10000_full      102.16 ms rows  3700
+   stock       text_rare_full              103.06 ms rows   100
+   stock       rate_full                    60.59 ms rows     0
+   stock       logs_last_10s                 8.91 ms rows   100
+   stock       empty_past                    6.34 ms rows     0
+   stock       random set 26.16 s  mem {'VmHWM': 67, 'VmRSS': 42}
+   topk        logs_limit50_full             8.60 ms rows    50 page2 7.8 [items 64 processed 1 stopped true]
+   topk        logs_limit1000_full          18.72 ms rows  1000 [items 64 processed 1 stopped true]
+   topk        logs_limit10000_full        131.41 ms rows 10000 [items 64 processed 6 stopped true]
+   topk        host_limit50_full            16.83 ms rows    50 [items 64 processed 4 stopped true]
+   topk        metric_limit100_full         11.16 ms rows   100 [items 45 processed 2 stopped true]
+   topk        metric_limit10000_full      116.66 ms rows  3700 [items 45 processed 45 stopped false]
+   topk        text_rare_full              116.89 ms rows   100 [items 64 processed 59 stopped true]
+   topk        rate_full                    82.74 ms rows     0
+   topk        logs_last_10s                 8.61 ms rows   100 [items 1 processed 1 stopped false]
+   topk        empty_past                    6.89 ms rows     0 [items 0 processed 0 stopped false]
+   topk        random set 15.38 s  mem {'VmHWM': 72, 'VmRSS': 52}
+   differential stock vs topk: 0 mismatches
+== seg-adversarial64
+   stock       logs_limit50_full           120.24 ms rows    50 page2 117.1
+   stock       logs_limit1000_full         116.73 ms rows  1000
+   stock       logs_limit10000_full        250.93 ms rows 10000
+   stock       host_limit50_full           105.51 ms rows    50
+   stock       metric_limit100_full         69.62 ms rows   100
+   stock       metric_limit10000_full       95.63 ms rows  3700
+   stock       text_rare_full              104.70 ms rows   100
+   stock       rate_full                    66.90 ms rows     0
+   stock       logs_last_10s                 6.50 ms rows     0
+   stock       empty_past                    6.38 ms rows     0
+   stock       random set 51.65 s  mem {'VmHWM': 55, 'VmRSS': 35}
+   topk        logs_limit50_full            71.05 ms rows    50 page2 105.0 [items 64 processed 37 stopped true]
+   topk        logs_limit1000_full         140.32 ms rows  1000 [items 64 processed 64 stopped false]
+   topk        logs_limit10000_full        290.93 ms rows 10000 [items 64 processed 64 stopped false]
+   topk        host_limit50_full           127.50 ms rows    50 [items 64 processed 64 stopped false]
+   topk        metric_limit100_full         74.50 ms rows   100 [items 45 processed 45 stopped false]
+   topk        metric_limit10000_full      117.85 ms rows  3700 [items 45 processed 45 stopped false]
+   topk        text_rare_full              119.92 ms rows   100 [items 64 processed 64 stopped false]
+   topk        rate_full                    88.01 ms rows     0
+   topk        logs_last_10s                 8.02 ms rows     0 [items 0 processed 0 stopped false]
+   topk        empty_past                    8.82 ms rows     0 [items 0 processed 0 stopped false]
+   topk        random set 55.45 s  mem {'VmHWM': 74, 'VmRSS': 47}
+   differential stock vs topk: 0 mismatches

@@ -13,9 +13,9 @@ The novelty firewall of the charter applies to every entry: before "novel", the 
 | L-01 | Fabric's evidence fields are query completeness under per-source completeness statements | REDISCOVERED | State it in the kernel (Q1 of the [direction review](query-engine-direction.md)) |
 | L-02 | Sound Segment dispositions from manifest facts remove the per-Segment cost that grows with retention | DERIVED and confirmed sound; FALSIFIED as a material saving | [Retention-scale run 01](../experiments/benchmarks/retention-scale-run-01.md): the rule changes no answer, the two traps are real, the saving is tens of milliseconds at 319 Segments |
 | L-03 | A memtable of keys makes the unsealed tail selectable | CANDIDATE, confirmed on the prototype | [Tail-index run 01](../experiments/benchmarks/tail-index-run-01.md): selective shapes from about 220 ms to 4 to 13 ms, 0 mismatches in 1,500 queries, 95 B per entry; a whole-window query still materialises everything. Promotion needs the soak and the Q2 design |
-| L-04 | The threshold algorithm over row-group and entry bounds ends every `limit` scan early | CANDIDATE, now first | Measure the gain against cross-Segment overlap; it is also what bounds a wide-window query over the indexed tail, which L-03 alone does not |
-| L-05 | Budget-bounded answers that are exact for the sources read and name the rest | CANDIDATE | Property first, then a contract change |
-| L-06 | Drop the projections and answer from raw bytes with a key sidecar | FALSIFIED for text search; UNRESOLVED otherwise | None until real corpora are measured |
+| L-04 | The threshold algorithm over row-group and entry bounds ends every `limit` scan early | CANDIDATE, confirmed on the prototype | [Threshold run 01](../experiments/benchmarks/topk-run-01.md): whole-window `limit 50` from 252 to 320 ms to 13 to 20 ms on 64 MiB tails, reading 26 entries of 55,000; one row group of 64 on disjoint Segments; no gain at total overlap; the server stays at 56 to 59 MiB where stock reached 242 to 257; 0 mismatches in 1,200 queries and pages. Shapes that cannot stop pay 20 to 80 % for the walk: fall back to file order when the heap cannot fill. Promotion with L-03 under Q2 |
+| L-05 | Budget-bounded answers that are exact for the sources read and name the rest | EXPERIMENTING | Prototype on the L-04 walk: a page ends at the first unread source's minimum key `m`, returns exactly the rows below `m`, names the boundary in `unavailable`, and resumes at `m`; run 01 in progress |
+| L-06 | Drop the projections and answer from raw bytes with a key sidecar | FALSIFIED for text search; UNRESOLVED for selective shapes | Measured on real text ([storage layout run 01](../experiments/benchmarks/storage-layout-run-01.md)): the duplicate payload is 63 % of a real-text Segment and the raw copy is the larger half. The remedy ranked first is now the other way round (L-19, L-20: shrink the custody copy, keep the projection) |
 | L-07 | Manifest facts for two-sided skipping: per-table key bounds, node presence that covers gaps | DERIVED | Decided by L-02's result; an amendment to ADR-0020 |
 | L-08 | Query-shaped sidecars that follow workload drift (charter H1) | PRIOR_ART | None until a registered gate fails |
 | L-09 | Progressive evidence search (charter H2) | REDISCOVERED | It is L-02 to L-05 in sequence |
@@ -27,7 +27,12 @@ The novelty firewall of the charter applies to every entry: before "novel", the 
 | L-15 | Query-directed instrumentation (charter H8) | HUNCH, out of contract | None |
 | L-16 | External merge sort for the sealer | PROMOTED | [ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md) |
 | L-17 | Clock skew between node and server is unbounded and unreported | UNRESOLVED | Measure on the target host; run 01 shows a 5 s skew breaks receive-bound pruning in 31 of 440 queries |
-| L-18 | Query time and memory are proportional to the unsealed tail, unbounded by anything but `journal_bytes` | OBSERVED (run 01) | Bound it: L-03, or a budget (L-05) as the stopgap |
+| L-18 | Query time and memory are proportional to the unsealed tail, unbounded by anything but `journal_bytes` | OBSERVED (run 01); bounded by L-03 and L-04 on the prototype | On real text the tail also holds 2.5 times the bytes of its Segment (uncompressed protobuf against Zstd Parquet). The bounded sealer keeps it short; L-03 and L-04 make queries over it cost their answers |
+| L-19 | Hash the custody table per row group instead of per Batch | CANDIDATE | 32 B per Batch is 3.6 % of a synthetic Segment and 17.6 % of a real-text one; a scratch sealer and a replay differential decide whether custody survives without the per-row check |
+| L-20 | A custody encoding that stores OTLP framing and repeated attributes once per Batch | HUNCH | On real text the raw copy costs twice the body column; the framing share is unmeasured. Measure it first |
+| L-21 | Real-corpus query run | CANDIDATE, ranked first among the storage questions | Every query figure so far is on synthetic lines; the real-text state exists; one run of the attribution shapes calibrates text search, body decode and L-06's open half |
+| L-22 | Delta encodings for the metrics projection | DERIVED | Measured 16 to 29 % of a table that is 3 to 13 % of a Segment; a writer property and an ADR note when a consumer's metric volume makes it matter |
+| L-23 | Traces as a third projection of the same record spine | OUT OF CONTRACT (design held) | The [storage direction](storage-direction.md) says where spans, locators and a `trace_id` bloom would go; nothing runs until the contract changes |
 
 ## Ranking of the next experiments
 
@@ -42,7 +47,14 @@ L-03 ran next ([tail-index run 01](../experiments/benchmarks/tail-index-run-01.m
 3. **L-07.** Design work whose test exists.
 4. **L-03's promotion** waits on the registered soak (ACK latency while the index extends on two CPUs) and the Q2 design in the direction review.
 
-Only one experiment runs at a time; L-04's is next.
+L-04 ran next ([threshold run 01](../experiments/benchmarks/topk-run-01.md)): ordering sources by their minimum key and stopping at the heap's threshold makes a `limit` query cost its answer on disjoint history (26 entries read of 55,000; one row group of 64), keeps the server's memory flat where the index alone did not, changes no answer in 1,200 queries, and gains nothing at total overlap or for shapes that cannot fill the heap, which pay for the walk. After it:
+
+1. **L-05** is running: the budget that bounds the shapes L-04 cannot, with a boundary key that keeps every page exact.
+2. **L-21**, the real-corpus query run: the [storage direction](storage-direction.md) found that the synthetic workload hides the storage costs; whether it also hides query costs decides every storage entry that follows.
+3. **L-19**, then **L-20**: the custody copy, measured as the largest removable cost of a Segment.
+4. **L-07**, design work whose test exists; **L-03 and L-04's promotion** together under Q2 of the direction review, after the registered soak.
+
+Only one experiment runs at a time; L-05's is in progress.
 
 ## Entries
 
@@ -143,6 +155,8 @@ Only one experiment runs at a time; L-04's is next.
 
 **Promotion criterion.** Differential clean on all three states and on pages; the gain measured against overlap; then Q3 of the direction review with a boundary mutant.
 
+**Result (run 01, 2026-10-02).** [Record](../experiments/benchmarks/topk-run-01.md). On two 64 MiB tails, whole-window `limit 50` fell from 252 to 320 ms to 13 to 20 ms, reading 26 of 55,000 entries; `limit 1,000` to about 30 ms; the second page costs the same as the first; the server's high-water mark stayed at 56 to 59 MiB through the shapes and 300 random queries where stock reached 242 to 257 MiB and the index alone 398 to 414. On 64 disjoint Segments the walk read one row group of 64 (96 to 8.6 ms). On 64 totally overlapping Segments it read everything and cost 10 to 20 % more than stock, the predicted floor. Shapes that cannot fill the heap (a rare text search; `limit 10,000` over 3,700 points) were 20 to 80 % slower, because the walk decodes entries in key order rather than frames in file order. 0 mismatches in 1,200 random queries and their pages. The differential and the overlap measurement are done; the promotion waits on Q2 with L-03, with a file-order fallback when the first pass over the bounds shows the heap cannot fill.
+
 ### L-05. Budget-bounded answers with sound partial completeness
 
 **State:** CANDIDATE (a composition).
@@ -180,6 +194,8 @@ Only one experiment runs at a time; L-04's is next.
 **Why it fails.** Answering from raw bytes is the measured tail cost, 3.2 ms per MiB of protobuf decode: a text search over a 64 MiB Segment would cost about 200 ms per Segment, and over a day of retention, seconds. The projections are what make text search affordable. For node- and time-selective shapes with a key sidecar the cost would be the selected entries' decode, which may be competitive; unmeasured.
 
 **Remaining uncertainty.** Real log corpora may compress the projection far better than the raw bytes (templates), changing the duplication cost; no corpus has been measured.
+
+**Measured since (2026-10-02).** [Storage layout run 01](../experiments/benchmarks/storage-layout-run-01.md) sealed 64 MiB of real log lines: the raw copy is 43 % of the Segment at 5.4:1 and the body column 20 % at 6.2:1, so the raw copy costs twice the projection (the OTLP framing and five file attributes travel with every line). The duplicate is the Segment's largest cost on real text as on synthetic, but the cheaper half to keep is the projection. The question inverts into L-19 and L-20: shrink the custody copy without losing custody. Option C of the [storage direction](storage-direction.md) (projection without body, decode on demand) stays open only for selective shapes under L-03 and L-04, and L-21 measures it.
 
 ### L-07. Manifest facts for sound two-sided skipping
 
@@ -259,3 +275,70 @@ Rows carry the node's clock, gaps and the retained window the server's, freshnes
 
 `History::sources` decodes every journal frame and keeps every Group in memory, and `run_once` extracts every row, before any filter. Measured: 18 MiB resident after replaying a 320 MiB journal; 876 MiB high-water mark and 714 MiB resident after one query that could match nothing, which took 4.64 s. The cost is about 3.2 ms and 2.7 MiB per MiB of tail, per query, and nothing bounds the tail but `journal_bytes` (4 GiB in the soak configuration). This is the only cost in the audit that can exhaust the server rather than slow it. L-03 removes it; L-05 would bound it meanwhile; the sealer milestone shortens the exposure by keeping the tail at most one file when sealing keeps up, and does nothing when it does not.
 
+### L-19. Hash the custody table per row group
+
+**State:** CANDIDATE.
+
+**Precise problem.** `batches.parquet` stores a 32-byte SHA-256 per Batch so that replay can check each row ([store.rs](../../crates/fabric-server/src/store.rs) `scan_batches`). The column is uncompressible: 3.6 % of a synthetic Segment and 17.6 % of a real-text one, where Batches are two short lines ([storage layout run 01](../experiments/benchmarks/storage-layout-run-01.md)).
+
+**Strongest prior art.** Prometheus chunks carry one CRC32C per chunk, not per sample; Parquet carries page-level CRCs; the manifest already hashes each file.
+
+**Why Fabric's constraints differ.** Replay must detect a corrupted or substituted Batch before it re-enters stream state; a per-row-group hash detects it per 8,192 rows and names the group, not the row. The node's own bytes carry no hash of their own; the server's hash is the custody claim.
+
+**Proposed mechanism.** Hash per row group in the manifest (`files.batches.row_groups[i].sha256`), computed over the row group's `batch` values in order; replay hashes a row group as it reads it and refuses the Segment on mismatch. Manifest version 2; version-1 readers unchanged.
+
+**Expected advantage.** 6 to 28 % of a Segment; nothing on the query path.
+
+**Expected disadvantage.** A corrupted row is located to a group, not a row; a persisted-format change (ADR-0020 amendment, own commit).
+
+**Falsification test.** False if replay from a Segment with one flipped byte in `batch` is not refused, or if HIST-1/HIST-2 differentials change, or if replay time grows materially.
+
+**Smallest prototype.** A scratch sealer and reader; the real-text and synthetic states; a flipped-byte negative control.
+
+**Baseline.** The per-Batch hash.
+
+**Promotion criterion.** The negative control refused; HIST-1/2 clean; a written ADR amendment.
+
+### L-20. A custody encoding that stores framing once
+
+**State:** HUNCH.
+
+**Precise problem.** On real text the raw Batch costs 77 bytes for two lines whose body column costs 37; the difference is OTLP framing and five file attributes repeated per record, compressed in blocks but still paid.
+
+**Strongest prior art.** Tempo's nested schema (resource attributes once per resource); OTel Arrow's attribute tables keyed by parent id; CLP's separation of static text from variables.
+
+**Why Fabric's constraints differ.** The custody copy must reproduce the node's exact bytes, byte for byte, because the hash and replay depend on them. A re-encoding that is not bijective breaks custody; one that is bijective is a codec, pure by nature, adapter-support by ownership.
+
+**Proposed mechanism.** Measure first: the share of a real Batch that is framing and repeated attributes. If it is most of the difference, a custody format of (framing template once, per-record variable fields, lines) with a proven exact round trip.
+
+**Falsification test.** False if any Batch fails to round-trip byte for byte under a fuzzer over the OTLP encoder's freedom (field order, varint lengths), or if the share measured is small.
+
+**Smallest prototype.** The measurement, with `pyarrow` over the real-text state's Batches; no server change.
+
+### L-21. Real-corpus query run
+
+**State:** CANDIDATE, ranked first among the storage questions.
+
+**Precise problem.** Every query figure in the ledger comes from synthetic lines that compress 1.3:1 and contain no templates; text-search selectivity, body decode and per-row cost may differ on real text, and the real-text state ([storage layout run 01](../experiments/benchmarks/storage-layout-run-01.md)) now exists.
+
+**Proposed experiment.** The attribution shapes and the L-04 shapes on the real-text state, stock server and the L-04 prototype; per-shape time and rows read; then the same with the tail unsealed. No code change.
+
+**Falsification test.** The hypothesis is that the synthetic figures transfer within a factor of two. False if a shape differs by more.
+
+**Promotion criterion.** None; it calibrates L-06, L-19 and L-20.
+
+### L-22. Delta encodings for the metrics projection
+
+**State:** DERIVED.
+
+**Mechanism.** `DELTA_BINARY_PACKED` on `time_ns`, `start_ns`, `group`, `sequence` and `value_int`; reader-transparent in Parquet. Measured 16 to 29 % off the metrics table, which is 3 to 13 % of a Segment ([storage layout run 01](../experiments/benchmarks/storage-layout-run-01.md)); the value column's share is a floor, since the generator's values are random.
+
+**Cost.** A writer property; a note in ADR-0020's consequences since the bytes of a Segment change; HIST-1/2 unchanged.
+
+**Falsification.** None needed; the question is whether a consumer's metric volume makes the saving matter.
+
+### L-23. Traces as a third projection
+
+**State:** OUT OF CONTRACT; design held in the [storage direction](storage-direction.md).
+
+**Claim.** A span is an observation with the same key (start time, node_id, sequence, index), locators (`trace_id`, `span_id`, `parent_span_id`) that logs and metric exemplars share as nullable columns, and a per-row-group bloom filter on `trace_id` for the "fetch one trace" shape. The wire `Batch` needs a traces payload slot (a wire change); the product contract names traces a non-goal; the contract allows no index beyond row-group statistics unless a gate fails. Nothing runs.

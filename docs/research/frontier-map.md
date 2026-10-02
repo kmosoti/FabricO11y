@@ -64,6 +64,8 @@ Measured, on this 4-CPU container, all exploratory unless marked:
 | Startup replay | 1.6 s for a 40 MiB journal (first read from disk); 1.7 s for 320 MiB with a warm page cache | attribution run 01; [retention-scale run 01](../experiments/benchmarks/retention-scale-run-01.md) |
 | **Query memory over an unsealed tail** | one query that can match nothing, over a 320 MiB unsealed tail, took 4.64 s and raised the server's high-water mark from 18 MiB to 876 MiB; 714 MiB stayed resident afterwards. Query time and memory are both proportional to the tail, which `journal_bytes` allows to reach 4 GiB | retention-scale run 01; the key-index prototype in [tail-index run 01](../experiments/benchmarks/tail-index-run-01.md) removes the time for selective shapes and not the memory for whole-window ones |
 | Line to query | 517 ms at the median, 85 % of it the Spindle's 1 s log poll; 50 ms of it the server's group window | [collection-to-query run 01](../experiments/benchmarks/e2e-latency-run-01.md) |
+| **Wide-window `limit` queries** | with sources ordered by minimum key and the heap's threshold as the stop: `limit 50` over a 64 MiB tail 252 to 320 ms stock, 13 to 20 ms on the prototype, reading 26 entries of 55,000; one row group of 64 on disjoint Segments; no gain at total overlap; server memory flat at 56 to 59 MiB against 242 to 257 | [threshold run 01](../experiments/benchmarks/topk-run-01.md) |
+| **Segment bytes** | the payload stored twice (raw Batch bytes and the body column) is 92 % of a synthetic Segment and 63 % of a real-text one; the per-Batch hash 3.6 % and 17.6 %; all key and time columns about 3 B per row; the unsealed tail holds 2.5 times its Segment's bytes on real text | [storage layout run 01](../experiments/benchmarks/storage-layout-run-01.md) |
 | Group commit | 50 ms window held open even for a lone Batch | the same; [store.rs](../../crates/fabric-server/src/store.rs) `CommitMode::GROUPED` |
 
 ## 5. Current correctness invariants
@@ -74,7 +76,7 @@ Stated for the sealer design, not yet checked: S-1 to S-6 (same rows, same order
 
 ## 6. Current benchmark evidence
 
-Registered and run: history (revision 2, four-CPU host, passing), outage and stress (revision 2, passing), soak (failed on sealer memory), installation acceptance (inconclusive). Exploratory: the sealer study, collection-to-query latency, query attribution, retention scale. None on the target profile. Fixtures: synthetic (the fleet simulator's two 512-byte lines per identity per second, half repeated bytes and half seeded entropy; 32 gauge points every 15 s). No real log corpus has been used; compression, text-search selectivity and template structure of real logs are unmeasured.
+Registered and run: history (revision 2, four-CPU host, passing), outage and stress (revision 2, passing), soak (failed on sealer memory), installation acceptance (inconclusive). Exploratory: the sealer study, collection-to-query latency, query attribution, retention scale, tail index, threshold walk, storage layout. None on the target profile. Fixtures: synthetic (the fleet simulator's two 512-byte lines per identity per second, half repeated bytes and half seeded entropy; 32 gauge points every 15 s). No real log corpus has been used; compression, text-search selectivity and template structure of real logs are unmeasured.
 
 ## 7. Missing measurements
 
@@ -82,8 +84,8 @@ Registered and run: history (revision 2, four-CPU host, passing), outage and str
 - **Recovery time at full retention**: journal replay measured 1.7 s for 320 MiB warm; cold, and at the 4 GiB `journal_bytes` allows, unmeasured. The first query after such a restart is the larger cost (4.64 s and 858 MiB over a 320 MiB tail).
 - **Per-row cost split** between Parquet decode, Zstd, allocation and the attribute JSON parse; it decides whether late materialisation or a leaner row type is the lever.
 - **Clock skew** between nodes and server in any real deployment; the freshness field assumes the node's clock.
-- **Cross-Segment time overlap** under backlog drains, which bounds what early termination can save.
-- **Real log corpora**: compression ratio of `logs.parquet` and `batches.parquet`, the duplication cost of keeping both, text-search selectivity.
+- **Cross-Segment time overlap** under backlog drains: measured at its two extremes in [threshold run 01](../experiments/benchmarks/topk-run-01.md) (disjoint: one source read; total: everything read); the distribution under a real backlog drain at 64 MiB Segments is not.
+- **Real log corpora**: bytes measured in [storage layout run 01](../experiments/benchmarks/storage-layout-run-01.md) on 15,994 real lines drawn at random (6:1 body column, 5.4:1 raw copy, duplication 63 % of the Segment); query cost on real text (text-search selectivity, body decode) is not measured (ledger L-21).
 - **Cycles, instructions, cache misses**: no `perf` in this container; only wall and CPU time have been recorded.
 - **Cold-cache query cost**: every run so far had the page cache warm.
 - **ACK p99 while sealing** and while a query runs, on the two-CPU profile.
