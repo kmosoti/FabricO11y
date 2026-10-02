@@ -31,8 +31,8 @@ class Q:
         r = self.conn.getresponse(); return r.status, json.loads(r.read())
 
 def server(which, state, tail="off", topk="off"):
-    port = free_port(); tag = f"{which}-{tail}-{topk}"; conf = state / f"{tag}.conf"
-    conf.write_text(f"listen=127.0.0.1:{port}\ntls_cert={ROOT}/server.pem\ntls_key={ROOT}/server.key\nstate_dir={state}\nadmin_token_file={ROOT}/admin-token\njournal_bytes=4294967296\njournal_file_bytes={1024 * MIB}\n")
+    port = free_port(); tag = f"{which}-{tail}-{topk}-{os.environ.get('FABRIC_QUERY_PLAN', '')}"; conf = state / f"{tag}.conf"
+    conf.write_text(f"listen=127.0.0.1:{port}\ntls_cert={ROOT}/server.pem\ntls_key={ROOT}/server.key\nstate_dir={state}\nadmin_token_file={ROOT}/admin-token\njournal_bytes=4294967296\njournal_file_bytes={1024 * MIB}\n" + (f"query_plan={os.environ['FABRIC_QUERY_PLAN']}\n" if os.environ.get("FABRIC_QUERY_PLAN") else ""))
     env = dict(os.environ, FABRIC_PROTO_TAIL=tail, FABRIC_PROTO_TOPK=topk, FABRIC_PROTO_DISPOSITION="off"); env.pop("FABRIC_PROTO_BUDGET", None)
     logp = state / f"{tag}.log"; log = open(logp, "wb"); t0 = time.monotonic()
     p = subprocess.Popen(["taskset", "-c", "0-1", str(BIN / which / "fabric-server"), "serve", str(conf)], stdout=log, stderr=subprocess.STDOUT, env=env); kids.append(p)

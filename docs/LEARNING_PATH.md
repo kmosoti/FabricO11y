@@ -184,6 +184,20 @@ Try it:
 2. Run `cargo test -p fabric-properties --test observation`. The mutation property found [CX-FOB1-DUPLICATE-DICTIONARY](formal/counterexamples.json) on its first full run. Which level's contract was incomplete, and why did the block-level round-trip test not see it?
 3. Read [observation encoding run 01](experiments/benchmarks/observation-encoding-run-01.md). Why does the encoding save a fifth on real text and nothing on the synthetic workload, and what does that say about which workload to measure storage on?
 
+## Stage 13 — Read only what the answer needs
+
+**Status: part 1 of [ADR-0024](decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md) implemented as `query_plan=walk`; default `scan`.** A `limit 50` query over a 64 MiB real-text tail decoded all 149,585 entries to return 50 rows. The [optimality bounds](research/optimality-bounds.md) state what any algorithm must read for each shape, and the walk reads that plus one source.
+
+The Rust idea: **borrow the decision, own the effect**. The rule that makes stopping sound lives in the core as an executable definition (`fabric_core::query::spec::threshold_walk`, with its theorem as a property); the server's [query.rs](../crates/fabric-server/src/query.rs) and [tail.rs](../crates/fabric-server/src/tail.rs) apply it to files, holding a mutex only while the index is extended and a frame cache only for one query.
+
+The contract: the walk returns the scan's answer, page for page. The trade-off: a few MiB of index per process and a first query that builds it, against reading every source on every query.
+
+Try it:
+
+1. Read `Smallest::threshold` and the stop line `if best.threshold().is_some_and(|t| min > t.0)` in query.rs. Why is it `>` and not `>=`? The test `walk_and_scan_plans_answer_identically` needed a third Spindle writing at the same instants before it could tell the two apart.
+2. Run `cargo test -p fabric-server --test history walk`.
+3. Read [query walk run 01](experiments/benchmarks/query-walk-run-01.md). Which shapes did the walk not speed up, and which part of ADR-0024 addresses each?
+
 ## Working rule
 
 For each new component, answer these in plain language before coding:

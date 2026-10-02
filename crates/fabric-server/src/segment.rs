@@ -401,19 +401,27 @@ pub fn cleanup(state_dir: &Path) -> io::Result<()> {
 }
 
 /// Committed segments in label order.
+/// The labels of the committed Segment directories, in no particular order.
+pub fn labels(state_dir: &Path) -> io::Result<Vec<u64>> {
+    let dir = segments_dir(state_dir)?;
+    let mut labels = Vec::new();
+    for entry in fs::read_dir(&dir)? {
+        let name = entry?.file_name().to_string_lossy().into_owned();
+        if let Some(label) = name
+            .strip_prefix("seg-")
+            .and_then(|d| d.parse::<u64>().ok())
+        {
+            labels.push(label);
+        }
+    }
+    Ok(labels)
+}
+
 pub fn list(state_dir: &Path) -> io::Result<Vec<(u64, Manifest)>> {
     let dir = segments_dir(state_dir)?;
     let mut found = Vec::new();
-    for entry in fs::read_dir(&dir)? {
-        let entry = entry?;
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let Some(label) = name
-            .strip_prefix("seg-")
-            .and_then(|d| d.parse::<u64>().ok())
-        else {
-            continue;
-        };
-        match read_manifest(&entry.path()) {
+    for label in labels(state_dir)? {
+        match read_manifest(&dir.join(segment_name(label))) {
             Ok(manifest) => found.push((label, manifest)),
             // Deleted by retention between listing and reading.
             Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
@@ -482,6 +490,49 @@ fn prune(
         .collect()
 }
 
+/// Which table of a Segment a row-group bound describes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Table {
+    Logs,
+    Metrics,
+}
+
+/// Row groups as (index, min, max) of their key's time column.
+pub type GroupBounds = Vec<(usize, u64, u64)>;
+
+/// Every row group of `table` as (index, min, max) of its key's time column, from the
+/// file's statistics. A group without statistics is unbounded: `(0, u64::MAX)`, so a
+/// walk over these bounds never skips a group it cannot prove empty.
+pub fn row_group_bounds(
+    dir: &Path,
+    manifest: &Manifest,
+    table: Table,
+) -> io::Result<Vec<(usize, u64, u64)>> {
+    let (builder, column) = match table {
+        Table::Logs => (
+            open_table(dir, manifest, "logs.parquet", &logs_schema())?,
+            5,
+        ),
+        Table::Metrics => (
+            open_table(dir, manifest, "metrics.parquet", &metrics_schema())?,
+            9,
+        ),
+    };
+    Ok(builder
+        .metadata()
+        .row_groups()
+        .iter()
+        .enumerate()
+        .map(|(i, rg)| match rg.column(column).statistics() {
+            Some(Statistics::Int64(s)) => match (s.min_opt(), s.max_opt()) {
+                (Some(min), Some(max)) => (i, *min as u64, *max as u64),
+                _ => (i, 0, u64::MAX),
+            },
+            _ => (i, 0, u64::MAX),
+        })
+        .collect())
+}
+
 fn col<A: Array + 'static>(batch: &RecordBatch, index: usize) -> io::Result<&A> {
     batch
         .column(index)
@@ -503,6 +554,29 @@ pub fn scan_logs(
 ) -> io::Result<()> {
     let builder = open_table(dir, manifest, "logs.parquet", &logs_schema())?;
     let groups = prune(&builder, 5, from, to);
+    read_logs(builder, groups, from, to, &mut visit)
+}
+
+/// Scan only the given row groups of the logs table, rows in `[from, to)`.
+pub fn scan_logs_groups(
+    dir: &Path,
+    manifest: &Manifest,
+    groups: Vec<usize>,
+    from: u64,
+    to: u64,
+    mut visit: impl FnMut(LogRow),
+) -> io::Result<()> {
+    let builder = open_table(dir, manifest, "logs.parquet", &logs_schema())?;
+    read_logs(builder, groups, from, to, &mut visit)
+}
+
+fn read_logs(
+    builder: ParquetRecordBatchReaderBuilder<File>,
+    groups: Vec<usize>,
+    from: u64,
+    to: u64,
+    visit: &mut impl FnMut(LogRow),
+) -> io::Result<()> {
     for batch in builder.with_row_groups(groups).build().map_err(err)? {
         let batch = batch.map_err(err)?;
         let (g, n, id, s, i, t, b, a) = (
@@ -544,6 +618,29 @@ pub fn scan_metrics(
 ) -> io::Result<()> {
     let builder = open_table(dir, manifest, "metrics.parquet", &metrics_schema())?;
     let groups = prune(&builder, 9, from, to);
+    read_metrics(builder, groups, from, to, &mut visit)
+}
+
+/// Scan only the given row groups of the metrics table, points in `[from, to)`.
+pub fn scan_metrics_groups(
+    dir: &Path,
+    manifest: &Manifest,
+    groups: Vec<usize>,
+    from: u64,
+    to: u64,
+    mut visit: impl FnMut(MetricRow),
+) -> io::Result<()> {
+    let builder = open_table(dir, manifest, "metrics.parquet", &metrics_schema())?;
+    read_metrics(builder, groups, from, to, &mut visit)
+}
+
+fn read_metrics(
+    builder: ParquetRecordBatchReaderBuilder<File>,
+    groups: Vec<usize>,
+    from: u64,
+    to: u64,
+    visit: &mut impl FnMut(MetricRow),
+) -> io::Result<()> {
     for batch in builder.with_row_groups(groups).build().map_err(err)? {
         let batch = batch.map_err(err)?;
         let vi = col::<Int64Array>(&batch, 11)?;

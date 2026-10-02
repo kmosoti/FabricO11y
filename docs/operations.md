@@ -17,7 +17,7 @@ The package installs `fabric-node`, `fabric-server` and `fabricctl` in `/usr/bin
 1. Create `/etc/fabrico11y/server.conf` from the example. Provide a TLS certificate and key signed by a CA your nodes trust, and an admin token of at least 32 printable characters. Make the key and token `0640 root:fabricolly`.
 2. `sudo systemctl enable --now fabrico11y-server.service`.
 
-Keys: `listen`, `tls_cert`, `tls_key`, `state_dir`, `admin_token_file`, and optionally `journal_bytes` (default 20 GiB), `journal_file_bytes` (64 MiB; the unit sealed into a segment), `retention_s` (86,400) and `retention_bytes` (20 GiB). Retention keeps at most the age and at most the bytes given, deleting whole segments oldest first.
+Keys: `listen`, `tls_cert`, `tls_key`, `state_dir`, `admin_token_file`, and optionally `journal_bytes` (default 20 GiB), `journal_file_bytes` (64 MiB; the unit sealed into a segment), `retention_s` (86,400), `retention_bytes` (20 GiB) and `query_plan` (`scan`, or `walk` for the key-ordered walk of [ADR-0024](decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md), which answers identically and reads only the sources an answer needs). Retention keeps at most the age and at most the bytes given, deleting whole segments oldest first.
 
 ## Admin client
 

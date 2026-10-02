@@ -41,6 +41,8 @@ Terms mean one thing each across code, documents, diagrams and experiments. When
 | Adapter | An implementation of a port that performs effects: Linux, filesystem, HTTP/TLS, Parquet, clock. |
 | Adapter support | Infrastructure shared by adapters that is not domain semantics, such as the `FAB1` frame log and the envelope codec (`fabric-frame`). |
 | Composition root | A binary or library that wires adapters into use cases; today `fabric-server` and the root package, which still contain adapters. |
+| Query plan | How a history query reads its sources, set by the server key `query_plan`: `scan` decodes every tail entry and reads every row group the window admits; `walk` reads sources in order of the smallest key each can hold and stops at the heap's threshold ([ADR-0024](decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md)). Both return the same answer. |
+| Tail index | The walk plan's per-process record of every unsealed journal entry: group, frame position, node, receive time and the time bounds of its rows, without the rows. |
 | Layer gate | `cargo xtask check-layers` over [layers.json](architecture/layers.json). |
 | Purity gate | `cargo xtask check-core-purity` over [core-purity.json](architecture/core-purity.json). |
 

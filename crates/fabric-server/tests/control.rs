@@ -138,6 +138,7 @@ fn start(root: &Path) -> Running {
         journal_file_bytes: 64 * 1024 * 1024,
         retention_s: 86400,
         retention_bytes: 1 << 30,
+        query_plan: fabric_server::query::Plan::Scan,
     };
     let handle = axum_server::Handle::new();
     let serving = handle.clone();

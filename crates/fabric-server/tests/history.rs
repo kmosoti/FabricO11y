@@ -6,6 +6,7 @@ use fabric_o11y::spindle::sender::{Delivery, Sender, ServerTarget, agent};
 use fabric_o11y::spindle::spool::{Batch, Spool};
 use fabric_server::config::Config;
 use fabric_server::control::{Control, DesiredConfig};
+use fabric_server::query::{History, Plan, Query};
 use fabric_server::store::{CommitMode, Store};
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
@@ -136,6 +137,7 @@ fn config(root: &Path, file_bytes: u64, retention_bytes: u64) -> Config {
         journal_file_bytes: file_bytes,
         retention_s: 86400,
         retention_bytes,
+        query_plan: Plan::Scan,
     }
 }
 
@@ -320,9 +322,14 @@ fn query(root: &Path, addr: SocketAddr, body: &Value) -> (u16, Value) {
 }
 
 /// Every page of a query, following `next_page`.
-fn all_pages(root: &Path, addr: SocketAddr, mut body: Value) -> Vec<Value> {
+fn all_pages(root: &Path, addr: SocketAddr, body: Value) -> Vec<Value> {
+    pages_over_http(root, addr, body, usize::MAX)
+}
+
+/// The first `max` pages of a query over HTTP (every page when there are fewer).
+fn pages_over_http(root: &Path, addr: SocketAddr, mut body: Value, max: usize) -> Vec<Value> {
     let mut pages = Vec::new();
-    loop {
+    while pages.len() < max {
         let (status, page) = query(root, addr, &body);
         assert_eq!(status, 200, "{page}");
         let next = page["next_page"].clone();
@@ -332,6 +339,7 @@ fn all_pages(root: &Path, addr: SocketAddr, mut body: Value) -> Vec<Value> {
         }
         body["page"] = next;
     }
+    pages
 }
 
 fn b64(bytes: &[u8]) -> String {
@@ -533,6 +541,14 @@ fn crash_states_of_sealing_never_serve_a_record_twice() {
         .run(&all, *groups.keys().max().unwrap() + 1000)
         .unwrap();
     assert_eq!(live["rows"].as_array().unwrap().len(), 30 * 25);
+    let walk = History::with_plan(&cfg.state_dir, Plan::Walk);
+    let walked = walk
+        .run(&all, *groups.keys().max().unwrap() + 1000)
+        .unwrap();
+    assert_eq!(
+        walked, live,
+        "the walk plan must answer the live window as the scan does"
+    );
     // Restart: the leftover build is removed and the duplicate journal file
     // is reclaimed before serving.
     let server = start(cfg.clone());
@@ -628,6 +644,22 @@ fn a_corrupt_segment_makes_the_answer_incomplete() {
     assert_eq!(answer["complete"], false);
     assert_eq!(answer["unavailable"].as_array().unwrap().len(), 1);
     server.stop();
+    let all: Query = serde_json::from_value(
+        json!({"kind": "logs", "from_ns": 0, "to_ns": u64::MAX / 2, "limit": 10000}),
+    )
+    .unwrap();
+    let walked = History::with_plan(&cfg.state_dir, Plan::Walk)
+        .run(&all, 1 << 40)
+        .unwrap();
+    assert_eq!(
+        walked["complete"], false,
+        "the walk plan must report the corrupt Segment"
+    );
+    assert_eq!(walked["unavailable"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        walked,
+        History::new(&cfg.state_dir).run(&all, 1 << 40).unwrap()
+    );
 }
 
 /// What a query answer means, without the parts that legitimately differ
@@ -708,6 +740,177 @@ fn journal_and_segment_representations_answer_identically() {
         assert_eq!(
             before, after,
             "query {q} changed when its history was sealed"
+        );
+    }
+}
+
+/// The first `max` pages of a query answered in process by `history` at snapshot
+/// `newest` (every page when there are fewer).
+fn pages_in_process(history: &History, mut body: Value, newest: u64) -> Vec<Value> {
+    pages_upto(history, &mut body, newest, 60)
+}
+
+fn pages_upto(history: &History, body: &mut Value, newest: u64, max: usize) -> Vec<Value> {
+    let mut pages = Vec::new();
+    for _ in 0..max {
+        let query: Query = serde_json::from_value(body.clone()).unwrap();
+        let page = history.run(&query, newest).expect("query failed");
+        let next = page["next_page"].clone();
+        pages.push(page);
+        if next.is_null() {
+            return pages;
+        }
+        body["page"] = next;
+    }
+    pages
+}
+
+/// Seeded queries over the delivered range: every kind, windows from empty to
+/// everything, limits from 1 to 1,000, nodes present and absent, text present,
+/// absent and spanning a word boundary.
+fn seeded_queries(n: usize, seed: u64) -> Vec<Value> {
+    let mut state = seed;
+    let mut next = move |m: u64| {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (state >> 33) % m
+    };
+    let nodes = [None, None, Some("node-a"), Some("node-b"), Some("node-z")];
+    let texts = [
+        None,
+        None,
+        Some("needle"),
+        Some("hay"),
+        Some("zq9"),
+        Some("+1 hay"),
+    ];
+    let limits = [1, 3, 10, 37, 1000];
+    (0..n)
+        .map(|_| {
+            let from = 999_000 + next(6_000);
+            let to = from + 1 + [next(50), next(500), next(5_000), 1 << 40][next(4) as usize];
+            let mut q = match next(4) {
+                0 | 1 => json!({"kind": "logs", "from_ns": from, "to_ns": to, "limit": limits[next(5) as usize]}),
+                2 => json!({"kind": "metrics", "name": "system.network.receive.bytes", "from_ns": from, "to_ns": to, "limit": limits[next(5) as usize]}),
+                _ => json!({"kind": "rate", "name": "system.network.receive.bytes", "from_ns": from, "to_ns": to}),
+            };
+            if let Some(node) = nodes[next(5) as usize] {
+                q["node"] = json!(node);
+            }
+            if q["kind"] == "logs"
+                && let Some(text) = texts[next(6) as usize]
+            {
+                q["contains"] = json!(text);
+            }
+            q
+        })
+        .collect()
+}
+
+/// ADR-0024, part 1: the walk plan returns, page for page, the scan plan's answer.
+/// Three Spindles write lines at identical times, so every source overlaps another
+/// and ties on time are broken by node, sequence and index; part of the history is
+/// sealed into Segments and part stays in the journal tail. The walk's own answers
+/// are also graded by the independent oracle.
+#[test]
+fn walk_and_scan_plans_answer_identically() {
+    let scratch = Scratch::new();
+    make_certs(&scratch.0);
+    let tokens = enroll(&scratch, &["node-a", "node-b", "node-c"]);
+    let cfg = config(&scratch.0, 16 * 1024, 1 << 30);
+    let server = start(cfg.clone());
+    let a = sender(&scratch.0, server.addr, &tokens[0]);
+    let b = sender(&scratch.0, server.addr, &tokens[1]);
+    let c = sender(&scratch.0, server.addr, &tokens[2]);
+    deliver(&scratch.path("spool-a"), &a, 0, 40);
+    deliver(&scratch.path("spool-b"), &b, 0, 40);
+    deliver(&scratch.path("spool-c"), &c, 0, 40);
+    wait_for_segments(&cfg.state_dir, 2);
+    deliver(&scratch.path("spool-a"), &a, 40, 4);
+    deliver(&scratch.path("spool-b"), &b, 40, 2);
+    server.stop();
+    assert!(fabric_server::segment::list(&cfg.state_dir).unwrap().len() >= 2);
+
+    let scan = History::new(&cfg.state_dir);
+    let walk = History::with_plan(&cfg.state_dir, Plan::Walk);
+    let mut queries = seeded_queries(150, 7);
+    // Three Spindles write at the same instants, so a heap of one or two rows fills
+    // with keys whose time equals the next source's lowest bound: the case in which a
+    // stop at `bound >= threshold` instead of `bound > threshold` drops a row.
+    for k in (0..44).step_by(5) {
+        let from = 1_000_000 + k * 100;
+        for limit in [1, 2] {
+            queries.push(
+                json!({"kind": "logs", "from_ns": from, "to_ns": from + 1000, "limit": limit}),
+            );
+            queries.push(json!({"kind": "metrics", "name": "system.network.receive.bytes", "from_ns": from, "to_ns": 1u64 << 40, "limit": limit}));
+        }
+    }
+    let mut rows = 0;
+    for q in &queries {
+        let expected = pages_in_process(&scan, q.clone(), 1 << 40);
+        let got = pages_in_process(&walk, q.clone(), 1 << 40);
+        assert_eq!(got, expected, "query {q}");
+        rows += expected
+            .iter()
+            .map(|p| p["rows"].as_array().map_or(0, |r| r.len()))
+            .sum::<usize>();
+    }
+    assert!(rows > 2_000, "the seeded queries must return rows ({rows})");
+    // One whole history drained in pages of 97, every page compared.
+    let drain = json!({"kind": "logs", "from_ns": 0, "to_ns": 1u64 << 40, "limit": 97});
+    let expected = pages_upto(&scan, &mut drain.clone(), 1 << 40, 10_000);
+    assert!(expected.last().unwrap()["next_page"].is_null() && expected.len() > 20);
+    assert_eq!(
+        pages_upto(&walk, &mut drain.clone(), 1 << 40, 10_000),
+        expected
+    );
+    for q in queries.iter().filter(|q| q["kind"] != "rate").take(12) {
+        let pages = pages_upto(&walk, &mut q.clone(), 1 << 40, 10_000);
+        let verdict = oracle(&scratch, &cfg, q, &pages, None);
+        assert_eq!(verdict["passed"], true, "query {q}: {verdict}");
+    }
+}
+
+/// The walk plan in a running server: its tail index grows between queries and
+/// loses entries to sealing, and its answers stay those of the scan plan.
+#[test]
+fn a_walking_server_keeps_its_tail_index_exact_while_sealing() {
+    let scratch = Scratch::new();
+    make_certs(&scratch.0);
+    let tokens = enroll(&scratch, &["node-a", "node-b"]);
+    let mut cfg = config(&scratch.0, 16 * 1024, 1 << 30);
+    cfg.query_plan = Plan::Walk;
+    let server = start(cfg.clone());
+    let a = sender(&scratch.0, server.addr, &tokens[0]);
+    let b = sender(&scratch.0, server.addr, &tokens[1]);
+    let probe = json!({"kind": "logs", "from_ns": 0, "to_ns": 1u64 << 40, "limit": 1000});
+    for round in 0..5 {
+        deliver(&scratch.path("spool-a"), &a, round * 8, 8);
+        deliver(&scratch.path("spool-b"), &b, round * 8, 8);
+        let pages = all_pages(&scratch.0, server.addr, probe.clone());
+        let total: usize = pages
+            .iter()
+            .map(|p| p["rows"].as_array().unwrap().len())
+            .sum();
+        assert_eq!(total as u64, 2 * (round + 1) * 8 * 25, "round {round}");
+    }
+    wait_for_segments(&cfg.state_dir, 2);
+    let queries = seeded_queries(60, 11);
+    let answers: Vec<Vec<Value>> = queries
+        .iter()
+        .map(|q| pages_over_http(&scratch.0, server.addr, q.clone(), 60))
+        .collect();
+    server.stop();
+    let scan = History::new(&cfg.state_dir);
+    for (q, pages) in queries.iter().zip(&answers) {
+        let snapshot = pages[0]["snapshot"].as_str().unwrap();
+        let newest: u64 = snapshot.rsplit('-').next().unwrap().parse().unwrap();
+        assert_eq!(
+            &pages_in_process(&scan, q.clone(), newest),
+            pages,
+            "query {q}"
         );
     }
 }
