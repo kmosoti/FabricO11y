@@ -70,7 +70,7 @@ Installation acceptance must exercise sysusers dry run and temporary root, repea
 
 ## Non-goals of the first profile
 
-A general OTLP receiver, traces, a UI, SQLite, `rcgen`, an async runtime in the Spindle, inotify watchers, plugin boundaries, dynamic users, polkit helpers, and any index beyond Parquet row-group statistics unless a registered gate fails. Every feature or configuration value must have a current consumer and a test.
+A general OTLP receiver, traces, a UI, SQLite, `rcgen`, an async runtime in the Spindle, inotify watchers, plugin boundaries, dynamic users, polkit helpers, and any index beyond Parquet row-group statistics and the per-row-group trigram filter of [ADR-0024](decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md) (part 2), unless a registered gate fails. The trigram filter is an optional index under the rule above: a missing or corrupt filter triggers an exact scan and never changes an answer. Every feature or configuration value must have a current consumer and a test.
 
 ## Changing this contract
 

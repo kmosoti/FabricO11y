@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 2026-09-28 in the history-qualification milestone, as plan item 4.6 asked. The format was implemented before this record was written; the record captures it, with the measurement that tested it. It changes no bytes.
+Accepted on 2026-09-28 in the history-qualification milestone, as plan item 4.6 asked. The format was implemented before this record was written; the record captures it, with the measurement that tested it. It changes no bytes. Amended on 2026-10-02 by [ADR-0024](ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md), part 2: a Segment may hold an optional fifth file, `text_filter.bin` (one trigram bloom per logs row group), listed in the version-1 manifest's `files` like the others; the sentence "There is no token index" below no longer holds. Version-1 readers that do not know the file ignore it, and a reader that uses it falls back to the exact scan when it is missing or its digest differs.
 
 ## Context
 
