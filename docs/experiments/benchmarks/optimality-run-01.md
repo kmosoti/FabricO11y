@@ -1,6 +1,6 @@
 # Optimality run 01: stream order, block locality, one copy against the projections, the row-group text filter
 
-Status: **Exploratory.** Seven measurements made on 2026-10-02 for the [optimality bounds](../../research/optimality-bounds.md): hypothesis B3 of the [suite](../../research/hypotheses.md) (a real stream against the random draw), the block locality of tokens in real streams, the text-search half of hypothesis D3 (one canonical copy against the Parquet projections), the walk's no-stop overhead (A4), a trigram filter per row group (L-25, hypothesis C5) the whole-tail decode of a canonical block tail (A3, the fixed-cost half) and a per-process cache of Segment metadata (the empty-window gap). No protocol was registered; nothing here is **Measured** in the [evidence-state](../../QUALIFICATION.md#evidence-states) sense. Scripts: [locality.py](data/optimality/locality.py.txt); the `fobscan` subcommand of the research generator ([tools/research](../../../tools/research/README.md)).
+Status: **Exploratory.** Nine measurements made on 2026-10-02 for the [optimality bounds](../../research/optimality-bounds.md): hypothesis B3 of the [suite](../../research/hypotheses.md) (a real stream against the random draw), the block locality of tokens in real streams, the text-search half of hypothesis D3 (one canonical copy against the Parquet projections), the walk's no-stop overhead (A4), a trigram filter per row group (L-25, hypothesis C5) the whole-tail decode of a canonical block tail (A3, the fixed-cost half) a per-process cache of Segment metadata (the empty-window gap), the canonical block tail through the server (A3) and the node-presence set settled from the data (L-07). No protocol was registered; nothing here is **Measured** in the [evidence-state](../../QUALIFICATION.md#evidence-states) sense. Scripts: [locality.py](data/optimality/locality.py.txt); the `fobscan` subcommand of the research generator ([tools/research](../../../tools/research/README.md)).
 
 ## B3: a real stream against the random draw
 
@@ -145,10 +145,56 @@ Differentials: 0 mismatches for the walk and 0 for the walk with the cache on al
 
 **Verdict.** The gap was smaller than the bounds page assumed, and most of it was not the metadata. The cache takes the empty-window shape from 6.6 to 10.0 ms (stock) to 4.4 to 5.9 ms and the short-window shapes down by 1 to 4 ms on the real-text states, but what remains is about 4 ms whatever the shape: the cheapest shape that reads data (`logs_last_10s` on the overlapping state) costs 4.2 ms with the cache. So the empty-window answer now sits at the per-request floor of this server (the journal listing, TLS, the JSON answer), not at Ω(S); a sorted table of Segment bounds would save what binary search saves over a 64-entry in-memory scan, which is nothing measurable at this S. At the product's 320 Segments of 64 MiB the uncached reads would be five times larger (about 25 to 40 ms by the 0.08 ms per manifest and the footer reads), which is where the cache matters. On the overlapping state the walk does not help any wide shape, as its floor says (every Segment can hold the first keys), and the spread between repeated configurations there (up to 25 % on the text shapes) is the noise of this container, not an effect of the cache, which removes reads and adds none.
 
+## A3 through the server: the real tail answered from canonical blocks
+
+The walk prototype with `FABRIC_PROTO_TAIL_BLOCKS=on`: every tail frame's log records converted once to FOB1, n consecutive frames of a file per Zstd-compressed block (`FABRIC_PROTO_TAIL_BLOCK_FRAMES=n`), each block a source of the walk bounded by its selected entries' keys, read through one reused decompressor and `decode_view`, with a row materialised only after the window, node, text and threshold checks on borrowed fields. The conversion runs on the first query and is timed apart (it stands in for a server that writes blocks on receipt; 0.6 to 2.0 s for the 619,170 records, about 1 to 3 µs per record including the OTLP decode the receipt path does anyway). The real-text 64 MiB tail of run L-21 (149,585 entries in 29,917 frames), the fourteen L-21 shapes, eight repetitions, the median, and a 200-query random differential with pages against stock for every configuration ([a3-sweep.json](data/optimality/a3-sweep.json), [a3-filter.json](data/optimality/a3-filter.json), [a3.py](data/optimality/a3.py.txt)); in ms:
+
+| Configuration | `empty_past` | logs `limit 50` | text, 0.1 % | text, no match | random set (s) | peak RSS (MiB) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| stock | 608 | 628 | 616 | 609 | 268.39 | 279 |
+| walk over the OTLP tail with the key index | 13 | 38 | 214 | 580 | 12.37 | 75 |
+| blocks of 1 frames | 11 | 48 | 152 | 335 | 14.14 | 152 |
+| blocks of 8 frames | 13 | 46 | 104 | 215 | 13.09 | 132 |
+| blocks of 32 frames | 11 | 43 | 96 | 184 | 14.15 | 131 |
+| blocks of 128 frames | 12 | 47 | 99 | 173 | 13.37 | 131 |
+| blocks of 512 frames | 12 | 49 | 85 | 161 | 14.65 | 127 |
+
+| Configuration (second run) | `empty_past` | logs `limit 50` | text, 0.1 % | text, no match | random set (s) | peak RSS (MiB) |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| stock | 608 | 626 | 643 | 614 | 265.65 | 281 |
+| walk | 12 | 39 | 219 | 567 | 12.47 | 79 |
+| blocks of 32 frames | 16 | 48 | 98 | 193 | 13.48 | 138 |
+| blocks of 128 frames | 13 | 50 | 95 | 173 | 13.67 | 132 |
+| blocks of 32 frames + trigram filter | 12 | 66 | 68 | 56 | 14.13 | 182 |
+| blocks of 128 frames + trigram filter | 13 | 55 | 82 | 48 | 14.19 | 132 |
+
+Differentials: 0 mismatches for every configuration of both runs (2,200 queries with pages against stock).
+
+**Verdict.** Three findings.
+
+1. **The block's grain is the whole effect, and the cost model predicts it.** One block per journal frame (about 21 records) was slower than the OTLP walk in a first build that created a Zstd context per block (853 ms for the no-match search; 28.5 µs per block); with one reused decompressor it is 335 ms, and the sweep falls as the per-block fixed cost is amortised: 215 ms at 8 frames, 184 at 32, 173 at 128, 161 at 512. Fitting cost = blocks × c_block + records × c_rec to the no-match column gives c_block ≈ 6 µs and a floor of about 160 ms, which is the decode pass of the fixed-cost half (140 to 146 ms) plus the walk's per-query bookkeeping. The grain that balances the two terms is c_block / c_rec ≈ 6 µs / 0.13 µs ≈ 50 records per block; above about 2,600 records (128 frames) the remaining gain is under 10 % (173 to 161 ms at 512 frames). The selective shapes pay for coarse blocks in overshoot instead: `limit 10,000` rises from 126 ms at 128 frames to 149 at 512, and the node shape from 15 to 22 ms.
+2. **A3 as registered is not met; H0 as worded is rejected.** Under blocks alone the empty-window shape is 0.02 of stock and `limit 50` 0.08, but the no-match search is 0.26 to 0.28 (161 to 173 against 609 to 614 ms), above the one fifth the statistic requires. The block tail is 3.5 to 3.8× faster than stock on the no-match search and 2.2 to 2.5× faster than the walk on the rare token, so H0's wording (within 2× of the OTLP tail) does not hold either. The registered decision rule decides: H0 is not rejected.
+3. **With L-25's filter per block, every A3 shape passes.** A trigram bloom built with each block rejects every block for an absent token: the no-match search falls to 48 to 56 ms (0.08 to 0.09 of stock) with no record decoded, and the rare token to 68 to 82 ms. That is two mechanisms together (A3 and C5), not A3 as registered, and it inherits C5's product-contract question; it is recorded as the configuration that reaches every floor of the tail shapes measured here.
+
+**Against prior art.** Loki's chunks and Elasticsearch's stored fields are blocks of compressed raw lines decoded whole; the measurement says the decoding format, not the blocking, set the stock tail's cost (4.7 µs per entry against 0.13 µs per record plus 6 µs per block), and the block's grain is a computable trade-off between a per-block constant and the overshoot of selective shapes, not a tuning knob. ClickHouse's granule (8,192 rows) and Parquet's row group sit on the same curve far to the coarse side; the tail's optimum is far finer because its sources must also serve `limit k` early stops.
+
+## L-07: a node-presence set per row group, settled from the data
+
+A node-presence set lets a node query skip a row group that does not hold the node. Time-sorted rows from N nodes emitting at comparable rates put a given node in a group of g rows with probability 1 − (1 − 1/N)^g ≈ 1 − e^(−g/N), so the fraction of groups a presence set can skip for one node is about e^(−g/N). Measured on the two real-text 64-Segment states merged into one time-sorted table of 300,140 and 300,020 lines from 100 nodes, the size of one 64 MiB real-text journal file ([l07-nodes.json](data/optimality/l07-nodes.json)):
+
+| Rows per group | distinct nodes per group, stream order (min / mean / max) | random draw | predicted e^(−g/N) skippable |
+| ---: | --- | --- | ---: |
+| 1,024 | 54 / 99.8 / 100 | 100 / 100 / 100 | 0.004 % |
+| 4,096 | 100 / 100 / 100 | 100 / 100 / 100 | 0 |
+| 8,192 | 100 / 100 / 100 | 100 / 100 / 100 | 0 |
+
+**Verdict.** At this fleet size the presence set would skip nothing at the product's grain, so L-07's node half is worth nothing here; the stream's bursts show only at 1,024 rows. The formula says where that changes: at N = 10,000 nodes a node is absent from 44 % of 8,192-row groups and from 90 % of 1,024-row groups (D4), so the set pays at fleet scale and with finer groups, at N bits per group (1.2 KiB at 10,000 nodes, under 0.2 bytes per row). The time-bounds half of L-07 is unaffected.
+
 ## Limits
 
 - The samples are 2,000 lines each; stream order within a sample is real, the mix across samples is not, and the locality block is 100 lines.
 - The FOB1 conversion dropped point values; the time comparison stands for lines, the byte comparison is given both ways.
 - The Parquet scan materialises every row (`LogRow` with its allocations), as the stock path does; a projection reader that searched the body column without materialising would be faster than 117 ms, and so would a block search that stopped decoding at the body. Both sides have the same headroom.
 - The L-25 states hold one row group per Segment; the filter's skip fractions for present tokens are those of 4,690-line blocks and would differ at 8,192 rows (the product's) or at the finer groups of D4. The filter is built per query process and held in memory; a product filter would be written at seal time and read from the manifest, which this run does not cost.
+- The block tail is built in memory from the OTLP journal on the first query; a server that wrote blocks on receipt (the ADR-0023 wire decision) would also pay the write and the durability of the block, which no run here costs. The L-07 table assumes comparable per-node rates; a skewed fleet changes the exponent per node.
 - One host, warm cache. The stock figures in the A4 table are about 15 % below those of run L-21 on the same state (570 to 614 against 656 to 749 ms), within the variance seen between runs on this container.

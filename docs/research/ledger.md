@@ -204,7 +204,7 @@ The [hypothesis suite](hypotheses.md) states the next experiments with their nul
 
 ### L-07. Manifest facts for sound two-sided skipping
 
-**State:** DERIVED from L-02's traps.
+**State:** DERIVED from L-02's traps; the node half settled from the data in [optimality run 01](../experiments/benchmarks/optimality-run-01.md): with time-sorted rows a presence set can skip a fraction e^(−g/N) of g-row groups for one of N nodes, measured as nothing at 100 nodes and 4,096 or 8,192 rows (every group holds every node), predicted 44 % at 10,000 nodes and 8,192 rows. It pays at fleet scale, not at the fixtures' size.
 
 **Mechanism.** Add to the manifest, per table, the minimum and maximum of the query key's leading component (observed time for logs, point time for metrics, receive time for gaps), and a per-node presence set that covers gap rows. Then a Segment can be skipped on both sides of a window and by node for every table, each skip justified by a fact about that table. Block-max indexes (Ding and Suel 2011) are the model: bounds per block, per column that is filtered.
 

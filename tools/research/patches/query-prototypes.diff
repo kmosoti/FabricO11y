@@ -1,5 +1,5 @@
 diff --git a/crates/fabric-server/src/query.rs b/crates/fabric-server/src/query.rs
-index 0519f99..8b6f1eb 100644
+index 0519f99..f5b43d6 100644
 --- a/crates/fabric-server/src/query.rs
 +++ b/crates/fabric-server/src/query.rs
 @@ -18,7 +18,8 @@ use fabric_frame::frame::read_frame;
@@ -164,7 +164,7 @@ index 0519f99..8b6f1eb 100644
  }
  
  fn number_json(value: Number) -> Value {
-@@ -138,8 +284,36 @@ fn metric_json(r: &MetricRow) -> Value {
+@@ -138,8 +284,77 @@ fn metric_json(r: &MetricRow) -> Value {
      row
  }
  
@@ -192,16 +192,57 @@ index 0519f99..8b6f1eb 100644
 +    })
 +}
 +
++/// Research prototype (A3): one journal frame's log records as a FOB1 block.
++struct TailBlock {
++    /// L-25's trigram bloom over the block's bodies.
++    filter: Vec<u64>,
++    zst: Vec<u8>,
++    raw_len: usize,
++    /// Per entry: ((frame offset, entry index), first record, node label, metric points, group).
++    entries: Vec<((u64, u32), usize, String, usize, u64)>,
++}
++
++fn tail_block_build(groups: &[(u64, Group)]) -> io::Result<TailBlock> {
++    use fabric_observation as fo;
++    let mut recs = Vec::new();
++    let mut entries = Vec::new();
++    let mut filter = vec![0u64; TEXT_FILTER_BITS / 64];
++    for (offset, group) in groups {
++    for (i, entry) in group.entries.iter().enumerate() {
++        let mut rows = Rows::default();
++        extract(group.group_sequence, entry, &mut rows)?;
++        entries.push(((*offset, i as u32), recs.len(), entry.label.clone(), rows.metrics.len(), group.group_sequence));
++        for r in rows.logs {
++            text_filter_add(&mut filter, r.body.as_bytes());
++            recs.push(fo::Observation {
++                strand: fo::Strand { node_id: r.node_id, generation: 0 },
++                sequence: r.sequence,
++                index: r.index,
++                time_ns: r.observed_ns,
++                locators: None,
++                attributes: r.attributes.into_iter().map(|(k, v)| (k, fo::Value::Str(v))).collect(),
++                signal: fo::Signal::Log { severity: 0, event: String::new(), body: r.body },
++            });
++        }
++    }
++    }
++    let raw = fo::encode(&recs).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
++    Ok(TailBlock { filter, zst: zstd::bulk::compress(&raw, 3)?, raw_len: raw.len(), entries })
++}
++
  pub struct History {
      state_dir: PathBuf,
 +    tail: Mutex<TailIndex>,
 +    /// Research prototype (L-25): per-row-group trigram bloom filters, keyed by
 +    /// (segment label, row group), built lazily on first use.
 +    text_filters: Mutex<HashMap<(u64, usize), Vec<u64>>>,
++    /// Research prototype (A3): each tail frame as one Zstd-compressed FOB1 block of its
++    /// log records, built once (standing in for a server that writes blocks on receipt).
++    tail_blocks: Mutex<HashMap<(u64, u64), std::sync::Arc<TailBlock>>>,
  }
  
  /// Keeps the `capacity` smallest rows by key.
-@@ -171,6 +345,10 @@ impl<T> Smallest<T> {
+@@ -171,6 +386,10 @@ impl<T> Smallest<T> {
          self.rows.insert(self.next, row);
          self.next += 1;
      }
@@ -212,16 +253,35 @@ index 0519f99..8b6f1eb 100644
      fn sorted(self) -> Vec<(Key, T)> {
          let mut keyed: Vec<(Key, usize)> = self.heap.into_vec();
          keyed.sort();
-@@ -186,6 +364,8 @@ impl History {
+@@ -186,7 +405,27 @@ impl History {
      pub fn new(state_dir: &Path) -> Self {
          Self {
              state_dir: state_dir.to_path_buf(),
 +            tail: Mutex::new(TailIndex::default()),
 +            text_filters: Mutex::new(HashMap::new()),
++            tail_blocks: Mutex::new(HashMap::new()),
++        }
++    }
++
++    /// A3 prototype: the offset of every frame of each tail file, cached per (file, length).
++    fn frame_ordinals(&self, sources: &Sources) -> io::Result<HashMap<u64, Vec<u64>>> {
++        static CACHE: Mutex<Option<HashMap<(u64, u64), Vec<u64>>>> = Mutex::new(None);
++        let mut out = HashMap::new();
++        let mut cache = CACHE.lock().unwrap_or_else(|e| e.into_inner());
++        let cache = cache.get_or_insert_with(Default::default);
++        for (first, path) in &sources.tail_paths {
++            let file = match File::open(path) { Ok(f) => f, Err(e) if e.kind() == io::ErrorKind::NotFound => return Err(interrupted("journal moved")), Err(e) => return Err(e) };
++            let len = file.metadata()?.len();
++            if let Some(v) = cache.get(&(*first, len)) { out.insert(*first, v.clone()); continue; }
++            let mut offs = Vec::new(); let mut at = 0;
++            while at < len { let Some((_, next)) = read_frame(&file, at, len, MAX_GROUP_PAYLOAD)? else { break }; offs.push(at); at = next; }
++            cache.insert((*first, len), offs.clone()); out.insert(*first, offs);
          }
++        Ok(out)
      }
  
-@@ -253,6 +433,134 @@ impl History {
+     /// Load the segments and journal groups for `[oldest, newest]`.
+@@ -253,6 +492,134 @@ impl History {
              segments,
              journal,
              oldest_group,
@@ -356,7 +416,7 @@ index 0519f99..8b6f1eb 100644
          })
      }
  
-@@ -331,7 +639,11 @@ impl History {
+@@ -331,7 +698,11 @@ impl History {
                  }
              }
          };
@@ -369,7 +429,7 @@ index 0519f99..8b6f1eb 100644
          let oldest = floor.unwrap_or(sources.oldest_group);
          if floor.is_some_and(|f| !kernel::page_snapshot_retained(f, sources.oldest_group)) {
              return Err(QueryError::Gone);
-@@ -341,6 +653,19 @@ impl History {
+@@ -341,6 +712,19 @@ impl History {
              newest_group: newest,
          };
          let node_ok = |n: &str| node.as_deref().is_none_or(|want| want == n);
@@ -389,7 +449,7 @@ index 0519f99..8b6f1eb 100644
  
          let mut unavailable = Vec::new();
          let mut freshness: BTreeMap<String, u64> = BTreeMap::new();
-@@ -364,6 +689,15 @@ impl History {
+@@ -364,6 +748,15 @@ impl History {
              let f = freshness.entry(r.node.clone()).or_default();
              *f = (*f).max(r.time_ns);
          }
@@ -405,7 +465,7 @@ index 0519f99..8b6f1eb 100644
          gaps.extend(journal_rows.gaps.iter().cloned());
          for (dir, manifest) in &sources.segments {
              received = (
-@@ -374,6 +708,9 @@ impl History {
+@@ -374,6 +767,9 @@ impl History {
                  let f = freshness.entry(n.clone()).or_default();
                  *f = (*f).max(*t);
              }
@@ -415,7 +475,7 @@ index 0519f99..8b6f1eb 100644
              if let Err(e) = segment::scan_gaps(dir, manifest, |g| gaps.push(g)) {
                  if !dir.exists() {
                      return Err(
-@@ -407,7 +744,110 @@ impl History {
+@@ -407,7 +803,182 @@ impl History {
                          best.offer(key(r), r.clone());
                      }
                  }
@@ -425,9 +485,36 @@ index 0519f99..8b6f1eb 100644
 +                    // Research prototype: every source in order of its lowest possible
 +                    // key, stopping once the full heap's largest key is below them all.
 +                    let mut items: Vec<(u64, u64, usize, usize)> = Vec::new(); // (min, max, kind, idx): kind 0 tail entry, 1 row group
++                    // A3: with FABRIC_PROTO_TAIL_BLOCKS=on every tail frame is one source (kind 2)
++                    // bounded by its selected entries, answered from its FOB1 block.
++                    let tail_blocks = std::env::var("FABRIC_PROTO_TAIL_BLOCKS").as_deref() == Ok("on");
++                    // A block is n consecutive frames of one journal file (FABRIC_PROTO_TAIL_BLOCK_FRAMES,
++                    // default 1); its key is (file, ordinal of its first frame / n) over every frame
++                    // of the file, so blocks are stable across queries.
++                    let per: u64 = std::env::var("FABRIC_PROTO_TAIL_BLOCK_FRAMES").ok().and_then(|v| v.parse().ok()).filter(|n| *n >= 1).unwrap_or(1);
++                    let mut frame_list: Vec<((u64, u64), HashSet<(u64, u32)>)> = Vec::new();
++                    let ordinals = if tail_blocks { self.frame_ordinals(&sources)? } else { HashMap::new() };
++                    if tail_blocks {
++                        let mut at: HashMap<(u64, u64), usize> = HashMap::new();
++                        let mut fb: Vec<(u64, u64)> = Vec::new();
++                        for e in sources.tail_lazy.iter() {
++                            if e.log_min == u64::MAX { continue; }
++                            let ord = ordinals[&e.file_first].binary_search(&e.offset).map_err(|_| interrupted("frame moved"))? as u64;
++                            let k = (e.file_first, ord / per);
++                            let j = *at.entry(k).or_insert_with(|| { frame_list.push((k, HashSet::new())); fb.push((u64::MAX, 0)); frame_list.len() - 1 });
++                            frame_list[j].1.insert((e.offset, e.index));
++                            fb[j] = (fb[j].0.min(e.log_min), fb[j].1.max(e.log_max));
++                        }
++                        for (j, (mn, mx)) in fb.iter().enumerate() { items.push((*mn, *mx, 2, j)); }
++                    } else {
 +                    for (i, e) in sources.tail_lazy.iter().enumerate() {
 +                        if e.log_min != u64::MAX { items.push((e.log_min, e.log_max, 0, i)); }
 +                    }
++                    }
++                    let (mut blocks_built, mut built_ms) = (0usize, 0f64);
++                    let mut dctx = zstd::bulk::Decompressor::new()?;
++                    let text_filter_blocks = std::env::var("FABRIC_PROTO_TEXT_FILTER").as_deref() == Ok("on");
++                    let mut blocks_filtered = 0usize;
 +                    let mut group_of: Vec<(usize, usize)> = Vec::new();
 +                    for (si, (dir, manifest)) in sources.segments.iter().enumerate() {
 +                        if skip_rows(manifest) { continue; }
@@ -487,7 +574,51 @@ index 0519f99..8b6f1eb 100644
 +                        if !file_order && budget.is_some_and(|b| examined >= b) && after.as_ref().is_none_or(|a| *mn > a.0.saturating_add(1)) && last_mn.is_none_or(|l| *mn > l) { boundary = Some(*mn); break; }
 +                        last_mn = Some(*mn);
 +                        processed += 1;
-+                        if *kind == 0 {
++                        if *kind == 2 {
++                            let (fkey, wanted) = &frame_list[*idx];
++                            let block = {
++                                let mut cache = self.tail_blocks.lock().unwrap_or_else(|e| e.into_inner());
++                                if let Some(b) = cache.get(fkey) { b.clone() } else {
++                                    let t0 = std::time::Instant::now();
++                                    let path = sources.tail_paths.get(&fkey.0).ok_or_else(|| interrupted("journal moved"))?;
++                                    let file = match File::open(path) { Ok(f) => f, Err(err) if err.kind() == io::ErrorKind::NotFound => return Err(interrupted("journal moved").into()), Err(err) => return Err(err.into()) };
++                                    let len = file.metadata()?.len();
++                                    let ords = &ordinals[&fkey.0];
++                                    let lo = (fkey.1 * per) as usize; let hi = (lo + per as usize).min(ords.len());
++                                    let mut gs = Vec::new();
++                                    for &off in &ords[lo..hi] {
++                                        let Some((payload, _)) = read_frame(&file, off, len, MAX_GROUP_PAYLOAD)? else { break };
++                                        gs.push((off, Group::decode(payload.as_slice()).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))?));
++                                    }
++                                    let b = std::sync::Arc::new(tail_block_build(&gs)?);
++                                    blocks_built += 1; built_ms += t0.elapsed().as_secs_f64() * 1e3;
++                                    cache.insert(*fkey, b.clone()); b
++                                }
++                            };
++                            if text_filter_blocks && contains.as_deref().is_some_and(|c| c.len() >= 3 && !text_filter_may_contain(&block.filter, c.as_bytes())) { blocks_filtered += 1; continue; }
++                            let raw = dctx.decompress(&block.zst, block.raw_len)?;
++                            let view = fabric_observation::decode_view(&raw).map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err.to_string()))?;
++                            let mut ei = 0usize;
++                            for (ri, o) in view.iter().enumerate() {
++                                while ei + 1 < block.entries.len() && block.entries[ei + 1].1 <= ri { ei += 1; }
++                                let (eidx, _, label, _, group) = &block.entries[ei];
++                                let group = *group;
++                                if !wanted.contains(eidx) { continue; }
++                                examined += 1;
++                                let fabric_observation::SignalRef::Log { body, .. } = o.signal else { continue };
++                                if !window.contains(o.time_ns) || !node_ok(label) || !snapshot.contains(group) { continue; }
++                                if contains.as_deref().is_some_and(|c| !body.contains(c)) { continue; }
++                                let k = (o.time_ns, o.strand.node_id, o.sequence, o.index);
++                                if !kernel::after_page(&k, after.as_ref()) { continue; }
++                                if best.threshold().is_some_and(|t| k >= t) { continue; }
++                                let r = LogRow {
++                                    group, node: label.clone(), node_id: o.strand.node_id, sequence: o.sequence, index: o.index, observed_ns: o.time_ns, body: body.to_owned(),
++                                    attributes: o.attributes.iter().filter_map(|(k, v)| match v { fabric_observation::ValueRef::Str(s) => Some(((*k).to_owned(), (*s).to_owned())), _ => None }).collect(),
++                                };
++                                if keep(&r) { best.offer(k, r); }
++                            }
++                            for (eidx, _, _, metrics, _) in &block.entries { if wanted.contains(eidx) { examined += metrics; } }
++                        } else if *kind == 0 {
 +                            let e = sources.tail_lazy[*idx];
 +                            if !frames.contains_key(&(e.file_first, e.offset)) {
 +                                if frames.len() >= 64 { frames.clear(); }
@@ -518,6 +649,7 @@ index 0519f99..8b6f1eb 100644
 +                        }
 +                    }
 +                    eprintln!("topk: table=logs items={} tail={} groups={} processed={} skipped_low={} stopped={} examined={} boundary={} order={}", items.len(), sources.tail_lazy.len(), group_of.len(), processed, skipped_low, stopped, examined, boundary.map(|b| b.to_string()).unwrap_or_else(|| "none".into()), if file_order { "file" } else { "key" });
++                    if tail_blocks { eprintln!("tailblocks: blocks={} frames_per_block={} built={} built_ms={:.1} filtered={}", frame_list.len(), per, blocks_built, built_ms, blocks_filtered); }
 +                } else {
                  for (dir, manifest) in &sources.segments {
 +                    if skip_rows(manifest) {
@@ -526,7 +658,7 @@ index 0519f99..8b6f1eb 100644
                      let scanned = segment::scan_logs(dir, manifest, from, to, |r| {
                          if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
                              best.offer(key(&r), r);
-@@ -426,7 +866,20 @@ impl History {
+@@ -426,7 +997,20 @@ impl History {
                          );
                      }
                  }
@@ -547,7 +679,7 @@ index 0519f99..8b6f1eb 100644
                  if sorted.len() > *limit as usize {
                      sorted.truncate(*limit as usize);
                      let (k, _) = sorted.last().unwrap();
-@@ -451,7 +904,74 @@ impl History {
+@@ -451,7 +1035,74 @@ impl History {
                          best.offer(key(r), r.clone());
                      }
                  }
@@ -622,7 +754,7 @@ index 0519f99..8b6f1eb 100644
                      let scanned = segment::scan_metrics(dir, manifest, from, to, |r| {
                          if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
                              best.offer(key(&r), r);
-@@ -470,7 +990,20 @@ impl History {
+@@ -470,7 +1121,20 @@ impl History {
                          );
                      }
                  }
@@ -643,7 +775,7 @@ index 0519f99..8b6f1eb 100644
                  if sorted.len() > *limit as usize {
                      sorted.truncate(*limit as usize);
                      let (k, _) = sorted.last().unwrap();
-@@ -492,7 +1025,72 @@ impl History {
+@@ -492,7 +1156,72 @@ impl History {
                          && snapshot.contains(r.group)
                  };
                  points.extend(journal_rows.metrics.iter().filter(|r| keep(r)).cloned());
@@ -716,7 +848,7 @@ index 0519f99..8b6f1eb 100644
                      let scanned = segment::scan_metrics(dir, manifest, from, to, |r| {
                          if keep(&r) {
                              points.push(r);
-@@ -511,6 +1109,7 @@ impl History {
+@@ -511,6 +1240,7 @@ impl History {
                          );
                      }
                  }
