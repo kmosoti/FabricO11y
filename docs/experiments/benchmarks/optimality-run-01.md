@@ -1,6 +1,6 @@
 # Optimality run 01: stream order, block locality, one copy against the projections, the row-group text filter
 
-Status: **Exploratory.** Six measurements made on 2026-10-02 for the [optimality bounds](../../research/optimality-bounds.md): hypothesis B3 of the [suite](../../research/hypotheses.md) (a real stream against the random draw), the block locality of tokens in real streams, the text-search half of hypothesis D3 (one canonical copy against the Parquet projections), the walk's no-stop overhead (A4), a trigram filter per row group (L-25, hypothesis C5) and the whole-tail decode of a canonical block tail (A3, the fixed-cost half). No protocol was registered; nothing here is **Measured** in the [evidence-state](../../QUALIFICATION.md#evidence-states) sense. Scripts: [locality.py](data/optimality/locality.py.txt); the `fobscan` subcommand of the research generator ([tools/research](../../../tools/research/README.md)).
+Status: **Exploratory.** Seven measurements made on 2026-10-02 for the [optimality bounds](../../research/optimality-bounds.md): hypothesis B3 of the [suite](../../research/hypotheses.md) (a real stream against the random draw), the block locality of tokens in real streams, the text-search half of hypothesis D3 (one canonical copy against the Parquet projections), the walk's no-stop overhead (A4), a trigram filter per row group (L-25, hypothesis C5) the whole-tail decode of a canonical block tail (A3, the fixed-cost half) and a per-process cache of Segment metadata (the empty-window gap). No protocol was registered; nothing here is **Measured** in the [evidence-state](../../QUALIFICATION.md#evidence-states) sense. Scripts: [locality.py](data/optimality/locality.py.txt); the `fobscan` subcommand of the research generator ([tools/research](../../../tools/research/README.md)).
 
 ## B3: a real stream against the random draw
 
@@ -112,6 +112,38 @@ The real-text 64 MiB tail of run L-21 (149,585 journal entries: 619,570 records,
 **Verdict.** The decode of the whole tail is the fixed cost that every shape the walk cannot stop pays, and as canonical blocks it is 4.0 to 4.3× below the stock OTLP decode (and 3.7 to 4.0× below the walk's 556 ms no-match search with the frame cache). The [cost model](../../research/observation-model.md) predicts 82 ms for the view decode (619,570 records at 72 ns, 46.4 MB at 0.8 ns per byte) and about 45 ms for Zstd at 1 GB/s, 127 ms against 140 to 146 measured, within 15 %. The compressed tail is 16× smaller than the journal that holds the same records.
 
 What this half does not show, and why A3 stays open: these are decode passes in a process, not server answers; there is no key filter, heap, HTTP or JSON here, and the stock side carries all of them (the walk's `limit 50` answer on the same tail is 40 ms, so the answer's own cost is small against the decode's). A block tail would also have to be written by the server as it receives, which is the ADR-0023 wire question, and the budget of the A3 statistic (one fifth of stock on three shapes with a clean differential) needs the server path. The figure says the fifth is within reach: 146 of 607 is 0.24, before the server's early stop and the frame cache that A4 added to the walk apply to blocks too.
+
+## The empty-window gap: Segment metadata read on every query
+
+The bounds page put the empty-window shape at Ω(S) against a floor of Ω(log S), because every query lists the Segments, reads each manifest and, in the walk, opens each Parquet footer for its row-group bounds. The walk prototype with `FABRIC_PROTO_META_CACHE=on` keeps both per process, keyed by the Segment's path; a named Segment never changes and the directory is still listed on every query, so retention is seen as before. The fourteen L-21 shapes on three 64-Segment states, eight repetitions, the median, and a 200-query random differential with pages against stock per state ([metacache.json](data/optimality/metacache.json), [metacache.py](data/optimality/metacache.py.txt)); the shapes most sensitive to fixed cost, in ms:
+
+| State | Shape | stock | walk | walk + cache |
+| --- | --- | ---: | ---: | ---: |
+| real text, stream order | `empty_past` | 7.3 | 6.8 | 5.9 |
+| real text, stream order | `logs_last_10s` | 10.4 | 9.3 | 8.4 |
+| real text, stream order | `host_last_60s` | 11.8 | 11.7 | 10.2 |
+| real text, stream order | `logs_limit50_full` | 101.4 | 9.0 | 9.6 |
+| real text, stream order | `metric_limit100_full` | 111.4 | 11.1 | 7.5 |
+| real text, stream order | `text_none_full` | 106.7 | 100.9 | 103.4 |
+| real text, stream order | random set, 200 queries with pages (s) | 18.92 | 9.88 | 9.57 |
+| real text, random draw | `empty_past` | 10.0 | 7.8 | 4.4 |
+| real text, random draw | `logs_last_10s` | 10.7 | 11.9 | 6.7 |
+| real text, random draw | `host_last_60s` | 14.1 | 14.1 | 9.9 |
+| real text, random draw | `logs_limit50_full` | 141.1 | 9.8 | 9.6 |
+| real text, random draw | `metric_limit100_full` | 109.5 | 12.9 | 8.7 |
+| real text, random draw | `text_none_full` | 144.4 | 123.2 | 121.4 |
+| real text, random draw | random set, 200 queries with pages (s) | 19.41 | 10.93 | 8.54 |
+| synthetic, every Segment overlapping | `empty_past` | 6.6 | 6.8 | 4.7 |
+| synthetic, every Segment overlapping | `logs_last_10s` | 6.6 | 8.5 | 4.2 |
+| synthetic, every Segment overlapping | `host_last_60s` | 92.4 | 94.9 | 95.3 |
+| synthetic, every Segment overlapping | `logs_limit50_full` | 93.0 | 64.3 | 69.7 |
+| synthetic, every Segment overlapping | `metric_limit100_full` | 69.5 | 67.1 | 67.1 |
+| synthetic, every Segment overlapping | `text_none_full` | 98.5 | 102.6 | 125.0 |
+| synthetic, every Segment overlapping | random set, 200 queries with pages (s) | 31.83 | 32.87 | 32.98 |
+
+Differentials: 0 mismatches for the walk and 0 for the walk with the cache on all three states (600 queries).
+
+**Verdict.** The gap was smaller than the bounds page assumed, and most of it was not the metadata. The cache takes the empty-window shape from 6.6 to 10.0 ms (stock) to 4.4 to 5.9 ms and the short-window shapes down by 1 to 4 ms on the real-text states, but what remains is about 4 ms whatever the shape: the cheapest shape that reads data (`logs_last_10s` on the overlapping state) costs 4.2 ms with the cache. So the empty-window answer now sits at the per-request floor of this server (the journal listing, TLS, the JSON answer), not at Ω(S); a sorted table of Segment bounds would save what binary search saves over a 64-entry in-memory scan, which is nothing measurable at this S. At the product's 320 Segments of 64 MiB the uncached reads would be five times larger (about 25 to 40 ms by the 0.08 ms per manifest and the footer reads), which is where the cache matters. On the overlapping state the walk does not help any wide shape, as its floor says (every Segment can hold the first keys), and the spread between repeated configurations there (up to 25 % on the text shapes) is the noise of this container, not an effect of the cache, which removes reads and adds none.
 
 ## Limits
 

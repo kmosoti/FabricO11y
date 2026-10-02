@@ -725,7 +725,7 @@ index 0519f99..8b6f1eb 100644
              }
          };
 diff --git a/crates/fabric-server/src/segment.rs b/crates/fabric-server/src/segment.rs
-index b20806e..1f95689 100644
+index b20806e..267eeb6 100644
 --- a/crates/fabric-server/src/segment.rs
 +++ b/crates/fabric-server/src/segment.rs
 @@ -74,7 +74,7 @@ pub fn segment_name(label: u64) -> String {
@@ -773,7 +773,43 @@ index b20806e..1f95689 100644
      let mut sha = FixedSizeBinaryBuilder::new(32);
      for (_, entry) in records {
          sha.append_value(Sha256::digest(&entry.batch))
-@@ -644,3 +644,118 @@ pub fn verify(dir: &Path, manifest: &Manifest) -> io::Result<()> {
+@@ -413,7 +413,7 @@ pub fn list(state_dir: &Path) -> io::Result<Vec<(u64, Manifest)>> {
+         else {
+             continue;
+         };
+-        match read_manifest(&entry.path()) {
++        match read_manifest_cached(&entry.path()) {
+             Ok(manifest) => found.push((label, manifest)),
+             // Deleted by retention between listing and reading.
+             Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+@@ -424,6 +424,26 @@ pub fn list(state_dir: &Path) -> io::Result<Vec<(u64, Manifest)>> {
+     Ok(found)
+ }
+ 
++/// Research prototype (bounds page, empty-window shape): with
++/// `FABRIC_PROTO_META_CACHE=on`, a Segment's manifest and row-group bounds are read once
++/// per process and kept, keyed by its path. A named Segment is immutable, and the
++/// directory is still listed on every query, so a Segment removed by retention drops out
++/// of the answer exactly as before; only the reads of unchanged metadata go.
++fn meta_cache_on() -> bool {
++    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
++    *ON.get_or_init(|| std::env::var("FABRIC_PROTO_META_CACHE").as_deref() == Ok("on"))
++}
++type BoundsCache = std::collections::HashMap<(std::path::PathBuf, String), Vec<(usize, u64, u64)>>;
++static MANIFESTS: std::sync::Mutex<Option<std::collections::HashMap<std::path::PathBuf, Manifest>>> = std::sync::Mutex::new(None);
++static BOUNDS: std::sync::Mutex<Option<BoundsCache>> = std::sync::Mutex::new(None);
++fn read_manifest_cached(dir: &Path) -> io::Result<Manifest> {
++    if !meta_cache_on() { return read_manifest(dir); }
++    if let Some(m) = MANIFESTS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default).get(dir) { return Ok(m.clone()); }
++    let m = read_manifest(dir)?;
++    MANIFESTS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default).insert(dir.to_path_buf(), m.clone());
++    Ok(m)
++}
++
+ pub fn read_manifest(dir: &Path) -> io::Result<Manifest> {
+     let text = fs::read(dir.join("manifest.json"))?;
+     let manifest: Manifest = serde_json::from_slice(&text).map_err(err)?;
+@@ -644,3 +664,135 @@ pub fn verify(dir: &Path, manifest: &Manifest) -> io::Result<()> {
      }
      Ok(())
  }
@@ -781,6 +817,23 @@ index b20806e..1f95689 100644
 +/// Research prototype: each row group's (index, min, max) of an Int64 time
 +/// column, from the file's statistics; a group without statistics is unbounded.
 +pub fn row_group_bounds(
++    dir: &Path,
++    manifest: &Manifest,
++    name: &str,
++    schema: &SchemaRef,
++    column: usize,
++) -> io::Result<Vec<(usize, u64, u64)>> {
++    if meta_cache_on() {
++        let key = (dir.to_path_buf(), name.to_string());
++        if let Some(b) = BOUNDS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default).get(&key) { return Ok(b.clone()); }
++        let b = row_group_bounds_read(dir, manifest, name, schema, column)?;
++        BOUNDS.lock().unwrap_or_else(|e| e.into_inner()).get_or_insert_with(Default::default).insert(key, b.clone());
++        return Ok(b);
++    }
++    row_group_bounds_read(dir, manifest, name, schema, column)
++}
++
++fn row_group_bounds_read(
 +    dir: &Path,
 +    manifest: &Manifest,
 +    name: &str,
