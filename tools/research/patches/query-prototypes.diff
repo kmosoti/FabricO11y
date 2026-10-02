@@ -1,5 +1,5 @@
 diff --git a/crates/fabric-server/src/query.rs b/crates/fabric-server/src/query.rs
-index 0519f99..2354c5d 100644
+index 0519f99..8b6f1eb 100644
 --- a/crates/fabric-server/src/query.rs
 +++ b/crates/fabric-server/src/query.rs
 @@ -18,7 +18,8 @@ use fabric_frame::frame::read_frame;
@@ -164,15 +164,44 @@ index 0519f99..2354c5d 100644
  }
  
  fn number_json(value: Number) -> Value {
-@@ -140,6 +286,7 @@ fn metric_json(r: &MetricRow) -> Value {
+@@ -138,8 +284,36 @@ fn metric_json(r: &MetricRow) -> Value {
+     row
+ }
  
++/// Research prototype (L-25): a 2^16-bit bloom filter over the byte trigrams of a row
++/// group's bodies, two hash positions per trigram. `contains` substrings of three or
++/// more bytes can skip a row group whose filter lacks any of their trigrams.
++const TEXT_FILTER_BITS: usize = 1 << 16;
++fn trigram_positions(g: [u8; 3]) -> (usize, usize) {
++    let v = u32::from_le_bytes([g[0], g[1], g[2], 0]);
++    let a = (v.wrapping_mul(0x9E37_79B1) >> 16) as usize & (TEXT_FILTER_BITS - 1);
++    let b = (v.wrapping_mul(0x85EB_CA6B).rotate_left(13).wrapping_mul(0xC2B2_AE35) >> 16) as usize & (TEXT_FILTER_BITS - 1);
++    (a, b)
++}
++fn text_filter_add(bits: &mut [u64], body: &[u8]) {
++    for w in body.windows(3) {
++        let (a, b) = trigram_positions([w[0], w[1], w[2]]);
++        bits[a / 64] |= 1 << (a % 64);
++        bits[b / 64] |= 1 << (b % 64);
++    }
++}
++fn text_filter_may_contain(bits: &[u64], needle: &[u8]) -> bool {
++    needle.windows(3).all(|w| {
++        let (a, b) = trigram_positions([w[0], w[1], w[2]]);
++        bits[a / 64] & (1 << (a % 64)) != 0 && bits[b / 64] & (1 << (b % 64)) != 0
++    })
++}
++
  pub struct History {
      state_dir: PathBuf,
 +    tail: Mutex<TailIndex>,
++    /// Research prototype (L-25): per-row-group trigram bloom filters, keyed by
++    /// (segment label, row group), built lazily on first use.
++    text_filters: Mutex<HashMap<(u64, usize), Vec<u64>>>,
  }
  
  /// Keeps the `capacity` smallest rows by key.
-@@ -171,6 +318,10 @@ impl<T> Smallest<T> {
+@@ -171,6 +345,10 @@ impl<T> Smallest<T> {
          self.rows.insert(self.next, row);
          self.next += 1;
      }
@@ -183,15 +212,16 @@ index 0519f99..2354c5d 100644
      fn sorted(self) -> Vec<(Key, T)> {
          let mut keyed: Vec<(Key, usize)> = self.heap.into_vec();
          keyed.sort();
-@@ -186,6 +337,7 @@ impl History {
+@@ -186,6 +364,8 @@ impl History {
      pub fn new(state_dir: &Path) -> Self {
          Self {
              state_dir: state_dir.to_path_buf(),
 +            tail: Mutex::new(TailIndex::default()),
++            text_filters: Mutex::new(HashMap::new()),
          }
      }
  
-@@ -253,6 +405,134 @@ impl History {
+@@ -253,6 +433,134 @@ impl History {
              segments,
              journal,
              oldest_group,
@@ -326,7 +356,7 @@ index 0519f99..2354c5d 100644
          })
      }
  
-@@ -331,7 +611,11 @@ impl History {
+@@ -331,7 +639,11 @@ impl History {
                  }
              }
          };
@@ -339,7 +369,7 @@ index 0519f99..2354c5d 100644
          let oldest = floor.unwrap_or(sources.oldest_group);
          if floor.is_some_and(|f| !kernel::page_snapshot_retained(f, sources.oldest_group)) {
              return Err(QueryError::Gone);
-@@ -341,6 +625,19 @@ impl History {
+@@ -341,6 +653,19 @@ impl History {
              newest_group: newest,
          };
          let node_ok = |n: &str| node.as_deref().is_none_or(|want| want == n);
@@ -359,7 +389,7 @@ index 0519f99..2354c5d 100644
  
          let mut unavailable = Vec::new();
          let mut freshness: BTreeMap<String, u64> = BTreeMap::new();
-@@ -364,6 +661,15 @@ impl History {
+@@ -364,6 +689,15 @@ impl History {
              let f = freshness.entry(r.node.clone()).or_default();
              *f = (*f).max(r.time_ns);
          }
@@ -375,7 +405,7 @@ index 0519f99..2354c5d 100644
          gaps.extend(journal_rows.gaps.iter().cloned());
          for (dir, manifest) in &sources.segments {
              received = (
-@@ -374,6 +680,9 @@ impl History {
+@@ -374,6 +708,9 @@ impl History {
                  let f = freshness.entry(n.clone()).or_default();
                  *f = (*f).max(*t);
              }
@@ -385,7 +415,7 @@ index 0519f99..2354c5d 100644
              if let Err(e) = segment::scan_gaps(dir, manifest, |g| gaps.push(g)) {
                  if !dir.exists() {
                      return Err(
-@@ -407,7 +716,84 @@ impl History {
+@@ -407,7 +744,110 @@ impl History {
                          best.offer(key(r), r.clone());
                      }
                  }
@@ -421,6 +451,32 @@ index 0519f99..2354c5d 100644
 +                        items.sort_unstable_by_key(|(_, _, kind, idx)| (*kind, if *kind == 0 { let e = sources.tail_lazy[*idx]; (e.file_first, e.offset, e.index as u64) } else { (*idx as u64, 0, 0) }));
 +                    } else {
 +                        items.sort_unstable_by_key(|(mn, _, _, _)| *mn);
++                    }
++                    // L-25: drop row groups whose trigram filter cannot hold the needle.
++                    let text_filter = std::env::var("FABRIC_PROTO_TEXT_FILTER").as_deref() == Ok("on");
++                    if let (true, Some(needle)) = (text_filter, contains.as_deref().filter(|c| c.len() >= 3)) {
++                        let needle = needle.as_bytes();
++                        let (mut built, mut skipped_text, mut kept_text) = (0usize, 0usize, 0usize);
++                        let mut filters = self.text_filters.lock().unwrap_or_else(|e| e.into_inner());
++                        let mut keep_items = Vec::with_capacity(items.len());
++                        for item in &items {
++                            let (_, _, kind, idx) = *item;
++                            if kind != 1 { keep_items.push(*item); continue; }
++                            let (si, rg) = group_of[idx];
++                            let (dir, manifest) = &sources.segments[si];
++                            let fkey = (manifest.journal_label, rg);
++                            if !filters.contains_key(&fkey) {
++                                let mut bits = vec![0u64; TEXT_FILTER_BITS / 64];
++                                let scanned = segment::scan_logs_groups(dir, manifest, vec![rg], 0, u64::MAX, |r| text_filter_add(&mut bits, r.body.as_bytes()));
++                                if scanned.is_err() { keep_items.push(*item); continue; }
++                                built += 1;
++                                filters.insert(fkey, bits);
++                            }
++                            if text_filter_may_contain(&filters[&fkey], needle) { kept_text += 1; keep_items.push(*item); } else { skipped_text += 1; }
++                        }
++                        drop(filters);
++                        eprintln!("textfilter: table=logs needle_len={} built={} skipped={} kept={}", needle.len(), built, skipped_text, kept_text);
++                        items = keep_items;
 +                    }
 +                    let (mut processed, mut skipped_low, mut stopped) = (0usize, 0usize, false);
 +                    let mut last_mn: Option<u64> = None;
@@ -470,7 +526,7 @@ index 0519f99..2354c5d 100644
                      let scanned = segment::scan_logs(dir, manifest, from, to, |r| {
                          if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
                              best.offer(key(&r), r);
-@@ -426,7 +812,20 @@ impl History {
+@@ -426,7 +866,20 @@ impl History {
                          );
                      }
                  }
@@ -491,7 +547,7 @@ index 0519f99..2354c5d 100644
                  if sorted.len() > *limit as usize {
                      sorted.truncate(*limit as usize);
                      let (k, _) = sorted.last().unwrap();
-@@ -451,7 +850,74 @@ impl History {
+@@ -451,7 +904,74 @@ impl History {
                          best.offer(key(r), r.clone());
                      }
                  }
@@ -566,7 +622,7 @@ index 0519f99..2354c5d 100644
                      let scanned = segment::scan_metrics(dir, manifest, from, to, |r| {
                          if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
                              best.offer(key(&r), r);
-@@ -470,7 +936,20 @@ impl History {
+@@ -470,7 +990,20 @@ impl History {
                          );
                      }
                  }
@@ -587,7 +643,7 @@ index 0519f99..2354c5d 100644
                  if sorted.len() > *limit as usize {
                      sorted.truncate(*limit as usize);
                      let (k, _) = sorted.last().unwrap();
-@@ -492,7 +971,72 @@ impl History {
+@@ -492,7 +1025,72 @@ impl History {
                          && snapshot.contains(r.group)
                  };
                  points.extend(journal_rows.metrics.iter().filter(|r| keep(r)).cloned());
@@ -660,7 +716,7 @@ index 0519f99..2354c5d 100644
                      let scanned = segment::scan_metrics(dir, manifest, from, to, |r| {
                          if keep(&r) {
                              points.push(r);
-@@ -511,6 +1055,7 @@ impl History {
+@@ -511,6 +1109,7 @@ impl History {
                          );
                      }
                  }

@@ -99,6 +99,11 @@ H1: on a workload with monotonic counters, the budgeted rate over `[from, m)` eq
 Statistic: the L-05 oracle's rate half on a journal replayed from a captured counter series (B4's capture). Reject H0 if 0 mismatches over 100 random rate queries.
 Cost: the capture of B4 plus the L-05 run, half a day. Decides: the one half of L-05's oracle that run 01 could not exercise.
 
+**C5. A trigram filter per row group reaches the block floor for text search.** *Ran ([optimality run 01](../experiments/benchmarks/optimality-run-01.md)): H0 rejected for the absent token on both orders (114 to 126 ms to 7 to 10 ms, every group rejected) and for present tokens in stream order (17 to 62 % of groups skipped; the 0.1 % token 23 groups to 15); not rejected for present tokens on the random draw, where no group is skipped at a 4,690-line grain. 0 mismatches in 400 queries.*
+H1: a 2^16-bit bloom over the byte trigrams of each row group's bodies lets the walk skip at least a third of the groups for a token under 1 % of lines on a stream-ordered real-text state, and every group for an absent token, at under 2 bytes per row and with no change to any answer. H0: fewer than a third are skipped for the rare token, or an absent token still reads a group, or any answer differs.
+Statistic: groups read and time for twelve tokens of graded frequency, walk with and without the filter, on a stream-ordered and a random-draw state of 64 real-text Segments; a 200-query random differential per state. Reject H0 if all three parts of H1 hold on the stream state.
+Cost: a scratch filter in the prototype, half a day. Decides: whether the text-search floor needs an inverted index or a filter two orders of magnitude smaller.
+
 ## Group D: is the sealing and segmentation design right?
 
 Every run so far has measured inside the design of [ADR-0020](../decisions/ADR-0020-store-sealed-history-as-parquet-segments.md) and [ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md): a Segment per 64 MiB journal file, four Parquet tables, time-first sort, 8,192-row groups, a sealer thread that builds each Segment after the fact, retention by whole Segment. None of that is the oracle. These hypotheses are judged by the contract and the Python oracle over the journal, never by the stock server.
@@ -154,4 +159,4 @@ By information value per hour, with the dependency each unlocks:
 9. **B5**, **C1**, **D8**, **D9**: the Segment side at product size and the retention and durability checks no run has made.
 10. **B2**, **B4**, **C2**, **C3**, **C4**: each decided by the ones above or waiting on a capture.
 
-One experiment runs at a time. B3 and A4 have run; A1 is next, then D6 of this suite.
+One experiment runs at a time. B3, A4 and C5 have run; A1 is next, then D6 of this suite.

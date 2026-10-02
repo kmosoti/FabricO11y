@@ -1,6 +1,6 @@
-# Optimality run 01: stream order, block locality, one copy against the projections
+# Optimality run 01: stream order, block locality, one copy against the projections, the row-group text filter
 
-Status: **Exploratory.** Four measurements made on 2026-10-02 for the [optimality bounds](../../research/optimality-bounds.md): hypothesis B3 of the [suite](../../research/hypotheses.md) (a real stream against the random draw), the block locality of tokens in real streams, and the text-search half of hypothesis D3 (one canonical copy against the Parquet projections). No protocol was registered; nothing here is **Measured** in the [evidence-state](../../QUALIFICATION.md#evidence-states) sense. Scripts: [locality.py](data/optimality/locality.py.txt); the `fobscan` subcommand of the research generator ([tools/research](../../../tools/research/README.md)).
+Status: **Exploratory.** Five measurements made on 2026-10-02 for the [optimality bounds](../../research/optimality-bounds.md): hypothesis B3 of the [suite](../../research/hypotheses.md) (a real stream against the random draw), the block locality of tokens in real streams, the text-search half of hypothesis D3 (one canonical copy against the Parquet projections), the walk's no-stop overhead (A4) and a trigram filter per row group (L-25, hypothesis C5). No protocol was registered; nothing here is **Measured** in the [evidence-state](../../QUALIFICATION.md#evidence-states) sense. Scripts: [locality.py](data/optimality/locality.py.txt); the `fobscan` subcommand of the research generator ([tools/research](../../../tools/research/README.md)).
 
 ## B3: a real stream against the random draw
 
@@ -69,9 +69,39 @@ The walk prototype with a 64-frame decode cache in place of its single cached fr
 
 **Verdict.** The hypothesis named the order; the measurement names the cache. In key order consecutive entries interleave among a few frames, and the single-frame cache of runs L-04 and L-21 re-decoded a frame for nearly every entry (1,246 ms for the no-match search in run L-21); a 64-frame cache brings that to 556 ms, under the stock scan's 570, and halves the 0.1 % search (461 to 227 ms). File order removes the re-decoding too but forgoes the early stop, so a 35 % search that stops after 124 entries in key order reads everything in file order (575 ms). H0 of A4 (the overhead is per-entry work whatever the order) is rejected; H1 as stated (a file-order fallback brings the no-match shape to stock) is not the remedy; key order with a frame cache is, and it is the prototype's default from this run on.
 
+## L-25: a trigram filter per row group
+
+The walk prototype with a 2^16-bit bloom filter per row group over the byte trigrams of its bodies (two positions per trigram, 8 KiB per group, built on the first query by a pass over the group and held in memory; `FABRIC_PROTO_TEXT_FILTER=on`), against the walk alone and against stock, on two real-text Segment states of 64 Segments each (one row group of about 4,690 lines per Segment; 300,140 and 300,020 log rows): one sealed from the corpus in **stream order** (each line after its own predecessor, the 1 MiB journal of run L-26's generator option) and one from the **random draw** of run L-21. Twelve `contains` tokens of graded frequency, `limit 100`, the whole window; eight repetitions, the median; a 200-query random differential with pages per state, a third of the logs queries carrying one of the tokens ([l25.json](data/optimality/l25.json), [l25.py](data/optimality/l25.py.txt)):
+
+| Token | Lines of 16,000 | Stream order: stock | walk [groups read of 64] | walk + filter [read of kept] | Random draw: stock | walk [read of 64] | walk + filter [read of kept] |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `INFO` | 5,629 | 112 ms | 10 [1] | 10 [1 of 64] | 130 ms | 10 [1] | 13 [1 of 64] |
+| `WARN` | 2,206 | 102 ms | 12 [2] | 11 [2 of 53] | 135 ms | 10 [1] | 14 [1 of 64] |
+| `blk_` | 2,005 | 100 ms | 12 [1] | 11 [1 of 32] | 121 ms | 10 [1] | 13 [1 of 64] |
+| `jk2_init` | 848 | 105 ms | 12 [1] | 9 [1 of 24] | 138 ms | 10 [1] | 11 [1 of 64] |
+| `PacketResponder` | 603 | 107 ms | 13 [1] | 9 [1 of 28] | 124 ms | 11 [1] | 10 [1 of 64] |
+| `ntpd` | 571 | 104 ms | 15 [3] | 9 [1 of 27] | 128 ms | 12 [1] | 10 [1 of 64] |
+| `Failed password` | 520 | 110 ms | 15 [2] | 9 [1 of 25] | 130 ms | 12 [1] | 12 [1 of 64] |
+| `ERROR` | 164 | 116 ms | 14 [2] | 10 [1 of 46] | 144 ms | 15 [2] | 12 [2 of 64] |
+| `session opened` | 143 | 117 ms | 12 [2] | 10 [1 of 44] | 123 ms | 15 [3] | 16 [3 of 64] |
+| `Exception` | 15 | 98 ms | 49 [23] | 33 [15 of 39] | 152 ms | 46 [22] | 52 [22 of 63] |
+| `zq9` | 0 | 107 ms | 118 [64] | 8 [0 of 0] | 143 ms | 123 [64] | 10 [0 of 0] |
+| `no such token anywhere` | 0 | 103 ms | 114 [64] | 7 [0 of 0] | 146 ms | 126 [64] | 9 [0 of 0] |
+
+Building the 64 filters cost 210 ms on the stream state and 251 ms on the random one (0.7 to 0.8 µs per row, 512 KiB held: 1.1 to 1.8 bytes per row, 13 % of the compressed logs table at this row-group size; at the product's 8,192-row groups it is 1 byte per row). The 200-query differentials: 0 mismatches for the walk and 0 for the filter on both states. Resident memory: 33 to 34 MiB for walk and filter against 21 to 44 for stock.
+
+**Verdict.** Three findings, one of them against the derivation that put L-25 on the ledger.
+
+1. **The no-match search reaches the block floor whatever the order.** Every group's filter rejects an absent token, so the walk reads no group at all: 114 to 126 ms become 7 to 10 ms (the cost is now the manifests and bounds), 12 to 15× on both states. This is the shape the walk could not stop and the one that cost 556 ms on the 64 MiB tail (A4); it is the shape an index exists for.
+2. **For a present token the filter's gain is in stream order and is set by the row group's grain, not the token's.** In stream order the filter drops 11 to 40 of 64 groups for tokens at 0.9 to 14 % of lines and 25 for the one at 0.1 % (`Exception`: 23 groups read become 15, 49 ms become 33). On the random draw it drops nothing for any present token (1 group for `Exception`), as the locality measurement predicted: a token drawn at random into 4,690-line groups lands in every group. The groups here are 47 times the 100-line blocks of the locality measurement, so the fractions skipped (17 to 62 %) are below the ones that measurement promised for 100-line blocks (40 to 95 %); hypothesis D4 (finer row groups) and this filter are the same lever seen twice.
+3. **The walk already made the present-token shapes cheap; the filter is for what the walk cannot stop.** With `limit 100` the walk stops after 1 to 3 groups for every token above 0.1 % of lines (10 to 15 ms against stock's 100 to 150, which reads all 64 groups), so the filter changes those shapes by a millisecond or two. Its value is the two shapes whose answer is small but whose candidates are everywhere: the rare token and the absent one.
+
+**Against prior art.** An inverted index over the same 300,140 lines would hold a posting per distinct token per line; the filter holds 1 to 2 bytes per row, is built at 0.8 µs per row with no tokenizer, and reaches the index's floor (read only blocks that can hold the token) exactly where real streams are local. Where they are not (the random draw), neither would help a present token at this grain, and only finer blocks would. The bloom's false-positive rate at 2^16 bits and two positions is about 7 % per group for a one-trigram needle at 10,000 distinct trigrams per group and falls geometrically with the needle's trigrams, which the 64-of-64 rejections of both absent needles show. The filter is an index beyond row-group statistics and so a product-contract question (ledger [L-25](../../research/ledger.md#l-25-a-text-filter-per-row-group)); this run says what it buys, not whether the contract should admit it.
+
 ## Limits
 
 - The samples are 2,000 lines each; stream order within a sample is real, the mix across samples is not, and the locality block is 100 lines.
 - The FOB1 conversion dropped point values; the time comparison stands for lines, the byte comparison is given both ways.
 - The Parquet scan materialises every row (`LogRow` with its allocations), as the stock path does; a projection reader that searched the body column without materialising would be faster than 117 ms, and so would a block search that stopped decoding at the body. Both sides have the same headroom.
+- The L-25 states hold one row group per Segment; the filter's skip fractions for present tokens are those of 4,690-line blocks and would differ at 8,192 rows (the product's) or at the finer groups of D4. The filter is built per query process and held in memory; a product filter would be written at seal time and read from the manifest, which this run does not cost.
 - One host, warm cache. The stock figures in the A4 table are about 15 % below those of run L-21 on the same state (570 to 614 against 656 to 749 ms), within the variance seen between runs on this container.

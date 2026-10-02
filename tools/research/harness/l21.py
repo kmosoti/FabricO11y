@@ -48,7 +48,7 @@ def tail_state(name, src):
     state = ROOT / "states" / name; shutil.rmtree(state, ignore_errors=True); (state / "journal").mkdir(parents=True)
     os.link(src, state / "journal" / "batches.faj"); return state
 def seg_state(name, src):
-    state = ROOT / "states" / name; shutil.rmtree(state, ignore_errors=True)
+    state = ROOT / "states" / name; shutil.rmtree(state, ignore_errors=True); state.parent.mkdir(parents=True, exist_ok=True)
     subprocess.run(["cp", "-al", str(src), str(state)], check=True)
     for f in list(state.glob("*.conf")) + list(state.glob("*.log")): f.unlink()
     return state
