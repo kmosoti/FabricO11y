@@ -12,8 +12,8 @@ The novelty firewall of the charter applies to every entry: before "novel", the 
 | --- | --- | --- | --- |
 | L-01 | Fabric's evidence fields are query completeness under per-source completeness statements | REDISCOVERED | State it in the kernel (Q1 of the [direction review](query-engine-direction.md)) |
 | L-02 | Sound Segment dispositions from manifest facts remove the per-Segment cost that grows with retention | DERIVED and confirmed sound; FALSIFIED as a material saving | [Retention-scale run 01](../experiments/benchmarks/retention-scale-run-01.md): the rule changes no answer, the two traps are real, the saving is tens of milliseconds at 319 Segments |
-| L-03 | A memtable of keys makes the unsealed tail selectable | CANDIDATE, now first | Prototype against hostile tails; the tail costs 3.2 ms and 2.7 MiB per MiB per query (run 01) |
-| L-04 | The threshold algorithm over row-group and entry bounds ends every `limit` scan early | CANDIDATE, now second | Measure the gain against cross-Segment overlap; the wide-window shape is the retention-scale risk (579 ms over 319 Segments of 1 MiB) |
+| L-03 | A memtable of keys makes the unsealed tail selectable | CANDIDATE, confirmed on the prototype | [Tail-index run 01](../experiments/benchmarks/tail-index-run-01.md): selective shapes from about 220 ms to 4 to 13 ms, 0 mismatches in 1,500 queries, 95 B per entry; a whole-window query still materialises everything. Promotion needs the soak and the Q2 design |
+| L-04 | The threshold algorithm over row-group and entry bounds ends every `limit` scan early | CANDIDATE, now first | Measure the gain against cross-Segment overlap; it is also what bounds a wide-window query over the indexed tail, which L-03 alone does not |
 | L-05 | Budget-bounded answers that are exact for the sources read and name the rest | CANDIDATE | Property first, then a contract change |
 | L-06 | Drop the projections and answer from raw bytes with a key sidecar | FALSIFIED for text search; UNRESOLVED otherwise | None until real corpora are measured |
 | L-07 | Manifest facts for two-sided skipping: per-table key bounds, node presence that covers gaps | DERIVED | Decided by L-02's result; an amendment to ADR-0020 |
@@ -35,12 +35,14 @@ Ranked by what the next experiment would teach, not by the size of the expected 
 
 Before run 01, L-02 ranked first: it tested a risk nobody had measured (the registered 2 s gate was passed on four Segments; retention allows about 320), it tested the charter's essential pruning invariant with two concrete ways to break it, and every other pruning idea depended on its answer. It was run; the [record](../experiments/benchmarks/retention-scale-run-01.md) and the L-02 entry hold the result. After it:
 
-1. **L-03.** Run 01 found the one cost that can exceed the server's memory: a query over an unsealed tail takes about 3.2 ms and 2.7 MiB per MiB of tail, so 4.64 s and 858 MiB over 320 MiB, and `journal_bytes` allows 4 GiB. What the next experiment teaches is whether a key index bounds both under hostile tails and what it costs the commit thread on two CPUs.
-2. **L-04.** The wide-window `limit` shape is the retention-scale risk (579 ms over 319 Segments of 1 MiB; tens of seconds extrapolated to 20 GiB), and its remedy's gain depends on cross-Segment overlap, which no run has measured.
-3. **L-05.** A budget is the only bound on the tail cost until L-03 lands, and its property is cheap to state and test.
-4. **L-07.** Run 01 showed which facts prune soundly and which do not; the manifest amendment is design work whose test already exists.
+L-03 ran next ([tail-index run 01](../experiments/benchmarks/tail-index-run-01.md)): the index removes the tail's cost for every selective shape, changes no answer, and costs about 95 bytes per entry, but a query whose window covers the tail still decodes everything, so the index bounds selection and not materialisation. After it:
 
-Only one experiment runs at a time; L-03's is next.
+1. **L-04.** It is now both the retention-scale remedy (the wide-window `limit` shape, 579 ms over 319 Segments of 1 MiB) and the missing half of the tail bound: with the index's entries sorted by their lower time bound, the heap's threshold can stop materialisation after a few frames. What the experiment teaches is the gain against cross-Segment and cross-entry overlap, which no run has measured, on the outage and adversarial tails where overlap is worst.
+2. **L-05.** The only bound for shapes that neither index nor threshold can shrink (a rate over a long window; a text search), and the semantics that lets a bounded query still answer truthfully.
+3. **L-07.** Design work whose test exists.
+4. **L-03's promotion** waits on the registered soak (ACK latency while the index extends on two CPUs) and the Q2 design in the direction review.
+
+Only one experiment runs at a time; L-04's is next.
 
 ## Entries
 
@@ -89,7 +91,9 @@ Only one experiment runs at a time; L-03's is next.
 
 ### L-03. A memtable of keys for the unsealed tail
 
-**State:** CANDIDATE.
+**State:** CANDIDATE, confirmed on the prototype; promotion pending the soak. Result in [tail-index run 01](../experiments/benchmarks/tail-index-run-01.md).
+
+**Result.** On five 64 MiB tails (steady, 303,500 tiny entries, 1,000 identities, drained backlog, skewed clocks with gap-only nodes): every selective shape fell from 216 to 238 ms to 4 to 13 ms, the 300-query random set ran twelve times faster, 0 of 1,500 queries and their pages differed from the stock server, a rotation and seal under 1,908 live queries produced no error and the index dropped the sealed entries. Index cost: 92 to 97 bytes per entry (138 on the tiny tail), built in about one stock query's time. What failed: a query whose window covers the tail selects everything and reaches the same high-water mark as stock, and on the tiny tail the wide shapes are slower than stock. The index bounds selection; materialisation needs L-04 or L-05. The ACK falsifier was not run.
 
 **Precise problem.** The tail is decoded in full on every query: 126 ms for an empty window on 40 MiB, about 3.2 ms per MiB ([attribution run 01](../experiments/benchmarks/query-attribution-run-01.md)); and it is held in memory in full: 4.64 s and about 858 MiB for an empty window over a 320 MiB tail, 2.7 MiB per MiB, resident afterwards ([retention-scale run 01](../experiments/benchmarks/retention-scale-run-01.md)). The tail is bounded only by `journal_bytes`, which allows 4 GiB; a sealer that falls behind makes every query pay for the backlog.
 
