@@ -22,6 +22,8 @@ Native scaled-volume follow-up: [20 real Spindles, medium/enterprise run 01](exp
 
 [Consumer experience and all four workload tiers](research/consumer-performance.md) consolidates native latency/RSS/CPU evidence and maps it to human, agent and programmatic users. Pipeline receive/ACK measurements do not establish per-tier query response or observation-to-queryable latency; those consumer measurements remain unrun.
 
+Owner-directed testing/use focus: [development through moderate configuration and query study](research/development-moderate-plan.md). Determine caps and useful threading from consumer-inclusive measurements; enterprise remains stress evidence. Proposed query loader/processing/output responsibilities are unimplemented, and installed defaults/qualification are unchanged.
+
 ## Implemented
 
 - **Spindle** (`fabric-node`): bounded Linux host metrics and selected log files as OTLP inside version-one Batches, a durable `FAB1` Spool with ACK cursor and whole-file reclaim, visible collection gaps, SIGTERM-safe cycles, remote configuration with last-valid fallback ([Spindle view](architecture/spindle.md)). It meters its own output as `fabric.spindle.*` metrics and can cap its delivery rate (`max_output_bytes_per_s`); a pass that leaves a log backlog is followed by another once delivery has caught up, about 9.7 MB/s of real log text per node on this machine (3.6 before the server's quiet rule), set by one Batch in flight: the server's 13 ms answer and the 12 ms collection of the next Batch, in series ([spindle run 01](experiments/benchmarks/spindle-run-01.md), [sealer profile run 01](experiments/benchmarks/sealer-profile-run-01.md))).

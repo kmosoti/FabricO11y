@@ -76,3 +76,5 @@ Existing [sizing assumptions](workload-sizing.md#planning-hardware-and-storage) 
 ## Verification
 
 The overview was generated directly from four existing summary files. Summary SHA-256s are retained. For each row, primary/source clock populations match the expected log count, and ordinary/burst/recovery arithmetic matches that count. No percentiles were recomputed, pooled across tiers or extrapolated to new hardware. Documentation checks and `git diff --check` exited 0. No runtime changed; the prior native-run fast checks remain 19 passed / 1 existing Clippy failure ([receipt](../experiments/benchmarks/data/native-scaled-spindle-run-01/receipts/clippy.json)); they were not rerun for this documentation/data consolidation.
+
+The owner-directed [development-through-moderate study plan](development-moderate-plan.md) narrows the next practical testing/use target and adds cap/threading hypotheses plus proposed query responsibilities. No new defaults or query performance results are implied.
