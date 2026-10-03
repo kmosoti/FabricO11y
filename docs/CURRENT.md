@@ -14,6 +14,8 @@ Local output-writer experiment: [streaming output run 01](experiments/benchmarks
 
 Workload planning: [development-to-enterprise sizing](research/workload-sizing.md) adds an editable calculator grounded in the frozen writer pilot, with explicit assumptions for event volume, memory, bursts, retention and outage buffers. It is arithmetic and proposed trial hardware, not new deployment measurements or qualification.
 
+Sequential local workload pilots: [development and small run 01](experiments/benchmarks/dev-small-local-run-01.md) recovered 3,000 and 300,000 exact source logs through real Spindles. Collection-to-ingestion p99 was 8.89 / 50.65 ms; server RSS peak 7.91 / 440.41 MiB, with no development seal and five small Segments. Both met their finite pilot criteria; long-term memory, deployment caps and maximum capacity remain unqualified.
+
 ## Implemented
 
 - **Spindle** (`fabric-node`): bounded Linux host metrics and selected log files as OTLP inside version-one Batches, a durable `FAB1` Spool with ACK cursor and whole-file reclaim, visible collection gaps, SIGTERM-safe cycles, remote configuration with last-valid fallback ([Spindle view](architecture/spindle.md)). It meters its own output as `fabric.spindle.*` metrics and can cap its delivery rate (`max_output_bytes_per_s`); a pass that leaves a log backlog is followed by another once delivery has caught up, about 9.7 MB/s of real log text per node on this machine (3.6 before the server's quiet rule), set by one Batch in flight: the server's 13 ms answer and the 12 ms collection of the next Batch, in series ([spindle run 01](experiments/benchmarks/spindle-run-01.md), [sealer profile run 01](experiments/benchmarks/sealer-profile-run-01.md))).

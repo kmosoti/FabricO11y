@@ -1,0 +1,35 @@
+error: package ID specification `fabric-o11y` did not match any packages
+
+help: a package with a similar name exists: `fabric_o11y`
+   Compiling fabric-server v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-server)
+    Finished `release` profile [optimized] target(s) in 6.23s
+   Compiling zerocopy v0.8.59
+   Compiling cc v1.5.1
+   Compiling syn v2.0.119
+   Compiling ring v0.17.14
+   Compiling ppv-lite86 v0.2.21
+   Compiling slab v0.4.12
+   Compiling futures-util v0.3.34
+   Compiling rand_chacha v0.9.0
+   Compiling prost-derive v0.14.4
+   Compiling futures-executor v0.3.34
+   Compiling rand v0.9.5
+   Compiling serde_core v1.0.228
+   Compiling httparse v1.10.1
+   Compiling opentelemetry_sdk v0.33.0
+   Compiling prost v0.14.4
+   Compiling rustls v0.23.45
+   Compiling opentelemetry-proto v0.33.0
+   Compiling rustls-webpki v0.103.15
+   Compiling http v1.5.0
+   Compiling serde_json v1.0.150
+   Compiling once_cell v1.21.4
+   Compiling ureq-proto v0.6.0
+   Compiling fabric-frame v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-frame)
+   Compiling serde_derive v1.0.228
+   Compiling memchr v2.8.3
+   Compiling ureq v3.3.0
+   Compiling fabric-adapter-linux v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-adapter-linux)
+   Compiling serde v1.0.228
+   Compiling fabric_o11y v0.1.0 (/workspace/FabricO11y-journal-reclaim)
+    Finished `release` profile [optimized] target(s) in 37.38s
