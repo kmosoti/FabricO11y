@@ -6,9 +6,11 @@ This guide is for an operator of one controlled Linux installation. It describes
 
 ```sh
 cargo fetch --locked                      # once, on a machine with network access
-packaging/build-deb.sh target/package-out # needs rustc 1.98.0 and dpkg-deb
-sudo apt install ./target/package-out/fabrico11y_0.1.0~alpha.1_amd64.deb
+packaging/build-deb.sh target/package-out # needs rustc 1.98.0, dpkg-deb, dpkg-shlibdeps, objdump
+sudo apt install ./target/package-out/fabrico11y_0.1.0~alpha.1_$(dpkg --print-architecture).deb
 ```
+
+The package targets Debian-family distributions with glibc 2.34 or newer and systemd 249 or newer: Debian 12 and 13, Ubuntu 22.04 and 24.04, and distributions derived from them ([ADR-0025](decisions/ADR-0025-carry-traces-as-a-third-signal.md)). Its `Depends` line is computed from the binaries by `dpkg-shlibdeps` (today `libc6 (>= 2.34), libgcc-s1 (>= 4.2)`) plus `systemd (>= 249)`, and the build fails if a binary would need a newer glibc ([check-glibc.sh](../packaging/check-glibc.sh)), so a package built on a newer host still installs on the oldest supported one. The registered qualification runs used Debian 13; the other distributions are covered by the package's declared dependencies and by building and testing on Ubuntu 24.04, not by a registered run.
 
 The package installs `fabric-node`, `fabric-server` and `fabricctl` in `/usr/bin`, the units `fabrico11y-node.service` and `fabrico11y-server.service` in `system-fabrico11y.slice`, and a sysusers file that creates the system user and group `fabricolly`. Installation refuses an existing `fabricolly` account that is not a non-login system account with primary group `fabricolly`. Examples are in `/usr/share/doc/fabrico11y/examples`.
 
@@ -17,7 +19,7 @@ The package installs `fabric-node`, `fabric-server` and `fabricctl` in `/usr/bin
 1. Create `/etc/fabrico11y/server.conf` from the example. Provide a TLS certificate and key signed by a CA your nodes trust, and an admin token of at least 32 printable characters. Make the key and token `0640 root:fabricolly`.
 2. `sudo systemctl enable --now fabrico11y-server.service`.
 
-Keys: `listen`, `tls_cert`, `tls_key`, `state_dir`, `admin_token_file`, and optionally `journal_bytes` (default 20 GiB), `journal_file_bytes` (64 MiB; the unit sealed into a segment), `retention_s` (86,400), `retention_bytes` (20 GiB) and `query_plan` (`scan`, or `walk` for the key-ordered walk of [ADR-0024](decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md), which answers identically and reads only the sources an answer needs). Retention keeps at most the age and at most the bytes given, deleting whole segments oldest first.
+Keys: `listen`, `tls_cert`, `tls_key`, `state_dir`, `admin_token_file`, and optionally `journal_bytes` (default 20 GiB), `journal_file_bytes` (64 MiB; the unit sealed into a segment), `retention_s` (86,400), `retention_bytes` (20 GiB) `seal_workers` (Segments built at once; default half the CPUs, one to four) and `query_plan` (`scan`, or `walk` for the key-ordered walk of [ADR-0024](decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md), which answers identically and reads only the sources an answer needs). Retention keeps at most the age and at most the bytes given, deleting whole segments oldest first.
 
 ## Admin client
 
