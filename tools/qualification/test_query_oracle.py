@@ -129,8 +129,25 @@ def metrics_request(metrics: list) -> bytes:
     return _ld(1, resource_metrics)
 
 
+def span(trace_id: bytes, span_id: bytes, parent: bytes, name: str, kind: int, start: int, end: int,
+         attrs: dict, status_code=None) -> bytes:
+    out = _ld(1, trace_id) + _ld(2, span_id)
+    if parent:
+        out += _ld(4, parent)
+    out += _str_field(5, name) + _vint(6, kind)
+    out += _fixed64(7, struct.pack("<Q", start)) + _fixed64(8, struct.pack("<Q", end))
+    out += attrs_fields(9, attrs)
+    if status_code is not None:
+        out += _ld(15, _str_field(2, "msg") + _vint(3, status_code))
+    return out
+
+
+def traces_request(spans: list) -> bytes:
+    return _ld(1, _ld(2, b"".join(_ld(2, sp) for sp in spans)))
+
+
 def encode_batch(node_id16: bytes, generation: int, sequence: int, metrics_bytes: bytes,
-                  logs_bytes: bytes, gaps: list) -> bytes:
+                  logs_bytes: bytes, gaps: list, traces_bytes: bytes = b"") -> bytes:
     out = _vint(1, 1)
     out += _ld(2, node_id16)
     out += _vint(3, generation)
@@ -141,12 +158,14 @@ def encode_batch(node_id16: bytes, generation: int, sequence: int, metrics_bytes
         out += _ld(6, logs_bytes)
     for g in gaps:
         out += _str_field(8, g)
+    if traces_bytes:
+        out += _ld(9, traces_bytes)
     return out
 
 
 def record_dict(label: str, received_ns: int, node_id16: bytes, generation: int, sequence: int,
-                 metrics_bytes: bytes = b"", logs_bytes: bytes = b"", gaps=None) -> dict:
-    raw = encode_batch(node_id16, generation, sequence, metrics_bytes, logs_bytes, gaps or [])
+                 metrics_bytes: bytes = b"", logs_bytes: bytes = b"", gaps=None, traces_bytes: bytes = b"") -> dict:
+    raw = encode_batch(node_id16, generation, sequence, metrics_bytes, logs_bytes, gaps or [], traces_bytes)
     return {"label": label, "received_ns": received_ns, "bytes": base64.b64encode(raw).decode("ascii")}
 
 
@@ -858,5 +877,81 @@ class TestCLI(unittest.TestCase):
             self.assertEqual(proc.returncode, 2, proc.stdout + proc.stderr)
 
 
+# --------------------------------------------------------------------------
+# Spans (ADR-0025)
+# --------------------------------------------------------------------------
+
+T1 = bytes(range(16))
+T2 = bytes([0xEE] * 16)
+
+
+def build_span_fixture():
+    r1 = record_dict(
+        "nodeA", 1000, NODE_A, 1, 1,
+        traces_bytes=traces_request([
+            span(T1, b"\x01" * 8, b"", "GET /", 2, 100, 190, {"http.method": "GET"}, status_code=1),
+            span(T1, b"\x02" * 8, b"\x01" * 8, "db.query", 3, 120, 150, {}),
+            span(T2, b"\x03" * 8, b"", "GET /", 2, 300, 310, {}, status_code=2),
+        ]),
+    )
+    r2 = record_dict(
+        "nodeB", 1500, NODE_B, 1, 1,
+        traces_bytes=traces_request([span(T1, b"\x04" * 8, b"\x02" * 8, "cache.get", 3, 120, 125, {})]),
+    )
+    return [r1, r2]
+
+
+SPAN_QUERY = {"kind": "spans", "from_ns": 0, "to_ns": 2000, "limit": 2}
+
+
+class TestSpans(unittest.TestCase):
+    def setUp(self):
+        self.records = build_span_fixture()
+
+    def test_decoded_fields_and_order(self):
+        rows = qo.expected(self.records, SPAN_QUERY)["rows"]
+        self.assertEqual([(r["start_ns"], r["node"], r["index"]) for r in rows],
+                         [(100, "nodeA", 0), (120, "nodeA", 1), (120, "nodeB", 0), (300, "nodeA", 2)])
+        root = rows[0]
+        self.assertEqual(root["trace_id"], T1.hex())
+        self.assertEqual(root["span_id"], "01" * 8)
+        self.assertEqual(root["parent_span_id"], "")
+        self.assertEqual((root["name"], root["kind"], root["status"], root["end_ns"]), ("GET /", 2, 1, 190))
+        self.assertEqual(root["attributes"], {"http.method": "GET"})
+        self.assertEqual(rows[1]["parent_span_id"], "01" * 8)
+        self.assertEqual(rows[1]["status"], 0, "an absent Status is unset")
+
+    def test_trace_id_name_and_node_filters(self):
+        by_trace = qo.expected(self.records, dict(SPAN_QUERY, trace_id=T2.hex()))["rows"]
+        self.assertEqual([r["span_id"] for r in by_trace], ["03" * 8])
+        by_name = qo.expected(self.records, dict(SPAN_QUERY, name="GET /"))["rows"]
+        self.assertEqual(len(by_name), 2)
+        by_node = qo.expected(self.records, dict(SPAN_QUERY, node="nodeB"))["rows"]
+        self.assertEqual([r["name"] for r in by_node], ["cache.get"])
+        window = qo.expected(self.records, dict(SPAN_QUERY, from_ns=120, to_ns=300))["rows"]
+        self.assertEqual(len(window), 2, "start_ns is half-open")
+
+    def test_freshness_counts_span_starts(self):
+        self.assertEqual(qo.expected(self.records, SPAN_QUERY)["freshness"], {"nodeA": 300, "nodeB": 120})
+
+    def test_correct_pages_pass_and_mutants_fail(self):
+        pages, _ = build_correct_log_pages(self.records, SPAN_QUERY)
+        self.assertTrue(qo.check(self.records, SPAN_QUERY, pages)["passed"])
+        dropped = json.loads(json.dumps(pages)); dropped[0]["rows"].pop()
+        self.assertFalse(qo.check(self.records, SPAN_QUERY, dropped)["passed"])
+        wrong_parent = json.loads(json.dumps(pages)); wrong_parent[0]["rows"][1]["parent_span_id"] = ""
+        verdict = qo.check(self.records, SPAN_QUERY, wrong_parent)
+        self.assertEqual([v["rule"] for v in verdict["violations"]], ["ROW-CONTENT"])
+        reordered = json.loads(json.dumps(pages)); r = reordered[0]["rows"]; r[0], r[1] = r[1], r[0]
+        self.assertFalse(qo.check(self.records, SPAN_QUERY, reordered)["passed"])
+        extra_key = json.loads(json.dumps(pages)); extra_key[0]["rows"][0]["duration_ns"] = 90
+        self.assertEqual(qo.check(self.records, SPAN_QUERY, extra_key)["violations"][0]["rule"], "MALFORMED")
+
+    def test_unknown_query_key_is_malformed(self):
+        with self.assertRaises(qo.MalformedInput):
+            qo.validate_query(dict(SPAN_QUERY, contains="x"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
