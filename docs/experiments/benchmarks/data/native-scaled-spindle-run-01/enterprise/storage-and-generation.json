@@ -1,0 +1,22 @@
+{
+  "retained_segment_tree_bytes": 2701652474,
+  "source_file_bytes": 3153500000,
+  "phase_write_completions": {
+    "normal": {
+      "source_logs": 1000000,
+      "first_write_completion_s": 0.001172329,
+      "last_write_completion_s": 10.013465233
+    },
+    "burst": {
+      "source_logs": 1500000,
+      "first_write_completion_s": 10.041948683,
+      "last_write_completion_s": 17.019928759
+    },
+    "recovery": {
+      "source_logs": 1000000,
+      "first_write_completion_s": 17.021000198,
+      "last_write_completion_s": 24.93424344
+    }
+  },
+  "retained_evidence_bytes_before_this_file": 1829931
+}

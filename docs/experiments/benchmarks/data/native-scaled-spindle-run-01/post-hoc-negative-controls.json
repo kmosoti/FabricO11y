@@ -1,0 +1,12 @@
+{
+  "runner_controls": {
+    "sqlite_source_comparison": {
+      "identical": "identical",
+      "changed": "changed",
+      "missing": "missing"
+    },
+    "disappearing_file_inventory_rejected_as_present": true
+  },
+  "clock_mutation_rejected": true,
+  "ack_mutation_rejected": true
+}

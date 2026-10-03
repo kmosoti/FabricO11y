@@ -1,0 +1,219 @@
+{
+  "name": "medium",
+  "real_spindles": 20,
+  "ordinary_events_s": 10000,
+  "burst_events_s": 30000,
+  "expected_logs": 350000,
+  "offered_logs": 350000,
+  "decoded_logs": 350000,
+  "unique_logs": 350000,
+  "missing_logs": 0,
+  "changed_logs": 0,
+  "unexpected_logs": 0,
+  "gaps": [],
+  "acked_batches": 692,
+  "recovered_batches": 692,
+  "missing_or_changed_ack": 0,
+  "producer": {
+    "epoch_ns": 1791064459360938621,
+    "elapsed_s": 24.902407661
+  },
+  "producer_lag_ms": {
+    "samples": 5000,
+    "p50": 1.685321,
+    "p99": 15.561967,
+    "max": 71.216179,
+    "negative": 0
+  },
+  "latency_ms": {
+    "normal": {
+      "ingest": {
+        "samples": 100000,
+        "p50": 14.947352,
+        "p99": 35.909812,
+        "max": 42.842158,
+        "negative": 0
+      },
+      "ack": {
+        "samples": 100000,
+        "p50": 22.006668,
+        "p99": 48.923099,
+        "max": 52.315376,
+        "negative": 0
+      },
+      "source_ingest": {
+        "samples": 100000,
+        "p50": 513.8119,
+        "p99": 1008.301658,
+        "max": 1019.782462,
+        "negative": 0
+      },
+      "scheduled_ingest": {
+        "samples": 100000,
+        "p50": 516.298392,
+        "p99": 1011.912206,
+        "max": 1021.944318,
+        "negative": 0
+      },
+      "source_ack": {
+        "samples": 100000,
+        "p50": 519.606374,
+        "p99": 1014.904429,
+        "max": 1024.654094,
+        "negative": 0
+      }
+    },
+    "burst": {
+      "ingest": {
+        "samples": 150000,
+        "p50": 31.475424,
+        "p99": 117.518476,
+        "max": 120.738562,
+        "negative": 0
+      },
+      "ack": {
+        "samples": 150000,
+        "p50": 41.160915,
+        "p99": 131.708408,
+        "max": 132.973008,
+        "negative": 0
+      },
+      "source_ingest": {
+        "samples": 150000,
+        "p50": 575.174741,
+        "p99": 1047.871251,
+        "max": 1095.337245,
+        "negative": 0
+      },
+      "scheduled_ingest": {
+        "samples": 150000,
+        "p50": 578.67248,
+        "p99": 1070.899725,
+        "max": 1105.061652,
+        "negative": 0
+      },
+      "source_ack": {
+        "samples": 150000,
+        "p50": 583.52707,
+        "p99": 1058.752571,
+        "max": 1108.325129,
+        "negative": 0
+      }
+    },
+    "recovery": {
+      "ingest": {
+        "samples": 100000,
+        "p50": 10.126152,
+        "p99": 28.710629,
+        "max": 36.274405,
+        "negative": 0
+      },
+      "ack": {
+        "samples": 100000,
+        "p50": 14.457861,
+        "p99": 33.786476,
+        "max": 42.325542,
+        "negative": 0
+      },
+      "source_ingest": {
+        "samples": 100000,
+        "p50": 467.215344,
+        "p99": 1002.9576,
+        "max": 1013.230204,
+        "negative": 0
+      },
+      "scheduled_ingest": {
+        "samples": 100000,
+        "p50": 469.520432,
+        "p99": 1004.796008,
+        "max": 1015.335899,
+        "negative": 0
+      },
+      "source_ack": {
+        "samples": 100000,
+        "p50": 471.657147,
+        "p99": 1008.30871,
+        "max": 1017.700534,
+        "negative": 0
+      }
+    },
+    "all": {
+      "ingest": {
+        "samples": 350000,
+        "p50": 15.583807,
+        "p99": 102.994999,
+        "max": 120.738562,
+        "negative": 0
+      },
+      "ack": {
+        "samples": 350000,
+        "p50": 22.199826,
+        "p99": 126.698031,
+        "max": 132.973008,
+        "negative": 0
+      },
+      "source_ingest": {
+        "samples": 350000,
+        "p50": 527.970953,
+        "p99": 1013.62326,
+        "max": 1095.337245,
+        "negative": 0
+      },
+      "scheduled_ingest": {
+        "samples": 350000,
+        "p50": 530.837748,
+        "p99": 1021.850522,
+        "max": 1105.061652,
+        "negative": 0
+      },
+      "source_ack": {
+        "samples": 350000,
+        "p50": 535.387076,
+        "p99": 1025.765463,
+        "max": 1108.325129,
+        "negative": 0
+      }
+    }
+  },
+  "native_attempt_rtt_ms": {
+    "samples": 692,
+    "p50": 10.003,
+    "p99": 45.897,
+    "max": 61.358,
+    "negative": 0
+  },
+  "retries": {},
+  "drain_seconds_after_producer": 1.002805685995554,
+  "server_peak_rss_mib": 470.38671875,
+  "node_peak_rss_mib": 9.2421875,
+  "aggregate_nodes_peak_rss_mib": 149.4453125,
+  "producer_peak_rss_mib": 1.2578125,
+  "server_mean_cpu_equivalents": 0.1273818165149324,
+  "nodes_mean_cpu_equivalents": 0.09027839020918106,
+  "encoded_batch_bytes": 393142901,
+  "encoded_bytes_per_source_log": 1123.2654314285714,
+  "max_file_backlog_bytes_per_node": 646017,
+  "max_reported_spool_bytes_per_node": 9653404,
+  "peak_spool_disk_bytes": 169770522,
+  "max_sealed_files": 1,
+  "segments_final": 5,
+  "sealed_final": 0,
+  "peak_timed_disk_bytes": 711557725,
+  "offset_range_ms": 0.0009765625,
+  "gates": {
+    "all_exact_source_logs": true,
+    "no_gaps": true,
+    "ack_hash_custody": true,
+    "contiguous_sequences": true,
+    "clean_exits": true,
+    "drained_within_120s": true,
+    "producer_lag_p99_le_100ms": true,
+    "ingest_p99_le_1s": true,
+    "ack_p99_le_1s": true,
+    "source_ingest_p99_le_2s": true,
+    "server_rss_le_2gib": true,
+    "node_rss_le_64mib": true,
+    "offset_range_le_5ms": true
+  },
+  "passed": true
+}

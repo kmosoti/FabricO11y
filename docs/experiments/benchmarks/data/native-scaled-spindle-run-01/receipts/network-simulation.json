@@ -1,0 +1,38 @@
+{
+  "bounds": null,
+  "candidate_commit": "9eb15a7609cf7914a3817fed3c499aea6fe6adc5",
+  "check_id": "network-simulation",
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "fabric-sim"
+  ],
+  "duration_ms": 1106,
+  "exit_code": 0,
+  "expected": "exit 0",
+  "fixtures": null,
+  "negative_controls": "M-SIM-DUPLICATE in xtask/mutants.json",
+  "oracle_revision": "none",
+  "output_sha256": "57cc37c0389ec4fbeea5957a179c28eaafd8ed481f7d277bf1783bc1f9bd3392",
+  "profile": "fast",
+  "property_ids": [
+    "DEL-1",
+    "DEL-2",
+    "DEL-4"
+  ],
+  "receipt_version": 1,
+  "result": "passed",
+  "scope": "turmoil simulation of delivery against the real server router and store under link failures, latency, partitions and lost answers (6 seeds)",
+  "specification_revision": "none",
+  "toolchain": {
+    "bun": "1.4.0",
+    "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)",
+    "python3": "Python 3.12.14",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "Process crashes (delivery-faults covers them); TLS; the commit thread runs on a real OS thread, so runs are not fully deterministic.",
+  "worktree_dirty": false
+}
