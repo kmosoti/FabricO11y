@@ -1,0 +1,131 @@
+{
+  "name": "enterprise",
+  "identities": 2000,
+  "seal_workers": 1,
+  "expected_logs": 3500000,
+  "recovered_logs": 3500000,
+  "created_batches": 50000,
+  "recovered_batches": 50000,
+  "acks": 50000,
+  "pending": 0,
+  "creation_lag_ms": {
+    "samples": 50000,
+    "p50": 195.160641,
+    "p99": 1375.942555,
+    "max": 1791.838393,
+    "negative": 0
+  },
+  "actual_generation_span_seconds": 24.703513966,
+  "nominal_average_events_s": 140000.0,
+  "events_s_over_actual_generation_span": 141680.24860014362,
+  "encoded_batch_bytes": 3223520000,
+  "encoded_bytes_per_log": 921.0057142857142,
+  "latency_ms": {
+    "ingest": {
+      "samples": 3500000,
+      "p50": 1119.274459,
+      "p99": 6984.896396,
+      "max": 9840.861294,
+      "negative": 0
+    },
+    "normal_ingest": {
+      "samples": 1000000,
+      "p50": 331.303995,
+      "p99": 1860.586036,
+      "max": 2431.84708,
+      "negative": 0
+    },
+    "scheduled_ingest": {
+      "samples": 3500000,
+      "p50": 1762.364632,
+      "p99": 7350.102063,
+      "max": 10694.650042,
+      "negative": 0
+    },
+    "normal_scheduled_ingest": {
+      "samples": 1000000,
+      "p50": 460.85035,
+      "p99": 1949.447365,
+      "max": 2505.415296,
+      "negative": 0
+    },
+    "ack": {
+      "samples": 3500000,
+      "p50": 1125.947729,
+      "p99": 6991.965952,
+      "max": 9847.040018,
+      "negative": 0
+    },
+    "scheduled_ack": {
+      "samples": 3500000,
+      "p50": 1768.892826,
+      "p99": 7356.374175,
+      "max": 10699.370819,
+      "negative": 0
+    },
+    "burst_ingest": {
+      "samples": 1500000,
+      "p50": 1096.596994,
+      "p99": 5821.956721,
+      "max": 9650.919453,
+      "negative": 0
+    },
+    "burst_scheduled_ingest": {
+      "samples": 1500000,
+      "p50": 1762.364632,
+      "p99": 6268.692973,
+      "max": 10435.543775,
+      "negative": 0
+    },
+    "recovery_ingest": {
+      "samples": 1000000,
+      "p50": 4095.230166,
+      "p99": 7874.352547,
+      "max": 9840.861294,
+      "negative": 0
+    },
+    "recovery_scheduled_ingest": {
+      "samples": 1000000,
+      "p50": 4402.177624,
+      "p99": 8171.933935,
+      "max": 10694.650042,
+      "negative": 0
+    }
+  },
+  "request_rtt_ms": {
+    "samples": 50000,
+    "p50": 30.081196,
+    "p99": 127.761043,
+    "max": 441.87761,
+    "negative": 0
+  },
+  "non_ack_attempts": 43305,
+  "server_peak_rss_mib": 1061.0546875,
+  "simulator_peak_rss_mib": 1640.890625,
+  "server_mean_cpu_equivalents": 0.8411181674480865,
+  "simulator_mean_cpu_equivalents": 1.1980376343634491,
+  "max_sealed_files_waiting": 15,
+  "segments_final": 47,
+  "sealed_files_final": 0,
+  "clock_offset_range_ms": 0.00146484375,
+  "peak_trial_disk_bytes": 2918056576,
+  "gates": {
+    "expected_logs_recovered": true,
+    "expected_batches_generated": true,
+    "pending_zero": true,
+    "delivery_oracle": true,
+    "clean_exits": true,
+    "creation_lag_p99_le_1s": false,
+    "ingest_p99_le_1s": false,
+    "ack_p99_le_1s": false,
+    "scheduled_ingest_p99_le_2s": false,
+    "server_rss_le_2gib": true,
+    "simulator_rss_le_4gib": true,
+    "clock_offset_range_le_5ms": true
+  },
+  "passed": false,
+  "oracle": {
+    "passed": true,
+    "violations": []
+  }
+}

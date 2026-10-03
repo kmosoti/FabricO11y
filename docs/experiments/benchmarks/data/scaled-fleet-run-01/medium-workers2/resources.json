@@ -1,0 +1,868 @@
+[
+  {
+    "wall_ns": 1791062310823334840,
+    "mono_ns": 56851133494378,
+    "server": {
+      "cpu_s": 0.0,
+      "rss_kib": 7128,
+      "hwm_kib": 7128
+    },
+    "simulator": {
+      "cpu_s": 0.0,
+      "rss_kib": 300,
+      "hwm_kib": 300
+    },
+    "logical_disk_bytes": 87868,
+    "sealed_files": 0,
+    "segments": 0,
+    "cgroup_memory_current": 10633785344
+  },
+  {
+    "wall_ns": 1791062311826699699,
+    "mono_ns": 56852136859597,
+    "server": {
+      "cpu_s": 0.13,
+      "rss_kib": 26240,
+      "hwm_kib": 26240
+    },
+    "simulator": {
+      "cpu_s": 0.28,
+      "rss_kib": 135612,
+      "hwm_kib": 135920
+    },
+    "logical_disk_bytes": 9718307,
+    "sealed_files": 0,
+    "segments": 0,
+    "cgroup_memory_current": 10804699136
+  },
+  {
+    "wall_ns": 1791062312829949536,
+    "mono_ns": 56853140108994,
+    "server": {
+      "cpu_s": 0.17,
+      "rss_kib": 38968,
+      "hwm_kib": 38968
+    },
+    "simulator": {
+      "cpu_s": 0.38,
+      "rss_kib": 140144,
+      "hwm_kib": 142728
+    },
+    "logical_disk_bytes": 19062309,
+    "sealed_files": 0,
+    "segments": 0,
+    "cgroup_memory_current": 10832293888
+  },
+  {
+    "wall_ns": 1791062313833154543,
+    "mono_ns": 56854143314011,
+    "server": {
+      "cpu_s": 0.21,
+      "rss_kib": 45292,
+      "hwm_kib": 45292
+    },
+    "simulator": {
+      "cpu_s": 0.48,
+      "rss_kib": 140588,
+      "hwm_kib": 143676
+    },
+    "logical_disk_bytes": 28397995,
+    "sealed_files": 0,
+    "segments": 0,
+    "cgroup_memory_current": 10848862208
+  },
+  {
+    "wall_ns": 1791062314836802967,
+    "mono_ns": 56855146962595,
+    "server": {
+      "cpu_s": 0.25,
+      "rss_kib": 46784,
+      "hwm_kib": 46784
+    },
+    "simulator": {
+      "cpu_s": 0.58,
+      "rss_kib": 140860,
+      "hwm_kib": 143948
+    },
+    "logical_disk_bytes": 37842334,
+    "sealed_files": 0,
+    "segments": 0,
+    "cgroup_memory_current": 10859524096
+  },
+  {
+    "wall_ns": 1791062315862432833,
+    "mono_ns": 56856172592592,
+    "server": {
+      "cpu_s": 0.31,
+      "rss_kib": 47772,
+      "hwm_kib": 47772
+    },
+    "simulator": {
+      "cpu_s": 0.71,
+      "rss_kib": 144332,
+      "hwm_kib": 144332
+    },
+    "logical_disk_bytes": 51336806,
+    "sealed_files": 0,
+    "segments": 0,
+    "cgroup_memory_current": 10878881792
+  },
+  {
+    "wall_ns": 1791062316869210621,
+    "mono_ns": 56857179370329,
+    "server": {
+      "cpu_s": 0.36,
+      "rss_kib": 47956,
+      "hwm_kib": 47956
+    },
+    "simulator": {
+      "cpu_s": 0.82,
+      "rss_kib": 144136,
+      "hwm_kib": 144136
+    },
+    "logical_disk_bytes": 61796145,
+    "sealed_files": 0,
+    "segments": 0,
+    "cgroup_memory_current": 10889396224
+  },
+  {
+    "wall_ns": 1791062317875057008,
+    "mono_ns": 56858185216967,
+    "server": {
+      "cpu_s": 0.4,
+      "rss_kib": 48388,
+      "hwm_kib": 48388
+    },
+    "simulator": {
+      "cpu_s": 0.94,
+      "rss_kib": 144344,
+      "hwm_kib": 144344
+    },
+    "logical_disk_bytes": 72207156,
+    "sealed_files": 1,
+    "segments": 0,
+    "cgroup_memory_current": 10900738048
+  },
+  {
+    "wall_ns": 1791062318883397053,
+    "mono_ns": 56859193556871,
+    "server": {
+      "cpu_s": 0.55,
+      "rss_kib": 209328,
+      "hwm_kib": 209328
+    },
+    "simulator": {
+      "cpu_s": 1.03,
+      "rss_kib": 142844,
+      "hwm_kib": 144112
+    },
+    "logical_disk_bytes": 83676414,
+    "sealed_files": 1,
+    "segments": 0,
+    "cgroup_memory_current": 11076452352
+  },
+  {
+    "wall_ns": 1791062319889467848,
+    "mono_ns": 56860199627707,
+    "server": {
+      "cpu_s": 1.23,
+      "rss_kib": 291216,
+      "hwm_kib": 423484
+    },
+    "simulator": {
+      "cpu_s": 1.13,
+      "rss_kib": 143512,
+      "hwm_kib": 144436
+    },
+    "logical_disk_bytes": 81341649,
+    "sealed_files": 0,
+    "segments": 1,
+    "cgroup_memory_current": 11155300352
+  },
+  {
+    "wall_ns": 1791062320899400041,
+    "mono_ns": 56861209560040,
+    "server": {
+      "cpu_s": 1.27,
+      "rss_kib": 310104,
+      "hwm_kib": 423484
+    },
+    "simulator": {
+      "cpu_s": 1.29,
+      "rss_kib": 174704,
+      "hwm_kib": 174704
+    },
+    "logical_disk_bytes": 89371677,
+    "sealed_files": 0,
+    "segments": 1,
+    "cgroup_memory_current": 11214815232
+  },
+  {
+    "wall_ns": 1791062321904349052,
+    "mono_ns": 56862214508711,
+    "server": {
+      "cpu_s": 1.37,
+      "rss_kib": 334256,
+      "hwm_kib": 423484
+    },
+    "simulator": {
+      "cpu_s": 1.53,
+      "rss_kib": 181100,
+      "hwm_kib": 181100
+    },
+    "logical_disk_bytes": 115167338,
+    "sealed_files": 0,
+    "segments": 1,
+    "cgroup_memory_current": 11273232384
+  },
+  {
+    "wall_ns": 1791062322911338250,
+    "mono_ns": 56863221498469,
+    "server": {
+      "cpu_s": 1.83,
+      "rss_kib": 628472,
+      "hwm_kib": 662576
+    },
+    "simulator": {
+      "cpu_s": 1.73,
+      "rss_kib": 181948,
+      "hwm_kib": 181948
+    },
+    "logical_disk_bytes": 171497342,
+    "sealed_files": 1,
+    "segments": 1,
+    "cgroup_memory_current": 11638382592
+  },
+  {
+    "wall_ns": 1791062323918629666,
+    "mono_ns": 56864228789264,
+    "server": {
+      "cpu_s": 2.25,
+      "rss_kib": 388876,
+      "hwm_kib": 748748
+    },
+    "simulator": {
+      "cpu_s": 1.92,
+      "rss_kib": 181128,
+      "hwm_kib": 181568
+    },
+    "logical_disk_bytes": 164785059,
+    "sealed_files": 0,
+    "segments": 2,
+    "cgroup_memory_current": 11379216384
+  },
+  {
+    "wall_ns": 1791062324924261381,
+    "mono_ns": 56865234421159,
+    "server": {
+      "cpu_s": 2.99,
+      "rss_kib": 398020,
+      "hwm_kib": 755772
+    },
+    "simulator": {
+      "cpu_s": 2.13,
+      "rss_kib": 178296,
+      "hwm_kib": 181568
+    },
+    "logical_disk_bytes": 182393286,
+    "sealed_files": 0,
+    "segments": 3,
+    "cgroup_memory_current": 11404328960
+  },
+  {
+    "wall_ns": 1791062325928966958,
+    "mono_ns": 56866239126405,
+    "server": {
+      "cpu_s": 3.08,
+      "rss_kib": 399108,
+      "hwm_kib": 755772
+    },
+    "simulator": {
+      "cpu_s": 2.25,
+      "rss_kib": 146744,
+      "hwm_kib": 181568
+    },
+    "logical_disk_bytes": 205849321,
+    "sealed_files": 0,
+    "segments": 3,
+    "cgroup_memory_current": 11395928064
+  },
+  {
+    "wall_ns": 1791062326932583418,
+    "mono_ns": 56867242743016,
+    "server": {
+      "cpu_s": 3.13,
+      "rss_kib": 399848,
+      "hwm_kib": 755772
+    },
+    "simulator": {
+      "cpu_s": 2.34,
+      "rss_kib": 147552,
+      "hwm_kib": 181568
+    },
+    "logical_disk_bytes": 215192807,
+    "sealed_files": 0,
+    "segments": 3,
+    "cgroup_memory_current": 11406495744
+  },
+  {
+    "wall_ns": 1791062327935924630,
+    "mono_ns": 56868246084098,
+    "server": {
+      "cpu_s": 3.16,
+      "rss_kib": 400460,
+      "hwm_kib": 755772
+    },
+    "simulator": {
+      "cpu_s": 2.43,
+      "rss_kib": 147204,
+      "hwm_kib": 181568
+    },
+    "logical_disk_bytes": 224528075,
+    "sealed_files": 0,
+    "segments": 3,
+    "cgroup_memory_current": 11416363008
+  },
+  {
+    "wall_ns": 1791062328939588706,
+    "mono_ns": 56869249748454,
+    "server": {
+      "cpu_s": 3.2,
+      "rss_kib": 401236,
+      "hwm_kib": 755772
+    },
+    "simulator": {
+      "cpu_s": 2.52,
+      "rss_kib": 147188,
+      "hwm_kib": 181568
+    },
+    "logical_disk_bytes": 233871390,
+    "sealed_files": 0,
+    "segments": 3,
+    "cgroup_memory_current": 11426041856
+  },
+  {
+    "wall_ns": 1791062329943331964,
+    "mono_ns": 56870253491642,
+    "server": {
+      "cpu_s": 3.28,
+      "rss_kib": 519124,
+      "hwm_kib": 755772
+    },
+    "simulator": {
+      "cpu_s": 2.61,
+      "rss_kib": 147432,
+      "hwm_kib": 181568
+    },
+    "logical_disk_bytes": 243206790,
+    "sealed_files": 1,
+    "segments": 3,
+    "cgroup_memory_current": 11556798464
+  },
+  {
+    "wall_ns": 1791062330947345143,
+    "mono_ns": 56871257504721,
+    "server": {
+      "cpu_s": 3.93,
+      "rss_kib": 402848,
+      "hwm_kib": 774504
+    },
+    "simulator": {
+      "cpu_s": 2.71,
+      "rss_kib": 147508,
+      "hwm_kib": 181568
+    },
+    "logical_disk_bytes": 240407604,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11434708992
+  },
+  {
+    "wall_ns": 1791062331951075760,
+    "mono_ns": 56872261235418,
+    "server": {
+      "cpu_s": 3.98,
+      "rss_kib": 402944,
+      "hwm_kib": 774504
+    },
+    "simulator": {
+      "cpu_s": 2.81,
+      "rss_kib": 147644,
+      "hwm_kib": 181568
+    },
+    "logical_disk_bytes": 249742965,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11444662272
+  },
+  {
+    "wall_ns": 1791062332954948984,
+    "mono_ns": 56873265108442,
+    "server": {
+      "cpu_s": 4.02,
+      "rss_kib": 402948,
+      "hwm_kib": 774504
+    },
+    "simulator": {
+      "cpu_s": 2.9,
+      "rss_kib": 147636,
+      "hwm_kib": 181568
+    },
+    "logical_disk_bytes": 259094666,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11452682240
+  },
+  {
+    "wall_ns": 1791062333958891686,
+    "mono_ns": 56874269051113,
+    "server": {
+      "cpu_s": 4.06,
+      "rss_kib": 402956,
+      "hwm_kib": 774504
+    },
+    "simulator": {
+      "cpu_s": 2.99,
+      "rss_kib": 147644,
+      "hwm_kib": 181568
+    },
+    "logical_disk_bytes": 268430063,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11461627904
+  },
+  {
+    "wall_ns": 1791062334962638507,
+    "mono_ns": 56875272798216,
+    "server": {
+      "cpu_s": 4.12,
+      "rss_kib": 402972,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318124544
+  },
+  {
+    "wall_ns": 1791062335966487472,
+    "mono_ns": 56876276647070,
+    "server": {
+      "cpu_s": 4.12,
+      "rss_kib": 402972,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318124544
+  },
+  {
+    "wall_ns": 1791062336970181890,
+    "mono_ns": 56877280341478,
+    "server": {
+      "cpu_s": 4.12,
+      "rss_kib": 402972,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318124544
+  },
+  {
+    "wall_ns": 1791062337973738596,
+    "mono_ns": 56878283898445,
+    "server": {
+      "cpu_s": 4.12,
+      "rss_kib": 402972,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318124544
+  },
+  {
+    "wall_ns": 1791062338977339283,
+    "mono_ns": 56879287498861,
+    "server": {
+      "cpu_s": 4.12,
+      "rss_kib": 402972,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318124544
+  },
+  {
+    "wall_ns": 1791062339981102970,
+    "mono_ns": 56880291262398,
+    "server": {
+      "cpu_s": 4.12,
+      "rss_kib": 402976,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318124544
+  },
+  {
+    "wall_ns": 1791062340984822763,
+    "mono_ns": 56881294982341,
+    "server": {
+      "cpu_s": 4.12,
+      "rss_kib": 402984,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318116352
+  },
+  {
+    "wall_ns": 1791062341988968391,
+    "mono_ns": 56882299127849,
+    "server": {
+      "cpu_s": 4.12,
+      "rss_kib": 402984,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318116352
+  },
+  {
+    "wall_ns": 1791062342992851411,
+    "mono_ns": 56883303011199,
+    "server": {
+      "cpu_s": 4.12,
+      "rss_kib": 402988,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318116352
+  },
+  {
+    "wall_ns": 1791062343996398069,
+    "mono_ns": 56884306557777,
+    "server": {
+      "cpu_s": 4.12,
+      "rss_kib": 402988,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318116352
+  },
+  {
+    "wall_ns": 1791062344999890714,
+    "mono_ns": 56885310050462,
+    "server": {
+      "cpu_s": 4.12,
+      "rss_kib": 402992,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318116352
+  },
+  {
+    "wall_ns": 1791062346003380351,
+    "mono_ns": 56886313539919,
+    "server": {
+      "cpu_s": 4.12,
+      "rss_kib": 402996,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318116352
+  },
+  {
+    "wall_ns": 1791062347007674792,
+    "mono_ns": 56887317834470,
+    "server": {
+      "cpu_s": 4.13,
+      "rss_kib": 402996,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318116352
+  },
+  {
+    "wall_ns": 1791062348011381091,
+    "mono_ns": 56888321540679,
+    "server": {
+      "cpu_s": 4.13,
+      "rss_kib": 402996,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318628352
+  },
+  {
+    "wall_ns": 1791062349014771212,
+    "mono_ns": 56889324930980,
+    "server": {
+      "cpu_s": 4.13,
+      "rss_kib": 402996,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318628352
+  },
+  {
+    "wall_ns": 1791062350018170686,
+    "mono_ns": 56890328330214,
+    "server": {
+      "cpu_s": 4.13,
+      "rss_kib": 403004,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318509568
+  },
+  {
+    "wall_ns": 1791062351021534318,
+    "mono_ns": 56891331693937,
+    "server": {
+      "cpu_s": 4.13,
+      "rss_kib": 403004,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318509568
+  },
+  {
+    "wall_ns": 1791062352024944887,
+    "mono_ns": 56892335104455,
+    "server": {
+      "cpu_s": 4.13,
+      "rss_kib": 403008,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318509568
+  },
+  {
+    "wall_ns": 1791062353028611919,
+    "mono_ns": 56893338771347,
+    "server": {
+      "cpu_s": 4.13,
+      "rss_kib": 403008,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318509568
+  },
+  {
+    "wall_ns": 1791062354032293609,
+    "mono_ns": 56894342453067,
+    "server": {
+      "cpu_s": 4.13,
+      "rss_kib": 403008,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318509568
+  },
+  {
+    "wall_ns": 1791062355035871822,
+    "mono_ns": 56895346031270,
+    "server": {
+      "cpu_s": 4.13,
+      "rss_kib": 403008,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318247424
+  },
+  {
+    "wall_ns": 1791062356039410531,
+    "mono_ns": 56896349570019,
+    "server": {
+      "cpu_s": 4.13,
+      "rss_kib": 403012,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318247424
+  },
+  {
+    "wall_ns": 1791062357043019253,
+    "mono_ns": 56897353179151,
+    "server": {
+      "cpu_s": 4.13,
+      "rss_kib": 403012,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318247424
+  },
+  {
+    "wall_ns": 1791062358046950610,
+    "mono_ns": 56898357109807,
+    "server": {
+      "cpu_s": 4.13,
+      "rss_kib": 403012,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318247424
+  },
+  {
+    "wall_ns": 1791062359050624861,
+    "mono_ns": 56899360784279,
+    "server": {
+      "cpu_s": 4.13,
+      "rss_kib": 403012,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318247424
+  },
+  {
+    "wall_ns": 1791062360054204983,
+    "mono_ns": 56900364364571,
+    "server": {
+      "cpu_s": 4.14,
+      "rss_kib": 403012,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318247424
+  },
+  {
+    "wall_ns": 1791062361057621491,
+    "mono_ns": 56901367780889,
+    "server": {
+      "cpu_s": 4.14,
+      "rss_kib": 403012,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318247424
+  },
+  {
+    "wall_ns": 1791062362061188046,
+    "mono_ns": 56902371347514,
+    "server": {
+      "cpu_s": 4.14,
+      "rss_kib": 403012,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318247424
+  },
+  {
+    "wall_ns": 1791062363064591022,
+    "mono_ns": 56903374750480,
+    "server": {
+      "cpu_s": 4.14,
+      "rss_kib": 403012,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318247424
+  },
+  {
+    "wall_ns": 1791062364068075167,
+    "mono_ns": 56904378234745,
+    "server": {
+      "cpu_s": 4.14,
+      "rss_kib": 403016,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318247424
+  },
+  {
+    "wall_ns": 1791062365071481546,
+    "mono_ns": 56905381640904,
+    "server": {
+      "cpu_s": 4.14,
+      "rss_kib": 403016,
+      "hwm_kib": 774504
+    },
+    "simulator": null,
+    "logical_disk_bytes": 277801523,
+    "sealed_files": 0,
+    "segments": 4,
+    "cgroup_memory_current": 11318247424
+  }
+]

@@ -1,0 +1,131 @@
+{
+  "name": "medium",
+  "identities": 200,
+  "seal_workers": 1,
+  "expected_logs": 350000,
+  "recovered_logs": 350000,
+  "created_batches": 5000,
+  "recovered_batches": 5000,
+  "acks": 5000,
+  "pending": 0,
+  "creation_lag_ms": {
+    "samples": 5000,
+    "p50": 16.280151,
+    "p99": 64.973338,
+    "max": 74.417964,
+    "negative": 0
+  },
+  "actual_generation_span_seconds": 24.036478637,
+  "nominal_average_events_s": 14000.0,
+  "events_s_over_actual_generation_span": 14561.201134563678,
+  "encoded_batch_bytes": 322352000,
+  "encoded_bytes_per_log": 921.0057142857142,
+  "latency_ms": {
+    "ingest": {
+      "samples": 350000,
+      "p50": 34.05515,
+      "p99": 168.43863,
+      "max": 207.640353,
+      "negative": 0
+    },
+    "normal_ingest": {
+      "samples": 100000,
+      "p50": 23.992205,
+      "p99": 174.689795,
+      "max": 207.640353,
+      "negative": 0
+    },
+    "scheduled_ingest": {
+      "samples": 350000,
+      "p50": 52.524314,
+      "p99": 214.350145,
+      "max": 227.47332,
+      "negative": 0
+    },
+    "normal_scheduled_ingest": {
+      "samples": 100000,
+      "p50": 40.673483,
+      "p99": 218.86331,
+      "max": 227.47332,
+      "negative": 0
+    },
+    "ack": {
+      "samples": 350000,
+      "p50": 41.051076,
+      "p99": 175.13496,
+      "max": 212.333338,
+      "negative": 0
+    },
+    "scheduled_ack": {
+      "samples": 350000,
+      "p50": 59.784922,
+      "p99": 222.533622,
+      "max": 240.50755,
+      "negative": 0
+    },
+    "burst_ingest": {
+      "samples": 150000,
+      "p50": 80.474716,
+      "p99": 170.451835,
+      "max": 181.54607,
+      "negative": 0
+    },
+    "burst_scheduled_ingest": {
+      "samples": 150000,
+      "p50": 113.745823,
+      "p99": 214.350145,
+      "max": 225.00643,
+      "negative": 0
+    },
+    "recovery_ingest": {
+      "samples": 100000,
+      "p50": 20.543535,
+      "p99": 55.736377,
+      "max": 67.113141,
+      "negative": 0
+    },
+    "recovery_scheduled_ingest": {
+      "samples": 100000,
+      "p50": 37.853668,
+      "p99": 74.365052,
+      "max": 84.844635,
+      "negative": 0
+    }
+  },
+  "request_rtt_ms": {
+    "samples": 5000,
+    "p50": 18.171307,
+    "p99": 86.461776,
+    "max": 132.665607,
+    "negative": 0
+  },
+  "non_ack_attempts": 0,
+  "server_peak_rss_mib": 641.98046875,
+  "simulator_peak_rss_mib": 177.46484375,
+  "server_mean_cpu_equivalents": 0.07999824146169804,
+  "simulator_mean_cpu_equivalents": 0.14134074539739594,
+  "max_sealed_files_waiting": 1,
+  "segments_final": 4,
+  "sealed_files_final": 0,
+  "clock_offset_range_ms": 0.0009765625,
+  "peak_trial_disk_bytes": 277912218,
+  "gates": {
+    "expected_logs_recovered": true,
+    "expected_batches_generated": true,
+    "pending_zero": true,
+    "delivery_oracle": true,
+    "clean_exits": true,
+    "creation_lag_p99_le_1s": true,
+    "ingest_p99_le_1s": true,
+    "ack_p99_le_1s": true,
+    "scheduled_ingest_p99_le_2s": true,
+    "server_rss_le_2gib": true,
+    "simulator_rss_le_4gib": true,
+    "clock_offset_range_le_5ms": true
+  },
+  "passed": true,
+  "oracle": {
+    "passed": true,
+    "violations": []
+  }
+}

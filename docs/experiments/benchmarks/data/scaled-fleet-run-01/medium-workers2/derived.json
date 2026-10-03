@@ -1,0 +1,6 @@
+{
+  "ack_completion_seconds_from_sim_epoch": 24.072068148,
+  "acked_events_s_over_completion": 14539.673028845233,
+  "non_ack_kinds": {},
+  "server_files_at_rest_bytes": 274365198
+}

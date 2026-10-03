@@ -1,0 +1,6 @@
+{
+  "p99_reduction_fraction": 0.11188835363954208,
+  "rss_increase_fraction": 0.17815354098340697,
+  "exploratory_control_met_threshold": true,
+  "caveat": "one sequential trial per variant; no significance or universal winner"
+}
