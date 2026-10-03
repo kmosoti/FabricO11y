@@ -202,7 +202,13 @@ class RunnerControls(unittest.TestCase):
         try:
             deadline = time.monotonic() + 2
             while time.monotonic() < deadline:
-                current = json.loads((self.path / "result.json").read_text())
+                # The runner unlinks the old result before writing the new
+                # one, so a poll can land in that gap or on a partial write.
+                try:
+                    current = json.loads((self.path / "result.json").read_text())
+                except (FileNotFoundError, json.JSONDecodeError):
+                    time.sleep(0.01)
+                    continue
                 if current.get("invocation_id") != first["invocation_id"]:
                     break
                 time.sleep(0.01)
