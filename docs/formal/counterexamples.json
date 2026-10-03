@@ -181,6 +181,18 @@
         "test": "rejects_dictionaries_out_of_first_use_order_or_unused"
       },
       "fix_commit": "9a12bf6"
+    },
+    {
+      "id": "CX-BUDGET-BOUNDARY-AT-START",
+      "origin": "property the_budget_drains_to_the_definition (T8) in a fast-check run",
+      "defect": "With budget 0 a boundary at the page start, time 0, saturated the continuation and the drain lost the row at time 0",
+      "seed_or_trace": "proptest seed cc 923e6e37 in crates/fabric-properties/tests/query_spec.proptest-regressions",
+      "contract": "QS-2",
+      "reproducer": {
+        "file": "crates/fabric-core/src/query/spec.rs",
+        "test": "a_boundary_never_sits_at_the_page_start"
+      },
+      "fix_commit": "bf74770"
     }
   ]
 }
