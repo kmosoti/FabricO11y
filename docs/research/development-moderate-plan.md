@@ -61,3 +61,5 @@ Report a Pareto set rather than one magic configuration: memory-efficient, laten
 ## Next concrete work
 
 Register and implement the finite consumer-inclusive baseline harness before changing runtime defaults. Start development and small sequentially, then moderate volume and fleet cardinality within declared disk/wall limits. Record source-write, collection, server receive, ACK observation, first matching query response and request-response clocks; verify precision and coverage independently. Use the baseline to freeze practical acceptance margins for the cap/thread experiments. No benchmark, cap change, query refactor, systemd enforcement or qualification was run as part of writing this plan.
+
+Before the tier baselines, complete the [responsibility benchmark prerequisites](../experiments/benchmarks/responsibility-benchmark-audit.md). This source audit records current benchmark coverage, omitted phase boundaries, native cap restrictions and competing inefficiency hypotheses; it does not claim new benchmarks have run.
