@@ -16,6 +16,10 @@ Planning is by milestone: a stable engineering objective with its own branch `mi
 
 The historical source branch `alpha/controlled-linux-collection` stays available until its work is integrated; it is not deleted automatically.
 
+## Planned investigation
+
+[Journal reclaim progress](milestones/journal-reclaim-progress.md), branch `milestone/journal-reclaim-progress`: investigate whether earlier ordered reclaim of durably published Segments reduces capacity pressure without increasing ACK latency or changing query answers. The plan separates custody, query visibility and capacity restoration, specifies deterministic controls and a draft performance comparison, and leaves the bounded-sealer milestone and existing qualification protocols unchanged. Implementation and measurements have not started.
+
 ## Work carried from the completion plan
 
 The release-stage completion plan (`docs/ALPHA-PLAN.md` at base `9b3a2b4`, readable with `git show 9b3a2b4:docs/ALPHA-PLAN.md`) is retired. Its settled decisions and open steps continue here:

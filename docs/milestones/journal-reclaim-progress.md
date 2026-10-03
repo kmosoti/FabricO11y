@@ -1,0 +1,121 @@
+# Milestone: journal reclaim progress
+
+Status: **proposed investigation; plan only**. Branch: `milestone/journal-reclaim-progress`, based on `5f0c52f16f8afe01cf29a118513cf8a43b4cb333`. No implementation, new test, performance run, or qualification result is claimed. The scope of this change is to establish the hypothesis and implementation/validation plan. Future implementation and runs are separate work; the draft comparison below must be registered with its executable harness before measurement.
+
+## Finding: three kinds of progress
+
+FabricO11y preserves evidence, builds representations for interpreting it, and returns capacity for new evidence. These advance separately:
+
+| Representation | Progress event | What it establishes |
+| --- | --- | --- |
+| Custody | Journal data and commit marker synced; ACK becomes eligible | The server has accepted responsibility for the Batch under the filesystem assumptions |
+| Query sources | A Segment is durably published | Queries can use its projection and exclude its duplicate journal coverage |
+| Capacity | Stream state checkpointed, then the oldest covered journal file removed | Journal capacity can be reused without forgetting deduplication state |
+
+This is an analytical model, not a new protocol or persisted state. A single scalar watermark cannot describe it: parallel builders may publish noncontiguous labels, while reclaim must advance through the oldest contiguous eligible prefix. Observation time is another ordering entirely; advancing reclaim does not establish freshness.
+
+### Evidence at the base revision
+
+- [`sealer::pass`](../../crates/fabric-server/src/sealer.rs) snapshots sealed labels, builds pending files in worker-sized groups, waits for the captured build set (or a failed group), and only then calls `Intake::reclaim` in label order. Already published files are also left until this build phase ends.
+- [`Intake::reclaim` and `Store::reclaim`](../../crates/fabric-server/src/store.rs) route reclamation through the commit thread, require the oldest sealed file, save `streams.json`, then remove that file. The checkpoint is synchronous work shared with ingest.
+- [`History::sources` and `sources_walk`](../../crates/fabric-server/src/query.rs) exclude journal coverage already represented by Segments. Deleting a duplicate journal file is therefore not itself a query acceleration mechanism.
+- [`crash_states_of_sealing_never_serve_a_record_twice`](../../crates/fabric-server/tests/history.rs) already exercises a published Segment coexisting with its journal file, both query plans, and restart cleanup. It does not establish prompt reclaim while later builds remain pending.
+- [Ingest run 01](../experiments/benchmarks/ingest-run-01.md) records journal-full refusals and subsequent drain with one to three sealing workers. It does not isolate how much is caused by scheduling versus sealing throughput.
+
+The [custody and completeness contract](../PRODUCT-CONTRACT.md), [Segment lifecycle](../decisions/ADR-0020-store-sealed-history-as-parquet-segments.md), and [retained-history view](../architecture/retained-history.md) remain authoritative.
+
+## Hypothesis and counter-hypotheses
+
+**H1:** reclaiming the oldest contiguous published prefix before new builds and after each completed worker group reduces the time durable duplicate journal bytes occupy capacity. Under journal pressure, this may reduce refusal time and delivery backlog without changing evidence, query answers, or the durable ordering inside publication and reclaim.
+
+The mechanism claim and the performance claim are distinct. The baseline can fail a deterministic progress assertion without violating the existing custody contract. No performance improvement follows merely from that failure.
+
+| Perspective | Prediction to test | Counter-hypothesis or cost |
+| --- | --- | --- |
+| Queueing | Earlier reusable capacity reduces journal-full intervals | Sealing CPU dominates, so shifting deletion times changes little |
+| Durability | The existing checkpoint-before-delete operation is sufficient | New interleavings expose a recovery, retry, or checkpoint failure bug |
+| Commit scheduling | Earlier reclaim avoids large end-of-pass reclaim bursts | Interleaved checkpoint syncs delay submissions and worsen ACK p99 |
+| Query interpretation | Both plans return identical snapshot-bound answers | Queries crossing publication/reclaim observe a missing or repeated source |
+| Resources | Eligible duplicate byte-time falls with unchanged build concurrency | Segment memory is unchanged; aggregate RSS or I/O may still regress |
+| Retention | Reclaim can change independently of expiration policy | Changing retention cadence as well would confound answers and resource accounting |
+
+**H0:** the candidate has no useful pressure benefit, or its commit-path cost outweighs the benefit. Record that outcome and retain the baseline; do not widen the experiment until it produces a win.
+
+## Proposed implementation boundary
+
+1. Preserve the finite sealed-label snapshot and existing worker grouping. Track successful publication and already published labels locally to this pass.
+2. Before building, reclaim only the already published oldest contiguous prefix through `Intake::reclaim`.
+3. After each worker group has joined, reclaim the now-eligible oldest prefix before starting the next group. A later successful label cannot cross an earlier missing, failed, or unfinished label.
+4. On a build failure, reclaim only eligible earlier labels, return the failure, and leave later journal files intact. On a checkpoint/reclaim failure, stop and propagate it without attempting later deletions.
+5. Keep Segment publication, stream checkpoint, journal deletion, ACK, and retry semantics unchanged. Reuse the commit-thread reclaim operation rather than deleting from a worker.
+6. Keep retention cadence and rules unchanged. Keep `seal_workers`, query-plan defaults, codecs, formats, and the builder unchanged during this comparison.
+
+This first candidate still waits for the slowest worker inside one group. Completion-driven scheduling within a group is a separate hypothesis, justified only by measured residual delay. No new executor, plugin boundary, public configuration, dependency, or persisted watermark is proposed.
+
+This is independent of the [bounded-sealer milestone](bounded-sealer.md): it cannot fix that milestone's working-set failure. Rebase and reevaluate the mechanism if the builder or scheduler changes before implementation.
+
+## Implementation and verification sequence
+
+Each step produces reviewable evidence. Policy/oracle/protocol changes are separate commits from implementation under [AGENTS.md](../../AGENTS.md).
+
+1. **Freeze the comparison.** Record the baseline and candidate SHAs, confirm the base finding still exists, and register the draft below with exact harness commands. Add instrumentation for publication/reclaim events and full delivery lifetimes to both variants, then measure its perturbation. Do not edit historical results or existing qualification gates.
+2. **Expose the scheduling decision to deterministic tests.** Prefer module-local injection of build completion/reclaim effects over a new production port. Use barriers and channels with bounded watchdogs, not wall-time assertions dependent on disk speed. Demonstrate the baseline misses the proposed progress condition and preserve that trace as the mechanism control.
+3. **Implement the narrow candidate.** Change only when the sealer requests existing reclamation. Document the new scheduling and failure interleavings in the retained-history view and affected diagrams; reconcile ADR-0025's parallel sealer description. If implementation requires a change to sync ordering or public semantics, stop and propose that change separately.
+4. **Check correctness before timing.** Run the cases below, both query plans, existing delivery/history tests, and the required fast checks. Register meaningful mutants/check entries separately when introducing them. Keep the Python oracles independent and unchanged unless a separately justified specification gap is found.
+5. **Run the registered comparison when implementation/run scope is authorized.** Preserve every trial, including failed or inconclusive ones. Compare the same offered workload, not only successfully accepted traffic.
+6. **Decide.** Adopt only if correctness holds and the stated performance rule passes. Otherwise preserve the counterexample or null result. Update `CURRENT.md`, the verification matrix, architecture records, and result links to the actual outcome. Existing qualification status remains unchanged until its protocols run on the candidate revision.
+
+### Required correctness and progress cases
+
+| Case | Deciding observation |
+| --- | --- |
+| Multiple worker groups | First group's eligible files are reclaimed before a deliberately blocked later group is released; the baseline fails this new progress assertion |
+| Preexisting Segment | Its oldest journal duplicate is reclaimed before an unrelated build is allowed to complete |
+| Out-of-order completion and failure | A later published Segment never permits reclaim across an earlier failed or unfinished label; an earlier successful prefix can still progress |
+| Reclaim/checkpoint error | A failed checkpoint prevents deletion and later reclaim; an error cannot be silently converted to successful capacity restoration |
+| Retry after partial progress | Already removed files are not reclaimed again; surviving published Segments are reused; remaining files finish in order |
+| Query and paging | Logs, metrics, monotonic counters with resets, and spans agree under scan and walk before/after publication and reclaim, including a page boundary across the transition |
+| Recovery states | Reopen states before publication, after publication, after checkpoint, and after deletion preserve every retained ACKed Batch and its exact bytes, bindings and deduplication behavior |
+
+Use disposable fixtures for deterministic recovery states. Destructive fault campaigns and qualification runs are not authorized by this planning change. Negative controls must include a forced end-of-pass delay, skipping an earlier failed label, and deleting before checkpoint success; each relevant checker must reject its injected defect. These are proposed controls, not registered mutants or claims of current coverage. Existing [HIST-1/2 and delivery checks](../formal/verification-matrix.md) remain the baseline.
+
+## Draft comparison protocol
+
+Status: **proposed, not registered or executable**. No benchmark harness is added by this plan. Resolve the explicit preparation items below, record commands and fixture hashes, and freeze a protocol revision before any comparison. The thresholds are proposed engineering decision rules, not observations or changes to existing qualification criteria.
+
+### Fixed comparison and workloads
+
+- Compare the base scheduler and the narrow candidate with identical instrumentation, release build, dependencies, durability, retention, TLS, and resource placement. Record the full SHAs, toolchain, kernel, filesystem, CPU allocation and disk limits.
+- Use seeds `0xA11FA001`, `0xA11FA002`, `0xA11FA003`; one paired baseline/candidate trial per seed per cell, alternating run order. Each invocation owns one disposable directory; run cells sequentially under the existing [bounded runner](../QUALIFICATION.md#harness-boundary).
+- Use 32 enrolled senders with actual durable spools and normal sender retry behavior. Precompute identical seeded schedules for each paired trial; continue accounting for scheduled offers while senders back up. An open-loop source must not silently become a successful-ACK-paced source.
+- Retain the three preparation tiers: (A) a fixed preloaded queue of eight 64 MiB sealed files to isolate reclaim progress; (B) continuous offered load at 60% of a frozen baseline sustainable rate; (C) at 110% to exercise pressure. Use `seal_workers=1` and `2`, a 1 GiB journal ceiling, and 64 MiB journal files. Calibrate the rate using only the baseline and a disjoint seed `0xA11FA000`; freeze the resulting numeric rates before candidate trials. If a stable baseline rate cannot be established within the budget, do not run the comparison.
+- Use 30 s warmup and 120 s measurement for continuous-load cells, followed by a separately timed drain capped at 120 s. Bound source generation and reject a cell at preflight if it cannot fit the live-data ceiling. Reduce the offered scope only through a new protocol revision, not during a run.
+- Freeze a corpus manifest and a realistic Batch shape including the actual agent's source attributes, metrics with cumulative counters/resets, and spans. Record raw source bytes, OTLP bytes, encoded Batch bytes, record counts and journal bytes separately. The current [ingest generator](../../crates/fabric-server/examples/ingest_load.rs) bypasses the Spool and omits file attributes, so it is not an interchangeable baseline for this comparison.
+- Run the preloaded mechanism cell without background queries. For continuous-load cells, independently run `scan` and `walk` with one persistent client issuing one seeded query per second, rotating log search, metric history, counter rate and trace-ID lookup. Keep query text/window/limit distributions identical per pair and report scheduling lag. Retention should not expire fixture records within a trial; preflight its byte ceiling while counting journal plus Segments and all other live data.
+- Per invocation: at most 5 GiB live data, 50 MiB retained evidence, 30 min wall time, and a four-CPU host allocation. Record sender and server memory separately. A watchdog breach, missing artifact, incomplete drain or uncontrolled host contention is incomplete/inconclusive, never a pass. The runner's sampled disk ceiling is not a hard quota.
+
+### Metrics and measurement boundaries
+
+| Metric | Definition |
+| --- | --- |
+| Eligible duplicate byte-time | Integral of bytes in the oldest contiguous published-but-unreclaimed journal prefix, in byte-seconds, over the measured interval; report bytes blocked behind an unpublished prefix separately |
+| Publication-to-reclaim delay | Monotonic elapsed time from completed durable Segment publication to completed reclaim, per label, with file size and worker count |
+| Pressure | Journal occupancy over time, time intake is capacity-blocked, refusal count, offered/admitted/committed records and bytes, and sender backlog at fixed interval boundaries |
+| Delivery latency | Successful-attempt ACK latency and offer-to-durable-ACK latency including every refusal, backoff and spool wait, reported separately; unfinished offers remain right-censored backlog rather than disappearing from p99 |
+| Throughput and drain | Committed encoded Batch bytes per measured second; completed sealed/reclaimed bytes; raw text rate separately; end-of-load backlog and post-load drain duration |
+| Shared-resource cost | Server/sender peak RSS, CPU seconds, checkpoint count/duration, bytes read/written, and all live bytes including retained source files, spools, journal, Segments, scratch and logs |
+| Query behavior | End-to-end query p50/p99, time to queryable evidence, oracle-exact rows and all answer fields, for both plans; no freshness gain presumed from reclamation alone |
+
+For load latency, report completed/offered counts with the distribution. If censored offers could change the p99 decision, call the latency gate inconclusive. Use a monotonic clock for local durations; do not infer cross-host latency from unsynchronized clocks.
+
+### Proposed decision rule
+
+All correctness cases must pass, with zero missing retained ACKed records, retry-created logical duplicates, query-oracle mismatches, or deletion before checkpoint success. The deterministic progress cases must distinguish the candidate from the baseline.
+
+For every continuous-load cell, compare paired per-seed results: the median across the three seeds of offer-to-ACK p99 and query p99 must not worsen by more than 10%, and no individual paired trial may regress by more than 20%. The same aggregate/non-outlier rule applies to peak RSS and measured server CPU per committed encoded MiB. Report absolute values beside ratios and do not treat a ratio over a zero/missing baseline as a pass.
+
+For pressure cells, require at least a 25% reduction in median eligible duplicate byte-time and at least a 10% improvement in either capacity-blocked duration or end-of-load sender backlog, with neither regressing by more than 10%. If the baseline has no meaningful pressure, the cell cannot decide H1. A correctness failure rejects the candidate regardless of speed; a progress improvement without a pressure benefit establishes only the scheduling mechanism, not an optimization worth adopting.
+
+## Results and completion of this planning change
+
+No implementation or experimental results yet. Planning is complete when this document is linked from current state and the roadmap, its relative links and Markdown validate, and the feature branch records the plan. Future execution records must name their commands, exits, revision, raw evidence and limitations; this plan does not inherit historical qualification.
