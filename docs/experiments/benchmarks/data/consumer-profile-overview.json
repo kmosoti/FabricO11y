@@ -1,0 +1,177 @@
+{
+  "kind": "existing_measurement_consolidation_not_new_benchmark",
+  "profiles": [
+    {
+      "profile": "development",
+      "summary": "docs/experiments/benchmarks/data/dev-small-local-run-01/development/summary.json",
+      "summary_sha256": "1231f2010cafaa9ad94d992f9085b0fad88d9f5859c0affcf6f0efbd2eaf3ed3",
+      "ordinary_logs_s_scheduled": 10,
+      "burst_logs_s_scheduled": 30,
+      "phase_seconds": [
+        60,
+        60,
+        60
+      ],
+      "native_spindles": 1,
+      "exact_logs": 3000,
+      "collection_to_ingestion_ms": {
+        "samples": 3000,
+        "p50": 5.05965,
+        "p99": 8.889384,
+        "max": 9.798794,
+        "negative": 0
+      },
+      "collection_to_ack_observation_ms": {
+        "samples": 3000,
+        "p50": 7.461857,
+        "p99": 12.672973,
+        "max": 13.241749,
+        "negative": 0
+      },
+      "source_to_ingestion_ms": {
+        "samples": 3000,
+        "p50": 413.846276,
+        "p99": 910.309852,
+        "max": 913.702145,
+        "negative": 0
+      },
+      "server_peak_rss_mib": 7.90625,
+      "max_spindle_rss_mib": 4.47265625,
+      "server_mean_cpu_equivalents_whole_monitored_phase": 0.0011753478246772048,
+      "all_spindles_mean_cpu_equivalents_whole_monitored_phase": 0.0014691847808465058,
+      "segments_final": 0,
+      "passed_finite_registered_criteria": true,
+      "query_response_performance": "not measured in these trials",
+      "observation_to_queryable_performance": "not measured in these trials"
+    },
+    {
+      "profile": "small",
+      "summary": "docs/experiments/benchmarks/data/dev-small-local-run-01/small/summary.json",
+      "summary_sha256": "d4421d78c468eb8364719fd95deb92e4ea0e95948de5043f58f4671119f64076",
+      "ordinary_logs_s_scheduled": 1000,
+      "burst_logs_s_scheduled": 3000,
+      "phase_seconds": [
+        60,
+        60,
+        60
+      ],
+      "native_spindles": 20,
+      "exact_logs": 300000,
+      "collection_to_ingestion_ms": {
+        "samples": 300000,
+        "p50": 6.192339,
+        "p99": 50.650078,
+        "max": 115.204708,
+        "negative": 0
+      },
+      "collection_to_ack_observation_ms": {
+        "samples": 300000,
+        "p50": 9.096412,
+        "p99": 57.462673,
+        "max": 128.506136,
+        "negative": 0
+      },
+      "source_to_ingestion_ms": {
+        "samples": 300000,
+        "p50": 507.976063,
+        "p99": 997.992613,
+        "max": 1100.318229,
+        "negative": 0
+      },
+      "server_peak_rss_mib": 440.41015625,
+      "max_spindle_rss_mib": 5.375,
+      "server_mean_cpu_equivalents_whole_monitored_phase": 0.03501015799587541,
+      "all_spindles_mean_cpu_equivalents_whole_monitored_phase": 0.033496469156444254,
+      "segments_final": 5,
+      "passed_finite_registered_criteria": true,
+      "query_response_performance": "not measured in these trials",
+      "observation_to_queryable_performance": "not measured in these trials"
+    },
+    {
+      "profile": "moderate",
+      "summary": "docs/experiments/benchmarks/data/native-scaled-spindle-run-01/medium/summary.json",
+      "summary_sha256": "3e3cb7624c40cca774c8a993eb46235d6b60be054a7e2b8bbc155de9431edf9d",
+      "ordinary_logs_s_scheduled": 10000,
+      "burst_logs_s_scheduled": 30000,
+      "phase_seconds": [
+        10,
+        5,
+        10
+      ],
+      "native_spindles": 20,
+      "exact_logs": 350000,
+      "collection_to_ingestion_ms": {
+        "samples": 350000,
+        "p50": 15.583807,
+        "p99": 102.994999,
+        "max": 120.738562,
+        "negative": 0
+      },
+      "collection_to_ack_observation_ms": {
+        "samples": 350000,
+        "p50": 22.199826,
+        "p99": 126.698031,
+        "max": 132.973008,
+        "negative": 0
+      },
+      "source_to_ingestion_ms": {
+        "samples": 350000,
+        "p50": 527.970953,
+        "p99": 1013.62326,
+        "max": 1095.337245,
+        "negative": 0
+      },
+      "server_peak_rss_mib": 470.38671875,
+      "max_spindle_rss_mib": 9.2421875,
+      "server_mean_cpu_equivalents_whole_monitored_phase": 0.1273818165149324,
+      "all_spindles_mean_cpu_equivalents_whole_monitored_phase": 0.09027839020918106,
+      "segments_final": 5,
+      "passed_finite_registered_criteria": true,
+      "query_response_performance": "not measured in these trials",
+      "observation_to_queryable_performance": "not measured in these trials"
+    },
+    {
+      "profile": "enterprise",
+      "summary": "docs/experiments/benchmarks/data/native-scaled-spindle-run-01/enterprise/summary.json",
+      "summary_sha256": "be066a020fb9680dd28435718ef200ad88b35304a25ca15f61af464f88ff2777",
+      "ordinary_logs_s_scheduled": 100000,
+      "burst_logs_s_scheduled": 300000,
+      "phase_seconds": [
+        10,
+        5,
+        10
+      ],
+      "native_spindles": 20,
+      "exact_logs": 3500000,
+      "collection_to_ingestion_ms": {
+        "samples": 3500000,
+        "p50": 66.559929,
+        "p99": 1854.63942,
+        "max": 2155.465235,
+        "negative": 0
+      },
+      "collection_to_ack_observation_ms": {
+        "samples": 3500000,
+        "p50": 79.633249,
+        "p99": 1865.858708,
+        "max": 2171.947324,
+        "negative": 0
+      },
+      "source_to_ingestion_ms": {
+        "samples": 3500000,
+        "p50": 2241.746808,
+        "p99": 21314.51337,
+        "max": 22322.790096,
+        "negative": 0
+      },
+      "server_peak_rss_mib": 521.78515625,
+      "max_spindle_rss_mib": 9.12890625,
+      "server_mean_cpu_equivalents_whole_monitored_phase": 0.9801307334129661,
+      "all_spindles_mean_cpu_equivalents_whole_monitored_phase": 0.5882199751717382,
+      "segments_final": 58,
+      "passed_finite_registered_criteria": false,
+      "query_response_performance": "not measured in these trials",
+      "observation_to_queryable_performance": "not measured in these trials"
+    }
+  ]
+}
