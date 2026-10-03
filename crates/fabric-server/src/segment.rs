@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs::{self, File};
-use std::io::{self, Write};
+use std::io::{self, BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -328,24 +328,48 @@ fn batches_batch(records: &[(u64, Entry)]) -> io::Result<RecordBatch> {
     .map_err(err)
 }
 
+/// Hash only bytes accepted by the sink. A failed write/flush prevents a
+/// manifest from being returned; buffered bytes are flushed before file sync.
+struct HashingWriter<W> {
+    inner: W,
+    hash: Sha256,
+    bytes: u64,
+}
+
+impl<W: Write> Write for HashingWriter<W> {
+    fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+        let n = self.inner.write(data)?;
+        self.hash.update(&data[..n]);
+        self.bytes += n as u64;
+        Ok(n)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 fn write_table(path: &Path, batch: &RecordBatch) -> io::Result<FileEntry> {
     let properties = WriterProperties::builder()
         .set_max_row_group_row_count(Some(ROW_GROUP))
         .set_compression(Compression::ZSTD(ZstdLevel::try_new(3).map_err(err)?))
         .build();
-    let mut bytes = Vec::new();
+    let mut output = HashingWriter {
+        inner: BufWriter::with_capacity(256 * 1024, File::create(path)?),
+        hash: Sha256::new(),
+        bytes: 0,
+    };
     {
         let mut writer =
-            ArrowWriter::try_new(&mut bytes, batch.schema(), Some(properties)).map_err(err)?;
+            ArrowWriter::try_new(&mut output, batch.schema(), Some(properties)).map_err(err)?;
         writer.write(batch).map_err(err)?;
         writer.close().map_err(err)?;
     }
-    let mut file = File::create(path)?;
-    file.write_all(&bytes)?;
-    file.sync_all()?;
+    output.flush()?;
+    output.inner.get_ref().sync_all()?;
     Ok(FileEntry {
-        sha256: hex(&Sha256::digest(&bytes)),
-        bytes: bytes.len() as u64,
+        sha256: hex(&output.hash.finalize()),
+        bytes: output.bytes,
         rows: batch.num_rows() as u64,
     })
 }
@@ -987,4 +1011,102 @@ pub fn verify(dir: &Path, manifest: &Manifest) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::*;
+
+    struct PartialSink {
+        bytes: Vec<u8>,
+        remaining: usize,
+    }
+    impl Write for PartialSink {
+        fn write(&mut self, data: &[u8]) -> io::Result<usize> {
+            if self.remaining == 0 {
+                return Err(io::Error::other("injected write failure"));
+            }
+            let n = data.len().min(3).min(self.remaining);
+            self.bytes.extend_from_slice(&data[..n]);
+            self.remaining -= n;
+            Ok(n)
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Err(io::Error::other("injected flush failure"))
+        }
+    }
+
+    #[test]
+    fn hash_and_length_follow_partial_writes_and_exclude_failed_bytes() {
+        let mut output = HashingWriter {
+            inner: PartialSink {
+                bytes: Vec::new(),
+                remaining: 5,
+            },
+            hash: Sha256::new(),
+            bytes: 0,
+        };
+        assert!(output.write_all(b"123456789").is_err());
+        assert_eq!(output.inner.bytes, b"12345");
+        assert_eq!(output.bytes, 5);
+        assert_eq!(output.hash.finalize(), Sha256::digest(b"12345"));
+    }
+
+    #[test]
+    fn flush_failure_is_propagated() {
+        let mut output = HashingWriter {
+            inner: PartialSink {
+                bytes: Vec::new(),
+                remaining: 10,
+            },
+            hash: Sha256::new(),
+            bytes: 0,
+        };
+        output.write_all(b"123456").unwrap();
+        assert_eq!(output.bytes, 6);
+        assert_eq!(
+            output.flush().unwrap_err().to_string(),
+            "injected flush failure"
+        );
+    }
+
+    #[test]
+    fn streamed_table_is_byte_identical_to_buffered_reference() {
+        let schema = Arc::new(Schema::new(vec![Field::new("body", DataType::Utf8, false)]));
+        let batch = RecordBatch::try_new(
+            schema,
+            vec![Arc::new(StringArray::from_iter_values(
+                (0..ROW_GROUP + 3)
+                    .map(|i| format!("row-{i}: preserves unicode λ and row-group boundaries")),
+            ))],
+        )
+        .unwrap();
+        let properties = WriterProperties::builder()
+            .set_max_row_group_row_count(Some(ROW_GROUP))
+            .set_compression(Compression::ZSTD(ZstdLevel::try_new(3).unwrap()))
+            .build();
+        let mut expected = Vec::new();
+        {
+            let mut writer =
+                ArrowWriter::try_new(&mut expected, batch.schema(), Some(properties)).unwrap();
+            writer.write(&batch).unwrap();
+            writer.close().unwrap();
+        }
+        let dir = std::env::temp_dir().join(format!(
+            "fabric-output-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&dir).unwrap();
+        let path = dir.join("table.parquet");
+        let entry = write_table(&path, &batch).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), expected);
+        assert_eq!(entry.sha256, hex(&Sha256::digest(&expected)));
+        assert_eq!(entry.bytes, expected.len() as u64);
+        assert_eq!(entry.rows, batch.num_rows() as u64);
+        fs::remove_dir_all(dir).unwrap();
+    }
 }
