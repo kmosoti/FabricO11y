@@ -3,7 +3,7 @@ of real text (the research corpus repeated), pinned to CPU 3, in three modes:
 collect only (no server), collect and deliver to the release server (CPUs 0-2,
 seal_workers=2), and the same under max_output_bytes_per_s. Reads the node's cycle
 lines for consumed log bytes and lines over time, and /proc for its CPU and memory.
-Usage: spindle_bench.py <out-root> [seconds] [cap_mib_per_s]
+Usage: spindle_bench.py <out-root> [seconds] [cap_mib_per_s] [modes: collect-only,deliver,cap]
 """
 import json, os, re, shutil, signal, socket, subprocess, sys, threading, time
 from pathlib import Path
@@ -42,8 +42,11 @@ def run_node(name, log_mib, server=None, cap=None, token=0):
     t0 = time.monotonic()
     node = subprocess.Popen(["taskset", "-c", "3", str(NODE), "run", str(conf)], stdout=subprocess.PIPE, stderr=open(work / "node.err", "w"), text=True)
     points = []; acked = [0]; batch_seq = [0]
+    # Every stdout line with its arrival time, for the anatomy of one Batch.
+    out = open(work / "node.out", "w")
     def reader():
         for line in node.stdout:
+            out.write(f"{time.monotonic() - t0:.6f} {line}"); out.flush()
             m = re.match(r"batch=(\d+) .*logs=(\d+) .*log_backlog_bytes=(\d+) acked_through=(\d+)", line)
             if m:
                 batch_seq[0] = int(m[1])
@@ -72,7 +75,8 @@ def run_node(name, log_mib, server=None, cap=None, token=0):
     shutil.rmtree(work / "spool", ignore_errors=True); log.unlink()
     return rec
 
-results = [run_node("collect-only", 64)]
+MODES = sys.argv[4].split(",") if len(sys.argv) > 4 else ["collect-only", "deliver", "cap"]
+results = [run_node("collect-only", 64)] if "collect-only" in MODES else []
 state = ROOT / "server-state"; state.mkdir()
 # The server's central configuration replaces a node's log paths, so the enrolled
 # configuration names the benchmark's log.
@@ -89,8 +93,8 @@ while True:
     except OSError:
         if time.monotonic() - t0 > 30: raise SystemExit("server did not start")
         time.sleep(0.05)
-results.append(run_node("deliver", 256, server=port))
-results.append(run_node(f"deliver-cap-{CAP}MiB", 256, server=port, cap=CAP, token=1))
+if "deliver" in MODES: results.append(run_node("deliver", 256, server=port))
+if "cap" in MODES: results.append(run_node(f"deliver-cap-{CAP}MiB", 256, server=port, cap=CAP, token=1))
 srv.send_signal(signal.SIGTERM); srv.wait(timeout=60)
 shutil.rmtree(state, ignore_errors=True)
 json.dump({"corpus_lines": corpus_lines, "results": results}, open(ROOT / "spindle_bench.json", "w"), indent=1)

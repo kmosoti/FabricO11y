@@ -22,7 +22,6 @@
 //! positions per trigram, from two multiplicative hashes of its 24 bits. The decoder
 //! accepts only this form: the right magic, every `m_i` in range, and the exact length.
 
-use std::collections::HashSet;
 use std::io;
 
 pub const FILE: &str = "text_filter.bin";
@@ -59,20 +58,30 @@ pub struct GroupFilter {
 impl GroupFilter {
     /// The filter of the bodies of one row group.
     pub fn build<'a>(bodies: impl IntoIterator<Item = &'a str>) -> Self {
-        let mut distinct: HashSet<u32> = HashSet::new();
+        // The distinct trigrams of the group as one bit each in a 2^24-bit
+        // map: a few bit operations per trigram where a hash set spent a hash
+        // and a probe. The map is 2 MiB per build, released on return.
+        let mut seen = vec![0_u64; (1 << 24) / 64];
+        let mut distinct = 0_usize;
         for body in bodies {
             for w in body.as_bytes().windows(3) {
-                distinct.insert(trigram(w));
+                let t = trigram(w) as usize;
+                let word = &mut seen[t / 64];
+                let bit = 1_u64 << (t % 64);
+                distinct += usize::from(*word & bit == 0);
+                *word |= bit;
             }
         }
-        let bits = (distinct.len() * 8)
-            .next_power_of_two()
-            .clamp(MIN_BITS, MAX_BITS);
+        let bits = (distinct * 8).next_power_of_two().clamp(MIN_BITS, MAX_BITS);
         let mut words = vec![0_u64; bits / 64];
-        for t in distinct {
-            let (a, b) = positions(t, bits);
-            words[a / 64] |= 1 << (a % 64);
-            words[b / 64] |= 1 << (b % 64);
+        for (index, mut word) in seen.into_iter().enumerate() {
+            while word != 0 {
+                let t = (index * 64 + word.trailing_zeros() as usize) as u32;
+                word &= word - 1;
+                let (a, b) = positions(t, bits);
+                words[a / 64] |= 1 << (a % 64);
+                words[b / 64] |= 1 << (b % 64);
+            }
         }
         Self { words }
     }

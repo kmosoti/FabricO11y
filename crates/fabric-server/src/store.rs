@@ -247,19 +247,32 @@ impl State {
 
 /// Commit mode. The qualification comparison runs both with identical
 /// durability: each group is one frame with one data and one marker sync.
+/// How submissions are grouped into one frame and its two syncs.
+///
+/// A group closes at `max_bytes`, when `window` has elapsed since its first
+/// submission, or when no submission has arrived for `quiet`. The quiet rule is
+/// what keeps a lone sender from waiting out the whole window: with one Batch
+/// in flight per Strand, a single node can never bring a second submission
+/// while its first is held, so without it every one of its Batches costs the
+/// full window. Under load, arrivals are closer together than `quiet` and
+/// groups still fill to `max_bytes` or the window. Durability is unchanged:
+/// every group is synced before any of its answers is sent.
 #[derive(Clone, Copy, Debug)]
 pub struct CommitMode {
     pub window: Duration,
+    pub quiet: Duration,
     pub max_bytes: usize,
 }
 
 impl CommitMode {
     pub const GROUPED: Self = Self {
         window: Duration::from_millis(50),
+        quiet: Duration::from_millis(2),
         max_bytes: GROUP_BYTES,
     };
     pub const INDIVIDUAL: Self = Self {
         window: Duration::ZERO,
+        quiet: Duration::ZERO,
         max_bytes: 0,
     };
 }
@@ -476,7 +489,7 @@ impl Store {
                 if now >= deadline {
                     break;
                 }
-                match receiver.recv_timeout(deadline - now) {
+                match receiver.recv_timeout((deadline - now).min(self.mode.quiet)) {
                     Ok(Command::Submit(next)) => {
                         bytes += next.bytes.len();
                         group.push(next);
@@ -612,4 +625,75 @@ fn journal_dir(state_dir: &Path) -> io::Result<PathBuf> {
     let dir = state_dir.join("journal");
     std::fs::create_dir_all(&dir)?;
     dir.canonicalize()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "fabric-store-{name}-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// One submission, answered; returns how long the commit thread held it.
+    fn lone_submission_latency(mode: CommitMode) -> Duration {
+        let dir = scratch("quiet");
+        let intake = Store::open(&dir, 64 * 1024 * 1024, mode)
+            .unwrap()
+            .spawn()
+            .unwrap();
+        let batch = Batch {
+            version: 1,
+            node_id: vec![7; 16],
+            generation: 1,
+            sequence: 1,
+            collection_gaps: vec!["one gap makes the Batch non-empty".into()],
+            ..Default::default()
+        };
+        let (reply, answer) = oneshot::channel();
+        let started = Instant::now();
+        intake.submit(Submission {
+            label: "fresh-credential".into(),
+            strand: StrandId::new(SpindleId::new([7; 16]), 1).unwrap(),
+            sequence: NonZeroU64::MIN,
+            bytes: batch.encode_to_vec(),
+            reply,
+        });
+        answer.blocking_recv().unwrap();
+        let elapsed = started.elapsed();
+        drop(intake);
+        let _ = std::fs::remove_dir_all(&dir);
+        elapsed
+    }
+
+    /// A lone sender is not held for the window (ADR-0013, quiet rule).
+    #[test]
+    fn a_lone_submission_is_not_held_for_the_window() {
+        let elapsed = lone_submission_latency(CommitMode::GROUPED);
+        assert!(
+            elapsed < CommitMode::GROUPED.window - Duration::from_millis(10),
+            "{elapsed:?}"
+        );
+    }
+
+    /// Negative control: with the quiet rule disabled (quiet = window) the same
+    /// submission waits out the window, which is what the rule removes.
+    #[test]
+    fn without_the_quiet_rule_a_lone_submission_waits_the_window() {
+        let mode = CommitMode {
+            quiet: CommitMode::GROUPED.window,
+            ..CommitMode::GROUPED
+        };
+        let elapsed = lone_submission_latency(mode);
+        assert!(elapsed >= CommitMode::GROUPED.window, "{elapsed:?}");
+    }
 }
