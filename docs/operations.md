@@ -43,7 +43,8 @@ The query kinds, fields and answer envelope are defined in [retained history](ar
 
 1. Create `/etc/fabrico11y/node.conf` from the example with `server_url`, `server_ca` and `token_file` (the token printed by `node add`, stored `0640 root:fabricolly`).
 2. Give the service read access to each selected log with a narrow ACL, for example `setfacl -m u:fabricolly:r /var/log/app.log`. An unreadable log produces a visible collection gap; the node never escalates.
-3. `sudo systemctl enable --now fabrico11y-node.service`.
+3. Optionally set `traces_listen=127.0.0.1:4318` so local applications can export traces to the node, with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces` and `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf` in their environment. The node answers an export only after it is in the spool; spans are queried with `{"kind":"spans", ...}` ([retained history](architecture/retained-history.md)).
+4. `sudo systemctl enable --now fabrico11y-node.service`.
 
 The node samples host metrics on its interval, reads logs every second, keeps every batch in its spool until the server acknowledges it, and polls for configuration every 5 s. Log paths and interval set through `fabricctl admin ... node config` replace the local file's values once the node has validated and stored them; the spool, its ceiling and the server target stay local. `fabricctl inspect /etc/fabrico11y/node.conf` reports the spool: batches, acknowledged sequence, backlog, and any recovery state.
 

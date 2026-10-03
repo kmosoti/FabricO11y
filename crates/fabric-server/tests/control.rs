@@ -308,6 +308,7 @@ fn admin_api_configures_pauses_and_revokes_a_polling_node() {
             ca: scratch.path("ca.pem"),
             token_file: scratch.path("token"),
         }),
+        traces_listen: None,
     };
     let mut node = Spindle::open_with_paths(base.clone(), host_paths(&scratch.0)).unwrap();
     assert!(node.poll_config().unwrap().changed);

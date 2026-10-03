@@ -9,3 +9,7 @@ spool_bytes=268435456
 # server_url=https://fabric-server.example:7443
 # server_ca=/etc/fabrico11y/ca.pem
 # token_file=/etc/fabrico11y/node-token
+# Loopback OTLP/HTTP endpoint for local applications' trace exports (ADR-0025),
+# for example OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces
+# with OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf. Loopback addresses only.
+# traces_listen=127.0.0.1:4318

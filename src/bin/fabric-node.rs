@@ -68,7 +68,18 @@ fn main() -> ExitCode {
             install_stop_handler()?;
         }
         let config = Config::load(config_path)?;
+        let traces_listen = config.traces_listen;
         let mut node = Spindle::open(config)?;
+        // The loopback trace endpoint (ADR-0025), in `run` mode only.
+        let traces = match traces_listen {
+            Some(addr) if mode == "run" => {
+                let (bound, rx) = fabric_o11y::spindle::otlp::start(addr)?;
+                println!("traces listening={bound}");
+                Some(rx)
+            }
+            _ => None,
+        };
+        let mut carried = None;
         if STOP.load(Ordering::SeqCst) {
             return Ok(());
         }
@@ -80,6 +91,12 @@ fn main() -> ExitCode {
         let mut next_config = Instant::now();
         let mut last_config_error: Option<String> = None;
         loop {
+            if let Some(rx) = &traces
+                && fabric_o11y::spindle::otlp::drain(&mut node, rx, &mut carried)
+                && last_error.is_none()
+            {
+                retry_at = Instant::now();
+            }
             let now = Instant::now();
             if mode == "run" && now >= next_config {
                 next_config = now + CONFIG_POLL;
@@ -139,11 +156,25 @@ fn main() -> ExitCode {
             // after a failed attempt, and honour a stop request within 100 ms.
             let deadline = next_metrics.min(next_logs).min(next_config);
             while !STOP.load(Ordering::SeqCst) && Instant::now() < deadline {
+                if let Some(rx) = &traces
+                    && fabric_o11y::spindle::otlp::drain(&mut node, rx, &mut carried)
+                    && last_error.is_none()
+                {
+                    // A trace Batch was committed: send it now, not at the next poll.
+                    retry_at = Instant::now();
+                }
                 let now = Instant::now();
+                // With the trace endpoint on, deliver in short slices so a waiting
+                // exporter is answered within about 200 ms of its commit turn.
+                let slice = if traces.is_some() {
+                    deadline.min(now + Duration::from_millis(200))
+                } else {
+                    deadline
+                };
                 if now >= retry_at {
                     // Stdout is line buffered: each line is written before
                     // the ACK it reports is persisted.
-                    let report = node.deliver(deadline, |a| println!("{}", delivery_line(a)))?;
+                    let report = node.deliver(slice, |a| println!("{}", delivery_line(a)))?;
                     match report.error {
                         Some(error) => {
                             if last_error.as_deref() != Some(error.as_str()) {

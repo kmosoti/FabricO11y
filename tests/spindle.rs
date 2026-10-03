@@ -74,6 +74,7 @@ fn config(root: &Path, bytes: u64) -> Config {
         interval_s: 15,
         spool_bytes: bytes,
         server: None,
+        traces_listen: None,
     }
 }
 
@@ -782,4 +783,124 @@ fn staged_marker_left_by_a_failed_write_still_reports_unknown_coverage() {
     assert!(gap_texts(&cfg)[0][0].starts_with("coverage unknown since an unrecorded time"));
     assert!(!cfg.spool.join("coverage-unknown.tmp").exists());
     assert_eq!(node.collect_once().unwrap().gaps, 0);
+}
+
+/// ADR-0025: the loopback OTLP/HTTP endpoint of a running Spindle answers `200` only
+/// after an export is committed to the Spool, keeps the connection alive, refuses
+/// other media types and oversized bodies, and a non-loopback address is refused.
+#[test]
+fn trace_exports_are_committed_to_the_spool_before_they_are_acknowledged() {
+    use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
+    use opentelemetry_proto::tonic::trace::v1::{ResourceSpans, ScopeSpans, Span};
+    use std::io::{BufRead, BufReader, Read};
+    use std::net::TcpStream;
+    use std::process::{Command, Stdio};
+    let scratch = Scratch::new();
+    let conf = scratch.path("node.conf");
+    let base = format!(
+        "spool_dir={}\nmetric_interval_s=3600\nspool_bytes=8388608\n",
+        scratch.path("spool").display()
+    );
+    fs::write(&conf, format!("{base}traces_listen=0.0.0.0:4318\n")).unwrap();
+    assert!(
+        Config::load(&conf).is_err(),
+        "a non-loopback endpoint must be refused"
+    );
+    fs::write(&conf, format!("{base}traces_listen=127.0.0.1:0\n")).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_fabric-node"))
+        .args(["run", conf.to_str().unwrap()])
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let addr = lines
+        .next()
+        .unwrap()
+        .unwrap()
+        .strip_prefix("traces listening=")
+        .unwrap()
+        .to_owned();
+    let export = |n: u64| {
+        ExportTraceServiceRequest {
+            resource_spans: vec![ResourceSpans {
+                scope_spans: vec![ScopeSpans {
+                    spans: (0..n)
+                        .map(|i| Span {
+                            trace_id: vec![7; 16],
+                            span_id: (i + 1).to_be_bytes().to_vec(),
+                            name: format!("op-{i}"),
+                            start_time_unix_nano: 1_000 + i,
+                            end_time_unix_nano: 2_000 + i,
+                            ..Default::default()
+                        })
+                        .collect(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        }
+        .encode_to_vec()
+    };
+    let mut stream = TcpStream::connect(&addr).unwrap();
+    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    let mut exchange = |content_type: &str, body: &[u8], length: usize| {
+        write!(stream, "POST /v1/traces HTTP/1.1\r\nHost: x\r\nContent-Type: {content_type}\r\nContent-Length: {length}\r\n\r\n").unwrap();
+        stream.write_all(body).unwrap();
+        let mut status = String::new();
+        reader.read_line(&mut status).unwrap();
+        let mut body_len = 0;
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            if line == "\r\n" {
+                break;
+            }
+            if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                body_len = v.trim().parse().unwrap();
+            }
+        }
+        let mut rest = vec![0; body_len];
+        reader.read_exact(&mut rest).unwrap();
+        status.split(' ').nth(1).unwrap().to_owned()
+    };
+    let (first, second) = (export(3), export(5));
+    assert_eq!(
+        exchange("application/x-protobuf", &first, first.len()),
+        "200"
+    );
+    assert_eq!(
+        exchange("application/x-protobuf", &second, second.len()),
+        "200",
+        "keep-alive"
+    );
+    assert_eq!(exchange("application/json", b"{}", 2), "415");
+    let mut fresh = TcpStream::connect(&addr).unwrap();
+    write!(fresh, "POST /v1/traces HTTP/1.1\r\nContent-Type: application/x-protobuf\r\nContent-Length: 2000000\r\n\r\n").unwrap();
+    let mut answer = String::new();
+    BufReader::new(fresh).read_line(&mut answer).unwrap();
+    assert!(answer.starts_with("HTTP/1.1 413"), "{answer}");
+    // SAFETY: kill with a valid child pid and signal number.
+    assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGTERM) }, 0);
+    assert!(child.wait().unwrap().success());
+    // Both acknowledged exports are in the Spool, span for span.
+    let cfg = Config::load(&conf).unwrap();
+    let spans: Vec<String> = batches(&cfg)
+        .iter()
+        .filter(|b| !b.traces.is_empty())
+        .flat_map(|b| {
+            ExportTraceServiceRequest::decode(b.traces.as_slice())
+                .unwrap()
+                .resource_spans
+                .into_iter()
+                .flat_map(|r| r.scope_spans)
+                .flat_map(|s| s.spans)
+                .map(|s| s.name)
+        })
+        .collect();
+    assert_eq!(
+        spans,
+        [
+            "op-0", "op-1", "op-2", "op-0", "op-1", "op-2", "op-3", "op-4"
+        ]
+    );
 }

@@ -43,6 +43,8 @@ pub struct Config {
     pub spool_bytes: u64,
     /// Delivery target; `None` keeps every batch local.
     pub server: Option<ServerTarget>,
+    /// Loopback address of the OTLP/HTTP trace endpoint (ADR-0025); `None` disables it.
+    pub traces_listen: Option<std::net::SocketAddr>,
 }
 
 impl Config {
@@ -61,6 +63,7 @@ impl Config {
             interval_s: 15,
             spool_bytes: 256 * 1024 * 1024,
             server: None,
+            traces_listen: None,
         };
         let (mut url, mut ca, mut token_file) = (None, None, None);
         let mut seen_spool = false;
@@ -96,6 +99,9 @@ impl Config {
                 "server_url" if url.is_none() => url = Some(value.to_owned()),
                 "server_ca" if ca.is_none() => ca = Some(PathBuf::from(value)),
                 "token_file" if token_file.is_none() => token_file = Some(PathBuf::from(value)),
+                "traces_listen" if result.traces_listen.is_none() => {
+                    result.traces_listen = Some(super::otlp::check_listen(value)?);
+                }
                 _ => return Err(invalid("unknown or duplicate node config key")),
             }
         }
@@ -700,6 +706,27 @@ impl Spindle {
             }
         }
         Ok(report)
+    }
+
+    /// Commit trace exports (encoded `ExportTraceServiceRequest`s, already validated)
+    /// as one Batch. Concatenated encodings of a message are its merge, so the Batch
+    /// holds every span of every export. The Batch carries the committed log cursors
+    /// forward, as every Batch does, because the Spool restores cursors from its
+    /// newest Batches. Returns the Batch sequence.
+    pub fn commit_traces(&mut self, exports: &[&[u8]]) -> io::Result<u64> {
+        let traces: Vec<u8> = exports.concat();
+        let candidate = Batch {
+            version: 1,
+            node_id: vec![],
+            generation: 0,
+            sequence: 0,
+            metrics: Vec::new(),
+            logs: Vec::new(),
+            cursors: self.cursors.values().cloned().collect(),
+            collection_gaps: Vec::new(),
+            traces,
+        };
+        Ok(self.journal.append(&candidate)?.sequence)
     }
 
     /// One full cycle: host metrics and every configured log. Always commits
