@@ -12,7 +12,7 @@ Baseline source: `6835d0d1ce978a1cdb1b6c4a97dd301d955616a8`. Baseline plus the f
 
 The native [`seal_output_probe`](../../../crates/fabric-server/examples/seal_output_probe.rs) generates deterministic valid Batch envelopes, Groups and projected logs, metrics, spans and gaps. Sixteen node identities, 64 logs per Batch, 1,024-byte bodies, two string attributes per log, one gauge and span plus a gap per Batch. Observation times are deliberately out of order. Shapes: identical repeated bodies and deterministic high-entropy printable bodies. Seeds: 2703163393, 2703163394, 2703163395. Target total Group protobuf bytes: 16 and 64 MiB, stopping at the first whole Group at or above the target. It is a builder fixture, not a claim of valid contiguous per-Strand delivery histories or journal framing overhead.
 
-Input hash covers each Group's length followed by exact encoded bytes; record fixture hashes, actual bytes and row counts. All fixture Groups stay in memory before the measured build. Reset the allocator peak immediately before `segment::build`; record incremental peak above this resident-input baseline, total live-heap peak and post-build live heap. Record build wall time through final Segment publication/sync. Verification happens afterward. `/usr/bin/time` measures whole-process CPU and peak RSS, including fixture creation and verification; those boundaries differ from the build-only interval.
+Input hash covers each Group's length followed by exact encoded bytes; record fixture hashes, actual bytes and row counts. All fixture Groups stay in memory before the measured build. Reset the allocator peak immediately before `segment::build`; record incremental peak above this resident-input baseline, total live-heap peak and post-build live heap. Record build wall time through final Segment publication/sync. Verification happens afterward. Linux `wait4` rusage measures whole-process CPU and peak RSS, including fixture creation and verification; those boundaries differ from the build-only interval.
 
 The counting allocator wraps System, counts successful alloc/zeroed/realloc/dealloc capacities, and is identical in both binaries. All timing is instrumented, exploratory timing; no uninstrumented speedup is claimed. Linux RSS includes allocator effects and is not interchangeable with the live-heap counter. No cache flushing is performed. Report the actual filesystem and CPU contention limits rather than labeling the runs cold disk measurements.
 
@@ -39,3 +39,7 @@ Compile time is not included in the trial budget. Compilation or fixture failure
 ## Results
 
 Not run at registration. Keep the experiment's null result if this removes too little peak memory or costs too much time. Do not expand scope to an entire pipeline until the result is interpretable.
+
+## Pre-trial setup correction
+
+Before any timing trial, the first compile found the vendored OTLP KeyValue also requires `key_strindex`; the fixture now supplies its default value. GNU time was unavailable, so the runner uses Python `os.wait4` for the same per-child CPU and peak-RSS boundary. Neither input semantics nor decision rules changed; this correction is committed before production edits and measurements.

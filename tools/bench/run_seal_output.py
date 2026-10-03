@@ -34,23 +34,28 @@ def run(binary, state, shape, mib, seed, cpus):
         os.sched_setaffinity(0, cpus)
         resource.setrlimit(resource.RLIMIT_AS, (2 * 1024**3, 2 * 1024**3))
         resource.setrlimit(resource.RLIMIT_CPU, (180, 180))
-    timing = state.with_suffix(".time.json")
-    cmd = ["/usr/bin/time", "-f", '{"user_seconds":%U,"system_seconds":%S,"peak_rss_kib":%M}', "-o", str(timing), str(binary), str(state), shape, str(mib), str(seed)]
+    cmd = [str(binary), str(state), shape, str(mib), str(seed)]
     start = time.monotonic()
-    p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, preexec_fn=limits)
-    try:
-        out, err = p.communicate(timeout=180)
-    except subprocess.TimeoutExpired:
-        os.killpg(p.pid, signal.SIGKILL)
-        out, err = p.communicate()
-        state.with_suffix(".stderr.txt").write_bytes(err)
-        raise RuntimeError("180-second trial watchdog")
-    state.with_suffix(".stderr.txt").write_bytes(err)
-    state.with_suffix(".stdout.json").write_bytes(out)
+    stdout = state.with_suffix(".stdout.json")
+    stderr = state.with_suffix(".stderr.txt")
+    with stdout.open("wb") as out, stderr.open("wb") as err:
+        p = subprocess.Popen(cmd, stdout=out, stderr=err, preexec_fn=limits)
+        while True:
+            pid, status, usage = os.wait4(p.pid, os.WNOHANG)
+            if pid:
+                p.returncode = os.waitstatus_to_exitcode(status)
+                break
+            if time.monotonic() - start > 180:
+                os.killpg(p.pid, signal.SIGKILL)
+                _, status, _ = os.wait4(p.pid, 0)
+                p.returncode = os.waitstatus_to_exitcode(status)
+                raise RuntimeError("180-second trial watchdog")
+            time.sleep(0.05)
     if p.returncode:
-        raise RuntimeError(f"trial exit {p.returncode}: {err.decode(errors='replace')}")
-    result = json.loads(out)
-    result.update(json.loads(timing.read_text()))
+        raise RuntimeError(f"trial exit {p.returncode}: {stderr.read_text()}")
+    result = json.loads(stdout.read_text())
+    result.update(user_seconds=usage.ru_utime, system_seconds=usage.ru_stime,
+                  peak_rss_kib=usage.ru_maxrss)
     result.update(command=cmd, exit_code=p.returncode, process_wall_seconds=time.monotonic()-start)
     return result
 

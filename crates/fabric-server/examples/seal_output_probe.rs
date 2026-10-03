@@ -124,10 +124,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         KeyValue {
                             key: "source".into(),
                             value: text(format!("/logs/{node}.log")),
+                            ..Default::default()
                         },
                         KeyValue {
                             key: "offset".into(),
                             value: text((seq * 64 + row).to_string()),
+                            ..Default::default()
                         },
                     ],
                     ..Default::default()
