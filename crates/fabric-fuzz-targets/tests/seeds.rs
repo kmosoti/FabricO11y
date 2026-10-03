@@ -32,6 +32,7 @@ fn batch(sequence: u64, gaps: Vec<String>, logs: Vec<u8>) -> Vec<u8> {
             prefix_crc: 99,
         }],
         collection_gaps: gaps,
+        traces: Vec::new(),
     }
     .encode_to_vec()
 }

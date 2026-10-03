@@ -14,7 +14,7 @@ axum = { version = "=0.8.9", default-features = false, features = ["http1", "tok
 axum-server = { version = "=0.7.3", features = ["tls-rustls-no-provider"] }
 arrow-array = "=60.0.0"
 arrow-schema = "=60.0.0"
-opentelemetry-proto = { version = "=0.33.0", default-features = false, features = ["gen-tonic-messages", "logs", "metrics"] }
+opentelemetry-proto = { version = "=0.33.0", default-features = false, features = ["gen-tonic-messages", "logs", "metrics", "trace"] }
 parquet = { version = "=60.0.0", default-features = false, features = ["arrow", "zstd"] }
 prost = "=0.14.4"
 rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std", "tls12"] }

@@ -815,6 +815,7 @@ impl Spindle {
             logs,
             cursors: pending_cursors,
             collection_gaps: gaps,
+            traces: Vec::new(),
         };
         let committed = match self.journal.append(&candidate) {
             Ok(batch) => batch,
@@ -1080,6 +1081,7 @@ mod tests {
                     prefix_len: 0,
                     prefix_crc: 0,
                 }],
+                traces: Vec::new(),
             };
             absorb(batch, &allowed, &mut cursors, &mut recovered).unwrap();
             assert_eq!(recovered.len(), 1);

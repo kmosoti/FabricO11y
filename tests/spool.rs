@@ -34,6 +34,7 @@ fn fixture(label: &str) -> Batch {
         logs: vec![],
         cursors: vec![],
         collection_gaps: vec![label.to_owned()],
+        traces: Vec::new(),
     }
 }
 

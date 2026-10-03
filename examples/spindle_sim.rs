@@ -367,6 +367,7 @@ fn run(args: Args) -> std::io::Result<()> {
                             logs,
                             cursors: vec![],
                             collection_gaps: vec![],
+                            traces: Vec::new(),
                         };
                         let bytes = batch.encode_to_vec();
                         log_transcript(

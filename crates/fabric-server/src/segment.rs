@@ -6,12 +6,12 @@
 //! a directory sync: the rename is the commit point. A `.building-*`
 //! directory found at startup is incomplete and removed.
 
-use crate::rows::{GapRow, LogRow, MetricRow, Number, Rows, extract};
+use crate::rows::{GapRow, LogRow, MetricRow, Number, Rows, SpanRow, extract};
 use crate::store::{Entry, Group};
 use arrow_array::builder::FixedSizeBinaryBuilder;
 use arrow_array::{
-    Array, BinaryArray, BooleanArray, FixedSizeBinaryArray, Float64Array, Int64Array, RecordBatch,
-    StringArray, UInt32Array, UInt64Array,
+    Array, BinaryArray, BooleanArray, FixedSizeBinaryArray, Float64Array, Int32Array, Int64Array,
+    RecordBatch, StringArray, UInt32Array, UInt64Array,
 };
 use arrow_schema::{DataType, Field, Schema, SchemaRef};
 use fabric_frame::frame::read_frame;
@@ -105,6 +105,63 @@ pub fn logs_schema() -> SchemaRef {
         Field::new("body", DataType::Utf8, false),
         Field::new("attributes", DataType::Utf8, false),
     ]))
+}
+
+/// The spans table (ADR-0025), sorted by start time, node identity, sequence, index.
+pub const SPANS: &str = "spans.parquet";
+/// The trigram filter over each spans row group's hex trace IDs.
+pub const SPANS_FILTER: &str = "spans_filter.bin";
+
+pub fn spans_schema() -> SchemaRef {
+    Arc::new(Schema::new(vec![
+        Field::new("group", DataType::UInt64, false),
+        Field::new("node", DataType::Utf8, false),
+        Field::new("node_id", DataType::FixedSizeBinary(16), false),
+        Field::new("sequence", DataType::UInt64, false),
+        Field::new("index", DataType::UInt32, false),
+        Field::new("start_ns", DataType::Int64, false),
+        Field::new("end_ns", DataType::Int64, false),
+        Field::new("trace_id", DataType::Utf8, false),
+        Field::new("span_id", DataType::Utf8, false),
+        Field::new("parent_span_id", DataType::Utf8, false),
+        Field::new("name", DataType::Utf8, false),
+        Field::new("kind", DataType::Int32, false),
+        Field::new("status", DataType::Int32, false),
+        Field::new("attributes", DataType::Utf8, false),
+    ]))
+}
+
+fn spans_batch(rows: &[SpanRow]) -> io::Result<RecordBatch> {
+    let strings =
+        |f: fn(&SpanRow) -> &str| Arc::new(StringArray::from_iter_values(rows.iter().map(f)));
+    RecordBatch::try_new(
+        spans_schema(),
+        vec![
+            Arc::new(UInt64Array::from_iter_values(rows.iter().map(|r| r.group))),
+            strings(|r| r.node.as_str()),
+            Arc::new(node_id_array(rows.iter().map(|r| r.node_id))?),
+            Arc::new(UInt64Array::from_iter_values(
+                rows.iter().map(|r| r.sequence),
+            )),
+            Arc::new(UInt32Array::from_iter_values(rows.iter().map(|r| r.index))),
+            Arc::new(Int64Array::from_iter_values(
+                rows.iter().map(|r| r.start_ns as i64),
+            )),
+            Arc::new(Int64Array::from_iter_values(
+                rows.iter().map(|r| r.end_ns as i64),
+            )),
+            strings(|r| r.trace_id.as_str()),
+            strings(|r| r.span_id.as_str()),
+            strings(|r| r.parent_span_id.as_str()),
+            strings(|r| r.name.as_str()),
+            Arc::new(Int32Array::from_iter_values(rows.iter().map(|r| r.kind))),
+            Arc::new(Int32Array::from_iter_values(rows.iter().map(|r| r.status))),
+            Arc::new(StringArray::from_iter_values(
+                rows.iter().map(|r| attrs_json(&r.attributes)),
+            )),
+        ],
+    )
+    .map_err(err)
 }
 
 pub fn metrics_schema() -> SchemaRef {
@@ -296,26 +353,43 @@ fn write_table(path: &Path, batch: &RecordBatch) -> io::Result<FileEntry> {
 /// Write `text_filter.bin` beside a just-written `logs.parquet`: one filter per row
 /// group, the groups taken from the file's own metadata so they match the reader's.
 fn write_text_filter(building: &Path, logs: &[LogRow]) -> io::Result<FileEntry> {
+    write_filter(
+        building,
+        "logs.parquet",
+        crate::text_filter::FILE,
+        logs,
+        |r| r.body.as_str(),
+    )
+}
+
+/// Write a trigram filter file beside a just-written table: one filter per row group
+/// over `text` of its rows, the groups taken from the file's own metadata.
+fn write_filter<R>(
+    building: &Path,
+    table: &str,
+    file_name: &str,
+    rows: &[R],
+    text: impl Fn(&R) -> &str,
+) -> io::Result<FileEntry> {
     let builder =
-        ParquetRecordBatchReaderBuilder::try_new(File::open(building.join("logs.parquet"))?)
-            .map_err(err)?;
+        ParquetRecordBatchReaderBuilder::try_new(File::open(building.join(table))?).map_err(err)?;
     let mut groups = Vec::new();
     let mut at = 0_usize;
     for rg in builder.metadata().row_groups() {
         let n = usize::try_from(rg.num_rows()).map_err(err)?;
-        let rows = logs
+        let chunk = rows
             .get(at..at + n)
-            .ok_or_else(|| invalid("logs row groups exceed rows"))?;
+            .ok_or_else(|| invalid(format!("{table} row groups exceed rows")))?;
         groups.push(crate::text_filter::GroupFilter::build(
-            rows.iter().map(|r| r.body.as_str()),
+            chunk.iter().map(&text),
         ));
         at += n;
     }
-    if at != logs.len() {
-        return Err(invalid("logs row groups do not cover the rows"));
+    if at != rows.len() {
+        return Err(invalid(format!("{table} row groups do not cover the rows")));
     }
     let bytes = crate::text_filter::encode(&groups);
-    let mut file = File::create(building.join(crate::text_filter::FILE))?;
+    let mut file = File::create(building.join(file_name))?;
     file.write_all(&bytes)?;
     file.sync_all()?;
     Ok(FileEntry {
@@ -332,8 +406,24 @@ pub fn read_text_filter(
     dir: &Path,
     manifest: &Manifest,
 ) -> Option<Vec<crate::text_filter::GroupFilter>> {
-    let entry = manifest.files.get(crate::text_filter::FILE)?;
-    let bytes = fs::read(dir.join(crate::text_filter::FILE)).ok()?;
+    read_filter(dir, manifest, crate::text_filter::FILE)
+}
+
+/// The verified trace-ID filters of a Segment's spans row groups (ADR-0025).
+pub fn read_spans_filter(
+    dir: &Path,
+    manifest: &Manifest,
+) -> Option<Vec<crate::text_filter::GroupFilter>> {
+    read_filter(dir, manifest, SPANS_FILTER)
+}
+
+fn read_filter(
+    dir: &Path,
+    manifest: &Manifest,
+    name: &str,
+) -> Option<Vec<crate::text_filter::GroupFilter>> {
+    let entry = manifest.files.get(name)?;
+    let bytes = fs::read(dir.join(name)).ok()?;
     if bytes.len() as u64 != entry.bytes || hex(&Sha256::digest(&bytes)) != entry.sha256 {
         return None;
     }
@@ -377,6 +467,8 @@ pub fn build(state_dir: &Path, label: u64, groups: &[Group]) -> io::Result<Manif
     rows.logs.sort_by_key(key_log);
     rows.metrics
         .sort_by_key(|r| (r.time_ns, r.node_id, r.sequence, r.index));
+    rows.spans
+        .sort_by_key(|r| (r.start_ns, r.node_id, r.sequence, r.index));
     let mut freshness: BTreeMap<String, u64> = BTreeMap::new();
     for r in &rows.logs {
         let f = freshness.entry(r.node.clone()).or_default();
@@ -386,7 +478,23 @@ pub fn build(state_dir: &Path, label: u64, groups: &[Group]) -> io::Result<Manif
         let f = freshness.entry(r.node.clone()).or_default();
         *f = (*f).max(r.time_ns);
     }
+    for r in &rows.spans {
+        let f = freshness.entry(r.node.clone()).or_default();
+        *f = (*f).max(r.start_ns);
+    }
     let mut files = BTreeMap::new();
+    if !rows.spans.is_empty() {
+        files.insert(
+            SPANS.into(),
+            write_table(&building.join(SPANS), &spans_batch(&rows.spans)?)?,
+        );
+        files.insert(
+            SPANS_FILTER.into(),
+            write_filter(&building, SPANS, SPANS_FILTER, &rows.spans, |r| {
+                r.trace_id.as_str()
+            })?,
+        );
+    }
     files.insert(
         "batches.parquet".into(),
         write_table(&building.join("batches.parquet"), &batches_batch(&records)?)?,
@@ -547,6 +655,7 @@ fn prune(
 pub enum Table {
     Logs,
     Metrics,
+    Spans,
 }
 
 /// Row groups as (index, min, max) of their key's time column.
@@ -569,6 +678,9 @@ pub fn row_group_bounds(
             open_table(dir, manifest, "metrics.parquet", &metrics_schema())?,
             9,
         ),
+        // A Segment sealed without spans has no spans table: no groups.
+        Table::Spans if !manifest.files.contains_key(SPANS) => return Ok(Vec::new()),
+        Table::Spans => (open_table(dir, manifest, SPANS, &spans_schema())?, 5),
     };
     Ok(builder
         .metadata()
@@ -620,6 +732,89 @@ pub fn scan_logs_groups(
 ) -> io::Result<()> {
     let builder = open_table(dir, manifest, "logs.parquet", &logs_schema())?;
     read_logs(builder, groups, from, to, &mut visit)
+}
+
+/// Spans with `start_ns` in `[from, to)`; none when the Segment has no spans table.
+pub fn scan_spans(
+    dir: &Path,
+    manifest: &Manifest,
+    from: u64,
+    to: u64,
+    mut visit: impl FnMut(SpanRow),
+) -> io::Result<()> {
+    if !manifest.files.contains_key(SPANS) {
+        return Ok(());
+    }
+    let builder = open_table(dir, manifest, SPANS, &spans_schema())?;
+    let groups = prune(&builder, 5, from, to);
+    read_spans(builder, groups, from, to, &mut visit)
+}
+
+/// Scan only the given row groups of the spans table.
+pub fn scan_spans_groups(
+    dir: &Path,
+    manifest: &Manifest,
+    groups: Vec<usize>,
+    from: u64,
+    to: u64,
+    mut visit: impl FnMut(SpanRow),
+) -> io::Result<()> {
+    let builder = open_table(dir, manifest, SPANS, &spans_schema())?;
+    read_spans(builder, groups, from, to, &mut visit)
+}
+
+fn read_spans(
+    builder: ParquetRecordBatchReaderBuilder<File>,
+    groups: Vec<usize>,
+    from: u64,
+    to: u64,
+    visit: &mut impl FnMut(SpanRow),
+) -> io::Result<()> {
+    for batch in builder.with_row_groups(groups).build().map_err(err)? {
+        let batch = batch.map_err(err)?;
+        let s = |i| col::<StringArray>(&batch, i);
+        let (g, n, id, sq, ix, st, en) = (
+            col::<UInt64Array>(&batch, 0)?,
+            s(1)?,
+            col::<FixedSizeBinaryArray>(&batch, 2)?,
+            col::<UInt64Array>(&batch, 3)?,
+            col::<UInt32Array>(&batch, 4)?,
+            col::<Int64Array>(&batch, 5)?,
+            col::<Int64Array>(&batch, 6)?,
+        );
+        let (tr, sp, pa, nm, ki, stt, at) = (
+            s(7)?,
+            s(8)?,
+            s(9)?,
+            s(10)?,
+            col::<Int32Array>(&batch, 11)?,
+            col::<Int32Array>(&batch, 12)?,
+            s(13)?,
+        );
+        for row in 0..batch.num_rows() {
+            let start = st.value(row) as u64;
+            if start < from || start >= to {
+                continue;
+            }
+            visit(SpanRow {
+                group: g.value(row),
+                node: n.value(row).to_owned(),
+                node_id: id.value(row).try_into().map_err(err)?,
+                sequence: sq.value(row),
+                index: ix.value(row),
+                trace_id: tr.value(row).to_owned(),
+                span_id: sp.value(row).to_owned(),
+                parent_span_id: pa.value(row).to_owned(),
+                name: nm.value(row).to_owned(),
+                kind: ki.value(row),
+                status: stt.value(row),
+                start_ns: start,
+                end_ns: en.value(row) as u64,
+                attributes: attrs_of(at.value(row))?,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn read_logs(

@@ -82,6 +82,7 @@ fn batch(sequence: u64) -> Vec<u8> {
         logs: Vec::new(),
         cursors: Vec::new(),
         collection_gaps: vec![format!("simulated batch {sequence}")],
+        traces: Vec::new(),
     }
     .encode_to_vec()
 }

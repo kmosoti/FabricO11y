@@ -316,6 +316,7 @@ fn batches(spool: &Path, count: usize) -> Vec<Vec<u8>> {
         logs: vec![],
         cursors: vec![],
         collection_gaps: vec!["fixture".into()],
+        traces: Vec::new(),
     };
     (0..count)
         .map(|_| journal.append(&template).unwrap().encode_to_vec())

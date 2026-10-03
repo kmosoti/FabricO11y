@@ -450,6 +450,7 @@ mod tests {
             logs: vec![],
             cursors: vec![],
             collection_gaps: vec!["test".into()],
+            traces: Vec::new(),
         }
     }
 

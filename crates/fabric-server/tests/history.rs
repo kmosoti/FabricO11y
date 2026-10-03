@@ -10,11 +10,13 @@ use fabric_server::query::{History, Plan, Query};
 use fabric_server::store::{CommitMode, Store};
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
+use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{AnyValue, KeyValue, any_value};
 use opentelemetry_proto::tonic::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
 use opentelemetry_proto::tonic::metrics::v1::{
     Metric, NumberDataPoint, ResourceMetrics, ScopeMetrics, Sum, metric, number_data_point,
 };
+use opentelemetry_proto::tonic::trace::v1::{ResourceSpans, ScopeSpans, Span, Status};
 use prost::Message;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -264,6 +266,45 @@ fn payload(t0: u64, n: u64, counter: i64, start: u64) -> Batch {
             ..Default::default()
         }],
     };
+    // Three spans per batch: a root and two children, two batches per trace, kinds
+    // and statuses varying, and every eleventh batch a span whose kind is outside the
+    // OTLP enum (kept as its integer; a tail block cannot carry it).
+    let k = (t0 - 1_000_000) / 100;
+    let trace_id: Vec<u8> = (0..16).map(|i| (k / 2) as u8 ^ (i * 17)).collect();
+    let span_id = |i: u64| (k * 10 + i + 1).to_be_bytes().to_vec();
+    let traces = ExportTraceServiceRequest {
+        resource_spans: vec![ResourceSpans {
+            scope_spans: vec![ScopeSpans {
+                spans: (0..3)
+                    .map(|i| Span {
+                        trace_id: trace_id.clone(),
+                        span_id: span_id(i),
+                        parent_span_id: if i == 0 { vec![] } else { span_id(0) },
+                        name: if i == 0 {
+                            "GET /items".into()
+                        } else {
+                            format!("db.query.{i}")
+                        },
+                        kind: if k.is_multiple_of(11) && i == 2 {
+                            9
+                        } else {
+                            1 + i as i32
+                        },
+                        start_time_unix_nano: t0 + 3 * i,
+                        end_time_unix_nano: t0 + 3 * i + 5,
+                        attributes: vec![kv("http.route", "/items")],
+                        status: (i == 1).then(|| Status {
+                            code: (k % 3) as i32,
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    })
+                    .collect(),
+                ..Default::default()
+            }],
+            ..Default::default()
+        }],
+    };
     Batch {
         version: 1,
         node_id: vec![],
@@ -271,6 +312,7 @@ fn payload(t0: u64, n: u64, counter: i64, start: u64) -> Batch {
         sequence: 0,
         metrics: metrics.encode_to_vec(),
         logs: logs.encode_to_vec(),
+        traces: traces.encode_to_vec(),
         cursors: vec![],
         collection_gaps: if t0.is_multiple_of(7) {
             vec![format!("gap at {t0}")]
@@ -445,6 +487,9 @@ fn sealed_history_answers_exactly_and_pages_are_stable() {
         json!({"kind": "logs", "from_ns": 1_000_000, "to_ns": 1_004_000, "limit": 37}),
         json!({"kind": "logs", "node": "node-b", "from_ns": 1_000_000, "to_ns": 1_010_000, "contains": "needle", "limit": 50}),
         json!({"kind": "metrics", "name": "system.network.receive.bytes", "from_ns": 0, "to_ns": u64::MAX / 2, "limit": 9}),
+        json!({"kind": "spans", "from_ns": 1_000_000, "to_ns": 1_004_000, "limit": 23}),
+        json!({"kind": "spans", "node": "node-a", "from_ns": 0, "to_ns": u64::MAX / 2, "name": "db.query.2", "limit": 7}),
+        json!({"kind": "spans", "from_ns": 0, "to_ns": u64::MAX / 2, "trace_id": (0..16u8).map(|i| format!("{:02x}", 5u8 ^ i.wrapping_mul(17))).collect::<String>(), "limit": 5}),
     ];
     let mut graded = Vec::new();
     for q in &queries {
@@ -790,7 +835,20 @@ fn seeded_queries(n: usize, seed: u64) -> Vec<Value> {
         .map(|_| {
             let from = 999_000 + next(6_000);
             let to = from + 1 + [next(50), next(500), next(5_000), 1 << 40][next(4) as usize];
-            let mut q = match next(4) {
+            let mut q = match next(5) {
+                4 => {
+                    let mut q = json!({"kind": "spans", "from_ns": from, "to_ns": to, "limit": limits[next(5) as usize]});
+                    match next(3) {
+                        0 => {
+                            let k = next(44);
+                            let id: String = (0..16).map(|i| format!("{:02x}", (k / 2) as u8 ^ (i * 17))).collect();
+                            q["trace_id"] = json!(id);
+                        }
+                        1 => q["name"] = json!(["GET /items", "db.query.1", "nope"][next(3) as usize]),
+                        _ => {}
+                    }
+                    q
+                }
                 0 | 1 => json!({"kind": "logs", "from_ns": from, "to_ns": to, "limit": limits[next(5) as usize]}),
                 2 => json!({"kind": "metrics", "name": "system.network.receive.bytes", "from_ns": from, "to_ns": to, "limit": limits[next(5) as usize]}),
                 _ => json!({"kind": "rate", "name": "system.network.receive.bytes", "from_ns": from, "to_ns": to}),

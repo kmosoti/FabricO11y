@@ -7,5 +7,5 @@ publish = false
 
 [dependencies]
 crc32fast = "=1.5.2"
-opentelemetry-proto = { version = "=0.33.0", default-features = false, features = ["gen-tonic-messages", "logs", "metrics"] }
+opentelemetry-proto = { version = "=0.33.0", default-features = false, features = ["gen-tonic-messages", "logs", "metrics", "trace"] }
 prost = "=0.14.4"

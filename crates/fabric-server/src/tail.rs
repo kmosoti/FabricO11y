@@ -71,6 +71,7 @@ pub(crate) struct TailEntry {
     pub received: u64,
     pub logs: (u64, u64),
     pub metrics: (u64, u64),
+    pub spans: (u64, u64),
     pub has_gaps: bool,
     /// The block that holds this entry's rows, once one is complete.
     pub block: Option<u32>,
@@ -96,7 +97,9 @@ pub(crate) struct TailBlock {
     pub raw_len: usize,
     /// In record order.
     pub entries: Vec<BlockEntry>,
+    /// Trigram filters over the block's log bodies and over its spans' hex trace IDs.
     pub filter: GroupFilter,
+    pub trace_filter: GroupFilter,
     file_first: u64,
 }
 
@@ -105,6 +108,72 @@ pub(crate) struct TailBlock {
 struct Pending {
     records: Vec<fabric_observation::Observation>,
     entries: Vec<BlockEntry>,
+    /// A row FOB1 cannot carry (a span with a malformed identity or an unknown
+    /// kind or status): the block is not made and its entries are read one by one.
+    refused: bool,
+}
+
+fn unhex<const N: usize>(text: &str) -> Option<[u8; N]> {
+    if text.len() != 2 * N {
+        return None;
+    }
+    let mut out = [0_u8; N];
+    for (i, b) in out.iter_mut().enumerate() {
+        *b = u8::from_str_radix(text.get(2 * i..2 * i + 2)?, 16).ok()?;
+    }
+    Some(out)
+}
+
+fn span_record(
+    r: &crate::rows::SpanRow,
+    generation: u64,
+) -> Option<fabric_observation::Observation> {
+    use fabric_observation as fo;
+    let parent_span_id = if r.parent_span_id.is_empty() {
+        None
+    } else {
+        Some(unhex::<8>(&r.parent_span_id)?)
+    };
+    let kind = match r.kind {
+        0 => fo::SpanKind::Unspecified,
+        1 => fo::SpanKind::Internal,
+        2 => fo::SpanKind::Server,
+        3 => fo::SpanKind::Client,
+        4 => fo::SpanKind::Producer,
+        5 => fo::SpanKind::Consumer,
+        _ => return None,
+    };
+    let status = match r.status {
+        0 => fo::Status::Unset,
+        1 => fo::Status::Ok,
+        2 => fo::Status::Error,
+        _ => return None,
+    };
+    Some(fo::Observation {
+        strand: fo::Strand {
+            node_id: r.node_id,
+            generation,
+        },
+        sequence: r.sequence,
+        index: r.index,
+        time_ns: r.start_ns,
+        locators: Some(fo::Locators {
+            trace_id: unhex::<16>(&r.trace_id)?,
+            span_id: unhex::<8>(&r.span_id)?,
+            parent_span_id,
+        }),
+        attributes: r
+            .attributes
+            .iter()
+            .map(|(k, v)| (k.clone(), fo::Value::Str(v.clone())))
+            .collect(),
+        signal: fo::Signal::Span {
+            name: r.name.clone(),
+            end_ns: r.end_ns,
+            status,
+            kind,
+        },
+    })
 }
 
 impl Pending {
@@ -148,6 +217,12 @@ impl Pending {
                 },
             });
         }
+        for r in &rows.spans {
+            match span_record(r, generation) {
+                Some(record) => self.records.push(record),
+                None => self.refused = true,
+            }
+        }
         for r in &rows.metrics {
             self.records.push(fo::Observation {
                 strand: fo::Strand {
@@ -183,6 +258,14 @@ impl Pending {
     fn close(&mut self, file_first: u64) -> Option<TailBlock> {
         let records = std::mem::take(&mut self.records);
         let entries = std::mem::take(&mut self.entries);
+        if std::mem::take(&mut self.refused) {
+            return None;
+        }
+        let trace_ids: Vec<String> = records
+            .iter()
+            .filter_map(|r| r.locators.map(|l| crate::rows::hex(&l.trace_id)))
+            .collect();
+        let trace_filter = GroupFilter::build(trace_ids.iter().map(String::as_str));
         let raw = fabric_observation::encode(&records).ok()?;
         let filter = GroupFilter::build(records.iter().filter_map(|r| match &r.signal {
             fabric_observation::Signal::Log { body, .. } => Some(body.as_str()),
@@ -194,6 +277,7 @@ impl Pending {
             raw_len: raw.len(),
             entries,
             filter,
+            trace_filter,
             file_first,
         })
     }
@@ -212,6 +296,7 @@ pub(crate) struct WalkState {
     /// Verified text filters by label; `None` when a Segment has none or its digest
     /// differs (a named Segment's bytes never change, so the verdict is kept).
     filters: HashMap<u64, Option<Arc<Vec<GroupFilter>>>>,
+    spans_filters: HashMap<u64, Option<Arc<Vec<GroupFilter>>>>,
     /// Complete tail blocks by id, the rows of each file not yet in one, and the size
     /// at which a block closes (0 means `BLOCK_RECORDS`).
     pub blocks: HashMap<u32, Arc<TailBlock>>,
@@ -294,6 +379,7 @@ impl WalkState {
                     rows.logs.clear();
                     rows.metrics.clear();
                     rows.gaps.clear();
+                    rows.spans.clear();
                     extract(group.group_sequence, entry, &mut rows)?;
                     let generation = fabric_frame::envelope::Batch::decode(entry.batch.as_slice())
                         .map(|b| b.generation)
@@ -316,6 +402,7 @@ impl WalkState {
                         received: entry.received_unix_nano,
                         logs: bounds(rows.logs.iter().map(|r| r.observed_ns)),
                         metrics: bounds(rows.metrics.iter().map(|r| r.time_ns)),
+                        spans: bounds(rows.spans.iter().map(|r| r.start_ns)),
                         has_gaps: !rows.gaps.is_empty(),
                         block: None,
                     });
@@ -398,6 +485,7 @@ impl WalkState {
         self.manifests.retain(|l, _| live.contains(l));
         self.bounds.retain(|(l, _), _| live.contains(l));
         self.filters.retain(|l, _| live.contains(l));
+        self.spans_filters.retain(|l, _| live.contains(l));
         Ok(found)
     }
 
@@ -421,6 +509,17 @@ impl WalkState {
 
 impl WalkState {
     /// The verified text filters of one Segment's logs row groups, read once per label.
+    pub fn spans_filters(
+        &mut self,
+        dir: &Path,
+        manifest: &Manifest,
+    ) -> Option<Arc<Vec<GroupFilter>>> {
+        self.spans_filters
+            .entry(manifest.journal_label)
+            .or_insert_with(|| segment::read_spans_filter(dir, manifest).map(Arc::new))
+            .clone()
+    }
+
     pub fn filters(&mut self, dir: &Path, manifest: &Manifest) -> Option<Arc<Vec<GroupFilter>>> {
         self.filters
             .entry(manifest.journal_label)
@@ -577,6 +676,54 @@ pub(crate) fn metric_row(
             Number::Int(v) => crate::rows::Number::Int(v),
             Number::Double(v) => crate::rows::Number::Double(v),
         },
+        attributes: attributes(record),
+    })
+}
+
+/// The span row a block record stands for, if it is one.
+pub(crate) fn span_row(
+    entry: &BlockEntry,
+    record: &fabric_observation::ObservationRef<'_>,
+) -> Option<crate::rows::SpanRow> {
+    use fabric_observation::{SignalRef, SpanKind, Status};
+    let SignalRef::Span {
+        name,
+        end_ns,
+        status,
+        kind,
+    } = record.signal
+    else {
+        return None;
+    };
+    let locators = record.locators?;
+    Some(crate::rows::SpanRow {
+        group: entry.group,
+        node: entry.node.clone(),
+        node_id: record.strand.node_id,
+        sequence: record.sequence,
+        index: record.index,
+        trace_id: crate::rows::hex(&locators.trace_id),
+        span_id: crate::rows::hex(&locators.span_id),
+        parent_span_id: locators
+            .parent_span_id
+            .map(|p| crate::rows::hex(&p))
+            .unwrap_or_default(),
+        name: name.to_owned(),
+        kind: match kind {
+            SpanKind::Unspecified => 0,
+            SpanKind::Internal => 1,
+            SpanKind::Server => 2,
+            SpanKind::Client => 3,
+            SpanKind::Producer => 4,
+            SpanKind::Consumer => 5,
+        },
+        status: match status {
+            Status::Unset => 0,
+            Status::Ok => 1,
+            Status::Error => 2,
+        },
+        start_ns: record.time_ns,
+        end_ns,
         attributes: attributes(record),
     })
 }

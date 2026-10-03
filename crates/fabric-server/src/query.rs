@@ -18,7 +18,7 @@
 //!
 //! [ADR-0024]: ../../../docs/decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md
 
-use crate::rows::{GapRow, LogRow, MetricRow, Number, Rows, extract};
+use crate::rows::{GapRow, LogRow, MetricRow, Number, Rows, SpanRow, extract};
 use crate::segment::{self, GroupBounds, MAX_GROUP_PAYLOAD, Manifest, Table};
 use crate::store::Group;
 use crate::tail::{TailEntry, TailReader, WalkState, interrupted};
@@ -65,6 +65,20 @@ pub enum Query {
         name: String,
         from_ns: u64,
         to_ns: u64,
+    },
+    /// Spans by start time, optionally one trace or one name (ADR-0025).
+    Spans {
+        #[serde(default)]
+        node: Option<String>,
+        from_ns: u64,
+        to_ns: u64,
+        #[serde(default)]
+        trace_id: Option<String>,
+        #[serde(default)]
+        name: Option<String>,
+        limit: u32,
+        #[serde(default)]
+        page: Option<String>,
     },
 }
 
@@ -173,6 +187,15 @@ fn log_json(r: &LogRow) -> Value {
     json!({
         "node": r.node, "node_id": hex(&r.node_id), "sequence": r.sequence, "index": r.index,
         "observed_ns": r.observed_ns, "body": r.body, "attributes": r.attributes,
+    })
+}
+
+fn span_json(r: &SpanRow) -> Value {
+    json!({
+        "node": r.node, "node_id": hex(&r.node_id), "sequence": r.sequence, "index": r.index,
+        "trace_id": r.trace_id, "span_id": r.span_id, "parent_span_id": r.parent_span_id,
+        "name": r.name, "kind": r.kind, "status": r.status,
+        "start_ns": r.start_ns, "end_ns": r.end_ns, "attributes": r.attributes,
     })
 }
 
@@ -319,6 +342,7 @@ impl History {
         let kind = |e: &TailEntry| match query {
             Query::Logs { .. } => e.logs,
             Query::Metrics { .. } | Query::Rate { .. } => e.metrics,
+            Query::Spans { .. } => e.spans,
         };
         let mut received = (u64::MAX, 0_u64);
         let mut freshness: BTreeMap<String, u64> = BTreeMap::new();
@@ -332,8 +356,11 @@ impl History {
             }
             received = (received.0.min(e.received), received.1.max(e.received));
             let label = &state.labels[e.label as usize];
-            let newest_time = e.logs.1.max(e.metrics.1);
-            if e.logs != crate::tail::NONE || e.metrics != crate::tail::NONE {
+            let newest_time = e.logs.1.max(e.metrics.1).max(e.spans.1);
+            if e.logs != crate::tail::NONE
+                || e.metrics != crate::tail::NONE
+                || e.spans != crate::tail::NONE
+            {
                 let f = freshness.entry(label.clone()).or_default();
                 *f = (*f).max(newest_time);
             }
@@ -370,6 +397,7 @@ impl History {
         let table = match query {
             Query::Logs { .. } => Table::Logs,
             Query::Metrics { .. } | Query::Rate { .. } => Table::Metrics,
+            Query::Spans { .. } => Table::Spans,
         };
         let bounds = segments
             .iter()
@@ -380,10 +408,16 @@ impl History {
             })
             .collect();
         let needle = matches!(query, Query::Logs { contains: Some(c), .. } if c.len() >= 3);
+        let trace = matches!(query, Query::Spans { trace_id: Some(t), .. } if t.len() >= 3);
         let filters = if needle {
             segments
                 .iter()
                 .map(|(dir, manifest)| state.filters(dir, manifest))
+                .collect()
+        } else if trace {
+            segments
+                .iter()
+                .map(|(dir, manifest)| state.spans_filters(dir, manifest))
                 .collect()
         } else {
             Vec::new()
@@ -427,6 +461,7 @@ impl History {
         window: &Window,
         kind: impl Fn(&TailEntry) -> (u64, u64),
         needle: Option<&str>,
+        traces: bool,
         unavailable: &mut Vec<Value>,
     ) -> io::Result<Vec<(u64, u64, Source)>> {
         let mut items: Vec<(u64, u64, Source)> = sources
@@ -437,7 +472,12 @@ impl History {
             .collect();
         for (j, b) in sources.blocks.iter().enumerate() {
             // A block whose filter lacks one of the needle's trigrams holds no match.
-            if needle.is_some_and(|n| n.len() >= 3 && !b.block.filter.may_contain(n.as_bytes())) {
+            let filter = if traces {
+                &b.block.trace_filter
+            } else {
+                &b.block.filter
+            };
+            if needle.is_some_and(|n| n.len() >= 3 && !filter.may_contain(n.as_bytes())) {
                 continue;
             }
             items.push((b.bounds.0, b.bounds.1, Source::Block(j)));
@@ -574,6 +614,14 @@ impl History {
                 limit,
                 page,
                 ..
+            }
+            | Query::Spans {
+                node,
+                from_ns,
+                to_ns,
+                limit,
+                page,
+                ..
             } => (node, *from_ns, *to_ns, Some(*limit), page.as_ref()),
             Query::Rate {
                 node,
@@ -659,6 +707,10 @@ impl History {
             let f = freshness.entry(r.node.clone()).or_default();
             *f = (*f).max(r.time_ns);
         }
+        for r in &journal_rows.spans {
+            let f = freshness.entry(r.node.clone()).or_default();
+            *f = (*f).max(r.start_ns);
+        }
         if let Some((r, f)) = &sources.tail_evidence {
             received = (received.0.min(r.0), received.1.max(r.1));
             for (n, t) in f {
@@ -715,6 +767,7 @@ impl History {
                         &window,
                         |e| e.logs,
                         contains.as_deref(),
+                        false,
                         &mut unavailable,
                     )?;
                     let mut reader = TailReader::new(&sources.tail_paths);
@@ -841,8 +894,14 @@ impl History {
                     }
                 }
                 if walking {
-                    let items =
-                        Self::walk_order(&sources, &window, |e| e.metrics, None, &mut unavailable)?;
+                    let items = Self::walk_order(
+                        &sources,
+                        &window,
+                        |e| e.metrics,
+                        None,
+                        false,
+                        &mut unavailable,
+                    )?;
                     let mut reader = TailReader::new(&sources.tail_paths);
                     let mut dctx = zstd::bulk::Decompressor::new()?;
                     for (min, max, source) in items {
@@ -938,6 +997,130 @@ impl History {
                 }
                 sorted.iter().map(|(_, r)| metric_json(r)).collect()
             }
+            Query::Spans {
+                trace_id,
+                name,
+                limit,
+                ..
+            } => {
+                let mut best = Smallest::new(*limit as usize + 1);
+                let keep = |r: &SpanRow| {
+                    node_ok(&r.node)
+                        && trace_id.as_deref().is_none_or(|t| r.trace_id == t)
+                        && name.as_deref().is_none_or(|n| r.name == n)
+                        && window.contains(r.start_ns)
+                        && snapshot.contains(r.group)
+                };
+                let key = |r: &SpanRow| (r.start_ns, r.node_id, r.sequence, r.index);
+                for r in journal_rows.spans.iter().filter(|r| keep(r)) {
+                    if kernel::after_page(&key(r), after.as_ref()) {
+                        best.offer(key(r), r.clone());
+                    }
+                }
+                if walking {
+                    let items = Self::walk_order(
+                        &sources,
+                        &window,
+                        |e| e.spans,
+                        trace_id.as_deref(),
+                        true,
+                        &mut unavailable,
+                    )?;
+                    let mut reader = TailReader::new(&sources.tail_paths);
+                    let mut dctx = zstd::bulk::Decompressor::new()?;
+                    for (min, max, source) in items {
+                        if after.as_ref().is_some_and(|a| max < a.0) {
+                            continue;
+                        }
+                        if best.threshold().is_some_and(|t| min > t.0) {
+                            break;
+                        }
+                        match source {
+                            Source::Block(j) => {
+                                let b = &sources.blocks[j];
+                                crate::tail::visit_block(
+                                    &b.block,
+                                    &b.wanted,
+                                    &mut dctx,
+                                    |e, o| {
+                                        if let Some(r) = crate::tail::span_row(e, o)
+                                            && keep(&r)
+                                            && kernel::after_page(&key(&r), after.as_ref())
+                                        {
+                                            best.offer(key(&r), r);
+                                        }
+                                    },
+                                )?;
+                            }
+                            Source::Tail(i) => {
+                                for r in reader.rows(&sources.tail[i])?.spans {
+                                    if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
+                                        best.offer(key(&r), r);
+                                    }
+                                }
+                            }
+                            Source::Group(si, rg) => {
+                                let (dir, manifest) = &sources.segments[si];
+                                let scanned = segment::scan_spans_groups(
+                                    dir,
+                                    manifest,
+                                    vec![rg],
+                                    from,
+                                    to,
+                                    |r| {
+                                        if keep(&r) && kernel::after_page(&key(&r), after.as_ref())
+                                        {
+                                            best.offer(key(&r), r);
+                                        }
+                                    },
+                                );
+                                if let Err(e) = scanned {
+                                    if !dir.exists() {
+                                        return Err(io::Error::new(
+                                            io::ErrorKind::Interrupted,
+                                            "segment removed",
+                                        )
+                                        .into());
+                                    }
+                                    unavailable.push(
+                            json!({"segment": manifest.journal_label, "error": e.to_string()}),
+                        );
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    for (dir, manifest) in &sources.segments {
+                        let scanned = segment::scan_spans(dir, manifest, from, to, |r| {
+                            if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
+                                best.offer(key(&r), r);
+                            }
+                        });
+                        if let Err(e) = scanned {
+                            if !dir.exists() {
+                                return Err(io::Error::new(
+                                    io::ErrorKind::Interrupted,
+                                    "segment removed",
+                                )
+                                .into());
+                            }
+                            unavailable.push(
+                                json!({"segment": manifest.journal_label, "error": e.to_string()}),
+                            );
+                        }
+                    }
+                }
+                let mut sorted = best.sorted();
+                if sorted.len() > *limit as usize {
+                    sorted.truncate(*limit as usize);
+                    let (k, _) = sorted.last().unwrap();
+                    next_page = json!(encode_token(&json!({
+                        "oldest": oldest, "newest": newest, "query": fingerprint,
+                        "after": [k.0, hex(&k.1), k.2, k.3],
+                    })));
+                }
+                sorted.iter().map(|(_, r)| span_json(r)).collect()
+            }
             Query::Rate { name, .. } => {
                 let mut points: Vec<MetricRow> = Vec::new();
                 let keep = |r: &MetricRow| {
@@ -952,8 +1135,14 @@ impl History {
                 if walking {
                     // A rate has no limit, so nothing stops it; the walk reads only the
                     // tail entries and row groups whose bounds meet the window.
-                    let items =
-                        Self::walk_order(&sources, &window, |e| e.metrics, None, &mut unavailable)?;
+                    let items = Self::walk_order(
+                        &sources,
+                        &window,
+                        |e| e.metrics,
+                        None,
+                        false,
+                        &mut unavailable,
+                    )?;
                     let mut reader = TailReader::new(&sources.tail_paths);
                     let mut dctx = zstd::bulk::Decompressor::new()?;
                     for (_, _, source) in items {
@@ -1091,6 +1280,18 @@ impl serde::Serialize for QueryShape<'_> {
                 to_ns,
             } => json!({
                 "kind": "rate", "node": node, "name": name, "from_ns": from_ns, "to_ns": to_ns,
+            }),
+            Query::Spans {
+                node,
+                from_ns,
+                to_ns,
+                trace_id,
+                name,
+                limit,
+                ..
+            } => json!({
+                "kind": "spans", "node": node, "from_ns": from_ns, "to_ns": to_ns,
+                "trace_id": trace_id, "name": name, "limit": limit,
             }),
         };
         v.serialize(s)
