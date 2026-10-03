@@ -139,6 +139,7 @@ fn start(root: &Path) -> Running {
         retention_s: 86400,
         retention_bytes: 1 << 30,
         query_plan: fabric_server::query::Plan::Scan,
+        seal_workers: 2,
     };
     let handle = axum_server::Handle::new();
     let serving = handle.clone();
@@ -309,6 +310,7 @@ fn admin_api_configures_pauses_and_revokes_a_polling_node() {
             token_file: scratch.path("token"),
         }),
         traces_listen: None,
+        max_output_bytes_per_s: None,
     };
     let mut node = Spindle::open_with_paths(base.clone(), host_paths(&scratch.0)).unwrap();
     assert!(node.poll_config().unwrap().changed);

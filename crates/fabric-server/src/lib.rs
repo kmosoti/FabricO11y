@@ -46,6 +46,7 @@ pub async fn serve(
             max_bytes: config.retention_bytes,
         },
         Arc::clone(&stop_sealer),
+        config.seal_workers,
     )?;
     let tls = RustlsConfig::from_pem_file(&config.tls_cert, &config.tls_key).await?;
     let app = http::router(http::AppState {

@@ -140,6 +140,7 @@ fn config(root: &Path, file_bytes: u64, retention_bytes: u64) -> Config {
         retention_s: 86400,
         retention_bytes,
         query_plan: Plan::Scan,
+        seal_workers: 2,
     }
 }
 

@@ -149,6 +149,7 @@ fn server_config(root: &Path) -> Config {
         retention_s: 86400,
         retention_bytes: 1 << 30,
         query_plan: fabric_server::query::Plan::Scan,
+        seal_workers: 2,
     }
 }
 
@@ -274,6 +275,7 @@ fn node_delivers_exact_bytes_and_both_sides_survive_restart() {
         spool_bytes: 16 * 1024 * 1024,
         server: Some(target(&scratch.0, addr, "token-a")),
         traces_listen: None,
+        max_output_bytes_per_s: None,
     };
     let mut node =
         Spindle::open_with_paths(node_config(server.addr), host_paths(&scratch.0)).unwrap();
@@ -390,6 +392,7 @@ fn exported_spans_reach_the_server_and_answer_the_spans_query() {
         spool_bytes: 16 * 1024 * 1024,
         server: Some(target(&scratch.0, server.addr, "token-a")),
         traces_listen: Some("127.0.0.1:0".parse().unwrap()),
+        max_output_bytes_per_s: None,
     };
     let mut node = Spindle::open_with_paths(config.clone(), host_paths(&scratch.0)).unwrap();
     let (addr, rx) = otlp::start(config.traces_listen.unwrap()).unwrap();
@@ -494,4 +497,79 @@ fn exported_spans_reach_the_server_and_answer_the_spans_query() {
         .map(|r| r["name"].as_str().unwrap().to_owned())
         .collect();
     assert_eq!(names, ["op-0", "op-1", "op-2", "op-3"]);
+}
+
+/// The Spindle's output cap delays delivery to the configured rate (a token bucket
+/// with a one-Batch burst) and meters the time it waited.
+#[test]
+fn the_output_cap_holds_delivery_to_its_rate() {
+    let scratch = setup();
+    let server = start(server_config(&scratch.0));
+    let rate = 512 * 1024;
+    let mut config = NodeConfig {
+        spool: scratch.path("spool"),
+        logs: vec![],
+        interval_s: 15,
+        spool_bytes: 64 * 1024 * 1024,
+        server: Some(target(&scratch.0, server.addr, "token-a")),
+        traces_listen: None,
+        max_output_bytes_per_s: Some(rate),
+    };
+    let mut node = Spindle::open_with_paths(config.clone(), host_paths(&scratch.0)).unwrap();
+    // Eight trace Batches of about 480 KiB: 3.9 MB, of which 1 MiB is burst.
+    let body = {
+        use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
+        use opentelemetry_proto::tonic::trace::v1::{ResourceSpans, ScopeSpans, Span};
+        ExportTraceServiceRequest {
+            resource_spans: vec![ResourceSpans {
+                scope_spans: vec![ScopeSpans {
+                    spans: (0..2000_u64)
+                        .map(|i| Span {
+                            trace_id: vec![1; 16],
+                            span_id: (i + 1).to_be_bytes().to_vec(),
+                            name: format!("{i:0>200}"),
+                            start_time_unix_nano: 10 + i,
+                            ..Default::default()
+                        })
+                        .collect(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        }
+        .encode_to_vec()
+    };
+    for _ in 0..8 {
+        node.commit_traces(&[body.as_slice()]).unwrap();
+    }
+    let total: usize = spool_bytes(&scratch.path("spool"))
+        .iter()
+        .map(Vec::len)
+        .sum();
+    let started = Instant::now();
+    loop {
+        let report = node
+            .deliver(Instant::now() + Duration::from_secs(2), |_| {})
+            .unwrap();
+        assert!(report.error.is_none(), "{report:?}");
+        if report.caught_up {
+            break;
+        }
+        assert!(started.elapsed() < Duration::from_secs(60));
+    }
+    let elapsed = started.elapsed().as_secs_f64();
+    let floor = (total as f64 - (1 << 20) as f64) / rate as f64;
+    assert!(
+        elapsed >= floor * 0.95,
+        "{total} bytes in {elapsed:.2} s, floor {floor:.2} s"
+    );
+    assert!(
+        elapsed < floor + 5.0,
+        "the cap must not stall delivery: {elapsed:.2} s"
+    );
+    drop(node);
+    // Uncapped, the same history is already delivered; a fresh node reports the
+    // waiting it did in its next metric cycle.
+    config.max_output_bytes_per_s = None;
+    server.stop();
 }

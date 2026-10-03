@@ -173,6 +173,8 @@ These are claims of the design. The milestone assigns each a check, and the [ver
 
 Until the milestone merges, `segment::build` reads the whole file into memory, clones every entry, extracts all rows, sorts them in one pass and builds each Parquet file in a buffer. The peak is about 5.5 times the journal file (356 MiB for 64 MiB), and the allocator keeps it afterwards ([soak run 01](../experiments/benchmarks/soak-run-01.md)). The output is the format this design keeps.
 
+Since [ADR-0025](../decisions/ADR-0025-carry-traces-as-a-third-signal.md) the sealer builds up to `seal_workers` Segments at once (default half the CPUs, one to four), one thread per journal file, because a Segment depends only on its own file. Journal files are still reclaimed strictly oldest first, and not past the first file whose build failed, so the commit thread's checkpoint-then-delete order and the replay rules are unchanged. Peak memory is the per-build peak times the workers, which is why the default stops at four under the server's 3 GiB ceiling until this design's flat-memory build lands.
+
 ## Related
 
 - [Retained history and query](retained-history.md) (the contract this design must not change)
