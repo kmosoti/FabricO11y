@@ -1,0 +1,9 @@
+{
+  "published": false,
+  "refs_changed": false,
+  "git_push_error": "command-line HTTPS credentials unavailable",
+  "connector_error": "MCP request body exceeds 16 MiB limit",
+  "largest_blocking_path": "docs/experiments/benchmarks/data/dev-small-local-run-01/small/sources.jsonl.gz",
+  "base64_characters": 17638624,
+  "transfer": "Git bundle in scratch; requires prerequisite 5f0c52f"
+}
