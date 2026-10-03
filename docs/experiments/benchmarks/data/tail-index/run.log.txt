@@ -1,0 +1,57 @@
+== steady: tail 64.0 MiB
+  tail 64 MiB  entries 55100  index 5.0 MiB (95.3 B/entry)  build 131 ms
+  first query: stock 748 ms  index 528 ms;  HWM after first: stock 183 MiB (replay 7)  index 183 MiB (replay 8)
+   empty_past         stock    220.69  index      4.14  rows 0/0
+   logs_last_10s      stock    216.50  index      7.88  rows 100/100
+   host_last_60s      stock    215.89  index      5.94  rows 120/120
+   text_last_60s      stock    222.11  index     29.21  rows 10/10
+   fleet_last_15s     stock    231.38  index      7.27  rows 100/100
+   rate_last_60s      stock    221.73  index     13.32  rows 0/0
+   logs_limit50_full  stock    229.17  index    263.13  rows 50/50
+  random set: stock 127.69 s  index 10.65 s;  mismatches 0
+== tiny: tail 64.3 MiB
+  tail 64 MiB  entries 303500  index 40.0 MiB (138.2 B/entry)  build 544 ms
+  first query: stock 3276 ms  index 1550 ms;  HWM after first: stock 418 MiB (replay 8)  index 418 MiB (replay 9)
+   empty_past         stock    817.40  index     21.01  rows 0/0
+   logs_last_10s      stock    854.91  index    206.69  rows 100/100
+   host_last_60s      stock    848.27  index     39.21  rows 1000/1000
+   text_last_60s      stock    878.74  index    935.05  rows 17/17
+   fleet_last_15s     stock    910.87  index    125.25  rows 3500/3500
+   rate_last_60s      stock    883.92  index    587.12  rows 0/0
+   logs_limit50_full  stock    887.34  index    991.73  rows 50/50
+  random set: stock 518.0 s  index 152.07 s;  mismatches 0
+== needle: tail 64.0 MiB
+  tail 64 MiB  entries 55140  index 5.1 MiB (96.6 B/entry)  build 149 ms
+  first query: stock 321 ms  index 511 ms;  HWM after first: stock 184 MiB (replay 7)  index 184 MiB (replay 8)
+   empty_past         stock    236.25  index     10.46  rows 0/0
+   logs_last_10s      stock    226.08  index     12.85  rows 100/100
+   host_last_60s      stock    224.26  index      9.25  rows 12/12
+   text_last_60s      stock    233.52  index     36.18  rows 10/10
+   fleet_last_15s     stock    234.09  index     12.38  rows 100/100
+   rate_last_60s      stock    235.68  index     17.39  rows 0/0
+   logs_limit50_full  stock    241.42  index    290.53  rows 50/50
+  random set: stock 123.24 s  index 12.33 s;  mismatches 0
+== outage: tail 64.0 MiB
+  tail 64 MiB  entries 55100  index 5.0 MiB (95.3 B/entry)  build 136 ms
+  first query: stock 324 ms  index 501 ms;  HWM after first: stock 183 MiB (replay 7)  index 183 MiB (replay 8)
+   empty_past         stock    230.90  index      4.22  rows 0/0
+   logs_last_10s      stock    221.23  index      7.84  rows 100/100
+   host_last_60s      stock    232.82  index      5.82  rows 120/120
+   text_last_60s      stock    230.16  index     30.86  rows 10/10
+   fleet_last_15s     stock    237.96  index      7.49  rows 100/100
+   rate_last_60s      stock    229.80  index     12.88  rows 0/0
+   logs_limit50_full  stock    243.64  index    279.96  rows 50/50
+  random set: stock 131.07 s  index 10.58 s;  mismatches 0
+== skew: tail 64.0 MiB
+  tail 64 MiB  entries 57195  index 5.0 MiB (91.8 B/entry)  build 141 ms
+  first query: stock 331 ms  index 529 ms;  HWM after first: stock 188 MiB (replay 7)  index 188 MiB (replay 8)
+   empty_past         stock    226.74  index      4.83  rows 0/0
+   logs_last_10s      stock    227.22  index     10.35  rows 100/100
+   host_last_60s      stock    234.03  index      5.32  rows 0/0
+   text_last_60s      stock    244.88  index     36.91  rows 13/13
+   fleet_last_15s     stock    227.61  index      8.44  rows 106/106
+   rate_last_60s      stock    226.11  index     14.83  rows 0/0
+   logs_limit50_full  stock    242.23  index    305.43  rows 50/50
+  random set: stock 137.42 s  index 11.42 s;  mismatches 0
+rotation: {'answers': 1908, 'error_count': 0, 'segments': 1, 'sealed_left': 0, 'entries_first': 55100, 'entries_max': 55103, 'entries_last': 12}
+exit=0

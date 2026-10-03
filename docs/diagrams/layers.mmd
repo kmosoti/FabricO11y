@@ -5,7 +5,7 @@ flowchart TB
     end
     App[fabric-app: use cases]
     Ports[fabric-ports: DurableJournal, Clock, SegmentStore]
-    Support[fabric-frame: FAB1 frame log, Batch envelope]
+    Support[fabric-frame: FAB1 frame log, Batch envelope; fabric-observation: Observation record, FOB1 codec]
     Linux[fabric-adapter-linux: host and log reads]
     Core[fabric-core: delivery, control, query, retention and collection decisions]
     Verify[verification layer: fabric-properties, fabric-fuzz-targets, fabric-sim]

@@ -68,18 +68,38 @@ fn main() -> ExitCode {
             install_stop_handler()?;
         }
         let config = Config::load(config_path)?;
+        let traces_listen = config.traces_listen;
         let mut node = Spindle::open(config)?;
+        // The loopback trace endpoint (ADR-0025), in `run` mode only.
+        let traces = match traces_listen {
+            Some(addr) if mode == "run" => {
+                let (bound, rx) = fabric_o11y::spindle::otlp::start(addr)?;
+                println!("traces listening={bound}");
+                Some(rx)
+            }
+            _ => None,
+        };
+        let mut carried = None;
         if STOP.load(Ordering::SeqCst) {
             return Ok(());
         }
         let mut backoff = MIN_BACKOFF;
         let mut last_error: Option<String> = None;
+        // Whether the last delivery attempt left nothing unacknowledged. Catch-up
+        // passes wait for it, so collection never outruns what the server accepts.
+        let mut delivered = true;
         let mut retry_at = Instant::now();
         let mut next_metrics = Instant::now();
         let mut next_logs = Instant::now() + LOG_POLL;
         let mut next_config = Instant::now();
         let mut last_config_error: Option<String> = None;
         loop {
+            if let Some(rx) = &traces
+                && fabric_o11y::spindle::otlp::drain(&mut node, rx, &mut carried)
+                && last_error.is_none()
+            {
+                retry_at = Instant::now();
+            }
             let now = Instant::now();
             if mode == "run" && now >= next_config {
                 next_config = now + CONFIG_POLL;
@@ -120,6 +140,18 @@ fn main() -> ExitCode {
             } else {
                 None
             };
+            // A pass that left unread log bytes is followed by another as soon as
+            // delivery has caught up, so collection keeps pace with delivery rather
+            // than with one pass per second (ADR-0025).
+            let catch_up = delivered && cycle.as_ref().is_some_and(|c| c.log_backlog_bytes > 0);
+            if catch_up {
+                next_logs = Instant::now();
+                // Deliver at once: a retry time left from an idle turn would
+                // otherwise hold this pass until that turn's deadline.
+                if last_error.is_none() {
+                    retry_at = Instant::now();
+                }
+            }
             if let Some(cycle) = cycle {
                 println!(
                     "batch={} metrics={} logs={} gaps={} spool_bytes={} log_backlog_bytes={} acked_through={}",
@@ -137,15 +169,35 @@ fn main() -> ExitCode {
             }
             // Until the next poll: deliver while batches are pending, back off
             // after a failed attempt, and honour a stop request within 100 ms.
-            let deadline = next_metrics.min(next_logs).min(next_config);
+            let deadline = if catch_up {
+                // Deliver until caught up (bounded), then read the backlog again.
+                Instant::now() + Duration::from_secs(2)
+            } else {
+                next_metrics.min(next_logs).min(next_config)
+            };
             while !STOP.load(Ordering::SeqCst) && Instant::now() < deadline {
+                if let Some(rx) = &traces
+                    && fabric_o11y::spindle::otlp::drain(&mut node, rx, &mut carried)
+                    && last_error.is_none()
+                {
+                    // A trace Batch was committed: send it now, not at the next poll.
+                    retry_at = Instant::now();
+                }
                 let now = Instant::now();
+                // With the trace endpoint on, deliver in short slices so a waiting
+                // exporter is answered within about 200 ms of its commit turn.
+                let slice = if traces.is_some() {
+                    deadline.min(now + Duration::from_millis(200))
+                } else {
+                    deadline
+                };
                 if now >= retry_at {
                     // Stdout is line buffered: each line is written before
                     // the ACK it reports is persisted.
-                    let report = node.deliver(deadline, |a| println!("{}", delivery_line(a)))?;
+                    let report = node.deliver(slice, |a| println!("{}", delivery_line(a)))?;
                     match report.error {
                         Some(error) => {
+                            delivered = false;
                             if last_error.as_deref() != Some(error.as_str()) {
                                 eprintln!("fabric-node: delivery: {error}");
                             }
@@ -159,8 +211,12 @@ fn main() -> ExitCode {
                                 eprintln!("fabric-node: delivery resumed");
                             }
                             backoff = MIN_BACKOFF;
+                            delivered = report.caught_up;
                             if !report.caught_up {
                                 continue;
+                            }
+                            if catch_up {
+                                break;
                             }
                             // Nothing pending until the next poll commits.
                             retry_at = deadline;

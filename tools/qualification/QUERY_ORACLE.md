@@ -23,6 +23,20 @@ Checked against the vendored `opentelemetry-proto-0.33.0` crate sources and
 `NumberDataPoint.start_time_unix_nano=2, time_unix_nano=3, as_double=4,
 as_int=6, attributes=7`.
 
+Traces (added with [ADR-0025](../../docs/decisions/ADR-0025-carry-traces-as-a-third-signal.md), from
+`opentelemetry.proto.trace.v1.rs` and `opentelemetry.proto.collector.trace.v1.rs` of the same crate):
+`Batch.traces=9`; `ExportTraceServiceRequest.resource_spans=1`, `ResourceSpans.scope_spans=2`,
+`ScopeSpans.spans=2`; `Span.trace_id=1`, `span_id=2`, `parent_span_id=4`, `name=5`,
+`kind=6` (enum), `start_time_unix_nano=7` and `end_time_unix_nano=8` (fixed64),
+`attributes=9`, `status=15`; `Status.code=3`. A span row carries `node`, `node_id`,
+`sequence`, `index` (position among the Batch's spans), `trace_id`, `span_id` and
+`parent_span_id` as lowercase hex of the bytes (empty when absent), `name`, `kind` and
+`status` as the OTLP integers (an absent `Status` is 0), `start_ns`, `end_ns` and string
+`attributes`. A `spans` query (`node?`, `from_ns`, `to_ns`, `trace_id?`, `name?`,
+`limit`, `page?`) selects `start_ns` in `[from_ns, to_ns)` with exact `trace_id` and
+`name`, ordered by `start_ns`, `node_id`, `sequence`, `index`, and is paginated like
+`logs`. Freshness counts span start times.
+
 ## CLI
 
 ```

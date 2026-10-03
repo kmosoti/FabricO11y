@@ -1,0 +1,15 @@
+#!/bin/bash
+# seal_time.sh <tag> : seal one 64 MiB journal file natively, print wall and CPU seconds
+cd /home/user/fabric-m4
+P=target/research/data/profile
+rm -rf $P/state; mkdir -p $P/state/journal
+ln target/research/data/a3lite/journal/sealed-00000000000000000001.faj $P/state/journal/
+taskset -c 3 target/release/fabric-server serve $P/server.conf > /dev/null 2>&1 &
+PID=$!
+t0=$(date +%s.%N)
+while ls $P/state/journal/sealed-*.faj >/dev/null 2>&1; do sleep 0.05; done
+t1=$(date +%s.%N)
+read -a st < /proc/$PID/stat
+cpu=$(echo "scale=2; (${st[13]} + ${st[14]}) / $(getconf CLK_TCK)" | bc)
+kill -TERM $PID; wait $PID 2>/dev/null
+echo "$1 wall=$(echo "scale=2; $t1 - $t0" | bc)s cpu=${cpu}s (includes journal replay)"

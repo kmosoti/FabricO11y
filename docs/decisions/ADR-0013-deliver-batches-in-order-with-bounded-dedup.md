@@ -25,6 +25,8 @@ An `ack` is sent only after the group containing that batch, or the earlier batc
 
 The server groups commits: one frame holds up to 1 MiB of batches or whatever arrived within 50 ms, followed by one data sync and one marker sync. The individual mode is a group of one, so both modes have identical durability semantics.
 
+Amended 2026-10-03 (quiet rule): a group also closes when no submission has arrived for 2 ms. With one Batch in flight per Strand a lone sender could never bring a second submission while its first was held, so every one of its Batches paid the whole window; under load arrivals are closer than 2 ms and groups still fill to 1 MiB or the window. Durability is unchanged: a group is synced before any of its answers is sent. Tested by `a_lone_submission_is_not_held_for_the_window` and its negative control in `store.rs`; measured in [sealer profile run 01](../experiments/benchmarks/sealer-profile-run-01.md).
+
 ## Alternatives considered
 
 - A full set of committed sequences per stream. It permits out-of-order sending but grows without bound or needs its own compaction.

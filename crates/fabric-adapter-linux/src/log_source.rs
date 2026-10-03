@@ -8,8 +8,8 @@ use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 
 const MAX_LINE: usize = 4096;
-const MAX_SCAN: usize = 256 * 1024;
-const MAX_LINES: usize = 128;
+const MAX_SCAN: usize = 1024 * 1024;
+const MAX_LINES: usize = 8192;
 const MAX_GAPS: usize = 8;
 const PREFIX_BYTES: usize = 64;
 
@@ -94,6 +94,18 @@ pub fn read_lines(
     prior: Option<&Cursor>,
     body_budget: usize,
 ) -> io::Result<ReadResult> {
+    read_lines_costed(path, prior, body_budget, 0)
+}
+
+/// As `read_lines`, with each accepted line also costing `per_line` bytes of the
+/// budget: the encoding overhead its record adds beyond the body (its path and
+/// offsets), so a caller can bound the encoded size of what it collects.
+pub fn read_lines_costed(
+    path: &Path,
+    prior: Option<&Cursor>,
+    body_budget: usize,
+    per_line: usize,
+) -> io::Result<ReadResult> {
     let name = path
         .to_str()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "non-UTF8 log path"))?;
@@ -163,12 +175,12 @@ pub fn read_lines(
         }
         if oversize {
             committed = at;
-        } else if body_bytes + line.len() > body_budget {
+        } else if body_bytes + line.len() + per_line > body_budget {
             break;
         } else {
             match String::from_utf8(std::mem::take(&mut line)) {
                 Ok(body) => {
-                    body_bytes += body.len();
+                    body_bytes += body.len() + per_line;
                     lines.push(Line {
                         body,
                         path: name.to_owned(),

@@ -1,0 +1,657 @@
+{
+ "stock": {
+  "shapes": {
+   "logs_limit50_full": {
+    "p50_ms": 607.41,
+    "min_ms": 584.58,
+    "rows": 50,
+    "complete": true,
+    "body_bytes": 6179
+   },
+   "logs_limit1000_full": {
+    "p50_ms": 610.6,
+    "min_ms": 561.94,
+    "rows": 1000,
+    "complete": true,
+    "body_bytes": 127891
+   },
+   "logs_limit10000_full": {
+    "p50_ms": 731.36,
+    "min_ms": 666.71,
+    "rows": 10000,
+    "complete": true,
+    "body_bytes": 1282108
+   },
+   "host_limit50_full": {
+    "p50_ms": 671.19,
+    "min_ms": 614.46,
+    "rows": 50,
+    "complete": true,
+    "body_bytes": 6521
+   },
+   "metric_limit100_full": {
+    "p50_ms": 598.22,
+    "min_ms": 545.43,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 0
+   },
+   "text_common_full": {
+    "p50_ms": 613.66,
+    "min_ms": 562.8,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 12823
+   },
+   "text_mid_full": {
+    "p50_ms": 595.53,
+    "min_ms": 566.4,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 14768
+   },
+   "text_rare_full": {
+    "p50_ms": 583.77,
+    "min_ms": 549.94,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 28831
+   },
+   "text_none_full": {
+    "p50_ms": 569.86,
+    "min_ms": 536.47,
+    "rows": 0,
+    "complete": true,
+    "body_bytes": 0
+   },
+   "text_none_60s": {
+    "p50_ms": 596.79,
+    "min_ms": 576.16,
+    "rows": 0,
+    "complete": true,
+    "body_bytes": 0
+   },
+   "rate_full": {
+    "p50_ms": 609.23,
+    "min_ms": 571.18,
+    "rows": 0,
+    "complete": true,
+    "body_bytes": 0
+   },
+   "logs_last_10s": {
+    "p50_ms": 581.95,
+    "min_ms": 535.97,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 12811
+   },
+   "host_last_60s": {
+    "p50_ms": 595.03,
+    "min_ms": 554.61,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 12325
+   },
+   "empty_past": {
+    "p50_ms": 550.48,
+    "min_ms": 503.69,
+    "rows": 0,
+    "complete": true,
+    "body_bytes": 0
+   }
+  },
+  "random_set_s": 134.26,
+  "mem": {
+   "VmHWM": 278,
+   "VmRSS": 193
+  }
+ },
+ "walk-key": {
+  "shapes": {
+   "logs_limit50_full": {
+    "p50_ms": 39.8,
+    "min_ms": 36.36,
+    "rows": 50,
+    "complete": true,
+    "body_bytes": 6179,
+    "topk": {
+     "table": "logs",
+     "items": "149585",
+     "tail": "149585",
+     "groups": "0",
+     "processed": "26",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "884",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "logs_limit1000_full": {
+    "p50_ms": 44.15,
+    "min_ms": 42.96,
+    "rows": 1000,
+    "complete": true,
+    "body_bytes": 127891,
+    "topk": {
+     "table": "logs",
+     "items": "149585",
+     "tail": "149585",
+     "groups": "0",
+     "processed": "502",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "4204",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "logs_limit10000_full": {
+    "p50_ms": 128.11,
+    "min_ms": 117.24,
+    "rows": 10000,
+    "complete": true,
+    "body_bytes": 1282108,
+    "topk": {
+     "table": "logs",
+     "items": "149585",
+     "tail": "149585",
+     "groups": "0",
+     "processed": "5002",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "22804",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "host_limit50_full": {
+    "p50_ms": 12.62,
+    "min_ms": 12.18,
+    "rows": 50,
+    "complete": true,
+    "body_bytes": 6521,
+    "topk": {
+     "table": "logs",
+     "items": "1496",
+     "tail": "1496",
+     "groups": "0",
+     "processed": "26",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "116",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "metric_limit100_full": {
+    "p50_ms": 16.2,
+    "min_ms": 14.95,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 0,
+    "topk": {
+     "table": "metrics",
+     "items": "10000",
+     "tail": "10000",
+     "groups": "0",
+     "processed": "102",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "3468",
+     "boundary": "none"
+    }
+   },
+   "text_common_full": {
+    "p50_ms": 39.68,
+    "min_ms": 33.84,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 12823,
+    "topk": {
+     "table": "logs",
+     "items": "149585",
+     "tail": "149585",
+     "groups": "0",
+     "processed": "124",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "3448",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "text_mid_full": {
+    "p50_ms": 55.53,
+    "min_ms": 49.86,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 14768,
+    "topk": {
+     "table": "logs",
+     "items": "149585",
+     "tail": "149585",
+     "groups": "0",
+     "processed": "4412",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "18424",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "text_rare_full": {
+    "p50_ms": 226.67,
+    "min_ms": 214.63,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 28831,
+    "topk": {
+     "table": "logs",
+     "items": "149585",
+     "tail": "149585",
+     "groups": "0",
+     "processed": "50556",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "209912",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "text_none_full": {
+    "p50_ms": 556.12,
+    "min_ms": 546.1,
+    "rows": 0,
+    "complete": true,
+    "body_bytes": 0,
+    "topk": {
+     "table": "logs",
+     "items": "149585",
+     "tail": "149585",
+     "groups": "0",
+     "processed": "149585",
+     "skipped_low": "0",
+     "stopped": "false",
+     "examined": "619170",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "text_none_60s": {
+    "p50_ms": 33.33,
+    "min_ms": 32.65,
+    "rows": 0,
+    "complete": true,
+    "body_bytes": 0,
+    "topk": {
+     "table": "logs",
+     "items": "5985",
+     "tail": "5985",
+     "groups": "0",
+     "processed": "5985",
+     "skipped_low": "0",
+     "stopped": "false",
+     "examined": "24770",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "rate_full": {
+    "p50_ms": 217.19,
+    "min_ms": 207.72,
+    "rows": 0,
+    "complete": true,
+    "body_bytes": 0,
+    "topk": {
+     "table": "rate",
+     "items": "10000",
+     "tail": "10000",
+     "groups": "0",
+     "processed": "10000",
+     "skipped_low": "0",
+     "stopped": "false",
+     "examined": "320000",
+     "boundary": "none"
+    }
+   },
+   "logs_last_10s": {
+    "p50_ms": 12.87,
+    "min_ms": 12.25,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 12811,
+    "topk": {
+     "table": "logs",
+     "items": "985",
+     "tail": "985",
+     "groups": "0",
+     "processed": "52",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "104",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "host_last_60s": {
+    "p50_ms": 13.79,
+    "min_ms": 13.04,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 12325,
+    "topk": {
+     "table": "logs",
+     "items": "60",
+     "tail": "60",
+     "groups": "0",
+     "processed": "51",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "230",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "empty_past": {
+    "p50_ms": 11.67,
+    "min_ms": 11.05,
+    "rows": 0,
+    "complete": true,
+    "body_bytes": 0,
+    "topk": {
+     "table": "logs",
+     "items": "0",
+     "tail": "0",
+     "groups": "0",
+     "processed": "0",
+     "skipped_low": "0",
+     "stopped": "false",
+     "examined": "0",
+     "boundary": "none",
+     "order": "key"
+    }
+   }
+  },
+  "random_set_s": 6.8,
+  "mem": {
+   "VmHWM": 74,
+   "VmRSS": 74
+  },
+  "mismatches": []
+ },
+ "walk-auto": {
+  "shapes": {
+   "logs_limit50_full": {
+    "p50_ms": 44.1,
+    "min_ms": 35.71,
+    "rows": 50,
+    "complete": true,
+    "body_bytes": 6179,
+    "topk": {
+     "table": "logs",
+     "items": "149585",
+     "tail": "149585",
+     "groups": "0",
+     "processed": "26",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "884",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "logs_limit1000_full": {
+    "p50_ms": 42.71,
+    "min_ms": 41.37,
+    "rows": 1000,
+    "complete": true,
+    "body_bytes": 127891,
+    "topk": {
+     "table": "logs",
+     "items": "149585",
+     "tail": "149585",
+     "groups": "0",
+     "processed": "502",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "4204",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "logs_limit10000_full": {
+    "p50_ms": 135.46,
+    "min_ms": 114.61,
+    "rows": 10000,
+    "complete": true,
+    "body_bytes": 1282108,
+    "topk": {
+     "table": "logs",
+     "items": "149585",
+     "tail": "149585",
+     "groups": "0",
+     "processed": "5002",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "22804",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "host_limit50_full": {
+    "p50_ms": 12.79,
+    "min_ms": 12.19,
+    "rows": 50,
+    "complete": true,
+    "body_bytes": 6521,
+    "topk": {
+     "table": "logs",
+     "items": "1496",
+     "tail": "1496",
+     "groups": "0",
+     "processed": "26",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "116",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "metric_limit100_full": {
+    "p50_ms": 16.08,
+    "min_ms": 15.26,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 0,
+    "topk": {
+     "table": "metrics",
+     "items": "10000",
+     "tail": "10000",
+     "groups": "0",
+     "processed": "102",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "3468",
+     "boundary": "none"
+    }
+   },
+   "text_common_full": {
+    "p50_ms": 575.07,
+    "min_ms": 524.23,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 12823,
+    "topk": {
+     "table": "logs",
+     "items": "149585",
+     "tail": "149585",
+     "groups": "0",
+     "processed": "149585",
+     "skipped_low": "0",
+     "stopped": "false",
+     "examined": "619170",
+     "boundary": "none",
+     "order": "file"
+    }
+   },
+   "text_mid_full": {
+    "p50_ms": 583.9,
+    "min_ms": 556.66,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 14768,
+    "topk": {
+     "table": "logs",
+     "items": "149585",
+     "tail": "149585",
+     "groups": "0",
+     "processed": "149585",
+     "skipped_low": "0",
+     "stopped": "false",
+     "examined": "619170",
+     "boundary": "none",
+     "order": "file"
+    }
+   },
+   "text_rare_full": {
+    "p50_ms": 568.11,
+    "min_ms": 538.91,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 28831,
+    "topk": {
+     "table": "logs",
+     "items": "149585",
+     "tail": "149585",
+     "groups": "0",
+     "processed": "149585",
+     "skipped_low": "0",
+     "stopped": "false",
+     "examined": "619170",
+     "boundary": "none",
+     "order": "file"
+    }
+   },
+   "text_none_full": {
+    "p50_ms": 579.04,
+    "min_ms": 536.69,
+    "rows": 0,
+    "complete": true,
+    "body_bytes": 0,
+    "topk": {
+     "table": "logs",
+     "items": "149585",
+     "tail": "149585",
+     "groups": "0",
+     "processed": "149585",
+     "skipped_low": "0",
+     "stopped": "false",
+     "examined": "619170",
+     "boundary": "none",
+     "order": "file"
+    }
+   },
+   "text_none_60s": {
+    "p50_ms": 34.13,
+    "min_ms": 31.72,
+    "rows": 0,
+    "complete": true,
+    "body_bytes": 0,
+    "topk": {
+     "table": "logs",
+     "items": "5985",
+     "tail": "5985",
+     "groups": "0",
+     "processed": "5985",
+     "skipped_low": "0",
+     "stopped": "false",
+     "examined": "24770",
+     "boundary": "none",
+     "order": "file"
+    }
+   },
+   "rate_full": {
+    "p50_ms": 230.93,
+    "min_ms": 213.93,
+    "rows": 0,
+    "complete": true,
+    "body_bytes": 0,
+    "topk": {
+     "table": "rate",
+     "items": "10000",
+     "tail": "10000",
+     "groups": "0",
+     "processed": "10000",
+     "skipped_low": "0",
+     "stopped": "false",
+     "examined": "320000",
+     "boundary": "none"
+    }
+   },
+   "logs_last_10s": {
+    "p50_ms": 13.11,
+    "min_ms": 12.12,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 12811,
+    "topk": {
+     "table": "logs",
+     "items": "985",
+     "tail": "985",
+     "groups": "0",
+     "processed": "52",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "104",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "host_last_60s": {
+    "p50_ms": 13.35,
+    "min_ms": 12.9,
+    "rows": 100,
+    "complete": true,
+    "body_bytes": 12325,
+    "topk": {
+     "table": "logs",
+     "items": "60",
+     "tail": "60",
+     "groups": "0",
+     "processed": "51",
+     "skipped_low": "0",
+     "stopped": "true",
+     "examined": "230",
+     "boundary": "none",
+     "order": "key"
+    }
+   },
+   "empty_past": {
+    "p50_ms": 12.19,
+    "min_ms": 11.35,
+    "rows": 0,
+    "complete": true,
+    "body_bytes": 0,
+    "topk": {
+     "table": "logs",
+     "items": "0",
+     "tail": "0",
+     "groups": "0",
+     "processed": "0",
+     "skipped_low": "0",
+     "stopped": "false",
+     "examined": "0",
+     "boundary": "none",
+     "order": "key"
+    }
+   }
+  },
+  "random_set_s": 9.83,
+  "mem": {
+   "VmHWM": 73,
+   "VmRSS": 73
+  },
+  "mismatches": []
+ }
+}

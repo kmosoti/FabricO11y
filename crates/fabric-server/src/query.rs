@@ -7,10 +7,21 @@
 //! Rows are kept in a bounded heap of `limit + 1`, so memory does not grow
 //! with the number of matching rows. What the window, page, snapshot and
 //! counter rules mean is decided by `fabric_core::query`.
+//!
+//! Two plans answer the same query with the same rows ([ADR-0024], part 1). The
+//! scan plan, the default, decodes every journal entry and reads every row group the
+//! window's statistics admit. The walk plan orders the sources (tail entries and
+//! row groups) by the smallest key each can hold and stops once the heap is full and
+//! its largest key is below the next source's bound: the threshold rule of
+//! `fabric_core::query::spec::threshold_walk`. It reads the tail through a key index
+//! and caches Segment metadata (see `tail`).
+//!
+//! [ADR-0024]: ../../../docs/decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md
 
-use crate::rows::{GapRow, LogRow, MetricRow, Number, Rows, extract};
-use crate::segment::{self, MAX_GROUP_PAYLOAD, Manifest};
+use crate::rows::{GapRow, LogRow, MetricRow, Number, Rows, SpanRow, extract};
+use crate::segment::{self, GroupBounds, MAX_GROUP_PAYLOAD, Manifest, Table};
 use crate::store::Group;
+use crate::tail::{TailEntry, TailReader, WalkState, interrupted};
 use fabric_core::query::{
     self as kernel, CounterPoint, CounterStep, QueryRejection, Snapshot, Window,
 };
@@ -18,10 +29,11 @@ use fabric_frame::frame::read_frame;
 use prost::Message;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, BinaryHeap};
+use std::collections::{BTreeMap, BinaryHeap, HashMap};
 use std::fs::File;
 use std::io;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
@@ -53,6 +65,20 @@ pub enum Query {
         name: String,
         from_ns: u64,
         to_ns: u64,
+    },
+    /// Spans by start time, optionally one trace or one name (ADR-0025).
+    Spans {
+        #[serde(default)]
+        node: Option<String>,
+        from_ns: u64,
+        to_ns: u64,
+        #[serde(default)]
+        trace_id: Option<String>,
+        #[serde(default)]
+        name: Option<String>,
+        limit: u32,
+        #[serde(default)]
+        page: Option<String>,
     },
 }
 
@@ -109,6 +135,45 @@ struct Sources {
     /// Journal groups inside the snapshot that no segment covers.
     journal: Vec<Group>,
     oldest_group: u64,
+    /// Walk plan: selected tail entries left undecoded until the walk reaches them,
+    /// the live journal files, receive bounds and freshness over the whole tail of the
+    /// snapshot (which `journal` then no longer holds), and each Segment's row-group
+    /// bounds for the queried table, or the error that made them unreadable.
+    tail: Vec<TailEntry>,
+    tail_paths: HashMap<u64, PathBuf>,
+    tail_evidence: Option<((u64, u64), BTreeMap<String, u64>)>,
+    bounds: Vec<Result<GroupBounds, String>>,
+    /// Walk plan, logs queries with a needle of three or more bytes: each Segment's
+    /// verified row-group text filters, if it has them (ADR-0024 part 2).
+    filters: Vec<Option<std::sync::Arc<Vec<crate::text_filter::GroupFilter>>>>,
+    /// Walk plan: complete tail blocks holding selected entries, each with those
+    /// entries (by frame offset and index) and the bounds of their queried rows.
+    blocks: Vec<TailBlockSource>,
+}
+
+/// A tail block as a source of one query (ADR-0024 part 3).
+struct TailBlockSource {
+    block: std::sync::Arc<crate::tail::TailBlock>,
+    wanted: std::collections::HashSet<(u64, u32)>,
+    bounds: (u64, u64),
+}
+
+/// One source of the walk: a tail entry, or a row group of a Segment.
+#[derive(Clone, Copy)]
+enum Source {
+    Tail(usize),
+    Block(usize),
+    Group(usize, usize),
+}
+
+/// How a query reads its sources; both plans return the same answer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Plan {
+    /// Decode every tail entry, read every row group the window admits.
+    #[default]
+    Scan,
+    /// Read sources in key order and stop at the heap's threshold (ADR-0024).
+    Walk,
 }
 
 fn number_json(value: Number) -> Value {
@@ -122,6 +187,15 @@ fn log_json(r: &LogRow) -> Value {
     json!({
         "node": r.node, "node_id": hex(&r.node_id), "sequence": r.sequence, "index": r.index,
         "observed_ns": r.observed_ns, "body": r.body, "attributes": r.attributes,
+    })
+}
+
+fn span_json(r: &SpanRow) -> Value {
+    json!({
+        "node": r.node, "node_id": hex(&r.node_id), "sequence": r.sequence, "index": r.index,
+        "trace_id": r.trace_id, "span_id": r.span_id, "parent_span_id": r.parent_span_id,
+        "name": r.name, "kind": r.kind, "status": r.status,
+        "start_ns": r.start_ns, "end_ns": r.end_ns, "attributes": r.attributes,
     })
 }
 
@@ -140,6 +214,8 @@ fn metric_json(r: &MetricRow) -> Value {
 
 pub struct History {
     state_dir: PathBuf,
+    plan: Plan,
+    walk: Mutex<WalkState>,
 }
 
 /// Keeps the `capacity` smallest rows by key.
@@ -171,6 +247,14 @@ impl<T> Smallest<T> {
         self.rows.insert(self.next, row);
         self.next += 1;
     }
+    /// The largest held key once full: no key at or above it can enter.
+    fn threshold(&self) -> Option<Key> {
+        if self.heap.len() == self.capacity {
+            self.heap.peek().map(|(k, _)| *k)
+        } else {
+            None
+        }
+    }
     fn sorted(self) -> Vec<(Key, T)> {
         let mut keyed: Vec<(Key, usize)> = self.heap.into_vec();
         keyed.sort();
@@ -184,9 +268,249 @@ impl<T> Smallest<T> {
 
 impl History {
     pub fn new(state_dir: &Path) -> Self {
+        Self::with_plan(state_dir, Plan::Scan)
+    }
+
+    pub fn with_plan(state_dir: &Path, plan: Plan) -> Self {
         Self {
             state_dir: state_dir.to_path_buf(),
+            plan,
+            walk: Mutex::new(WalkState::default()),
         }
+    }
+
+    /// Close tail blocks at `records` records instead of the default (tests use small
+    /// blocks so that a small history has several).
+    #[doc(hidden)]
+    pub fn with_tail_block_records(self, records: usize) -> Self {
+        self.walk
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .block_records = records;
+        self
+    }
+
+    /// How many complete tail blocks the walk plan holds (for tests and diagnostics).
+    #[doc(hidden)]
+    pub fn tail_blocks(&self) -> usize {
+        self.walk
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .blocks
+            .len()
+    }
+
+    /// Walk plan: the snapshot's sources from the tail index and the metadata cache.
+    /// Entries are selected by their bounds for the queried kind and by node; those
+    /// with gaps inside the window are decoded now (the answer's `gaps` needs them),
+    /// the rest wait for the walk.
+    fn sources_walk(
+        &self,
+        oldest: Option<u64>,
+        newest: u64,
+        query: &Query,
+        window: &Window,
+        node: &Option<String>,
+    ) -> io::Result<Sources> {
+        let mut state = self.walk.lock().unwrap_or_else(|e| e.into_inner());
+        let segments_dir = segment::segments_dir(&self.state_dir)?;
+        let mut covered = Vec::new();
+        let mut segments = Vec::new();
+        for (label, manifest) in state.segments(&self.state_dir)? {
+            if manifest.first_group > newest {
+                continue;
+            }
+            covered.push((manifest.first_group, manifest.last_group));
+            segments.push((segments_dir.join(segment::segment_name(label)), manifest));
+        }
+        covered.sort_unstable();
+        let tail_paths = state.extend(&self.state_dir.join("journal"), &covered)?;
+        let oldest_group = segments
+            .iter()
+            .map(|(_, m)| m.first_group)
+            .chain(
+                state
+                    .entries
+                    .iter()
+                    .map(|e| e.group)
+                    .filter(|g| *g <= newest),
+            )
+            .min()
+            .unwrap_or(newest + 1);
+        let floor = oldest.unwrap_or(oldest_group);
+        segments.retain(|(_, m)| m.last_group >= floor);
+        let kind = |e: &TailEntry| match query {
+            Query::Logs { .. } => e.logs,
+            Query::Metrics { .. } | Query::Rate { .. } => e.metrics,
+            Query::Spans { .. } => e.spans,
+        };
+        let mut received = (u64::MAX, 0_u64);
+        let mut freshness: BTreeMap<String, u64> = BTreeMap::new();
+        let mut lazy = Vec::new();
+        let mut eager = Vec::new();
+        let mut blocks: Vec<TailBlockSource> = Vec::new();
+        let mut block_at: HashMap<u32, usize> = HashMap::new();
+        for e in &state.entries {
+            if e.group > newest || e.group < floor {
+                continue;
+            }
+            received = (received.0.min(e.received), received.1.max(e.received));
+            let label = &state.labels[e.label as usize];
+            let newest_time = e.logs.1.max(e.metrics.1).max(e.spans.1);
+            if e.logs != crate::tail::NONE
+                || e.metrics != crate::tail::NONE
+                || e.spans != crate::tail::NONE
+            {
+                let f = freshness.entry(label.clone()).or_default();
+                *f = (*f).max(newest_time);
+            }
+            if node.as_deref().is_some_and(|n| n != label) {
+                continue;
+            }
+            if e.has_gaps && window.contains(e.received) {
+                eager.push(*e);
+            } else {
+                let (min, max) = kind(e);
+                if max >= window.from_ns && min < window.to_ns {
+                    match e
+                        .block
+                        .and_then(|b| state.blocks.get(&b).map(|block| (b, block)))
+                    {
+                        Some((b, block)) => {
+                            let j = *block_at.entry(b).or_insert_with(|| {
+                                blocks.push(TailBlockSource {
+                                    block: block.clone(),
+                                    wanted: std::collections::HashSet::new(),
+                                    bounds: crate::tail::NONE,
+                                });
+                                blocks.len() - 1
+                            });
+                            let s = &mut blocks[j];
+                            s.wanted.insert((e.offset, e.index));
+                            s.bounds = (s.bounds.0.min(min), s.bounds.1.max(max));
+                        }
+                        None => lazy.push(*e),
+                    }
+                }
+            }
+        }
+        let table = match query {
+            Query::Logs { .. } => Table::Logs,
+            Query::Metrics { .. } | Query::Rate { .. } => Table::Metrics,
+            Query::Spans { .. } => Table::Spans,
+        };
+        let bounds = segments
+            .iter()
+            .map(|(dir, manifest)| {
+                state
+                    .bounds(dir, manifest, table)
+                    .map_err(|e| e.to_string())
+            })
+            .collect();
+        let needle = matches!(query, Query::Logs { contains: Some(c), .. } if c.len() >= 3);
+        let trace = matches!(query, Query::Spans { trace_id: Some(t), .. } if t.len() >= 3);
+        let filters = if needle {
+            segments
+                .iter()
+                .map(|(dir, manifest)| state.filters(dir, manifest))
+                .collect()
+        } else if trace {
+            segments
+                .iter()
+                .map(|(dir, manifest)| state.spans_filters(dir, manifest))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        drop(state);
+        let mut reader = TailReader::new(&tail_paths);
+        let mut journal: Vec<Group> = Vec::new();
+        for e in &eager {
+            let entry = reader
+                .group(e.file_first, e.offset)?
+                .entries
+                .get(e.index as usize)
+                .ok_or_else(|| interrupted("journal moved"))?
+                .clone();
+            match journal.last_mut() {
+                Some(g) if g.group_sequence == e.group => g.entries.push(entry),
+                _ => journal.push(Group {
+                    group_sequence: e.group,
+                    entries: vec![entry],
+                }),
+            }
+        }
+        Ok(Sources {
+            segments,
+            journal,
+            oldest_group,
+            tail: lazy,
+            tail_paths,
+            tail_evidence: Some((received, freshness)),
+            bounds,
+            filters,
+            blocks,
+        })
+    }
+
+    /// Walk plan: every source that can hold a row of the window, in order of the
+    /// smallest key it can hold. A Segment whose bounds could not be read is reported
+    /// unavailable, as the scan reports a Segment it cannot read.
+    fn walk_order(
+        sources: &Sources,
+        window: &Window,
+        kind: impl Fn(&TailEntry) -> (u64, u64),
+        needle: Option<&str>,
+        traces: bool,
+        unavailable: &mut Vec<Value>,
+    ) -> io::Result<Vec<(u64, u64, Source)>> {
+        let mut items: Vec<(u64, u64, Source)> = sources
+            .tail
+            .iter()
+            .enumerate()
+            .map(|(i, e)| (kind(e).0, kind(e).1, Source::Tail(i)))
+            .collect();
+        for (j, b) in sources.blocks.iter().enumerate() {
+            // A block whose filter lacks one of the needle's trigrams holds no match.
+            let filter = if traces {
+                &b.block.trace_filter
+            } else {
+                &b.block.filter
+            };
+            if needle.is_some_and(|n| n.len() >= 3 && !filter.may_contain(n.as_bytes())) {
+                continue;
+            }
+            items.push((b.bounds.0, b.bounds.1, Source::Block(j)));
+        }
+        for (si, ((dir, manifest), bounds)) in
+            sources.segments.iter().zip(&sources.bounds).enumerate()
+        {
+            match bounds {
+                Ok(groups) => {
+                    // A row group whose verified filter lacks one of the needle's
+                    // trigrams holds no match (ADR-0024 part 2).
+                    let filter = sources.filters.get(si).and_then(|f| f.as_deref());
+                    let excluded = |rg: usize| {
+                        needle.zip(filter).is_some_and(|(n, f)| {
+                            f.get(rg).is_some_and(|g| !g.may_contain(n.as_bytes()))
+                        })
+                    };
+                    for &(rg, min, max) in groups {
+                        if max >= window.from_ns && min < window.to_ns && !excluded(rg) {
+                            items.push((min, max, Source::Group(si, rg)));
+                        }
+                    }
+                }
+                Err(e) => {
+                    if !dir.exists() {
+                        return Err(interrupted("segment removed"));
+                    }
+                    unavailable.push(json!({"segment": manifest.journal_label, "error": e}));
+                }
+            }
+        }
+        items.sort_unstable_by_key(|(min, _, _)| *min);
+        Ok(items)
     }
 
     /// Load the segments and journal groups for `[oldest, newest]`.
@@ -253,6 +577,12 @@ impl History {
             segments,
             journal,
             oldest_group,
+            tail: Vec::new(),
+            tail_paths: HashMap::new(),
+            tail_evidence: None,
+            bounds: Vec::new(),
+            filters: Vec::new(),
+            blocks: Vec::new(),
         })
     }
 
@@ -278,6 +608,14 @@ impl History {
                 ..
             }
             | Query::Metrics {
+                node,
+                from_ns,
+                to_ns,
+                limit,
+                page,
+                ..
+            }
+            | Query::Spans {
                 node,
                 from_ns,
                 to_ns,
@@ -331,7 +669,12 @@ impl History {
                 }
             }
         };
-        let sources = self.sources(floor, newest)?;
+        let walking = self.plan == Plan::Walk;
+        let sources = if walking {
+            self.sources_walk(floor, newest, query, &window, node)?
+        } else {
+            self.sources(floor, newest)?
+        };
         let oldest = floor.unwrap_or(sources.oldest_group);
         if floor.is_some_and(|f| !kernel::page_snapshot_retained(f, sources.oldest_group)) {
             return Err(QueryError::Gone);
@@ -363,6 +706,17 @@ impl History {
         for r in &journal_rows.metrics {
             let f = freshness.entry(r.node.clone()).or_default();
             *f = (*f).max(r.time_ns);
+        }
+        for r in &journal_rows.spans {
+            let f = freshness.entry(r.node.clone()).or_default();
+            *f = (*f).max(r.start_ns);
+        }
+        if let Some((r, f)) = &sources.tail_evidence {
+            received = (received.0.min(r.0), received.1.max(r.1));
+            for (n, t) in f {
+                let e = freshness.entry(n.clone()).or_default();
+                *e = (*e).max(*t);
+            }
         }
         gaps.extend(journal_rows.gaps.iter().cloned());
         for (dir, manifest) in &sources.segments {
@@ -407,23 +761,111 @@ impl History {
                         best.offer(key(r), r.clone());
                     }
                 }
-                for (dir, manifest) in &sources.segments {
-                    let scanned = segment::scan_logs(dir, manifest, from, to, |r| {
-                        if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
-                            best.offer(key(&r), r);
+                if walking {
+                    let items = Self::walk_order(
+                        &sources,
+                        &window,
+                        |e| e.logs,
+                        contains.as_deref(),
+                        false,
+                        &mut unavailable,
+                    )?;
+                    let mut reader = TailReader::new(&sources.tail_paths);
+                    let mut dctx = zstd::bulk::Decompressor::new()?;
+                    for (min, max, source) in items {
+                        if after.as_ref().is_some_and(|a| max < a.0) {
+                            continue;
                         }
-                    });
-                    if let Err(e) = scanned {
-                        if !dir.exists() {
-                            return Err(io::Error::new(
-                                io::ErrorKind::Interrupted,
-                                "segment removed",
-                            )
-                            .into());
+                        if best.threshold().is_some_and(|t| min > t.0) {
+                            break;
                         }
-                        unavailable.push(
+                        match source {
+                            Source::Block(j) => {
+                                let b = &sources.blocks[j];
+                                crate::tail::visit_block(
+                                    &b.block,
+                                    &b.wanted,
+                                    &mut dctx,
+                                    |e, o| {
+                                        let fabric_observation::SignalRef::Log { body, .. } =
+                                            o.signal
+                                        else {
+                                            return;
+                                        };
+                                        if !window.contains(o.time_ns)
+                                            || !node_ok(&e.node)
+                                            || !snapshot.contains(e.group)
+                                            || contains
+                                                .as_deref()
+                                                .is_some_and(|c| !body.contains(c))
+                                        {
+                                            return;
+                                        }
+                                        let k = (o.time_ns, o.strand.node_id, o.sequence, o.index);
+                                        if kernel::after_page(&k, after.as_ref())
+                                            && best.threshold().is_none_or(|t| k < t)
+                                        {
+                                            best.offer(k, crate::tail::log_row(e, o, body));
+                                        }
+                                    },
+                                )?;
+                            }
+                            Source::Tail(i) => {
+                                for r in reader.rows(&sources.tail[i])?.logs {
+                                    if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
+                                        best.offer(key(&r), r);
+                                    }
+                                }
+                            }
+                            Source::Group(si, rg) => {
+                                let (dir, manifest) = &sources.segments[si];
+                                let scanned = segment::scan_logs_groups(
+                                    dir,
+                                    manifest,
+                                    vec![rg],
+                                    from,
+                                    to,
+                                    |r| {
+                                        if keep(&r) && kernel::after_page(&key(&r), after.as_ref())
+                                        {
+                                            best.offer(key(&r), r);
+                                        }
+                                    },
+                                );
+                                if let Err(e) = scanned {
+                                    if !dir.exists() {
+                                        return Err(io::Error::new(
+                                            io::ErrorKind::Interrupted,
+                                            "segment removed",
+                                        )
+                                        .into());
+                                    }
+                                    unavailable.push(
                             json!({"segment": manifest.journal_label, "error": e.to_string()}),
                         );
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    for (dir, manifest) in &sources.segments {
+                        let scanned = segment::scan_logs(dir, manifest, from, to, |r| {
+                            if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
+                                best.offer(key(&r), r);
+                            }
+                        });
+                        if let Err(e) = scanned {
+                            if !dir.exists() {
+                                return Err(io::Error::new(
+                                    io::ErrorKind::Interrupted,
+                                    "segment removed",
+                                )
+                                .into());
+                            }
+                            unavailable.push(
+                                json!({"segment": manifest.journal_label, "error": e.to_string()}),
+                            );
+                        }
                     }
                 }
                 let mut sorted = best.sorted();
@@ -451,23 +893,97 @@ impl History {
                         best.offer(key(r), r.clone());
                     }
                 }
-                for (dir, manifest) in &sources.segments {
-                    let scanned = segment::scan_metrics(dir, manifest, from, to, |r| {
-                        if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
-                            best.offer(key(&r), r);
+                if walking {
+                    let items = Self::walk_order(
+                        &sources,
+                        &window,
+                        |e| e.metrics,
+                        None,
+                        false,
+                        &mut unavailable,
+                    )?;
+                    let mut reader = TailReader::new(&sources.tail_paths);
+                    let mut dctx = zstd::bulk::Decompressor::new()?;
+                    for (min, max, source) in items {
+                        if after.as_ref().is_some_and(|a| max < a.0) {
+                            continue;
                         }
-                    });
-                    if let Err(e) = scanned {
-                        if !dir.exists() {
-                            return Err(io::Error::new(
-                                io::ErrorKind::Interrupted,
-                                "segment removed",
-                            )
-                            .into());
+                        if best.threshold().is_some_and(|t| min > t.0) {
+                            break;
                         }
-                        unavailable.push(
+                        match source {
+                            Source::Block(j) => {
+                                let b = &sources.blocks[j];
+                                crate::tail::visit_block(
+                                    &b.block,
+                                    &b.wanted,
+                                    &mut dctx,
+                                    |e, o| {
+                                        if let Some(r) = crate::tail::metric_row(e, o)
+                                            && keep(&r)
+                                            && kernel::after_page(&key(&r), after.as_ref())
+                                        {
+                                            best.offer(key(&r), r);
+                                        }
+                                    },
+                                )?;
+                            }
+                            Source::Tail(i) => {
+                                for r in reader.rows(&sources.tail[i])?.metrics {
+                                    if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
+                                        best.offer(key(&r), r);
+                                    }
+                                }
+                            }
+                            Source::Group(si, rg) => {
+                                let (dir, manifest) = &sources.segments[si];
+                                let scanned = segment::scan_metrics_groups(
+                                    dir,
+                                    manifest,
+                                    vec![rg],
+                                    from,
+                                    to,
+                                    |r| {
+                                        if keep(&r) && kernel::after_page(&key(&r), after.as_ref())
+                                        {
+                                            best.offer(key(&r), r);
+                                        }
+                                    },
+                                );
+                                if let Err(e) = scanned {
+                                    if !dir.exists() {
+                                        return Err(io::Error::new(
+                                            io::ErrorKind::Interrupted,
+                                            "segment removed",
+                                        )
+                                        .into());
+                                    }
+                                    unavailable.push(
                             json!({"segment": manifest.journal_label, "error": e.to_string()}),
                         );
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    for (dir, manifest) in &sources.segments {
+                        let scanned = segment::scan_metrics(dir, manifest, from, to, |r| {
+                            if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
+                                best.offer(key(&r), r);
+                            }
+                        });
+                        if let Err(e) = scanned {
+                            if !dir.exists() {
+                                return Err(io::Error::new(
+                                    io::ErrorKind::Interrupted,
+                                    "segment removed",
+                                )
+                                .into());
+                            }
+                            unavailable.push(
+                                json!({"segment": manifest.journal_label, "error": e.to_string()}),
+                            );
+                        }
                     }
                 }
                 let mut sorted = best.sorted();
@@ -481,6 +997,130 @@ impl History {
                 }
                 sorted.iter().map(|(_, r)| metric_json(r)).collect()
             }
+            Query::Spans {
+                trace_id,
+                name,
+                limit,
+                ..
+            } => {
+                let mut best = Smallest::new(*limit as usize + 1);
+                let keep = |r: &SpanRow| {
+                    node_ok(&r.node)
+                        && trace_id.as_deref().is_none_or(|t| r.trace_id == t)
+                        && name.as_deref().is_none_or(|n| r.name == n)
+                        && window.contains(r.start_ns)
+                        && snapshot.contains(r.group)
+                };
+                let key = |r: &SpanRow| (r.start_ns, r.node_id, r.sequence, r.index);
+                for r in journal_rows.spans.iter().filter(|r| keep(r)) {
+                    if kernel::after_page(&key(r), after.as_ref()) {
+                        best.offer(key(r), r.clone());
+                    }
+                }
+                if walking {
+                    let items = Self::walk_order(
+                        &sources,
+                        &window,
+                        |e| e.spans,
+                        trace_id.as_deref(),
+                        true,
+                        &mut unavailable,
+                    )?;
+                    let mut reader = TailReader::new(&sources.tail_paths);
+                    let mut dctx = zstd::bulk::Decompressor::new()?;
+                    for (min, max, source) in items {
+                        if after.as_ref().is_some_and(|a| max < a.0) {
+                            continue;
+                        }
+                        if best.threshold().is_some_and(|t| min > t.0) {
+                            break;
+                        }
+                        match source {
+                            Source::Block(j) => {
+                                let b = &sources.blocks[j];
+                                crate::tail::visit_block(
+                                    &b.block,
+                                    &b.wanted,
+                                    &mut dctx,
+                                    |e, o| {
+                                        if let Some(r) = crate::tail::span_row(e, o)
+                                            && keep(&r)
+                                            && kernel::after_page(&key(&r), after.as_ref())
+                                        {
+                                            best.offer(key(&r), r);
+                                        }
+                                    },
+                                )?;
+                            }
+                            Source::Tail(i) => {
+                                for r in reader.rows(&sources.tail[i])?.spans {
+                                    if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
+                                        best.offer(key(&r), r);
+                                    }
+                                }
+                            }
+                            Source::Group(si, rg) => {
+                                let (dir, manifest) = &sources.segments[si];
+                                let scanned = segment::scan_spans_groups(
+                                    dir,
+                                    manifest,
+                                    vec![rg],
+                                    from,
+                                    to,
+                                    |r| {
+                                        if keep(&r) && kernel::after_page(&key(&r), after.as_ref())
+                                        {
+                                            best.offer(key(&r), r);
+                                        }
+                                    },
+                                );
+                                if let Err(e) = scanned {
+                                    if !dir.exists() {
+                                        return Err(io::Error::new(
+                                            io::ErrorKind::Interrupted,
+                                            "segment removed",
+                                        )
+                                        .into());
+                                    }
+                                    unavailable.push(
+                            json!({"segment": manifest.journal_label, "error": e.to_string()}),
+                        );
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    for (dir, manifest) in &sources.segments {
+                        let scanned = segment::scan_spans(dir, manifest, from, to, |r| {
+                            if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
+                                best.offer(key(&r), r);
+                            }
+                        });
+                        if let Err(e) = scanned {
+                            if !dir.exists() {
+                                return Err(io::Error::new(
+                                    io::ErrorKind::Interrupted,
+                                    "segment removed",
+                                )
+                                .into());
+                            }
+                            unavailable.push(
+                                json!({"segment": manifest.journal_label, "error": e.to_string()}),
+                            );
+                        }
+                    }
+                }
+                let mut sorted = best.sorted();
+                if sorted.len() > *limit as usize {
+                    sorted.truncate(*limit as usize);
+                    let (k, _) = sorted.last().unwrap();
+                    next_page = json!(encode_token(&json!({
+                        "oldest": oldest, "newest": newest, "query": fingerprint,
+                        "after": [k.0, hex(&k.1), k.2, k.3],
+                    })));
+                }
+                sorted.iter().map(|(_, r)| span_json(r)).collect()
+            }
             Query::Rate { name, .. } => {
                 let mut points: Vec<MetricRow> = Vec::new();
                 let keep = |r: &MetricRow| {
@@ -492,23 +1132,93 @@ impl History {
                         && snapshot.contains(r.group)
                 };
                 points.extend(journal_rows.metrics.iter().filter(|r| keep(r)).cloned());
-                for (dir, manifest) in &sources.segments {
-                    let scanned = segment::scan_metrics(dir, manifest, from, to, |r| {
-                        if keep(&r) {
-                            points.push(r);
-                        }
-                    });
-                    if let Err(e) = scanned {
-                        if !dir.exists() {
-                            return Err(io::Error::new(
-                                io::ErrorKind::Interrupted,
-                                "segment removed",
-                            )
-                            .into());
-                        }
-                        unavailable.push(
+                if walking {
+                    // A rate has no limit, so nothing stops it; the walk reads only the
+                    // tail entries and row groups whose bounds meet the window.
+                    let items = Self::walk_order(
+                        &sources,
+                        &window,
+                        |e| e.metrics,
+                        None,
+                        false,
+                        &mut unavailable,
+                    )?;
+                    let mut reader = TailReader::new(&sources.tail_paths);
+                    let mut dctx = zstd::bulk::Decompressor::new()?;
+                    for (_, _, source) in items {
+                        match source {
+                            Source::Block(j) => {
+                                let b = &sources.blocks[j];
+                                crate::tail::visit_block(
+                                    &b.block,
+                                    &b.wanted,
+                                    &mut dctx,
+                                    |e, o| {
+                                        if let Some(r) = crate::tail::metric_row(e, o)
+                                            && keep(&r)
+                                        {
+                                            points.push(r);
+                                        }
+                                    },
+                                )?;
+                            }
+                            Source::Tail(i) => {
+                                points.extend(
+                                    reader
+                                        .rows(&sources.tail[i])?
+                                        .metrics
+                                        .into_iter()
+                                        .filter(|r| keep(r)),
+                                );
+                            }
+                            Source::Group(si, rg) => {
+                                let (dir, manifest) = &sources.segments[si];
+                                let scanned = segment::scan_metrics_groups(
+                                    dir,
+                                    manifest,
+                                    vec![rg],
+                                    from,
+                                    to,
+                                    |r| {
+                                        if keep(&r) {
+                                            points.push(r);
+                                        }
+                                    },
+                                );
+                                if let Err(e) = scanned {
+                                    if !dir.exists() {
+                                        return Err(io::Error::new(
+                                            io::ErrorKind::Interrupted,
+                                            "segment removed",
+                                        )
+                                        .into());
+                                    }
+                                    unavailable.push(
                             json!({"segment": manifest.journal_label, "error": e.to_string()}),
                         );
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    for (dir, manifest) in &sources.segments {
+                        let scanned = segment::scan_metrics(dir, manifest, from, to, |r| {
+                            if keep(&r) {
+                                points.push(r);
+                            }
+                        });
+                        if let Err(e) = scanned {
+                            if !dir.exists() {
+                                return Err(io::Error::new(
+                                    io::ErrorKind::Interrupted,
+                                    "segment removed",
+                                )
+                                .into());
+                            }
+                            unavailable.push(
+                                json!({"segment": manifest.journal_label, "error": e.to_string()}),
+                            );
+                        }
                     }
                 }
                 rates(points)
@@ -570,6 +1280,18 @@ impl serde::Serialize for QueryShape<'_> {
                 to_ns,
             } => json!({
                 "kind": "rate", "node": node, "name": name, "from_ns": from_ns, "to_ns": to_ns,
+            }),
+            Query::Spans {
+                node,
+                from_ns,
+                to_ns,
+                trace_id,
+                name,
+                limit,
+                ..
+            } => json!({
+                "kind": "spans", "node": node, "from_ns": from_ns, "to_ns": to_ns,
+                "trace_id": trace_id, "name": name, "limit": limit,
             }),
         };
         v.serialize(s)

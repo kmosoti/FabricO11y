@@ -148,6 +148,8 @@ fn server_config(root: &Path) -> Config {
         journal_file_bytes: 64 * 1024 * 1024,
         retention_s: 86400,
         retention_bytes: 1 << 30,
+        query_plan: fabric_server::query::Plan::Scan,
+        seal_workers: 2,
     }
 }
 
@@ -272,6 +274,8 @@ fn node_delivers_exact_bytes_and_both_sides_survive_restart() {
         interval_s: 15,
         spool_bytes: 16 * 1024 * 1024,
         server: Some(target(&scratch.0, addr, "token-a")),
+        traces_listen: None,
+        max_output_bytes_per_s: None,
     };
     let mut node =
         Spindle::open_with_paths(node_config(server.addr), host_paths(&scratch.0)).unwrap();
@@ -315,6 +319,7 @@ fn batches(spool: &Path, count: usize) -> Vec<Vec<u8>> {
         logs: vec![],
         cursors: vec![],
         collection_gaps: vec!["fixture".into()],
+        traces: Vec::new(),
     };
     (0..count)
         .map(|_| journal.append(&template).unwrap().encode_to_vec())
@@ -365,4 +370,206 @@ fn retry_conflict_gap_binding_and_rejections_follow_the_delivery_rule() {
             stream_b[0].clone()
         ]
     );
+}
+
+/// ADR-0025 end to end: an application exports spans to the Spindle's loopback
+/// endpoint, each export is answered only after its Spool commit, the trace Batches
+/// reach the server byte for byte, and the spans query returns every span, the same
+/// from the scan and the walk plan, and finds one trace by its ID.
+#[test]
+fn exported_spans_reach_the_server_and_answer_the_spans_query() {
+    use fabric_o11y::spindle::otlp;
+    use fabric_server::query::{History, Plan, Query};
+    use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
+    use opentelemetry_proto::tonic::trace::v1::{ResourceSpans, ScopeSpans, Span};
+    use std::io::{BufRead, BufReader, Read, Write};
+    let scratch = setup();
+    let server = start(server_config(&scratch.0));
+    let config = NodeConfig {
+        spool: scratch.path("spool"),
+        logs: vec![],
+        interval_s: 15,
+        spool_bytes: 16 * 1024 * 1024,
+        server: Some(target(&scratch.0, server.addr, "token-a")),
+        traces_listen: Some("127.0.0.1:0".parse().unwrap()),
+        max_output_bytes_per_s: None,
+    };
+    let mut node = Spindle::open_with_paths(config.clone(), host_paths(&scratch.0)).unwrap();
+    let (addr, rx) = otlp::start(config.traces_listen.unwrap()).unwrap();
+    let export = |e: u64| {
+        ExportTraceServiceRequest {
+            resource_spans: vec![ResourceSpans {
+                scope_spans: vec![ScopeSpans {
+                    spans: (0..4)
+                        .map(|i| Span {
+                            trace_id: vec![e as u8; 16],
+                            span_id: (e * 10 + i + 1).to_be_bytes().to_vec(),
+                            parent_span_id: if i == 0 {
+                                vec![]
+                            } else {
+                                (e * 10 + 1).to_be_bytes().to_vec()
+                            },
+                            name: format!("op-{i}"),
+                            kind: 2,
+                            start_time_unix_nano: 5_000 + e * 100 + i,
+                            end_time_unix_nano: 5_050 + e * 100 + i,
+                            ..Default::default()
+                        })
+                        .collect(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        }
+        .encode_to_vec()
+    };
+    // The exporter: ten exports on one connection, each waiting for its answer.
+    let client = std::thread::spawn(move || {
+        let mut stream = std::net::TcpStream::connect(addr).unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let mut statuses = Vec::new();
+        for e in 1..=10 {
+            let body = export(e);
+            write!(stream, "POST /v1/traces HTTP/1.1\r\nContent-Type: application/x-protobuf\r\nContent-Length: {}\r\n\r\n", body.len()).unwrap();
+            stream.write_all(&body).unwrap();
+            let mut status = String::new();
+            reader.read_line(&mut status).unwrap();
+            let mut len = 0;
+            loop {
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    len = v.trim().parse().unwrap();
+                }
+            }
+            reader.read_exact(&mut vec![0; len]).unwrap();
+            statuses.push(status.split(' ').nth(1).unwrap().to_owned());
+        }
+        statuses
+    });
+    // The Spindle's loop, reduced to the two calls that matter here.
+    let mut carried = None;
+    let deadline = Instant::now() + Duration::from_secs(30);
+    while !client.is_finished() && Instant::now() < deadline {
+        otlp::drain(&mut node, &rx, &mut carried);
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let statuses = client.join().unwrap();
+    assert_eq!(statuses, vec!["200"; 10]);
+    let report = node
+        .deliver(Instant::now() + Duration::from_secs(20), |_| {})
+        .unwrap();
+    assert!(report.caught_up, "{report:?}");
+    drop(node);
+    server.stop();
+    assert_eq!(
+        recovered(&scratch.0),
+        spool_bytes(&scratch.path("spool")),
+        "custody: exact bytes"
+    );
+
+    let state = server_config(&scratch.0).state_dir;
+    let all: Query = serde_json::from_value(
+        serde_json::json!({"kind": "spans", "from_ns": 0, "to_ns": 1u64 << 40, "limit": 1000}),
+    )
+    .unwrap();
+    let scan = History::new(&state).run(&all, 1 << 40).unwrap();
+    let walk = History::with_plan(&state, Plan::Walk)
+        .run(&all, 1 << 40)
+        .unwrap();
+    assert_eq!(scan, walk);
+    let rows = scan["rows"].as_array().unwrap();
+    assert_eq!(rows.len(), 40);
+    assert_eq!(rows[0]["node"], "node-a");
+    assert_eq!(rows[0]["start_ns"], 5_100);
+    assert_eq!(rows[1]["parent_span_id"], rows[0]["span_id"]);
+    let one: Query = serde_json::from_value(serde_json::json!({"kind": "spans", "from_ns": 0, "to_ns": 1u64 << 40, "trace_id": "07070707070707070707070707070707", "limit": 10})).unwrap();
+    let trace = History::with_plan(&state, Plan::Walk)
+        .run(&one, 1 << 40)
+        .unwrap();
+    let names: Vec<_> = trace["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["name"].as_str().unwrap().to_owned())
+        .collect();
+    assert_eq!(names, ["op-0", "op-1", "op-2", "op-3"]);
+}
+
+/// The Spindle's output cap delays delivery to the configured rate (a token bucket
+/// with a one-Batch burst) and meters the time it waited.
+#[test]
+fn the_output_cap_holds_delivery_to_its_rate() {
+    let scratch = setup();
+    let server = start(server_config(&scratch.0));
+    let rate = 512 * 1024;
+    let mut config = NodeConfig {
+        spool: scratch.path("spool"),
+        logs: vec![],
+        interval_s: 15,
+        spool_bytes: 64 * 1024 * 1024,
+        server: Some(target(&scratch.0, server.addr, "token-a")),
+        traces_listen: None,
+        max_output_bytes_per_s: Some(rate),
+    };
+    let mut node = Spindle::open_with_paths(config.clone(), host_paths(&scratch.0)).unwrap();
+    // Eight trace Batches of about 480 KiB: 3.9 MB, of which 1 MiB is burst.
+    let body = {
+        use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
+        use opentelemetry_proto::tonic::trace::v1::{ResourceSpans, ScopeSpans, Span};
+        ExportTraceServiceRequest {
+            resource_spans: vec![ResourceSpans {
+                scope_spans: vec![ScopeSpans {
+                    spans: (0..2000_u64)
+                        .map(|i| Span {
+                            trace_id: vec![1; 16],
+                            span_id: (i + 1).to_be_bytes().to_vec(),
+                            name: format!("{i:0>200}"),
+                            start_time_unix_nano: 10 + i,
+                            ..Default::default()
+                        })
+                        .collect(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        }
+        .encode_to_vec()
+    };
+    for _ in 0..8 {
+        node.commit_traces(&[body.as_slice()]).unwrap();
+    }
+    let total: usize = spool_bytes(&scratch.path("spool"))
+        .iter()
+        .map(Vec::len)
+        .sum();
+    let started = Instant::now();
+    loop {
+        let report = node
+            .deliver(Instant::now() + Duration::from_secs(2), |_| {})
+            .unwrap();
+        assert!(report.error.is_none(), "{report:?}");
+        if report.caught_up {
+            break;
+        }
+        assert!(started.elapsed() < Duration::from_secs(60));
+    }
+    let elapsed = started.elapsed().as_secs_f64();
+    let floor = (total as f64 - (1 << 20) as f64) / rate as f64;
+    assert!(
+        elapsed >= floor * 0.95,
+        "{total} bytes in {elapsed:.2} s, floor {floor:.2} s"
+    );
+    assert!(
+        elapsed < floor + 5.0,
+        "the cap must not stall delivery: {elapsed:.2} s"
+    );
+    drop(node);
+    // Uncapped, the same history is already delivered; a fresh node reports the
+    // waiting it did in its next metric cycle.
+    config.max_output_bytes_per_s = None;
+    server.stop();
 }

@@ -1,0 +1,42 @@
+{
+ "seg-corpus64": {
+  "meta": {
+   "logs": {
+    "created_by": "parquet-rs version 60.0.0",
+    "codec": "ZSTD",
+    "rg_rows": 4380
+   },
+   "metrics": {
+    "created_by": "parquet-rs version 60.0.0",
+    "codec": "ZSTD",
+    "rg_rows": 6400
+   },
+   "batches": {
+    "created_by": "parquet-rs version 60.0.0",
+    "codec": "ZSTD",
+    "rg_rows": 2190
+   }
+  },
+  "bytes": {
+   "logs/on_disk": 6608578,
+   "logs/control zstd3 dict": 6508414,
+   "logs/zstd9": 5652939,
+   "logs/delta ints": 5814048,
+   "logs/series-first order": 6612526,
+   "logs/series-first + delta": 5804936,
+   "logs/keys only (no body)": 936513,
+   "logs/body only": 5584765,
+   "metrics/on_disk": 3435070,
+   "metrics/control zstd3 dict": 3409227,
+   "metrics/zstd9": 3401783,
+   "metrics/delta ints": 2896054,
+   "metrics/series-first order": 3438471,
+   "metrics/series-first + delta": 2914510,
+   "batches/on_disk": 16888691,
+   "batches/control zstd3 dict": 17203644,
+   "batches/zstd9": 16243126,
+   "batches/without sha256": 12160027,
+   "batches/batch bytes only": 11732619
+  }
+ }
+}

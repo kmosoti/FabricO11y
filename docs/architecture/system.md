@@ -47,7 +47,7 @@ The canonical source is [system.mmd](../diagrams/system.mmd).
 | Spool | Durable `FAB1` frame log of Batches with an ACK cursor and whole-file reclaim | [src/spindle/spool.rs](../../src/spindle/spool.rs), [fabric-frame](../../crates/fabric-frame/src/frame.rs) | [storage](storage.md) |
 | Delivery | One Batch in flight per Strand, exact stored bytes, ACK only after durable commit | [fabric-core delivery](../../crates/fabric-core/src/delivery.rs), [fabric-app delivery](../../crates/fabric-app/src/delivery.rs), [store](../../crates/fabric-server/src/store.rs) | [delivery](delivery.md) |
 | Server journal | Grouped two-sync commits, Strand and binding state by replay, checkpoint before reclaim | [store](../../crates/fabric-server/src/store.rs) | [storage](storage.md) |
-| Retained history | Zstd Parquet Segments, sealing off the commit path, retention by age and bytes | [segment](../../crates/fabric-server/src/segment.rs), [sealer](../../crates/fabric-server/src/sealer.rs) | [retained history](retained-history.md) |
+| Retained history | Zstd Parquet Segments, sealing off the commit path, retention by age and bytes | [segment](../../crates/fabric-server/src/segment.rs), [sealer](../../crates/fabric-server/src/sealer.rs) | [retained history](retained-history.md), [sealer design](sealer.md) |
 | Query | Log, metric and rate queries with completeness, freshness, gaps and snapshot-bound pages | [query](../../crates/fabric-server/src/query.rs) | [retained history](retained-history.md) |
 | Control | Enrollment, desired and applied configuration, pause, resume, revoke | [control](../../crates/fabric-server/src/control.rs) | [control](control-plane.md) |
 | `fabricctl` | Local Spool inspection and the admin HTTPS client | [src/bin/fabricctl.rs](../../src/bin/fabricctl.rs) | [operations](../operations.md) |
@@ -65,7 +65,7 @@ flowchart TB
     end
     App[fabric-app: use cases]
     Ports[fabric-ports: DurableJournal, Clock, SegmentStore]
-    Support[fabric-frame: FAB1 frame log, Batch envelope]
+    Support[fabric-frame: FAB1 frame log, Batch envelope; fabric-observation: Observation record, FOB1 codec]
     Linux[fabric-adapter-linux: host and log reads]
     Core[fabric-core: delivery, control, query, retention and collection decisions]
     Verify[verification layer: fabric-properties, fabric-fuzz-targets, fabric-sim]
@@ -92,6 +92,7 @@ The canonical source is [layers.mmd](../diagrams/layers.mmd).
 | [fabric-ports](../../crates/fabric-ports/src/lib.rs) | ports | `DurableJournal`, `Clock`, `SegmentStore` |
 | [fabric-app](../../crates/fabric-app/src/lib.rs) | app | `commit_group` (delivery) and `apply_retention` (retention) |
 | [fabric-frame](../../crates/fabric-frame/src/lib.rs) | adapter support | the `FAB1` rotating frame log and the version-one `Batch` envelope |
+| [fabric-observation](../../crates/fabric-observation/src/lib.rs) | adapter support | the version-one `Observation` record (line, point or span) and its canonical `FOB1` block codec, built from the bits up as a [tower of levels](observation.md) with no dependencies; proposed in [ADR-0023](../decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md), not yet wired to anything |
 | [fabric-server](../../crates/fabric-server/src/lib.rs) | composition root | HTTP/TLS, the journal adapter, control, segments, sealer, query, and `main` |
 | [fabric-adapter-linux](../../crates/fabric-adapter-linux/src/lib.rs) | adapter | bounded `/proc` and `statvfs` sampling and newline log reading for the Spindle |
 | root package `fabric_o11y` | composition root | the Spindle runtime, its Spool and HTTP client; `fabric-node`, `fabricctl`; the FOL2 demonstration |

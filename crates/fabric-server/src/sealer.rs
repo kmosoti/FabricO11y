@@ -37,19 +37,85 @@ fn sealed_labels(journal: &Path) -> io::Result<Vec<u64>> {
     Ok(labels)
 }
 
-/// One pass: seal every sealed journal file, then apply retention.
-pub fn pass(state_dir: &Path, intake: &Intake, retention: Retention) -> io::Result<()> {
+/// The default number of Segments built at once: half the CPUs, one to four. Each
+/// build of a 64 MiB journal file peaks near 5.5 times the file in memory today
+/// (ADR-0022 will flatten that), so four stay inside the server's 3 GiB ceiling.
+pub fn default_workers() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get() / 2)
+        .unwrap_or(1)
+        .clamp(1, 4)
+}
+
+/// One pass: seal every sealed journal file, `workers` at a time, then apply
+/// retention. Segments are independent, so they are built in parallel; journal files
+/// are reclaimed strictly oldest first, and not past the first file whose Segment
+/// could not be built (ADR-0025).
+pub fn pass(
+    state_dir: &Path,
+    intake: &Intake,
+    retention: Retention,
+    workers: usize,
+) -> io::Result<()> {
     let journal: PathBuf = state_dir.join("journal");
     let segmented: BTreeSet<u64> = segment::list(state_dir)?
         .into_iter()
         .map(|(l, _)| l)
         .collect();
-    for label in sealed_labels(&journal)? {
-        if !segmented.contains(&label) {
-            let groups = segment::read_sealed(&journal.join(format!("sealed-{label:020}.faj")))?;
-            segment::build(state_dir, label, &groups)?;
+    let sealed = sealed_labels(&journal)?;
+    let pending: Vec<u64> = sealed
+        .iter()
+        .copied()
+        .filter(|l| !segmented.contains(l))
+        .collect();
+    let mut failed: Option<(u64, io::Error)> = None;
+    for chunk in pending.chunks(workers.max(1)) {
+        let results: Vec<(u64, io::Result<()>)> = std::thread::scope(|scope| {
+            let handles: Vec<_> = chunk
+                .iter()
+                .map(|&label| {
+                    let journal = &journal;
+                    scope.spawn(move || {
+                        let groups =
+                            segment::read_sealed(&journal.join(format!("sealed-{label:020}.faj")))?;
+                        segment::build(state_dir, label, &groups).map(|_| ())
+                    })
+                })
+                .collect();
+            chunk
+                .iter()
+                .zip(handles)
+                .map(|(&label, h)| {
+                    (
+                        label,
+                        h.join()
+                            .unwrap_or_else(|_| Err(io::Error::other("sealing thread panicked"))),
+                    )
+                })
+                .collect()
+        });
+        for (label, result) in results {
+            if let Err(error) = result
+                && failed.as_ref().is_none_or(|(l, _)| label < *l)
+            {
+                failed = Some((label, error));
+            }
+        }
+        if failed.is_some() {
+            break;
+        }
+    }
+    for label in sealed {
+        if failed.as_ref().is_some_and(|(l, _)| label >= *l) {
+            break;
         }
         intake.reclaim(label)?;
+    }
+    if let Some((label, error)) = failed {
+        return Err(io::Error::new(
+            error.kind(),
+            format!("sealing {label}: {error}"),
+        ));
     }
     let segments_dir = segment::segments_dir(state_dir)?;
     let mut store = SegmentDir {
@@ -102,12 +168,13 @@ pub fn spawn(
     intake: Intake,
     retention: Retention,
     stop: Arc<AtomicBool>,
+    workers: usize,
 ) -> io::Result<std::thread::JoinHandle<()>> {
     std::thread::Builder::new()
         .name("fabric-sealer".into())
         .spawn(move || {
             while !stop.load(Ordering::SeqCst) {
-                if let Err(error) = pass(&state_dir, &intake, retention) {
+                if let Err(error) = pass(&state_dir, &intake, retention, workers) {
                     eprintln!("fabric-server: sealing: {error}");
                 }
                 for _ in 0..10 {

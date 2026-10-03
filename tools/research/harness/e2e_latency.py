@@ -1,0 +1,178 @@
+"""Exploratory: time from a log line written on a host to a query that returns it.
+
+Real fabric-server and fabric-node over TLS on one host. For each tagged line:
+  t0  harness appends the line to the watched log file and flushes it
+  t1  observed_ns in the query row: the Spindle cycle that read it began
+  t2  the node prints `batch=S ...`: the Batch is committed to the Spool
+  t3  received_ns from the server journal: the server took the Batch
+  t4  the node prints `delivery sequence=S status=ack`: the ACK arrived
+  t5  the first admin query whose answer contains the line was sent
+Stdout lines are timestamped by a reader thread as they arrive (line-buffered).
+All clocks are the host's CLOCK_REALTIME.
+"""
+import argparse, http.client, json, os, random, shutil, signal, ssl, subprocess, sys, threading, time
+from pathlib import Path
+import research_paths
+
+from delivery_faults import free_port, make_certs  # noqa: E402
+
+def now_ns():
+    return time.time_ns()
+
+class Query:
+    """Keep-alive HTTPS client for the admin query endpoint."""
+    def __init__(self, port, ca, token):
+        self.port, self.token = port, token
+        self.ctx = ssl.create_default_context(cafile=str(ca))
+        self.conn = None
+    def post(self, body):
+        for _ in range(2):
+            try:
+                if self.conn is None:
+                    self.conn = http.client.HTTPSConnection("127.0.0.1", self.port, context=self.ctx, timeout=30)
+                self.conn.request("POST", "/v1/admin/query", body=json.dumps(body).encode(),
+                                  headers={"authorization": f"Bearer {self.token}", "content-type": "application/json"})
+                r = self.conn.getresponse()
+                data = r.read()
+                return r.status, json.loads(data or b"null")
+            except (http.client.HTTPException, OSError):
+                self.conn = None
+        raise RuntimeError("query failed twice")
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--bin-dir", default=str(research_paths.REPO / "target" / "release"))
+    ap.add_argument("--out", required=True)
+    ap.add_argument("--lines", type=int, default=150)
+    ap.add_argument("--load", type=int, default=0, help="simulated identities sending the soak workload")
+    ap.add_argument("--poll-ms", type=float, default=10)
+    ap.add_argument("--journal-file-bytes", type=int, default=64 * 1024 * 1024)
+    ap.add_argument("--seed", type=int, default=1)
+    a = ap.parse_args()
+    bins = Path(a.bin_dir)
+    root = Path(a.out).resolve()
+    shutil.rmtree(root, ignore_errors=True); root.mkdir(parents=True)
+    rng = random.Random(a.seed)
+    make_certs(root)
+    port = free_port()
+    token = f"{rng.getrandbits(256):064x}"
+    (root / "admin-token").write_text(token + "\n")
+    (root / "server.conf").write_text(
+        f"listen=127.0.0.1:{port}\ntls_cert={root}/server.pem\ntls_key={root}/server.key\n"
+        f"state_dir={root}/server-state\nadmin_token_file={root}/admin-token\n"
+        f"journal_bytes=4294967296\njournal_file_bytes={a.journal_file_bytes}\n")
+    kids = []
+    def spawn(cmd, **kw):
+        p = subprocess.Popen(cmd, **kw); kids.append(p); return p
+    try:
+        server = spawn(["taskset", "-c", "0-1", str(bins / "fabric-server"), "serve", str(root / "server.conf")],
+                       stdout=open(root / "server.log", "wb"), stderr=subprocess.STDOUT)
+        q = Query(port, root / "ca.pem", token)
+        deadline = time.monotonic() + 20
+        while True:
+            try:
+                q.post({"kind": "logs", "from_ns": 0, "to_ns": 1, "limit": 1, "page": None}); break
+            except Exception:
+                if time.monotonic() > deadline or server.poll() is not None:
+                    raise SystemExit("server did not start")
+                time.sleep(0.1)
+        admin = ["--"]  # enrollment through the admin API, as fleet_tier does
+        import urllib.request
+        def enroll(body):
+            req = urllib.request.Request(f"https://127.0.0.1:{port}/v1/admin/nodes", data=json.dumps(body).encode(), method="POST",
+                                         headers={"authorization": f"Bearer {token}", "content-type": "application/json"})
+            with urllib.request.urlopen(req, context=q.ctx, timeout=30) as r:
+                return json.loads(r.read())
+        app_log = root / "app.log"; app_log.touch()
+        (root / "token").write_text(enroll({"name": "probe", "metric_interval_s": 15, "logs": [str(app_log)]})["token"] + "\n")
+        (root / "node.conf").write_text(
+            f"spool_dir={root}/spool\nlog={app_log}\nmetric_interval_s=15\nspool_bytes=67108864\n"
+            f"server_url=https://127.0.0.1:{port}\nserver_ca={root}/ca.pem\ntoken_file={root}/token\n")
+        if a.load:
+            toks = [enroll({"name": f"sim{i:04d}", "metric_interval_s": 15})["token"] for i in range(a.load)]
+            (root / "tokens").write_text("\n".join(toks) + "\n")
+            spawn(["taskset", "-c", "2-3", str(bins / "examples" / "spindle_sim"), "--server-url", f"https://127.0.0.1:{port}",
+                   "--ca", str(root / "ca.pem"), "--tokens", str(root / "tokens"), "--seed", hex(0xA11FA001),
+                   "--seconds", str(int(a.lines * 2.2 + 120)), "--workers", str(a.load), "--out", str(root / "sim")],
+                  stdout=open(root / "sim.log", "wb"), stderr=subprocess.STDOUT)
+            time.sleep(20)  # let the fleet reach steady state
+        node = spawn(["taskset", "-c", "2-3", str(bins / "fabric-node"), "run", str(root / "node.conf")],
+                     stdout=subprocess.PIPE, stderr=open(root / "node.err", "wb"), bufsize=0)
+        batches, acks, node_lines = {}, {}, []
+        def read_node():
+            buf = b""
+            while True:
+                chunk = node.stdout.read1(65536) if hasattr(node.stdout, "read1") else os.read(node.stdout.fileno(), 65536)
+                t = now_ns()
+                if not chunk:
+                    return
+                buf += chunk
+                while b"\n" in buf:
+                    line, buf = buf.split(b"\n", 1)
+                    s = line.decode()
+                    node_lines.append((t, s))
+                    f = dict(p.split("=", 1) for p in s.split()[1:] if "=" in p) if " " in s else {}
+                    if s.startswith("batch="):
+                        f = dict(p.split("=", 1) for p in s.split())
+                        batches.setdefault(int(f["batch"]), (t, int(f["logs"]), int(f["metrics"])))
+                    elif s.startswith("delivery ") and f.get("status") == "ack":
+                        acks.setdefault(int(f["sequence"]), (t, int(f["elapsed_us"])))
+        threading.Thread(target=read_node, daemon=True).start()
+        time.sleep(3)
+        written, seen, qlat = {}, {}, []
+        stop = threading.Event()
+        start_ns = now_ns()
+        def poll():
+            while not stop.is_set():
+                t = now_ns()
+                st, ans = q.post({"kind": "logs", "node": "probe", "from_ns": max(0, t - 120_000_000_000),
+                                  "to_ns": t + 60_000_000_000, "contains": "e2e-probe-", "limit": 10000, "page": None})
+                t2 = now_ns()
+                qlat.append((t2 - t) / 1e6)
+                if st == 200:
+                    for row in ans.get("rows", []):
+                        body = row.get("body", "")
+                        if body.startswith("e2e-probe-") and body not in seen:
+                            seen[body] = (t, row)
+                time.sleep(a.poll_ms / 1000)
+        poller = threading.Thread(target=poll, daemon=True); poller.start()
+        with open(app_log, "a") as f:
+            for i in range(a.lines):
+                tag = f"e2e-probe-{i:05d}"
+                t0 = now_ns()
+                f.write(tag + "\n"); f.flush()
+                written[tag] = t0
+                time.sleep(rng.uniform(1.3, 2.7))  # not aligned with the 1 s log poll
+        wait_until = time.monotonic() + 30
+        while len(seen) < len(written) and time.monotonic() < wait_until:
+            time.sleep(0.2)
+        stop.set(); poller.join(timeout=10)
+        node.send_signal(signal.SIGTERM); node.wait(timeout=30)
+        # server receive times: journal records of label "probe", in sequence order
+        server.send_signal(signal.SIGTERM); server.wait(timeout=60)
+        dump = subprocess.run([str(bins / "examples" / "server_dump"), str(root / "server.conf"), "--records"],
+                              capture_output=True, text=True, timeout=600)
+        recv = [json.loads(l)["received_ns"] for l in dump.stdout.splitlines() if l.startswith("{") and '"label":"probe"' in l]
+        rows = []
+        for tag, t0 in written.items():
+            if tag not in seen:
+                rows.append({"tag": tag, "missing": True}); continue
+            t5, row = seen[tag]
+            seq = row["sequence"]
+            t1 = row["observed_ns"]
+            t2 = batches.get(seq, (None,))[0]
+            t3 = recv[seq - 1] if seq - 1 < len(recv) else None
+            t4, rtt_us = acks.get(seq, (None, None))
+            rows.append({"tag": tag, "seq": seq, "t0": t0, "t1": t1, "t2": t2, "t3": t3, "t4": t4, "t5": t5, "rtt_us": rtt_us,
+                         "batch_logs": batches.get(seq, (0, 0, 0))[1], "batch_metrics": batches.get(seq, (0, 0, 0))[2]})
+        out = {"args": vars(a), "rows": rows, "query_ms": qlat, "probe_records_in_journal": len(recv),
+               "batches_seen": len(batches), "acks_seen": len(acks), "start_ns": start_ns}
+        json.dump(out, open(root / "result.json", "w"))
+        print(json.dumps({"lines": len(written), "seen": len(seen), "queries": len(qlat), "journal_probe_records": len(recv)}))
+    finally:
+        for p in kids:
+            if p.poll() is None:
+                p.kill(); p.wait(timeout=10)
+
+if __name__ == "__main__":
+    main()

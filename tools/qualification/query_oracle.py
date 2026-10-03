@@ -188,6 +188,7 @@ def decode_batch(raw: bytes) -> dict:
         "metrics_bytes": _one(f, 5, b""),
         "logs_bytes": _one(f, 6, b""),
         "gaps": [_as_string(g) for g in _many(f, 8)],
+        "traces_bytes": _one(f, 9, b""),
     }
 
 
@@ -254,6 +255,44 @@ def decode_logs_request(raw: bytes) -> list[dict]:
     return out
 
 
+def decode_span(raw: bytes) -> dict:
+    """OTLP Span (trace.v1): trace_id 1, span_id 2, parent_span_id 4, name 5,
+    kind 6 (enum), start 7 and end 8 (fixed64), attributes 9, status 15
+    (Status: code 3)."""
+    f = parse_fields(raw)
+    status_raw = _one(f, 15)
+    code = 0
+    if status_raw is not None:
+        code = _varint_to_int64(_one(parse_fields(status_raw), 3, 0))
+    return {
+        "trace_id": (_one(f, 1, b"") or b"").hex(),
+        "span_id": (_one(f, 2, b"") or b"").hex(),
+        "parent_span_id": (_one(f, 4, b"") or b"").hex(),
+        "name": _as_string(_one(f, 5)),
+        "kind": _varint_to_int64(_one(f, 6, 0)),
+        "start_ns": _as_fixed64_uint(_one(f, 7)),
+        "end_ns": _as_fixed64_uint(_one(f, 8)),
+        "attributes": _string_attributes(_many(f, 9)),
+        "status": code,
+    }
+
+
+def decode_traces_request(raw: bytes) -> list[dict]:
+    """ExportTraceServiceRequest: resource_spans 1; ResourceSpans: scope_spans 2;
+    ScopeSpans: spans 2."""
+    if not raw:
+        return []
+    f = parse_fields(raw)
+    out = []
+    for rs_raw in _many(f, 1):
+        rs = parse_fields(rs_raw)
+        for ss_raw in _many(rs, 2):
+            ss = parse_fields(ss_raw)
+            for sp_raw in _many(ss, 2):
+                out.append(decode_span(sp_raw))
+    return out
+
+
 def decode_number_data_point(raw: bytes) -> dict:
     f = parse_fields(raw)
     start_ns = _as_fixed64_uint(_one(f, 2, b"\x00" * 8))
@@ -314,6 +353,7 @@ class MaterializedRecord:
     log_rows: list = field(default_factory=list)
     metric_points: list = field(default_factory=list)
     gaps: list = field(default_factory=list)
+    span_rows: list = field(default_factory=list)
 
 
 def materialize_record(label: str, received_ns: int, batch_bytes: bytes) -> MaterializedRecord:
@@ -362,6 +402,12 @@ def materialize_record(label: str, received_ns: int, batch_bytes: bytes) -> Mate
         for g in batch["gaps"]
     ]
 
+    span_rows = []
+    for idx, sp in enumerate(decode_traces_request(batch["traces_bytes"])):
+        row = {"node": label, "node_id": node_id, "sequence": sequence, "index": idx}
+        row.update(sp)
+        span_rows.append(row)
+
     return MaterializedRecord(
         label=label,
         node_id=node_id,
@@ -370,6 +416,7 @@ def materialize_record(label: str, received_ns: int, batch_bytes: bytes) -> Mate
         log_rows=log_rows,
         metric_points=metric_points,
         gaps=gaps,
+        span_rows=span_rows,
     )
 
 
@@ -524,6 +571,7 @@ _QUERY_ALLOWED = {
     "logs": _QUERY_COMMON | {"contains", "limit", "page"},
     "metrics": _QUERY_COMMON | {"name", "limit", "page"},
     "rate": _QUERY_COMMON | {"name"},
+    "spans": _QUERY_COMMON | {"trace_id", "name", "limit", "page"},
 }
 
 
@@ -531,8 +579,8 @@ def validate_query(query: Any) -> None:
     if not isinstance(query, dict):
         raise MalformedInput("query must be a JSON object")
     kind = query.get("kind")
-    if kind not in ("logs", "metrics", "rate"):
-        raise MalformedInput(f"query.kind must be logs|metrics|rate, got {kind!r}")
+    if kind not in ("logs", "metrics", "rate", "spans"):
+        raise MalformedInput(f"query.kind must be logs|metrics|rate|spans, got {kind!r}")
     _check_no_unknown_keys(query, _QUERY_ALLOWED[kind], "query")
     _check_type(query, "from_ns", int, "query")
     _check_type(query, "to_ns", int, "query")
@@ -541,7 +589,10 @@ def validate_query(query: Any) -> None:
     _check_type(query, "node", str, "query", required=False)
     if kind in ("metrics", "rate"):
         _check_type(query, "name", str, "query")
-    if kind in ("logs", "metrics"):
+    if kind == "spans":
+        _check_type(query, "name", str, "query", required=False)
+        _check_type(query, "trace_id", str, "query", required=False)
+    if kind in ("logs", "metrics", "spans"):
         _check_type(query, "limit", int, "query")
         if not (1 <= query["limit"] <= 10000):
             raise MalformedInput("query.limit must be in [1, 10000]")
@@ -588,6 +639,27 @@ def _expected_metric_rows(mats: list[MaterializedRecord], query: dict) -> list[d
                 continue
             rows.append(r)
     rows.sort(key=lambda r: (r["time_ns"], r["node_id"], r["sequence"], r["index"]))
+    return rows
+
+
+def _span_matches(r: dict, query: dict) -> bool:
+    if not (query["from_ns"] <= r["start_ns"] < query["to_ns"]):
+        return False
+    if query.get("trace_id") is not None and r["trace_id"] != query["trace_id"]:
+        return False
+    if query.get("name") is not None and r["name"] != query["name"]:
+        return False
+    return True
+
+
+def _expected_span_rows(mats: list[MaterializedRecord], query: dict) -> list[dict]:
+    node = query.get("node")
+    rows = []
+    for m in mats:
+        if node is not None and m.label != node:
+            continue
+        rows.extend(r for r in m.span_rows if _span_matches(r, query))
+    rows.sort(key=lambda r: (r["start_ns"], r["node_id"], r["sequence"], r["index"]))
     return rows
 
 
@@ -648,6 +720,8 @@ def _freshness(mats: list[MaterializedRecord]) -> dict[str, int]:
             best = r["observed_ns"] if best is None else max(best, r["observed_ns"])
         for r in m.metric_points:
             best = r["time_ns"] if best is None else max(best, r["time_ns"])
+        for r in m.span_rows:
+            best = r["start_ns"] if best is None else max(best, r["start_ns"])
         if best is not None:
             fresh[m.label] = best if m.label not in fresh else max(fresh[m.label], best)
     return fresh
@@ -687,6 +761,8 @@ def _record_could_match(m: MaterializedRecord, query: dict) -> bool:
             if r["name"] == name and from_ns <= r["time_ns"] < to_ns:
                 return True
         return False
+    if kind == "spans":
+        return any(_span_matches(r, query) for r in m.span_rows)
     if kind == "rate":
         name = query["name"]
         for r in m.metric_points:
@@ -709,6 +785,8 @@ def expected(records: Any, query: dict, unavailable: Any = None) -> dict:
         rows = _expected_log_rows(available, query)
     elif kind == "metrics":
         rows = _expected_metric_rows(available, query)
+    elif kind == "spans":
+        rows = _expected_span_rows(available, query)
     else:
         rows = _expected_rate_rows(available, query)
 
@@ -752,6 +830,21 @@ _LOG_ROW_FIELDS = {
     "index": int,
     "observed_ns": int,
     "body": str,
+    "attributes": dict,
+}
+_SPAN_ROW_FIELDS = {
+    "node": str,
+    "node_id": str,
+    "sequence": int,
+    "index": int,
+    "trace_id": str,
+    "span_id": str,
+    "parent_span_id": str,
+    "name": str,
+    "kind": int,
+    "status": int,
+    "start_ns": int,
+    "end_ns": int,
     "attributes": dict,
 }
 _METRIC_ROW_BASE = {
@@ -805,7 +898,7 @@ def _validate_pages_shape(pages: Any, query: dict) -> None:
             for key, typ in (("node", str), ("sequence", int), ("receive_ns", int), ("gap", str)):
                 _check_type(g, key, typ, gctx)
         _check_type(page, "rows", list, ctx)
-        if kind in ("logs", "metrics"):
+        if kind in ("logs", "metrics", "spans"):
             if "next_page" not in page or not (page["next_page"] is None or isinstance(page["next_page"], str)):
                 raise MalformedInput(f"{ctx}: next_page must be a string or null")
         else:
@@ -818,6 +911,11 @@ def _validate_pages_shape(pages: Any, query: dict) -> None:
             if kind == "logs":
                 _check_no_unknown_keys(row, set(_LOG_ROW_FIELDS), rctx)
                 for key, typ in _LOG_ROW_FIELDS.items():
+                    _check_type(row, key, typ, rctx)
+                _validate_attributes(row["attributes"], rctx)
+            elif kind == "spans":
+                _check_no_unknown_keys(row, set(_SPAN_ROW_FIELDS), rctx)
+                for key, typ in _SPAN_ROW_FIELDS.items():
                     _check_type(row, key, typ, rctx)
                 _validate_attributes(row["attributes"], rctx)
             elif kind == "metrics":
@@ -892,6 +990,8 @@ def _numbers_equal(expected_value, actual_value) -> bool:
 
 
 def _row_equal(er: dict, ar: dict, kind: str) -> bool:
+    if kind == "spans":
+        return all(er[f_] == ar.get(f_) for f_ in _SPAN_ROW_FIELDS)
     if kind == "logs":
         for f_ in ("node", "node_id", "sequence", "index", "observed_ns", "body"):
             if er[f_] != ar.get(f_):
@@ -911,7 +1011,9 @@ def _row_equal(er: dict, ar: dict, kind: str) -> bool:
 
 def _row_diff(er: dict, ar: dict, kind: str) -> tuple[str, str]:
     fields_to_check = (
-        ["node", "node_id", "sequence", "index", "observed_ns", "body", "attributes"]
+        list(_SPAN_ROW_FIELDS)
+        if kind == "spans"
+        else ["node", "node_id", "sequence", "index", "observed_ns", "body", "attributes"]
         if kind == "logs"
         else [
             "node",

@@ -1,0 +1,40 @@
+== seg-steady64 (64 Segments)  {'logs': {'created_by': 'parquet-rs version 60.0.0', 'codec': 'ZSTD', 'rg_rows': 1630}, 'metrics': {'created_by': 'parquet-rs version 60.0.0', 'codec': 'ZSTD', 'rg_rows': 3200}, 'batches': {'created_by': 'parquet-rs version 60.0.0', 'codec': 'ZSTD', 'rg_rows': 815}}
+  batches  batch bytes only            22.91 MiB    93.5% of on-disk
+  batches  control zstd3 dict          24.83 MiB   101.4% of on-disk
+  batches  on_disk                     24.49 MiB   100.0% of on-disk
+  batches  without sha256              23.06 MiB    94.1% of on-disk
+  batches  zstd9                       24.85 MiB   101.5% of on-disk
+  logs     body only                   20.77 MiB    98.3% of on-disk
+  logs     control zstd3 dict          21.19 MiB   100.3% of on-disk
+  logs     delta ints                  20.97 MiB    99.3% of on-disk
+  logs     keys only (no body)          0.43 MiB     2.1% of on-disk
+  logs     on_disk                     21.12 MiB   100.0% of on-disk
+  logs     series-first + delta        20.95 MiB    99.2% of on-disk
+  logs     series-first order          21.17 MiB   100.3% of on-disk
+  logs     zstd9                       21.16 MiB   100.2% of on-disk
+  metrics  control zstd3 dict           1.28 MiB    97.0% of on-disk
+  metrics  delta ints                   1.11 MiB    83.8% of on-disk
+  metrics  on_disk                      1.32 MiB   100.0% of on-disk
+  metrics  series-first + delta         1.11 MiB    83.7% of on-disk
+  metrics  series-first order           1.28 MiB    96.8% of on-disk
+  metrics  zstd9                        1.28 MiB    96.5% of on-disk
+== seg-adversarial64 (64 Segments)  {'logs': {'created_by': 'parquet-rs version 60.0.0', 'codec': 'ZSTD', 'rg_rows': 1630}, 'metrics': {'created_by': 'parquet-rs version 60.0.0', 'codec': 'ZSTD', 'rg_rows': 3200}, 'batches': {'created_by': 'parquet-rs version 60.0.0', 'codec': 'ZSTD', 'rg_rows': 815}}
+  batches  batch bytes only            24.16 MiB    93.9% of on-disk
+  batches  control zstd3 dict          26.08 MiB   101.3% of on-disk
+  batches  on_disk                     25.74 MiB   100.0% of on-disk
+  batches  without sha256              24.31 MiB    94.4% of on-disk
+  batches  zstd9                       26.03 MiB   101.1% of on-disk
+  logs     body only                   20.78 MiB    95.4% of on-disk
+  logs     control zstd3 dict          21.89 MiB   100.5% of on-disk
+  logs     delta ints                  21.70 MiB    99.6% of on-disk
+  logs     keys only (no body)          1.12 MiB     5.1% of on-disk
+  logs     on_disk                     21.78 MiB   100.0% of on-disk
+  logs     series-first + delta        21.63 MiB    99.3% of on-disk
+  logs     series-first order          21.86 MiB   100.3% of on-disk
+  logs     zstd9                       21.85 MiB   100.3% of on-disk
+  metrics  control zstd3 dict           2.32 MiB    98.5% of on-disk
+  metrics  delta ints                   1.93 MiB    82.3% of on-disk
+  metrics  on_disk                      2.35 MiB   100.0% of on-disk
+  metrics  series-first + delta         1.67 MiB    71.2% of on-disk
+  metrics  series-first order           2.17 MiB    92.1% of on-disk
+  metrics  zstd9                        2.31 MiB    98.0% of on-disk

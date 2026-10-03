@@ -1,0 +1,224 @@
+"""Exploratory: query cost against the number of retained Segments, with and
+without Segment-level dispositions, plus a differential soundness test.
+
+Usage: retscale.py <out-root>
+"""
+import http.client, json, os, random, shutil, signal, ssl, subprocess, sys, time
+from pathlib import Path
+sys.path.insert(0, "<repo>/tools/qualification")
+from delivery_faults import free_port, make_certs
+
+SB = Path("<repo>/target/release/examples/sealbench")
+BIN = Path("<scratch>/bin")
+ROOT = Path(sys.argv[1]).resolve()
+NS = [] if len(sys.argv) > 2 and sys.argv[2] == "diff" else [int(x) for x in (sys.argv[2].split(",") if len(sys.argv) > 2 else "1,8,64,320".split(","))]
+MIB = 1048576
+ROOT.mkdir(parents=True, exist_ok=True)
+make_certs(ROOT)
+TOKEN = "cd" * 32
+(ROOT / "admin-token").write_text(TOKEN + "\n")
+kids = []
+
+def pct(v, p):
+    v = sorted(v); k = (len(v) - 1) * p / 100; f = int(k); c = min(f + 1, len(v) - 1)
+    return v[f] + (v[c] - v[f]) * (k - f)
+
+class Q:
+    def __init__(self, port):
+        self.port = port; self.ctx = ssl.create_default_context(cafile=str(ROOT / "ca.pem")); self.conn = None
+    def post(self, body):
+        if self.conn is None:
+            self.conn = http.client.HTTPSConnection("127.0.0.1", self.port, context=self.ctx, timeout=300)
+        self.conn.request("POST", "/v1/admin/query", body=json.dumps(body).encode(),
+                          headers={"authorization": f"Bearer {TOKEN}", "content-type": "application/json"})
+        r = self.conn.getresponse(); data = r.read()
+        return r.status, json.loads(data)
+
+def gen(kind, total_mib):
+    d = ROOT / f"gen-{kind}"
+    if d.exists() and list(d.glob("sealed-*.faj")):
+        return sorted(d.glob("sealed-*.faj"))
+    subprocess.run([str(SB), "gen", kind, str(d), str(total_mib * MIB), str(MIB)], check=True, capture_output=True, timeout=600)
+    files = sorted(d.glob("sealed-*.faj"))
+    return files
+
+def make_state(name, files, n):
+    state = ROOT / "states" / name
+    n = min(n, len(files))
+    shutil.rmtree(state, ignore_errors=True)
+    (state / "journal").mkdir(parents=True)
+    for f in files[:n]:
+        os.link(f, state / "journal" / f.name)
+    return state
+
+def server(which, state, mode="off"):
+    port = free_port()
+    conf = state / f"{which}-{mode}.conf"
+    conf.write_text(f"listen=127.0.0.1:{port}\ntls_cert={ROOT}/server.pem\ntls_key={ROOT}/server.key\n"
+                    f"state_dir={state}\nadmin_token_file={ROOT}/admin-token\njournal_bytes=4294967296\njournal_file_bytes=65536\n")
+    env = dict(os.environ, FABRIC_PROTO_DISPOSITION=mode)
+    log = open(state / f"{which}-{mode}.log", "ab")
+    t0 = time.monotonic()
+    p = subprocess.Popen(["taskset", "-c", "0-1", str(BIN / which / "fabric-server"), "serve", str(conf)], stdout=log, stderr=subprocess.STDOUT, env=env)
+    kids.append(p)
+    q = Q(port)
+    while True:
+        try:
+            q.post({"kind": "logs", "from_ns": 1, "to_ns": 2, "limit": 1, "page": None}); break
+        except Exception:
+            q.conn = None
+            if p.poll() is not None or time.monotonic() - t0 > 900: raise SystemExit(f"{which} did not start on {state}")
+            time.sleep(0.1)
+    return p, q, round(time.monotonic() - t0, 2)
+
+def stop(p):
+    p.send_signal(signal.SIGTERM); p.wait(timeout=600)
+
+def proc_status(p):
+    out = {}
+    for line in open(f"/proc/{p.pid}/status"):
+        if line.startswith(("VmHWM:", "VmRSS:")):
+            out[line.split(":")[0]] = int(line.split()[1])
+    return out
+
+def wait_sealed(state, n):
+    n = min(n, 319)
+    t0 = time.monotonic()
+    while time.monotonic() - t0 < 1800:
+        if not list((state / "journal").glob("sealed-*")) and len(list((state / "segments").glob("seg-*"))) == n:
+            return round(time.monotonic() - t0, 2)
+        time.sleep(0.2)
+    raise SystemExit("sealing did not finish")
+
+def window(q):
+    st, ans = q.post({"kind": "logs", "from_ns": 0, "to_ns": 2**63, "limit": 1, "page": None})
+    return ans["retained_from_ns"], ans["retained_to_ns"]
+
+def shapes(a, b):
+    s = 1_000_000_000
+    return [
+        ("empty_past",        {"kind": "logs", "from_ns": 1, "to_ns": 2, "limit": 100, "page": None}),
+        ("logs_last_10s",     {"kind": "logs", "from_ns": b - 10 * s, "to_ns": b + 1, "limit": 100, "page": None}),
+        ("host_last_60s",     {"kind": "logs", "node": "node-0007", "from_ns": b - 60 * s, "to_ns": b + 1, "limit": 1000, "page": None}),
+        ("text_last_60s",     {"kind": "logs", "from_ns": b - 60 * s, "to_ns": b + 1, "contains": "zq9", "limit": 100, "page": None}),
+        ("fleet_last_15s",    {"kind": "metrics", "name": "sim.metric.3", "from_ns": b - 15 * s, "to_ns": b + 1, "limit": 10000, "page": None}),
+        ("rate_last_60s",     {"kind": "rate", "name": "sim.metric.0", "from_ns": b - 60 * s, "to_ns": b + 1}),
+        ("logs_limit50_full", {"kind": "logs", "from_ns": max(0, a - 60 * s), "to_ns": b + 1, "limit": 50, "page": None}),
+    ]
+
+def bench(q, a, b, reps=10):
+    out = {}
+    for name, body in shapes(a, b):
+        ts = []
+        for _ in range(reps):
+            t = time.perf_counter(); st, ans = q.post(body); ts.append((time.perf_counter() - t) * 1000)
+            assert st == 200, (name, st, ans)
+        out[name] = {"p50_ms": round(pct(ts, 50), 2), "min_ms": round(min(ts), 2), "max_ms": round(max(ts), 2), "rows": len(ans.get("rows", [])), "complete": ans.get("complete")}
+    return out
+
+result = json.load(open(ROOT / "retscale.json")) if (ROOT / "retscale.json").exists() else {"scale": {}, "differential": {}}
+try:
+    steady = gen("steady", max(NS)) if NS else []
+    print("generated", len(steady), "steady files", flush=True)
+    for n in NS:
+        state = make_state(f"n{n}", steady, n)
+        p, q, ready_journal = server("stock", state)
+        sealed_s = wait_sealed(state, n); mem = proc_status(p); stop(p)
+        seg_bytes = sum(f.stat().st_size for f in (state / "segments").rglob("*") if f.is_file())
+        p, q, ready_segments = server("stock", state)
+        a, b = window(q)
+        stock = bench(q, a, b); stop(p)
+        p, q, _ = server("proto", state, "sound")
+        sound = bench(q, a, b); stop(p)
+        p, q, _ = server("stock", state)
+        stock2 = bench(q, a, b); stop(p)
+        result["scale"][str(n)] = {"segments": len(list((state / "segments").glob("seg-*"))), "server_after_sealing_kib": mem, "stock_second_pass": stock2,"ready_with_journal_s": ready_journal, "seal_all_s": sealed_s, "ready_with_segments_s": ready_segments,
+                              "segment_bytes": seg_bytes, "stock": stock, "sound": sound}
+        print(f"n={n:4} ready(journal) {ready_journal}s seal {sealed_s}s ready(segments) {ready_segments}s", flush=True)
+        print(f"   server after sealing: {mem}", flush=True)
+        for k in stock: print(f"   {k:18} stock {stock[k]['p50_ms']:9.2f}  sound {sound[k]['p50_ms']:9.2f}  stock2 {stock2[k]['p50_ms']:9.2f}  rows {stock[k]['rows']}/{sound[k]['rows']}", flush=True)
+        json.dump(result, open(ROOT / "retscale.json", "w"), indent=1)
+
+    # differential soundness test on a state with clock skew and gap-only nodes
+    skew = gen("skew", 16)
+    state = make_state("skew", skew, 16)
+    p, q, _ = server("stock", state); wait_sealed(state, 16); stop(p)
+    manifests = [json.loads((d / "manifest.json").read_text()) for d in sorted((state / "segments").glob("seg-*"))]
+    rmax = [m["received_max_ns"] for m in manifests]
+    labels = sorted({n for m in manifests for n in m["freshness"]})
+    rng = random.Random(7); s = 1_000_000_000
+    queries = []
+    for i in range(400):
+        base = rng.choice(rmax); frm = base + int(rng.uniform(-2, 8) * s); to = frm + int(rng.uniform(1, 120) * s)
+        node = rng.choice([None, None, rng.choice(labels), f"node-{rng.randrange(100):04d}", "node-9999"])
+        kind = rng.choice(["logs", "logs", "metrics", "rate"])
+        body = {"kind": kind, "from_ns": frm, "to_ns": to}
+        if node: body["node"] = node
+        if kind == "logs":
+            body.update({"limit": rng.choice([1, 10, 100, 1000]), "page": None})
+            if rng.random() < 0.3: body["contains"] = rng.choice(["R", "zq9", "gap"])
+        elif kind == "metrics":
+            body.update({"name": f"sim.metric.{rng.randrange(32)}", "limit": rng.choice([1, 10, 100, 10000]), "page": None})
+        else:
+            body["name"] = f"sim.metric.{rng.randrange(32)}"
+        queries.append(body)
+    # targeted: nodes that send only gaps (absent from every freshness map)
+    gap_only_labels = [f"node-{n:04d}" for n in range(100) if n % 25 == 7]
+    for i in range(40):
+        base = rng.choice(rmax); frm = base - int(rng.uniform(0, 30) * s); to = frm + int(rng.uniform(5, 120) * s)
+        kind = rng.choice(["logs", "metrics"])
+        body = {"kind": kind, "from_ns": frm, "to_ns": to, "node": rng.choice(gap_only_labels), "limit": 100, "page": None}
+        if kind == "metrics": body["name"] = "sim.metric.1"
+        queries.append(body)
+    answers, timing = {}, {}
+    for which, mode in [("stock", "off"), ("proto", "naive"), ("proto", "sound")]:
+        p, q, _ = server(which, state, mode)
+        got = []; t0 = time.monotonic()
+        for body in queries:
+            st, ans = q.post(body); entry = {"first": [st, ans], "pages": []}
+            nxt = ans.get("next_page") if st == 200 else None; hops = 0
+            while nxt and hops < 3:
+                st2, ans2 = q.post(dict(body, page=nxt)); entry["pages"].append([st2, ans2])
+                nxt = ans2.get("next_page") if st2 == 200 else None; hops += 1
+            got.append(entry)
+        timing[mode] = round(time.monotonic() - t0, 2)
+        answers[mode] = got; stop(p)
+    skewed = {f"node-{n:04d}" for n in range(100) if n % 10 == 0}
+    gap_only = {f"node-{n:04d}" for n in range(100) if n % 25 == 7}
+    def rowkey(r): return (r.get("node"), r.get("sequence"), r.get("index"), r.get("name"), r.get("time_ns"))
+    def classify(i, a, b):
+        out = {"index": i, "query": queries[i], "fields": [], "pages_equal": a["pages"] == b["pages"]}
+        x, y = a["first"][1], b["first"][1]
+        if a["first"][0] != b["first"][0]:
+            out["fields"] = ["status"]; return out
+        out["fields"] = sorted(k for k in set(x) | set(y) if x.get(k) != y.get(k))
+        if "rows" in out["fields"]:
+            have = {rowkey(r) for r in y["rows"]}
+            missing = [r for r in x["rows"] if rowkey(r) not in have]
+            out["rows_missing_in_candidate"] = len(missing)
+            out["missing_rows_from_skewed_nodes"] = sum(1 for r in missing if r.get("node") in skewed)
+        if "gaps" in out["fields"]:
+            out["gaps_stock"] = len(x["gaps"]); out["gaps_candidate"] = len(y["gaps"])
+            out["stock_gaps_from_gap_only_nodes"] = sum(1 for g in x["gaps"] if g["node"] in gap_only)
+        return out
+    def diff(a, b): return [classify(i, x, y) for i, (x, y) in enumerate(zip(a, b)) if x != y]
+    naive = diff(answers["off"], answers["naive"]); sound = diff(answers["off"], answers["sound"])
+    rows_m = [e for e in naive if "rows" in e["fields"]]
+    result["differential"] = {"queries": len(queries), "timing_s": timing, "naive_mismatches": len(naive), "sound_mismatches": len(sound),
+        "naive_rows_mismatches": len(rows_m),
+        "naive_rows_mismatches_where_every_missing_row_is_from_a_skewed_node": sum(1 for e in rows_m if e["rows_missing_in_candidate"] > 0 and e["missing_rows_from_skewed_nodes"] == e["rows_missing_in_candidate"]),
+        "naive_rows_mismatches_with_no_missing_rows": sum(1 for e in rows_m if e["rows_missing_in_candidate"] == 0),
+        "naive_gap_mismatches": sum(1 for e in naive if "gaps" in e["fields"]),
+        "naive_gap_mismatches_on_gap_only_nodes": sum(1 for e in naive if "gaps" in e["fields"] and e.get("stock_gaps_from_gap_only_nodes", 0) > 0),
+        "naive_other_field_mismatches": sum(1 for e in naive if set(e["fields"]) - {"rows", "gaps", "next_page"}),
+        "naive_page_chain_mismatches": sum(1 for e in naive if not e["pages_equal"]),
+        "queries_on_gap_only_nodes": sum(1 for b in queries if b.get("node") in gap_only),
+        "skewed_nodes": sorted(skewed), "gap_only_nodes": sorted(gap_only),
+        "naive_vs_stock": naive, "sound_vs_stock": sound}
+    d = result["differential"]
+    print("differential:", {k: v for k, v in d.items() if k not in ("naive_vs_stock", "sound_vs_stock", "skewed_nodes", "gap_only_nodes")}, flush=True)
+    json.dump(result, open(ROOT / "retscale.json", "w"), indent=1)
+    json.dump(queries, open(ROOT / "differential-queries.json", "w"))
+finally:
+    for p in kids:
+        if p.poll() is None: p.kill(); p.wait(timeout=10)

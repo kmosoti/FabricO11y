@@ -7,6 +7,7 @@ description = "Fuzz target bodies shared by cargo-fuzz (fuzz/) and the stable co
 
 [dependencies]
 fabric-frame = { path = "../fabric-frame" }
+fabric-observation = { path = "../fabric-observation" }
 fabric-server = { path = "../fabric-server" }
 serde_json = "=1.0.150"
 

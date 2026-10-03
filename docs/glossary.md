@@ -19,6 +19,11 @@ Terms mean one thing each across code, documents, diagrams and experiments. When
 | ACK | The server's answer `ack` with `committed_through`, sent only after the group holding the Batch (or the earlier Batch it acknowledges) completed data and marker syncs. |
 | Server journal | The server's `FAB1` frame log of committed groups of Batches, replayed to rebuild Strand and binding state. |
 | Segment | An immutable directory of Zstd Parquet files plus a manifest written last, covering a contiguous range of journal groups. |
+| Observation | The proposed one record for a log line, a metric point or a span: the query key `(time_ns, node_id, generation, sequence, index)`, optional trace locators, typed attributes and one signal payload ([ADR-0023](decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md)). Not yet emitted or stored. |
+| FOB1 | The Observation's canonical block encoding: dictionaries in first-use order, delta-coded columns, a CRC trailer; one byte string per valid block and one block per accepted byte string, so a hash of the bytes is a hash of the records. |
+| Canonical encoding | An encoding in which `decode(encode(b)) == b` for every valid value and `encode(decode(x)) == x` for every accepted byte string; the decoder rejects every other form. |
+| Sealer | The server's background thread that turns each sealed journal file into a Segment, then lets the commit thread delete the file, and applies retention. It runs after ingestion and never sits on the ACK path. |
+| Run | A sorted batch of log rows or metric points, spilled to a scratch file while a Segment is built. Runs are merged into the final table and deleted before the Segment commits; they are not a durable format. |
 | Retention | Deleting whole Segments, oldest first, when the age or byte limit is exceeded; the retained window is reported with every answer. |
 | Snapshot | The group range a query answer was computed from; a page token binds it. |
 | Completeness | Whether every Segment and journal file that could hold matching rows was read and verified (`complete`), with the unavailable ones listed. |
@@ -36,6 +41,13 @@ Terms mean one thing each across code, documents, diagrams and experiments. When
 | Adapter | An implementation of a port that performs effects: Linux, filesystem, HTTP/TLS, Parquet, clock. |
 | Adapter support | Infrastructure shared by adapters that is not domain semantics, such as the `FAB1` frame log and the envelope codec (`fabric-frame`). |
 | Composition root | A binary or library that wires adapters into use cases; today `fabric-server` and the root package, which still contain adapters. |
+| Query plan | How a history query reads its sources, set by the server key `query_plan`: `scan` decodes every tail entry and reads every row group the window admits; `walk` reads sources in order of the smallest key each can hold and stops at the heap's threshold ([ADR-0024](decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md)). Both return the same answer. |
+| Trace endpoint | The Spindle's loopback OTLP/HTTP `POST /v1/traces` receiver (`traces_listen`), which commits each export to the Spool before answering ([ADR-0025](decisions/ADR-0025-carry-traces-as-a-third-signal.md)). |
+| Output meter | The Spindle's counters of what it commits and delivers, reported as its own `fabric.spindle.*` metrics, and its optional delivery rate cap (`max_output_bytes_per_s`). |
+| Span row | One OTLP span as a query row: node, Strand position, hex trace, span and parent IDs, name, kind, status, start and end times, string attributes. |
+| Text filter | `text_filter.bin` in a Segment: one Bloom filter per `logs` row group over the distinct byte trigrams of its bodies, written by the sealer, used by the walk plan only after its digest matches the manifest ([ADR-0024](decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md) part 2). An optional index: missing or corrupt, the walk reads exactly. |
+| Tail block | A FOB1 block of 4,096 tail records with a trigram filter, derived in memory from the journal by the walk plan and read in place of decoding its entries; never persisted ([ADR-0024](decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md) part 3). |
+| Tail index | The walk plan's per-process record of every unsealed journal entry: group, frame position, node, receive time and the time bounds of its rows, without the rows. |
 | Layer gate | `cargo xtask check-layers` over [layers.json](architecture/layers.json). |
 | Purity gate | `cargo xtask check-core-purity` over [core-purity.json](architecture/core-purity.json). |
 

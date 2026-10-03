@@ -1,0 +1,16 @@
+#!/bin/bash
+cd /home/user/fabric-m4
+P=target/research/data/profile
+S=/tmp/claude-0/-home-user-FabricO11y/ee4a18f9-b6ab-5b3c-bec7-76e4def16b31/scratchpad
+taskset -c 3 valgrind --tool=callgrind --callgrind-out-file=$S/callgrind.out --cache-sim=no target/release/fabric-server serve $P/server.conf > $S/profile-server.log 2>&1 &
+V=$!
+t0=$(date +%s)
+while ls $P/state/journal/sealed-*.faj >/dev/null 2>&1; do
+  sleep 5
+  if [ $(( $(date +%s) - t0 )) -gt 1500 ]; then echo "timeout" ; break; fi
+done
+echo "sealed after $(( $(date +%s) - t0 )) s"
+kill -TERM $V; wait $V; echo "valgrind exit=$?"
+callgrind_annotate --inclusive=no $S/callgrind.out 2>/dev/null | head -60 > $S/profile-top.txt
+callgrind_annotate --inclusive=yes $S/callgrind.out 2>/dev/null | head -60 > $S/profile-incl.txt
+echo done

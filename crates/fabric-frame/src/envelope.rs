@@ -4,6 +4,7 @@
 
 use opentelemetry_proto::tonic::collector::{
     logs::v1::ExportLogsServiceRequest, metrics::v1::ExportMetricsServiceRequest,
+    trace::v1::ExportTraceServiceRequest,
 };
 use prost::Message;
 use std::io;
@@ -52,6 +53,11 @@ pub struct Batch {
     pub cursors: Vec<Cursor>,
     #[prost(string, repeated, tag = "8")]
     pub collection_gaps: Vec<String>,
+    /// Serialized OTLP `ExportTraceServiceRequest` that a local application
+    /// exported to the Spindle (ADR-0025). Additive: a version-1 decoder that
+    /// predates it ignores the field, and the Batch's identity stays its bytes.
+    #[prost(bytes, tag = "9")]
+    pub traces: Vec<u8>,
 }
 
 impl Batch {
@@ -63,12 +69,22 @@ impl Batch {
         {
             return Err(invalid("invalid Fabric batch identity/version"));
         }
-        if self.metrics.is_empty() && self.logs.is_empty() && self.collection_gaps.is_empty() {
+        if self.metrics.is_empty()
+            && self.logs.is_empty()
+            && self.traces.is_empty()
+            && self.collection_gaps.is_empty()
+        {
             return Err(invalid("empty Fabric batch"));
         }
         if self.metrics.len() > MAX_BATCH
             || self.logs.len() > MAX_BATCH
-            || self.metrics.len().saturating_add(self.logs.len()) > MAX_BATCH
+            || self.traces.len() > MAX_BATCH
+            || self
+                .metrics
+                .len()
+                .saturating_add(self.logs.len())
+                .saturating_add(self.traces.len())
+                > MAX_BATCH
             || self.cursors.len() > 16
             || self.cursors.iter().any(|cursor| {
                 cursor.path.len() > 4096
@@ -89,6 +105,10 @@ impl Batch {
         }
         if !self.logs.is_empty() {
             ExportLogsServiceRequest::decode(self.logs.as_slice())
+                .map_err(|e| invalid(e.to_string()))?;
+        }
+        if !self.traces.is_empty() {
+            ExportTraceServiceRequest::decode(self.traces.as_slice())
                 .map_err(|e| invalid(e.to_string()))?;
         }
         Ok(())

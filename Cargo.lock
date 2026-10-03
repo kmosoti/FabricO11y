@@ -448,10 +448,15 @@ name = "fabric-fuzz-targets"
 version = "0.1.0"
 dependencies = [
  "fabric-frame",
+ "fabric-observation",
  "fabric-server",
  "prost",
  "serde_json",
 ]
+
+[[package]]
+name = "fabric-observation"
+version = "0.1.0"
 
 [[package]]
 name = "fabric-ports"
@@ -465,6 +470,7 @@ name = "fabric-properties"
 version = "0.1.0"
 dependencies = [
  "fabric-core",
+ "fabric-observation",
  "proptest",
 ]
 
@@ -479,6 +485,7 @@ dependencies = [
  "fabric-app",
  "fabric-core",
  "fabric-frame",
+ "fabric-observation",
  "fabric-ports",
  "fabric_o11y",
  "opentelemetry-proto",
@@ -490,6 +497,7 @@ dependencies = [
  "sha2",
  "tokio",
  "ureq",
+ "zstd",
 ]
 
 [[package]]
@@ -977,7 +985,11 @@ version = "0.33.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6cdb0b1b267eb9db3331b434ed9ddab10d50e280a9adf9d13e5233e2002b61b5"
 dependencies = [
+ "futures-core",
+ "futures-sink",
  "js-sys",
+ "pin-project-lite",
+ "thiserror",
 ]
 
 [[package]]
@@ -1001,7 +1013,9 @@ dependencies = [
  "futures-executor",
  "futures-util",
  "opentelemetry",
+ "percent-encoding",
  "portable-atomic",
+ "rand 0.9.5",
  "thiserror",
 ]
 

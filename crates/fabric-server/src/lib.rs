@@ -7,6 +7,8 @@ pub mod rows;
 pub mod sealer;
 pub mod segment;
 pub mod store;
+mod tail;
+pub mod text_filter;
 
 use axum_server::tls_rustls::RustlsConfig;
 use sha2::{Digest, Sha256};
@@ -44,13 +46,17 @@ pub async fn serve(
             max_bytes: config.retention_bytes,
         },
         Arc::clone(&stop_sealer),
+        config.seal_workers,
     )?;
     let tls = RustlsConfig::from_pem_file(&config.tls_cert, &config.tls_key).await?;
     let app = http::router(http::AppState {
         intake,
         control,
         admin_token_sha256: Sha256::digest(admin.as_bytes()).into(),
-        history: Arc::new(query::History::new(&config.state_dir)),
+        history: Arc::new(query::History::with_plan(
+            &config.state_dir,
+            config.query_plan,
+        )),
     });
     let served = axum_server::bind_rustls(config.listen, tls)
         .handle(handle)

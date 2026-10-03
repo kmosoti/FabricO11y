@@ -1,0 +1,208 @@
+{
+ "Apache_2k": {
+  "lines": 2000,
+  "zstd3_stream_order": 5.41,
+  "zstd3_shuffled": 8.68,
+  "zstd19_stream_order": 3.74,
+  "zstd19_shuffled": 5.94,
+  "tokens": {}
+ },
+ "HDFS_2k": {
+  "lines": 2000,
+  "zstd3_stream_order": 29.21,
+  "zstd3_shuffled": 31.61,
+  "zstd19_stream_order": 21.92,
+  "zstd19_shuffled": 23.32,
+  "tokens": {
+   "INFO": {
+    "lines_pct": 96.0,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "WARN": {
+    "lines_pct": 4.0,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "blk_": {
+    "lines_pct": 100.0,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   }
+  }
+ },
+ "Hadoop_2k": {
+  "lines": 2000,
+  "zstd3_stream_order": 9.19,
+  "zstd3_shuffled": 14.47,
+  "zstd19_stream_order": 7.13,
+  "zstd19_shuffled": 11.04,
+  "tokens": {
+   "INFO": {
+    "lines_pct": 52.0,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "WARN": {
+    "lines_pct": 40.4,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "ERROR": {
+    "lines_pct": 7.55,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "Exception": {
+    "lines_pct": 0.4,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "blk_": {
+    "lines_pct": 0.25,
+    "blocks_touched_stream_pct": 50.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "Failed": {
+    "lines_pct": 16.3,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "timeout": {
+    "lines_pct": 0.3,
+    "blocks_touched_stream_pct": 50.0,
+    "blocks_touched_shuffled_pct": 100.0
+   }
+  }
+ },
+ "Linux_2k": {
+  "lines": 2000,
+  "zstd3_stream_order": 7.52,
+  "zstd3_shuffled": 12.65,
+  "zstd19_stream_order": 5.93,
+  "zstd19_shuffled": 9.89,
+  "tokens": {
+   "session": {
+    "lines_pct": 12.3,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "kernel": {
+    "lines_pct": 3.85,
+    "blocks_touched_stream_pct": 50.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "closed": {
+    "lines_pct": 6.15,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   }
+  }
+ },
+ "OpenSSH_2k": {
+  "lines": 2000,
+  "zstd3_stream_order": 8.29,
+  "zstd3_shuffled": 12.94,
+  "zstd19_stream_order": 5.79,
+  "zstd19_shuffled": 9.05,
+  "tokens": {
+   "Exception": {
+    "lines_pct": 0.1,
+    "blocks_touched_stream_pct": 50.0,
+    "blocks_touched_shuffled_pct": 50.0
+   },
+   "session": {
+    "lines_pct": 0.1,
+    "blocks_touched_stream_pct": 50.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "closed": {
+    "lines_pct": 1.75,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "Failed": {
+    "lines_pct": 26.2,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   }
+  }
+ },
+ "Spark_2k": {
+  "lines": 2000,
+  "zstd3_stream_order": 7.19,
+  "zstd3_shuffled": 11.96,
+  "zstd19_stream_order": 5.29,
+  "zstd19_shuffled": 7.6,
+  "tokens": {
+   "INFO": {
+    "lines_pct": 100.0,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   }
+  }
+ },
+ "Thunderbird_2k": {
+  "lines": 2000,
+  "zstd3_stream_order": 15.71,
+  "zstd3_shuffled": 20.37,
+  "zstd19_stream_order": 11.84,
+  "zstd19_shuffled": 16.0,
+  "tokens": {
+   "session": {
+    "lines_pct": 2.15,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "kernel": {
+    "lines_pct": 0.1,
+    "blocks_touched_stream_pct": 50.0,
+    "blocks_touched_shuffled_pct": 50.0
+   },
+   "closed": {
+    "lines_pct": 1.5,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   }
+  }
+ },
+ "Zookeeper_2k": {
+  "lines": 2000,
+  "zstd3_stream_order": 12.58,
+  "zstd3_shuffled": 15.28,
+  "zstd19_stream_order": 8.85,
+  "zstd19_shuffled": 10.49,
+  "tokens": {
+   "INFO": {
+    "lines_pct": 33.45,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "WARN": {
+    "lines_pct": 65.9,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "ERROR": {
+    "lines_pct": 0.65,
+    "blocks_touched_stream_pct": 50.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "Exception": {
+    "lines_pct": 0.25,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "session": {
+    "lines_pct": 11.65,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   },
+   "timeout": {
+    "lines_pct": 4.5,
+    "blocks_touched_stream_pct": 100.0,
+    "blocks_touched_shuffled_pct": 100.0
+   }
+  }
+ }
+}

@@ -1,0 +1,56 @@
+/// Measures the FOB1 observation encoding against the raw OTLP Batch bytes
+/// over the first `n` sealed files of a journal directory.
+fn fob(dir: &Path, n: usize) -> io::Result<()> {
+    use fabric_observation as fo;
+    use fabric_server::rows::{Rows, extract, Number as RN};
+    use prost::Message as _;
+    let mut files: Vec<_> = std::fs::read_dir(dir)?.filter_map(|e| e.ok().map(|e| e.path())).filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with("sealed-") && n.ends_with(".faj"))).collect();
+    files.sort(); files.truncate(n);
+    let (mut raw, mut raw_z, mut per_batch, mut per_batch_z, mut per_file, mut per_file_z, mut lines, mut points, mut batches, mut parquet_like) = (0u64,0u64,0u64,0u64,0u64,0u64,0u64,0u64,0u64,0u64);
+    let mut raw_concat_z = 0u64;
+    let mut t_enc = std::time::Duration::ZERO; let mut t_dec = std::time::Duration::ZERO;
+    for f in &files {
+        let groups = segment::read_sealed(f)?;
+        let mut file_records: Vec<fo::Observation> = Vec::new();
+        let mut raw_concat: Vec<u8> = Vec::new();
+        let mut fob_concat: Vec<u8> = Vec::new();
+        for g in &groups { for e in &g.entries {
+            batches += 1; raw += e.batch.len() as u64; raw_concat.extend_from_slice(&e.batch);
+            raw_z += zstd::bulk::compress(&e.batch, 3)?.len() as u64;
+            let batch = fabric_frame::envelope::Batch::decode(e.batch.as_slice()).map_err(|x| io::Error::new(io::ErrorKind::InvalidData, x.to_string()))?;
+            let mut rows = Rows::default(); extract(g.group_sequence, e, &mut rows)?;
+            let strand = fo::Strand { node_id: batch.node_id.as_slice().try_into().unwrap(), generation: batch.generation };
+            let mut recs: Vec<fo::Observation> = Vec::new();
+            for r in &rows.logs { lines += 1; recs.push(fo::Observation { strand, sequence: r.sequence, index: r.index, time_ns: r.observed_ns, locators: None,
+                attributes: r.attributes.iter().map(|(k, v)| (k.clone(), fo::Value::Str(v.clone()))).collect(),
+                signal: fo::Signal::Log { severity: 0, event: String::new(), body: r.body.clone() } }); }
+            for r in &rows.metrics { points += 1; recs.push(fo::Observation { strand, sequence: r.sequence, index: r.index, time_ns: r.time_ns, locators: None,
+                attributes: r.attributes.iter().map(|(k, v)| (k.clone(), fo::Value::Str(v.clone()))).collect(),
+                signal: fo::Signal::Point { name: r.name.clone(), unit: r.unit.clone(), kind: if r.sum { fo::PointKind::Sum { monotonic: r.monotonic, start_ns: r.start_ns } } else { fo::PointKind::Gauge },
+                    value: match r.value { RN::Int(i) => fo::Number::Int(i), RN::Double(d) => fo::Number::Double(d) } } }); }
+            if recs.is_empty() { continue; }
+            let t = std::time::Instant::now(); let bytes = fo::encode(&recs).map_err(|x| io::Error::new(io::ErrorKind::InvalidData, x.to_string()))?; t_enc += t.elapsed();
+            let t = std::time::Instant::now(); let back = fo::decode(&bytes).map_err(|x| io::Error::new(io::ErrorKind::InvalidData, x.to_string()))?; t_dec += t.elapsed();
+            assert_eq!(back, recs);
+            per_batch += bytes.len() as u64; per_batch_z += zstd::bulk::compress(&bytes, 3)?.len() as u64; fob_concat.extend_from_slice(&bytes);
+            file_records.extend(recs);
+        } }
+        raw_concat_z += zstd::bulk::compress(&raw_concat, 3)?.len() as u64;
+        parquet_like += zstd::bulk::compress(&fob_concat, 3)?.len() as u64;
+        // one block per file (chunks of MAX_RECORDS)
+        for chunk in file_records.chunks(fo::MAX_RECORDS) {
+            let bytes = fo::encode(chunk).map_err(|x| io::Error::new(io::ErrorKind::InvalidData, x.to_string()))?;
+            per_file += bytes.len() as u64; per_file_z += zstd::bulk::compress(&bytes, 3)?.len() as u64;
+        }
+    }
+    let recs = lines + points;
+    println!("{}", serde_json::json!({
+        "files": files.len(), "batches": batches, "lines": lines, "points": points, "records": recs,
+        "raw_batch_bytes": raw, "raw_batch_zstd_each": raw_z, "raw_batch_zstd_per_file": raw_concat_z,
+        "fob_per_batch": per_batch, "fob_per_batch_zstd_each": per_batch_z, "fob_per_batch_zstd_per_file": parquet_like,
+        "fob_per_file": per_file, "fob_per_file_zstd": per_file_z,
+        "bytes_per_record": {"raw": raw as f64 / recs as f64, "raw_zstd_per_file": raw_concat_z as f64 / recs as f64, "fob_per_batch": per_batch as f64 / recs as f64, "fob_per_file": per_file as f64 / recs as f64, "fob_per_file_zstd": per_file_z as f64 / recs as f64},
+        "encode_ns_per_record": t_enc.as_nanos() as f64 / recs as f64, "decode_ns_per_record": t_dec.as_nanos() as f64 / recs as f64
+    }));
+    Ok(())
+}

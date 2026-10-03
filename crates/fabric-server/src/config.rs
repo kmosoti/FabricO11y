@@ -28,6 +28,12 @@ pub struct Config {
     /// Retention: at most this age and at most this many segment bytes.
     pub retention_s: u64,
     pub retention_bytes: u64,
+    /// How history queries read their sources (`query_plan=scan|walk`, default scan);
+    /// both plans return the same answers (ADR-0024).
+    pub query_plan: crate::query::Plan,
+    /// Segments built at once (`seal_workers`, 1 to 16; default half the CPUs, at
+    /// most 4). Journal files are still reclaimed oldest first (ADR-0025).
+    pub seal_workers: usize,
 }
 
 fn read_bounded(path: &Path) -> io::Result<String> {
@@ -65,6 +71,8 @@ impl Config {
                     | "journal_file_bytes"
                     | "retention_s"
                     | "retention_bytes"
+                    | "query_plan"
+                    | "seal_workers"
             ) {
                 return Err(invalid("unknown server config key"));
             }
@@ -105,6 +113,18 @@ impl Config {
             journal_file_bytes: number("journal_file_bytes", 64 * 1024 * 1024)?,
             retention_s: number("retention_s", 24 * 3600)?,
             retention_bytes: number("retention_bytes", 20 * 1024 * 1024 * 1024)?,
+            seal_workers: match values.get("seal_workers") {
+                None => crate::sealer::default_workers(),
+                Some(v) => match v.parse::<usize>() {
+                    Ok(n) if (1..=16).contains(&n) => n,
+                    _ => return Err(invalid("seal_workers must be 1 to 16")),
+                },
+            },
+            query_plan: match values.get("query_plan").copied() {
+                None | Some("scan") => crate::query::Plan::Scan,
+                Some("walk") => crate::query::Plan::Walk,
+                Some(_) => return Err(invalid("query_plan must be scan or walk")),
+            },
         };
         if config.journal_file_bytes < 64 * 1024
             || config.journal_file_bytes > config.journal_bytes
@@ -144,11 +164,20 @@ mod tests {
         let config = Config::load(&path).unwrap();
         assert_eq!(config.admin_token_file, PathBuf::from("/a"));
         assert_eq!(config.journal_bytes, DEFAULT_JOURNAL_BYTES);
+        assert_eq!(config.query_plan, crate::query::Plan::Scan);
+        std::fs::write(&path, format!("{good}query_plan=walk\n")).unwrap();
+        assert_eq!(
+            Config::load(&path).unwrap().query_plan,
+            crate::query::Plan::Walk
+        );
         for bad in [
             format!("{good}node_credentials=/x\n"),
             format!("{good}listen=127.0.0.1:1\n"),
             good.replace("admin_token_file=/a\n", ""),
             good.replace("state_dir=/s", "state_dir=relative"),
+            format!("{good}query_plan=index\n"),
+            format!("{good}seal_workers=0\n"),
+            format!("{good}seal_workers=17\n"),
         ] {
             std::fs::write(&path, bad).unwrap();
             assert!(Config::load(&path).is_err());

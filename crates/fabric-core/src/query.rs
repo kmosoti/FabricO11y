@@ -6,6 +6,8 @@
 //!
 //! [retained-history contract]: ../../../docs/architecture/retained-history.md
 
+pub mod spec;
+
 /// Largest `limit` a paginated query accepts.
 pub const MAX_LIMIT: u32 = 10_000;
 

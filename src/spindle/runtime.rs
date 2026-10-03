@@ -25,7 +25,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 const MAX_LOGS: usize = 16;
-const LOG_BODY_BUDGET: usize = 64 * 1024;
+/// Log bytes per Batch, counting each line's encoding overhead (ADR-0025).
+const LOG_BODY_BUDGET: usize = fabric_frame::envelope::MAX_BATCH - BATCH_RESERVE;
+/// Encoding overhead of one log record beyond its body and path: the observed
+/// time, four numeric attributes with their keys, and the protobuf framing. The
+/// encoded record is at most body + path + this many bytes (see the test
+/// `a_full_batch_of_short_lines_stays_under_the_envelope_cap`).
+const LOG_LINE_OVERHEAD: usize = 256;
+/// Room kept in every Batch for the resource, the cursors and the gaps.
+const BATCH_RESERVE: usize = 96 * 1024;
 const SPOOL_RESERVE: u64 = 4096;
 
 fn invalid(message: &str) -> io::Error {
@@ -43,6 +51,11 @@ pub struct Config {
     pub spool_bytes: u64,
     /// Delivery target; `None` keeps every batch local.
     pub server: Option<ServerTarget>,
+    /// Loopback address of the OTLP/HTTP trace endpoint (ADR-0025); `None` disables it.
+    pub traces_listen: Option<std::net::SocketAddr>,
+    /// Cap on delivered Batch bytes per second (`max_output_bytes_per_s`); `None` is
+    /// uncapped. At least 64 KiB/s when set.
+    pub max_output_bytes_per_s: Option<u64>,
 }
 
 impl Config {
@@ -61,6 +74,8 @@ impl Config {
             interval_s: 15,
             spool_bytes: 256 * 1024 * 1024,
             server: None,
+            traces_listen: None,
+            max_output_bytes_per_s: None,
         };
         let (mut url, mut ca, mut token_file) = (None, None, None);
         let mut seen_spool = false;
@@ -96,6 +111,18 @@ impl Config {
                 "server_url" if url.is_none() => url = Some(value.to_owned()),
                 "server_ca" if ca.is_none() => ca = Some(PathBuf::from(value)),
                 "token_file" if token_file.is_none() => token_file = Some(PathBuf::from(value)),
+                "max_output_bytes_per_s" if result.max_output_bytes_per_s.is_none() => {
+                    let rate: u64 = value
+                        .parse()
+                        .map_err(|_| invalid("invalid max_output_bytes_per_s"))?;
+                    if rate < 64 * 1024 {
+                        return Err(invalid("max_output_bytes_per_s must be at least 65536"));
+                    }
+                    result.max_output_bytes_per_s = Some(rate);
+                }
+                "traces_listen" if result.traces_listen.is_none() => {
+                    result.traces_listen = Some(super::otlp::check_listen(value)?);
+                }
                 _ => return Err(invalid("unknown or duplicate node config key")),
             }
         }
@@ -214,6 +241,7 @@ fn metric_request(
     snapshot: &host::Snapshot,
     now: u64,
     history: &History,
+    extra: Vec<Metric>,
 ) -> io::Result<(Vec<u8>, History, usize)> {
     // A complete host sample replaces prior series. Retaining old device or
     // boot identities would make RAM grow across a bounded spool's lifetime.
@@ -267,7 +295,9 @@ fn metric_request(
             ..Default::default()
         });
     }
+    // Host points only: the meter's own metrics ride along uncounted.
     let count = metrics.len();
+    metrics.extend(extra);
     let request = ExportMetricsServiceRequest {
         resource_metrics: vec![ResourceMetrics {
             resource: Some(resource(&snapshot.hostname, &snapshot.boot_id)),
@@ -360,6 +390,11 @@ fn absorb(
             .ok_or_else(|| corrupt("committed metrics missing boot ID"))?;
         for scope in group.scope_metrics {
             for metric in scope.metrics {
+                // The Spindle's own output meter restarts from zero with the
+                // process; there is no counter history to restore for it.
+                if metric.name.starts_with(super::meter::PREFIX) {
+                    continue;
+                }
                 if !supported_counter(&metric.name)
                     && matches!(&metric.data, Some(metric::Data::Sum(_)))
                 {
@@ -430,6 +465,10 @@ pub struct Spindle {
     sender: Option<Sender>,
     /// A coverage-unknown notice already committed while its marker remains.
     unknown_reported: Option<Unknown>,
+    /// Output metering and the optional delivery rate cap.
+    meter: super::meter::Meter,
+    /// Unread log bytes after the last pass, for the meter's gauge.
+    last_backlog: u64,
 }
 
 /// What one configuration poll did.
@@ -551,6 +590,7 @@ impl Spindle {
                 unknown_reported = None;
             }
         }
+        let config_rate = config.max_output_bytes_per_s;
         Ok(Self {
             config,
             base,
@@ -562,6 +602,12 @@ impl Spindle {
             host_paths,
             sender,
             unknown_reported,
+            meter: super::meter::Meter::new(
+                now_ns()?,
+                config_rate,
+                fabric_frame::envelope::MAX_BATCH,
+            ),
+            last_backlog: 0,
         })
     }
 
@@ -656,6 +702,19 @@ impl Spindle {
             };
             report.sent += 1;
             let started = std::time::Instant::now();
+            // The rate cap delays a send; a wait past `until` ends this delivery
+            // slice instead (the tokens are given back), so the loop never spins.
+            let wait = self.meter.take(bytes.len());
+            if !wait.is_zero() {
+                let now = std::time::Instant::now();
+                if now + wait > until {
+                    self.meter.untake(bytes.len());
+                    std::thread::sleep(until.saturating_duration_since(now));
+                    report.sent -= 1;
+                    break;
+                }
+                std::thread::sleep(wait);
+            }
             let outcome = sender.send(&bytes);
             let elapsed_us = started.elapsed().as_micros() as u64;
             on_attempt(&Attempt {
@@ -672,6 +731,7 @@ impl Spindle {
                     // Beyond our last committed sequence is an error from
                     // record_ack; the spool is left unchanged.
                     self.journal.record_ack(through)?;
+                    self.meter.record_delivery(bytes.len());
                     report.acked_through = through;
                 }
                 Delivery::Ack(through) => {
@@ -702,6 +762,44 @@ impl Spindle {
         Ok(report)
     }
 
+    /// Commit trace exports (encoded `ExportTraceServiceRequest`s, already validated)
+    /// as one Batch. Concatenated encodings of a message are its merge, so the Batch
+    /// holds every span of every export. The Batch carries the committed log cursors
+    /// forward, as every Batch does, because the Spool restores cursors from its
+    /// newest Batches. Returns the Batch sequence.
+    pub fn commit_traces(&mut self, exports: &[&[u8]]) -> io::Result<u64> {
+        let traces: Vec<u8> = exports.concat();
+        let candidate = Batch {
+            version: 1,
+            node_id: vec![],
+            generation: 0,
+            sequence: 0,
+            metrics: Vec::new(),
+            logs: Vec::new(),
+            cursors: self.cursors.values().cloned().collect(),
+            collection_gaps: Vec::new(),
+            traces,
+        };
+        let spans: usize = exports
+            .iter()
+            .filter_map(|e| {
+                opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest::decode(
+                    *e,
+                )
+                .ok()
+            })
+            .flat_map(|r| r.resource_spans)
+            .flat_map(|r| r.scope_spans)
+            .map(|s| s.spans.len())
+            .sum();
+        let committed = self.journal.append(&candidate)?;
+        self.meter.record_commit(super::meter::Committed {
+            traces: (committed.traces.len() as u64, spans as u64),
+            ..Default::default()
+        });
+        Ok(committed.sequence)
+    }
+
     /// One full cycle: host metrics and every configured log. Always commits
     /// a batch (metrics, lines or at least a gap).
     pub fn collect_once(&mut self) -> io::Result<Cycle> {
@@ -722,6 +820,11 @@ impl Spindle {
         if self.paused() {
             return Ok(None);
         }
+        // The Spool rotates only before a Batch with metrics, so every retained file
+        // starts with counter state for replay. A log-heavy node would otherwise grow
+        // one file until its next metric interval and could not reclaim acknowledged
+        // bytes; sampling host metrics when rotation is due keeps files near 8 MiB.
+        let include_metrics = include_metrics || self.journal.rotation_due();
         let now = now_ns()?;
         let mut gaps = Vec::new();
         // A prior cycle could not commit. Its interval is reported as a gap in
@@ -744,14 +847,26 @@ impl Spindle {
             None
         };
         let (metrics, updated_history, metric_points) = if let Some(snapshot) = sampled.as_ref() {
-            let (bytes, history, count) = metric_request(snapshot, now, &self.history)?;
+            let unacked = self
+                .journal
+                .next_sequence()
+                .saturating_sub(1)
+                .saturating_sub(self.journal.acked_through());
+            let metered =
+                self.meter
+                    .metrics(now, self.journal.used_bytes(), unacked, self.last_backlog);
+            let (bytes, history, count) = metric_request(snapshot, now, &self.history, metered)?;
             (bytes, history, count)
         } else {
             (Vec::new(), self.history.clone(), 0)
         };
         let mut lines = Vec::new();
         let mut pending_cursors = Vec::new();
-        let mut remaining = LOG_BODY_BUDGET;
+        let mut remaining = LOG_BODY_BUDGET.min(
+            fabric_frame::envelope::MAX_BATCH
+                .saturating_sub(metrics.len())
+                .saturating_sub(BATCH_RESERVE),
+        );
         let mut log_backlog_bytes = 0_u64;
         // The shared per-cycle body budget is spent in path order, starting at a
         // different path each batch, so one busy file cannot starve the others.
@@ -764,11 +879,16 @@ impl Spindle {
         for index in 0..count {
             let path = &self.config.logs[(first + index) % count];
             let name = path.to_string_lossy().to_string();
-            match log_source::read_lines(path, self.cursors.get(&name), remaining) {
+            let per_line = name.len() + LOG_LINE_OVERHEAD;
+            match log_source::read_lines_costed(path, self.cursors.get(&name), remaining, per_line)
+            {
                 Ok(read) => {
                     log_backlog_bytes = log_backlog_bytes.saturating_add(read.backlog_bytes);
                     remaining = remaining.saturating_sub(
-                        read.lines.iter().map(|line| line.body.len()).sum::<usize>(),
+                        read.lines
+                            .iter()
+                            .map(|line| line.body.len() + per_line)
+                            .sum::<usize>(),
                     );
                     lines.extend(read.lines);
                     pending_cursors.push(read.cursor);
@@ -815,6 +935,7 @@ impl Spindle {
             logs,
             cursors: pending_cursors,
             collection_gaps: gaps,
+            traces: Vec::new(),
         };
         let committed = match self.journal.append(&candidate) {
             Ok(batch) => batch,
@@ -835,6 +956,12 @@ impl Spindle {
         // Update in-memory state first: the batch is committed, and a caller
         // that retries after a later error must not collect the same lines.
         let sequence = committed.sequence;
+        self.meter.record_commit(super::meter::Committed {
+            logs: (committed.logs.len() as u64, lines.len() as u64),
+            metrics: (committed.metrics.len() as u64, metric_points as u64),
+            traces: (0, 0),
+        });
+        self.last_backlog = log_backlog_bytes;
         let gap_count = committed.collection_gaps.len();
         for cursor in committed.cursors {
             self.cursors.insert(cursor.path.clone(), cursor);
@@ -1061,7 +1188,8 @@ mod tests {
                     known_start_ns: None,
                 }],
             };
-            let (metrics, next, _) = metric_request(&snapshot, 100 + boot, &history).unwrap();
+            let (metrics, next, _) =
+                metric_request(&snapshot, 100 + boot, &history, Vec::new()).unwrap();
             assert_eq!(next.len(), 1);
             let batch = Batch {
                 version: 1,
@@ -1080,6 +1208,7 @@ mod tests {
                     prefix_len: 0,
                     prefix_crc: 0,
                 }],
+                traces: Vec::new(),
             };
             absorb(batch, &allowed, &mut cursors, &mut recovered).unwrap();
             assert_eq!(recovered.len(), 1);

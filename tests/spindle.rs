@@ -74,6 +74,8 @@ fn config(root: &Path, bytes: u64) -> Config {
         interval_s: 15,
         spool_bytes: bytes,
         server: None,
+        traces_listen: None,
+        max_output_bytes_per_s: None,
     }
 }
 
@@ -209,16 +211,17 @@ fn counters_preserve_start_then_reset_on_decrease_and_boot_change() {
 fn oversized_skip_is_committed_and_resumed_after_node_restart() {
     let scratch = Scratch::new();
     write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
-    let mut bytes = vec![b'X'; 256 * 1024 + 10];
+    // Longer than one pass's scan bound (1 MiB), so the first pass ends mid-line.
+    let mut bytes = vec![b'X'; 1024 * 1024 + 10];
     bytes.extend_from_slice(b"\nnormal\n");
     fs::write(scratch.path("selected.log"), &bytes).unwrap();
-    let cfg = config(&scratch.0, 1024 * 1024);
+    let cfg = config(&scratch.0, 4 * 1024 * 1024);
     let mut first = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     let cycle = first.collect_once().unwrap();
     assert_eq!((cycle.log_records, cycle.gaps), (0, 1));
     drop(first);
     let saved = batches(&cfg);
-    assert_eq!(saved[0].cursors[0].offset, 256 * 1024);
+    assert_eq!(saved[0].cursors[0].offset, 1024 * 1024);
     assert!(saved[0].cursors[0].skipping_oversize);
     let mut resumed = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     assert_eq!(resumed.collect_once().unwrap().log_records, 1);
@@ -592,10 +595,11 @@ fn busy_first_log_cannot_starve_a_later_log_and_backlog_is_visible() {
     write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
     let busy = scratch.path("a-busy.log");
     let quiet = scratch.path("b-quiet.log");
-    // 600-byte lines exhaust the 64 KiB body budget before the 128-line cap,
-    // and the quiet line is longer than what the busy file leaves over.
+    // 600-byte lines with their encoding overhead exhaust the 928 KiB Batch
+    // budget before the busy file ends (about 1,030 of its 1,200 lines), and
+    // the quiet line is longer than what the busy file leaves over.
     let line = [vec![b'x'; 599], b"\n".to_vec()].concat();
-    fs::write(&busy, line.repeat(1000)).unwrap();
+    fs::write(&busy, line.repeat(1200)).unwrap();
     let quiet_body = format!("quiet {}", "q".repeat(994));
     fs::write(&quiet, format!("{quiet_body}\n")).unwrap();
     let mut cfg = config(&scratch.0, 16 * 1024 * 1024);
@@ -782,4 +786,316 @@ fn staged_marker_left_by_a_failed_write_still_reports_unknown_coverage() {
     assert!(gap_texts(&cfg)[0][0].starts_with("coverage unknown since an unrecorded time"));
     assert!(!cfg.spool.join("coverage-unknown.tmp").exists());
     assert_eq!(node.collect_once().unwrap().gaps, 0);
+}
+
+/// ADR-0025: the loopback OTLP/HTTP endpoint of a running Spindle answers `200` only
+/// after an export is committed to the Spool, keeps the connection alive, refuses
+/// other media types and oversized bodies, and a non-loopback address is refused.
+#[test]
+fn trace_exports_are_committed_to_the_spool_before_they_are_acknowledged() {
+    use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
+    use opentelemetry_proto::tonic::trace::v1::{ResourceSpans, ScopeSpans, Span};
+    use std::io::{BufRead, BufReader, Read};
+    use std::net::TcpStream;
+    use std::process::{Command, Stdio};
+    let scratch = Scratch::new();
+    let conf = scratch.path("node.conf");
+    let base = format!(
+        "spool_dir={}\nmetric_interval_s=3600\nspool_bytes=8388608\n",
+        scratch.path("spool").display()
+    );
+    fs::write(&conf, format!("{base}traces_listen=0.0.0.0:4318\n")).unwrap();
+    assert!(
+        Config::load(&conf).is_err(),
+        "a non-loopback endpoint must be refused"
+    );
+    fs::write(&conf, format!("{base}traces_listen=127.0.0.1:0\n")).unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_fabric-node"))
+        .args(["run", conf.to_str().unwrap()])
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+    let addr = lines
+        .next()
+        .unwrap()
+        .unwrap()
+        .strip_prefix("traces listening=")
+        .unwrap()
+        .to_owned();
+    let export = |n: u64| {
+        ExportTraceServiceRequest {
+            resource_spans: vec![ResourceSpans {
+                scope_spans: vec![ScopeSpans {
+                    spans: (0..n)
+                        .map(|i| Span {
+                            trace_id: vec![7; 16],
+                            span_id: (i + 1).to_be_bytes().to_vec(),
+                            name: format!("op-{i}"),
+                            start_time_unix_nano: 1_000 + i,
+                            end_time_unix_nano: 2_000 + i,
+                            ..Default::default()
+                        })
+                        .collect(),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        }
+        .encode_to_vec()
+    };
+    let mut stream = TcpStream::connect(&addr).unwrap();
+    let mut reader = BufReader::new(stream.try_clone().unwrap());
+    let mut exchange = |content_type: &str, body: &[u8], length: usize| {
+        write!(stream, "POST /v1/traces HTTP/1.1\r\nHost: x\r\nContent-Type: {content_type}\r\nContent-Length: {length}\r\n\r\n").unwrap();
+        stream.write_all(body).unwrap();
+        let mut status = String::new();
+        reader.read_line(&mut status).unwrap();
+        let mut body_len = 0;
+        loop {
+            let mut line = String::new();
+            reader.read_line(&mut line).unwrap();
+            if line == "\r\n" {
+                break;
+            }
+            if let Some(v) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                body_len = v.trim().parse().unwrap();
+            }
+        }
+        let mut rest = vec![0; body_len];
+        reader.read_exact(&mut rest).unwrap();
+        status.split(' ').nth(1).unwrap().to_owned()
+    };
+    let (first, second) = (export(3), export(5));
+    assert_eq!(
+        exchange("application/x-protobuf", &first, first.len()),
+        "200"
+    );
+    assert_eq!(
+        exchange("application/x-protobuf", &second, second.len()),
+        "200",
+        "keep-alive"
+    );
+    assert_eq!(exchange("application/json", b"{}", 2), "415");
+    let mut fresh = TcpStream::connect(&addr).unwrap();
+    write!(fresh, "POST /v1/traces HTTP/1.1\r\nContent-Type: application/x-protobuf\r\nContent-Length: 2000000\r\n\r\n").unwrap();
+    let mut answer = String::new();
+    BufReader::new(fresh).read_line(&mut answer).unwrap();
+    assert!(answer.starts_with("HTTP/1.1 413"), "{answer}");
+    // SAFETY: kill with a valid child pid and signal number.
+    assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGTERM) }, 0);
+    assert!(child.wait().unwrap().success());
+    // Both acknowledged exports are in the Spool, span for span.
+    let cfg = Config::load(&conf).unwrap();
+    let spans: Vec<String> = batches(&cfg)
+        .iter()
+        .filter(|b| !b.traces.is_empty())
+        .flat_map(|b| {
+            ExportTraceServiceRequest::decode(b.traces.as_slice())
+                .unwrap()
+                .resource_spans
+                .into_iter()
+                .flat_map(|r| r.scope_spans)
+                .flat_map(|s| s.spans)
+                .map(|s| s.name)
+        })
+        .collect();
+    assert_eq!(
+        spans,
+        [
+            "op-0", "op-1", "op-2", "op-0", "op-1", "op-2", "op-3", "op-4"
+        ]
+    );
+}
+
+/// ADR-0025: a pass reads far more than the old 128 lines and 64 KiB, and the Batch
+/// stays under the 1 MiB envelope cap in the worst cases: tiny lines under the longest
+/// allowed path (overhead-dominated) and lines at the 4 KiB maximum.
+#[test]
+fn a_full_batch_of_short_lines_stays_under_the_envelope_cap() {
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "boot-a", 1000, 8);
+    // As long as the config allows (240 bytes), so per-line overhead dominates.
+    let room = 240 - scratch.0.as_os_str().len() - "/tiny.log".len() - 2;
+    let deep = scratch
+        .0
+        .join("d".repeat(room / 2))
+        .join("e".repeat(room - room / 2));
+    fs::create_dir_all(&deep).unwrap();
+    let cases = [
+        (deep.join("tiny.log"), "x\n".repeat(60_000)),
+        (
+            scratch.path("wide.log"),
+            format!("{}\n", "w".repeat(4095)).repeat(400),
+        ),
+    ];
+    for (log, text) in cases {
+        fs::write(&log, &text).unwrap();
+        let mut cfg = config(&scratch.0, 64 * 1024 * 1024);
+        cfg.spool = scratch.path(&format!(
+            "spool-{}",
+            log.file_name().unwrap().to_string_lossy()
+        ));
+        cfg.logs = vec![log.clone()];
+        let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+        let mut largest = 0;
+        let mut first_lines = 0;
+        let mut total = 0;
+        while let Some(cycle) = node.collect_logs().unwrap() {
+            if first_lines == 0 {
+                first_lines = cycle.log_records;
+            }
+            total += cycle.log_records;
+            if cycle.log_backlog_bytes == 0 {
+                break;
+            }
+        }
+        for batch in batches(&cfg) {
+            largest = largest.max(batch.encode_to_vec().len());
+            assert!(batch.logs.len() + batch.metrics.len() <= fabric_frame::envelope::MAX_BATCH);
+        }
+        let expected = text.lines().count();
+        assert_eq!(
+            total,
+            expected,
+            "{}: every line collected once",
+            log.display()
+        );
+        assert!(
+            first_lines > 128,
+            "{}: a pass reads more than the old cap ({first_lines})",
+            log.display()
+        );
+        assert!(
+            largest <= fabric_frame::envelope::MAX_BATCH,
+            "{}: {largest} bytes",
+            log.display()
+        );
+        assert!(
+            largest > 512 * 1024,
+            "{}: Batches are filled ({largest} bytes)",
+            log.display()
+        );
+    }
+}
+
+fn metric_value(batch: &Batch, name: &str, signal: Option<&str>) -> Option<f64> {
+    use opentelemetry_proto::tonic::metrics::v1::number_data_point::Value;
+    let request = ExportMetricsServiceRequest::decode(batch.metrics.as_slice()).ok()?;
+    let metric = request.resource_metrics[0].scope_metrics[0]
+        .metrics
+        .iter()
+        .find(|m| m.name == name)?;
+    let points = match metric.data.as_ref()? {
+        metric::Data::Sum(s) => &s.data_points,
+        metric::Data::Gauge(g) => &g.data_points,
+        _ => return None,
+    };
+    let point = points.iter().find(|p| {
+        signal.is_none_or(|want| {
+            p.attributes.iter().any(|kv| {
+                kv.key == "signal"
+                    && matches!(kv.value.as_ref().and_then(|v| v.value.as_ref()), Some(any_value::Value::StringValue(s)) if s == want)
+            })
+        })
+    })?;
+    match point.value? {
+        Value::AsDouble(v) => Some(v),
+        Value::AsInt(v) => Some(v as f64),
+    }
+}
+
+/// The Spindle meters its own output: the next metric cycle reports exactly what the
+/// earlier Batches committed, by signal, and the Spool and backlog gauges.
+#[test]
+fn the_spindle_reports_what_it_committed_in_its_next_metric_cycle() {
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1000, 8);
+    fs::write(scratch.path("selected.log"), "alpha\nbeta\ngamma\n").unwrap();
+    let cfg = config(&scratch.0, 16 * 1024 * 1024);
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    node.collect_once().unwrap();
+    node.collect_once().unwrap();
+    let saved = batches(&cfg);
+    let (first, second) = (&saved[0], &saved[1]);
+    assert_eq!(
+        metric_value(first, "fabric.spindle.committed.bytes", Some("logs")),
+        Some(0.0)
+    );
+    assert_eq!(
+        metric_value(second, "fabric.spindle.committed.bytes", Some("logs")),
+        Some(first.logs.len() as f64)
+    );
+    assert_eq!(
+        metric_value(second, "fabric.spindle.committed.records", Some("logs")),
+        Some(3.0)
+    );
+    assert_eq!(
+        metric_value(second, "fabric.spindle.committed.bytes", Some("metrics")),
+        Some(first.metrics.len() as f64)
+    );
+    assert_eq!(
+        metric_value(second, "fabric.spindle.committed.bytes", Some("traces")),
+        Some(0.0)
+    );
+    assert_eq!(
+        metric_value(second, "fabric.spindle.unacked.batches", None),
+        Some(1.0)
+    );
+    assert!(metric_value(second, "fabric.spindle.spool.bytes", None).unwrap() > 0.0);
+    assert_eq!(
+        metric_value(second, "fabric.spindle.delivered.bytes", None),
+        Some(0.0)
+    );
+}
+
+#[test]
+fn a_rate_cap_below_64_kib_per_second_is_refused() {
+    let scratch = Scratch::new();
+    let path = scratch.path("node.conf");
+    let base = format!("spool_dir={}\n", scratch.path("spool").display());
+    fs::write(&path, format!("{base}max_output_bytes_per_s=65535\n")).unwrap();
+    assert!(Config::load(&path).is_err());
+    fs::write(&path, format!("{base}max_output_bytes_per_s=1048576\n")).unwrap();
+    assert_eq!(
+        Config::load(&path).unwrap().max_output_bytes_per_s,
+        Some(1 << 20)
+    );
+}
+
+/// A log-heavy node rotates its Spool near the rotation size even between metric
+/// intervals, so acknowledged files can be reclaimed: when rotation is due, the next
+/// log pass also samples host metrics, and each Spool file starts with them.
+#[test]
+fn a_log_heavy_node_rotates_its_spool_between_metric_intervals() {
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "cccccccc-cccc-cccc-cccc-cccccccccccc", 1000, 8);
+    let line = format!("{}\n", "r".repeat(1000));
+    fs::write(scratch.path("selected.log"), line.repeat(30_000)).unwrap();
+    let mut cfg = config(&scratch.0, 64 * 1024 * 1024);
+    cfg.interval_s = 3600;
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    node.collect_once().unwrap();
+    while node
+        .collect_logs()
+        .unwrap()
+        .is_some_and(|c| c.log_backlog_bytes > 0)
+    {}
+    let files: Vec<String> = fs::read_dir(&cfg.spool)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".faj"))
+        .collect();
+    assert!(
+        files.len() >= 3,
+        "the Spool must rotate between metric intervals: {files:?}"
+    );
+    let with_metrics = batches(&cfg)
+        .iter()
+        .filter(|b| !b.metrics.is_empty())
+        .count();
+    assert!(
+        with_metrics >= files.len(),
+        "every file starts with a metrics Batch"
+    );
 }

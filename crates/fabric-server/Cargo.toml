@@ -8,18 +8,20 @@ description = "Fabric O11y central server: authenticated batch intake with durab
 fabric-app = { path = "../fabric-app" }
 fabric-core = { path = "../fabric-core" }
 fabric-frame = { path = "../fabric-frame" }
+fabric-observation = { path = "../fabric-observation" }
 fabric-ports = { path = "../fabric-ports" }
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "tokio", "json"] }
 axum-server = { version = "=0.7.3", features = ["tls-rustls-no-provider"] }
 arrow-array = "=60.0.0"
 arrow-schema = "=60.0.0"
-opentelemetry-proto = { version = "=0.33.0", default-features = false, features = ["gen-tonic-messages", "logs", "metrics"] }
+opentelemetry-proto = { version = "=0.33.0", default-features = false, features = ["gen-tonic-messages", "logs", "metrics", "trace"] }
 parquet = { version = "=60.0.0", default-features = false, features = ["arrow", "zstd"] }
 prost = "=0.14.4"
 rustls = { version = "=0.23.45", default-features = false, features = ["ring", "std", "tls12"] }
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.150"
 sha2 = "=0.10.9"
+zstd = { version = "=0.14.0", default-features = false }
 tokio = { version = "=1.53.1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal"] }
 
 [dev-dependencies]

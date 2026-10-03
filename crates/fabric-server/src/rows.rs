@@ -9,6 +9,7 @@ use crate::store::Entry;
 use fabric_frame::envelope::Batch;
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
+use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{KeyValue, any_value};
 use opentelemetry_proto::tonic::metrics::v1::{metric, number_data_point};
 use prost::Message;
@@ -53,6 +54,31 @@ pub struct MetricRow {
     pub attributes: Attributes,
 }
 
+/// One OTLP span (ADR-0025). Identities are lowercase hex of their bytes,
+/// empty when absent; `kind` and `status` are the OTLP integers.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpanRow {
+    pub group: u64,
+    pub node: String,
+    pub node_id: [u8; 16],
+    pub sequence: u64,
+    pub index: u32,
+    pub trace_id: String,
+    pub span_id: String,
+    pub parent_span_id: String,
+    pub name: String,
+    pub kind: i32,
+    pub status: i32,
+    pub start_ns: u64,
+    pub end_ns: u64,
+    pub attributes: Attributes,
+}
+
+/// Lowercase hex of bytes.
+pub fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct GapRow {
     pub group: u64,
@@ -68,6 +94,7 @@ pub struct Rows {
     pub logs: Vec<LogRow>,
     pub metrics: Vec<MetricRow>,
     pub gaps: Vec<GapRow>,
+    pub spans: Vec<SpanRow>,
 }
 
 fn invalid(message: impl Into<String>) -> io::Error {
@@ -156,6 +183,34 @@ pub fn extract(group: u64, entry: &Entry, out: &mut Rows) -> io::Result<()> {
                         });
                         index += 1;
                     }
+                }
+            }
+        }
+    }
+    if !batch.traces.is_empty() {
+        let request = ExportTraceServiceRequest::decode(batch.traces.as_slice())
+            .map_err(|e| invalid(e.to_string()))?;
+        let mut index = 0_u32;
+        for resource in &request.resource_spans {
+            for scope in &resource.scope_spans {
+                for span in &scope.spans {
+                    out.spans.push(SpanRow {
+                        group,
+                        node: node.clone(),
+                        node_id,
+                        sequence: batch.sequence,
+                        index,
+                        trace_id: hex(&span.trace_id),
+                        span_id: hex(&span.span_id),
+                        parent_span_id: hex(&span.parent_span_id),
+                        name: span.name.clone(),
+                        kind: span.kind,
+                        status: span.status.as_ref().map_or(0, |s| s.code),
+                        start_ns: span.start_time_unix_nano,
+                        end_ns: span.end_time_unix_nano,
+                        attributes: strings(&span.attributes),
+                    });
+                    index += 1;
                 }
             }
         }

@@ -169,6 +169,30 @@
         "test": "non_finite_rates_are_resets"
       },
       "fix_commit": "4a46b31"
+    },
+    {
+      "id": "CX-FOB1-DUPLICATE-DICTIONARY",
+      "origin": "property test mutations_are_rejected_or_canonical (crates/fabric-properties/tests/observation.rs), first failure under cargo xtask checks --profile fast on 2026-10-02",
+      "defect": "An FOB1 block whose string dictionary held two equal entries was accepted, and re-encoded to different bytes: the encoding was not canonical",
+      "seed_or_trace": "crates/fabric-properties/tests/observation.proptest-regressions (cc c0f326fa...)",
+      "contract": "OBS-2",
+      "reproducer": {
+        "file": "crates/fabric-observation/src/tests.rs",
+        "test": "rejects_dictionaries_out_of_first_use_order_or_unused"
+      },
+      "fix_commit": "9a12bf6"
+    },
+    {
+      "id": "CX-BUDGET-BOUNDARY-AT-START",
+      "origin": "property the_budget_drains_to_the_definition (T8) in a fast-check run",
+      "defect": "With budget 0 a boundary at the page start, time 0, saturated the continuation and the drain lost the row at time 0",
+      "seed_or_trace": "proptest seed cc 923e6e37 in crates/fabric-properties/tests/query_spec.proptest-regressions",
+      "contract": "QS-2",
+      "reproducer": {
+        "file": "crates/fabric-core/src/query/spec.rs",
+        "test": "a_boundary_never_sits_at_the_page_start"
+      },
+      "fix_commit": "bf74770"
     }
   ]
 }

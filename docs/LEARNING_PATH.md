@@ -131,6 +131,75 @@ Try it:
 2. Read [CX-RETENTION-SATURATED-TOTAL](formal/counterexamples.json). Explain why proptest, whose generated sizes stay below 50 bytes, could not find it, and why Kani did.
 3. Run `cargo xtask mutants --only M-SIM-DUPLICATE`. Explain which lost answer makes the simulation fail.
 
+## Stage 11 — Sort more data than fits in memory
+
+**Status: bounded-sealer milestone, design only.** The sealer turns a 64 MiB journal file into a Segment, and today it needs about 356 MiB to do it. The fix is an algorithm older than databases: sort in pieces, then merge.
+
+1. Read the file as a stream, a frame at a time, and cut the rows into **runs** of a fixed size.
+2. Sort each run in memory and write it to a scratch file.
+3. Open every run and keep only its front row in memory, in a min-heap. Pop the smallest, write it, and refill from the run it came from.
+
+Memory is one run plus one row per run, whatever the file's size. The [sealer view](architecture/sealer.md) has the diagram, the steps and a ten-row worked example.
+
+The Rust ideas:
+
+- an iterator yields one item at a time, so a stream never needs the whole collection;
+- `BinaryHeap<Reverse<T>>` is a min-heap, because the standard heap is a max-heap;
+- a type that wraps a writer and hashes each write (an adapter over `Write`) computes a checksum without a second pass;
+- a guard value with a `Drop` implementation can remove a scratch directory on every exit path.
+
+The system contract: a Segment answers every query as it did before, because its rows are in the same order and its row groups cover disjoint times.
+
+The trade-off: the merge costs disk. Spill is about 1.1 times the file, and the peak is about three times the file while a seal runs. Cheaper algorithms exist, and the [study](experiments/benchmarks/sealer-study-run-01.md) measured why each was rejected: sorting each chunk alone makes queries read up to 5.7 times more rows.
+
+Try it:
+
+1. Run the [worked example](architecture/sealer.md#a-worked-example) by hand with a run size of three. How many runs are there? How many rows does the merge hold at once?
+2. Read the [study's heap table](experiments/benchmarks/sealer-study-run-01.md#results). Why did a limit of 16,384 rows fail on 16 KiB rows, and what does the design count instead?
+3. After the milestone merges, run `cargo test -p fabric-server` and find the test that fails when a run is kept in memory.
+
+## Stage 12 — One record for every signal, built from the bytes up
+
+**Status: accepted for the server's in-memory block tail ([ADR-0023](decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md), [ADR-0024](decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md) part 3); not on the wire or on disk.** Fabric keeps two copies of every line: the node's exact OTLP bytes (custody) and a body column (query). [Storage layout run 01](experiments/benchmarks/storage-layout-run-01.md) measured that the pair is most of a Segment. The two cannot be one object because OTLP's protobuf is not canonical: the same observation has many byte strings, so the server can only vouch for the bytes it received, never for the records.
+
+The Rust idea: a **canonical encoding** is a pair of functions with `decode(encode(b)) == b` for every valid value *and* `encode(decode(x)) == x` for every accepted byte string. The second half is the hard one, and it cannot be bolted on at the top: a decoder that tolerated one overlong varint anywhere would give the same records two byte strings. So [fabric-observation](../crates/fabric-observation/src/lib.rs) is built as a tower ([architecture page](architecture/observation.md)), each level stating what it refuses before the next is allowed to use it:
+
+1. **bits**: shifts and masks on a machine word, the seven-bit group a varint byte carries, little-endian packing. The standard library's conversions are used only as the oracle the proofs compare these against.
+2. **bytes** and **crc32**: a reader that cannot run past its slice and names the offset of every failure; the IEEE check built from its polynomial, bit by bit, with a compile-time table proved equal to the definition.
+3. **varint**: integers in exactly one (shortest) form; counts that cannot reserve more than the bytes left.
+4. **zigzag**: signed to unsigned, a bijection proved for every value.
+5. **delta**: differences that invert under wrap, so a regular series costs one byte per element.
+6. **dictionary**: repeated values once, in a table whose order is a function of the data.
+7. **cells**: numbers and attributes with one form each; no NaN, keys sorted.
+8. **record**: the Observation and the rules that give it an encoding.
+9. **block**: columns, two dictionaries, a CRC; `encode` and `decode`.
+
+The crate has no dependencies and no standard library beyond `core` and `alloc`, like the semantic core.
+
+The contract: the crate is a pure codec in adapter support; it decides nothing about delivery or retention and performs no effect. The trade-off: strictness. A reader that accepts only canonical bytes refuses input a lenient one would take, by design; and the type is only useful once the node emits it, which is a wire-format decision this stage does not take.
+
+Try it:
+
+1. Read [bits.rs](../crates/fabric-observation/src/bits.rs), then [varint.rs](../crates/fabric-observation/src/varint.rs) and its test `overlong_forms_are_rejected`. Then read the property `varint_accepts_only_the_shortest_form` in [observation_levels.rs](../crates/fabric-properties/tests/observation_levels.rs). Why is the second the stronger statement, and what would it take to prove it for every input rather than test it?
+2. Run `cargo test -p fabric-properties --test observation`. The mutation property found [CX-FOB1-DUPLICATE-DICTIONARY](formal/counterexamples.json) on its first full run. Which level's contract was incomplete, and why did the block-level round-trip test not see it?
+3. Read [observation encoding run 01](experiments/benchmarks/observation-encoding-run-01.md). Why does the encoding save a fifth on real text and nothing on the synthetic workload, and what does that say about which workload to measure storage on?
+
+## Stage 13 — Read only what the answer needs
+
+**Status: part 1 of [ADR-0024](decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md) implemented as `query_plan=walk`; default `scan`.** A `limit 50` query over a 64 MiB real-text tail decoded all 149,585 entries to return 50 rows. The [optimality bounds](research/optimality-bounds.md) state what any algorithm must read for each shape, and the walk reads that plus one source.
+
+The Rust idea: **borrow the decision, own the effect**. The rule that makes stopping sound lives in the core as an executable definition (`fabric_core::query::spec::threshold_walk`, with its theorem as a property); the server's [query.rs](../crates/fabric-server/src/query.rs) and [tail.rs](../crates/fabric-server/src/tail.rs) apply it to files, holding a mutex only while the index is extended and a frame cache only for one query.
+
+The contract: the walk returns the scan's answer, page for page. The trade-off: a few MiB of index per process and a first query that builds it, against reading every source on every query.
+
+Try it:
+
+1. Read `Smallest::threshold` and the stop line `if best.threshold().is_some_and(|t| min > t.0)` in query.rs. Why is it `>` and not `>=`? The test `walk_and_scan_plans_answer_identically` needed a third Spindle writing at the same instants before it could tell the two apart.
+2. Run `cargo test -p fabric-server --test history walk`.
+3. Read [query walk run 01](experiments/benchmarks/query-walk-run-01.md). Which shapes did the walk not speed up, and which part of ADR-0024 addresses each?
+4. Read [text_filter.rs](../crates/fabric-server/src/text_filter.rs) and the test `text_filters_skip_only_groups_without_the_needle_and_fall_back_when_corrupt`. A Bloom filter has no false negatives only while its bytes are the sealer's: what does the reader do to keep that true, and which failure does the last part of the test show it cannot catch?
+5. Read `Pending::close` and `visit_block` in [tail.rs](../crates/fabric-server/src/tail.rs), then [block tail run 01](experiments/benchmarks/block-tail-run-01.md). Why are the blocks kept in memory and not written beside the journal, and what does the walk do with a block the codec refuses?
+
 ## Working rule
 
 For each new component, answer these in plain language before coding:

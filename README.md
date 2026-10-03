@@ -9,7 +9,7 @@ FabricO11y is an observability system in Rust built around one question: *what d
 - **Fabric Server**: a durable journal, immutable Zstd Parquet **Segments**, retention by age and size, and log, metric and counter-rate **queries** whose answers report completeness, freshness, collection gaps and the retained window, with snapshot-bound pages.
 - **Central control**: enrollment, desired and applied configuration, pause, resume and revoke through `fabricctl` and an admin HTTP API.
 
-Maturity: implemented and tested; the target operating profile (one controlled Debian 13 / WSL2 installation, up to 1,000 simulated identities) is **not yet qualified**. Several registered measurements passed on earlier revisions; history latency, freshness, outage/drain, stress, soak and running installation are outstanding, and no release has been tagged. See [qualification](docs/QUALIFICATION.md).
+Maturity: implemented and tested; the target operating profile (one controlled Debian-family installation, Debian 12/13 or Ubuntu 22.04/24.04 and derivatives, natively or under WSL2, up to 1,000 simulated identities) is **not yet qualified**. Several registered measurements passed on earlier revisions; history latency, freshness, outage/drain, stress, soak and running installation are outstanding, and no release has been tagged. See [qualification](docs/QUALIFICATION.md).
 
 ## The main idea
 
