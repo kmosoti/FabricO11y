@@ -20,7 +20,7 @@ The historical source branch `alpha/controlled-linux-collection` stays available
 
 [Journal reclaim progress](milestones/journal-reclaim-progress.md), branch `milestone/journal-reclaim-progress`: investigate whether earlier ordered reclaim of durably published Segments reduces capacity pressure without increasing ACK latency or changing query answers. The plan separates custody, query visibility and capacity restoration, specifies deterministic controls and a draft performance comparison, and leaves the bounded-sealer milestone and existing qualification protocols unchanged. The candidate and bounded correctness/progress tests are recorded in the [local run](experiments/benchmarks/journal-reclaim-local-run-01.md). Mixed-load performance measurements remain unrun.
 
-The [adaptive sealing and memory proposal](experiments/benchmarks/adaptive-sealing-hypotheses.md) is a separately testable follow-up: isolate fixed pull scheduling, resource-feedback concurrency and bounded builder memory before combining them. It changes neither the registered bounded-sealer acceptance nor current product defaults.
+The [adaptive sealing and memory proposal](experiments/benchmarks/adaptive-sealing-hypotheses.md) is a separately testable follow-up: isolate fixed pull scheduling, resource-feedback concurrency and bounded builder memory before combining them. It changes neither the registered bounded-sealer acceptance nor current product defaults. The [pipeline computational model](research/sealing-pipeline-model.md) specifies the later bounded-buffer and stage-processing proposal, with independent hypotheses and explicit proof obligations.
 
 ## Work carried from the completion plan
 

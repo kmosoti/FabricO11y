@@ -4,6 +4,8 @@ Status: **proposal; no implementation or performance experiment run**. This docu
 
 Source baseline for this proposal: `42eda24e7e0a2c22710acebc3b175826d71f7cee`, containing the [journal-reclaim candidate](../../milestones/journal-reclaim-progress.md). Keep that reclaim mechanism identical across scheduling comparisons. The [product contract](../../PRODUCT-CONTRACT.md), [Segment lifecycle](../../decisions/ADR-0020-store-sealed-history-as-parquet-segments.md) and [registered bounded-sealer acceptance](../../milestones/bounded-sealer.md#registered-acceptance-protocol) remain authoritative.
 
+The [sealing pipeline computational model](../../research/sealing-pipeline-model.md) develops the later storage-owned buffer and processing-task proposal: memory conservation, ownership transitions, bounded merge, deadlock controls, optimization objectives and hypotheses. It is separate from the per-file adaptive experiment below. The [route catalog](sealing-pipeline-experiment-design.md) gives preliminary experiments across ownership, loading, CPU scheduling, external sorting and feedback, including coupled effects.
+
 ## Factory model and actual source
 
 | Satisfactory role | FabricO11y mechanism | Resource consequence |

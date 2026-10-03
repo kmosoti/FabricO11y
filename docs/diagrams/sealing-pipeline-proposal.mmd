@@ -1,0 +1,22 @@
+flowchart LR
+    Journal[(Durable sealed journal)]
+    Loader[Storage adapter: bounded read ahead]
+    Input[Leased input buffers]
+    Workers[Processing tasks: decode, project, sort]
+    Output[Leased output and sort buffers]
+    Runs[(Temporary sorted runs)]
+    Merge[Bounded merge tasks]
+    Writer[Storage adapter: write, hash, sync]
+    Segment[(Published Segment)]
+    Commit[Commit thread: checkpoint, ordered reclaim]
+    Budget[Admission: bytes, task slots, I/O slots]
+    Journal --> Loader --> Input --> Workers --> Output
+    Output -->|raw records and gaps in journal order| Writer
+    Output -->|sorted runs| Runs
+    Runs -->|bounded reads| Merge --> Writer
+    Writer --> Segment --> Commit
+    Commit -->|release journal capacity| Journal
+    Budget -.-> Loader
+    Budget -.-> Workers
+    Budget -.-> Merge
+    Budget -.-> Writer

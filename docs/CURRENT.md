@@ -8,7 +8,7 @@ Research in step with it ([design consolidation](research/design-consolidation.m
 
 Local investigation: [journal reclaim progress](milestones/journal-reclaim-progress.md), on `milestone/journal-reclaim-progress` from `5f0c52f`. The candidate reclaims an eligible published prefix before builds and between worker groups. [Local mechanism tests](experiments/benchmarks/journal-reclaim-local-run-01.md) establish earlier reclaim and exercise failure boundaries; the mixed-load benefit and ACK latency trade-off remain unmeasured. This does not replace the bounded-sealer work or establish target-host qualification.
 
-Proposed follow-up: [adaptive sealing and builder memory](experiments/benchmarks/adaptive-sealing-hypotheses.md) separates demand-driven concurrency from per-builder working-set amplification, with hypothesis/null pairs and a draft validation design. Neither new mechanism is implemented or measured.
+Proposed follow-up: [adaptive sealing and builder memory](experiments/benchmarks/adaptive-sealing-hypotheses.md) separates demand-driven concurrency from per-builder working-set amplification, with hypothesis/null pairs and a draft validation design. Neither new mechanism is implemented or measured. The [computational pipeline model](research/sealing-pipeline-model.md) adds explicit buffer ownership, byte admission, bounded task/merge scheduling and falsifiable performance claims; it has not been model-checked or benchmarked.
 
 ## Implemented
 
