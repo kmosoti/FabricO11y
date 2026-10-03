@@ -594,8 +594,9 @@ fn busy_first_log_cannot_starve_a_later_log_and_backlog_is_visible() {
     write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
     let busy = scratch.path("a-busy.log");
     let quiet = scratch.path("b-quiet.log");
-    // 600-byte lines exhaust the 64 KiB body budget before the 128-line cap,
-    // and the quiet line is longer than what the busy file leaves over.
+    // 600-byte lines with their encoding overhead exhaust the 768 KiB Batch
+    // budget before the busy file ends (about 870 of its 1,000 lines), and the
+    // quiet line is longer than what the busy file leaves over.
     let line = [vec![b'x'; 599], b"\n".to_vec()].concat();
     fs::write(&busy, line.repeat(1000)).unwrap();
     let quiet_body = format!("quiet {}", "q".repeat(994));

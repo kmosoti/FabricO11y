@@ -33,13 +33,14 @@ impl Drop for Scratch {
 fn oversized_line_progress_survives_cursor_restart_without_false_suffix() {
     let scratch = Scratch::new();
     let path = scratch.path("selected.log");
-    let mut input = vec![b'X'; 256 * 1024 + 10];
+    // Longer than one pass's 1 MiB scan bound, so the first pass ends mid-line.
+    let mut input = vec![b'X'; 1024 * 1024 + 10];
     input.extend_from_slice(b"\nnormal\n");
     fs::write(&path, &input).unwrap();
     let first = read_lines(&path, None, 100).unwrap();
     assert!(first.lines.is_empty());
     assert_eq!(first.gaps.len(), 1);
-    assert_eq!(first.cursor.offset, 256 * 1024);
+    assert_eq!(first.cursor.offset, 1024 * 1024);
     assert!(first.cursor.skipping_oversize);
     // The cursor can be persisted in a committed Batch and reconstructed by
     // a new node. The next call starts in skip mode at the saved byte offset.
@@ -47,7 +48,7 @@ fn oversized_line_progress_survives_cursor_restart_without_false_suffix() {
     let second = read_lines(&path, Some(&restarted), 100).unwrap();
     assert_eq!(second.lines.len(), 1);
     assert_eq!(second.lines[0].body, "normal");
-    assert_eq!(second.lines[0].start, (256 * 1024 + 11) as u64);
+    assert_eq!(second.lines[0].start, (1024 * 1024 + 11) as u64);
     assert_eq!(second.cursor.offset, input.len() as u64);
     assert!(!second.cursor.skipping_oversize);
     assert!(second.gaps.is_empty());
