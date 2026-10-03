@@ -26,7 +26,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 const MAX_LOGS: usize = 16;
 /// Log bytes per Batch, counting each line's encoding overhead (ADR-0025).
-const LOG_BODY_BUDGET: usize = 768 * 1024;
+const LOG_BODY_BUDGET: usize = fabric_frame::envelope::MAX_BATCH - BATCH_RESERVE;
 /// Encoding overhead of one log record beyond its body and path: the observed
 /// time, four numeric attributes with their keys, and the protobuf framing. The
 /// encoded record is at most body + path + this many bytes (see the test
@@ -820,6 +820,11 @@ impl Spindle {
         if self.paused() {
             return Ok(None);
         }
+        // The Spool rotates only before a Batch with metrics, so every retained file
+        // starts with counter state for replay. A log-heavy node would otherwise grow
+        // one file until its next metric interval and could not reclaim acknowledged
+        // bytes; sampling host metrics when rotation is due keeps files near 8 MiB.
+        let include_metrics = include_metrics || self.journal.rotation_due();
         let now = now_ns()?;
         let mut gaps = Vec::new();
         // A prior cycle could not commit. Its interval is reported as a gap in

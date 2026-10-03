@@ -85,6 +85,9 @@ fn main() -> ExitCode {
         }
         let mut backoff = MIN_BACKOFF;
         let mut last_error: Option<String> = None;
+        // Whether the last delivery attempt left nothing unacknowledged. Catch-up
+        // passes wait for it, so collection never outruns what the server accepts.
+        let mut delivered = true;
         let mut retry_at = Instant::now();
         let mut next_metrics = Instant::now();
         let mut next_logs = Instant::now() + LOG_POLL;
@@ -140,9 +143,14 @@ fn main() -> ExitCode {
             // A pass that left unread log bytes is followed by another as soon as
             // delivery has caught up, so collection keeps pace with delivery rather
             // than with one pass per second (ADR-0025).
-            let catch_up = cycle.as_ref().is_some_and(|c| c.log_backlog_bytes > 0);
+            let catch_up = delivered && cycle.as_ref().is_some_and(|c| c.log_backlog_bytes > 0);
             if catch_up {
                 next_logs = Instant::now();
+                // Deliver at once: a retry time left from an idle turn would
+                // otherwise hold this pass until that turn's deadline.
+                if last_error.is_none() {
+                    retry_at = Instant::now();
+                }
             }
             if let Some(cycle) = cycle {
                 println!(
@@ -189,6 +197,7 @@ fn main() -> ExitCode {
                     let report = node.deliver(slice, |a| println!("{}", delivery_line(a)))?;
                     match report.error {
                         Some(error) => {
+                            delivered = false;
                             if last_error.as_deref() != Some(error.as_str()) {
                                 eprintln!("fabric-node: delivery: {error}");
                             }
@@ -202,6 +211,7 @@ fn main() -> ExitCode {
                                 eprintln!("fabric-node: delivery resumed");
                             }
                             backoff = MIN_BACKOFF;
+                            delivered = report.caught_up;
                             if !report.caught_up {
                                 continue;
                             }

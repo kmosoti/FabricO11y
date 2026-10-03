@@ -1,7 +1,8 @@
 //! Ingest load generator for throughput measurements on one machine (ADR-0025).
 //!
-//! `ingest_load enroll <STATE_DIR> <TOKEN_DIR> <NODES>` enrolls NODES nodes in a
-//! stopped server's control state and writes one token file per node.
+//! `ingest_load enroll <STATE_DIR> <TOKEN_DIR> <NODES> [LOG_PATH]` enrolls NODES nodes
+//! in a stopped server's control state, with LOG_PATH as their centrally configured
+//! log if given, and writes one token file per node.
 //! `ingest_load run <URL> <CA> <TOKEN_DIR> <NODES> <SECONDS> <CORPUS> <BODY_KIB>` then
 //! drives one thread per node, each sending Batches with one in flight, as a Spindle
 //! does, but without a Spool: log lines drawn in order from CORPUS up to BODY_KIB of
@@ -106,6 +107,8 @@ fn main() {
                 PathBuf::from(&args[2]),
                 args[3].parse::<u64>().unwrap(),
             );
+            // Optional: a log path the enrolled nodes' central configuration collects.
+            let logs: Vec<String> = args.get(4).into_iter().cloned().collect();
             std::fs::create_dir_all(&tokens).unwrap();
             let mut control = Control::open(&state).unwrap();
             for n in 0..nodes {
@@ -113,8 +116,8 @@ fn main() {
                     .enroll(
                         &format!("load-{n:04}"),
                         DesiredConfig {
-                            logs: vec![],
-                            metric_interval_s: 15,
+                            logs: logs.clone(),
+                            metric_interval_s: 3600,
                         },
                     )
                     .unwrap();

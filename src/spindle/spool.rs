@@ -268,6 +268,12 @@ impl Spool {
         self.acked
     }
 
+    /// Whether the active file has reached its rotation size: the next Batch that
+    /// carries metrics will start a new file.
+    pub fn rotation_due(&self) -> bool {
+        self.log.active_bytes() >= self.rotate_bytes
+    }
+
     pub fn append(&mut self, batch: &Batch) -> io::Result<Batch> {
         self.append_inner(batch.clone(), |_| Ok(()))
     }

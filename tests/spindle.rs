@@ -595,11 +595,11 @@ fn busy_first_log_cannot_starve_a_later_log_and_backlog_is_visible() {
     write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
     let busy = scratch.path("a-busy.log");
     let quiet = scratch.path("b-quiet.log");
-    // 600-byte lines with their encoding overhead exhaust the 768 KiB Batch
-    // budget before the busy file ends (about 870 of its 1,000 lines), and the
-    // quiet line is longer than what the busy file leaves over.
+    // 600-byte lines with their encoding overhead exhaust the 928 KiB Batch
+    // budget before the busy file ends (about 1,030 of its 1,200 lines), and
+    // the quiet line is longer than what the busy file leaves over.
     let line = [vec![b'x'; 599], b"\n".to_vec()].concat();
-    fs::write(&busy, line.repeat(1000)).unwrap();
+    fs::write(&busy, line.repeat(1200)).unwrap();
     let quiet_body = format!("quiet {}", "q".repeat(994));
     fs::write(&quiet, format!("{quiet_body}\n")).unwrap();
     let mut cfg = config(&scratch.0, 16 * 1024 * 1024);
@@ -1060,5 +1060,42 @@ fn a_rate_cap_below_64_kib_per_second_is_refused() {
     assert_eq!(
         Config::load(&path).unwrap().max_output_bytes_per_s,
         Some(1 << 20)
+    );
+}
+
+/// A log-heavy node rotates its Spool near the rotation size even between metric
+/// intervals, so acknowledged files can be reclaimed: when rotation is due, the next
+/// log pass also samples host metrics, and each Spool file starts with them.
+#[test]
+fn a_log_heavy_node_rotates_its_spool_between_metric_intervals() {
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "cccccccc-cccc-cccc-cccc-cccccccccccc", 1000, 8);
+    let line = format!("{}\n", "r".repeat(1000));
+    fs::write(scratch.path("selected.log"), line.repeat(30_000)).unwrap();
+    let mut cfg = config(&scratch.0, 64 * 1024 * 1024);
+    cfg.interval_s = 3600;
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    node.collect_once().unwrap();
+    while node
+        .collect_logs()
+        .unwrap()
+        .is_some_and(|c| c.log_backlog_bytes > 0)
+    {}
+    let files: Vec<String> = fs::read_dir(&cfg.spool)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.ends_with(".faj"))
+        .collect();
+    assert!(
+        files.len() >= 3,
+        "the Spool must rotate between metric intervals: {files:?}"
+    );
+    let with_metrics = batches(&cfg)
+        .iter()
+        .filter(|b| !b.metrics.is_empty())
+        .count();
+    assert!(
+        with_metrics >= files.len(),
+        "every file starts with a metrics Batch"
     );
 }

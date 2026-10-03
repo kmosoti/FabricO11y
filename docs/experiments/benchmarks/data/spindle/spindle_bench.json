@@ -1,0 +1,53 @@
+{
+ "corpus_lines": 15994,
+ "results": [
+  {
+   "mode": "collect-only",
+   "log_bytes": 68873871,
+   "seconds": 60.03,
+   "busy_s": 2.25,
+   "consumed_bytes": 68873717,
+   "lines": 527802,
+   "mb_per_s": 30.68,
+   "lines_per_s": 235097,
+   "node_cpu_s": 1.82,
+   "node_cpu_share": 0.03,
+   "node_hwm_mib": 9,
+   "batches": 246,
+   "acked_through": 0,
+   "drained": false
+  },
+  {
+   "mode": "deliver",
+   "log_bytes": 269234223,
+   "seconds": 60.02,
+   "busy_s": 60.02,
+   "consumed_bytes": 218162631,
+   "lines": 1671802,
+   "mb_per_s": 3.63,
+   "lines_per_s": 27853,
+   "node_cpu_s": 9.16,
+   "node_cpu_share": 0.15,
+   "node_hwm_mib": 11,
+   "batches": 779,
+   "acked_through": 778,
+   "drained": false
+  },
+  {
+   "mode": "deliver-cap-4MiB",
+   "log_bytes": 269234223,
+   "seconds": 60.03,
+   "busy_s": 60.03,
+   "consumed_bytes": 94330516,
+   "lines": 723397,
+   "mb_per_s": 1.57,
+   "lines_per_s": 12051,
+   "node_cpu_s": 4.25,
+   "node_cpu_share": 0.07,
+   "node_hwm_mib": 11,
+   "batches": 337,
+   "acked_through": 336,
+   "drained": false
+  }
+ ]
+}
