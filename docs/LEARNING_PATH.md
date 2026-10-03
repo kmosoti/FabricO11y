@@ -209,3 +209,5 @@ For each new component, answer these in plain language before coding:
 3. Who owns the data before and after it runs?
 4. What can fail, and how will that failure be visible?
 5. What measurement or model could prove the design wrong?
+
+**Streaming output experiment.** The [table writer](../crates/fabric-server/src/segment.rs) on the streaming-output branch uses a buffered sink and hashes only bytes accepted by `Write`. It flushes before file sync. [Run 01](experiments/benchmarks/streaming-output-local-run-01.md) shows why removing a whole-file output buffer can preserve every byte and still miss a peak-heap target: decoded rows and Arrow arrays remain. Lower RSS and lower live heap are different observations.

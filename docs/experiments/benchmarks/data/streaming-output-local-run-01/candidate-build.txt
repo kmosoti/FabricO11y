@@ -1,0 +1,2 @@
+   Compiling fabric-server v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-server)
+    Finished `release` profile [optimized] target(s) in 17.14s

@@ -1,0 +1,2426 @@
+[
+  {
+    "shape": "repeat",
+    "mib": 16,
+    "seed": 2703163393,
+    "order": [
+      "baseline",
+      "candidate"
+    ],
+    "baseline": {
+      "build_seconds_instrumented": 0.156365672,
+      "encoded_group_bytes": 16791906,
+      "groups": 241,
+      "heap_after_build_bytes": 16812572,
+      "heap_start_bytes": 16809916,
+      "incremental_peak_heap_bytes": 69790390,
+      "input_sha256": "9668d98466e7f7cd84a7b8850211b1f310ac7d3d5cefe5da372acf1c02ff1269",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 120659,
+            "rows": 241,
+            "sha256": "3d2aac1f492f9616e9eb1c0b27069d0314fdb12e0e8a5c5afb5945452e1b8020"
+          },
+          "gaps.parquet": {
+            "bytes": 3878,
+            "rows": 241,
+            "sha256": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161"
+          },
+          "logs.parquet": {
+            "bytes": 105669,
+            "rows": 15424,
+            "sha256": "2e0bad5c82ffc045501359758040c2de91f0b2cdff38e3b54dddc64b68280c49"
+          },
+          "metrics.parquet": {
+            "bytes": 6585,
+            "rows": 241,
+            "sha256": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535"
+          },
+          "spans.parquet": {
+            "bytes": 7181,
+            "rows": 241,
+            "sha256": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 1040,
+            "rows": 2,
+            "sha256": "ebf2683e07fd174fc69cb6b2282dfa5b0d3dbf152da2bb055087cf6c26436e24"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000004773,
+          "node-1": 1800000000000004790,
+          "node-10": 1800000000000004671,
+          "node-11": 1800000000000004688,
+          "node-12": 1800000000000004705,
+          "node-13": 1800000000000004722,
+          "node-14": 1800000000000004739,
+          "node-15": 1800000000000004756,
+          "node-2": 1800000000000004535,
+          "node-3": 1800000000000004552,
+          "node-4": 1800000000000004569,
+          "node-5": 1800000000000004586,
+          "node-6": 1800000000000004603,
+          "node-7": 1800000000000004620,
+          "node-8": 1800000000000004637,
+          "node-9": 1800000000000004654
+        },
+        "journal_label": 1,
+        "last_group": 241,
+        "received_max_ns": 1800000000000000241,
+        "received_min_ns": 1800000000000000001,
+        "records": 241,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 86600306,
+      "seed": 2703163393,
+      "shape": "repeat",
+      "target_mib": 16,
+      "user_seconds": 0.16222699999999998,
+      "system_seconds": 0.037708,
+      "peak_rss_kib": 99300,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/baseline",
+        "/workspace/scratch/stream-output-run-01/repeat-16-2703163393-baseline",
+        "repeat",
+        "16",
+        "2703163393"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.25333179199515143
+    },
+    "candidate": {
+      "build_seconds_instrumented": 0.133170299,
+      "encoded_group_bytes": 16791906,
+      "groups": 241,
+      "heap_after_build_bytes": 16812574,
+      "heap_start_bytes": 16809918,
+      "incremental_peak_heap_bytes": 70052540,
+      "input_sha256": "9668d98466e7f7cd84a7b8850211b1f310ac7d3d5cefe5da372acf1c02ff1269",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 120659,
+            "rows": 241,
+            "sha256": "3d2aac1f492f9616e9eb1c0b27069d0314fdb12e0e8a5c5afb5945452e1b8020"
+          },
+          "gaps.parquet": {
+            "bytes": 3878,
+            "rows": 241,
+            "sha256": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161"
+          },
+          "logs.parquet": {
+            "bytes": 105669,
+            "rows": 15424,
+            "sha256": "2e0bad5c82ffc045501359758040c2de91f0b2cdff38e3b54dddc64b68280c49"
+          },
+          "metrics.parquet": {
+            "bytes": 6585,
+            "rows": 241,
+            "sha256": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535"
+          },
+          "spans.parquet": {
+            "bytes": 7181,
+            "rows": 241,
+            "sha256": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 1040,
+            "rows": 2,
+            "sha256": "ebf2683e07fd174fc69cb6b2282dfa5b0d3dbf152da2bb055087cf6c26436e24"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000004773,
+          "node-1": 1800000000000004790,
+          "node-10": 1800000000000004671,
+          "node-11": 1800000000000004688,
+          "node-12": 1800000000000004705,
+          "node-13": 1800000000000004722,
+          "node-14": 1800000000000004739,
+          "node-15": 1800000000000004756,
+          "node-2": 1800000000000004535,
+          "node-3": 1800000000000004552,
+          "node-4": 1800000000000004569,
+          "node-5": 1800000000000004586,
+          "node-6": 1800000000000004603,
+          "node-7": 1800000000000004620,
+          "node-8": 1800000000000004637,
+          "node-9": 1800000000000004654
+        },
+        "journal_label": 1,
+        "last_group": 241,
+        "received_max_ns": 1800000000000000241,
+        "received_min_ns": 1800000000000000001,
+        "records": 241,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 86862458,
+      "seed": 2703163393,
+      "shape": "repeat",
+      "target_mib": 16,
+      "user_seconds": 0.139952,
+      "system_seconds": 0.046838,
+      "peak_rss_kib": 99116,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/candidate",
+        "/workspace/scratch/stream-output-run-01/repeat-16-2703163393-candidate",
+        "repeat",
+        "16",
+        "2703163393"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.20265378300246084
+    },
+    "output_sha256": {
+      "segments/seg-00000000000000000001/text_filter.bin": "ebf2683e07fd174fc69cb6b2282dfa5b0d3dbf152da2bb055087cf6c26436e24",
+      "segments/seg-00000000000000000001/manifest.json": "64561f2a3cdf00ae5594a44001c86f2b5a40ecbfc9d5c7116dd40fbddc8888b7",
+      "segments/seg-00000000000000000001/spans.parquet": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858",
+      "segments/seg-00000000000000000001/batches.parquet": "3d2aac1f492f9616e9eb1c0b27069d0314fdb12e0e8a5c5afb5945452e1b8020",
+      "segments/seg-00000000000000000001/metrics.parquet": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535",
+      "segments/seg-00000000000000000001/logs.parquet": "2e0bad5c82ffc045501359758040c2de91f0b2cdff38e3b54dddc64b68280c49",
+      "segments/seg-00000000000000000001/gaps.parquet": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161",
+      "segments/seg-00000000000000000001/spans_filter.bin": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+    },
+    "ratios": {
+      "incremental_peak_heap_bytes": 1.0037562478157809,
+      "peak_rss_kib": 0.998147029204431,
+      "build_seconds_instrumented": 0.8516594294430556
+    }
+  },
+  {
+    "shape": "repeat",
+    "mib": 16,
+    "seed": 2703163394,
+    "order": [
+      "candidate",
+      "baseline"
+    ],
+    "candidate": {
+      "build_seconds_instrumented": 0.13749601,
+      "encoded_group_bytes": 16791906,
+      "groups": 241,
+      "heap_after_build_bytes": 16812574,
+      "heap_start_bytes": 16809918,
+      "incremental_peak_heap_bytes": 70052540,
+      "input_sha256": "9668d98466e7f7cd84a7b8850211b1f310ac7d3d5cefe5da372acf1c02ff1269",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 120659,
+            "rows": 241,
+            "sha256": "3d2aac1f492f9616e9eb1c0b27069d0314fdb12e0e8a5c5afb5945452e1b8020"
+          },
+          "gaps.parquet": {
+            "bytes": 3878,
+            "rows": 241,
+            "sha256": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161"
+          },
+          "logs.parquet": {
+            "bytes": 105669,
+            "rows": 15424,
+            "sha256": "2e0bad5c82ffc045501359758040c2de91f0b2cdff38e3b54dddc64b68280c49"
+          },
+          "metrics.parquet": {
+            "bytes": 6585,
+            "rows": 241,
+            "sha256": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535"
+          },
+          "spans.parquet": {
+            "bytes": 7181,
+            "rows": 241,
+            "sha256": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 1040,
+            "rows": 2,
+            "sha256": "ebf2683e07fd174fc69cb6b2282dfa5b0d3dbf152da2bb055087cf6c26436e24"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000004773,
+          "node-1": 1800000000000004790,
+          "node-10": 1800000000000004671,
+          "node-11": 1800000000000004688,
+          "node-12": 1800000000000004705,
+          "node-13": 1800000000000004722,
+          "node-14": 1800000000000004739,
+          "node-15": 1800000000000004756,
+          "node-2": 1800000000000004535,
+          "node-3": 1800000000000004552,
+          "node-4": 1800000000000004569,
+          "node-5": 1800000000000004586,
+          "node-6": 1800000000000004603,
+          "node-7": 1800000000000004620,
+          "node-8": 1800000000000004637,
+          "node-9": 1800000000000004654
+        },
+        "journal_label": 1,
+        "last_group": 241,
+        "received_max_ns": 1800000000000000241,
+        "received_min_ns": 1800000000000000001,
+        "records": 241,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 86862458,
+      "seed": 2703163394,
+      "shape": "repeat",
+      "target_mib": 16,
+      "user_seconds": 0.128623,
+      "system_seconds": 0.054757999999999994,
+      "peak_rss_kib": 99176,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/candidate",
+        "/workspace/scratch/stream-output-run-01/repeat-16-2703163394-candidate",
+        "repeat",
+        "16",
+        "2703163394"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.2021450280008139
+    },
+    "baseline": {
+      "build_seconds_instrumented": 0.134847042,
+      "encoded_group_bytes": 16791906,
+      "groups": 241,
+      "heap_after_build_bytes": 16812572,
+      "heap_start_bytes": 16809916,
+      "incremental_peak_heap_bytes": 69790390,
+      "input_sha256": "9668d98466e7f7cd84a7b8850211b1f310ac7d3d5cefe5da372acf1c02ff1269",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 120659,
+            "rows": 241,
+            "sha256": "3d2aac1f492f9616e9eb1c0b27069d0314fdb12e0e8a5c5afb5945452e1b8020"
+          },
+          "gaps.parquet": {
+            "bytes": 3878,
+            "rows": 241,
+            "sha256": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161"
+          },
+          "logs.parquet": {
+            "bytes": 105669,
+            "rows": 15424,
+            "sha256": "2e0bad5c82ffc045501359758040c2de91f0b2cdff38e3b54dddc64b68280c49"
+          },
+          "metrics.parquet": {
+            "bytes": 6585,
+            "rows": 241,
+            "sha256": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535"
+          },
+          "spans.parquet": {
+            "bytes": 7181,
+            "rows": 241,
+            "sha256": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 1040,
+            "rows": 2,
+            "sha256": "ebf2683e07fd174fc69cb6b2282dfa5b0d3dbf152da2bb055087cf6c26436e24"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000004773,
+          "node-1": 1800000000000004790,
+          "node-10": 1800000000000004671,
+          "node-11": 1800000000000004688,
+          "node-12": 1800000000000004705,
+          "node-13": 1800000000000004722,
+          "node-14": 1800000000000004739,
+          "node-15": 1800000000000004756,
+          "node-2": 1800000000000004535,
+          "node-3": 1800000000000004552,
+          "node-4": 1800000000000004569,
+          "node-5": 1800000000000004586,
+          "node-6": 1800000000000004603,
+          "node-7": 1800000000000004620,
+          "node-8": 1800000000000004637,
+          "node-9": 1800000000000004654
+        },
+        "journal_label": 1,
+        "last_group": 241,
+        "received_max_ns": 1800000000000000241,
+        "received_min_ns": 1800000000000000001,
+        "records": 241,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 86600306,
+      "seed": 2703163394,
+      "shape": "repeat",
+      "target_mib": 16,
+      "user_seconds": 0.135428,
+      "system_seconds": 0.043484999999999996,
+      "peak_rss_kib": 99476,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/baseline",
+        "/workspace/scratch/stream-output-run-01/repeat-16-2703163394-baseline",
+        "repeat",
+        "16",
+        "2703163394"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.20233903999906033
+    },
+    "output_sha256": {
+      "segments/seg-00000000000000000001/text_filter.bin": "ebf2683e07fd174fc69cb6b2282dfa5b0d3dbf152da2bb055087cf6c26436e24",
+      "segments/seg-00000000000000000001/manifest.json": "64561f2a3cdf00ae5594a44001c86f2b5a40ecbfc9d5c7116dd40fbddc8888b7",
+      "segments/seg-00000000000000000001/spans.parquet": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858",
+      "segments/seg-00000000000000000001/batches.parquet": "3d2aac1f492f9616e9eb1c0b27069d0314fdb12e0e8a5c5afb5945452e1b8020",
+      "segments/seg-00000000000000000001/metrics.parquet": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535",
+      "segments/seg-00000000000000000001/logs.parquet": "2e0bad5c82ffc045501359758040c2de91f0b2cdff38e3b54dddc64b68280c49",
+      "segments/seg-00000000000000000001/gaps.parquet": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161",
+      "segments/seg-00000000000000000001/spans_filter.bin": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+    },
+    "ratios": {
+      "incremental_peak_heap_bytes": 1.0037562478157809,
+      "peak_rss_kib": 0.9969841971932929,
+      "build_seconds_instrumented": 1.0196442425485315
+    }
+  },
+  {
+    "shape": "repeat",
+    "mib": 16,
+    "seed": 2703163395,
+    "order": [
+      "baseline",
+      "candidate"
+    ],
+    "baseline": {
+      "build_seconds_instrumented": 0.13871019,
+      "encoded_group_bytes": 16791906,
+      "groups": 241,
+      "heap_after_build_bytes": 16812572,
+      "heap_start_bytes": 16809916,
+      "incremental_peak_heap_bytes": 69790390,
+      "input_sha256": "9668d98466e7f7cd84a7b8850211b1f310ac7d3d5cefe5da372acf1c02ff1269",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 120659,
+            "rows": 241,
+            "sha256": "3d2aac1f492f9616e9eb1c0b27069d0314fdb12e0e8a5c5afb5945452e1b8020"
+          },
+          "gaps.parquet": {
+            "bytes": 3878,
+            "rows": 241,
+            "sha256": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161"
+          },
+          "logs.parquet": {
+            "bytes": 105669,
+            "rows": 15424,
+            "sha256": "2e0bad5c82ffc045501359758040c2de91f0b2cdff38e3b54dddc64b68280c49"
+          },
+          "metrics.parquet": {
+            "bytes": 6585,
+            "rows": 241,
+            "sha256": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535"
+          },
+          "spans.parquet": {
+            "bytes": 7181,
+            "rows": 241,
+            "sha256": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 1040,
+            "rows": 2,
+            "sha256": "ebf2683e07fd174fc69cb6b2282dfa5b0d3dbf152da2bb055087cf6c26436e24"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000004773,
+          "node-1": 1800000000000004790,
+          "node-10": 1800000000000004671,
+          "node-11": 1800000000000004688,
+          "node-12": 1800000000000004705,
+          "node-13": 1800000000000004722,
+          "node-14": 1800000000000004739,
+          "node-15": 1800000000000004756,
+          "node-2": 1800000000000004535,
+          "node-3": 1800000000000004552,
+          "node-4": 1800000000000004569,
+          "node-5": 1800000000000004586,
+          "node-6": 1800000000000004603,
+          "node-7": 1800000000000004620,
+          "node-8": 1800000000000004637,
+          "node-9": 1800000000000004654
+        },
+        "journal_label": 1,
+        "last_group": 241,
+        "received_max_ns": 1800000000000000241,
+        "received_min_ns": 1800000000000000001,
+        "records": 241,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 86600306,
+      "seed": 2703163395,
+      "shape": "repeat",
+      "target_mib": 16,
+      "user_seconds": 0.151907,
+      "system_seconds": 0.039727,
+      "peak_rss_kib": 99600,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/baseline",
+        "/workspace/scratch/stream-output-run-01/repeat-16-2703163395-baseline",
+        "repeat",
+        "16",
+        "2703163395"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.20238630600215402
+    },
+    "candidate": {
+      "build_seconds_instrumented": 0.131848789,
+      "encoded_group_bytes": 16791906,
+      "groups": 241,
+      "heap_after_build_bytes": 16812574,
+      "heap_start_bytes": 16809918,
+      "incremental_peak_heap_bytes": 70052540,
+      "input_sha256": "9668d98466e7f7cd84a7b8850211b1f310ac7d3d5cefe5da372acf1c02ff1269",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 120659,
+            "rows": 241,
+            "sha256": "3d2aac1f492f9616e9eb1c0b27069d0314fdb12e0e8a5c5afb5945452e1b8020"
+          },
+          "gaps.parquet": {
+            "bytes": 3878,
+            "rows": 241,
+            "sha256": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161"
+          },
+          "logs.parquet": {
+            "bytes": 105669,
+            "rows": 15424,
+            "sha256": "2e0bad5c82ffc045501359758040c2de91f0b2cdff38e3b54dddc64b68280c49"
+          },
+          "metrics.parquet": {
+            "bytes": 6585,
+            "rows": 241,
+            "sha256": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535"
+          },
+          "spans.parquet": {
+            "bytes": 7181,
+            "rows": 241,
+            "sha256": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 1040,
+            "rows": 2,
+            "sha256": "ebf2683e07fd174fc69cb6b2282dfa5b0d3dbf152da2bb055087cf6c26436e24"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000004773,
+          "node-1": 1800000000000004790,
+          "node-10": 1800000000000004671,
+          "node-11": 1800000000000004688,
+          "node-12": 1800000000000004705,
+          "node-13": 1800000000000004722,
+          "node-14": 1800000000000004739,
+          "node-15": 1800000000000004756,
+          "node-2": 1800000000000004535,
+          "node-3": 1800000000000004552,
+          "node-4": 1800000000000004569,
+          "node-5": 1800000000000004586,
+          "node-6": 1800000000000004603,
+          "node-7": 1800000000000004620,
+          "node-8": 1800000000000004637,
+          "node-9": 1800000000000004654
+        },
+        "journal_label": 1,
+        "last_group": 241,
+        "received_max_ns": 1800000000000000241,
+        "received_min_ns": 1800000000000000001,
+        "records": 241,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 86862458,
+      "seed": 2703163395,
+      "shape": "repeat",
+      "target_mib": 16,
+      "user_seconds": 0.129773,
+      "system_seconds": 0.043633,
+      "peak_rss_kib": 99308,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/candidate",
+        "/workspace/scratch/stream-output-run-01/repeat-16-2703163395-candidate",
+        "repeat",
+        "16",
+        "2703163395"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.2022507889996632
+    },
+    "output_sha256": {
+      "segments/seg-00000000000000000001/text_filter.bin": "ebf2683e07fd174fc69cb6b2282dfa5b0d3dbf152da2bb055087cf6c26436e24",
+      "segments/seg-00000000000000000001/manifest.json": "64561f2a3cdf00ae5594a44001c86f2b5a40ecbfc9d5c7116dd40fbddc8888b7",
+      "segments/seg-00000000000000000001/spans.parquet": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858",
+      "segments/seg-00000000000000000001/batches.parquet": "3d2aac1f492f9616e9eb1c0b27069d0314fdb12e0e8a5c5afb5945452e1b8020",
+      "segments/seg-00000000000000000001/metrics.parquet": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535",
+      "segments/seg-00000000000000000001/logs.parquet": "2e0bad5c82ffc045501359758040c2de91f0b2cdff38e3b54dddc64b68280c49",
+      "segments/seg-00000000000000000001/gaps.parquet": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161",
+      "segments/seg-00000000000000000001/spans_filter.bin": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+    },
+    "ratios": {
+      "incremental_peak_heap_bytes": 1.0037562478157809,
+      "peak_rss_kib": 0.9970682730923695,
+      "build_seconds_instrumented": 0.9505342686070863
+    }
+  },
+  {
+    "shape": "repeat",
+    "mib": 64,
+    "seed": 2703163393,
+    "order": [
+      "candidate",
+      "baseline"
+    ],
+    "candidate": {
+      "build_seconds_instrumented": 0.491413376,
+      "encoded_group_bytes": 67131412,
+      "groups": 963,
+      "heap_after_build_bytes": 67203100,
+      "heap_start_bytes": 67200444,
+      "incremental_peak_heap_bytes": 254776869,
+      "input_sha256": "bf38b084005faa1b5d7d78bb1012956d7eeec234d2db14561975f1de65cac724",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 476985,
+            "rows": 963,
+            "sha256": "c839cc16ec9d1d724e5d38bc40ed3093009aea7307c16731c537cc7e2fb34395"
+          },
+          "gaps.parquet": {
+            "bytes": 10383,
+            "rows": 963,
+            "sha256": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d"
+          },
+          "logs.parquet": {
+            "bytes": 409044,
+            "rows": 61632,
+            "sha256": "339e96f37e43313ec1bd8f313dc43b05a47f976b2e4e16628a7e10154733036c"
+          },
+          "metrics.parquet": {
+            "bytes": 15321,
+            "rows": 963,
+            "sha256": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722"
+          },
+          "spans.parquet": {
+            "bytes": 16654,
+            "rows": 963,
+            "sha256": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 4136,
+            "rows": 8,
+            "sha256": "fee10923b193871efef2b96ef1eb6df95554cad4bfeb2b83608f0bc8947b5da0"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000017013,
+          "node-1": 1800000000000017030,
+          "node-10": 1800000000000016911,
+          "node-11": 1800000000000016928,
+          "node-12": 1800000000000016945,
+          "node-13": 1800000000000016962,
+          "node-14": 1800000000000016979,
+          "node-15": 1800000000000016996,
+          "node-2": 1800000000000017047,
+          "node-3": 1800000000000017064,
+          "node-4": 1800000000000016809,
+          "node-5": 1800000000000016826,
+          "node-6": 1800000000000016843,
+          "node-7": 1800000000000016860,
+          "node-8": 1800000000000016877,
+          "node-9": 1800000000000016894
+        },
+        "journal_label": 1,
+        "last_group": 963,
+        "received_max_ns": 1800000000000000963,
+        "received_min_ns": 1800000000000000001,
+        "records": 963,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 321977313,
+      "seed": 2703163393,
+      "shape": "repeat",
+      "target_mib": 64,
+      "user_seconds": 0.498722,
+      "system_seconds": 0.173502,
+      "peak_rss_kib": 352172,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/candidate",
+        "/workspace/scratch/stream-output-run-01/repeat-64-2703163393-candidate",
+        "repeat",
+        "64",
+        "2703163393"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.7047711339982925
+    },
+    "baseline": {
+      "build_seconds_instrumented": 0.498773719,
+      "encoded_group_bytes": 67131412,
+      "groups": 963,
+      "heap_after_build_bytes": 67203098,
+      "heap_start_bytes": 67200442,
+      "incremental_peak_heap_bytes": 254514719,
+      "input_sha256": "bf38b084005faa1b5d7d78bb1012956d7eeec234d2db14561975f1de65cac724",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 476985,
+            "rows": 963,
+            "sha256": "c839cc16ec9d1d724e5d38bc40ed3093009aea7307c16731c537cc7e2fb34395"
+          },
+          "gaps.parquet": {
+            "bytes": 10383,
+            "rows": 963,
+            "sha256": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d"
+          },
+          "logs.parquet": {
+            "bytes": 409044,
+            "rows": 61632,
+            "sha256": "339e96f37e43313ec1bd8f313dc43b05a47f976b2e4e16628a7e10154733036c"
+          },
+          "metrics.parquet": {
+            "bytes": 15321,
+            "rows": 963,
+            "sha256": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722"
+          },
+          "spans.parquet": {
+            "bytes": 16654,
+            "rows": 963,
+            "sha256": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 4136,
+            "rows": 8,
+            "sha256": "fee10923b193871efef2b96ef1eb6df95554cad4bfeb2b83608f0bc8947b5da0"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000017013,
+          "node-1": 1800000000000017030,
+          "node-10": 1800000000000016911,
+          "node-11": 1800000000000016928,
+          "node-12": 1800000000000016945,
+          "node-13": 1800000000000016962,
+          "node-14": 1800000000000016979,
+          "node-15": 1800000000000016996,
+          "node-2": 1800000000000017047,
+          "node-3": 1800000000000017064,
+          "node-4": 1800000000000016809,
+          "node-5": 1800000000000016826,
+          "node-6": 1800000000000016843,
+          "node-7": 1800000000000016860,
+          "node-8": 1800000000000016877,
+          "node-9": 1800000000000016894
+        },
+        "journal_label": 1,
+        "last_group": 963,
+        "received_max_ns": 1800000000000000963,
+        "received_min_ns": 1800000000000000001,
+        "records": 963,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 321715161,
+      "seed": 2703163393,
+      "shape": "repeat",
+      "target_mib": 64,
+      "user_seconds": 0.561453,
+      "system_seconds": 0.12124499999999999,
+      "peak_rss_kib": 352188,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/baseline",
+        "/workspace/scratch/stream-output-run-01/repeat-64-2703163393-baseline",
+        "repeat",
+        "64",
+        "2703163393"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.703831896003976
+    },
+    "output_sha256": {
+      "segments/seg-00000000000000000001/text_filter.bin": "fee10923b193871efef2b96ef1eb6df95554cad4bfeb2b83608f0bc8947b5da0",
+      "segments/seg-00000000000000000001/manifest.json": "a5e757f0b1b310d10194063f39bff2b8bdffa6c4537bbcb5a5a53e7e8df67153",
+      "segments/seg-00000000000000000001/spans.parquet": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f",
+      "segments/seg-00000000000000000001/batches.parquet": "c839cc16ec9d1d724e5d38bc40ed3093009aea7307c16731c537cc7e2fb34395",
+      "segments/seg-00000000000000000001/metrics.parquet": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722",
+      "segments/seg-00000000000000000001/logs.parquet": "339e96f37e43313ec1bd8f313dc43b05a47f976b2e4e16628a7e10154733036c",
+      "segments/seg-00000000000000000001/gaps.parquet": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d",
+      "segments/seg-00000000000000000001/spans_filter.bin": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+    },
+    "ratios": {
+      "incremental_peak_heap_bytes": 1.0010299993691132,
+      "peak_rss_kib": 0.9999545697184459,
+      "build_seconds_instrumented": 0.9852431218413896
+    }
+  },
+  {
+    "shape": "repeat",
+    "mib": 64,
+    "seed": 2703163394,
+    "order": [
+      "baseline",
+      "candidate"
+    ],
+    "baseline": {
+      "build_seconds_instrumented": 0.462955552,
+      "encoded_group_bytes": 67131412,
+      "groups": 963,
+      "heap_after_build_bytes": 67203098,
+      "heap_start_bytes": 67200442,
+      "incremental_peak_heap_bytes": 254514719,
+      "input_sha256": "bf38b084005faa1b5d7d78bb1012956d7eeec234d2db14561975f1de65cac724",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 476985,
+            "rows": 963,
+            "sha256": "c839cc16ec9d1d724e5d38bc40ed3093009aea7307c16731c537cc7e2fb34395"
+          },
+          "gaps.parquet": {
+            "bytes": 10383,
+            "rows": 963,
+            "sha256": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d"
+          },
+          "logs.parquet": {
+            "bytes": 409044,
+            "rows": 61632,
+            "sha256": "339e96f37e43313ec1bd8f313dc43b05a47f976b2e4e16628a7e10154733036c"
+          },
+          "metrics.parquet": {
+            "bytes": 15321,
+            "rows": 963,
+            "sha256": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722"
+          },
+          "spans.parquet": {
+            "bytes": 16654,
+            "rows": 963,
+            "sha256": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 4136,
+            "rows": 8,
+            "sha256": "fee10923b193871efef2b96ef1eb6df95554cad4bfeb2b83608f0bc8947b5da0"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000017013,
+          "node-1": 1800000000000017030,
+          "node-10": 1800000000000016911,
+          "node-11": 1800000000000016928,
+          "node-12": 1800000000000016945,
+          "node-13": 1800000000000016962,
+          "node-14": 1800000000000016979,
+          "node-15": 1800000000000016996,
+          "node-2": 1800000000000017047,
+          "node-3": 1800000000000017064,
+          "node-4": 1800000000000016809,
+          "node-5": 1800000000000016826,
+          "node-6": 1800000000000016843,
+          "node-7": 1800000000000016860,
+          "node-8": 1800000000000016877,
+          "node-9": 1800000000000016894
+        },
+        "journal_label": 1,
+        "last_group": 963,
+        "received_max_ns": 1800000000000000963,
+        "received_min_ns": 1800000000000000001,
+        "records": 963,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 321715161,
+      "seed": 2703163394,
+      "shape": "repeat",
+      "target_mib": 64,
+      "user_seconds": 0.48929799999999996,
+      "system_seconds": 0.155629,
+      "peak_rss_kib": 352312,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/baseline",
+        "/workspace/scratch/stream-output-run-01/repeat-64-2703163394-baseline",
+        "repeat",
+        "64",
+        "2703163394"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.6536834959988482
+    },
+    "candidate": {
+      "build_seconds_instrumented": 0.448936855,
+      "encoded_group_bytes": 67131412,
+      "groups": 963,
+      "heap_after_build_bytes": 67203100,
+      "heap_start_bytes": 67200444,
+      "incremental_peak_heap_bytes": 254776869,
+      "input_sha256": "bf38b084005faa1b5d7d78bb1012956d7eeec234d2db14561975f1de65cac724",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 476985,
+            "rows": 963,
+            "sha256": "c839cc16ec9d1d724e5d38bc40ed3093009aea7307c16731c537cc7e2fb34395"
+          },
+          "gaps.parquet": {
+            "bytes": 10383,
+            "rows": 963,
+            "sha256": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d"
+          },
+          "logs.parquet": {
+            "bytes": 409044,
+            "rows": 61632,
+            "sha256": "339e96f37e43313ec1bd8f313dc43b05a47f976b2e4e16628a7e10154733036c"
+          },
+          "metrics.parquet": {
+            "bytes": 15321,
+            "rows": 963,
+            "sha256": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722"
+          },
+          "spans.parquet": {
+            "bytes": 16654,
+            "rows": 963,
+            "sha256": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 4136,
+            "rows": 8,
+            "sha256": "fee10923b193871efef2b96ef1eb6df95554cad4bfeb2b83608f0bc8947b5da0"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000017013,
+          "node-1": 1800000000000017030,
+          "node-10": 1800000000000016911,
+          "node-11": 1800000000000016928,
+          "node-12": 1800000000000016945,
+          "node-13": 1800000000000016962,
+          "node-14": 1800000000000016979,
+          "node-15": 1800000000000016996,
+          "node-2": 1800000000000017047,
+          "node-3": 1800000000000017064,
+          "node-4": 1800000000000016809,
+          "node-5": 1800000000000016826,
+          "node-6": 1800000000000016843,
+          "node-7": 1800000000000016860,
+          "node-8": 1800000000000016877,
+          "node-9": 1800000000000016894
+        },
+        "journal_label": 1,
+        "last_group": 963,
+        "received_max_ns": 1800000000000000963,
+        "received_min_ns": 1800000000000000001,
+        "records": 963,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 321977313,
+      "seed": 2703163394,
+      "shape": "repeat",
+      "target_mib": 64,
+      "user_seconds": 0.468891,
+      "system_seconds": 0.16561399999999998,
+      "peak_rss_kib": 352224,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/candidate",
+        "/workspace/scratch/stream-output-run-01/repeat-64-2703163394-candidate",
+        "repeat",
+        "64",
+        "2703163394"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.6545374429988442
+    },
+    "output_sha256": {
+      "segments/seg-00000000000000000001/text_filter.bin": "fee10923b193871efef2b96ef1eb6df95554cad4bfeb2b83608f0bc8947b5da0",
+      "segments/seg-00000000000000000001/manifest.json": "a5e757f0b1b310d10194063f39bff2b8bdffa6c4537bbcb5a5a53e7e8df67153",
+      "segments/seg-00000000000000000001/spans.parquet": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f",
+      "segments/seg-00000000000000000001/batches.parquet": "c839cc16ec9d1d724e5d38bc40ed3093009aea7307c16731c537cc7e2fb34395",
+      "segments/seg-00000000000000000001/metrics.parquet": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722",
+      "segments/seg-00000000000000000001/logs.parquet": "339e96f37e43313ec1bd8f313dc43b05a47f976b2e4e16628a7e10154733036c",
+      "segments/seg-00000000000000000001/gaps.parquet": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d",
+      "segments/seg-00000000000000000001/spans_filter.bin": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+    },
+    "ratios": {
+      "incremental_peak_heap_bytes": 1.0010299993691132,
+      "peak_rss_kib": 0.999750221394673,
+      "build_seconds_instrumented": 0.969719129753519
+    }
+  },
+  {
+    "shape": "repeat",
+    "mib": 64,
+    "seed": 2703163395,
+    "order": [
+      "candidate",
+      "baseline"
+    ],
+    "candidate": {
+      "build_seconds_instrumented": 0.429110708,
+      "encoded_group_bytes": 67131412,
+      "groups": 963,
+      "heap_after_build_bytes": 67203100,
+      "heap_start_bytes": 67200444,
+      "incremental_peak_heap_bytes": 254776869,
+      "input_sha256": "bf38b084005faa1b5d7d78bb1012956d7eeec234d2db14561975f1de65cac724",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 476985,
+            "rows": 963,
+            "sha256": "c839cc16ec9d1d724e5d38bc40ed3093009aea7307c16731c537cc7e2fb34395"
+          },
+          "gaps.parquet": {
+            "bytes": 10383,
+            "rows": 963,
+            "sha256": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d"
+          },
+          "logs.parquet": {
+            "bytes": 409044,
+            "rows": 61632,
+            "sha256": "339e96f37e43313ec1bd8f313dc43b05a47f976b2e4e16628a7e10154733036c"
+          },
+          "metrics.parquet": {
+            "bytes": 15321,
+            "rows": 963,
+            "sha256": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722"
+          },
+          "spans.parquet": {
+            "bytes": 16654,
+            "rows": 963,
+            "sha256": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 4136,
+            "rows": 8,
+            "sha256": "fee10923b193871efef2b96ef1eb6df95554cad4bfeb2b83608f0bc8947b5da0"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000017013,
+          "node-1": 1800000000000017030,
+          "node-10": 1800000000000016911,
+          "node-11": 1800000000000016928,
+          "node-12": 1800000000000016945,
+          "node-13": 1800000000000016962,
+          "node-14": 1800000000000016979,
+          "node-15": 1800000000000016996,
+          "node-2": 1800000000000017047,
+          "node-3": 1800000000000017064,
+          "node-4": 1800000000000016809,
+          "node-5": 1800000000000016826,
+          "node-6": 1800000000000016843,
+          "node-7": 1800000000000016860,
+          "node-8": 1800000000000016877,
+          "node-9": 1800000000000016894
+        },
+        "journal_label": 1,
+        "last_group": 963,
+        "received_max_ns": 1800000000000000963,
+        "received_min_ns": 1800000000000000001,
+        "records": 963,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 321977313,
+      "seed": 2703163395,
+      "shape": "repeat",
+      "target_mib": 64,
+      "user_seconds": 0.489562,
+      "system_seconds": 0.116034,
+      "peak_rss_kib": 352212,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/candidate",
+        "/workspace/scratch/stream-output-run-01/repeat-64-2703163395-candidate",
+        "repeat",
+        "64",
+        "2703163395"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.6539460130006773
+    },
+    "baseline": {
+      "build_seconds_instrumented": 0.471165844,
+      "encoded_group_bytes": 67131412,
+      "groups": 963,
+      "heap_after_build_bytes": 67203098,
+      "heap_start_bytes": 67200442,
+      "incremental_peak_heap_bytes": 254514719,
+      "input_sha256": "bf38b084005faa1b5d7d78bb1012956d7eeec234d2db14561975f1de65cac724",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 476985,
+            "rows": 963,
+            "sha256": "c839cc16ec9d1d724e5d38bc40ed3093009aea7307c16731c537cc7e2fb34395"
+          },
+          "gaps.parquet": {
+            "bytes": 10383,
+            "rows": 963,
+            "sha256": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d"
+          },
+          "logs.parquet": {
+            "bytes": 409044,
+            "rows": 61632,
+            "sha256": "339e96f37e43313ec1bd8f313dc43b05a47f976b2e4e16628a7e10154733036c"
+          },
+          "metrics.parquet": {
+            "bytes": 15321,
+            "rows": 963,
+            "sha256": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722"
+          },
+          "spans.parquet": {
+            "bytes": 16654,
+            "rows": 963,
+            "sha256": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 4136,
+            "rows": 8,
+            "sha256": "fee10923b193871efef2b96ef1eb6df95554cad4bfeb2b83608f0bc8947b5da0"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000017013,
+          "node-1": 1800000000000017030,
+          "node-10": 1800000000000016911,
+          "node-11": 1800000000000016928,
+          "node-12": 1800000000000016945,
+          "node-13": 1800000000000016962,
+          "node-14": 1800000000000016979,
+          "node-15": 1800000000000016996,
+          "node-2": 1800000000000017047,
+          "node-3": 1800000000000017064,
+          "node-4": 1800000000000016809,
+          "node-5": 1800000000000016826,
+          "node-6": 1800000000000016843,
+          "node-7": 1800000000000016860,
+          "node-8": 1800000000000016877,
+          "node-9": 1800000000000016894
+        },
+        "journal_label": 1,
+        "last_group": 963,
+        "received_max_ns": 1800000000000000963,
+        "received_min_ns": 1800000000000000001,
+        "records": 963,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 321715161,
+      "seed": 2703163395,
+      "shape": "repeat",
+      "target_mib": 64,
+      "user_seconds": 0.48586799999999997,
+      "system_seconds": 0.17174499999999998,
+      "peak_rss_kib": 352204,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/baseline",
+        "/workspace/scratch/stream-output-run-01/repeat-64-2703163395-baseline",
+        "repeat",
+        "64",
+        "2703163395"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.7040611500051455
+    },
+    "output_sha256": {
+      "segments/seg-00000000000000000001/text_filter.bin": "fee10923b193871efef2b96ef1eb6df95554cad4bfeb2b83608f0bc8947b5da0",
+      "segments/seg-00000000000000000001/manifest.json": "a5e757f0b1b310d10194063f39bff2b8bdffa6c4537bbcb5a5a53e7e8df67153",
+      "segments/seg-00000000000000000001/spans.parquet": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f",
+      "segments/seg-00000000000000000001/batches.parquet": "c839cc16ec9d1d724e5d38bc40ed3093009aea7307c16731c537cc7e2fb34395",
+      "segments/seg-00000000000000000001/metrics.parquet": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722",
+      "segments/seg-00000000000000000001/logs.parquet": "339e96f37e43313ec1bd8f313dc43b05a47f976b2e4e16628a7e10154733036c",
+      "segments/seg-00000000000000000001/gaps.parquet": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d",
+      "segments/seg-00000000000000000001/spans_filter.bin": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+    },
+    "ratios": {
+      "incremental_peak_heap_bytes": 1.0010299993691132,
+      "peak_rss_kib": 1.0000227141088687,
+      "build_seconds_instrumented": 0.9107423924387864
+    }
+  },
+  {
+    "shape": "entropy",
+    "mib": 16,
+    "seed": 2703163393,
+    "order": [
+      "baseline",
+      "candidate"
+    ],
+    "baseline": {
+      "build_seconds_instrumented": 0.232299579,
+      "encoded_group_bytes": 16791906,
+      "groups": 241,
+      "heap_after_build_bytes": 16812575,
+      "heap_start_bytes": 16809919,
+      "incremental_peak_heap_bytes": 84698223,
+      "input_sha256": "091244a63f81c365f308d9f69cf5c4b7b06b2d0c0b3e951db38d42f7196a1811",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 13292259,
+            "rows": 241,
+            "sha256": "e56263fb52d8b992e44e1059f0cd935cf6f144e9dc8107d85077a4e4376d5a6f"
+          },
+          "gaps.parquet": {
+            "bytes": 3878,
+            "rows": 241,
+            "sha256": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161"
+          },
+          "logs.parquet": {
+            "bytes": 13166057,
+            "rows": 15424,
+            "sha256": "19acdaee16f5d5bb33426ebc0e209ec69921aabcee90e51fdab29a38598a6e4a"
+          },
+          "metrics.parquet": {
+            "bytes": 6585,
+            "rows": 241,
+            "sha256": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535"
+          },
+          "spans.parquet": {
+            "bytes": 7181,
+            "rows": 241,
+            "sha256": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 262160,
+            "rows": 2,
+            "sha256": "e03fa925215bf152860944cca94eb52d3e59ea83f02f9d19d9441266c172ec20"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000004773,
+          "node-1": 1800000000000004790,
+          "node-10": 1800000000000004671,
+          "node-11": 1800000000000004688,
+          "node-12": 1800000000000004705,
+          "node-13": 1800000000000004722,
+          "node-14": 1800000000000004739,
+          "node-15": 1800000000000004756,
+          "node-2": 1800000000000004535,
+          "node-3": 1800000000000004552,
+          "node-4": 1800000000000004569,
+          "node-5": 1800000000000004586,
+          "node-6": 1800000000000004603,
+          "node-7": 1800000000000004620,
+          "node-8": 1800000000000004637,
+          "node-9": 1800000000000004654
+        },
+        "journal_label": 1,
+        "last_group": 241,
+        "received_max_ns": 1800000000000000241,
+        "received_min_ns": 1800000000000000001,
+        "records": 241,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 101508142,
+      "seed": 2703163393,
+      "shape": "entropy",
+      "target_mib": 16,
+      "user_seconds": 0.26095599999999997,
+      "system_seconds": 0.051616999999999996,
+      "peak_rss_kib": 112344,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/baseline",
+        "/workspace/scratch/stream-output-run-01/entropy-16-2703163393-baseline",
+        "entropy",
+        "16",
+        "2703163393"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.35326761000033
+    },
+    "candidate": {
+      "build_seconds_instrumented": 0.246142717,
+      "encoded_group_bytes": 16791906,
+      "groups": 241,
+      "heap_after_build_bytes": 16812577,
+      "heap_start_bytes": 16809921,
+      "incremental_peak_heap_bytes": 81420367,
+      "input_sha256": "091244a63f81c365f308d9f69cf5c4b7b06b2d0c0b3e951db38d42f7196a1811",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 13292259,
+            "rows": 241,
+            "sha256": "e56263fb52d8b992e44e1059f0cd935cf6f144e9dc8107d85077a4e4376d5a6f"
+          },
+          "gaps.parquet": {
+            "bytes": 3878,
+            "rows": 241,
+            "sha256": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161"
+          },
+          "logs.parquet": {
+            "bytes": 13166057,
+            "rows": 15424,
+            "sha256": "19acdaee16f5d5bb33426ebc0e209ec69921aabcee90e51fdab29a38598a6e4a"
+          },
+          "metrics.parquet": {
+            "bytes": 6585,
+            "rows": 241,
+            "sha256": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535"
+          },
+          "spans.parquet": {
+            "bytes": 7181,
+            "rows": 241,
+            "sha256": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 262160,
+            "rows": 2,
+            "sha256": "e03fa925215bf152860944cca94eb52d3e59ea83f02f9d19d9441266c172ec20"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000004773,
+          "node-1": 1800000000000004790,
+          "node-10": 1800000000000004671,
+          "node-11": 1800000000000004688,
+          "node-12": 1800000000000004705,
+          "node-13": 1800000000000004722,
+          "node-14": 1800000000000004739,
+          "node-15": 1800000000000004756,
+          "node-2": 1800000000000004535,
+          "node-3": 1800000000000004552,
+          "node-4": 1800000000000004569,
+          "node-5": 1800000000000004586,
+          "node-6": 1800000000000004603,
+          "node-7": 1800000000000004620,
+          "node-8": 1800000000000004637,
+          "node-9": 1800000000000004654
+        },
+        "journal_label": 1,
+        "last_group": 241,
+        "received_max_ns": 1800000000000000241,
+        "received_min_ns": 1800000000000000001,
+        "records": 241,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 98230288,
+      "seed": 2703163393,
+      "shape": "entropy",
+      "target_mib": 16,
+      "user_seconds": 0.2873,
+      "system_seconds": 0.044659,
+      "peak_rss_kib": 103212,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/candidate",
+        "/workspace/scratch/stream-output-run-01/entropy-16-2703163393-candidate",
+        "entropy",
+        "16",
+        "2703163393"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.3538851830016938
+    },
+    "output_sha256": {
+      "segments/seg-00000000000000000001/text_filter.bin": "e03fa925215bf152860944cca94eb52d3e59ea83f02f9d19d9441266c172ec20",
+      "segments/seg-00000000000000000001/manifest.json": "fae81851a1a41e1198b012b0cee4a5084b8ebc6ac77c31d8411bfa5735982825",
+      "segments/seg-00000000000000000001/spans.parquet": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858",
+      "segments/seg-00000000000000000001/batches.parquet": "e56263fb52d8b992e44e1059f0cd935cf6f144e9dc8107d85077a4e4376d5a6f",
+      "segments/seg-00000000000000000001/metrics.parquet": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535",
+      "segments/seg-00000000000000000001/logs.parquet": "19acdaee16f5d5bb33426ebc0e209ec69921aabcee90e51fdab29a38598a6e4a",
+      "segments/seg-00000000000000000001/gaps.parquet": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161",
+      "segments/seg-00000000000000000001/spans_filter.bin": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+    },
+    "ratios": {
+      "incremental_peak_heap_bytes": 0.9612995894848939,
+      "peak_rss_kib": 0.9187139500106815,
+      "build_seconds_instrumented": 1.0595917481193542
+    }
+  },
+  {
+    "shape": "entropy",
+    "mib": 16,
+    "seed": 2703163394,
+    "order": [
+      "candidate",
+      "baseline"
+    ],
+    "candidate": {
+      "build_seconds_instrumented": 0.22161726,
+      "encoded_group_bytes": 16791906,
+      "groups": 241,
+      "heap_after_build_bytes": 16812577,
+      "heap_start_bytes": 16809921,
+      "incremental_peak_heap_bytes": 81421039,
+      "input_sha256": "abe7e7bce8fa449ebd2b212f8970ed64d0f9f836498f6647fdd2146177b194dd",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 13292811,
+            "rows": 241,
+            "sha256": "214ce471f3ff1eb18f71438a815f9fe005270897e99b4de972ddf71f0a129d44"
+          },
+          "gaps.parquet": {
+            "bytes": 3878,
+            "rows": 241,
+            "sha256": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161"
+          },
+          "logs.parquet": {
+            "bytes": 13166040,
+            "rows": 15424,
+            "sha256": "62474f542b0f10970b35dfcda3c9e1f25c1de7a1f0a26e2b0cfd6f7037f3d7c0"
+          },
+          "metrics.parquet": {
+            "bytes": 6585,
+            "rows": 241,
+            "sha256": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535"
+          },
+          "spans.parquet": {
+            "bytes": 7181,
+            "rows": 241,
+            "sha256": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 262160,
+            "rows": 2,
+            "sha256": "68074932b4bdfe8b14597a96bf18f920c82280c547992042a9a47ddb12b903d9"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000004773,
+          "node-1": 1800000000000004790,
+          "node-10": 1800000000000004671,
+          "node-11": 1800000000000004688,
+          "node-12": 1800000000000004705,
+          "node-13": 1800000000000004722,
+          "node-14": 1800000000000004739,
+          "node-15": 1800000000000004756,
+          "node-2": 1800000000000004535,
+          "node-3": 1800000000000004552,
+          "node-4": 1800000000000004569,
+          "node-5": 1800000000000004586,
+          "node-6": 1800000000000004603,
+          "node-7": 1800000000000004620,
+          "node-8": 1800000000000004637,
+          "node-9": 1800000000000004654
+        },
+        "journal_label": 1,
+        "last_group": 241,
+        "received_max_ns": 1800000000000000241,
+        "received_min_ns": 1800000000000000001,
+        "records": 241,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 98230960,
+      "seed": 2703163394,
+      "shape": "entropy",
+      "target_mib": 16,
+      "user_seconds": 0.27854,
+      "system_seconds": 0.029130999999999997,
+      "peak_rss_kib": 103408,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/candidate",
+        "/workspace/scratch/stream-output-run-01/entropy-16-2703163394-candidate",
+        "entropy",
+        "16",
+        "2703163394"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.35341209399484796
+    },
+    "baseline": {
+      "build_seconds_instrumented": 0.228802422,
+      "encoded_group_bytes": 16791906,
+      "groups": 241,
+      "heap_after_build_bytes": 16812575,
+      "heap_start_bytes": 16809919,
+      "incremental_peak_heap_bytes": 84695381,
+      "input_sha256": "abe7e7bce8fa449ebd2b212f8970ed64d0f9f836498f6647fdd2146177b194dd",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 13292811,
+            "rows": 241,
+            "sha256": "214ce471f3ff1eb18f71438a815f9fe005270897e99b4de972ddf71f0a129d44"
+          },
+          "gaps.parquet": {
+            "bytes": 3878,
+            "rows": 241,
+            "sha256": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161"
+          },
+          "logs.parquet": {
+            "bytes": 13166040,
+            "rows": 15424,
+            "sha256": "62474f542b0f10970b35dfcda3c9e1f25c1de7a1f0a26e2b0cfd6f7037f3d7c0"
+          },
+          "metrics.parquet": {
+            "bytes": 6585,
+            "rows": 241,
+            "sha256": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535"
+          },
+          "spans.parquet": {
+            "bytes": 7181,
+            "rows": 241,
+            "sha256": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 262160,
+            "rows": 2,
+            "sha256": "68074932b4bdfe8b14597a96bf18f920c82280c547992042a9a47ddb12b903d9"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000004773,
+          "node-1": 1800000000000004790,
+          "node-10": 1800000000000004671,
+          "node-11": 1800000000000004688,
+          "node-12": 1800000000000004705,
+          "node-13": 1800000000000004722,
+          "node-14": 1800000000000004739,
+          "node-15": 1800000000000004756,
+          "node-2": 1800000000000004535,
+          "node-3": 1800000000000004552,
+          "node-4": 1800000000000004569,
+          "node-5": 1800000000000004586,
+          "node-6": 1800000000000004603,
+          "node-7": 1800000000000004620,
+          "node-8": 1800000000000004637,
+          "node-9": 1800000000000004654
+        },
+        "journal_label": 1,
+        "last_group": 241,
+        "received_max_ns": 1800000000000000241,
+        "received_min_ns": 1800000000000000001,
+        "records": 241,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 101505300,
+      "seed": 2703163394,
+      "shape": "entropy",
+      "target_mib": 16,
+      "user_seconds": 0.268433,
+      "system_seconds": 0.039804,
+      "peak_rss_kib": 112284,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/baseline",
+        "/workspace/scratch/stream-output-run-01/entropy-16-2703163394-baseline",
+        "entropy",
+        "16",
+        "2703163394"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.3531517170049483
+    },
+    "output_sha256": {
+      "segments/seg-00000000000000000001/text_filter.bin": "68074932b4bdfe8b14597a96bf18f920c82280c547992042a9a47ddb12b903d9",
+      "segments/seg-00000000000000000001/manifest.json": "fbf50f00e339355f829b41d6829de3e0b0cea8cec2b345bd251a26a299ff43a2",
+      "segments/seg-00000000000000000001/spans.parquet": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858",
+      "segments/seg-00000000000000000001/batches.parquet": "214ce471f3ff1eb18f71438a815f9fe005270897e99b4de972ddf71f0a129d44",
+      "segments/seg-00000000000000000001/metrics.parquet": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535",
+      "segments/seg-00000000000000000001/logs.parquet": "62474f542b0f10970b35dfcda3c9e1f25c1de7a1f0a26e2b0cfd6f7037f3d7c0",
+      "segments/seg-00000000000000000001/gaps.parquet": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161",
+      "segments/seg-00000000000000000001/spans_filter.bin": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+    },
+    "ratios": {
+      "incremental_peak_heap_bytes": 0.9613397807372754,
+      "peak_rss_kib": 0.920950447080617,
+      "build_seconds_instrumented": 0.9685966523553672
+    }
+  },
+  {
+    "shape": "entropy",
+    "mib": 16,
+    "seed": 2703163395,
+    "order": [
+      "baseline",
+      "candidate"
+    ],
+    "baseline": {
+      "build_seconds_instrumented": 0.230112942,
+      "encoded_group_bytes": 16791906,
+      "groups": 241,
+      "heap_after_build_bytes": 16812575,
+      "heap_start_bytes": 16809919,
+      "incremental_peak_heap_bytes": 84697621,
+      "input_sha256": "1e732b35ff85292b197aa22a8cea1e12a75d43bc9e2d39f3786341b758fccad6",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 13293367,
+            "rows": 241,
+            "sha256": "20b57bfc0195e63798a0dedfbadcaedfa255874f22177445278c8b5ad88f58c6"
+          },
+          "gaps.parquet": {
+            "bytes": 3878,
+            "rows": 241,
+            "sha256": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161"
+          },
+          "logs.parquet": {
+            "bytes": 13166142,
+            "rows": 15424,
+            "sha256": "352a1d25a2a1a7309fa98484686c28091385b47fbe85c314c985604afa6c8d49"
+          },
+          "metrics.parquet": {
+            "bytes": 6585,
+            "rows": 241,
+            "sha256": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535"
+          },
+          "spans.parquet": {
+            "bytes": 7181,
+            "rows": 241,
+            "sha256": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 262160,
+            "rows": 2,
+            "sha256": "5ed7e30f31c6accefc2192595f3dff1e11abb757eac5cefb087ac26e800d23c6"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000004773,
+          "node-1": 1800000000000004790,
+          "node-10": 1800000000000004671,
+          "node-11": 1800000000000004688,
+          "node-12": 1800000000000004705,
+          "node-13": 1800000000000004722,
+          "node-14": 1800000000000004739,
+          "node-15": 1800000000000004756,
+          "node-2": 1800000000000004535,
+          "node-3": 1800000000000004552,
+          "node-4": 1800000000000004569,
+          "node-5": 1800000000000004586,
+          "node-6": 1800000000000004603,
+          "node-7": 1800000000000004620,
+          "node-8": 1800000000000004637,
+          "node-9": 1800000000000004654
+        },
+        "journal_label": 1,
+        "last_group": 241,
+        "received_max_ns": 1800000000000000241,
+        "received_min_ns": 1800000000000000001,
+        "records": 241,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 101507540,
+      "seed": 2703163395,
+      "shape": "entropy",
+      "target_mib": 16,
+      "user_seconds": 0.241994,
+      "system_seconds": 0.06514099999999999,
+      "peak_rss_kib": 112404,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/baseline",
+        "/workspace/scratch/stream-output-run-01/entropy-16-2703163395-baseline",
+        "entropy",
+        "16",
+        "2703163395"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.3531353409998701
+    },
+    "candidate": {
+      "build_seconds_instrumented": 0.218309714,
+      "encoded_group_bytes": 16791906,
+      "groups": 241,
+      "heap_after_build_bytes": 16812577,
+      "heap_start_bytes": 16809921,
+      "incremental_peak_heap_bytes": 81421802,
+      "input_sha256": "1e732b35ff85292b197aa22a8cea1e12a75d43bc9e2d39f3786341b758fccad6",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 13293367,
+            "rows": 241,
+            "sha256": "20b57bfc0195e63798a0dedfbadcaedfa255874f22177445278c8b5ad88f58c6"
+          },
+          "gaps.parquet": {
+            "bytes": 3878,
+            "rows": 241,
+            "sha256": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161"
+          },
+          "logs.parquet": {
+            "bytes": 13166142,
+            "rows": 15424,
+            "sha256": "352a1d25a2a1a7309fa98484686c28091385b47fbe85c314c985604afa6c8d49"
+          },
+          "metrics.parquet": {
+            "bytes": 6585,
+            "rows": 241,
+            "sha256": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535"
+          },
+          "spans.parquet": {
+            "bytes": 7181,
+            "rows": 241,
+            "sha256": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 262160,
+            "rows": 2,
+            "sha256": "5ed7e30f31c6accefc2192595f3dff1e11abb757eac5cefb087ac26e800d23c6"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000004773,
+          "node-1": 1800000000000004790,
+          "node-10": 1800000000000004671,
+          "node-11": 1800000000000004688,
+          "node-12": 1800000000000004705,
+          "node-13": 1800000000000004722,
+          "node-14": 1800000000000004739,
+          "node-15": 1800000000000004756,
+          "node-2": 1800000000000004535,
+          "node-3": 1800000000000004552,
+          "node-4": 1800000000000004569,
+          "node-5": 1800000000000004586,
+          "node-6": 1800000000000004603,
+          "node-7": 1800000000000004620,
+          "node-8": 1800000000000004637,
+          "node-9": 1800000000000004654
+        },
+        "journal_label": 1,
+        "last_group": 241,
+        "received_max_ns": 1800000000000000241,
+        "received_min_ns": 1800000000000000001,
+        "records": 241,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 98231723,
+      "seed": 2703163395,
+      "shape": "entropy",
+      "target_mib": 16,
+      "user_seconds": 0.237557,
+      "system_seconds": 0.056423999999999995,
+      "peak_rss_kib": 103212,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/candidate",
+        "/workspace/scratch/stream-output-run-01/entropy-16-2703163395-candidate",
+        "entropy",
+        "16",
+        "2703163395"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 0.30277370499970857
+    },
+    "output_sha256": {
+      "segments/seg-00000000000000000001/text_filter.bin": "5ed7e30f31c6accefc2192595f3dff1e11abb757eac5cefb087ac26e800d23c6",
+      "segments/seg-00000000000000000001/manifest.json": "109b0836bd4e8b980eed90418d2e3c360d1ab003dc53fc7ecb05e639b82b9fc7",
+      "segments/seg-00000000000000000001/spans.parquet": "becb047b3d0b17982f78b1e26af9531a72d9403e8cc799712a1f131e2898c858",
+      "segments/seg-00000000000000000001/batches.parquet": "20b57bfc0195e63798a0dedfbadcaedfa255874f22177445278c8b5ad88f58c6",
+      "segments/seg-00000000000000000001/metrics.parquet": "7d6bf738df488c3aae20130db2878ddc0d71d09f4e801ecc965430e078fec535",
+      "segments/seg-00000000000000000001/logs.parquet": "352a1d25a2a1a7309fa98484686c28091385b47fbe85c314c985604afa6c8d49",
+      "segments/seg-00000000000000000001/gaps.parquet": "7d525e72419a25335c7522069d1f50394fc491aad48e70809b798000e34c2161",
+      "segments/seg-00000000000000000001/spans_filter.bin": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+    },
+    "ratios": {
+      "incremental_peak_heap_bytes": 0.9613233646786844,
+      "peak_rss_kib": 0.9182235507633181,
+      "build_seconds_instrumented": 0.9487068050262032
+    }
+  },
+  {
+    "shape": "entropy",
+    "mib": 64,
+    "seed": 2703163393,
+    "order": [
+      "candidate",
+      "baseline"
+    ],
+    "candidate": {
+      "build_seconds_instrumented": 0.923975561,
+      "encoded_group_bytes": 67131412,
+      "groups": 963,
+      "heap_after_build_bytes": 67203103,
+      "heap_start_bytes": 67200447,
+      "incremental_peak_heap_bytes": 305491162,
+      "input_sha256": "0d5c08d86ce926202eaefe1192eaa1227ed894aa973020173cae46dfaf23f35b",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 53103711,
+            "rows": 963,
+            "sha256": "7a356c451cea69c7245148cfa057ed62bb61c2ab649579d739ec3bb30bf93e23"
+          },
+          "gaps.parquet": {
+            "bytes": 10383,
+            "rows": 963,
+            "sha256": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d"
+          },
+          "logs.parquet": {
+            "bytes": 52596310,
+            "rows": 61632,
+            "sha256": "f774d3c0b56906f197a87e5abf4d256feb800f01c99bf35ef592d888bb7c3e26"
+          },
+          "metrics.parquet": {
+            "bytes": 15321,
+            "rows": 963,
+            "sha256": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722"
+          },
+          "spans.parquet": {
+            "bytes": 16654,
+            "rows": 963,
+            "sha256": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 1048616,
+            "rows": 8,
+            "sha256": "87f5d4fc35498eda16b980ff4ff9e069632aa106156e5ec92a82065288a7b97a"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000017013,
+          "node-1": 1800000000000017030,
+          "node-10": 1800000000000016911,
+          "node-11": 1800000000000016928,
+          "node-12": 1800000000000016945,
+          "node-13": 1800000000000016962,
+          "node-14": 1800000000000016979,
+          "node-15": 1800000000000016996,
+          "node-2": 1800000000000017047,
+          "node-3": 1800000000000017064,
+          "node-4": 1800000000000016809,
+          "node-5": 1800000000000016826,
+          "node-6": 1800000000000016843,
+          "node-7": 1800000000000016860,
+          "node-8": 1800000000000016877,
+          "node-9": 1800000000000016894
+        },
+        "journal_label": 1,
+        "last_group": 963,
+        "received_max_ns": 1800000000000000963,
+        "received_min_ns": 1800000000000000001,
+        "records": 963,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 372691609,
+      "seed": 2703163393,
+      "shape": "entropy",
+      "target_mib": 64,
+      "user_seconds": 1.035276,
+      "system_seconds": 0.200061,
+      "peak_rss_kib": 377912,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/candidate",
+        "/workspace/scratch/stream-output-run-01/entropy-64-2703163393-candidate",
+        "entropy",
+        "64",
+        "2703163393"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 1.3063123960018856
+    },
+    "baseline": {
+      "build_seconds_instrumented": 0.956860946,
+      "encoded_group_bytes": 67131412,
+      "groups": 963,
+      "heap_after_build_bytes": 67203101,
+      "heap_start_bytes": 67200445,
+      "incremental_peak_heap_bytes": 328403190,
+      "input_sha256": "0d5c08d86ce926202eaefe1192eaa1227ed894aa973020173cae46dfaf23f35b",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 53103711,
+            "rows": 963,
+            "sha256": "7a356c451cea69c7245148cfa057ed62bb61c2ab649579d739ec3bb30bf93e23"
+          },
+          "gaps.parquet": {
+            "bytes": 10383,
+            "rows": 963,
+            "sha256": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d"
+          },
+          "logs.parquet": {
+            "bytes": 52596310,
+            "rows": 61632,
+            "sha256": "f774d3c0b56906f197a87e5abf4d256feb800f01c99bf35ef592d888bb7c3e26"
+          },
+          "metrics.parquet": {
+            "bytes": 15321,
+            "rows": 963,
+            "sha256": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722"
+          },
+          "spans.parquet": {
+            "bytes": 16654,
+            "rows": 963,
+            "sha256": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 1048616,
+            "rows": 8,
+            "sha256": "87f5d4fc35498eda16b980ff4ff9e069632aa106156e5ec92a82065288a7b97a"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000017013,
+          "node-1": 1800000000000017030,
+          "node-10": 1800000000000016911,
+          "node-11": 1800000000000016928,
+          "node-12": 1800000000000016945,
+          "node-13": 1800000000000016962,
+          "node-14": 1800000000000016979,
+          "node-15": 1800000000000016996,
+          "node-2": 1800000000000017047,
+          "node-3": 1800000000000017064,
+          "node-4": 1800000000000016809,
+          "node-5": 1800000000000016826,
+          "node-6": 1800000000000016843,
+          "node-7": 1800000000000016860,
+          "node-8": 1800000000000016877,
+          "node-9": 1800000000000016894
+        },
+        "journal_label": 1,
+        "last_group": 963,
+        "received_max_ns": 1800000000000000963,
+        "received_min_ns": 1800000000000000001,
+        "records": 963,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 395603635,
+      "seed": 2703163393,
+      "shape": "entropy",
+      "target_mib": 64,
+      "user_seconds": 1.045507,
+      "system_seconds": 0.219447,
+      "peak_rss_kib": 430240,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/baseline",
+        "/workspace/scratch/stream-output-run-01/entropy-64-2703163393-baseline",
+        "entropy",
+        "64",
+        "2703163393"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 1.3069586350029567
+    },
+    "output_sha256": {
+      "segments/seg-00000000000000000001/text_filter.bin": "87f5d4fc35498eda16b980ff4ff9e069632aa106156e5ec92a82065288a7b97a",
+      "segments/seg-00000000000000000001/manifest.json": "9cd7724fce449ab853b6d5bb0bfd9650d5a131fabd20f68fb931ba336a266d86",
+      "segments/seg-00000000000000000001/spans.parquet": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f",
+      "segments/seg-00000000000000000001/batches.parquet": "7a356c451cea69c7245148cfa057ed62bb61c2ab649579d739ec3bb30bf93e23",
+      "segments/seg-00000000000000000001/metrics.parquet": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722",
+      "segments/seg-00000000000000000001/logs.parquet": "f774d3c0b56906f197a87e5abf4d256feb800f01c99bf35ef592d888bb7c3e26",
+      "segments/seg-00000000000000000001/gaps.parquet": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d",
+      "segments/seg-00000000000000000001/spans_filter.bin": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+    },
+    "ratios": {
+      "incremental_peak_heap_bytes": 0.9302320175391718,
+      "peak_rss_kib": 0.8783748605429528,
+      "build_seconds_instrumented": 0.9656320125327802
+    }
+  },
+  {
+    "shape": "entropy",
+    "mib": 64,
+    "seed": 2703163394,
+    "order": [
+      "baseline",
+      "candidate"
+    ],
+    "baseline": {
+      "build_seconds_instrumented": 0.964006538,
+      "encoded_group_bytes": 67131412,
+      "groups": 963,
+      "heap_after_build_bytes": 67203101,
+      "heap_start_bytes": 67200445,
+      "incremental_peak_heap_bytes": 328413661,
+      "input_sha256": "90b63a0599120b622a743b977e0f309d2a01d0fe6f1da8a8aee4cf9df617d42f",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 53101906,
+            "rows": 963,
+            "sha256": "73be5c631fce65bd2d0f8183e08f4778ea1df1bc7f85b53342a88a092538332b"
+          },
+          "gaps.parquet": {
+            "bytes": 10383,
+            "rows": 963,
+            "sha256": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d"
+          },
+          "logs.parquet": {
+            "bytes": 52596835,
+            "rows": 61632,
+            "sha256": "3646f17c50524e30eb99cee56a55f7db445ea1bc2ae618f9cef446abd2d63a33"
+          },
+          "metrics.parquet": {
+            "bytes": 15321,
+            "rows": 963,
+            "sha256": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722"
+          },
+          "spans.parquet": {
+            "bytes": 16654,
+            "rows": 963,
+            "sha256": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 1048616,
+            "rows": 8,
+            "sha256": "a02875f91caebaffbb06eaa8edec7c5cf16403eb5aa27684ef8d1723cb56c72e"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000017013,
+          "node-1": 1800000000000017030,
+          "node-10": 1800000000000016911,
+          "node-11": 1800000000000016928,
+          "node-12": 1800000000000016945,
+          "node-13": 1800000000000016962,
+          "node-14": 1800000000000016979,
+          "node-15": 1800000000000016996,
+          "node-2": 1800000000000017047,
+          "node-3": 1800000000000017064,
+          "node-4": 1800000000000016809,
+          "node-5": 1800000000000016826,
+          "node-6": 1800000000000016843,
+          "node-7": 1800000000000016860,
+          "node-8": 1800000000000016877,
+          "node-9": 1800000000000016894
+        },
+        "journal_label": 1,
+        "last_group": 963,
+        "received_max_ns": 1800000000000000963,
+        "received_min_ns": 1800000000000000001,
+        "records": 963,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 395614106,
+      "seed": 2703163394,
+      "shape": "entropy",
+      "target_mib": 64,
+      "user_seconds": 1.050208,
+      "system_seconds": 0.239839,
+      "peak_rss_kib": 430368,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/baseline",
+        "/workspace/scratch/stream-output-run-01/entropy-64-2703163394-baseline",
+        "entropy",
+        "64",
+        "2703163394"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 1.3561997349970625
+    },
+    "candidate": {
+      "build_seconds_instrumented": 0.995353982,
+      "encoded_group_bytes": 67131412,
+      "groups": 963,
+      "heap_after_build_bytes": 67203103,
+      "heap_start_bytes": 67200447,
+      "incremental_peak_heap_bytes": 305489298,
+      "input_sha256": "90b63a0599120b622a743b977e0f309d2a01d0fe6f1da8a8aee4cf9df617d42f",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 53101906,
+            "rows": 963,
+            "sha256": "73be5c631fce65bd2d0f8183e08f4778ea1df1bc7f85b53342a88a092538332b"
+          },
+          "gaps.parquet": {
+            "bytes": 10383,
+            "rows": 963,
+            "sha256": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d"
+          },
+          "logs.parquet": {
+            "bytes": 52596835,
+            "rows": 61632,
+            "sha256": "3646f17c50524e30eb99cee56a55f7db445ea1bc2ae618f9cef446abd2d63a33"
+          },
+          "metrics.parquet": {
+            "bytes": 15321,
+            "rows": 963,
+            "sha256": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722"
+          },
+          "spans.parquet": {
+            "bytes": 16654,
+            "rows": 963,
+            "sha256": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 1048616,
+            "rows": 8,
+            "sha256": "a02875f91caebaffbb06eaa8edec7c5cf16403eb5aa27684ef8d1723cb56c72e"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000017013,
+          "node-1": 1800000000000017030,
+          "node-10": 1800000000000016911,
+          "node-11": 1800000000000016928,
+          "node-12": 1800000000000016945,
+          "node-13": 1800000000000016962,
+          "node-14": 1800000000000016979,
+          "node-15": 1800000000000016996,
+          "node-2": 1800000000000017047,
+          "node-3": 1800000000000017064,
+          "node-4": 1800000000000016809,
+          "node-5": 1800000000000016826,
+          "node-6": 1800000000000016843,
+          "node-7": 1800000000000016860,
+          "node-8": 1800000000000016877,
+          "node-9": 1800000000000016894
+        },
+        "journal_label": 1,
+        "last_group": 963,
+        "received_max_ns": 1800000000000000963,
+        "received_min_ns": 1800000000000000001,
+        "records": 963,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 372689745,
+      "seed": 2703163394,
+      "shape": "entropy",
+      "target_mib": 64,
+      "user_seconds": 1.156367,
+      "system_seconds": 0.172234,
+      "peak_rss_kib": 377620,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/candidate",
+        "/workspace/scratch/stream-output-run-01/entropy-64-2703163394-candidate",
+        "entropy",
+        "64",
+        "2703163394"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 1.4100034099974437
+    },
+    "output_sha256": {
+      "segments/seg-00000000000000000001/text_filter.bin": "a02875f91caebaffbb06eaa8edec7c5cf16403eb5aa27684ef8d1723cb56c72e",
+      "segments/seg-00000000000000000001/manifest.json": "36f1910bf09906025c3b2f8f4f283040df666772a21458c21c5798e3b46527b8",
+      "segments/seg-00000000000000000001/spans.parquet": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f",
+      "segments/seg-00000000000000000001/batches.parquet": "73be5c631fce65bd2d0f8183e08f4778ea1df1bc7f85b53342a88a092538332b",
+      "segments/seg-00000000000000000001/metrics.parquet": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722",
+      "segments/seg-00000000000000000001/logs.parquet": "3646f17c50524e30eb99cee56a55f7db445ea1bc2ae618f9cef446abd2d63a33",
+      "segments/seg-00000000000000000001/gaps.parquet": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d",
+      "segments/seg-00000000000000000001/spans_filter.bin": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+    },
+    "ratios": {
+      "incremental_peak_heap_bytes": 0.9301966826526136,
+      "peak_rss_kib": 0.8774351252881255,
+      "build_seconds_instrumented": 1.0325178748943298
+    }
+  },
+  {
+    "shape": "entropy",
+    "mib": 64,
+    "seed": 2703163395,
+    "order": [
+      "candidate",
+      "baseline"
+    ],
+    "candidate": {
+      "build_seconds_instrumented": 0.893427288,
+      "encoded_group_bytes": 67131412,
+      "groups": 963,
+      "heap_after_build_bytes": 67203103,
+      "heap_start_bytes": 67200447,
+      "incremental_peak_heap_bytes": 305490479,
+      "input_sha256": "78e4d5ac62c693d51e56d14c1fa59830941384b8ea22459ec1b0a9514b6d73d7",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 53103304,
+            "rows": 963,
+            "sha256": "6261225fa6dcd74dab47eb5f31d99cb22f4236056900592949f06a72f48fbece"
+          },
+          "gaps.parquet": {
+            "bytes": 10383,
+            "rows": 963,
+            "sha256": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d"
+          },
+          "logs.parquet": {
+            "bytes": 52596796,
+            "rows": 61632,
+            "sha256": "7003d9182044228a5e118a21b47ffa0eb896d930feaa18b89d945a854881abf3"
+          },
+          "metrics.parquet": {
+            "bytes": 15321,
+            "rows": 963,
+            "sha256": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722"
+          },
+          "spans.parquet": {
+            "bytes": 16654,
+            "rows": 963,
+            "sha256": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 1048616,
+            "rows": 8,
+            "sha256": "73ddfd2311f7e189c294317ebf17818b43f17e9390743ed91465be75ca510cb5"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000017013,
+          "node-1": 1800000000000017030,
+          "node-10": 1800000000000016911,
+          "node-11": 1800000000000016928,
+          "node-12": 1800000000000016945,
+          "node-13": 1800000000000016962,
+          "node-14": 1800000000000016979,
+          "node-15": 1800000000000016996,
+          "node-2": 1800000000000017047,
+          "node-3": 1800000000000017064,
+          "node-4": 1800000000000016809,
+          "node-5": 1800000000000016826,
+          "node-6": 1800000000000016843,
+          "node-7": 1800000000000016860,
+          "node-8": 1800000000000016877,
+          "node-9": 1800000000000016894
+        },
+        "journal_label": 1,
+        "last_group": 963,
+        "received_max_ns": 1800000000000000963,
+        "received_min_ns": 1800000000000000001,
+        "records": 963,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 372690926,
+      "seed": 2703163395,
+      "shape": "entropy",
+      "target_mib": 64,
+      "user_seconds": 1.022027,
+      "system_seconds": 0.204867,
+      "peak_rss_kib": 377720,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/candidate",
+        "/workspace/scratch/stream-output-run-01/entropy-64-2703163395-candidate",
+        "entropy",
+        "64",
+        "2703163395"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 1.258306056006404
+    },
+    "baseline": {
+      "build_seconds_instrumented": 1.023547945,
+      "encoded_group_bytes": 67131412,
+      "groups": 963,
+      "heap_after_build_bytes": 67203101,
+      "heap_start_bytes": 67200445,
+      "incremental_peak_heap_bytes": 328417069,
+      "input_sha256": "78e4d5ac62c693d51e56d14c1fa59830941384b8ea22459ec1b0a9514b6d73d7",
+      "manifest": {
+        "files": {
+          "batches.parquet": {
+            "bytes": 53103304,
+            "rows": 963,
+            "sha256": "6261225fa6dcd74dab47eb5f31d99cb22f4236056900592949f06a72f48fbece"
+          },
+          "gaps.parquet": {
+            "bytes": 10383,
+            "rows": 963,
+            "sha256": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d"
+          },
+          "logs.parquet": {
+            "bytes": 52596796,
+            "rows": 61632,
+            "sha256": "7003d9182044228a5e118a21b47ffa0eb896d930feaa18b89d945a854881abf3"
+          },
+          "metrics.parquet": {
+            "bytes": 15321,
+            "rows": 963,
+            "sha256": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722"
+          },
+          "spans.parquet": {
+            "bytes": 16654,
+            "rows": 963,
+            "sha256": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f"
+          },
+          "spans_filter.bin": {
+            "bytes": 524,
+            "rows": 1,
+            "sha256": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+          },
+          "text_filter.bin": {
+            "bytes": 1048616,
+            "rows": 8,
+            "sha256": "73ddfd2311f7e189c294317ebf17818b43f17e9390743ed91465be75ca510cb5"
+          }
+        },
+        "first_group": 1,
+        "freshness": {
+          "node-0": 1800000000000017013,
+          "node-1": 1800000000000017030,
+          "node-10": 1800000000000016911,
+          "node-11": 1800000000000016928,
+          "node-12": 1800000000000016945,
+          "node-13": 1800000000000016962,
+          "node-14": 1800000000000016979,
+          "node-15": 1800000000000016996,
+          "node-2": 1800000000000017047,
+          "node-3": 1800000000000017064,
+          "node-4": 1800000000000016809,
+          "node-5": 1800000000000016826,
+          "node-6": 1800000000000016843,
+          "node-7": 1800000000000016860,
+          "node-8": 1800000000000016877,
+          "node-9": 1800000000000016894
+        },
+        "journal_label": 1,
+        "last_group": 963,
+        "received_max_ns": 1800000000000000963,
+        "received_min_ns": 1800000000000000001,
+        "records": 963,
+        "version": 1
+      },
+      "peak_live_heap_bytes": 395617514,
+      "seed": 2703163395,
+      "shape": "entropy",
+      "target_mib": 64,
+      "user_seconds": 1.094797,
+      "system_seconds": 0.254956,
+      "peak_rss_kib": 430464,
+      "command": [
+        "/workspace/scratch/stream-output-binaries/baseline",
+        "/workspace/scratch/stream-output-run-01/entropy-64-2703163395-baseline",
+        "entropy",
+        "64",
+        "2703163395"
+      ],
+      "exit_code": 0,
+      "process_wall_seconds": 1.407006610003009
+    },
+    "output_sha256": {
+      "segments/seg-00000000000000000001/text_filter.bin": "73ddfd2311f7e189c294317ebf17818b43f17e9390743ed91465be75ca510cb5",
+      "segments/seg-00000000000000000001/manifest.json": "7f7b8c7111f84ff5800b85195255aa237999eecac929f64e633e95fae4cb2888",
+      "segments/seg-00000000000000000001/spans.parquet": "d8e535b7a6a3911097e6f81dbd7b0b94e6534609aa262568ea8451153fc1e65f",
+      "segments/seg-00000000000000000001/batches.parquet": "6261225fa6dcd74dab47eb5f31d99cb22f4236056900592949f06a72f48fbece",
+      "segments/seg-00000000000000000001/metrics.parquet": "050ba50bcdcd7c850ad03df21e8cdade2d56e5f47d82eff02fccd2d8a3701722",
+      "segments/seg-00000000000000000001/logs.parquet": "7003d9182044228a5e118a21b47ffa0eb896d930feaa18b89d945a854881abf3",
+      "segments/seg-00000000000000000001/gaps.parquet": "d9c5630d5efd2fd2cf899c66f62025bf82c9f9df4513383be9c5473c6de17c2d",
+      "segments/seg-00000000000000000001/spans_filter.bin": "3fdb786b18565e8d1eb954f083f374177893a3a46c3dfedf44c2f29f83565f15"
+    },
+    "ratios": {
+      "incremental_peak_heap_bytes": 0.9301906259933158,
+      "peak_rss_kib": 0.8774717514124294,
+      "build_seconds_instrumented": 0.8728729243846023
+    }
+  }
+]

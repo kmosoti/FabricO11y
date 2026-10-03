@@ -1,6 +1,6 @@
 # Sealing pipeline: experiment design and optimization routes
 
-Status: **preliminary experiment design; all routes unrun**. Companion to the [computational model](../../research/sealing-pipeline-model.md) and [earlier adaptive-concurrency proposal](adaptive-sealing-hypotheses.md). This is a search plan, not a registered executable benchmark or a performance result. Runtime source remains at the journal-reclaim candidate; source checkpoint for the proposal is `ba0c25da3124eddc753950cdf7846c4cd8086cf8`.
+Status: **preliminary experiment design; R0 local pilot completed, other routes unrun**. Companion to the [computational model](../../research/sealing-pipeline-model.md) and [earlier adaptive-concurrency proposal](adaptive-sealing-hypotheses.md). This is a search plan, not a registered executable benchmark or a performance result. The [R0 local pilot](streaming-output-local-run-01.md) missed its primary heap target while preserving exact output; source checkpoint for the proposal is `ba0c25da3124eddc753950cdf7846c4cd8086cf8`.
 
 ## Rotate the representation before choosing a mechanism
 
@@ -38,7 +38,7 @@ The Cartesian product is deliberately not the experiment. Prune points violating
 
 ## Route catalog
 
-All routes start as **PROPOSED**, not measured winners. Each promotes only through a rejecting control, a native pilot and an independently frozen confirmation where applicable.
+All routes start as **PROPOSED**, not measured winners. R0 now has a [local result](streaming-output-local-run-01.md): 12 exact-output pairs, about 7% primary heap reduction, below its >10% gate. Each promotes only through a rejecting control, a native pilot and an independently frozen confirmation where applicable.
 
 | Route | Predicted mechanism | Smallest discriminating experiment | Null/rejection and next branch |
 | --- | --- | --- | --- |
@@ -99,7 +99,7 @@ Screen removal of full-file output buffering, avoidable clones and redundant con
 | --- | --- | --- | --- |
 | E0 | Finite ownership/admission model and rejecting traces | Safety and conditional progress for explicit finite bounds | Designed; not implemented/run |
 | E1 | Sequential bounded-build allocation attribution | Per-stage memory/copy/I/O causes and existing finite memory gates | Designed; product candidate absent |
-| E2 | Native isolated-route pilots | Which mechanisms deserve more investigation on this host | Designed; no measurements |
+| E2 | Native isolated-route pilots | Which mechanisms deserve more investigation on this host | R0 local pilot completed; primary heap target not met; remaining routes unrun |
 | E3 | Crossed interaction pilots | Where route effects combine, cancel or reverse | Designed; no measurements |
 | E4 | Frozen paired confirmation | Predeclared statistical and practical claims | Protocol/runner not yet registered |
 | E5 | PC reproduction and repeated-cycle memory run | Hardware-specific performance, pressure and lifetime | PC environment not inspected |

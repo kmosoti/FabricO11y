@@ -22,6 +22,8 @@ The historical source branch `alpha/controlled-linux-collection` stays available
 
 The [adaptive sealing and memory proposal](experiments/benchmarks/adaptive-sealing-hypotheses.md) is a separately testable follow-up: isolate fixed pull scheduling, resource-feedback concurrency and bounded builder memory before combining them. It changes neither the registered bounded-sealer acceptance nor current product defaults. The [pipeline computational model](research/sealing-pipeline-model.md) specifies the later bounded-buffer and stage-processing proposal, with independent hypotheses and explicit proof obligations.
 
+[Streaming output run 01](experiments/benchmarks/streaming-output-local-run-01.md) tested route R0 on the constrained cloud host. Exact output matched, but the >10% primary heap-reduction target was not met; retain the experimental candidate on `milestone/streaming-segment-output` without treating it as completion of bounded sealing.
+
 ## Work carried from the completion plan
 
 The release-stage completion plan (`docs/ALPHA-PLAN.md` at base `9b3a2b4`, readable with `git show 9b3a2b4:docs/ALPHA-PLAN.md`) is retired. Its settled decisions and open steps continue here:
