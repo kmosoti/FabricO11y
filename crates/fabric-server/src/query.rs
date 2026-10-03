@@ -132,12 +132,23 @@ struct Sources {
     /// Walk plan, logs queries with a needle of three or more bytes: each Segment's
     /// verified row-group text filters, if it has them (ADR-0024 part 2).
     filters: Vec<Option<std::sync::Arc<Vec<crate::text_filter::GroupFilter>>>>,
+    /// Walk plan: complete tail blocks holding selected entries, each with those
+    /// entries (by frame offset and index) and the bounds of their queried rows.
+    blocks: Vec<TailBlockSource>,
+}
+
+/// A tail block as a source of one query (ADR-0024 part 3).
+struct TailBlockSource {
+    block: std::sync::Arc<crate::tail::TailBlock>,
+    wanted: std::collections::HashSet<(u64, u32)>,
+    bounds: (u64, u64),
 }
 
 /// One source of the walk: a tail entry, or a row group of a Segment.
 #[derive(Clone, Copy)]
 enum Source {
     Tail(usize),
+    Block(usize),
     Group(usize, usize),
 }
 
@@ -245,6 +256,27 @@ impl History {
         }
     }
 
+    /// Close tail blocks at `records` records instead of the default (tests use small
+    /// blocks so that a small history has several).
+    #[doc(hidden)]
+    pub fn with_tail_block_records(self, records: usize) -> Self {
+        self.walk
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .block_records = records;
+        self
+    }
+
+    /// How many complete tail blocks the walk plan holds (for tests and diagnostics).
+    #[doc(hidden)]
+    pub fn tail_blocks(&self) -> usize {
+        self.walk
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .blocks
+            .len()
+    }
+
     /// Walk plan: the snapshot's sources from the tail index and the metadata cache.
     /// Entries are selected by their bounds for the queried kind and by node; those
     /// with gaps inside the window are decoded now (the answer's `gaps` needs them),
@@ -292,6 +324,8 @@ impl History {
         let mut freshness: BTreeMap<String, u64> = BTreeMap::new();
         let mut lazy = Vec::new();
         let mut eager = Vec::new();
+        let mut blocks: Vec<TailBlockSource> = Vec::new();
+        let mut block_at: HashMap<u32, usize> = HashMap::new();
         for e in &state.entries {
             if e.group > newest || e.group < floor {
                 continue;
@@ -311,7 +345,25 @@ impl History {
             } else {
                 let (min, max) = kind(e);
                 if max >= window.from_ns && min < window.to_ns {
-                    lazy.push(*e);
+                    match e
+                        .block
+                        .and_then(|b| state.blocks.get(&b).map(|block| (b, block)))
+                    {
+                        Some((b, block)) => {
+                            let j = *block_at.entry(b).or_insert_with(|| {
+                                blocks.push(TailBlockSource {
+                                    block: block.clone(),
+                                    wanted: std::collections::HashSet::new(),
+                                    bounds: crate::tail::NONE,
+                                });
+                                blocks.len() - 1
+                            });
+                            let s = &mut blocks[j];
+                            s.wanted.insert((e.offset, e.index));
+                            s.bounds = (s.bounds.0.min(min), s.bounds.1.max(max));
+                        }
+                        None => lazy.push(*e),
+                    }
                 }
             }
         }
@@ -363,6 +415,7 @@ impl History {
             tail_evidence: Some((received, freshness)),
             bounds,
             filters,
+            blocks,
         })
     }
 
@@ -382,6 +435,13 @@ impl History {
             .enumerate()
             .map(|(i, e)| (kind(e).0, kind(e).1, Source::Tail(i)))
             .collect();
+        for (j, b) in sources.blocks.iter().enumerate() {
+            // A block whose filter lacks one of the needle's trigrams holds no match.
+            if needle.is_some_and(|n| n.len() >= 3 && !b.block.filter.may_contain(n.as_bytes())) {
+                continue;
+            }
+            items.push((b.bounds.0, b.bounds.1, Source::Block(j)));
+        }
         for (si, ((dir, manifest), bounds)) in
             sources.segments.iter().zip(&sources.bounds).enumerate()
         {
@@ -482,6 +542,7 @@ impl History {
             tail_evidence: None,
             bounds: Vec::new(),
             filters: Vec::new(),
+            blocks: Vec::new(),
         })
     }
 
@@ -657,6 +718,7 @@ impl History {
                         &mut unavailable,
                     )?;
                     let mut reader = TailReader::new(&sources.tail_paths);
+                    let mut dctx = zstd::bulk::Decompressor::new()?;
                     for (min, max, source) in items {
                         if after.as_ref().is_some_and(|a| max < a.0) {
                             continue;
@@ -665,6 +727,36 @@ impl History {
                             break;
                         }
                         match source {
+                            Source::Block(j) => {
+                                let b = &sources.blocks[j];
+                                crate::tail::visit_block(
+                                    &b.block,
+                                    &b.wanted,
+                                    &mut dctx,
+                                    |e, o| {
+                                        let fabric_observation::SignalRef::Log { body, .. } =
+                                            o.signal
+                                        else {
+                                            return;
+                                        };
+                                        if !window.contains(o.time_ns)
+                                            || !node_ok(&e.node)
+                                            || !snapshot.contains(e.group)
+                                            || contains
+                                                .as_deref()
+                                                .is_some_and(|c| !body.contains(c))
+                                        {
+                                            return;
+                                        }
+                                        let k = (o.time_ns, o.strand.node_id, o.sequence, o.index);
+                                        if kernel::after_page(&k, after.as_ref())
+                                            && best.threshold().is_none_or(|t| k < t)
+                                        {
+                                            best.offer(k, crate::tail::log_row(e, o, body));
+                                        }
+                                    },
+                                )?;
+                            }
                             Source::Tail(i) => {
                                 for r in reader.rows(&sources.tail[i])?.logs {
                                     if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
@@ -752,6 +844,7 @@ impl History {
                     let items =
                         Self::walk_order(&sources, &window, |e| e.metrics, None, &mut unavailable)?;
                     let mut reader = TailReader::new(&sources.tail_paths);
+                    let mut dctx = zstd::bulk::Decompressor::new()?;
                     for (min, max, source) in items {
                         if after.as_ref().is_some_and(|a| max < a.0) {
                             continue;
@@ -760,6 +853,22 @@ impl History {
                             break;
                         }
                         match source {
+                            Source::Block(j) => {
+                                let b = &sources.blocks[j];
+                                crate::tail::visit_block(
+                                    &b.block,
+                                    &b.wanted,
+                                    &mut dctx,
+                                    |e, o| {
+                                        if let Some(r) = crate::tail::metric_row(e, o)
+                                            && keep(&r)
+                                            && kernel::after_page(&key(&r), after.as_ref())
+                                        {
+                                            best.offer(key(&r), r);
+                                        }
+                                    },
+                                )?;
+                            }
                             Source::Tail(i) => {
                                 for r in reader.rows(&sources.tail[i])?.metrics {
                                     if keep(&r) && kernel::after_page(&key(&r), after.as_ref()) {
@@ -846,8 +955,24 @@ impl History {
                     let items =
                         Self::walk_order(&sources, &window, |e| e.metrics, None, &mut unavailable)?;
                     let mut reader = TailReader::new(&sources.tail_paths);
+                    let mut dctx = zstd::bulk::Decompressor::new()?;
                     for (_, _, source) in items {
                         match source {
+                            Source::Block(j) => {
+                                let b = &sources.blocks[j];
+                                crate::tail::visit_block(
+                                    &b.block,
+                                    &b.wanted,
+                                    &mut dctx,
+                                    |e, o| {
+                                        if let Some(r) = crate::tail::metric_row(e, o)
+                                            && keep(&r)
+                                        {
+                                            points.push(r);
+                                        }
+                                    },
+                                )?;
+                            }
                             Source::Tail(i) => {
                                 points.extend(
                                     reader

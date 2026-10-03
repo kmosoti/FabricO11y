@@ -1015,3 +1015,68 @@ fn text_filters_skip_only_groups_without_the_needle_and_fall_back_when_corrupt()
         "a lying filter must be visible to the equivalence check"
     );
 }
+
+/// ADR-0024 part 3: the walk reads complete tail blocks (FOB1, derived from the
+/// journal in memory) in place of decoding entries, and answers as the scan does.
+/// Blocks here close at 60 records so a small tail has many; three Spindles write at
+/// the same instants, part of the history is sealed and most stays in the tail.
+#[test]
+fn a_block_tail_answers_as_the_scan_does() {
+    let scratch = Scratch::new();
+    make_certs(&scratch.0);
+    let tokens = enroll(&scratch, &["node-a", "node-b", "node-c"]);
+    let cfg = config(&scratch.0, 16 * 1024, 1 << 30);
+    let server = start(cfg.clone());
+    let senders: Vec<_> = tokens
+        .iter()
+        .map(|t| sender(&scratch.0, server.addr, t))
+        .collect();
+    for (i, s) in senders.iter().enumerate() {
+        deliver(&scratch.path(&format!("spool-{i}")), s, 0, 20);
+    }
+    wait_for_segments(&cfg.state_dir, 1);
+    server.stop();
+    // A larger journal file keeps the rest unsealed.
+    let unsealed = config(&scratch.0, 1 << 30, 1 << 30);
+    let server = start(unsealed.clone());
+    let senders: Vec<_> = tokens
+        .iter()
+        .map(|t| sender(&scratch.0, server.addr, t))
+        .collect();
+    for (i, s) in senders.iter().enumerate() {
+        deliver(&scratch.path(&format!("spool-{i}")), s, 20, 24);
+    }
+    server.stop();
+
+    let scan = History::new(&cfg.state_dir);
+    let walk = History::with_plan(&cfg.state_dir, Plan::Walk).with_tail_block_records(60);
+    let mut queries = seeded_queries(120, 23);
+    for k in (20..44).step_by(4) {
+        let from = 1_000_000 + k * 100;
+        for limit in [1, 2, 7] {
+            queries.push(
+                json!({"kind": "logs", "from_ns": from, "to_ns": from + 1000, "limit": limit}),
+            );
+            queries.push(json!({"kind": "logs", "from_ns": from, "to_ns": 1u64 << 40, "contains": "needle", "limit": limit}));
+            queries.push(json!({"kind": "metrics", "name": "system.network.receive.bytes", "from_ns": from, "to_ns": 1u64 << 40, "limit": limit}));
+        }
+        queries.push(json!({"kind": "rate", "name": "system.network.receive.bytes", "from_ns": from, "to_ns": 1u64 << 40}));
+    }
+    for q in &queries {
+        assert_eq!(
+            pages_in_process(&walk, q.clone(), 1 << 40),
+            pages_in_process(&scan, q.clone(), 1 << 40),
+            "query {q}"
+        );
+    }
+    assert!(
+        walk.tail_blocks() > 10,
+        "the tail must be read through blocks ({})",
+        walk.tail_blocks()
+    );
+    let drain = json!({"kind": "logs", "from_ns": 0, "to_ns": 1u64 << 40, "limit": 97});
+    assert_eq!(
+        pages_upto(&walk, &mut drain.clone(), 1 << 40, 10_000),
+        pages_upto(&scan, &mut drain.clone(), 1 << 40, 10_000)
+    );
+}

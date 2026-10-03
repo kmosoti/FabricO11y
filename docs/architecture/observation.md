@@ -1,6 +1,6 @@
 # Observation record and FOB1 encoding
 
-Status: **proposed** ([ADR-0023](../decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md)). The crate [fabric-observation](../../crates/fabric-observation/src/lib.rs) exists, is tested, fuzzed and measured, and is wired to nothing: no Spindle emits it, no journal or Segment stores it. This page describes what it is and how it is built, so that the decision to adopt it can be read against the code.
+Status: **accepted for the in-memory block tail** ([ADR-0023](../decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md), [ADR-0024](../decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md) part 3). The crate [fabric-observation](../../crates/fabric-observation/src/lib.rs) is tested, fuzzed and measured; the server's walk plan encodes the unsealed tail as FOB1 blocks in memory ([tail.rs](../../crates/fabric-server/src/tail.rs)). No Spindle emits it, and no journal or Segment stores it. This page describes what it is and how it is built, so that the decision to adopt it can be read against the code.
 
 ## Purpose
 

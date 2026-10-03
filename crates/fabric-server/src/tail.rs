@@ -11,6 +11,21 @@
 //! tail a stock query would decode. Its size is about 72 bytes per entry, below the
 //! rows the stock plan materialises for the same entries.
 //!
+//! The tail is also held as **blocks** ([ADR-0024] part 3, the format of [ADR-0023]):
+//! as frames are indexed, the rows they hold are gathered per journal file, and at
+//! the first frame boundary past `block_records` records they become one Zstd-compressed
+//! FOB1 block with a trigram filter over its log bodies. A walk then reads a block
+//! through `decode_view` in place of decoding each of its entries' OTLP bytes, and
+//! skips a block whose filter lacks a needle's trigram. Blocks are derived from the
+//! journal, which stays the durable custody record of every Batch's exact bytes; they
+//! live only in memory, are rebuilt as the index is rebuilt after a restart, and leave
+//! with their file or when a Segment covers them. A block the codec refuses (a NaN
+//! point value, for one) is not made, and its entries are read one by one. Entries
+//! after the last complete block of a file are read one by one too.
+//!
+//! [ADR-0023]: ../../../docs/decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md
+//! [ADR-0024]: ../../../docs/decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md
+//!
 //! Segment manifests and row-group bounds are cached by label: a named Segment is
 //! immutable (the manifest is written last and the directory renamed into place),
 //! labels are never reused, and the directory is listed on every query, so a Segment
@@ -57,6 +72,131 @@ pub(crate) struct TailEntry {
     pub logs: (u64, u64),
     pub metrics: (u64, u64),
     pub has_gaps: bool,
+    /// The block that holds this entry's rows, once one is complete.
+    pub block: Option<u32>,
+}
+
+/// Records gathered into one block before it closes, by default.
+pub(crate) const BLOCK_RECORDS: usize = 4096;
+
+/// One entry's place in a block.
+#[derive(Clone, Debug)]
+pub(crate) struct BlockEntry {
+    pub offset: u64,
+    pub index: u32,
+    /// Position of the entry's first record in the block.
+    pub start: usize,
+    pub node: String,
+    pub group: u64,
+}
+
+/// Consecutive frames of one journal file as a compressed FOB1 block.
+pub(crate) struct TailBlock {
+    pub zst: Vec<u8>,
+    pub raw_len: usize,
+    /// In record order.
+    pub entries: Vec<BlockEntry>,
+    pub filter: GroupFilter,
+    file_first: u64,
+}
+
+/// Rows of one journal file gathered since its last block closed.
+#[derive(Default)]
+struct Pending {
+    records: Vec<fabric_observation::Observation>,
+    entries: Vec<BlockEntry>,
+}
+
+impl Pending {
+    fn push(
+        &mut self,
+        rows: &Rows,
+        offset: u64,
+        index: u32,
+        node: &str,
+        group: u64,
+        generation: u64,
+    ) {
+        use fabric_observation as fo;
+        self.entries.push(BlockEntry {
+            offset,
+            index,
+            start: self.records.len(),
+            node: node.to_owned(),
+            group,
+        });
+        let attributes = |a: &crate::rows::Attributes| {
+            a.iter()
+                .map(|(k, v)| (k.clone(), fo::Value::Str(v.clone())))
+                .collect()
+        };
+        for r in &rows.logs {
+            self.records.push(fo::Observation {
+                strand: fo::Strand {
+                    node_id: r.node_id,
+                    generation,
+                },
+                sequence: r.sequence,
+                index: r.index,
+                time_ns: r.observed_ns,
+                locators: None,
+                attributes: attributes(&r.attributes),
+                signal: fo::Signal::Log {
+                    severity: 0,
+                    event: String::new(),
+                    body: r.body.clone(),
+                },
+            });
+        }
+        for r in &rows.metrics {
+            self.records.push(fo::Observation {
+                strand: fo::Strand {
+                    node_id: r.node_id,
+                    generation,
+                },
+                sequence: r.sequence,
+                index: r.index,
+                time_ns: r.time_ns,
+                locators: None,
+                attributes: attributes(&r.attributes),
+                signal: fo::Signal::Point {
+                    name: r.name.clone(),
+                    unit: r.unit.clone(),
+                    kind: if r.sum {
+                        fo::PointKind::Sum {
+                            monotonic: r.monotonic,
+                            start_ns: r.start_ns,
+                        }
+                    } else {
+                        fo::PointKind::Gauge
+                    },
+                    value: match r.value {
+                        crate::rows::Number::Int(v) => fo::Number::Int(v),
+                        crate::rows::Number::Double(v) => fo::Number::Double(v),
+                    },
+                },
+            });
+        }
+    }
+
+    /// The block of everything gathered, or `None` if the codec refuses it.
+    fn close(&mut self, file_first: u64) -> Option<TailBlock> {
+        let records = std::mem::take(&mut self.records);
+        let entries = std::mem::take(&mut self.entries);
+        let raw = fabric_observation::encode(&records).ok()?;
+        let filter = GroupFilter::build(records.iter().filter_map(|r| match &r.signal {
+            fabric_observation::Signal::Log { body, .. } => Some(body.as_str()),
+            _ => None,
+        }));
+        let zst = zstd::bulk::compress(&raw, 3).ok()?;
+        Some(TailBlock {
+            zst,
+            raw_len: raw.len(),
+            entries,
+            filter,
+            file_first,
+        })
+    }
 }
 
 /// Process-wide state of the walk plan.
@@ -72,6 +212,12 @@ pub(crate) struct WalkState {
     /// Verified text filters by label; `None` when a Segment has none or its digest
     /// differs (a named Segment's bytes never change, so the verdict is kept).
     filters: HashMap<u64, Option<Arc<Vec<GroupFilter>>>>,
+    /// Complete tail blocks by id, the rows of each file not yet in one, and the size
+    /// at which a block closes (0 means `BLOCK_RECORDS`).
+    pub blocks: HashMap<u32, Arc<TailBlock>>,
+    next_block: u32,
+    pending: HashMap<u64, Pending>,
+    pub block_records: usize,
 }
 
 impl WalkState {
@@ -149,6 +295,17 @@ impl WalkState {
                     rows.metrics.clear();
                     rows.gaps.clear();
                     extract(group.group_sequence, entry, &mut rows)?;
+                    let generation = fabric_frame::envelope::Batch::decode(entry.batch.as_slice())
+                        .map(|b| b.generation)
+                        .unwrap_or(0);
+                    self.pending.entry(*first).or_default().push(
+                        &rows,
+                        at,
+                        i as u32,
+                        &entry.label,
+                        group.group_sequence,
+                        generation,
+                    );
                     let label = self.label_id(&entry.label);
                     self.entries.push(TailEntry {
                         group: group.group_sequence,
@@ -160,9 +317,22 @@ impl WalkState {
                         logs: bounds(rows.logs.iter().map(|r| r.observed_ns)),
                         metrics: bounds(rows.metrics.iter().map(|r| r.time_ns)),
                         has_gaps: !rows.gaps.is_empty(),
+                        block: None,
                     });
                 }
                 at = next;
+                let limit = if self.block_records == 0 {
+                    BLOCK_RECORDS
+                } else {
+                    self.block_records
+                };
+                if self
+                    .pending
+                    .get(first)
+                    .is_some_and(|p| p.records.len() >= limit)
+                {
+                    self.close_block(*first);
+                }
             }
             self.scanned.insert(*first, at);
         }
@@ -174,7 +344,36 @@ impl WalkState {
         };
         self.entries
             .retain(|e| live.contains(&e.file_first) && !covers(e.group));
+        self.blocks.retain(|_, b| {
+            live.contains(&b.file_first) && !b.entries.first().is_some_and(|e| covers(e.group))
+        });
+        self.pending
+            .retain(|f, p| live.contains(f) && !p.entries.first().is_some_and(|e| covers(e.group)));
         Ok(files.into_iter().map(|(f, p, _)| (f, p)).collect())
+    }
+
+    /// Close the pending rows of one file into a block and mark its entries.
+    fn close_block(&mut self, file_first: u64) {
+        let Some(pending) = self.pending.get_mut(&file_first) else {
+            return;
+        };
+        let Some(block) = pending.close(file_first) else {
+            return;
+        };
+        let id = self.next_block;
+        self.next_block = self.next_block.wrapping_add(1);
+        let keys: HashSet<(u64, u32)> = block.entries.iter().map(|e| (e.offset, e.index)).collect();
+        let mut left = keys.len();
+        for e in self.entries.iter_mut().rev() {
+            if left == 0 {
+                break;
+            }
+            if e.file_first == file_first && keys.contains(&(e.offset, e.index)) {
+                e.block = Some(id);
+                left -= 1;
+            }
+        }
+        self.blocks.insert(id, Arc::new(block));
     }
 
     /// The Segments as `segment::list` returns them, manifests read once per label.
@@ -285,5 +484,138 @@ impl<'a> TailReader<'a> {
         let mut rows = Rows::default();
         extract(e.group, entry, &mut rows)?;
         Ok(rows)
+    }
+}
+
+/// Visit every record of the selected entries (`wanted`, by frame offset and entry
+/// index) of one block, in block order, with the entry it belongs to.
+pub(crate) fn visit_block(
+    block: &TailBlock,
+    wanted: &HashSet<(u64, u32)>,
+    dctx: &mut zstd::bulk::Decompressor<'_>,
+    mut visit: impl FnMut(&BlockEntry, &fabric_observation::ObservationRef<'_>),
+) -> io::Result<()> {
+    let raw = dctx.decompress(&block.zst, block.raw_len)?;
+    let view = fabric_observation::decode_view(&raw).map_err(invalid_data)?;
+    let mut at = 0_usize;
+    for (i, record) in view.iter().enumerate() {
+        while at + 1 < block.entries.len() && block.entries[at + 1].start <= i {
+            at += 1;
+        }
+        let entry = &block.entries[at];
+        if wanted.contains(&(entry.offset, entry.index)) {
+            visit(entry, record);
+        }
+    }
+    Ok(())
+}
+
+fn attributes(record: &fabric_observation::ObservationRef<'_>) -> crate::rows::Attributes {
+    record
+        .attributes
+        .iter()
+        .filter_map(|(k, v)| match v {
+            fabric_observation::ValueRef::Str(s) => Some(((*k).to_owned(), (*s).to_owned())),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The log row a block record stands for.
+pub(crate) fn log_row(
+    entry: &BlockEntry,
+    record: &fabric_observation::ObservationRef<'_>,
+    body: &str,
+) -> crate::rows::LogRow {
+    crate::rows::LogRow {
+        group: entry.group,
+        node: entry.node.clone(),
+        node_id: record.strand.node_id,
+        sequence: record.sequence,
+        index: record.index,
+        observed_ns: record.time_ns,
+        body: body.to_owned(),
+        attributes: attributes(record),
+    }
+}
+
+/// The metric point a block record stands for, if it is one.
+pub(crate) fn metric_row(
+    entry: &BlockEntry,
+    record: &fabric_observation::ObservationRef<'_>,
+) -> Option<crate::rows::MetricRow> {
+    use fabric_observation::{Number, PointKind, SignalRef};
+    let SignalRef::Point {
+        name,
+        unit,
+        kind,
+        value,
+    } = record.signal
+    else {
+        return None;
+    };
+    let (sum, monotonic, start_ns) = match kind {
+        PointKind::Gauge => (false, false, 0),
+        PointKind::Sum {
+            monotonic,
+            start_ns,
+        } => (true, monotonic, start_ns),
+    };
+    Some(crate::rows::MetricRow {
+        group: entry.group,
+        node: entry.node.clone(),
+        node_id: record.strand.node_id,
+        sequence: record.sequence,
+        index: record.index,
+        name: name.to_owned(),
+        unit: unit.to_owned(),
+        sum,
+        monotonic,
+        time_ns: record.time_ns,
+        start_ns,
+        value: match value {
+            Number::Int(v) => crate::rows::Number::Int(v),
+            Number::Double(v) => crate::rows::Number::Double(v),
+        },
+        attributes: attributes(record),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rows::{MetricRow, Number};
+
+    fn point(value: Number) -> Rows {
+        let mut rows = Rows::default();
+        rows.metrics.push(MetricRow {
+            group: 1,
+            node: "n".into(),
+            node_id: [7; 16],
+            sequence: 1,
+            index: 0,
+            name: "m".into(),
+            unit: "1".into(),
+            sum: false,
+            monotonic: false,
+            time_ns: 10,
+            start_ns: 0,
+            value,
+            attributes: Default::default(),
+        });
+        rows
+    }
+
+    #[test]
+    fn a_block_the_codec_refuses_is_not_made() {
+        let mut pending = Pending::default();
+        pending.push(&point(Number::Double(1.5)), 0, 0, "n", 1, 0);
+        assert!(pending.close(1).is_some());
+        let mut pending = Pending::default();
+        pending.push(&point(Number::Double(f64::NAN)), 0, 0, "n", 1, 0);
+        assert!(
+            pending.close(1).is_none(),
+            "a NaN point value cannot be a canonical block"
+        );
     }
 }

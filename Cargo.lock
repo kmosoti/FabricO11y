@@ -485,6 +485,7 @@ dependencies = [
  "fabric-app",
  "fabric-core",
  "fabric-frame",
+ "fabric-observation",
  "fabric-ports",
  "fabric_o11y",
  "opentelemetry-proto",
@@ -496,6 +497,7 @@ dependencies = [
  "sha2",
  "tokio",
  "ureq",
+ "zstd",
 ]
 
 [[package]]

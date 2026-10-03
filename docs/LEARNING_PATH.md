@@ -160,7 +160,7 @@ Try it:
 
 ## Stage 12 — One record for every signal, built from the bytes up
 
-**Status: proposed ([ADR-0023](decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md)); built, tested and measured; wired to nothing.** Fabric keeps two copies of every line: the node's exact OTLP bytes (custody) and a body column (query). [Storage layout run 01](experiments/benchmarks/storage-layout-run-01.md) measured that the pair is most of a Segment. The two cannot be one object because OTLP's protobuf is not canonical: the same observation has many byte strings, so the server can only vouch for the bytes it received, never for the records.
+**Status: accepted for the server's in-memory block tail ([ADR-0023](decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md), [ADR-0024](decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md) part 3); not on the wire or on disk.** Fabric keeps two copies of every line: the node's exact OTLP bytes (custody) and a body column (query). [Storage layout run 01](experiments/benchmarks/storage-layout-run-01.md) measured that the pair is most of a Segment. The two cannot be one object because OTLP's protobuf is not canonical: the same observation has many byte strings, so the server can only vouch for the bytes it received, never for the records.
 
 The Rust idea: a **canonical encoding** is a pair of functions with `decode(encode(b)) == b` for every valid value *and* `encode(decode(x)) == x` for every accepted byte string. The second half is the hard one, and it cannot be bolted on at the top: a decoder that tolerated one overlong varint anywhere would give the same records two byte strings. So [fabric-observation](../crates/fabric-observation/src/lib.rs) is built as a tower ([architecture page](architecture/observation.md)), each level stating what it refuses before the next is allowed to use it:
 
@@ -198,6 +198,7 @@ Try it:
 2. Run `cargo test -p fabric-server --test history walk`.
 3. Read [query walk run 01](experiments/benchmarks/query-walk-run-01.md). Which shapes did the walk not speed up, and which part of ADR-0024 addresses each?
 4. Read [text_filter.rs](../crates/fabric-server/src/text_filter.rs) and the test `text_filters_skip_only_groups_without_the_needle_and_fall_back_when_corrupt`. A Bloom filter has no false negatives only while its bytes are the sealer's: what does the reader do to keep that true, and which failure does the last part of the test show it cannot catch?
+5. Read `Pending::close` and `visit_block` in [tail.rs](../crates/fabric-server/src/tail.rs), then [block tail run 01](experiments/benchmarks/block-tail-run-01.md). Why are the blocks kept in memory and not written beside the journal, and what does the walk do with a block the codec refuses?
 
 ## Working rule
 
