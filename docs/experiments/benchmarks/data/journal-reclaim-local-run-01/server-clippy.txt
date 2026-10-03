@@ -1,0 +1,55 @@
+    Checking zerocopy v0.8.59
+    Checking tokio v1.53.1
+   Compiling ring v0.17.14
+    Checking half v2.7.1
+    Checking ppv-lite86 v0.2.21
+    Checking rand_chacha v0.9.0
+    Checking arrow-buffer v60.0.0
+    Checking arrow-data v60.0.0
+    Checking tracing v0.1.44
+    Checking rand v0.9.5
+    Checking ahash v0.8.12
+    Checking tokio-util v0.7.19
+    Checking h2 v0.4.19
+    Checking arrow-array v60.0.0
+   Compiling rustls v0.23.45
+    Checking opentelemetry_sdk v0.33.0
+    Checking rustls-webpki v0.103.15
+    Checking prost v0.14.4
+    Checking fabric-core v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-core)
+    Checking hyper v1.11.1
+    Checking opentelemetry-proto v0.33.0
+    Checking arrow-cmp v60.0.0
+    Checking bitflags v2.13.2
+    Checking flatbuffers v25.12.19
+    Checking fabric-frame v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-frame)
+    Checking arrow-select v60.0.0
+    Checking hyper-util v0.1.21
+    Checking serde v1.0.228
+    Checking tokio-rustls v0.26.5
+    Checking fs-err v3.1.3
+    Checking arrow-ipc v60.0.0
+    Checking tower v0.5.3
+    Checking fabric-ports v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-ports)
+    Checking axum v0.8.9
+    Checking parquet v60.0.0
+    Checking axum-server v0.7.3
+    Checking fabric-app v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-app)
+    Checking fabric-observation v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-observation)
+    Checking ureq v3.3.0
+    Checking fabric-adapter-linux v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-adapter-linux)
+    Checking fabric_o11y v0.1.0 (/workspace/FabricO11y-journal-reclaim)
+    Checking fabric-server v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-server)
+error: using `chunks_exact` with a constant chunk size
+   --> crates/fabric-server/src/text_filter.rs:153:14
+    |
+153 |             .chunks_exact(8)
+    |              ^^^^^^^^^^^^^^^ help: consider using `as_chunks` instead: `as_chunks::<8>().0.iter()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#chunks_exact_to_as_chunks
+    = note: `-D clippy::chunks-exact-to-as-chunks` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::chunks_exact_to_as_chunks)]`
+
+error: could not compile `fabric-server` (lib test) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `fabric-server` (lib) due to 1 previous error

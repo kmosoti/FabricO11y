@@ -1,0 +1,14 @@
+    Checking fabric-server v0.1.0 (/workspace/FabricO11y-review-5f0c52f/crates/fabric-server)
+error: using `chunks_exact` with a constant chunk size
+   --> crates/fabric-server/src/text_filter.rs:153:14
+    |
+153 |             .chunks_exact(8)
+    |              ^^^^^^^^^^^^^^^ help: consider using `as_chunks` instead: `as_chunks::<8>().0.iter()`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#chunks_exact_to_as_chunks
+    = note: `-D clippy::chunks-exact-to-as-chunks` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::chunks_exact_to_as_chunks)]`
+
+error: could not compile `fabric-server` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: could not compile `fabric-server` (lib test) due to 1 previous error

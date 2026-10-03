@@ -18,6 +18,8 @@ flowchart LR
         Commit -->|grouped two-sync append| Journal
         Journal -->|sealed files| Sealer
         Sealer -->|manifest last| Segments
+        Sealer -->|published prefix before and between build groups| Commit
+        Commit -->|checkpoint then oldest journal reclaim| Journal
         Journal -->|unsealed tail| Query
         Segments -->|snapshot-bound reads| Query
     end

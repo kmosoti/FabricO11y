@@ -1,6 +1,6 @@
 # Milestone: journal reclaim progress
 
-Status: **proposed investigation; plan only**. Branch: `milestone/journal-reclaim-progress`, based on `5f0c52f16f8afe01cf29a118513cf8a43b4cb333`. No implementation, new test, performance run, or qualification result is claimed. The scope of this change is to establish the hypothesis and implementation/validation plan. Future implementation and runs are separate work; the draft comparison below must be registered with its executable harness before measurement.
+Status: **candidate implemented; local mechanism checks passed**. Branch: `milestone/journal-reclaim-progress`, based on `5f0c52f16f8afe01cf29a118513cf8a43b4cb333`. The [local run](../experiments/benchmarks/journal-reclaim-local-run-01.md) records bounded correctness/progress tests and their negative controls. The mixed-load comparison below remains a draft and must be registered with its executable harness before measurement. No throughput, latency or target-host qualification result is claimed.
 
 ## Finding: three kinds of progress
 
@@ -149,6 +149,6 @@ For every continuous-load cell, compare paired per-seed results: the median acro
 
 For pressure cells, require at least a 25% reduction in median eligible duplicate byte-time and at least a 10% improvement in either capacity-blocked duration or end-of-load sender backlog, with neither regressing by more than 10%. If the baseline has no meaningful pressure, the cell cannot decide H1. A correctness failure rejects the candidate regardless of speed; a progress improvement without a pressure benefit establishes only the scheduling mechanism, not an optimization worth adopting.
 
-## Results and completion of this planning change
+## Local result and remaining decision
 
-No implementation or experimental results yet. Planning is complete when this document is linked from current state and the roadmap, its relative links and Markdown validate, and the feature branch records the plan. Future execution records must name their commands, exits, revision, raw evidence and limitations; this plan does not inherit historical qualification.
+The candidate reclaims the contiguous published prefix before building and after each worker group. Six focused tests passed, including two rejected scheduling mutants and a real checkpoint-write failure/retry fixture; see the [run record](../experiments/benchmarks/journal-reclaim-local-run-01.md) for broader checks and limitations. This establishes earlier scheduling, not a measured pressure benefit. Keep the branch as an experiment until the mixed-load trade-off is measured; do not infer readiness to merge from progress alone.
