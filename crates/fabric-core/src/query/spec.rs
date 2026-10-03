@@ -237,7 +237,7 @@ pub fn budgeted_walk<'a>(
             break;
         }
         if examined >= budget
-            && after.is_none_or(|a| source.min_ns > a.0.saturating_add(1))
+            && source.min_ns > after.map_or(q.window.from_ns, |a| a.0.saturating_add(1))
             && last_min.is_none_or(|l| source.min_ns > l)
         {
             boundary = Some(source.min_ns);
@@ -314,6 +314,29 @@ mod tests {
             contains: None,
             limit,
         }
+    }
+
+    /// Regression (proptest `the_budget_drains_to_the_definition`, seed in
+    /// `query_spec.proptest-regressions`): with budget 0 the first source's
+    /// lower bound became a boundary at the page start, time 0, and the
+    /// continuation `m - 1` saturated past the row at time 0. A boundary must
+    /// lie strictly above the page start, which is the window start on the
+    /// first page.
+    #[test]
+    fn a_boundary_never_sits_at_the_page_start() {
+        let rows = [row(0, 0, "a", 0, "")];
+        let srcs = [Source {
+            min_ns: 0,
+            max_ns: 0,
+            rows: rows.to_vec(),
+        }];
+        let snap = Snapshot {
+            oldest_group: 0,
+            newest_group: 0,
+        };
+        let q = q(0, 1, 1);
+        assert_eq!(drain_budgeted(&srcs, &q, &snap, 0), drain(&rows, &q, &snap));
+        assert_eq!(drain_budgeted(&srcs, &q, &snap, 0).len(), 1);
     }
 
     #[test]
