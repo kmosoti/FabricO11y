@@ -1,0 +1,7 @@
+# Native scaled Spindle retry protocol, revision 2
+
+Registered before the enterprise retry. [Revision 1](native-scaled-spindle-protocol.md) medium completed; enterprise stopped in resource sampling because a native Spool renamed `append-in-progress` between directory enumeration and stat. Preserve that attempt and its failure; do not count it as a capacity failure or completed run.
+
+The retry runs enterprise only, after completed medium and stopped failed enterprise, with fresh state and the same frozen binaries, seed, rates, bounds, criteria and full native forwarding path. No runtime or workload parameter changes. Logical disk sampling skips only files that disappear during stat; it remains an approximate once-per-second inventory, not an atomic snapshot. Other filesystem errors still terminate the run. A deterministic disappearing-file fixture must exercise this monitor fix before retry. The source comparison receives pretrial SQLite controls accepting identical bytes and rejecting altered and missing entries using the actual comparison helper; this strengthens checker validation without changing expected outcomes. Preserve the original shallow SHA controls as historical evidence.
+
+Record distinct harness revisions and raw directories; do not pool samples across attempts. Medium remains a revision-1 result. Enterprise retry is revision 2. All other revision-1 limitations apply.
