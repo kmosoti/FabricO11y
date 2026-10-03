@@ -4,11 +4,41 @@ import argparse, base64, gzip, hashlib, json, os, signal, socket, sqlite3, subpr
 from collections import Counter
 from pathlib import Path
 REPO=Path(__file__).resolve().parents[2]
-sys.path.insert(0,str(REPO/'tools/bench'));from run_dev_small import dump, process_stats, footprint, percentile
+sys.path.insert(0,str(REPO/'tools/bench'));from run_dev_small import dump, process_stats, percentile
 from run_scaled_fleet import weighted
 sys.path.insert(0,str(REPO/'tools/qualification'));from delivery_faults import make_certs,free_port
 import query_oracle
 import ssl, urllib.request
+
+
+def footprint(path):
+    total=0
+    for p in path.rglob('*'):
+        try:
+            if p.is_file():total+=p.stat().st_size
+        except FileNotFoundError:
+            # Spool append publication/reclaim races non-atomic inventory.
+            continue
+    return total
+
+
+def compare_source(db,tag,body):
+    row=db.execute('SELECT hash FROM logs WHERE tag=?',(tag,)).fetchone()
+    return 'missing' if row is None else 'changed' if row[0]!=hashlib.sha256(body).digest() else 'identical'
+
+
+def controls():
+    db=sqlite3.connect(':memory:');db.execute('CREATE TABLE logs(tag TEXT PRIMARY KEY, hash BLOB) WITHOUT ROWID')
+    db.execute('INSERT INTO logs VALUES (?,?)',('present',hashlib.sha256(b'original').digest()))
+    results={k:compare_source(db,tag,body) for k,tag,body in [('identical','present',b'original'),('changed','present',b'changed'),('missing','absent',b'original')]}
+    assert results=={'identical':'identical','changed':'changed','missing':'missing'};db.close()
+    class Disappeared:
+        def is_file(self):return True
+        def stat(self):raise FileNotFoundError('registered Spool rename counterexample')
+    class Inventory:
+        def rglob(self,pattern):return [Disappeared()]
+    assert footprint(Inventory())==0
+    return {'sqlite_source_comparison':results,'disappearing_file_inventory_rejected_as_present':True}
 
 
 def io_stats(pid):
@@ -110,9 +140,9 @@ def trial(root,bins,name,per_tick,cpus):
             whole=hashlib.sha256()
             with (root/f'node{i:02}.log').open('rb') as f:
                 for line in f:
-                    whole.update(line);offered+=1;body=line.rstrip(b'\n');tag=body.split(b' ',1)[0][5:].decode();row=db.execute('SELECT hash FROM logs WHERE tag=?',(tag,)).fetchone()
-                    if row is None:missing+=1
-                    elif row[0]!=hashlib.sha256(body).digest():changed+=1
+                    whole.update(line);offered+=1;body=line.rstrip(b'\n');tag=body.split(b' ',1)[0][5:].decode();comparison=compare_source(db,tag,body)
+                    if comparison=='missing':missing+=1
+                    elif comparison=='changed':changed+=1
             source_hashes[f'node{i:02}.log']=whole.hexdigest()
         dump(root/'source-file-hashes.json',source_hashes);db.close();populations={p:{k:[] for k in ['ingest','ack','source_ingest','scheduled_ingest','source_ack']} for p in ['normal','burst','recovery','all']}
         with gzip.open(root/'clock-groups.jsonl.gz','wt') as f:
@@ -133,14 +163,14 @@ def trial(root,bins,name,per_tick,cpus):
 
 
 def main():
-    ap=argparse.ArgumentParser();ap.add_argument('--out',type=Path,required=True);ap.add_argument('--bin-dir',type=Path,required=True);a=ap.parse_args();root=a.out.resolve();bins=a.bin_dir.resolve();assert not root.exists();root.mkdir(parents=True);cpus=sorted(os.sched_getaffinity(0));assert len(cpus)>=4
-    # Independent exact-byte control, before workloads.
-    expected=hashlib.sha256(b'original').digest();assert expected==hashlib.sha256(b'original').digest();assert expected!=hashlib.sha256(b'changed').digest();assert {}.get('missing') is None
-    dump(root/'negative-control.json',{'identical_accepted':True,'changed_rejected':True,'missing_rejected':True})
+    ap=argparse.ArgumentParser();ap.add_argument('--out',type=Path,required=True);ap.add_argument('--bin-dir',type=Path,required=True);ap.add_argument('--tier',choices=['both','enterprise'],default='both');a=ap.parse_args();root=a.out.resolve();bins=a.bin_dir.resolve();assert not root.exists();root.mkdir(parents=True);cpus=sorted(os.sched_getaffinity(0));assert len(cpus)>=4
+    # Exercise the same SQLite source-comparison helper and monitor race.
+    dump(root/'negative-control.json',controls())
     dump(root/'environment.json',{'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=REPO,text=True).strip(),'affinity':cpus,'cpu_max':Path('/sys/fs/cgroup/cpu.max').read_text().strip(),'memory_max':Path('/sys/fs/cgroup/memory.max').read_text().strip(),'uname':list(os.uname()),'harness_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),'binaries':{str(p.relative_to(bins)):hashlib.sha256(p.read_bytes()).hexdigest() for p in [bins/'fabric-server',bins/'fabric-node',bins/'native_source',bins/'examples/server_dump']}})
     os.sched_setaffinity(0,cpus[2:4])
-    for name,per_tick in [('medium',50),('enterprise',500)]:
+    sequence=[('medium',50),('enterprise',500)] if a.tier=='both' else [('enterprise',500)]
+    for name,per_tick in sequence:
         try:trial(root/name,bins,name,per_tick,cpus)
         except Exception as e:dump(root/(name+'-failure.json'),{'error':str(e)});raise
-    dump(root/'complete.json',{'sequential':['medium','enterprise']})
+    dump(root/'complete.json',{'sequential':[name for name,_ in sequence]})
 if __name__=='__main__':main()
