@@ -79,6 +79,39 @@ Each step produces reviewable evidence. Policy/oracle/protocol changes are separ
 
 Use disposable fixtures for deterministic recovery states. Destructive fault campaigns and qualification runs are not authorized by this planning change. Negative controls must include a forced end-of-pass delay, skipping an earlier failed label, and deleting before checkpoint success; each relevant checker must reject its injected defect. These are proposed controls, not registered mutants or claims of current coverage. Existing [HIST-1/2 and delivery checks](../formal/verification-matrix.md) remain the baseline.
 
+## Current environment and PC work split
+
+The work is an investigation of the existing native product. It introduces no WebAssembly runtime, Docker requirement, release stage, or release tag. The journal-reclaim branch remains separate from any discussion of managed extensions.
+
+The inspected development environment is Debian 13 on x86-64, with a four-CPU-equivalent cgroup quota (five visible CPUs), a 16 GiB memory ceiling and approximately 29 GiB free workspace storage. Its workspace is overlayfs and PID 1 is not systemd. These are setup observations, not workload measurements. Rust is not initially installed; install the repository's pinned toolchain before running Rust checks. Run builds and test processes directly, with bounded build parallelism; Docker is not needed.
+
+| Work | Execute in this environment | Evidence that belongs on the PC or another representative host |
+| --- | --- | --- |
+| State-machine reasoning | Enumerate small completion/failure schedules; distinguish safety from conditional progress; inject an unsafe reclaim and a delayed-reclaim control | No hardware dependency for the abstract result; it is not proof of the full Rust implementation |
+| Implementation | Narrow scheduling change, deterministic progress/failure tests, source review and documentation | No need to offload ordinary development |
+| Correctness | Existing delivery/history tests, both query plans, independent oracles, simulated recovery states, meaningful negative controls | Repeat important recovery cases on the actual filesystem; timing or physical durability does not transfer from overlayfs |
+| Exploratory behavior | Bounded native-process A/B experiments, byte-time accounting, checkpoint interference, query concurrency, memory and CPU measurements | Actual target-host latency/capacity and sustained-load results; rerun the same frozen protocol rather than extrapolating |
+| Resource lifetime | Short repeated cycles with explicit data/time ceilings and recorded RSS | Longer soak, actual disk pressure and resource-enforcement behavior on the intended storage/kernel stack |
+| Installation | Build/package checks and static systemd unit validation when relevant | Actual systemd lifecycle, account/permission setup and cgroup enforcement in a disposable VM or dedicated installation; this scheduler change alone does not require reinstalling the everyday PC |
+
+The initial local mechanism investigation is specified separately in the [registered local protocol](../experiments/benchmarks/journal-reclaim-local-protocol.md). It is smaller than the draft mixed-load comparison and makes no speedup or qualification claim.
+
+### Local stopping points
+
+1. Establish a runnable baseline and retain any preexisting failed check separately from candidate regressions. Missing tools or failed setup are not test failures and do not become passes.
+2. Demonstrate the progress mechanism and safety controls before trying to measure a speedup. Use the existing scheduler as a baseline, not as the semantic oracle.
+3. Run the candidate's functional checks and bounded experiments that fit the inspected CPU, memory and disk budgets. Record the filesystem, CPU quota, source revision, build, commands and exits alongside every result. Smaller experiments need their own registered scope; they cannot silently stand in for the full draft comparison below.
+4. Stop local measurement on the runner's resource limits or unresolved correctness failures. Classify an environment-limited result as such; do not transfer an unexplained failure to the PC as an installation task.
+5. Prepare a handoff only once local evidence is interpretable. The handoff may establish a rejected hypothesis; it need not contain a candidate recommended for adoption.
+
+### Reproducible PC handoff
+
+Provide frozen baseline/candidate source SHAs, lockfiles, toolchain and build settings, fixture manifests and hashes, the registered protocol and bounded native runner, preflight commands, result schema and an automatic comparison. Include local counterexamples and limitations so the PC run answers the remaining question instead of repeating the investigation.
+
+Preflight the PC's OS/architecture, available resources, filesystem, toolchain and binary compatibility. A binary built on this environment's newer glibc may not run on an older target: rebuild both variants from the frozen sources with one target-compatible toolchain, or supply verified compatible builds, and record the resulting hashes. Do not assume the repository's historical PC description is still current.
+
+Use owned scratch directories and unprivileged processes for the performance comparison; no service installation, root access, Docker, module runtime or release is necessary. If systemd installation acceptance is separately required, adapt it for a disposable Linux VM. Do not run the existing container-specific `tools/qualification/install/acceptance.sh` unchanged on the everyday PC. Filesystem-sensitive results and any target-profile qualification remain separate from local functional correctness and exploratory measurements.
+
 ## Draft comparison protocol
 
 Status: **proposed, not registered or executable**. No benchmark harness is added by this plan. Resolve the explicit preparation items below, record commands and fixture hashes, and freeze a protocol revision before any comparison. The thresholds are proposed engineering decision rules, not observations or changes to existing qualification criteria.
