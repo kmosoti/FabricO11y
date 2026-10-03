@@ -75,6 +75,7 @@ fn config(root: &Path, bytes: u64) -> Config {
         spool_bytes: bytes,
         server: None,
         traces_listen: None,
+        max_output_bytes_per_s: None,
     }
 }
 
@@ -976,4 +977,88 @@ fn a_full_batch_of_short_lines_stays_under_the_envelope_cap() {
             log.display()
         );
     }
+}
+
+fn metric_value(batch: &Batch, name: &str, signal: Option<&str>) -> Option<f64> {
+    use opentelemetry_proto::tonic::metrics::v1::number_data_point::Value;
+    let request = ExportMetricsServiceRequest::decode(batch.metrics.as_slice()).ok()?;
+    let metric = request.resource_metrics[0].scope_metrics[0]
+        .metrics
+        .iter()
+        .find(|m| m.name == name)?;
+    let points = match metric.data.as_ref()? {
+        metric::Data::Sum(s) => &s.data_points,
+        metric::Data::Gauge(g) => &g.data_points,
+        _ => return None,
+    };
+    let point = points.iter().find(|p| {
+        signal.is_none_or(|want| {
+            p.attributes.iter().any(|kv| {
+                kv.key == "signal"
+                    && matches!(kv.value.as_ref().and_then(|v| v.value.as_ref()), Some(any_value::Value::StringValue(s)) if s == want)
+            })
+        })
+    })?;
+    match point.value? {
+        Value::AsDouble(v) => Some(v),
+        Value::AsInt(v) => Some(v as f64),
+    }
+}
+
+/// The Spindle meters its own output: the next metric cycle reports exactly what the
+/// earlier Batches committed, by signal, and the Spool and backlog gauges.
+#[test]
+fn the_spindle_reports_what_it_committed_in_its_next_metric_cycle() {
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb", 1000, 8);
+    fs::write(scratch.path("selected.log"), "alpha\nbeta\ngamma\n").unwrap();
+    let cfg = config(&scratch.0, 16 * 1024 * 1024);
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    node.collect_once().unwrap();
+    node.collect_once().unwrap();
+    let saved = batches(&cfg);
+    let (first, second) = (&saved[0], &saved[1]);
+    assert_eq!(
+        metric_value(first, "fabric.spindle.committed.bytes", Some("logs")),
+        Some(0.0)
+    );
+    assert_eq!(
+        metric_value(second, "fabric.spindle.committed.bytes", Some("logs")),
+        Some(first.logs.len() as f64)
+    );
+    assert_eq!(
+        metric_value(second, "fabric.spindle.committed.records", Some("logs")),
+        Some(3.0)
+    );
+    assert_eq!(
+        metric_value(second, "fabric.spindle.committed.bytes", Some("metrics")),
+        Some(first.metrics.len() as f64)
+    );
+    assert_eq!(
+        metric_value(second, "fabric.spindle.committed.bytes", Some("traces")),
+        Some(0.0)
+    );
+    assert_eq!(
+        metric_value(second, "fabric.spindle.unacked.batches", None),
+        Some(1.0)
+    );
+    assert!(metric_value(second, "fabric.spindle.spool.bytes", None).unwrap() > 0.0);
+    assert_eq!(
+        metric_value(second, "fabric.spindle.delivered.bytes", None),
+        Some(0.0)
+    );
+}
+
+#[test]
+fn a_rate_cap_below_64_kib_per_second_is_refused() {
+    let scratch = Scratch::new();
+    let path = scratch.path("node.conf");
+    let base = format!("spool_dir={}\n", scratch.path("spool").display());
+    fs::write(&path, format!("{base}max_output_bytes_per_s=65535\n")).unwrap();
+    assert!(Config::load(&path).is_err());
+    fs::write(&path, format!("{base}max_output_bytes_per_s=1048576\n")).unwrap();
+    assert_eq!(
+        Config::load(&path).unwrap().max_output_bytes_per_s,
+        Some(1 << 20)
+    );
 }

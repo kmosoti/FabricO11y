@@ -53,6 +53,9 @@ pub struct Config {
     pub server: Option<ServerTarget>,
     /// Loopback address of the OTLP/HTTP trace endpoint (ADR-0025); `None` disables it.
     pub traces_listen: Option<std::net::SocketAddr>,
+    /// Cap on delivered Batch bytes per second (`max_output_bytes_per_s`); `None` is
+    /// uncapped. At least 64 KiB/s when set.
+    pub max_output_bytes_per_s: Option<u64>,
 }
 
 impl Config {
@@ -72,6 +75,7 @@ impl Config {
             spool_bytes: 256 * 1024 * 1024,
             server: None,
             traces_listen: None,
+            max_output_bytes_per_s: None,
         };
         let (mut url, mut ca, mut token_file) = (None, None, None);
         let mut seen_spool = false;
@@ -107,6 +111,15 @@ impl Config {
                 "server_url" if url.is_none() => url = Some(value.to_owned()),
                 "server_ca" if ca.is_none() => ca = Some(PathBuf::from(value)),
                 "token_file" if token_file.is_none() => token_file = Some(PathBuf::from(value)),
+                "max_output_bytes_per_s" if result.max_output_bytes_per_s.is_none() => {
+                    let rate: u64 = value
+                        .parse()
+                        .map_err(|_| invalid("invalid max_output_bytes_per_s"))?;
+                    if rate < 64 * 1024 {
+                        return Err(invalid("max_output_bytes_per_s must be at least 65536"));
+                    }
+                    result.max_output_bytes_per_s = Some(rate);
+                }
                 "traces_listen" if result.traces_listen.is_none() => {
                     result.traces_listen = Some(super::otlp::check_listen(value)?);
                 }
@@ -228,6 +241,7 @@ fn metric_request(
     snapshot: &host::Snapshot,
     now: u64,
     history: &History,
+    extra: Vec<Metric>,
 ) -> io::Result<(Vec<u8>, History, usize)> {
     // A complete host sample replaces prior series. Retaining old device or
     // boot identities would make RAM grow across a bounded spool's lifetime.
@@ -281,7 +295,9 @@ fn metric_request(
             ..Default::default()
         });
     }
+    // Host points only: the meter's own metrics ride along uncounted.
     let count = metrics.len();
+    metrics.extend(extra);
     let request = ExportMetricsServiceRequest {
         resource_metrics: vec![ResourceMetrics {
             resource: Some(resource(&snapshot.hostname, &snapshot.boot_id)),
@@ -374,6 +390,11 @@ fn absorb(
             .ok_or_else(|| corrupt("committed metrics missing boot ID"))?;
         for scope in group.scope_metrics {
             for metric in scope.metrics {
+                // The Spindle's own output meter restarts from zero with the
+                // process; there is no counter history to restore for it.
+                if metric.name.starts_with(super::meter::PREFIX) {
+                    continue;
+                }
                 if !supported_counter(&metric.name)
                     && matches!(&metric.data, Some(metric::Data::Sum(_)))
                 {
@@ -444,6 +465,10 @@ pub struct Spindle {
     sender: Option<Sender>,
     /// A coverage-unknown notice already committed while its marker remains.
     unknown_reported: Option<Unknown>,
+    /// Output metering and the optional delivery rate cap.
+    meter: super::meter::Meter,
+    /// Unread log bytes after the last pass, for the meter's gauge.
+    last_backlog: u64,
 }
 
 /// What one configuration poll did.
@@ -565,6 +590,7 @@ impl Spindle {
                 unknown_reported = None;
             }
         }
+        let config_rate = config.max_output_bytes_per_s;
         Ok(Self {
             config,
             base,
@@ -576,6 +602,12 @@ impl Spindle {
             host_paths,
             sender,
             unknown_reported,
+            meter: super::meter::Meter::new(
+                now_ns()?,
+                config_rate,
+                fabric_frame::envelope::MAX_BATCH,
+            ),
+            last_backlog: 0,
         })
     }
 
@@ -670,6 +702,19 @@ impl Spindle {
             };
             report.sent += 1;
             let started = std::time::Instant::now();
+            // The rate cap delays a send; a wait past `until` ends this delivery
+            // slice instead (the tokens are given back), so the loop never spins.
+            let wait = self.meter.take(bytes.len());
+            if !wait.is_zero() {
+                let now = std::time::Instant::now();
+                if now + wait > until {
+                    self.meter.untake(bytes.len());
+                    std::thread::sleep(until.saturating_duration_since(now));
+                    report.sent -= 1;
+                    break;
+                }
+                std::thread::sleep(wait);
+            }
             let outcome = sender.send(&bytes);
             let elapsed_us = started.elapsed().as_micros() as u64;
             on_attempt(&Attempt {
@@ -686,6 +731,7 @@ impl Spindle {
                     // Beyond our last committed sequence is an error from
                     // record_ack; the spool is left unchanged.
                     self.journal.record_ack(through)?;
+                    self.meter.record_delivery(bytes.len());
                     report.acked_through = through;
                 }
                 Delivery::Ack(through) => {
@@ -734,7 +780,24 @@ impl Spindle {
             collection_gaps: Vec::new(),
             traces,
         };
-        Ok(self.journal.append(&candidate)?.sequence)
+        let spans: usize = exports
+            .iter()
+            .filter_map(|e| {
+                opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest::decode(
+                    *e,
+                )
+                .ok()
+            })
+            .flat_map(|r| r.resource_spans)
+            .flat_map(|r| r.scope_spans)
+            .map(|s| s.spans.len())
+            .sum();
+        let committed = self.journal.append(&candidate)?;
+        self.meter.record_commit(super::meter::Committed {
+            traces: (committed.traces.len() as u64, spans as u64),
+            ..Default::default()
+        });
+        Ok(committed.sequence)
     }
 
     /// One full cycle: host metrics and every configured log. Always commits
@@ -779,7 +842,15 @@ impl Spindle {
             None
         };
         let (metrics, updated_history, metric_points) = if let Some(snapshot) = sampled.as_ref() {
-            let (bytes, history, count) = metric_request(snapshot, now, &self.history)?;
+            let unacked = self
+                .journal
+                .next_sequence()
+                .saturating_sub(1)
+                .saturating_sub(self.journal.acked_through());
+            let metered =
+                self.meter
+                    .metrics(now, self.journal.used_bytes(), unacked, self.last_backlog);
+            let (bytes, history, count) = metric_request(snapshot, now, &self.history, metered)?;
             (bytes, history, count)
         } else {
             (Vec::new(), self.history.clone(), 0)
@@ -880,6 +951,12 @@ impl Spindle {
         // Update in-memory state first: the batch is committed, and a caller
         // that retries after a later error must not collect the same lines.
         let sequence = committed.sequence;
+        self.meter.record_commit(super::meter::Committed {
+            logs: (committed.logs.len() as u64, lines.len() as u64),
+            metrics: (committed.metrics.len() as u64, metric_points as u64),
+            traces: (0, 0),
+        });
+        self.last_backlog = log_backlog_bytes;
         let gap_count = committed.collection_gaps.len();
         for cursor in committed.cursors {
             self.cursors.insert(cursor.path.clone(), cursor);
@@ -1106,7 +1183,8 @@ mod tests {
                     known_start_ns: None,
                 }],
             };
-            let (metrics, next, _) = metric_request(&snapshot, 100 + boot, &history).unwrap();
+            let (metrics, next, _) =
+                metric_request(&snapshot, 100 + boot, &history, Vec::new()).unwrap();
             assert_eq!(next.len(), 1);
             let batch = Batch {
                 version: 1,
