@@ -25,7 +25,15 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
 const MAX_LOGS: usize = 16;
-const LOG_BODY_BUDGET: usize = 64 * 1024;
+/// Log bytes per Batch, counting each line's encoding overhead (ADR-0025).
+const LOG_BODY_BUDGET: usize = 768 * 1024;
+/// Encoding overhead of one log record beyond its body and path: the observed
+/// time, four numeric attributes with their keys, and the protobuf framing. The
+/// encoded record is at most body + path + this many bytes (see the test
+/// `a_full_batch_of_short_lines_stays_under_the_envelope_cap`).
+const LOG_LINE_OVERHEAD: usize = 256;
+/// Room kept in every Batch for the resource, the cursors and the gaps.
+const BATCH_RESERVE: usize = 96 * 1024;
 const SPOOL_RESERVE: u64 = 4096;
 
 fn invalid(message: &str) -> io::Error {
@@ -778,7 +786,11 @@ impl Spindle {
         };
         let mut lines = Vec::new();
         let mut pending_cursors = Vec::new();
-        let mut remaining = LOG_BODY_BUDGET;
+        let mut remaining = LOG_BODY_BUDGET.min(
+            fabric_frame::envelope::MAX_BATCH
+                .saturating_sub(metrics.len())
+                .saturating_sub(BATCH_RESERVE),
+        );
         let mut log_backlog_bytes = 0_u64;
         // The shared per-cycle body budget is spent in path order, starting at a
         // different path each batch, so one busy file cannot starve the others.
@@ -791,11 +803,16 @@ impl Spindle {
         for index in 0..count {
             let path = &self.config.logs[(first + index) % count];
             let name = path.to_string_lossy().to_string();
-            match log_source::read_lines(path, self.cursors.get(&name), remaining) {
+            let per_line = name.len() + LOG_LINE_OVERHEAD;
+            match log_source::read_lines_costed(path, self.cursors.get(&name), remaining, per_line)
+            {
                 Ok(read) => {
                     log_backlog_bytes = log_backlog_bytes.saturating_add(read.backlog_bytes);
                     remaining = remaining.saturating_sub(
-                        read.lines.iter().map(|line| line.body.len()).sum::<usize>(),
+                        read.lines
+                            .iter()
+                            .map(|line| line.body.len() + per_line)
+                            .sum::<usize>(),
                     );
                     lines.extend(read.lines);
                     pending_cursors.push(read.cursor);

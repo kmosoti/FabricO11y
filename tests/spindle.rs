@@ -210,16 +210,17 @@ fn counters_preserve_start_then_reset_on_decrease_and_boot_change() {
 fn oversized_skip_is_committed_and_resumed_after_node_restart() {
     let scratch = Scratch::new();
     write_host(&scratch.0, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", 1000, 4);
-    let mut bytes = vec![b'X'; 256 * 1024 + 10];
+    // Longer than one pass's scan bound (1 MiB), so the first pass ends mid-line.
+    let mut bytes = vec![b'X'; 1024 * 1024 + 10];
     bytes.extend_from_slice(b"\nnormal\n");
     fs::write(scratch.path("selected.log"), &bytes).unwrap();
-    let cfg = config(&scratch.0, 1024 * 1024);
+    let cfg = config(&scratch.0, 4 * 1024 * 1024);
     let mut first = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     let cycle = first.collect_once().unwrap();
     assert_eq!((cycle.log_records, cycle.gaps), (0, 1));
     drop(first);
     let saved = batches(&cfg);
-    assert_eq!(saved[0].cursors[0].offset, 256 * 1024);
+    assert_eq!(saved[0].cursors[0].offset, 1024 * 1024);
     assert!(saved[0].cursors[0].skipping_oversize);
     let mut resumed = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
     assert_eq!(resumed.collect_once().unwrap().log_records, 1);
@@ -903,4 +904,75 @@ fn trace_exports_are_committed_to_the_spool_before_they_are_acknowledged() {
             "op-0", "op-1", "op-2", "op-0", "op-1", "op-2", "op-3", "op-4"
         ]
     );
+}
+
+/// ADR-0025: a pass reads far more than the old 128 lines and 64 KiB, and the Batch
+/// stays under the 1 MiB envelope cap in the worst cases: tiny lines under the longest
+/// allowed path (overhead-dominated) and lines at the 4 KiB maximum.
+#[test]
+fn a_full_batch_of_short_lines_stays_under_the_envelope_cap() {
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "boot-a", 1000, 8);
+    // As long as the config allows (240 bytes), so per-line overhead dominates.
+    let room = 240 - scratch.0.as_os_str().len() - "/tiny.log".len() - 2;
+    let deep = scratch
+        .0
+        .join("d".repeat(room / 2))
+        .join("e".repeat(room - room / 2));
+    fs::create_dir_all(&deep).unwrap();
+    let cases = [
+        (deep.join("tiny.log"), "x\n".repeat(60_000)),
+        (
+            scratch.path("wide.log"),
+            format!("{}\n", "w".repeat(4095)).repeat(400),
+        ),
+    ];
+    for (log, text) in cases {
+        fs::write(&log, &text).unwrap();
+        let mut cfg = config(&scratch.0, 64 * 1024 * 1024);
+        cfg.spool = scratch.path(&format!(
+            "spool-{}",
+            log.file_name().unwrap().to_string_lossy()
+        ));
+        cfg.logs = vec![log.clone()];
+        let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+        let mut largest = 0;
+        let mut first_lines = 0;
+        let mut total = 0;
+        while let Some(cycle) = node.collect_logs().unwrap() {
+            if first_lines == 0 {
+                first_lines = cycle.log_records;
+            }
+            total += cycle.log_records;
+            if cycle.log_backlog_bytes == 0 {
+                break;
+            }
+        }
+        for batch in batches(&cfg) {
+            largest = largest.max(batch.encode_to_vec().len());
+            assert!(batch.logs.len() + batch.metrics.len() <= fabric_frame::envelope::MAX_BATCH);
+        }
+        let expected = text.lines().count();
+        assert_eq!(
+            total,
+            expected,
+            "{}: every line collected once",
+            log.display()
+        );
+        assert!(
+            first_lines > 128,
+            "{}: a pass reads more than the old cap ({first_lines})",
+            log.display()
+        );
+        assert!(
+            largest <= fabric_frame::envelope::MAX_BATCH,
+            "{}: {largest} bytes",
+            log.display()
+        );
+        assert!(
+            largest > 512 * 1024,
+            "{}: Batches are filled ({largest} bytes)",
+            log.display()
+        );
+    }
 }

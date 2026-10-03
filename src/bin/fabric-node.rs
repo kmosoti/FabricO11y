@@ -137,6 +137,13 @@ fn main() -> ExitCode {
             } else {
                 None
             };
+            // A pass that left unread log bytes is followed by another as soon as
+            // delivery has caught up, so collection keeps pace with delivery rather
+            // than with one pass per second (ADR-0025).
+            let catch_up = cycle.as_ref().is_some_and(|c| c.log_backlog_bytes > 0);
+            if catch_up {
+                next_logs = Instant::now();
+            }
             if let Some(cycle) = cycle {
                 println!(
                     "batch={} metrics={} logs={} gaps={} spool_bytes={} log_backlog_bytes={} acked_through={}",
@@ -154,7 +161,12 @@ fn main() -> ExitCode {
             }
             // Until the next poll: deliver while batches are pending, back off
             // after a failed attempt, and honour a stop request within 100 ms.
-            let deadline = next_metrics.min(next_logs).min(next_config);
+            let deadline = if catch_up {
+                // Deliver until caught up (bounded), then read the backlog again.
+                Instant::now() + Duration::from_secs(2)
+            } else {
+                next_metrics.min(next_logs).min(next_config)
+            };
             while !STOP.load(Ordering::SeqCst) && Instant::now() < deadline {
                 if let Some(rx) = &traces
                     && fabric_o11y::spindle::otlp::drain(&mut node, rx, &mut carried)
@@ -192,6 +204,9 @@ fn main() -> ExitCode {
                             backoff = MIN_BACKOFF;
                             if !report.caught_up {
                                 continue;
+                            }
+                            if catch_up {
+                                break;
                             }
                             // Nothing pending until the next poll commits.
                             retry_at = deadline;
