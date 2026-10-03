@@ -12,6 +12,8 @@ Proposed follow-up: [adaptive sealing and builder memory](experiments/benchmarks
 
 Local output-writer experiment: [streaming output run 01](experiments/benchmarks/streaming-output-local-run-01.md), branch `milestone/streaming-segment-output`. Twelve pairs produced byte-identical Segments under a 2 GiB address-space limit. The primary fixture used about 7% less incremental heap and 12% less whole-process peak RSS; the registered >10% heap target was not met. The whole-file builder remains unbounded in input size and this candidate is experimental.
 
+Workload planning: [development-to-enterprise sizing](research/workload-sizing.md) adds an editable calculator grounded in the frozen writer pilot, with explicit assumptions for event volume, memory, bursts, retention and outage buffers. It is arithmetic and proposed trial hardware, not new deployment measurements or qualification.
+
 ## Implemented
 
 - **Spindle** (`fabric-node`): bounded Linux host metrics and selected log files as OTLP inside version-one Batches, a durable `FAB1` Spool with ACK cursor and whole-file reclaim, visible collection gaps, SIGTERM-safe cycles, remote configuration with last-valid fallback ([Spindle view](architecture/spindle.md)). It meters its own output as `fabric.spindle.*` metrics and can cap its delivery rate (`max_output_bytes_per_s`); a pass that leaves a log backlog is followed by another once delivery has caught up, about 9.7 MB/s of real log text per node on this machine (3.6 before the server's quiet rule), set by one Batch in flight: the server's 13 ms answer and the 12 ms collection of the next Batch, in series ([spindle run 01](experiments/benchmarks/spindle-run-01.md), [sealer profile run 01](experiments/benchmarks/sealer-profile-run-01.md))).

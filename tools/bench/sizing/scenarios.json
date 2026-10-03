@@ -1,0 +1,25 @@
+{
+  "assumptions": {
+    "encoded_bytes_per_event": 1024,
+    "burst_multiplier": 3,
+    "burst_seconds": 60,
+    "outage_seconds": 3600,
+    "storage_ratios": [0.5, 1.6],
+    "service_derating": 0.5,
+    "network_margin": 1.2,
+    "disk_margin": 1.25,
+    "file_mib": 64,
+    "journal_floor_gib": 20,
+    "fixed_server_gib": 1,
+    "builder_gib": 0.625,
+    "builder_margin": 1.25,
+    "host_reserve_gib": 1,
+    "memory_target_fraction": 0.75
+  },
+  "scenarios": [
+    {"name": "development", "nodes": 1, "events_per_second": 10, "retention_days": 1, "trial_vcpus": 2, "trial_ram_gib": 4},
+    {"name": "small", "nodes": 20, "events_per_second": 1000, "retention_days": 7, "trial_vcpus": 2, "trial_ram_gib": 4},
+    {"name": "moderate", "nodes": 200, "events_per_second": 10000, "retention_days": 14, "trial_vcpus": 4, "trial_ram_gib": 8},
+    {"name": "enterprise", "nodes": 2000, "events_per_second": 100000, "retention_days": 30, "trial_vcpus": 16, "trial_ram_gib": 32}
+  ]
+}

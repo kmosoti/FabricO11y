@@ -21,6 +21,8 @@ Frozen reviewer probes, verdicts and parent notes from earlier language-model re
 
 [Adaptive sealing and builder memory](benchmarks/adaptive-sealing-hypotheses.md) develops separate scheduler and working-set hypotheses, nulls, resource models and a draft validation design. It is a proposal with no implementation or new measurements. The [sealing pipeline model](../research/sealing-pipeline-model.md) develops storage-owned buffers, processing-task semantics, memory/deadlock obligations and a constrained optimization/validation design. Its [experiment and optimization route catalog](benchmarks/sealing-pipeline-experiment-design.md) defines multidimensional screening, interaction tests and independent confirmation; R0 has a separately registered local result; other routes remain unrun.
 
+The [workload sizing model](../research/workload-sizing.md) calculates development, small, moderate and enterprise resource budgets from frozen evidence and editable assumptions. It records no new performance measurements.
+
 Research results do not become product behavior without an ADR.
 
 The [local prototype completion contract](ablation/end-to-end-prototype.md) is closed
