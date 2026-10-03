@@ -4,7 +4,7 @@ Status: local mechanism and server regression tests passed. The full fast profil
 
 ## Revisions and environment
 
-Baseline: `5f0c52f16f8afe01cf29a118513cf8a43b4cb333`. Protocol registration: [`9df2e17`](https://github.com/kmosoti/FabricO11y/commit/9df2e17764c8d02fcb9397dfecc3f19c541244e9) (published equivalent of local registration `0e2d3f0`, committed before source changes). Candidate source SHA-256 for `crates/fabric-server/src/sealer.rs`: `432d676986206d81cc1e8f70ffd04a76cb395d09c1c9253debf794ff4e73ec96`.
+Baseline: `5f0c52f16f8afe01cf29a118513cf8a43b4cb333`. Protocol registration: [`9df2e17`](https://github.com/kmosoti/FabricO11y/commit/9df2e17764c8d02fcb9397dfecc3f19c541244e9) (published equivalent of local registration `0e2d3f0`, committed before source changes). Candidate implementation: [`9c4713c`](https://github.com/kmosoti/FabricO11y/commit/9c4713c735314cac962ce850500efa09013ccd88). Candidate source SHA-256 for `crates/fabric-server/src/sealer.rs`: `432d676986206d81cc1e8f70ffd04a76cb395d09c1c9253debf794ff4e73ec96`.
 
 Debian 13, x86_64, glibc 2.41, kernel 6.18.44; five visible CPUs, cgroup quota four CPU equivalents and 16 GiB memory. Workspace uses overlayfs. Rust 1.98.0, two build jobs, `CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_PROFILE_TEST_DEBUG=0`; shared build cache outside both worktrees. Bun 1.4.0 for documentation checks. Native processes only. No PC access, Docker, Wasm, service installation or release.
 
