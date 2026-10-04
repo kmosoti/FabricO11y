@@ -66,10 +66,11 @@ retries. No p99 with fewer than 1,000 comparable observations.
 
 H1-G: finer journal files reduce per-builder live memory at a CPU/metadata/IO
 cost. H0-G: memory is not reduced or useful completion does not compensate costs.
-First hold one worker, shuffled seed 42, 131,072 x 1,024-byte raw log bodies
-constant, and vary rotation at 1, 16, 64 MiB encoded bytes. Ensure at least two
+First hold one worker, shuffled seed 42, 262,144 x 1,024-byte raw log bodies
+constant, and vary rotation at 1, 16, 64 MiB encoded bytes. Ensure at least four
 representative default-sized journal files; capture actual file/group sizes and
-active tail. Hold 64 MiB rotation next and vary 1/2/3/4 workers. Then test all
+active tail. The fixture journal allowance is 1 GiB to admit the complete input
+before the timed finite pass; this is not a product cap selection. Hold 64 MiB rotation next and vary 1/2/3/4 workers. Then test all
 selected granularity x worker interactions: 16 and 64 MiB x 1/2/3/4 workers.
 Deduplicate cells already executed. Five fresh-process repetitions per cell,
 counterbalanced order; counted repetitions separate from plain. Exact recovered
@@ -131,3 +132,8 @@ Gates: exact pre-retention source recovery, no hidden gaps, clean exits, bounded
 120 s drain, nonnegative clocks, no OOM; descriptive latency/resource evidence
 without invented deployment SLO. Failure stops dependent comparisons. Document
 completed and unrun cells explicitly, and preserve every raw failure.
+
+Prospective fixture refinement before implementation/preflight: the 262,144-row
+fixture provides four closed 64 MiB files, so a three/four-worker comparison is
+not silently limited to two available tasks. Earlier protocol text used 131,072
+rows; no measurements ran under that size.
