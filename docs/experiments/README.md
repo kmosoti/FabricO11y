@@ -22,7 +22,7 @@ Frozen reviewer probes, verdicts and parent notes from earlier language-model re
 
 ## Research
 
-The [responsibility experiment design](benchmarks/responsibility-experiment-design.md) specifies parallel preparation versus sequential measurements and preserves a partial initial isolation run. New measurements are paused for design; query-fixture correctness and observer/statistical calibration precede the next campaign.
+The [responsibility experiment design](benchmarks/responsibility-experiment-design.md) specifies parallel preparation versus sequential measurements and preserves a partial initial isolation run. [Revision-2 protocol](benchmarks/responsibility-isolation-protocol-r2.md) and [results](benchmarks/responsibility-isolation-r2-run-01.md) record corrected all-mode preflight, observer calibration and 290 sequential native boundary trials; exact checks passed for that finite screen. Coverage gaps, unstable timing populations and later composite work remain explicit; no shipping defaults were selected.
 
 The [pre-tier responsibility benchmark audit](benchmarks/responsibility-benchmark-audit.md) maps six functional and two supporting groups to current tools, missing measurements, candidate inefficiencies and correctness controls. Full phase/observer attribution is a prerequisite for the next development/small/moderate consumer tests; no new performance result is claimed.
 

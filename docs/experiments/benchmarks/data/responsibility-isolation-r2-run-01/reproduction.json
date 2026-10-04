@@ -1,0 +1,39 @@
+{
+  "revision": "a717c33",
+  "protocol": "responsibility-isolation-protocol-r2.md",
+  "release_builds": [
+    "cargo build --offline --release -p fabric-server --example responsibility_probe",
+    "cargo build --offline --release -p fabric-server --example responsibility_probe --features responsibility-alloc-probe"
+  ],
+  "env": {
+    "CARGO_BUILD_JOBS": "2",
+    "CARGO_HOME": "/workspace/scratch/fabrico11y-rust/cargo",
+    "RUSTUP_HOME": "/workspace/scratch/fabrico11y-rust/rustup",
+    "CARGO_TARGET_DIR": "/workspace/scratch/fabrico11y-target"
+  },
+  "server_binaries": "Frozen native server/dump from preceding isolation build; unchanged production source. Binary hashes in each environment record.",
+  "commands": [
+    "python3 -B tools/bench/run_responsibility_isolation.py --phase preflight --out /workspace/scratch/responsibility-v2-preflight-02 --bins /workspace/scratch/responsibility-v2-frozen",
+    "python3 -B tools/bench/run_responsibility_isolation.py --phase calibration --out /workspace/scratch/responsibility-v2-calibration-01 --bins /workspace/scratch/responsibility-v2-frozen --readiness /workspace/scratch/responsibility-v2-preflight-02",
+    "python3 -B tools/bench/run_responsibility_isolation.py --phase measure --out /workspace/scratch/responsibility-v2-run-01 --bins /workspace/scratch/responsibility-v2-frozen --readiness /workspace/scratch/responsibility-v2-preflight-02 --calibration /workspace/scratch/responsibility-v2-calibration-01"
+  ],
+  "exits": {
+    "failed_preflight": 1,
+    "corrected_preflight": 0,
+    "calibration": 0,
+    "measurement": 0,
+    "final_fast_checks": 1,
+    "package_probe_clippy": 101,
+    "final_docs": 0,
+    "git_diff_check": 0,
+    "python_compile_and_aggregate": 0
+  },
+  "aggregation": "python3 -B tools/bench/summarize_responsibility_isolation.py <measurement-dir> <aggregate.json>",
+  "fixture": "seed42; exact per-trial argv/env/case in command.json; frozen native probe source; only owned temporary source/state deleted",
+  "final_checks": [
+    "cargo xtask checks --profile fast",
+    "cargo clippy --offline -p fabric-server --example responsibility_probe --features responsibility-alloc-probe --no-deps -- -D warnings",
+    "bun tools/docs/check.mjs",
+    "git diff --check"
+  ]
+}

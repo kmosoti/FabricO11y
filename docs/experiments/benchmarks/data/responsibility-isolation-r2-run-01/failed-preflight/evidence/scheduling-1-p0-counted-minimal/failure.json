@@ -1,0 +1,11 @@
+{
+  "error": "probe exit 101",
+  "case": {
+    "id": "scheduling-1",
+    "mode": "scheduling",
+    "size": 1,
+    "records": 4096,
+    "order": "sorted"
+  },
+  "phase": "preflight"
+}

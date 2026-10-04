@@ -1,0 +1,40 @@
+{
+  "bounds": null,
+  "candidate_commit": "a717c33eb641e1137633c924b65d0e80237dab1f",
+  "check_id": "clippy",
+  "command": [
+    "cargo",
+    "clippy",
+    "--workspace",
+    "--all-targets",
+    "--all-features",
+    "--locked",
+    "--",
+    "-D",
+    "warnings"
+  ],
+  "duration_ms": 381,
+  "exit_code": 101,
+  "expected": "exit 0",
+  "fixtures": null,
+  "negative_controls": null,
+  "oracle_revision": "none",
+  "output_sha256": "8bd21d570f4a276f22b5748ad5de90580389e1ae0f663d7e966ad3d450597d6a",
+  "profile": "fast",
+  "property_ids": [
+    "ARCH-2"
+  ],
+  "receipt_version": 1,
+  "result": "failed",
+  "scope": "Clippy on every workspace crate and target with warnings denied, including the core's panic and unchecked-arithmetic restrictions",
+  "specification_revision": "47b2c38ad609e03531eb0767a99a343a41d1b513",
+  "toolchain": {
+    "bun": "1.4.0",
+    "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)",
+    "python3": "Python 3.12.14",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "Research packages under tools/ and the nightly fuzz crate are outside the workspace.",
+  "worktree_dirty": false
+}

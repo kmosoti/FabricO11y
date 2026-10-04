@@ -1,0 +1,33 @@
+{
+  "argv": [
+    "prlimit",
+    "--as=2147483648",
+    "--",
+    "taskset",
+    "-c",
+    "0,1,2,3,4",
+    "/workspace/scratch/responsibility-v2-frozen/counted",
+    "/workspace/scratch/responsibility-v2-run-01/scratch/processing-3500-p3-counted-minimal",
+    "processing",
+    "3500"
+  ],
+  "bench_env": {
+    "BENCH_RECORDS": "4096",
+    "BENCH_ORDER": "sorted",
+    "BENCH_BODY_SIZE": "3500",
+    "BENCH_QUERY_REPEATS": "3",
+    "BENCH_OBSERVER": "minimal",
+    "BENCH_PREFLIGHT": "0",
+    "BENCH_QUERY_ROTATION": "2"
+  },
+  "case": {
+    "id": "processing-3500",
+    "mode": "processing",
+    "size": 3500,
+    "records": 4096,
+    "order": "sorted"
+  },
+  "phase": "measure",
+  "observer": "minimal",
+  "predicted_logical_bytes": 248217600
+}

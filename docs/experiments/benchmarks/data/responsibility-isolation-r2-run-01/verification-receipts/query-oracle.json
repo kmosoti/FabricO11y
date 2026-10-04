@@ -1,0 +1,37 @@
+{
+  "bounds": null,
+  "candidate_commit": "a717c33eb641e1137633c924b65d0e80237dab1f",
+  "check_id": "query-oracle",
+  "command": [
+    "python3",
+    "-B",
+    "tools/qualification/test_query_oracle.py"
+  ],
+  "duration_ms": 294,
+  "exit_code": 0,
+  "expected": "exit 0",
+  "fixtures": null,
+  "negative_controls": null,
+  "oracle_revision": "b5a92eb767a08d2f4d995da118689809ef4ae58b",
+  "output_sha256": "c276c27619c2f1c36313db0a7f18b535e17af3b982081762ed9eb435e81a5f8c",
+  "profile": "fast",
+  "property_ids": [
+    "HIST-3",
+    "HIST-4",
+    "HIST-5",
+    "HIST-6"
+  ],
+  "receipt_version": 1,
+  "result": "passed",
+  "scope": "The independent query and rate oracle and its pagination, rate and completeness mutants",
+  "specification_revision": "b5a92eb767a08d2f4d995da118689809ef4ae58b",
+  "toolchain": {
+    "bun": "1.4.0",
+    "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)",
+    "python3": "Python 3.12.14",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "Latency and freshness; the oracle is exact-scan only.",
+  "worktree_dirty": false
+}

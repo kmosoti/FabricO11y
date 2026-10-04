@@ -1,0 +1,54 @@
+{"trial": "collection-128-p0-counted-minimal", "exit": 0, "elapsed_s": 0.04084569899714552, "cleanup": true}
+{"trial": "collection-128-p0-plain-minimal", "exit": 0, "elapsed_s": 0.03076221200171858, "cleanup": true}
+{"trial": "collection-900-p0-counted-minimal", "exit": 0, "elapsed_s": 0.18210482499853242, "cleanup": true}
+{"trial": "collection-900-p0-plain-minimal", "exit": 0, "elapsed_s": 0.172294673990109, "cleanup": true}
+{"trial": "collection-3500-p0-counted-minimal", "exit": 0, "elapsed_s": 0.6673485500068637, "cleanup": true}
+{"trial": "collection-3500-p0-plain-minimal", "exit": 0, "elapsed_s": 0.6068584020104026, "cleanup": true}
+{"trial": "delivery-128-p0-counted-minimal", "exit": 0, "elapsed_s": 0.2733606499969028, "cleanup": true}
+{"trial": "delivery-128-p0-plain-minimal", "exit": 0, "elapsed_s": 0.27414210500137415, "cleanup": true}
+{"trial": "delivery-900-p0-counted-minimal", "exit": 0, "elapsed_s": 0.45633588900091127, "cleanup": true}
+{"trial": "delivery-900-p0-plain-minimal", "exit": 0, "elapsed_s": 0.353425908004283, "cleanup": true}
+{"trial": "delivery-3500-p0-counted-minimal", "exit": 0, "elapsed_s": 0.9092500460101292, "cleanup": true}
+{"trial": "delivery-3500-p0-plain-minimal", "exit": 0, "elapsed_s": 0.8498850930045592, "cleanup": true}
+{"trial": "storage-128-p0-counted-minimal", "exit": 0, "elapsed_s": 0.30314935700153, "cleanup": true}
+{"trial": "storage-128-p0-plain-minimal", "exit": 0, "elapsed_s": 0.23254746999009512, "cleanup": true}
+{"trial": "storage-900-p0-counted-minimal", "exit": 0, "elapsed_s": 0.5052865779871354, "cleanup": true}
+{"trial": "storage-900-p0-plain-minimal", "exit": 0, "elapsed_s": 0.47485904199129436, "cleanup": true}
+{"trial": "storage-3500-p0-counted-minimal", "exit": 0, "elapsed_s": 1.414444360008929, "cleanup": true}
+{"trial": "storage-3500-p0-plain-minimal", "exit": 0, "elapsed_s": 1.2832825709920144, "cleanup": true}
+{"trial": "processing-128-p0-counted-minimal", "exit": 0, "elapsed_s": 0.09146237499953713, "cleanup": true}
+{"trial": "processing-128-p0-plain-minimal", "exit": 0, "elapsed_s": 0.07120342200505547, "cleanup": true}
+{"trial": "processing-900-p0-counted-minimal", "exit": 0, "elapsed_s": 0.3740910539927427, "cleanup": true}
+{"trial": "processing-900-p0-plain-minimal", "exit": 0, "elapsed_s": 0.354060864992789, "cleanup": true}
+{"trial": "processing-3500-p0-counted-minimal", "exit": 0, "elapsed_s": 1.3859040850074962, "cleanup": true}
+{"trial": "processing-3500-p0-plain-minimal", "exit": 0, "elapsed_s": 1.2027639129955787, "cleanup": true}
+{"trial": "processing-900-reversed-p0-counted-minimal", "exit": 0, "elapsed_s": 0.404415931989206, "cleanup": true}
+{"trial": "processing-900-reversed-p0-plain-minimal", "exit": 0, "elapsed_s": 0.3440737539931433, "cleanup": true}
+{"trial": "processing-900-shuffled-p0-counted-minimal", "exit": 0, "elapsed_s": 0.37408096400031354, "cleanup": true}
+{"trial": "processing-900-shuffled-p0-plain-minimal", "exit": 0, "elapsed_s": 0.34381150899571367, "cleanup": true}
+{"trial": "processing-1024-16384-p0-counted-minimal", "exit": 0, "elapsed_s": 1.7176538109924877, "cleanup": true}
+{"trial": "processing-1024-16384-p0-plain-minimal", "exit": 0, "elapsed_s": 1.538325828005327, "cleanup": true}
+{"trial": "processing-1024-65536-p0-counted-minimal", "exit": 0, "elapsed_s": 6.717451594988233, "cleanup": true}
+{"trial": "processing-1024-65536-p0-plain-minimal", "exit": 0, "elapsed_s": 5.954288623004686, "cleanup": true}
+{"trial": "query-128-p0-counted-minimal", "exit": 0, "elapsed_s": 0.4392378509946866, "cleanup": true}
+{"trial": "query-128-p0-plain-minimal", "exit": 0, "elapsed_s": 0.38447314100631047, "cleanup": true}
+{"trial": "query-900-p0-counted-minimal", "exit": 0, "elapsed_s": 1.001483084008214, "cleanup": true}
+{"trial": "query-900-p0-plain-minimal", "exit": 0, "elapsed_s": 0.9395660139998654, "cleanup": true}
+{"trial": "query-3500-p0-counted-minimal", "exit": 0, "elapsed_s": 2.923924224000075, "cleanup": true}
+{"trial": "query-3500-p0-plain-minimal", "exit": 0, "elapsed_s": 2.7075829779932974, "cleanup": true}
+{"trial": "control-1-p0-counted-minimal", "exit": 0, "elapsed_s": 0.182213606996811, "cleanup": true}
+{"trial": "control-1-p0-plain-minimal", "exit": 0, "elapsed_s": 0.15211987600196153, "cleanup": true}
+{"trial": "control-20-p0-counted-minimal", "exit": 0, "elapsed_s": 0.1821493419993203, "cleanup": true}
+{"trial": "control-20-p0-plain-minimal", "exit": 0, "elapsed_s": 0.1721927750040777, "cleanup": true}
+{"trial": "control-200-p0-counted-minimal", "exit": 0, "elapsed_s": 0.29328119799902197, "cleanup": true}
+{"trial": "control-200-p0-plain-minimal", "exit": 0, "elapsed_s": 0.2832485090038972, "cleanup": true}
+Traceback (most recent call last):
+  File "/workspace/FabricO11y-journal-reclaim/tools/bench/run_responsibility_isolation.py", line 437, in <module>
+    main()
+  File "/workspace/FabricO11y-journal-reclaim/tools/bench/run_responsibility_isolation.py", line 417, in main
+    result = run(root, bins, c, pair, variant, cpus, a.phase, observer)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/FabricO11y-journal-reclaim/tools/bench/run_responsibility_isolation.py", line 260, in run
+    assert p.returncode == 0, f'probe exit {p.returncode}'
+           ^^^^^^^^^^^^^^^^^
+AssertionError: probe exit 101

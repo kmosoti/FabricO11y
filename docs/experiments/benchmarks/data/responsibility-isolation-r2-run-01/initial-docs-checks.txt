@@ -1,0 +1,57 @@
+Documentation checks passed.
+PASS absolute file URI is rejected: expected nonzero exit with diagnostic, got exit 1
+PASS relative file URI is rejected: expected nonzero exit with diagnostic, got exit 1
+PASS Windows drive link is rejected: expected nonzero exit with diagnostic, got exit 1
+PASS Windows drive link with encoded slash is rejected: expected nonzero exit with diagnostic, got exit 1
+PASS Windows drive link with encoded backslash is rejected: expected nonzero exit with diagnostic, got exit 1
+PASS Windows drive link with encoded colon is rejected: expected nonzero exit with diagnostic, got exit 1
+PASS baseline repository documents: expected exit 0, got exit 0
+PASS external, mailto, and protocol-relative URLs require no network: expected exit 0, got exit 0
+PASS broken relative Markdown link: expected nonzero exit with diagnostic, got exit 1
+PASS missing heading fragment: expected nonzero exit with diagnostic, got exit 1
+PASS inline image destination is checked: expected nonzero exit with diagnostic, got exit 1
+PASS reference-style link destination is checked: expected nonzero exit with diagnostic, got exit 1
+PASS reference-style image destination is checked: expected nonzero exit with diagnostic, got exit 1
+PASS valid inline link in a GFM table cell: expected exit 0, got exit 0
+PASS missing inline link in a GFM table cell: expected nonzero exit with diagnostic, got exit 1
+PASS valid image and reference-style destinations: expected exit 0, got exit 0
+PASS percent-decoded local path, query, and heading fragment: expected exit 0, got exit 0
+PASS second duplicate GitHub heading slug: expected exit 0, got exit 0
+PASS nonexistent third duplicate heading slug: expected nonzero exit with diagnostic, got exit 1
+PASS root-absolute local link is rejected: expected nonzero exit with diagnostic, got exit 1
+PASS inline code and ordinary fenced code do not contain links: expected exit 0, got exit 0
+PASS quadruple example fence hides nested Mermaid and links: expected exit 0, got exit 0
+PASS valid unmarked Mermaid flowchart fence: expected exit 0, got exit 0
+PASS valid standalone Mermaid state diagram: expected exit 0, got exit 0
+PASS malformed standalone Mermaid flowchart: expected nonzero exit with diagnostic, got exit 1
+PASS malformed real Mermaid fence: expected nonzero exit with diagnostic, got exit 1
+PASS malformed Mermaid fence in a blockquote: expected nonzero exit with diagnostic, got exit 1
+PASS canonical Mermaid marker with blank line and normalized endings: expected exit 0, got exit 0
+PASS root README canonical marker and inline-code marker literal: expected exit 0, got exit 0
+PASS canonical Mermaid copy drift: expected nonzero exit with diagnostic, got exit 1
+PASS canonical Mermaid marker points to missing file: expected nonzero exit with diagnostic, got exit 1
+PASS orphan canonical Mermaid marker: expected nonzero exit with diagnostic, got exit 1
+PASS malformed VS Code extensions JSON: expected nonzero exit with diagnostic, got exit 1
+PASS malformed Codex hooks JSON: expected nonzero exit with diagnostic, got exit 1
+PASS malformed optional architecture graph JSON: expected nonzero exit with diagnostic, got exit 1
+PASS duplicate four-digit ADR number: expected nonzero exit with diagnostic, got exit 1
+PASS hidden agent skill Markdown is scanned: expected nonzero exit with diagnostic, got exit 1
+PASS .git, target, and node_modules trees are skipped: expected exit 0, got exit 0
+PASS symlinked directory outside root is not traversed: expected exit 0, got exit 0
+PASS link through symlinked file outside root is rejected: expected nonzero exit with diagnostic, got exit 1
+40/40 acceptance probes passed
+test_broken_link_requests_one_continuation (__main__.HookContract.test_broken_link_requests_one_continuation) ... ok
+test_context_is_bounded (__main__.HookContract.test_context_is_bounded) ... ok
+test_continuation_guard_reports_remaining_failure (__main__.HookContract.test_continuation_guard_reports_remaining_failure) ... ok
+test_malformed_input_fails_explicitly (__main__.HookContract.test_malformed_input_fails_explicitly) ... ok
+test_missing_dependencies_are_reported (__main__.HookContract.test_missing_dependencies_are_reported) ... ok
+test_missing_runtime_is_not_reported_as_success (__main__.HookContract.test_missing_runtime_is_not_reported_as_success) ... ok
+test_missing_state_is_reported (__main__.HookContract.test_missing_state_is_reported) ... ok
+test_other_event_is_ignored (__main__.HookContract.test_other_event_is_ignored) ... ok
+test_session_start_from_subdirectory (__main__.HookContract.test_session_start_from_subdirectory) ... ok
+test_valid_docs_allow_stop (__main__.HookContract.test_valid_docs_allow_stop) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 1.277s
+
+OK

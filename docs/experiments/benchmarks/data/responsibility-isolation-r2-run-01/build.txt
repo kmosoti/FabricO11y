@@ -1,0 +1,30 @@
+   Compiling fabric-server v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-server)
+warning: unused import: `Value`
+  --> crates/fabric-server/examples/responsibility_probe.rs:23:18
+   |
+23 | use serde_json::{Value, json};
+   |                  ^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `fabric-server` (example "responsibility_probe") generated 1 warning (run `cargo fix --example "responsibility_probe" -p fabric-server` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 3.95s
+   Compiling fabric-server v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-server)
+warning: unused import: `Value`
+  --> crates/fabric-server/examples/responsibility_probe.rs:23:18
+   |
+23 | use serde_json::{Value, json};
+   |                  ^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: `fabric-server` (example "responsibility_probe") generated 1 warning (run `cargo fix --example "responsibility_probe" -p fabric-server` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 3.95s
+   Compiling fabric-server v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-server)
+    Finished `release` profile [optimized] target(s) in 3.99s
+   Compiling fabric-server v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-server)
+    Finished `release` profile [optimized] target(s) in 4.01s
+   Compiling fabric-server v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-server)
+    Finished `release` profile [optimized] target(s) in 4.00s
+   Compiling fabric-server v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-server)
+    Finished `release` profile [optimized] target(s) in 4.23s

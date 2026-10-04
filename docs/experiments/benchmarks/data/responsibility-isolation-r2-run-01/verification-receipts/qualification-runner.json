@@ -1,0 +1,34 @@
+{
+  "bounds": null,
+  "candidate_commit": "a717c33eb641e1137633c924b65d0e80237dab1f",
+  "check_id": "qualification-runner",
+  "command": [
+    "python3",
+    "-B",
+    "tools/qualification/test_runner.py"
+  ],
+  "duration_ms": 3330,
+  "exit_code": 0,
+  "expected": "exit 0",
+  "fixtures": null,
+  "negative_controls": null,
+  "oracle_revision": "7650c7cb5e0e2cddcc4eb5513d957114acc323c4",
+  "output_sha256": "536aa065797d811f3584df44d9ac24b0f465dc6130ea4a096b34151a12dc4701",
+  "profile": "fast",
+  "property_ids": [
+    "QUAL-H"
+  ],
+  "receipt_version": 1,
+  "result": "passed",
+  "scope": "The qualification runner's limits, ownership marker and negative controls",
+  "specification_revision": "none",
+  "toolchain": {
+    "bun": "1.4.0",
+    "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)",
+    "python3": "Python 3.12.14",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "Hard filesystem quotas; environment-scrubbing children.",
+  "worktree_dirty": false
+}
