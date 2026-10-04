@@ -20,7 +20,7 @@ use opentelemetry_proto::tonic::{
     logs::v1::{LogRecord, ResourceLogs, ScopeLogs},
 };
 use prost::Message;
-use serde_json::{Value, json};
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::{
     cell::RefCell,

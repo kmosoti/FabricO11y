@@ -312,7 +312,9 @@ def run(root, bins, case, pair, variant, cpus, phase, observer='minimal'):
                    'records_sha256': sha(work / 'records.jsonl'), 'records': len(expected),
                    'exact_fixture_bodies': True, 'oracle': oracle, 'controls': controls, 'stats': stats,
                    'sampled_peak_process_hwm_mib': max((s['process']['hwm_kib'] / 1024 for s in mon), default=None),
-                   'sample_count': len(mon)}
+                   'sample_count': len(mon),
+                   'server_cpu_seconds_tick_estimate': (server_stats[-1]['process']['cpu_s'] - server_stats[0]['process']['cpu_s']) if server_stats else None,
+                   'server_peak_hwm_mib': max((x['process']['hwm_kib'] / 1024 for x in server_stats), default=None)}
         dump(dest / 'summary.json', summary)
         dump(dest / 'resources.json', mon)
         dump(dest / 'server-resources.json', server_stats)
