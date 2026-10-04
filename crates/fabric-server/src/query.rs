@@ -23,7 +23,7 @@ use crate::segment::{self, GroupBounds, MAX_GROUP_PAYLOAD, Manifest, Table};
 use crate::store::Group;
 use crate::tail::{TailEntry, TailReader, WalkState, interrupted};
 use fabric_core::query::{
-    self as kernel, CounterPoint, CounterStep, QueryRejection, Snapshot, Window,
+    self as kernel, CounterSample, CounterStep, QueryRejection, Snapshot, Window,
 };
 use fabric_frame::frame::read_frame;
 use prost::Message;
@@ -1310,33 +1310,35 @@ fn rates(mut points: Vec<MetricRow>) -> Vec<Value> {
                 .collect::<Vec<_>>(),
         )
     };
-    points.sort_by(|a, b| {
-        (series(a), a.time_ns, a.node_id, a.sequence, a.index).cmp(&(
-            series(b),
-            b.time_ns,
-            b.node_id,
-            b.sequence,
-            b.index,
-        ))
+    // Cache the legacy presentation key once. Structural identity breaks
+    // delimiter collisions without changing the order of distinct legacy keys.
+    points.sort_by_cached_key(|r| {
+        (
+            series(r),
+            r.attributes.clone(),
+            r.time_ns,
+            r.node_id,
+            r.sequence,
+            r.index,
+        )
     });
-    let as_f64 = |v: Number| match v {
-        Number::Int(i) => i as f64,
-        Number::Double(d) => d,
-    };
     let mut out = Vec::new();
     for pair in points.windows(2) {
         let (a, b) = (&pair[0], &pair[1]);
-        if series(a) != series(b) {
+        if a.node != b.node || a.attributes != b.attributes {
             continue;
         }
         let base = json!({"node": b.node, "name": b.name, "attributes": b.attributes, "time_ns": b.time_ns});
         let mut row = base.as_object().unwrap().clone();
-        let point = |r: &MetricRow| CounterPoint {
+        let point = |r: &MetricRow| CounterSample {
             start_ns: r.start_ns,
             time_ns: r.time_ns,
-            value: as_f64(r.value),
+            value: match r.value {
+                Number::Int(i) => kernel::CounterNumber::Int(i),
+                Number::Double(d) => kernel::CounterNumber::Double(d),
+            },
         };
-        match kernel::counter_step(point(a), point(b)) {
+        match kernel::counter_step_numbers(point(a), point(b)) {
             CounterStep::Rate(rate) => {
                 row.insert("reset".into(), json!(false));
                 row.insert("rate".into(), json!(rate));

@@ -1,0 +1,175 @@
+{
+  "utc": "2026-10-04T14:53:01Z",
+  "affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "commands": [
+    {
+      "command": "git rev-parse HEAD",
+      "exit": 0,
+      "stdout": "a6d49053f1e655c561e9e5e008139e53909e3a1f\n",
+      "stderr": ""
+    },
+    {
+      "command": "git branch --show-current",
+      "exit": 0,
+      "stdout": "milestone/streaming-segment-output\n",
+      "stderr": ""
+    },
+    {
+      "command": "git merge-base --is-ancestor a6d4905 HEAD",
+      "exit": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": "hostname",
+      "exit": 0,
+      "stdout": "fedora-blade\n",
+      "stderr": ""
+    },
+    {
+      "command": "uname -a",
+      "exit": 0,
+      "stdout": "Linux fedora-blade 7.2.8-200.fc44.x86_64 #1 SMP PREEMPT_DYNAMIC Fri Sep 25 21:05:44 UTC 2026 x86_64 GNU/Linux\n",
+      "stderr": ""
+    },
+    {
+      "command": "lscpu",
+      "exit": 0,
+      "stdout": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           39 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  12\nOn-line CPU(s) list:                     0-11\nVendor ID:                               GenuineIntel\nModel name:                              Intel(R) Core(TM) i7-10750H CPU @ 2.60GHz\nCPU family:                              6\nModel:                                   165\nThread(s) per core:                      2\nCore(s) per socket:                      6\nSocket(s):                               1\nStepping:                                2\nCPU(s) scaling MHz:                      86%\nCPU max MHz:                             5000.0000\nCPU min MHz:                             800.0000\nBogoMIPS:                                5199.98\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf pni pclmulqdq dtes64 monitor ds_cpl vmx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb ssbd ibrs ibpb stibp ibrs_enhanced tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid mpx rdseed adx smap clflushopt intel_pt xsaveopt xsavec xgetbv1 xsaves dtherm ida arat pln pts hwp hwp_notify hwp_act_window hwp_epp vnmi pku ospke md_clear flush_l1d arch_capabilities\nVirtualization:                          VT-x\nL1d cache:                               192 KiB (6 instances)\nL1i cache:                               192 KiB (6 instances)\nL2 cache:                                1.5 MiB (6 instances)\nL3 cache:                                12 MiB (1 instance)\nNUMA node(s):                            1\nNUMA node0 CPU(s):                       0-11\nVulnerability Gather data sampling:      Mitigation; Microcode\nVulnerability Ghostwrite:                Not affected\nVulnerability Indirect target selection: Mitigation; Aligned branch/return thunks\nVulnerability Itlb multihit:             KVM: Mitigation: Split huge pages\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Mitigation; Clear CPU buffers; SMT vulnerable\nVulnerability Old microcode:             Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Mitigation; Enhanced IBRS\nVulnerability Spec rstack overflow:      Not affected\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS SW sequence; BHI SW loop, KVM SW loop\nVulnerability Srbds:                     Mitigation; Microcode\nVulnerability Tsa:                       Not affected\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Mitigation; IBPB before exit to userspace\n",
+      "stderr": ""
+    },
+    {
+      "command": "free -b",
+      "exit": 0,
+      "stdout": "               total        used        free      shared  buff/cache   available\nMem:     33491931136  8244985856 14267244544  1249546240 10665963520 25246945280\nSwap:     8589930496           0  8589930496\n",
+      "stderr": ""
+    },
+    {
+      "command": "df -B1 . /tmp",
+      "exit": 0,
+      "stdout": "Filesystem                                               1B-blocks        Used    Available Use% Mounted on\n/dev/mapper/luks-ac115b34-e7cb-4c76-ae1f-520630e4856a 509315383296 13668450304 494372749312   3% /home\ntmpfs                                                  16745967616     2875392  16743092224   1% /tmp\n",
+      "stderr": ""
+    },
+    {
+      "command": "lsblk -o NAME,SIZE,TYPE,FSTYPE,MOUNTPOINTS",
+      "exit": 0,
+      "stdout": "NAME                                            SIZE TYPE  FSTYPE      MOUNTPOINTS\nzram0                                             8G disk  swap        [SWAP]\nnvme1n1                                       465.8G disk              \n\u2514\u2500nvme1n1p1                                   465.7G part  crypto_LUKS \n  \u2514\u2500luks-8716f10b-f91e-4efe-9147-1dabfb0e70b1 465.6G crypt ext4        /run/media/kmosoti/data\nnvme0n1                                       476.9G disk              \n\u251c\u2500nvme0n1p1                                     600M part  vfat        /boot/efi\n\u251c\u2500nvme0n1p2                                       2G part  ext4        /boot\n\u2514\u2500nvme0n1p3                                   474.4G part  crypto_LUKS \n  \u2514\u2500luks-ac115b34-e7cb-4c76-ae1f-520630e4856a 474.3G crypt btrfs       /home\n                                                                       /\n",
+      "stderr": ""
+    },
+    {
+      "command": "findmnt -T .",
+      "exit": 0,
+      "stdout": "TARGET SOURCE                                                       FSTYPE OPTIONS\n/home  /dev/mapper/luks-ac115b34-e7cb-4c76-ae1f-520630e4856a[/home] btrfs  rw,relatime,seclabel,compress=zstd:1,ssd,discard=async,space_cache=v2,subvolid=257,subvol=/home\n",
+      "stderr": ""
+    },
+    {
+      "command": "findmnt -T /tmp",
+      "exit": 0,
+      "stdout": "TARGET SOURCE FSTYPE OPTIONS\n/tmp   tmpfs  tmpfs  rw,nosuid,nodev,seclabel,size=16353484k,nr_inodes=1048576,inode64,usrquota\n",
+      "stderr": ""
+    },
+    {
+      "command": "rustc -Vv",
+      "exit": 0,
+      "stdout": "rustc 1.99.0 (b940084d7 2026-09-28)\nbinary: rustc\ncommit-hash: b940084d7eb6a299eb4bfeb8e34901bc051e7ac4\ncommit-date: 2026-09-28\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.0\nLLVM version: 23.1.1\n",
+      "stderr": ""
+    },
+    {
+      "command": "cargo -V",
+      "exit": 0,
+      "stdout": "cargo 1.99.0 (5f94df478 2026-08-27)\n",
+      "stderr": ""
+    },
+    {
+      "command": "python3 --version",
+      "exit": 0,
+      "stdout": "Python 3.14.7\n",
+      "stderr": ""
+    },
+    {
+      "command": "bun --version",
+      "exit": 127,
+      "stdout": "",
+      "stderr": "/bin/sh: line 1: bun: command not found\n"
+    },
+    {
+      "command": "openssl version",
+      "exit": 0,
+      "stdout": "OpenSSL 3.5.9 29 Sep 2026 (Library: OpenSSL 3.5.9 29 Sep 2026)\n",
+      "stderr": ""
+    },
+    {
+      "command": "cat /etc/os-release",
+      "exit": 0,
+      "stdout": "NAME=\"Fedora Linux\"\nVERSION=\"44 (Workstation Edition)\"\nRELEASE_TYPE=stable\nID=fedora\nVERSION_ID=44\nVERSION_CODENAME=\"\"\nPRETTY_NAME=\"Fedora Linux 44 (Workstation Edition)\"\nANSI_COLOR=\"0;38;2;60;110;180\"\nLOGO=fedora-logo-icon\nCPE_NAME=\"cpe:/o:fedoraproject:fedora:44\"\nDEFAULT_HOSTNAME=\"fedora\"\nHOME_URL=\"https://fedoraproject.org/\"\nDOCUMENTATION_URL=\"https://docs.fedoraproject.org/en-US/fedora/f44/\"\nSUPPORT_URL=\"https://ask.fedoraproject.org/\"\nBUG_REPORT_URL=\"https://bugzilla.redhat.com/\"\nREDHAT_BUGZILLA_PRODUCT=\"Fedora\"\nREDHAT_BUGZILLA_PRODUCT_VERSION=44\nREDHAT_SUPPORT_PRODUCT=\"Fedora\"\nREDHAT_SUPPORT_PRODUCT_VERSION=44\nSUPPORT_END=2027-05-19\nVARIANT=\"Workstation Edition\"\nVARIANT_ID=workstation\n",
+      "stderr": ""
+    },
+    {
+      "command": "cat /proc/self/limits",
+      "exit": 0,
+      "stdout": "Limit                     Soft Limit           Hard Limit           Units     \nMax cpu time              unlimited            unlimited            seconds   \nMax file size             unlimited            unlimited            bytes     \nMax data size             unlimited            unlimited            bytes     \nMax stack size            8388608              unlimited            bytes     \nMax core file size        unlimited            unlimited            bytes     \nMax resident set          unlimited            unlimited            bytes     \nMax processes             127126               127126               processes \nMax open files            1024                 524288               files     \nMax locked memory         8388608              8388608              bytes     \nMax address space         unlimited            unlimited            bytes     \nMax file locks            unlimited            unlimited            locks     \nMax pending signals       127126               127126               signals   \nMax msgqueue size         819200               819200               bytes     \nMax nice priority         0                    0                    \nMax realtime priority     0                    0                    \nMax realtime timeout      unlimited            unlimited            us        \n",
+      "stderr": ""
+    }
+  ],
+  "cgroup_ancestors": {
+    "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice/ptyxis-spawn-fb35842f-0411-4daf-a583-48f7aff092b6.scope": {
+      "cpu.max": "max 100000",
+      "memory.max": "max",
+      "memory.high": "max",
+      "memory.current": "4010905600",
+      "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+      "io.max": "",
+      "pids.max": "38137"
+    },
+    "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service/app.slice": {
+      "cpu.max": "max 100000",
+      "memory.max": "max",
+      "memory.high": "max",
+      "memory.current": "13753122816",
+      "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+      "io.max": "",
+      "pids.max": "max"
+    },
+    "/sys/fs/cgroup/user.slice/user-1000.slice/user@1000.service": {
+      "cpu.max": "max 100000",
+      "memory.max": "max",
+      "memory.high": "max",
+      "memory.current": "14688296960",
+      "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+      "io.max": "",
+      "pids.max": "max"
+    },
+    "/sys/fs/cgroup/user.slice/user-1000.slice": {
+      "cpu.max": "max 100000",
+      "memory.max": "max",
+      "memory.high": "max",
+      "memory.current": "14692814848",
+      "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+      "io.max": "",
+      "pids.max": "83903"
+    },
+    "/sys/fs/cgroup/user.slice": {
+      "cpu.max": "max 100000",
+      "memory.max": "max",
+      "memory.high": "max",
+      "memory.current": "15856865280",
+      "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+      "io.max": "",
+      "pids.max": "max"
+    },
+    "/sys/fs/cgroup": {}
+  }
+}

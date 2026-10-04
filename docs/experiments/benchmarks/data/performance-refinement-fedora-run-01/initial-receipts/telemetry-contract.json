@@ -1,0 +1,32 @@
+{
+  "bounds": null,
+  "candidate_commit": "9ab7e12161b997eb33f473570e8487416564d598",
+  "check_id": "telemetry-contract",
+  "command": [
+    "python3",
+    "-B",
+    "tools/telemetry/test_contract.py"
+  ],
+  "duration_ms": 134,
+  "exit_code": 0,
+  "expected": "exit 0",
+  "fixtures": null,
+  "negative_controls": null,
+  "oracle_revision": "none",
+  "output_sha256": "2eaf27dc94c51a80943d178b2bf7d223b6c1944746b06cc04d0c214a3a04d2e1",
+  "profile": "fast",
+  "property_ids": [],
+  "receipt_version": 1,
+  "result": "passed",
+  "scope": "Agent-telemetry record contract",
+  "specification_revision": "none",
+  "toolchain": {
+    "bun": "1.4.2",
+    "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+    "python3": "Python 3.14.7",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "Development tooling only; no product claim.",
+  "worktree_dirty": true
+}

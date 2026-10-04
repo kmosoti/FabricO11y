@@ -1,0 +1,36 @@
+fmt                      passed                        279 ms  cargo fmt --all --check
+check                    passed                      16872 ms  cargo check --workspace --locked --all-targets
+test                     passed                     161948 ms  cargo test --workspace --locked --all-features
+clippy                   failed                        596 ms  cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+    |    |                            ^^^^^^^^^^^^^^^
+    |    |
+    | help: consider using `as_chunks::<8>()` instead
+    |   --> crates/fabric-observation/src/crc32.rs:81:28
+    |    |
+    | 81 |     let mut chunks = bytes.chunks_exact(8);
+    |    |                            ^^^^^^^^^^^^^^^
+    |    = note: you can access the chunks using `chunks.0.iter()`, and the remainder using `chunks.1`
+    |    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#chunks_exact_to_as_chunks
+    |    = note: `-D clippy::chunks-exact-to-as-chunks` implied by `-D warnings`
+    |    = help: to override `-D warnings` add `#[allow(clippy::chunks_exact_to_as_chunks)]`
+    | 
+    | error: could not compile `fabric-observation` (lib) due to 1 previous error
+    | warning: build failed, waiting for other jobs to finish...
+    | error: could not compile `fabric-observation` (lib test) due to 1 previous error
+layers                   passed                        196 ms  cargo xtask check-layers
+core-purity              passed                        156 ms  cargo xtask check-core-purity
+qualification-runner     passed                       4024 ms  python3 -B tools/qualification/test_runner.py
+workload-rate-oracle     passed                        878 ms  python3 -B tools/qualification/test_workload.py
+soak-decision-rule       passed                         90 ms  python3 -B tools/qualification/test_soak_tier.py
+delivery-oracle          passed                        319 ms  python3 -B tools/qualification/test_delivery_oracle.py
+query-oracle             passed                        343 ms  python3 -B tools/qualification/test_query_oracle.py
+docs                     passed                       1074 ms  bun tools/docs/check.mjs
+docs-checker-probes      passed                      13984 ms  bun tools/docs/check.test.mjs
+hooks                    passed                       1400 ms  python3 -B tools/docs/test_hooks.py
+telemetry-contract       passed                        134 ms  python3 -B tools/telemetry/test_contract.py
+telemetry-cli            passed                       2278 ms  python3 -B tools/telemetry/test_cli.py
+counterexamples          passed                         63 ms  cargo xtask check-counterexamples
+kernel-properties        passed                      27962 ms  cargo test --locked -p fabric-properties
+fuzz-corpus              passed                       6999 ms  cargo test --locked -p fabric-fuzz-targets --test corpus
+network-simulation       passed                      14915 ms  cargo test --locked -p fabric-sim
+checks: FAILED; receipts in /home/kmosoti/Projects/moiric/FabricO11y/target/verification/receipts

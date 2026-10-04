@@ -1,0 +1,40 @@
+{
+  "bounds": null,
+  "candidate_commit": "9ab7e12161b997eb33f473570e8487416564d598",
+  "check_id": "fuzz-corpus",
+  "command": [
+    "cargo",
+    "test",
+    "--locked",
+    "-p",
+    "fabric-fuzz-targets",
+    "--test",
+    "corpus"
+  ],
+  "duration_ms": 6999,
+  "exit_code": 0,
+  "expected": "exit 0",
+  "fixtures": null,
+  "negative_controls": "M-FUZZ-IDENTIFY in xtask/mutants.json",
+  "oracle_revision": "none",
+  "output_sha256": "4171a737aea5dbc403afe0042db87edeb7bbe36bf56d7ac79f7f5d61f3213e40",
+  "profile": "fast",
+  "property_ids": [
+    "DEL-5",
+    "HIST-4",
+    "SPOOL-3"
+  ],
+  "receipt_version": 1,
+  "result": "passed",
+  "scope": "Replays every committed fuzz corpus and regression input through the fuzz target bodies on stable Rust",
+  "specification_revision": "none",
+  "toolchain": {
+    "bun": "1.4.2",
+    "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+    "python3": "Python 3.14.7",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "Only committed inputs; coverage-guided search is fuzz-smoke (extended).",
+  "worktree_dirty": true
+}

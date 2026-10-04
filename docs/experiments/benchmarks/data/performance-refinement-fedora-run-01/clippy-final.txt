@@ -1,0 +1,11 @@
+   Compiling ring v0.17.14
+   Compiling rustls v0.23.45
+    Checking rustls-webpki v0.103.15
+    Checking ureq v3.3.0
+    Checking tokio-rustls v0.26.5
+    Checking axum-server v0.7.3
+    Checking fabric-server v0.1.0 (/home/kmosoti/Projects/moiric/FabricO11y/crates/fabric-server)
+    Checking fabric_o11y v0.1.0 (/home/kmosoti/Projects/moiric/FabricO11y)
+    Checking fabric-fuzz-targets v0.1.0 (/home/kmosoti/Projects/moiric/FabricO11y/crates/fabric-fuzz-targets)
+    Checking fabric-sim v0.1.0 (/home/kmosoti/Projects/moiric/FabricO11y/crates/fabric-sim)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.15s

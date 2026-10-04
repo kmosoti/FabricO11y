@@ -1,0 +1,34 @@
+{
+  "bounds": null,
+  "candidate_commit": "9ab7e12161b997eb33f473570e8487416564d598",
+  "check_id": "soak-decision-rule",
+  "command": [
+    "python3",
+    "-B",
+    "tools/qualification/test_soak_tier.py"
+  ],
+  "duration_ms": 90,
+  "exit_code": 0,
+  "expected": "exit 0",
+  "fixtures": null,
+  "negative_controls": null,
+  "oracle_revision": "1c67ff3b4dcac299f6c5e74ba4522f0f66c0894a",
+  "output_sha256": "56e03afda220e7ba78bbcecf9a2e53a0149cfc3e311fa10bbd01b25e8e5ba671",
+  "profile": "fast",
+  "property_ids": [
+    "QUAL-H"
+  ],
+  "receipt_version": 1,
+  "result": "passed",
+  "scope": "The soak protocol's decision rule, with one injected defect per gate that must fail exactly that gate",
+  "specification_revision": "none",
+  "toolchain": {
+    "bun": "1.4.2",
+    "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+    "python3": "Python 3.14.7",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "The harness's measurement collection; exercised only by a soak run.",
+  "worktree_dirty": true
+}

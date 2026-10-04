@@ -1,0 +1,34 @@
+{
+  "bounds": null,
+  "candidate_commit": "9ab7e12161b997eb33f473570e8487416564d598",
+  "check_id": "workload-rate-oracle",
+  "command": [
+    "python3",
+    "-B",
+    "tools/qualification/test_workload.py"
+  ],
+  "duration_ms": 874,
+  "exit_code": 0,
+  "expected": "exit 0",
+  "fixtures": "seed 0xA11FA001, ten identities, two seconds; SHA-256 a6e5fca6...",
+  "negative_controls": null,
+  "oracle_revision": "7650c7cb5e0e2cddcc4eb5513d957114acc323c4",
+  "output_sha256": "e32fd61006e6403bcae67439f8169eaa0bd4b0d879ee3a1d018aa0abb1e95fe2",
+  "profile": "fast",
+  "property_ids": [
+    "QUAL-H"
+  ],
+  "receipt_version": 1,
+  "result": "passed",
+  "scope": "Seeded source and the independent rate oracle, with injected overrate, corruption and missing-source controls",
+  "specification_revision": "none",
+  "toolchain": {
+    "bun": "1.4.2",
+    "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+    "python3": "Python 3.14.7",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "Real Spindle offer timing and end-to-end admission.",
+  "worktree_dirty": true
+}

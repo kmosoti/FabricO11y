@@ -1,0 +1,18 @@
+{
+  "revision": "a6d4905",
+  "command": [
+    "cargo",
+    "test",
+    "--offline",
+    "-p",
+    "fabric-server",
+    "--test",
+    "history",
+    "rate_counterexamples_survive_delivery_sealing_and_restart",
+    "--",
+    "--nocapture"
+  ],
+  "exit": 101,
+  "old_query_sha256": "1725685737c5eadacd993fbcdd8ba0252f21c61584176deade2481dfcd63aa83",
+  "regression_sha256": "19dfa778ae59636d0a00dfda6c0b3e216ba04f1ec990c04c5aa1625d58dbfe80"
+}

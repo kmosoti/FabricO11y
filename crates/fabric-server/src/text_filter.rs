@@ -150,8 +150,10 @@ pub fn decode(bytes: &[u8]) -> io::Result<Vec<GroupFilter>> {
     let mut out = Vec::with_capacity(groups);
     for bits in sizes {
         let words = bytes[at..at + bits / 8]
-            .chunks_exact(8)
-            .map(|c| u64::from_le_bytes(c.try_into().expect("eight bytes")))
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|c| u64::from_le_bytes(*c))
             .collect();
         out.push(GroupFilter { words });
         at += bits / 8;

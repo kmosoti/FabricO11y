@@ -1,0 +1,10 @@
+mutant         result             expected failing test              contract
+M-DEL-ACK      caught             ack_is_returned_only_after_a_successful_commit DEL-1 commit precedes ACK
+M-DEL-BYTES    caught             adr_0013_truth_table               DEL-3 same Strand and sequence with different bytes is rejected
+M-DEL-GAP      caught             adr_0013_truth_table               DEL-4 a sequence gap is detected
+M-DEL-BIND     caught             binding_disagreement_in_either_direction_forbids_before_sequencing DEL-5 credential and Spindle binding cannot silently change
+M-DEL-GROUP    caught             extraction_agrees_with_the_base_decision_loop_on_every_small_group DEL-5 binding holds within one commit group
+M-SPOOL-RECLAIM caught             reclaim_keeps_the_file_holding_the_first_unacknowledged_batch SPOOL-2 reclaim removes only acknowledged closed files
+M-SPOOL-KNOWN  caught             reported_sync_errors_quarantine_and_record_known_failure SPOOL-3 interrupted-append recovery does not clear a known I/O failure
+M-CTRL-REVOKE  caught             admin_api_configures_pauses_and_revokes_a_polling_node CTRL-2 a revoked identity cannot continue sending
+M-CTRL-INVALID caught             admin_api_configures_pauses_and_revokes_a_polling_node CTRL-1 an invalid desired configuration does not become active
