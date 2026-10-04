@@ -41,11 +41,11 @@ def samples(pid):
 
 def run(root,bins,mode,size,pair,variant,cpus):
     label=f'{mode}-{size}-p{pair}-{variant}';work=root/'scratch'/label;work.mkdir();(work/'owned').write_text(label);dest=root/'evidence'/label;dest.mkdir();free_before=shutil.disk_usage(work).free;assert free_before>4*2**30
-    command=['prlimit',f'--as={2*2**30}','--','taskset','-c',','.join(map(str,cpus[:2])),str(bins/variant),str(work),mode,str(size)];server=None;server_stats=[]
+    command=['prlimit',f'--as={2*2**30}','--','taskset','-c',','.join(map(str,cpus[:2])),str(bins/variant),str(work),mode,str(size)];server=None;server_stats=[];p=None
     try:
         if mode=='delivery':
             make_certs(work);port=free_port();admin=os.urandom(32).hex();(work/'admin').write_text(admin);conf=work/'server.conf';conf.write_text(f'listen=127.0.0.1:{port}\ntls_cert={work}/server.pem\ntls_key={work}/server.key\nstate_dir={work}/state\nadmin_token_file={work}/admin\njournal_bytes=268435456\njournal_file_bytes=67108864\nseal_workers=1\n')
-            server=subprocess.Popen(['taskset','-c',','.join(map(str,cpus[2:4])),str(bins/'fabric-server'),'serve',str(conf)],stdout=open(work/'server.out','wb'),stderr=open(work/'server.err','wb'))
+            server=subprocess.Popen(['prlimit',f'--as={2*2**30}','--','taskset','-c',','.join(map(str,cpus[2:4])),str(bins/'fabric-server'),'serve',str(conf)],stdout=open(work/'server.out','wb'),stderr=open(work/'server.err','wb'))
             ctx=ssl.create_default_context(cafile=str(work/'ca.pem'));url=f'https://127.0.0.1:{port}'
             for _ in range(100):
                 try:
@@ -63,7 +63,7 @@ def run(root,bins,mode,size,pair,variant,cpus):
             while p.poll() is None:
                 if time.monotonic()-start>180 or footprint(work)>2**30 or shutil.disk_usage(work).free<4*2**30:p.kill();p.wait();raise RuntimeError('child resource bound')
                 try:mon.append(samples(p.pid))
-                except (FileNotFoundError,ProcessLookupError):pass
+                except (FileNotFoundError,ProcessLookupError,KeyError):pass
                 if server is not None:server_stats.append(samples(server.pid))
                 time.sleep(.1)
         assert p.returncode==0,f'probe exit {p.returncode}'
@@ -100,6 +100,7 @@ def run(root,bins,mode,size,pair,variant,cpus):
             with gzip.open(dest/'partial-timings.jsonl.gz','wb') as f:f.write((work/'timings.jsonl').read_bytes())
         raise
     finally:
+        if p is not None and p.poll() is None:p.kill();p.wait(timeout=10)
         if server is not None and server.poll() is None:server.kill();server.wait(timeout=10)
         # Failure evidence was saved above; remove only this runner's marked trial.
         removed=footprint(work);assert (work/'owned').read_text()==label;shutil.rmtree(work)
