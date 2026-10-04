@@ -821,15 +821,17 @@ fn main() {
             );
             let state = root.join("state");
             seed_store(&state, &groups, rotate_bytes, false, per_batch);
-            let store =
-                Store::open_with(&state, 256 * 1024 * 1024, rotate_bytes, CommitMode::GROUPED)
-                    .unwrap();
+            // Replay obtains the journal lock itself. Snapshot before opening
+            // the writer; a second live owner is a real WouldBlock, not a retry.
             let mut before = Vec::new();
             Store::replay(&state, 256 * 1024 * 1024, |e| {
                 before.push(e.batch.to_vec());
                 Ok(())
             })
             .unwrap();
+            let store =
+                Store::open_with(&state, 256 * 1024 * 1024, rotate_bytes, CommitMode::GROUPED)
+                    .unwrap();
             let (intake, thread) = store.spawn_joinable().unwrap();
             measure("native_sealer_pass_inclusive", texts.len(), || {
                 sealer::pass(

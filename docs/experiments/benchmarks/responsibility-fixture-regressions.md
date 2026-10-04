@@ -1,0 +1,8 @@
+# Responsibility fixture counterexamples
+
+These failures belong to the experiment fixtures, not changes to production semantics. Retain old runs; corrected preflight must finish before any revised campaign.
+
+- **Missing active journal**, initial isolation run, seed 42, query body 128, 4,096 records, revision `9130325` plus bounded-runner `6ec501f`: constructed Segment layout used a journal directory without native `ACTIVE`. `History::sources` retried and returned `Interrupted("journal moved")`. Fix: create legal empty active journal through native `Store::open_with`, then build Segment and recover exact raw Batches. Every actual answer is independently graded in revision 2.
+- **Two live journal owners**, revision-2 preflight 01 at `f031157`, seed 42, scheduling worker 1, 900-byte bodies, 4,096 records, counted allocator. Recipe: `BENCH_PREFLIGHT=1 BENCH_RECORDS=4096 BENCH_BODY_SIZE=900 BENCH_ORDER=sorted <counted-probe> <owned-dir> scheduling 1`. The fixture opened a writer Store before calling static `Store::replay`, whose independent FrameLog open correctly returned `WouldBlock`. Fix: complete the replay snapshot before opening/spawning the writer. No lock bypass, retry or storage behavior change. Preflight stopped after 44 completed trials, before calibration/main timing; failed probe exited 101. The failure recipe, stderr, encoded records and partial ledger are retained before scratch cleanup.
+
+Both fixes preserve the legal storage lifecycle and make native recovery a prerequisite rather than suppressing errors. The native preflight remains the executable regression check.
