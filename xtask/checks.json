@@ -287,7 +287,7 @@
     },
     {
       "id": "docs",
-      "profile": "fast",
+      "profile": "documentation",
       "command": [
         "bun",
         "tools/docs/check.mjs"
@@ -305,7 +305,7 @@
     },
     {
       "id": "docs-checker-probes",
-      "profile": "fast",
+      "profile": "documentation",
       "command": [
         "bun",
         "tools/docs/check.test.mjs"
@@ -323,7 +323,7 @@
     },
     {
       "id": "hooks",
-      "profile": "fast",
+      "profile": "documentation",
       "command": [
         "python3",
         "-B",
