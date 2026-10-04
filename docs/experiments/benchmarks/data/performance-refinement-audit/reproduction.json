@@ -1,0 +1,72 @@
+{
+  "attribute_key_collision": {
+    "expected": [],
+    "actual": [
+      {
+        "attributes": {
+          "a": "b=c"
+        },
+        "name": "counter",
+        "node": "node",
+        "rate": 10.0,
+        "reset": false,
+        "time_ns": 2000000000
+      }
+    ],
+    "equal": false
+  },
+  "large_integer_increment": {
+    "expected": [
+      {
+        "node": "node",
+        "name": "counter",
+        "attributes": {
+          "a": "b"
+        },
+        "time_ns": 2000000000,
+        "reset": false,
+        "rate": 1.0
+      }
+    ],
+    "actual": [
+      {
+        "attributes": {
+          "a": "b"
+        },
+        "name": "counter",
+        "node": "node",
+        "rate": 0.0,
+        "reset": false,
+        "time_ns": 2000000000
+      }
+    ],
+    "equal": false
+  },
+  "large_integer_decrease": {
+    "expected": [
+      {
+        "node": "node",
+        "name": "counter",
+        "attributes": {
+          "a": "b"
+        },
+        "time_ns": 2000000000,
+        "reset": true,
+        "rate": null
+      }
+    ],
+    "actual": [
+      {
+        "attributes": {
+          "a": "b"
+        },
+        "name": "counter",
+        "node": "node",
+        "rate": 0.0,
+        "reset": false,
+        "time_ns": 2000000000
+      }
+    ],
+    "equal": false
+  }
+}

@@ -1,0 +1,64 @@
+[
+  {
+    "id": "duckdb-memory",
+    "url": "https://duckdb.org/2024/07/09/memory-management.html",
+    "error": "HTTP Error 403: Forbidden"
+  },
+  {
+    "id": "datafusion-memory",
+    "url": "https://raw.githubusercontent.com/apache/datafusion/main/datafusion/execution/src/memory_pool/mod.rs",
+    "final_url": "https://raw.githubusercontent.com/apache/datafusion/main/datafusion/execution/src/memory_pool/mod.rs",
+    "bytes": 25639,
+    "sha256": "3e32d6d131605476ffe7ebd9fea692298ec0487132e7bbd8a4164bfb2fdb9461"
+  },
+  {
+    "id": "otel-arrow",
+    "url": "https://raw.githubusercontent.com/open-telemetry/otel-arrow/main/README.md",
+    "final_url": "https://raw.githubusercontent.com/open-telemetry/otel-arrow/main/README.md",
+    "bytes": 14085,
+    "sha256": "ac10dfe21f50126d65e414c51f968866d36c252877629e245f7366e4615db4f4"
+  },
+  {
+    "id": "clickhouse-async",
+    "url": "https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/main/docs/optimize/asynchronous-inserts.md",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "id": "arrow-format",
+    "url": "https://arrow.apache.org/docs/format/Columnar.html",
+    "final_url": "https://arrow.apache.org/docs/format/Columnar.html",
+    "bytes": 184631,
+    "sha256": "2bff0bcd7b3fb09616a7b0e8333b99d343be37cfd4ed32193d215de9e4ddff87"
+  },
+  {
+    "id": "kernel-tls",
+    "url": "https://docs.kernel.org/networking/tls.html",
+    "final_url": "https://docs.kernel.org/networking/tls.html",
+    "bytes": 42414,
+    "sha256": "bd9a498b4f7aae90ce5e599aa6469e8ea7e27c4c042f1a373786221400d7672f"
+  },
+  {
+    "id": "http3-rfc",
+    "url": "https://www.rfc-editor.org/rfc/rfc9114.txt",
+    "final_url": "https://www.rfc-editor.org/rfc/rfc9114.txt",
+    "bytes": 155206,
+    "sha256": "6b84555c88eeebcf5d2b2e1d9d7b58630abc97ab877b2cf62dee4cd635db34e4"
+  },
+  {
+    "id": "duckdb-memory-source",
+    "url": "https://raw.githubusercontent.com/duckdb/duckdb-web/main/_posts/2024-07-09-memory-management.md",
+    "bytes": 12067,
+    "sha256": "aaceb8a0b97c8ec3b8cf343e7698624d0f908a0581d9d8fb3b15012a0b38221f"
+  },
+  {
+    "id": "clickhouse-async-source",
+    "url": "https://raw.githubusercontent.com/ClickHouse/clickhouse-docs/main/docs/guides/developer/asynchronous-inserts.md",
+    "error": "HTTP Error 404: Not Found"
+  },
+  {
+    "id": "seastar-intro",
+    "url": "https://raw.githubusercontent.com/scylladb/seastar/master/doc/tutorial.md",
+    "bytes": 171626,
+    "sha256": "8fa7d37cd930914778708b9aa5a92d11f2b2c09132be1c8986412e081ed5c7c0"
+  }
+]
