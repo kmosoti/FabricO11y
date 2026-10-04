@@ -1,0 +1,42 @@
+[
+  {
+    "original_directory": "/workspace/scratch/responsibility-v2-preflight-01",
+    "archive": "failed-preflight",
+    "verified_files": 470,
+    "removed_duplicate_logical_bytes": 3225881,
+    "free_before": 12236128256,
+    "free_after": 12240773120,
+    "removed": true,
+    "archive_commit": "bd5123f"
+  },
+  {
+    "original_directory": "/workspace/scratch/responsibility-v2-preflight-02",
+    "archive": "preflight",
+    "verified_files": 602,
+    "removed_duplicate_logical_bytes": 1397542,
+    "free_before": 12240773120,
+    "free_after": 12244013056,
+    "removed": true,
+    "archive_commit": "bd5123f"
+  },
+  {
+    "original_directory": "/workspace/scratch/responsibility-v2-calibration-01",
+    "archive": "calibration",
+    "verified_files": 205,
+    "removed_duplicate_logical_bytes": 591451,
+    "free_before": 12244013056,
+    "free_after": 12245196800,
+    "removed": true,
+    "archive_commit": "bd5123f"
+  },
+  {
+    "original_directory": "/workspace/scratch/responsibility-v2-run-01",
+    "archive": "measurement",
+    "verified_files": 3068,
+    "removed_duplicate_logical_bytes": 250058663,
+    "free_before": 12245196800,
+    "free_after": 12504428544,
+    "removed": true,
+    "archive_commit": "bd5123f"
+  }
+]

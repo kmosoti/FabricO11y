@@ -17515,6 +17515,10 @@
     "verification-receipts/workload-rate-oracle.json": {
       "bytes": 1177,
       "sha256": "8cbc1ce3a21abe0de31acc426ac4953f233121cc6b253942ed1a5d9da8391636"
+    },
+    "archive-cleanup.json": {
+      "bytes": 1240,
+      "sha256": "60a247e5f58ac119dbb05c0a0413065f00f3891d7649639d0a0fa871663f833a"
     }
   }
 }
