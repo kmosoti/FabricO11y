@@ -30,3 +30,21 @@ arrival-rate capacity, remote forwarding or deployment qualification.
 Use the verified 20 GiB cgroup, no swap and the data drive. Preserve every
 failure, all answers and command/source/binary hashes. Remove only owned trial
 scratch after grading and archiving evidence; record cleanup and observations.
+
+## Preflight grading correction and availability budget
+
+The first small preflight failed because `query_oracle.check` expects a complete
+page chain, while this screen samples first-page responses during publication.
+Its failure is retained. Before any measured trial, grade each observed first
+page against the unchanged oracle's `expected` rows (the first `limit` rows),
+shape and envelope functions, and check that a continuation exists exactly when
+more rows match. Do not fabricate unobserved pages or claim full-chain grading.
+Negative controls must reject changed, missing and duplicated first-page rows.
+Full-chain behavior remains covered by the unchanged HTTP/history integration
+tests. Cache the independent expected answer per fixed query outside native
+timings, to avoid repeatedly decoding the same input in the Python observer.
+
+Owner clarification: up to 30 seconds after ACK is proposed experimental
+processing headroom for query availability, not an intentional delay. This
+finite screen tests already-committed journal/Segment visibility; it does not
+measure ACK-to-first-visible latency or amend installed freshness promises.
