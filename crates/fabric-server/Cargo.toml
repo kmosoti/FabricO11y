@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2024"
 description = "Fabric O11y central server: authenticated batch intake with durable ACK"
 
+[features]
+responsibility-alloc-probe = []
+
 [dependencies]
 fabric-app = { path = "../fabric-app" }
 fabric-core = { path = "../fabric-core" }
