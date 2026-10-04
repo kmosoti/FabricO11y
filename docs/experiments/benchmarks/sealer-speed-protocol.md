@@ -64,3 +64,20 @@ All builds, tests, profiling, comparisons and validators use the existing
 30-minute per-command deadline. Archive small evidence and failure observations;
 delete owned trial scratch and temporary frozen binaries once complete. Keep
 source fixtures as identified evidence. Do not run remote workloads here.
+
+## Selected mechanism, after attribution and before comparisons
+
+The phase profile found 18 runs at the largest fixture. The old pass rewrites
+all 18 into two runs even though reducing to sixteen needs only three runs
+merged into one. Select two compatible removals: compact binary private spill
+encoding (preserving scalar bits and UTF-8), and a partial final merge pass that
+rewrites only enough contiguous runs to meet fan-in while renaming untouched
+runs into the next level. Full passes remain when reduction to sixteen is
+impossible in one pass. Stable ties follow original contiguous run order.
+
+Freeze three variants: baseline JSON/full-pass, binary-only, and candidate
+binary/partial-pass. Run three alternating baseline/candidate pairs at both
+sizes, and three alternating baseline/binary-only pairs at 262,144 rows to
+separate representation from merge scheduling. Report the binary-only cell
+even if it loses. The original success rules are unchanged. Final exact file
+hash equality is required for every measured pair.
