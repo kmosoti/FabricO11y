@@ -137,3 +137,10 @@ Prospective fixture refinement before implementation/preflight: the 262,144-row
 fixture provides four closed 64 MiB files, so a three/four-worker comparison is
 not silently limited to two available tasks. Earlier protocol text used 131,072
 rows; no measurements ran under that size.
+
+Compression attribution refinement, before preflight: obtain decompressed encoded
+pages from the native-built Parquet tables and replay the unchanged Parquet Zstd
+level-3 codec on those exact page payloads, checking exact decompression. This
+standalone primitive cut isolates codec work; it is not an exclusive phase of the
+original integrated writer. Preserve inclusive writer-write/finish/flush/sync
+spans alongside it, and do not subtract their independent percentiles.
