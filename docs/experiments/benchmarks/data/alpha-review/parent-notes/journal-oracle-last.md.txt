@@ -1,5 +1,0 @@
-The independent oracle is in [target/alpha-journal-oracle](/home/kmosoti/projects/fabric_o11y/target/alpha-journal-oracle/README.md). I froze the [test source](/home/kmosoti/projects/fabric_o11y/target/alpha-journal-oracle/tests/journal_contract.rs) before running it; its SHA256 is `9a3383c49f8b6490f9c6acfa06dfa6b4c6085843eb88afdc77d672364b6bceb2`.
-
-From that directory, `cargo generate-lockfile --offline` exited **0**. With the specified `CARGO_HOME` and `CARGO_TARGET_DIR`, `cargo test --offline --locked --message-format=json --test journal_contract` exited **0**: **6 passed, 0 failed**. No counterexample was found. The deliberate malformed OTLP, oversize batch, and full-journal inputs were rejected without advancing observable committed state.
-
-The [results record](/home/kmosoti/projects/fabric_o11y/target/alpha-journal-oracle/RESULTS.md) gives the exact commands and limits. Sync-order, known-I/O-error, and partial-write recovery probes still require an integrator-provided fault seam or frozen format. I did not read alpha implementation source, edit repository implementation or documentation, or commit.

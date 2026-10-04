@@ -1,5 +1,0 @@
---- candidate/sealer.rs
-+++ cross-hole/sealer.rs
-@@ -154 +154 @@
--        if !published.contains(&label) {
-+        if false && !published.contains(&label) {

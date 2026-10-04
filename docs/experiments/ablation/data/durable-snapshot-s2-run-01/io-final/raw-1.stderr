@@ -1,6 +1,0 @@
-   Compiling storage-probe v0.1.0 (/tmp/fabric-disk-a/tools/storage-probe)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.12s
-     Running tests/disk_io_fault.rs (tools/storage-probe/target/debug/deps/disk_io_fault-1a456cf5325ae3e3)
-injected short raw read: 64 bytes
-injected EIO after 64 raw bytes
-raw_files=2 raw_bytes=64 unavailable=[0]

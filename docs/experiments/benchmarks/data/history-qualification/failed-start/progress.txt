@@ -1,9 +1,0 @@
-== 2026-09-28T15:07:49Z start segment seed 1
-== 2026-09-28T15:07:49Z end segment seed 1 exit 0
-== 2026-09-28T15:07:49Z start segment seed 2
-== 2026-09-28T15:07:49Z end segment seed 2 exit 0
-== 2026-09-28T15:07:49Z start segment seed 3
-== 2026-09-28T15:07:50Z end segment seed 3 exit 0
-== 2026-09-28T15:07:50Z start journal seed 1
-== 2026-09-28T15:07:50Z end journal seed 1 exit 0
-== all done

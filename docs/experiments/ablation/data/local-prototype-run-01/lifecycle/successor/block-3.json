@@ -1,1 +1,0 @@
-{"version":1,"events":[{"id":103,"tenant":7,"source":8,"resource":9,"event_time":1,"observed_time":0,"attributes":[{"key":"otel.log.field.time_present","value":{"kind":"bool","value":true}},{"key":"otel.log.field.observed_time_present","value":{"kind":"bool","value":false}}],"payload":{"kind":"log","body":"rare late arrival"}}]}

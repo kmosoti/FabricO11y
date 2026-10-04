@@ -1,9 +1,0 @@
-[package]
-name = "fabric-ports"
-version = "0.1.0"
-edition = "2024"
-description = "Effect contracts that FabricO11y application use cases need"
-publish = false
-
-[dependencies]
-fabric-core = { path = "../fabric-core" }

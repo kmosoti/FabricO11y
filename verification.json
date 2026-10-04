@@ -1,0 +1,10 @@
+{
+  "branch": "milestone/streaming-segment-output",
+  "head": "a6d49053f1e655c561e9e5e008139e53909e3a1f",
+  "bundle_bytes": 226356787,
+  "sha256": "2ef8f43d696cd3f410f1bfe9beca1e932ec89855ace4b3f4c3b8380586757768",
+  "git_bundle_verify_exit": 0,
+  "fresh_clone_exit": 0,
+  "git_fsck_full_exit": 0,
+  "history": "complete"
+}

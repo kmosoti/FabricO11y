@@ -1,4 +1,0 @@
-    Blocking waiting for file lock on package cache
-   Compiling layout-probe v0.1.0 (/tmp/fabric-layout-a/tools/layout-probe)
-    Finished `release` profile [optimized] target(s) in 4.78s
-     Running tests/layout_review.rs (tools/layout-probe/target/release/deps/layout_review-27570e6971b46bce)

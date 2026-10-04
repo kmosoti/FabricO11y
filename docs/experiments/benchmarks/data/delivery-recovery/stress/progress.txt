@@ -1,7 +1,0 @@
-== 2026-09-28T17:31:37Z start stress seed 1
-== 2026-09-28T17:35:03Z end stress seed 1 exit 0
-== 2026-09-28T17:35:03Z start stress seed 2
-== 2026-09-28T17:38:27Z end stress seed 2 exit 0
-== 2026-09-28T17:38:27Z start stress seed 3
-== 2026-09-28T17:41:52Z end stress seed 3 exit 0
-== all done

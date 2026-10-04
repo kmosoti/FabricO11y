@@ -1,7 +1,0 @@
-**Phase 1 is at a stopping checkpoint, pending parent re-review.** I repaired the four executed review defects: public `Config` values now use the same validation as file-loaded config; the fixed gap bound accommodates all 16 sources without halting collection; a cursor witness detects changed consumed prefixes even when an inode is reused; and inspection treats a marker held by a live writer as retryable. `cargo run` also uses the legacy demo again.
-
-The repair and its limits are recorded in [the review checkpoint](/home/kmosoti/projects/fabric_o11y/docs/experiments/formal/alpha-phase1-review-checkpoint.md). [ALPHA.md](/home/kmosoti/projects/fabric_o11y/docs/ALPHA.md) and [CURRENT.md](/home/kmosoti/projects/fabric_o11y/docs/CURRENT.md) mark phase 1 as **not promoted**.
-
-**Checks exited 0:** `cargo fmt --all --check`; `cargo test --offline --locked --all-features`; `cargo run --offline --locked`; `bun tools/docs/check.mjs`; `git diff --check`; the release build; the original public API probe; all three copied executable defect probes; and the adapted journal and log-reader oracles. A repaired-binary restart smoke retained one log without duplication.
-
-The three 135-second native trials remain valid **pre-repair evidence**, with their original hashes preserved. I did not rerun them or measure post-repair native RSS. The parent’s next step is final cross-family execution review and a decision on post-repair qualification. Phase 2 has not started. **No commit, push, tag, or publication was made**; those integration actions remain with the parent.

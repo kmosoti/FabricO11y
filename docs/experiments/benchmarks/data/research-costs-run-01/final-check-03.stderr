@@ -1,7 +1,0 @@
-   Compiling layout-probe v0.1.0 (/home/kmosoti/projects/fabric_o11y/tools/layout-probe)
-    Finished `release` profile [optimized] target(s) in 7.30s
-     Running unittests src/lib.rs (tools/layout-probe/target/release/deps/layout_probe-ca4917d373cf78e2)
-     Running unittests src/bin/layout-cost.rs (tools/layout-probe/target/release/deps/layout_cost-ecd6a4871be43566)
-     Running tests/layout_contract.rs (tools/layout-probe/target/release/deps/layout_contract-032fa259e9ebb5f6)
-     Running tests/layout_review.rs (tools/layout-probe/target/release/deps/layout_review-7238f6bab68eb13e)
-   Doc-tests layout_probe

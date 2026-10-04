@@ -1,4 +1,0 @@
-# Optional: only the Segment byte measurements (segstat.py, reencode.py,
-# corpus.py) need these. The query and codec harnesses use the standard library.
-pyarrow>=15
-zstandard>=0.22

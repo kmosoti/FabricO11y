@@ -1,6 +1,0 @@
-   Compiling storage-probe v0.1.0 (/tmp/fabric-cli-b/tools/storage-probe)
-    Finished `release` profile [optimized] target(s) in 1.60s
-     Running tests/prototype_cli.rs (tools/storage-probe/target/release/deps/prototype_cli-409ed125bc7eda90)
-     Running tests/prototype_collect.rs (tools/storage-probe/target/release/deps/prototype_collect-93ddec3dea185eac)
-     Running tests/prototype_limits.rs (tools/storage-probe/target/release/deps/prototype_limits-095911bae32f4228)
-     Running tests/prototype_selection.rs (tools/storage-probe/target/release/deps/prototype_selection-ea71e42c37de2d7b)
