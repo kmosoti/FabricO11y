@@ -1,0 +1,187 @@
+{
+  "label": "storage-900-p1-counted",
+  "mode": "storage",
+  "size": 900,
+  "pair": 1,
+  "variant": "counted",
+  "elapsed_process_s": 0.6075455800018972,
+  "exit": 0,
+  "source_sha256": "de7c6e5098252a78dbcc51b87aa105f12a113b92c92b7934554181abd0a2a3e3",
+  "records_sha256": "c5d143d652510659813f9e57ca7507fdeaf0138a83617a1b78474abf0a87d4f5",
+  "exact_fixture_bodies": true,
+  "oracle": [],
+  "controls": {},
+  "stats": {
+    "spool_clone_encode_append_sync": {
+      "wall_ms": {
+        "samples": 32,
+        "p50": 1.173141,
+        "p99": 1.899868,
+        "max": 1.899868,
+        "sum": 40.220908
+      },
+      "units": 4096,
+      "cpu_ticks": 1,
+      "proc_io": {
+        "cancelled_write_bytes": 0,
+        "rchar": 13885,
+        "read_bytes": 0,
+        "syscr": 320,
+        "syscw": 128,
+        "wchar": 3763744,
+        "write_bytes": 4153344
+      },
+      "max_baseline_live_bytes": 22352634,
+      "max_peak_live_bytes": 22609842,
+      "max_incremental_peak_bytes": 257208,
+      "cumulative_requested_bytes": 12729952
+    },
+    "spool_read_decode": {
+      "wall_ms": {
+        "samples": 32,
+        "p50": 0.021602,
+        "p99": 0.055533,
+        "max": 0.055533,
+        "sum": 0.730185
+      },
+      "units": 4096,
+      "cpu_ticks": 0,
+      "proc_io": {
+        "cancelled_write_bytes": 0,
+        "rchar": 3776275,
+        "read_bytes": 0,
+        "syscr": 416,
+        "syscw": 0,
+        "wchar": 0,
+        "write_bytes": 0
+      },
+      "max_baseline_live_bytes": 22352634,
+      "max_peak_live_bytes": 22705214,
+      "max_incremental_peak_bytes": 352580,
+      "cumulative_requested_bytes": 11283072
+    },
+    "spool_ack_persist_advance": {
+      "wall_ms": {
+        "samples": 32,
+        "p50": 0.649954,
+        "p99": 0.939303,
+        "max": 0.939303,
+        "sum": 21.066005
+      },
+      "units": 4096,
+      "cpu_ticks": 1,
+      "proc_io": {
+        "cancelled_write_bytes": 0,
+        "rchar": 3776277,
+        "read_bytes": 0,
+        "syscr": 416,
+        "syscw": 96,
+        "wchar": 640,
+        "write_bytes": 131072
+      },
+      "max_baseline_live_bytes": 22470174,
+      "max_peak_live_bytes": 22587714,
+      "max_incremental_peak_bytes": 117540,
+      "cumulative_requested_bytes": 3776064
+    },
+    "spool_open_recovery": {
+      "wall_ms": {
+        "samples": 1,
+        "p50": 1.515447,
+        "p99": 1.515447,
+        "max": 1.515447,
+        "sum": 1.515447
+      },
+      "units": 4096,
+      "cpu_ticks": 0,
+      "proc_io": {
+        "cancelled_write_bytes": 0,
+        "rchar": 3762789,
+        "read_bytes": 0,
+        "syscr": 110,
+        "syscw": 0,
+        "wchar": 0,
+        "write_bytes": 0
+      },
+      "max_baseline_live_bytes": 22352480,
+      "max_peak_live_bytes": 22727524,
+      "max_incremental_peak_bytes": 375044,
+      "cumulative_requested_bytes": 16485913
+    },
+    "spool_replay_decode": {
+      "wall_ms": {
+        "samples": 1,
+        "p50": 0.619279,
+        "p99": 0.619279,
+        "max": 0.619279,
+        "sum": 0.619279
+      },
+      "units": 4096,
+      "cpu_ticks": 0,
+      "proc_io": {
+        "cancelled_write_bytes": 0,
+        "rchar": 3762742,
+        "read_bytes": 0,
+        "syscr": 106,
+        "syscw": 0,
+        "wchar": 0,
+        "write_bytes": 0
+      },
+      "max_baseline_live_bytes": 22352634,
+      "max_peak_live_bytes": 22705214,
+      "max_incremental_peak_bytes": 352580,
+      "cumulative_requested_bytes": 11283072
+    },
+    "server_submit_to_durable_answer": {
+      "wall_ms": {
+        "samples": 32,
+        "p50": 3.68122,
+        "p99": 4.839273,
+        "max": 4.839273,
+        "sum": 121.077331
+      },
+      "units": 4096,
+      "cpu_ticks": 3,
+      "proc_io": {
+        "cancelled_write_bytes": 0,
+        "rchar": 14048,
+        "read_bytes": 0,
+        "syscr": 320,
+        "syscw": 128,
+        "wchar": 3764672,
+        "write_bytes": 4149248
+      },
+      "max_baseline_live_bytes": 22748125,
+      "max_peak_live_bytes": 23359188,
+      "max_incremental_peak_bytes": 611236,
+      "cumulative_requested_bytes": 36781247
+    },
+    "server_open_replay": {
+      "wall_ms": {
+        "samples": 1,
+        "p50": 7.133005,
+        "p99": 7.133005,
+        "max": 7.133005,
+        "sum": 7.133005
+      },
+      "units": 4096,
+      "cpu_ticks": 0,
+      "proc_io": {
+        "cancelled_write_bytes": 0,
+        "rchar": 11290135,
+        "read_bytes": 0,
+        "syscr": 298,
+        "syscw": 0,
+        "wchar": 0,
+        "write_bytes": 0
+      },
+      "max_baseline_live_bytes": 22352662,
+      "max_peak_live_bytes": 26352743,
+      "max_incremental_peak_bytes": 4000081,
+      "cumulative_requested_bytes": 42855020
+    }
+  },
+  "sampled_peak_process_hwm_mib": 33.359375,
+  "sample_count": 6,
+  "cpu_tick_hz": 100
+}

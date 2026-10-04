@@ -1,0 +1,83 @@
+{"trial": "collection-128-p1-plain", "exit": 0, "elapsed_s": 0.10121474199695513, "cleanup": true}
+{"trial": "collection-128-p1-counted", "exit": 0, "elapsed_s": 0.10091467900201678, "cleanup": true}
+{"trial": "collection-128-p2-counted", "exit": 0, "elapsed_s": 0.10089613999298308, "cleanup": true}
+{"trial": "collection-128-p2-plain", "exit": 0, "elapsed_s": 0.10080110200215131, "cleanup": true}
+{"trial": "collection-128-p3-plain", "exit": 0, "elapsed_s": 0.10088841000106186, "cleanup": true}
+{"trial": "collection-128-p3-counted", "exit": 0, "elapsed_s": 0.10085982400050852, "cleanup": true}
+{"trial": "collection-900-p1-plain", "exit": 0, "elapsed_s": 0.30204332899302244, "cleanup": true}
+{"trial": "collection-900-p1-counted", "exit": 0, "elapsed_s": 0.40390045499952976, "cleanup": true}
+{"trial": "collection-900-p2-counted", "exit": 0, "elapsed_s": 0.405451577011263, "cleanup": true}
+{"trial": "collection-900-p2-plain", "exit": 0, "elapsed_s": 0.30210050799360033, "cleanup": true}
+{"trial": "collection-900-p3-plain", "exit": 0, "elapsed_s": 0.30239473600522615, "cleanup": true}
+{"trial": "collection-900-p3-counted", "exit": 0, "elapsed_s": 0.40285726900037844, "cleanup": true}
+{"trial": "collection-3500-p1-plain", "exit": 0, "elapsed_s": 1.1103730210015783, "cleanup": true}
+{"trial": "collection-3500-p1-counted", "exit": 0, "elapsed_s": 1.2076923949935008, "cleanup": true}
+{"trial": "collection-3500-p2-counted", "exit": 0, "elapsed_s": 1.2075042400101665, "cleanup": true}
+{"trial": "collection-3500-p2-plain", "exit": 0, "elapsed_s": 1.1113634390057996, "cleanup": true}
+{"trial": "collection-3500-p3-plain", "exit": 0, "elapsed_s": 1.107314987006248, "cleanup": true}
+{"trial": "collection-3500-p3-counted", "exit": 0, "elapsed_s": 1.2109610519983107, "cleanup": true}
+{"trial": "delivery-128-p1-plain", "exit": 0, "elapsed_s": 0.3029949110059533, "cleanup": true}
+{"trial": "delivery-128-p1-counted", "exit": 0, "elapsed_s": 0.30284158799622674, "cleanup": true}
+{"trial": "delivery-128-p2-counted", "exit": 0, "elapsed_s": 0.3029935059894342, "cleanup": true}
+{"trial": "delivery-128-p2-plain", "exit": 0, "elapsed_s": 0.30304884498764295, "cleanup": true}
+{"trial": "delivery-128-p3-plain", "exit": 0, "elapsed_s": 0.3028441299975384, "cleanup": true}
+{"trial": "delivery-128-p3-counted", "exit": 0, "elapsed_s": 0.30315910099307075, "cleanup": true}
+{"trial": "delivery-900-p1-plain", "exit": 0, "elapsed_s": 0.40497874999709893, "cleanup": true}
+{"trial": "delivery-900-p1-counted", "exit": 0, "elapsed_s": 0.4042294579994632, "cleanup": true}
+{"trial": "delivery-900-p2-counted", "exit": 0, "elapsed_s": 0.40430581000691745, "cleanup": true}
+{"trial": "delivery-900-p2-plain", "exit": 0, "elapsed_s": 0.4068305990076624, "cleanup": true}
+{"trial": "delivery-900-p3-plain", "exit": 0, "elapsed_s": 0.40390780399320647, "cleanup": true}
+{"trial": "delivery-900-p3-counted", "exit": 0, "elapsed_s": 0.4038800429989351, "cleanup": true}
+{"trial": "delivery-3500-p1-plain", "exit": 0, "elapsed_s": 0.9093394359952072, "cleanup": true}
+{"trial": "delivery-3500-p1-counted", "exit": 0, "elapsed_s": 0.909365732994047, "cleanup": true}
+{"trial": "delivery-3500-p2-counted", "exit": 0, "elapsed_s": 0.9122956619976321, "cleanup": true}
+{"trial": "delivery-3500-p2-plain", "exit": 0, "elapsed_s": 0.9103963660018053, "cleanup": true}
+{"trial": "delivery-3500-p3-plain", "exit": 0, "elapsed_s": 0.9111838550015818, "cleanup": true}
+{"trial": "delivery-3500-p3-counted", "exit": 0, "elapsed_s": 0.9088378029991873, "cleanup": true}
+{"trial": "storage-128-p1-plain", "exit": 0, "elapsed_s": 0.3022110710007837, "cleanup": true}
+{"trial": "storage-128-p1-counted", "exit": 0, "elapsed_s": 0.30224184300459456, "cleanup": true}
+{"trial": "storage-128-p2-counted", "exit": 0, "elapsed_s": 0.30240198799583595, "cleanup": true}
+{"trial": "storage-128-p2-plain", "exit": 0, "elapsed_s": 0.30624439899111167, "cleanup": true}
+{"trial": "storage-128-p3-plain", "exit": 0, "elapsed_s": 0.3024850109941326, "cleanup": true}
+{"trial": "storage-128-p3-counted", "exit": 0, "elapsed_s": 0.30218291099299677, "cleanup": true}
+{"trial": "storage-900-p1-plain", "exit": 0, "elapsed_s": 0.5072479950031266, "cleanup": true}
+{"trial": "storage-900-p1-counted", "exit": 0, "elapsed_s": 0.6075455800018972, "cleanup": true}
+{"trial": "storage-900-p2-counted", "exit": 0, "elapsed_s": 0.6043502090033144, "cleanup": true}
+{"trial": "storage-900-p2-plain", "exit": 0, "elapsed_s": 0.5057645369961392, "cleanup": true}
+{"trial": "storage-900-p3-plain", "exit": 0, "elapsed_s": 0.5037684800045099, "cleanup": true}
+{"trial": "storage-900-p3-counted", "exit": 0, "elapsed_s": 0.6052786039945204, "cleanup": true}
+{"trial": "storage-3500-p1-plain", "exit": 0, "elapsed_s": 1.4140028179972433, "cleanup": true}
+{"trial": "storage-3500-p1-counted", "exit": 0, "elapsed_s": 1.5126648000004934, "cleanup": true}
+{"trial": "storage-3500-p2-counted", "exit": 0, "elapsed_s": 1.517283357999986, "cleanup": true}
+{"trial": "storage-3500-p2-plain", "exit": 0, "elapsed_s": 1.3100170429970603, "cleanup": true}
+{"trial": "storage-3500-p3-plain", "exit": 0, "elapsed_s": 1.3172615619987482, "cleanup": true}
+{"trial": "storage-3500-p3-counted", "exit": 0, "elapsed_s": 1.5216008700081147, "cleanup": true}
+{"trial": "processing-128-p1-plain", "exit": 0, "elapsed_s": 0.10103978800179902, "cleanup": true}
+{"trial": "processing-128-p1-counted", "exit": 0, "elapsed_s": 0.10088192300463561, "cleanup": true}
+{"trial": "processing-128-p2-counted", "exit": 0, "elapsed_s": 0.10099599299428519, "cleanup": true}
+{"trial": "processing-128-p2-plain", "exit": 0, "elapsed_s": 0.10083333800139371, "cleanup": true}
+{"trial": "processing-128-p3-plain", "exit": 0, "elapsed_s": 0.10080754500813782, "cleanup": true}
+{"trial": "processing-128-p3-counted", "exit": 0, "elapsed_s": 0.1008323889982421, "cleanup": true}
+{"trial": "processing-900-p1-plain", "exit": 0, "elapsed_s": 0.30566942199948244, "cleanup": true}
+{"trial": "processing-900-p1-counted", "exit": 0, "elapsed_s": 0.3020858139934717, "cleanup": true}
+{"trial": "processing-900-p2-counted", "exit": 0, "elapsed_s": 0.3021076769946376, "cleanup": true}
+{"trial": "processing-900-p2-plain", "exit": 0, "elapsed_s": 0.3023853080085246, "cleanup": true}
+{"trial": "processing-900-p3-plain", "exit": 0, "elapsed_s": 0.30218511099519674, "cleanup": true}
+{"trial": "processing-900-p3-counted", "exit": 0, "elapsed_s": 0.30231666400504764, "cleanup": true}
+{"trial": "processing-3500-p1-plain", "exit": 0, "elapsed_s": 0.8052585819968954, "cleanup": true}
+{"trial": "processing-3500-p1-counted", "exit": 0, "elapsed_s": 0.8053224350005621, "cleanup": true}
+{"trial": "processing-3500-p2-counted", "exit": 0, "elapsed_s": 0.8056162010034313, "cleanup": true}
+{"trial": "processing-3500-p2-plain", "exit": 0, "elapsed_s": 0.8053221040026983, "cleanup": true}
+{"trial": "processing-3500-p3-plain", "exit": 0, "elapsed_s": 0.8054553879919695, "cleanup": true}
+{"trial": "processing-3500-p3-counted", "exit": 0, "elapsed_s": 0.9061312260018894, "cleanup": true}
+Traceback (most recent call last):
+  File "/workspace/FabricO11y-journal-reclaim/tools/bench/run_responsibility_isolation.py", line 127, in <module>
+    if __name__=='__main__':main()
+                            ^^^^^^
+  File "/workspace/FabricO11y-journal-reclaim/tools/bench/run_responsibility_isolation.py", line 123, in main
+    s=run(root,bins,mode,size,pair,variant,cpus);all_results.append(s);print(json.dumps({'trial':s['label'],'exit':s['exit'],'elapsed_s':s['elapsed_process_s'],'cleanup':True}),flush=True)
+      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/FabricO11y-journal-reclaim/tools/bench/run_responsibility_isolation.py", line 69, in run
+    assert p.returncode==0,f'probe exit {p.returncode}'
+           ^^^^^^^^^^^^^^^
+AssertionError: probe exit 101

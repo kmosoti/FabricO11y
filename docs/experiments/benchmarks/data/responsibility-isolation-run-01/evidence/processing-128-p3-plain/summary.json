@@ -1,0 +1,91 @@
+{
+  "label": "processing-128-p3-plain",
+  "mode": "processing",
+  "size": 128,
+  "pair": 3,
+  "variant": "plain",
+  "elapsed_process_s": 0.10080754500813782,
+  "exit": 0,
+  "source_sha256": "553791a478df1471bd645d0c8a4b785865c9bc73e0418918c5589d7af143cc85",
+  "records_sha256": "30172af8cedf247d7e03c6d9a25432224b5c2c6849a3bcba60539ad2ab18c87a",
+  "exact_fixture_bodies": true,
+  "oracle": [],
+  "controls": {},
+  "stats": {
+    "batch_decode_project_rows": {
+      "wall_ms": {
+        "samples": 160,
+        "p50": 0.021932,
+        "p99": 0.088611,
+        "max": 0.094359,
+        "sum": 4.287868
+      },
+      "units": 20480,
+      "cpu_ticks": 1,
+      "proc_io": {
+        "cancelled_write_bytes": 0,
+        "rchar": 68815,
+        "read_bytes": 0,
+        "syscr": 1600,
+        "syscw": 0,
+        "wchar": 0,
+        "write_bytes": 0
+      },
+      "max_baseline_live_bytes": null,
+      "max_peak_live_bytes": null,
+      "max_incremental_peak_bytes": null,
+      "cumulative_requested_bytes": 0
+    },
+    "sort_log_rows": {
+      "wall_ms": {
+        "samples": 5,
+        "p50": 0.008273,
+        "p99": 0.022143,
+        "max": 0.022143,
+        "sum": 0.055214
+      },
+      "units": 20480,
+      "cpu_ticks": 0,
+      "proc_io": {
+        "cancelled_write_bytes": 0,
+        "rchar": 2152,
+        "read_bytes": 0,
+        "syscr": 50,
+        "syscw": 0,
+        "wchar": 0,
+        "write_bytes": 0
+      },
+      "max_baseline_live_bytes": null,
+      "max_peak_live_bytes": null,
+      "max_incremental_peak_bytes": null,
+      "cumulative_requested_bytes": 0
+    },
+    "segment_build_inclusive_publish": {
+      "wall_ms": {
+        "samples": 1,
+        "p50": 13.728373,
+        "p99": 13.728373,
+        "max": 13.728373,
+        "sum": 13.728373
+      },
+      "units": 4096,
+      "cpu_ticks": 1,
+      "proc_io": {
+        "cancelled_write_bytes": 0,
+        "rchar": 2258,
+        "read_bytes": 0,
+        "syscr": 12,
+        "syscw": 6,
+        "wchar": 593065,
+        "write_bytes": 618496
+      },
+      "max_baseline_live_bytes": null,
+      "max_peak_live_bytes": null,
+      "max_incremental_peak_bytes": null,
+      "cumulative_requested_bytes": 0
+    }
+  },
+  "sampled_peak_process_hwm_mib": 0.08203125,
+  "sample_count": 1,
+  "cpu_tick_hz": 100
+}

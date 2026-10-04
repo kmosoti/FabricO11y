@@ -1,0 +1,67 @@
+{
+  "label": "collection-900-p1-counted",
+  "mode": "collection",
+  "size": 900,
+  "pair": 1,
+  "variant": "counted",
+  "elapsed_process_s": 0.40390045499952976,
+  "exit": 0,
+  "source_sha256": "de7c6e5098252a78dbcc51b87aa105f12a113b92c92b7934554181abd0a2a3e3",
+  "records_sha256": "367799ab6cb715c5115d22531ee21da7e4364dd25291c825feb89a4ea06ad102",
+  "exact_fixture_bodies": true,
+  "oracle": [],
+  "controls": {},
+  "stats": {
+    "file_read_validate_cursor": {
+      "wall_ms": {
+        "samples": 50,
+        "p50": 2.510643,
+        "p99": 6.455095,
+        "max": 6.455095,
+        "sum": 134.482654
+      },
+      "units": 50,
+      "cpu_ticks": 14,
+      "proc_io": {
+        "cancelled_write_bytes": 0,
+        "rchar": 37126597,
+        "read_bytes": 0,
+        "syscr": 9660,
+        "syscw": 0,
+        "wchar": 0,
+        "write_bytes": 0
+      },
+      "max_baseline_live_bytes": 21624414,
+      "max_peak_live_bytes": 22609807,
+      "max_incremental_peak_bytes": 1001943,
+      "cumulative_requested_bytes": 95626310
+    },
+    "host_sample": {
+      "wall_ms": {
+        "samples": 20,
+        "p50": 0.039829,
+        "p99": 0.178445,
+        "max": 0.178445,
+        "sum": 1.115715
+      },
+      "units": 20,
+      "cpu_ticks": 1,
+      "proc_io": {
+        "cancelled_write_bytes": 0,
+        "rchar": 108500,
+        "read_bytes": 0,
+        "syscr": 920,
+        "syscw": 0,
+        "wchar": 0,
+        "write_bytes": 0
+      },
+      "max_baseline_live_bytes": 18586217,
+      "max_peak_live_bytes": 18613419,
+      "max_incremental_peak_bytes": 27202,
+      "cumulative_requested_bytes": 953560
+    }
+  },
+  "sampled_peak_process_hwm_mib": 22.40625,
+  "sample_count": 4,
+  "cpu_tick_hz": 100
+}

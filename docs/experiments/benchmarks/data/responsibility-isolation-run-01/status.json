@@ -1,0 +1,14 @@
+{
+  "status": "partial_exploratory_run_stopped_on_query_fixture_failure",
+  "completed_trials": 72,
+  "failed_trials": 1,
+  "not_executed": [
+    "control",
+    "scheduling",
+    "observation"
+  ],
+  "logical_scratch_bytes_removed_cumulative": 2054784507,
+  "all_trial_scratch_removed": true,
+  "scratch_directory_empty": true,
+  "further_measurements_paused_for_experiment_design": true
+}

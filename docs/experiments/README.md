@@ -22,6 +22,8 @@ Frozen reviewer probes, verdicts and parent notes from earlier language-model re
 
 ## Research
 
+The [responsibility experiment design](benchmarks/responsibility-experiment-design.md) specifies parallel preparation versus sequential measurements and preserves a partial initial isolation run. New measurements are paused for design; query-fixture correctness and observer/statistical calibration precede the next campaign.
+
 The [pre-tier responsibility benchmark audit](benchmarks/responsibility-benchmark-audit.md) maps six functional and two supporting groups to current tools, missing measurements, candidate inefficiencies and correctness controls. Full phase/observer attribution is a prerequisite for the next development/small/moderate consumer tests; no new performance result is claimed.
 
 [Adaptive sealing and builder memory](benchmarks/adaptive-sealing-hypotheses.md) develops separate scheduler and working-set hypotheses, nulls, resource models and a draft validation design. It is a proposal with no implementation or new measurements. The [sealing pipeline model](../research/sealing-pipeline-model.md) develops storage-owned buffers, processing-task semantics, memory/deadlock obligations and a constrained optimization/validation design. Its [experiment and optimization route catalog](benchmarks/sealing-pipeline-experiment-design.md) defines multidimensional screening, interaction tests and independent confirmation; R0 has a separately registered local result; other routes remain unrun.

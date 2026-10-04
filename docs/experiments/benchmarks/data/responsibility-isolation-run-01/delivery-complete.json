@@ -1,0 +1,22 @@
+{
+  "trials": [
+    "delivery-128-p1-plain",
+    "delivery-128-p1-counted",
+    "delivery-128-p2-counted",
+    "delivery-128-p2-plain",
+    "delivery-128-p3-plain",
+    "delivery-128-p3-counted",
+    "delivery-900-p1-plain",
+    "delivery-900-p1-counted",
+    "delivery-900-p2-counted",
+    "delivery-900-p2-plain",
+    "delivery-900-p3-plain",
+    "delivery-900-p3-counted",
+    "delivery-3500-p1-plain",
+    "delivery-3500-p1-counted",
+    "delivery-3500-p2-counted",
+    "delivery-3500-p2-plain",
+    "delivery-3500-p3-plain",
+    "delivery-3500-p3-counted"
+  ]
+}

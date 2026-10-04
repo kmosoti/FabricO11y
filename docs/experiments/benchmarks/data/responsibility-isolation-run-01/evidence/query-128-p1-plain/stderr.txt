@@ -1,0 +1,4 @@
+
+thread 'main' (198841) panicked at crates/fabric-server/examples/responsibility_probe.rs:434:55:
+called `Result::unwrap()` on an `Err` value: Io(Custom { kind: Interrupted, error: "journal moved" })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

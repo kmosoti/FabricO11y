@@ -1,0 +1,22 @@
+{
+  "trials": [
+    "processing-128-p1-plain",
+    "processing-128-p1-counted",
+    "processing-128-p2-counted",
+    "processing-128-p2-plain",
+    "processing-128-p3-plain",
+    "processing-128-p3-counted",
+    "processing-900-p1-plain",
+    "processing-900-p1-counted",
+    "processing-900-p2-counted",
+    "processing-900-p2-plain",
+    "processing-900-p3-plain",
+    "processing-900-p3-counted",
+    "processing-3500-p1-plain",
+    "processing-3500-p1-counted",
+    "processing-3500-p2-counted",
+    "processing-3500-p2-plain",
+    "processing-3500-p3-plain",
+    "processing-3500-p3-counted"
+  ]
+}

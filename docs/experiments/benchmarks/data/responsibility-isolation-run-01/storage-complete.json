@@ -1,0 +1,22 @@
+{
+  "trials": [
+    "storage-128-p1-plain",
+    "storage-128-p1-counted",
+    "storage-128-p2-counted",
+    "storage-128-p2-plain",
+    "storage-128-p3-plain",
+    "storage-128-p3-counted",
+    "storage-900-p1-plain",
+    "storage-900-p1-counted",
+    "storage-900-p2-counted",
+    "storage-900-p2-plain",
+    "storage-900-p3-plain",
+    "storage-900-p3-counted",
+    "storage-3500-p1-plain",
+    "storage-3500-p1-counted",
+    "storage-3500-p2-counted",
+    "storage-3500-p2-plain",
+    "storage-3500-p3-plain",
+    "storage-3500-p3-counted"
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "trials": [
+    "collection-128-p1-plain",
+    "collection-128-p1-counted",
+    "collection-128-p2-counted",
+    "collection-128-p2-plain",
+    "collection-128-p3-plain",
+    "collection-128-p3-counted",
+    "collection-900-p1-plain",
+    "collection-900-p1-counted",
+    "collection-900-p2-counted",
+    "collection-900-p2-plain",
+    "collection-900-p3-plain",
+    "collection-900-p3-counted",
+    "collection-3500-p1-plain",
+    "collection-3500-p1-counted",
+    "collection-3500-p2-counted",
+    "collection-3500-p2-plain",
+    "collection-3500-p3-plain",
+    "collection-3500-p3-counted"
+  ]
+}
