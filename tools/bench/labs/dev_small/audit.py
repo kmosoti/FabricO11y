@@ -308,7 +308,7 @@ def audit_data(root: Path):
             'live_acks': len(acks), 'source_logs': len(source), 'clock_rows': len(clock_rows),
             'resource_samples': len(samples), 'query_verdicts': len(final_verdicts)},
             'clock': clock, 'query_provenance': {'oracle_path': 'tools/qualification/query_oracle.py',
-            'oracle_sha256': oracle_sha, 'replay_sha256': provenance.get('replay_sha256'),
+            'oracle_sha256': oracle_sha, 'replay_sha256': replay_sha,
             'verdict_file': provenance.get('verdict_file'),
             'negative_controls': len(controls)}, 'artifact_hashes_checked': manifest_checks,
             'environment_keys': sorted(env), 'passed': not problems}
@@ -387,6 +387,10 @@ def controls():
             assert any(expected in issue for issue in verdict['problems']), (label, verdict['problems'])
             checks[label] = True
         assert not audit_data_after_build(build_cell, root)
+        # Review counterexample: the checked recovered_sha256 was previously
+        # copied from a nonexistent replay_sha256 key into the display report.
+        assert audit_data(root)['query_provenance']['replay_sha256'] == hashlib.sha256(b'replay').hexdigest()
+        checks['checked_replay_hash_is_reported'] = True
         require_rejected('ack_hash_mismatch_rejected',
             lambda: put_lines('node00-events.jsonl.gz', [{'t': epoch, 'kind': 'cycle', 'batch': 1},
                 {'t': epoch, 'kind': 'ack_attempt', 'sequence': 1, 'sha256': hashlib.sha256(b'wrong').hexdigest(), 'status': 'ack'}]),
