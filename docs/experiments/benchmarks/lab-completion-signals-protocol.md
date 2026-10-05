@@ -29,7 +29,12 @@ During each short cell gracefully restart the server halfway through, with a
 two-second stopped interval while nodes retain custody. Keep source lateness and
 query failures during that deliberate interruption visible. Query every ten
 seconds; after drain, compare complete logs, CPU metrics and spans pagination
-chains to the unchanged Python oracle. Separately require exact source log
+chains to the unchanged Python oracle. The log chain selects node00 and prefix
+`load-00:000`; source/hash comparison still covers all emitted logs on every
+node. Preserve source ledgers, complete query pages, every Batch custody digest,
+and exact trace/metric protobuf; remove duplicated raw source-log payloads only
+after grading. This compact evidence is not a full byte-replay archive.
+Separately require exact source log
 hashes, source span IDs/parents/names/timestamps, exact concatenated successful
 SDK payload bytes versus retained raw traces, every server ACK hash recoverable,
 no duplicate or missing Batch, and successful SDK flush. Metrics are compared
