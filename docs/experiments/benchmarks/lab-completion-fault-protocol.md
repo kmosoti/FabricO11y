@@ -24,3 +24,8 @@ storage tests supply independent full-query grading and publication/reclaim
 recovery. It is not physical power-loss evidence, exhaustive partial-IO evidence
 or checkpoint-fault coverage. Run existing checkpoint/reclaim regressions too.
 Frozen acceptance and independent oracles remain unchanged.
+
+Before first execution, extend the cases with sealed-journal EIO and a successful
+short (at most16-byte) spill write or merge-run read followed by EIO on the same
+descriptor. Require nonzero failure and exact retry as above. This covers these
+representative partial-IO paths, not every partial syscall boundary.
