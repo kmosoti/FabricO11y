@@ -1,0 +1,1 @@
+{"semantic_negative_controls": {"checked_replay_hash_is_reported": true, "ack_hash_mismatch_rejected": true, "source_body_mismatch_rejected": true, "clock_discontinuity_rejected": true, "query_verdict_failure_rejected": true}, "temporary_fixture_removed": true}

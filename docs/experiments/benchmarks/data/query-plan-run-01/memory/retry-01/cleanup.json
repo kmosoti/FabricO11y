@@ -1,0 +1,9 @@
+{
+  "status": "failed",
+  "work": "/run/media/kmosoti/data/FabricO11y/scratch/work-zwh0vn5m/memory/allocation-retry-01/tmp/query-allocation-profile",
+  "removed": false,
+  "scratch_logical_bytes": 40096521,
+  "retained_logical_bytes": 190210,
+  "elapsed_seconds": 1.0041299459990114,
+  "failed_scratch_moves_with_launcher_tmpdir": true
+}

@@ -1,0 +1,7 @@
+{
+  "encoding": "identity-and-time-columns-v1",
+  "identity": "../corpus/11d58ea3fac626ee4971aa26a6ad6bf3e47494117ebe77ecb2b94b50261a3d50.jsonl.gz",
+  "rows": 300000,
+  "raw_sha256": "50fb7933a42a69baba6dd7fa6f97418d0b5b04822ce6167d52717ceb63f81ebf",
+  "identity_raw_sha256": "11d58ea3fac626ee4971aa26a6ad6bf3e47494117ebe77ecb2b94b50261a3d50"
+}

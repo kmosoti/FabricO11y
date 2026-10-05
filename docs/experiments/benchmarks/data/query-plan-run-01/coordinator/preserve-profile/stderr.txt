@@ -1,0 +1,11 @@
+resource group: /user.slice/user-1000.slice/user@1000.service/app.slice/fabric-work-36570b9b54ea437884eba244ed4192be.service; memory.max=21474836480; swap.max=0
+Traceback (most recent call last):
+  File "/home/kmosoti/Projects/moiric/FabricO11y/tools/bench/labs/preserve_query_profile_failure.py", line 43, in <module>
+    if __name__=='__main__':main()
+                            ~~~~^^
+  File "/home/kmosoti/Projects/moiric/FabricO11y/tools/bench/labs/preserve_query_profile_failure.py", line 34, in main
+    p.check_space(out,DATA/'memory')
+    ~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/home/kmosoti/Projects/moiric/FabricO11y/tools/bench/labs/query_compare/profile.py", line 35, in check_space
+    raise RuntimeError('profiling evidence exceeds 50MiB; preserve scratch')
+RuntimeError: profiling evidence exceeds 50MiB; preserve scratch

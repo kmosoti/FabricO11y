@@ -1,0 +1,13 @@
+{
+  "estimated_delegated_token_budget": 12000,
+  "initial_estimated_allocation": 9000,
+  "reserve_estimated_allocation": 3000,
+  "actual_token_usage": null,
+  "actual_usage_limitation": "Agent token telemetry is not exposed; allocations are estimates, not measured usage.",
+  "workload_execution": "Inline coordinator only, serialized cgroup jobs on data drive",
+  "labs": {
+    "query": {"pi": "inline", "task": "Fixed-demand Scan/Walk native comparison"},
+    "memory": {"pi": "query_profile_pi", "model": "gpt-6.1-sol", "effort": "medium", "task": "Private allocation harness, no workload execution", "initial_token_estimate": 6000, "correction_reserve_estimate": 1500},
+    "recovery": {"pi": "inline", "assistant": "query_compare_review", "model": "gpt-6-luna", "effort": "medium", "task": "Bounded independent demand/provenance review", "initial_token_estimate": 3000}
+  }
+}

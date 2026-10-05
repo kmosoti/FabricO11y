@@ -1,0 +1,37 @@
+{
+  "bounds": null,
+  "candidate_commit": "37af74e86a6d54e6662e392f096c7ab685ef1b34",
+  "check_id": "delivery-oracle",
+  "command": [
+    "python3",
+    "-B",
+    "tools/qualification/test_delivery_oracle.py"
+  ],
+  "duration_ms": 300,
+  "exit_code": 0,
+  "expected": "exit 0",
+  "fixtures": null,
+  "negative_controls": "dropped ACKed record, duplicate, replaced bytes, early forget",
+  "oracle_revision": "7650c7cb5e0e2cddcc4eb5513d957114acc323c4",
+  "output_sha256": "a2b8848fedf051de00fd76159164572820533c7a38d936e4342bcd4a8b6dc41d",
+  "profile": "fast",
+  "property_ids": [
+    "DEL-1",
+    "DEL-2",
+    "DEL-3",
+    "SPOOL-1"
+  ],
+  "receipt_version": 1,
+  "result": "passed",
+  "scope": "The independent delivery oracle and its mutation controls",
+  "specification_revision": "a820c86198f986d4e7ee2b29091e8df68acfdb38",
+  "toolchain": {
+    "bun": "unavailable",
+    "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+    "python3": "Python 3.14.7",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "The oracle's own adapter contract: it grades transcripts, not processes.",
+  "worktree_dirty": true
+}

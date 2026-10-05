@@ -1,0 +1,43 @@
+{
+  "fixture": {
+    "allocator_counted": true,
+    "answer_ledger_limit_bytes": 268435456,
+    "body_bytes": 1024,
+    "cpu_clock": "CLOCK_PROCESS_CPUTIME_ID",
+    "cpu_clock_resolution_ns": 1,
+    "encoded_batch_bytes": 133412,
+    "encoded_group_bytes": 133441,
+    "ledger_capacity": 4244,
+    "observer": "minimal",
+    "observer_batch_iterations": 20000,
+    "preflight": false,
+    "query_warm_repeats": 3,
+    "records": 128,
+    "scheduling_memory_guard_bytes": 1073741824,
+    "scheduling_rotate_bytes": 524288,
+    "seed": 42,
+    "size": 1024,
+    "source_bytes": 131200,
+    "source_sha256": "b1874e60aba20841b3c7977dca85d9c2dd2c8db955c8e3e0dc34cae590066bb0",
+    "stage": "fixture",
+    "timestamp_order": "shuffled",
+    "timestamp_ranks_sha256": "b0a1be2654705e4f928e6d6356166e6149eb4f8100d292bdcb2b21877ccddda7"
+  },
+  "records_objects": {
+    "fixture": "259f447b3de401e05e455311f2a6be6afb277e788fb2fc1b866879bc6ffd787d.records-index.json.gz",
+    "tail": "b438abef3120e293f9b247d5e83deedf347254077ecb0efd2580b3e941f8d804.records-index.json.gz",
+    "segment": "259f447b3de401e05e455311f2a6be6afb277e788fb2fc1b866879bc6ffd787d.records-index.json.gz"
+  },
+  "source_bytes": 131200,
+  "record_count": 128,
+  "variant": "counted",
+  "population": "preflight",
+  "complete": {
+    "cpu_clock_resolution_ns": 1,
+    "ledger_events": 128,
+    "mode": "query",
+    "observer": "minimal",
+    "stage": "complete",
+    "vm_hwm_kib": 13416
+  }
+}

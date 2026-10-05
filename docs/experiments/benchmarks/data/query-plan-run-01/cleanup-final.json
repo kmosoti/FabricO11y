@@ -1,0 +1,137 @@
+{
+  "jobs": [
+    {
+      "id": "allocation",
+      "exit": 1,
+      "service_state": "inactive",
+      "scratch_removed": true
+    },
+    {
+      "id": "allocation-retry-01",
+      "exit": 1,
+      "service_state": "inactive",
+      "scratch_removed": true
+    },
+    {
+      "id": "allocation-retry-02",
+      "exit": 1,
+      "service_state": "inactive",
+      "scratch_removed": true
+    },
+    {
+      "id": "audit-controls",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "cleanup",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "compact-profile",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "consolidate",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "controls",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "dev-scan",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "dev-walk",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "documentation",
+      "exit": 1,
+      "service_state": "inactive",
+      "removed_bytes": 0,
+      "preserved_failure": "recovery/documentation-failure.tar.gz",
+      "scratch_removed": true
+    },
+    {
+      "id": "documentation-retry",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "fast-checks",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "native-build",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "preserve-profile",
+      "exit": 1,
+      "service_state": "inactive",
+      "scratch_removed": true
+    },
+    {
+      "id": "small-scan-1",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "small-scan-2",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "small-scan-3",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "small-walk-1",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "small-walk-2",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "small-walk-3",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "verify-profile-archive",
+      "exit": 0,
+      "service_state": "inactive"
+    }
+  ],
+  "shared_cache": "preserved",
+  "remote": "none",
+  "completed_execution_seconds": {
+    "native": 2105.0363427709963,
+    "profile": 29.229906713990204,
+    "overhead": 166.7346082939912
+  },
+  "lab_bytes": {
+    "coordinator": 25870781,
+    "memory": 51570760,
+    "query": 37961318,
+    "recovery": 2881856
+  },
+  "oom_events": 0,
+  "swap_bytes": 0,
+  "limit": "Current cleanup job is still running; its own launcher writes final exit/cleanup after this report."
+}

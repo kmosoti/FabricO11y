@@ -1,0 +1,28 @@
+{
+  "unit": "fabric-work-fb993bd40328463f87634a447a858629",
+  "command": [
+    "python3",
+    "tools/bench/labs/query_compare/run_job.py",
+    "--id",
+    "audit-controls",
+    "--lab",
+    "recovery",
+    "--stage",
+    "overhead",
+    "--seconds",
+    "30",
+    "--",
+    "python3",
+    "-c",
+    "import runpy,json; m=runpy.run_path('tools/bench/labs/dev_small/audit.py'); print(json.dumps(m['controls']()))"
+  ],
+  "exit": 0,
+  "started_unix": 1791223826.517531,
+  "elapsed_s": 0.8290891647338867,
+  "data_drive": "/run/media/kmosoti/data",
+  "temporary": "/run/media/kmosoti/data/FabricO11y/scratch/work-7uwt7xj8",
+  "temporary_removed": true,
+  "retained_failure_evidence": null,
+  "memory_max_bytes": 21474836480,
+  "swap_max_bytes": 0
+}

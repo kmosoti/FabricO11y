@@ -1,0 +1,2885 @@
+{
+  "deployment": "small",
+  "nodes": 20,
+  "offered_rates": [
+    1000,
+    3000,
+    1000
+  ],
+  "schedule_seconds": [
+    60,
+    60,
+    60
+  ],
+  "history": {
+    "batches": 0,
+    "condition": "H0",
+    "encoded_bytes": 0,
+    "fixture_target_override": false,
+    "generation": 1,
+    "observed_start_ns": 1759680000000000000,
+    "old_node_id": "71717171717171717171717171717171",
+    "prefix_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "received_max_ns": null,
+    "received_min_ns": null,
+    "rows": 0,
+    "seed_replay_exact": true,
+    "segments": [],
+    "preparation_seconds": 0.06426692599779926,
+    "active_journal_bytes": 0,
+    "seed_batch_hash_mismatches": 0
+  },
+  "expected_logs": 300000,
+  "recovered_logs": 300000,
+  "comparison": {
+    "missing": 0,
+    "unexpected": 0,
+    "changed": 0
+  },
+  "duplicates": 0,
+  "collection_gaps": [],
+  "latency_ms": {
+    "normal": {
+      "ingest": {
+        "samples": 60000,
+        "p50": 11.324416,
+        "p99": 28.362394,
+        "max": 34.834473,
+        "negative": 0
+      },
+      "ack": {
+        "samples": 60000,
+        "p50": 17.173896,
+        "p99": 36.602873,
+        "max": 44.035151,
+        "negative": 0
+      },
+      "source_to_ingest": {
+        "samples": 60000,
+        "p50": 506.614211,
+        "p99": 991.56576,
+        "max": 1011.091831,
+        "negative": 0
+      }
+    },
+    "burst": {
+      "ingest": {
+        "samples": 180000,
+        "p50": 15.810404,
+        "p99": 32.051663,
+        "max": 51.840727,
+        "negative": 0
+      },
+      "ack": {
+        "samples": 180000,
+        "p50": 26.423602,
+        "p99": 45.096465,
+        "max": 67.061196,
+        "negative": 0
+      },
+      "source_to_ingest": {
+        "samples": 180000,
+        "p50": 519.589528,
+        "p99": 988.259101,
+        "max": 1022.016519,
+        "negative": 0
+      }
+    },
+    "recovery": {
+      "ingest": {
+        "samples": 60000,
+        "p50": 11.438122,
+        "p99": 29.951605,
+        "max": 54.835091,
+        "negative": 0
+      },
+      "ack": {
+        "samples": 60000,
+        "p50": 17.099234,
+        "p99": 42.438888,
+        "max": 65.113547,
+        "negative": 0
+      },
+      "source_to_ingest": {
+        "samples": 60000,
+        "p50": 506.327223,
+        "p99": 991.298967,
+        "max": 1008.261208,
+        "negative": 0
+      }
+    },
+    "all": {
+      "ingest": {
+        "samples": 300000,
+        "p50": 14.011702,
+        "p99": 31.27485,
+        "max": 54.835091,
+        "negative": 0
+      },
+      "ack": {
+        "samples": 300000,
+        "p50": 22.944114,
+        "p99": 43.383955,
+        "max": 67.061196,
+        "negative": 0
+      },
+      "source_to_ingest": {
+        "samples": 300000,
+        "p50": 507.188482,
+        "p99": 989.157796,
+        "max": 1022.016519,
+        "negative": 0
+      }
+    }
+  },
+  "native_attempt_rtt_ms": {
+    "samples": 3640,
+    "p50": 12.157,
+    "p99": 29.504,
+    "max": 44.267,
+    "negative": 0
+  },
+  "acknowledged_batches": 3640,
+  "recovered_batches": 3640,
+  "encoded_batch_bytes": 353379039,
+  "encoded_bytes_per_source_log_including_metrics": 1177.93013,
+  "offer_window_seconds": 179.90864247400168,
+  "mean_encoded_mib_s_offer_window": 1.87322025677184,
+  "server_peak_rss_mib": 467.92578125,
+  "node_peak_rss_mib": 6.4765625,
+  "aggregate_nodes_peak_rss_mib": 120.203125,
+  "measured_wall_seconds": 204.082085467,
+  "server_cpu_seconds": 44.510000000000005,
+  "nodes_cpu_seconds": 6.4,
+  "server_mean_cpu_equivalents": 0.21809851608556427,
+  "nodes_mean_cpu_equivalents": 0.0313599304189533,
+  "max_sealed_files_waiting": 1,
+  "segments_final": 5,
+  "journal_final_bytes": 17090960,
+  "peak_trial_disk_bytes": 727256161,
+  "max_node_log_backlog_bytes": 0,
+  "non_ack_attempts": 0,
+  "clock_offset_range_ms": 0.00341796875,
+  "gates": {
+    "exact_source_logs": true,
+    "no_collection_gaps": true,
+    "ack_hash_recovery": true,
+    "contiguous_recovered_sequences": true,
+    "no_unexpected_retries": true,
+    "clean_child_exits": true,
+    "collection_to_ingest_p99_le_1s": true,
+    "collection_to_ack_p99_le_1s": true,
+    "server_rss_le_2gib": true,
+    "node_rss_le_64mib": true,
+    "clock_offset_range_le_5ms": true,
+    "producer_lag_p99_le_100ms": true,
+    "all_visibility_targets_returned": true,
+    "source_to_visible_le_30s": true,
+    "no_query_errors": true,
+    "no_incomplete_answers": true,
+    "live_returned_logs_exact": true,
+    "final_queries_exact": true,
+    "query_negative_controls_rejected": true,
+    "spool_cycle_custody": true,
+    "rate_accounting_exact": true,
+    "measurement_valid": true
+  },
+  "passed": true,
+  "child_exits": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+  ],
+  "observation": {
+    "epoch_ns": 1791221863371059469,
+    "cpu": {
+      "whole": {
+        "samples": 203,
+        "observed_seconds": 204.082085467,
+        "processes": {
+          "server": {
+            "cpu_seconds": 44.52,
+            "mean_cores": 0.21814751597684387,
+            "max_interval_cores": 1.2473718135757068,
+            "user_seconds": 41.71,
+            "system_seconds": 2.81,
+            "peak_rss_mib": 462.60546875,
+            "io_delta": {
+              "rchar": 14239673359,
+              "wchar": 928681525,
+              "syscr": 285272,
+              "syscw": 17894,
+              "read_bytes": 4096,
+              "write_bytes": 942919680,
+              "cancelled_write_bytes": 349802496
+            }
+          },
+          "observer": {
+            "cpu_seconds": 14.79,
+            "mean_cores": 0.07247083920254987,
+            "max_interval_cores": 0.14849664447329902,
+            "user_seconds": 13.56,
+            "system_seconds": 1.23,
+            "peak_rss_mib": 156.3125,
+            "io_delta": {
+              "rchar": 24801962,
+              "wchar": 284333838,
+              "syscr": 912101,
+              "syscw": 37024,
+              "read_bytes": 0,
+              "write_bytes": 284401664,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node00": {
+            "cpu_seconds": 0.36,
+            "mean_cores": 0.0017639960860661229,
+            "max_interval_cores": 0.01983164852092477,
+            "user_seconds": 0.2,
+            "system_seconds": 0.16,
+            "peak_rss_mib": 6.21875,
+            "io_delta": {
+              "rchar": 49023327,
+              "wchar": 17724985,
+              "syscr": 6372,
+              "syscw": 1629,
+              "read_bytes": 0,
+              "write_bytes": 20631552,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node01": {
+            "cpu_seconds": 0.35,
+            "mean_cores": 0.0017149961947865082,
+            "max_interval_cores": 0.01982089793024256,
+            "user_seconds": 0.21,
+            "system_seconds": 0.14,
+            "peak_rss_mib": 6.125,
+            "io_delta": {
+              "rchar": 49023328,
+              "wchar": 17724987,
+              "syscr": 6373,
+              "syscw": 1629,
+              "read_bytes": 0,
+              "write_bytes": 20631552,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node02": {
+            "cpu_seconds": 0.38,
+            "mean_cores": 0.001861995868625352,
+            "max_interval_cores": 0.019836585494578583,
+            "user_seconds": 0.24,
+            "system_seconds": 0.14,
+            "peak_rss_mib": 6.0390625,
+            "io_delta": {
+              "rchar": 49023327,
+              "wchar": 17724986,
+              "syscr": 6372,
+              "syscw": 1629,
+              "read_bytes": 0,
+              "write_bytes": 20631552,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node03": {
+            "cpu_seconds": 0.36,
+            "mean_cores": 0.0017639960860661229,
+            "max_interval_cores": 0.00991829274728929,
+            "user_seconds": 0.22,
+            "system_seconds": 0.14,
+            "peak_rss_mib": 5.94140625,
+            "io_delta": {
+              "rchar": 49023327,
+              "wchar": 17724974,
+              "syscr": 6372,
+              "syscw": 1629,
+              "read_bytes": 0,
+              "write_bytes": 20631552,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node04": {
+            "cpu_seconds": 0.33,
+            "mean_cores": 0.0016169964122272793,
+            "max_interval_cores": 0.019810238576515777,
+            "user_seconds": 0.21,
+            "system_seconds": 0.12,
+            "peak_rss_mib": 6.1640625,
+            "io_delta": {
+              "rchar": 49023331,
+              "wchar": 17724987,
+              "syscr": 6372,
+              "syscw": 1629,
+              "read_bytes": 0,
+              "write_bytes": 20631552,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node05": {
+            "cpu_seconds": 0.33,
+            "mean_cores": 0.0016169964122272793,
+            "max_interval_cores": 0.00991829274728929,
+            "user_seconds": 0.21,
+            "system_seconds": 0.12,
+            "peak_rss_mib": 6.3515625,
+            "io_delta": {
+              "rchar": 49023330,
+              "wchar": 17724969,
+              "syscr": 6372,
+              "syscw": 1629,
+              "read_bytes": 0,
+              "write_bytes": 20631552,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node06": {
+            "cpu_seconds": 0.32,
+            "mean_cores": 0.0015679965209476649,
+            "max_interval_cores": 0.01982149155191726,
+            "user_seconds": 0.21,
+            "system_seconds": 0.11,
+            "peak_rss_mib": 5.98828125,
+            "io_delta": {
+              "rchar": 49023330,
+              "wchar": 17724946,
+              "syscr": 6372,
+              "syscw": 1629,
+              "read_bytes": 0,
+              "write_bytes": 20631552,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node07": {
+            "cpu_seconds": 0.32,
+            "mean_cores": 0.0015679965209476649,
+            "max_interval_cores": 0.019810238576515832,
+            "user_seconds": 0.2,
+            "system_seconds": 0.12,
+            "peak_rss_mib": 6.203125,
+            "io_delta": {
+              "rchar": 49023331,
+              "wchar": 17724962,
+              "syscr": 6372,
+              "syscw": 1629,
+              "read_bytes": 0,
+              "write_bytes": 20631552,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node08": {
+            "cpu_seconds": 0.3,
+            "mean_cores": 0.0014699967383884356,
+            "max_interval_cores": 0.019827758620368126,
+            "user_seconds": 0.2,
+            "system_seconds": 0.1,
+            "peak_rss_mib": 6.21484375,
+            "io_delta": {
+              "rchar": 49027399,
+              "wchar": 17725109,
+              "syscr": 6375,
+              "syscw": 1633,
+              "read_bytes": 0,
+              "write_bytes": 20635648,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node09": {
+            "cpu_seconds": 0.3,
+            "mean_cores": 0.0014699967383884356,
+            "max_interval_cores": 0.00991968837767171,
+            "user_seconds": 0.2,
+            "system_seconds": 0.1,
+            "peak_rss_mib": 6.0859375,
+            "io_delta": {
+              "rchar": 49027036,
+              "wchar": 17724924,
+              "syscr": 6375,
+              "syscw": 1633,
+              "read_bytes": 0,
+              "write_bytes": 20635648,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node10": {
+            "cpu_seconds": 0.3,
+            "mean_cores": 0.0014699967383884356,
+            "max_interval_cores": 0.019800776389234245,
+            "user_seconds": 0.21,
+            "system_seconds": 0.09,
+            "peak_rss_mib": 6.2109375,
+            "io_delta": {
+              "rchar": 49027398,
+              "wchar": 17725081,
+              "syscr": 6375,
+              "syscw": 1633,
+              "read_bytes": 0,
+              "write_bytes": 20635648,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node11": {
+            "cpu_seconds": 0.31,
+            "mean_cores": 0.0015189966296680502,
+            "max_interval_cores": 0.019414536687734907,
+            "user_seconds": 0.2,
+            "system_seconds": 0.11,
+            "peak_rss_mib": 6.18359375,
+            "io_delta": {
+              "rchar": 49027398,
+              "wchar": 17725092,
+              "syscr": 6375,
+              "syscw": 1633,
+              "read_bytes": 0,
+              "write_bytes": 20635648,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node12": {
+            "cpu_seconds": 0.31,
+            "mean_cores": 0.0015189966296680502,
+            "max_interval_cores": 0.019804143045737136,
+            "user_seconds": 0.23,
+            "system_seconds": 0.08,
+            "peak_rss_mib": 6.015625,
+            "io_delta": {
+              "rchar": 49031470,
+              "wchar": 17729237,
+              "syscr": 6378,
+              "syscw": 1637,
+              "read_bytes": 0,
+              "write_bytes": 20643840,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node13": {
+            "cpu_seconds": 0.3,
+            "mean_cores": 0.0014699967383884356,
+            "max_interval_cores": 0.019811832857888134,
+            "user_seconds": 0.21,
+            "system_seconds": 0.09,
+            "peak_rss_mib": 6.1640625,
+            "io_delta": {
+              "rchar": 49040349,
+              "wchar": 17729317,
+              "syscr": 6416,
+              "syscw": 1639,
+              "read_bytes": 0,
+              "write_bytes": 20647936,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node14": {
+            "cpu_seconds": 0.3,
+            "mean_cores": 0.0014699967383884356,
+            "max_interval_cores": 0.019771476196847448,
+            "user_seconds": 0.19,
+            "system_seconds": 0.11,
+            "peak_rss_mib": 6.28125,
+            "io_delta": {
+              "rchar": 49040348,
+              "wchar": 17729526,
+              "syscr": 6416,
+              "syscw": 1640,
+              "read_bytes": 0,
+              "write_bytes": 20652032,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node15": {
+            "cpu_seconds": 0.3,
+            "mean_cores": 0.0014699967383884356,
+            "max_interval_cores": 0.019804029601356344,
+            "user_seconds": 0.19,
+            "system_seconds": 0.11,
+            "peak_rss_mib": 6.0625,
+            "io_delta": {
+              "rchar": 49040348,
+              "wchar": 17729494,
+              "syscr": 6416,
+              "syscw": 1640,
+              "read_bytes": 0,
+              "write_bytes": 20652032,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node16": {
+            "cpu_seconds": 0.3,
+            "mean_cores": 0.0014699967383884356,
+            "max_interval_cores": 0.009918305279965582,
+            "user_seconds": 0.21,
+            "system_seconds": 0.09,
+            "peak_rss_mib": 6.3046875,
+            "io_delta": {
+              "rchar": 49040351,
+              "wchar": 17729496,
+              "syscr": 6416,
+              "syscw": 1640,
+              "read_bytes": 0,
+              "write_bytes": 20652032,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node17": {
+            "cpu_seconds": 0.3,
+            "mean_cores": 0.0014699967383884356,
+            "max_interval_cores": 0.01982412600396869,
+            "user_seconds": 0.2,
+            "system_seconds": 0.1,
+            "peak_rss_mib": 6.08984375,
+            "io_delta": {
+              "rchar": 49040348,
+              "wchar": 17729471,
+              "syscr": 6416,
+              "syscw": 1640,
+              "read_bytes": 0,
+              "write_bytes": 20652032,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node18": {
+            "cpu_seconds": 0.3,
+            "mean_cores": 0.0014699967383884356,
+            "max_interval_cores": 0.019795548506712644,
+            "user_seconds": 0.19,
+            "system_seconds": 0.11,
+            "peak_rss_mib": 6.16796875,
+            "io_delta": {
+              "rchar": 49040348,
+              "wchar": 17729442,
+              "syscr": 6416,
+              "syscw": 1640,
+              "read_bytes": 0,
+              "write_bytes": 20652032,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node19": {
+            "cpu_seconds": 0.33,
+            "mean_cores": 0.0016169964122272793,
+            "max_interval_cores": 0.019771476196847448,
+            "user_seconds": 0.21,
+            "system_seconds": 0.12,
+            "peak_rss_mib": 5.9453125,
+            "io_delta": {
+              "rchar": 49040348,
+              "wchar": 17729400,
+              "syscr": 6431,
+              "syscw": 1640,
+              "read_bytes": 0,
+              "write_bytes": 20652032,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "all_nodes": {
+            "cpu_seconds": 6.4,
+            "mean_cores": 0.0313599304189533,
+            "peak_aggregate_rss_mib": 120.203125
+          }
+        }
+      },
+      "normal": {
+        "samples": 60,
+        "observed_seconds": 59.534854435,
+        "processes": {
+          "server": {
+            "cpu_seconds": 8.110000000000001,
+            "mean_cores": 0.13622272325960716,
+            "max_interval_cores": 1.0209098736144693,
+            "user_seconds": 7.41,
+            "system_seconds": 0.7,
+            "peak_rss_mib": 402.453125,
+            "io_delta": {
+              "rchar": 2592157220,
+              "wchar": 184915462,
+              "syscr": 67386,
+              "syscw": 5405,
+              "read_bytes": 4096,
+              "write_bytes": 190238720,
+              "cancelled_write_bytes": 69718016
+            }
+          },
+          "observer": {
+            "cpu_seconds": 3.31,
+            "mean_cores": 0.05559768359917382,
+            "max_interval_cores": 0.06941075488788945,
+            "user_seconds": 2.96,
+            "system_seconds": 0.35000000000000003,
+            "peak_rss_mib": 72.27734375,
+            "io_delta": {
+              "rchar": 7308010,
+              "wchar": 56401199,
+              "syscr": 291296,
+              "syscw": 12200,
+              "read_bytes": 0,
+              "write_bytes": 56393728,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node00": {
+            "cpu_seconds": 0.09,
+            "mean_cores": 0.001511719493633125,
+            "max_interval_cores": 0.009917761800140095,
+            "user_seconds": 0.04,
+            "system_seconds": 0.05,
+            "peak_rss_mib": 5.703125,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500699,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node01": {
+            "cpu_seconds": 0.09,
+            "mean_cores": 0.001511719493633125,
+            "max_interval_cores": 0.00991940575077965,
+            "user_seconds": 0.05,
+            "system_seconds": 0.04,
+            "peak_rss_mib": 5.59765625,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500701,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node02": {
+            "cpu_seconds": 0.09,
+            "mean_cores": 0.001511719493633125,
+            "max_interval_cores": 0.019836585494578583,
+            "user_seconds": 0.06,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.6953125,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500702,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node03": {
+            "cpu_seconds": 0.09,
+            "mean_cores": 0.001511719493633125,
+            "max_interval_cores": 0.00991829274728929,
+            "user_seconds": 0.05,
+            "system_seconds": 0.04,
+            "peak_rss_mib": 5.59375,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500694,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node04": {
+            "cpu_seconds": 0.08,
+            "mean_cores": 0.0013437506610072222,
+            "max_interval_cores": 0.00991968837767171,
+            "user_seconds": 0.04,
+            "system_seconds": 0.04,
+            "peak_rss_mib": 5.6484375,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500701,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node05": {
+            "cpu_seconds": 0.08,
+            "mean_cores": 0.0013437506610072222,
+            "max_interval_cores": 0.00991829274728929,
+            "user_seconds": 0.04,
+            "system_seconds": 0.04,
+            "peak_rss_mib": 5.703125,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500691,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node06": {
+            "cpu_seconds": 0.07,
+            "mean_cores": 0.0011757818283813196,
+            "max_interval_cores": 0.0099199186100041,
+            "user_seconds": 0.04,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.6484375,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500682,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node07": {
+            "cpu_seconds": 0.07,
+            "mean_cores": 0.0011757818283813196,
+            "max_interval_cores": 0.00991968837767171,
+            "user_seconds": 0.04,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.67578125,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500685,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node08": {
+            "cpu_seconds": 0.07,
+            "mean_cores": 0.0011757818283813196,
+            "max_interval_cores": 0.009916000833074963,
+            "user_seconds": 0.05,
+            "system_seconds": 0.02,
+            "peak_rss_mib": 5.69921875,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500687,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node09": {
+            "cpu_seconds": 0.07,
+            "mean_cores": 0.0011757818283813196,
+            "max_interval_cores": 0.00991968837767171,
+            "user_seconds": 0.04,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.734375,
+            "io_delta": {
+              "rchar": 9669920,
+              "wchar": 3500621,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node10": {
+            "cpu_seconds": 0.07,
+            "mean_cores": 0.0011757818283813196,
+            "max_interval_cores": 0.009918305279965582,
+            "user_seconds": 0.04,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.74609375,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500670,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node11": {
+            "cpu_seconds": 0.07,
+            "mean_cores": 0.0011757818283813196,
+            "max_interval_cores": 0.009917418518809286,
+            "user_seconds": 0.04,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.65625,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500673,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node12": {
+            "cpu_seconds": 0.06,
+            "mean_cores": 0.0010078129957554166,
+            "max_interval_cores": 0.00991829274728929,
+            "user_seconds": 0.05,
+            "system_seconds": 0.01,
+            "peak_rss_mib": 5.6640625,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500671,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node13": {
+            "cpu_seconds": 0.07,
+            "mean_cores": 0.0011757818283813196,
+            "max_interval_cores": 0.009919282532739609,
+            "user_seconds": 0.05,
+            "system_seconds": 0.02,
+            "peak_rss_mib": 5.6484375,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500671,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node14": {
+            "cpu_seconds": 0.07,
+            "mean_cores": 0.0011757818283813196,
+            "max_interval_cores": 0.00991940575077965,
+            "user_seconds": 0.04,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.69140625,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500686,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node15": {
+            "cpu_seconds": 0.07,
+            "mean_cores": 0.0011757818283813196,
+            "max_interval_cores": 0.00991968837767171,
+            "user_seconds": 0.03,
+            "system_seconds": 0.04,
+            "peak_rss_mib": 5.625,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500672,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node16": {
+            "cpu_seconds": 0.06,
+            "mean_cores": 0.0010078129957554166,
+            "max_interval_cores": 0.009918305279965582,
+            "user_seconds": 0.04,
+            "system_seconds": 0.02,
+            "peak_rss_mib": 5.6484375,
+            "io_delta": {
+              "rchar": 9670041,
+              "wchar": 3500662,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node17": {
+            "cpu_seconds": 0.06,
+            "mean_cores": 0.0010078129957554166,
+            "max_interval_cores": 0.0099199186100041,
+            "user_seconds": 0.04,
+            "system_seconds": 0.02,
+            "peak_rss_mib": 5.7421875,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500661,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node18": {
+            "cpu_seconds": 0.07,
+            "mean_cores": 0.0011757818283813196,
+            "max_interval_cores": 0.009917418518809286,
+            "user_seconds": 0.04,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.6484375,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500649,
+              "syscr": 1602,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node19": {
+            "cpu_seconds": 0.08,
+            "mean_cores": 0.0013437506610072222,
+            "max_interval_cores": 0.009918305279965582,
+            "user_seconds": 0.05,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.59765625,
+            "io_delta": {
+              "rchar": 9670038,
+              "wchar": 3500647,
+              "syscr": 1608,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "all_nodes": {
+            "cpu_seconds": 1.48,
+            "mean_cores": 0.024859387228633612,
+            "peak_aggregate_rss_mib": 113.3671875
+          }
+        }
+      },
+      "burst": {
+        "samples": 59,
+        "observed_seconds": 58.66042815,
+        "processes": {
+          "server": {
+            "cpu_seconds": 17.12,
+            "mean_cores": 0.29184921658298535,
+            "max_interval_cores": 1.2473718135757068,
+            "user_seconds": 16.07,
+            "system_seconds": 1.05,
+            "peak_rss_mib": 462.60546875,
+            "io_delta": {
+              "rchar": 4851287284,
+              "wchar": 552083951,
+              "syscr": 61780,
+              "syscw": 6493,
+              "read_bytes": 0,
+              "write_bytes": 555630592,
+              "cancelled_write_bytes": 210382848
+            }
+          },
+          "observer": {
+            "cpu_seconds": 7.540000000000001,
+            "mean_cores": 0.12853639562124472,
+            "max_interval_cores": 0.14849664447329902,
+            "user_seconds": 7.120000000000001,
+            "system_seconds": 0.42,
+            "peak_rss_mib": 130.421875,
+            "io_delta": {
+              "rchar": 7238587,
+              "wchar": 166688221,
+              "syscr": 295213,
+              "syscw": 12069,
+              "read_bytes": 0,
+              "write_bytes": 166727680,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node00": {
+            "cpu_seconds": 0.18000000000000002,
+            "mean_cores": 0.0030685081182790517,
+            "max_interval_cores": 0.01983164852092477,
+            "user_seconds": 0.12,
+            "system_seconds": 0.06,
+            "peak_rss_mib": 6.21875,
+            "io_delta": {
+              "rchar": 28816663,
+              "wchar": 10411808,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node01": {
+            "cpu_seconds": 0.17,
+            "mean_cores": 0.0028980354450413265,
+            "max_interval_cores": 0.01982089793024256,
+            "user_seconds": 0.12000000000000001,
+            "system_seconds": 0.049999999999999996,
+            "peak_rss_mib": 6.125,
+            "io_delta": {
+              "rchar": 28816664,
+              "wchar": 10411808,
+              "syscr": 2934,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node02": {
+            "cpu_seconds": 0.18000000000000002,
+            "mean_cores": 0.0030685081182790517,
+            "max_interval_cores": 0.01981183285788816,
+            "user_seconds": 0.13,
+            "system_seconds": 0.049999999999999996,
+            "peak_rss_mib": 6.0390625,
+            "io_delta": {
+              "rchar": 28816663,
+              "wchar": 10411808,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node03": {
+            "cpu_seconds": 0.18000000000000002,
+            "mean_cores": 0.0030685081182790517,
+            "max_interval_cores": 0.009914971652109503,
+            "user_seconds": 0.13,
+            "system_seconds": 0.049999999999999996,
+            "peak_rss_mib": 5.94140625,
+            "io_delta": {
+              "rchar": 28816663,
+              "wchar": 10411808,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node04": {
+            "cpu_seconds": 0.15999999999999998,
+            "mean_cores": 0.002727562771803601,
+            "max_interval_cores": 0.019795548506712668,
+            "user_seconds": 0.12,
+            "system_seconds": 0.04,
+            "peak_rss_mib": 6.1640625,
+            "io_delta": {
+              "rchar": 28816667,
+              "wchar": 10411808,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node05": {
+            "cpu_seconds": 0.15999999999999998,
+            "mean_cores": 0.002727562771803601,
+            "max_interval_cores": 0.009914971652109517,
+            "user_seconds": 0.12,
+            "system_seconds": 0.04,
+            "peak_rss_mib": 6.3515625,
+            "io_delta": {
+              "rchar": 28816666,
+              "wchar": 10411808,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node06": {
+            "cpu_seconds": 0.16999999999999998,
+            "mean_cores": 0.002898035445041326,
+            "max_interval_cores": 0.01982149155191726,
+            "user_seconds": 0.12,
+            "system_seconds": 0.05,
+            "peak_rss_mib": 5.98828125,
+            "io_delta": {
+              "rchar": 28816666,
+              "wchar": 10411808,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node07": {
+            "cpu_seconds": 0.16,
+            "mean_cores": 0.0027275627718036013,
+            "max_interval_cores": 0.00991444983831495,
+            "user_seconds": 0.12,
+            "system_seconds": 0.04000000000000001,
+            "peak_rss_mib": 6.203125,
+            "io_delta": {
+              "rchar": 28816666,
+              "wchar": 10411808,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node08": {
+            "cpu_seconds": 0.16,
+            "mean_cores": 0.0027275627718036013,
+            "max_interval_cores": 0.019827758620368126,
+            "user_seconds": 0.11,
+            "system_seconds": 0.05,
+            "peak_rss_mib": 6.21484375,
+            "io_delta": {
+              "rchar": 28816663,
+              "wchar": 10411808,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node09": {
+            "cpu_seconds": 0.15,
+            "mean_cores": 0.002557090098565876,
+            "max_interval_cores": 0.009915824260462378,
+            "user_seconds": 0.10999999999999999,
+            "system_seconds": 0.04000000000000001,
+            "peak_rss_mib": 6.0859375,
+            "io_delta": {
+              "rchar": 28816545,
+              "wchar": 10411749,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node10": {
+            "cpu_seconds": 0.15,
+            "mean_cores": 0.002557090098565876,
+            "max_interval_cores": 0.019800776389234245,
+            "user_seconds": 0.12,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 6.2109375,
+            "io_delta": {
+              "rchar": 28816663,
+              "wchar": 10411808,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node11": {
+            "cpu_seconds": 0.16,
+            "mean_cores": 0.0027275627718036013,
+            "max_interval_cores": 0.019414536687734907,
+            "user_seconds": 0.10999999999999999,
+            "system_seconds": 0.05,
+            "peak_rss_mib": 6.18359375,
+            "io_delta": {
+              "rchar": 28816663,
+              "wchar": 10411808,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node12": {
+            "cpu_seconds": 0.15,
+            "mean_cores": 0.002557090098565876,
+            "max_interval_cores": 0.019804143045737136,
+            "user_seconds": 0.11000000000000001,
+            "system_seconds": 0.04,
+            "peak_rss_mib": 6.015625,
+            "io_delta": {
+              "rchar": 28816663,
+              "wchar": 10411805,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node13": {
+            "cpu_seconds": 0.15,
+            "mean_cores": 0.002557090098565876,
+            "max_interval_cores": 0.019811832857888134,
+            "user_seconds": 0.11,
+            "system_seconds": 0.039999999999999994,
+            "peak_rss_mib": 6.1640625,
+            "io_delta": {
+              "rchar": 28816664,
+              "wchar": 10411808,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node14": {
+            "cpu_seconds": 0.15,
+            "mean_cores": 0.002557090098565876,
+            "max_interval_cores": 0.019771476196847448,
+            "user_seconds": 0.1,
+            "system_seconds": 0.05,
+            "peak_rss_mib": 6.28125,
+            "io_delta": {
+              "rchar": 28816663,
+              "wchar": 10411808,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node15": {
+            "cpu_seconds": 0.15,
+            "mean_cores": 0.002557090098565876,
+            "max_interval_cores": 0.019804029601356344,
+            "user_seconds": 0.12,
+            "system_seconds": 0.030000000000000006,
+            "peak_rss_mib": 6.0625,
+            "io_delta": {
+              "rchar": 28816663,
+              "wchar": 10411808,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node16": {
+            "cpu_seconds": 0.16,
+            "mean_cores": 0.0027275627718036013,
+            "max_interval_cores": 0.009915824260462378,
+            "user_seconds": 0.12,
+            "system_seconds": 0.039999999999999994,
+            "peak_rss_mib": 6.3046875,
+            "io_delta": {
+              "rchar": 28816663,
+              "wchar": 10411808,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node17": {
+            "cpu_seconds": 0.16,
+            "mean_cores": 0.0027275627718036013,
+            "max_interval_cores": 0.01982412600396869,
+            "user_seconds": 0.12,
+            "system_seconds": 0.039999999999999994,
+            "peak_rss_mib": 6.08984375,
+            "io_delta": {
+              "rchar": 28816663,
+              "wchar": 10411800,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node18": {
+            "cpu_seconds": 0.15,
+            "mean_cores": 0.002557090098565876,
+            "max_interval_cores": 0.019795548506712644,
+            "user_seconds": 0.10999999999999999,
+            "system_seconds": 0.04000000000000001,
+            "peak_rss_mib": 6.16796875,
+            "io_delta": {
+              "rchar": 28816663,
+              "wchar": 10411801,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node19": {
+            "cpu_seconds": 0.16999999999999998,
+            "mean_cores": 0.002898035445041326,
+            "max_interval_cores": 0.019771476196847448,
+            "user_seconds": 0.11,
+            "system_seconds": 0.06,
+            "peak_rss_mib": 5.9453125,
+            "io_delta": {
+              "rchar": 28816663,
+              "wchar": 10411758,
+              "syscr": 2933,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 11358208,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "all_nodes": {
+            "cpu_seconds": 3.2199999999999998,
+            "mean_cores": 0.05489220078254747,
+            "peak_aggregate_rss_mib": 120.203125
+          }
+        }
+      },
+      "recovery": {
+        "samples": 60,
+        "observed_seconds": 59.620902229,
+        "processes": {
+          "server": {
+            "cpu_seconds": 16.400000000000002,
+            "mean_cores": 0.2750713153754143,
+            "max_interval_cores": 1.1371121471762853,
+            "user_seconds": 15.469999999999999,
+            "system_seconds": 0.9299999999999999,
+            "peak_rss_mib": 456.85546875,
+            "io_delta": {
+              "rchar": 5713048931,
+              "wchar": 185135450,
+              "syscr": 128367,
+              "syscw": 5365,
+              "read_bytes": 0,
+              "write_bytes": 190529536,
+              "cancelled_write_bytes": 69701632
+            }
+          },
+          "observer": {
+            "cpu_seconds": 3.4399999999999995,
+            "mean_cores": 0.05769788566411128,
+            "max_interval_cores": 0.07915635465914078,
+            "user_seconds": 3.0700000000000003,
+            "system_seconds": 0.37,
+            "peak_rss_mib": 154.66015625,
+            "io_delta": {
+              "rchar": 7341447,
+              "wchar": 56653421,
+              "syscr": 296834,
+              "syscw": 12220,
+              "read_bytes": 0,
+              "write_bytes": 56717312,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node00": {
+            "cpu_seconds": 0.07999999999999996,
+            "mean_cores": 0.0013418112945142154,
+            "max_interval_cores": 0.009905297157587372,
+            "user_seconds": 0.04000000000000001,
+            "system_seconds": 0.039999999999999994,
+            "peak_rss_mib": 5.99609375,
+            "io_delta": {
+              "rchar": 9703668,
+              "wchar": 3513344,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node01": {
+            "cpu_seconds": 0.08999999999999997,
+            "mean_cores": 0.0015095377063284925,
+            "max_interval_cores": 0.00990293838938179,
+            "user_seconds": 0.03999999999999998,
+            "system_seconds": 0.05000000000000002,
+            "peak_rss_mib": 5.9375,
+            "io_delta": {
+              "rchar": 9703668,
+              "wchar": 3513344,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node02": {
+            "cpu_seconds": 0.09999999999999998,
+            "mean_cores": 0.0016772641181427696,
+            "max_interval_cores": 0.009905119288257916,
+            "user_seconds": 0.04999999999999999,
+            "system_seconds": 0.05000000000000002,
+            "peak_rss_mib": 6.01171875,
+            "io_delta": {
+              "rchar": 9703668,
+              "wchar": 3513342,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node03": {
+            "cpu_seconds": 0.08999999999999997,
+            "mean_cores": 0.0015095377063284925,
+            "max_interval_cores": 0.009903333874953275,
+            "user_seconds": 0.04000000000000001,
+            "system_seconds": 0.05000000000000002,
+            "peak_rss_mib": 5.91015625,
+            "io_delta": {
+              "rchar": 9703668,
+              "wchar": 3513339,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node04": {
+            "cpu_seconds": 0.09000000000000002,
+            "mean_cores": 0.0015095377063284933,
+            "max_interval_cores": 0.019810238576515777,
+            "user_seconds": 0.04999999999999999,
+            "system_seconds": 0.039999999999999994,
+            "peak_rss_mib": 5.95703125,
+            "io_delta": {
+              "rchar": 9703668,
+              "wchar": 3513344,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node05": {
+            "cpu_seconds": 0.09000000000000002,
+            "mean_cores": 0.0015095377063284933,
+            "max_interval_cores": 0.009908248371639334,
+            "user_seconds": 0.04999999999999999,
+            "system_seconds": 0.039999999999999994,
+            "peak_rss_mib": 6.015625,
+            "io_delta": {
+              "rchar": 9703668,
+              "wchar": 3513337,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node06": {
+            "cpu_seconds": 0.07,
+            "mean_cores": 0.0011740848826999391,
+            "max_interval_cores": 0.009905119288257916,
+            "user_seconds": 0.04000000000000001,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.95703125,
+            "io_delta": {
+              "rchar": 9703668,
+              "wchar": 3513323,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node07": {
+            "cpu_seconds": 0.06,
+            "mean_cores": 0.001006358470885662,
+            "max_interval_cores": 0.019810238576515832,
+            "user_seconds": 0.03,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.99609375,
+            "io_delta": {
+              "rchar": 9703669,
+              "wchar": 3513335,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node08": {
+            "cpu_seconds": 0.06999999999999998,
+            "mean_cores": 0.0011740848826999387,
+            "max_interval_cores": 0.009908248371639306,
+            "user_seconds": 0.04000000000000001,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 6.015625,
+            "io_delta": {
+              "rchar": 9703669,
+              "wchar": 3513321,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node09": {
+            "cpu_seconds": 0.07999999999999999,
+            "mean_cores": 0.0013418112945142158,
+            "max_interval_cores": 0.009907050555721594,
+            "user_seconds": 0.05000000000000002,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 6.05078125,
+            "io_delta": {
+              "rchar": 9703550,
+              "wchar": 3513265,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node10": {
+            "cpu_seconds": 0.06999999999999998,
+            "mean_cores": 0.0011740848826999387,
+            "max_interval_cores": 0.00990600017138768,
+            "user_seconds": 0.03999999999999998,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 6.04296875,
+            "io_delta": {
+              "rchar": 9703668,
+              "wchar": 3513313,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node11": {
+            "cpu_seconds": 0.06999999999999998,
+            "mean_cores": 0.0011740848826999387,
+            "max_interval_cores": 0.009902217581822968,
+            "user_seconds": 0.04000000000000001,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.984375,
+            "io_delta": {
+              "rchar": 9703668,
+              "wchar": 3513318,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node12": {
+            "cpu_seconds": 0.07999999999999999,
+            "mean_cores": 0.0013418112945142158,
+            "max_interval_cores": 0.009907074916524802,
+            "user_seconds": 0.04999999999999999,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.98046875,
+            "io_delta": {
+              "rchar": 9703668,
+              "wchar": 3513312,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node13": {
+            "cpu_seconds": 0.06999999999999998,
+            "mean_cores": 0.0011740848826999387,
+            "max_interval_cores": 0.009907050555721594,
+            "user_seconds": 0.03999999999999998,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.953125,
+            "io_delta": {
+              "rchar": 9703668,
+              "wchar": 3513301,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node14": {
+            "cpu_seconds": 0.07999999999999999,
+            "mean_cores": 0.0013418112945142158,
+            "max_interval_cores": 0.00990600017138768,
+            "user_seconds": 0.04999999999999999,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.98828125,
+            "io_delta": {
+              "rchar": 9703668,
+              "wchar": 3513325,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node15": {
+            "cpu_seconds": 0.06999999999999998,
+            "mean_cores": 0.0011740848826999387,
+            "max_interval_cores": 0.009907074916524802,
+            "user_seconds": 0.04000000000000001,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.9375,
+            "io_delta": {
+              "rchar": 9703668,
+              "wchar": 3513309,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node16": {
+            "cpu_seconds": 0.07999999999999999,
+            "mean_cores": 0.0013418112945142158,
+            "max_interval_cores": 0.009904361259199891,
+            "user_seconds": 0.04999999999999999,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.91796875,
+            "io_delta": {
+              "rchar": 9703668,
+              "wchar": 3513319,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node17": {
+            "cpu_seconds": 0.06999999999999998,
+            "mean_cores": 0.0011740848826999387,
+            "max_interval_cores": 0.009901794771793353,
+            "user_seconds": 0.04000000000000001,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 6.04296875,
+            "io_delta": {
+              "rchar": 9703668,
+              "wchar": 3513304,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node18": {
+            "cpu_seconds": 0.06999999999999998,
+            "mean_cores": 0.0011740848826999387,
+            "max_interval_cores": 0.009903813735140337,
+            "user_seconds": 0.04000000000000001,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.96875,
+            "io_delta": {
+              "rchar": 9703668,
+              "wchar": 3513288,
+              "syscr": 1635,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4460544,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node19": {
+            "cpu_seconds": 0.08000000000000002,
+            "mean_cores": 0.0013418112945142162,
+            "max_interval_cores": 0.009906286715887164,
+            "user_seconds": 0.04999999999999999,
+            "system_seconds": 0.03,
+            "peak_rss_mib": 5.9375,
+            "io_delta": {
+              "rchar": 9687443,
+              "wchar": 3507432,
+              "syscr": 1642,
+              "syscw": 531,
+              "read_bytes": 0,
+              "write_bytes": 4452352,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "all_nodes": {
+            "cpu_seconds": 1.5599999999999998,
+            "mean_cores": 0.02616532024302721,
+            "peak_aggregate_rss_mib": 119.59765625
+          }
+        }
+      },
+      "drain": {
+        "samples": 19,
+        "observed_seconds": 18.192400438,
+        "processes": {
+          "server": {
+            "cpu_seconds": 2.6899999999999977,
+            "mean_cores": 0.14786393962509575,
+            "max_interval_cores": 0.3463535037244079,
+            "user_seconds": 2.5799999999999983,
+            "system_seconds": 0.10999999999999988,
+            "peak_rss_mib": 430.60546875,
+            "io_delta": {
+              "rchar": 1037574768,
+              "wchar": 401984,
+              "syscr": 26720,
+              "syscw": 256,
+              "read_bytes": 0,
+              "write_bytes": 180224,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "observer": {
+            "cpu_seconds": 0.22000000000000064,
+            "mean_cores": 0.012092961605026464,
+            "max_interval_cores": 0.019799804395553976,
+            "user_seconds": 0.16999999999999993,
+            "system_seconds": 0.050000000000000044,
+            "peak_rss_mib": 156.3125,
+            "io_delta": {
+              "rchar": 1965837,
+              "wchar": 38726,
+              "syscr": 10078,
+              "syscw": 76,
+              "read_bytes": 0,
+              "write_bytes": 0,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node00": {
+            "cpu_seconds": 0.010000000000000009,
+            "mean_cores": 0.0005496800729557473,
+            "max_interval_cores": 0.009894990237389899,
+            "user_seconds": 0.0,
+            "system_seconds": 0.010000000000000009,
+            "peak_rss_mib": 5.99609375,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4386,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node01": {
+            "cpu_seconds": 0.0,
+            "mean_cores": 0.0,
+            "max_interval_cores": 0.0,
+            "user_seconds": 0.0,
+            "system_seconds": 0.0,
+            "peak_rss_mib": 5.94140625,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4386,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node02": {
+            "cpu_seconds": 0.0,
+            "mean_cores": 0.0,
+            "max_interval_cores": 0.0,
+            "user_seconds": 0.0,
+            "system_seconds": 0.0,
+            "peak_rss_mib": 6.01171875,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4386,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node03": {
+            "cpu_seconds": 0.0,
+            "mean_cores": 0.0,
+            "max_interval_cores": 0.0,
+            "user_seconds": 0.0,
+            "system_seconds": 0.0,
+            "peak_rss_mib": 5.9140625,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4386,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node04": {
+            "cpu_seconds": 0.0,
+            "mean_cores": 0.0,
+            "max_interval_cores": 0.0,
+            "user_seconds": 0.0,
+            "system_seconds": 0.0,
+            "peak_rss_mib": 5.9609375,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4386,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node05": {
+            "cpu_seconds": 0.0,
+            "mean_cores": 0.0,
+            "max_interval_cores": 0.0,
+            "user_seconds": 0.0,
+            "system_seconds": 0.0,
+            "peak_rss_mib": 6.01953125,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4386,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node06": {
+            "cpu_seconds": 0.010000000000000009,
+            "mean_cores": 0.0005496800729557473,
+            "max_interval_cores": 0.009899347101431085,
+            "user_seconds": 0.009999999999999981,
+            "system_seconds": 0.0,
+            "peak_rss_mib": 5.9609375,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4386,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node07": {
+            "cpu_seconds": 0.010000000000000009,
+            "mean_cores": 0.0005496800729557473,
+            "max_interval_cores": 0.00990089885389453,
+            "user_seconds": 0.0,
+            "system_seconds": 0.009999999999999995,
+            "peak_rss_mib": 6.0,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4386,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node08": {
+            "cpu_seconds": 0.0,
+            "mean_cores": 0.0,
+            "max_interval_cores": 0.0,
+            "user_seconds": 0.0,
+            "system_seconds": 0.0,
+            "peak_rss_mib": 6.015625,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4386,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node09": {
+            "cpu_seconds": 0.0,
+            "mean_cores": 0.0,
+            "max_interval_cores": 0.0,
+            "user_seconds": 0.0,
+            "system_seconds": 0.0,
+            "peak_rss_mib": 6.0546875,
+            "io_delta": {
+              "rchar": 19480,
+              "wchar": 4384,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node10": {
+            "cpu_seconds": 0.0,
+            "mean_cores": 0.0,
+            "max_interval_cores": 0.0,
+            "user_seconds": 0.0,
+            "system_seconds": 0.0,
+            "peak_rss_mib": 6.04296875,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4385,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node11": {
+            "cpu_seconds": 0.0,
+            "mean_cores": 0.0,
+            "max_interval_cores": 0.0,
+            "user_seconds": 0.0,
+            "system_seconds": 0.0,
+            "peak_rss_mib": 5.8359375,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4386,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node12": {
+            "cpu_seconds": 0.010000000000000009,
+            "mean_cores": 0.0005496800729557473,
+            "max_interval_cores": 0.009899347101431085,
+            "user_seconds": 0.010000000000000009,
+            "system_seconds": 0.0,
+            "peak_rss_mib": 5.98046875,
+            "io_delta": {
+              "rchar": 19483,
+              "wchar": 4385,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node13": {
+            "cpu_seconds": 0.0,
+            "mean_cores": 0.0,
+            "max_interval_cores": 0.0,
+            "user_seconds": 0.0,
+            "system_seconds": 0.0,
+            "peak_rss_mib": 5.95703125,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4385,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node14": {
+            "cpu_seconds": 0.0,
+            "mean_cores": 0.0,
+            "max_interval_cores": 0.0,
+            "user_seconds": 0.0,
+            "system_seconds": 0.0,
+            "peak_rss_mib": 5.98828125,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4385,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node15": {
+            "cpu_seconds": 0.010000000000000009,
+            "mean_cores": 0.0005496800729557473,
+            "max_interval_cores": 0.00990062340344528,
+            "user_seconds": 0.0,
+            "system_seconds": 0.009999999999999995,
+            "peak_rss_mib": 5.94140625,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4385,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node16": {
+            "cpu_seconds": 0.0,
+            "mean_cores": 0.0,
+            "max_interval_cores": 0.0,
+            "user_seconds": 0.0,
+            "system_seconds": 0.0,
+            "peak_rss_mib": 5.921875,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4386,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node17": {
+            "cpu_seconds": 0.010000000000000009,
+            "mean_cores": 0.0005496800729557473,
+            "max_interval_cores": 0.009899347101431085,
+            "user_seconds": 0.0,
+            "system_seconds": 0.010000000000000009,
+            "peak_rss_mib": 6.046875,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4385,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node18": {
+            "cpu_seconds": 0.010000000000000009,
+            "mean_cores": 0.0005496800729557473,
+            "max_interval_cores": 0.00990089885389453,
+            "user_seconds": 0.0,
+            "system_seconds": 0.009999999999999995,
+            "peak_rss_mib": 5.97265625,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4385,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "node19": {
+            "cpu_seconds": 0.0,
+            "mean_cores": 0.0,
+            "max_interval_cores": 0.0,
+            "user_seconds": 0.0,
+            "system_seconds": 0.0,
+            "peak_rss_mib": 5.72265625,
+            "io_delta": {
+              "rchar": 19482,
+              "wchar": 4385,
+              "syscr": 100,
+              "syscw": 9,
+              "read_bytes": 0,
+              "write_bytes": 20480,
+              "cancelled_write_bytes": 0
+            }
+          },
+          "all_nodes": {
+            "cpu_seconds": 0.07000000000000006,
+            "mean_cores": 0.0038477605106902314,
+            "peak_aggregate_rss_mib": 119.28515625
+          }
+        }
+      }
+    },
+    "rates": {
+      "normal": {
+        "window_seconds": 60.0,
+        "counts": {
+          "spool_batches": 1199,
+          "spool_logs": 59950,
+          "spool_bytes": 70742397,
+          "send_attempts": 1199,
+          "status_ack": 1199,
+          "unique_acks": 1199,
+          "ack_bytes": 70742397,
+          "source_logs": 60000,
+          "source_bytes": 54060000
+        },
+        "per_second": {
+          "spool_batches": 19.983333333333334,
+          "spool_logs": 999.1666666666666,
+          "spool_bytes": 1179039.95,
+          "send_attempts": 19.983333333333334,
+          "status_ack": 19.983333333333334,
+          "unique_acks": 19.983333333333334,
+          "ack_bytes": 1179039.95,
+          "source_logs": 1000.0,
+          "source_bytes": 901000.0
+        },
+        "ack_attempt_fraction": 1.0
+      },
+      "burst": {
+        "window_seconds": 60.0,
+        "counts": {
+          "spool_batches": 1200,
+          "spool_logs": 179900,
+          "spool_bytes": 211248200,
+          "send_attempts": 1198,
+          "status_ack": 1198,
+          "unique_acks": 1198,
+          "ack_bytes": 210896034,
+          "source_logs": 180000,
+          "source_bytes": 162180000
+        },
+        "per_second": {
+          "spool_batches": 20.0,
+          "spool_logs": 2998.3333333333335,
+          "spool_bytes": 3520803.3333333335,
+          "send_attempts": 19.966666666666665,
+          "status_ack": 19.966666666666665,
+          "unique_acks": 19.966666666666665,
+          "ack_bytes": 3514933.9,
+          "source_logs": 3000.0,
+          "source_bytes": 2703000.0
+        },
+        "ack_attempt_fraction": 1.0
+      },
+      "recovery": {
+        "window_seconds": 60.0,
+        "counts": {
+          "spool_batches": 1200,
+          "spool_logs": 60100,
+          "spool_bytes": 71167719,
+          "send_attempts": 1200,
+          "status_ack": 1200,
+          "unique_acks": 1200,
+          "ack_bytes": 71402117,
+          "source_logs": 60000,
+          "source_bytes": 54060000
+        },
+        "per_second": {
+          "spool_batches": 20.0,
+          "spool_logs": 1001.6666666666666,
+          "spool_bytes": 1186128.65,
+          "send_attempts": 20.0,
+          "status_ack": 20.0,
+          "unique_acks": 20.0,
+          "ack_bytes": 1190035.2833333334,
+          "source_logs": 1000.0,
+          "source_bytes": 901000.0
+        },
+        "ack_attempt_fraction": 1.0
+      },
+      "drain": {
+        "window_seconds": 19.08331029,
+        "counts": {
+          "spool_batches": 21,
+          "spool_logs": 50,
+          "spool_bytes": 139943,
+          "send_attempts": 23,
+          "status_ack": 23,
+          "unique_acks": 23,
+          "ack_bytes": 257711
+        },
+        "per_second": {
+          "spool_batches": 1.100438010013618,
+          "spool_logs": 2.6200905000324237,
+          "spool_bytes": 7333.26649692075,
+          "send_attempts": 1.205241630014915,
+          "status_ack": 1.205241630014915,
+          "unique_acks": 1.205241630014915,
+          "ack_bytes": 13504.52285707712
+        },
+        "ack_attempt_fraction": 1.0
+      }
+    },
+    "queries": {
+      "recent_logs": {
+        "all": {
+          "latency_ms": {
+            "samples": 67,
+            "p50": 86.908754,
+            "p99": 187.020576,
+            "max": 187.020576,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 67,
+            "p50": 0.368488,
+            "p99": 7.089901,
+            "max": 7.089901,
+            "negative": 0
+          },
+          "response_json_bytes": 4215830
+        },
+        "normal": {
+          "latency_ms": {
+            "samples": 20,
+            "p50": 82.320758,
+            "p99": 168.529594,
+            "max": 168.529594,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 20,
+            "p50": 0.318903,
+            "p99": 0.730636,
+            "max": 0.730636,
+            "negative": 0
+          },
+          "response_json_bytes": 1268894
+        },
+        "burst": {
+          "latency_ms": {
+            "samples": 20,
+            "p50": 113.77773,
+            "p99": 187.020576,
+            "max": 187.020576,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 20,
+            "p50": 0.732406,
+            "p99": 7.089901,
+            "max": 7.089901,
+            "negative": 0
+          },
+          "response_json_bytes": 1336902
+        },
+        "recovery": {
+          "latency_ms": {
+            "samples": 20,
+            "p50": 77.612749,
+            "p99": 154.365772,
+            "max": 154.365772,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 20,
+            "p50": 0.324169,
+            "p99": 0.929806,
+            "max": 0.929806,
+            "negative": 0
+          },
+          "response_json_bytes": 1339612
+        },
+        "drain": {
+          "latency_ms": {
+            "samples": 7,
+            "p50": 41.692832,
+            "p99": 46.065458,
+            "max": 46.065458,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 7,
+            "p50": 0.656096,
+            "p99": 0.903258,
+            "max": 0.903258,
+            "negative": 0
+          },
+          "response_json_bytes": 270422
+        }
+      },
+      "absent_text": {
+        "all": {
+          "latency_ms": {
+            "samples": 67,
+            "p50": 266.726846,
+            "p99": 551.314669,
+            "max": 551.314669,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 67,
+            "p50": 0.330047,
+            "p99": 3.990653,
+            "max": 3.990653,
+            "negative": 0
+          },
+          "response_json_bytes": 54765
+        },
+        "normal": {
+          "latency_ms": {
+            "samples": 20,
+            "p50": 87.466472,
+            "p99": 269.940829,
+            "max": 269.940829,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 20,
+            "p50": 0.323241,
+            "p99": 0.571428,
+            "max": 0.571428,
+            "negative": 0
+          },
+          "response_json_bytes": 16337
+        },
+        "burst": {
+          "latency_ms": {
+            "samples": 20,
+            "p50": 234.306613,
+            "p99": 551.314669,
+            "max": 551.314669,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 20,
+            "p50": 0.709494,
+            "p99": 3.990653,
+            "max": 3.990653,
+            "negative": 0
+          },
+          "response_json_bytes": 16342
+        },
+        "recovery": {
+          "latency_ms": {
+            "samples": 20,
+            "p50": 349.601203,
+            "p99": 411.454907,
+            "max": 411.454907,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 20,
+            "p50": 0.324068,
+            "p99": 0.918943,
+            "max": 0.918943,
+            "negative": 0
+          },
+          "response_json_bytes": 16360
+        },
+        "drain": {
+          "latency_ms": {
+            "samples": 7,
+            "p50": 348.851177,
+            "p99": 361.829491,
+            "max": 361.829491,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 7,
+            "p50": 0.180435,
+            "p99": 0.798701,
+            "max": 0.798701,
+            "negative": 0
+          },
+          "response_json_bytes": 5726
+        }
+      },
+      "cpu_metrics": {
+        "all": {
+          "latency_ms": {
+            "samples": 66,
+            "p50": 80.898588,
+            "p99": 187.553646,
+            "max": 187.553646,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 66,
+            "p50": 0.371634,
+            "p99": 1.811978,
+            "max": 1.811978,
+            "negative": 0
+          },
+          "response_json_bytes": 1023735
+        },
+        "normal": {
+          "latency_ms": {
+            "samples": 20,
+            "p50": 74.539721,
+            "p99": 156.636752,
+            "max": 156.636752,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 20,
+            "p50": 0.325014,
+            "p99": 0.557166,
+            "max": 0.557166,
+            "negative": 0
+          },
+          "response_json_bytes": 310191
+        },
+        "burst": {
+          "latency_ms": {
+            "samples": 20,
+            "p50": 94.172824,
+            "p99": 187.553646,
+            "max": 187.553646,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 20,
+            "p50": 0.703505,
+            "p99": 1.811978,
+            "max": 1.811978,
+            "negative": 0
+          },
+          "response_json_bytes": 310206
+        },
+        "recovery": {
+          "latency_ms": {
+            "samples": 20,
+            "p50": 80.898588,
+            "p99": 164.215933,
+            "max": 164.215933,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 20,
+            "p50": 0.326138,
+            "p99": 1.078928,
+            "max": 1.078928,
+            "negative": 0
+          },
+          "response_json_bytes": 310260
+        },
+        "drain": {
+          "latency_ms": {
+            "samples": 6,
+            "p50": 44.693671,
+            "p99": 45.714149,
+            "max": 45.714149,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 6,
+            "p50": 0.586292,
+            "p99": 0.912969,
+            "max": 0.912969,
+            "negative": 0
+          },
+          "response_json_bytes": 93078
+        }
+      },
+      "visibility": {
+        "all": {
+          "latency_ms": {
+            "samples": 36,
+            "p50": 232.776767,
+            "p99": 491.598533,
+            "max": 491.598533,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 36,
+            "p50": 0.383792,
+            "p99": 5.622066,
+            "max": 5.622066,
+            "negative": 0
+          },
+          "response_json_bytes": 76569
+        },
+        "normal": {
+          "latency_ms": {
+            "samples": 12,
+            "p50": 83.866612,
+            "p99": 232.776767,
+            "max": 232.776767,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 12,
+            "p50": 0.447042,
+            "p99": 1.817507,
+            "max": 1.817507,
+            "negative": 0
+          },
+          "response_json_bytes": 25490
+        },
+        "burst": {
+          "latency_ms": {
+            "samples": 12,
+            "p50": 213.787797,
+            "p99": 491.598533,
+            "max": 491.598533,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 12,
+            "p50": 0.395304,
+            "p99": 5.622066,
+            "max": 5.622066,
+            "negative": 0
+          },
+          "response_json_bytes": 25519
+        },
+        "recovery": {
+          "latency_ms": {
+            "samples": 12,
+            "p50": 324.133254,
+            "p99": 390.032415,
+            "max": 390.032415,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 12,
+            "p50": 0.296974,
+            "p99": 0.972774,
+            "max": 0.972774,
+            "negative": 0
+          },
+          "response_json_bytes": 25560
+        },
+        "drain": {
+          "latency_ms": {
+            "samples": 0,
+            "p50": null,
+            "p99": null,
+            "max": null,
+            "negative": 0
+          },
+          "errors": 0,
+          "schedule_lateness_ms": {
+            "samples": 0,
+            "p50": null,
+            "p99": null,
+            "max": null,
+            "negative": 0
+          },
+          "response_json_bytes": 0
+        }
+      }
+    },
+    "visibility": {
+      "source_ms": {
+        "samples": 36,
+        "p50": 3234.593384,
+        "p99": 3491.674228,
+        "max": 3491.674228,
+        "negative": 0
+      },
+      "spool_observed_ms": {
+        "samples": 36,
+        "p50": 2274.367163,
+        "p99": 2565.049699,
+        "max": 2565.049699,
+        "negative": 0
+      },
+      "ack_observed_ms": {
+        "samples": 36,
+        "p50": 2260.927247,
+        "p99": 2543.819569,
+        "max": 2543.819569,
+        "negative": 0
+      }
+    },
+    "visibility_missing": 0,
+    "producer_lateness_ms": {
+      "samples": 300000,
+      "p50": 0.15034800162538886,
+      "p99": 0.9131970000453293,
+      "max": 1.1881719983648509,
+      "negative": 0
+    },
+    "cgroup_peak_bytes": 1469771776,
+    "cgroup_sampled_current_peak_bytes": 1382948864,
+    "cgroup_last": {
+      "memory.current": "1194659840",
+      "memory.peak": "1469771776",
+      "memory.stat": "anon 635453440\nfile 537382912\nkernel 20635648\nkernel_stack 819200\npagetables 3063808\nsec_pagetables 0\npercpu 5152\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nzswap_incomp 0\nfile_mapped 0\nfile_dirty 1650688\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 635248640\ninactive_file 537477120\nactive_file 0\nunevictable 0\nslab_reclaimable 15317832\nslab_unreclaimable 1329032\nslab 16646864\nhugetlb 0\nworkingset_refault_anon 0\nworkingset_refault_file 0\nworkingset_activate_anon 0\nworkingset_activate_file 0\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgsteal_kswapd 0\npgsteal_direct 0\npgsteal_khugepaged 0\npgsteal_proactive 0\npgscan_kswapd 0\npgscan_direct 0\npgscan_khugepaged 0\npgscan_proactive 0\npgrefill 0\npgpromote_success 0\npgscan 0\npgsteal 0\npswpin 0\npswpout 0\npgfault 728762\npgmajfault 0\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nnuma_pages_migrated 0\nnuma_pte_updates 0\nnuma_hint_faults 0",
+      "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+      "memory.swap.current": "0",
+      "memory.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=2\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=2",
+      "cpu.stat": "usage_usec 67587006\nuser_usec 60559729\nsystem_usec 7027276\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0",
+      "cpu.pressure": "some avg10=0.00 avg60=0.08 avg300=0.06 total=1158612\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=87864",
+      "io.stat": "259:3 rbytes=0 wbytes=761856 rios=0 wios=7 dbytes=0 dios=0\n252:0 rbytes=0 wbytes=761856 rios=0 wios=7 dbytes=0 dios=0\n259:0 rbytes=4096 wbytes=1289539584 rios=1 wios=33124 dbytes=0 dios=0\n252:1 rbytes=4096 wbytes=1289539584 rios=1 wios=33124 dbytes=0 dios=0",
+      "io.pressure": "some avg10=0.12 avg60=0.12 avg300=0.03 total=1110587\nfull avg10=0.12 avg60=0.10 avg300=0.02 total=1011248",
+      "pids.current": "51"
+    },
+    "peak_pending_batches": 6,
+    "peak_file_backlog_bytes": 0,
+    "peak_spool_disk_bytes": 169537632,
+    "progress_final": [
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777777
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      },
+      {
+        "batch": 182,
+        "acked": 182,
+        "pending_batches": 0,
+        "file_backlog_bytes": 0,
+        "spool_bytes": 777791
+      }
+    ],
+    "spool_append_attempt_acceptance_fraction": null,
+    "spool_append_attempt_acceptance_note": "Success-only cycle output; no complete append attempt denominator."
+  },
+  "measurement": {
+    "rate_accounting": {
+      "passed": true,
+      "phase_counts_exact": {
+        "normal": true,
+        "burst": true,
+        "recovery": true
+      },
+      "expected_counts": {
+        "normal": {
+          "spool_batches": 1199,
+          "spool_logs": 59950,
+          "spool_bytes": 70742397,
+          "send_attempts": 1199,
+          "status_ack": 1199,
+          "unique_acks": 1199,
+          "ack_bytes": 70742397,
+          "source_logs": 60000,
+          "source_bytes": 54060000
+        },
+        "burst": {
+          "spool_batches": 1200,
+          "spool_logs": 179900,
+          "spool_bytes": 211248200,
+          "send_attempts": 1198,
+          "status_ack": 1198,
+          "unique_acks": 1198,
+          "ack_bytes": 210896034,
+          "source_logs": 180000,
+          "source_bytes": 162180000
+        },
+        "recovery": {
+          "spool_batches": 1200,
+          "spool_logs": 60100,
+          "spool_bytes": 71167719,
+          "send_attempts": 1200,
+          "status_ack": 1200,
+          "unique_acks": 1200,
+          "ack_bytes": 71402117,
+          "source_logs": 60000,
+          "source_bytes": 54060000
+        }
+      },
+      "method": "recount event and source rows against independently retained phase counts"
+    },
+    "clock": {
+      "realtime_monotonic_valid": true,
+      "suspend_interval_valid": true,
+      "realtime_range_ns": 698,
+      "suspend_range_ns": 1087,
+      "guard_ns": 5000000,
+      "reason": null
+    },
+    "phases": {
+      "normal": {
+        "samples": 60,
+        "server_cpu_cores": 0.13622272325960716,
+        "reason": null
+      },
+      "burst": {
+        "samples": 59,
+        "server_cpu_cores": 0.29184921658298535,
+        "reason": null
+      },
+      "recovery": {
+        "samples": 60,
+        "server_cpu_cores": 0.2750713153754143,
+        "reason": null
+      }
+    },
+    "valid_for_timing": true,
+    "invalid_reasons": [],
+    "cell": "scan",
+    "visibility_jitter": {
+      "enabled": false,
+      "schedule_ns": [],
+      "policy": "disabled"
+    }
+  }
+}

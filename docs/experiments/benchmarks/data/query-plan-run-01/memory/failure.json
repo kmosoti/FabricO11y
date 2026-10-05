@@ -1,0 +1,5 @@
+{
+  "status": "failed",
+  "error": "RuntimeError('fixture/tail/segment raw records differ; evidence preserved')",
+  "scratch_preserved": "/run/media/kmosoti/data/FabricO11y/scratch/work-wi0biz60/memory/allocation/tmp/query-allocation-profile"
+}

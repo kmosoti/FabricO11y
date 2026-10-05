@@ -1,0 +1,32 @@
+{
+  "bounds": null,
+  "candidate_commit": "37af74e86a6d54e6662e392f096c7ab685ef1b34",
+  "check_id": "telemetry-cli",
+  "command": [
+    "python3",
+    "-B",
+    "tools/telemetry/test_cli.py"
+  ],
+  "duration_ms": 2239,
+  "exit_code": 0,
+  "expected": "exit 0",
+  "fixtures": null,
+  "negative_controls": null,
+  "oracle_revision": "none",
+  "output_sha256": "4186b4d5f329c1dc0ba3a519e35cc07ab8c2f82877e7391dd90342b5c1c4fa8f",
+  "profile": "fast",
+  "property_ids": [],
+  "receipt_version": 1,
+  "result": "passed",
+  "scope": "Agent-telemetry observer CLI",
+  "specification_revision": "none",
+  "toolchain": {
+    "bun": "unavailable",
+    "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+    "python3": "Python 3.14.7",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "Development tooling only; no product claim.",
+  "worktree_dirty": true
+}

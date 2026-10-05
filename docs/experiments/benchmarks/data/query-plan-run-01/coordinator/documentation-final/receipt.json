@@ -1,0 +1,50 @@
+{
+  "id": "documentation-final",
+  "lab": "recovery",
+  "stage": "overhead",
+  "state": "passed",
+  "command": [
+    "python3",
+    "-c",
+    "import os,shutil,subprocess; from pathlib import Path; b=Path(os.environ['TMPDIR'])/'bun'; shutil.copyfile('/tmp/fabric-bun-runtime/bun-linux-x64/bun',b); b.chmod(0o700); subprocess.run([str(b),'tools/docs/check.mjs'],check=True); subprocess.run(['git','diff','--check'],check=True); b.unlink()"
+  ],
+  "cwd": "/home/kmosoti/Projects/moiric/FabricO11y",
+  "scratch": "/run/media/kmosoti/data/FabricO11y/scratch/work-br7z38dl/recovery/documentation-final",
+  "started_unix_ns": 1791224024053179436,
+  "timeout_s": 30,
+  "scratch_limit_bytes": 4294967296,
+  "requested_timeout_s": 30,
+  "prior_execution_s": 2301.5017913129777,
+  "stage_limit_s": 300,
+  "stage_prior_execution_s": 167.23554182799126,
+  "cgroup": "/user.slice/user-1000.slice/user@1000.service/app.slice/fabric-work-0b8b87d0bcba4c7f929e5a5295c1e84a.service",
+  "protocol_hashes": {
+    "docs/experiments/benchmarks/query-plan-protocol.md": "99038b6401978a8a7ae8d46e482b042c969da5b179477aabca1f7fe49582638f",
+    "docs/experiments/benchmarks/dev-small-lab-plan.md": "49736fe0c829d9d86751b913b62892612b1b7a605f045572dac1d2c5be783fd9"
+  },
+  "revision": "dbf7b065d66dab39d59edbbab4df849dec446fad",
+  "limits": {
+    "memory.max": "21474836480",
+    "memory.high": "17179869184",
+    "memory.swap.max": "0",
+    "cpu.max": "max 100000"
+  },
+  "exit": 0,
+  "elapsed_s": 1.0010796139977174,
+  "stop_reason": null,
+  "peak_sampled_scratch_bytes": 79500640,
+  "terminated_descendants": [],
+  "cgroup_final": {
+    "memory.peak": "249958400",
+    "memory.current": "17760256",
+    "memory.stat": "anon 14864384\nfile 856064\nkernel 278528\nkernel_stack 0\npagetables 139264\nsec_pagetables 0\npercpu 448\nsock 0\nvmalloc 0\nshmem 0\nzswap 0\nzswapped 0\nzswap_incomp 0\nfile_mapped 0\nfile_dirty 856064\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 0\nshmem_thp 0\ninactive_anon 0\nactive_anon 14860288\ninactive_file 860160\nactive_file 0\nunevictable 0\nslab_reclaimable 35680\nslab_unreclaimable 95536\nslab 131216\nhugetlb 0\nworkingset_refault_anon 0\nworkingset_refault_file 0\nworkingset_activate_anon 0\nworkingset_activate_file 0\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgsteal_kswapd 0\npgsteal_direct 0\npgsteal_khugepaged 0\npgsteal_proactive 0\npgscan_kswapd 0\npgscan_direct 0\npgscan_khugepaged 0\npgscan_proactive 0\npgrefill 0\npgpromote_success 0\npgscan 0\npgsteal 0\npswpin 0\npswpout 0\npgfault 51743\npgmajfault 0\npgactivate 0\npgdeactivate 0\npglazyfree 0\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nzswpin 0\nzswpout 0\nzswpwb 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0\nnuma_pages_migrated 0\nnuma_pte_updates 0\nnuma_hint_faults 0",
+    "memory.events": "low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\noom_group_kill 0\nsock_throttled 0",
+    "memory.swap.current": "0",
+    "cpu.stat": "usage_usec 1671898\nuser_usec 1427594\nsystem_usec 244303\nnice_usec 0\ncore_sched.force_idle_usec 0\nnr_periods 0\nnr_throttled 0\nthrottled_usec 0\nnr_bursts 0\nburst_usec 0",
+    "io.stat": "",
+    "memory.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+    "io.pressure": "some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0"
+  },
+  "scratch_removed": true,
+  "failed_scratch_retained_by_launcher": false
+}

@@ -1,0 +1,9 @@
+{
+  "status": "passed",
+  "work": "/run/media/kmosoti/data/FabricO11y/scratch/work-nngzmy2k/query/small-walk-2/tmp/small-walk-2",
+  "removed": true,
+  "logical_bytes": 555519491,
+  "elapsed_s": 279.45918806499685,
+  "retained_lab_bytes": 26958870,
+  "failure_moves_with_launcher": false
+}

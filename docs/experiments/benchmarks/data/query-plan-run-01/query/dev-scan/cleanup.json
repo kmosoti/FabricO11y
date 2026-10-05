@@ -1,0 +1,9 @@
+{
+  "status": "passed",
+  "work": "/run/media/kmosoti/data/FabricO11y/scratch/work-8ohfed67/query/dev-scan/tmp/dev-scan",
+  "removed": true,
+  "logical_bytes": 12568363,
+  "elapsed_s": 206.4968369720009,
+  "retained_lab_bytes": 1679601,
+  "failure_moves_with_launcher": false
+}

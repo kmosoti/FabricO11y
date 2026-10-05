@@ -1,0 +1,28 @@
+{
+  "unit": "fabric-work-86c038743477453ab69d9ba5d9bdc149",
+  "command": [
+    "python3",
+    "tools/bench/labs/query_compare/run_job.py",
+    "--id",
+    "documentation-retry",
+    "--lab",
+    "recovery",
+    "--stage",
+    "overhead",
+    "--seconds",
+    "30",
+    "--",
+    "python3",
+    "-c",
+    "import os,shutil,subprocess; from pathlib import Path; b=Path(os.environ['TMPDIR'])/'bun'; shutil.copyfile('/tmp/fabric-bun-runtime/bun-linux-x64/bun',b); b.chmod(0o700); subprocess.run([str(b),'tools/docs/check.mjs'],check=True); subprocess.run(['git','diff','--check'],check=True); b.unlink()"
+  ],
+  "exit": 0,
+  "started_unix": 1791223922.4355135,
+  "elapsed_s": 1.322760820388794,
+  "data_drive": "/run/media/kmosoti/data",
+  "temporary": "/run/media/kmosoti/data/FabricO11y/scratch/work-7dr92w83",
+  "temporary_removed": true,
+  "retained_failure_evidence": null,
+  "memory_max_bytes": 21474836480,
+  "swap_max_bytes": 0
+}

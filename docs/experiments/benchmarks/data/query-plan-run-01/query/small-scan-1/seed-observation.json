@@ -1,0 +1,17 @@
+{
+  "batches": 0,
+  "condition": "H0",
+  "encoded_bytes": 0,
+  "fixture_target_override": false,
+  "generation": 1,
+  "observed_start_ns": 1759680000000000000,
+  "old_node_id": "71717171717171717171717171717171",
+  "prefix_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "received_max_ns": null,
+  "received_min_ns": null,
+  "rows": 0,
+  "seed_replay_exact": true,
+  "segments": [],
+  "preparation_seconds": 0.06426692599779926,
+  "active_journal_bytes": 0
+}
