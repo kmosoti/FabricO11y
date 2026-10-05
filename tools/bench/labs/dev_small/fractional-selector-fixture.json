@@ -1,0 +1,9 @@
+{
+  "origin": "C1-5 pre-run source review in dev-small-labs-run-02",
+  "contract": "One actual source visibility target in each five-second bucket",
+  "nodes": 20,
+  "rates": [100, 300, 100],
+  "ticks": 1800,
+  "old_target_count": 12,
+  "required_target_count": 36
+}

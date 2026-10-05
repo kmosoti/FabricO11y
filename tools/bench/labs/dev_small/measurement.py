@@ -135,6 +135,7 @@ class Observer(observation.Observer):
             raise ValueError('jitter_ns must be a nonempty sequence of nonnegative integers')
         self._jitter_origin_ns = None
         self._jitter_ordinal = 0
+        self._last_target_bucket = -1
         self.seed_summary = None
         self.seed_ledger = []
 
@@ -207,7 +208,13 @@ class Observer(observation.Observer):
         if self.cell == 'off':
             return False
         if not self.visibility_jitter:
-            return isinstance(tick, int) and tick % 50 == 0
+            if not isinstance(tick, int) or tick < 0:
+                return False
+            bucket = tick // 50
+            if bucket <= self._last_target_bucket:
+                return False
+            self._last_target_bucket = bucket
+            return True
         if self._jitter_origin_ns is None:
             self._jitter_origin_ns = candidate
             self._jitter_ordinal = 0
@@ -411,11 +418,33 @@ def controls():
                for tick in range(1800)) == 36
     assert sum(off.select_visibility_target(tick*100_000_000, tick)
                for tick in range(1800)) == 0
+    # Review counterexample: fractional per-node offers have no record on
+    # normal/recovery bucket boundaries. Exercise the actual rate accumulator.
+    fixture = json.loads(Path(__file__).with_name('fractional-selector-fixture.json').read_text())
+    fractional = Observer(cell='scan')
+    eligible, repaired = [], []
+    accumulator = 0
+    for tick in range(fixture['ticks']):
+        accumulator += fixture['rates'][tick // 600]
+        count, accumulator = divmod(accumulator, 10 * fixture['nodes'])
+        if count:
+            eligible.append(tick)
+            if fractional.select_visibility_target(tick * 100_000_000, tick):
+                repaired.append(tick)
+    old = [tick for tick in eligible if tick % 50 == 0]
+    assert len(old) == fixture['old_target_count'] == 12
+    assert len(repaired) == fixture['required_target_count'] == 36
+    assert [tick // 50 for tick in repaired] == list(range(36))
+    assert repaired[:12] == list(range(1, 600, 50))
+    assert repaired[12:24] == list(range(600, 1200, 50))
+    assert repaired[24:] == list(range(1201, 1800, 50))
     checks.update(archived_clock_fixture_rejected=True,
                   missing_phase_null_and_timing_invalid=True,
                   injected_clock_suspend_rate_custody_defects_rejected=True,
                   fresh_development_configuration_constructible=True,
                   default_selector_36_targets=True,
+                  fractional_selector_counterexample={'origin': fixture['origin'],
+                      'old_selected_ticks': old, 'repaired_selected_ticks': repaired},
                   jitter_selector_36_targets_not_phase_locked=True,
                   query_off_selector_no_targets=True)
     return checks

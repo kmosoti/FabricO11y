@@ -19,6 +19,7 @@ import archive
 
 DATA = ROOT/'docs/experiments/benchmarks/data/dev-small-labs-run-02'
 PROTOCOL = ROOT/'docs/experiments/benchmarks/dev-small-labs-screen-protocol.md'
+ADDENDUM = ROOT/'docs/experiments/benchmarks/dev-small-labs-screen-r2.md'
 CELLS = {
     'm0':('query',1,(10,30,10),'H0','scan',False),
     'c1-1':('memory',20,(1000,3000,1000),'H0','off',False),
@@ -77,11 +78,13 @@ def main():
         'history':history,'near_rotation':near,'timed_queries':mode,'binaries':hashes,
         'revision':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),
         'protocol_sha256':archive.sha(PROTOCOL),'server_cpus':cpus[:2],'client_cpus':cpus[2:4],
+        'protocol_addenda':{str(ADDENDUM.relative_to(ROOT)):archive.sha(ADDENDUM)},
         'storage':str(work),'uname':list(os.uname()),
         'sources':{str(p.relative_to(ROOT)):archive.sha(p) for p in
                    list(Path(__file__).parent.glob('*.py'))+[ROOT/'tools/bench/observe_dev_small.py',ROOT/'tools/qualification/query_oracle.py']}}
     native.dump(destination/'environment.json',environment)
     shutil.copyfile(PROTOCOL,destination/'protocol.txt')
+    shutil.copyfile(ADDENDUM,destination/'protocol-addendum.txt')
     observer = measurement.Observer(mode,visibility_jitter=args.cell.startswith('q1'),native_module=native)
     status = 'interrupted'
     began = time.monotonic()
