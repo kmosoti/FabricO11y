@@ -68,3 +68,12 @@ Negative controls must reject lost, altered and duplicated source identities.
 The frozen query oracle retains its existing independent controls. Full source,
 configuration and binary hashes accompany every trial; never silently alter
 historical decision rules after observing outcomes.
+
+Pre-mixed-cell observation addendum: the trace-only preflight and `trace-180`
+retain their original periodic first-page probes. Starting with the matched
+development/small log-versus-mixed cells, every ten-second probe additionally
+queries spans in the preceding twenty-second window, limit10000. Preserve actual
+answers and observation times; map each span to SDK local response, durable
+server receipt, ACK observation and first observed query appearance. Missing
+observations stay null, never zero latency. This is a coarse observation bound,
+not the exact instant the row became queryable. It changes no correctness gate.
