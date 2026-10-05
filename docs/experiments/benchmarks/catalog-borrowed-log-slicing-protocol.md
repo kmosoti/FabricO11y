@@ -34,8 +34,13 @@ bytes are compared exactly, original/new hashes and lengths are retained
 incrementally BEFORE removal, then removal completion is recorded. Aggregate
 requires these receipts and rechecks decoded/compressed hashes and lengths;
 logical JSON content and full-chain association remain unchanged.
-The aggregate256MiB evidence cap includes shared objects, archived binaries
-and every slice. Scratch8GiB,16GiB drive reserve, no swap and original cgroup
+The reviewed aggregate512MiB capacity evidence cap includes shared objects, archived binaries
+and every slice, plus existing CR1/spill/CR3 capacity datasets and baseline
+freeze archives when present. Runtime admission/polling checks unique inode
+lengths and allocated blocks for those trees and the2GiB aggregate catalog cap;
+logical path sums remain separately reported. The separately registered
+[catalog allocation amendment](catalog-evidence-allocation-protocol.md) is
+included in frozen provenance. Scratch8GiB,16GiB drive reserve, no swap and original cgroup
 caps remain. Each freeze/pair driver deadline is1400s within1500s coordinator.
 Root admits each slice against the remaining shared campaign/stage budget.
 The first full plain pair supplies a runtime admission checkpoint for remaining
