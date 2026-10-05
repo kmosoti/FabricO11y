@@ -29,3 +29,9 @@ Before first execution, extend the cases with sealed-journal EIO and a successfu
 short (at most16-byte) spill write or merge-run read followed by EIO on the same
 descriptor. Require nonzero failure and exact retry as above. This covers these
 representative partial-IO paths, not every partial syscall boundary.
+
+Before first execution, the eight-group trace-bearing storage fixture adds
+actual child-process ENOSPC write/sync failures for spans.parquet and its optional
+span filter. Require injection, nonzero exit, unchanged pending journal, no
+published Segment, independent complete-chain answers before retry, then startup
+cleanup, successful bounded build and exact independent answers afterward.
