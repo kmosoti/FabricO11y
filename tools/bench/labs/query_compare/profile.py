@@ -162,8 +162,10 @@ def collect(work, out, variant, population, deadline):
         path = work / ('records.jsonl' if kind == 'fixture' else kind + '-records/records.jsonl')
         raw_ledgers[kind] = path.read_bytes()
         ledgers[kind] = retain_ledger(raw_ledgers[kind], catalog)
-    if raw_ledgers['tail'] != raw_ledgers['segment']:
-        raise RuntimeError('tail/segment exact record ledgers differ; evidence preserved')
+    # Segment is built directly from the fixture; tail uses Intake, which stamps
+    # receipt time. Both plans use the same recovered ledger within each layout.
+    if raw_ledgers['fixture'] != raw_ledgers['segment']:
+        raise RuntimeError('fixture/segment exact record ledgers differ; evidence preserved')
     if not same_batch_records(raw_ledgers['fixture'], raw_ledgers['tail']):
         raise RuntimeError('fixture/recovered records differ beyond received_ns; evidence preserved')
     grader.compress(work / 'timings.jsonl', out / 'timings.jsonl.gz')
