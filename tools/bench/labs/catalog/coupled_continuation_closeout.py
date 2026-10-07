@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 import coupled_overlap
+import tarfile
 
 import coupled_admit
 from coupled_cleanup import inactive, validate_archive
@@ -190,11 +191,30 @@ def main():
                 if report.get('state') == 'completed':
                     verified.extend(r for r in report.get('jobs', [])
                                     if r.get('id') == row['id'] and r.get('byte_verified') and r.get('scratch_removed'))
-            if len(verified) != 1:
+            references = []
+            for report_path in (DATA / 'lab-completion-run-01').glob('catalog-coupled-bun-preserve-*.json'):
+                report = json.loads(report_path.read_text())
+                if report.get('state') == 'completed':
+                    references.extend(r for r in report.get('jobs', [])
+                                      if r.get('id') == row['id'] and r.get('byte_verified') and r.get('scratch_removed'))
+            if len(verified) + len(references) != 1:
                 raise RuntimeError('missing unique verified failed-scratch cleanup: ' + row['id'])
-            archive = DATA / 'lab-completion-run-01' / verified[0]['archive']
+            retained = (verified + references)[0]
+            archive = DATA / 'lab-completion-run-01' / retained['archive']
             manifest = json.loads(archive.with_suffix('.manifest.json').read_text())
             validate_archive(archive, manifest)
+            if references:
+                if row['id'] != 'catalog-coupled-continuation-closeout-01' or retained['archive'] != 'coordinator/failure-catalog-docs-01.tar.gz' or retained['member'] != 'coordinator/catalog-docs-01/tmp/bun':
+                    raise RuntimeError('unregistered runtime reference')
+                if retained['preservation_kind'] != 'archive_member_reference' or digest(archive)[0] != retained['archive_sha256']:
+                    raise RuntimeError('reference archive identity drift')
+                expected = {'bytes': retained['decoded_bytes'], 'sha256': retained['decoded_sha256']}
+                if len(retained['source_manifest']) != 1 or list(retained['source_manifest'].values()) != [expected] or manifest.get(retained['member']) != expected:
+                    raise RuntimeError('source/reference manifest mismatch')
+                with tarfile.open(archive, 'r:gz') as stream:
+                    members = [m for m in stream.getmembers() if m.name == retained['member']]
+                    if len(members) != 1 or not members[0].isfile() or members[0].size != expected['bytes']:
+                        raise RuntimeError('reference member mismatch')
         if row.get('scratch') and Path(row['scratch']).exists():
             raise RuntimeError('owned job scratch remains: ' + row['id'])
         runs.append({key: row.get(key) for key in ('id', 'state', 'exit', 'elapsed_s')})
