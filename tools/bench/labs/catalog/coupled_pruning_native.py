@@ -117,7 +117,7 @@ def main():
     if child.returncode:raise RuntimeError('native child exit '+str(child.returncode))
     native_elapsed=time.monotonic()-started
     report=json.loads((args.out/'native.json').read_text());records,bodies=grader.decode_records(trial/'records.jsonl')
-    if len(bodies)!=1100 or any(len(b)!=16384 for b in bodies) or report['fixture']['run_mib_selector']!='16':raise RuntimeError('fixture drift')
+    if len(records)!=35 or len(bodies)!=1100 or any(len(b)!=16384 for b in bodies) or report['fixture']['run_mib_selector']!='16':raise RuntimeError('fixture drift')
     expected=producer_rows(records);details=check(report,expected);negative=controls(report,expected)
     verdicts=[];archives={}
     archives['records.jsonl']=compress(trial/'records.jsonl',args.out/'records.jsonl.gz')
