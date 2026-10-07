@@ -54,13 +54,23 @@ impl Drop for Scratch {
                     if path.is_file() && path.extension().is_some_and(|e| e != "so") {
                         fs::copy(&path, out.join(path.file_name().unwrap())).unwrap();
                     }
-                    if path.is_dir() && path.file_name().unwrap().to_string_lossy().starts_with("oracle-") {
+                    if path.is_dir()
+                        && path
+                            .file_name()
+                            .unwrap()
+                            .to_string_lossy()
+                            .starts_with("oracle-")
+                    {
                         let destination = out.join(path.file_name().unwrap());
                         fs::create_dir(&destination).unwrap();
                         for artifact in fs::read_dir(&path).unwrap() {
                             let artifact = artifact.unwrap().path();
-                            assert!(artifact.is_file() && !artifact.is_symlink(), "oracle artifact must be a regular file");
-                            fs::copy(&artifact, destination.join(artifact.file_name().unwrap())).unwrap();
+                            assert!(
+                                artifact.is_file() && !artifact.is_symlink(),
+                                "oracle artifact must be a regular file"
+                            );
+                            fs::copy(&artifact, destination.join(artifact.file_name().unwrap()))
+                                .unwrap();
                         }
                     }
                 }
@@ -254,21 +264,60 @@ fn grade_excluding(
     expected: bool,
     unavailable: Option<Value>,
 ) {
-    grade_with_model(scratch, groups, query, pages, expected, "query_oracle.py",
-        unavailable.map(|value| ("--unavailable", value)));
+    grade_with_model(
+        scratch,
+        groups,
+        query,
+        pages,
+        expected,
+        "query_oracle.py",
+        unavailable.map(|value| ("--unavailable", value)),
+    );
 }
 
-fn grade_projection(scratch: &Scratch, groups: &[Group], query: &Value, pages: &[Value], raw_available: bool, projection: Option<&str>) {
-    let missing = projection.map(|name| json!([{"projection":name,"from_ns":2_000_001,"to_ns":2_000_009}])).unwrap_or_else(|| json!([]));
-    grade_with_model(scratch, groups, query, pages, true, "projection_availability_oracle.py",
-        Some(("--availability", json!({"raw_available":raw_available,"missing_projections":missing}))));
+fn grade_projection(
+    scratch: &Scratch,
+    groups: &[Group],
+    query: &Value,
+    pages: &[Value],
+    raw_available: bool,
+    projection: Option<&str>,
+) {
+    let missing = projection
+        .map(|name| json!([{"projection":name,"from_ns":2_000_001,"to_ns":2_000_009}]))
+        .unwrap_or_else(|| json!([]));
+    grade_with_model(
+        scratch,
+        groups,
+        query,
+        pages,
+        true,
+        "projection_availability_oracle.py",
+        Some((
+            "--availability",
+            json!({"raw_available":raw_available,"missing_projections":missing}),
+        )),
+    );
 }
 
-fn grade_with_model(scratch: &Scratch, groups: &[Group], query: &Value, pages: &[Value], expected: bool, oracle: &str, declaration: Option<(&str, Value)>) {
+fn grade_with_model(
+    scratch: &Scratch,
+    groups: &[Group],
+    query: &Value,
+    pages: &[Value],
+    expected: bool,
+    oracle: &str,
+    declaration: Option<(&str, Value)>,
+) {
     // Numbered calls retain every query/page/declaration/verdict across table cuts.
-    let numbered = scratch.0.join(format!("oracle-{:04}",
-        fs::read_dir(&scratch.0).unwrap().filter_map(Result::ok)
-            .filter(|e| e.file_name().to_string_lossy().starts_with("oracle-") && e.path().is_dir()).count()));
+    let numbered = scratch.0.join(format!(
+        "oracle-{:04}",
+        fs::read_dir(&scratch.0)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|e| e.file_name().to_string_lossy().starts_with("oracle-") && e.path().is_dir())
+            .count()
+    ));
     fs::create_dir(&numbered).unwrap();
     fs::write(numbered.join("ledger.jsonl"), ledger(groups)).unwrap();
     fs::write(numbered.join("query.json"), query.to_string()).unwrap();
@@ -349,7 +398,8 @@ fn missing_query_tables_are_incomplete_with_independently_declared_unavailabilit
 
 #[test]
 fn missing_raw_batches_preserve_projection_rows_but_mark_incomplete() {
-    let s = Scratch::new("raw batches table deleted; verified projections metadata and gaps survive");
+    let s =
+        Scratch::new("raw batches table deleted; verified projections metadata and gaps survive");
     let state = s.0.join("state");
     empty_journal(&state);
     let groups = fixture(1, 8, 2_000_000);
@@ -373,7 +423,9 @@ fn missing_raw_batches_preserve_projection_rows_but_mark_incomplete() {
 #[test]
 fn raw_batch_table_integrity_failures_are_incomplete() {
     for defect in ["truncated", "footer", "schema", "manifest_rows"] {
-        let s = Scratch::new(&format!("raw integrity {defect}; intact projection metadata and gaps"));
+        let s = Scratch::new(&format!(
+            "raw integrity {defect}; intact projection metadata and gaps"
+        ));
         let state = s.0.join("state");
         empty_journal(&state);
         let groups = fixture(1, 8, 2_000_000);
@@ -384,24 +436,37 @@ fn raw_batch_table_integrity_failures_are_incomplete() {
         let raw = dir.join("batches.parquet");
         let original = fs::read(&raw).unwrap();
         match defect {
-            "truncated" => { fs::write(&raw, &original[..original.len() - 1]).unwrap(); }
+            "truncated" => {
+                fs::write(&raw, &original[..original.len() - 1]).unwrap();
+            }
             "footer" => {
                 let mut broken = original.clone();
                 let len = broken.len();
                 broken[len - 4..].copy_from_slice(b"FAIL");
                 fs::write(&raw, &broken).unwrap();
-                assert_eq!(fs::metadata(&raw).unwrap().len(), manifest.files["batches.parquet"].bytes);
+                assert_eq!(
+                    fs::metadata(&raw).unwrap().len(),
+                    manifest.files["batches.parquet"].bytes
+                );
             }
             "schema" => {
                 fs::copy(dir.join("metrics.parquet"), &raw).unwrap();
                 // Make size/hash/rows describe the actual replacement: schema alone is wrong.
                 let replacement = manifest.files["metrics.parquet"].clone();
                 manifest.files.insert("batches.parquet".into(), replacement);
-                fs::write(dir.join("manifest.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+                fs::write(
+                    dir.join("manifest.json"),
+                    serde_json::to_vec(&manifest).unwrap(),
+                )
+                .unwrap();
             }
             "manifest_rows" => {
                 manifest.files.get_mut("batches.parquet").unwrap().rows += 1;
-                fs::write(dir.join("manifest.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+                fs::write(
+                    dir.join("manifest.json"),
+                    serde_json::to_vec(&manifest).unwrap(),
+                )
+                .unwrap();
             }
             _ => unreachable!(),
         }
@@ -422,14 +487,21 @@ fn raw_batch_table_integrity_failures_are_incomplete() {
 #[test]
 fn missing_gap_table_is_incomplete_and_missing_manifest_is_source_error() {
     for defect in ["gaps", "manifest"] {
-        let s = Scratch::new(&format!("missing {defect}; unambiguous source availability control"));
+        let s = Scratch::new(&format!(
+            "missing {defect}; unambiguous source availability control"
+        ));
         let state = s.0.join("state");
         empty_journal(&state);
         let groups = fixture(1, 8, 2_000_000);
         segment::build(&state, 1, &groups).unwrap();
         let dir = state.join("segments").join(segment::segment_name(1));
         segment::verify(&dir, &segment::read_manifest(&dir).unwrap()).unwrap();
-        fs::remove_file(dir.join(if defect == "gaps" {"gaps.parquet"} else {"manifest.json"})).unwrap();
+        fs::remove_file(dir.join(if defect == "gaps" {
+            "gaps.parquet"
+        } else {
+            "manifest.json"
+        }))
+        .unwrap();
         let mut observations = Vec::new();
         for plan in [Plan::Scan, Plan::Walk] {
             let q = json!({"kind":"logs","from_ns":0,"to_ns":u64::MAX/2,"limit":3});
@@ -453,7 +525,11 @@ fn missing_gap_table_is_incomplete_and_missing_manifest_is_source_error() {
                 }
             }
         }
-        fs::write(s.0.join("source-error-controls.json"), json!({"defect":defect,"observations":observations}).to_string()).unwrap();
+        fs::write(
+            s.0.join("source-error-controls.json"),
+            json!({"defect":defect,"observations":observations}).to_string(),
+        )
+        .unwrap();
     }
 }
 
@@ -767,7 +843,15 @@ fn missing_raw_batch_table_reports_replay_failure_without_fabricating_projection
         Store::replay(&state, 1 << 28, |_| Ok(())).is_err(),
         "raw custody replay must surface loss"
     );
-    verify(&s, &state, &groups);
+    // Raw custody is unavailable while the original projection query set survives.
+    // Use the already registered companion; retain all five queries in both plans.
+    for plan in [Plan::Scan, Plan::Walk] {
+        let history = History::with_plan(&state, plan);
+        for query in queries() {
+            let chain = pages(&history, query.clone(), 8);
+            grade_projection(&s, &groups, &query, &chain, false, None);
+        }
+    }
 }
 
 fn input_journal(state: &Path, groups: &[Group]) -> PathBuf {
