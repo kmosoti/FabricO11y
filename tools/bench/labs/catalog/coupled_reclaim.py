@@ -123,7 +123,7 @@ def main():
         parser.error('fresh scoped ID and at most180seconds required')
     require_limits()
     protocol = args.protocol.resolve(strict=True)
-    if protocol.parent != ROOT / 'docs/experiments/benchmarks' or protocol.name != 'coupled-reclamation-protocol.md':
+    if protocol.parent != ROOT / 'docs/experiments/benchmarks' or protocol.name not in ('coupled-reclamation-protocol.md', 'coupled-reclamation-retry-protocol.md'):
         raise RuntimeError('exact registered coupled-reclaim protocol required')
     regular(args.protocol)
     regular(Path(__file__))
