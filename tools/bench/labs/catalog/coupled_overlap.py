@@ -78,7 +78,7 @@ def freeze(out,work,deadline):
             'decoded_sha256':sha(readback),'decoded_bytes':readback.stat().st_size}
     receipt['status']='complete';dump(out/'freeze.json',receipt)
 
-def trial(work,out,mode,bins,parent,deadline):
+def trial(work,out,mode,bins,parent,deadline,profile_name='lightpilot'):
     work.mkdir();out.mkdir();make_certs(work)
     port,relay_port=free_port(),free_port()
     token='o8-admin-fixture-0123456789abcdef0123456789abcdef';(work/'admin-token').write_text(token+'\n')
@@ -111,6 +111,7 @@ def trial(work,out,mode,bins,parent,deadline):
         raise RuntimeError('pagination bound exceeded')
     request_events=[];event_lock=threading.Lock()
     visibility_stop=threading.Event();visibility_thread=None;visibility_errors=[]
+    resource_stop=threading.Event();resource_thread=None;resource_samples=[];resource_errors=[]
     first_seen={};clock_offsets=[]
     class Relay(http.server.BaseHTTPRequestHandler):
         def log_message(self,*args):pass
@@ -159,8 +160,48 @@ def trial(work,out,mode,bins,parent,deadline):
             'boot_id':'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa','hostname':'o8-fixture\n'}
         for name,text in fixtures.items():(host/name).write_text(text)
         node_conf=work/'node.conf'
-        node_conf.write_text(f'spool_dir={work}/spool\nlog={logs}\nmetric_interval_s=15\nspool_bytes=1048576\nserver_url=https://127.0.0.1:{relay_port}\nserver_ca={work}/ca.pem\ntoken_file={work}/node-token\n')
+        spool_bytes=8*2**20 if profile_name=='backlog' else 1048576
+        node_conf.write_text(f'spool_dir={work}/spool\nlog={logs}\nmetric_interval_s=15\nspool_bytes={spool_bytes}\nserver_url=https://127.0.0.1:{relay_port}\nserver_ca={work}/ca.pem\ntoken_file={work}/node-token\n')
+        offered=[]
+        if profile_name=='backlog':
+            with logs.open('ab',buffering=0) as source:
+                for index in range(512):
+                    body=f'o8-seed42-{index:06}-'+('R'*(4000-17))
+                    timestamp=time.time_ns();source.write((body+'\n').encode())
+                    offered.append({'body':body,'offered_ns':timestamp})
+            # The source is closed before node startup: collection cannot
+            # consume the intended backlog during startup settling.
+            if logs.stat().st_size!=512*4001:raise RuntimeError('backlog fixture size drift')
         node=spawn('node',[node_conf,mode,20,host,work/'stop'])
+        if profile_name=='backlog':
+            def sample_resources():
+                try:
+                    with (out/'resources.jsonl').open('w') as stream:
+                        while not resource_stop.is_set():
+                            sample={'unix_ns':time.time_ns(),'services':{}}
+                            for name,child in (('server',server),('node',node)):
+                                status=Path(f'/proc/{child.pid}/status')
+                                values={}
+                                try:
+                                    for line in status.read_text().splitlines():
+                                        if line.startswith(('VmRSS:','VmHWM:')):
+                                            key,value,unit=line.split()
+                                            if unit!='kB':raise RuntimeError('RSS unit drift')
+                                            values[key[:-1]]=int(value)*1024
+                                except FileNotFoundError:pass
+                                values.update({key:(groups[name]/key).read_text().strip()
+                                    for key in ('cpu.stat','io.stat','memory.current','memory.peak','memory.events')})
+                                sample['services'][name]=values
+                            spool_file_bytes=0
+                            for path in (work/'spool').rglob('*'):
+                                try:
+                                    if path.is_file():spool_file_bytes+=path.stat().st_size
+                                except FileNotFoundError:pass # ACK/config atomic replacement.
+                            sample['spool_file_bytes']=spool_file_bytes
+                            resource_samples.append(sample);stream.write(json.dumps(sample)+'\n');stream.flush()
+                            resource_stop.wait(1)
+                except Exception as error:resource_errors.append(str(error))
+            resource_thread=threading.Thread(target=sample_resources,daemon=True);resource_thread.start()
         def poll_visibility():
             previous=None
             try:
@@ -177,9 +218,9 @@ def trial(work,out,mode,bins,parent,deadline):
                         visibility_stop.wait(.1)
             except Exception as error:visibility_errors.append(str(error))
         visibility_thread=threading.Thread(target=poll_visibility,daemon=True);visibility_thread.start()
-        offered=[];offering=time.monotonic()
+        offering=time.monotonic()
         with logs.open('ab',buffering=0) as source:
-            for tick in range(150):
+            for tick in range(150 if profile_name=='lightpilot' else 0):
                 rate=(10,30,10)[tick//50]
                 target=offering+tick/10
                 if target>time.monotonic():time.sleep(target-time.monotonic())
@@ -190,6 +231,9 @@ def trial(work,out,mode,bins,parent,deadline):
                 if time.monotonic()>deadline:raise RuntimeError('native deadline exhausted')
         node.wait(timeout=min(30,max(.1,deadline-time.monotonic())))
         if node.returncode:raise RuntimeError('node failed')
+        resource_stop.set()
+        if resource_thread:resource_thread.join(timeout=5)
+        if (resource_thread and resource_thread.is_alive()) or resource_errors:raise RuntimeError('resource sampling failed: '+repr(resource_errors))
         visibility_stop.set();visibility_thread.join(timeout=10)
         if visibility_thread.is_alive() or visibility_errors:raise RuntimeError('visibility poll failed: '+repr(visibility_errors))
         if clock_offsets and max(clock_offsets)-min(clock_offsets)>10_000_000:raise RuntimeError('wall/monotonic offset moved over10ms')
@@ -223,6 +267,8 @@ def trial(work,out,mode,bins,parent,deadline):
         commits={e['sequence']:e['unix_ns'] for e in events if e['event']=='commit'}
         acked={e['sequence']:e['unix_ns'] for e in events if e['event']=='attempt' and e['outcome']==f"Ack({e['sequence']})"}
         if set(acked)!=set(hashes) or set(commits)!=set(hashes):raise RuntimeError('ACK/commit sourceassociation missing')
+        transitions=[s for s in commits if s>1 and s-1 in acked]
+        overlapped=[s for s in transitions if commits[s]<acked[s-1]]
         if len(request_events)!=len(producer):raise RuntimeError('unexpected normal-trial retries')
         spool_ack=[(acked[s]-t)/1e6 for s,t in commits.items()]
         cycle=[e['elapsed_ns']/1e6 for e in events if e['event']=='cycle']
@@ -252,17 +298,35 @@ def trial(work,out,mode,bins,parent,deadline):
         finished=next(e for e in events if e['event']=='finished')
         if not finished['caught_up'] or finished['acked']!=finished['last']:raise RuntimeError('unacknowledged final custody')
         result={'mode':mode,'offered_logs':len(offered),'committed_batches':len(producer),'acked_batches':len(acked),'encoded_batch_bytes':sum(len(bytes.fromhex(p['hex'])) for p in producer),
+            'profile':profile_name,'spool_capacity_bytes':spool_bytes,
+            'eligible_successor_transitions':len(transitions),'committed_before_previous_ack':overlapped,
             'source_logical_bytes':logical_bytes,'node_cpu_seconds':cpu_s,'node_cpu_seconds_per_logical_mib':cpu_s/(logical_bytes/2**20),
             'node_wall_seconds':finished['wall_ns']/1e9,'query_verdicts':verdicts,
             'spool_to_ack':summary(spool_ack),'observation_to_ack':summary(observation_ack),'observation_to_spool':summary(observation_spool),
             'ack_to_queryable_upper_bound':summary(ack_visibility),'cycle':summary(cycle),'negative_controls':negative,
             'wall_monotonic_offset_range_ns':max(clock_offsets)-min(clock_offsets) if clock_offsets else None,'fixed_ack_relay_delay_ms':50,
             'no_p99_or_capacity_claim':True,'service_cgroups':cgroups.snapshot(parent)}
-        for name,value in [('source.json',offered),('requests.json',request_events),('query-pages.json',answers),('queries.json',queries),('visibility-first-seen.json',first_seen),('result.json',result)]:dump(out/name,value)
+        if profile_name=='backlog':
+            result['resource_observations']={'samples':len(resource_samples),
+                'sampled_spool_peak_file_bytes':max((s['spool_file_bytes'] for s in resource_samples),default=0),
+                'rss_sampled_peak_bytes':{name:max((s['services'][name].get('VmRSS',0) for s in resource_samples),default=0) for name in groups},
+                'final_io_stat':{name:(group/'io.stat').read_text().strip() for name,group in groups.items()},
+                'collection_errors':[e for e in events if e['event']=='collection_error'],
+                'delivery_errors':[e for e in events if e['event']=='delivery_error'],
+                'request_status_counts':{str(status):sum(e['status']==status for e in request_events) for status in {e['status'] for e in request_events}},
+                'normal_request_retries':len(request_events)-len(producer),
+                'accepted_logical_bytes':logical_bytes,'accepted_encoded_batch_bytes':result['encoded_batch_bytes'],
+                'byte_refusal_measurement':'not separately instrumented; collection errors and request statuses retained'}
+        for name,value in [('source.json',offered),('requests.json',request_events),('query-pages.json',answers),('queries.json',queries),('visibility-first-seen.json',first_seen),('result.json',result)]:
+            if profile_name=='backlog' and name in ('source.json','query-pages.json','visibility-first-seen.json'):
+                with gzip.open(out/(name+'.gz'),'wt') as stream:stream.write(json.dumps(value,indent=2)+'\n')
+            else:dump(out/name,value)
         for name in ('producer.jsonl','recovered.jsonl'):
             with (work/name).open('rb') as src,gzip.open(out/(name+'.gz'),'wb') as dst:shutil.copyfileobj(src,dst)
         return result
     finally:
+        resource_stop.set()
+        if resource_thread:resource_thread.join(timeout=5)
         visibility_stop.set()
         if visibility_thread:visibility_thread.join(timeout=10)
         for p in kids:
@@ -277,6 +341,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--stage',choices=('freeze','pair'),required=True);parser.add_argument('--out',type=Path,required=True)
     parser.add_argument('--freeze',type=Path);parser.add_argument('--seconds',type=int,default=300)
+    parser.add_argument('--profile',choices=('lightpilot','backlog'),default='lightpilot')
     args=parser.parse_args();require_limits()
     if not 1<=args.seconds<=900:parser.error('seconds must be1..900')
     if args.stage=='pair' and args.freeze is None:parser.error('pair requires --freeze')
@@ -296,11 +361,13 @@ def main():
                 path.chmod(0o700)
             parent=cgroups.delegate();results=[]
             for mode in ('serial','overlap'):
-                results.append(trial(work/mode,out/mode,mode,bins,parent,deadline));dump(out/'results.json',results)
+                results.append(trial(work/mode,out/mode,mode,bins,parent,deadline,args.profile));dump(out/'results.json',results)
             dump(out/'freeze-reference.json',receipt)
             dump(out/'execution-driver.json',{'path':str(Path(__file__).relative_to(ROOT)),'sha256':sha(Path(__file__))})
             baseline,candidate=results
             dump(out/'comparison.json',{'single_pair_screen_only':True,
+                'profile':args.profile,
+                'mechanism_status':('exposed' if candidate['committed_before_previous_ack'] else 'inconclusive_no_prepared_successor') if args.profile=='backlog' else 'low_demand_screen',
                 'observation_ack_median_ratio':candidate['observation_to_ack']['median_ms']/baseline['observation_to_ack']['median_ms'],
                 'node_cpu_per_logical_mib_ratio':candidate['node_cpu_seconds_per_logical_mib']/baseline['node_cpu_seconds_per_logical_mib'],
                 'both_exact_and_fully_acked':True,'no_p99_capacity_or_nomination_claim':True})
