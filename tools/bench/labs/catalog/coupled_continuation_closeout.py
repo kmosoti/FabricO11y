@@ -1,5 +1,6 @@
 """Readback, documentation and cleanup receipts for the continued experiments."""
 import ast
+import argparse
 import gzip
 import hashlib
 import json
@@ -98,11 +99,43 @@ def small_acceptance_bins():
     return result
 
 
+def provenance_context():
+    source_protocol = ROOT / 'docs/experiments/benchmarks/coupled-reclamation-protocol.md'
+    source_freeze = DATA / 'catalog-overlap-freeze-01/freeze.json'
+    targets = [(source_freeze, COORD / 'catalog-coupled-reclaim-01/data/catalog-overlap-freeze-01/freeze.json'),
+               (source_freeze, COORD / 'catalog-coupled-reclaim-02/data/catalog-overlap-freeze-01/freeze.json'),
+               (source_protocol, COORD / 'catalog-coupled-reclaim-02/coupled-reclamation-protocol.md')]
+    result = []
+    for source, target in targets:
+        if source.is_symlink() or target.is_symlink():
+            raise RuntimeError('linked context provenance')
+        raw = source.read_bytes()
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.exists():
+            if target.read_bytes() != raw:
+                raise RuntimeError('conflicting context provenance')
+        else:
+            with target.open('xb') as stream:
+                stream.write(raw)
+                stream.flush()
+                os.fsync(stream.fileno())
+        if target.read_bytes() != raw:
+            raise RuntimeError('context provenance copy drift')
+        result.append({'source': str(source.relative_to(ROOT)), 'target': str(target.relative_to(ROOT)),
+                       'sha256': hashlib.sha256(raw).hexdigest(), 'bytes': len(raw), 'exact_readback': True})
+    return result
+
+
 def main():
     require_limits()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--id', choices=(ID, 'catalog-coupled-continuation-closeout-02'), default=ID)
+    args = parser.parse_args()
+    job_id = args.id
     coupled_admit.observe(2 * 1024**2, 0)
-    out = DATA / ID
+    out = DATA / job_id
     out.mkdir(exist_ok=False)
+    context = provenance_context() if job_id.endswith('-02') else []
     negative_control = control()
     states = {}
     manifests = sorted(COORD.glob('catalog-coupled-reclaim-*/transformations.jsonl'))
@@ -132,7 +165,7 @@ def main():
     outer_dir.mkdir(exist_ok=True)
     for path in COORD.glob('*/receipt.json'):
         row = json.loads(path.read_text())
-        if row['started_unix_ns'] < start or row['id'] == ID:
+        if row['started_unix_ns'] < start or row['id'] == job_id:
             continue
         if row['state'] == 'running':
             raise RuntimeError('prior continuation job still running')
@@ -170,9 +203,10 @@ def main():
         ast.parse(path.read_text(), filename=str(path))
         syntax.append(str(path.relative_to(ROOT)))
     command = [sys.executable, '-B', 'tools/bench/labs/completion/checks.py',
-               '--profile', 'documentation', '--id', ID]
+               '--profile', 'documentation', '--id', job_id]
     status = subprocess.run(command).returncode
     result = {'transformation_readbacks': len(states), 'readback_control': negative_control,
+              'provenance_context_copies': context,
               'manifests': [str(path.relative_to(ROOT)) for path in manifests], 'syntax_checked': syntax,
               'command': command, 'documentation_exit': status,
               'continuation_jobs': runs, 'owned_scratch_absent': True,
