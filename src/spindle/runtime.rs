@@ -538,7 +538,165 @@ pub struct DeliveryReport {
     pub error: Option<String>,
 }
 
+/// One experimental send and at most one durably prepared successor.
+pub struct OverlapReport {
+    pub delivery: DeliveryReport,
+    pub prepared: Option<Cycle>,
+    /// Wall-clock sample immediately after successful durable collection, before
+    /// joining the request worker; not the marker syscall's exact finish time.
+    pub prepared_unix_ns: Option<u64>,
+    pub collection_error: Option<String>,
+}
+
 impl Spindle {
+    /// Experimental logs/metrics overlap. The caller owns scheduling/config polls;
+    /// this call sends only the oldest unacknowledged Batch and joins its worker
+    /// before processing ACK or returning. It never sends the prepared successor.
+    #[doc(hidden)]
+    pub fn deliver_with_one_prepared(
+        &mut self,
+        until: std::time::Instant,
+        include_metrics: bool,
+        stop: &std::sync::atomic::AtomicBool,
+        on_attempt: impl FnMut(&Attempt),
+    ) -> io::Result<OverlapReport> {
+        if self.config.traces_listen.is_some() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "overlap is scoped to logs/metrics without a trace listener",
+            ));
+        }
+        let Some(sender) = self.sender.take() else {
+            return Ok(OverlapReport {
+                delivery: DeliveryReport {
+                    sent: 0,
+                    acked_through: self.journal.acked_through(),
+                    caught_up: true,
+                    error: None,
+                },
+                prepared: None,
+                prepared_unix_ns: None,
+                collection_error: None,
+            });
+        };
+        let result = self.overlap_attempt(until, include_metrics, stop, on_attempt, |bytes| {
+            sender.send(bytes)
+        });
+        self.sender = Some(sender);
+        result
+    }
+
+    fn overlap_attempt(
+        &mut self,
+        until: std::time::Instant,
+        include_metrics: bool,
+        stop: &std::sync::atomic::AtomicBool,
+        mut on_attempt: impl FnMut(&Attempt),
+        send: impl FnOnce(&[u8]) -> Delivery + Send,
+    ) -> io::Result<OverlapReport> {
+        use std::sync::atomic::Ordering;
+        let mut report = OverlapReport {
+            delivery: DeliveryReport {
+                sent: 0,
+                acked_through: self.journal.acked_through(),
+                caught_up: false,
+                error: None,
+            },
+            prepared: None,
+            prepared_unix_ns: None,
+            collection_error: None,
+        };
+        if stop.load(Ordering::SeqCst) || std::time::Instant::now() >= until {
+            return Ok(report);
+        }
+        let Some((sequence, bytes)) = self.journal.next_unacked()? else {
+            report.delivery.caught_up = true;
+            return Ok(report);
+        };
+        let length = bytes.len();
+        let sha256: String = sha2::Sha256::digest(&bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        let started = std::time::Instant::now();
+        let wait = self.meter.take(length);
+        if !wait.is_zero() {
+            let now = std::time::Instant::now();
+            if now + wait > until {
+                self.meter.untake(length);
+                std::thread::sleep(until.saturating_duration_since(now));
+                return Ok(report);
+            }
+            std::thread::sleep(wait);
+        }
+        if stop.load(Ordering::SeqCst) {
+            self.meter.untake(length);
+            return Ok(report);
+        }
+        // A retry/backlog with an already durable N+1 must never prepare N+2.
+        let prior_last = self.journal.next_sequence() - 1;
+        let prepare = prior_last == sequence;
+        let (outcome, elapsed_us) = std::thread::scope(|scope| {
+            let worker = scope.spawn(move || {
+                let outcome = send(&bytes);
+                (outcome, started.elapsed().as_micros() as u64)
+            });
+            if prepare && !stop.load(Ordering::SeqCst) {
+                match self.collect(include_metrics) {
+                    Ok(cycle) => {
+                        if cycle.is_some() {
+                            report.prepared_unix_ns = now_ns().ok();
+                        }
+                        report.prepared = cycle;
+                    }
+                    Err(error) => report.collection_error = Some(error.to_string()),
+                }
+            }
+            worker
+                .join()
+                .map_err(|_| io::Error::other("overlap send worker panicked"))
+        })?;
+        report.delivery.sent = 1;
+        on_attempt(&Attempt {
+            sequence,
+            sha256,
+            outcome: outcome.clone(),
+            elapsed_us,
+        });
+        match outcome {
+            Delivery::Ack(through) if through > prior_last => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "server acknowledged beyond the pre-attempt durable sequence",
+                ));
+            }
+            Delivery::Ack(through) if through >= sequence => {
+                self.journal.record_ack(through)?;
+                self.meter.record_delivery(length);
+                report.delivery.acked_through = through;
+            }
+            Delivery::Ack(through) => {
+                report.delivery.error = Some(format!(
+                    "server acknowledged {through}, below sent sequence {sequence}"
+                ))
+            }
+            Delivery::Conflict(through) => {
+                report.delivery.error = Some(format!(
+                    "server holds different bytes for sequence {sequence} (committed through {through}); delivery stopped"
+                ))
+            }
+            Delivery::Gap(through) => {
+                report.delivery.error = Some(format!(
+                    "server committed only through {through}, below this node's acknowledged {}; delivery stopped",
+                    self.journal.acked_through()
+                ))
+            }
+            Delivery::Rejected(why) | Delivery::Retry(why) => report.delivery.error = Some(why),
+        }
+        report.delivery.caught_up = self.journal.next_unacked()?.is_none();
+        Ok(report)
+    }
+
     pub fn open(config: Config) -> io::Result<Self> {
         Self::open_with_paths(config, Paths::default())
     }
@@ -1161,6 +1319,10 @@ pub fn inspect(config: &Config) -> io::Result<Report> {
         log_backlog_bytes,
     })
 }
+
+#[cfg(test)]
+#[path = "overlap_tests.rs"]
+mod overlap_tests;
 
 #[cfg(test)]
 mod tests {
