@@ -1,10 +1,10 @@
 {
   "campaign": "coupled-cost-correctness",
-  "state": "admitted_work_closed_remaining_cells_resource_deferred",
+  "state": "continuation_native_screens_complete_c5_resource_deferred",
   "execution_authorized_by_this_plan": true,
   "plan": "coupled-labs-plan.md",
   "resource_envelope": "existing frontier remainder; no renewed budget",
-  "last_recorded_used_seconds": 10611.680442639059,
+  "last_recorded_used_seconds": 11054.90907455406,
   "total_frontier_seconds": 14400,
   "admission": "root only; one cgroup workload at a time; recheck stage/time/disk budgets",
   "jobs": [
@@ -98,7 +98,7 @@
         "frozen service profile"
       ],
       "packet": "coupled-labs-capacity.md",
-      "next_action": "A new preservation design or scoped evidence allocation must precede the queued noquery/grid/holdout service cells.",
+      "next_action": "Full-state failure preservation bound still missing within20MiB; fix absolute deadline, HTTPS readiness, gate clocks and early-failure replay retention before any new admission.",
       "previous_result": {
         "state": "deferred",
         "outcome": "not run",
@@ -111,8 +111,8 @@
       "id": "O8",
       "lab": "operations",
       "aim": "Depth-one collection preparation overlap",
-      "state": "recorded",
-      "outcome": "light_load_pilot_complete_no_nomination_larger_cells_deferred",
+      "state": "reviewed",
+      "outcome": "backlog_and_small_screens_exact_no_nomination_observer_cost_unresolved",
       "depends_on": [
         "O6",
         "O7"
@@ -123,20 +123,20 @@
         "frozen service profile"
       ],
       "packet": "coupled-labs-operations.md",
-      "next_action": "Register bounded preloaded-backlog discriminator, then consider20node small profile; remaining evidence allocation does not admit more nativecells now.",
+      "next_action": "Closed finite dev/backlog/small screens without promotion; register observer-cost ablation before interpreting CPU efficiency or increasing demand.",
       "previous_result": {
         "state": "deferred",
         "outcome": "not run",
         "result": null,
         "next_action": "Implement/test main-owned Spool with one immutable network request and at most one next durable Batch before timing."
       },
-      "result": "Six corrected controls;pair1-04 exact250logs perarm,151/153ACKedBatches,6full chains. MedianACK67.33/67.75ms;CPU+1.94%;only2/152successors actuallyoverlapped. Three harness failures preserved."
+      "result": "Original light pilot plus backlog512logs/arm and20-node25000logs/arm exact custody and6fullchains per pair. Backlog median248.323/276.267ms;small86.445/87.035ms. Actualprepared2/3 and35/3015. CPUincludesprobeinspection;about63percent small CPUobserved during quiet tail."
     }
   ],
   "global_blocks": [
-    "C5 native grid exceeds measured evidence admission; no additional allocation granted.",
-    "O8 low-load pilot scarcely exercises preparation overlap; no small-profile or capacity conclusion.",
-    "All17 fast gates plus manual documentation/resource audit passed; historical768MiB capacity and C2 failures remain.",
+    "C5 full native grid lacks an admitted arbitrary-state preservation bound and reviewed lifecycle deadlines.",
+    "O8 finite screens complete without nomination; repeated Spool inspection confounds interpretation of node CPU.",
+    "Historical failures remain recorded; prior17fastgates apply to their revision; continuation closeout02 readbacks/manualdocs/syntax/cleanup passed.",
     "No production-default promotion or deployment qualification."
   ],
   "preparation_validation": {
@@ -206,5 +206,64 @@
     "aggregate_allocated_snapshot_bytes": 1893703680,
     "aggregate_incremental_cap_bytes": 1894879232,
     "remaining_cells": "C5 six nativecells; O8 small/backlogged follow-up notrun"
+  },
+  "continuation": {
+    "reclaim01": {
+      "exit": 1,
+      "elapsed_s": 180.9052925510041,
+      "reason": "180second deadline;1241completed transformations preserved"
+    },
+    "reclaim02": {
+      "exit": 0,
+      "elapsed_s": 19.105879584007198
+    },
+    "aggregate_net_reclaimed_bytes": 123678720,
+    "backlog": {
+      "job": "catalog-overlap-backlog-pair1-01",
+      "exit": 0,
+      "elapsed_s": 48.10987952002324
+    },
+    "small": {
+      "job": "catalog-overlap-small-pair1-01",
+      "exit": 0,
+      "elapsed_s": 60.433940974005964
+    },
+    "cleanup": {
+      "job": "catalog-coupled-continuation-cleanup-01",
+      "exit": 0,
+      "elapsed_s": 20.518892099004006
+    },
+    "closeout": {
+      "job": "catalog-coupled-continuation-closeout-02",
+      "exit": 0,
+      "elapsed_s": 31.53805239900248,
+      "transformation_readbacks": 1241,
+      "manual_documentation_exit": 0,
+      "owned_failed_scratch_preserved_and_removed": true,
+      "no_rust_changed": true,
+      "aggregate_allocated_snapshot_bytes": 1795559424,
+      "capacity_allocated_snapshot_bytes": 746004480,
+      "query_upper_allocated_snapshot_bytes": 1049554944
+    },
+    "closeout01": {
+      "exit": 1,
+      "elapsed_s": 31.069274221983505,
+      "transformations_read_back": 1241,
+      "reason": "Archived protocol relative links; checker probes/hooks passed"
+    },
+    "cleanup02": {
+      "exit": 1,
+      "elapsed_s": 15.013891997979954,
+      "reason": "Duplicate runtime archive did not fit; no deletion"
+    },
+    "bun_reference": {
+      "exit": 0,
+      "elapsed_s": 16.014815956994426,
+      "scope": "Exact preserved historical archive member, durable reference, owned scratch removed"
+    },
+    "cleanup03": {
+      "exit": 0,
+      "elapsed_s": 20.518712610995863
+    }
   }
 }

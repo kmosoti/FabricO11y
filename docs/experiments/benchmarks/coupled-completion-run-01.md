@@ -187,3 +187,130 @@ that fits measured failure costs is needed before restarting them. The tested
 working tree passes all17 fast gates; no release or deployment qualification is
 claimed. See the final [audit](data/catalog-coupled-completion-closeout-01/result.json)
 and [queue](coupled-lab-queue.json).
+
+## Continuation
+
+Owner requested continuation. Three existing labs prepared a lossless evidence
+reclamation, a backlog discriminator and a small-profile pair. Root reviewed,
+registered and serialized execution; lab agents did not run competing workloads.
+[Reclamation registration](coupled-reclamation-protocol.md), its
+[retry](coupled-reclamation-retry-protocol.md), and the
+[backlog](coupled-overlap-backlog-protocol.md)/[small](coupled-overlap-small-protocol.md)
+fixtures preceded their respective execution. Aggregate/query/capacity ceilings
+and the14400-second frontier were not increased.
+
+`resource_group.py -> coupled_reclaim.py` reclaim01 exited1 at180.905seconds,
+after147 exact diff and1094 decoded-gzip hardlink replacements. All1241 had
+matching durable prepared/replaced receipts. The timeout remains failed.
+Reclaim02 exited0 in19.106seconds, found no additional replacements necessary,
+and finished the inventory. Every path remains; gzip representation changes have
+old/new compressed hashes and exact decoded comparisons. Changed payload,
+truncated gzip, missing canonical and symlink controls rejected. Frozen binaries
+and failure archives were not compacted. Net allocated aggregate savings between
+reclaim01's before and reclaim02's after snapshots were123678720bytes
+(117.95MiB), including transformation-receipt overhead. Capacity saved101089280
+bytes; conservatively assigned query/coordination saved22589440. Later experiment
+receipts consume headroom again. Historical overages retain their original result.
+
+Both new native commands used the existing frozen node/server/dump binaries,
+actual HTTPS delivery, delayed ACK relay, real Spools and recovered raw custody.
+Both exact source sets were fully ACKed with no normal-trial retries; original
+query oracle graded six complete chains per pair and rejected omissions and
+duplicate rows. Source, producer/recovery, requests, query pages, clocks, CPU,
+memory/events, IO and sampled RSS/Spool sizes are retained.
+
+| Fixture, serial / overlap | Backlog pair | Small pair |
+| --- | ---: | ---: |
+| Logs per arm |512 /512|25000 /25000 across20nodes|
+| ACKed Batches |4 /4|3031 /3035|
+| Source-to-ACK median |248.323 /276.267ms|86.445 /87.035ms|
+| Post-Spool-to-ACK median |72.889 /115.669ms|74.983 /75.527ms|
+| Actually prepared before prior ACK |0/3 /2/3|0/3011 /35/3015|
+| Instrumented node CPU |4.145 /4.214s|54.055 /53.911s across20nodes|
+
+Backlog execution `catalog-overlap-backlog-pair1-01` exited0 in48.110seconds,
+parent cgroup peak218.9MiB. Small execution `catalog-overlap-small-pair1-01`
+exited0 in60.434seconds, parent peak615.8MiB. No swap/OOM was observed. Service
+maxima remained384MiB/server64MiB/node for backlog and3GiB/server256MiB/node
+for small, beneath the20GiB parent. Small sampled server RSS was42.20/41.40MiB;
+its service cgroup peaks57.46/56.46MiB are a different metric. Small offered
+1000/3000/1000logs/s for three5-second phases, then quiet drain. This is an exact
+fixed-demand screen, not sustained capacity. Timestamp-derived Spool/ACK
+acceptance bins are retained separately in the new closeout, including metrics
+Batches and before/after offer windows.
+
+There is a useful causal distinction: backlog source-to-Spool median fell from
+170.160 to64.131ms while source-to-ACK worsened. Earlier durable preparation
+creates an earlier queued successor; it does not by itself accelerate the later
+send. The small pair scarcely exercised preparation (1.16% of transitions).
+Neither median ACK result supports promotion; one pair cannot establish a stable
+regression or speedup. CPU measures the instrumented example. It calls
+`Spool::inspect` every loop, decoding/validating retained frames before discarding
+already-recorded sequences, then sleeps5ms. Actual small resource samples put
+34.11/34.31 node CPU-seconds in the final approximately4.2 quiet seconds,
+about63% of totals. Repeated inspection is a plausible major cause; attributing
+all quiet CPU to it requires ablation. Synchronous ledger hex rendering is also
+on the critical path. A separately registered observer-cost ablation is the
+highest-information follow-up before another demand increase.
+
+All60 small visibility sentinels were seen. Their maximum ACK-to-observed-visible
+upper bounds were3.551/3.551seconds;60 round-robin polls spaced at least50ms plus
+request time naturally produce a roughly3-second revisit interval. These bounds
+do not measure actual server visibility latency or visibility of every unpolled
+row. Backlog covered all512 records and had negative differences where query
+visibility preceded the deliberately delayed ACK. No30-second freshness promise
+or alpha qualification follows.
+
+`catalog-coupled-continuation-cleanup-01` exited0 in20.519seconds, preserving and
+byte-verifying reclaim01's retained launcher scratch before deletion. Its inner
+control scratch was already removed by the failed helper. Both native pairs
+removed their owned scratch after grading; no remote workload ran. C5 review
+remains read-only: [full-state preservation and lifecycle findings](coupled-c5-preservation-review.md).
+Its no-query control, four query grid cells and32MiB holdout remain unrun;
+reclaimed duplicate objects do not establish the original20MiB preservation
+bound. C4/Q4 remain closed at their historical outcomes. New independent
+transformation readbacks, manual docs, syntax, launcher receipts and inventory
+ran in `catalog-coupled-continuation-closeout-01`: exit1 in31.069seconds.
+All1241 readbacks and changed-hash control succeeded; archived byte-exact
+protocol copies had two broken relative links. Checker probes and hook tests
+passed. [Closeout retry registration](coupled-continuation-closeout-retry-protocol.md)
+preserves those source copies and adds exact context files, with no check waiver.
+
+Cleanup02 exited1 in15.014seconds before any deletion: rearchiving the failed
+audit's79.5MB Bun runtime exceeded prospective query evidence room. The exact
+runtime was already preserved in a historical failure archive. A
+[new reference-preservation registration](coupled-bun-reference-preservation-protocol.md)
+preceded `catalog-coupled-bun-preserve-01`, exit0 in16.015seconds. It rejected
+changed-source/missing-member controls, verified full archive and payload hashes,
+compared all source/member bytes, persisted a complete source-manifest reference,
+rechecked originals and inactivity, then removed the owned failure root. This
+avoids duplicating the same runtime; unknown failure bytes are not excluded.
+Cleanup03 preserves cleanup02's own retained scratch. Closeout02 independently
+checks the canonical runtime archive/reference alongside transformations and
+reruns documentation. Original failed receipts and manual-check receipts remain;
+closeout02 subsequently exited0 in31.538seconds. All1241 transformation
+readbacks, canonical archive/member/source-manifest verification, changed-hash
+control, Python syntax and manual documentation/checker-probe/hook checks
+succeeded. Its nine preceding continuation jobs were terminal, inactive, and
+their owned scratch removed with preservation checks. Its own launcher receipt
+also reports temporary removal and no retained failure root. No automatic Bun
+hook or CI was enabled. The protocol-context copies retain exact original bytes.
+
+Timestamp-derived small acceptance bins in the
+[final readback report](data/catalog-coupled-continuation-closeout-02/result.json)
+separate Spool commit from client ACK. The5–10s peak slices recorded202.0/202.6
+durable Batches/s and202.0/206.6ACKed Batches/s serial/overlap; associated log
+ACK rates were2999/3020rows/s. Overlap's boundary spillover accounts for the
+apparent rate above3000, while all totals remain25000. These are finite slice
+averages with metrics Batches included, not sustainable throughput. All raw
+clocks remain available for a different retrospective slice.
+
+Final helper inventory before its last receipt/log blocks: aggregate1795559424
+allocated bytes below1894879232, capacity746004480 below872415232, and query
+upper1049554944 below1073741824. Later admission output measured aggregate
+1795579904/query1049575424. Capacity remains the same. The frontier now records
+11054.909seconds consumed of14400 (3345.091remaining); no budget was reset.
+These are current snapshots, not historical capacity recertification. C5's
+full failed-state preservation and lifecycle prerequisites remain unresolved;
+the original six service cells were not executed. This final receipt/status
+entry follows the successful documentation run; no new implementation followed.
