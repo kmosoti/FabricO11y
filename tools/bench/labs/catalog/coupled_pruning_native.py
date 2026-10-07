@@ -67,6 +67,8 @@ def check(report, expected):
                         'footer_admitted_rows':sum(len(g['rows']) for g in groups if g['id'] in admitted)})
     if not any(d['matched_rows']==0 for d in details) or not any(d['matched_rows']==1100 for d in details):
         raise ValueError('empty/broad coverage absent')
+    if not any(d['matched_rows']==0 and d['footer_admitted_rows']>0 for d in details):
+        raise ValueError('empty false-positive admission fixture missing')
     if not any(groups[i]['rows'][-1]['time']==groups[i+1]['rows'][0]['time'] for i in range(len(groups)-1)):
         raise ValueError('tied boundary fixture missing')
     return details
@@ -95,7 +97,7 @@ def compress(src,dst):
     return {'original_sha256':sha(src),'gzip_sha256':sha(dst),'original_bytes':src.stat().st_size,'gzip_bytes':dst.stat().st_size}
 
 def main():
-    require_limits();parser=argparse.ArgumentParser();parser.add_argument('--bin',type=Path,required=True);parser.add_argument('--out',type=Path,required=True)
+    require_limits();parser=argparse.ArgumentParser();parser.add_argument('--bin',type=Path,required=True);parser.add_argument('--out',type=Path,required=True);parser.add_argument('--run-mib',type=int,choices=[8,16,32],default=16)
     args=parser.parse_args();binary=args.bin.resolve(strict=True);args.out.mkdir(parents=True,exist_ok=False)
     base=Path(os.environ['FABRIC_SCRATCH_ROOT']).resolve(strict=True)
     if not base.is_relative_to(STORAGE/'scratch'):raise RuntimeError('owned data-drive scratch required')
@@ -117,7 +119,7 @@ def main():
     if child.returncode:raise RuntimeError('native child exit '+str(child.returncode))
     native_elapsed=time.monotonic()-started
     report=json.loads((args.out/'native.json').read_text());records,bodies=grader.decode_records(trial/'records.jsonl')
-    if len(records)!=35 or len(bodies)!=1100 or any(len(b)!=16384 for b in bodies) or report['fixture']['run_mib_selector']!='16':raise RuntimeError('fixture drift')
+    if len(records)!=35 or len(bodies)!=1100 or any(len(b)!=16384 for b in bodies) or report['fixture']['run_mib_selector']!=str(args.run_mib):raise RuntimeError('fixture drift')
     expected=producer_rows(records);details=check(report,expected);negative=controls(report,expected)
     verdicts=[];archives={}
     archives['records.jsonl']=compress(trial/'records.jsonl',args.out/'records.jsonl.gz')

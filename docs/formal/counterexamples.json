@@ -193,6 +193,18 @@
         "test": "a_boundary_never_sits_at_the_page_start"
       },
       "fix_commit": "bf74770"
+    },
+    {
+      "id": "CX-RAW-TABLE-COMPLETE",
+      "origin": "catalog-coupled-o6-raw-red-01; docs/experiments/benchmarks/coupled-availability-decision.md",
+      "defect": "Deleting retained batches.parquet left projected queries complete despite lost raw custody",
+      "seed_or_trace": "fixture seed7, eight Groups; remove only batches.parquet after verifying intact Segment; 48 log rows survive but completeness must be false",
+      "contract": "HIST-3",
+      "reproducer": {
+        "file": "crates/fabric-server/tests/completion_storage.rs",
+        "test": "missing_raw_batches_preserve_projection_rows_but_mark_incomplete"
+      },
+      "fix_commit": "73447a2"
     }
   ]
 }
