@@ -1,0 +1,210 @@
+{
+  "campaign": "coupled-cost-correctness",
+  "state": "admitted_work_closed_remaining_cells_resource_deferred",
+  "execution_authorized_by_this_plan": true,
+  "plan": "coupled-labs-plan.md",
+  "resource_envelope": "existing frontier remainder; no renewed budget",
+  "last_recorded_used_seconds": 10611.680442639059,
+  "total_frontier_seconds": 14400,
+  "admission": "root only; one cgroup workload at a time; recheck stage/time/disk budgets",
+  "jobs": [
+    {
+      "id": "O6",
+      "lab": "operations",
+      "aim": "Projection availability and answer envelopes",
+      "state": "recorded",
+      "outcome": "scoped_controls_passed_product_bug_fixed",
+      "depends_on": [],
+      "admission_requirements": [
+        "source-grounded semantics decision",
+        "scope and separate registration for any oracle/contract change"
+      ],
+      "packet": "coupled-labs-operations.md",
+      "result": "Raw loss reproduced complete=true;73447a2 fixes raw footer/presence checks. Companion9tests;6partial+6rawmissing+24integrity chains;missinggap/Manifest selected controls passed. Original oracle unchanged.",
+      "next_action": "Broader corruption/recovery remains outside finite companion scope; full fast now passed.",
+      "previous_result": {
+        "state": "recorded",
+        "outcome": "failed",
+        "result": "Unchanged missing-table test exit101; zero rows match but retained window/freshness/gaps disagree. Archived and cleaned; no contract/oracle change.",
+        "next_action": "Prepare explicit projection-availability mapping and independent companion checker; reproduce raw-table loss separately."
+      }
+    },
+    {
+      "id": "O7",
+      "lab": "operations",
+      "aim": "Logical exactness versus physical pruning equivalence",
+      "state": "recorded",
+      "outcome": "finite_soundness_and_variant_preservation_passed",
+      "depends_on": [],
+      "admission_requirements": [
+        "minimized C2 ledger",
+        "separate decision for any acceptance change"
+      ],
+      "packet": "coupled-labs-operations.md",
+      "result": "Final8/16/32MiB variants:42complete chains, equal manifest fileentries, conservative physicalbounds with empty false-positive window. HistoricalC2 unchanged; no queryIO claim.",
+      "next_action": "Actual IO/selectivity measurement is separate future research.",
+      "previous_result": {
+        "state": "recorded",
+        "outcome": "inconclusive",
+        "result": "Archived ledger diagnostic exit0; report identities and logical counts agree, original pruning gatefalse. Actual IO and bound soundness not established.",
+        "next_action": "Prepare native identity/bounds/actual-visit diagnostic; any prospective criterion change is separately scoped."
+      }
+    },
+    {
+      "id": "C4",
+      "lab": "capacity",
+      "aim": "Residual decode/validation cost after borrowing",
+      "state": "reviewed",
+      "outcome": "diagnostic_complete_observer_inconclusive",
+      "depends_on": [],
+      "admission_requirements": [
+        "prospective evidence allocation",
+        "observer calibration",
+        "registered executable diagnostic"
+      ],
+      "packet": "coupled-labs-capacity.md",
+      "result": "Run03 exit0: twelve children, 48 complete chains, 144 first-page associations. Borrowing saves21.3\u201321.5% empty /11.7\u201311.8% rich requested bytes; observer fails admission; no nomination. Compile failures01/02 preserved.",
+      "next_action": "Closed admitted diagnostic; no repetition required. Phase causality remains inconclusive."
+    },
+    {
+      "id": "Q4",
+      "lab": "query",
+      "aim": "Reusable bounded storage snapshots",
+      "state": "reviewed",
+      "outcome": "screen_complete_no_nomination",
+      "depends_on": [],
+      "admission_requirements": [
+        "lifecycle and coverage controls",
+        "bounded handle design",
+        "registered executable comparison"
+      ],
+      "packet": "coupled-labs-query.md",
+      "result": "Five final-frozen lifecycle controls; six children and48 exact chains. Single main plain pair CPU3.16% and wall0.91% lower; counted pair slower. No repeatability or promotion claim.",
+      "next_action": "Closed screen without nomination; no confirmation/adoption."
+    },
+    {
+      "id": "C5",
+      "lab": "capacity",
+      "aim": "Workers and run-size feasibility",
+      "state": "deferred",
+      "outcome": "service_grid_not_admitted_storage",
+      "depends_on": [
+        "O6",
+        "O7"
+      ],
+      "admission_requirements": [
+        "time/evidence admission",
+        "experiment-only byte-cap control",
+        "frozen service profile"
+      ],
+      "packet": "coupled-labs-capacity.md",
+      "next_action": "A new preservation design or scoped evidence allocation must precede the queued noquery/grid/holdout service cells.",
+      "previous_result": {
+        "state": "deferred",
+        "outcome": "not run",
+        "result": null,
+        "next_action": "Implement strict8/16/32MiB selector and controlled pending-journal service adapter before registering timing."
+      },
+      "result": "Selectors8/16/32 and archival/measurement controls passed. Exact300000inputlines require111083520allocated gzipbytes, exceeding20MiB assignment before seed/Spool/journals. Admission01 completed with admitted=false;no native child."
+    },
+    {
+      "id": "O8",
+      "lab": "operations",
+      "aim": "Depth-one collection preparation overlap",
+      "state": "recorded",
+      "outcome": "light_load_pilot_complete_no_nomination_larger_cells_deferred",
+      "depends_on": [
+        "O6",
+        "O7"
+      ],
+      "admission_requirements": [
+        "cursor/Spool ownership design",
+        "time/evidence admission",
+        "frozen service profile"
+      ],
+      "packet": "coupled-labs-operations.md",
+      "next_action": "Register bounded preloaded-backlog discriminator, then consider20node small profile; remaining evidence allocation does not admit more nativecells now.",
+      "previous_result": {
+        "state": "deferred",
+        "outcome": "not run",
+        "result": null,
+        "next_action": "Implement/test main-owned Spool with one immutable network request and at most one next durable Batch before timing."
+      },
+      "result": "Six corrected controls;pair1-04 exact250logs perarm,151/153ACKedBatches,6full chains. MedianACK67.33/67.75ms;CPU+1.94%;only2/152successors actuallyoverlapped. Three harness failures preserved."
+    }
+  ],
+  "global_blocks": [
+    "C5 native grid exceeds measured evidence admission; no additional allocation granted.",
+    "O8 low-load pilot scarcely exercises preparation overlap; no small-profile or capacity conclusion.",
+    "All17 fast gates plus manual documentation/resource audit passed; historical768MiB capacity and C2 failures remain.",
+    "No production-default promotion or deployment qualification."
+  ],
+  "preparation_validation": {
+    "job": "catalog-coupled-preparation-docs-01",
+    "exit": 0,
+    "elapsed_seconds": 16.0242717609799,
+    "scratch_removed": true,
+    "scope": "documentation links, checker probes and hook tests; no native experiment"
+  },
+  "authorization": "Owner: Launch the experiments. Concrete protocols registered separately before each workload.",
+  "closeout_validation": {
+    "fast": {
+      "job": "catalog-coupled-fast-01",
+      "exit": 1,
+      "reason": "existing missing-table failure plus new redundant iterator bound"
+    },
+    "clippy_correction": {
+      "job": "catalog-coupled-clippy-02",
+      "exit": 0
+    },
+    "selected_controls": {
+      "job": "catalog-coupled-q4-controls-03",
+      "exit": 0,
+      "tests": 5
+    },
+    "documentation": {
+      "job": "catalog-coupled-docs-01",
+      "exit": 0
+    },
+    "audit": {
+      "job": "catalog-coupled-audit-01",
+      "exit": 0,
+      "per_lab_certification": "inconclusive"
+    }
+  },
+  "completion_plan": "coupled-completion-plan.md",
+  "resource_readiness": {
+    "job": "catalog-coupled-readiness-audit-01",
+    "exit": 0,
+    "aggregate_allocated_bytes": 1772122112,
+    "query_upper_allocated_bytes": 925040640,
+    "capacity_assigned_allocated_bytes": 847081472,
+    "limitation": "snapshot; source/receipt overhead grows; no historical recertification"
+  },
+  "readiness_validation": {
+    "job": "catalog-coupled-readiness-docs-01",
+    "exit": 0,
+    "elapsed_seconds": 16.07199745098478,
+    "scratch_removed": true
+  },
+  "completion_run": "coupled-completion-run-01.md",
+  "completion_fast": {
+    "job": "catalog-coupled-completion-fast-02",
+    "exit": 0,
+    "elapsed_s": 255.93150061598863,
+    "all_fast_gates": 17,
+    "scratch_removed": true,
+    "prior_fast01": "failed; legacy raw fixture routing and Clippy; failure archived"
+  },
+  "completion_closeout": {
+    "job": "catalog-coupled-completion-closeout-01",
+    "exit": 0,
+    "elapsed_s": 27.53298721901956,
+    "scratch_removed": true,
+    "documentation_exit": 0,
+    "owned_failed_scratch_absent": true,
+    "aggregate_allocated_snapshot_bytes": 1893703680,
+    "aggregate_incremental_cap_bytes": 1894879232,
+    "remaining_cells": "C5 six nativecells; O8 small/backlogged follow-up notrun"
+  }
+}
