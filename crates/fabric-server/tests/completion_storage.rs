@@ -371,6 +371,93 @@ fn missing_raw_batches_preserve_projection_rows_but_mark_incomplete() {
 }
 
 #[test]
+fn raw_batch_table_integrity_failures_are_incomplete() {
+    for defect in ["truncated", "footer", "schema", "manifest_rows"] {
+        let s = Scratch::new(&format!("raw integrity {defect}; intact projection metadata and gaps"));
+        let state = s.0.join("state");
+        empty_journal(&state);
+        let groups = fixture(1, 8, 2_000_000);
+        segment::build(&state, 1, &groups).unwrap();
+        let dir = state.join("segments").join(segment::segment_name(1));
+        let mut manifest = segment::read_manifest(&dir).unwrap();
+        segment::verify(&dir, &manifest).unwrap();
+        let raw = dir.join("batches.parquet");
+        let original = fs::read(&raw).unwrap();
+        match defect {
+            "truncated" => { fs::write(&raw, &original[..original.len() - 1]).unwrap(); }
+            "footer" => {
+                let mut broken = original.clone();
+                let len = broken.len();
+                broken[len - 4..].copy_from_slice(b"FAIL");
+                fs::write(&raw, &broken).unwrap();
+                assert_eq!(fs::metadata(&raw).unwrap().len(), manifest.files["batches.parquet"].bytes);
+            }
+            "schema" => {
+                fs::copy(dir.join("metrics.parquet"), &raw).unwrap();
+                // Make size/hash/rows describe the actual replacement: schema alone is wrong.
+                let replacement = manifest.files["metrics.parquet"].clone();
+                manifest.files.insert("batches.parquet".into(), replacement);
+                fs::write(dir.join("manifest.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+            }
+            "manifest_rows" => {
+                manifest.files.get_mut("batches.parquet").unwrap().rows += 1;
+                fs::write(dir.join("manifest.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+            }
+            _ => unreachable!(),
+        }
+        fs::write(s.0.join("raw-integrity-cut.json"), json!({"defect":defect,"raw_before_bytes":original.len(),"raw_after_bytes":fs::metadata(&raw).unwrap().len()}).to_string()).unwrap();
+        for plan in [Plan::Scan, Plan::Walk] {
+            for q in [
+                json!({"kind":"logs","from_ns":0,"to_ns":u64::MAX/2,"limit":3}),
+                json!({"kind":"metrics","name":"system.network.receive.bytes","from_ns":0,"to_ns":u64::MAX/2,"limit":3}),
+                json!({"kind":"spans","from_ns":0,"to_ns":u64::MAX/2,"limit":3}),
+            ] {
+                let chain = pages(&History::with_plan(&state, plan), q.clone(), 32);
+                grade_projection(&s, &groups, &q, &chain, false, None);
+            }
+        }
+    }
+}
+
+#[test]
+fn missing_gap_table_is_incomplete_and_missing_manifest_is_source_error() {
+    for defect in ["gaps", "manifest"] {
+        let s = Scratch::new(&format!("missing {defect}; unambiguous source availability control"));
+        let state = s.0.join("state");
+        empty_journal(&state);
+        let groups = fixture(1, 8, 2_000_000);
+        segment::build(&state, 1, &groups).unwrap();
+        let dir = state.join("segments").join(segment::segment_name(1));
+        segment::verify(&dir, &segment::read_manifest(&dir).unwrap()).unwrap();
+        fs::remove_file(dir.join(if defect == "gaps" {"gaps.parquet"} else {"manifest.json"})).unwrap();
+        let mut observations = Vec::new();
+        for plan in [Plan::Scan, Plan::Walk] {
+            let q = json!({"kind":"logs","from_ns":0,"to_ns":u64::MAX/2,"limit":3});
+            let history = History::with_plan(&state, plan);
+            if defect == "gaps" {
+                let chain = pages(&history, q, 32);
+                for page in &chain {
+                    assert_eq!(page["complete"], false);
+                    assert!(!page["unavailable"].as_array().unwrap().is_empty());
+                }
+                observations.push(json!({"plan":format!("{plan:?}"),"pages":chain}));
+                // No companion grade: gaps evidence is outside its intact-gaps scope.
+            } else {
+                let parsed: Query = serde_json::from_value(q).unwrap();
+                match history.run(&parsed, 32) {
+                    Err(QueryError::Io(error)) => {
+                        assert_eq!(error.kind(), std::io::ErrorKind::Interrupted);
+                        observations.push(json!({"plan":format!("{plan:?}"),"error_kind":"Interrupted","error":error.to_string()}));
+                    }
+                    other => panic!("missing Manifest must remain a source error, got {other:?}"),
+                }
+            }
+        }
+        fs::write(s.0.join("source-error-controls.json"), json!({"defect":defect,"observations":observations}).to_string()).unwrap();
+    }
+}
+
+#[test]
 fn span_table_and_filter_write_and_sync_faults_keep_pending_custody() {
     let s = Scratch::new("owned span table/filter ENOSPC writes and sync");
     let lib = s.0.join("fault.so");
