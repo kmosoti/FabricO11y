@@ -971,6 +971,12 @@ pub fn scan_gaps(dir: &Path, manifest: &Manifest, mut visit: impl FnMut(GapRow))
     Ok(())
 }
 
+/// Check raw custody availability without decoding every Batch on each query.
+/// This checks file size, schema and footer row count, not page contents or hashes.
+pub(crate) fn check_raw_available(dir: &Path, manifest: &Manifest) -> io::Result<()> {
+    open_table(dir, manifest, "batches.parquet", &batches_schema()).map(|_| ())
+}
+
 /// Every record of a segment with its group, for server_dump and checks.
 pub fn scan_batches(
     dir: &Path,

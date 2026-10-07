@@ -720,6 +720,15 @@ impl History {
         }
         gaps.extend(journal_rows.gaps.iter().cloned());
         for (dir, manifest) in &sources.segments {
+            if let Err(e) = segment::check_raw_available(dir, manifest) {
+                if !dir.exists() {
+                    return Err(
+                        io::Error::new(io::ErrorKind::Interrupted, "segment removed").into(),
+                    );
+                }
+                unavailable
+                    .push(json!({"segment": manifest.journal_label, "error": e.to_string()}));
+            }
             received = (
                 received.0.min(manifest.received_min_ns),
                 received.1.max(manifest.received_max_ns),
