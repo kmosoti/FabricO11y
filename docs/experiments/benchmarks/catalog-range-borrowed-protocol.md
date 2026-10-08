@@ -69,6 +69,10 @@ The query stages boundary metadata until scanning succeeds and clones a label
 only on first insertion. No format, custody, integrity, retention or oracle
 semantics change. Independent known-value timestamp tests and unchanged
 snapshot-transition full-chain oracle tests run after the comparison.
+Preparation also compiles the workspace test artifacts with
+`cargo test --workspace --locked --offline --all-features --no-run`, so the final
+bounded verification job spends its deadline running the unchanged gates. This
+is recorded as a build only; no test success follows from `--no-run`.
 
 ## Decision and resources
 
