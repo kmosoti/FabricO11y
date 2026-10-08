@@ -23,7 +23,11 @@ Initial allocation was capacity/query/operations 256 MiB each, source retrieval
 192 MiB and coordination/build/verification 64 MiB. Prospectively reallocate
 128 MiB from query to operations after `prefix-load-03`: capacity 256 MiB,
 query 128 MiB, operations 384 MiB, source 192 MiB, coordination 64 MiB. The
-1 GiB aggregate is unchanged. That successful diagnostic used a 2 ms observer
+1 GiB aggregate is unchanged. A subsequent measurement repair reallocates
+32 MiB from completed source retrieval to capacity: capacity 288 MiB, query
+128 MiB, operations 384 MiB, source 160 MiB, coordination 64 MiB. Existing source
+evidence, including the failed download prefix, fits the reduced allowance.
+That successful diagnostic used a 2 ms observer
 instead of the registered 10 ms; preserve it and repeat the same 18 cells at
 10 ms. Its approximately 179 MiB retained evidence remains charged. Query must
 fit the smaller allowance or stop; do not truncate evidence. Record allocated and logical bytes;
@@ -99,6 +103,20 @@ dependency changes. Record its version/metadata and separate Python validation
 time from native process costs. Installation and retry share the existing
 900-second job allowance and unchanged evidence allocation.
 
+After `memory/census-02`, the parent decoder's resident memory confounded
+`wait4` peak RSS despite smaller post-exec `/proc` high-water samples. Replay
+the same six cells with PyArrow import and validation confined to a reaped
+subprocess and a lean native-spawning parent. Record parent RSS/high-water before
+each native spawn. Retain native CPU, wall, allocator and post-exec observations
+separately. The historical run remains valid for its allocator/semantic checks;
+its wait4 RSS is not a native-only peak claim. Reuse an existing fixture archive
+only after exact regular-file path, size and SHA-256 equality with the newly
+generated complete state. Preserve a reference receipt and leave the original
+archive untouched. A changed, missing or extra file must reject reuse and trigger
+full failed-state preservation. Reserve 48 MiB evidence for this replay under
+the amended capacity allowance; retain oversized failures in owned scratch and
+stop. No new Rust probe, production code or filter predicate is introduced.
+
 ## Query lab: bounded work census
 
 Build the existing `completion_query_probe` plain and with its existing
@@ -121,6 +139,21 @@ label OS cache state cold/warm without control. Complete-chain correctness is
 measured; plain query-only full-chain latency is unsupported. Per-case full
 state must fit 128 MiB, lab retained evidence 128 MiB. The 8192-row cell is queued
 but requires a separate admission decision after this bounded batch.
+
+Prospective follow-up after `query/census-01`: compare the existing compile-time
+borrowed-log experiment switch, explicitly 0 versus 1, crossed with plain versus
+counted binaries. Keep the registered 128/2048 records, 16/1024-byte bodies,
+seed 42, limit 64 and three repeats; balance the four-arm order across cells.
+Copy and hash all four executables; verify the reported switch and identical
+input provenance. This is 16 variants and 1024 complete oracle-graded chains,
+inside the existing 128 MiB query evidence cap and 1200-second job maximum.
+H1 predicts at least 1 MiB fewer requested allocation bytes in each matched
+2048-row/wide-body sealed selective measured query; H0 includes smaller savings
+or unchanged dominant decode work. Report plain CPU/time and adverse broad/tail
+cases without a prespecified speedup claim. Preserve all unchanged oracle and
+rejection controls, and run existing rejected-row corruption/type controls.
+This is an exploratory ablation of existing code, not a production-default
+change, fresh held-out confirmation or qualification.
 
 ## Operations lab: prefix reclamation under ingest
 
