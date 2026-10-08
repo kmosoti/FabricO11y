@@ -82,7 +82,12 @@ or claim complete M1/service qualification. Preserve full cell state under
 ## Query lab: bounded work census
 
 Build the existing `completion_query_probe` plain and with its existing
-allocation/phase features into separate data-drive target paths. Use shuffled
+allocation/phase features sequentially in the shared data-drive Cargo cache.
+Copy each executable to a distinct owned path before the next build; record
+both build commands, features, source identity and binary SHA-256, and execute
+only those frozen copies. This prospective clarification preserves dependency
+cache reuse without letting the second build replace the first measured binary.
+Use shuffled
 seed 42, 128 and 2048 records, exact 16 and 1024-byte bodies, limit 64 and three
 repeats. Alternate variant order. Each native variant emits 64 first-page
 measurements and 64 complete chains over Scan/Walk and tail/Segment layouts.
