@@ -19,8 +19,14 @@ reserve. Aggregate active scratch must remain within 8 GiB.
 
 New evidence root: `data/cross-system-run-01`. Its 1 GiB allocation is additive
 to the historical retained evidence, which remains inventoried separately.
-Allocate capacity/query/operations 256 MiB each, source retrieval 192 MiB and
-coordination/build/verification 64 MiB. Record allocated and logical bytes;
+Initial allocation was capacity/query/operations 256 MiB each, source retrieval
+192 MiB and coordination/build/verification 64 MiB. Prospectively reallocate
+128 MiB from query to operations after `prefix-load-03`: capacity 256 MiB,
+query 128 MiB, operations 384 MiB, source 192 MiB, coordination 64 MiB. The
+1 GiB aggregate is unchanged. That successful diagnostic used a 2 ms observer
+instead of the registered 10 ms; preserve it and repeat the same 18 cells at
+10 ms. Its approximately 179 MiB retained evidence remains charged. Query must
+fit the smaller allowance or stop; do not truncate evidence. Record allocated and logical bytes;
 reserve the entire failed-case state before native admission. Do not silently
 delete failure evidence to fit. Existing C5 has its own unresolved preservation
 scope and is not admitted by this protocol. Preserve exact archive readback
@@ -113,7 +119,7 @@ selected payload processing; H0 is no separable avoidable cost. Capture CPU,
 RSS, allocation, inclusive spans and artifact sizes; do not sum nested spans or
 label OS cache state cold/warm without control. Complete-chain correctness is
 measured; plain query-only full-chain latency is unsupported. Per-case full
-state must fit 128 MiB, lab retained evidence 256 MiB. The 8192-row cell is queued
+state must fit 128 MiB, lab retained evidence 128 MiB. The 8192-row cell is queued
 but requires a separate admission decision after this bounded batch.
 
 ## Operations lab: prefix reclamation under ingest
@@ -134,7 +140,8 @@ poll gives interval bounds, not exact checkpoint service times. Preserve exact
 Batch replay and idempotent retry; grade pre/post complete Scan/Walk query chains
 using the unchanged oracle. A separately selected artificial-delay diagnostic
 can establish scheduling only and cannot substitute for the natural-load result.
-State ≤64 MiB/cell, retained ≤16 MiB/cell and ≤256 MiB total; stop on divergence
+State ≤64 MiB/cell, retained ≤16 MiB/cell and ≤256 MiB per invocation, within
+the amended 384 MiB aggregate operations allocation; stop on divergence
 or overage and preserve the full failed state before cleanup.
 
 ## Decisions and continuation
