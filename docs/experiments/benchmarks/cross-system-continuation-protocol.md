@@ -154,6 +154,12 @@ cases without a prespecified speedup claim. Preserve all unchanged oracle and
 rejection controls, and run existing rejected-row corruption/type controls.
 This is an exploratory ablation of existing code, not a production-default
 change, fresh held-out confirmation or qualification.
+The [prior CR2 result](catalog-borrowed-log-findings.md) already established
+roughly 24.7% selective allocation savings at 65536 wide rows but failed its
+strict CPU/wall preservation guards and received no nomination. This follow-up
+characterizes the smaller 128/2048-row, 64-result-page regime exposed by the
+census. It neither rediscovers the mechanism nor replaces or relaxes CR2's
+acceptance criteria; its allocation-only prediction cannot nominate production.
 
 ## Operations lab: prefix reclamation under ingest
 
