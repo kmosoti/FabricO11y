@@ -64,7 +64,7 @@ def main():
         completed = [json.loads(p.read_text()) for p in DATA.glob('*/receipt.json')]
         consumed = sum(r.get('elapsed_s', 0) for r in completed)
         available = int(86400 - consumed)
-        stage_limit = {'preparation':3600,'capacity':7200,'query':7200,'recovery':7200,'signals':5400,'limits':5400,'soak':7500,'outage':9600,'lifecycle':15500,'installation':7200,'verification':3600}[args.stage]
+        stage_limit = {'preparation':3540,'capacity':7200,'query':7200,'recovery':7200,'signals':5400,'limits':5400,'soak':7500,'outage':9600,'lifecycle':15500,'installation':7200,'verification':3660}[args.stage]
         stage_used = sum(r.get('elapsed_s',0) for r in completed if r.get('stage')==args.stage)
         available = min(available, int(stage_limit-stage_used))
         if available <= 0:
