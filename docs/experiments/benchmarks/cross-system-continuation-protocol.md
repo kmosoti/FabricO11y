@@ -79,6 +79,20 @@ reservations are unsupported by this probe: do not invent a reservation metric
 or claim complete M1/service qualification. Preserve full cell state under
 128 MiB decoded/64 MiB archive, within the 256 MiB lab total; stop on overage.
 
+Prospective checker correction after `memory/census-01` failed: filter manifest
+`rows` counts physical groups, which ADR-0022 permits to differ under the byte
+cap. The failed comparison remains failed. Before retry, authenticate each
+file, compare its filter count with its own Parquet row groups, and reconstruct
+the exact filter bits independently from the actual row strings. Only after
+those checks may physical filter counts differ; logical rows, ordered custody,
+other manifest semantics and applicable file-byte comparisons stay mandatory.
+Run missing, misaligned and corrupted-filter rejection controls first. Use
+PyArrow 22.0.0 solely as an independent Parquet decoder, installed as a binary
+wheel into owned data-drive scratch and removed after the run; no production
+dependency changes. Record its version/metadata and separate Python validation
+time from native process costs. Installation and retry share the existing
+900-second job allowance and unchanged evidence allocation.
+
 ## Query lab: bounded work census
 
 Build the existing `completion_query_probe` plain and with its existing
