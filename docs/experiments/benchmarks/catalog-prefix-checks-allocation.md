@@ -23,3 +23,25 @@ receipts and any timeout. Do not loosen a test or omit a gate to meet the deadli
 The driver freezes this amendment alongside the original protocol in the new
 checks receipt. Existing baseline/candidate receipts retain their original
 resource and source identities.
+
+## Revised before the checks launch
+
+The candidate phase passed all eight sealer controls, then reached its deadline
+during the history target (six tests had completed successfully). Preserve this
+interrupted outcome and the launcher-owned failure tree for unit
+`fabric-work-e924e62f84504e13bd441be97ddf6718`; it is not a completed history run.
+
+Remaining frontier time is now approximately 366 seconds. Request 350 seconds
+for checks, retaining the 4040-second verification and 3160-second preparation
+caps above. Use the workspace's default test concurrency for the fast profile;
+the initial diagnostic forced one test thread. The cgroup still contains all
+descendants. No test, expected result or gate changes. The full fast profile
+reruns the independent history target and sealer controls.
+
+Before checking, confirm the failed unit is inactive, archive its entire owned
+failure tree with a 512 KiB decoded bound, compare every saved byte with existing
+archive controls, and remove that owned tree only after exact readback. Include
+the compressed archive in the unchanged 192 KiB phase reservation. If it cannot
+fit, retain the original and do not dispatch. Record preservation separately from
+test results. This is prospective execution/cleanup scope, not a retroactive
+extension of the interrupted candidate run.
