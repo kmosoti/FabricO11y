@@ -30,7 +30,8 @@ MIB = 1024**2
 DATA = Path('/run/media/kmosoti/data/FabricO11y')
 RAW_LIMIT = 128 * MIB
 ARCHIVE_LIMIT = 64 * MIB
-EVIDENCE_LIMIT = 256 * MIB
+EVIDENCE_LIMIT = 288 * MIB
+REPLAY_FAILURE_RESERVE = 48 * MIB
 RESERVE = 16 * 1024**3
 SAMPLE_SECONDS = 0.1
 TRIAL_SECONDS = 120
@@ -240,6 +241,83 @@ def grade(reference, bounded):
     }
 
 
+def equal_member_maps(expected, actual):
+    if expected != actual:
+        raise ValueError('archive reuse differs: missing, extra, or changed regular members')
+
+
+def regular_members(state):
+    result = {}
+    for path in state.rglob('*'):
+        mode = path.lstat().st_mode
+        if stat.S_ISREG(mode):
+            result[str(path.relative_to(state))] = {'bytes': path.stat().st_size, 'sha256': digest(path)}
+        elif not stat.S_ISDIR(mode):
+            raise ValueError('nonregular fixture member: ' + str(path))
+    return result
+
+
+def archive_members(archive, root_name):
+    result = {}
+    decoded = 0
+    with tarfile.open(archive, 'r:gz') as stream:
+        for member in stream:
+            name = Path(member.name)
+            if name.is_absolute() or '..' in name.parts or not name.parts or name.parts[0] != root_name:
+                raise ValueError('archive member outside expected fixture root')
+            if member.isdir():
+                continue
+            if not member.isfile():
+                raise ValueError('nonregular archive fixture member')
+            key = str(Path(*name.parts[1:]))
+            if key == '.' or key in result:
+                raise ValueError('invalid/duplicate archive member')
+            decoded += member.size
+            if decoded > RAW_LIMIT:
+                raise ValueError('archive decoded fixture ceiling')
+            reader = stream.extractfile(member)
+            h = hashlib.sha256()
+            size = 0
+            for chunk in iter(lambda: reader.read(MIB), b''):
+                size += len(chunk)
+                h.update(chunk)
+            if size != member.size:
+                raise ValueError('truncated archived member')
+            result[key] = {'bytes': size, 'sha256': h.hexdigest()}
+    return result
+
+
+def decoder_worker(mode, state=None, stdout=None, deadline=None):
+    import pyarrow
+    import pyarrow.parquet as parquet
+    if mode == 'version':
+        return {'pyarrow_version': pyarrow.__version__}
+    return physical_filters(Path(state), json.loads(Path(stdout).read_text()), parquet, float(deadline))
+
+
+def decoder_call(mode, deadline, state=None, stdout=None):
+    command = [sys.executable, '-B', str(Path(__file__).resolve()), '--decoder-worker', mode]
+    if state is not None:
+        command += [str(state), str(stdout), str(deadline)]
+    # wait reaps the decoder; the native-spawning parent never imports it.
+    with tempfile.TemporaryFile(dir=os.environ['FABRIC_SCRATCH_ROOT']) as output, \
+            tempfile.TemporaryFile(dir=os.environ['FABRIC_SCRATCH_ROOT']) as error:
+        child = subprocess.Popen(command, stdout=output, stderr=error)
+        try:
+            child.wait(timeout=max(0.001, min(TRIAL_SECONDS, deadline-time.monotonic())))
+        except BaseException:
+            child.kill()
+            child.wait()
+            raise
+        if output.tell() + error.tell() > MIB:
+            raise RuntimeError('decoder output ceiling')
+        output.seek(0)
+        error.seek(0)
+        if child.returncode:
+            raise RuntimeError('decoder exit ' + str(child.returncode) + ': ' + error.read().decode(errors='replace'))
+        return json.loads(output.read())
+
+
 def controls():
     row = dict(shape='steady', target_mib=16, seed=1, groups=2,
                input_sha256='input', journal_bytes=1, encoded_group_bytes=1,
@@ -322,7 +400,44 @@ def controls():
         raise AssertionError('archive evidence ceiling bypassed')
     if output.getvalue() != b'ab':
         raise AssertionError('archive wrote beyond ceiling')
+    original = {'input/file': {'bytes': 1, 'sha256': 'a'}}
+    equal_member_maps(original, dict(original))
+    for changed in [{}, {'input/file': {'bytes': 1, 'sha256': 'b'}},
+                    {**original, 'extra': {'bytes': 0, 'sha256': 'c'}}]:
+        try:
+            equal_member_maps(original, changed)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError('archive dedupe mutation accepted')
+    if 'pyarrow' in sys.modules:
+        raise AssertionError('native-spawning parent imported decoder')
+    waited = []
+    def fake_spawn(*args, **kwargs):
+        kwargs['stdout'].write(b'{"pyarrow_version":"control"}')
+        return SimpleNamespace(returncode=0, wait=lambda **kw: waited.append('reaped'))
+    with patch('subprocess.Popen', side_effect=fake_spawn):
+        if decoder_call('version', time.monotonic()+1)['pyarrow_version'] != 'control' or waited != ['reaped']:
+            raise AssertionError('decoder result returned without reaping')
+    events = []
+    def timeout_wait(**kwargs):
+        if kwargs:
+            events.append('timeout')
+            raise subprocess.TimeoutExpired('control', 1)
+        events.append('reaped')
+    timed_out = SimpleNamespace(returncode=None, wait=timeout_wait, kill=lambda: events.append('killed'))
+    with patch('subprocess.Popen', return_value=timed_out):
+        try:
+            decoder_call('version', time.monotonic()+1)
+        except subprocess.TimeoutExpired:
+            pass
+        else:
+            raise AssertionError('decoder timeout swallowed')
+    if events != ['timeout', 'killed', 'reaped']:
+        raise AssertionError('decoder timeout left child running')
     return {'unchanged_accepted': True, 'rejected_mutations': results,
+            'reuse_changed_missing_extra_rejected': True, 'parent_decoder_import_absent': True,
+            'decoder_reaped_before_result': True, 'decoder_timeout_killed_and_reaped': True,
             'different_validated_layout_accepted': True, 'filter_byte_controls_rejected': rejected,
             'inventory_disappearance_tolerated': True, 'inventory_permission_error_propagated': True,
             'archive_overage_rejected_before_write': True}
@@ -353,8 +468,8 @@ def guard(work, destination, deadline):
         raise RuntimeError('campaign deadline')
     if inventory(work)['total'] > RAW_LIMIT:
         raise RuntimeError('128MiB scratch ceiling')
-    if inventory(destination)['total'] > EVIDENCE_LIMIT:
-        raise RuntimeError('256MiB capacity evidence ceiling')
+    if inventory(evidence_root(destination))['total'] > EVIDENCE_LIMIT:
+        raise RuntimeError('288MiB capacity evidence ceiling')
     if shutil.disk_usage(work).free < RESERVE:
         raise RuntimeError('16GiB free-space reserve')
 
@@ -380,14 +495,37 @@ class ArchiveWriter:
         self.stream.flush()
 
 
-def preserve(state, destination):
+def evidence_root(destination):
+    registered = ROOT / 'docs/experiments/benchmarks/data/cross-system-run-01/memory'
+    return registered if destination.is_relative_to(registered) else destination
+
+
+def preserve(state, destination, reuse=None):
     """Keep exact journals and outputs, including failed partial state, before cleanup."""
     raw = inventory(state)
     if raw['total'] > RAW_LIMIT:
         raise RuntimeError('state exceeds preservation envelope; scratch retained')
+    mismatch = None
+    if reuse is not None:
+        try:
+            receipt = json.loads((reuse / 'preservation.json').read_text())
+            archive = reuse / 'exact-state.tar.gz'
+            if archive.stat().st_size > ARCHIVE_LIMIT or digest(archive) != receipt['archive_sha256']:
+                raise ValueError('reuse archive authentication failed')
+            expected = archive_members(archive, state.name)
+            actual = regular_members(state)
+            equal_member_maps(expected, actual)
+            dump(destination / 'preservation.json', {'archive_reference': str(archive),
+                 'archive_sha256': receipt['archive_sha256'], 'archive_bytes': archive.stat().st_size,
+                 'source_logical_bytes': raw, 'regular_members': actual,
+                 'payload_verification': 'exact regular member path/bytes/sha256 equality; historical archive unchanged'})
+            return
+        except (ValueError, KeyError, OSError, tarfile.TarError) as error:
+            mismatch = str(error)
+            dump(destination / 'reuse-failure.json', {'error': mismatch, 'reuse_cell': str(reuse)})
     archive = destination / 'exact-state.tar.gz'
     # The pair directory and builder directory are below the census evidence root.
-    remaining = EVIDENCE_LIMIT - inventory(destination.parent.parent)['total'] - MIB
+    remaining = EVIDENCE_LIMIT - inventory(evidence_root(destination.parent.parent))['total'] - MIB
     if remaining <= 0:
         raise RuntimeError('no preservation allowance remains; scratch retained')
     with archive.open('wb') as output:
@@ -408,9 +546,11 @@ def preserve(state, destination):
     dump(destination / 'preservation.json', {'archive': archive.name,
          'archive_sha256': digest(archive), 'archive_bytes': archive.stat().st_size,
          'source_logical_bytes': raw, 'payload_verification': 'sha256 compared with source'})
+    if mismatch is not None:
+        raise ValueError('archive reuse mismatch; full new archive and scratch retained: ' + mismatch)
 
 
-def trial(binary, state, destination, shape, seed, group, deadline, work, evidence, parquet):
+def trial(binary, state, destination, shape, seed, group, deadline, work, evidence, reuse):
     argv = [str(binary), str(state), shape, '16', str(seed), destination.name]
     dump(destination / 'command.json', {'argv': argv})
     started = time.monotonic()
@@ -422,6 +562,9 @@ def trial(binary, state, destination, shape, seed, group, deadline, work, eviden
     try:
         with (destination / 'stdout.json').open('wb') as out, (destination / 'stderr.txt').open('wb') as err, \
                 (destination / 'timeline.jsonl').open('w') as timeline:
+            dump(destination / 'parent-before-spawn.json', {'pid': os.getpid(),
+                 'process': sample(group, os.getpid(), state, started)['process'],
+                 'pyarrow_imported': 'pyarrow' in sys.modules})
             child = subprocess.Popen(argv, stdout=out, stderr=err)
             while True:
                 timeline.write(json.dumps(sample(group, child.pid, state, started)) + '\n')
@@ -443,7 +586,7 @@ def trial(binary, state, destination, shape, seed, group, deadline, work, eviden
         expected = {'shape': shape, 'target_mib': 16, 'seed': seed, 'builder': destination.name}
         if any(row.get(key) != value for key, value in expected.items()):
             raise RuntimeError('probe did not report the commanded fixture/builder')
-        row['physical_filter_check'] = physical_filters(state, row, parquet, deadline)
+        row['physical_filter_check'] = decoder_call('validate', deadline, state, destination / 'stdout.json')
         dump(destination / 'physical-filter-check.json', row['physical_filter_check'])
     except BaseException as error:
         failure = error
@@ -463,7 +606,7 @@ def trial(binary, state, destination, shape, seed, group, deadline, work, eviden
         # Failed preservation leaves the source intact and prevents further cells.
         if state.exists():
             try:
-                preserve(state, destination)
+                preserve(state, destination, reuse if failure is None else None)
                 shutil.rmtree(state)
             except BaseException as error:
                 dump(destination / 'cleanup.json', {'removed': False,
@@ -477,11 +620,18 @@ def trial(binary, state, destination, shape, seed, group, deadline, work, eviden
 
 def main():
     require_limits()
+    if len(sys.argv) > 2 and sys.argv[1] == '--decoder-worker':
+        mode = sys.argv[2]
+        if mode not in ['version', 'validate'] or len(sys.argv) != (3 if mode == 'version' else 6):
+            raise ValueError('invalid decoder worker arguments')
+        print(json.dumps(decoder_worker(mode, *sys.argv[3:])))
+        return
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--destination', type=Path, required=True)
     parser.add_argument('--protocol', type=Path, required=True)
     parser.add_argument('--seed', type=int, required=True)
     parser.add_argument('--controls-only', action='store_true')
+    parser.add_argument('--reuse-census', type=Path)
     args = parser.parse_args()
     if not 0 < args.seed < 2**64:
         parser.error('seed must be a nonzero u64')
@@ -499,13 +649,22 @@ def main():
         dump(destination / 'complete.json', {'exit_code': 0, 'controls_only': True})
         return
     try:
-        import pyarrow
-        import pyarrow.parquet as parquet
-    except ImportError as error:
+        decoder = decoder_call('version', time.monotonic() + TRIAL_SECONDS)
+    except RuntimeError as error:
         dump(destination / 'failure.json', {'status': 'environment unavailable',
              'error': 'pyarrow.parquet required for independent physical filter validation',
              'native_cells_started': 0})
         raise RuntimeError('pyarrow.parquet required; no native cell started') from error
+    reuse = args.reuse_census.resolve() if args.reuse_census else None
+    if reuse is not None:
+        if not (reuse.is_relative_to(DATA.resolve()) or reuse.is_relative_to(registered.resolve())):
+            raise ValueError('reuse census must be data-drive or registered memory evidence')
+        previous = json.loads((reuse / 'metadata.json').read_text())
+        completed = json.loads((reuse / 'complete.json').read_text())
+        if previous['seed'] != args.seed or previous['target_mib'] != 16 or completed['exit_code'] != 0:
+            raise ValueError('reuse census must be completed with identical seed/size')
+        if EVIDENCE_LIMIT - inventory(evidence_root(destination))['total'] < REPLAY_FAILURE_RESERVE:
+            raise RuntimeError('48MiB replay failure preservation reserve unavailable')
     binary = Path(os.environ['CARGO_TARGET_DIR']) / 'release/examples/readiness_memory_lab'
     group = cgroup()
     sources = [PROBE, ROOT / 'Cargo.lock']
@@ -519,13 +678,17 @@ def main():
               'allocation_timeline': None, 'allocation_reason': 'probe emits build-only start/peak/after counters',
               'ledger_provenance': 'same Rust scanner differential; not an independent oracle',
               'physical_filter_provenance': 'pyarrow Parquet decoder + Python reconstruction from row bytes; independent of Rust filter code',
-              'pyarrow_version': pyarrow.__version__,
+              'pyarrow_version': decoder['pyarrow_version'], 'decoder_ownership': 'reaped subprocess; parent never imports pyarrow',
+              'reuse_census': str(reuse) if reuse else None,
               'limits': {'raw_bytes': RAW_LIMIT, 'archive_bytes_per_cell': ARCHIVE_LIMIT,
                          'evidence_bytes': EVIDENCE_LIMIT, 'free_reserve_bytes': RESERVE,
+                         'replay_failure_reserve_bytes': REPLAY_FAILURE_RESERVE,
                          'trial_seconds': TRIAL_SECONDS, 'campaign_seconds': CAMPAIGN_SECONDS},
               'git_revision': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(),
               'source_sha256': {str(path.relative_to(ROOT)): digest(path) for path in sources}}
     dump(destination / 'metadata.json', frozen)
+    if reuse is not None and frozen['binary_sha256'] != previous['binary_sha256']:
+        raise ValueError('reuse census native binary differs')
     for source, name in [(PROBE, 'probe.rs'), (Path(__file__), 'runner.py'), (args.protocol, 'protocol.txt')]:
         shutil.copyfile(source, destination / name)
     (destination / 'working-tree.diff').write_bytes(subprocess.check_output(['git', 'diff', 'HEAD'], cwd=ROOT))
@@ -545,7 +708,8 @@ def main():
                 cell_dir = pair_dir / builder
                 cell_dir.mkdir()
                 rows[builder] = trial(binary, work / f'{shape}-{builder}', cell_dir,
-                                      shape, args.seed, group, deadline, work, destination, parquet)
+                                      shape, args.seed, group, deadline, work, destination,
+                                      reuse / shape / builder if reuse else None)
             gates = grade(rows['reference']['probe'], rows['bounded']['probe'])
             pair = {'shape': shape, 'order': order, 'rows': rows, 'gates': gates}
             dump(pair_dir / 'pair.json', pair)
