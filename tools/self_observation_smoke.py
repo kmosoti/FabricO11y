@@ -63,7 +63,15 @@ class Trial:
         size = sum(p.stat().st_size for p in self.work.rglob('*') if p.is_file())
         if size > 128 * 2**20:
             raise RuntimeError('128 MiB fixture cap exceeded')
-        self.samples.append(dict(time_ns=time.time_ns(), fixture_bytes=size,
+        processes = {}
+        for name, pid in [('server', self.server.pid if self.server else None), ('spindle', self.child)]:
+            if pid and live(pid):
+                status = dict(line.split(':', 1) for line in Path(f'/proc/{pid}/status').read_text().splitlines() if ':' in line)
+                stat = Path(f'/proc/{pid}/stat').read_text().rpartition(') ')[2].split()
+                processes[name] = dict(pid=pid, rss_bytes=int(status['VmRSS'].split()[0])*1024,
+                    hwm_bytes=int(status['VmHWM'].split()[0])*1024,
+                    cpu_s=(int(stat[11])+int(stat[12]))/os.sysconf('SC_CLK_TCK'))
+        self.samples.append(dict(time_ns=time.time_ns(), fixture_bytes=size, processes=processes,
             cgroup={k: (self.group/k).read_text().strip() for k in
                     ('memory.current', 'memory.peak', 'memory.events',
                      'memory.swap.current', 'cpu.stat', 'io.stat', 'pids.current')}))
@@ -180,6 +188,24 @@ class Trial:
         self.setup()
         self.start()
         self.logs()
+        # Cross an actual timer boundary. Querying one's diagnostics must not
+        # generate a per-query/per-ACK stream that recursively logs itself.
+        paths = [self.work/'state/diagnostics/server.log',
+                 self.work/'state/self-spindle/spool/diagnostics/spindle.log']
+        before = [p.read_text().splitlines() for p in paths]
+        until = time.monotonic()+16
+        while time.monotonic() < until:
+            self.remaining()
+            self.query('component=')
+            self.sample()
+            time.sleep(.5)
+        after = [p.read_text().splitlines() for p in paths]
+        increments = [sum('event=process_sample' in x for x in a)-sum('event=process_sample' in x for x in b)
+                      for a, b in zip(after, before)]
+        assert all(1 <= n <= 2 for n in increments)
+        assert all(len(a)-len(b) <= 6 for a, b in zip(after, before)), 'diagnostic feedback during quiet queries'
+        self.report['quiet_timer_sample_increments'] = increments
+        self.logs()
         token = self.work/'state/self-spindle/token'
         identity = self.work/'state/self-spindle/spool/identity'
         original = sha(token), sha(identity)
@@ -235,6 +261,22 @@ class Trial:
         self.wait_child()
         self.server = None
         self.report['startup_failures'].append(dict(case='wrong-san', code=code))
+        # The documented self-signed default uses tls_cert itself as the local
+        # trust anchor; exercise it without any companion CA override.
+        subprocess.run(['openssl', 'x509', '-req', '-in', 'server.csr', '-signkey', 'server.key',
+            '-out', 'self.pem', '-days', '2', '-extfile', 'san.ext'], cwd=self.work,
+            capture_output=True, check=True, timeout=self.remaining(8))
+        original_conf, original_ctx = self.conf, self.ctx
+        self.conf = self.work/'self-signed.conf'
+        self.conf.write_text(original_conf.read_text().replace(
+            'tls_cert='+str(self.work/'server.pem'), 'tls_cert='+str(self.work/'self.pem')).replace(
+            f'self_spindle_ca={self.work}/ca.pem\n', ''))
+        self.ctx = ssl.create_default_context(cafile=str(self.work/'self.pem'))
+        self.start()
+        self.logs()
+        self.stop()
+        self.report['self_signed_default_delivered'] = True
+        self.conf, self.ctx = original_conf, original_ctx
         # Wrong/missing bootstrap secrets cannot silently enroll a replacement.
         control = self.work/'state/control.json'
         control_before, token_before = sha(control), token.read_bytes()
