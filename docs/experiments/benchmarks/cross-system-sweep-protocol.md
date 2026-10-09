@@ -41,6 +41,14 @@ Reserve enough source allocation for the next entire bounded failed download.
 No upstream server code is executed by retrieval. A full archive is not a
 recursive checkout of submodules.
 
+Prospective retry after `source-repair-01`: ClickHouse downloaded completely
+(361264396 bytes), then its compressed regular-file inventory exceeded 4 MiB.
+Keep that failed receipt and full archive. Permit 16 MiB compressed inventory
+per repository for the retry, inside the same source allocation. Reuse the
+complete archive only after its recorded revision, size and SHA-256 match;
+reference it without copying or changing the failed evidence. Vector and
+FoundationDB still require their full downloads. All other limits are unchanged.
+
 ## Labs and decision rules
 
 Lab proposals are registered below before their commands run. Storage will
