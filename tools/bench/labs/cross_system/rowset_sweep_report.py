@@ -28,6 +28,9 @@ def main():
         raise ValueError('RowSet grid incomplete or not cleaned')
     if not controls['valid_accepted'] or set(controls['rejected']) != {'missing', 'extra', 'order'}:
         raise ValueError('exact-membership controls did not reject representative mutations')
+    if not controls.get('known_license_alias_target_validated') or set(controls.get('license_alias_controls_rejected', [])) != {
+            'wrong_link', 'wrong_path', 'absolute_link', 'wrong_package', 'absent_target'}:
+        raise ValueError('registered license alias controls incomplete')
     summary = json.loads((args.source/'summary.json').read_text())
     cells = {}
     for row in summary['cells']:
