@@ -64,3 +64,11 @@ workload, an observed tradeoff and a next discriminating experiment. A screening
 win needs a fresh confirmation before promotion. Existing borrowed-log CR2
 non-nomination remains unchanged. No production representation, custody, query
 or retention contract changes are included.
+
+Detailed prospective lab supplements are
+[storage](cross-system-storage-sweep-proposal.md),
+[query](cross-system-query-sweep-proposal.md), and
+[operations](cross-system-cadence-sweep-proposal.md).
+Each supplement must be registered before its own first execution. Frozen build
+identities bind the corresponding supplement, so later labs do not change the
+source identity of already measured work.
