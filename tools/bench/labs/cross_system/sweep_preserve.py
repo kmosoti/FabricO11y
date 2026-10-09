@@ -16,13 +16,14 @@ import tarfile
 import time
 
 import prefix_load as shared
+from run_sweep_job import CAPS
 
 ROOT = shared.ROOT
 MIB = 1024 ** 2
 DATA = Path('/run/media/kmosoti/data/FabricO11y')
 BASE = ROOT / 'docs/experiments/benchmarks/data/cross-system-sweep-01'
 RAW_CAP = 512 * MIB
-ARCHIVE_CAP = 128 * MIB
+ARCHIVE_CAP = 192 * MIB
 
 
 def check_deadline(deadline):
@@ -237,9 +238,9 @@ def main():
     if (not out.is_relative_to(category) or out.exists() or out.resolve() != out
             or out.parent.resolve() != out.parent):
         raise RuntimeError('fresh unlinked category evidence destination required')
-    cap = (256 if args.category == 'query' else 1024) * MIB
+    cap = CAPS[args.category] * MIB
     if shared.footprint(category) + ARCHIVE_CAP + MIB > cap:
-        raise RuntimeError('category cannot reserve whole128MiB failure archive plus metadata')
+        raise RuntimeError('category cannot reserve complete bounded failure archive plus metadata')
     if not args.proposal.is_file() or any(not p.is_file() for p in args.origin):
         raise RuntimeError('registered proposal/origin unavailable')
     out.mkdir(parents=True)
