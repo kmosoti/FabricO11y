@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+from pathlib import PurePosixPath
 import struct
 import sys
 import tarfile
@@ -43,28 +44,77 @@ def exact(raw, expected):
         raise ValueError('retained native result differs from exact Python set result')
 
 
+def classify_archive_member(name, is_file, is_dir, seen):
+    normalized = name[:-1] if is_dir and name.endswith('/') else name
+    path = PurePosixPath(normalized)
+    if (not normalized or normalized.endswith('/') or path.is_absolute()
+            or '..' in path.parts or str(path) != normalized):
+        raise ValueError('native output archive has noncanonical or unsafe member path')
+    if normalized == 'output':
+        if not is_dir or normalized in seen:
+            raise ValueError('native output archive root directory is invalid or duplicated')
+        seen.add(normalized)
+        return None
+    if not is_file or len(path.parts) != 2 or path.parts[0] != 'output' or normalized in seen:
+        raise ValueError('native output archive contains unsafe/duplicate member')
+    seen.add(normalized)
+    return path.parts[1]
+
+
+def archive_path_controls():
+    seen = set()
+    if classify_archive_member('output/', False, True, seen) is not None:
+        raise ValueError('valid archive directory control rejected')
+    if classify_archive_member('output/and.u32', True, False, seen) != 'and.u32':
+        raise ValueError('valid archive file control rejected')
+    rejected = []
+    cases = {
+        'traversal': ('output/../escape', True, False, set()),
+        'absolute': ('/output/and.u32', True, False, set()),
+        'nested': ('output/nested/and.u32', True, False, set()),
+        'noncanonical': ('output//and.u32', True, False, set()),
+        'root_as_file': ('output', True, False, set()),
+        'symlink': ('output/and.u32', False, False, set()),
+        'duplicate': ('output/and.u32', True, False, {'output', 'output/and.u32'}),
+        'duplicate_root': ('output', False, True, {'output'}),
+    }
+    for label, (name, is_file, is_dir, prior) in cases.items():
+        try:
+            classify_archive_member(name, is_file, is_dir, set(prior))
+        except ValueError:
+            rejected.append(label)
+        else:
+            raise ValueError('archive path control accepted representative defect: ' + label)
+    return {'valid_directory_and_file_accepted': True, 'rejected': rejected}
+
+
 def read_outputs(cell, row, expected):
     archive_path = cell / 'exact-output.tar.gz'
     if sha(archive_path) != row['archive_sha256']:
         raise ValueError('native output archive digest differs from cell summary')
     observed = {}
     payloads = {}
+    seen = set()
+    allowed_files = set(expected) | {'a.native', 'b.native'}
     with tarfile.open(archive_path, 'r:gz') as archive:
         for member in archive:
-            path = Path(member.name)
-            if (not member.isfile() or path.is_absolute() or '..' in path.parts
-                    or len(path.parts) != 2 or path.parts[0] != 'output' or path.parts[1] in observed):
-                raise ValueError('native output archive contains unsafe/duplicate member')
+            name = classify_archive_member(member.name, member.isfile(), member.isdir(), seen)
+            if name is None:
+                continue
+            if name not in allowed_files:
+                raise ValueError('native output archive contains an unregistered file')
             stream = archive.extractfile(member)
             raw = stream.read(2 * mc.MIB + 1)
             if len(raw) > 2 * mc.MIB:
                 raise ValueError('native output member exceeds reducer bound')
-            name = path.parts[1]
             observed[name] = {'bytes': len(raw), 'sha256': hashlib.sha256(raw).hexdigest()}
             payloads[name] = raw
     members = read(cell / 'members.json')
-    if members != observed or set(payloads) != set(expected):
+    expected_members = allowed_files
+    if ('output' not in seen or members != observed or set(payloads) != expected_members):
         raise ValueError('native output member inventory/readback differs')
+    if len(payloads['a.native']) + len(payloads['b.native']) != row['metrics']['native_serialized_bytes']:
+        raise ValueError('native serialized byte count differs from retained input artifacts')
     for name, values in expected.items():
         exact(payloads[name], values)
     return observed
@@ -97,6 +147,7 @@ def main():
         raise ValueError('locality grid incomplete or owned scratch remains')
     controls = read(source / 'negative-controls.json')
     controls_check(controls)
+    archive_controls = archive_path_controls()
     metadata = read(source / 'metadata.json')
     if (metadata.get('qualification') is not False
             or metadata['runner_sha256'] != sha(source / 'rowset_locality.py')
@@ -202,7 +253,7 @@ def main():
         'qualification': False,
         'interpretation': 'paired physical-arrangement screen at fixed logical density/cardinality/overlap; no performance threshold or Fabric claim',
         'cell_count': len(cells), 'paired_layout_count': len(paired), 'paired_layouts': paired,
-        'fixture_receipts': fixture_receipts,
+        'fixture_receipts': fixture_receipts, 'archive_path_controls': archive_controls,
         'input_receipt_sha256': {name: sha(source / name) for name in
                                  ('summary.json', 'complete.json', 'negative-controls.json', 'metadata.json')},
         'runner_sha256': metadata['runner_sha256'], 'probe_sha256': metadata['probe_sha256'],
