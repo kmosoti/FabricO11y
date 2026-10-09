@@ -125,3 +125,16 @@ an explicit construction/serialization tradeoff and a source-based causal
 explanation. There is no production nomination threshold in this exploratory
 screen: a separately registered end-to-end Fabric query comparison and fresh
 confirmation are required before considering a representation change.
+
+## Prospective package-edition correction before launch
+
+No RowSet execution preceded this supplement. Read each extracted package's
+actual Cargo.toml and compile its declared edition, using Rust's 2015 default
+only when the manifest omits the edition. Reject unknown or workspace-inherited
+editions rather than guessing. The standalone benchmark remains edition 2021.
+Record each package's version, edition, manifest SHA-256 and enabled features;
+require the registered default-feature closure exactly (bytemuck none,
+byteorder std, Roaring std). Supply and record package name/version/manifest
+directory for Cargo-compatible compile-time metadata. Archives and checksums
+remain unchanged. This corrects direct-build configuration before measurement;
+it does not substitute modified upstream source or an inexact dependency.
