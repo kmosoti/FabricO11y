@@ -6,6 +6,16 @@ executing [vortex_sweep.py](../../../tools/bench/labs/cross_system/vortex_sweep.
 This is a compressed-representation experiment, not a production format change
 or a replacement for the historical CR2 no-nomination.
 
+Prospective retry supplement: the first `vortex-01` attempt failed in the first
+worker on Arrow materialization of a zero-length chunked struct array, before
+completing its measured cases. Preserve that original attempt and scratch.
+For a new `vortex-02` attempt, the adapter constructs an empty Arrow table from
+the returned struct's actual field schema, then performs the same checked cast
+to the ingestion schema used for nonempty results. Non-struct outputs remain
+errors. This is schema handling, not a changed predicate, order, limit or oracle.
+The registered absent query and independent exact-source check still require
+an empty answer. All original cells, version pins, controls and bounds remain.
+
 Use exactly the successful [query-sweep](cross-system-query-sweep-proposal.md)
 source and Parquet objects for rowgroups8192 at widths16/1024 and
 clustered/mixed physical locality. Bind every object to its original hash and
@@ -83,7 +93,7 @@ updates/refills and does not establish universal break-even or engine dominance.
 Proposed command after separate owner registration:
 
 ```sh
-python3 tools/resource_group.py -- python3 tools/bench/labs/cross_system/run_sweep_job.py --id vortex-sweep-01 --lab query --reserve-mib 128 --seconds 1000 -- python3 tools/bench/labs/cross_system/vortex_sweep.py --inputs docs/experiments/benchmarks/data/cross-system-sweep-01/query/sweep-02 --out docs/experiments/benchmarks/data/cross-system-sweep-01/query/vortex-01 --seconds 900
+python3 tools/resource_group.py -- python3 tools/bench/labs/cross_system/run_sweep_job.py --id vortex-sweep-02 --lab query --reserve-mib 128 --seconds 1000 -- python3 tools/bench/labs/cross_system/vortex_sweep.py --inputs docs/experiments/benchmarks/data/cross-system-sweep-01/query/sweep-02 --out docs/experiments/benchmarks/data/cross-system-sweep-01/query/vortex-02 --seconds 900
 ```
 
 The900-second deadline includes dependency preparation and grading. Bound
