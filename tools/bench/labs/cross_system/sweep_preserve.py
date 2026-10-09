@@ -6,6 +6,7 @@ The root coordinator must register the accompanying preservation supplement.
 import argparse
 import gzip
 import hashlib
+import io
 import json
 import os
 from pathlib import Path, PurePosixPath
@@ -23,7 +24,14 @@ MIB = 1024 ** 2
 DATA = Path('/run/media/kmosoti/data/FabricO11y')
 BASE = ROOT / 'docs/experiments/benchmarks/data/cross-system-sweep-01'
 RAW_CAP = 512 * MIB
-ARCHIVE_CAP = 192 * MIB
+MAX_ARCHIVE_CAP_MIB = 192
+ARCHIVE_CAP = MAX_ARCHIVE_CAP_MIB * MIB
+
+
+def checked_archive_cap(value):
+    if not 1 <= value <= MAX_ARCHIVE_CAP_MIB:
+        raise ValueError('archive reservation must be within 1..192 MiB')
+    return value * MIB
 
 
 def check_deadline(deadline):
@@ -105,7 +113,7 @@ class LimitedOutput:
     def write(self, data):
         self.count += len(data)
         if self.count > ARCHIVE_CAP:
-            raise RuntimeError('compressed archive exceeds128MiB; keep original')
+            raise RuntimeError('compressed archive exceeds configured ceiling; keep original')
         return self.stream.write(data)
 
     def flush(self):
@@ -190,6 +198,26 @@ def negative_controls(scratch, deadline):
     write_archive(work, archive, members, deadline)
     verify_archive(work, archive, members, deadline)
     rejected = []
+    for value in (0, MAX_ARCHIVE_CAP_MIB + 1):
+        try:
+            checked_archive_cap(value)
+        except ValueError:
+            rejected.append('invalid-archive-cap-' + str(value))
+        else:
+            raise RuntimeError('archive cap validator accepted invalid bound')
+    if checked_archive_cap(1) != MIB or checked_archive_cap(MAX_ARCHIVE_CAP_MIB) != 192 * MIB:
+        raise RuntimeError('valid archive cap control rejected')
+    output = io.BytesIO()
+    limited = LimitedOutput(output)
+    limited.count = ARCHIVE_CAP
+    try:
+        limited.write(b'x')
+    except RuntimeError:
+        if output.getvalue():
+            raise RuntimeError('over-cap write reached the underlying stream')
+        rejected.append('archive-cap-enforced-before-write')
+    else:
+        raise RuntimeError('archive ceiling not enforced')
     for name, kwargs in [('mutated-payload', {'altered': 'payload'}),
                          ('missing-file', {'omit': 'payload'}),
                          ('bad-link-target', {'bad_link': '../../outside-owned-root'})]:
@@ -218,6 +246,7 @@ def negative_controls(scratch, deadline):
 
 
 def main():
+    global ARCHIVE_CAP
     if os.environ.get('FABRIC_CROSS_SYSTEM_COORDINATED') != '1':
         raise RuntimeError('root coordinator ownership required')
     shared.require_limits()
@@ -228,7 +257,9 @@ def main():
     parser.add_argument('--origin', type=Path, action='append', required=True)
     parser.add_argument('--proposal', type=Path, required=True)
     parser.add_argument('--empty-only', action='store_true')
+    parser.add_argument('--archive-cap-mib', type=int, default=MAX_ARCHIVE_CAP_MIB)
     args = parser.parse_args()
+    ARCHIVE_CAP = checked_archive_cap(args.archive_cap_mib)
     root = args.root.absolute()
     if (root.parent != DATA / 'evidence' or not re.fullmatch(r'fabric-work-[0-9a-f]{32}', root.name)
             or root.is_symlink() or root.resolve(strict=True) != root or not root.is_dir()):

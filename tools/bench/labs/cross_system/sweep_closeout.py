@@ -108,10 +108,10 @@ def resolved_argument(argv, flag):
 
 def final_bindings(jobs):
     by_id = {record['id']: (path, record) for path, record in jobs}
-    paths = {'fast': BASE / 'coordinator/final-fast-01/checks',
+    paths = {'fast': BASE / 'coordinator/final-fast-02/checks',
              'documentation': BASE / 'coordinator/documentation-01/checks'}
     bindings = {}
-    for profile, identifier in [('fast', 'final-fast-01'), ('documentation', 'final-docs-01')]:
+    for profile, identifier in [('fast', 'final-fast-02'), ('documentation', 'final-docs-01')]:
         path, job = by_id[identifier]
         argv = job['argv']
         if profile == 'fast':
@@ -222,6 +222,8 @@ def main():
     for relative in ('query/sweep-01/preserved-scratch-01/receipt.json',
                      'query/vortex-01/preserved-scratch-01/receipt.json',
                      'query/rowset-locality-report-01/preserved-scratch-01/receipt.json',
+                     'query/rowset-report-preservation-failure-01/preserved-scratch-01/receipt.json',
+                     'query/final-fast-01/preserved-scratch-01/receipt.json',
                      'source/empty-failure-preservation/receipt.json'):
         path = BASE / relative
         receipt = read(path)
