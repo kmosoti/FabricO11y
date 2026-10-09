@@ -56,6 +56,28 @@ TLS protects Spindle and admin traffic. Spindle credentials are revocable and di
 
 ## Linux installation contract
 
+Every production `fabric-server serve` invocation owns one dedicated local
+Spindle process with its own persistent identity, node credential and bounded
+Spool. Its destination is that server's HTTPS listener; TLS verification remains
+enabled. Server and Spindle operational diagnostics are bounded local files,
+automatically collected through the ordinary Spool/ACK path. Emit periodic
+process samples and state transitions, not a new self-log per collected or
+delivered Batch. Diagnostics are best effort before Spool commit: rotation or
+unavailable collection must not be presented as complete evidence. A Spindle
+collects its own diagnostics; it does not spawn another Spindle. Edge Spindles
+keep their configured destination.
+
+The production CLI supervises and reaps its companion and stops serving if that
+process exits unexpectedly. The library serving primitive remains available for
+embedded composition and isolated tests; it does not implicitly launch processes.
+The companion inherits its server service's cgroup; existing numeric service and
+aggregate limits below are not increased. The server unit's bound covers the
+combined server and companion. Operational logs retain at most two 256 KiB files
+per process; a managed companion uses a 64 MiB Spool and 64 KiB/s output cap.
+Its local diagnostics and the server diagnostic file consume two of the existing
+sixteen log-source slots. Automatic self-observation is a capability to verify,
+not a new qualification claim.
+
 Status: packaging exists and passes static checks; the running-installation acceptance ran in a Debian 13 systemd container and is inconclusive, because `MemoryHigh` enforcement needs a unified cgroup hierarchy ([ledger](QUALIFICATION.md#capability-ledger)).
 
 Ship only `fabrico11y-node.service`, `fabrico11y-server.service`, `fabricctl`, and one `system-fabrico11y.slice` for their aggregate resource bound. The slice name deliberately places it beneath `system.slice`; both services set `Slice=system-fabrico11y.slice`. The package installs `/usr/lib/sysusers.d/fabrico11y.conf` with `g fabricolly -` followed by `u! fabricolly -:fabricolly "Fabric O11y service" - /usr/sbin/nologin`. The static system user **and primary group** are exactly `fabricolly`. Both units explicitly set `User=fabricolly` and `Group=fabricolly`. Package installation must inspect an existing account/group for the expected non-login service identity and primary group, refusing a collision instead of silently commandeering it. Vendor files live under `/usr/lib`; administrator overrides live under `/etc`. The Rust daemons never create accounts, chown installation paths, or manage cgroups. [Debian's systemd 257 sysusers documentation](https://manpages.debian.org/trixie/systemd/sysusers.d.5.en.html) specifies these entries and the vendor/administrator precedence.
