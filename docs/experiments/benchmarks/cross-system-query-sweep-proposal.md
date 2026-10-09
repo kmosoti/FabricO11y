@@ -56,6 +56,15 @@ existing delivery/query oracle. Native Fabric Scan/Walk are omitted because the
 unchanged completion probe cannot admit these matched query/locality fixtures;
 unmatched native numbers would not establish a causal comparison.
 
+Before measured queries, two additional controls mutate the actual index used
+by the Arrow-pruned arm: omit a group containing selective matches through a
+false time bound, then remove its required `S!x` trigram. Both execute the actual
+selector/read/filter/sort path and must lose source-expected rows that the oracle
+rejects. Preserve the affected group, original/mutated bounds, removed trigrams,
+query, expected/actual rows and rejection. Restore the exact original index in
+each case and check a valid answer before timing. These controls prewarm that
+path; no cold-cache comparison is claimed.
+
 Record plain library-query wall/process CPU separately from Python result
 projection, plus their sum. Arrow timing includes Python candidate selection and
 Arrow decode/filter/sort;
