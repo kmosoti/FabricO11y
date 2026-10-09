@@ -10,8 +10,8 @@ import run_native_job as base
 old_load, old_totals = base.load_ledgers, base.ledger_totals
 PREVIOUS = base.BASE
 base.BASE = ROOT / 'docs/experiments/benchmarks/data/hammer-reference-01'
-base.PROTOCOL = ROOT / 'docs/experiments/benchmarks/hammer-reference-protocol.md'
-base.CAPS = {'memory': 2048, 'query': 512, 'coordinator': 128}
+base.PROTOCOL = ROOT / 'docs/experiments/benchmarks/hammer-walk-errorbody-protocol.md'
+base.CAPS = {'memory': 8192, 'query': 512, 'coordinator': 128}
 base.FRONTIER_SECONDS = 36000  # 28,800 historical + 7,200 owner-scoped pressure.
 
 
