@@ -11,6 +11,7 @@ import random
 import resource
 import shutil
 import signal
+import stat
 import statistics
 import subprocess
 import sys
@@ -49,10 +50,14 @@ def sha(path):
 def footprint(path):
     total = 0
     for p in path.rglob('*'):
-        if p.is_symlink():
+        try:
+            info = p.lstat()
+        except FileNotFoundError:
+            continue
+        if stat.S_ISLNK(info.st_mode):
             raise RuntimeError('linked scratch/evidence rejected')
-        if p.is_file():
-            total += max(p.stat().st_size, p.stat().st_blocks * 512)
+        if stat.S_ISREG(info.st_mode):
+            total += max(info.st_size, info.st_blocks * 512)
     return total
 
 
@@ -466,9 +471,15 @@ def main():
         requirements = work / 'requirements.txt'
         requirements.write_text(''.join(f'{work / "wheels" / filename} --hash=sha256:{digest}\n'
             for _, _, filename, _, digest, _ in WHEELS))
-        child(['uv', 'pip', 'install', '--python', sys.executable, '--target', str(work / 'packages'),
+        installer_env = dict(os.environ)
+        installer_env.pop('UV_CACHE_DIR', None)
+        environment['installer'] = {'cache': 'disabled', 'link_mode': 'copy',
+                                    'tmpdir': installer_env['TMPDIR']}
+        dump(out / 'environment.json', environment)
+        child(['uv', '--no-cache', 'pip', 'install', '--link-mode', 'copy',
+               '--python', sys.executable, '--target', str(work / 'packages'),
                '--no-deps', '--no-index', '--require-hashes', '-r', str(requirements)],
-              dict(os.environ, UV_CACHE_DIR=str(work / 'uv-cache')), out / 'install.out', out / 'install.err', deadline, work, out)
+              installer_env, out / 'install.out', out / 'install.err', deadline, work, out)
         env = dict(os.environ, PYTHONPATH=str(work / 'packages'), PYTHONNOUSERSITE='1',
                    OMP_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1')
         results = []
@@ -533,16 +544,25 @@ def main():
         dump(out / 'failure.json', {'status': status, 'error': repr(error), 'full_scratch_preserved': str(work)})
         raise
     finally:
-        size = footprint(work)
+        accounting_error = None
+        try:
+            size = footprint(work)
+        except (OSError, RuntimeError) as error:
+            size, accounting_error = None, repr(error)
+            if status == 'passed':
+                status = 'failed'
         if status == 'passed':
             if (work / 'owned').read_text() != str(out):
                 raise RuntimeError('scratch ownership mismatch')
             shutil.rmtree(work)
         dump(out / 'cleanup.json', {'status': status, 'scratch': str(work), 'removed': not work.exists(),
             'scratch_bytes_before_cleanup': size, 'retained_bytes': footprint(out),
+            'scratch_accounting_error': accounting_error,
             'elapsed_seconds': time.monotonic() - began,
             'preservation': 'full worker/scratch state on failure; retained exact source/Parquet/index on success; '
                             'ingested DuckDB files reproducible from retained inputs, DDL and version/hash receipts'})
+        if accounting_error and sys.exc_info()[0] is None:
+            raise RuntimeError('scratch accounting failed; full state preserved: ' + accounting_error)
     print(json.dumps({'status': status, 'evidence': str(out)}))
 
 

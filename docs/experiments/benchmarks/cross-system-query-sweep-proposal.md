@@ -84,7 +84,10 @@ and `pyarrow==22.0.0` cp314 x86_64 manylinux2_28 wheel SHA256
 `6dda1ddac033d27421c20d7a7943eec60be44e0db4e079f33cc5af3b8280ccde`.
 Download URLs and exact lengths are frozen in the script/environment receipt.
 UV's actual tool version is recorded; installation uses `--target` on owned
-data-drive scratch, `--no-deps --no-index --require-hashes`. No production
+data-drive scratch, `--no-cache --link-mode copy --no-deps --no-index
+--require-hashes`, with launcher data-drive TMPDIR recorded and UV_CACHE_DIR
+unset. Link rejection remains fail-closed; failed scratch accounting is recorded
+without masking the original error. No production
 dependencies or ambient packages are installed. Engine/library thread counts
 are1. The outer launcher supplies20GiB no-swap containment; the sweep restricts
 its inherited CPU affinity to the first two available CPUs before dependency
@@ -114,3 +117,12 @@ some configurations. The null is that pruning fails to repay construction or
 survives neither mixed locality nor less-selective predicates. Compare all shapes,
 both fresh repetitions and construction cost rather than selecting a favorable
 median. Any later nomination needs a separate prospective confirmation protocol.
+
+Prospective retry after `query-sweep-01`: installation stopped before any query
+cell because UV's cache contained an internal symbolic link. The strict live
+scratch link policy remains. Retry in `query/sweep-02` using UV's no-cache mode
+and copy installation. Preserve the failed tree and its receipt; report any
+failure-time accounting error without masking the original cause. Use one
+`lstat` observation per monitored member and tolerate members that have already
+been removed, since installer scratch is live. Workloads, expected answers,
+budgets and decision rules are unchanged.
