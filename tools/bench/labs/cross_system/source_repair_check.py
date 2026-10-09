@@ -11,6 +11,12 @@ from source_evidence_check import archive_check, controls, immutable_pin, safe_n
 from source_fetch import require_limits, digest, ROOT
 
 
+def bind_selected(inventory, selected):
+    for name, record in selected.items():
+        if inventory.get(name) != dict(path=name, **record):
+            raise ValueError('selected excerpt differs from complete pinned inventory')
+
+
 def inventory_match(archive, expected):
     seen = set()
     total = 0
@@ -65,7 +71,15 @@ def corruption_controls():
         except ValueError:
             continue
         raise RuntimeError('negative control accepted: ' + name)
-    return sorted(cases)
+    bind_selected({'a': dict(path='a', **expected['a'])}, expected)
+    substituted = {'a': dict(bytes=3, sha256=hashlib.sha256(b'abd').hexdigest())}
+    try:
+        bind_selected({'a': dict(path='a', **expected['a'])}, substituted)
+    except ValueError:
+        pass
+    else:
+        raise RuntimeError('self-consistent substituted excerpt accepted')
+    return sorted(cases) + ['self_consistent_excerpt_substitution']
 
 
 def main():
@@ -97,11 +111,15 @@ def main():
             checked = inventory_match(stream, inventory)
         if checked['members'] != receipt['regular_members'] or checked['bytes'] != receipt['regular_member_bytes']:
             raise ValueError('inventory totals differ')
+        bind_selected(inventory, receipt['selected_members'])
+        if digest(folder / 'selected-source.tar.gz') != receipt['selected_archive_sha256']:
+            raise ValueError('selected archive digest differs')
         with (folder / 'selected-source.tar.gz').open('rb') as stream:
             selected = archive_check(stream, receipt['selected_members'])
         result['repositories'][name] = dict(revision=receipt['revision'], full_inventory=checked, selected=selected)
     result['checker_sha256'] = digest(Path(__file__))
-    (args.source / 'verification.json').write_text(json.dumps(result, indent=2) + '\n')
+    output = args.source / ('verification-' + result['checker_sha256'][:16] + '.json')
+    output.write_text(json.dumps(result, indent=2) + '\n')
     print(json.dumps(result))
 
 
