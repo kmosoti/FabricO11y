@@ -67,7 +67,10 @@ this live Firefox fixture as a passing gate based on the shell-only Firefox chec
 
 The harness verifies a stricter combined 4,000,000,000-byte memory cap (rounded
 down to a kernel page), zero swap, two CPU equivalents and 512 tasks before
-launching fixtures. Its fixture storage ceiling is 512 MiB. The launcher retains
+launching fixtures. Its fixture storage ceiling is 512 MiB. The primary native
+producer has a 32 MiB Spool allowance so the finite cursor-expiry wait does not
+exhaust its telemetry buffer; the scoped-query witness first checks that this
+producer remains alive and ACKs the new independent observations. The launcher retains
 the finite outer deadline; browser waits also have a bounded overall budget.
 Receipts include the effective cgroup limits, process and cgroup samples, source
 and binary hashes, checks, screenshots, failures and cleanup. Cleanup stops owned

@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import secrets
 import shutil
@@ -492,7 +493,7 @@ self.addEventListener("fetch",event=>{
         click('Clear displayed credential')
         node_config=work/'edge.conf'
         trace_port=free_port()
-        node_config.write_text(f'spool_dir={work}/edge-spool\nlog={fixture_log}\nmetric_interval_s=1\nspool_bytes=4194304\nserver_url={origin}\nserver_ca={work}/ca.pem\ntoken_file={token_file}\nmax_output_bytes_per_s=65536\ntraces_listen=127.0.0.1:{trace_port}\n')
+        node_config.write_text(f'spool_dir={work}/edge-spool\nlog={fixture_log}\nmetric_interval_s=1\nspool_bytes=33554432\nserver_url={origin}\nserver_ca={work}/ca.pem\ntoken_file={token_file}\nmax_output_bytes_per_s=65536\ntraces_listen=127.0.0.1:{trace_port}\n')
         edge=launch('edge',[str(args.spindle.resolve()),'run',str(node_config)])
         wait(lambda:(out/'edge.log').is_file() and 'status=ack' in (out/'edge.log').read_text(),'native edge exact delivery ACK')
         trace_origin=time.time_ns()-1_000_000_000
@@ -906,7 +907,18 @@ self.addEventListener("fetch",event=>{
         code,invited_inventory=api('/v1/console/nodes')
         check(code==200 and len(invited_inventory['nodes'])==1 and all(n['enrollment_id']==enrollment for n in invited_inventory['nodes']),'invited human inventory obeys explicit immutable scope')
         expect(api('/v1/console/principals'), 403, 'access denied', 'invited reader cannot administer identities')
+        check(edge.poll() is None,'native producer remains running after bounded expiry and polling')
+        producer_offset=(out/'edge.log').stat().st_size
         with fixture_log.open('a') as source:source.write(''.join(f'browser-invited-scope-fixture ordinal={i:03d}\n' for i in range(200)))
+        def invited_producer_acked():
+            if edge.poll() is not None:
+                raise AssertionError('native scoped-query producer stopped before fresh delivery')
+            with (out/'edge.log').open() as source:
+                source.seek(producer_offset);events=source.read()
+            batches=re.findall(r'batch=(\d+) metrics=\d+ logs=(\d+)',events)
+            committed=[int(value) for value in re.findall(r'status=ack committed_through=(\d+)',events)]
+            return bool(committed) and sum(int(logs) for sequence,logs in batches if int(sequence)<=max(committed))>=200
+        wait(invited_producer_acked,'independent producer commits all200 new scoped-query observations')
         nav('Explore');field('Signal','logs');field('Source name (blank = authorized scope)','browser-edge');field('Body substring (case-sensitive)','browser-invited-scope-fixture')
         def invited_query_ready():
             if js('return document.querySelectorAll(".results tbody tr").length===100'):return True
