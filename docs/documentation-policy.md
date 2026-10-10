@@ -33,6 +33,24 @@ archives remain private, and an unavailable raw artifact is identified honestly.
 Future reports go directly to the wiki, with commands, outcomes, measurement
 definitions, revision, resource and cleanup receipts, and interpretation limits.
 
+### Controlled evidence references
+
+Historical procedures and machine inputs retain their original bytes when raw
+run archives move to controlled storage. Their exact private references are
+declared in [controlled-evidence-references.json](controlled-evidence-references.json).
+The documentation checker requires the exact source SHA-256 and exact normalized
+repository-relative target. Only experiment `data/` paths are eligible; absolute
+paths, traversal segments, wildcards and out-of-scope targets are rejected. The
+inventory is bounded to 128 references and 256 KiB. Changes to this exception or
+inventory are verification-policy changes and require their own reasoned commit.
+
+Declared references are counted as **private/unavailable, not validated links**.
+The checker never follows, opens or validates their private targets. They remain
+unavailable in a fresh checkout, whether a local archive symlink exists or not.
+Source hash drift invalidates the declaration. Every unregistered missing link
+or link escaping the repository retains the ordinary failure behavior; the
+declaration does not establish an archive's contents or a historical result.
+
 ## Purpose
 
 This repository must maintain a living architectural model alongside the implementation.

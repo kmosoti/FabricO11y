@@ -2,6 +2,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { marked } from "marked";
 import GithubSlugger from "github-slugger";
@@ -43,6 +44,52 @@ try {
   process.exit(1);
 }
 
+// These declarations name private historical evidence, not validated links.
+// Exact source hashes prevent silently extending the exception by editing prose.
+const privateEvidence = new Set();
+let privateEvidenceCount = 0;
+function canonicalRelative(value) {
+  return typeof value === "string" && value.length > 0 && value.length <= 1024
+    && !/[\\\x00*?:]/.test(value) && !path.posix.isAbsolute(value)
+    && value.split("/").every((part) => part !== "" && part !== "." && part !== "..")
+    && path.posix.normalize(value) === value;
+}
+function loadPrivateEvidence() {
+  const inventory = path.join(root, "docs", "controlled-evidence-references.json");
+  if (!fs.existsSync(inventory)) return;
+  try {
+    if (fs.lstatSync(inventory).isSymbolicLink() || !insideRoot(fs.realpathSync(inventory))
+        || !fs.statSync(inventory).isFile() || fs.statSync(inventory).size > 256 * 1024) {
+      throw new Error("inventory must be a bounded regular repository file");
+    }
+    const document = JSON.parse(fs.readFileSync(inventory, "utf8"));
+    if (document.format !== "fabric-private-evidence-references-v1"
+        || !Array.isArray(document.references) || document.references.length > 128) {
+      throw new Error("invalid inventory format or reference bound");
+    }
+    for (const entry of document.references) {
+      if (!canonicalRelative(entry.source) || !entry.source.startsWith("docs/")
+          || !entry.source.endsWith(".md") || !/^[a-f0-9]{64}$/.test(entry.source_sha256)
+          || !canonicalRelative(entry.target)
+          || !/^docs\/experiments\/(?:benchmarks|formal|ablation)\/data\/.+/.test(entry.target)
+          || entry.status !== "private_unavailable_not_validated") {
+        throw new Error("invalid source, hash, target scope or private status");
+      }
+      const source = path.join(root, entry.source);
+      if (!insideRoot(fs.realpathSync(source)) || fs.lstatSync(source).isSymbolicLink()
+          || createHash("sha256").update(fs.readFileSync(source)).digest("hex") !== entry.source_sha256) {
+        throw new Error(`source hash or repository boundary differs: ${entry.source}`);
+      }
+      const key = `${entry.source}\0${entry.target}`;
+      if (privateEvidence.has(key)) throw new Error("duplicate private reference");
+      privateEvidence.add(key);
+    }
+  } catch (error) {
+    privateEvidence.clear();
+    report(inventory, `invalid controlled evidence inventory (${error.message})`);
+  }
+}
+
 function collectFiles(dir, files = []) {
   let entries;
   try {
@@ -60,6 +107,7 @@ function collectFiles(dir, files = []) {
       continue;
     }
     if (entry.isSymbolicLink()) {
+      if (/^docs\/experiments\/(?:benchmarks|formal|ablation)\/data\//.test(displayPath(full))) continue;
       let stat;
       let real;
       try {
@@ -251,6 +299,11 @@ async function checkMarkdown(file, source, filesByRealPath) {
     const local = localPathForLink(file, link.href);
     if (!local) continue;
     const { target, fragment, hasFragment } = local;
+    const privateKey = `${displayPath(file)}\0${displayPath(target)}`;
+    if (link.type !== "image" && insideRoot(target) && privateEvidence.has(privateKey)) {
+      privateEvidenceCount += 1;
+      continue; // Never realpath, stat, open or follow the private target.
+    }
     let realTarget;
     try {
       realTarget = fs.realpathSync(target);
@@ -380,6 +433,7 @@ function readText(file, diagnosticFile = file, description = "file") {
 }
 
 async function main() {
+  loadPrivateEvidence();
   const files = collectFiles(root).sort((a, b) => a.localeCompare(b));
   const filesByRealPath = new Set();
   for (const file of files) {
@@ -434,6 +488,7 @@ async function main() {
     }
   }
 
+  console.log(`Declared private/unavailable evidence references: ${privateEvidenceCount}; not validated links.`);
   if (errors.length) {
     for (const error of errors) console.error(error);
     console.error(`Documentation checks found ${errors.length} issue${errors.length === 1 ? "" : "s"}.`);
