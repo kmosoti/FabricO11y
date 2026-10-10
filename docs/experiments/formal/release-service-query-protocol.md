@@ -112,21 +112,28 @@ no unpaginated rate route, and this experiment does not invent one.
 ### Independent visible UI witness
 
 Prospective amendment registered 2026-10-10 after the preserved first Segment
-candidate failure and before successor fixed-query cells: enabling the polling
+candidate failure and before successor main, fixed-query and
+[service-pressure](service-pressure-protocol.md) cells: enabling the polling
 control alone does not establish that an actual UI read occurred. Before each
-timed query phase, record the native UI request counters and require one completed
+timed workload phase, record the native UI request counters and require one completed
 native UI read within a bounded 20-second readiness interval. This readiness lies
 outside query latency. Count the actual application's native request and consumed
 response body; owner control API requests cannot satisfy the witness.
 
-Keep the UI visible and polling throughout the query replay. Observe its health
+Keep the UI visible and polling throughout each workload's active periods. The
+main trial's intentional ten-second pause at measured seconds 40–50 stays exempt
+from request-progress obligations; resume records a new active-period baseline.
+Observe its health
 at least every 30 seconds and at phase end. Reject a hidden or locked UI, failed
 HTTP status, transport failure or more than one pending native read. For an
 observation horizon of at least 20 seconds (five-second cadence plus the existing
 15-second request deadline), require advancement of attempted and completed read
 counters. A shorter phase retains its witnessed readiness and end counters; do not
 invent a 20-second progress observation. Retain bounded phase and request-counter
-receipts. Query populations, latency boundaries, thresholds and independent
+receipts. Identity reauthentication must pause and drain native UI reads, perform
+the real passkey ceremony, refresh the UI session and resume with a new baseline;
+retain cumulative counters across these transitions rather than discarding failures.
+Query populations, latency boundaries, thresholds and independent
 oracles remain unchanged. Inject absent completion and failed status witnesses
 into the witness checker before full execution; each must fail its named control.
 
