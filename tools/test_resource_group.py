@@ -10,6 +10,26 @@ import resource_group
 
 
 class Containment(unittest.TestCase):
+    def disconnected_wrapper(self, stop_status):
+        """CX: self-observation-fast-02 lost its bus; wrapper exited zero."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = resource_group.Path(directory)
+            with patch.object(resource_group, 'STORAGE', root), \
+                 patch.object(sys, 'argv', ['resource_group.py', '--', 'true']), \
+                 patch.object(resource_group.subprocess, 'call', return_value=0), \
+                 patch.object(resource_group.subprocess, 'run',
+                              return_value=subprocess.CompletedProcess([], stop_status)):
+                status = resource_group.main()
+            scratch = list((root / 'scratch').iterdir())
+            evidence = list((root / 'evidence').iterdir()) if (root / 'evidence').exists() else []
+            return status, len(scratch), len(evidence)
+
+    def test_wrapper_success_without_command_completion_is_incomplete(self):
+        self.assertEqual(self.disconnected_wrapper(0), (2, 0, 1))
+
+    def test_unconfirmed_stop_preserves_scratch_in_place(self):
+        self.assertEqual(self.disconnected_wrapper(1), (2, 1, 0))
+
     def test_deadline_default_and_explicit_finite_extension(self):
         self.assertEqual(resource_group.command_options(['--','true']), (1800,False,['true']))
         self.assertEqual(resource_group.command_options(['--runtime-seconds','7500','--','true']), (7500,False,['true']))
