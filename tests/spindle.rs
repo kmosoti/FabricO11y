@@ -1149,6 +1149,10 @@ fn optional_timing_follows_durable_commit_and_is_bounded() {
     assert!(events.iter().all(|e| e.sequence == cycle.batch_sequence));
     for adjacent in events.windows(2) {
         assert!(adjacent[0].stamp.monotonic_after_ns <= adjacent[1].stamp.monotonic_before_ns);
+        assert!(
+            adjacent[0].stamp.boot_monotonic_ns.unwrap()
+                <= adjacent[1].stamp.boot_monotonic_ns.unwrap()
+        );
     }
     let expected = (
         events[2].node_id.to_vec(),
