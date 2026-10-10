@@ -54,6 +54,37 @@ These records contain process RSS, high-water RSS and CPU ticks with tick rate.
 They are log bodies, not a new generic metrics receiver. A printed listener/PID
 confirms process startup; query the received observations to check delivery.
 
+## Network and certificate setup
+
+Choose a stable server hostname before enrolling passkeys. Its certificate SAN
+must match the hostname used by browsers and remote Spindles; the dedicated local
+Spindle also needs the loopback or local-listener SAN described above. A private
+CA can issue a certificate containing both names. Install that CA in each
+browser's trusted certificate store, and configure `server_ca` on edges and
+`self_spindle_ca` on the server. A browser certificate exception or a disabled
+TLS check is not a substitute for this setup. Never copy the CA's private key
+to an edge.
+
+Check the configured names and trust before enabling collection:
+
+```sh
+openssl verify -CAfile /etc/fabrico11y/ca.pem /etc/fabrico11y/server.pem
+openssl x509 -in /etc/fabrico11y/server.pem -noout -ext subjectAltName
+```
+
+Bind the central listener to an intended private/LAN/VPN address when possible.
+In the host firewall and any cloud firewall, allow its configured TCP port
+(7443 in the example) only from the edge and operator networks. Include IPv6
+rules if using an IPv6 listener. Edges initiate outbound HTTPS; they do not need
+an inbound Fabric port. The optional OTLP receiver stays on loopback port 4318
+and is for applications on that edge. Preserve SSH/VPN administration when
+editing existing firewall rules. Packages do not change those rules.
+
+Visit the configured HTTPS origin without a certificate error, complete owner
+enrollment, then confirm that the companion appears and its diagnostic records
+are queryable. Check remote delivery separately after enrolling an edge; a
+listening port alone does not establish certificate trust or durable custody.
+
 ## Scoped client and Spindle controls
 
 In console Settings, issue a workload credential with only the required query
@@ -111,6 +142,53 @@ The node samples host metrics on its interval, reads logs every second, keeps ev
 the server drains requests and releases its journal. The packaged 30-second stop
 deadline bounds shutdown; systemd terminates remaining processes if it expires.
 Clients retain unacknowledged Spool data for retry after restart.
+
+## Upgrade, backup and removal
+
+Check the candidate's recorded compatibility and package checksum before an
+upgrade. Use the server, Spindles, CLI and console from the same tested candidate;
+mixed-version compatibility is not established. The tested predecessor fixture
+in the [installation record](experiments/formal/installation-release-run-01.md)
+is specific evidence, not a promise that arbitrary older state can be upgraded
+or that new state can be read by an older executable.
+
+Stop the affected services before copying state or replacing the package:
+
+```sh
+sudo systemctl stop fabrico11y-node.service fabrico11y-server.service
+```
+
+Back up `/etc/fabrico11y` and the complete `/var/lib/fabrico11y` tree, including
+access state, journals, Segments, manifests and every Spool. Include any configured
+state/Spool directories and key files outside those defaults. Keep ownership,
+permissions and protected credential material intact in controlled backup storage.
+Do not run a copied Spool alongside the original: both would share an identity.
+A copied configuration alone cannot recover acknowledged telemetry.
+
+Install the checksum-verified `.deb` with `sudo apt install ./PACKAGE.deb`, or
+the `.rpm` with `sudo dnf install ./PACKAGE.rpm`. The package reloads unit
+definitions and preserves operator configuration; it does not perform the
+operator's service restart. Explicitly start the roles configured on that host.
+For a central-only host, start `fabrico11y-server.service`; it starts its own
+dedicated Spindle. An edge starts `fabrico11y-node.service`. Confirm service status,
+fresh login, exact retained queries and drained pending Spools. Server restart
+invalidates browser sessions and delegated credentials. The PWA may request a
+reload to activate its new coherent shell.
+
+To remove executables while retaining state, use `sudo apt remove fabrico11y`
+or `sudo dnf remove fabrico11y`. Both stop the services and preserve configuration,
+telemetry and the service account. Verify that both services are inactive.
+
+A deliberate reset destroys retained telemetry, credentials and pending Spool
+data. After stopping/removing the services and deciding what backup to retain,
+Debian's `sudo apt purge fabrico11y` deletes the default `/etc/fabrico11y` and
+`/var/lib/fabrico11y` trees. RPM removal has no purge operation; an operator who
+intends that same reset can explicitly remove those two directories after
+`dnf remove`. Custom paths are outside that default cleanup. Reinstallation with
+empty state requires fresh owner and edge enrollment. Restoring an older access
+snapshot requires the [offline owner recovery](access-operations.md#offline-owner-recovery)
+procedure before reopening remote access; package rollback alone does not rotate
+old credentials or restore lost telemetry.
 
 ## Limits
 
