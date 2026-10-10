@@ -1,7 +1,7 @@
 # Console algorithms
 
-Status: finite model for the initial console crate; these local display algorithms
-do not implement server authorization, cancellation, live transport or qualification.
+Status: native presentation models plus a bounded authenticated browser adapter;
+server authority and release qualification remain separate verification boundaries.
 The console must preserve the [query contract](retained-history.md) and
 [identity boundary](identity-access.md). Pure model code is in
 [model.rs](../../crates/fabric-ui/src/model.rs); deterministic counterexamples are
@@ -12,14 +12,90 @@ in [model tests](../../crates/fabric-ui/tests/model.rs).
 flowchart LR
     Assets[Packaged public shell] --> Views[Leptos browser views]
     Assets --> Cache[Allowlisted offline shell cache]
-    Fixture[Explicit synthetic fixture] --> Model[Bounded request, tail and chart models]
+    Fixture[Explicit synthetic demonstration] --> Model[Pure request tail and chart models]
     Model --> Views
-    Views --> Controls[Source, signal, trace and theme controls]
-    Controls --> Model
-    Views -. future authenticated integration .-> Policy[Server session and scope enforcement]
-    Policy -. scoped reads .-> History[Journal and Segment query]
-    Policy -. scoped writes .-> Control[Durable control and audit]
+    Views --> Controls[Source signal trace and access controls]
+    Controls --> Client[Serialized bounded browser adapter]
+    Client --> Policy[Server session scope and CSRF enforcement]
+    Policy --> History[Scoped journal and Segment query]
+    Policy --> Control[Durable control access and audit]
+    History --> Projection[Exact integer rows and evidence]
+    Projection --> Views
 ```
+
+## Live browser adapter
+
+[live.rs](../../crates/fabric-ui/src/live.rs) uses exact Rust JSON integers and
+same-origin version-1 requests. A single local busy slot covers network requests
+and WebAuthn ceremonies. A checked-exhaustion epoch refuses new work after its
+maximum; filter edits, logout and offline/session invalidation reject late
+completions. Superseding a pending query also aborts its transport, while its
+local slot remains occupied until terminal completion. Browser abort is local
+transport completion, not proof that server
+query work stopped: independently bounded server admission retains its permit
+through blocking-worker completion.
+
+Fetch includes same-origin cookies, no-store caching, a compatibility header and
+session-bound CSRF on mutations. A 15-second abort deadline covers both headers
+and body streaming. Content-Length and every streamed chunk are checked against
+8 MiB before copying into the Rust decode buffer. Browser/network-internal
+allocation and retained parsed/DOM representations remain additional memory;
+these wire bounds are not a browser RSS guarantee. Server query pages are capped
+independently. The UI asks for at most 200 rows and half-open windows no longer
+than 24 hours. It lowers the row count to the current grant, labels time presets
+with their actual granted duration, and rejects explicit ranges exceeding that
+grant before fetch. The server independently enforces the same authority.
+
+Session validation precedes data display. Offline notification, logout,
+cross-tab logout and known absolute expiry clear protected transient views and
+invalidate pending results. Logout clears the view before the network response;
+a failed logout explicitly says server-side revocation was not confirmed. During
+a pending read, sign out aborts the read and queues exactly one CSRF logout to
+drain afterward; it does not create a second active transport or automatically
+retry an unsuccessful revocation. API
+401/403 locks the current view. A cross-tab channel transports only the literal
+logout notice, never cookies, credentials or telemetry. WebAuthn JSON conversion
+is limited to ceremony options and credential fields; telemetry never uses JS
+JSON.parse. Fresh passkey verification and every grant are enforced by the
+server, independently of disabled UI controls.
+
+Live tail deliberately differs from the pure identity-deduplicating model below:
+the query projection does not carry complete generation identity. Each accepted
+poll replaces a page snapshot; no cross-poll deduplication is inferred. Retained
+text is capped at 200 rows / 262,144 UTF-8 bytes by refusing an oversized row and
+evicting whole oldest rows. Display refusals/evictions remain distinct from
+collection gaps. Polls use the latest 30-second window on a five-second timer,
+suppress overlap, retain at most one accepted response and stop on errors until
+explicit resume. Polling starts paused and skips callbacks while the document is
+hidden; a configured running schedule resumes on a later visible timer tick.
+There is no automatic retry/backoff claim for this adapter;
+pagination, polling gaps and retention may omit events.
+
+Metric rendering charts at most eight distinct source/name/unit/attribute series
+from the bounded page, using the extrema model below with 32 buckets. Exact raw
+integer values stay visible; approximate coordinates never become query keys.
+Bars do not interpolate between buckets. Collection-gap metadata is shown as
+returned, without placing receive-time gaps on an observation-time axis. Span
+waterfalls subtract integer timestamps before conversion; unavailable-parent
+labels describe this bounded page, not proof of an absent trace-wide parent.
+Exact span-name filtering is optional and preserved by snapshot pagination;
+its UTF-8 editing budget is checked before transport.
+
+The trace related-log action copies the exact applied source and half-open
+window, then searches literal trace-ID text in log bodies. Missing matching text
+is not evidence that the trace has no related logs. Overview refreshes authorized
+inventory and explicitly loads the dedicated companion's recorded process
+observations. Pipeline names custody boundaries and shows returned status values;
+neither view invents health, throughput or unreported backlog. Human-readable UTC
+timestamps retain exact fractional digits and unsigned values in row titles and
+expandable fields. Exact query inputs, evidence and row JSON start collapsed.
+
+Explicit workload/human/delegated scopes are parsed with byte, field and numeric
+bounds, and checked against the current session grant for useful client errors.
+The server rechecks policy, resource scope and fresh verification. A grant editor
+cannot make an empty enrollment scope installation-wide by inference. One-time
+secrets are transient page state with a clear control; they are removed from
+status/result summaries.
 
 ## Request ownership
 

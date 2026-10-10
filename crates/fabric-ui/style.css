@@ -1152,3 +1152,33 @@ caption {
 
 /* Tick positions share the stretched plot coordinates: 20,70,120,170 / 180. */
 .chart-y{position:relative;display:block;flex:0 0 44px;padding:0}.chart-y span{position:absolute;left:0;line-height:1;transform:translateY(-50%)}.chart-y span:nth-child(1){top:11.111111%}.chart-y span:nth-child(2){top:38.888889%}.chart-y span:nth-child(3){top:66.666667%}.chart-y span:nth-child(4){top:94.444444%}
+
+.live-json { white-space: pre-wrap; overflow-wrap: anywhere; max-width: 100%; font-size: 12px; line-height: 1.5; }
+.live-connection { margin-bottom: 20px; }
+.live-connection + .card { margin-top: 20px; }
+.query-form textarea { min-height: 80px; max-width: 100%; }
+.query-form button { max-inline-size: 100%; white-space: normal; }
+details > summary { cursor: pointer; padding: 10px 0; }
+.live-span { margin: 16px 0; }
+.live-span > div:first-child { display: flex; gap: 12px; flex-wrap: wrap; }
+.live-span-track { height: 20px; margin-top: 8px; background: var(--line, #d6e3e7); border-radius: 4px; overflow: hidden; }
+.live-span-bar { height: 100%; background: #10bdd1; border-radius: 4px; }
+.scope-editor { width: 100%; font-family: monospace; font-size: 12px; }
+.live-metric-plot { display: block; width: 100%; max-height: 180px; }
+.live-connection, .query-card { overflow-wrap: anywhere; }
+.card-heading > div { min-width: 0; }
+@media(max-width:700px) {
+  .card-heading { flex-wrap: wrap; }
+  .top-actions { flex-wrap: wrap; min-width: 0; }
+  .mobile-nav button { overflow-wrap: anywhere; }
+  .skip-link { max-width: calc(100% - 32px); }
+  .query-form select { max-width: 100%; }
+}
+
+.live-connection .connection-title { font-size: 18px; margin: 0; }
+.live-connection .card-heading { margin-bottom: 8px; }
+.live-connection p { margin: 4px 0 0; }
+.time-presets { margin: 16px 0; flex-wrap: wrap; }
+.exact-range { margin-top: 8px; }
+.observation-text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.results td.mono { font-size: 12px; }

@@ -37,7 +37,7 @@ def main():
     command = [str(DATA / 'tools/ui/trunk'), 'build', '--release', '--locked',
                '--dist', str(out / 'dist'), '--public-url', '/console/']
     receipt = {'command': command, 'source': str(ROOT / 'crates/fabric-ui'),
-               'out': str(out), 'exit': None, 'artifact_role': 'console foundation; not authenticated release'}
+               'out': str(out), 'exit': None, 'artifact_role': 'console build candidate; acceptance recorded separately'}
     inputs = sorted(p for p in (ROOT / 'crates/fabric-ui').rglob('*') if p.is_file())
     inputs += [ROOT / 'Cargo.lock', Path(__file__).resolve()]
     receipt['source_sha256'] = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs}

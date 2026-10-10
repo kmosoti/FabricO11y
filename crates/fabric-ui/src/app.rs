@@ -5,7 +5,7 @@ use crate::model::{
 use leptos::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Page {
+pub(crate) enum Page {
     Overview,
     Explore,
     Traces,
@@ -14,7 +14,7 @@ enum Page {
     Settings,
 }
 impl Page {
-    fn title(self) -> &'static str {
+    pub(crate) fn title(self) -> &'static str {
         match self {
             Self::Overview => "Overview",
             Self::Explore => "Explore",
@@ -78,6 +78,7 @@ pub fn App() -> impl IntoView {
     let page = RwSignal::new(Page::Overview);
     let dark = RwSignal::new(false);
     let demo = RwSignal::new(false);
+    let live = RwSignal::new(false);
     provide_context(RwSignal::new(String::new()));
     view! {
         <div class="console" class:dark=move || dark.get()>
@@ -91,10 +92,11 @@ pub fn App() -> impl IntoView {
                 <div class="sidebar-foot"><span class="status-dot"></span>"Local workspace"<small>"Evidence before certainty"</small></div>
             </aside>
             <div class="workspace">
-                <header class="topbar"><div class="breadcrumb">"Workspace"<span>" / "</span>{move || page.get().title()}</div><div class="top-actions"><span class="badge" class:warning=move || demo.get()>{move || if demo.get() { "DEMONSTRATION" } else { "CONNECTION REQUIRED" }}</span><button class="theme-button" aria-label="Toggle color theme" on:click=move |_| dark.update(|v| *v = !*v)>{move || if dark.get() { "Theme: light" } else { "Theme: dark" }}</button></div></header>
+                <header class="topbar"><div class="breadcrumb">"Workspace"<span>" / "</span>{move || page.get().title()}</div><div class="top-actions"><span class="badge" class:warning=move || demo.get()>{move || if live.get() { "SERVER CONNECTION" } else if demo.get() { "DEMONSTRATION" } else { "CONNECTION REQUIRED" }}</span><button class="theme-button" aria-label="Toggle color theme" on:click=move |_| dark.update(|v| *v = !*v)>{move || if dark.get() { "Theme: light" } else { "Theme: dark" }}</button></div></header>
                 <main id="main-content">
+                    <Show when=move || live.get() fallback=move || view! {
                     <Show when=move || demo.get() fallback=move || view! {
-                        <section class="locked card" data-testid="locked-screen"><p class="eyebrow">"FABRIC O11Y OPERATOR CONSOLE"</p><h1>"Connect to a server"</h1><p>"This preview contains demonstration data only. Secure server sign-in is not available yet."</p><p class="muted">"No admin credential is requested, stored or embedded in this app."</p><button class="primary" data-testid="enter-demo" on:click=move |_| demo.set(true)>"Explore demonstration"<span>" →"</span></button><small>"Deterministic synthetic data · no network requests · no persisted telemetry"</small></section>
+                        <section class="locked card" data-testid="locked-screen"><p class="eyebrow">"FABRIC O11Y OPERATOR CONSOLE"</p><h1>"Connect to a server"</h1><p>"Use a same-origin authenticated server session, or inspect the explicit synthetic demonstration."</p><p class="muted">"No admin credential is requested, stored or embedded in this app."</p><button class="primary" data-testid="connect-server" on:click=move |_| live.set(true)>"Connect to server"</button><button class="secondary" data-testid="enter-demo" on:click=move |_| demo.set(true)>"Explore demonstration"<span>" →"</span></button><small>"Deterministic synthetic data · no network requests · no persisted telemetry"</small></section>
                     }>
                         <div class="demo-note" role="status"><span>"◇"</span>"Demonstration workspace. All observations below are synthetic fixture data, not a live deployment."<button on:click=move |_| demo.set(false)>"Exit demo"</button></div>
                         <div class="page-heading"><div><p class="eyebrow">"OBSERVE / UNDERSTAND"</p><h1>{move || page.get().title()}</h1><p class="muted">{move || match page.get() { Page::Overview => "A clear view of retained evidence and its limits.", Page::Explore => "Ask a bounded question. Keep the evidence in view.", Page::Traces => "Follow recorded spans without inventing missing context.", Page::Pipeline => "Understand where telemetry lives and who holds custody.", Page::Tail => "A bounded preview, with explicit pause and retention.", Page::Settings => "Identity, appearance and effective storage policy." }}</p></div><span class="fixture-chip">"Fixture / 01"</span></div>
@@ -107,6 +109,7 @@ pub fn App() -> impl IntoView {
                             Page::Settings => view! { <Settings dark=dark/> }.into_any(),
                         }}
                     </Show>
+                    }><crate::live::LiveConsole navigate=page/></Show>
                 </main>
                 <footer>"FabricO11y"<span>"Fidelity · Custody · Completeness · Freshness · Boundedness"</span></footer>
             </div>
@@ -301,5 +304,5 @@ fn LiveTail() -> impl IntoView {
 
 #[component]
 fn Settings(dark: RwSignal<bool>) -> impl IntoView {
-    view! { <div class="two-column"><section class="card"><p class="eyebrow">"IDENTITY & ACCESS"</p><h2>"Production session required"</h2><p class="muted">"Passkey enrollment, recovery, session revocation and scoped Spindle enrollment/configuration/pause/revoke are release requirements. They are unavailable in this demonstration foundation."</p><span class="badge warning">"Not implemented"</span></section><section class="card"><p class="eyebrow">"APPEARANCE"</p><h2>"Make room for your work"</h2><p class="muted">"The theme is held in page memory only."</p><button class="secondary" on:click=move |_| dark.update(|v| *v = !*v)>{move || if dark.get() { "Use light theme" } else { "Use dark theme" }}</button></section></div><section class="card"><div class="card-heading"><h2>"Retention & storage policy"</h2><span class="badge">"Read-only plan"</span></div><div class="policy-grid"><div><small>"Release requirement"</small><strong>"100 GB"</strong><p>"Decimal sealed-Segment retention default"</p></div><div><small>"Age retention"</small><strong>"24 hours"</strong><p>"Either byte or age expiry can apply first"</p></div><div><small>"Custody boundaries"</small><strong>"Separate budgets"</strong><p>"Journal, workspace and edge Spools need headroom"</p></div></div><p class="muted">"This is intended release policy, not a fetched effective configuration. Current server defaults remain 20 GiB. Operators use the protected server configuration file and documented restart procedure; no browser write is offered."</p></section> }
+    view! { <div class="two-column"><section class="card"><p class="eyebrow">"IDENTITY & ACCESS"</p><h2>"Production session required"</h2><p class="muted">"Passkey enrollment, recovery, session revocation and scoped Spindle enrollment/configuration/pause/revoke are release requirements. They are unavailable in this demonstration foundation."</p><span class="badge warning">"Not implemented"</span></section><section class="card"><p class="eyebrow">"APPEARANCE"</p><h2>"Make room for your work"</h2><p class="muted">"The theme is held in page memory only."</p><button class="secondary" on:click=move |_| dark.update(|v| *v = !*v)>{move || if dark.get() { "Use light theme" } else { "Use dark theme" }}</button></section></div><section class="card"><div class="card-heading"><h2>"Retention & storage policy"</h2><span class="badge">"Read-only plan"</span></div><div class="policy-grid"><div><small>"Release requirement"</small><strong>"100 GB"</strong><p>"Decimal sealed-Segment retention default"</p></div><div><small>"Age retention"</small><strong>"24 hours"</strong><p>"Either byte or age expiry can apply first"</p></div><div><small>"Custody boundaries"</small><strong>"Separate budgets"</strong><p>"Journal, workspace and edge Spools need headroom"</p></div></div><p class="muted">"This is intended release policy, not a fetched effective configuration. Live Settings fetches the effective server policy. Operators use the protected server configuration file and documented restart procedure; no browser write is offered."</p></section> }
 }
