@@ -58,6 +58,16 @@ original screen gate, including80MiB heap and exact applicable file bytes. The
 first candidate failure remains failed. A passing screen still requires the
 full registered repetitions and service checks.
 
+For an admitted new eight-cell campaign, collect one additional observer replay
+per cell using `spill_measure.py --campaign-root ... --binary ... --out ...`.
+Freeze the measured binary and require its hash to match every baseline; verify
+it before and after each child. Strip inherited fault settings and freeze both
+observer source and shared-library hashes. Require the existing exact9-byte
+write/writev control, positive spill writes, identical input and complete final
+manifest. Report cumulative logical spill writes separately; observer CPU, time
+and heap are not comparative evidence. Preserve the original campaign's null
+metrics and its separately registered supplemental-accounting scope.
+
 Use `python3 -B tools/resource_group.py -- COMMAND` for every build, workload and
 validator, serializing resource-heavy jobs. The data drive at
 `/run/media/kmosoti/data/FabricO11y` owns caches, tool installations and scratch.
