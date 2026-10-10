@@ -7,8 +7,8 @@ Follow the [ownership policy](../documentation-policy.md#canonical-ownership);
 historical measurements retain their original revision and limitations.
 
 The [wiki index](https://github.com/kmosoti/FabricO11y/wiki/Index) now contains
-150 historical reports. The [migration manifest](../wiki-migration.json) records
-their source hashes and verified wiki commit: 144 repository bodies became
+151 migrated historical reports. The [migration manifest](../wiki-migration.json) records
+their source hashes and verified wiki commit: 145 repository bodies became
 compatibility pointers; six mixed records retain their bodies because harnesses
 consume or regenerate them. Registered protocols, fixtures and raw evidence were
 not moved into the public wiki.
@@ -21,6 +21,8 @@ to those archives identify private evidence, not public downloads. Tracked
 fixtures and machine-consumed documentation remain versioned here.
 
 ## Recent investigations
+
+Finite release checkpoints: [package installation](formal/installation-release-run-01.md), [scoped evidence cache](benchmarks/scoped-evidence-cache-run-01.md), and [production-access campaign prerequisites](benchmarks/production-access-campaign-run-01.md). These retain their exact revisions, failures and limits; successor campaign acceptance is separate.
 
 | Area | Records | Scope or status |
 | --- | --- | --- |

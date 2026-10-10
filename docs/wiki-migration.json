@@ -1,6 +1,6 @@
 {
   "format": "fabric-wiki-migration-v1",
-  "wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d",
+  "wiki_commit": "3cecc10d988c012aea21628f43b76f1e6cc0fe67",
   "source_base": "6ed5659cb0123ccd928d6f9a0ce5a83fad09fbaf",
   "raw_assets_uploaded": 0,
   "original_archive_sha256": "4fb293e4aa1dc52e20c82f3f62e9cd95cf4fe01ab6741672c80c50a89f7215f0",
@@ -1488,6 +1488,19 @@
       "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-invariant-consolidation",
       "repository_state": "compatibility_pointer",
       "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/formal/installation-release-run-01.md",
+      "source_sha256": "6636c6e5c05f5160dca4d01c87ded9756e424a8aa043f1cb8677ccbb7598904c",
+      "page": "Experiment-formal-installation-release-run-01",
+      "page_sha256": "733b7e025f4394f0df6d0fe34ba780bdb0225abb6cf3cc8ae5658bf135ed3e28",
+      "normalizations": {
+        "relative_links": true,
+        "data_drive_prefix": true
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-release-run-01",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "3cecc10d988c012aea21628f43b76f1e6cc0fe67"
     }
   ],
   "migration_batches": [
@@ -1521,6 +1534,17 @@
       "original_archive_sha256": "e7a17947f68cac7d17b74c8169b3923c18f13a0bddb4668a7b02905be9d86962",
       "raw_assets_uploaded": 0,
       "publication_receipt": "$FABRIC_DATA/results/wiki-stage-02/publication-receipt.json"
+    },
+    {
+      "published_wiki_commit": "3cecc10d988c012aea21628f43b76f1e6cc0fe67",
+      "report_count": 1,
+      "source_paths": [
+        "docs/experiments/formal/installation-release-run-01.md"
+      ],
+      "archive_location": "$FABRIC_DATA/results/wiki-stage-03/original-reports.tar.gz",
+      "original_archive_sha256": "d9b1bfc80cc2af13a933c0f12260b2858b91fde170cb73fcce9c19a7c6733795",
+      "raw_assets_uploaded": 0,
+      "publication_receipt": "$FABRIC_DATA/results/wiki-stage-03/publication-receipt.json"
     }
   ],
   "repository_retention_notes": [
@@ -1582,6 +1606,26 @@
       "source": "docs/experiments/lab-orchestration.md",
       "reason": "Adopted executable coordination procedure; repository remains canonical.",
       "source_sha256": "1bf5e53556aa9d9134a7aed0e5f9b41d7afdac3c4a6236815273929282bba069"
+    }
+  ],
+  "direct_publications": [
+    {
+      "page": "Experiment-benchmarks-scoped-evidence-cache-run-01",
+      "page_sha256": "791aec6ced6073d2812377dce97e381094e6ecf29476168a692b9f876e9a6bd7",
+      "draft_sha256": "dc951703f9a156d2102dfbc827c91a4b7e82036dfa122e55177f63f6e6235cc4",
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-scoped-evidence-cache-run-01",
+      "repository_state": "direct_canonical_publication",
+      "published_wiki_commit": "3cecc10d988c012aea21628f43b76f1e6cc0fe67",
+      "source": "docs/experiments/benchmarks/scoped-evidence-cache-run-01.md"
+    },
+    {
+      "page": "Experiment-benchmarks-production-access-campaign-run-01",
+      "page_sha256": "15b2f2f66782e297c2c46e1b9accc6f6432a48cc7f6a9557e1f69fa4781951f7",
+      "draft_sha256": "15b2f2f66782e297c2c46e1b9accc6f6432a48cc7f6a9557e1f69fa4781951f7",
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-production-access-campaign-run-01",
+      "repository_state": "direct_canonical_publication",
+      "published_wiki_commit": "3cecc10d988c012aea21628f43b76f1e6cc0fe67",
+      "source": "docs/experiments/benchmarks/production-access-campaign-run-01.md"
     }
   ]
 }
