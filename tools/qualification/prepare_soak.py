@@ -31,9 +31,10 @@ def git(*arguments):
 
 
 def source_paths(*, include_missing=False):
-    # Only compilation/source inputs: exclude run archives, dotfiles, arbitrary
-    # configuration, credentials and ignored files. Include dirty untracked Rust
-    # modules; the snapshot is distinct from the existing working tree.
+    # Git-listed compilation and package inputs, including dirty new modules,
+    # patched vendor crates and console assets. No run archives, arbitrary
+    # operator configuration, credentials or ignored files. A snapshot remains
+    # provenance, not a claim that supplied binaries were built from its bytes.
     names = git("ls-files", "--cached", "--others", "--exclude-standard", "-z")
     selected = []
     for name in names.decode().split("\0"):
@@ -42,11 +43,18 @@ def source_paths(*, include_missing=False):
         path = Path(name)
         if path.is_absolute() or ".." in path.parts:
             raise ValueError("unsafe source path")
-        root_input = name in ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml", "build.rs")
+        root_input = name in ("Cargo.toml", "Cargo.lock", "rust-toolchain.toml",
+                              "build.rs", ".cargo/config.toml", "LICENSE", "NOTICE")
         rust_input = path.parts[0] in ("src", "crates", "examples", "tests", "xtask") and (
             path.suffix in (".rs", ".proto") or path.name in ("Cargo.toml", "Cargo.lock"))
-        proto_input = path.parts[0] in ("proto", "vendor") and path.suffix == ".proto"
-        if (root_input or rust_input or proto_input) and (include_missing or (ROOT / path).exists()):
+        proto_input = path.parts[0] == "proto" and path.suffix == ".proto"
+        vendor_input = path.parts[0] == "vendor"
+        console_input = path.parts[:2] == ("crates", "fabric-ui")
+        package_input = path.parts[0] == "packaging"
+        helper_input = name in ("tools/resource_group.py", "tools/ui/build.py") or (
+            path.parts[:2] == ("tools", "packaging") and path.suffix == ".py")
+        if (root_input or rust_input or proto_input or vendor_input or console_input
+                or package_input or helper_input) and (include_missing or (ROOT / path).exists()):
             selected.append(name)
     return sorted(set(selected))
 
