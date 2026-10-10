@@ -5,6 +5,8 @@ the executable acceptance scope for ACCESS-1–4 and UI-1–2 within the
 [operator-console milestone](../../milestones/operator-console.md). Native unit
 checks are supporting evidence; they do not establish browser interoperability.
 Results and observations belong in the research wiki, with local receipt links.
+The [ASVS selection](../../formal/console-security-map.md) pins control identifiers,
+mechanisms, applicability and explicit differences without a conformance claim.
 
 ## Candidate and containment
 
