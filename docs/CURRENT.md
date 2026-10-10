@@ -97,6 +97,10 @@ Successor Debian build 03 and RPM build 02 contain native source `e174fd3` and
 the same console build 08; all 637 common payload files match. A hosted browser
 trial then found a zoom/reflow defect in those UI sources. Corrected assets and
 packages are being prepared before full installed and service acceptance.
+Console build 09 passed 150 actual Chrome checks against the staged native
+candidate, including enlarged standalone pagination and an injected overflow
+that the reflow assertion rejected. This staged check does not replace testing
+the rebuilt packages.
 
 The native access adapter, scoped HTTPS APIs and PWA are implemented. Exact-package
 Chrome smoke `console-live-chrome-final-package-04` passed 147 checks. The longer
@@ -146,7 +150,8 @@ its original cause was not established. Successor hosted run `38071282547` at
 `3e609a4` passed all 20 enabled fast checks and the actual Chrome sandbox
 preflight, then found the standalone Next-page button extending to 409 px in a
 390 px viewport at 200% content zoom. The button now has a bounded width and
-wrapping; a fresh actual-browser regression and hosted run are pending. Bun
+wrapping; the actual-browser regression passed, including its negative control.
+Hosted run `38072930139` at `8597c42` is in progress. Bun
 CI/hooks remain disabled.
 
 The [research wiki](https://github.com/kmosoti/FabricO11y/wiki) owns research and
