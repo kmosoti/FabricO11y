@@ -54,7 +54,7 @@ jobs:
       - name: Verify Chrome namespace and seccomp sandbox with startup diagnostics
         run: |
           python3 -B tools/resource_group.py -- python3 -B tools/ci/test_chrome_sandbox.py
-          python3 -B tools/resource_group.py -- python3 -B tools/ci/chrome-sandbox.py
+          python3 -B tools/resource_group.py -- env GITHUB_ACTIONS=true python3 -B tools/ci/chrome-sandbox.py
       - name: Build native authenticated browser fixture
         run: python3 -B tools/resource_group.py -- cargo build --locked --workspace --bins
       - name: Check actual passkeys and scoped native HTTPS console in Chrome
@@ -70,7 +70,7 @@ jobs:
         run: python3 -B tools/resource_group.py -- python3 -B tools/packaging/test_packaging.py
       - name: Remove exact hosted Chrome AppArmor attachment
         if: always()
-        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/chrome-sandbox.py --cleanup
+        run: python3 -B tools/resource_group.py -- env GITHUB_ACTIONS=true python3 -B tools/ci/chrome-sandbox.py --cleanup
       - name: Keep receipts and console identity
         if: always()
         uses: actions/upload-artifact@v4
