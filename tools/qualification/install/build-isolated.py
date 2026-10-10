@@ -22,7 +22,7 @@ from prepare_soak import MAX_COPY_BYTES, source_paths
 DATA_MOUNT = Path("/run/media/kmosoti/data")
 TOOLCHAIN_HOME = STORAGE / "toolchain-cache/rustup"
 TOOLCHAIN = TOOLCHAIN_HOME / "toolchains/1.98.0-x86_64-unknown-linux-gnu"
-IMAGE_TAG = "docker.io/library/debian:13-slim"
+IMAGE_TAG = "docker.io/library/debian:12-slim"
 MAX_DATA_BYTES = 100 * 1000**3
 RUN_BUDGET_BYTES = 8 * 1024**3
 PULL_TIMEOUT_S = 300

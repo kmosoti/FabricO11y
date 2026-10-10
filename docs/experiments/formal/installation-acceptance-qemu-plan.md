@@ -23,13 +23,16 @@ from a private Git snapshot of the known Rust/Cargo inputs from
 
 ```sh
 python3 tools/resource_group.py -- python3 tools/qualification/install/build-isolated.py \
-  --run-id install-debian13-deb-01
+  --run-id install-debian12-deb-01
 ```
 
 The helper includes dirty tracked and untracked allowlisted files, records
 their SHA-256 hashes and source diff, and leaves the main worktree untouched.
 It creates a private Git commit and runs the existing `packaging/build-deb.sh`
-unchanged in a one-shot rootless Debian 13 container. The official image tag is
+unchanged in a one-shot rootless Debian 12 build container. Building against
+Debian 12's glibc 2.36 keeps the newer Rust toolchain from adding symbols beyond
+the product's GLIBC 2.34 compatibility floor. This build environment is
+separate from the Debian 13 runtime acceptance VM below. The official image tag is
 resolved to a repository digest and the container runs by that digest. `git`,
 `build-essential`, `binutils`, `ca-certificates`, and `dpkg-dev` are installed
 inside the disposable container only. Rust 1.98 is mounted read-only. The
@@ -54,7 +57,7 @@ Run the acceptance VM from the repository root:
 
 ```sh
 python3 tools/resource_group.py -- python3 tools/qualification/install/run-qemu.py \
-  --deb /run/media/kmosoti/data/FabricO11y/results/installation-package-build/install-debian13-deb-01/fabrico11y_0.1.0~alpha.1_amd64.deb \
+  --deb /run/media/kmosoti/data/FabricO11y/results/installation-package-build/install-debian12-deb-01/fabrico11y_0.1.0~alpha.1_amd64.deb \
   --source-commit <40-or-64-character-snapshot-commit> \
   --run-id install-debian13-local-01
 ```
@@ -84,6 +87,14 @@ before manual cleanup. Record a successful run as a local VM measurement, not
 as the registered container result or deployment qualification.
 
 ## Current host prerequisites
+
+The first isolated Debian 13 package-build attempt was rejected by the
+unchanged compatibility checker: the server binary referenced weak undefined
+`pidfd_spawnp` and `pidfd_getpid` symbols at `GLIBC_2.39`. The failed package
+and build logs are retained under the `readiness-01` result and scratch paths.
+This is evidence against using Debian 13 as the build sysroot with Rust 1.98;
+it does not change the supported `GLIBC_2.34` floor or runtime target. The
+follow-up build uses Debian 12, while acceptance still runs on Debian 13.
 
 The inspected Fedora host has QEMU TCG, `qemu-img`, `genisoimage`, OpenSSH,
 curl and cgroup v2. `/dev/kvm` is not available to the user; the runner does
