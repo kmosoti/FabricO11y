@@ -137,6 +137,11 @@ systemctl enable --now fabrico11y-server
         (root / 'producer.json').write_text(json.dumps(config))
         edge.copy(root / 'producer.json', '/home/accept/producer.json')
         edge.copy(HERE / 'producer.py', '/home/accept/producer.py')
+        edge.copy(HERE / 'outage.py', '/home/accept/outage.py')
+        edge.script('install -m 0700 /home/accept/outage.py /root/cross/outage.py\n')
+        for guest in (server, edge):
+            guest.copy(HERE / 'monitor.py', '/home/accept/monitor.py')
+            guest.script('install -m 0700 /home/accept/monitor.py /root/cross/monitor.py\n')
         edge.script(f'''set -eu
 install -m 0644 /home/accept/ca.pem /etc/fabrico11y/ca.pem
 install -m 0640 -o root -g fabricolly /home/accept/edge-token /etc/fabrico11y/node-token
@@ -160,20 +165,38 @@ printf '[Service]\\nExecStart=\\nExecStart=/usr/bin/fabric-node run /etc/fabrico
 if command -v restorecon >/dev/null; then restorecon -R /etc/fabrico11y /var/log/fabric-cross; fi
 systemctl daemon-reload
 systemctl enable --now fabrico11y-node
-systemd-run --unit=cross-producer --property=MemoryMax=128M --property=MemorySwapMax=0 --property=TasksMax=32 /usr/bin/python3 -B /root/cross/producer.py --config /root/cross/producer.json
 ''', timeout=60)
+        # Wait for the actual native listener before creating the first trace.
+        edge.script("""python3 - <<'PY'
+import socket,time
+deadline=time.monotonic()+30
+while True:
+ try:
+  with socket.create_connection(('127.0.0.1',4318),timeout=.2): break
+ except OSError:
+  if time.monotonic()>deadline: raise
+  time.sleep(.1)
+PY
+""", timeout=35)
+        for guest, service in ((edge, 'fabrico11y-node.service'), (server, 'fabrico11y-server.service')):
+            guest.script(f'''set -eu
+group=$(systemctl show --property=ControlGroup --value {service})
+test -n "$group"
+systemd-run --unit=cross-monitor --property=MemoryMax=64M --property=MemorySwapMax=0 --property=TasksMax=16 /usr/bin/python3 -B /root/cross/monitor.py --service-cgroup "$group" --out /root/cross/resources.jsonl
+''', timeout=30)
+        edge.script('systemd-run --unit=cross-producer --property=MemoryMax=128M --property=MemorySwapMax=0 --property=TasksMax=32 /usr/bin/python3 -B /root/cross/producer.py --config /root/cross/producer.json\n', timeout=30)
         # Grading uses all populations; unjoined clocks or missing evidence are
         # incomplete gates. No omitted gate can be promoted to a successful cell.
         from grade import measure_and_grade
         facts['gates'] = measure_and_grade(server, edge, call, config, result, data_port)
         facts['exit'] = 0 if facts['gates'] and all(g['passed'] for g in facts['gates'].values()) else 1
-    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, RuntimeError, KeyError, IndexError, TypeError, subprocess.SubprocessError) as error:
         facts['error'] = f'{type(error).__name__}: {error}'
     finally:
         for guest in (edge, server):
             if guest.child is not None and guest.child.poll() is None:
                 try:
-                    diagnostic = guest.script('set +e\nsystemctl stop cross-producer fabrico11y-node fabrico11y-server\njournalctl --no-pager -u fabrico11y-node -u fabrico11y-server -u cross-producer\n', timeout=60, check=False)
+                    diagnostic = guest.script('set +e\nsystemctl stop cross-producer cross-monitor cross-outage fabrico11y-node fabrico11y-server\nnft delete table inet fabric_cross 2>/dev/null\njournalctl --no-pager -o cat -u fabrico11y-node -u fabrico11y-server -u cross-producer\n', timeout=60, check=False)
                     (result / (guest.role + '-journal.txt')).write_text(diagnostic.stdout + diagnostic.stderr)
                 except (OSError, subprocess.SubprocessError) as error:
                     facts[guest.role + '_diagnostic_error'] = str(error)

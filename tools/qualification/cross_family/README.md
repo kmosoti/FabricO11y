@@ -7,8 +7,11 @@ uninstalled qualification helpers. Other release campaign runners reuse this
 admission check.
 
 The producer's exact metric population, trace identities and log entropy have
-executable checks against the unchanged query oracle. The VM manager and grading
-adapter are prerequisites in progress: `measure_and_grade` deliberately fails
-until the complete measurement, clock joins, custody/query controls and resource
-grading are implemented. No cross-family cell has run or passed. Running
-`run.py` currently cannot produce a successful cell receipt.
+executable checks against the unchanged query oracle. The manager implements
+guest-local interruption timing, resource sampling, the four registered latency
+populations, `clearing-v2`, independent stopped-journal snapshot selection and
+unchanged custody/query oracles with named negative controls. Missing source
+bytes, clocks, ACKs or visibility observations fail admission.
+
+The first actual two-guest execution remains pending. No cross-family cell has
+run or passed; contained unit controls do not establish end-to-end acceptance.

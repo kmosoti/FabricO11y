@@ -116,9 +116,24 @@ class Guest:
         (self.results / (self.role + '-install.txt')).write_text(result.stdout + result.stderr)
 
     def clock(self):
-        result = Q.run([*self.ssh, 'python3', '-'],
-                       input_text='import time\nprint(time.monotonic_ns())\n', timeout=15)
-        return int(result.stdout.strip())
+        return self.correlation()['monotonic_before_ns']
+
+    def correlation(self):
+        before = time.monotonic_ns()
+        result = Q.run([*self.ssh, 'python3', '-'], input_text='''import json,time
+from pathlib import Path
+before=time.monotonic_ns()
+wall=time.time_ns()
+after=time.monotonic_ns()
+print(json.dumps({'boot_id':Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
+ 'monotonic_before_ns':before,'unix_ns':wall,'monotonic_after_ns':after}))
+''', timeout=15)
+        after = time.monotonic_ns()
+        value = json.loads(result.stdout)
+        if (value['boot_id'] != self.boot_id or value['monotonic_after_ns'] < value['monotonic_before_ns']):
+            raise ValueError('guest clock identity or sampling order changed')
+        return {**value, 'host_request_before_ns': before, 'host_request_after_ns': after,
+                'ssh_roundtrip_ns': after - before}
 
     def stop(self):
         if self.child is not None and self.child.poll() is None:
