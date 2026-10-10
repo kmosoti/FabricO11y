@@ -1,0 +1,592 @@
+{
+  "schema_version": 1,
+  "date": "2026-10-09",
+  "status": "native RCA journal/restart matrix complete; repaired pressure measurements and owned cleanup complete; diagnostic closeout retains one missing historical launcher receipt; application integrations and broader research remain",
+  "program": "cross-system-performance-program.md",
+  "active_goal": "Close Fabric's recorded end-to-end correctness, sustained-memory, capacity, recovery and installation evidence gaps for development and small deployments; continue bounded multidimensional algorithm research informed by contemporary sources and research-agent methods, preserving exact evidence semantics and resource limits",
+  "goal_interpretation": "Prioritize readiness checks and reproduced defects; use persistent experimental state, competing mechanisms and staged executable evaluation to generate and test useful trajectories. Finish finite research rounds with supported, rejected or inconclusive findings; do not substitute them for unmet product gates",
+  "goal_revision": {
+    "date": "2026-10-09",
+    "record": "cross-system-performance-program.md#revised-engineering-goal",
+    "previous_objective": "Multidimensional source research, bounded experiments and consolidated Fabric findings",
+    "scope": "repository objective revised at owner request; existing goal API cannot edit objective text",
+    "session_goal_replaced": false,
+    "budget_reset": false,
+    "execution_state": "gap audit and primary-source methods research completed; new workload protocols and admission remain prerequisites",
+    "priority_order": ["current evidence and admission", "bounded-sealer acceptance and soak", "combined dev/small consumers", "lifecycle pressure and recovery", "installation and target-profile qualification", "operator guidance and finite research synthesis"],
+    "research_methods": ["persistent experiment state", "candidate diversity", "cheap-to-expensive executable evaluation", "bounded independent delegation", "held-out confirmation", "single integration owner"],
+    "verification_directory": "../experiments/benchmarks/data/engineering-goal-01/docs-checks"
+  },
+  "goal_complete": false,
+  "application_use_cases": {
+    "design": "application-use-cases.md",
+    "state": "twelve experiment cards; U1 journal/restart matrix executed, while publication/interpretation and U2-U12 remain proposed",
+    "native_rca_findings": "../experiments/benchmarks/rca-journal-findings.md",
+    "nomos_identity": "unresolved; generic deployment adapter design pending actual repository/API",
+    "accountable_pi": "coordinator until scoped dispatch",
+    "labs": {
+      "collection_reliability": ["U3", "U6", "U7", "U11"],
+      "storage_memory": ["U5", "U9", "U12"],
+      "query_investigation": ["U1", "U2", "U4", "U8", "U10"]
+    },
+    "execution_order": ["U1 published-storage and interpretation (journal/restart matrix executed)", "U2/U4/U11 instrumented application", "U3/U5 deployment and build recorder", "U6/U7/U8 website flow", "U9/U12 mixed signals and U10 jobs/tools"],
+    "admission": "freeze per-card workload, commands, independent outcomes, resource and time limits, controls and source binding in separately registered protocols before dispatch",
+    "new_time_allocation": false,
+    "production_interfaces_changed": false,
+    "boundary": "use-case research design; no browser/Nomos integration, causal engine, generalized metric intake or deployment qualification claimed"
+  },
+  "rca_flow_preparation": {
+    "design": "../experiments/benchmarks/rca-flow-design.md",
+    "fixtures": "../../tools/bench/labs/rca/scenarios.json",
+    "state": "preparation passed; native pilot 25 chains/3 controls and fourteen case-plan cells 350 chains/30 controls passed; publication and interpretation grading unrun",
+    "registered": true,
+    "preparation_protocol": "../experiments/benchmarks/use-case-preparation-protocol.md",
+    "preparation_protocol_commit": "f6e8276",
+    "preparation_result": "../experiments/benchmarks/data/hammer-reference-01/query/rca-preparation-01/result.json",
+    "preparation_cleanup": "launcher/coordinator scratch removed; cgroup peak 85897216 bytes",
+    "preflight_exit": 2,
+    "preflight_failure": "read-only mounted data-drive scratch; workload not started",
+    "new_time_allocation": false,
+    "native_protocol": "../experiments/benchmarks/rca-journal-matrix-protocol.md",
+    "native_findings": "../experiments/benchmarks/rca-journal-findings.md",
+    "pending": ["register and execute published-storage phase with bounded padding", "exercise actual application SDK/Spindle path", "grade supported conclusions and abstention separately from query exactness"],
+    "boundary": "Fabric supplies evidence; no production causal engine, generalized metric intake or measured RCA performance is claimed"
+  },
+  "pressure_reference_round": {
+    "protocol": "../experiments/benchmarks/hammer-reference-protocol.md",
+    "findings": "../experiments/benchmarks/hammer-reference-findings.md",
+    "evidence_root": "../experiments/benchmarks/data/hammer-reference-01",
+    "state": "three journal identity defects reproduced and repaired; all four identity service cells passed; remote reductions repaired/retried successfully; seventeen fast and three manual documentation checks passed; owned cleanup complete; diagnostic reconciliation has no mismatches but remains incomplete for missing original identity-scan-02 outer receipt",
+    "additional_seconds_allocation": 7200,
+    "prior_charges_preserved": true,
+    "server_memory_max_bytes": 3999997952,
+    "owner_storage_ceiling_bytes": 100000000000,
+    "local_lab_memory_max_bytes": 21474836480,
+    "remote_host": "digitalocean-02",
+    "remote_memory_max_bytes": 134217728,
+    "remote_cpu_equivalents": 0.5,
+    "qualification": false,
+    "production_defaults_changed": false,
+    "repair_protocol": "../experiments/benchmarks/hammer-journal-identity-protocol.md",
+    "repair_evidence": "four unchanged identity regressions passed after three baseline failures; server library 68 passed and 2 ignored; all-feature Clippy passed",
+    "old_second_seed_cells": "not run: registered semantic stop after pressure-walk-01",
+    "signal_coverage": "native host metrics active every 15 seconds; complete CPU-metric queries oracle-checked; remote simulator carries gauges; no trace pressure in this round",
+    "fast_checks": "final-fast-01: seventeen passed, exit 0",
+    "pending_closeout": ["original identity-scan-02 launcher receipt unavailable; strict closeout cannot be declared passed"],
+    "diagnostic_reconciliation": "../experiments/benchmarks/data/hammer-reference-01/coordinator/final-reconciliation-01/reconciliation/summary.json",
+    "cleanup": "thirteen failed trees preserved and removed; bulky archives verified on data drive; exact empty Scan scratch parent removed; remote owned scratch/units absent",
+    "archive_repair": "relocation child copied exact archives but failed no-symlink census; metadata repair restored regular location records; all thirteen archive hashes independently matched; original failures unchanged",
+    "separately_charged_maintenance_s": 0.4128239154815674,
+    "resumption_protocol": "../experiments/benchmarks/pressure-resumption-protocol.md",
+    "reporting_retries": "remote-reduce-two-01/eight-01 failed name-shadow bug; two-02/eight-02 passed; final-preflight-01 caught reconciliation syntax error, final-preflight-02 passed after repair",
+    "next_discriminators": [
+      "Make simulator scheduled/generated/ACKed counts and deadline behavior explicit before using it for sustained-capacity claims",
+      "Repeat bounded request concurrency with fixed actual offer timing and request/configuration cost attribution",
+      "Measure compressed predicate CPU savings against complete conversion/write cost on Fabric's own representation"
+    ]
+  },
+  "service_recovery_round": {
+    "protocol": "../experiments/benchmarks/service-recovery-research-protocol.md",
+    "findings": "../experiments/benchmarks/service-recovery-research-findings.md",
+    "state": "complete: both service cases and eighteen fault cases passed finite gates; seventeen fast and three documentation checks passed; receipts and cleanup reconciled",
+    "budget_reset": false,
+    "service": "Scan then Walk; twenty actual Spindles; 60000 logs each; four publications each; exact source/ACK custody, independent final queries and finite residency gates passed",
+    "recovery": "seventeen selected syscall/cut cases plus repeated crashes during recovery; all preserve input and recover exact manifest",
+    "evidence_repair": "stale final-resource hashes preserved and separately reconciled; six actual defective archive controls rejected",
+    "closeout": "../experiments/benchmarks/data/native-frontier-01/memory/service-recovery/closeout/summary.json",
+    "agent_cost": "two scoped inspection assignments, one implementation assignment and one short follow-up review; actual inference token total unavailable",
+    "qualification": false,
+    "production_defaults_changed": false,
+    "next_discriminator": "balanced repeated query-plan/residency comparison with query-off controls; registered long soak and target qualification remain separate"
+  },
+  "native_mechanism_round": {
+    "protocol": "../experiments/benchmarks/native-frontier-protocol.md",
+    "findings": "../experiments/benchmarks/native-frontier-findings.md",
+    "evidence_root": "../experiments/benchmarks/data/native-frontier-01",
+    "budget_reset": false,
+    "additional_seconds_allocation": 7200,
+    "memory": {
+      "state": "confirmation_failed_cost_guard",
+      "native_cells": 24,
+      "result": "all twelve exact-output pairs reduce requested heap 12-17 percent; one held-out RSS ratio1.151341 exceeds1.10",
+      "diagnostic_cells": 8,
+      "diagnostic": "same input/frozen binaries reproduce default-policy RSS excess in both orders; fixed mmap threshold removes most of the paired gap; original confirmation remains failed",
+      "findings": "../experiments/benchmarks/native-ownership-findings.md"
+    },
+    "query": {
+      "state": "screen_failed_cost_guards",
+      "native_children": 24,
+      "complete_chains": 576,
+      "measured_first_pages": 2304,
+      "result": "primary reused-tail CPU improves11.27 percent with2558531 fewer requested allocation bytes; other plain CPU/wall guards fail",
+      "confirmation": "not_admitted",
+      "findings": "../experiments/benchmarks/native-key-first-findings.md"
+    },
+    "operations": {
+      "state": "verified_and_cleaned",
+      "fast": "final-fast-03 passed all seventeen checks; two prior Clippy failures and exact preservation receipts retained",
+      "documentation": "final-docs-01 passed all three manual checks; report reconciliation recheck recorded separately as final-docs-02",
+      "closeout": "final-closeout-01 authenticated twenty check receipts and removed six frozen binary copies",
+      "findings": "../experiments/benchmarks/native-resource-findings.md"
+    },
+    "next_vectors": [
+      "Consuming conversion with explicit source/destination growth overlap and journal-preserving failure semantics",
+      "Allocator-history sensitivity and requested-live versus resident memory accounting; contrast early release with bounded buffer reuse",
+      "Query admission overhead/churn and repeated first/reuse controls before any new nomination",
+      "Shared signal staging with decoded inputs, spare capacity, sorting and writer transients included"
+    ],
+    "next_vectors_state": "proposed; new protocols and ledger admission required before execution",
+    "production_defaults_changed": false,
+    "release_qualification": false
+  },
+  "matched_workload_round": {
+    "protocol": "../experiments/benchmarks/cross-system-sweep-protocol.md",
+    "findings": "../experiments/benchmarks/cross-system-sweep-findings.md",
+    "vectors": "cross-system-sweep-vectors.md",
+    "evidence_root": "../experiments/benchmarks/data/cross-system-sweep-01",
+    "additional_seconds_allocation": 7200,
+    "budget_reset": false,
+    "containment": "verified 16/20 GiB memory high/max, zero swap; native jobs serialized; data-drive scratch and build cache",
+    "source": {
+      "status": "24 additional complete regular-file inventories; Turso remains separate",
+      "repaired": ["clickhouse", "vector", "foundationdb"],
+      "verification_job": "source-check-02",
+      "qualification": "source custody and selected implementation dissections; not a whole-engine audit"
+    },
+    "memory": {
+      "screen": "72 native cells, all semantic gates; all six 8-versus-16 MiB finite screens passed both initial seeds; all six 32-versus-16 screens failed",
+      "models": "both frozen small-input predictions falsified at 64 MiB; max errors approximately 23 percent",
+      "attribution": "eight native cells locate peak during ingestion batch writing, with co-resident live-state growth; exclusive allocation owners unresolved",
+      "confirmation": "24 native cells on two new seeds completed; all six screens confirmed with exact semantic gates and unchanged cost guards",
+      "findings": "../experiments/benchmarks/cross-system-storage-sweep-findings.md"
+    },
+    "query": {
+      "matched_answers": 1536,
+      "vortex_answers": 576,
+      "prepared_scan_answers": 384,
+      "independent_full_answers_rechecked": 2496,
+      "rowset_native_cells": 48,
+      "held_density_rowset_cells": 48,
+      "qualification": "component costs and exact answers; no native Fabric service throughput claim",
+      "findings": "../experiments/benchmarks/cross-system-query-sweep-findings.md",
+      "rowset_findings": "../experiments/benchmarks/cross-system-rowset-sweep-findings.md"
+    },
+    "operations": {
+      "native_cells": 66,
+      "accepted_batches": 33792,
+      "complete_query_chains": 528,
+      "result": "cadence-dependent grouping and ACK tradeoff reproduced; polling perturbs paced runs; event-arm p99 outlier retained",
+      "qualification": "finite native Store/sealer/restart cases, not HTTP/TLS or sustained capacity",
+      "findings": "../experiments/benchmarks/cross-system-operations-sweep-findings.md"
+    },
+    "production_defaults_changed": false,
+    "production_dependencies_added": false,
+    "verification": {
+      "fast": "final-fast-02: all 17 checks passed, exit 0; original final-fast-01 Clippy failure retained",
+      "documentation": "final-docs-01: all 3 manual checks passed, exit 0; hooks and CI remain disabled",
+      "closeout": "final-closeout-01: exit 0; all 20 receipts bound to final jobs, candidate and execution windows; frozen storage binaries removed after authentication",
+      "record": "../experiments/benchmarks/data/cross-system-sweep-01/coordinator/closeout-01/summary.json",
+      "maximum_job_cgroup_peak_bytes": 2697691136,
+      "recorded_swap_and_oom_events": 0,
+      "failed_evidence": "all seven failed coordinator jobs retained; later preservation receipts resolve historical scratch cleanup flags"
+    },
+    "release_qualification": false
+  },
+  "coordinator": "inline agent consolidates three lab responsibilities, with scoped PI and research-assistant work",
+  "execution_admission": "continuation and matched sweep under verified containment; each new cell requires concrete registration and ledger admission",
+  "candidate_source_screen": {
+    "record": "cross-system-candidate-screen.md",
+    "outcome": "source evidence changes candidate selection; no executable performance or correctness result",
+    "decisions": [
+      "D1 retained with commit-thread checkpoint and completion-channel ownership constraints",
+      "D2 general escaped-log-borrow premise retired for inspected paths; residual metric/span and attribute work remains",
+      "D3 must account shared blocks held by query source views after cache eviction",
+      "D5 added: specific FSST predicate/selection path, with conversion and exact literal fallback"
+    ],
+    "vortex_git_blobs": {
+      "encodings/fsst/src/kernel.rs": "8dde5072faec0f6bbb0fa60981c55f3ac7d6356b",
+      "encodings/fsst/src/compute/filter.rs": "45a95520acad0611f3cb26d1c1a46652dce62be7",
+      "encodings/fsst/src/compute/like.rs": "388cdb342dc5c790bf9a361c2c4725928e9fd319",
+      "encodings/fsst/src/dfa/mod.rs": "5f67f92997e1259ca7ec743aa71f761ad8450c77",
+      "encodings/fsst/src/ops.rs": "31e270a097c7cf4fe9fbb81945f9e8390515ee59",
+      "vortex-array/src/arrays/varbin/compute/filter.rs": "2e780e58f26beaa4ce115db0cd0af618ef9896d8",
+      "vortex-array/src/arrays/filter/execute/take.rs": "0a4b0d70238b18dcee1d8536cd649cf2e7449c6b"
+    },
+    "additional_fabric_sha256": {
+      "crates/fabric-server/src/store.rs": "da2bf256fb8e5c9d8b1ab2c41686941401ed03b25feeb3c5c0b5133967cb40ce",
+      "crates/fabric-server/src/query/selection.rs": "dc53237a829d253ad7582ee28164feb29e124908574904e6c4ea6221a35690cf"
+    }
+  },
+  "fabric_source_provenance": {
+    "inspected_file_manifest": "turso-source-manifest.json",
+    "additional_sha256": {
+      "crates/fabric-server/src/sealer.rs": "b041d947918034f00a57692e974420d66027a65496435d5f38208f84860368f2",
+      "crates/fabric-server/src/segment/bounded.rs": "9d5c55867dba2adf3b35fce215fe40818a7923de85683b919519a86536d2db90",
+      "crates/fabric-server/src/segment/bounded/spill.rs": "0ea4adac770b776900256eddd1e96f3550663aec9f962c76b6729840569fe4c7"
+    },
+    "qualification": "dirty working tree; freeze all affected sources again before execution"
+  },
+  "resource_envelope": {
+    "launcher": "python3 -B tools/resource_group.py -- COMMAND",
+    "aggregate_memory_high_gib": 16,
+    "aggregate_memory_max_gib": 20,
+    "swap_max_bytes": 0,
+    "outer_deadline_seconds": 1800,
+    "execution_policy": "serialize all project workloads; verify containment and any smaller child limits",
+    "scratch_and_caches": "/run/media/kmosoti/data/FabricO11y",
+    "scratch_fallback": false,
+    "budget_reset": false,
+    "pre_admission": "inventory existing time, scratch, free reserve and evidence allowances; bound failed-state preservation",
+    "current_environment": "data volume writable; registration commits available; smoke and first slice exited zero"
+  },
+  "source_reviews": [
+    {
+      "assignment": "compressed_representation_review",
+      "assistant": "GPT-6 Luna medium",
+      "status": "recorded and coordinator reviewed",
+      "scope": "selected Vortex documentation and Lance source; no benchmark"
+    },
+    {
+      "assignment": "feldera_storage_review",
+      "assistant": "GPT-6 Luna medium",
+      "status": "recorded and coordinator reviewed",
+      "scope": "storage proposal and selected Spine/merge source; no benchmark",
+      "qualification": "fuel does not bound all consumed work; inspected PushMerger has a development-use qualification"
+    },
+    {
+      "assignment": "admission_reliability_review",
+      "assistant": "GPT-6 Luna medium",
+      "status": "recorded and coordinator reviewed",
+      "scope": "Vector controller and FoundationDB testing references; no benchmark"
+    }
+  ],
+  "source_revisions": {
+    "turso": "ff97ec42cdef94651a6985eb47e8f9d07e4608cd",
+    "datafusion_comet": "412468e2817207eff0c1907d1c4aac8c3f06680d",
+    "feldera_storage_design": "ff12ddadd8dbfbcb8dedc276cc83382d4c2f3095",
+    "feldera": "31b177027205a35e51b08c6209cd9ea90f5c881c",
+    "vortex": "881b867d736e8955a0381655f80d6d2d630fc590",
+    "lance": "b8886f554b773ceaa78aef9666af616217bd0199",
+    "fjall": "17ae6720cbf1a44a1f1f0dcbcb1f4fd913b23c89",
+    "vector": "47e05c4749b6b1af460af521279dc4681a912bb3",
+    "foundationdb": "daae46ce69b1fdddefdbb985e03e5a12576b3077",
+    "redb": "f403a514fd557f633bd4725248f0d19b434eedff",
+    "tantivy": "c12cc2d54bc0ff75bf1b4a836b4c7e593600bc1a",
+    "quickwit": "d140cfc4bbcc37b73354a9d0e4f4b1a44639bb04",
+    "clickhouse": "47907285810e618994aa703c31beb0edfc5d2271",
+    "duckdb": "42d15ef8e0b84f3364cf507b40ebc37487299747",
+    "greptimedb": "e4872ec1a2d0d040d9f05c370f238cd7f411328e",
+    "tempo": "b5a99aea3826ffc499827f2d0934ef80fc3d8b12",
+    "roaring": "0439d576fb3d36acba4444f5a5bc0d4173ecd932",
+    "otel_collector": "84512703ba39b6d3eed45d9e4940b7f5ffd73ffa",
+    "shuttle": "094be2b9cafa5bfba93df99d7e5cc8a581a430b2",
+    "loom": "948c8cc78b178ede6eeff3afc7d97f2f4ea08559",
+    "fail_rs": "2cb57636adf466510d901e45293233226e3f9f13",
+    "proptest": "4b0594eb07c53695dc3c24d3fa06bdceb98540e9",
+    "prometheus": "21fd457f2b67fe417e181817d814dba812471e9f",
+    "slatedb": "c7d2b7b067295198af4ed8b7d81ff4d5f2f58d71",
+    "differential_dataflow": "aa8745f93ea8abe131104fc7885ba4fd47e63902"
+  },
+  "generative_exploration": {
+    "program_section": "cross-system-performance-program.md#generative-exploration-and-selection",
+    "state": "source mechanisms compiled; existing D1 and selective-ownership hypotheses discriminated; no seeded candidate sampler or new production nomination",
+    "first_batch_candidate_ceiling": 6,
+    "prototype_nomination_ceiling": 2,
+    "budget": "within existing allowances; no reset or additional workload admission",
+    "selection": "one evidence-supported candidate and at most one feasible different mechanism family; unused slots remain empty",
+    "dimensions": [
+      "representation",
+      "ownership lifetime",
+      "scheduling",
+      "physical locality",
+      "feedback"
+    ],
+    "operators": [
+      "combine",
+      "invert",
+      "remove a barrier",
+      "move a decision boundary",
+      "perturb workload assumptions"
+    ],
+    "sampling_seed": null,
+    "sampling_status": "not run; freeze sampler, admissible combinations and seed before a sampled round",
+    "reproducibility": "preserve exact cards, available model configuration, selection record and executable fixtures; workload seeds do not reproduce language-model output",
+    "candidate_cards": [
+      {
+        "id": "D1",
+        "lab_home": "O2",
+        "idea": "reclaim completed durable prefixes before sibling builders finish",
+        "status": "ordered-join candidate passes unchanged progress regression and seven other sealer controls; initial history invocation interrupted; no service performance measurement"
+      },
+      {
+        "id": "D2",
+        "lab_home": "Q2",
+        "idea": "measure residual metric/span and attribute materialization",
+        "status": "revised: general escaped-log-borrow premise is already addressed in inspected paths; performance remains unmeasured"
+      },
+      {
+        "id": "D3",
+        "lab_home": "M1/Q3",
+        "idea": "budget hot-tail acceleration against reuse before publication",
+        "status": "hypothesis; fallback, estimate error and oscillation need controls"
+      },
+      {
+        "id": "D4",
+        "lab_home": "M2/O3",
+        "idea": "feedback-scheduled merge quanta charged by consumed work",
+        "status": "hypothesis; isolate components before interaction tests"
+      },
+      {
+        "id": "D5",
+        "lab_home": "M3",
+        "idea": "literal substring matching on compressed log bodies before payload expansion",
+        "status": "concrete upstream kernel paths inspected; Fabric adapter and whole-path benefit untested"
+      }
+    ],
+    "acceptance": "unchanged contracts and independent checks, discriminating comparison, fresh held-out confirmation and existing resource guards",
+    "novelty": "unestablished; model agreement and unfamiliarity do not establish originality"
+  },
+  "invariant_gates": [
+    "exact Batch custody and idempotent retry",
+    "unchanged durable ACK and per-Strand ordering",
+    "publish before reclaim",
+    "independent producer-derived delivery/query oracles unchanged",
+    "complete snapshot metadata and expired-token Gone",
+    "no false-negative pruning; required raw digest and typed validation remain",
+    "permits follow actual work through cancellation and join",
+    "historical failed/interrupted experiments retain their outcomes"
+  ],
+  "items": [
+    {
+      "id": "G0",
+      "lab": "Coordinator / Recovery and operations",
+      "accountable_pi": "coordinator until execution dispatch",
+      "depends_on": [],
+      "question": "Baseline, containment and evidence admission",
+      "state": "readiness slice completed",
+      "run_outcome": "six existing sealer controls passed; pinned Turso retrieval and preservation completed; no full performance baseline",
+      "hypothesis_and_controls": "cross-system-performance-program.md#finite-lab-queue",
+      "registration": "../experiments/benchmarks/catalog-cross-system-readiness-protocol.md",
+      "executable_command": "python3 -B tools/resource_group.py -- python3 -B tools/bench/labs/catalog/cross_system_readiness.py",
+      "admission": "freeze workload, commands, source, metrics, guards, failure preservation and finite budget before execution"
+    },
+    {
+      "id": "M1",
+      "lab": "Capacity and lifecycle",
+      "accountable_pi": "capacity PI",
+      "depends_on": [
+        "G0"
+      ],
+      "question": "Simultaneous reservation, allocation, RSS and cgroup census",
+      "state": "offline slice complete; simultaneous service reservations still pending",
+      "run_outcome": "six repaired cells:65\u201366% less requested-live build peak and46\u201354% lower whole-worker RSS on16MiB fixtures",
+      "hypothesis_and_controls": "cross-system-performance-program.md#finite-lab-queue",
+      "registration": "../experiments/benchmarks/cross-system-continuation-protocol.md",
+      "executable_command": null,
+      "admission": "freeze workload, commands, source, metrics, guards, failure preservation and finite budget before execution"
+    },
+    {
+      "id": "Q1",
+      "lab": "Query and availability",
+      "accountable_pi": "query PI",
+      "depends_on": [
+        "G0"
+      ],
+      "question": "Whole-query discovery, integrity, decoding and ownership census",
+      "state": "log slice complete; mixed signals and query-only full-chain timing pending",
+      "run_outcome": "eight variants,512 accepted chains/3520pages;72 rejected controls; block projection dominates wide selected queries",
+      "hypothesis_and_controls": "cross-system-performance-program.md#finite-lab-queue",
+      "registration": "../experiments/benchmarks/cross-system-continuation-protocol.md",
+      "executable_command": null,
+      "admission": "freeze workload, commands, source, metrics, guards, failure preservation and finite budget before execution"
+    },
+    {
+      "id": "O1",
+      "lab": "Recovery and operations",
+      "accountable_pi": "coordinator until execution dispatch",
+      "depends_on": [
+        "G0"
+      ],
+      "question": "Accepted-work, cancellation, publication and reclaim cuts",
+      "state": "reclaim scheduling slice executed; other cuts pending",
+      "run_outcome": "baseline rejected; eight candidate sealer controls passed; first history invocation interrupted and preserved; final fast/manual results in separate receipt",
+      "hypothesis_and_controls": "cross-system-performance-program.md#finite-lab-queue",
+      "registration": "../experiments/benchmarks/catalog-prefix-progress-protocol.md",
+      "executable_command": "python3 -B tools/resource_group.py -- python3 -B tools/bench/labs/catalog/prefix_progress.py candidate",
+      "admission": "freeze workload, commands, source, metrics, guards, failure preservation and finite budget before execution",
+      "continuation_outcome": "registered18-cell Store/intake prefix comparison;144acceptedchains/36rejectedcontrols; one resolved skewed byte-time pair, other bounds overlap",
+      "continuation_registration": "../experiments/benchmarks/cross-system-continuation-protocol.md"
+    },
+    {
+      "id": "M2",
+      "lab": "Capacity and lifecycle",
+      "accountable_pi": "coordinator until execution dispatch",
+      "depends_on": [
+        "M1",
+        "O1"
+      ],
+      "question": "Input-work-charged resumable merge quantum",
+      "state": "proposed",
+      "run_outcome": "not executed in this continuation; requires a scoped fixture and resource admission",
+      "hypothesis_and_controls": "cross-system-performance-program.md#finite-lab-queue",
+      "registration": null,
+      "executable_command": null,
+      "admission": "freeze workload, commands, source, metrics, guards, failure preservation and finite budget before execution",
+      "historical_preparation_outcome": "not run; environment unavailable"
+    },
+    {
+      "id": "Q2",
+      "lab": "Query and availability",
+      "accountable_pi": "query PI",
+      "depends_on": [
+        "Q1",
+        "O1"
+      ],
+      "question": "Selective materialization and bounded backing-buffer ownership",
+      "state": "small-profile existing-code ablation complete without nomination; broader ownership work pending",
+      "run_outcome": "16variants,1024 accepted chains/7040pages;144 rejected controls;~2.01MiB less requested allocation, no compelling CPU benefit",
+      "hypothesis_and_controls": "cross-system-performance-program.md#finite-lab-queue",
+      "registration": "../experiments/benchmarks/cross-system-continuation-protocol.md",
+      "executable_command": null,
+      "admission": "freeze workload, commands, source, metrics, guards, failure preservation and finite budget before execution"
+    },
+    {
+      "id": "M3",
+      "lab": "Capacity and lifecycle",
+      "accountable_pi": "coordinator until execution dispatch",
+      "depends_on": [
+        "M1",
+        "Q1"
+      ],
+      "question": "Bounded Parquet versus scratch Vortex with conversion included",
+      "state": "proposed",
+      "run_outcome": "not executed in this continuation; requires a scoped fixture and resource admission",
+      "hypothesis_and_controls": "cross-system-performance-program.md#finite-lab-queue",
+      "registration": null,
+      "executable_command": null,
+      "admission": "freeze workload, commands, source, metrics, guards, failure preservation and finite budget before execution",
+      "historical_preparation_outcome": "not run; environment unavailable"
+    },
+    {
+      "id": "Q3",
+      "lab": "Query and availability",
+      "accountable_pi": "coordinator until execution dispatch",
+      "depends_on": [
+        "Q1"
+      ],
+      "question": "Index break-even and sparse/range/Roaring candidates",
+      "state": "proposed",
+      "run_outcome": "not executed in this continuation; requires a scoped fixture and resource admission",
+      "hypothesis_and_controls": "cross-system-performance-program.md#finite-lab-queue",
+      "registration": null,
+      "executable_command": null,
+      "admission": "freeze workload, commands, source, metrics, guards, failure preservation and finite budget before execution",
+      "historical_preparation_outcome": "not run; environment unavailable"
+    },
+    {
+      "id": "O2",
+      "lab": "Recovery and operations",
+      "accountable_pi": "coordinator until execution dispatch",
+      "depends_on": [
+        "O1"
+      ],
+      "question": "Stable identity and snapshot mapping without retention leases",
+      "state": "proposed",
+      "run_outcome": "not executed in this continuation; requires a scoped fixture and resource admission",
+      "hypothesis_and_controls": "cross-system-performance-program.md#finite-lab-queue",
+      "registration": null,
+      "executable_command": null,
+      "admission": "freeze workload, commands, source, metrics, guards, failure preservation and finite budget before execution",
+      "historical_preparation_outcome": "not run; environment unavailable"
+    },
+    {
+      "id": "O3",
+      "lab": "Recovery and operations",
+      "accountable_pi": "coordinator until execution dispatch",
+      "depends_on": [
+        "M1",
+        "O1"
+      ],
+      "question": "Fixed versus feedback admission across independent Strands",
+      "state": "proposed",
+      "run_outcome": "not executed in this continuation; requires a scoped fixture and resource admission",
+      "hypothesis_and_controls": "cross-system-performance-program.md#finite-lab-queue",
+      "registration": null,
+      "executable_command": null,
+      "admission": "freeze workload, commands, source, metrics, guards, failure preservation and finite budget before execution",
+      "historical_preparation_outcome": "not run; environment unavailable"
+    },
+    {
+      "id": "Q4",
+      "lab": "Query and availability",
+      "accountable_pi": "coordinator until execution dispatch",
+      "depends_on": [
+        "O2"
+      ],
+      "question": "Finite-window incremental count versus full recomputation",
+      "state": "proposed",
+      "run_outcome": "not executed in this continuation; requires a scoped fixture and resource admission",
+      "hypothesis_and_controls": "cross-system-performance-program.md#finite-lab-queue",
+      "registration": null,
+      "executable_command": null,
+      "admission": "freeze workload, commands, source, metrics, guards, failure preservation and finite budget before execution",
+      "historical_preparation_outcome": "not run; environment unavailable"
+    },
+    {
+      "id": "M4",
+      "lab": "Capacity and lifecycle",
+      "accountable_pi": "coordinator until execution dispatch",
+      "depends_on": [
+        "M3"
+      ],
+      "question": "Exact numeric-series encoding versus current columns",
+      "state": "proposed",
+      "run_outcome": "not executed in this continuation; requires a scoped fixture and resource admission",
+      "hypothesis_and_controls": "cross-system-performance-program.md#finite-lab-queue",
+      "registration": null,
+      "executable_command": null,
+      "admission": "freeze workload, commands, source, metrics, guards, failure preservation and finite budget before execution",
+      "historical_preparation_outcome": "not run; environment unavailable"
+    }
+  ],
+  "deferred": [
+    "General incremental operators and differential-dataflow source teardown beyond the bounded count",
+    "Progressive investigation API and new evidence-result contracts",
+    "Adaptive instrumentation with authorization, expiry and fidelity semantics",
+    "OTLP Arrow wire experiment with replay and dictionary-recovery contract",
+    "SlateDB/remote cold storage",
+    "Production format migration or embedded database adoption"
+  ],
+  "c5": "Full historical C5 remains unrun; these smaller cells do not complete or replace it",
+  "source_review_checks_historical": "No project validators, Rust tests or alternate-engine benchmarks ran in the original source-review turn; later continuation and matched sweep records supersede execution status",
+  "source_review_cleanup_historical": "No owned experiment scratch, process or transient unit was created by the original source-review turn; later run receipts record actual workload cleanup",
+  "native_workloads_dispatched_historical": 5,
+  "continuation": {
+    "protocol": "../experiments/benchmarks/cross-system-continuation-protocol.md",
+    "findings": "../experiments/benchmarks/cross-system-continuation-findings.md",
+    "source_synthesis": "cross-system-source-synthesis.md",
+    "source_archives_inventoried": 21,
+    "additional_selected_repository_retrievals": 3,
+    "native_probe_children_executed": 78,
+    "memory": "census01 failed layout comparison; census02 passed with RSS qualification; census03 isolated decoder and reused exact archives",
+    "query": "512 census chains plus1024 small-profile ablation chains; all independent verdicts accepted",
+    "operations": "18 diagnostic2ms cells and18 registered10ms cells; no universal timing gain",
+    "production_default_changes": false,
+    "goal_complete": false
+  },
+  "source_revision_history": {
+    "vector": [
+      {
+        "revision": "58caf13adb5cd52a7a8e923108f2c61a84367a60",
+        "reason": "historical retrieval returned404; replacement immutable pin preserved in supplement01"
+      }
+    ],
+    "foundationdb": [
+      {
+        "revision": "55b4a06d2de16e47d52c0138b2a4a288fd9e7f2d",
+        "reason": "historical retrieval returned404; replacement immutable pin preserved in supplement01"
+      }
+    ]
+  },
+  "queue_interpretation": "Items coordinate research, not executable dispatch; source_revisions supplies downloader pins."
+}

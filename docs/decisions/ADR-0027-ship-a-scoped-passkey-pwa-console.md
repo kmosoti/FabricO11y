@@ -3,7 +3,8 @@
 ## Status
 
 Accepted intended design on 2026-10-10 following the owner's release scope and
-local-passkey decision. Implementation and acceptance remain unrun. This amends
+local-passkey decision. Implementation is in candidate verification; registered
+browser and release acceptance are separate evidence. This amends
 the shared administrative credential boundary of ADR-0014 for the new release;
 its existing control transitions and Spindle custody contract remain intact.
 
@@ -54,10 +55,11 @@ Delivery bytes, sync ordering and previously admitted Batch custody are unchange
 
 ## Evidence
 
-[Current HTTP routes](../../crates/fabric-server/src/http.rs) and
-[query types](../../crates/fabric-server/src/query.rs) establish existing shared
-admin authentication, query limits and admission behavior. They do not implement
-the new design. [Leptos CSR deployment](https://book.leptos.dev/deployment/csr.html),
+[Console routes](../../crates/fabric-server/src/console.rs),
+[access state](../../crates/fabric-server/src/access.rs) and
+[query types](../../crates/fabric-server/src/query.rs) implement the new boundary.
+The [acceptance protocol](../experiments/formal/console-access-protocol.md) separates
+native fixtures from browser evidence. [Leptos CSR deployment](https://book.leptos.dev/deployment/csr.html),
 [WebAuthn](https://www.w3.org/TR/webauthn-2/) and the primary references in the
 identity/console views support mechanism selection, not Fabric security results.
 The owner's four visual references establish light/dark desktop/mobile direction;
