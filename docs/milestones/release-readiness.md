@@ -8,9 +8,8 @@ version tag and package metadata, following [ADR-0019](../decisions/ADR-0019-kee
 This plan defines the work to prepare that release. It does not declare new
 measurements passed, publish a release, or supersede existing qualification
 protocols. Register the executable profile and its decision rules in a separate
-policy commit before measurement. The broader [qualification ledger](../QUALIFICATION.md)
-continues to own broader deployment claims; its current all-gates release rule
-must be explicitly reconciled with the owner's selected narrower release scope.
+policy commit before measurement. The [qualification ledger](../QUALIFICATION.md#bounded-application-release)
+records the owner-selected bounded release separately from broader deployment claims.
 
 ## Release promise
 
@@ -19,7 +18,11 @@ with Debian-based and Fedora-based Linux supported in the finite matrix below.
 The initial release architecture is x86_64, with systemd and unified cgroup v2;
 other CPU architectures require their own artifacts and acceptance and are not
 implied by a distribution-family label. One production server, its mandatory
-dedicated Spindle, remote edge Spindles, the HTTP API and `fabricctl` are in scope.
+dedicated Spindle, remote edge Spindles, the HTTP API, `fabricctl` and a same-origin
+Leptos/WASM PWA are in scope. Local passkeys are required for human sign-in;
+AI and system clients receive distinct scoped workload credentials. The
+[identity design](../architecture/identity-access.md) and
+[console plan](operator-console.md) define mandatory release dependencies.
 Supported workflows are selected
 file logs, host metrics, local OTLP/HTTP protobuf trace intake, durable forwarding,
 journal and Segment queries, retention, restart/replay and self-observation.
@@ -59,13 +62,20 @@ planning change does not implement or verify the requested default.
 Never reclaim unacknowledged Spool data or unpublished journal coverage to meet
 a storage target; pressure outcomes must preserve custody and visible gaps.
 
-Features outside the release gate include a UI, a general OTLP receiver,
-browser SDKs, Nomos integration, distributed storage, new indexing/encoding
+Features outside the release gate include OIDC/SSO, an alert rule/notification
+engine, a general OTLP receiver, browser SDKs, Nomos integration, distributed storage, new indexing/encoding
 algorithms and capacity claims above the measured profiles. Keep them in research.
 Physical power-loss behavior remains outside the existing successful-sync and
 process-crash assumptions. No fidelity, custody or completeness rule is relaxed.
 
 ## Candidate and evidence
+
+The console follows the owner's light/dark desktop/mobile references, with
+Overview, Explore, trace detail, bounded Live Tail, Pipeline and scoped Settings.
+The diagrams' alert engine, sample throughput/latency and SQL-like query text do
+not become implemented capabilities. The pipeline uses actual journal/sealer
+states; every chart and answer retains its evidence limits. See
+[ADR-0027](../decisions/ADR-0027-ship-a-scoped-passkey-pwa-console.md).
 
 Reconcile the existing dirty worktree into a reviewable `milestone/release-readiness`
 candidate without discarding work or committing private fixtures. Separate policy,
@@ -78,7 +88,9 @@ a Fedora-compatible `.rpm` with a pinned, isolated build workflow still to be
 implemented. Record both package and extracted binary hashes and their runtime
 dependency floors. Service acceptance uses each family's exact package;
 native harnesses must use its exact binaries, with test helpers built from the
-same source/toolchain. A locally rebuilt equivalent binary is supporting evidence,
+same source/toolchain. Include the PWA's exact HTML/JS/CSS/WASM, manifest, icons and
+worker hashes in both packages; pin the UI toolchain, dependencies and API version.
+A locally rebuilt equivalent binary is supporting evidence,
 not a substitute for testing the deliverable. Keep each candidate's receipts separate.
 
 The [completed continuation](../experiments/formal/readiness-continuation-results.md)
@@ -92,7 +104,11 @@ release gates on the candidate; do not repeat unrelated exploratory benchmarks.
 The following is the proposed finite matrix to turn into an executable protocol
 in step R0. Any harness additions need independent expected values and negative
 controls before candidate trials. Freeze commands and metric definitions then;
-do not invent missing results from the current harness output.
+do not invent missing results from the current harness output. Register the
+identity expected-denial fixtures, applicable OWASP ASVS requirements, supported
+browser/passkey cells and U1–U6 console checks alongside it. UI math and bounds
+are specified in the [console algorithm model](../architecture/console-algorithms.md)
+before implementation or performance claims.
 
 | Dimension | Development | Small deployment |
 | --- | --- | --- |
@@ -127,6 +143,13 @@ Before the full matrix, use one disposable smoke to verify all paths. The measur
 main trials use normal sealing; a separate fixed-fixture query matrix guarantees
 coverage of both journal-only and published Segment reads, including restart.
 
+Run at least one active authenticated console in each main trial; pin its polling,
+page/point/byte bounds and interaction schedule before registration. Account for
+console requests separately from benchmark queries and keep generators/browser
+processes outside the server cgroup. Add one deterministic overlapping-session
+cell with disjoint scopes, late responses and logout/account switching. Keep B3–B5
+unchanged with this traffic. Do not retroactively call older UI-free runs passes.
+
 ## Release gates
 
 Every required cell must pass individually. Do not average away a failed seed,
@@ -144,6 +167,9 @@ pool unlike query latencies, or exclude rejected requests from load accounting.
 | B8 — Installation | All 17 [installation checks](../experiments/formal/installation-acceptance-protocol.md) and the three existing mutation controls, including effective memory/task enforcement, pass on the exact `.deb` in the disposable Debian guest. The registered Fedora adapter preserves the same security/custody outcomes on the exact `.rpm`, adds SELinux enforcing checks, and tests both server/companion and standalone edge roles. Lifecycle additions below pass for both families. |
 | B9 — Repository and security | Required fast checks, manual documentation checks, dependency policy and affected invariant/fault/model regressions pass. Triage security findings; no known exploitable authentication bypass, credential exposure or blocker remains in the supported configuration. |
 | B10 — Operator workflow | Fresh central-and-remote-edge setup from the shipped guide reaches log, metric and trace queries without source edits on both families. Verify certificate trust/SANs, enrollment/revocation, firewall guidance, narrow log access, configurable storage, stop/restart, recovery, uninstall/data preservation and documented reset/compatibility policy. Ship known issues and bug/security reporting instructions. |
+| B11 — Human identity | Real HTTPS/passkey bootstrap, login, second-key enrollment, key loss/offline owner recovery, session expiry/logout/revocation and credential migration pass. Reject ceremony replay, wrong RP/origin, absent user verification, fixation, CSRF and stored XSS; each checker rejects a representative injected defect. No first-visitor admin, shared browser master token or undocumented legacy bypass. |
+| B12 — Authorization and access durability | Independently specified cross-principal fixtures check every route, all signals, inventory, evidence metadata and cursors. Scoped workload expiry/rotation/revocation and AI delegation cannot widen grants. Barrier-controlled revocation races, crash/uncertain publication, audit/full-state limits and offline restore preserve deny-default behavior and custody. Pin applicable ASVS 5.0.0 requirements and give evidence or a reasoned non-applicability decision for each; no general certification claim. |
+| B13 — Operator PWA | All [U1–U6](operator-console.md#boundedness-and-acceptance) pass using exact packaged assets: supported workflows, truthful evidence, stale-response rejection, shell-only caching, offline/logout isolation, browser/install/update/rollback behavior, accessibility and measured bounded UI overhead. A rendered mockup or passing unit tests alone do not satisfy browser/installed acceptance. |
 
 For B3, capture observation, source acceptance, Spool commit, send attempts, durable
 ACK and query visibility as distinct events. Include failures, censoring and
@@ -208,12 +234,14 @@ retain an incomplete result rather than truncating the required workload.
 
 | Step | Work | Exit condition |
 | --- | --- | --- |
-| R0 | Register the bounded release profile, pinned Debian/Fedora x86_64 images, four remote cells and exact matrix; reconcile the ledger's broad release rule and product contract's Debian-only/20 GiB defaults in a policy-only commit. Register decimal 100 GB Segment retention, preserved configurable 24 h age limit, separate journal/workspace/Spool bounds and pressure/headroom semantics. Specify Fedora/lifecycle adapters and negative controls, outage/pressure companion adapters, backlog calculation, trace oracle inputs, query sample counts and deadlines. | No ambiguous gate or undocumented exception; old protocols/results preserved. |
-| R1 | Consolidate source, reconcile canonical repository operator/current/roadmap documentation and prepare build provenance. Migrate historical narrative/reports to the initialized wiki with a checked source-to-destination index; preserve versioned protocols, fixtures and code contracts in the repository. | Reviewable candidate revision and pinned build inputs; release-relevant canonical guidance and migrated links verified; only registered packaging/storage scope admitted. Unrelated research migration does not extend the release gate. |
-| R2 | Implement the registered storage default in the parser and shipped examples with byte/age boundary, restart and query regressions; implement Fedora packaging/lifecycle support; build both packages; run fast/dependency/affected regression checks and harness negative controls; admit one smoke. | Exact packages identified; checker defects and packaging/storage failures resolved before expensive trials. |
+| R0 | Register the bounded executable profile, pinned Debian/Fedora images, four remote cells, 100 GB retention and separate working-space bounds. Freeze identity/session defaults, independent permission fixtures, ASVS mapping, browser/passkey matrix, UI algorithm budgets and API compatibility. Specify Fedora/lifecycle, pressure/outage adapters, timing/backlog/query definitions and negative controls. Contract/ledger scope was amended separately; existing protocols remain unchanged. | No ambiguous gate or undocumented exception; exact candidate protocol precedes its runs. |
+| R1 | Consolidate source, canonical documentation and build provenance; preserve the checked wiki migration and versioned protocol inputs. Model bounded UI state, rendering and query work before adding the composition-root UI crate. | Reviewable source and pinned inputs; new policy/layer assignments committed separately from implementation. |
+| R2a | Implement passkey/bootstrap/recovery, sessions, workload principals/grants/delegation, durable audit and query/control scope enforcement. Replace the shared-master path through explicit local migration and scoped CLI credentials. Keep Spindle bytes/custody unchanged. | B11–B12 fixtures and negative controls pass; no bypass left on existing routes. |
+| R2b | Implement and verify UI algorithms, Leptos screens, scoped status/control adapters, app-shell PWA and lifecycle. Demo fixtures must be explicitly labeled; they never fill integrated release gates. | Model properties and client failure controls pass; U1–U6 test harnesses ready and bounded. |
+| R2c | Implement 100 GB default and retention regressions; implement RPM/lifecycle support; package server, companion and UI; run fast/dependency checks and one smoke. | Exact packages and assets identified; packaging/storage/identity/UI failures resolved before expensive trials. |
 | R3 | Run six main profile trials and the fixed query matrix, the four remote cells, then recovery/rollover/pressure and the three outage trials. | Every B2–B6 cell passes with complete per-host resource/timing/custody evidence. |
 | R4 | Run full R2 soak and both families' installed-package/lifecycle acceptance with mutation controls and Fedora SELinux enforcing. | B7–B8 pass on the candidate; all child processes stopped and temporary fixtures cleaned. |
-| R5 | Exercise the operator walkthrough from canonical repository documentation; finalize compatibility/reset notes, known issues, checksums and evidence index, verifying release-relevant wiki report links and preserved evidence provenance. | B1–B10 ledger complete; zero open release blockers; artifact hashes still match; operator instructions remain self-contained in the repository. |
+| R5 | Complete B11–B13 on installed candidates and supported browsers; exercise fresh-owner HTTPS/passkey recovery and central/edge setup from the guide. Finalize compatibility/reset notes, known issues, checksums and evidence links. | B1–B13 ledger complete; zero open release blockers; hashes match; operator guidance is self-contained. |
 | R6 | Publish the selected unused version tag and exact tested `.deb`/`.rpm` under explicit release authorization. | Downloaded artifact checksums verified; release notes and report links available. |
 
 The operator walkthrough should use fresh state and the guide alone; fixes to
@@ -238,6 +266,15 @@ Segments. The intended 100 GB Segment default and Fedora SELinux behavior remain
 unimplemented/unverified; an aggregate disk cap is outside the confirmed promise.
 Resolve these gaps through R0–R4 rather than changing the historical results.
 
+The present HTTP adapter has one admin bearer for query/control and no human
+passkeys, scoped workload policy or PWA serving. UI algorithms and crate work can
+progress against explicit fixtures, but a demonstration is not authenticated
+product access. Resolve identity/scoped-evidence persistence and packaged browser
+flows through R2a–R5. A reviewed WebAuthn library and recovery design precede auth
+implementation. No new cryptographic protocol or prompt-based authorization is
+part of this plan. Security references: [OWASP ASVS](https://owasp.org/www-project-application-security-verification-standard/)
+and the W3C/OWASP sources in the identity view.
+
 Block on a failed required cell, unverified artifact identity, inability to finish
 an advertised workflow, known silent corruption/ACKed-data loss, auth bypass or
 credential disclosure, failed resource enforcement, or misleading complete query
@@ -251,7 +288,7 @@ service/recovery and package acceptance as applicable. Never combine incompatibl
 candidate results into a green ledger. Pure documentation edits need documentation
 and affected walkthrough checks, not a new unrelated performance campaign.
 
-The gate is finite: once B1–B10 pass, archive the evidence, clean owned scratch
+The gate is finite: once B1–B13 pass, archive the evidence, clean owned scratch
 and prepare publication. New research or optimization ideas do not extend this
 release unless they resolve a defined blocker. Broader profile qualification
 continues separately without being relabeled as passed.

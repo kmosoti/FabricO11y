@@ -4,6 +4,22 @@ A living map from each product claim to what checks it on the **current head**. 
 
 Specification sources: **PC** = [product contract](../PRODUCT-CONTRACT.md), **ADR-n** = [decisions](../decisions/README.md), **RH** = [retained history](../architecture/retained-history.md), **DO**/**QO** = [delivery](../../tools/qualification/DELIVERY_ORACLE.md)/[query](../../tools/qualification/QUERY_ORACLE.md) oracle specifications.
 
+## Identity and operator console
+
+These are new release obligations, not inherited CTRL/HIST passes. Detailed
+fixtures/negative controls must be registered before candidate acceptance.
+The [identity design](../architecture/identity-access.md) and
+[console plan](../milestones/operator-console.md) define their intended boundaries.
+
+| ID | Contract | Planned verification and independent expectation | Required negative control | State |
+| --- | --- | --- | --- | --- |
+| ACCESS-1 | Local passkey ceremony, session and protected recovery identify the intended human | Fixed account/credential fixtures; packaged HTTPS and real authenticator/browser checks; replay, UV, origin/RP, bootstrap race, fixation, CSRF, key loss, logout and expiry | Accept wrong origin/replayed challenge or restored session | Not implemented; not run |
+| ACCESS-2 | Every read/control surface enforces current action and Spindle/signal scope | Disjoint principals, all signal oracles, inventory/evidence/page fixtures and barrier-controlled revoke races; no hidden identities or misleading scoped completeness | Leak one forbidden row/metadata field or accept another principal's cursor | Not implemented; not run |
+| ACCESS-3 | Workloads and delegated AI cannot expand authority | Fixed grant-intersection truth tables, expiry/rotation/audience and parent-revocation fixtures; Spindle credential crossover denied | Widen one delegation intersection or trust client actor/role | Not implemented; not run |
+| ACCESS-4 | Access/audit persistence and restore fail closed while preserving custody | Crash/sync/rename faults, audit/state caps, offline restore and concurrent policy/mutation fixtures; pre-revoke Batch admission may finish | Publish stale authority or resurrect a revoked credential from backup | Not implemented; not run |
+| UI-1 | UI answers preserve exact values, bounded work and evidence semantics | [Algorithm model](../architecture/console-algorithms.md), [native model tests](../../crates/fabric-ui/tests/model.rs), registered browser workloads and unchanged query/rate oracles | Accept stale session result, round nanosecond ordering or bridge a chart gap | Native model tests ran: 17 integration + 1 private unit, exit 0 under the resource launcher with `cargo +1.99.0 test --locked --offline -p fabric-ui`; authenticated integration not run |
+| UI-2 | PWA caches only public shell; installed lifecycle respects access and compatibility | U1–U6 packaged-browser checks, sensitive cache fixtures, offline/logout/account switch and upgrade/rollback | Cache an API response or reapply an old account's result | Shell/demonstration implemented; authenticated and installed release gates not run |
+
 ## Delivery
 
 | ID | Contract | Spec | Production implementation | Verification | Independent oracle | Negative control | Formal model | Fault test | Status | Unchecked |

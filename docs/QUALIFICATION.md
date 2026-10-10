@@ -1,6 +1,24 @@
 # Qualification
 
-This page owns how a [product contract](PRODUCT-CONTRACT.md) claim becomes *qualified* for the target operating profile: the registered workload, the decision rule, the harness boundary, and the ledger of what has and has not been run. It migrated from the release-stage contract and completion plan at base `9b3a2b4`; seeds, durations, identity counts, query mix, percentiles, thresholds, budgets and measurement windows are unchanged. Release maturity is not qualification: a release is a tag on a revision whose required gates have recorded evidence ([ADR-0019](decisions/ADR-0019-keep-release-maturity-in-tags.md)).
+This page owns how a [product contract](PRODUCT-CONTRACT.md) claim becomes *qualified* for the target operating profile: the registered workload, the decision rule, the harness boundary, and the ledger of what has and has not been run. It migrated from the release-stage contract and completion plan at base `9b3a2b4`; the broader qualification workload below retains its seeds, durations, identity counts, query mix, thresholds and budgets. Release maturity is not qualification: a release is a tag on a revision whose required gates have recorded evidence ([ADR-0019](decisions/ADR-0019-keep-release-maturity-in-tags.md)).
+
+## Bounded application release
+
+On 2026-10-10 the owner selected Option B: a release for development and small
+deployments, expanded to Debian/Fedora remote forwarding, 100 GB retained
+telemetry, an authenticated Leptos PWA and local passkeys. Its required gates are
+**B1–B13** in the [release plan](milestones/release-readiness.md#release-gates),
+including the identity and console checks. Every gate needs candidate-specific
+commands, exits and evidence; the executable workload, browser matrix and
+adversarial controls must be registered before execution. This amendment replaces
+the former requirement to pass every broader ledger row before any release.
+
+The bounded release uses the declared 10/100-identity workloads and exact installed
+artifacts; it does not qualify the 1,000-identity profile or every distribution.
+The broader protocol, historical results and oracle meanings below are unchanged.
+Missing evidence, security bypasses, custody violations or misleading completeness
+block the bounded release; they are not maturity-label exceptions. No release
+candidate currently meets this new gate set.
 
 ## Evidence states
 
@@ -80,7 +98,9 @@ States are for the revision named in each linked record, not for the current hea
 | Soak | Within the 2 h invocation limit | **Passed** for frozen R2 manifest `18e6ee2d397999758819076098f4ea9e20f044e30a8382202adf053806412662`, native four-CPU host with dedicated companion: all ten original gates; 546,000 exact simulator batches and 825 exact companion batches; final median RSS 265 MiB. Command exited 0 in 5,509.35 s. Historical `2b5c939` run remains **Failed** on RSS growth. This is finite workload evidence, not deployment qualification. | [R2 protocol](experiments/benchmarks/soak-protocol-r2.md), [soak run 02](experiments/benchmarks/soak-run-02.md), [failed run 01](experiments/benchmarks/soak-run-01.md) |
 | Packaging | Reproducible `.deb`, sysusers dry run, collision refusal, `systemd-analyze verify` | Tested (static) | [packaging static checks](experiments/formal/alpha-phase5-packaging-static.md) |
 | Running installation | The installation acceptance list in the [product contract](PRODUCT-CONTRACT.md#linux-installation-contract) | Measured and passing for source snapshot `717fcca151487dbe1f510b6e99296d8caf18d749`: Debian 12-built package in a Debian 13 unified-cgroup VM; all 17 checks passed and all three required mutations were rejected at their named checks. Actual memory/task enforcement and continued delivery observed; all VM scratch removed. The earlier legacy-hierarchy run remains inconclusive. Not deployment qualification. | [installation acceptance protocol](experiments/formal/installation-acceptance-protocol.md), [installation acceptance run 02](experiments/formal/installation-acceptance-run-02.md) |
-| Release readiness | Every gate above has a recorded command, exit and evidence | Not performed | [roadmap](ROADMAP.md) |
+| Local human/workload access | Passkey, session, action/resource scope, delegation, recovery and audit gates B11–B12 | Not implemented; not run | [identity design](architecture/identity-access.md), [planned checks](formal/verification-matrix.md#identity-and-operator-console) |
+| Packaged operator PWA | Console U1–U6 and release gate B13, including privacy, browser lifecycle and resource impact | Demonstration/model foundation implemented; authenticated package acceptance not run | [console plan](milestones/operator-console.md) |
+| Bounded release readiness | Every B1–B13 cell has candidate-specific commands, exits and evidence | Not performed | [release plan](milestones/release-readiness.md), [roadmap](ROADMAP.md) |
 
 The runs still needed on the target host are listed, with commands and pass rules, in the [qualification runbook](qualification-runbook.md).
 
