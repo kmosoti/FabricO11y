@@ -13,12 +13,24 @@ use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
 use opentelemetry_proto::tonic::common::v1::{KeyValue, any_value};
 use opentelemetry_proto::tonic::metrics::v1::{metric, number_data_point};
 use prost::Message;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io;
 
 pub type Attributes = BTreeMap<String, String>;
 
-#[derive(Clone, Debug, PartialEq)]
+// Conservative retained-payload admission, not allocator/RSS accounting.
+// A generous per-entry allowance includes BTree node structure; the cgroup
+// remains the independent whole-process enforcement boundary.
+fn attribute_bytes(a: &Attributes) -> usize {
+    a.iter().fold(0usize, |n, (k, v)| {
+        n.saturating_add(256)
+            .saturating_add(k.capacity())
+            .saturating_add(v.capacity())
+    })
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct LogRow {
     pub group: u64,
     pub node: String,
@@ -29,14 +41,34 @@ pub struct LogRow {
     pub body: String,
     pub attributes: Attributes,
 }
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Number {
-    Int(i64),
-    Double(f64),
+impl LogRow {
+    pub(crate) fn retained_bytes(&self) -> usize {
+        std::mem::size_of::<Self>()
+            .saturating_add(self.node.capacity())
+            .saturating_add(self.body.capacity())
+            .saturating_add(attribute_bytes(&self.attributes))
+    }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub enum Number {
+    Int(i64),
+    Double(#[serde(with = "float_bits")] f64),
+}
+
+// Private spill rows must preserve every represented number, including NaN
+// payloads and signed zero. JSON numbers cannot represent all these values.
+mod float_bits {
+    use serde::{Deserialize, Deserializer, Serializer};
+    pub fn serialize<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_u64(value.to_bits())
+    }
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
+        u64::deserialize(deserializer).map(f64::from_bits)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MetricRow {
     pub group: u64,
     pub node: String,
@@ -53,10 +85,19 @@ pub struct MetricRow {
     pub value: Number,
     pub attributes: Attributes,
 }
+impl MetricRow {
+    pub(crate) fn retained_bytes(&self) -> usize {
+        std::mem::size_of::<Self>()
+            .saturating_add(self.node.capacity())
+            .saturating_add(self.name.capacity())
+            .saturating_add(self.unit.capacity())
+            .saturating_add(attribute_bytes(&self.attributes))
+    }
+}
 
 /// One OTLP span (ADR-0025). Identities are lowercase hex of their bytes,
 /// empty when absent; `kind` and `status` are the OTLP integers.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SpanRow {
     pub group: u64,
     pub node: String,
@@ -72,6 +113,17 @@ pub struct SpanRow {
     pub start_ns: u64,
     pub end_ns: u64,
     pub attributes: Attributes,
+}
+impl SpanRow {
+    pub(crate) fn retained_bytes(&self) -> usize {
+        std::mem::size_of::<Self>()
+            .saturating_add(self.node.capacity())
+            .saturating_add(self.name.capacity())
+            .saturating_add(self.trace_id.capacity())
+            .saturating_add(self.span_id.capacity())
+            .saturating_add(self.parent_span_id.capacity())
+            .saturating_add(attribute_bytes(&self.attributes))
+    }
 }
 
 /// Lowercase hex of bytes.
@@ -112,9 +164,138 @@ fn strings(attributes: &[KeyValue]) -> Attributes {
         .collect()
 }
 
+// Consuming only the decoded logs tree transfers its String allocations into
+// rows. Collect retains the legacy last-string-value-wins duplicate semantics;
+// missing/non-string values do not erase earlier string-valued attributes.
+fn project_logs(
+    group: u64,
+    node: &str,
+    node_id: [u8; 16],
+    sequence: u64,
+    request: ExportLogsServiceRequest,
+    out: &mut Rows,
+) {
+    let mut index = 0_u32;
+    for resource in request.resource_logs {
+        for scope in resource.scope_logs {
+            for record in scope.log_records {
+                let body = match record.body.and_then(|body| body.value) {
+                    Some(any_value::Value::StringValue(body)) => body,
+                    _ => String::new(),
+                };
+                let attributes = record
+                    .attributes
+                    .into_iter()
+                    .filter_map(|kv| match kv.value?.value? {
+                        any_value::Value::StringValue(value) => Some((kv.key, value)),
+                        _ => None,
+                    })
+                    .collect();
+                out.logs.push(LogRow {
+                    group,
+                    node: node.to_owned(),
+                    node_id,
+                    sequence,
+                    index,
+                    observed_ns: record.observed_time_unix_nano,
+                    body,
+                    attributes,
+                });
+                index += 1;
+            }
+        }
+    }
+}
+
+/// Newest supported observation in one raw Entry without constructing query rows.
+/// Performs the same full typed envelope/node-ID/logs/metrics/traces validation,
+/// in that order, as `extract`. Counts each log's observed time, Gauge/Sum point
+/// time, and span start; ignores unsupported metric types. Returns `None` when
+/// there are no supported signal rows (including a gaps-only Entry).
+pub fn latest_observation_ns(entry: &Entry) -> io::Result<Option<u64>> {
+    latest_observation_bytes(&entry.batch)
+}
+
+/// The same validated metadata projection over borrowed raw Batch bytes.
+/// Avoids requiring an owned Entry at the storage visitor boundary.
+pub fn latest_observation_bytes(bytes: &[u8]) -> io::Result<Option<u64>> {
+    latest_selected_observation_bytes(bytes, true, true, true)
+}
+
+/// Validate the entire record but derive freshness from authorized signals only.
+pub(crate) fn latest_selected_observation_bytes(
+    bytes: &[u8],
+    logs: bool,
+    metrics: bool,
+    traces: bool,
+) -> io::Result<Option<u64>> {
+    let batch = Batch::decode(bytes).map_err(|error| invalid(error.to_string()))?;
+    let _: [u8; 16] = batch
+        .node_id
+        .as_slice()
+        .try_into()
+        .map_err(|_| invalid("batch node_id is not 16 bytes"))?;
+    let mut newest = None;
+    let mut add = |time: u64| newest = Some(newest.map_or(time, |old: u64| old.max(time)));
+    if !batch.logs.is_empty() {
+        let request = ExportLogsServiceRequest::decode(batch.logs.as_slice())
+            .map_err(|error| invalid(error.to_string()))?;
+        for resource in request.resource_logs {
+            for scope in resource.scope_logs {
+                for record in scope.log_records {
+                    if logs {
+                        add(record.observed_time_unix_nano);
+                    }
+                }
+            }
+        }
+    }
+    if !batch.metrics.is_empty() {
+        let request = ExportMetricsServiceRequest::decode(batch.metrics.as_slice())
+            .map_err(|error| invalid(error.to_string()))?;
+        for resource in request.resource_metrics {
+            for scope in resource.scope_metrics {
+                for metric in scope.metrics {
+                    let points = match metric.data {
+                        Some(metric::Data::Gauge(g)) => g.data_points,
+                        Some(metric::Data::Sum(s)) => s.data_points,
+                        _ => continue,
+                    };
+                    for point in points {
+                        if metrics {
+                            add(point.time_unix_nano);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if !batch.traces.is_empty() {
+        let request = ExportTraceServiceRequest::decode(batch.traces.as_slice())
+            .map_err(|error| invalid(error.to_string()))?;
+        for resource in request.resource_spans {
+            for scope in resource.scope_spans {
+                for span in scope.spans {
+                    if traces {
+                        add(span.start_time_unix_nano);
+                    }
+                }
+            }
+        }
+    }
+    Ok(newest)
+}
+
 /// Decode one record into its rows, appending to `out`.
 pub fn extract(group: u64, entry: &Entry, out: &mut Rows) -> io::Result<()> {
-    let batch = Batch::decode(entry.batch.as_slice()).map_err(|e| invalid(e.to_string()))?;
+    #[cfg(feature = "phase-probe")]
+    let _phase = fabric_frame::probe::span("otlp_decode_project");
+
+    let batch = {
+        #[cfg(feature = "phase-probe")]
+        let _phase = fabric_frame::probe::span("batch_envelope_decode");
+        Batch::decode(entry.batch.as_slice()).map_err(|e| invalid(e.to_string()))?
+    };
     let node_id: [u8; 16] = batch
         .node_id
         .as_slice()
@@ -122,34 +303,25 @@ pub fn extract(group: u64, entry: &Entry, out: &mut Rows) -> io::Result<()> {
         .map_err(|_| invalid("batch node_id is not 16 bytes"))?;
     let node = entry.label.clone();
     if !batch.logs.is_empty() {
-        let request = ExportLogsServiceRequest::decode(batch.logs.as_slice())
-            .map_err(|e| invalid(e.to_string()))?;
-        let mut index = 0_u32;
-        for resource in &request.resource_logs {
-            for scope in &resource.scope_logs {
-                for record in &scope.log_records {
-                    let body = match record.body.as_ref().and_then(|b| b.value.as_ref()) {
-                        Some(any_value::Value::StringValue(s)) => s.clone(),
-                        _ => String::new(),
-                    };
-                    out.logs.push(LogRow {
-                        group,
-                        node: node.clone(),
-                        node_id,
-                        sequence: batch.sequence,
-                        index,
-                        observed_ns: record.observed_time_unix_nano,
-                        body,
-                        attributes: strings(&record.attributes),
-                    });
-                    index += 1;
-                }
-            }
-        }
+        let request = {
+            #[cfg(feature = "phase-probe")]
+            let _phase = fabric_frame::probe::span("otlp_logs_decode");
+            ExportLogsServiceRequest::decode(batch.logs.as_slice())
+                .map_err(|e| invalid(e.to_string()))?
+        };
+        #[cfg(feature = "phase-probe")]
+        let _projection = fabric_frame::probe::span("otlp_logs_projection");
+        project_logs(group, &node, node_id, batch.sequence, request, out);
     }
     if !batch.metrics.is_empty() {
-        let request = ExportMetricsServiceRequest::decode(batch.metrics.as_slice())
-            .map_err(|e| invalid(e.to_string()))?;
+        let request = {
+            #[cfg(feature = "phase-probe")]
+            let _phase = fabric_frame::probe::span("otlp_metrics_decode");
+            ExportMetricsServiceRequest::decode(batch.metrics.as_slice())
+                .map_err(|e| invalid(e.to_string()))?
+        };
+        #[cfg(feature = "phase-probe")]
+        let _projection = fabric_frame::probe::span("otlp_metrics_projection");
         let mut index = 0_u32;
         for resource in &request.resource_metrics {
             for scope in &resource.scope_metrics {
@@ -188,8 +360,14 @@ pub fn extract(group: u64, entry: &Entry, out: &mut Rows) -> io::Result<()> {
         }
     }
     if !batch.traces.is_empty() {
-        let request = ExportTraceServiceRequest::decode(batch.traces.as_slice())
-            .map_err(|e| invalid(e.to_string()))?;
+        let request = {
+            #[cfg(feature = "phase-probe")]
+            let _phase = fabric_frame::probe::span("otlp_traces_decode");
+            ExportTraceServiceRequest::decode(batch.traces.as_slice())
+                .map_err(|e| invalid(e.to_string()))?
+        };
+        #[cfg(feature = "phase-probe")]
+        let _projection = fabric_frame::probe::span("otlp_traces_projection");
         let mut index = 0_u32;
         for resource in &request.resource_spans {
             for scope in &resource.scope_spans {
@@ -227,3 +405,11 @@ pub fn extract(group: u64, entry: &Entry, out: &mut Rows) -> io::Result<()> {
     }
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "rows_ownership_tests.rs"]
+mod ownership_tests;
+
+#[cfg(test)]
+#[path = "rows_freshness_tests.rs"]
+mod freshness_tests;

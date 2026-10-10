@@ -28,7 +28,7 @@ fn hex(b: &[u8]) -> String {
 }
 fn body(seq: u64, index: usize, len: usize) -> String {
     let mut s = format!("old-{seq:06}:{index:03} ");
-    if index % 2 == 0 {
+    if index.is_multiple_of(2) {
         s.extend(std::iter::repeat_n('R', len.saturating_sub(s.len())));
     } else {
         let mut counter = 0;

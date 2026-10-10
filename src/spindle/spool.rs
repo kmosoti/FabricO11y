@@ -145,7 +145,13 @@ fn read_acked(dir: &Path, generation: u64) -> io::Result<u64> {
     if u64::from_le_bytes(bytes[4..12].try_into().unwrap()) != generation {
         return Err(invalid("ACK cursor belongs to another generation"));
     }
-    Ok(u64::from_le_bytes(bytes[12..20].try_into().unwrap()))
+    let acked = u64::from_le_bytes(bytes[12..20].try_into().unwrap());
+    // The spool represents its next sequence as a u64, including after reclaim.
+    // A terminal ACK has no representable successor and must not reach scans.
+    acked
+        .checked_add(1)
+        .ok_or_else(|| invalid("ACK cursor sequence exhausted"))?;
+    Ok(acked)
 }
 
 fn write_acked(dir: &Path, generation: u64, through: u64) -> io::Result<()> {
@@ -278,6 +284,12 @@ impl Spool {
         self.append_inner(batch.clone(), |_| Ok(()))
     }
 
+    /// Commit an owned candidate without cloning its payloads or source state.
+    /// The caller advances source responsibility only from the returned Batch.
+    pub(crate) fn append_owned(&mut self, batch: Batch) -> io::Result<Batch> {
+        self.append_inner(batch, |_| Ok(()))
+    }
+
     // The private callback lets unit tests simulate a reported sync failure
     // or a process death after each stage. It is not a runtime configuration.
     fn append_inner(
@@ -288,6 +300,13 @@ impl Spool {
         if self.log.is_poisoned() {
             return Err(io::Error::other("journal quarantined after write error"));
         }
+        // Origin: a terminal sequence could be synced before the increment
+        // overflowed, leaving a committed spool that Scan could not reopen.
+        // Refuse it before rotation or writes; do not advance on a sync error.
+        let next_sequence = self
+            .next_sequence
+            .checked_add(1)
+            .ok_or_else(|| invalid("sequence exhausted"))?;
         batch.version = 1;
         batch.node_id = self.node_id.to_vec();
         batch.generation = self.generation;
@@ -316,7 +335,7 @@ impl Spool {
             // First frame of an empty active file: after first open or rotation.
             self.active_first = batch.sequence;
         }
-        self.next_sequence += 1;
+        self.next_sequence = next_sequence;
         Ok(batch)
     }
 
@@ -433,8 +452,9 @@ mod tests {
     impl Scratch {
         fn new() -> Self {
             let id = NEXT.fetch_add(1, Ordering::Relaxed);
-            let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("target")
+            let path = std::env::var_os("FABRIC_SCRATCH_ROOT")
+                .map(PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir)
                 .join(format!("spool-fault-{}-{id}", std::process::id()));
             fs::create_dir(&path).unwrap();
             Self(path)
@@ -468,6 +488,243 @@ mod tests {
         })
         .unwrap();
         (status, visible)
+    }
+
+    fn mixed_batch(body_bytes: usize) -> Batch {
+        use opentelemetry_proto::tonic::{
+            collector::{logs::v1::ExportLogsServiceRequest, trace::v1::ExportTraceServiceRequest},
+            common::v1::{AnyValue, any_value},
+            logs::v1::{LogRecord, ResourceLogs, ScopeLogs},
+            trace::v1::ResourceSpans,
+        };
+        let mut b = metrics_batch();
+        b.logs = ExportLogsServiceRequest {
+            resource_logs: vec![ResourceLogs {
+                scope_logs: vec![ScopeLogs {
+                    log_records: vec![LogRecord {
+                        body: Some(AnyValue {
+                            value: Some(any_value::Value::StringValue("x".repeat(body_bytes))),
+                        }),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        }
+        .encode_to_vec();
+        b.traces = ExportTraceServiceRequest {
+            resource_spans: vec![ResourceSpans::default()],
+        }
+        .encode_to_vec();
+        b.cursors = vec![Cursor {
+            path: "owned-source.log".into(),
+            offset: 42,
+            ..Default::default()
+        }];
+        b.collection_gaps = vec!["fixture gap".into()];
+        b
+    }
+
+    fn payload_addresses(batch: &Batch) -> [usize; 5] {
+        [
+            batch.logs.as_ptr() as usize,
+            batch.metrics.as_ptr() as usize,
+            batch.traces.as_ptr() as usize,
+            batch.cursors[0].path.as_ptr() as usize,
+            batch.collection_gaps[0].as_ptr() as usize,
+        ]
+    }
+
+    #[test]
+    fn owned_append_preserves_allocations_and_exact_durable_bytes() {
+        for size in [16 * 1024, 256 * 1024, 896 * 1024] {
+            for owned in [false, true] {
+                let scratch = Scratch::new();
+                let mut spool = Spool::open(&scratch.0, 2 * MAX_BATCH as u64).unwrap();
+                let input = mixed_batch(size);
+                let addresses = payload_addresses(&input);
+                let original = input.clone();
+                let mut expected = original.clone();
+                expected.version = 1;
+                expected.node_id = spool.identity().0.to_vec();
+                expected.generation = spool.identity().1;
+                expected.sequence = 1;
+                let committed = if owned {
+                    spool.append_owned(input).unwrap()
+                } else {
+                    let result = spool.append(&input).unwrap();
+                    assert_eq!(input, original); // Borrowed input remains live and intact.
+                    for (before, after) in addresses.into_iter().zip(payload_addresses(&result)) {
+                        assert_ne!(before, after); // Negative control detects the deep clone.
+                    }
+                    result
+                };
+                if owned {
+                    assert_eq!(payload_addresses(&committed), addresses);
+                }
+                assert_eq!(committed, expected);
+                assert_eq!(
+                    spool.next_unacked().unwrap().unwrap(),
+                    (1, expected.encode_to_vec())
+                );
+                drop(spool);
+                let mut reopened = Spool::open(&scratch.0, 2 * MAX_BATCH as u64).unwrap();
+                let mut rows = Vec::new();
+                reopened
+                    .replay(|b| {
+                        rows.push(b);
+                        Ok(())
+                    })
+                    .unwrap();
+                assert_eq!(rows, vec![expected]);
+                assert_eq!(reopened.next_sequence(), 2);
+            }
+        }
+    }
+
+    #[test]
+    fn owned_append_refusal_keeps_sequence_and_committed_cursor() {
+        for refusal in ["malformed", "oversized", "full"] {
+            let scratch = Scratch::new();
+            let cap = if refusal == "full" {
+                1024
+            } else {
+                2 * MAX_BATCH as u64
+            };
+            let mut spool = Spool::open(&scratch.0, cap).unwrap();
+            let mut initial = batch();
+            initial.cursors = vec![Cursor {
+                path: "source.log".into(),
+                offset: 42,
+                ..Default::default()
+            }];
+            let first = spool.append_owned(initial).unwrap();
+            let bytes_before = spool.used_bytes();
+            let mut rejected = mixed_batch(16 * 1024);
+            rejected.cursors[0].offset = 999;
+            match refusal {
+                "malformed" => rejected.logs = vec![0xff],
+                "oversized" => rejected.logs = vec![0; MAX_BATCH + 1],
+                "full" => {}
+                _ => unreachable!(),
+            }
+            assert!(spool.append_owned(rejected).is_err());
+            assert_eq!(spool.next_sequence(), 2);
+            assert_eq!(spool.used_bytes(), bytes_before);
+            assert_eq!(
+                spool.next_unacked().unwrap().unwrap(),
+                (1, first.encode_to_vec())
+            );
+            let retry = spool.append_owned(first.clone()).unwrap();
+            assert_eq!(retry.sequence, 2);
+            assert_eq!(retry.cursors, first.cursors);
+        }
+    }
+
+    #[test]
+    fn exhausted_sequence_refuses_before_commit_or_rotation_and_reopens() {
+        // Counterexample: append synced MAX, then overflowed next_sequence;
+        // recovery rejected the committed terminal frame as exhausted.
+        let scratch = Scratch::new();
+        let mut spool = Spool::open_rotating(&scratch.0, 64 * 1024, 1).unwrap();
+        // A reclaimed prefix lets us reach the boundary without MAX appends.
+        spool.acked = u64::MAX - 2;
+        spool.next_sequence = u64::MAX - 1;
+        write_acked(&scratch.0, spool.generation, spool.acked).unwrap();
+        let mut initial = batch();
+        initial.cursors = vec![Cursor {
+            path: "source.log".into(),
+            offset: 42,
+            ..Default::default()
+        }];
+        let committed = spool.append_owned(initial).unwrap();
+        assert_eq!(committed.sequence, u64::MAX - 1);
+        drop(spool);
+
+        let mut spool = Spool::open_rotating(&scratch.0, 64 * 1024, 1).unwrap();
+        assert_eq!(spool.next_sequence(), u64::MAX);
+        assert!(spool.rotation_due());
+        let active = scratch.0.join(fabric_frame::frame::ACTIVE);
+        let before = fs::read(&active).unwrap();
+        let ack_before = fs::read(scratch.0.join(ACKED)).unwrap();
+        let send_before = spool.send_pos;
+        let first_before = spool.active_first;
+        let bytes_before = spool.used_bytes();
+        let mut rejected = metrics_batch();
+        rejected.cursors = vec![Cursor {
+            path: "source.log".into(),
+            offset: 999,
+            ..Default::default()
+        }];
+        assert_eq!(
+            spool.append(&rejected).unwrap_err().to_string(),
+            "sequence exhausted"
+        );
+        assert_eq!(
+            spool
+                .append_owned(rejected.clone())
+                .unwrap_err()
+                .to_string(),
+            "sequence exhausted"
+        );
+        let mut synced = false;
+        assert!(
+            spool
+                .append_inner(rejected, |_| {
+                    synced = true;
+                    Ok(())
+                })
+                .is_err()
+        );
+        assert!(!synced);
+        assert_eq!(spool.next_sequence(), u64::MAX);
+        assert_eq!(spool.used_bytes(), bytes_before);
+        assert_eq!(spool.send_pos, send_before);
+        assert_eq!(spool.active_first, first_before);
+        assert!(sealed_on_disk(&scratch.0).is_empty());
+        assert_eq!(fs::read(&active).unwrap(), before);
+        assert_eq!(fs::read(scratch.0.join(ACKED)).unwrap(), ack_before);
+        assert_eq!(
+            spool.next_unacked().unwrap().unwrap(),
+            (committed.sequence, committed.encode_to_vec())
+        );
+        spool.record_ack(committed.sequence).unwrap();
+        drop(spool);
+        let mut reopened = Spool::open(&scratch.0, 64 * 1024).unwrap();
+        assert_eq!(reopened.next_sequence(), u64::MAX);
+        assert_eq!(reopened.acked_through(), u64::MAX - 1);
+        assert!(reopened.next_unacked().unwrap().is_none());
+        assert!(reopened.append(&batch()).is_err());
+        let mut replayed = Vec::new();
+        reopened
+            .replay(|b| {
+                replayed.push(b);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(replayed, vec![committed]);
+    }
+
+    #[test]
+    fn terminal_ack_cursor_is_rejected_by_open_and_inspection() {
+        for has_frames in [false, true] {
+            let scratch = Scratch::new();
+            let mut spool = Spool::open(&scratch.0, 64 * 1024).unwrap();
+            if has_frames {
+                spool.append(&batch()).unwrap();
+            }
+            write_acked(&scratch.0, spool.generation, u64::MAX).unwrap();
+            drop(spool);
+            let error = Spool::open(&scratch.0, 64 * 1024).err().unwrap();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+            assert_eq!(error.to_string(), "ACK cursor sequence exhausted");
+            let error = Spool::inspect(&scratch.0, 64 * 1024, |_| Ok(()))
+                .err()
+                .unwrap();
+            assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+            assert_eq!(error.to_string(), "ACK cursor sequence exhausted");
+        }
     }
 
     #[test]

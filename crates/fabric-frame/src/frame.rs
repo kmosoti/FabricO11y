@@ -145,6 +145,8 @@ fn list_sealed(dir: &Path) -> io::Result<Vec<(u64, u64, u64)>> {
 }
 
 fn sync_dir(dir: &Path) -> io::Result<()> {
+    #[cfg(feature = "phase-probe")]
+    let _phase = crate::probe::span("frame_directory_sync");
     File::open(dir)?.sync_all()
 }
 
@@ -565,7 +567,11 @@ impl FrameLog {
                 .create_new(true)
                 .open(&in_progress)?;
             marker.write_all(b"append in progress; reopen verifies the tail\n")?;
+            #[cfg(feature = "phase-probe")]
+            let sync_phase = crate::probe::span("frame_append_intent_sync");
             marker.sync_all()?;
+            #[cfg(feature = "phase-probe")]
+            drop(sync_phase);
             sync_dir(&self.dir)?;
             self.active.seek(SeekFrom::Start(at))?;
             let mut header = [0_u8; HEADER_BYTES as usize];
@@ -576,7 +582,11 @@ impl FrameLog {
             header[12..16].copy_from_slice(&crc32fast::hash(payload).to_le_bytes());
             self.active.write_all(&header)?;
             self.active.write_all(payload)?;
+            #[cfg(feature = "phase-probe")]
+            let sync_phase = crate::probe::span("frame_data_or_commit_sync");
             self.active.sync_all()?;
+            #[cfg(feature = "phase-probe")]
+            drop(sync_phase);
             after_sync(SyncStage::Data)?;
             let mut commit = [0_u8; MARKER_BYTES as usize];
             commit[..4].copy_from_slice(COMMIT_MAGIC);
@@ -584,7 +594,11 @@ impl FrameLog {
             let commit_crc = crc32fast::hash(&commit[..12]);
             commit[12..16].copy_from_slice(&commit_crc.to_le_bytes());
             self.active.write_all(&commit)?;
+            #[cfg(feature = "phase-probe")]
+            let sync_phase = crate::probe::span("frame_data_or_commit_sync");
             self.active.sync_all()?;
+            #[cfg(feature = "phase-probe")]
+            drop(sync_phase);
             after_sync(SyncStage::Marker)?;
             sync_dir(&self.dir)?;
             after_sync(SyncStage::DirectoryBeforeClear)?;

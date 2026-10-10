@@ -3,6 +3,7 @@ name = "fabric-properties"
 version = "0.1.0"
 edition = "2024"
 publish = false
+license = "Apache-2.0"
 description = "Property-based tests of the semantic kernels (verification layer; no product crate depends on it)."
 
 [dependencies]

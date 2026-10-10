@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "FabricO11y semantic core: pure, deterministic domain decisions"
 publish = false
+license = "Apache-2.0"
 
 # Every dependency here is reviewed against docs/architecture/core-purity.json
 # and rejected by `cargo xtask check-core-purity` unless allowlisted.

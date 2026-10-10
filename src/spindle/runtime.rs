@@ -17,7 +17,7 @@ use opentelemetry_proto::tonic::metrics::v1::{
 use opentelemetry_proto::tonic::resource::v1::Resource;
 use prost::Message;
 use sha2::Digest;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
@@ -243,6 +243,9 @@ fn metric_request(
     history: &History,
     extra: Vec<Metric>,
 ) -> io::Result<(Vec<u8>, History, usize)> {
+    #[cfg(feature = "phase-probe")]
+    let _phase = fabric_frame::probe::span("native_otlp_metrics_assembly");
+
     // A complete host sample replaces prior series. Retaining old device or
     // boot identities would make RAM grow across a bounded spool's lifetime.
     let mut next = History::new();
@@ -311,23 +314,30 @@ fn metric_request(
     Ok((request.encode_to_vec(), next, count))
 }
 
-fn encoded_logs(lines: &[log_source::Line], hostname: &str, boot_id: &str, now: u64) -> Vec<u8> {
+fn owned_log_record(line: log_source::Line, now: u64) -> LogRecord {
+    LogRecord {
+        observed_time_unix_nano: now,
+        body: Some(AnyValue {
+            value: Some(any_value::Value::StringValue(line.body)),
+        }),
+        attributes: vec![
+            attr("log.file.path", line.path),
+            attr("log.file.device", line.device.to_string()),
+            attr("log.file.inode", line.inode.to_string()),
+            attr("log.file.offset.start", line.start.to_string()),
+            attr("log.file.offset.end", line.end.to_string()),
+        ],
+        ..Default::default()
+    }
+}
+
+fn encoded_logs(lines: Vec<log_source::Line>, hostname: &str, boot_id: &str, now: u64) -> Vec<u8> {
+    #[cfg(feature = "phase-probe")]
+    let _phase = fabric_frame::probe::span("native_otlp_logs_assembly");
+
     let records = lines
-        .iter()
-        .map(|line| LogRecord {
-            observed_time_unix_nano: now,
-            body: Some(AnyValue {
-                value: Some(any_value::Value::StringValue(line.body.clone())),
-            }),
-            attributes: vec![
-                attr("log.file.path", &line.path),
-                attr("log.file.device", line.device.to_string()),
-                attr("log.file.inode", line.inode.to_string()),
-                attr("log.file.offset.start", line.start.to_string()),
-                attr("log.file.offset.end", line.end.to_string()),
-            ],
-            ..Default::default()
-        })
+        .into_iter()
+        .map(|line| owned_log_record(line, now))
         .collect();
     ExportLogsServiceRequest {
         resource_logs: vec![ResourceLogs {
@@ -451,11 +461,49 @@ pub struct Cycle {
     pub log_backlog_bytes: u64,
 }
 
+/// Optional operational timing, independent of telemetry and durable state.
+/// A wall sample lies within the monotonic bracket; a failed wall read is absent.
+#[derive(Clone, Copy, Debug)]
+pub struct TimingStamp {
+    pub unix_ns: Option<u64>,
+    pub monotonic_before_ns: u64,
+    pub monotonic_after_ns: u64,
+}
+
+fn timing_stamp(epoch: std::time::Instant) -> TimingStamp {
+    timing_stamp_read(epoch, now_ns)
+}
+
+fn timing_stamp_read(
+    epoch: std::time::Instant,
+    read: impl FnOnce() -> io::Result<u64>,
+) -> TimingStamp {
+    let monotonic_before_ns = epoch.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+    let unix_ns = read().ok();
+    let monotonic_after_ns = epoch.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+    TimingStamp {
+        unix_ns,
+        monotonic_before_ns,
+        monotonic_after_ns,
+    }
+}
+
+#[derive(Debug)]
+pub struct TimingEvent {
+    pub node_id: [u8; 16],
+    pub generation: u64,
+    pub sequence: u64,
+    pub stage: &'static str,
+    pub stamp: TimingStamp,
+}
+
 /// The Spindle runtime: one host's collection state, Spool and delivery client.
 pub struct Spindle {
     /// The configuration in force: the local base with any applied remote view.
     config: Config,
     base: Config,
+    /// Local composition-root sources cannot be removed by remote configuration.
+    local_logs: Vec<PathBuf>,
     applied: Option<RemoteView>,
     config_error: Option<String>,
     journal: Spool,
@@ -469,6 +517,10 @@ pub struct Spindle {
     meter: super::meter::Meter,
     /// Unread log bytes after the last pass, for the meter's gauge.
     last_backlog: u64,
+    timing_epoch: std::time::Instant,
+    timing_enabled: bool,
+    timing_events: VecDeque<TimingEvent>,
+    timing_dropped: u64,
 }
 
 /// What one configuration poll did.
@@ -482,16 +534,22 @@ pub struct ConfigPoll {
 
 const APPLIED: &str = "applied-config.json";
 
-/// The local base with a remote view's log paths and interval, validated by
-/// the same rules as a local file.
-fn effective(base: &Config, view: &RemoteView) -> io::Result<Config> {
+/// Merge local sources without increasing the collection profile's bound.
+fn with_local_logs(mut config: Config, local_logs: &[PathBuf]) -> io::Result<Config> {
+    config.validate()?;
+    config.logs.extend_from_slice(local_logs);
+    config.logs.sort();
+    config.logs.dedup();
+    config.validate()?;
+    Ok(config)
+}
+
+/// The local base with a remote view's log paths and interval, retaining pins.
+fn effective(base: &Config, view: &RemoteView, local_logs: &[PathBuf]) -> io::Result<Config> {
     let mut config = base.clone();
     config.logs = view.logs.iter().map(PathBuf::from).collect();
     config.interval_s = view.metric_interval_s;
-    config.validate()?;
-    config.logs.sort();
-    config.logs.dedup();
-    Ok(config)
+    with_local_logs(config, local_logs)
 }
 
 fn read_applied(dir: &Path) -> Option<RemoteView> {
@@ -522,8 +580,8 @@ pub struct Attempt {
     pub sequence: u64,
     pub sha256: String,
     pub outcome: Delivery,
-    /// Request start to answer; for an `ack` this includes the server's
-    /// durable commit.
+    /// Attempt start to answer, including any rate-cap wait; for an `ack`
+    /// this includes the server's durable commit. It is not creation-to-ACK.
     pub elapsed_us: u64,
 }
 
@@ -549,6 +607,37 @@ pub struct OverlapReport {
 }
 
 impl Spindle {
+    /// Opt-in evidence only. The fixed buffer never delays or fails a commit.
+    pub fn enable_timing_events(&mut self) {
+        self.timing_enabled = true;
+    }
+
+    pub fn take_timing_events(&mut self) -> (Vec<TimingEvent>, u64) {
+        let dropped = std::mem::take(&mut self.timing_dropped);
+        (self.timing_events.drain(..).collect(), dropped)
+    }
+
+    fn timing_sample(&self) -> Option<TimingStamp> {
+        self.timing_enabled.then(|| timing_stamp(self.timing_epoch))
+    }
+
+    fn timing(&mut self, sequence: u64, stage: &'static str, stamp: Option<TimingStamp>) {
+        let Some(stamp) = stamp else {
+            return;
+        };
+        if self.timing_events.len() == 256 {
+            self.timing_dropped = self.timing_dropped.saturating_add(1);
+            return;
+        }
+        let (node_id, generation) = self.journal.identity();
+        self.timing_events.push_back(TimingEvent {
+            node_id,
+            generation,
+            sequence,
+            stage,
+            stamp,
+        });
+    }
     /// Experimental logs/metrics overlap. The caller owns scheduling/config polls;
     /// this call sends only the oldest unacknowledged Batch and joins its worker
     /// before processing ACK or returning. It never sends the prepared successor.
@@ -701,18 +790,35 @@ impl Spindle {
         Self::open_with_paths(config, Paths::default())
     }
 
-    pub fn open_with_paths(mut config: Config, host_paths: Paths) -> io::Result<Self> {
+    /// Pin local diagnostic sources across remote log-path replacement. All
+    /// sources together share the existing sixteen-path collection bound.
+    pub fn open_with_local_logs(config: Config, local_logs: Vec<PathBuf>) -> io::Result<Self> {
+        Self::open_inner(config, Paths::default(), local_logs)
+    }
+
+    pub fn open_with_paths(config: Config, host_paths: Paths) -> io::Result<Self> {
+        Self::open_inner(config, host_paths, Vec::new())
+    }
+
+    fn open_inner(
+        mut config: Config,
+        host_paths: Paths,
+        mut local_logs: Vec<PathBuf>,
+    ) -> io::Result<Self> {
         config.validate()?;
         config.logs.sort();
         config.logs.dedup();
+        local_logs.sort();
+        local_logs.dedup();
         // The local file is the base: spool, ceiling and server target. The
         // last configuration applied from the server, if still valid against
         // that base, replaces its log paths and interval (ADR-0014).
         let base = config.clone();
+        config = with_local_logs(config, &local_logs)?;
         let mut applied = None;
         let mut config_error = None;
         if let Some(view) = read_applied(&config.spool) {
-            match effective(&base, &view) {
+            match effective(&base, &view, &local_logs) {
                 Ok(effective) => {
                     config = effective;
                     applied = Some(view);
@@ -752,6 +858,7 @@ impl Spindle {
         Ok(Self {
             config,
             base,
+            local_logs,
             applied,
             config_error,
             journal,
@@ -766,6 +873,10 @@ impl Spindle {
                 fabric_frame::envelope::MAX_BATCH,
             ),
             last_backlog: 0,
+            timing_epoch: std::time::Instant::now(),
+            timing_enabled: false,
+            timing_events: VecDeque::new(),
+            timing_dropped: 0,
         })
     }
 
@@ -803,7 +914,7 @@ impl Spindle {
                 });
             }
         };
-        let effective = match effective(&self.base, &view) {
+        let effective = match effective(&self.base, &view, &self.local_logs) {
             Ok(effective) => effective,
             Err(error) => {
                 let message = format!("revision {}: {error}", view.revision);
@@ -849,10 +960,10 @@ impl Spindle {
             caught_up: false,
             error: None,
         };
-        let Some(sender) = self.sender.as_ref() else {
+        if self.sender.is_none() {
             report.caught_up = true;
             return Ok(report);
-        };
+        }
         while std::time::Instant::now() < until {
             let Some((sequence, bytes)) = self.journal.next_unacked()? else {
                 report.caught_up = true;
@@ -873,7 +984,13 @@ impl Spindle {
                 }
                 std::thread::sleep(wait);
             }
-            let outcome = sender.send(&bytes);
+            let send_stamp = self.timing_sample();
+            let outcome = self
+                .sender
+                .as_ref()
+                .expect("sender checked above")
+                .send(&bytes);
+            let answer_stamp = self.timing_sample();
             let elapsed_us = started.elapsed().as_micros() as u64;
             on_attempt(&Attempt {
                 elapsed_us,
@@ -884,6 +1001,8 @@ impl Spindle {
                     .collect(),
                 outcome: outcome.clone(),
             });
+            self.timing(sequence, "send_started", send_stamp);
+            self.timing(sequence, "answer_received", answer_stamp);
             match outcome {
                 Delivery::Ack(through) if through >= sequence => {
                     // Beyond our last committed sequence is an error from
@@ -950,7 +1069,11 @@ impl Spindle {
             .flat_map(|r| r.scope_spans)
             .map(|s| s.spans.len())
             .sum();
-        let committed = self.journal.append(&candidate)?;
+        let accepted_stamp = self.timing_sample();
+        let committed = self.journal.append_owned(candidate)?;
+        let committed_stamp = self.timing_sample();
+        self.timing(committed.sequence, "traces_accepted", accepted_stamp);
+        self.timing(committed.sequence, "spool_committed", committed_stamp);
         self.meter.record_commit(super::meter::Committed {
             traces: (committed.traces.len() as u64, spans as u64),
             ..Default::default()
@@ -961,6 +1084,9 @@ impl Spindle {
     /// One full cycle: host metrics and every configured log. Always commits
     /// a batch (metrics, lines or at least a gap).
     pub fn collect_once(&mut self) -> io::Result<Cycle> {
+        #[cfg(feature = "phase-probe")]
+        let _phase = fabric_frame::probe::span("native_collection_inclusive");
+
         if self.paused() {
             return Err(io::Error::other("collection is paused by the server"));
         }
@@ -968,10 +1094,46 @@ impl Spindle {
             .ok_or_else(|| io::Error::other("metrics cycle produced no batch"))
     }
 
-    /// Read configured logs only. Commits a batch only when there are new
-    /// lines or gaps, so a quiet poll writes nothing to the spool.
+    /// Read configured logs. New lines, gaps or forward progress through an
+    /// oversized line commit a Batch. Skip-only progress may sample metrics;
+    /// a poll with no progress writes nothing to the Spool.
     pub fn collect_logs(&mut self) -> io::Result<Option<Cycle>> {
         self.collect(false)
+    }
+
+    fn sample_collection_host(&self, gaps: &mut Vec<String>) -> Option<host::Snapshot> {
+        let observation = {
+            #[cfg(feature = "phase-probe")]
+            let _phase = fabric_frame::probe::span("native_host_observation");
+            host::sample(&self.host_paths)
+        };
+        match observation {
+            Ok(snapshot) => Some(snapshot),
+            Err(error) => {
+                gaps.push(bounded_gap(format!("host metrics unavailable: {error}")));
+                None
+            }
+        }
+    }
+
+    fn collection_metrics(
+        &self,
+        sampled: Option<&host::Snapshot>,
+        now: u64,
+    ) -> io::Result<(Vec<u8>, Option<History>, usize)> {
+        let Some(snapshot) = sampled else {
+            return Ok((Vec::new(), None, 0));
+        };
+        let unacked = self
+            .journal
+            .next_sequence()
+            .saturating_sub(1)
+            .saturating_sub(self.journal.acked_through());
+        let metered =
+            self.meter
+                .metrics(now, self.journal.used_bytes(), unacked, self.last_backlog);
+        let (bytes, history, count) = metric_request(snapshot, now, &self.history, metered)?;
+        Ok((bytes, Some(history), count))
     }
 
     fn collect(&mut self, include_metrics: bool) -> io::Result<Option<Cycle>> {
@@ -984,6 +1146,7 @@ impl Spindle {
         // bytes; sampling host metrics when rotation is due keeps files near 8 MiB.
         let include_metrics = include_metrics || self.journal.rotation_due();
         let now = now_ns()?;
+        let observed_stamp = self.timing_sample();
         let mut gaps = Vec::new();
         // A prior cycle could not commit. Its interval is reported as a gap in
         // the next committed batch rather than halting collection for good.
@@ -993,31 +1156,13 @@ impl Spindle {
         {
             gaps.push(unknown.notice());
         }
-        let sampled = if include_metrics {
-            match host::sample(&self.host_paths) {
-                Ok(snapshot) => Some(snapshot),
-                Err(error) => {
-                    gaps.push(bounded_gap(format!("host metrics unavailable: {error}")));
-                    None
-                }
-            }
+        let mut sampled = if include_metrics {
+            self.sample_collection_host(&mut gaps)
         } else {
             None
         };
-        let (metrics, updated_history, metric_points) = if let Some(snapshot) = sampled.as_ref() {
-            let unacked = self
-                .journal
-                .next_sequence()
-                .saturating_sub(1)
-                .saturating_sub(self.journal.acked_through());
-            let metered =
-                self.meter
-                    .metrics(now, self.journal.used_bytes(), unacked, self.last_backlog);
-            let (bytes, history, count) = metric_request(snapshot, now, &self.history, metered)?;
-            (bytes, history, count)
-        } else {
-            (Vec::new(), self.history.clone(), 0)
-        };
+        let (mut metrics, mut updated_history, mut metric_points) =
+            self.collection_metrics(sampled.as_ref(), now)?;
         let mut lines = Vec::new();
         let mut pending_cursors = Vec::new();
         let mut remaining = LOG_BODY_BUDGET.min(
@@ -1038,8 +1183,12 @@ impl Spindle {
             let path = &self.config.logs[(first + index) % count];
             let name = path.to_string_lossy().to_string();
             let per_line = name.len() + LOG_LINE_OVERHEAD;
-            match log_source::read_lines_costed(path, self.cursors.get(&name), remaining, per_line)
-            {
+            let read = {
+                #[cfg(feature = "phase-probe")]
+                let _phase = fabric_frame::probe::span("native_file_collection");
+                log_source::read_lines_costed(path, self.cursors.get(&name), remaining, per_line)
+            };
+            match read {
                 Ok(read) => {
                     log_backlog_bytes = log_backlog_bytes.saturating_add(read.backlog_bytes);
                     remaining = remaining.saturating_sub(
@@ -1067,10 +1216,26 @@ impl Spindle {
         }
         debug_assert!(gaps.len() <= MAX_GAPS_PER_BATCH);
         if !include_metrics && lines.is_empty() && gaps.is_empty() {
-            // Nothing new. Cursor progress through an oversized line is not
-            // committed here; the next poll repeats it within the scan bound.
-            return Ok(None);
+            let skip_progress = pending_cursors.iter().any(|cursor| {
+                self.cursors.get(&cursor.path).is_some_and(|old| {
+                    old.skipping_oversize
+                        && old.path == cursor.path
+                        && old.device == cursor.device
+                        && old.inode == cursor.inode
+                        && cursor.offset > old.offset
+                })
+            });
+            if !skip_progress {
+                return Ok(None);
+            }
+            // Cursor-only Batches are invalid. Commit this bounded skip progress
+            // with real metrics, or the existing host-failure gap. Do not reread
+            // the source or add another gap for the already reported long line.
+            sampled = self.sample_collection_host(&mut gaps);
+            (metrics, updated_history, metric_points) =
+                self.collection_metrics(sampled.as_ref(), now)?;
         }
+        debug_assert!(gaps.len() <= MAX_GAPS_PER_BATCH);
         let identity = match sampled.as_ref() {
             Some(s) => Some((s.hostname.clone(), s.boot_id.clone())),
             None => host::identity(&self.host_paths).ok(),
@@ -1079,10 +1244,11 @@ impl Spindle {
             .as_ref()
             .map(|(h, b)| (h.as_str(), b.as_str()))
             .unwrap_or(("unknown", "unknown"));
+        let log_records = lines.len();
         let logs = if lines.is_empty() {
             Vec::new()
         } else {
-            encoded_logs(&lines, hostname, boot_id, now)
+            encoded_logs(lines, hostname, boot_id, now)
         };
         let candidate = Batch {
             version: 1,
@@ -1095,11 +1261,12 @@ impl Spindle {
             collection_gaps: gaps,
             traces: Vec::new(),
         };
-        let committed = match self.journal.append(&candidate) {
+        let accepted_stamp = self.timing_sample();
+        let committed = match self.journal.append_owned(candidate) {
             Ok(batch) => batch,
             Err(error) => {
-                // The candidate and source cursor remain ours on failure.
-                // Coverage cannot be called delivered; persist unknown state.
+                // Source cursors and counter history remain unadvanced on failure.
+                // The candidate is discarded; persist unknown coverage.
                 let replace = self.unknown_reported.is_some();
                 if let Err(marker) = mark_unknown(&self.config.spool, now, replace) {
                     return Err(io::Error::new(
@@ -1111,11 +1278,15 @@ impl Spindle {
                 return Err(error);
             }
         };
+        let committed_stamp = self.timing_sample();
+        self.timing(committed.sequence, "collection_started", observed_stamp);
+        self.timing(committed.sequence, "sources_accepted", accepted_stamp);
+        self.timing(committed.sequence, "spool_committed", committed_stamp);
         // Update in-memory state first: the batch is committed, and a caller
         // that retries after a later error must not collect the same lines.
         let sequence = committed.sequence;
         self.meter.record_commit(super::meter::Committed {
-            logs: (committed.logs.len() as u64, lines.len() as u64),
+            logs: (committed.logs.len() as u64, log_records as u64),
             metrics: (committed.metrics.len() as u64, metric_points as u64),
             traces: (0, 0),
         });
@@ -1124,7 +1295,9 @@ impl Spindle {
         for cursor in committed.cursors {
             self.cursors.insert(cursor.path.clone(), cursor);
         }
-        self.history = updated_history;
+        if let Some(history) = updated_history {
+            self.history = history;
+        }
         if let Some(unknown) = unknown {
             // The notice is committed. If removing the marker fails, remember
             // that it was reported and retry the removal next cycle.
@@ -1136,7 +1309,7 @@ impl Spindle {
         Ok(Some(Cycle {
             batch_sequence: sequence,
             metric_points,
-            log_records: lines.len(),
+            log_records,
             gaps: gap_count,
             spool_bytes: self.journal.used_bytes(),
             log_backlog_bytes,
@@ -1321,12 +1494,33 @@ pub fn inspect(config: &Config) -> io::Result<Report> {
 }
 
 #[cfg(test)]
+#[path = "skip_progress_tests.rs"]
+mod skip_progress_tests;
+
+#[cfg(test)]
+#[path = "runtime_ownership_tests.rs"]
+mod runtime_ownership_tests;
+
+#[cfg(test)]
+#[path = "local_logs_tests.rs"]
+mod local_logs_tests;
+
+#[cfg(test)]
 #[path = "overlap_tests.rs"]
 mod overlap_tests;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unavailable_operational_clock_is_unmeasured_without_failing_commit() {
+        let stamp = timing_stamp_read(std::time::Instant::now(), || {
+            Err(io::Error::other("registered clock-read failure"))
+        });
+        assert_eq!(stamp.unix_ns, None);
+        assert!(stamp.monotonic_after_ns >= stamp.monotonic_before_ns);
+    }
 
     #[test]
     fn current_metric_series_replace_obsolete_boot_and_device_keys() {

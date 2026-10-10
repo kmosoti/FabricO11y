@@ -51,6 +51,37 @@ fn invalid_data(e: impl std::fmt::Display) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, e.to_string())
 }
 
+// Reopening ACTIVE may reach a different file after rotation. Verify the first
+// committed group before using any saved offset, then follow its sealed name.
+// File handles live only for this discovery/read operation, never in Sources.
+fn open_journal(path: &Path, expected_first: u64) -> io::Result<(File, u64)> {
+    fn candidate(path: &Path, expected: u64) -> io::Result<Option<(File, u64)>> {
+        let file = match File::open(path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let len = file.metadata()?.len();
+        let Some((payload, _)) = read_frame(&file, 0, len, MAX_GROUP_PAYLOAD)? else {
+            return Ok(None);
+        };
+        let first = Group::decode(payload.as_slice())
+            .map_err(invalid_data)?
+            .group_sequence;
+        Ok((first == expected).then_some((file, len)))
+    }
+    if let Some(opened) = candidate(path, expected_first)? {
+        return Ok(opened);
+    }
+    let sealed = path.with_file_name(format!("sealed-{expected_first:020}.faj"));
+    if sealed != path
+        && let Some(opened) = candidate(&sealed, expected_first)?
+    {
+        return Ok(opened);
+    }
+    Err(interrupted("journal moved"))
+}
+
 /// No rows of that kind: the bounds are empty.
 pub(crate) const NONE: (u64, u64) = (u64::MAX, 0);
 
@@ -283,6 +314,32 @@ impl Pending {
     }
 }
 
+/// Query ownership of immutable metadata. Neither variant pins Segment files.
+pub(crate) enum ManifestHandle {
+    Owned(Manifest),
+    Shared(Arc<Manifest>),
+}
+
+impl ManifestHandle {
+    fn from_cached(manifest: &Arc<Manifest>, shared: bool) -> Self {
+        if shared {
+            Self::Shared(manifest.clone())
+        } else {
+            Self::Owned(manifest.as_ref().clone())
+        }
+    }
+}
+
+impl std::ops::Deref for ManifestHandle {
+    type Target = Manifest;
+    fn deref(&self) -> &Manifest {
+        match self {
+            Self::Owned(m) => m,
+            Self::Shared(m) => m,
+        }
+    }
+}
+
 /// Process-wide state of the walk plan.
 #[derive(Default)]
 pub(crate) struct WalkState {
@@ -291,7 +348,7 @@ pub(crate) struct WalkState {
     pub labels: Vec<String>,
     label_ids: HashMap<String, u32>,
     pub entries: Vec<TailEntry>,
-    manifests: HashMap<u64, Manifest>,
+    manifests: HashMap<u64, Arc<Manifest>>,
     bounds: HashMap<(u64, Table), GroupBounds>,
     /// Verified text filters by label; `None` when a Segment has none or its digest
     /// differs (a named Segment's bytes never change, so the verdict is kept).
@@ -316,9 +373,19 @@ impl WalkState {
         id
     }
 
-    /// Journal files as (first group, path, length), sealed files in order, the active
-    /// file last. A file whose first frame is incomplete holds no complete group yet.
+    /// Capture ACTIVE before listing sealed files, so rotation cannot hide the
+    /// old active file between the listing and its open. Two handles at most:
+    /// the captured active file and the sealed file currently being inspected.
     fn files(journal_dir: &Path) -> io::Result<Vec<(u64, PathBuf, u64)>> {
+        let active_path = journal_dir.join(fabric_frame::frame::ACTIVE);
+        let active = match File::open(&active_path) {
+            Ok(file) => file,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                return Err(interrupted("journal moved"));
+            }
+            Err(error) => return Err(error),
+        };
+        let active_len = active.metadata()?.len();
         let mut paths: Vec<PathBuf> = std::fs::read_dir(journal_dir)?
             .filter_map(|e| e.ok())
             .map(|e| e.path())
@@ -329,7 +396,6 @@ impl WalkState {
             })
             .collect();
         paths.sort();
-        paths.push(journal_dir.join(fabric_frame::frame::ACTIVE));
         let mut out = Vec::new();
         for path in paths {
             let file = match File::open(&path) {
@@ -348,6 +414,16 @@ impl WalkState {
                 .group_sequence;
             out.push((first, path, len));
         }
+        if let Some((payload, _)) = read_frame(&active, 0, active_len, MAX_GROUP_PAYLOAD)? {
+            let first = Group::decode(payload.as_slice())
+                .map_err(invalid_data)?
+                .group_sequence;
+            // A rotation may have listed the captured active file as sealed.
+            // Prefer that immutable pathname and index its frames only once.
+            if !out.iter().any(|(listed, _, _)| *listed == first) {
+                out.push((first, active_path, active_len));
+            }
+        }
         Ok(out)
     }
 
@@ -359,16 +435,33 @@ impl WalkState {
         journal_dir: &Path,
         covered: &[(u64, u64)],
     ) -> io::Result<HashMap<u64, PathBuf>> {
+        self.extend_inner(journal_dir, covered, || {})
+    }
+
+    #[cfg(test)]
+    pub(crate) fn extend_at_discovery_cut(
+        &mut self,
+        journal_dir: &Path,
+        covered: &[(u64, u64)],
+        after_discovery: impl FnOnce(),
+    ) -> io::Result<HashMap<u64, PathBuf>> {
+        self.extend_inner(journal_dir, covered, after_discovery)
+    }
+
+    fn extend_inner(
+        &mut self,
+        journal_dir: &Path,
+        covered: &[(u64, u64)],
+        after_discovery: impl FnOnce(),
+    ) -> io::Result<HashMap<u64, PathBuf>> {
         let files = Self::files(journal_dir)?;
+        after_discovery();
         let mut rows = Rows::default();
         for (first, path, len) in &files {
-            let file = match File::open(path) {
-                Ok(f) => f,
-                Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                    return Err(interrupted("journal moved"));
-                }
-                Err(e) => return Err(e),
-            };
+            let (file, verified_len) = open_journal(path, *first)?;
+            if verified_len < *len {
+                return Err(invalid_data("verified journal file shrank after discovery"));
+            }
             let mut at = self.scanned.get(first).copied().unwrap_or(0);
             while at < *len {
                 let Some((payload, next)) = read_frame(&file, at, *len, MAX_GROUP_PAYLOAD)? else {
@@ -463,19 +556,24 @@ impl WalkState {
         self.blocks.insert(id, Arc::new(block));
     }
 
-    /// The Segments as `segment::list` returns them, manifests read once per label.
-    pub fn segments(&mut self, state_dir: &Path) -> io::Result<Vec<(u64, Manifest)>> {
+    /// List live immutable metadata, selecting deep-copy or shared query ownership.
+    pub fn segments(
+        &mut self,
+        state_dir: &Path,
+        shared: bool,
+    ) -> io::Result<Vec<(u64, ManifestHandle)>> {
         let dir = segment::segments_dir(state_dir)?;
         let mut found = Vec::new();
         for label in segment::labels(state_dir)? {
             if let Some(m) = self.manifests.get(&label) {
-                found.push((label, m.clone()));
+                found.push((label, ManifestHandle::from_cached(m, shared)));
                 continue;
             }
             match segment::read_manifest(&dir.join(segment::segment_name(label))) {
                 Ok(m) => {
+                    let m = Arc::new(m);
                     self.manifests.insert(label, m.clone());
-                    found.push((label, m));
+                    found.push((label, ManifestHandle::from_cached(&m, shared)));
                 }
                 Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
                 Err(e) => return Err(e),
@@ -556,14 +654,12 @@ impl<'a> TailReader<'a> {
                 .paths
                 .get(&file_first)
                 .ok_or_else(|| interrupted("journal moved"))?;
-            let file = match File::open(path) {
-                Ok(f) => f,
-                Err(e) if e.kind() == io::ErrorKind::NotFound => {
-                    return Err(interrupted("journal moved"));
-                }
-                Err(e) => return Err(e),
-            };
-            let len = file.metadata()?.len();
+            let (file, len) = open_journal(path, file_first)?;
+            if offset > len {
+                return Err(invalid_data(
+                    "tail frame offset beyond verified journal file",
+                ));
+            }
             let Some((payload, _)) = read_frame(&file, offset, len, MAX_GROUP_PAYLOAD)? else {
                 return Err(interrupted("journal moved"));
             };
@@ -576,6 +672,9 @@ impl<'a> TailReader<'a> {
     /// The rows of one entry.
     pub fn rows(&mut self, e: &TailEntry) -> io::Result<Rows> {
         let group = self.group(e.file_first, e.offset)?;
+        if group.group_sequence != e.group {
+            return Err(invalid_data("tail entry group identity mismatch"));
+        }
         let entry = group
             .entries
             .get(e.index as usize)
@@ -766,3 +865,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "tail_identity_tests.rs"]
+mod tail_identity_tests;

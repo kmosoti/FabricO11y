@@ -48,6 +48,14 @@ fn main() -> io::Result<()> {
     let mut next_config = Instant::now();
     let mut last = 0u64;
     let mut recorded = 0u64;
+    let final_observer = match std::env::var("FABRIC_O8_OBSERVER").as_deref() {
+        Ok("final") => true,
+        Ok("loop") | Err(_) => false,
+        Ok(_) => return Err(io::Error::other("FABRIC_O8_OBSERVER must be loop or final")),
+    };
+    let mut scans = 0u64;
+    let mut decoded = 0u64;
+    let mut observer_ns = 0u128;
     let mut out = io::BufWriter::new(io::stdout());
     let mut ledger = fs::File::create(cfg.spool.parent().unwrap().join("producer.jsonl"))?;
     while Instant::now() < end && !stop_path.exists() {
@@ -118,19 +126,12 @@ fn main() -> io::Result<()> {
                 }
             }
         }
-        Spool::inspect(&cfg.spool, cfg.spool_bytes - 4096, |batch| {
-            if batch.sequence > recorded {
-                use prost::Message;
-                let bytes = batch.encode_to_vec();
-                writeln!(
-                    ledger,
-                    "{}",
-                    json!({"label":"o8-node","hex":bytes.iter().map(|b|format!("{b:02x}")).collect::<String>(),"sequence":batch.sequence})
-                )?;
-                recorded = batch.sequence;
-            }
-            Ok(())
-        })?;
+        if !final_observer {
+            let start = Instant::now();
+            decoded += capture(&cfg, &mut ledger, &mut recorded, false)?;
+            observer_ns += start.elapsed().as_nanos();
+            scans += 1;
+        }
         writeln!(
             out,
             "{}",
@@ -142,10 +143,59 @@ fn main() -> io::Result<()> {
     }
     // Stop prepares no new data; outstanding exact bytes are retained until ACK.
     let drained = node.deliver(Instant::now() + Duration::from_secs(10), |_| {})?;
+    if final_observer {
+        let start = Instant::now();
+        decoded += capture(&cfg, &mut ledger, &mut recorded, true)?;
+        observer_ns += start.elapsed().as_nanos();
+        scans += 1;
+        if recorded != last {
+            return Err(io::Error::other("final observer missed committed Batches"));
+        }
+    }
+    ledger.flush()?;
+    writeln!(
+        out,
+        "{}",
+        json!({"event":"observer","mode":if final_observer {"final"} else {"loop"},"scans":scans,"decoded_batches":decoded,"wall_ns":observer_ns})
+    )?;
     writeln!(
         out,
         "{}",
         json!({"event":"finished","acked":drained.acked_through,"last":last,"caught_up":drained.caught_up,"wall_ns":began.elapsed().as_nanos(),"recorded_batches":recorded})
     )?;
     out.flush()
+}
+
+// Final capture is valid only for finite fixtures retaining their entire Spool.
+// A reclaimed prefix fails explicitly instead of silently weakening custody.
+fn capture(
+    cfg: &Config,
+    ledger: &mut fs::File,
+    recorded: &mut u64,
+    complete: bool,
+) -> io::Result<u64> {
+    use prost::Message;
+    let mut decoded = 0u64;
+    let status = Spool::inspect(&cfg.spool, cfg.spool_bytes - 4096, |batch| {
+        decoded += 1;
+        if complete && batch.sequence != *recorded + 1 {
+            return Err(io::Error::other(
+                "final observer requires the complete retained prefix",
+            ));
+        }
+        if batch.sequence > *recorded {
+            let bytes = batch.encode_to_vec();
+            writeln!(
+                ledger,
+                "{}",
+                json!({"label":"o8-node","hex":bytes.iter().map(|b|format!("{b:02x}")).collect::<String>(),"sequence":batch.sequence})
+            )?;
+            *recorded = batch.sequence;
+        }
+        Ok(())
+    })?;
+    if status.recovery_required || (complete && status.next_sequence != *recorded + 1) {
+        return Err(io::Error::other("incomplete Spool observer capture"));
+    }
+    Ok(decoded)
 }

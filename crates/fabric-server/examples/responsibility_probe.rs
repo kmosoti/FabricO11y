@@ -127,6 +127,15 @@ mod process_clock {
     pub fn now() -> u64 {
         read(false)
     }
+    #[cfg(feature = "phase-probe")]
+    pub fn thread_now() -> u64 {
+        let mut ts = Timespec {
+            seconds: 0,
+            nanoseconds: 0,
+        };
+        assert_eq!(unsafe { clock_gettime(3, &mut ts) }, 0);
+        ts.seconds as u64 * 1_000_000_000 + ts.nanoseconds as u64
+    }
     pub fn resolution() -> u64 {
         read(true)
     }
@@ -418,7 +427,7 @@ fn batch_log_count(bytes: &[u8]) -> usize {
         .sum()
 }
 fn seed_store(path: &Path, groups: &[Group], rotate: u64, timed: bool, per_batch: usize) {
-    let (intake, thread) = Store::open_with(path, 256 * 1024 * 1024, rotate, CommitMode::GROUPED)
+    let (intake, thread) = Store::open_with(path, 1024 * 1024 * 1024, rotate, CommitMode::GROUPED)
         .unwrap()
         .spawn_joinable()
         .unwrap();
@@ -440,9 +449,10 @@ fn seed_store(path: &Path, groups: &[Group], rotate: u64, timed: bool, per_batch
 fn recover(path: &Path) -> Vec<Group> {
     let mut out = Vec::new();
     let mut seq = 0;
-    let store = Store::open_with(path, 256 * 1024 * 1024, 512 * 1024, CommitMode::GROUPED).unwrap();
+    let store =
+        Store::open_with(path, 1024 * 1024 * 1024, 512 * 1024, CommitMode::GROUPED).unwrap();
     drop(store);
-    Store::replay(path, 256 * 1024 * 1024, |e| {
+    Store::replay(path, 1024 * 1024 * 1024, |e| {
         seq += 1;
         out.push(Group {
             group_sequence: seq,
@@ -456,6 +466,110 @@ fn recover(path: &Path) -> Vec<Group> {
     })
     .unwrap();
     out
+}
+
+fn pending_trial(root: &Path, groups: &[Group], count: usize) {
+    use fabric_frame::frame::{ACTIVE, FrameLog};
+    use std::sync::{
+        Arc, Barrier,
+        atomic::{AtomicBool, Ordering},
+    };
+    let state = root.join("state");
+    let journal = state.join("journal");
+    fs::create_dir_all(&journal).unwrap();
+    let mut log = FrameLog::open(
+        &journal,
+        1024 * 1024 * 1024,
+        segment::MAX_GROUP_PAYLOAD,
+        |_, _| Ok(()),
+    )
+    .unwrap();
+    for group in &groups[..groups.len() - 1] {
+        log.append(&group.encode_to_vec()).unwrap();
+    }
+    log.rotate(1).unwrap();
+    log.append(&groups.last().unwrap().encode_to_vec()).unwrap();
+    drop(log);
+    let sealed = journal.join("sealed-00000000000000000001.faj");
+    assert!(sealed.exists() && journal.join(ACTIVE).exists());
+    let scan = History::with_plan(&state, Plan::Scan);
+    let walk = History::with_plan(&state, Plan::Walk);
+    let queries = [
+        json!({"kind":"logs","from_ns":START,"to_ns":START+count as u64,"limit":20}),
+        json!({"kind":"logs","from_ns":START,"to_ns":START+count as u64,"limit":20,
+               "contains":format!("bench-{:04} ", count-128)}),
+    ];
+    let run_query = |i: usize, phase: &str| {
+        let (history, plan) = if i.is_multiple_of(2) {
+            (&scan, "scan")
+        } else {
+            (&walk, "walk")
+        };
+        let q = &queries[(i / 2) % 2];
+        let parsed: Query = serde_json::from_value(q.clone()).unwrap();
+        let began = Instant::now();
+        let answer = history.run(&parsed, groups.len() as u64).unwrap();
+        let wall_ns = began.elapsed().as_nanos() as u64;
+        assert_eq!(answer["complete"], true);
+        assert_eq!(
+            answer["rows"].as_array().unwrap().len(),
+            if (i / 2).is_multiple_of(2) { 20 } else { 1 }
+        );
+        json!({"query":q,"answer":answer,"phase":phase,"plan":plan,"wall_ns":wall_ns})
+    };
+    let mut answers: Vec<_> = (0..4).map(|i| run_query(i, "before")).collect();
+    let done = Arc::new(AtomicBool::new(false));
+    let barrier = Arc::new(Barrier::new(2));
+    let builder = std::env::var("BENCH_BUILDER").unwrap();
+    let (manifest, during) = std::thread::scope(|scope| {
+        let handle = scope.spawn(|| {
+            barrier.wait();
+            let mut answers = Vec::new();
+            for i in 0..30 {
+                if done.load(Ordering::Acquire) {
+                    break;
+                }
+                answers.push(run_query(i, "during"));
+            }
+            answers
+        });
+        barrier.wait();
+        let manifest = measure("pending_read_and_build_segment", count - 128, || {
+            if builder == "reference" {
+                let decoded = segment::read_sealed(&sealed).unwrap();
+                segment::build(&state, 1, &decoded).unwrap()
+            } else {
+                assert_eq!(builder, "bounded");
+                segment::build_sealed(&state, 1, &sealed).unwrap()
+            }
+        });
+        done.store(true, Ordering::Release);
+        (manifest, handle.join().unwrap())
+    });
+    let during_count = during.len();
+    answers.extend(during);
+    answers.extend((0..4).map(|i| run_query(i, "after")));
+    let dir = state.join("segments").join(segment::segment_name(1));
+    segment::verify(&dir, &manifest).unwrap();
+    let mut record = 0;
+    segment::scan_batches(&dir, &manifest, |g, e| {
+        assert_eq!(g, groups[record].group_sequence);
+        assert_eq!(e, groups[record].entries[0]);
+        record += 1;
+    })
+    .unwrap();
+    assert_eq!(record, groups.len() - 1);
+    let mut out = BufWriter::new(fs::File::create(root.join("pending-answers.jsonl")).unwrap());
+    for answer in answers {
+        writeln!(out, "{answer}").unwrap();
+    }
+    out.flush().unwrap();
+    println!(
+        "{}",
+        json!({"stage":"pending_exactness","builder":builder,"during_samples":during_count,
+        "sealed_journal_bytes":fs::metadata(sealed).unwrap().len(),"sealed_records":record,
+        "active_records":1,"raw_custody":true,"whole_process_allocation_overlap":true})
+    );
 }
 fn main() {
     // Preserve completed ledger rows when native/assertion failure unwinds.
@@ -476,10 +590,25 @@ fn main() {
     let mode = &a[2];
     let size: usize = a[3].parse().unwrap();
     fs::create_dir_all(&root).unwrap();
+    #[cfg(feature = "phase-probe")]
+    if std::env::var("BENCH_PHASES").is_ok_and(|v| v == "1") {
+        fabric_frame::probe::install(|| {
+            #[cfg(feature = "responsibility-alloc-probe")]
+            let (live, peak, total) = allocation::facts();
+            #[cfg(not(feature = "responsibility-alloc-probe"))]
+            let (live, peak, total) = (0, 0, 0);
+            [
+                process_clock::thread_now(),
+                live as u64,
+                peak as u64,
+                total as u64,
+            ]
+        });
+    }
     let count = env_count("BENCH_RECORDS", 4096);
     assert!(
-        (128..=65_536).contains(&count) && count.is_multiple_of(128),
-        "BENCH_RECORDS must be a multiple of 128 in 128..=65536"
+        (128..=262_144).contains(&count) && count.is_multiple_of(128),
+        "BENCH_RECORDS must be a multiple of 128 in 128..=262144"
     );
     let order = std::env::var("BENCH_ORDER").unwrap_or_else(|_| "sorted".into());
     let observer = std::env::var("BENCH_OBSERVER").unwrap_or_else(|_| "minimal".into());
@@ -605,6 +734,97 @@ fn main() {
             );
             records(&root, &recovered);
         }
+        "assembly" => {
+            use fabric_o11y::spindle::runtime::{Config, Spindle};
+            let source_a = root.join("app-a.log");
+            let source_b = root.join("app-b.log");
+            fs::write(&source_a, texts[..texts.len() / 2].join("\n") + "\n").unwrap();
+            fs::write(&source_b, texts[texts.len() / 2..].join("\n") + "\n").unwrap();
+            let spool_path = root.join("native-spool");
+            let mut paths = vec![source_a, source_b];
+            let bad = std::env::var("BENCH_BAD_SOURCES").is_ok_and(|s| s == "1");
+            if bad {
+                let invalid = root.join("invalid.log");
+                fs::write(&invalid, [0xff, b'\n']).unwrap();
+                paths.extend([invalid, root.join("missing.log")]);
+            }
+            let mut node = Spindle::open(Config {
+                spool: spool_path.clone(),
+                logs: paths,
+                interval_s: 1,
+                spool_bytes: 256 * 1024 * 1024,
+                server: None,
+                traces_listen: None,
+                max_output_bytes_per_s: None,
+            })
+            .unwrap();
+            let mut seen = 0;
+            let mut gaps = 0;
+            for _ in 0..128 {
+                let cycle = measure("native_collection_otlp_spool", 1, || {
+                    node.collect_once().unwrap()
+                });
+                seen += cycle.log_records;
+                gaps += cycle.gaps;
+                if cycle.log_backlog_bytes == 0 {
+                    break;
+                }
+            }
+            assert_eq!(seen, texts.len());
+            if bad {
+                assert!(gaps >= 2);
+            } else {
+                assert_eq!(gaps, 0);
+            }
+            drop(node);
+            let mut spool = Spool::open(&spool_path, 256 * 1024 * 1024).unwrap();
+            let mut actual = Vec::new();
+            spool
+                .replay(|b| {
+                    actual.push(Group {
+                        group_sequence: b.sequence,
+                        entries: vec![Entry {
+                            label: "fixture".into(),
+                            received_unix_nano: START,
+                            batch: b.encode_to_vec(),
+                        }],
+                    });
+                    Ok(())
+                })
+                .unwrap();
+            records(&root, &actual);
+        }
+        "compression" => {
+            use parquet::file::reader::{FileReader, SerializedFileReader};
+            let state = root.join("state");
+            segment::build(&state, 1, &groups).unwrap();
+            let dir = state.join("segments").join(segment::segment_name(1));
+            let mut compressor = zstd::bulk::Compressor::new(3).unwrap();
+            let mut decompressor = zstd::bulk::Decompressor::new().unwrap();
+            for table in ["logs.parquet", "batches.parquet"] {
+                let reader =
+                    SerializedFileReader::new(fs::File::open(dir.join(table)).unwrap()).unwrap();
+                for rg in 0..reader.num_row_groups() {
+                    let group = reader.get_row_group(rg).unwrap();
+                    for column in 0..group.num_columns() {
+                        let mut pages = group.get_column_page_reader(column).unwrap();
+                        while let Some(page) = pages.get_next_page().unwrap() {
+                            let raw = page.buffer();
+                            let mut compressed = Vec::new();
+                            measure("standalone_page_zstd3_compress", raw.len(), || {
+                                compressed = compressor.compress(raw).unwrap()
+                            });
+                            let mut decoded = Vec::new();
+                            measure("standalone_page_zstd3_decompress", raw.len(), || {
+                                decoded = decompressor.decompress(&compressed, raw.len()).unwrap()
+                            });
+                            assert_eq!(decoded.as_slice(), raw.as_ref());
+                        }
+                    }
+                }
+            }
+            records(&root, &recover(&state));
+        }
         "processing" | "buffers" => {
             for _ in 0..repeats(5) {
                 let mut parsed = Rows::default();
@@ -659,6 +879,72 @@ fn main() {
                     .collect::<Vec<_>>()
             );
             records(&root, &recovered);
+        }
+        "pending" => pending_trial(&root, &groups, texts.len()),
+        "memory" => {
+            use fabric_frame::frame::{ACTIVE, FrameLog};
+            let journal = root.join("input");
+            fs::create_dir(&journal).unwrap();
+            let mut log = FrameLog::open(
+                &journal,
+                1024 * 1024 * 1024,
+                segment::MAX_GROUP_PAYLOAD,
+                |_, _| Ok(()),
+            )
+            .unwrap();
+            for group in &groups {
+                log.append(&group.encode_to_vec()).unwrap();
+            }
+            drop(log);
+            let input = journal.join(ACTIVE);
+            let state = root.join("state");
+            let builder = std::env::var("BENCH_BUILDER").unwrap();
+            let manifest = measure("read_and_build_segment", texts.len(), || {
+                if builder == "reference" {
+                    let decoded = segment::read_sealed(&input).unwrap();
+                    segment::build(&state, 1, &decoded).unwrap()
+                } else {
+                    assert_eq!(builder, "bounded");
+                    segment::build_sealed(&state, 1, &input).unwrap()
+                }
+            });
+            let dir = state.join("segments").join(segment::segment_name(1));
+            segment::verify(&dir, &manifest).unwrap();
+            let mut record = 0;
+            segment::scan_batches(&dir, &manifest, |group, entry| {
+                assert_eq!(group, groups[record].group_sequence);
+                assert_eq!(entry, groups[record].entries[0]);
+                record += 1;
+            })
+            .unwrap();
+            assert_eq!(record, groups.len());
+            let mut rows = 0;
+            segment::scan_logs(&dir, &manifest, 0, u64::MAX, |row| {
+                let position = (row.sequence as usize - 1) * 128 + row.index as usize;
+                assert_eq!(row.body, texts[position]);
+                assert_eq!(row.observed_ns, START + ranks[position] as u64);
+                assert_eq!(row.observed_ns, START + rows as u64);
+                assert_eq!(row.node_id, [7; 16]);
+                assert_eq!(row.node, "fixture");
+                assert!(row.attributes.is_empty());
+                rows += 1;
+            })
+            .unwrap();
+            assert_eq!(rows, texts.len());
+            assert!(
+                fs::read_dir(&dir).unwrap().all(|p| !p
+                    .unwrap()
+                    .file_name()
+                    .to_string_lossy()
+                    .contains(".run-"))
+            );
+            println!(
+                "{}",
+                json!({"stage":"memory_exactness","builder":builder,
+                "journal_bytes":fs::metadata(&input).unwrap().len(), "rows":rows,"records":record,
+                "raw_custody":true,"exact_source_rows":true,"spill_leftovers":0,
+                "files":manifest.files})
+            );
         }
         "query" => {
             const ANSWER_LEDGER_BYTES: usize = 256 * 1024 * 1024;
@@ -806,7 +1092,10 @@ fn main() {
             assert_eq!(c.inventory()[0].0.revision, repeats(10) as u64 + 1);
         }
         "scheduling" => {
-            assert!([1, 2, 4].contains(&size), "sealing worker cuts are 1/2/4");
+            assert!(
+                [1, 2, 3, 4].contains(&size),
+                "sealing worker cuts are 1/2/3/4"
+            );
             let rotate_bytes = env_count("BENCH_ROTATE_BYTES", 512 * 1024) as u64;
             assert!(rotate_bytes > 0);
             let guard = env_count("BENCH_MEMORY_GUARD_BYTES", 1024 * 1024 * 1024);
@@ -824,15 +1113,27 @@ fn main() {
             // Replay obtains the journal lock itself. Snapshot before opening
             // the writer; a second live owner is a real WouldBlock, not a retry.
             let mut before = Vec::new();
-            Store::replay(&state, 256 * 1024 * 1024, |e| {
+            Store::replay(&state, 1024 * 1024 * 1024, |e| {
                 before.push(e.batch.to_vec());
                 Ok(())
             })
             .unwrap();
-            let store =
-                Store::open_with(&state, 256 * 1024 * 1024, rotate_bytes, CommitMode::GROUPED)
-                    .unwrap();
+            let store = Store::open_with(
+                &state,
+                1024 * 1024 * 1024,
+                rotate_bytes,
+                CommitMode::GROUPED,
+            )
+            .unwrap();
             let (intake, thread) = store.spawn_joinable().unwrap();
+            let files: Vec<_> = fs::read_dir(state.join("journal")).unwrap().map(|e| {
+                let e=e.unwrap(); json!({"name":e.file_name().to_string_lossy(),"bytes":e.metadata().unwrap().len()})
+            }).collect();
+            fs::write(
+                root.join("journal-files-before.json"),
+                serde_json::to_vec(&files).unwrap(),
+            )
+            .unwrap();
             measure("native_sealer_pass_inclusive", texts.len(), || {
                 sealer::pass(
                     &state,
@@ -916,6 +1217,14 @@ fn main() {
             }
         }
         _ => panic!("unknown mode"),
+    }
+    #[cfg(feature = "phase-probe")]
+    {
+        let mut output = BufWriter::new(fs::File::create(root.join("phases.jsonl")).unwrap());
+        for p in fabric_frame::probe::take() {
+            writeln!(output, "{}", json!({"phase":p.name,"thread":format!("{:?}",p.thread),"depth":p.depth,"start_ns":p.start_ns,"wall_ns":p.wall_ns,"thread_cpu_ns":p.after[0].saturating_sub(p.before[0]),"before":p.before,"after":p.after})).unwrap();
+        }
+        output.flush().unwrap();
     }
     let measurements = flush_ledger();
     println!(

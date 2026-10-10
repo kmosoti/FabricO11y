@@ -21,9 +21,7 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Self {
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target")
-            .join(format!("control-test-{}-{id}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("control-test-{}-{id}", std::process::id()));
         fs::create_dir_all(&path).unwrap();
         Self(path.canonicalize().unwrap())
     }
@@ -116,7 +114,7 @@ fn make_certs(dir: &Path) {
 }
 
 struct Running {
-    handle: axum_server::Handle,
+    handle: axum_server::Handle<std::net::SocketAddr>,
     thread: Option<std::thread::JoinHandle<std::io::Result<()>>>,
     addr: SocketAddr,
 }
@@ -134,6 +132,9 @@ fn start(root: &Path) -> Running {
         tls_key: root.join("server.key"),
         state_dir: root.join("server-state"),
         admin_token_file: root.join("admin-token"),
+        console_dir: None,
+        access_origin: None,
+        access_rp_id: None,
         journal_bytes: 64 * 1024 * 1024,
         journal_file_bytes: 64 * 1024 * 1024,
         retention_s: 86400,

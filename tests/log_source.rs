@@ -13,9 +13,11 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Self {
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("target")
-            .join(format!("log-source-regression-{}-{id}", std::process::id()));
+        let path = PathBuf::from(
+            std::env::var_os("FABRIC_SCRATCH_ROOT")
+                .expect("run tests through the resource launcher"),
+        )
+        .join(format!("log-source-regression-{}-{id}", std::process::id()));
         fs::create_dir(&path).unwrap();
         Self(path)
     }

@@ -53,6 +53,7 @@ fn until() -> Instant {
 fn overlap_durable_successor_precedes_ack_without_second_send() {
     let s = Scratch::new();
     let mut spindle = s.spindle(1024 * 1024);
+    spindle.enable_timing_events();
     spindle.collect_logs().unwrap().unwrap();
     let original = spindle.journal.next_unacked().unwrap().unwrap().1;
     s.append("second\n");
@@ -97,6 +98,13 @@ fn overlap_durable_successor_precedes_ack_without_second_send() {
     assert_eq!(report.delivery.acked_through, 1);
     assert_eq!(report.prepared.unwrap().batch_sequence, 2);
     assert_eq!(spindle.journal.next_unacked().unwrap().unwrap().0, 2);
+    let (events, dropped) = spindle.take_timing_events();
+    assert_eq!(dropped, 0);
+    assert!(
+        events
+            .iter()
+            .any(|e| e.sequence == 2 && e.stage == "spool_committed")
+    );
 }
 
 #[test]

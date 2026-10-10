@@ -32,6 +32,8 @@ use std::sync::Arc;
 const VERSION: u32 = 1;
 const ROW_GROUP: usize = 8192;
 pub const MAX_GROUP_PAYLOAD: usize = 4 * 1024 * 1024;
+mod bounded;
+pub use bounded::build_sealed;
 
 fn invalid(message: impl Into<String>) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, message.into())
@@ -79,6 +81,9 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 fn sync_dir(dir: &Path) -> io::Result<()> {
+    #[cfg(feature = "phase-probe")]
+    let _phase = fabric_frame::probe::span("directory_sync");
+
     File::open(dir)?.sync_all()
 }
 
@@ -132,6 +137,9 @@ pub fn spans_schema() -> SchemaRef {
 }
 
 fn spans_batch(rows: &[SpanRow]) -> io::Result<RecordBatch> {
+    #[cfg(feature = "phase-probe")]
+    let _phase = fabric_frame::probe::span("arrow_spans");
+
     let strings =
         |f: fn(&SpanRow) -> &str| Arc::new(StringArray::from_iter_values(rows.iter().map(f)));
     RecordBatch::try_new(
@@ -205,6 +213,9 @@ pub fn batches_schema() -> SchemaRef {
 }
 
 fn logs_batch(rows: &[LogRow]) -> io::Result<RecordBatch> {
+    #[cfg(feature = "phase-probe")]
+    let _phase = fabric_frame::probe::span("arrow_logs");
+
     RecordBatch::try_new(
         logs_schema(),
         vec![
@@ -232,6 +243,9 @@ fn logs_batch(rows: &[LogRow]) -> io::Result<RecordBatch> {
 }
 
 fn metrics_batch(rows: &[MetricRow]) -> io::Result<RecordBatch> {
+    #[cfg(feature = "phase-probe")]
+    let _phase = fabric_frame::probe::span("arrow_metrics");
+
     RecordBatch::try_new(
         metrics_schema(),
         vec![
@@ -279,6 +293,9 @@ fn metrics_batch(rows: &[MetricRow]) -> io::Result<RecordBatch> {
 }
 
 fn gaps_batch(rows: &[GapRow]) -> io::Result<RecordBatch> {
+    #[cfg(feature = "phase-probe")]
+    let _phase = fabric_frame::probe::span("arrow_gaps");
+
     RecordBatch::try_new(
         gaps_schema(),
         vec![
@@ -302,6 +319,9 @@ fn gaps_batch(rows: &[GapRow]) -> io::Result<RecordBatch> {
 }
 
 fn batches_batch(records: &[(u64, Entry)]) -> io::Result<RecordBatch> {
+    #[cfg(feature = "phase-probe")]
+    let _phase = fabric_frame::probe::span("arrow_batches");
+
     let mut sha = FixedSizeBinaryBuilder::new(32);
     for (_, entry) in records {
         sha.append_value(Sha256::digest(&entry.batch))
@@ -350,6 +370,9 @@ impl<W: Write> Write for HashingWriter<W> {
 }
 
 fn write_table(path: &Path, batch: &RecordBatch) -> io::Result<FileEntry> {
+    #[cfg(feature = "phase-probe")]
+    let _phase = fabric_frame::probe::span("parquet_encode_compress_write_sync");
+
     let properties = WriterProperties::builder()
         .set_max_row_group_row_count(Some(ROW_GROUP))
         .set_compression(Compression::ZSTD(ZstdLevel::try_new(3).map_err(err)?))
@@ -362,11 +385,27 @@ fn write_table(path: &Path, batch: &RecordBatch) -> io::Result<FileEntry> {
     {
         let mut writer =
             ArrowWriter::try_new(&mut output, batch.schema(), Some(properties)).map_err(err)?;
-        writer.write(batch).map_err(err)?;
-        writer.close().map_err(err)?;
+        {
+            #[cfg(feature = "phase-probe")]
+            let _phase = fabric_frame::probe::span("parquet_writer_write_inclusive");
+            writer.write(batch).map_err(err)?;
+        }
+        {
+            #[cfg(feature = "phase-probe")]
+            let _phase = fabric_frame::probe::span("parquet_writer_finish_inclusive");
+            writer.close().map_err(err)?;
+        }
     }
-    output.flush()?;
-    output.inner.get_ref().sync_all()?;
+    {
+        #[cfg(feature = "phase-probe")]
+        let _phase = fabric_frame::probe::span("parquet_buffer_flush");
+        output.flush()?;
+    }
+    {
+        #[cfg(feature = "phase-probe")]
+        let _phase = fabric_frame::probe::span("parquet_file_sync");
+        output.inner.get_ref().sync_all()?;
+    }
     Ok(FileEntry {
         sha256: hex(&output.hash.finalize()),
         bytes: output.bytes,
@@ -395,6 +434,9 @@ fn write_filter<R>(
     rows: &[R],
     text: impl Fn(&R) -> &str,
 ) -> io::Result<FileEntry> {
+    #[cfg(feature = "phase-probe")]
+    let _phase = fabric_frame::probe::span("filter_build_write_sync");
+
     let builder =
         ParquetRecordBatchReaderBuilder::try_new(File::open(building.join(table))?).map_err(err)?;
     let mut groups = Vec::new();
@@ -438,6 +480,9 @@ pub fn read_spans_filter(
     dir: &Path,
     manifest: &Manifest,
 ) -> Option<Vec<crate::text_filter::GroupFilter>> {
+    #[cfg(feature = "phase-probe")]
+    let _phase = fabric_frame::probe::span("parquet_load_project_spans");
+
     read_filter(dir, manifest, SPANS_FILTER)
 }
 
@@ -472,6 +517,9 @@ pub fn read_sealed(path: &Path) -> io::Result<Vec<Group>> {
 
 /// Build and commit the segment for sealed journal file `label`.
 pub fn build(state_dir: &Path, label: u64, groups: &[Group]) -> io::Result<Manifest> {
+    #[cfg(feature = "phase-probe")]
+    let _phase = fabric_frame::probe::span("segment_build");
+
     let dir = segments_dir(state_dir)?;
     let building = dir.join(format!(".building-{label:020}"));
     let _ = fs::remove_dir_all(&building);
@@ -758,6 +806,102 @@ pub fn scan_logs_groups(
     read_logs(builder, groups, from, to, &mut visit)
 }
 
+/// Experimental scoped projection: attributes are still owned and validated
+/// before the consumer sees an in-window row. Strings borrow one Arrow batch.
+pub(crate) struct LogView<'a> {
+    pub group: u64,
+    pub node: &'a str,
+    pub node_id: [u8; 16],
+    pub sequence: u64,
+    pub index: u32,
+    pub observed_ns: u64,
+    pub body: &'a str,
+    pub attributes: BTreeMap<String, String>,
+}
+
+impl LogView<'_> {
+    pub(crate) fn into_owned(self) -> LogRow {
+        LogRow {
+            group: self.group,
+            node: self.node.to_owned(),
+            node_id: self.node_id,
+            sequence: self.sequence,
+            index: self.index,
+            observed_ns: self.observed_ns,
+            body: self.body.to_owned(),
+            attributes: self.attributes,
+        }
+    }
+}
+
+pub(crate) fn scan_logs_borrowed(
+    dir: &Path,
+    manifest: &Manifest,
+    from: u64,
+    to: u64,
+    mut visit: impl for<'a> FnMut(LogView<'a>),
+) -> io::Result<()> {
+    let builder = open_table(dir, manifest, "logs.parquet", &logs_schema())?;
+    let groups = prune(&builder, 5, from, to);
+    read_logs_borrowed(builder, groups, from, to, &mut visit)
+}
+
+pub(crate) fn scan_logs_groups_borrowed(
+    dir: &Path,
+    manifest: &Manifest,
+    groups: Vec<usize>,
+    from: u64,
+    to: u64,
+    mut visit: impl for<'a> FnMut(LogView<'a>),
+) -> io::Result<()> {
+    let builder = open_table(dir, manifest, "logs.parquet", &logs_schema())?;
+    read_logs_borrowed(builder, groups, from, to, &mut visit)
+}
+
+fn read_logs_borrowed(
+    builder: ParquetRecordBatchReaderBuilder<File>,
+    groups: Vec<usize>,
+    from: u64,
+    to: u64,
+    visit: &mut impl for<'a> FnMut(LogView<'a>),
+) -> io::Result<()> {
+    #[cfg(feature = "phase-probe")]
+    let _phase = fabric_frame::probe::span("parquet_load_project_logs");
+    for batch in builder.with_row_groups(groups).build().map_err(err)? {
+        let batch = batch.map_err(err)?;
+        // Keep original type checks and their order, including rejected rows.
+        let (g, n, id, s, i, t, b, a) = (
+            col::<UInt64Array>(&batch, 0)?,
+            col::<StringArray>(&batch, 1)?,
+            col::<FixedSizeBinaryArray>(&batch, 2)?,
+            col::<UInt64Array>(&batch, 3)?,
+            col::<UInt32Array>(&batch, 4)?,
+            col::<Int64Array>(&batch, 5)?,
+            col::<StringArray>(&batch, 6)?,
+            col::<StringArray>(&batch, 7)?,
+        );
+        for row in 0..batch.num_rows() {
+            let observed_ns = t.value(row) as u64;
+            if observed_ns < from || observed_ns >= to {
+                continue;
+            }
+            let node_id = id.value(row).try_into().map_err(err)?;
+            let attributes = attrs_of(a.value(row))?;
+            visit(LogView {
+                group: g.value(row),
+                node: n.value(row),
+                node_id,
+                sequence: s.value(row),
+                index: i.value(row),
+                observed_ns,
+                body: b.value(row),
+                attributes,
+            });
+        }
+    }
+    Ok(())
+}
+
 /// Spans with `start_ns` in `[from, to)`; none when the Segment has no spans table.
 pub fn scan_spans(
     dir: &Path,
@@ -848,6 +992,9 @@ fn read_logs(
     to: u64,
     visit: &mut impl FnMut(LogRow),
 ) -> io::Result<()> {
+    #[cfg(feature = "phase-probe")]
+    let _phase = fabric_frame::probe::span("parquet_load_project_logs");
+
     for batch in builder.with_row_groups(groups).build().map_err(err)? {
         let batch = batch.map_err(err)?;
         let (g, n, id, s, i, t, b, a) = (
@@ -912,6 +1059,9 @@ fn read_metrics(
     to: u64,
     visit: &mut impl FnMut(MetricRow),
 ) -> io::Result<()> {
+    #[cfg(feature = "phase-probe")]
+    let _phase = fabric_frame::probe::span("parquet_load_project_metrics");
+
     for batch in builder.with_row_groups(groups).build().map_err(err)? {
         let batch = batch.map_err(err)?;
         let vi = col::<Int64Array>(&batch, 11)?;
@@ -981,9 +1131,70 @@ pub(crate) fn check_raw_available(dir: &Path, manifest: &Manifest) -> io::Result
 pub fn scan_batches(
     dir: &Path,
     manifest: &Manifest,
+    visit: impl FnMut(u64, Entry),
+) -> io::Result<()> {
+    scan_batches_inner(dir, manifest, None, visit)
+}
+
+/// Snapshot-boundary metadata fallback: do not materialize the default 1,024
+/// raw Batch rows in one Arrow batch. Parquet page buffers remain reader-owned.
+pub fn scan_batches_one_at_a_time(
+    dir: &Path,
+    manifest: &Manifest,
+    visit: impl FnMut(u64, Entry),
+) -> io::Result<()> {
+    scan_batches_inner(dir, manifest, Some(1), visit)
+}
+
+/// Raw fields borrowed from the current Arrow batch after its Batch digest check.
+/// Values cannot outlive the visitor call; this ownership grants no file lease.
+#[derive(Clone, Copy, Debug)]
+pub struct RecordRef<'a> {
+    pub label: &'a str,
+    pub batch: &'a [u8],
+    pub received_unix_nano: u64,
+}
+
+/// Verify every raw digest before visiting, using one raw row per Arrow batch.
+/// The callback borrows fields; excluded groups still undergo digest checks.
+pub fn scan_batches_borrowed_one_at_a_time(
+    dir: &Path,
+    manifest: &Manifest,
+    visit: impl for<'a> FnMut(u64, RecordRef<'a>),
+) -> io::Result<()> {
+    scan_batches_ref_inner(dir, manifest, Some(1), visit)
+}
+
+fn scan_batches_inner(
+    dir: &Path,
+    manifest: &Manifest,
+    batch_size: Option<usize>,
     mut visit: impl FnMut(u64, Entry),
 ) -> io::Result<()> {
+    scan_batches_ref_inner(dir, manifest, batch_size, |group, entry| {
+        visit(
+            group,
+            Entry {
+                label: entry.label.to_owned(),
+                batch: entry.batch.to_vec(),
+                received_unix_nano: entry.received_unix_nano,
+            },
+        );
+    })
+}
+
+fn scan_batches_ref_inner(
+    dir: &Path,
+    manifest: &Manifest,
+    batch_size: Option<usize>,
+    mut visit: impl for<'a> FnMut(u64, RecordRef<'a>),
+) -> io::Result<()> {
     let builder = open_table(dir, manifest, "batches.parquet", &batches_schema())?;
+    let builder = if let Some(size) = batch_size {
+        builder.with_batch_size(size)
+    } else {
+        builder
+    };
     for batch in builder.build().map_err(err)? {
         let batch = batch.map_err(err)?;
         let g = col::<UInt64Array>(&batch, 0)?;
@@ -997,9 +1208,9 @@ pub fn scan_batches(
             }
             visit(
                 g.value(row),
-                Entry {
-                    label: l.value(row).to_owned(),
-                    batch: b.value(row).to_vec(),
+                RecordRef {
+                    label: l.value(row),
+                    batch: b.value(row),
                     received_unix_nano: r.value(row) as u64,
                 },
             );
@@ -1017,6 +1228,102 @@ pub fn verify(dir: &Path, manifest: &Manifest) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod borrowed_log_tests {
+    use super::*;
+
+    #[test]
+    fn rejected_views_keep_validation_order_and_window_semantics() {
+        let dir = std::env::temp_dir().join(format!(
+            "borrowed-log-control-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&dir).unwrap();
+        let rows = vec![LogRow {
+            group: 1,
+            node: "node-λ".into(),
+            node_id: [7; 16],
+            sequence: 1,
+            index: 0,
+            observed_ns: 42,
+            body: "rejected-λ".into(),
+            attributes: BTreeMap::from([("key\0λ".into(), "value\n\\".into())]),
+        }];
+        let valid = logs_batch(&rows).unwrap();
+        for defect in ["valid", "attributes", "identity", "column"] {
+            let mut fields: Vec<_> = valid
+                .schema()
+                .fields()
+                .iter()
+                .map(|f| f.as_ref().clone())
+                .collect();
+            let mut arrays = valid.columns().to_vec();
+            match defect {
+                "attributes" => arrays[7] = Arc::new(StringArray::from(vec!["not-json"])),
+                "identity" => {
+                    let mut id = FixedSizeBinaryBuilder::new(8);
+                    id.append_value([7; 8]).unwrap();
+                    arrays[2] = Arc::new(id.finish());
+                    fields[2] = Field::new("node_id", DataType::FixedSizeBinary(8), false);
+                }
+                "column" => {
+                    arrays[0] = Arc::new(StringArray::from(vec!["wrong"]));
+                    fields[0] = Field::new("group", DataType::Utf8, false);
+                }
+                _ => {}
+            }
+            let batch = RecordBatch::try_new(Arc::new(Schema::new(fields)), arrays).unwrap();
+            let path = dir.join(format!("{defect}.parquet"));
+            write_table(&path, &batch).unwrap();
+            for (from, to) in [(0, 100), (43, 100)] {
+                let mut owned = Vec::new();
+                let a = read_logs(
+                    ParquetRecordBatchReaderBuilder::try_new(File::open(&path).unwrap()).unwrap(),
+                    vec![0],
+                    from,
+                    to,
+                    &mut |row| owned.push(row),
+                );
+                let mut views = Vec::new();
+                let b = read_logs_borrowed(
+                    ParquetRecordBatchReaderBuilder::try_new(File::open(&path).unwrap()).unwrap(),
+                    vec![0],
+                    from,
+                    to,
+                    &mut |row| views.push(row.into_owned()),
+                );
+                assert_eq!(owned, views, "{defect} {from}");
+                match (a, b) {
+                    (Ok(()), Ok(())) => {
+                        assert!(defect == "valid" || (from == 43 && defect != "column"));
+                    }
+                    (Err(a), Err(b)) => {
+                        assert_eq!(a.kind(), b.kind());
+                        assert_eq!(a.to_string(), b.to_string());
+                    }
+                    other => panic!("validation behavior differs: {other:?}"),
+                }
+            }
+            // Reject every view. Attributes and node identity still validate first.
+            let mut callbacks = 0;
+            let result = read_logs_borrowed(
+                ParquetRecordBatchReaderBuilder::try_new(File::open(&path).unwrap()).unwrap(),
+                vec![0],
+                0,
+                100,
+                &mut |_row| callbacks += 1,
+            );
+            assert_eq!(result.is_ok(), defect == "valid");
+            assert_eq!(callbacks, usize::from(defect == "valid"));
+        }
+        fs::remove_dir_all(dir).unwrap();
+    }
 }
 
 #[cfg(test)]

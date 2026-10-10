@@ -33,9 +33,7 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Self {
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target")
-            .join(format!("history-test-{}-{id}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("history-test-{}-{id}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).unwrap();
         Self(path.canonicalize().unwrap())
@@ -135,6 +133,9 @@ fn config(root: &Path, file_bytes: u64, retention_bytes: u64) -> Config {
         tls_key: root.join("server.key"),
         state_dir: root.join("server-state"),
         admin_token_file: root.join("admin-token"),
+        console_dir: None,
+        access_origin: None,
+        access_rp_id: None,
         journal_bytes: 256 * 1024 * 1024,
         journal_file_bytes: file_bytes,
         retention_s: 86400,
@@ -145,7 +146,7 @@ fn config(root: &Path, file_bytes: u64, retention_bytes: u64) -> Config {
 }
 
 struct Running {
-    handle: axum_server::Handle,
+    handle: axum_server::Handle<std::net::SocketAddr>,
     thread: Option<std::thread::JoinHandle<std::io::Result<()>>>,
     addr: SocketAddr,
 }

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "FabricO11y application use cases: core decisions orchestrated over ports"
 publish = false
+license = "Apache-2.0"
 
 [dependencies]
 fabric-core = { path = "../fabric-core" }

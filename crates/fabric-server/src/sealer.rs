@@ -37,9 +37,9 @@ fn sealed_labels(journal: &Path) -> io::Result<Vec<u64>> {
     Ok(labels)
 }
 
-/// The default number of Segments built at once: half the CPUs, one to four. Each
-/// build of a 64 MiB journal file peaks near 5.5 times the file in memory today
-/// (ADR-0022 will flatten that), so four stay inside the server's 3 GiB ceiling.
+/// The default number of Segments built at once: half the CPUs, one to four.
+/// Each bounded builder owns its runs and writer buffers; the worker count alone
+/// does not establish a bound on total server memory.
 pub fn default_workers() -> usize {
     std::thread::available_parallelism()
         .map(|n| n.get() / 2)
@@ -51,7 +51,7 @@ pub fn default_workers() -> usize {
 /// retention. Segments are independent, so they are built in parallel; journal files
 /// are reclaimed strictly oldest first, and not past the first file whose Segment
 /// could not be built (ADR-0025). Reclaim runs before builds and after each
-/// worker group, so a later group does not hold an already published prefix.
+/// ordered worker join, so a later sibling does not hold a completed prefix.
 pub fn pass(
     state_dir: &Path,
     intake: &Intake,
@@ -69,8 +69,12 @@ pub fn pass(
         segmented,
         workers,
         |label| {
-            let groups = segment::read_sealed(&journal.join(format!("sealed-{label:020}.faj")))?;
-            segment::build(state_dir, label, &groups).map(|_| ())
+            segment::build_sealed(
+                state_dir,
+                label,
+                &journal.join(format!("sealed-{label:020}.faj")),
+            )
+            .map(|_| ())
         },
         |label| intake.reclaim(label),
     )?;
@@ -103,7 +107,7 @@ fn build_and_reclaim(
     let mut next = 0;
     reclaim_prefix(sealed, &published, &mut next, &mut reclaim)?;
     for chunk in pending.chunks(workers.max(1)) {
-        let results: Vec<(u64, io::Result<()>)> = std::thread::scope(|scope| {
+        std::thread::scope(|scope| {
             let handles: Vec<_> = chunk
                 .iter()
                 .map(|&label| {
@@ -111,35 +115,39 @@ fn build_and_reclaim(
                     scope.spawn(move || build(label))
                 })
                 .collect();
-            chunk
-                .iter()
-                .zip(handles)
-                .map(|(&label, h)| {
-                    (
-                        label,
-                        h.join()
-                            .unwrap_or_else(|_| Err(io::Error::other("sealing thread panicked"))),
-                    )
-                })
-                .collect()
-        });
-        let mut failed = None;
-        for (label, result) in results {
-            match result {
-                Ok(()) => {
-                    published.insert(label);
+            let mut failed = None;
+            let mut reclaim_failed = None;
+            // Later completions cannot advance the oldest eligible prefix.
+            // Consume handles in that order without waiting for the whole group.
+            for (&label, handle) in chunk.iter().zip(handles) {
+                match handle
+                    .join()
+                    .unwrap_or_else(|_| Err(io::Error::other("sealing thread panicked")))
+                {
+                    Ok(()) => {
+                        published.insert(label);
+                    }
+                    Err(error) if failed.is_none() => failed = Some((label, error)),
+                    Err(_) => {}
                 }
-                Err(error) if failed.is_none() => failed = Some((label, error)),
-                Err(_) => {}
+                if reclaim_failed.is_none() {
+                    reclaim_failed =
+                        reclaim_prefix(sealed, &published, &mut next, &mut reclaim).err();
+                }
+                // A failed checkpoint stops reclamation, but every started
+                // worker must still be joined, including a panicking sibling.
             }
-        }
-        reclaim_prefix(sealed, &published, &mut next, &mut reclaim)?;
-        if let Some((label, error)) = failed {
-            return Err(io::Error::new(
-                error.kind(),
-                format!("sealing {label}: {error}"),
-            ));
-        }
+            if let Some(error) = reclaim_failed {
+                return Err(error);
+            }
+            if let Some((label, error)) = failed {
+                return Err(io::Error::new(
+                    error.kind(),
+                    format!("sealing {label}: {error}"),
+                ));
+            }
+            Ok(())
+        })?;
     }
     Ok(())
 }
@@ -247,6 +255,152 @@ mod tests {
         )
         .unwrap();
         assert_eq!(*reclaimed.lock().unwrap(), [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn completed_prefix_reclaims_while_sibling_is_blocked() {
+        let (release, released) = mpsc::channel();
+        let released = Mutex::new(released);
+        let (started, starts) = mpsc::channel();
+        let (built, builds) = mpsc::channel();
+        let (reclaimed, reclaims) = mpsc::channel();
+        let (finished, finishes) = mpsc::channel();
+
+        std::thread::scope(|scope| {
+            let run = scope.spawn(|| {
+                let result = build_and_reclaim(
+                    &[1, 2, 3],
+                    BTreeSet::new(),
+                    3,
+                    |label| {
+                        started.send(label).unwrap();
+                        if label == 2 {
+                            released
+                                .lock()
+                                .unwrap()
+                                .recv_timeout(Duration::from_secs(10))
+                                .unwrap();
+                        }
+                        built.send(label).unwrap();
+                        Ok(())
+                    },
+                    |label| {
+                        reclaimed.send(label).unwrap();
+                        Ok(())
+                    },
+                );
+                finished.send(result).unwrap();
+            });
+
+            let mut start_labels = Vec::new();
+            for _ in 0..3 {
+                if let Ok(label) = starts.recv_timeout(Duration::from_secs(1)) {
+                    start_labels.push(label);
+                }
+            }
+
+            let mut built_labels = Vec::new();
+            for _ in 0..2 {
+                if let Ok(label) = builds.recv_timeout(Duration::from_secs(1)) {
+                    built_labels.push(label);
+                }
+            }
+            built_labels.sort_unstable();
+            let first_reclaim = reclaims.recv_timeout(Duration::from_secs(1)).ok();
+            let crossed_hole = reclaims.try_recv().is_ok();
+
+            // Always unblock label 2 before assertions or joining the scoped worker.
+            let _ = release.send(());
+            let result = finishes.recv_timeout(Duration::from_secs(1));
+            run.join().unwrap();
+
+            assert_eq!(start_labels.len(), 3, "all siblings must have started");
+            assert_eq!(
+                built_labels,
+                [1, 3],
+                "labels 1 and 3 must finish before label 2 is released"
+            );
+            assert_eq!(
+                first_reclaim,
+                Some(1),
+                "completed prefix was retained behind a blocked sibling"
+            );
+            assert!(!crossed_hole, "reclamation crossed blocked label 2");
+            result.unwrap().unwrap();
+
+            let mut final_reclaims = vec![first_reclaim.unwrap()];
+            final_reclaims.extend(reclaims.try_iter());
+            assert_eq!(final_reclaims, [1, 2, 3]);
+        });
+    }
+
+    #[test]
+    fn reclaim_failure_waits_for_started_siblings() {
+        let (release, released) = mpsc::channel();
+        let released = Mutex::new(released);
+        let (started, starts) = mpsc::channel();
+        let (built, builds) = mpsc::channel();
+        let (reclaimed, reclaims) = mpsc::channel();
+        let (finished, finishes) = mpsc::channel();
+
+        std::thread::scope(|scope| {
+            let run = scope.spawn(|| {
+                let result = build_and_reclaim(
+                    &[1, 2, 3, 4],
+                    BTreeSet::new(),
+                    3,
+                    |label| {
+                        started.send(label).unwrap();
+                        if label == 2 {
+                            released
+                                .lock()
+                                .unwrap()
+                                .recv_timeout(Duration::from_secs(10))
+                                .unwrap();
+                        }
+                        built.send(label).unwrap();
+                        Ok(())
+                    },
+                    |label| {
+                        reclaimed.send(label).unwrap();
+                        Err(io::Error::other("injected checkpoint failure"))
+                    },
+                );
+                finished.send(result).unwrap();
+            });
+
+            let mut start_labels = Vec::new();
+            for _ in 0..3 {
+                if let Ok(label) = starts.recv_timeout(Duration::from_secs(1)) {
+                    start_labels.push(label);
+                }
+            }
+            let returned_while_blocked = finishes.recv_timeout(Duration::from_secs(1)).is_ok();
+
+            // A reclaim error must not detach the already-started sibling.
+            let _ = release.send(());
+            let result = finishes.recv_timeout(Duration::from_secs(1));
+            run.join().unwrap();
+
+            let attempted = reclaims.try_iter().collect::<Vec<_>>();
+            let mut built_labels = builds.try_iter().collect::<Vec<_>>();
+            built_labels.sort_unstable();
+            assert_eq!(start_labels.len(), 3, "all siblings must have started");
+            assert!(
+                !returned_while_blocked,
+                "reclaim failure returned before the blocked sibling finished"
+            );
+            assert_eq!(attempted, [1]);
+            assert_eq!(
+                built_labels,
+                [1, 2, 3],
+                "the later chunk must not start after reclaim fails"
+            );
+            assert_eq!(
+                result.unwrap().unwrap_err().to_string(),
+                "injected checkpoint failure"
+            );
+        });
     }
 
     #[test]

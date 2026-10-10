@@ -7,8 +7,10 @@ use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
-/// Default journal ceiling: the retention floor of 20 GiB from the contract.
+/// Bounded journal workspace, separate from sealed telemetry retention.
 pub const DEFAULT_JOURNAL_BYTES: u64 = 20 * 1024 * 1024 * 1024;
+/// Release retention default: 100 GB decimal of sealed telemetry.
+pub const DEFAULT_RETENTION_BYTES: u64 = 100_000_000_000;
 
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
@@ -22,6 +24,9 @@ pub struct Config {
     pub state_dir: PathBuf,
     /// Root-owned file holding the administrator's bearer token.
     pub admin_token_file: PathBuf,
+    pub console_dir: Option<PathBuf>,
+    pub access_origin: Option<String>,
+    pub access_rp_id: Option<String>,
     pub journal_bytes: u64,
     /// Size at which the active journal file is sealed for segmenting.
     pub journal_file_bytes: u64,
@@ -34,6 +39,14 @@ pub struct Config {
     /// Segments built at once (`seal_workers`, 1 to 16; default half the CPUs, at
     /// most 4). Journal files are still reclaimed oldest first (ADR-0025).
     pub seal_workers: usize,
+}
+
+/// Production CLI options; the embedded serving primitive does not spawn processes.
+#[derive(Clone, Debug, Default)]
+pub struct SpindleSettings {
+    pub url: Option<String>,
+    pub ca: Option<PathBuf>,
+    pub executable: Option<PathBuf>,
 }
 
 fn read_bounded(path: &Path) -> io::Result<String> {
@@ -49,6 +62,10 @@ fn read_bounded(path: &Path) -> io::Result<String> {
 
 impl Config {
     pub fn load(path: impl AsRef<Path>) -> io::Result<Self> {
+        Self::load_with_spindle(path).map(|(server, _)| server)
+    }
+
+    pub fn load_with_spindle(path: impl AsRef<Path>) -> io::Result<(Self, SpindleSettings)> {
         let text = read_bounded(path.as_ref())?;
         let mut values: HashMap<&str, &str> = HashMap::new();
         for line in text.lines() {
@@ -67,12 +84,18 @@ impl Config {
                     | "tls_key"
                     | "state_dir"
                     | "admin_token_file"
+                    | "console_dir"
+                    | "access_origin"
+                    | "access_rp_id"
                     | "journal_bytes"
                     | "journal_file_bytes"
                     | "retention_s"
                     | "retention_bytes"
                     | "query_plan"
                     | "seal_workers"
+                    | "self_spindle_url"
+                    | "self_spindle_ca"
+                    | "self_spindle_executable"
             ) {
                 return Err(invalid("unknown server config key"));
             }
@@ -109,10 +132,16 @@ impl Config {
             tls_key: path("tls_key")?,
             state_dir: path("state_dir")?,
             admin_token_file: path("admin_token_file")?,
+            console_dir: values
+                .get("console_dir")
+                .map(|_| path("console_dir"))
+                .transpose()?,
+            access_origin: values.get("access_origin").map(|v| v.to_string()),
+            access_rp_id: values.get("access_rp_id").map(|v| v.to_string()),
             journal_bytes: number("journal_bytes", DEFAULT_JOURNAL_BYTES)?,
             journal_file_bytes: number("journal_file_bytes", 64 * 1024 * 1024)?,
             retention_s: number("retention_s", 24 * 3600)?,
-            retention_bytes: number("retention_bytes", 20 * 1024 * 1024 * 1024)?,
+            retention_bytes: number("retention_bytes", DEFAULT_RETENTION_BYTES)?,
             seal_workers: match values.get("seal_workers") {
                 None => crate::sealer::default_workers(),
                 Some(v) => match v.parse::<usize>() {
@@ -126,6 +155,15 @@ impl Config {
                 Some(_) => return Err(invalid("query_plan must be scan or walk")),
             },
         };
+        if config.access_origin.is_some() != config.access_rp_id.is_some()
+            || (config.console_dir.is_some() && config.access_origin.is_none())
+            || config.access_origin.as_ref().is_some_and(|v| v.is_empty())
+            || config.access_rp_id.as_ref().is_some_and(|v| v.is_empty())
+        {
+            return Err(invalid(
+                "access_origin and access_rp_id must be paired; console_dir requires access",
+            ));
+        }
         if config.journal_file_bytes < 64 * 1024
             || config.journal_file_bytes > config.journal_bytes
             || config.retention_s == 0
@@ -137,7 +175,18 @@ impl Config {
         if config.journal_bytes < 1024 * 1024 {
             return Err(invalid("journal_bytes below 1 MiB"));
         }
-        Ok(config)
+        let spindle = SpindleSettings {
+            url: values.get("self_spindle_url").map(|s| s.to_string()),
+            ca: values
+                .get("self_spindle_ca")
+                .map(|_| path("self_spindle_ca"))
+                .transpose()?,
+            executable: values
+                .get("self_spindle_executable")
+                .map(|_| path("self_spindle_executable"))
+                .transpose()?,
+        };
+        Ok((config, spindle))
     }
 }
 
@@ -164,6 +213,7 @@ mod tests {
         let config = Config::load(&path).unwrap();
         assert_eq!(config.admin_token_file, PathBuf::from("/a"));
         assert_eq!(config.journal_bytes, DEFAULT_JOURNAL_BYTES);
+        assert_eq!(config.retention_bytes, 100_000_000_000);
         assert_eq!(config.query_plan, crate::query::Plan::Scan);
         std::fs::write(&path, format!("{good}query_plan=walk\n")).unwrap();
         assert_eq!(
@@ -178,6 +228,9 @@ mod tests {
             format!("{good}query_plan=index\n"),
             format!("{good}seal_workers=0\n"),
             format!("{good}seal_workers=17\n"),
+            format!("{good}console_dir=/console\n"),
+            format!("{good}access_origin=https://example.com\n"),
+            format!("{good}access_rp_id=example.com\n"),
         ] {
             std::fs::write(&path, bad).unwrap();
             assert!(Config::load(&path).is_err());

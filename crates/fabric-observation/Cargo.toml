@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Adapter support: the version-one Observation record for logs, metric points and spans, and its canonical FOB1 block encoding, built from the bits up with no dependencies"
 publish = false
+license = "Apache-2.0"
 
 # No dependencies: the tower starts at bit operations on machine words and
 # builds everything above them itself (see src/lib.rs).

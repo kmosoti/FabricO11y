@@ -5,3 +5,4 @@
 
 pub mod host;
 pub mod log_source;
+pub mod operational_log;

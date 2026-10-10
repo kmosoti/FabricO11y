@@ -807,6 +807,105 @@ fn age_eviction_grades_the_predeclared_retained_ledger_and_expires_pages() {
 }
 
 #[test]
+fn byte_ceiling_and_interrupted_retention_preserve_exact_suffix() {
+    // Origin: CURRENT's open byte-ceiling/publication/recovery interaction.
+    // The expected source suffixes are declared before storage is constructed;
+    // the unchanged Python oracle decides their complete query semantics.
+    let s = Scratch::new("positive byte boundary and interrupted retention restart");
+    let state = s.0.join("state");
+    let groups = fixture(1, 16, 2_000_000);
+    fs::write(s.0.join("expected-before-io.jsonl"), ledger(&groups)).unwrap();
+    empty_journal(&state);
+    let mut sizes = Vec::new();
+    for chunk in groups.chunks(4) {
+        let manifest = segment::build(&state, chunk[0].group_sequence, chunk).unwrap();
+        sizes.push(manifest.files.values().map(|f| f.bytes).sum::<u64>());
+    }
+    assert!(sizes.iter().all(|bytes| *bytes > 0));
+    let boundary: u64 = sizes[1..].iter().sum();
+    fs::write(
+        s.0.join("byte-boundary.json"),
+        json!({"segment_bytes":sizes,"ceiling":boundary,"retained_at_ceiling":[5,9,13],"retained_one_byte_below":[9,13],"retained_after_interrupted_delete":[13]}).to_string(),
+    )
+    .unwrap();
+    let histories = [
+        History::with_plan(&state, Plan::Scan),
+        History::with_plan(&state, Plan::Walk),
+        History::with_plan(&state, Plan::Walk).with_shared_catalog(),
+    ];
+    histories[2].refresh_catalog(16).unwrap();
+    let q = json!({"kind":"logs","from_ns":0,"to_ns":u64::MAX/2,"limit":2});
+    let mut tokens = Vec::new();
+    for h in &histories {
+        let chain = pages(h, q.clone(), 16);
+        grade(&s, &groups, &q, &chain, true);
+        tokens.push(chain[0]["next_page"].clone());
+    }
+    let retain_bytes = |ceiling| {
+        let (intake, thread) = Store::open(&state, 1 << 28, CommitMode::GROUPED)
+            .unwrap()
+            .spawn_joinable()
+            .unwrap();
+        let result = sealer::pass(
+            &state,
+            &intake,
+            Retention {
+                max_age_s: u64::MAX,
+                max_bytes: ceiling,
+            },
+            2,
+        );
+        drop(intake);
+        thread.join().unwrap();
+        result.unwrap();
+    };
+    let labels = || {
+        let mut labels = segment::labels(&state).unwrap();
+        labels.sort_unstable();
+        labels
+    };
+    retain_bytes(boundary);
+    assert_eq!(labels(), vec![5, 9, 13]);
+    for (h, token) in histories.iter().zip(&tokens) {
+        let mut continuation = q.clone();
+        continuation["page"] = token.clone();
+        assert!(matches!(
+            h.run(&serde_json::from_value(continuation).unwrap(), 16),
+            Err(QueryError::Gone)
+        ));
+        grade(&s, &groups[4..], &q, &pages(h, q.clone(), 16), true);
+    }
+    verify(&s, &state, &groups[4..]);
+    retain_bytes(boundary - 1);
+    assert_eq!(labels(), vec![9, 13]);
+    verify(&s, &state, &groups[8..]);
+    for h in &histories {
+        grade(&s, &groups[8..], &q, &pages(h, q.clone(), 16), true);
+    }
+    // Construct the documented crash cut after the deletion rename has been
+    // synced, before remove_dir_all. Store::open must clean it on restart.
+    let directory = state.join("segments");
+    let deleting = directory.join(".deleting-00000000000000000009");
+    fs::rename(directory.join(segment::segment_name(9)), &deleting).unwrap();
+    fs::File::open(&directory).unwrap().sync_all().unwrap();
+    let (intake, thread) = Store::open(&state, 1 << 28, CommitMode::GROUPED)
+        .unwrap()
+        .spawn_joinable()
+        .unwrap();
+    drop(intake);
+    thread.join().unwrap();
+    assert!(!deleting.exists(), "restart left interrupted deletion");
+    assert_eq!(labels(), vec![13]);
+    verify(&s, &state, &groups[12..]);
+    for h in &histories {
+        grade(&s, &groups[12..], &q, &pages(h, q.clone(), 16), true);
+    }
+    let mut missing = pages(&History::new(&state), q.clone(), 16);
+    missing[0]["rows"].as_array_mut().unwrap().pop();
+    grade(&s, &groups[12..], &q, &missing, false);
+}
+
+#[test]
 fn absent_and_unauthentic_optional_log_and_span_filters_preserve_exact_answers() {
     let s = Scratch::new("optional filters fallback");
     let state = s.0.join("state");
@@ -913,8 +1012,176 @@ fn completion_storage_child() {
         b"bounded builder returned after publication",
     )
     .unwrap();
+    if std::env::var_os("FABRIC_STORAGE_CHILD_EXIT_AFTER_BUILD").is_some() {
+        return;
+    }
     loop {
         std::thread::sleep(Duration::from_secs(1));
+    }
+}
+
+#[test]
+fn named_sealer_kill_cuts_recover_exact_custody_and_oracle_query_chains() {
+    use std::os::unix::process::ExitStatusExt;
+    // BS-5 representative new-stage cuts, not all instructions or power loss.
+    // Origin/seed and producer ledger are recorded before any builder runs.
+    let s = Scratch::new("BS-5 named syscall kill cuts with independent query bridge");
+    let groups = fixture(1, 8, 2_000_000);
+    fs::write(s.0.join("predeclared-source.jsonl"), ledger(&groups)).unwrap();
+    let lib = s.0.join("fault.so");
+    assert!(
+        Command::new("gcc")
+            .args(["-shared", "-fPIC", "-O2", "-o"])
+            .arg(&lib)
+            .arg(
+                PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("../../tools/bench/labs/completion/io_fault.c")
+            )
+            .arg("-ldl")
+            .status()
+            .unwrap()
+            .success()
+    );
+    struct CutChild(std::process::Child);
+    impl Drop for CutChild {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let cuts = [
+        ("no-hit-control", "write", "DOES-NOT-EXIST", false),
+        ("spill-write", "write", ".run-0-", true),
+        ("merge-read", "read", ".run-0-", true),
+        ("raw-sync", "sync", "batches.parquet$", true),
+        ("logs-sync", "sync", "logs.parquet$", true),
+        ("metrics-sync", "sync", "metrics.parquet$", true),
+        ("gaps-sync", "sync", "gaps.parquet$", true),
+        ("spans-sync", "sync", "spans.parquet$", true),
+        ("text-filter-write", "write", "text_filter.bin$", true),
+        ("span-filter-write", "write", "spans_filter.bin$", true),
+        ("manifest-sync", "sync", "manifest.json$", true),
+        (
+            "building-sync",
+            "sync",
+            ".building-00000000000000000001$",
+            true,
+        ),
+        (
+            "publication-rename",
+            "rename",
+            ".building-00000000000000000001$",
+            true,
+        ),
+        ("published-directory-sync", "sync", "/segments$", true),
+    ];
+    for (name, op, pattern, kill) in cuts {
+        let state = s.0.join(name);
+        let input = input_journal(&state, &groups);
+        let original = fs::read(&input).unwrap();
+        let stderr = s.0.join(format!("{name}.stderr"));
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--ignored",
+                "--exact",
+                "completion_storage_child",
+                "--nocapture",
+            ])
+            .env("FABRIC_STORAGE_CHILD_STATE", &state)
+            .env("FABRIC_STORAGE_CHILD_EXIT_AFTER_BUILD", "1")
+            .env("LD_PRELOAD", &lib)
+            .env("FABRIC_FAULT_ROOT", &state)
+            .env("FABRIC_FAULT_OP", op)
+            .env("FABRIC_FAULT_MATCH", pattern)
+            .env_remove("FABRIC_FAULT_PAUSE")
+            .env_remove("FABRIC_FAULT_PARTIAL")
+            .env_remove("FABRIC_FAULT_N")
+            .stdout(fs::File::create(s.0.join(format!("{name}.stdout"))).unwrap())
+            .stderr(fs::File::create(&stderr).unwrap());
+        if kill {
+            command.env("FABRIC_FAULT_KILL", "1");
+        } else {
+            command.env_remove("FABRIC_FAULT_KILL");
+        }
+        let mut child = CutChild(command.spawn().unwrap());
+        let begin = Instant::now();
+        let exit = loop {
+            if let Some(exit) = child.0.try_wait().unwrap() {
+                break exit;
+            }
+            assert!(
+                begin.elapsed() < Duration::from_secs(60),
+                "{name} child timeout"
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        let trace = fs::read_to_string(&stderr).unwrap();
+        let injected = trace.contains("FABRIC_INJECTION");
+        let input_unchanged = fs::read(&input).unwrap() == original;
+        fs::write(
+            s.0.join(format!("{name}.cut.json")),
+            json!({"stage":name,"op":op,"match":pattern,"signal":exit.signal(),
+                "exit":exit.code(),"injected":injected,"input_unchanged":input_unchanged,
+                "seed":7,"contract":"BS-5 representative stage + HIST-2"})
+            .to_string(),
+        )
+        .unwrap();
+        assert_eq!(injected, kill, "{name}: {trace}");
+        if kill {
+            assert_eq!(exit.signal(), Some(9), "{name}: {exit}");
+            assert!(trace.contains(&format!("op={op}")), "{name}: {trace}");
+        } else {
+            assert!(exit.success(), "no-hit control failed: {trace}");
+        }
+        assert!(
+            input_unchanged,
+            "{name} changed journal custody before reclaim"
+        );
+        // Query before cleanup/build retry, while custody is pending or both
+        // representations exist, then again after actual restart/reclaim.
+        verify(&s, &state, &groups);
+        retain(&state, u64::MAX);
+        assert!(
+            !input.exists(),
+            "{name}: recovered publication did not reclaim"
+        );
+        for entry in fs::read_dir(state.join("segments")).unwrap() {
+            let entry = entry.unwrap();
+            let name = entry.file_name().to_string_lossy().into_owned();
+            assert!(!name.starts_with(".building-") && !name.starts_with(".deleting-"));
+            assert!(!name.contains(".run-"), "{name}: leftover spill file");
+            if entry.path().is_dir() {
+                for file in fs::read_dir(entry.path()).unwrap() {
+                    let file = file.unwrap();
+                    assert!(
+                        !file.file_name().to_string_lossy().contains(".run-"),
+                        "{name}: published spill file survived recovery"
+                    );
+                }
+            }
+        }
+        let mut recovered = String::new();
+        Store::replay(&state, 1 << 28, |entry| {
+            recovered.push_str(
+                &json!({"label":entry.label,"received_ns":entry.received_unix_nano,
+                "bytes":b64(&entry.batch)})
+                .to_string(),
+            );
+            recovered.push('\n');
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(
+            recovered,
+            ledger(&groups),
+            "{name}: restart changed exact custody"
+        );
+        verify(&s, &state, &groups);
+        let q = queries().remove(0);
+        let mut missing = pages(&History::new(&state), q.clone(), 8);
+        missing[0]["rows"].as_array_mut().unwrap().pop();
+        grade(&s, &groups, &q, &missing, false);
     }
 }
 

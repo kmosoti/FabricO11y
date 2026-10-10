@@ -10,9 +10,11 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Self {
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("target")
-            .join(format!("spool-regression-{}-{id}", std::process::id()));
+        let root = PathBuf::from(
+            std::env::var_os("FABRIC_SCRATCH_ROOT")
+                .expect("run tests through the resource launcher"),
+        )
+        .join(format!("spool-regression-{}-{id}", std::process::id()));
         fs::create_dir(&root).expect("create unique owned journal scratch root");
         Self(root)
     }

@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 description = "Adapter support: the FAB1 rotating frame log and the version-one Batch envelope codec"
 publish = false
+license = "Apache-2.0"
+
+[features]
+phase-probe = []
 
 [dependencies]
 crc32fast = "=1.5.2"

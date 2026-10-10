@@ -7,17 +7,65 @@
 use crate::control::{Control, DesiredConfig, Status};
 use crate::query::{History, Query, QueryError};
 use crate::store::{Answer, Intake, MAX_BATCH_BYTES, Submission, identify_strand};
-use axum::Router;
 use axum::body::Bytes;
-use axum::extract::{DefaultBodyLimit, Path, State};
+use axum::extract::{DefaultBodyLimit, Path, Request, State};
 use axum::http::{HeaderMap, StatusCode, header};
+use axum::middleware::{self, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post, put};
+use axum::{Extension, Router};
 use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
-use tokio::sync::oneshot;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot};
+
+type WorkPermit = Arc<OwnedSemaphorePermit>;
+
+#[derive(Clone)]
+struct Admission {
+    pool: Arc<Semaphore>,
+    query: bool,
+}
+
+async fn admit_body(
+    State(admission): State<Admission>,
+    mut request: Request,
+    next: Next,
+) -> Response {
+    let Ok(permit) = admission.pool.try_acquire_owned() else {
+        let mut response = if admission.query {
+            error(StatusCode::SERVICE_UNAVAILABLE, "query admission is full")
+        } else {
+            reply(StatusCode::SERVICE_UNAVAILABLE, "unavailable", None)
+        };
+        response.headers_mut().insert(
+            header::RETRY_AFTER,
+            axum::http::HeaderValue::from_static("1"),
+        );
+        return response;
+    };
+    let permit = Arc::new(permit);
+    request.extensions_mut().insert(Arc::clone(&permit));
+    let response = next.run(request).await;
+    // Keep admission through extraction and the response even when a handler
+    // does not consume its extension. Cancellation also drops this owner.
+    drop(permit);
+    response
+}
+
+// A canceled async waiter does not cancel started blocking work. Move its
+// admission owner into the same closure; unwind and completion both release it.
+fn spawn_query_work<T: Send + 'static>(
+    permit: WorkPermit,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> tokio::task::JoinHandle<T> {
+    tokio::task::spawn_blocking(move || {
+        let result = work();
+        drop(permit);
+        result
+    })
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -30,14 +78,52 @@ pub struct AppState {
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/v1/health", get(health))
-        .route("/v1/batches", post(batches))
+        .route(
+            "/v1/batches",
+            post(batches)
+                .layer(middleware::from_fn_with_state(
+                    Admission {
+                        pool: Arc::new(Semaphore::new(16)),
+                        query: false,
+                    },
+                    admit_body,
+                ))
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    authenticate_batch_header,
+                )),
+        )
         .route("/v1/config", get(node_config))
         .route("/v1/admin/nodes", get(list_nodes).post(enroll))
         .route("/v1/admin/nodes/{name}/config", put(set_config))
         .route("/v1/admin/nodes/{name}/{action}", post(set_status))
-        .route("/v1/admin/query", post(run_query))
+        .route(
+            "/v1/admin/query",
+            post(run_query).layer(middleware::from_fn_with_state(
+                Admission {
+                    pool: Arc::new(Semaphore::new(2)),
+                    query: true,
+                },
+                admit_body,
+            )),
+        )
         .layer(DefaultBodyLimit::max(MAX_BATCH_BYTES + 1))
         .with_state(state)
+}
+
+/// Reject unknown credentials before allocating/decoding a Batch body. The
+/// handler rechecks after body receipt to linearize admission with revocation.
+async fn authenticate_batch_header(
+    State(state): State<AppState>,
+    request: Request,
+    next: Next,
+) -> Response {
+    if node_for(&state, request.headers()).is_none() {
+        return reply(StatusCode::UNAUTHORIZED, "unauthorized", None);
+    }
+    tokio::time::timeout(std::time::Duration::from_secs(15), next.run(request))
+        .await
+        .unwrap_or_else(|_| reply(StatusCode::REQUEST_TIMEOUT, "timeout", None))
 }
 
 async fn health() -> Response {
@@ -87,11 +173,13 @@ async fn batches(State(state): State<AppState>, headers: HeaderMap, body: Bytes)
         return reply(StatusCode::BAD_REQUEST, "bad_request", None);
     };
     let (tx, rx) = oneshot::channel();
+    let bytes = body.to_vec();
+    drop(body);
     state.intake.submit(Submission {
         label,
         strand,
         sequence,
-        bytes: body.to_vec(),
+        bytes,
         reply: tx,
     });
     match rx.await.unwrap_or(Answer::Unavailable) {
@@ -227,7 +315,12 @@ async fn set_status(
 
 /// Read-only query over retained history. Runs on a blocking thread so a
 /// long scan never stalls request handling.
-async fn run_query(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
+async fn run_query(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Extension(permit): Extension<WorkPermit>,
+    body: Bytes,
+) -> Response {
     if !is_admin(&state, &headers) {
         return error(StatusCode::UNAUTHORIZED, "admin token required");
     }
@@ -237,7 +330,8 @@ async fn run_query(State(state): State<AppState>, headers: HeaderMap, body: Byte
     };
     let committed = state.intake.committed_group();
     let history = Arc::clone(&state.history);
-    match tokio::task::spawn_blocking(move || history.run(&query, committed)).await {
+    drop(body);
+    match spawn_query_work(permit, move || history.run(&query, committed)).await {
         Ok(Ok(answer)) => (StatusCode::OK, axum::Json(answer)).into_response(),
         Ok(Err(QueryError::Invalid(why))) => error(StatusCode::BAD_REQUEST, why),
         Ok(Err(QueryError::Gone)) => error(StatusCode::GONE, "page snapshot no longer retained"),
@@ -245,6 +339,10 @@ async fn run_query(State(state): State<AppState>, headers: HeaderMap, body: Byte
         Err(e) => error(StatusCode::INTERNAL_SERVER_ERROR, e),
     }
 }
+
+#[cfg(test)]
+#[path = "http/admission_tests.rs"]
+mod admission_tests;
 
 fn changed(result: std::io::Result<crate::control::NodeRecord>) -> Response {
     match result {

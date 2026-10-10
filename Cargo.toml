@@ -5,6 +5,7 @@ edition = "2024"
 default-run = "fabric_o11y"
 # Shipped as a Debian package (packaging/), never to crates.io.
 publish = false
+license = "Apache-2.0"
 
 [workspace]
 members = [
@@ -25,6 +26,7 @@ members = [
 exclude = ["tools", "target", "xtask/fixtures", "fuzz"]
 
 [features]
+phase-probe = ["fabric-frame/phase-probe"]
 append-attribution = []
 stage6-alloc-probe = []
 
@@ -42,3 +44,12 @@ serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.150"
 sha2 = "=0.10.9"
 ureq = { version = "=3.3.0", default-features = false, features = ["rustls-no-provider"] }
+
+# Source-preserving manifest patches replacing unmaintained paste with pastey.
+# Upstream checksums and license notices are retained in vendor/README.md.
+[patch.crates-io]
+either_of = { path = "vendor/either_of" }
+leptos = { path = "vendor/leptos" }
+reactive_graph = { path = "vendor/reactive_graph" }
+reactive_stores = { path = "vendor/reactive_stores" }
+tachys = { path = "vendor/tachys" }
