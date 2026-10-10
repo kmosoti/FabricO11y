@@ -301,6 +301,7 @@ fn main() {
     assert!([0, 2, 5].contains(&cadence_ms));
     let observer = args[5].as_str();
     assert!(["quiet", "events", "polled"].contains(&observer));
+    #[cfg(feature = "phase-probe")]
     let events_enabled = observer != "quiet";
     let poll_ms: u64 = if observer == "polled" { 2 } else { 0 };
     let state = root.join("state");
