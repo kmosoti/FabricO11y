@@ -1,6 +1,8 @@
 # Authenticated console acceptance protocol
 
-Revision 2, registered 2026-10-10 before the grant/visibility regression rerun.
+Revision 3, registered 2026-10-10 before standalone Firefox CTAP 2.1 acceptance.
+Revision 2 preceded the grant/visibility regression rerun; its observations
+retain their original source and fixture identities.
 Revision 1 preceded integrated browser execution; its observations retain their
 original source identities. This revision clarifies client behavior within the
 unchanged server and grant budgets. This is
@@ -36,6 +38,34 @@ verification. The browser harness may trust one fixture certificate's exact
 SPKI; this is controlled test trust, not evidence of operator OS certificate
 installation. Physical platform authenticators, Android and iOS are distinct
 cells and must not be inferred from desktop emulation.
+
+For the prospective Firefox desktop cell, use the virtual device protocol
+`ctap2_1`, USB transport capability, `hasResidentKey=true`,
+`hasUserVerification=true`, `isUserVerified=true` and `isUserConsenting=true`.
+Select Firefox's software test manager with
+`security.webauth.webauthn_enable_softtoken=true` and
+`security.webauth.webauthn_enable_usbtoken=false`, and record actual preference
+readback. Keep required server user verification and every C1–C8 assertion.
+This selection applies to the fixture; it changes no production server policy.
+
+The pinned Firefox 157
+[test token](https://github.com/mozilla-firefox/firefox/blob/FIREFOX_157_0_RELEASE/dom/webauthn/authrs_bridge/src/test_token.rs#L418)
+deliberately omits the credential ID for a CTAP 2.0 response when a filtered
+allowlist contains one key. Its
+[bridge](https://github.com/mozilla-firefox/firefox/blob/FIREFOX_157_0_RELEASE/dom/webauthn/authrs_bridge/src/lib.rs#L1139)
+restores the ID only when the original allowlist contains one key. The preserved
+two-allowed-keys/one-active-virtual-token CTAP 2.0 failure therefore remains
+failed; it is excluded from the prospective CTAP 2.1 fixture cell. It does not
+establish a Fabric or physical-authenticator defect. The USB manager also takes
+precedence over the software manager in the pinned
+[dispatch](https://github.com/mozilla-firefox/firefox/blob/FIREFOX_157_0_RELEASE/dom/webauthn/authrs_bridge/src/lib.rs#L939).
+
+Resident-key capability does not establish an actual discoverable credential.
+The observed production enrollment requested `residentKey=discouraged`, and
+the Firefox credential witness was nonresident. Actual resident-credential
+coverage from the original matrix remains unestablished by these diagnostics.
+Standalone acceptance must retain its own exact candidate and fixture identity;
+concurrent causal diagnostics do not fill that cell.
 
 ## Admission and algorithm budgets
 
