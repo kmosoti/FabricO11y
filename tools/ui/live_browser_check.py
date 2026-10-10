@@ -821,6 +821,11 @@ self.addEventListener("fetch",event=>{
         field('Signal','logs')
         field('Source name (blank = authorized scope)','browser-edge')
         field('Body substring (case-sensitive)','browser-page-fixture')
+        # The deliberate 902-second expiry wait ages these original rows beyond
+        # a fresh tab's default 15-minute preset. Preserve the independently
+        # selected producer window for this positive logout witness.
+        js('document.querySelector("details.exact-range").open=true')
+        field('Start (Unix ns)',str(read['from_ns']));field('End, exclusive (Unix ns)',str(read['to_ns']))
         click('Run query')
         wait(lambda:js('return document.querySelectorAll(".results tbody tr").length===200'),'second tab has positive protected-history witness before logout')
         js('window.fixtureLogoutFetch=window.fetch;window.fixtureLogoutResponseReady=false;window.fixtureLogoutDelivered=false;window.fixtureLogoutLockedAt=null;window.addEventListener("fabric-session-logout",()=>window.fixtureLogoutLockedAt=performance.now(),{once:true});window.fetch=async(...args)=>{const response=await window.fixtureLogoutFetch(...args);const url=typeof args[0]==="string"?args[0]:args[0].url;if(new URL(url,location.href).pathname==="/v1/console/query"){window.fixtureLogoutResponseReady=true;await new Promise(resolve=>setTimeout(resolve,5000));window.fixtureLogoutDeliveredAt=performance.now();window.fixtureLogoutDelivered=true;}return response}')
@@ -828,6 +833,8 @@ self.addEventListener("fetch",event=>{
         wait(lambda:js('return window.fixtureLogoutResponseReady'),'real authenticated response is held before cross-tab logout')
         wd('/window',{'handle':first_handle})
         nav('Explore');field('Signal','logs');field('Source name (blank = authorized scope)','browser-edge');field('Body substring (case-sensitive)','browser-page-fixture')
+        js('document.querySelector("details.exact-range").open=true')
+        field('Start (Unix ns)',str(read['from_ns']));field('End, exclusive (Unix ns)',str(read['to_ns']))
         js('window.fixtureBusyLogoutFetch=window.fetch;window.fixtureBusyLogoutReady=false;window.fixtureBusyLogoutAbort=false;window.fixtureBusyLogoutDelivered=false;window.fixtureBusyLogoutComplete=false;window.fixtureBusyLogoutOrder=[];window.fetch=async(...args)=>{const url=typeof args[0]==="string"?args[0]:args[0].url;const path=new URL(url,location.href).pathname;window.fixtureBusyLogoutOrder.push(path+":start");if(path==="/v1/console/query"){const signal=args[0]?.signal||args[1]?.signal;if(signal)signal.addEventListener("abort",()=>window.fixtureBusyLogoutAbort=true,{once:true});}const response=await window.fixtureBusyLogoutFetch(...args);if(path==="/v1/console/query"){window.fixtureBusyLogoutReady=true;await new Promise(resolve=>setTimeout(resolve,1200));window.fixtureBusyLogoutDelivered=true;}window.fixtureBusyLogoutOrder.push(path+":delivered");if(path==="/v1/console/logout")window.fixtureBusyLogoutComplete=true;return response}')
         click('Run query');wait(lambda:js('return window.fixtureBusyLogoutReady'),'first tab holds actual reply before busy signout')
         logout_cookie=next(item for item in wd('/cookie',method='GET') if item['name'].startswith('__Host-'))
