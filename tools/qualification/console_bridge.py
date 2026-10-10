@@ -24,6 +24,7 @@ import struct
 import subprocess
 import sys
 import threading
+import tempfile
 import time
 import urllib.error
 import urllib.parse
@@ -116,6 +117,7 @@ class ConsoleBridge:
         self.session = None
         self.driver = None
         self.log = None
+        self.browser_temporary = None
         self.principal_id = None
         self.closed = False
         self.records = []
@@ -138,6 +140,13 @@ class ConsoleBridge:
                 driver_port = port.getsockname()[1]
             self.endpoint = f"http://127.0.0.1:{driver_port}"
             env = dict(os.environ)
+            # Chrome creates AF_UNIX sockets below TMPDIR. The frozen runner
+            # path can exceed sun_path even though its profile is valid. Keep
+            # these temporary files in an owned short disk-backed directory.
+            self.browser_temporary = Path(tempfile.mkdtemp(prefix="cb-", dir=scratch))
+            if len(os.fsencode(str(self.browser_temporary))) > 60:
+                raise ValueError("browser scratch prefix is too long for bounded Unix socket paths")
+            env["TMPDIR"] = str(self.browser_temporary)
             for name in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"):
                 directory = self.work / name.lower()
                 directory.mkdir(mode=0o700)
@@ -206,6 +215,15 @@ class ConsoleBridge:
                     raise RuntimeError("WebDriver response exceeds bound")
                 return json.loads(raw)["value"]
         except urllib.error.HTTPError as error:
+            # Session creation carries public capabilities only, before any
+            # WebAuthn bootstrap/credentials. Retain its bounded cause while
+            # suppressing all later diagnostics that can echo secrets.
+            if path == "/session" and method == "POST":
+                try:
+                    failure = json.loads(error.read(16385))
+                    self.receipt["startup_driver_message"] = str(failure.get("value", {}).get("message", ""))[:4096]
+                except (ValueError, AttributeError):
+                    pass
             # Driver diagnostics can echo command arguments including secrets.
             raise RuntimeError(f"WebDriver command failed HTTP {error.code}") from None
 
@@ -220,7 +238,8 @@ class ConsoleBridge:
 
     def _storage_check(self):
         size = sum((Path(base) / name).lstat().st_size
-                   for base, _, names in os.walk(self.work, followlinks=False) for name in names)
+                   for root in (self.work, self.browser_temporary) if root is not None
+                   for base, _, names in os.walk(root, followlinks=False) for name in names)
         if size > MAX_PROFILE:
             raise RuntimeError("owned browser profile exceeds 512 MiB")
 
@@ -351,6 +370,8 @@ class ConsoleBridge:
         if self.log:
             self.log.close()
         shutil.rmtree(self.work)
+        if self.browser_temporary is not None:
+            shutil.rmtree(self.browser_temporary)
         self.receipt["state"] = "closed"
         self.receipt["cleanup"] = "owned driver/browser stopped; profile/cache removed; caller owns server"
         (self.out / "receipt.json").write_text(json.dumps(self.receipt, indent=2) + "\n")

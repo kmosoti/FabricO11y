@@ -158,8 +158,7 @@ def trial():
         port = int(PRODUCTION.origin.rsplit(':', 1)[1])
         shutil.copy2(PRODUCTION.work / 'ca.pem', root / 'ca.pem')
         admin = PRODUCTION
-        enrolled = [admin.call("POST", body={"name": f"sim{i:04d}", "metric_interval_s": 15})
-                    for i in range(IDENTITIES)]
+        enrolled = enroll_sources(admin, IDENTITIES)
         tokens = [value['token'] for value in enrolled]
         PRODUCTION.issue_reader([value['enrollment_id'] for value in enrolled], SECONDS + SEAL_WAIT + 300)
         class QueryAdapter:
@@ -398,6 +397,19 @@ def trial():
         PRODUCTION.receipt["passed"] = summary["passed"]
     print(json.dumps(summary, sort_keys=True))
     return 0 if summary["passed"] else 1
+
+
+def enroll_sources(admin, identities):
+    """Pace unmeasured setup below production credential verification admission.
+
+    Each enrollment makes a session check and control call. Do not retry denied
+    mutations: an unexpected response must remain a fixture failure.
+    """
+    enrolled = []
+    for index in range(identities):
+        time.sleep(.15)
+        enrolled.append(admin.call("POST", body={"name": f"sim{index:04d}", "metric_interval_s": 15}))
+    return enrolled
 
 
 def _count_le(ordered, value):

@@ -44,7 +44,7 @@ class ProductionAccess(CandidateFixture):
         self.receipt['adapter'] = 'production-access-campaign-protocol'
         self.receipt['historical_oracles_unchanged'] = True
         source = Path(__file__).resolve().parent
-        self.receipt['harness_sha256'] = {name: digest(source / name) for name in
+        self.receipt['adapter_harness_sha256'] = {name: digest(source / name) for name in
             ('production_access.py', 'soak_tier.py', 'outage_drain.py', 'console_bridge.py',
              'delivery_oracle.py', 'soak_companion.py')}
 

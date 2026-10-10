@@ -50,6 +50,19 @@ class ProductionAccessTests(unittest.TestCase):
             adapter.spawn(['fabric-server', 'serve', 'fixture.conf', '--timing-events'], 'server-0', 'fixture-group', '0-1')
             launch.assert_called_once_with(['fabric-server', 'serve', 'fixture.conf'], 'server-0', 'fixture-group', '0-1')
 
+    def test_unmeasured_enrollment_is_paced_without_denial_retries(self):
+        from soak_tier import enroll_sources
+        events = []
+        class Admin:
+            def call(self, method, body):
+                events.append(('call', body['name']))
+                if body['name'] == 'sim0002': raise RuntimeError('synthetic denied enrollment')
+                return {'enrollment_id': body['name']}
+        with patch('soak_tier.time.sleep', side_effect=lambda duration: events.append(('pace', duration))):
+            with self.assertRaises(RuntimeError): enroll_sources(Admin(), 100)
+        self.assertEqual(events, [('pace', .15), ('call', 'sim0000'), ('pace', .15), ('call', 'sim0001'),
+                                  ('pace', .15), ('call', 'sim0002')])
+
     def test_control_adapter_uses_only_console_nodes_and_rejects_denial(self):
         adapter = ProductionAccess.__new__(ProductionAccess)
         class Bridge:
