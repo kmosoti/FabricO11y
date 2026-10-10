@@ -17,6 +17,8 @@ import urllib.request
 from release_runtime import CandidateFixture, process_kib
 from release_fixture import traces, NS
 from release_timing import native, population, p99
+from release_main_source import reconstruct
+from release_query import join_verified_recovery, grade
 from workload import SEEDS, entropy_body
 import delivery_oracle
 import query_oracle
@@ -238,6 +240,16 @@ def perform(f, args, seconds, warmup, summary):
     edge.send_signal(signal.SIGTERM)
     if edge.wait(timeout=20) != 0:
         raise RuntimeError('native edge shutdown failed')
+    # These simulator streams have fully drained and cannot gain new records.
+    # Use the complete independent source corpus for exact metadata/row grading,
+    # without deriving a snapshot cutoff from the answer being checked.
+    oracle_answers = []
+    for index in sorted({0, args.tier // 2, args.tier - 1}):
+        for kind in ('logs', 'metrics'):
+            body = {'kind': kind, 'node': f'sim{index:04d}', 'from_ns': begin_wall,
+                    'to_ns': time.time_ns(), 'limit': 1000}
+            elapsed, pages = reader.pages(body)
+            oracle_answers.append({'query': body, 'pages': pages, 'elapsed_s': elapsed})
     final_resource = f.resource_sample()
     f.stop_server()
     # All original source prefixes must still exist. Never reconstruct missing
@@ -277,10 +289,12 @@ def perform(f, args, seconds, warmup, summary):
         subprocess.run([str(f.helpers / 'server_dump'), str(f.config), '--records'], stdout=output,
                        stderr=subprocess.PIPE, check=True, timeout=120)
     all_records = records(record_file)
-    node_ids = {}
-    for record in all_records:
-        batch = query_oracle.decode_batch(base64.b64decode(record['bytes']))
-        node_ids[record['label']] = batch['node_id'].hex()
+    originals, source_ids = reconstruct(args.seed, args.tier, seconds, events, source_ledger)
+    joined, _additional = join_verified_recovery(originals, all_records)
+    node_ids = {f'sim{i:04d}': node for i, node in source_ids.items()}
+    labels = set(node_ids)
+    for answer in oracle_answers:
+        answer['verdict'] = grade(joined, answer['query'], answer['pages'], labels)
     for event in events:
         if event['e'] == 'created':
             made[(event['id'], event['seq'])] = event['t']
@@ -311,6 +325,7 @@ def perform(f, args, seconds, warmup, summary):
     clock_offsets = [r['unix_ns'] - r['mono_ns'] for r in clocks]
     config_delays = [(applied[i] - stamp) / NS for i, stamp in puts.items() if i in applied]
     gates = {'delivery_oracle': verdict.passed, 'native_custody': all(r['passed'] for r in native_recovery.values()),
+             'sampled_query_oracle': all(a['verdict']['passed'] for a in oracle_answers),
              'exact_native_logs': log_exact, 'exact_native_traces': trace_exact,
              'clock_mapping_le_1ms': max(clock_offsets) - min(clock_offsets) <= 1_000_000,
              'all_timing_backlog': all(r['passed'] for r in timing.values()),
@@ -330,6 +345,8 @@ def perform(f, args, seconds, warmup, summary):
                    created_batches=len(made), acked_batches=len(acked), native_custody=native_recovery,
                    violations=[v.__dict__ for v in verdict.violations][:10],
                    clock_mapping_spread_ns=max(clock_offsets) - min(clock_offsets),
+                   independent_simulator_batches=len(originals),
+                   query_oracle_verdicts=[a['verdict'] for a in oracle_answers],
                    resources=samples, final_resource=final_resource)
     # Freeze compact synthetic observations and hashes; no config/token/private
     # access-state file is included. Failed raw work remains private for diagnosis.
@@ -341,6 +358,8 @@ def perform(f, args, seconds, warmup, summary):
             shutil.copyfileobj(incoming, output)
     with gzip.open(f.out / 'visibility-answers.json.gz', 'wt') as output:
         json.dump(queries, output)
+    with gzip.open(f.out / 'sampled-oracle-answers.json.gz', 'wt') as output:
+        json.dump(oracle_answers, output)
     if sum(p.stat().st_size for p in f.out.rglob('*') if p.is_file()) > 50 * 1024**2:
         raise RuntimeError('final compact evidence exceeded 50 MiB')
 
