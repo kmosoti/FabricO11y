@@ -1,0 +1,17 @@
+{
+  "status": "passed",
+  "exit": 0,
+  "checks": [
+    "matching source and anchor: exit0",
+    "working tree drift: exit3",
+    "symlink working file: exit3",
+    "blob defect rejected",
+    "anchor defect rejected",
+    "range defect rejected",
+    "unsafe manifest path rejected: ../outside",
+    "unsafe manifest path rejected: /absolute"
+  ],
+  "owned_fixture_cleanup_complete": true,
+  "scope": "bundle manifest checker only; not FabricO11y code",
+  "fabric_checkout_verified": false
+}

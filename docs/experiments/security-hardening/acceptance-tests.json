@@ -1,0 +1,484 @@
+{
+  "schema_version": 1,
+  "base_commit": "18f6b367d0f34886847ea25b9168e50eb0425300",
+  "status": "proposed_not_run",
+  "tests": [
+    {
+      "id": "A01",
+      "group": "admission",
+      "stimulus": "Native HTTPS request with real ConnectInfo, then same request without transport metadata.",
+      "required_observation": "Real socket peer is recognized; missing metadata fails closed before body/access mutation.",
+      "negative_control": "Replace missing peer with localhost/default shared identity.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "A02",
+      "group": "admission",
+      "stimulus": "One peer floods public and private lanes; a distinct peer performs valid requests.",
+      "required_observation": "Source/global rate bounds and source concurrency caps hold; all low-rate honest requests in frozen trace are admitted.",
+      "negative_control": "Delete peer bucket; or debit global token before checking peer eligibility.",
+      "layer": "model+integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "A03",
+      "group": "admission",
+      "stimulus": "Slow bodies from one source fill its own request allowance.",
+      "required_observation": "Public source holds <=2 of 8 slots; private source <=4 of16; another peer retains admission headroom.",
+      "negative_control": "Apply rate limits but omit per-peer in-flight caps.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "A04",
+      "group": "admission",
+      "stimulus": "Same TCP peer rotates X-Forwarded-For, Forwarded, X-Real-IP and source port.",
+      "required_observation": "All requests debit the same trusted peer key.",
+      "negative_control": "Use header or source port in PeerKey.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "A05",
+      "group": "admission",
+      "stimulus": "Compare IPv4, IPv4-mapped IPv6, and multiple addresses within one IPv6 /64.",
+      "required_observation": "v4-mapped address shares IPv4 bucket; configured /64 grouping is enforced.",
+      "negative_control": "Key raw SocketAddr or rotate /128 within prefix.",
+      "layer": "unit",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "A06",
+      "group": "admission",
+      "stimulus": "t=999ms/1001ms boundary, large elapsed time, repeated same time, backward injected time.",
+      "required_observation": "No fixed-window double burst; integer credit invariant holds; backward time gives no credit.",
+      "negative_control": "Reset at wall-clock second or use wrapping time arithmetic.",
+      "layer": "property",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "A07",
+      "group": "admission",
+      "stimulus": "Fill 1024 peer entries; hold leases; attempt churn/expiry/recreation.",
+      "required_observation": "No live entry evicted; no debt reset; no more than1024 entries; existing peers remain serviceable.",
+      "negative_control": "Evict an indebted/live entry and recreate it with full burst.",
+      "layer": "property+integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "A08",
+      "group": "admission",
+      "stimulus": "Drop waiter mid-body, handler error, task abort, panic in isolated fixture.",
+      "required_observation": "Every owned request permit releases exactly once; no counter underflow or leaked admission.",
+      "negative_control": "Retain manual counter decrement after handler return.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "A09",
+      "group": "admission",
+      "stimulus": "Unauthorized request triggers slow denial audit; policy changes during read.",
+      "required_observation": "Outer private guard covers audit; original scope and final authority recheck still enforce denial.",
+      "negative_control": "Drop guard before record_denial; remove final recheck.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "A10",
+      "group": "admission",
+      "stimulus": "Sustained limiter rejections at registered bound.",
+      "required_observation": "Only bounded low-cardinality counters; no token/IP/path payloads or durable write per rejection.",
+      "negative_control": "Persist every429 with supplied path/token.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "A11",
+      "group": "admission",
+      "stimulus": "Production defaults and reduced test policy under deterministic clock.",
+      "required_observation": "Public8/s burst8 global,2/s burst4 peer; private32/s burst32 global,8/s burst8 peer; table1024.",
+      "negative_control": "Accidentally expose test-only override via environment.",
+      "layer": "unit",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "A12",
+      "group": "admission",
+      "stimulus": "Invalid/duplicate cookie, invalid bearer, bad CSRF/origin, stale version, revoked/expired/delegated credentials.",
+      "required_observation": "No authorization or session-semantic regression; body remains unread for header-stage rejection.",
+      "negative_control": "Treat admission as authorization or bypass fresh verification.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "A13",
+      "group": "admission",
+      "stimulus": "Run actual native TLS fixture and packaged browser passkey login; run direct Router tests with explicit MockConnectInfo.",
+      "required_observation": "Production receives real peer info; test mocks never enable production fallback; login completes.",
+      "negative_control": "Only test request extensions by hand; native TLS path remains unconfigured.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "A14",
+      "group": "admission",
+      "stimulus": "Cancel expensive query waiter while blocking query continues.",
+      "required_observation": "Existing two query permits remain owned until actual query worker ends.",
+      "negative_control": "Release query permit when HTTP future times out.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "O01",
+      "group": "OTLP",
+      "stimulus": "Invoke check_listen and start with loopback/non-loopback addresses.",
+      "required_observation": "Both reject non-loopback; existing loopback config remains compatible.",
+      "negative_control": "Validate only config string, not start API.",
+      "layer": "unit+integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "O02",
+      "group": "OTLP",
+      "stimulus": "Open 32 simultaneous connections and a33rd in synthetic loopback fixture.",
+      "required_observation": "At most32 connection workers; extra connection promptly closed; permit count returns to zero.",
+      "negative_control": "Reserve slot only after thread spawn.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "O03",
+      "group": "OTLP",
+      "stimulus": "Inject thread-spawn failure immediately after permit ownership transfer.",
+      "required_observation": "Permit is released once; listener still accepts a later valid connection.",
+      "negative_control": "Manual failure decrement plus RAII causes double release.",
+      "layer": "unit",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "O04",
+      "group": "OTLP",
+      "stimulus": "EOF, parse failure, I/O error and test panic on worker.",
+      "required_observation": "RAII releases slot on each exit; no manual normal-return-only accounting.",
+      "negative_control": "Move release back to statement following serve.",
+      "layer": "unit+integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "O05",
+      "group": "OTLP",
+      "stimulus": "Send incomplete header bytes more frequently than inactivity timeout.",
+      "required_observation": "Connection closes at fixed header deadline within frozen scheduler tolerance.",
+      "negative_control": "Set socket timeout once; extend deadline whenever byte arrives.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "O06",
+      "group": "OTLP",
+      "stimulus": "Advertise valid bounded Content-Length and dribble body forever.",
+      "required_observation": "Absolute body deadline closes connection; no Export queued, no200.",
+      "negative_control": "Use read_exact with only a fixed per-read timeout.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "O07",
+      "group": "OTLP",
+      "stimulus": "Persistent keep-alive/pipelined requests, including already-buffered next header.",
+      "required_observation": "Idle/total-age/request-count limits apply even to buffered bytes; final response advertises close.",
+      "negative_control": "Reset connection age on each request or forget buffered path.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "O08",
+      "group": "OTLP",
+      "stimulus": "Peer does not read replies; induce partial writes and EAGAIN/EINTR.",
+      "required_observation": "Write deadline reapplied to every low-level write; closes without retrying a second response.",
+      "negative_control": "Unbounded write_all or timeout reset on progress.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "O09",
+      "group": "OTLP",
+      "stimulus": "Fill queue64 with consumer blocked, submit another complete bounded export.",
+      "required_observation": "Immediate overload path from try_send; never blocks before commit timer.",
+      "negative_control": "Restore SyncSender::send.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "O10",
+      "group": "OTLP",
+      "stimulus": "Enqueue succeeds; waiter expires; consumer later durably commits.",
+      "required_observation": "No false200 and no false assertion that data never committed; retained work follows existing custody semantics.",
+      "negative_control": "Delete accepted queue item on timeout or label timeout as definitely uncommitted.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "O11",
+      "group": "OTLP",
+      "stimulus": "Full Spool, pause, failed commit, dropped reply channel, confirmed successful commit.",
+      "required_observation": "Only confirmed durable successful commit yields200; error/unknown returns503 or closes.",
+      "negative_control": "Send200 when merely queued; spoof success after timeout.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "O12",
+      "group": "OTLP",
+      "stimulus": "Maximum headers/bodies/queue/32workers plus repeated reconnects under node memory cap.",
+      "required_observation": "Memory/tasks bounded, no growth trend after drain; report that reconnecting hostile locals can still cause denial.",
+      "negative_control": "Call finite connection lifetime an isolation guarantee.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "O13",
+      "group": "OTLP",
+      "stimulus": "Close/drop fixture listener and await all fixture workers.",
+      "required_observation": "Tests leave no listener/thread/scratch ownership leaks; cleanup timeout is failure.",
+      "negative_control": "Detach fixture threads and infer cleanup from client close.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "O14",
+      "group": "OTLP",
+      "stimulus": "Existing SDK-shaped protobuf requests, bad media type, duplicate length, transfer encoding, oversize request.",
+      "required_observation": "Existing accepted valid format and meaningful error classes preserved; limits never broadened.",
+      "negative_control": "Raise body cap or accept unsupported transfer encoding to pass test.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "F01",
+      "group": "filesystem",
+      "stimulus": "Open regular approved log through every production read/backlog entrypoint.",
+      "required_observation": "Same descriptor supplies fstat/identity/prefix/read; normal collection remains exact.",
+      "negative_control": "Securely check path, then reopen it by name.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "F02",
+      "group": "filesystem",
+      "stimulus": "Approved pathname is a leaf symlink to synthetic sentinel.",
+      "required_observation": "Read and backlog functions reject; no sentinel bytes collected.",
+      "negative_control": "Remove O_NOFOLLOW/NO_SYMLINKS.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "F03",
+      "group": "filesystem",
+      "stimulus": "Parent directory component is symlink; leaf is ordinary regular file.",
+      "required_observation": "Both entrypoints reject traversal; no sentinel bytes collected.",
+      "negative_control": "Use O_NOFOLLOW only on final component.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "F04",
+      "group": "filesystem",
+      "stimulus": "Use procfs magic-link path to a synthetic open FD.",
+      "required_observation": "Rejected by all-component policy without reading target.",
+      "negative_control": "Rely on regular-file fstat after following link.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "F05",
+      "group": "filesystem",
+      "stimulus": "FIFO with no writer, Unix socket, directory, and unprivileged /dev/null case.",
+      "required_observation": "No reads from nonregular source, no FIFO hang, descriptor closed.",
+      "negative_control": "Remove O_NONBLOCK or regular-file check.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "F06",
+      "group": "filesystem",
+      "stimulus": "Deterministic controlled rename before secure open and after returned descriptor.",
+      "required_observation": "Before-open link is rejected; after-open replacement cannot redirect existing FD; no filename reopen.",
+      "negative_control": "Canonicalize then open or metadata-check then open.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "F07",
+      "group": "filesystem",
+      "stimulus": "Rotation, truncation, invalid UTF8, oversize line, Btrfs namespace change.",
+      "required_observation": "Existing cursor/gap/oversize semantics retained; failures never advance unseen bytes.",
+      "negative_control": "Advance cursor on denied open.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "F08",
+      "group": "filesystem",
+      "stimulus": "Inject ENOSYS, EPERM, EINVAL and ELOOP from secure opener.",
+      "required_observation": "Visible per-source failure; no insecure fallback; other collectors remain available.",
+      "negative_control": "Retry via ordinary File::open after secure-open error.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "F09",
+      "group": "filesystem",
+      "stimulus": "Source aliases through an intended distribution symlink; absolute .. component; canonical explicit path.",
+      "required_observation": "Migration is explicit; alias rejected, canonical approved path works; no hidden scope normalization.",
+      "negative_control": "Auto-canonicalize or silently rewrite configured/granted paths.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "F10",
+      "group": "filesystem",
+      "stimulus": "Synthetic hardlink under trusted UID and synthetic replaced ordinary file.",
+      "required_observation": "Document/test that symlink policy is not hardlink/inode-origin authentication.",
+      "negative_control": "Claim all arbitrary-file redirection is prevented.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "C01",
+      "group": "CI",
+      "stimulus": "Clean hosted runner with relocated CARGO_HOME/RUSTUP_HOME and shared preflight.",
+      "required_observation": "Record actual launcher/toolchain paths; native/WASM pinned compiler resolves to intended storage.",
+      "negative_control": "Check PATH alone without rustup which or actual invocation.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "C02",
+      "group": "CI",
+      "stimulus": "Run preflight under real resource_group, with CI markers absent inside.",
+      "required_observation": "Self-update policy applies in shared RUSTUP_HOME; no dependency on inherited CI marker.",
+      "negative_control": "Fix only by setting CI in outer workflow environment.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "C03",
+      "group": "CI",
+      "stimulus": "Unmounted storage, uncapped cgroup, or wrong actual toolchain path.",
+      "required_observation": "Fail before builds; no /tmp/system-disk fallback and no broad env import.",
+      "negative_control": "Skip launcher or accept root home to green CI.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "C04",
+      "group": "CI",
+      "stimulus": "Fresh Kani install and cargo kani setup using exact pinned package.",
+      "required_observation": "Setup actually exits0; version and proof canary execute under intended toolchain.",
+      "negative_control": "Treat installed binary or cached directory as successful setup.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "C05",
+      "group": "CI",
+      "stimulus": "Assert-true canary followed by assert-false Kani canary.",
+      "required_observation": "Positive proof succeeds; negative proof fails for reachable assertion, not build/env error.",
+      "negative_control": "Accept any nonzero as a successful negative control.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "C06",
+      "group": "CI",
+      "stimulus": "Tool setup exits7 or receipt is missing/stale/partial.",
+      "required_observation": "Workflow fails; registry marked not_run; no successful extended receipt.",
+      "negative_control": "Continue-on-error or reuse older receipt.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "C07",
+      "group": "CI",
+      "stimulus": "Clean and warm-cache extended registry on target commit.",
+      "required_observation": "Every required check executed with current commit/digest/exit; artifacts contain matching receipts.",
+      "negative_control": "Check only job green or artifact existence.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "C08",
+      "group": "CI",
+      "stimulus": "PR changes only tools/ci/preflight or resource_group.py.",
+      "required_observation": "Extended workflow is eligible; tests validate trigger rules.",
+      "negative_control": "Omit those paths from top-level filter.",
+      "layer": "workflow contract",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "C09",
+      "group": "CI",
+      "stimulus": "Required-check ruleset review with applicable and nonapplicable PRs.",
+      "required_observation": "No claim based on protected=true alone; no permanently-pending filtered required check.",
+      "negative_control": "Require filtered check without compatible trigger design.",
+      "layer": "configuration review",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "C10",
+      "group": "CI",
+      "stimulus": "Preflight receives irrelevant secret-like environment variables.",
+      "required_observation": "Only allowlisted diagnostics recorded; no complete env dump or forwarded credentials.",
+      "negative_control": "Import user service environment wholesale.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "G01",
+      "group": "cross-cutting",
+      "stimulus": "Replay all new negative controls against frozen checks.",
+      "required_observation": "Each defect fails its exact intended semantic gate; build/env errors are inconclusive.",
+      "negative_control": "Count any crash/nonzero as detected security defect.",
+      "layer": "verifier",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "G02",
+      "group": "cross-cutting",
+      "stimulus": "Change expected outcome/oracle/spec during implementation.",
+      "required_observation": "Policy drift fails; separate explicit policy commit and rerun baseline required.",
+      "negative_control": "Weaken assertion to make candidate pass.",
+      "layer": "process",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "G03",
+      "group": "cross-cutting",
+      "stimulus": "Run unchanged fast/extended/browser/query/delivery controls after each admitted slice.",
+      "required_observation": "Existing security/durability/oracle behavior remains required.",
+      "negative_control": "Disable failing existing test as unrelated.",
+      "layer": "integration",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "G04",
+      "group": "cross-cutting",
+      "stimulus": "Independent observer measures candidate and baseline under frozen workload.",
+      "required_observation": "Report p50/p95/p99, throughput, CPU, memory, FD/thread counts, cleanup and repeats; unresolved regression blocks claim.",
+      "negative_control": "Invent benchmark numbers or enlarge threshold after seeing result.",
+      "layer": "performance",
+      "status": "not_run_on_application"
+    },
+    {
+      "id": "G05",
+      "group": "cross-cutting",
+      "stimulus": "Rebase/HEAD movement or mismatching original blob/anchor.",
+      "required_observation": "Re-anchor only affected edits against new evidence; never apply stale numeric line substitutions.",
+      "negative_control": "Apply original line ranges to changed source.",
+      "layer": "provenance",
+      "status": "not_run_on_application"
+    }
+  ]
+}

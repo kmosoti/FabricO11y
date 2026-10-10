@@ -1,0 +1,121 @@
+{
+  "format_version": 1,
+  "base_commit": "18f6b367d0f34886847ea25b9168e50eb0425300",
+  "fabric_application_code_executed": false,
+  "independent_verification": false,
+  "claim": "design counterexamples and isolated syscall observations only",
+  "admission": [
+    {
+      "candidate": "fixed_window_baseline",
+      "honest_offered": 24,
+      "honest_admitted": 0,
+      "attacker_admitted": 480,
+      "trace_seconds": 60,
+      "simulated": true
+    },
+    {
+      "candidate": "global_only",
+      "honest_offered": 24,
+      "honest_admitted": 0,
+      "attacker_admitted": 480,
+      "trace_seconds": 60,
+      "simulated": true
+    },
+    {
+      "candidate": "global_debit_before_peer",
+      "honest_offered": 24,
+      "honest_admitted": 0,
+      "attacker_admitted": 122,
+      "trace_seconds": 60,
+      "simulated": true
+    },
+    {
+      "candidate": "atomic_nested",
+      "honest_offered": 24,
+      "honest_admitted": 24,
+      "attacker_admitted": 122,
+      "trace_seconds": 60,
+      "simulated": true
+    }
+  ],
+  "concurrency": {
+    "global_cap": 8,
+    "per_peer_cap": 2,
+    "single_peer_max_held": 2,
+    "remaining_global_slots": 6
+  },
+  "deadline": {
+    "simulated": true,
+    "arrival_interval_seconds": 4,
+    "inactivity_timeout_seconds": 30,
+    "observation_seconds": 120,
+    "inactivity_timeout_triggered": false,
+    "absolute_deadline_seconds": 5,
+    "absolute_deadline_expiration_seconds": 5
+  },
+  "kernel_path_resolution": {
+    "status": "observed",
+    "machine": "x86_64",
+    "cases": [
+      {
+        "path_case": "regular",
+        "mode": "legacy",
+        "opened": true,
+        "regular": true
+      },
+      {
+        "path_case": "regular",
+        "mode": "leaf_only",
+        "opened": true,
+        "regular": true
+      },
+      {
+        "path_case": "regular",
+        "mode": "all_components",
+        "opened": true,
+        "regular": true
+      },
+      {
+        "path_case": "leaf_symlink",
+        "mode": "legacy",
+        "opened": true,
+        "regular": true
+      },
+      {
+        "path_case": "leaf_symlink",
+        "mode": "leaf_only",
+        "opened": false,
+        "errno": 40
+      },
+      {
+        "path_case": "leaf_symlink",
+        "mode": "all_components",
+        "opened": false,
+        "errno": 40
+      },
+      {
+        "path_case": "parent_symlink",
+        "mode": "legacy",
+        "opened": true,
+        "regular": true
+      },
+      {
+        "path_case": "parent_symlink",
+        "mode": "leaf_only",
+        "opened": true,
+        "regular": true
+      },
+      {
+        "path_case": "parent_symlink",
+        "mode": "all_components",
+        "opened": false,
+        "errno": 40
+      }
+    ],
+    "compile_exit": 0,
+    "synthetic_data_only": true,
+    "scope": "all-component symlink rejection, not race or product validation",
+    "owned_fixture_cleanup_complete": true
+  },
+  "production_status": "not_implemented_not_tested"
+}
