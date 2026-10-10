@@ -39,9 +39,8 @@ fn open_checked(
             "log path must be absolute, bounded and contain no parent traversal",
         ));
     }
-    let name = CString::new(path.as_os_str().as_bytes()).map_err(|_| {
-        io::Error::new(io::ErrorKind::InvalidInput, "log path contains a NUL byte")
-    })?;
+    let name = CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "log path contains a NUL byte"))?;
     let how = OpenHow {
         flags: (libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NONBLOCK | libc::O_NOFOLLOW) as u64,
         mode: 0,
@@ -136,7 +135,10 @@ mod tests {
         symlink("direct/log", scratch.0.join("leaf")).unwrap();
         symlink("direct", scratch.0.join("parent")).unwrap();
         for path in [scratch.0.join("leaf"), scratch.0.join("parent/log")] {
-            assert_eq!(open_regular_log(&path).unwrap_err().raw_os_error(), Some(libc::ELOOP));
+            assert_eq!(
+                open_regular_log(&path).unwrap_err().raw_os_error(),
+                Some(libc::ELOOP)
+            );
             assert!(unread_bytes(&path, None).is_err());
             assert!(read_lines(&path, None, 4096).is_err());
         }
@@ -195,8 +197,14 @@ mod tests {
         let name = CString::new(fifo.as_os_str().as_bytes()).unwrap();
         // SAFETY: this owned synthetic pathname remains valid for mkfifo.
         assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
-        assert_eq!(open_regular_log(&fifo).unwrap_err().kind(), io::ErrorKind::InvalidInput);
-        assert_eq!(open_regular_log(&scratch.0).unwrap_err().kind(), io::ErrorKind::InvalidInput);
+        assert_eq!(
+            open_regular_log(&fifo).unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        );
+        assert_eq!(
+            open_regular_log(&scratch.0).unwrap_err().kind(),
+            io::ErrorKind::InvalidInput
+        );
         assert!(unread_bytes(&fifo, None).is_err());
     }
 }

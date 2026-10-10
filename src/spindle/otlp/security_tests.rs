@@ -24,17 +24,29 @@ impl Fixture {
     fn new(policy: TransportPolicy, preload: bool) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
-        client.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-        client.set_write_timeout(Some(Duration::from_secs(2))).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
+        client
+            .set_write_timeout(Some(Duration::from_secs(2)))
+            .unwrap();
         let (server, _) = listener.accept().unwrap();
         let accepted = Instant::now();
         let (tx, rx) = sync_channel(1);
         if preload {
             let (reply, _) = sync_channel(1);
-            tx.send(Export { body: vec![7], reply }).unwrap();
+            tx.send(Export {
+                body: vec![7],
+                reply,
+            })
+            .unwrap();
         }
         let worker = std::thread::spawn(move || serve(server, &tx, accepted, policy));
-        Self { client, exports: Some(rx), worker: Some(worker) }
+        Self {
+            client,
+            exports: Some(rx),
+            worker: Some(worker),
+        }
     }
 
     fn request(&mut self) {
@@ -42,7 +54,11 @@ impl Fixture {
     }
 
     fn receive(&self) -> Export {
-        self.exports.as_ref().unwrap().recv_timeout(Duration::from_secs(2)).unwrap()
+        self.exports
+            .as_ref()
+            .unwrap()
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
     }
 
     fn response(&mut self) -> String {
@@ -92,14 +108,19 @@ fn security_connection_slots_are_bounded_and_owned() {
 fn security_unstarted_and_panicking_workers_release_their_slot() {
     let live = Arc::new(AtomicUsize::new(0));
     let permit = ConnectionPermit::acquire(&live).unwrap();
-    let unstarted = move || { let _permit = permit; };
+    let unstarted = move || {
+        let _permit = permit;
+    };
     drop(unstarted);
     assert_eq!(live.load(Ordering::SeqCst), 0);
     let copy = Arc::clone(&live);
-    assert!(std::panic::catch_unwind(move || {
-        let _permit = ConnectionPermit::acquire(&copy).unwrap();
-        panic!("synthetic worker failure");
-    }).is_err());
+    assert!(
+        std::panic::catch_unwind(move || {
+            let _permit = ConnectionPermit::acquire(&copy).unwrap();
+            panic!("synthetic worker failure");
+        })
+        .is_err()
+    );
     assert_eq!(live.load(Ordering::SeqCst), 0);
 }
 

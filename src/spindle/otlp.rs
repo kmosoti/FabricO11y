@@ -236,7 +236,10 @@ pub fn read_head(reader: &mut impl BufRead) -> io::Result<Option<Head>> {
 }
 
 fn phase(budget: Duration, ceiling: Instant) -> Instant {
-    Instant::now().checked_add(budget).unwrap_or(ceiling).min(ceiling)
+    Instant::now()
+        .checked_add(budget)
+        .unwrap_or(ceiling)
+        .min(ceiling)
 }
 
 fn respond(
@@ -266,7 +269,10 @@ fn serve(
     policy: TransportPolicy,
 ) -> io::Result<()> {
     let connection_end = accepted.checked_add(policy.connection).ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, "OTLP connection deadline overflow")
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "OTLP connection deadline overflow",
+        )
     })?;
     let mut writer = DeadlineStream::new(stream.try_clone()?, connection_end);
     let mut reader = BufReader::new(DeadlineStream::new(stream, connection_end));
@@ -280,27 +286,57 @@ fn serve(
             Ok(None) => return Ok(()),
             Err(error) if error.kind() == io::ErrorKind::TimedOut => return Err(error),
             Err(_) => {
-                return respond(&mut writer, "400 Bad Request", b"", true, phase(policy.response, request_end));
+                return respond(
+                    &mut writer,
+                    "400 Bad Request",
+                    b"",
+                    true,
+                    phase(policy.response, request_end),
+                );
             }
         };
         // Buffered bytes can bypass the underlying socket Read implementation.
         remaining(header_end)?;
         let close = head.close || request_number + 1 == policy.requests;
         if head.method != "POST" || head.path.split('?').next() != Some("/v1/traces") {
-            return respond(&mut writer, "404 Not Found", b"", true, phase(policy.response, request_end));
+            return respond(
+                &mut writer,
+                "404 Not Found",
+                b"",
+                true,
+                phase(policy.response, request_end),
+            );
         }
         if head
             .content_type
             .as_deref()
             .is_none_or(|t| t.split(';').next().map(str::trim) != Some("application/x-protobuf"))
         {
-            return respond(&mut writer, "415 Unsupported Media Type", b"", true, phase(policy.response, request_end));
+            return respond(
+                &mut writer,
+                "415 Unsupported Media Type",
+                b"",
+                true,
+                phase(policy.response, request_end),
+            );
         }
         let Some(length) = head.content_length else {
-            return respond(&mut writer, "411 Length Required", b"", true, phase(policy.response, request_end));
+            return respond(
+                &mut writer,
+                "411 Length Required",
+                b"",
+                true,
+                phase(policy.response, request_end),
+            );
         };
         if length > MAX_EXPORT {
-            return respond(&mut writer, "413 Content Too Large", b"", true, phase(policy.response, request_end));
+            return respond(
+                &mut writer,
+                "413 Content Too Large",
+                b"",
+                true,
+                phase(policy.response, request_end),
+            );
         }
         let body_end = phase(policy.body, request_end);
         remaining(body_end)?;
@@ -309,7 +345,13 @@ fn serve(
         reader.read_exact(&mut body)?;
         remaining(body_end)?;
         if length == 0 || ExportTraceServiceRequest::decode(body.as_slice()).is_err() {
-            return respond(&mut writer, "400 Bad Request", b"", true, phase(policy.response, request_end));
+            return respond(
+                &mut writer,
+                "400 Bad Request",
+                b"",
+                true,
+                phase(policy.response, request_end),
+            );
         }
         remaining(body_end)?;
         let (reply, answer) = sync_channel(1);
@@ -317,18 +359,36 @@ fn serve(
             Ok(()) => {}
             Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => {
                 // This attempt never entered the consumer queue.
-                return respond(&mut writer, "503 Service Unavailable", b"", true, phase(policy.response, request_end));
+                return respond(
+                    &mut writer,
+                    "503 Service Unavailable",
+                    b"",
+                    true,
+                    phase(policy.response, request_end),
+                );
             }
         }
         let commit_end = phase(policy.commit, request_end);
         match answer.recv_timeout(remaining(commit_end)?) {
             Ok(Commit::Committed(_)) => {
-                respond(&mut writer, "200 OK", b"", close, phase(policy.response, request_end))?;
+                respond(
+                    &mut writer,
+                    "200 OK",
+                    b"",
+                    close,
+                    phase(policy.response, request_end),
+                )?;
             }
             Ok(Commit::Unavailable(_)) | Err(_) => {
                 // A lost/expired reply leaves an admitted export's outcome
                 // unknown. It may still commit; never report a false ACK.
-                return respond(&mut writer, "503 Service Unavailable", b"", true, phase(policy.response, request_end));
+                return respond(
+                    &mut writer,
+                    "503 Service Unavailable",
+                    b"",
+                    true,
+                    phase(policy.response, request_end),
+                );
             }
         }
         if close {

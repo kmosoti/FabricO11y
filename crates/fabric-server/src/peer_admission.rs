@@ -121,7 +121,12 @@ impl Admission {
         })
     }
 
-    fn acquire(self: &Arc<Self>, peer: Peer, lane: usize, now: Duration) -> Result<Permit, Rejected> {
+    fn acquire(
+        self: &Arc<Self>,
+        peer: Peer,
+        lane: usize,
+        now: Duration,
+    ) -> Result<Permit, Rejected> {
         let mut book = self.book.lock().map_err(|_| Rejected::Unavailable)?;
         if !book.healthy || now < book.last || lane >= LIMITS.len() {
             return Err(Rejected::Unavailable);
@@ -233,7 +238,10 @@ async fn admit(State(admission): State<Arc<Admission>>, request: Request, next: 
     }
     let lane = usize::from(!path.starts_with("/v1/console/auth/"));
     let Some(ConnectInfo(address)) = request.extensions().get::<ConnectInfo<SocketAddr>>() else {
-        return refusal(StatusCode::SERVICE_UNAVAILABLE, "transport identity unavailable");
+        return refusal(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "transport identity unavailable",
+        );
     };
     let permit = match admission.acquire(Peer::from(*address), lane, admission.epoch.elapsed()) {
         Ok(permit) => permit,
@@ -241,7 +249,10 @@ async fn admit(State(admission): State<Arc<Admission>>, request: Request, next: 
             return refusal(StatusCode::TOO_MANY_REQUESTS, "request admission is full");
         }
         Err(Rejected::Unavailable) => {
-            return refusal(StatusCode::SERVICE_UNAVAILABLE, "request admission unavailable");
+            return refusal(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "request admission unavailable",
+            );
         }
     };
     let response = next.run(request).await;
@@ -284,7 +295,10 @@ mod tests {
         let first = gate.acquire(peer(1), 0, now).unwrap();
         let second = gate.acquire(peer(1), 0, now).unwrap();
         for _ in 0..1000 {
-            assert!(matches!(gate.acquire(peer(1), 0, now), Err(Rejected::Limited)));
+            assert!(matches!(
+                gate.acquire(peer(1), 0, now),
+                Err(Rejected::Limited)
+            ));
         }
         let honest = gate.acquire(peer(2), 0, now).unwrap();
         assert_eq!(gate.book.lock().unwrap().live[0], 3);
@@ -298,14 +312,26 @@ mod tests {
         for _ in 0..4 {
             drop(gate.acquire(peer(1), 0, Duration::ZERO).unwrap());
         }
-        assert!(gate.acquire(peer(1), 0, Duration::from_millis(499)).is_err());
-        drop(gate.acquire(peer(1), 0, Duration::from_millis(500)).unwrap());
+        assert!(
+            gate.acquire(peer(1), 0, Duration::from_millis(499))
+                .is_err()
+        );
+        drop(
+            gate.acquire(peer(1), 0, Duration::from_millis(500))
+                .unwrap(),
+        );
         assert!(matches!(
             gate.acquire(peer(1), 0, Duration::ZERO),
             Err(Rejected::Unavailable)
         ));
-        assert!(gate.acquire(peer(1), 0, Duration::from_millis(999)).is_err());
-        drop(gate.acquire(peer(1), 0, Duration::from_millis(1000)).unwrap());
+        assert!(
+            gate.acquire(peer(1), 0, Duration::from_millis(999))
+                .is_err()
+        );
+        drop(
+            gate.acquire(peer(1), 0, Duration::from_millis(1000))
+                .unwrap(),
+        );
     }
 
     #[test]
@@ -368,7 +394,10 @@ mod tests {
         let first = gate.acquire(address.into(), 0, Duration::ZERO).unwrap();
         let second = gate.acquire(address.into(), 0, Duration::ZERO).unwrap();
         let router = Router::new()
-            .route("/v1/console/auth/login/start", post(|| async { StatusCode::OK }))
+            .route(
+                "/v1/console/auth/login/start",
+                post(|| async { StatusCode::OK }),
+            )
             .layer(middleware::from_fn_with_state(Arc::clone(&gate), admit));
         let response = router
             .oneshot(

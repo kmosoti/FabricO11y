@@ -16,7 +16,10 @@ pub(super) fn remaining(deadline: Instant) -> io::Result<Duration> {
 }
 
 fn normalize(error: io::Error) -> io::Error {
-    if matches!(error.kind(), io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut) {
+    if matches!(
+        error.kind(),
+        io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut
+    ) {
         expired()
     } else {
         error
@@ -43,7 +46,8 @@ impl Read for DeadlineStream {
         if buffer.is_empty() {
             return Ok(0);
         }
-        self.stream.set_read_timeout(Some(remaining(self.deadline)?))?;
+        self.stream
+            .set_read_timeout(Some(remaining(self.deadline)?))?;
         let result = self.stream.read(buffer).map_err(normalize);
         remaining(self.deadline)?;
         result
@@ -55,7 +59,8 @@ impl Write for DeadlineStream {
         if buffer.is_empty() {
             return Ok(0);
         }
-        self.stream.set_write_timeout(Some(remaining(self.deadline)?))?;
+        self.stream
+            .set_write_timeout(Some(remaining(self.deadline)?))?;
         let result = self.stream.write(buffer).map_err(normalize);
         remaining(self.deadline)?;
         result
@@ -76,7 +81,10 @@ mod tests {
 
     #[test]
     fn security_expired_deadline_is_not_a_zero_socket_timeout() {
-        assert_eq!(remaining(Instant::now()).unwrap_err().kind(), io::ErrorKind::TimedOut);
+        assert_eq!(
+            remaining(Instant::now()).unwrap_err().kind(),
+            io::ErrorKind::TimedOut
+        );
     }
 
     #[test]
@@ -87,18 +95,22 @@ mod tests {
         let size: libc::c_int = 4096;
         // SAFETY: valid live socket and initialized integer with the supplied
         // size; this changes only the synthetic test socket's send buffer.
-        assert_eq!(unsafe {
-            libc::setsockopt(
-                server.as_raw_fd(),
-                libc::SOL_SOCKET,
-                libc::SO_SNDBUF,
-                &size as *const libc::c_int as *const libc::c_void,
-                std::mem::size_of_val(&size) as libc::socklen_t,
-            )
-        }, 0);
+        assert_eq!(
+            unsafe {
+                libc::setsockopt(
+                    server.as_raw_fd(),
+                    libc::SOL_SOCKET,
+                    libc::SO_SNDBUF,
+                    &size as *const libc::c_int as *const libc::c_void,
+                    std::mem::size_of_val(&size) as libc::socklen_t,
+                )
+            },
+            0
+        );
         let (tx, rx) = mpsc::channel();
         let worker = std::thread::spawn(move || {
-            let mut writer = DeadlineStream::new(server, Instant::now() + Duration::from_millis(150));
+            let mut writer =
+                DeadlineStream::new(server, Instant::now() + Duration::from_millis(150));
             let result = writer.write_all(&vec![0; 4 * 1024 * 1024]);
             let _ = tx.send(result.map_err(|error| error.kind()));
         });
