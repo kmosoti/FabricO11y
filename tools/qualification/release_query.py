@@ -173,7 +173,8 @@ def grade(records, query, pages, authorized_labels, *, prepared=None):
 def perform(f, args, summary):
     dependencies=[Path(__file__),Path(oracle.__file__),Path(__file__).with_name('release_fixture.py'),
                   Path(__file__).with_name('release_runtime.py'),Path(__file__).with_name('console_bridge.py'),
-                  Path(__file__).with_name('soak_companion.py')]
+                  Path(__file__).with_name('soak_companion.py'),Path(__file__).with_name('release_timing.py'),
+                  Path(__file__).with_name('workload.py'),Path(__file__).with_name('delivery_oracle.py')]
     source_hashes={str(path):file_digest(path) for path in dependencies}
     summary['harness_inputs']=source_hashes
     nodes, batches = (2, 1) if args.smoke else (100, 100)
