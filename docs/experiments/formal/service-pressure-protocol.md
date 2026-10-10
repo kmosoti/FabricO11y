@@ -58,6 +58,14 @@ cannot satisfy a full cell. Preserve failure evidence and verify cleanup.
 
 ## Recovery and storage controls
 
+Before full successor trials, the management generator uses absolute half-second
+deadlines, starting one quarter-second after its local simulator-launch anchor.
+This places attempts away from half-second bucket boundaries and avoids accumulated
+sleep drift. The checker still uses the simulator's independently reported actual
+begin time and requires coverage of every measured half-second slot. Record each
+scheduled deadline, actual start and scheduling lag; startup delay or a missed
+slot still fails. The earlier short smoke that missed slot 11 remains failed.
+
 The source-matched candidate must run the following existing executable controls
 with their independent fixtures and original outcomes. Record actual commands,
 exit statuses and the source identities; a historical pass is insufficient:
