@@ -20,6 +20,10 @@ jobs:
           toolchain: 1.99.0
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
+      - name: Check contained toolchain and explicit self-update policy
+        run: |
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/test_rust_preflight.py
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/rust_preflight.py
       - uses: browser-actions/setup-firefox@v1
         id: firefox
         with:

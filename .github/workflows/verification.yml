@@ -17,6 +17,8 @@ on:
       - "src/spindle/**"
       - "formal/**"
       - "tools/qualification/**"
+      - "tools/ci/**"
+      - "tools/resource_group.py"
       - "docs/formal/counterexamples.json"
       - "fuzz/**"
       - "deny.toml"
@@ -41,6 +43,10 @@ jobs:
         with:
           toolchain: 1.99.0
           components: rustfmt, clippy
+      - name: Check contained toolchain and explicit self-update policy
+        run: |
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/test_rust_preflight.py
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/rust_preflight.py
       - name: Install native crypto prerequisites
         run: |
           sudo apt-get update
@@ -71,6 +77,8 @@ jobs:
         run: |
           python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py kani-verifier 0.68.0
           python3 -B tools/resource_group.py -- cargo kani setup
+      - name: Verify Kani positive and semantic negative controls
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/kani_canary.py
       # Exit 3 (INCOMPLETE: an environment was unavailable) fails the job too.
       - name: Run the extended check registry
         run: python3 -B tools/resource_group.py -- cargo xtask checks --profile extended
