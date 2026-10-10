@@ -46,7 +46,8 @@ def elapsed(start, finish):
     upper = finish['upper_ns'] - start['lower_ns']
     if upper < 0:
         raise ValueError('completion precedes creation even after clock uncertainty')
-    return {'lower_ns': max(0, lower), 'upper_ns': upper,
+    lower = max(0, lower)
+    return {'lower_ns': lower, 'upper_ns': upper,
             'uncertainty_ns': upper - lower}
 
 
