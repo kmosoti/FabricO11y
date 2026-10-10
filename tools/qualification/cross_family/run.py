@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import ssl
 import subprocess
 import time
@@ -15,6 +16,10 @@ import urllib.request
 from guest import Guest, Q, image
 
 HERE = Path(__file__).resolve().parent
+
+
+def interrupted(signum, frame):
+    raise InterruptedError('cross-family manager interrupted by signal ' + str(signum))
 
 
 def main():
@@ -25,6 +30,7 @@ def main():
     parser.add_argument('--deb-receipt', type=Path, required=True)
     parser.add_argument('--rpm-receipt', type=Path, required=True)
     args = parser.parse_args()
+    signal.signal(signal.SIGTERM, interrupted)
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,79}', args.run_id):
         raise ValueError('invalid run identity')
     limits = Q.require_containment()
@@ -44,8 +50,11 @@ def main():
              'server_family': args.server_family, 'edge_family': args.edge_family,
              'inputs': artifacts['identity'], 'storage_admission': admission, 'host_cgroup': limits,
              'exit': 2, 'gates': {}}
-    for filename in ('run.py', 'guest.py', 'producer.py', 'inputs.py', 'grade.py'):
-        shutil.copy2(HERE / filename, result / filename)
+    adapter_hashes = {}
+    for source in sorted(HERE.glob('*.py')):
+        adapter_hashes[source.name] = hashlib.sha256(source.read_bytes()).hexdigest()
+        shutil.copy2(source, result / source.name)
+    facts['adapter_sha256'] = adapter_hashes
     key = root / 'id_ed25519'
     Q.run([Q.executable('ssh-keygen'), '-q', '-t', 'ed25519', '-N', '', '-f', str(key)], timeout=30)
     data_port = Q.free_port()
@@ -175,6 +184,10 @@ systemd-run --unit=cross-producer --property=MemoryMax=128M --property=MemorySwa
         facts['scratch_removed'] = not root.exists()
         facts['scratch_retained'] = str(root) if root.exists() else None
         facts['elapsed_seconds'] = round(time.monotonic() - began, 3)
+        facts['adapter_unchanged'] = all(hashlib.sha256((HERE / name).read_bytes()).hexdigest() == expected
+                                         for name, expected in adapter_hashes.items())
+        if not facts['adapter_unchanged']:
+            facts['exit'] = 2
         (result / 'receipt.json').write_text(json.dumps(facts, indent=2) + '\n')
         print(json.dumps(facts, indent=2))
     return facts['exit']

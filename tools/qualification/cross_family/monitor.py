@@ -18,7 +18,11 @@ def sample(service):
     rss = 0
     pids = []
     try:
-        processes = (path / 'cgroup.procs').read_text().split()
+        # Include service descendants; a child cgroup must not disappear from
+        # the process RSS population simply because its parent has no PIDs.
+        groups = [path, *(p for p in path.rglob('*') if p.is_dir())]
+        processes = sorted({pid for group in groups
+                            for pid in (group / 'cgroup.procs').read_text().split()})
         for pid in processes:
             status = Path('/proc') / pid / 'status'
             values = dict(line.split(':', 1) for line in status.read_text().splitlines() if ':' in line)
@@ -38,6 +42,9 @@ def main():
     parser.add_argument('--service-cgroup', required=True)
     parser.add_argument('--out', required=True, type=Path)
     args = parser.parse_args()
+    if '..' in Path(args.service_cgroup).parts or not args.service_cgroup.startswith('/'):
+        raise ValueError('absolute actual service cgroup required')
+    boot_id = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
     began = time.monotonic_ns()
     with args.out.open('x') as output:
         for tick in range(330):
@@ -47,7 +54,7 @@ def main():
             unix = time.time_ns()
             observation = sample(args.service_cgroup)
             after = time.monotonic_ns()
-            row = {'tick': tick, 'scheduled_ns': due, 'before_ns': before, 'after_ns': after,
+            row = {'tick': tick, 'boot_id': boot_id, 'scheduled_ns': due, 'before_ns': before, 'after_ns': after,
                    'unix_ns': unix, 'service_cgroup': args.service_cgroup, 'resource': observation}
             output.write(json.dumps(row, separators=(',', ':')) + '\n')
             output.flush()
