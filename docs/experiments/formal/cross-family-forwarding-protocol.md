@@ -85,6 +85,33 @@ counts and bytes in the first and last 30 s measured windows. A larger last
 window mean in either coordinate fails the growth gate. Publish all samples;
 missing samples make the rule incomplete. End-of-drain backlog must be zero.
 
+### Prospective timing-population clarification and backlog revision
+
+Registered before the first cross-family cell: report four distinct populations,
+without substituting one population's starting boundary for another's:
+
+| Population | Independently observable starting boundary |
+| --- | --- |
+| Offered edge logs and traces | The producer's observation/creation timestamp, joined by source offsets or span identity |
+| Controlled metrics | The independent producer's creation timestamp and exact Batch identity |
+| Native host metrics | Native collection-start timestamp; earlier physical counter changes are not measured |
+| Companion diagnostics | Native source acceptance before durable Spool append; diagnostic creation before collection is not measured |
+
+Apply ACK p99 ≤ 1 second and visibility p99 ≤ 5 seconds separately to each
+population using its stated boundary and conservative same-boot clock brackets.
+The companion result is acceptance-to-ACK/visibility, never diagnostic-creation
+latency. Pre-Spool diagnostic logging remains best-effort under the existing
+self-observation contract. Include every accepted companion Batch in custody,
+query, backlog, drain and resource accounting; this clarification excludes no
+accepted work or failed attempt. Missing required joins still fail admission.
+
+New cross-family cells explicitly select
+[backlog revision 2](service-backlog-protocol-r2.md): full interval-union clearing
+within 5 seconds and positive empty time in each measured 5-second window.
+Retain the original one-second samples and first/last means as diagnostics.
+The original rule above remains the revision-1 specification; no earlier result
+is regraded and no historical fleet, outage or soak rule changes.
+
 Fresh stopped-process Spool/server dumps feed unchanged independent delivery
 and query oracles. Check exact logs, metric values/rates, trace IDs/parents,
 pagination/completeness before interruption, after reconnection and restart.
