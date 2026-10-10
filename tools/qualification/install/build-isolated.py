@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Build the install .deb in a disposable, rootless Debian 13 container."""
+"""Build the install .deb in a disposable, rootless Debian 12 container.
+
+The Debian 12 build sysroot keeps Rust 1.98's weak pidfd references within the
+registered GLIBC 2.34 floor; installed-system acceptance still runs on Debian 13.
+"""
 from __future__ import annotations
 
 import argparse
