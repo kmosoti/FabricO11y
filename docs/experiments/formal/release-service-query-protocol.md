@@ -26,6 +26,9 @@ server RSS at most 2 GiB. Record their separate RSS, combined cgroup charge, CPU
 I/O, events, task counts and cleanup. Root coordinates aggregate admission within
 20 GiB. Reserve 5 GiB per cell below the 100 GB laboratory ceiling. Retained
 compact results are at most 50 MiB; source/fixture archives remain disk-accounted.
+Apply the [build serialization prerequisite](../benchmarks/production-access-campaign-protocol.md)
+before successor service cells: no concurrent container/package or VM builds,
+and no ignored aggregate storage-census errors.
 
 ### Successor CPU placement
 

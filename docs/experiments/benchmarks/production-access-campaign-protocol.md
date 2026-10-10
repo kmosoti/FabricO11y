@@ -39,6 +39,14 @@ usage. Preserve failed receipts and original oracle ledgers before removing
 owned credentials, browser profiles and candidate state. Record actual subgroup
 limits, peaks, memory events, empty groups and verified immutable input hashes.
 
+Before successor runs, finish container/package and VM build work, then verify
+its owned scratch cleanup and successful aggregate DATA accounting. Do not run
+those builds concurrently with measured service fixtures. Rootless container
+ownership can make temporary directories unreadable to the aggregate census;
+`production-soak-full-03` failed that prerequisite. Keep census errors fatal and
+preserve that failed run. CPU and memory separation alone does not establish
+observable aggregate disk usage.
+
 Both harnesses accept `--production-access --deb-receipt PATH --rpm-receipt
 PATH --production-out DATA/results/NAME`; soak also requires `--companion`.
 Legacy mode must be explicitly labeled and uses `serve-legacy`; its results are
