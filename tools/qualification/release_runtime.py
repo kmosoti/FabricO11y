@@ -104,6 +104,7 @@ class CandidateFixture:
         self.work = Path(os.environ['FABRIC_SCRATCH_ROOT']) / ('release-' + self.out.name)
         self.work.mkdir(mode=0o700)
         self.processes, self.logs, self.groups = [], [], []
+        self.extra_archives = []
         self.server = self.bridge = None
         self.closed = False
         self.receipt = {'state': 'starting', 'passed': False, 'inputs': self.artifacts['identity'],
@@ -112,6 +113,23 @@ class CandidateFixture:
                         'host': {'uname': list(os.uname()), 'cpus': os.cpu_count(),
                                  'boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip()}}
         try:
+            # Retain the Python actually loaded by this process, including its
+            # entry point. Later edits invalidate the receipt rather than
+            # silently attributing measurements to a different harness.
+            sources = {Path(m.__file__).resolve() for m in tuple(sys.modules.values())
+                       if getattr(m, '__file__', None)
+                       and str(m.__file__).endswith('.py')}
+            sources.add(ROOT / 'tools/bench/labs/completion/enter_group.py')
+            self.harness_hashes = {}
+            for source in sorted(p for p in sources if p.is_relative_to(ROOT)):
+                relative = source.relative_to(ROOT)
+                target = self.out / 'harness' / relative
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source, target)
+                self.harness_hashes[str(relative)] = digest(target)
+                if digest(source) != self.harness_hashes[str(relative)]:
+                    raise RuntimeError('harness changed while freezing its receipt')
+            self.receipt['harness_sha256'] = self.harness_hashes
             self.parent = cgroups.delegate()
             cgroups.set_limits(self.parent / 'supervisor', 2 * 1024**3, 1700 * 1024**2, 512, 4)
             self.server_group, limits = cgroups.subgroup(self.parent, 'server', 4_000_000_000, 3_000_000_000, 512, 2)
@@ -227,7 +245,8 @@ class CandidateFixture:
         return WorkloadReader(self.origin, self.context, value['token'])
 
     def resource_sample(self):
-        live = directory_bytes(self.work) + directory_bytes(self.out)
+        live = (directory_bytes(self.work) + directory_bytes(self.out)
+                + sum(directory_bytes(p) for p in self.extra_archives))
         if live > 5 * 1024**3:
             raise RuntimeError('registered live fixture disk budget exceeded')
         if directory_bytes(self.out) > 50 * 1024**2:
@@ -236,6 +255,20 @@ class CandidateFixture:
                 'server_rss_kib': process_kib(self.server.pid),
                 'server_hwm_kib': process_kib(self.server.pid, 'VmHWM'),
                 'groups': cgroups.snapshot(self.parent)}
+
+    def archive_dir(self):
+        """Separate source witnesses from compact results, within one budget."""
+        if not self.extra_archives:
+            parent = STORAGE / 'evidence'
+            if parent.is_symlink() or not parent.resolve(strict=True).is_relative_to(STORAGE):
+                raise RuntimeError('data-drive evidence root is not an owned directory')
+            target = parent / ('release-' + self.out.name)
+            # mkdir fails on any old directory or symlink; never append a new
+            # experiment's evidence to an earlier run.
+            target.mkdir(mode=0o700)
+            self.extra_archives.append(target)
+            self.receipt['source_archives'] = [str(target)]
+        return self.extra_archives[0]
 
     def close(self):
         if self.closed:
@@ -268,6 +301,11 @@ class CandidateFixture:
             unchanged = all((self.work / name).is_file() and digest(self.work / name) == expected
                             for name, expected in self.input_hashes.items())
             self.receipt['immutable_inputs'] = unchanged
+            cleanup = cleanup and unchanged
+        if hasattr(self, 'harness_hashes'):
+            unchanged = all((ROOT / name).is_file() and digest(ROOT / name) == expected
+                            for name, expected in self.harness_hashes.items())
+            self.receipt['immutable_harness'] = unchanged
             cleanup = cleanup and unchanged
         self.receipt['cleanup_confirmed'] = cleanup
         self.receipt['state'] = 'closed' if cleanup else 'cleanup_failed'

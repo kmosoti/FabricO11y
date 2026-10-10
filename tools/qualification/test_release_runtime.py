@@ -1,0 +1,55 @@
+import os
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import release_runtime as runtime
+
+
+class ArchiveBounds(unittest.TestCase):
+    def fixture(self, root):
+        f = runtime.CandidateFixture.__new__(runtime.CandidateFixture)
+        f.out, f.work = root / 'results/cell', root / 'scratch/cell'
+        for directory in (f.out, f.work, root / 'evidence'):
+            directory.mkdir(parents=True)
+        f.extra_archives, f.receipt = [], {}
+        return f
+
+    def test_archive_is_fresh_and_reused_only_by_its_owner(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            root = Path(directory)
+            f = self.fixture(root)
+            with patch.object(runtime, 'STORAGE', root):
+                archive = f.archive_dir()
+                self.assertEqual(f.archive_dir(), archive)
+                self.assertEqual(archive.stat().st_mode & 0o777, 0o700)
+                f.extra_archives = []
+                with self.assertRaises(FileExistsError):
+                    f.archive_dir()
+
+    def test_symlink_archive_root_is_rejected(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            root = Path(directory)
+            f = self.fixture(root)
+            (root / 'evidence').rmdir()
+            (root / 'evidence').symlink_to(f.work, target_is_directory=True)
+            with patch.object(runtime, 'STORAGE', root), self.assertRaises(RuntimeError):
+                f.archive_dir()
+
+    def test_source_archives_are_in_the_same_live_disk_budget(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            root = Path(directory)
+            f = self.fixture(root)
+            with patch.object(runtime, 'STORAGE', root):
+                archive = f.archive_dir()
+            # Sparse allocation keeps the control cheap. The logical-byte
+            # guard must reject this even when filesystem charge is small.
+            with (archive / 'too-large').open('wb') as output:
+                output.truncate(5 * 1024**3 + 1)
+            with self.assertRaisesRegex(RuntimeError, 'live fixture disk'):
+                f.resource_sample()
+
+
+if __name__ == '__main__':
+    unittest.main()
