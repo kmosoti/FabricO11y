@@ -1,6 +1,6 @@
 # Architecture documentation
 
-FabricO11y is a Rust observability system: a Spindle on each Linux host collects metrics and logs into a durable Spool and delivers them over TLS to Fabric Server, which commits before acknowledging, retains history as a journal and Parquet Segments, and answers queries that report what is complete, fresh and missing. The architecture is hexagonal: a pure `no_std` semantic core, effect ports, application use cases, adapters and thin composition roots, with the dependency rule checked by `cargo xtask`.
+FabricO11y is a Rust observability system: a Spindle on each Linux host collects host metrics, logs and exported traces into a durable Spool and delivers them over TLS to Fabric Server, which commits before acknowledging, retains history as a journal and Parquet Segments, and answers queries that report what is complete, fresh and missing. The architecture is hexagonal: a pure `no_std` semantic core, effect ports, application use cases, adapters and thin composition roots, with the dependency rule checked by `cargo xtask`.
 
 <!-- diagram: diagrams/system.mmd -->
 ```mermaid
@@ -37,9 +37,14 @@ flowchart LR
     CLI -->|local inspect| Spool
 ```
 
-The canonical source is [system.mmd](diagrams/system.mmd); the documentation check detects differences between it and this copy.
+Each production server also owns a [dedicated diagnostic Spindle](architecture/system.md). Edge Spindles keep their configured destination.
 
 ## Source of truth
+
+The repository owns product and operator documentation, architecture and executable
+verification. The [research wiki](https://github.com/kmosoti/FabricO11y/wiki) owns
+research, experiment reports and observations. The [ownership policy](documentation-policy.md#canonical-ownership)
+defines migration, provenance and evidence storage; each document has one editable home.
 
 When documents disagree, the higher entry wins and the lower one is corrected:
 
@@ -48,9 +53,9 @@ When documents disagree, the higher entry wins and the lower one is corrected:
 | 1 | [Product contract](PRODUCT-CONTRACT.md) |
 | 2 | Accepted [architecture decisions](decisions/README.md) |
 | 3 | Current [architecture views](architecture/README.md) |
-| 4 | Registered experiment protocols and results under [experiments](experiments/README.md), and [qualification](QUALIFICATION.md) |
+| 4 | Registered protocols and [qualification](QUALIFICATION.md) in the repository; revision-specific results linked by the [evidence index](experiments/README.md) and pinned wiki commit |
 | 5 | [Current state](CURRENT.md) |
-| 6 | Exploratory research: the [blueprint](architecture.md), the [generator-verifier digest](research/generator-verifier.md), the [query-engine direction review](research/query-engine-direction.md), the [frontier map](research/frontier-map.md), the [research ledger](research/ledger.md), the [storage direction](research/storage-direction.md) with its [prior-art survey](research/storage-prior-art.md), the [observation cost model](research/observation-model.md), the [hypothesis suite](research/hypotheses.md), the [query specification](formal/query-semantics.md), the [design consolidation](research/design-consolidation.md), the [optimality bounds](research/optimality-bounds.md), [experiment durability](research/experiment-durability.md) and the [research harnesses](../tools/research/README.md), and research experiments |
+| 6 | Research: [design consolidation](research/design-consolidation.md), [source synthesis](research/cross-system-source-synthesis.md), [ledger](research/ledger.md), [blueprint](architecture.md) and [research harnesses](../tools/research/README.md) |
 
 Implementation is evidence of what exists; none of these documents overrides it silently. A disagreement between code and a document is reconciled explicitly ([documentation policy](documentation-policy.md#19-relationship-between-code-and-documentation)).
 
@@ -62,7 +67,7 @@ Implementation is evidence of what exists; none of these documents overrides it 
 4. [Verification strategy](formal/verification-strategy.md) and [verification matrix](formal/verification-matrix.md): which technique checks which claim.
 5. [Concepts](concepts/README.md) and [glossary](glossary.md).
 6. [Architecture decisions](decisions/README.md).
-7. [Experiments](experiments/README.md): registered protocols, results, formal checks and research.
+7. [Experiments](experiments/README.md): registered protocols and links to wiki results; [research wiki](https://github.com/kmosoti/FabricO11y/wiki): investigations and observations.
 8. [Roadmap](ROADMAP.md) and the [milestone records](milestones/architecture-foundation.md).
 
 [Operating FabricO11y](operations.md) covers install, configuration, the admin CLI and recovery states. The [learning path](LEARNING_PATH.md) follows the Rust ideas and system contracts step by step. The [blueprint](architecture.md) is a proposal and research agenda; its pipelines, guarantees and example numbers do not describe completed work.

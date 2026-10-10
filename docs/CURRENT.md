@@ -1,80 +1,135 @@
 # Current project state
 
-## Active work
-
-Milestone **bounded sealer** ([record](milestones/bounded-sealer.md)): design accepted, implementation not started. The sealer will build each Segment by external merge sort, so its memory stops growing with the journal file ([ADR-0022](decisions/ADR-0022-build-segments-by-external-merge-sort.md), [sealer view](architecture/sealer.md)). Its acceptance protocol is registered; the comparison that chose the algorithm is an exploratory [study](experiments/benchmarks/sealer-study-run-01.md). Merged: the [architecture foundation](milestones/architecture-foundation.md), [verification foundation](milestones/verification-foundation.md), [semantic kernels](milestones/semantic-kernels.md), [history qualification](milestones/history-qualification.md), [delivery and recovery qualification](milestones/delivery-recovery.md), [Linux installation qualification](milestones/linux-installation.md) and [verification tooling](milestones/verification-tooling.md). The remaining target-host runs are in the [qualification runbook](qualification-runbook.md).
-
-Research in step with it ([design consolidation](research/design-consolidation.md) collapses it into decisions with their gates; [experiment durability](research/experiment-durability.md) says what of the research loop is reproducible from a clean clone): the [storage direction](research/storage-direction.md) (one record spine for logs, metrics and traces; measured on real text in [storage layout run 01](experiments/benchmarks/storage-layout-run-01.md)), the proposed [Observation record and FOB1 codec](decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md) ([fabric-observation](../crates/fabric-observation/src/lib.rs), tested and fuzzed, wired to nothing), the [executable query specification](formal/query-semantics.md) in the core with its theorems as properties and bounded proofs, and the query prototypes of ledger [L-04](research/ledger.md#l-04-the-threshold-algorithm-over-source-bounds) and [L-05](research/ledger.md#l-05-budget-bounded-answers-with-sound-partial-completeness), with the [optimality bounds](research/optimality-bounds.md) measuring each against its floor: the prototypes within 2× of every measured bound on the fixtures, the tail answered from canonical blocks at 0.26 to 0.28 of stock on its slowest shape (0.08 with a trigram filter per block), and a node-presence set shown to have nothing to skip below fleet scale; a trigram filter per row group (ledger [L-25](research/ledger.md#l-25-a-text-filter-per-row-group)) takes a no-match text search on Segments from about 120 ms to under 10 and awaits a product-contract decision. All of it is research: no prototype is wired into the product.
-
-Local investigation: [journal reclaim progress](milestones/journal-reclaim-progress.md), on `milestone/journal-reclaim-progress` from `5f0c52f`. The candidate reclaims an eligible published prefix before builds and between worker groups. [Local mechanism tests](experiments/benchmarks/journal-reclaim-local-run-01.md) establish earlier reclaim and exercise failure boundaries; the mixed-load benefit and ACK latency trade-off remain unmeasured. This does not replace the bounded-sealer work or establish target-host qualification.
-
-Proposed follow-up: [adaptive sealing and builder memory](experiments/benchmarks/adaptive-sealing-hypotheses.md) separates demand-driven concurrency from per-builder working-set amplification, with hypothesis/null pairs and a draft validation design. Neither new mechanism is implemented or measured. The [computational pipeline model](research/sealing-pipeline-model.md) adds explicit buffer ownership, byte admission, bounded task/merge scheduling and falsifiable performance claims; it has not been model-checked or benchmarked.
-
-Local output-writer experiment: [streaming output run 01](experiments/benchmarks/streaming-output-local-run-01.md), branch `milestone/streaming-segment-output`. Twelve pairs produced byte-identical Segments under a 2 GiB address-space limit. The primary fixture used about 7% less incremental heap and 12% less whole-process peak RSS; the registered >10% heap target was not met. The whole-file builder remains unbounded in input size and this candidate is experimental.
-
-Workload planning: [development-to-enterprise sizing](research/workload-sizing.md) adds an editable calculator grounded in the frozen writer pilot, with explicit assumptions for event volume, memory, bursts, retention and outage buffers. It is arithmetic and proposed trial hardware, not new deployment measurements or qualification.
-
-Sequential local workload pilots: [development and small run 01](experiments/benchmarks/dev-small-local-run-01.md) recovered 3,000 and 300,000 exact source logs through real Spindles. Collection-to-ingestion p99 was 8.89 / 50.65 ms; server RSS peak 7.91 / 440.41 MiB, with no development seal and five small Segments. Both met their finite pilot criteria; long-term memory, deployment caps and maximum capacity remain unqualified.
-
-Consolidated active branch: `milestone/streaming-segment-output` contains all preceding journal, writer, sizing and workload evidence. [Medium/enterprise simulations and recovered worker control](experiments/benchmarks/scaled-fleet-local-run-01.md): medium met finite criteria; enterprise preserved 3.5 million logs but failed timing and generator-lag gates. Two workers reduced medium overall ingestion p99 about 11% for about 18% more peak RSS in one trial. Memory attribution and independent confirmation remain unrun.
-
-Native scaled-volume follow-up: [20 real Spindles, medium/enterprise run 01](experiments/benchmarks/native-scaled-spindle-run-01.md) exercised app files, durable Spools and native TLS forwarding. Medium recovered 350,000 exact logs and met finite criteria; enterprise recovered 3.5 million but failed timing/producer-lag criteria. Enterprise file-write-to-ingestion p99 was 21.31 s versus collection-to-ingestion 1.85 s, with about 1.02 GiB unread source backlog. Peak server RSS was 470 / 522 MiB, each Spindle below 9.3 MiB. The first enterprise attempt was interrupted by a monitor rename race; a preregistered retry fixed the monitor only. These are aggregate volume pilots, not enterprise fleet qualification or solved memory bounds.
-
-[Consumer experience and all four workload tiers](research/consumer-performance.md) consolidates native latency/RSS/CPU evidence and maps it to human, agent and programmatic users. Pipeline receive/ACK measurements do not establish per-tier query response or observation-to-queryable latency; those consumer measurements remain unrun.
-
-Owner-directed testing/use focus: [development through moderate configuration and query study](research/development-moderate-plan.md). Determine caps and useful threading from consumer-inclusive measurements; enterprise remains stress evidence. Proposed query loader/processing/output responsibilities are unimplemented, and installed defaults/qualification are unchanged.
-
-Pre-tier prerequisite audit: [responsibility benchmark coverage and inefficiency hypotheses](experiments/benchmarks/responsibility-benchmark-audit.md) examines six functional and two supporting groups. Current aggregate probes do not provide complete per-phase attribution; native delivery timers omit Spool retrieval/ACK persistence, query/rate memory and sealer barriers need measurement, and the Spindle validator caps configured Spool size at 256 MiB. Missing probes/observer calibration precede the three-tier consumer tests. These are source-backed hypotheses, not new cost measurements or runtime changes.
-
-Resource-aware isolation: [revision-2 results](experiments/benchmarks/responsibility-isolation-r2-run-01.md) completed 58 corrected preflight, 20 calibration and 290 sequential measured trials; 1,920 query answers graded exactly and 21.25 GiB cumulative scratch cleaned. The 64 MiB full build added 235.55 MiB Rust heap; small-file native sealing with four workers was 2.24× faster than one for about 39% more CPU. Query first/warm and scan/walk comparisons show no universal plan winner. Fixture failures, observer costs and unstable populations remain preserved. This is a bounded screen with explicit coverage gaps; selected interactions, comprehensive signal/consumer coverage and the development/small/moderate composite remain outstanding. No caps/defaults changed.
-
-Cross-dimensional follow-up: [performance refinement audit](research/performance-refinement-audit.md) challenges journal/intake sizes, worker heuristics, memory ownership, query/rate costs and contemporary execution designs. A focused reproduction of the unchanged rate transformation disagreed with the independent oracle on attribute-key collisions and integer increments/decreases above `2^53`; [counterexamples](experiments/benchmarks/data/performance-refinement-audit/comparison.json) are retained. The [Fedora continuation protocol](experiments/benchmarks/performance-refinement-fedora-protocol.md) now governs their repair and further native measurements. The candidate separates structural identity from presentation order and preserves integer deltas; its HTTP regression covers 2,048 series, mixed numbers, both plans, sealing and restart. The [continuation record](experiments/benchmarks/performance-refinement-fedora-run-01.md) retains the reproduced failures and HTTP negative control; further attribution/composites are pending. Proposed optimization experiments and default selection remain unrun; production settings are unchanged.
-
 ## Implemented
 
-- **Spindle** (`fabric-node`): bounded Linux host metrics and selected log files as OTLP inside version-one Batches, a durable `FAB1` Spool with ACK cursor and whole-file reclaim, visible collection gaps, SIGTERM-safe cycles, remote configuration with last-valid fallback ([Spindle view](architecture/spindle.md)). It meters its own output as `fabric.spindle.*` metrics and can cap its delivery rate (`max_output_bytes_per_s`); a pass that leaves a log backlog is followed by another once delivery has caught up, about 9.7 MB/s of real log text per node on this machine (3.6 before the server's quiet rule), set by one Batch in flight: the server's 13 ms answer and the 12 ms collection of the next Batch, in series ([spindle run 01](experiments/benchmarks/spindle-run-01.md), [sealer profile run 01](experiments/benchmarks/sealer-profile-run-01.md))).
-- **Delivery**: TLS, bearer credentials bound to one Spindle, one Batch in flight per Strand, ACK only after the server's grouped two-sync commit ([delivery view](architecture/delivery.md)). The decision is a pure kernel in `fabric-core`, orchestrated by `fabric-app` over the `DurableJournal` and `Clock` ports.
-- **Traces** ([ADR-0025](decisions/ADR-0025-carry-traces-as-a-third-signal.md)): local applications export spans to the Spindle's loopback OTLP/HTTP endpoint, answered after the Spool commit; Batches carry them in field 9; the server stores them in `spans.parquet` with a trace-ID filter and answers `{"kind":"spans"}` by window, trace ID, name and node in both query plans, graded by the independent oracle.
-- **Throughput on this machine** (4 CPUs): the server seals journal files on `seal_workers` threads and sustained 48, 75 and 81 MB/s of real-text ingest with 1, 2 and 3 workers, bound by sealing CPU, relying on back-pressure when the journal filled ([ingest run 01](experiments/benchmarks/ingest-run-01.md)); how each component would scale with more resources, to 500 hosts at 500 MB/s, is in the [scaling design](research/scaling-design.md).
-- **Fabric Server**: journal with replayed Strand and binding state, stream checkpoint before reclaim, Zstd Parquet Segments sealed off the commit path, retention by age and bytes, log/metric/rate queries with completeness, freshness, gaps and snapshot-bound pages ([retained history](architecture/retained-history.md)), read by the scan plan or, with `query_plan=walk`, by the key-ordered walk over a tail index and cached Segment bounds (ADR-0024 part 1; identical answers; 21× faster on a random query set over a real-text tail in [query walk run 01](experiments/benchmarks/query-walk-run-01.md); default `scan` until the history protocol and soak are re-run); Segments carry a seal-time trigram filter per logs row group that the walk uses to skip groups without a needle (ADR-0024 part 2, contract amended; a no-match text search over 64 real-text Segments 95 to 131 ms to under 5 ms in [text filter run 01](experiments/benchmarks/text-filter-run-01.md)); and the walk reads the unsealed tail as FOB1 blocks derived from the journal in memory (ADR-0024 part 3, ADR-0023 accepted for this use; the slowest tail shape 614 to 28 ms in [block tail run 01](experiments/benchmarks/block-tail-run-01.md)), central control ([control](architecture/control-plane.md)).
-- **Packaging**: systemd units, slice, sysusers file and a reproducible `.deb` ([deployment](architecture/deployment.md)). The package targets Debian-family distributions (glibc 2.34+, systemd 249+): dependencies from `dpkg-shlibdeps`, a glibc-ceiling check, the build host's architecture.
-- **Checks**: layer and purity gates with fixture negative controls; independent Python delivery, query and rate oracles; semantic-mutant registry; TLA+ delivery model with trace validation; fault harness; property tests, Kani proofs of the core, fuzzing, turmoil network simulation and a cargo-deny dependency policy; check registry with receipts ([verification strategy](formal/verification-strategy.md)).
-- **Legacy and research**: the FOL2 [demonstration](architecture/fol2-demo.md) remains supported; research packages under `tools/` stay outside the product.
+FabricO11y collects, durably forwards, retains and queries Linux telemetry. It is
+usable for bounded development trials; no current deployment profile is qualified
+and no release tag has been produced.
+The [product contract](PRODUCT-CONTRACT.md) defines the promises and the
+[verification matrix](formal/verification-matrix.md) maps each invariant to checks
+and remaining limits.
 
-- **Sealer profile and two removals** ([sealer profile run 01](experiments/benchmarks/sealer-profile-run-01.md)): the trigram filter is built by bitmap (same bytes, 13% less sealing CPU where the profile had promised a quarter), and the server's group commit closes after 2 ms of quiet so a lone node no longer pays the 50 ms window (one node delivers 9.7 MB/s instead of 3.63; [ADR-0013](decisions/ADR-0013-deliver-batches-in-order-with-bounded-dedup.md) amended). Not changed, sized in the record: journal replay decodes and hashes every Batch; payloads are copied twice in decoding; rows are sorted as structs; a log line's five string attributes make the wire 2.5× the text.
+| Component | Current behavior |
+| --- | --- |
+| Spindle (`fabric-node`) | Host metrics, selected log files and loopback OTLP/HTTP trace intake; durable FAB1 Spool, exact retry, visible collection gaps, output-rate cap and last-valid remote configuration. |
+| Delivery | Verified TLS, per-Spindle credentials, ordered Batches, deduplication and ACK after grouped two-sync journal commit. A quiet sender closes its group after 2 ms. |
+| Storage | Bounded external-merge sealing to Zstd Parquet, manifest publication before checkpoint/reclaim, retention by age and bytes. The normal writer uses aligned sorted groups and disk-backed completed pages; estimated input targets admit a single oversized row. No whole-server memory bound is established. |
+| Query | Logs, metric points/rates and spans across journal and Segments, snapshot pagination, freshness and completeness. Scan remains default; opt-in Walk uses storage-owned source maps, FOB1 tail blocks and optional filters with exact fallback. |
+| Self-observation | Every production server CLI launches and supervises a dedicated local Spindle. Both emit bounded diagnostics through ordinary Spool/TLS/ACK delivery. Edge Spindles retain their configured destination. |
+| Packaging | Debian-family package, static systemd services and shared slice. A fresh unified-cgroup Debian VM passed all seventeen baseline checks and rejected all three required mutation controls. |
+| Architecture | Pure `no_std` semantic core, effect ports, application transitions and adapters; executable layer and purity gates. |
 
-## Architecture currently affected
+See the [system view](architecture/system.md), [operations guide](operations.md)
+and [architecture index](architecture/README.md) for behavior and configuration.
 
-Crates: `fabric-core` (core), `fabric-ports` (ports), `fabric-app` (app), `fabric-frame` (adapter support), `fabric-adapter-linux` (adapter), `fabric-server` and the root package (composition roots that still contain their adapters). See the [system view](architecture/system.md).
+## Results that shape the design
 
-## Current assumptions
+Measurements below belong to their linked workloads and revisions. Heap, RSS and
+cgroup memory are different quantities; isolated gains cannot be multiplied into
+a service-capacity claim.
 
-- ACKs rely on successful sync calls being honored by the filesystem; physical power loss is untested.
-- WSL2 on ext4 was the environment of the earlier measurements; the history measurements ran in a four-CPU Ubuntu 24.04 Firecracker VM on ext4. Neither is the target profile.
-- Batch identity for duplicate detection is the SHA-256 of the exact bytes; collisions are assumed infeasible.
-- The layer gate sees crates, not modules: the adapters inside the two composition roots are protected only by tests, oracles and mutants; their decisions are kernels in the core.
+| Investigation | Result | Consequence |
+| --- | --- | --- |
+| [Bounded sealer](experiments/benchmarks/ingestion-memory-run-01.md), [encoded-page correction](experiments/formal/encoded-page-memory-run-01.md), [readiness continuation](experiments/formal/readiness-continuation-results.md) | Combined aligned-input/disk-PageStore opt-in passed eight cells with three pairs each: 37.3 MiB steady256 heap and 39.5 MiB bigrows64; high-entropy probe 40.07 MiB. Supplemental row/page scratch observations completed. Seven cells were 1.7–11.9% slower; bigrows64 was 2.7% faster on the shared host. | Adopted as defaults, with unflagged recovery tests, loaded-binary equivalence and all 17 fast checks passing. The companion-inclusive full soak passed all ten gates. |
+| [Walk](experiments/benchmarks/query-walk-run-01.md), [tail blocks](experiments/benchmarks/block-tail-run-01.md), [text filters](experiments/benchmarks/text-filter-run-01.md) | Large selective-query wins, including a 614→28 ms tail shape. | Keep hierarchical pruning and delayed payload work. Scan remains default pending broader acceptance. |
+| [Fixed-demand plans](experiments/benchmarks/query-plan-run-01.md) | Three small-profile pairs favored Walk: median 42.2% lower server CPU and 64.1% lower sampled phase-peak RSS. | Workload-specific evidence; no universal plan winner. |
+| [Service/recovery](experiments/benchmarks/service-recovery-research-findings.md) | Two 20-Spindle cases each recovered 60,000 exact logs; Scan/Walk peak RSS 165.7/92.9 MiB. Eighteen selected storage fault/recovery cases passed. | Short bounded service behavior is supported; long-term stability is still open. |
+| [Pressure and remote edges](experiments/benchmarks/hammer-reference-findings.md) | Four repaired cells each recovered 1.26 million exact logs. Final Walk peak RSS 285.61 MiB. Real remote collectors and the eight-worker simulator delivered exactly. | Journal identity races were fixed. One missing outer receipt prevents strict campaign closeout; the two-worker simulator retained backlog and misreported timing. |
+| [Synthetic RCA](experiments/benchmarks/rca-journal-findings.md) | Fourteen journal/restart cells, 350 exact complete chains and 30 rejected corruptions. | Logs, metrics and traces support tested investigations; published-storage RCA, real application exporters and causal interpretation remain unmeasured. |
+| [Self-observation](experiments/formal/server-self-observation-findings.md) | Native TLS delivery, restart identity, source pinning, refusal cases and process cleanup checked under a 4 GB combined cap. Tiny debug fixture: 19.9/8.5 MiB server/Spindle peak RSS. | Dedicated Spindle is implemented. Diagnostic files before Spool commit remain best-effort; colocation cannot observe total host loss. |
+| [Cross-system trials](experiments/benchmarks/cross-system-sweep-findings.md), [continuation](experiments/benchmarks/cross-system-continuation-findings.md), [native candidates](experiments/benchmarks/native-frontier-findings.md) | Smaller sort runs and borrowed rows reduced allocations in selected fixtures. Larger-input models, timing guards and one RSS guard failed. | Retain the mechanisms and counterexamples; no storage-engine migration, allocator tuning or rejected candidate became a default. |
 
-## Unresolved questions
+The [experiment index](experiments/README.md) retains protocols and failures.
+The [research synthesis](research/cross-system-source-synthesis.md) and
+[coupled model review](research/coupled-performance-review.md) separate upstream ideas, measurements and hypotheses.
 
-- When, if ever, to rename the `fabric-node` executable ([ADR-0017](decisions/ADR-0017-name-the-spindle-and-the-strand.md)).
+## Invariants and reliability
 
-## Known risks
+Delivery, Spool, control, history/query, architecture, sealer, observation encoding
+and query semantics are tracked in the [verification matrix](formal/verification-matrix.md).
+The independent Python delivery/query/rate oracles remain the semantic reference.
+Properties, corpus replay, simulation and negative controls supplement them.
+The continuation records eleven bounded Kani proofs, named mutants, transport
+TLC and four 60-second fuzz targets with 11,370,454 executions without a crash;
+finite checks do not prove every execution. The [invariant audit](experiments/formal/invariant-consolidation.md)
+retains minimized launcher, control-publication and Spool-exhaustion defects.
 
-- Qualification is outstanding (below); earlier passing measurements belong to earlier revisions.
-- One host runs server, simulator and harness in fleet tiers; CPU contention distorts p99.
-- The server's sealer holds about ten times a journal file in memory while it builds a Segment, and the allocator keeps it: server RSS plateaus near 536 MiB after the first seal at 100 identities ([soak run 01](experiments/benchmarks/soak-run-01.md)). [ADR-0022](decisions/ADR-0022-build-segments-by-external-merge-sort.md) accepts a bounded replacement; it is not implemented.
-- An ineffective I/O controller on WSL must be reported, never counted as enforcement.
+Recent repairs cover journal identity during rotation, publication/reclaim
+coverage races, snapshot metadata after publication, HTTP admission before body
+allocation, cancellation and startup ownership leaks, oversized-line progress,
+exact integer counter rates and reserved diagnostic credentials. Their minimized
+failures and checks are linked from the matrix and experiment index.
 
-## Outstanding qualification
+## Completed readiness continuation
 
-From the [capability ledger](QUALIFICATION.md#capability-ledger): history query latency, freshness and journal-versus-Segment comparison **measured and passing** under [revision 2](experiments/benchmarks/history-protocol-r2.md) on a four-CPU host ([history run 01](experiments/benchmarks/history-run-01.md)), not qualified on the target profile; outage and drain **measured and passing** ([outage run 01](experiments/benchmarks/outage-run-01.md)); burst, rejection and concurrent management **measured and passing** under [stress revision 2](experiments/benchmarks/stress-protocol-r2.md) ([stress run 01](experiments/benchmarks/stress-run-01.md)); soak **failed** its RSS-growth gate ([soak run 01](experiments/benchmarks/soak-run-01.md)); running installation **inconclusive** ([installation acceptance run 01](experiments/formal/installation-acceptance-run-01.md): every check but `MemoryHigh` enforcement passed in a Debian 13 container on a legacy cgroup hierarchy); release **not performed**, no tag. No capability is qualified on the target profile.
+The [readiness continuation](experiments/formal/readiness-continuation-results.md)
+has completed the combined builder campaign, recovery/shutdown checks, dependency
+policy and finite [installation acceptance](experiments/formal/installation-acceptance-run-02.md).
+The [full companion-compatible R2 soak](experiments/benchmarks/soak-run-02.md)
+passed all ten gates and its frozen evidence is archived. The
+[normal writer](experiments/formal/bounded-writer-default-run-01.md) now enables
+aligned groups and disk-backed completed pages: unflagged 27 bounded tests,
+13 kill cuts plus no-hit, and loaded-binary equivalence passed. The data-only
+runner guard also passed 66 focused tests. Both owned freezes were archived and
+removed. All 17 final fast checks and all three manual documentation checks
+passed. This completes the registered continuation queue; evidence, failed
+attempts and exact revision limits remain in the linked records.
 
-## Next validation steps
+## Release preparation
 
-- [x] History measurement under revision 2 on a four-CPU host ([milestone record](milestones/history-qualification.md)).
-- [ ] History revision 1 on the 12-CPU target host.
-- [x] Outage, stress (revision 2) and soak run on a four-CPU host ([milestone record](milestones/delivery-recovery.md)).
-- [ ] Bound the sealer's working set, then rerun the registered soak unchanged ([soak run 01](experiments/benchmarks/soak-run-01.md); [bounded-sealer milestone](milestones/bounded-sealer.md)).
-- [x] Running-installation acceptance in a container ([milestone record](milestones/linux-installation.md)): inconclusive.
-- [ ] Running-installation acceptance on a host with the unified cgroup hierarchy (decides `MemoryHigh` enforcement).
-- [ ] Rerun the delivery fault runs under the quiet rule ([sealer profile run 01](experiments/benchmarks/sealer-profile-run-01.md)).
+The owner selected the bounded application release gate (Option B) for development
+and small deployments. The [release plan](milestones/release-readiness.md) fixes
+the candidate/package workflow, proposed 10/100-identity matrix, blockers and
+execution order. Profile registration and reconciliation with the broader release
+rule precede measurement. No release candidate is frozen or published yet.
+
+The selected scope includes a central server and remote Spindles on Debian and
+Fedora, with four cross-family forwarding cells and exact `.deb`/`.rpm` acceptance.
+The confirmed release default is `retention_bytes=100000000000` (100 GB decimal)
+of sealed telemetry, with separate bounded journal and working space. Configurable
+age retention remains 24 hours; either limit can expire data first. These are
+release requirements: the current code still defaults to 20 GiB and RPM packaging
+is not implemented. The plan names the implementation and verification steps.
+
+The [research wiki](https://github.com/kmosoti/FabricO11y/wiki) is the canonical
+home for research and result reports. Product/operator documentation, architecture,
+registered protocols and executable evidence inputs stay versioned here under the
+[ownership policy](documentation-policy.md#canonical-ownership).
+The [migration manifest](wiki-migration.json) pins 129 published reports to a
+verified wiki commit; 123 bodies were replaced by repository compatibility links
+and six executable-input records were preserved verbatim.
+
+## Assumptions and risks
+
+- Durability assumes successful sync calls are honored by the filesystem/device;
+  physical power loss has not been tested.
+- Exact-byte identity uses SHA-256; collisions are assumed infeasible.
+- Optional pruning structures require sound producer metadata; corrupt optional
+  indexes fall back to exact reads. Silent readable Parquet corruption is not
+  universally detected by per-query whole-file hashing.
+- Layer checks enforce crate boundaries, not every module or runtime interaction.
+- Earlier standalone-server benchmarks predate the dedicated Spindle; new service
+  measurements must account for its work and diagnostic traffic.
+- Query-tail decoding, retained metadata, worker concurrency and allocator
+  retention can dominate process memory despite bounded sealer payload buffers.
+- The historical standalone soak failed its RSS-growth gate; the passing R2
+  trial includes the companion and is not a causal single-variable comparison.
+- A pre-containment verification process caused a global workstation OOM on
+  2026-10-04; its allocation mechanism remains unverified.
+- Same-host producers/harnesses compete with the server and can distort latency.
+  Remote delivery and synthetic RCA are not deployment qualification.
+
+Broader qualification work follows the [capability ledger](QUALIFICATION.md#capability-ledger):
+default-scale retention and exporter pressure, published-storage RCA and real
+applications, and reconciliation of target-profile delivery evidence. These
+remain separate from the completed readiness continuation. Application adapters
+remain [proposed use cases](research/application-use-cases.md).
+
+## Resource envelope
+
+All builds, tests and experiments use the [resource launcher](CONTRIBUTING.md#resource-containment)
+and the mounted data drive at `/run/media/kmosoti/data/FabricO11y`. The laboratory
+ceiling is 20 GiB with no swap; the server experiment cap is 4 GB and total storage
+ceiling 100 GB. Remote hosts use their own smaller verified budgets. Preserve
+failure evidence and remove owned scratch. Bun CI/hooks remain disabled;
+documentation checks run manually.
