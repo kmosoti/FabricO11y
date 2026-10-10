@@ -1,7 +1,7 @@
 # ADR-0028: Preserve Btrfs log identity across reboots
 
-Status: Accepted for the observed Fedora reboot defect; implementation and fresh
-installation verification pending. Date: 2026-10-10.
+Status: Implemented in `889dfac`; native regression checks passed, fresh packaged
+Fedora upgrade/reboot verification pending. Date: 2026-10-10.
 
 ## Context
 

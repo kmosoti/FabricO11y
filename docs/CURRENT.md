@@ -14,9 +14,10 @@ and remaining limits.
 | Spindle (`fabric-node`) | Host metrics, selected log files and loopback OTLP/HTTP trace intake; durable FAB1 Spool, exact retry, visible collection gaps, output-rate cap and last-valid remote configuration. |
 | Delivery | Verified TLS, per-Spindle credentials, ordered Batches, deduplication and ACK after grouped two-sync journal commit. A quiet sender closes its group after 2 ms. |
 | Storage | Bounded external-merge sealing to Zstd Parquet, manifest publication before checkpoint/reclaim, retention by age and bytes. The normal writer uses aligned sorted groups and disk-backed completed pages; estimated input targets admit a single oversized row. No whole-server memory bound is established. |
-| Query | Logs, metric points/rates and spans across journal and Segments, snapshot pagination, freshness and completeness. Scan remains default; opt-in Walk uses storage-owned source maps, FOB1 tail blocks and optional filters with exact fallback. |
+| Query | Logs, metric points/rates and spans across journal and Segments, snapshot pagination, freshness and completeness. Legacy queries default to Scan. Scoped console queries use Walk with storage-owned source maps and authorization filtering before row selection. Unpaginated rates remain outside the console API. |
+| Console and access | Leptos/WASM PWA with local passkeys, scoped human/workload/delegated-agent access, live queries and Spindle controls. Finite native and browser checks are recorded below; full release acceptance remains open. |
 | Self-observation | Every production server CLI launches and supervises a dedicated local Spindle. Both emit bounded diagnostics through ordinary Spool/TLS/ACK delivery. Edge Spindles retain their configured destination. |
-| Packaging | Debian-family package, static systemd services and shared slice. A fresh unified-cgroup Debian VM passed all seventeen baseline checks and rejected all three required mutation controls. |
+| Packaging | Debian and RPM artifacts include the console, Apache-2.0 license and dependency notices, with static systemd services and a shared slice. Historical Debian acceptance passed seventeen baseline checks and three mutation controls; current exact-candidate lifecycle trials are in progress. |
 | Architecture | Pure `no_std` semantic core, effect ports, application transitions and adapters; executable layer and purity gates. |
 
 See the [system view](architecture/system.md), [operations guide](operations.md)
@@ -89,32 +90,69 @@ Fedora, with four cross-family forwarding cells and exact `.deb`/`.rpm` acceptan
 The confirmed release default is `retention_bytes=100000000000` (100 GB decimal)
 of sealed telemetry, with separate bounded journal and working space. Configurable
 age retention remains 24 hours; either limit can expire data first. These are
-release requirements: the current code still defaults to 20 GiB and RPM packaging
-is not implemented. The plan names the implementation and verification steps.
+implemented defaults. Debian and RPM staging now include the verified console
+and Apache-2.0 license; exact candidate installation and lifecycle checks remain
+tracked by the [package protocol](experiments/formal/installation-release-protocol.md).
 
 The release also requires a [Leptos/WASM PWA](milestones/operator-console.md) and
 [local passkeys with scoped human/workload/AI access](architecture/identity-access.md).
-OIDC/SSO is deferred. The current HTTP API still shares an admin credential across
-query and control; it does not implement these access guarantees. The
-[UI crate](../crates/fabric-ui/README.md) implements bounded native models and
-a Leptos demonstration with explicit synthetic fixtures; it does not qualify
-authenticated browser use. B11–B13 add security, recovery,
+OIDC/SSO is deferred. Production `serve` now requires exact HTTPS origin/RP
+configuration and serves the scoped console API; its legacy master routes are
+denied. The [access adapter](../crates/fabric-server/src/access.rs) implements
+passkeys, sessions, workload rotation/delegation, durable access state and offline
+recovery. Its latest focused run passed 18 tests; seven HTTP tests and three
+scoped CLI tests also passed. The
+[UI crate](../crates/fabric-ui/README.md) connects to real queries and controls;
+its latest native run passed 25 tests and its WASM check/build exited 0. These
+are implementation checks. A Chromium virtual-authenticator trial passed
+82 finite HTTPS workflow/privacy checks, including actual desktop PWA
+installation, launch and removal. An earlier injected API-cache defect was
+rejected at its registered boundary. Final-candidate workflow acceptance is in
+progress; these results do not establish physical-device compatibility. Firefox authenticator
+automation currently fails before credential creation and remains inconclusive.
+B11–B13 require
+security, recovery,
 privacy, browser lifecycle and UI-active resource acceptance.
 
-The console dependency review also ran `cargo deny --workspace --locked check`.
-It failed: Leptos introduces an unmaintained `paste` dependency and licenses
-outside the current allowlist; full workspace traversal additionally exposes
-existing server policy failures. The earlier root-package dependency receipt
-does not cover these crates. Keep these failures visible in release work; no
-license or advisory exception was introduced to pass the check.
+The earlier full-workspace dependency review exposed unmaintained `paste` and
+`rustls-pemfile` dependencies and license-policy gaps missed by root-only checks.
+Local source-preserving UI manifest patches select `pastey`; axum-server 0.8.0
+removes rustls-pemfile. The [dependency policy](dependency-policy.md) records
+separately reviewed license decisions and distribution obligations. The updated
+whole-workspace gate passed `cargo deny --locked --workspace check`, including
+all 350 resolved external packages; the historical failure remains recorded.
+The gate must also run on the frozen release candidate. The full fast profile
+passed all 21 checks in `console-fast-02` (exit 0, 636.8 seconds). This retains the
+earlier 19/21 failure: formatting and an invalid-credential admission fixture were
+corrected without weakening authentication or overload checks. The fast run
+predates the subsequent Btrfs and companion-timing changes, whose focused native
+tests, strict default/all-feature Clippy, layers and core purity exited 0.
+Final-candidate verification remains required.
+
+Fedora lifecycle testing exposed repeated log collection after Btrfs changed its
+runtime device number from 51 to 32 across reboot. The failed package/overlay
+receipts remain failed. [ADR-0028](decisions/ADR-0028-preserve-btrfs-log-identity-across-reboots.md)
+and its regression now preserve full filesystem/subvolume identity, with quiet
+migration committed through the ordinary Spool. Native regressions passed on
+`889dfac`; actual corrected-package Fedora upgrade/reboot remains pending.
+
+The expanded Chrome run `console-live-chrome-extended-22` passed 143 checks
+(exit 0, 53.7 seconds, 517.5 MiB cgroup peak) on console build 08, including actual
+installed standalone PWA launch, passkey recovery, scoped native-source queries,
+logout/cancellation races and worker update/rollback. A concurrent native rebuild
+made the restarted process identity ambiguous; this is a workflow result, not
+single-candidate evidence. Subsequent harness runs snapshot binaries and verify
+their hashes before and after execution. Longer expiry/resource checks and
+exact-package acceptance remain separate.
 
 The [research wiki](https://github.com/kmosoti/FabricO11y/wiki) is the canonical
 home for research and result reports. Product/operator documentation, architecture,
 registered protocols and executable evidence inputs stay versioned here under the
 [ownership policy](documentation-policy.md#canonical-ownership).
-The [migration manifest](wiki-migration.json) pins 129 published reports to a
-verified wiki commit; 123 bodies were replaced by repository compatibility links
-and six executable-input records were preserved verbatim.
+The [migration manifest](wiki-migration.json) pins 150 published reports to
+verified wiki commits; 144 bodies were replaced by repository compatibility links.
+Six published executable-input bodies and three additional machine-consumed
+plans remain versioned in the repository, with their exclusions recorded.
 
 ## Assumptions and risks
 

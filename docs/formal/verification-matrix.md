@@ -60,6 +60,14 @@ These preserve existing contract meanings; final execution outcomes are in that 
 
 ## Control
 
+The [Btrfs identity regression](../experiments/formal/btrfs-cursor-protocol.md)
+supplements Spool/source-cursor verification: full filesystem/subvolume matching,
+raw-device legacy migration, replacement/truncation/prefix controls, failed probe,
+quiet-file commit and full-Spool refusal/retry passed their focused native tests
+on `889dfac`. The failed Fedora 51-to-32 reboot is retained as
+`CX-BTRFS-REBOOT-LOG-REPLAY`; corrected exact-package lifecycle acceptance remains
+pending. This does not establish portable identity for other filesystems.
+
 | ID | Contract | Spec | Production implementation | Verification | Independent oracle | Negative control | Formal model | Fault test | Status | Unchecked |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | CTRL-1 | An invalid desired configuration does not become active | PC control; ADR-0014 | Spindle `effective` + `Config::validate`; server `check_desired` | `admin_api_configures_pauses_and_revokes_a_polling_node` | — | M-CTRL-INVALID | — | — | Tested | Spindle-side validation (`Config::validate`) is not in the core; server shape checks are (`fabric_core::control::check_desired`) |
