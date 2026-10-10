@@ -143,7 +143,7 @@ impl LocalSpindle {
         })
     }
 
-    pub fn start(&self, listener: SocketAddr) -> io::Result<Companion> {
+    pub fn start(&self, listener: SocketAddr, timing_events: bool) -> io::Result<Companion> {
         let url = destination(listener, self.settings.url.as_deref())?;
         let ca = self.settings.ca.as_ref().unwrap_or(&self.certificate);
         let text = format!(
@@ -161,8 +161,8 @@ impl LocalSpindle {
             .arg("--server-log")
             .arg(&self.server_log)
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
             .stderr(Stdio::inherit());
+        configure_timing(&mut command, timing_events);
         let parent = std::process::id() as libc::pid_t;
         // SAFETY: pre_exec uses only async-signal-safe syscalls; no allocation
         // or lock on the successful path. Close the fork/parent-death race.
@@ -178,6 +178,16 @@ impl LocalSpindle {
             });
         }
         Ok(Companion(command.spawn()?))
+    }
+}
+
+fn configure_timing(command: &mut Command, enabled: bool) {
+    if enabled {
+        // This stream is deliberately separate from the operational file the
+        // child collects. Its bounded events cannot feed back into collection.
+        command.arg("--timing-events").stdout(Stdio::inherit());
+    } else {
+        command.stdout(Stdio::null());
     }
 }
 
@@ -241,6 +251,20 @@ impl Drop for Companion {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn companion_timing_is_explicit_and_preserves_collection_arguments() {
+        for enabled in [false, true] {
+            let mut command = Command::new("fabric-node");
+            command.args(["run", "node.conf", "--server-log", "diagnostics/server.log"]);
+            configure_timing(&mut command, enabled);
+            let arguments: Vec<_> = command.get_args().map(|a| a.to_str().unwrap()).collect();
+            let mut expected = vec!["run", "node.conf", "--server-log", "diagnostics/server.log"];
+            if enabled {
+                expected.push("--timing-events");
+            }
+            assert_eq!(arguments, expected);
+        }
+    }
     #[test]
     fn a_companion_cannot_silently_forward_to_another_server() {
         let listener = "0.0.0.0:7443".parse().unwrap();

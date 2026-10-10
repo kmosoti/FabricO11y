@@ -70,3 +70,11 @@ creates the service identity. The builder rejects any resulting RPM with a
 nonempty sysusers header. Native library dependency generation remains enabled.
 This follows the account-ordering counterexample retained from the Fedora44
 `release-fedora44-upgrade-02` trial, which failed before normal service setup.
+
+For registered measurements, `fabric-server serve CONFIG --timing-events`
+(or the explicit migration `serve-legacy` mode) forwards the opt-in flag to
+its dedicated Spindle and inherits that child's stdout. The child reports
+bounded source/commit/send/answer events with process, node, generation and
+sequence identities. This stdout is separate from the operational file the
+Spindle collects; missing clock samples and dropped events remain explicit.
+Normal service commands leave timing disabled and child stdout suppressed.

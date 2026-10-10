@@ -10,7 +10,7 @@ use std::io;
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
-async fn run(config: Config, settings: SpindleSettings) -> io::Result<()> {
+async fn run(config: Config, settings: SpindleSettings, timing_events: bool) -> io::Result<()> {
     let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())?;
     let mut interrupt = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::interrupt())?;
     run_with_shutdown(
@@ -20,6 +20,7 @@ async fn run(config: Config, settings: SpindleSettings) -> io::Result<()> {
             tokio::select! { _ = term.recv() => {}, _ = interrupt.recv() => {} }
         },
         Duration::from_secs(12),
+        timing_events,
     )
     .await
 }
@@ -31,6 +32,7 @@ async fn run_with_shutdown(
     settings: SpindleSettings,
     shutdown: impl std::future::Future<Output = ()>,
     child_grace: Duration,
+    timing_events: bool,
 ) -> io::Result<()> {
     std::fs::create_dir_all(&config.state_dir)?;
     let diagnostics = OperationalLog::open(&config.state_dir.join("diagnostics"), "server")?;
@@ -69,7 +71,7 @@ async fn run_with_shutdown(
             address=&mut listening, if !bound && stopping.is_none()=>{
                 bound=true;
                 let started=address.ok_or_else(||io::Error::other("server listener did not start"))
-                    .and_then(|address|local.start(address).map(|child|(address,child)));
+                    .and_then(|address|local.start(address, timing_events).map(|child|(address,child)));
                 match started {
                     Ok((address,companion))=>{
                         eprintln!("fabric-server: listening on {address}; dedicated spindle pid={}",companion.0.id());
@@ -155,18 +157,12 @@ fn main() -> ExitCode {
             }
         };
     }
-    let [mode, path] = args.as_slice() else {
+    let Some((mode, path, timing_events)) = serving_args(&args) else {
         eprintln!(
-            "usage: fabric-server serve|serve-legacy <CONFIG_PATH> | renew-bootstrap <CONFIG_PATH> | recover-access <CONFIG_PATH> <OWNER_ID>"
+            "usage: fabric-server serve|serve-legacy <CONFIG_PATH> [--timing-events] | renew-bootstrap <CONFIG_PATH> | recover-access <CONFIG_PATH> <OWNER_ID>"
         );
         return ExitCode::from(2);
     };
-    if mode != "serve" && mode != "serve-legacy" {
-        eprintln!(
-            "usage: fabric-server serve|serve-legacy <CONFIG_PATH> | renew-bootstrap <CONFIG_PATH> | recover-access <CONFIG_PATH> <OWNER_ID>"
-        );
-        return ExitCode::from(2);
-    }
     let result = (|| {
         let (config, spindle) = Config::load_with_spindle(path)?;
         if mode == "serve" && config.access_origin.is_none() {
@@ -181,7 +177,7 @@ fn main() -> ExitCode {
             );
         }
         let runtime = tokio::runtime::Runtime::new()?;
-        runtime.block_on(run(config, spindle))
+        runtime.block_on(run(config, spindle, timing_events))
     })();
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -190,6 +186,19 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn serving_args(args: &[String]) -> Option<(&str, &str, bool)> {
+    let (mode, path, timing) = match args {
+        [mode, path] => (mode, path, false),
+        [mode, path, flag] if flag == "--timing-events" => (mode, path, true),
+        _ => return None,
+    };
+    matches!(mode.as_str(), "serve" | "serve-legacy").then_some((
+        mode.as_str(),
+        path.as_str(),
+        timing,
+    ))
 }
 
 /// Recovery is a local owner operation, serialized against the same lease held
@@ -309,6 +318,25 @@ mod shutdown_tests {
     use std::path::PathBuf;
     use std::process::Command;
 
+    #[test]
+    fn serving_timing_flag_is_explicit_and_cannot_change_recovery_commands() {
+        let arguments = |items: &[&str]| items.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+        for mode in ["serve", "serve-legacy"] {
+            let plain = arguments(&[mode, "server.conf"]);
+            assert_eq!(serving_args(&plain), Some((mode, "server.conf", false)));
+            let timed = arguments(&[mode, "server.conf", "--timing-events"]);
+            assert_eq!(serving_args(&timed), Some((mode, "server.conf", true)));
+        }
+        for items in [
+            vec!["serve", "server.conf", "--timing-event"],
+            vec!["recover-access", "server.conf", "--timing-events"],
+            vec!["renew-bootstrap", "server.conf", "--timing-events"],
+            vec!["serve", "server.conf", "--timing-events", "extra"],
+        ] {
+            assert!(serving_args(&arguments(&items)).is_none());
+        }
+    }
+
     struct Fixture(PathBuf);
     impl Drop for Fixture {
         fn drop(&mut self) {
@@ -362,7 +390,7 @@ mod shutdown_tests {
         // One native process, with handlers installed before publishing readiness.
         // Its only effect is exercising supervisor ownership and shutdown status.
         fs::write(&executable, format!(
-            "#!/usr/bin/python3\nimport os, pathlib, signal, sys, time\nsignal.signal(signal.SIGTERM, {handler})\npathlib.Path(sys.argv[2]).parent.joinpath('fixture-ready').write_text(str(os.getpid()))\nwhile True: time.sleep(0.05)\n"
+            "#!/usr/bin/python3\nimport os, pathlib, signal, sys, time\nsignal.signal(signal.SIGTERM, {handler})\npathlib.Path(sys.argv[2]).parent.joinpath('fixture-args').write_text(' '.join(sys.argv[1:]))\npathlib.Path(sys.argv[2]).parent.joinpath('fixture-ready').write_text(str(os.getpid()))\nwhile True: time.sleep(0.05)\n"
         )).unwrap();
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
         let config = Config {
@@ -403,10 +431,14 @@ mod shutdown_tests {
                 },
                 shutdown,
                 Duration::from_millis(200),
+                case == "timing",
             ),
         )
         .await
         .expect("supervisor must finish and reap within the fixture deadline");
+        let actual_args =
+            fs::read_to_string(fixture.0.join("state/self-spindle/fixture-args")).unwrap();
+        assert_eq!(actual_args.ends_with(" --timing-events"), case == "timing");
         let pid: libc::pid_t = fs::read_to_string(ready).unwrap().parse().unwrap();
         // SAFETY: signal zero only checks existence of the recorded child PID.
         assert_eq!(
@@ -421,6 +453,13 @@ mod shutdown_tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn supervisor_shutdown_orderly_child_exit_is_success() {
         supervised_shutdown("orderly", "lambda *_: sys.exit(0)")
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn companion_timing_reaches_owned_child_without_changing_shutdown() {
+        supervised_shutdown("timing", "lambda *_: sys.exit(0)")
             .await
             .unwrap();
     }
