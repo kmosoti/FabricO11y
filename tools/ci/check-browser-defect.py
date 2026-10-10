@@ -11,6 +11,7 @@ def detected(status, receipt):
     return (status == 1 and receipt.get('exit') == 1
             and receipt.get('injected_api_cache_defect') is True
             and receipt.get('error') == 'worker caches only public shell paths'
+            and 'actual browser matches reviewed version' in receipt.get('checks', [])
             and 'two real virtual-authenticator passkeys enrolled' in receipt.get('checks', [])
             and 'owned TLS/server/browser fixtures removed' in receipt.get('cleanup', ''))
 
