@@ -27,10 +27,11 @@ class CleanupEvidence(unittest.TestCase):
             (state / 'segments').mkdir()
             (state / 'segments/.building-1').mkdir()
             (state / 'segments/.run-0-0').write_bytes(b'leaked')
+            (state / 'segments/logs.run-0-0').write_bytes(b'leaked actual run name')
             (state / 'segments/seg-1').mkdir()
             (state / 'segments/seg-1/logs.parquet').write_bytes(b'committed')
             self.assertEqual(faults.leftovers(state),
-                             ['segments/.building-1', 'segments/.run-0-0'])
+                             ['segments/.building-1', 'segments/.run-0-0', 'segments/logs.run-0-0'])
 
 
 if __name__ == '__main__':

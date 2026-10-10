@@ -9,7 +9,7 @@ def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 def leftovers(state):
  return sorted(str(p.relative_to(state)) for p in state.rglob('*')
                if (p.is_dir() and p.name.startswith('.building'))
-               or (p.is_file() and p.name.startswith('.run-')))
+               or (p.is_file() and '.run-' in p.name))
 def grade(receipt, killed):
  return (receipt['injected'] and receipt['failed_exit']!=0
          and (not killed or receipt['failed_exit']==-9)
