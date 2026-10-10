@@ -1,6 +1,9 @@
 # Authenticated console acceptance protocol
 
-Revision 1, registered 2026-10-10 before integrated browser execution. This is
+Revision 2, registered 2026-10-10 before the grant/visibility regression rerun.
+Revision 1 preceded integrated browser execution; its observations retain their
+original source identities. This revision clarifies client behavior within the
+unchanged server and grant budgets. This is
 the executable acceptance scope for ACCESS-1–4 and UI-1–2 within the
 [operator-console milestone](../../milestones/operator-console.md). Native unit
 checks are supporting evidence; they do not establish browser interoperability.
@@ -56,12 +59,19 @@ uncertainty. Unpaginated rate queries are unavailable through this adapter.
 An opaque page handle is bound to principal, effective scope, delegation context,
 policy, query and snapshot; 1,024 handles expire after 15 minutes.
 
-The client requests 200 rows, admits one active request, aborts after 15 seconds,
+The client requests at most 200 rows within the current grant, admits one active request, aborts after 15 seconds,
 caps response bytes while streaming, and rejects stale session/query generations.
 Tail polling displays bounded snapshots, not cross-poll delivery/deduplication:
 the current projection lacks generation identity. Its display cap is 200 rows
 and 256 KiB; truncation and poll gaps remain visible. Charts preserve exact
 integer timestamps/values in text and bound plotted extrema independently.
+
+Grant-limited defaults and presets must expose their effective duration. An
+explicit exact window beyond the grant is rejected without silently narrowing
+it. A 100-row/60-second grant is the regression fixture: it must permit a valid
+60-second query, reject an explicitly requested 15-minute query, and never
+convert zero authority into a usable default. Hidden tabs issue no tail polls;
+visibility resumes the existing bounded cadence without overlapping requests.
 
 ## Registered checks and counterexamples
 
