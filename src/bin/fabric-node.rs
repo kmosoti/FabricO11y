@@ -99,8 +99,12 @@ fn timing_lines(node: &mut Spindle) {
             .stamp
             .unix_ns
             .map_or_else(|| "unmeasured".into(), |n| n.to_string());
+        let boot = event
+            .stamp
+            .boot_monotonic_ns
+            .map_or_else(|| "unmeasured".into(), |n| n.to_string());
         println!(
-            "timing process_id={} node_id={identity} generation={} sequence={} stage={} unix_ns={wall} monotonic_before_ns={} monotonic_after_ns={}",
+            "timing process_id={} node_id={identity} generation={} sequence={} stage={} unix_ns={wall} boot_monotonic_ns={boot} monotonic_before_ns={} monotonic_after_ns={}",
             std::process::id(),
             event.generation,
             event.sequence,

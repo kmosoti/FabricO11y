@@ -466,6 +466,9 @@ pub struct Cycle {
 #[derive(Clone, Copy, Debug)]
 pub struct TimingStamp {
     pub unix_ns: Option<u64>,
+    /// Linux CLOCK_MONOTONIC, shared by producer processes within this boot.
+    /// Cross-host visibility still needs a measured correlation bracket.
+    pub boot_monotonic_ns: Option<u64>,
     pub monotonic_before_ns: u64,
     pub monotonic_after_ns: u64,
 }
@@ -480,12 +483,36 @@ fn timing_stamp_read(
 ) -> TimingStamp {
     let monotonic_before_ns = epoch.elapsed().as_nanos().min(u64::MAX as u128) as u64;
     let unix_ns = read().ok();
+    let boot_monotonic_ns = boot_monotonic_ns();
     let monotonic_after_ns = epoch.elapsed().as_nanos().min(u64::MAX as u128) as u64;
     TimingStamp {
         unix_ns,
+        boot_monotonic_ns,
         monotonic_before_ns,
         monotonic_after_ns,
     }
+}
+
+fn boot_monotonic_ns() -> Option<u64> {
+    let mut value = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    // SAFETY: value is writable timespec storage and CLOCK_MONOTONIC is a
+    // Linux clock ID. Failure stays absent operational evidence.
+    if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut value) } != 0 {
+        return None;
+    }
+    checked_clock_ns(value.tv_sec, value.tv_nsec)
+}
+
+fn checked_clock_ns(seconds: libc::time_t, nanos: libc::c_long) -> Option<u64> {
+    let seconds = u64::try_from(seconds).ok()?;
+    let nanos = u64::try_from(nanos).ok()?;
+    if nanos >= 1_000_000_000 {
+        return None;
+    }
+    seconds.checked_mul(1_000_000_000)?.checked_add(nanos)
 }
 
 #[derive(Debug)]
@@ -1520,6 +1547,16 @@ mod tests {
         });
         assert_eq!(stamp.unix_ns, None);
         assert!(stamp.monotonic_after_ns >= stamp.monotonic_before_ns);
+    }
+
+    #[test]
+    fn timing_clock_conversion_rejects_negative_invalid_and_overflow_values() {
+        assert_eq!(checked_clock_ns(-1, 0), None);
+        assert_eq!(checked_clock_ns(0, -1), None);
+        assert_eq!(checked_clock_ns(0, 1_000_000_000), None);
+        assert_eq!(checked_clock_ns(libc::time_t::MAX, 0), None);
+        assert_eq!(checked_clock_ns(1, 2), Some(1_000_000_002));
+        assert!(boot_monotonic_ns().is_some());
     }
 
     #[test]
