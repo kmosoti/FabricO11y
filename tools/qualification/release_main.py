@@ -343,7 +343,7 @@ def perform(f, args, seconds, warmup, summary):
                    visibility=visibility, config_apply_s=config_delays, ui=ui,
                    independent_offers={'logs': len(offers['logs']), 'traces': len(offers['traces'])},
                    created_batches=len(made), acked_batches=len(acked), native_custody=native_recovery,
-                   violations=[v.__dict__ for v in verdict.violations][:10],
+                   violations=list(verdict.violations)[:10],
                    clock_mapping_spread_ns=max(clock_offsets) - min(clock_offsets),
                    independent_simulator_batches=len(originals),
                    query_oracle_verdicts=[a['verdict'] for a in oracle_answers],
