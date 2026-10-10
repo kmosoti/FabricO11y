@@ -107,10 +107,12 @@ library comparisons remain in the
 [cache report](https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-scoped-evidence-cache-run-01).
 These results are not automatically attributed to the resident-enrollment successor.
 
-Full soak `production-soak-full-03` is running on Debian build 04/RPM build 03.
-Its genuine browser polling has crossed user-verification refresh without the
-previous harness lockout. Earlier interrupted runs retain their original
-results and cleanup receipts in the
+Full soak `production-soak-full-03` failed after 1,587.618 seconds: its aggregate
+storage census could not traverse temporary directories owned by a concurrent
+rootless package build. The harness stopped rather than ignoring uncounted disk
+usage. No Fabric crash was observed. Container/package builds now complete and
+clean up before measured service fixtures start. This failed run and earlier
+interrupted runs retain their original results and cleanup receipts in the
 [campaign record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-production-access-campaign-run-01).
 The resident-enrollment packages will receive a fresh full soak. The final
 query/main/pressure/outage matrix, Debian/Fedora installation and lifecycle,
