@@ -24,7 +24,12 @@ Run the fast profile and documentation check, retaining failures and receipts.
 Capture CPU model/topology/affinity, RAM/swap, storage/mounts, all ancestor cgroup
 limits/events, process limits, toolchain and source revision. Compare with the
 cloud's four CPU equivalents / shared 16 GiB, rather than transferring its numbers.
-Use repository `target/performance-refinement` for scratch on physical storage;
+Owner-directed storage amendment, 2026-10-04: use
+`$FABRIC_SCRATCH_ROOT/performance-refinement` on the mounted data drive through
+the [resource launcher](../../../tools/resource_group.py), replacing repository
+`target/performance-refinement` for future trial scratch. Keep observations and
+failure evidence before owned-file cleanup, and record the changed filesystem
+when interpreting measurements. Earlier results retain their original storage.
 `/tmp` on this Fedora host is tmpfs and is unsuitable for storage costs. Do not
 flush global caches, stop unrelated services or delete unrelated files. Do not
 run loads on digitalocean-01 while its webserver is serving. Source, producer,
