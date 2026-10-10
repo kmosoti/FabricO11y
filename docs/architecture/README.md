@@ -8,8 +8,8 @@ Current product views use the [evidence states](../QUALIFICATION.md#evidence-sta
 | Collection | [Spindle](spindle.md) | Host collection, Spool custody, gaps and bounds. |
 | Delivery | [Delivery](delivery.md) | ACK rule, delivery kernel and layer split. |
 | Control | [Central control](control-plane.md) | Enrollment, desired/applied configuration, pause, resume and revoke. |
-| Identity | [Identity and access](identity-access.md) | Intended local passkeys, scoped workloads/AI, sessions and durable policy; release-required, unimplemented. |
-| Console | [Operator PWA](../milestones/operator-console.md), [algorithm model](console-algorithms.md), [art direction](console-art-direction.md) | Leptos demonstration and bounded native models implemented; authenticated integration and release acceptance remain required. |
+| Identity | [Identity and access](identity-access.md) | Local passkeys, scoped workloads/delegated agents, sessions and durable policy implemented; finite verification is recorded in the matrix. |
+| Console | [Operator PWA](../milestones/operator-console.md), [algorithm model](console-algorithms.md), [art direction](console-art-direction.md) | Authenticated Leptos/WASM workflows and bounded models implemented; complete browser/device acceptance remains required. |
 | Storage | [Storage](storage.md) | `FAB1` frame log, Spool, server journal and FOL2 log format. |
 | History and query | [Retained history and query](retained-history.md) | Segments, retention, exact queries, completeness, freshness and pages. |
 | Sealing | [Sealer](sealer.md) | Bounded external merge writer adopted; finite builder/recovery and companion soak evidence is linked from [CURRENT](../CURRENT.md). No whole-server memory proof ([ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md)). |

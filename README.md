@@ -1,15 +1,23 @@
 # FabricO11y
 
-FabricO11y is an observability system in Rust built around one question: *what did reality tell us, what happened to that evidence, and how much of it can we truthfully claim to know?* It collects host telemetry, preserves its meaning and custody across failures, retains it under explicit policy, and answers queries without hiding missing coverage or uncertainty.
+FabricO11y is a Rust telemetry server with Linux collectors and a browser console.
+It collects logs, host metrics and application traces, durably forwards them to
+a central server, and answers queries with explicit freshness and missing-coverage
+information.
 
 ## Current product
 
 - **Spindle** (`fabric-node`): collects CPU, memory, filesystem, disk, network and selected log files on one Linux host as OpenTelemetry protobuf inside versioned Batches, and keeps them in a durable local **Spool** until the server acknowledges them. Unreadable sources and full disks become visible gaps.
 - **Delivery**: authenticated TLS; one Batch in flight per **Strand** (one Spindle generation's ordered lineage); the server acknowledges only after a durable commit, deduplicates retries and rejects conflicting bytes.
 - **Fabric Server**: a durable journal, immutable Zstd Parquet **Segments**, retention by age and size, and log, metric and counter-rate **queries** whose answers report completeness, freshness, collection gaps and the retained window, with snapshot-bound pages.
-- **Central control**: enrollment, desired and applied configuration, pause, resume and revoke through `fabricctl` and an admin HTTP API.
+- **Console and access**: a Leptos/WASM PWA with local passkeys for humans and scoped credentials for systems and delegated agents. Explore telemetry and manage Spindles through the console or `fabricctl access`.
+- **Self-observation**: each server supervises its own dedicated Spindle. Edge Spindles send their diagnostics to their configured server.
 
-Maturity: implemented and tested; the target operating profile (one controlled Debian-family installation, Debian 12/13 or Ubuntu 22.04/24.04 and derivatives, natively or under WSL2, up to 1,000 simulated identities) is **not yet qualified**. Several registered measurements passed on earlier revisions; history latency, freshness, outage/drain, stress, soak and running installation are outstanding, and no release has been tagged. See [qualification](docs/QUALIFICATION.md).
+The bounded release for development and small deployments is in acceptance
+testing. Debian and Fedora packages are being verified with the console and
+100 GB retained-telemetry default. No release has been tagged and no deployment
+profile is qualified. See [current evidence](docs/CURRENT.md) and the
+[release plan](docs/milestones/release-readiness.md).
 
 ## The main idea
 
@@ -17,15 +25,19 @@ A pure, `no_std` semantic core decides what a transition means (for example, whe
 
 ## Build and run
 
-With Rust 1.85 or newer (CI pins 1.98.0):
+The tested toolchain is Rust 1.99.0, including its WASM target. Follow the
+[contributor setup](docs/CONTRIBUTING.md#resource-containment) for mounted storage
+and enforced cgroups:
 
 ```sh
-cargo test --workspace --locked            # tests, including the architecture gates
-cargo xtask checks --profile fast          # every required fast check, with receipts
-cargo build --release --locked             # fabric-node, fabric-server, fabricctl
+python3 -B tools/resource_group.py -- cargo xtask checks --profile fast
+python3 -B tools/resource_group.py -- cargo build --release --locked --workspace --bins
 ```
 
-[Operating FabricO11y](docs/operations.md) covers configuration, enrollment and recovery. The original single-process **FOL2 demonstration** still runs with `cargo run -- 42 3` ([FOL2 demonstration](docs/architecture/fol2-demo.md)); it is a legacy learning path, not the product.
+[Operating FabricO11y](docs/operations.md) covers server/edge setup;
+[access operations](docs/access-operations.md) covers passkeys and recovery.
+[Package construction](packaging/README.md) includes the required console build.
+The original [FOL2 demonstration](docs/architecture/fol2-demo.md) remains a learning example.
 
 ## Explore
 
@@ -35,3 +47,6 @@ cargo build --release --locked             # fabric-node, fabric-server, fabricc
 - [Verification strategy](docs/formal/verification-strategy.md) and [verification matrix](docs/formal/verification-matrix.md).
 - [Experiments](docs/experiments/README.md): registered protocols, results and research tooling (research is not product behavior).
 - [Learning path](docs/LEARNING_PATH.md) and [contributing](docs/CONTRIBUTING.md).
+
+Licensed under [Apache-2.0](LICENSE). Dependency terms are recorded separately in
+the [dependency policy](docs/dependency-policy.md) and packaged notices.

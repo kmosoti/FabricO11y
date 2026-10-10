@@ -32,8 +32,10 @@ flowchart LR
     Spool -->|oldest unacknowledged Batch over TLS| Intake
     Commit -->|ACK after durable commit| Spindle
     Control -->|desired configuration poll| Spindle
-    CLI[fabricctl] -->|admin HTTPS| Control
-    CLI -->|admin query| Query
+    UI[Leptos PWA] -->|passkey session| Access[Scoped console API]
+    CLI[fabricctl] -->|workload credential| Access
+    Access -->|authorized mutation| Control
+    Access -->|authorized sources and signals| Query
     CLI -->|local inspect| Spool
 ```
 
@@ -41,9 +43,10 @@ Each production server also owns a [dedicated diagnostic Spindle](architecture/s
 
 The expanded [release plan](milestones/release-readiness.md) requires a
 [Leptos operator PWA](milestones/operator-console.md) and
-[local passkeys/scoped access](architecture/identity-access.md). These are intended
-release capabilities; the current runtime diagram above does not imply their
-implementation or acceptance.
+[local passkeys/scoped access](architecture/identity-access.md). The integrated
+implementation is in candidate verification; the diagram does not establish
+release acceptance. [Access operations](access-operations.md) covers local owner
+setup, scoped CLI credentials, passkeys and recovery.
 
 ## Source of truth
 
@@ -76,6 +79,6 @@ Implementation is evidence of what exists; none of these documents overrides it 
 7. [Experiments](experiments/README.md): registered protocols and links to wiki results; [research wiki](https://github.com/kmosoti/FabricO11y/wiki): investigations and observations.
 8. [Roadmap](ROADMAP.md) and the [milestone records](milestones/architecture-foundation.md).
 
-[Operating FabricO11y](operations.md) covers install, configuration, the admin CLI and recovery states. The [learning path](LEARNING_PATH.md) follows the Rust ideas and system contracts step by step. The [blueprint](architecture.md) is a proposal and research agenda; its pipelines, guarantees and example numbers do not describe completed work.
+[Operating FabricO11y](operations.md) covers installation, configuration, the scoped CLI and recovery states. The [learning path](LEARNING_PATH.md) follows the Rust ideas and system contracts step by step. The [blueprint](architecture.md) is a proposal and research agenda; its pipelines, guarantees and example numbers do not describe completed work.
 
 Use the [contributor guide](CONTRIBUTING.md) for workflows and checks. [AGENTS.md](../AGENTS.md) is the operational contract for coding agents; the full [documentation policy](documentation-policy.md) applies to everyone.

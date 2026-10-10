@@ -8,12 +8,13 @@ sequenceDiagram
     S->>J: read frames in order, once
     S->>B: spill sorted runs, no sync
     Note over S,B: Crash or error here: the journal file is intact, the build directory is removed, the next pass starts over
-    S->>B: merge runs into logs and metrics, write Batches and gaps
+    S->>B: merge runs into logs, metrics and spans, write Batches and gaps
     S->>B: delete the runs
     S->>B: sync each table file as it closes
     S->>B: write the manifest, sync it, sync the directory
     S->>G: rename to seg-label, sync the segments directory
     Note over S,G: The rename is the commit point
+    Note over S,C: Join in oldest-label order, reclaim the eligible prefix before waiting for later siblings
     S->>C: reclaim journal file label
     C->>J: write stream checkpoint, delete the file
     Note over C,J: Crash after the rename: startup finds the Segment and reclaims the file

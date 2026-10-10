@@ -1,8 +1,13 @@
 # Identity and access
 
-Status: intended [release design](../milestones/release-readiness.md), not implementation/qualification evidence.
-The owner selected local passkeys for human login; optional OIDC federation is later work. Numeric choices
-below are **proposed defaults**, to register and verify before freezing a candidate.
+The [access adapter](../../crates/fabric-server/src/access.rs) and
+[console HTTP boundary](../../crates/fabric-server/src/console.rs) implement the
+local passkey and scoped-access design. Candidate acceptance is registered in the
+[console protocol](../experiments/formal/console-access-protocol.md); implementation
+alone does not establish release qualification. Optional OIDC federation is later work.
+The [operations guide](../access-operations.md) owns setup, credentials and recovery
+commands; the [security map](../formal/console-security-map.md) records the selected
+ASVS controls and their verification limits.
 
 ## Boundary and present evidence
 
@@ -11,15 +16,21 @@ workload API clients (including AI), and remote Spindles.
 This establishes scoped access within that installation; it makes no multitenant
 isolation, cloud IAM, universal attack resistance or compromised-host claim.
 The OS administrator, TLS termination and serving origin remain trusted boundaries.
+The [access flow](../diagrams/identity-access.mmd) separates human sessions,
+workload credentials, query publication, control intent and offline recovery.
 
-Today [HTTP](../../crates/fabric-server/src/http.rs) uses one admin bearer hash
-for query and control, node tokens for intake/polling, and public minimal health.
+Normal `fabric-server serve` requires configured HTTPS origin and RP ID, serves
+the packaged PWA and scoped API, and rejects the shared-master admin routes.
+Explicit `serve-legacy` is a migration entrypoint for historical installations;
+it cannot satisfy authenticated release acceptance. Node tokens protect
+intake/polling and minimal health remains public.
 [Control](../../crates/fabric-server/src/control.rs) stores per-node token hashes
 and refuses authority after uncertain publication. Its
 [view](control-plane.md) explicitly permits previously admitted batches to commit
-after revocation. Passkey accounts, browser sessions, delegated AI grants and
-resource-scoped query authorization are release gaps, not existing capabilities.
-Existing [CTRL/DEL/HIST evidence](../formal/verification-matrix.md) does not establish these access properties.
+after revocation. Access publication and control publication use a durable intent:
+uncertain completion quarantines access until offline reconciliation. Existing
+[CTRL/DEL/HIST evidence](../formal/verification-matrix.md) does not establish the
+new access properties; they have separate fixtures and browser acceptance.
 
 Immutable, server-generated principal IDs identify humans, workloads and Spindles;
 display names, node labels and credential IDs are separate attributes. IDs are
@@ -33,9 +44,11 @@ and [ADR-0016](../decisions/ADR-0016-keep-a-pure-semantic-core.md).
 
 ## Human authentication and recovery
 
-Use a maintained WebAuthn server library with published security review evidence;
-do not implement cryptography or assertion verification locally. Record its
-version, review scope, advisories and supported browser/authenticator combinations.
+Use pinned `webauthn-rs 0.5.5` for protocol and signature verification. The
+[upstream origin-validation advisory](https://github.com/kanidm/webauthn-rs/security/advisories/GHSA-22w3-693w-x895)
+affected earlier versions and is fixed in this release. Upstream describes a
+security review, but an independently examined report for this exact version is
+not available; no audit claim is made here. Record tested browser/authenticator combinations.
 Require user verification, a fresh server-generated one-use challenge tied to
 the ceremony and account, the configured exact HTTPS origin and RP ID, and library
 validation of signatures and credential ownership. Reject unexpected ceremony
@@ -173,7 +186,9 @@ remain governed by [retained history](retained-history.md).
 Authenticate and authorize headers/routes before expensive body buffering,
 decoding, history scans or intake allocation; retain a small independently bounded
 unauthenticated parser/rate-limit budget. Recheck body-dependent resource scope
-before scheduling work. The current admission middleware alone does not meet this.
+before scheduling work. The console middleware checks credentials and route actions
+before body extraction; handlers validate body-dependent scopes, and query answers
+recheck current policy and expiry before returning data.
 Persist policy, credential epoch and revocation transitions atomically and durably;
 uncertain writes, malformed identity state or unsupported versions fail closed.
 Do not continue serving with a permissive empty policy or a cached old authority.

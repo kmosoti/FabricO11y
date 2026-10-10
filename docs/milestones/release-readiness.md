@@ -251,28 +251,22 @@ only with a documented way for consumers to trust its signing key.
 ## Blockers and change control
 
 The scope additions have implementation gaps, not fresh acceptance evidence:
-[build-deb.sh](../../packaging/build-deb.sh) and the
-[Debian lifecycle scripts](../../packaging/debian/postrm) exist, while no RPM
-builder or Fedora acceptance adapter is present. The
-[installation protocol](../experiments/formal/installation-acceptance-protocol.md)
-and [guest definition](../../tools/qualification/install/Dockerfile) are Debian
-specific and exclude upgrade/reboot coverage. The
-[server parser](../../crates/fabric-server/src/config.rs) and
-[shipped example](../../packaging/etc/server.conf.example) default to 20 GiB
-independent journal and Segment ceilings; the
-[sealer](../../crates/fabric-server/src/sealer.rs) applies byte retention to
-Segments. The intended 100 GB Segment default and Fedora SELinux behavior remain
-unimplemented/unverified; an aggregate disk cap is outside the confirmed promise.
-Resolve these gaps through R0–R4 rather than changing the historical results.
+The [package builders](../../packaging/README.md) now include Debian and RPM
+construction, the console and dependency notices. The
+[candidate protocol](../experiments/formal/installation-release-protocol.md)
+adds Fedora enforcing-mode, upgrade and reboot acceptance; each result belongs
+to its exact artifacts. The parser and shipped examples now retain 100 GB of
+sealed telemetry with a separate 20 GiB journal ceiling. An aggregate disk cap
+is outside the confirmed product promise.
 
-The present HTTP adapter has one admin bearer for query/control and no human
-passkeys, scoped workload policy or PWA serving. UI algorithms and crate work can
-progress against explicit fixtures, but a demonstration is not authenticated
-product access. Resolve identity/scoped-evidence persistence and packaged browser
-flows through R2a–R5. A reviewed WebAuthn library and recovery design precede auth
-implementation. No new cryptographic protocol or prompt-based authorization is
-part of this plan. Security references: [OWASP ASVS](https://owasp.org/www-project-application-security-verification-standard/)
-and the W3C/OWASP sources in the identity view.
+Normal serving now uses local passkeys, scoped workload/delegated credentials
+and a packaged PWA. The legacy master adapter is an explicit migration mode.
+Implementation and finite checks are recorded in the
+[verification matrix](../formal/verification-matrix.md#identity-and-operator-console);
+they do not replace the required browser, recovery, resource and lifecycle cells.
+No new cryptographic protocol or prompt-based authorization is part of this plan.
+The [ASVS selection](../formal/console-security-map.md) documents the security
+controls and their applicability.
 
 Block on a failed required cell, unverified artifact identity, inability to finish
 an advertised workflow, known silent corruption/ACKed-data loss, auth bypass or

@@ -1,6 +1,6 @@
 # Milestone: authenticated operator console
 
-Status: **required release capability; console foundation implemented, integrated release acceptance unrun.**
+Status: **integrated implementation in verification; release acceptance incomplete.**
 Owner direction: 2026-10-10. A Rust Leptos WebAssembly UI, installable as a PWA,
 is part of the [bounded release](release-readiness.md), not a later milestone.
 The reference images describe the visual direction; their numbers and controls
@@ -8,9 +8,9 @@ are not evidence of implemented behavior. Authentication and authorization follo
 the [identity and access plan](../architecture/identity-access.md); local passkeys are the confirmed
 human login method, with OIDC integration deferred.
 
-The initial [UI crate](../../crates/fabric-ui/README.md) provides native-testable
-request/tail/chart/polling models and a compiled Leptos demonstration. Live server
-sign-in and protected data access remain unavailable. The
+The [UI crate](../../crates/fabric-ui/README.md) provides native-testable
+request/tail/chart/polling models and live Leptos passkey, query and control flows.
+The server serves hash-verified assets and enforces scoped authorization. The
 [algorithm model](../architecture/console-algorithms.md) owns mathematical bounds;
 the [art-direction flow](../architecture/console-art-direction.md) connects
 operator tasks, evidence, visual encoding and evaluation. A demonstration does
@@ -25,9 +25,9 @@ Pin Leptos, the Rust/WASM toolchain and asset builder before implementation.
 SSR adds no required capability for this authenticated console; do not introduce
 a second server, CDN runtime, or separate origin solely to render it.
 
-The present [HTTP adapter](../../crates/fabric-server/src/http.rs) exposes
-`/v1/admin/query` behind a shared admin bearer. It serves no console, sessions,
-PWA assets, human passkey endpoints or dedicated overview API. The
+The [console HTTP adapter](../../crates/fabric-server/src/console.rs) exposes
+`/v1/console` behind scoped credentials and serves `/console/`. Production `serve`
+requires passkey configuration and denies legacy `/v1/admin` routes. The
 [query contract](../architecture/retained-history.md) and
 [query implementation](../../crates/fabric-server/src/query.rs) establish actual
 filters, pagination and evidence metadata. The independent query/rate oracles
@@ -174,8 +174,10 @@ The accessibility target follows [WCAG 2.2](https://www.w3.org/TR/WCAG22/), incl
 minimum target size and accessible authentication; no conformance claim precedes
 the corresponding checks. Dashboard numbers and trace visuals need text alternatives.
 Server package caps and delivery/query gates remain unchanged with the UI active.
-Record all commands, exit statuses, exact artifact identities and limits; no gate
-above has run. Builds and verification use the required resource launcher/data
+Record all commands, exit statuses, exact artifact identities and limits. Native
+and finite browser checks have run; the [verification matrix](../formal/verification-matrix.md#identity-and-operator-console)
+distinguishes those results from completion of these release gates.
+Builds and verification use the required resource launcher/data
 drive; browser/guest descendants need explicit containment in registered harnesses.
 
 ## Execution dependency

@@ -1,6 +1,13 @@
 # Milestone: bounded sealer
 
-Status: **design accepted; implementation not started** ([ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md)). Base: `main` at `58b694d` (verification tooling merged). This milestone replaces how the sealer builds a Segment, so that its memory no longer grows with the journal file. It changes no wire or persisted format and no query answer, and it is not qualification.
+Status: **defaults adopted; local acceptance and final checks completed**.
+The [combined campaign](../experiments/formal/encoded-page-memory-run-01.md),
+[native R2 soak](../experiments/benchmarks/soak-run-02.md) and
+[unflagged default verification](../experiments/formal/bounded-writer-default-run-01.md)
+record the finite acceptance evidence. CI/merge completion and deployment
+qualification are not claimed. Base: `main` at `58b694d` (verification tooling
+merged). The milestone replaces Segment construction without changing wire or
+persisted formats or query answers ([ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md)).
 
 Why: [soak run 01](../experiments/benchmarks/soak-run-01.md) failed its `no_rss_growth` gate. The sealer's working set, about ten times a journal file, is the analysed cause, and its recorded next action is to bound that working set and rerun the registered soak unchanged.
 
@@ -63,4 +70,59 @@ Each step is a separate commit, and a policy change never shares a commit with a
 
 ## Results
 
-None yet. The exploratory study's findings are in its [record](../experiments/benchmarks/sealer-study-run-01.md#findings) and decide no criterion above.
+The [readiness continuation](../experiments/formal/readiness-continuation-results.md)
+records executed commands and launcher receipts. The frozen aligned-only
+campaign remains historical. The
+[combined aligned-input/disk-PageStore campaign](../experiments/formal/encoded-page-memory-run-01.md)
+passed all eight cells with three pairs each and supplemental row/page scratch
+observations. Its steady256 heap was 39,114,918 bytes and bigrows64 was
+41,405,704, with 5.88% steady64-to-steady256 scaling. The same record retains
+the high-entropy failure at 143,075,502 bytes and correction at 42,011,899 bytes,
+with exact files, filters and pruning. These measurements belong to the frozen
+builds with both selectors enabled.
+
+The [native R2 trial](../experiments/benchmarks/soak-run-02.md) subsequently
+passed all ten gates. The [normal writer](../experiments/formal/bounded-writer-default-run-01.md)
+now enables both mechanisms without flags: 27 bounded tests and 13 kill cuts
+plus no-hit passed unflagged. Four release artifacts match full-file hashes;
+the server's loaded content is equivalent after validated metadata normalization,
+with a byte-flip control rejected. This is default verification, not a second
+counting campaign. Both freezes were archived, verified and removed. All 17 final
+unflagged fast checks and three manual documentation checks passed; the historical
+CI/merge definition of done above remains unchanged.
+
+| Criterion | Current evidence | Remaining scope |
+| --- | --- | --- |
+| BS-1 | Opt-in campaign passed exact rows, manifests and applicable Parquet byte equality in all eight registered cells and all three pairs; mixed-signal custody/query fixtures also passed. | Unflagged bounded/recovery checks and loaded-content equivalence support the adopted defaults; real application bodies and inputs beyond the registered shapes remain unmeasured. |
+| BS-2 | Twenty-one bounded tests include 64 seeds × five byte limits and thirteen fan-in populations, stable ties and changed-key/payload/order controls. M-SEAL-MERGE-ORDER was caught; the opt-in campaign passed strict pruning equality. | Finite generators do not prove arbitrary rows and run sizes. |
+| BS-3 | The combined aligned-input/disk-PageStore campaign passed the registered 80 MiB ceiling and 10% scaling gates in all eight cells and three pairs; the [encoded-page record](../experiments/formal/encoded-page-memory-run-01.md) retains measurements and the corrected entropy counterexample. M-SEAL-RETAIN-RUNS was caught by the steady128 ceiling. | These frozen builder measurements do not establish a whole-server or arbitrary-input bound. |
+| BS-4 | Seventeen native syscall fault cases recovered exact clean manifests; ordinary-error cleanup was checked before retry. M-SEAL-SPILL-LEFT was caught. Campaign success cleanup and the supplemental spill replay cleanup were recorded. | Scoped injected errors are not physical filesystem exhaustion or every double fault. |
+| BS-5 | Thirteen named SIGKILL cuts plus an unmatched-path control preserved the original journal and exact recovered custody. All five query shapes in Scan/Walk were graded by the unchanged query oracle before cleanup and after restart/reclaim; missing-row controls were rejected. All thirteen cuts plus no-hit also passed unflagged after adoption. | Representative spill/merge/table/filter/manifest/directory/rename cuts do not cover every instruction boundary or physical power loss. |
+| BS-6 | All eight opt-in campaign cells passed repeated-build determinism across three pairs at frozen settings. | Different constants are not inferred; the default evidence establishes loaded-content equivalence rather than a second repeated campaign. |
+| BS-7 | The [companion-compatible R2 trial](../experiments/benchmarks/soak-run-02.md) passed all ten original gates with independent companion custody/containment and matching freeze checks. | Original run 01 remains failed; R2 is the separately registered successor. The companion-inclusive trial is not a causal single-variable comparison. |
+| BS-8 | Layers and core-purity passed in both the combined-selector and final unflagged seventeen-gate fast profiles; dependency-policy checking exited 0 with private cargo-deny 0.20.2. The writer uses existing crates and no new configuration key or port. Exact commands and receipts are in the [continuation](../experiments/formal/readiness-continuation-results.md). | Scope the lockfile review to this writer: the shared dirty tree also contains dependency edges for the separate companion implementation. |
+| BS-9 | Architecture, matrix, learning path and current state are reconciled; all three manual documentation checks passed. | Historical CI/merge definition of done is not claimed satisfied. |
+
+The historical aligned-only campaign's exact frozen source and binary hashes, per-cell commands,
+three-pair results and reduction are retained on the mounted data drive under
+`results/readiness-continuation-group-01`. The command
+`python3 -B tools/bench/labs/completion/continuation_campaign.py --screen /run/media/kmosoti/data/FabricO11y/results/readiness-continuation-group-screen-03 --out /run/media/kmosoti/data/FabricO11y/results/readiness-continuation-group-01`
+exited 0 under launcher unit `fabric-work-a68baf85cd96446bb77842a28c5adb67`.
+Its `result.json` explicitly records `full_bs_acceptance=false`; the campaign's
+gates alone do not supersede the complete protocol or definition of done above.
+
+A separate supplemental observer replay completed all eight cells, preserving
+each frozen input hash and final manifest while counting successful logical
+spill writes. Its known-write control counted nine bytes in two syscalls;
+steady256 counted 336,302,946 logical spill bytes in 1,312 successful syscalls.
+The command
+`python3 -B tools/bench/labs/completion/spill_measure.py --campaign-root /run/media/kmosoti/data/FabricO11y/results/readiness-continuation-group-01 --binary /run/media/kmosoti/data/FabricO11y/results/readiness-continuation-group-01/frozen/completion_builder --out /run/media/kmosoti/data/FabricO11y/results/readiness-continuation-group-01/spill-01`
+exited 0 under unit `fabric-work-a91d936a7dee4e9eb73a151db16ccea9`.
+`spill-01/cleanup.json` confirms owned scratch removal, and the launcher receipt
+confirms its stopped group and temporary-directory removal, with no OOM events.
+This is one observer replay per cell, **not three-pair spill/I/O measurement**;
+its timing and heap are not combined with the uninstrumented comparison.
+
+All commands above used the resource launcher. The exploratory
+[study](../experiments/benchmarks/sealer-study-run-01.md#findings) remains
+historical and decides no criterion by itself.

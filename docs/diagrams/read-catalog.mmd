@@ -1,0 +1,24 @@
+flowchart LR
+    Q[History query semantics] -->|Walk physical selection| C[Internal read catalog]
+    Q -->|Scan physical selection| L[History Scan source acquisition]
+    C --> T[Derived tail index and compressed blocks]
+    C --> M[Immutable Segment metadata and optional filters]
+    T --> I[Verify first group and requested group before offset reads]
+    I -->|follow immutable sealed name after rotation| J[Durable journal frames]
+    I -->|source reclaimed: Interrupted| B[History bounded retry]
+    M -->|describe without file lease| S[Published Segment files]
+    L --> J
+    L --> S
+    C --> V[Published label set consistency check]
+    L --> V
+    V -->|movement: Interrupted| B[History bounded retry]
+    B --> Q
+    V -->|source descriptors; metadata handles only| R[Live snapshot validation and exact row selection]
+    Q --> R
+    R --> A[Answer envelope and page token]
+    R --> E[Snapshot evidence]
+    E -->|fully covered| M
+    E -->|boundary| H[Verify every raw Batch digest]
+    S --> H
+    H --> F[Borrowed records and typed timestamp reduction]
+    F -->|merge only after scan succeeds| A

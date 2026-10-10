@@ -26,6 +26,8 @@ flowchart LR
     Spool -->|oldest unacknowledged Batch over TLS| Intake
     Commit -->|ACK after durable commit| Spindle
     Control -->|desired configuration poll| Spindle
-    CLI[fabricctl] -->|admin HTTPS| Control
-    CLI -->|admin query| Query
+    UI[Leptos PWA] -->|passkey session| Access[Scoped console API]
+    CLI[fabricctl] -->|workload credential| Access
+    Access -->|authorized mutation| Control
+    Access -->|authorized sources and signals| Query
     CLI -->|local inspect| Spool
