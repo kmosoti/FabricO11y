@@ -218,6 +218,10 @@ def main():
     def add_authenticator():
         options={'protocol':'ctap2','transport':'internal','hasResidentKey':True,'hasUserVerification':True,'isUserVerified':True}
         if args.browser=='firefox':
+            # Gecko's CTAP 2.0 test token omits the credential ID after filtering
+            # an original two-key allowlist to one. Its bridge restores the ID
+            # only for an originally single-key list. CTAP 2.1 retains that ID.
+            options['protocol']='ctap2_1'
             options['transport']='usb'
             options['isUserConsenting']=True
             # geckodriver #2239 renames fields that Gecko expects in camelCase.
@@ -402,7 +406,10 @@ self.addEventListener("fetch",event=>{
         if args.browser=='chrome':cdp('WebAuthn.enable', {})
         authenticator = add_authenticator()
         wd('/window/rect',{'width':1440,'height':1100})
-        receipt['virtual_authenticator'] = {'protocol':'ctap2','transport':'internal','user_verified':True,'resident_key':True}
+        receipt['virtual_authenticator'] = {
+            'protocol':'ctap2_1' if args.browser=='firefox' else 'ctap2',
+            'transport':'usb' if args.browser=='firefox' else 'internal',
+            'user_verified':True,'resident_key_capability':True}
         wd('/url', {'url': origin + '/console/'})
         wait(lambda: js('return !!document.querySelector("[data-testid=connect-server]")'), 'WASM mounted')
         check(js('return !!document.querySelector("[data-testid=locked-screen]")'), 'initial view is locked')
