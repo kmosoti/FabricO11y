@@ -6,6 +6,7 @@ pub mod control;
 mod coupled_catalog;
 pub mod http;
 mod lifecycle_workers;
+mod peer_admission;
 pub mod query;
 mod read_catalog;
 pub mod rows;
@@ -114,12 +115,14 @@ pub async fn serve(
         )),
     };
     let app = match scoped_access {
-        Some(access) => console::Console::new(state, access, assets, &config).router(),
+        Some(access) => {
+            peer_admission::wrap(console::Console::new(state, access, assets, &config).router())
+        }
         None => http::router(state),
     };
     let served = axum_server::bind_rustls(config.listen, tls)
         .handle(handle)
-        .serve(app.into_make_service())
+        .serve(app.into_make_service_with_connect_info::<std::net::SocketAddr>())
         .await;
     // Normal shutdown awaits both joins. Cancellation instead drops the owner,
     // signaling the already-started cleanup without blocking this executor.

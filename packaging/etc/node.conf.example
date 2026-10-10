@@ -7,6 +7,10 @@ spool_bytes=268435456
 # it counts against the 16-source bound and survives remote log replacement.
 # Selected logs need a narrow read ACL for fabricolly, for example:
 #   setfacl -m u:fabricolly:r /var/log/app.log
+# Use an absolute physical path: no component may be a symlink or magic link.
+# Secure opening requires Linux openat2; unavailable protection is a source
+# error, never a fallback to following links. Configure/grant a physical path
+# explicitly when migrating an existing symlinked source.
 # log=/var/log/app.log
 # Delivery target; all three together. The token file is 0640 root:fabricolly.
 # server_url=https://fabric-server.example:7443
@@ -15,6 +19,7 @@ spool_bytes=268435456
 # Loopback OTLP/HTTP endpoint for local applications' trace exports (ADR-0025),
 # for example OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces
 # with OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf. Loopback addresses only.
+# Stalled request I/O is bounded; loopback does not isolate hostile local users.
 # traces_listen=127.0.0.1:4318
 # Cap on delivered bytes per second (at least 65536); unset is uncapped.
 # max_output_bytes_per_s=10485760
