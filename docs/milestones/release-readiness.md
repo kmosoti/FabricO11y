@@ -1,6 +1,6 @@
 # Milestone: release readiness
 
-Status: **Option B selected; execution plan prepared, candidate not yet frozen.**
+Status: **Option B selected; implementation and candidate acceptance in progress.**
 Owner decision: 2026-10-10. The objective is a bounded application release for
 development and small deployments. Release maturity appears in the eventual
 version tag and package metadata, following [ADR-0019](../decisions/ADR-0019-keep-release-maturity-in-tags.md).
@@ -54,11 +54,10 @@ retention counts sealed Segments and deletes whole Segments oldest first; the
 existing configurable `retention_s=86400` age limit remains, with whichever
 limit expires first controlling deletion. Journal, sealing workspace and Spindle
 Spools remain separately bounded and require declared additional disk headroom.
-This is not an aggregate 100 GB hard limit on every server/edge file. The current
-parser and example still default to 20 GiB of Segments and a separate 20 GiB
-journal ceiling. Register the contract/default change in R0, then update parser
-defaults, shipped examples and boundary/restart/query regressions in R2. This
-planning change does not implement or verify the requested default.
+This is not an aggregate 100 GB hard limit on every server/edge file. The parser
+and shipped example now default to 100 GB of Segments and a separate 20 GiB
+journal ceiling. The contract/default change was registered in R0; frozen
+candidate boundary/restart/query evidence remains part of R2 acceptance.
 Never reclaim unacknowledged Spool data or unpublished journal coverage to meet
 a storage target; pressure outcomes must preserve custody and visible gaps.
 
