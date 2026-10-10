@@ -77,7 +77,7 @@ class SourceCensusTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("#!/bin/sh\nexit 0\n")
             path.chmod(0o700)
-        runtime_helpers = ("tools/resource_group.py", "tools/packaging/stage_console.py",
+        runtime_helpers = ("packaging/build-rpm.sh", "tools/resource_group.py", "tools/packaging/stage_console.py",
                            "tools/packaging/stage_candidate.py", "tools/packaging/payload.py",
                            "tools/qualification/cross_family/inputs.py",
                            "tools/bench/labs/completion/cgroups.py",
