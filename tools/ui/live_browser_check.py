@@ -675,6 +675,19 @@ self.addEventListener("fetch",event=>{
         js('document.documentElement.style.zoom="200%"')
         receipt['zoom_geometry']=js('return {viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,overflow:Array.from(document.querySelectorAll("body *")).map(e=>({tag:e.tagName,cls:e.className?.baseVal??e.className,text:e.tagName==="BUTTON"?e.textContent:null,left:e.getBoundingClientRect().left,right:e.getBoundingClientRect().right})).filter(e=>e.right>innerWidth+2).slice(0,40)}')
         check(js('return document.documentElement.scrollWidth <= window.innerWidth + 2'),'200 percent content zoom retains document reflow')
+        # Hosted CI exposed an unconstrained standalone pagination action.
+        # Force a larger user font on that actual action, outside query-form.
+        js("window.fixtureNextAction=Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()==='Next snapshot page');if(!window.fixtureNextAction)throw Error('standalone pagination action missing');window.fixtureNextStyle=window.fixtureNextAction.style.cssText;window.fixtureNextAction.style.fontSize='18px';")
+        receipt['pagination_reflow_candidate']=js("const e=window.fixtureNextAction;return {font:getComputedStyle(e).fontSize,viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,buttonLeft:e.getBoundingClientRect().left,buttonRight:e.getBoundingClientRect().right,maxInlineSize:getComputedStyle(e).maxInlineSize,whiteSpace:getComputedStyle(e).whiteSpace}")
+        check(js("return getComputedStyle(window.fixtureNextAction).fontSize==='18px' && !window.fixtureNextAction.closest('.query-form')"),'actual standalone pagination action uses independent 18px font witness')
+        check(js('return document.documentElement.scrollWidth <= innerWidth + 2 && window.fixtureNextAction.getBoundingClientRect().right<=innerWidth+2'),'standalone pagination fits at 200 percent zoom and 18px font')
+        try:
+            js("window.fixtureNextAction.style.maxInlineSize='none';window.fixtureNextAction.style.whiteSpace='nowrap';window.fixtureNextAction.style.overflowWrap='normal';")
+            receipt['pagination_reflow_negative']=js("const e=window.fixtureNextAction;return {viewport:innerWidth,documentWidth:document.documentElement.scrollWidth,buttonRight:e.getBoundingClientRect().right,maxInlineSize:getComputedStyle(e).maxInlineSize,whiteSpace:getComputedStyle(e).whiteSpace}")
+            check(js('return document.documentElement.scrollWidth > innerWidth + 2 && window.fixtureNextAction.getBoundingClientRect().right>innerWidth+2'),'pagination reflow grader rejects removed width cap and forced nowrap')
+        finally:
+            js("window.fixtureNextAction.style.cssText=window.fixtureNextStyle;delete window.fixtureNextAction;delete window.fixtureNextStyle;")
+        check(js('return document.documentElement.scrollWidth <= innerWidth + 2'),'pagination negative control restores coherent responsive layout')
         js('document.documentElement.style.zoom=""')
         wd('/window/rect', {'width':1440,'height':1100})
         code, _ = api('/v1/console/query', 'POST', {'kind':'rate','name':'test','from_ns':1,'to_ns':2})
