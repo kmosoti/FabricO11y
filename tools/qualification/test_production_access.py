@@ -63,6 +63,19 @@ class ProductionAccessTests(unittest.TestCase):
         self.assertEqual(events, [('pace', .15), ('call', 'sim0000'), ('pace', .15), ('call', 'sim0001'),
                                   ('pace', .15), ('call', 'sim0002')])
 
+    def test_browser_temporary_bytes_cannot_escape_combined_five_gib_limit(self):
+        adapter = ProductionAccess.__new__(ProductionAccess)
+        adapter.raw_root, adapter.work, adapter.out = (Path('/synthetic/raw'), Path('/synthetic/work'), Path('/synthetic/out'))
+        class Bridge: browser_temporary = Path('/synthetic/browser-temp')
+        adapter.bridge = Bridge()
+        sizes = {adapter.raw_root: 3 * 1024**3, adapter.work: 2 * 1024**3 - 1,
+                 adapter.out: 0, adapter.bridge.browser_temporary: 2}
+        with patch('production_access.directory_bytes', side_effect=lambda path: sizes[path]), \
+                patch('production_access.subprocess.check_output', return_value=b'0 synthetic\n'):
+            with self.assertRaisesRegex(RuntimeError, '5 GiB'): adapter.sample_bound()
+            sizes[adapter.bridge.browser_temporary] = 1
+            adapter.sample_bound()
+
     def test_control_adapter_uses_only_console_nodes_and_rejects_denial(self):
         adapter = ProductionAccess.__new__(ProductionAccess)
         class Bridge:

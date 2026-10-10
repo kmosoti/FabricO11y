@@ -1,5 +1,7 @@
 """Explicit production adapter; the historical campaign decisions stay separate."""
 import json
+import os
+import stat
 from pathlib import Path
 import shutil
 import subprocess
@@ -84,8 +86,45 @@ class ProductionAccess(CandidateFixture):
         return self
 
     def sample_bound(self):
-        if directory_bytes(self.raw_root) + directory_bytes(self.work) + directory_bytes(self.out) > 5 * 1024**3:
+        temporary = getattr(getattr(self, "bridge", None), "browser_temporary", None)
+        temporary_bytes = directory_bytes(temporary) if temporary is not None else 0
+        if directory_bytes(self.raw_root) + directory_bytes(self.work) + directory_bytes(self.out) + temporary_bytes > 5 * 1024**3:
             raise RuntimeError('combined production campaign live data exceeded 5 GiB')
         allocated = int(subprocess.check_output(['du', '-s', '-B1', str(STORAGE)]).split()[0])
         if allocated >= 95_000_000_000:
             raise RuntimeError('production campaign reached aggregate 95 GB stop')
+
+    def close(self):
+        if getattr(self, 'closed', False):
+            return
+        temporary = getattr(getattr(self, 'bridge', None), 'browser_temporary', None)
+        observation = None
+        observation_error = None
+        try:
+            if temporary is not None:
+                socket_lengths = []
+                for base, _, names in os.walk(temporary, followlinks=False):
+                    for name in names:
+                        path = Path(base) / name
+                        try:
+                            if stat.S_ISSOCK(path.lstat().st_mode):
+                                socket_lengths.append(len(os.fsencode(str(path))))
+                        except FileNotFoundError:
+                            pass
+                observation = {'path': str(temporary), 'directory_path_bytes': len(os.fsencode(str(temporary))),
+                               'regular_bytes_before_cleanup': directory_bytes(temporary),
+                               'socket_path_bytes': socket_lengths}
+        except OSError as error:
+            observation_error = error
+            observation = {"path": str(temporary), "observation_error": type(error).__name__}
+        try:
+            super().close()
+        finally:
+            if observation is not None:
+                observation['removed'] = not temporary.exists()
+            self.receipt['browser_temporary_cleanup'] = observation
+            (self.out / 'runtime.json').write_text(json.dumps(self.receipt, indent=2) + '\n')
+        if observation_error is not None:
+            raise RuntimeError('browser temporary observation failed after confirmed cleanup') from observation_error
+        if observation is not None and not observation['removed']:
+            raise RuntimeError('owned browser temporary directory remained after cleanup')
