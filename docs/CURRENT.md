@@ -86,19 +86,24 @@ Apache-2.0 licensing and dependency notices are included. OIDC remains deferred.
 No release tag has been published.
 
 The frozen `c06688c` candidate has exact Debian/RPM payload receipts and console
-build 08. Fresh Fedora installation and upgrade/reboot/removal passed their
+build 08. Its fresh Fedora installation and upgrade/reboot/removal passed their
 finite checks, including SELinux and service limits. The reboot trial verifies
 [ADR-0028](decisions/ADR-0028-preserve-btrfs-log-identity-across-reboots.md): a
 Btrfs device-number change no longer replays an already collected log. Earlier
 failed package runs remain preserved. Debian successor acceptance and the four
 cross-family forwarding cells are still queued in the
 [installation record](experiments/formal/installation-release-run-01.md).
+Successor Debian build 03 and RPM build 02 contain native source `e174fd3` and
+the same console build 08; all 637 common payload files match. A hosted browser
+trial then found a zoom/reflow defect in those UI sources. Corrected assets and
+packages are being prepared before full installed and service acceptance.
 
 The native access adapter, scoped HTTPS APIs and PWA are implemented. Exact-package
-Chrome smoke `console-live-chrome-final-package-02` passed 146 checks. The longer
+Chrome smoke `console-live-chrome-final-package-04` passed 147 checks. The longer
 run exercised real cursor expiry, then exhausted its 4 MiB producer fixture Spool
-before a later positive query. That failure is preserved; the bounded fixture is
-being corrected before repeating the complete browser run. Automation uses a virtual
+before a later positive query. That failure is preserved; the repaired 32 MiB
+fixture passed the short repeat, and the complete successor run is still queued.
+Automation uses a virtual
 CTAP2 authenticator, not a physical-device compatibility claim. Firefox's compiled
 shell checks passed; automated passkey enrollment remains inconclusive there.
 
@@ -113,28 +118,43 @@ five cache controls, three History controls,
 eight row controls, seven console controls and snapshot regression passed;
 strict all-feature server Clippy exited 0. All fifteen diagnostic answers also
 passed the independent query oracle. Cold metadata cost remains about 1.46 seconds;
-warm five-page counters fell from roughly 6.6 to 0.28 seconds. These library
-measurements require confirmation on a rebuilt package through HTTPS.
+warm five-page counters fell from roughly 6.6 to 0.28 seconds. A resource repeat
+reduced CPU from 38.67 to 6.15 seconds for the same query sets, with peak RSS
+about 51 MiB in both. The [canonical report](https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-scoped-evidence-cache-run-01)
+retains the comparison's failed controls and limits. These library measurements
+require confirmation on the successor package through HTTPS.
 
 The production soak `production-soak-full-01` was interrupted after 1,100 seconds:
 read-only browser inspection confirmed that the harness's automatic re-login
 left the UI locked rather than continuously polling. Its failure evidence and
 unchanged inputs are preserved; processes and browser scratch were cleaned.
-The bridge is being corrected before a fresh full soak. Historical passing R2
-results above remain attributed to their original revision.
+The repaired bridge passed a genuine 330-second refresh trial: 65 native UI body
+completions, one real UV refresh and no HTTP/transport failures. Its added
+readiness witness also passed a separate genuine smoke and 29 focused controls.
+Fresh full soak `production-soak-full-02` was interrupted after 562.893 seconds
+for that UI candidate replacement. Actual polling continued through its first
+real UV refresh; no full soak result is claimed. Its frozen inputs and cleanup
+receipts are preserved. The [campaign record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-production-access-campaign-run-01)
+preserves the earlier interruption and finite repairs. Historical passing R2 results
+above remain attributed to their original revision.
 
 Hosted CI run `38067490757` at `189127d` passed all 20 enabled fast checks,
 whole-workspace dependency policy, WASM/build/contrast checks and 19 Firefox
 shell checks. Chrome then failed during session startup before authentication
 checks ran. A sandbox-preserving diagnostic is ready for the next hosted run;
-its cause is not yet established. Bun CI/hooks remain disabled.
+its original cause was not established. Successor hosted run `38071282547` at
+`3e609a4` passed all 20 enabled fast checks and the actual Chrome sandbox
+preflight, then found the standalone Next-page button extending to 409 px in a
+390 px viewport at 200% content zoom. The button now has a bounded width and
+wrapping; a fresh actual-browser regression and hosted run are pending. Bun
+CI/hooks remain disabled.
 
 The [research wiki](https://github.com/kmosoti/FabricO11y/wiki) owns research and
 result reports. Product/operator documentation, architecture, registered protocols
 and executable evidence inputs stay versioned here under the
 [ownership policy](documentation-policy.md#canonical-ownership). The
-[migration manifest](wiki-migration.json) pins the earlier 150 published reports;
-new candidate findings are being consolidated into the same evidence index.
+[migration manifest](wiki-migration.json) pins 151 migrated reports; direct
+candidate reports also live in the same canonical wiki and evidence index.
 
 ## Assumptions and risks
 
