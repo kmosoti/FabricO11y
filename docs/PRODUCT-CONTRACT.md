@@ -68,9 +68,9 @@ are configurable; whichever expires data first controls whole-Segment deletion,
 and answers report the actual retained boundary. Journals, sealing workspace,
 Spools, access state and audit have separate bounded allowances and declared disk
 headroom; 100 GB is not an aggregate disk ceiling. Custody data cannot be deleted
-to meet retention. Current code still defaults to 20 GiB of Segments; the
-[release queue](milestones/release-readiness.md#execution-queue) owns implementation
-and regression evidence. Test overrides stay within the aggregate test budget.
+to meet retention. The code default is 100 GB of Segments; the
+[release queue](milestones/release-readiness.md#execution-queue) owns candidate
+regression evidence. Test overrides stay within the aggregate test budget.
 Collection limits are listed in the [Spindle view](architecture/spindle.md).
 
 ## Control and security contract
@@ -98,9 +98,10 @@ Security changes are durably audited within separately bounded storage.
 
 The threat boundary trusts the host administrator and serving HTTPS origin.
 Scoped access is not general multitenant isolation or a guarantee against all
-vulnerabilities. The current shared admin bearer implementation does not satisfy
-these release requirements; [ADR-0027](decisions/ADR-0027-ship-a-scoped-passkey-pwa-console.md)
-records the intended replacement and verification obligations.
+vulnerabilities. Explicit legacy administration does not satisfy these release
+requirements; normal `serve` requires the scoped passkey boundary.
+[ADR-0027](decisions/ADR-0027-ship-a-scoped-passkey-pwa-console.md)
+records that boundary and its verification obligations.
 
 ## Operator console contract
 
@@ -118,7 +119,7 @@ clear transient results, and stale responses cannot restore them. No offline
 mutation queue is provided. Packaged assets, API compatibility, passkey workflows,
 accessibility and browser/install behavior must pass the
 [console gates](milestones/operator-console.md#boundedness-and-acceptance) on the
-release candidate. These are required capabilities, currently unimplemented.
+release candidate. Implementation does not waive those candidate acceptance gates.
 
 ## Linux installation contract
 
