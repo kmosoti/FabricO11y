@@ -89,6 +89,16 @@ Run unchanged decision controls plus new missing-prefix, gap, identity,
 ACK/retained-set and changed/missing/duplicate/fabricated-recovery controls before
 smoke. Each altered outcome must be rejected. Root coordinates execution.
 
+Before and after each smoke/full command, run
+`tools/qualification/verify_soak_freeze.py` through the resource launcher with
+`--manifest` pointing to the exact owned `provenance/manifest.json`, a distinct
+`--label` such as `smoke-pre` or `full-post`, and a fresh absolute `--out` JSON
+path on the data drive outside the owned freeze. It checks the ownership marker,
+canonical member paths, absence of links, file sizes and every declared SHA-256.
+Keep both receipts and require matching manifest hashes as well as successful
+member checks; a changed manifest is not a new authority for the same trial.
+This check verifies frozen bytes, not source-to-binary build attestation.
+
 ```sh
 python3 tools/resource_group.py -- python3 -B -m unittest discover \
   -s tools/qualification -p 'test_soak*.py'
