@@ -157,8 +157,13 @@ its original cause was not established. Successor hosted run `38071282547` at
 preflight, then found the standalone Next-page button extending to 409 px in a
 390 px viewport at 200% content zoom. The button now has a bounded width and
 wrapping; the actual-browser regression passed, including its negative control.
-Hosted run `38072930139` at `8597c42` is in progress. Bun
-CI/hooks remain disabled.
+Hosted run `38072930139` at `8597c42` completed successfully: all 20 enabled
+fast receipts exited 0, whole-workspace dependency policy and WASM/build checks
+passed, Firefox completed its shell checks, and actual Chrome passed 139 checks.
+The injected API-cache defect failed the named shell-only cache assertion and
+its negative-control grader passed. Packaging checks and exact Chrome sandbox
+cleanup also passed. This CI run does not replace the longer exact-package
+browser or service campaigns. Bun CI/hooks remain disabled.
 
 The [research wiki](https://github.com/kmosoti/FabricO11y/wiki) owns research and
 result reports. Product/operator documentation, architecture, registered protocols
