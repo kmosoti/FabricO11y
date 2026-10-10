@@ -235,6 +235,13 @@ def main() -> int:
     if not os.environ.get("FABRIC_RESOURCE_RUNTIME_SECONDS"):
         raise RuntimeError("invoke through python3 tools/resource_group.py --")
     cgroup = require_limits()
+    # Owner-admitted two-job builder envelope allows independent finite UI/VM
+    # checks without reserving the full local20GiB for this one compilation.
+    limited = command(['systemctl', '--user', 'set-property', '--runtime', cgroup.name,
+                       'MemoryHigh=7G', 'MemoryMax=8G'])
+    if (limited.returncode or (cgroup / 'memory.max').read_text().strip() != str(8 * 1024**3)
+            or (cgroup / 'memory.high').read_text().strip() != str(7 * 1024**3)):
+        raise RuntimeError('isolated builder8GiB maximum/7GiB high not enforced')
     if not DATA_MOUNT.is_mount() or not STORAGE.is_dir():
         raise RuntimeError(f"mounted data drive unavailable: {DATA_MOUNT}")
     require_data_budget()
@@ -401,9 +408,9 @@ SOURCE_DATE_EPOCH=${FABRIC_SOURCE_DATE_EPOCH:?} /src/packaging/${FABRIC_PACKAGE_
 # Diagnostic recovery helpers share the exact frozen sources and sysroot, but
 # remain separate from the installed package and its payload identity.
 cd /src
-cargo build --offline --locked --release --workspace --example spool_dump --example server_dump
+cargo build --offline --locked --release --workspace --example spool_dump --example server_dump --example spindle_sim
 mkdir -p /out/qualification-helpers
-cp /target/release/examples/spool_dump /target/release/examples/server_dump /out/qualification-helpers/
+cp /target/release/examples/spool_dump /target/release/examples/server_dump /target/release/examples/spindle_sim /out/qualification-helpers/
 dpkg-query -W -f='${binary:Package}\t${Version}\n' build-essential binutils ca-certificates dpkg-dev git python3 rpm pkg-config libssl-dev
 '''
         container = [*podman_args, "run", "--rm", "--name", container_name,
@@ -439,7 +446,7 @@ dpkg-query -W -f='${binary:Package}\t${Version}\n' build-essential binutils ca-c
         helper_manifest = {
             "classification": "uninstalled recovery helpers; not package payload",
             "source": source_record,
-            "files": {name: sha256(helpers / name) for name in ("spool_dump", "server_dump")},
+            "files": {name: sha256(helpers / name) for name in ("spool_dump", "server_dump", "spindle_sim")},
         }
         (helpers / "manifest.json").write_text(json.dumps(helper_manifest, indent=2) + "\n")
         (result_dir / (built[0].name + ".sha256")).write_text(
