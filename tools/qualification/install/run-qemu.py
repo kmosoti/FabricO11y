@@ -215,6 +215,7 @@ def main() -> int:
     rc: int | None = None
     guest_acceptance_exit: int | None = None
     mutation_package_sha256: str | None = None
+    mutation_package_archive: str | None = None
     mutation_expected_failures = sorted(MUTATION_EXPECTED_FAILURES.get(args.mutate, set()))
     mutation_observed_failures: list[str] = []
     mutation_rejection_confirmed: bool | None = None
@@ -372,6 +373,12 @@ sha256sum /home/accept/a12-memory-pressure.py
         if args.mutate:
             mutation_package_sha256 = prepare_guest_package(ssh, args.mutate)
             tested_package_sha256 = mutation_package_sha256
+            archived_package = result_dir / 'fabrico11y-mutated.deb'
+            run([*scp, 'accept@127.0.0.1:/home/accept/fabrico11y-mutated.deb',
+                 str(archived_package)], timeout=120)
+            if digest(archived_package, 'sha256') != mutation_package_sha256:
+                raise RuntimeError('archived mutated package differs from the guest artifact')
+            mutation_package_archive = str(archived_package)
         package = '/home/accept/fabrico11y.deb'
         if args.mutate:
             package = '/home/accept/fabrico11y-mutated.deb'
@@ -433,8 +440,19 @@ sha256sum /home/accept/a12-memory-pressure.py
                             ('bootstrap.txt', ssh_log)):
             if value:
                 (result_dir / name).write_text(value)
-        if work_dir.exists() and cleanup_ok and rc == 0 and error is None:
+        completed_mutation = bool(args.mutate and mutation_package_archive and
+                                  mutation_rejected(args.mutate, rc, acceptance_log, error))
+        if work_dir.exists() and cleanup_ok and error is None and (rc == 0 or completed_mutation):
             shutil.rmtree(work_dir)
+            if completed_mutation:
+                (result_dir / 'cleanup-followup.json').write_text(json.dumps({
+                    'status': 'removed', 'target': str(work_dir),
+                    'reason': 'named mutation rejected; package, sources and logs preserved',
+                    'guest_acceptance_exit': guest_acceptance_exit,
+                    'mutation_package_archive': mutation_package_archive,
+                    'mutation_package_sha256': mutation_package_sha256,
+                    'qemu_process_cleanup_confirmed': process_cleanup_confirmed,
+                }, indent=2) + '\n')
 
     if args.mutate:
         mutation_rejection_confirmed = mutation_rejected(
@@ -447,6 +465,7 @@ sha256sum /home/accept/a12-memory-pressure.py
         'mutation_expected_failures': mutation_expected_failures,
         'mutation_observed_failures': mutation_observed_failures,
         'mutation_package_sha256': mutation_package_sha256,
+        'mutation_package_archive': mutation_package_archive,
         'mutation_rejection_confirmed': mutation_rejection_confirmed,
         'package': str(deb),
         'package_sha256': package_sha256,
