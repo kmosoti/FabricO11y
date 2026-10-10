@@ -385,7 +385,9 @@ main {
   min-height:42px;
   font-size:12px;
   font-weight:600;
-  white-space:nowrap
+  max-inline-size:100%;
+  white-space:normal;
+  overflow-wrap:anywhere
 }
 .primary {
   color:#fff;
