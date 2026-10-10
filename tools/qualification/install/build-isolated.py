@@ -284,6 +284,7 @@ def main() -> int:
     }
     container_name = "fabric-deb-build-" + args.run_id
     cleanup_ok = False
+    cleanup_actions: list[dict[str, object]] = []
 
     def logged(label: str, cmd: list[str], *, timeout: int,
                run_env: dict[str, str] = env) -> subprocess.CompletedProcess[str]:
@@ -420,27 +421,85 @@ dpkg-query -W -f='${binary:Package}\t${Version}\n' build-essential binutils ca-c
             for path in logs.glob("*"):
                 shutil.copy2(path, result_dir / path.name)
             try:
-                if not (owned / ".fabric-package-build-owned").is_file():
-                    raise RuntimeError("owned scratch marker is missing")
                 bundle = result_dir / "provenance" / "frozen-source.bundle"
                 if (not bundle.is_file() or
                         sha256(bundle) != receipt["source"]["source_bundle_sha256"]):
                     raise RuntimeError("frozen source bundle is missing or has a hash mismatch")
-                remove = command([*podman_args, "unshare", "rm", "-rf", "--", str(owned)],
-                                 timeout=60, env=env)
-                cleanup_ok = remove.returncode == 0 and not owned.exists()
-                receipt["cleanup_command_exit"] = remove.returncode
+                artifact = Path(str(receipt["package"]))
+                if (not artifact.is_file() or
+                        sha256(artifact) != receipt["package_sha256"]):
+                    raise RuntimeError("built package is missing or has a hash mismatch")
+                cleanup_unshare = command(
+                    [*podman_args, "image", "rm", "--all", "--force"],
+                    timeout=90, env=env,
+                )
+                cleanup_actions.append({"action": "remove-all-run-images",
+                                        "exit": cleanup_unshare.returncode,
+                                        "stderr": cleanup_unshare.stderr[-4000:]})
+                if cleanup_unshare.returncode != 0:
+                    raise RuntimeError(
+                        f"Podman image cleanup exit {cleanup_unshare.returncode}: "
+                        f"{cleanup_unshare.stderr[-1000:]}"
+                    )
+
+                # Only remove build payloads in the user namespace. Keep Podman's
+                # graph/runroot alive until every Podman command has exited.
+                payloads = [source, target, output, cargo_home_guest, logs]
+                cleanup_payloads = command(
+                    [*podman_args, "unshare", "rm", "-rf", "--", *map(str, payloads)],
+                    timeout=90, env=env,
+                )
+                cleanup_actions.append({"action": "remove-build-payloads",
+                                        "exit": cleanup_payloads.returncode,
+                                        "stderr": cleanup_payloads.stderr[-4000:]})
+                if cleanup_payloads.returncode != 0 or any(path.exists() for path in payloads):
+                    raise RuntimeError(
+                        f"Podman payload cleanup exit {cleanup_payloads.returncode}; "
+                        f"stderr: {cleanup_payloads.stderr[-1000:]}"
+                    )
+
+                if not (owned / ".fabric-package-build-owned").is_file():
+                    raise RuntimeError("owned scratch marker is missing")
+                owned_mounts = []
+                for line in Path("/proc/self/mountinfo").read_text().splitlines():
+                    fields = line.split()
+                    mountpoint = fields[4].replace("\\040", " ")
+                    if mountpoint == str(owned) or mountpoint.startswith(str(owned) + "/"):
+                        owned_mounts.append(mountpoint)
+                if owned_mounts:
+                    raise RuntimeError(f"owned scratch still has mounts: {owned_mounts}")
+                unexpected_owners: list[str] = []
+                def check_owner_error(error: OSError) -> None:
+                    raise error
+                for base, directories, files in os.walk(owned, onerror=check_owner_error,
+                                                        followlinks=False):
+                    for name in directories + files:
+                        path = Path(base) / name
+                        if path.lstat().st_uid != os.getuid():
+                            unexpected_owners.append(str(path))
+                            if len(unexpected_owners) == 8:
+                                break
+                    if unexpected_owners:
+                        break
+                if unexpected_owners:
+                    raise RuntimeError(
+                        f"Podman left non-user-owned paths; retaining scratch: {unexpected_owners}"
+                    )
+                shutil.rmtree(owned)
+                cleanup_ok = not owned.exists()
+                cleanup_actions.append({"action": "remove-host-owned-scratch",
+                                        "exit": 0 if cleanup_ok else 1,
+                                        "postcondition_absent": cleanup_ok})
                 if not cleanup_ok:
-                    raise RuntimeError("Podman user-namespace scratch cleanup failed")
-                receipt["cleanup"] = "container and owned scratch removed via rootless Podman user namespace"
-            except OSError as error:
+                    raise RuntimeError("owned scratch still exists after host cleanup")
+                receipt["cleanup"] = (
+                    "Podman images/payloads removed; verified host-owned remainder removed after Podman exited"
+                )
+            except (OSError, RuntimeError, subprocess.SubprocessError) as error:
                 receipt.update({"state": "failed", "cleanup": "owned scratch cleanup failed",
                                 "cleanup_error": str(error), "scratch_retained": str(owned)})
                 cleanup_ok = False
-            except (RuntimeError, subprocess.SubprocessError) as error:
-                receipt.update({"state": "failed", "cleanup": "owned scratch cleanup failed",
-                                "cleanup_error": str(error), "scratch_retained": str(owned)})
-                cleanup_ok = False
+            receipt["cleanup_actions"] = cleanup_actions
             (result_dir / "receipt.json").write_text(json.dumps(receipt, indent=2, sort_keys=True) + "\n")
         else:
             receipt["cleanup"] = "scratch retained for failure evidence"
