@@ -75,6 +75,12 @@ For the registered `parallel` fixture (unified cgroup v2 only):
 
 The historical `tail` fixture performs the same two memory-hog and task-tree steps as revision 1. It remains available for compatibility and is not evidence for the revised parallel fixture.
 
+The successful positive-control unit uses `Type=exec` and `RemainAfterExit=yes`
+until its exit status and samples have been collected, then is explicitly
+stopped. This prevents successful transient-unit garbage collection from erasing
+the evidence; the sampling loop requires `SubState=exited` within its deadline.
+See [systemd-run](https://manpages.debian.org/trixie/systemd/systemd-run.1.en.html).
+
 For each hog, `MemoryCurrent` is sampled every 0.2 s and must never exceed the limit, and the kernel must kill the hog:
 
 - on the unified hierarchy, `Result=oom-kill`;

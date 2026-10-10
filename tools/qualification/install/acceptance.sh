@@ -360,22 +360,26 @@ if [ "$A12_MEMORY_STRESSOR" = parallel ]; then
   echo "FIXTURE A12 memory-stressor=parallel helper_sha256=$helper_sha workers=96 node_worker_bytes=$node_worker_bytes slice_worker_bytes=$slice_worker_bytes"
   if command -v python3 >/dev/null 2>&1 && [ -f "$helper" ]; then
     systemd-run --quiet --unit=fabric-accept-mem-control --slice=system-fabrico11y.slice \
+      -p Type=exec -p RemainAfterExit=yes \
       -p RuntimeMaxSec=15 -p MemoryHigh=128M -p MemoryMax=256M -p MemorySwapMax=0 -p TasksMax=128 \
       python3 "$helper" --control --memory-high-bytes $((128 << 20)) \
         --memory-max-bytes $((256 << 20)) --tasks-max 128
-    control_peak=0; cur=0
-    while [ "$(systemctl is-active fabric-accept-mem-control 2>/dev/null)" = active ]; do
+    control_peak=0; cur=0; control_end=$((SECONDS + 20))
+    while [ "$(show fabric-accept-mem-control SubState)" = running ] && [ "$SECONDS" -lt "$control_end" ]; do
       cur=$(show fabric-accept-mem-control MemoryCurrent)
       case "$cur" in ''|'[not set]') ;; *) [ "$cur" -gt "$control_peak" ] && control_peak=$cur ;; esac
       sleep 0.2
     done
     control_result=$(show fabric-accept-mem-control Result)
     control_status=$(show fabric-accept-mem-control ExecMainStatus)
+    control_state=$(show fabric-accept-mem-control SubState)
+    systemctl stop fabric-accept-mem-control 2>/dev/null
     systemctl reset-failed fabric-accept-mem-control 2>/dev/null
     positive_control_ok=0
     if [ "$control_peak" -ge $((24 << 20)) ] && [ "$control_peak" -lt $((128 << 20)) ] \
-       && [ "$control_result" = success ] && [ "$control_status" = 0 ]; then positive_control_ok=1; fi
-    positive_control="$control_result/$control_status peak=$control_peak high=$((128 << 20))"
+       && [ "$control_state" = exited ] && [ "$control_result" = success ] \
+       && [ "$control_status" = 0 ]; then positive_control_ok=1; fi
+    positive_control="$control_result/$control_status state=$control_state peak=$control_peak high=$((128 << 20))"
   else
     positive_control_ok=0; positive_control='python3-or-fixture-unavailable'
   fi
