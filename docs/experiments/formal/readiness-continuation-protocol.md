@@ -68,6 +68,25 @@ manifest. Report cumulative logical spill writes separately; observer CPU, time
 and heap are not comparative evidence. Preserve the original campaign's null
 metrics and its separately registered supplemental-accounting scope.
 
+### Encoded-page spill follow-up
+
+The separately registered [entropy probe](encoded-page-memory-protocol.md)
+found that the aligned writer retained more than the 80 MiB ceiling in one
+full high-entropy group. Its page-store candidate therefore requires a fresh
+RC-GROUP screen and campaign; earlier campaign results do not qualify it.
+Use both `FABRIC_ROW_GROUP_CHUNKS_EXPERIMENT=1` and
+`FABRIC_PAGE_STORE_EXPERIMENT=1`, with `responsibility-alloc-probe` and all other
+experiment selectors unset. Use the same three screening cells (steady64,
+bigrows64, steady256), one pair each, then all eight original cells with three
+pairs each. Keep every existing gate and threshold. Require the additional
+entropy and seven native page-file fault checks before this screen.
+
+The supplemental interposer still counts only sort-run writes (`.run-`). Report
+these as row-sort spill bytes. The counted candidate separately reports exact
+serialized-page bytes through its page-store counters; retain those per-table
+observations for every measured build. Neither quantity alone is total device
+write amplification. No default change follows from screening alone.
+
 Use `python3 -B tools/resource_group.py -- COMMAND` for every build, workload and
 validator, serializing resource-heavy jobs. The data drive at
 `/run/media/kmosoti/data/FabricO11y` owns caches, tool installations and scratch.
