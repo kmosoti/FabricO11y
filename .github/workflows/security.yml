@@ -1,0 +1,72 @@
+name: Focused security regressions
+
+on:
+  pull_request:
+    paths:
+      - "crates/fabric-server/**"
+      - "crates/fabric-adapter-linux/**"
+      - "src/spindle/**"
+      - "src/bin/fabric-node.rs"
+      - "xtask/**"
+      - "tools/ci/**"
+      - "tools/resource_group.py"
+      - "Cargo.lock"
+      - "Cargo.toml"
+      - ".github/workflows/security.yml"
+  workflow_dispatch:
+
+# Superseded PR revisions are not useful merge evidence. Do not cancel other workflows.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  security-regressions:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Prepare disk storage and enforced cgroups
+        run: bash tools/ci/prepare-resource-host.sh
+      - name: Check CI scheduling and receipt contracts
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/test_ci_contracts.py
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.99.0
+          components: rustfmt
+      - name: Validate contained toolchain
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/rust_preflight.py
+      - name: Resolve mounted Cargo target for cache
+        id: cache-path
+        run: |
+          target=$(realpath -m --relative-to="$GITHUB_WORKSPACE" /run/media/kmosoti/data/FabricO11y/cargo)
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency and pinned-tool cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: hosted-fast-v1
+          workspaces: . -> ${{ steps.cache-path.outputs.target }}
+          cache-workspace-crates: 'false'
+          cache-on-failure: 'false'
+          save-if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+      - name: Install native crypto prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+      - name: Run all focused checks and retain full diagnostics
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/security_checks.py
+      - name: Retain revision-bound results and formatter-only suggestions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-regressions
+          path: |
+            /run/media/kmosoti/data/FabricO11y/results/security-checks/
+            /run/media/kmosoti/data/FabricO11y/results/ci-tool-install/
+            target/resource-containment/runs/
+          if-no-files-found: error

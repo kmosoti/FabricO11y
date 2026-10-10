@@ -9,6 +9,7 @@
 
 use crate::sha256_hex;
 use serde_json::{Value, json};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
@@ -231,8 +232,16 @@ pub fn receipt(context: &Context, check: &Check, outcome: &Outcome, elapsed_ms: 
     })
 }
 
-/// Run every check of `profile` (or only `only`), print a line per check,
-/// write receipts, and return the overall status.
+fn write_record(path: &Path, value: &Value) -> Result<(), String> {
+    let pending = path.with_extension("pending");
+    let text = serde_json::to_string_pretty(value).map_err(|e| e.to_string())?;
+    std::fs::write(&pending, text + "\n").map_err(|e| format!("{}: {e}", pending.display()))?;
+    std::fs::rename(&pending, path).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// Run every check of `profile` (or only `only`), print progress, retain complete
+/// output and receipts, and return the overall status. Output preserves the
+/// existing stdout-then-stderr order; it is not an interleaved live transcript.
 pub fn run(
     root: &Path,
     registry: &Path,
@@ -252,8 +261,20 @@ pub fn run(
     }
     std::fs::create_dir_all(receipts).map_err(|e| format!("{}: {e}", receipts.display()))?;
     let context = Context::new(root);
+    let marker = receipts.join("current-check.json");
     let mut overall = Status::Passed;
     for check in selected {
+        // A stopped command leaves this marker, never a fabricated success.
+        // Completed logs/receipts remain available when a later check fails.
+        write_record(
+            &marker,
+            &json!({
+                "state": "running", "check_id": check.id,
+                "candidate_commit": context.commit, "command": check.command,
+            }),
+        )?;
+        println!("{:<24} running  {}", check.id, check.command.join(" "));
+        std::io::stdout().flush().map_err(|e| e.to_string())?;
         let started = Instant::now();
         let outcome = run_one(root, check);
         let elapsed = started.elapsed().as_millis();
@@ -278,10 +299,13 @@ pub fn run(
             }
             _ => Status::Passed,
         };
-        let receipt = receipt(&context, check, &outcome, elapsed);
-        let path = receipts.join(format!("{}.json", check.id));
-        let text = serde_json::to_string_pretty(&receipt).map_err(|e| e.to_string())?;
-        std::fs::write(&path, text + "\n").map_err(|e| format!("{}: {e}", path.display()))?;
+        let log_name = format!("{}.log", check.id);
+        let log = receipts.join(&log_name);
+        std::fs::write(&log, &outcome.output).map_err(|e| format!("{}: {e}", log.display()))?;
+        let mut receipt = receipt(&context, check, &outcome, elapsed);
+        receipt["output_log"] = json!(log_name);
+        write_record(&receipts.join(format!("{}.json", check.id)), &receipt)?;
+        std::fs::remove_file(&marker).map_err(|e| format!("{}: {e}", marker.display()))?;
     }
     Ok(overall)
 }
