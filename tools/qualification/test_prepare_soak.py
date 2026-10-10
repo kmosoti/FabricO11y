@@ -1,5 +1,8 @@
 """Source census controls: vendor/UI/package bytes must survive a freeze."""
 import os
+import contextlib
+import io
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -24,7 +27,8 @@ class SourceCensusTests(unittest.TestCase):
             "packaging/build-rpm.sh", "packaging/etc/access.conf.example",
             "packaging/systemd/fabrico11y-server.service",
             "packaging/licenses/webauthn-rs-0.5.5/LICENSE.md",
-            "tools/packaging/stage_candidate.py", "tools/ui/build.py",
+            "tools/packaging/stage_candidate.py", "tools/packaging/stage_console.py",
+            "tools/resource_group.py", "tools/ui/build.py",
             ".cargo/config.toml", "Cargo.lock", "src/bin/fabricctl.rs",
         }
         self.excluded = {"operator-token", "local-server.conf", ".env",
@@ -65,6 +69,43 @@ class SourceCensusTests(unittest.TestCase):
             with patch.object(prepare_soak, "git", return_value=(name + "\0").encode()):
                 with self.assertRaisesRegex(ValueError, "unsafe source path"):
                     prepare_soak.source_paths()
+
+    def test_executable_freeze_copies_and_hashes_bridge_runtime_helpers(self):
+        bins = self.root / "fixture-bin"
+        for name in prepare_soak.BINARY_NAMES:
+            path = bins / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("#!/bin/sh\nexit 0\n")
+            path.chmod(0o700)
+        runtime_helpers = ("tools/resource_group.py", "tools/packaging/stage_console.py",
+                           "tools/packaging/stage_candidate.py", "tools/packaging/payload.py",
+                           "tools/qualification/cross_family/inputs.py",
+                           "tools/bench/labs/completion/cgroups.py",
+                           "tools/bench/labs/completion/enter_group.py")
+        for name in (*prepare_soak.PROTOCOL_NAMES, *runtime_helpers,
+                     "tools/bench/labs/completion/cgroups.py",
+                     "tools/bench/labs/completion/enter_group.py",
+                     "tools/qualification/console_bridge.py"):
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("synthetic frozen fixture\n")
+        census = ("\0".join(sorted(self.required | self.excluded | {self.deleted})) + "\0").encode()
+        def git(*args):
+            if args[0] == "ls-files": return census
+            if args[0] == "rev-parse": return b"1111111111111111111111111111111111111111\n"
+            if args[0] == "branch": return b"milestone/fixture\n"
+            return b""
+        with patch.object(prepare_soak, "git", side_effect=git), \
+                patch.dict(os.environ, {"FABRIC_SCRATCH_ROOT": str(self.root)}), \
+                patch("sys.argv", ["prepare_soak.py", "--id", "fixture", "--bin-dir", str(bins)]), \
+                contextlib.redirect_stdout(io.StringIO()):
+            prepare_soak.main()
+        owned = self.root / "soak-r2-fixture"
+        manifest = json.loads((owned / "provenance/manifest.json").read_text())
+        for name in runtime_helpers:
+            member = "frozen/" + name
+            self.assertEqual((owned / member).read_bytes(), (self.root / name).read_bytes())
+            self.assertEqual(manifest["members"][member]["sha256"], prepare_soak.digest(self.root / name))
 
 
 if __name__ == "__main__":

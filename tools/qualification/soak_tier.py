@@ -18,6 +18,7 @@ import importlib.util
 import json
 import random
 import signal
+import shutil
 import subprocess
 import sys
 import threading
@@ -43,6 +44,7 @@ SEAL_WAIT = 300
 RSS_LIMIT_KIB = 2 * 1024 * 1024
 CHILDREN = []
 COMPANION_GROUP = None
+PRODUCTION = None
 
 
 def evaluate(m):
@@ -73,6 +75,9 @@ def main():
     try:
         return trial()
     finally:
+        if PRODUCTION is not None:
+            (PRODUCTION.raw_root / "tokens").unlink(missing_ok=True)
+            PRODUCTION.close()
         for child in CHILDREN:
             if child.poll() is None:
                 child.kill()
@@ -104,7 +109,14 @@ def trial():
     parser.add_argument("--smoke", action="store_true")
     parser.add_argument("--companion", action="store_true",
                         help="registered R2: strict independent companion custody and 4 GB containment")
+    from production_access import options, validate_options, ProductionAccess
+    options(parser)
     args = parser.parse_args()
+    validate_options(args)
+    if args.production_access and (args.server_cpus != "0-1" or args.sim_cpus != "2-3"):
+        raise SystemExit("production soak retains registered CPUs 0-1 and 2-3")
+    if args.production_access and not args.companion:
+        raise SystemExit("production soak requires strict companion custody")
     global WARMUP, WINDOW, WINDOWS, SECONDS
     if args.smoke:
         WARMUP, WINDOW, WINDOWS = 10, 30, 2
@@ -129,44 +141,66 @@ def trial():
         spec = importlib.util.spec_from_file_location("soak_cgroups", support / "cgroups.py")
         cgroups = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(cgroups)
-        parent = cgroups.delegate()
-        group, limits = cgroups.subgroup(parent, "soak-server", 4_000_000_000,
-                                         3_000_000_000, 512, 2)
-        global COMPANION_GROUP
-        COMPANION_GROUP = (group, root)
-        companion["containment_limits"] = limits
+        if not args.production_access:
+            parent = cgroups.delegate()
+            group, limits = cgroups.subgroup(parent, "soak-server", 4_000_000_000,
+                                             3_000_000_000, 512, 2)
+            global COMPANION_GROUP
+            COMPANION_GROUP = (group, root)
+            companion["containment_limits"] = limits
     rng = random.Random(args.seed)
-    make_certs(root)
-    port = free_port()
-    admin_token = hashlib.sha256(f"admin:{args.seed}".encode()).hexdigest()
-    (root / "admin-token").write_text(admin_token + "\n")
-    server_conf = root / "server.conf"
-    server_conf.write_text(
-        f"listen=127.0.0.1:{port}\ntls_cert={root}/server.pem\ntls_key={root}/server.key\n"
-        f"state_dir={root}/server-state\nadmin_token_file={root}/admin-token\n"
-        f"journal_bytes=4294967296\njournal_file_bytes={64 * 1024 * 1024}\n"
-        + (f"self_spindle_ca={root}/ca.pem\n" if args.companion else ""))
-    server_command = ["taskset", "-c", args.server_cpus, str(bins / "fabric-server"), "serve", str(server_conf)]
-    if args.companion:
-        server_command = [sys.executable, str(support / "enter_group.py"), str(group)] + server_command
-    server = subprocess.Popen(server_command,
-                              stdout=open(root / "server.log", "wb"), stderr=subprocess.STDOUT)
-    CHILDREN.append(server)
-    admin = AdminClient(port, root / "ca.pem", admin_token)
-    deadline = time.monotonic() + 15
-    while True:
-        try:
-            admin.call("GET")
-            break
-        except OSError:
-            if time.monotonic() > deadline or server.poll() is not None:
-                raise SystemExit("server did not start")
-            time.sleep(0.1)
-    tokens = [admin.call("POST", body={"name": f"sim{i:04d}", "metric_interval_s": 15})["token"]
-              for i in range(IDENTITIES)]
+    global PRODUCTION
+    if args.production_access:
+        PRODUCTION = ProductionAccess(args, root, soak=True)
+        bins, server_conf, server = PRODUCTION.bins, PRODUCTION.config, PRODUCTION.server
+        state_root, group = PRODUCTION.state_root, PRODUCTION.server_group
+        companion["containment_limits"] = PRODUCTION.receipt["server_limits"]
+        port = int(PRODUCTION.origin.rsplit(':', 1)[1])
+        shutil.copy2(PRODUCTION.work / 'ca.pem', root / 'ca.pem')
+        admin = PRODUCTION
+        enrolled = [admin.call("POST", body={"name": f"sim{i:04d}", "metric_interval_s": 15})
+                    for i in range(IDENTITIES)]
+        tokens = [value['token'] for value in enrolled]
+        PRODUCTION.issue_reader([value['enrollment_id'] for value in enrolled], SECONDS + SEAL_WAIT + 300)
+        class QueryAdapter:
+            call = staticmethod(PRODUCTION.query_call)
+        query = QueryAdapter()
+        PRODUCTION.bridge.poll_ui(True)
+    else:
+        make_certs(root)
+        port = free_port()
+        admin_token = hashlib.sha256(f"admin:{args.seed}".encode()).hexdigest()
+        (root / "admin-token").write_text(admin_token + "\n")
+        server_conf = root / "server.conf"
+        server_conf.write_text(
+            f"listen=127.0.0.1:{port}\ntls_cert={root}/server.pem\ntls_key={root}/server.key\n"
+            f"state_dir={root}/server-state\nadmin_token_file={root}/admin-token\n"
+            f"journal_bytes=4294967296\njournal_file_bytes={64 * 1024 * 1024}\n"
+            + (f"self_spindle_ca={root}/ca.pem\n" if args.companion else ""))
+        server_command = ["taskset", "-c", args.server_cpus, str(bins / "fabric-server"), "serve-legacy", str(server_conf)]
+        if args.companion:
+            server_command = [sys.executable, str(support / "enter_group.py"), str(group)] + server_command
+        server = subprocess.Popen(server_command,
+                                  stdout=open(root / "server.log", "wb"), stderr=subprocess.STDOUT)
+        CHILDREN.append(server)
+        admin = AdminClient(port, root / "ca.pem", admin_token)
+        deadline = time.monotonic() + 15
+        while True:
+            try:
+                admin.call("GET")
+                break
+            except OSError:
+                if time.monotonic() > deadline or server.poll() is not None:
+                    raise SystemExit("server did not start")
+                time.sleep(0.1)
+        tokens = [admin.call("POST", body={"name": f"sim{i:04d}", "metric_interval_s": 15})["token"]
+                  for i in range(IDENTITIES)]
+        (root / "tokens").write_text("\n".join(tokens) + "\n")
+        query = AdminClient(port, root / "ca.pem", admin_token)
+        query.base = f"https://127.0.0.1:{port}/v1/admin/query"
+        state_root = root / "server-state"
     (root / "tokens").write_text("\n".join(tokens) + "\n")
-    query = AdminClient(port, root / "ca.pem", admin_token)
-    query.base = f"https://127.0.0.1:{port}/v1/admin/query"
+    (root / "tokens").chmod(0o600)
     sim = subprocess.Popen(["taskset", "-c", args.sim_cpus, str(bins / "examples" / "spindle_sim"),
                             "--server-url", f"https://127.0.0.1:{port}", "--ca", str(root / "ca.pem"),
                             "--tokens", str(root / "tokens"), "--seed", hex(args.seed),
@@ -176,6 +210,8 @@ def trial():
     began = time.monotonic()
     probes = {"query_s": [], "failed": 0, "incomplete": 0, "examples": []}
     management = {"ok": 0, "failed": 0}
+    sampling_errors = []
+    next_bound_sample = [0.0]
     samples = []  # (seconds since start, VmRSS KiB, CPU seconds)
 
     def prober():
@@ -212,6 +248,14 @@ def trial():
 
     def sampler():
         while sim.poll() is None:
+            if PRODUCTION is not None and time.monotonic() >= next_bound_sample[0]:
+                try:
+                    PRODUCTION.sample_bound()
+                    next_bound_sample[0] = time.monotonic() + 60
+                except Exception as error:
+                    sampling_errors.append(type(error).__name__)
+                    sim.terminate()
+                    return
             samples.append((time.monotonic() - began, status_kib(server.pid, "VmRSS"), cpu_s(server.pid)))
             time.sleep(SAMPLE_EVERY)
 
@@ -221,14 +265,18 @@ def trial():
     sim.wait()
     for t in threads:
         t.join(timeout=120)
+    if sampling_errors:
+        raise RuntimeError("production resource prerequisite failed: " + sampling_errors[0])
     sim_exit = sim.returncode
-    journal = root / "server-state" / "journal"
+    journal = state_root / "journal"
     seal_deadline = time.monotonic() + SEAL_WAIT
     while any(journal.glob("sealed-*.faj")) and time.monotonic() < seal_deadline:
         time.sleep(1)
     sealed_left = len(list(journal.glob("sealed-*.faj")))
-    segments = len(list((root / "server-state" / "segments").glob("seg-*")))
+    segments = len(list((state_root / "segments").glob("seg-*")))
     server_hwm = status_kib(server.pid, "VmHWM")
+    if PRODUCTION is not None:
+        PRODUCTION.bridge.poll_ui(False)
     server.send_signal(signal.SIGTERM)
     server_exit = server.wait(timeout=120)
 
@@ -244,7 +292,7 @@ def trial():
             and int(events.get("oom", 0)) == 0 and int(events.get("oom_kill", 0)) == 0)
         try:
             observation = soak_companion.dump_stopped_spool(
-                bins / "examples/spool_dump", root / "server-state/self-spindle/node.conf",
+                bins / "examples/spool_dump", state_root / "self-spindle/node.conf",
                 root / "companion-custody", processes_stopped=companion["containment_ok"])
             companion["observation"] = {key: value for key, value in observation.items()
                                         if key != "projected_sources"}
@@ -324,6 +372,7 @@ def trial():
         "seed": args.seed, "identities": IDENTITIES, "seconds": SECONDS, "smoke": args.smoke,
         "passed": all(gates.values()),
         "gates": gates, "violations": verdict.violations[:5],
+        "access_mode": "production-passkey-scoped-workload" if args.production_access else "explicit-legacy-admin",
         "companion": companion, "protocol_revision": "R2" if args.companion else "R1",
         "server_cpus": args.server_cpus, "sim_cpus": args.sim_cpus,
         "sim_exit": sim_exit, "server_exit": server_exit,
@@ -345,6 +394,8 @@ def trial():
         "server_vmhwm_kib": server_hwm, "live_bytes_end": live_bytes,
     }
     (root / "soak-summary.json").write_text(json.dumps(summary, sort_keys=True) + "\n")
+    if PRODUCTION is not None:
+        PRODUCTION.receipt["passed"] = summary["passed"]
     print(json.dumps(summary, sort_keys=True))
     return 0 if summary["passed"] else 1
 

@@ -18,7 +18,14 @@ BINARY_NAMES = ("fabric-server", "fabric-node", "examples/spindle_sim",
                 "examples/server_dump", "examples/spool_dump")
 PROTOCOL_NAMES = ("docs/experiments/benchmarks/soak-protocol.md",
                   "docs/experiments/benchmarks/soak-protocol-r2.md",
-                  "docs/experiments/formal/readiness-continuation-protocol.md")
+                  "docs/experiments/formal/readiness-continuation-protocol.md",
+                  "docs/experiments/benchmarks/alpha-phase5-outage-protocol.md",
+                  "docs/experiments/benchmarks/production-access-campaign-protocol.md")
+RUNTIME_HELPER_NAMES = ("tools/resource_group.py", "tools/packaging/stage_console.py",
+                        "tools/packaging/stage_candidate.py", "tools/packaging/payload.py",
+                        "tools/qualification/cross_family/inputs.py",
+                        "tools/bench/labs/completion/cgroups.py",
+                        "tools/bench/labs/completion/enter_group.py")
 
 
 def digest(path):
@@ -92,6 +99,9 @@ def main():
     copies += [(ROOT / "tools/bench/labs/completion" / name,
                 Path("frozen/tools/qualification") / name)
                for name in ("cgroups.py", "enter_group.py")]
+    # Production-access campaigns import these helpers from the executable
+    # frozen tree, not from the mutable worktree or provenance-only source copy.
+    copies += [(ROOT / name, Path("frozen") / name) for name in RUNTIME_HELPER_NAMES]
     copies += [(ROOT / name, Path("provenance/source") / name) for name in sources]
     copies += [(ROOT / name, Path("provenance/protocols") / name) for name in PROTOCOL_NAMES]
     total = 0
