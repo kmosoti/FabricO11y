@@ -64,6 +64,14 @@ migration, not a config rename. Support platform/synced and hardware passkeys;
 signature-counter behavior follows the reviewed library and device capabilities,
 not an assumption that all authenticators maintain increasing counters.
 
+The shared bootstrap, additional-key, invitation and recovery enrollment helper
+requests discoverable credentials with `residentKey=required` and the legacy
+`requireResidentKey=true`, while preserving required user verification and the
+library's opaque registration state. Existing nonresident credentials remain
+usable through explicit principal sign-in. The server cannot establish resident
+storage from unsigned client extension output; browser acceptance must separately
+witness the credential in its independent authenticator fixture.
+
 Bootstrap is a local owner operation: generate a 256-bit one-time setup secret
 in a protected file, with 10-minute expiry and no public registration mode. Bind
 its use to the configured HTTPS ceremony; persist the first admin and consumed

@@ -337,6 +337,23 @@ pub struct Access {
 fn denied() -> io::Error {
     io::Error::new(io::ErrorKind::PermissionDenied, "access denied")
 }
+
+fn require_resident_registration(challenge: &mut CreationChallengeResponse) -> io::Result<()> {
+    let selection = challenge
+        .public_key
+        .authenticator_selection
+        .as_mut()
+        .ok_or_else(denied)?;
+    // The library's prelude does not expose the resident-key enum. Infer its
+    // public field type without adding another dependency or changing opaque
+    // registration state, challenge bytes or the required UV policy.
+    selection.resident_key = Some(
+        serde_json::from_value(serde_json::Value::String("required".into()))
+            .map_err(|_| denied())?,
+    );
+    selection.require_resident_key = true;
+    Ok(())
+}
 fn passkey_revision(keys: &[Passkey]) -> io::Result<String> {
     let bytes = serde_json::to_vec(keys).map_err(|_| invalid("passkey serialization"))?;
     Ok(hex_bytes(&Sha256::digest(bytes)))
@@ -653,10 +670,11 @@ impl Access {
         now: u64,
     ) -> io::Result<CeremonyStart> {
         let uuid = Uuid::parse_str(&id).map_err(|_| denied())?;
-        let (challenge, state) = self
+        let (mut challenge, state) = self
             .webauthn
             .start_passkey_registration(uuid, &id, name, exclude)
             .map_err(|_| denied())?;
+        require_resident_registration(&mut challenge)?;
         let ceremony_id = random()?;
         let public_key = serde_json::to_value(challenge).map_err(|_| denied())?;
         self.ceremonies.insert(
@@ -2285,6 +2303,85 @@ mod tests {
         s.enrollments = ["enrollment-a".to_owned()].into();
         s.signals = [Signal::Logs].into();
         s
+    }
+    #[test]
+    fn resident_registration_options_cover_bootstrap_add_invitation_and_recovery() {
+        // Origin: Firefox diagnostic05 stored a nonresident key despite the
+        // console protocol's resident-credential requirement. All enrollment
+        // entrypoints must request resident credentials without weakening UV.
+        fn assert_options(start: &CeremonyStart) {
+            let key = &start.public_key["publicKey"];
+            let selection = &key["authenticatorSelection"];
+            assert_eq!(selection["residentKey"], "required");
+            assert_eq!(selection["requireResidentKey"], true);
+            assert_eq!(selection["userVerification"], "required");
+            assert!(selection.get("authenticatorAttachment").is_none());
+            assert_eq!(key["rp"]["id"], "fabric.example");
+            assert!(!key["challenge"].as_str().unwrap().is_empty());
+        }
+        let dir = Scratch::new();
+        let mut a = Access::open(&dir.0, config(), 100).unwrap();
+        let bootstrap = fs::read_to_string(dir.0.join("access-bootstrap.secret")).unwrap();
+        assert_options(&a.start_registration(&bootstrap, "owner", 100).unwrap());
+        let session = owner(&mut a, 100);
+        let human = a.authenticate_session(&session.session_token, 100).unwrap();
+        assert_options(
+            &a.start_add_passkey(&human, &session.csrf_token, "https://fabric.example", 100)
+                .unwrap(),
+        );
+        let invite = a
+            .invite_human(
+                &human,
+                "reader",
+                read_scope(),
+                &session.csrf_token,
+                "https://fabric.example",
+                100,
+            )
+            .unwrap();
+        assert_options(
+            &a.start_invited_registration(&invite.invitation, 100)
+                .unwrap(),
+        );
+        drop(a);
+        let recovery =
+            Access::recover_offline(&dir.0, config(), &session.principal_id, 101).unwrap();
+        let mut a = Access::open(&dir.0, config(), 101).unwrap();
+        let start = a.start_registration(&recovery, "owner", 101).unwrap();
+        assert_eq!(start.principal_id, session.principal_id);
+        assert_options(&start);
+    }
+    #[test]
+    fn resident_registration_preserves_library_options_and_rejects_missing_selection() {
+        let dir = Scratch::new();
+        let a = Access::open(&dir.0, config(), 100).unwrap();
+        let (mut challenge, _) = a
+            .webauthn
+            .start_passkey_registration(
+                Uuid::new_v4(),
+                "owner-id",
+                "owner",
+                Some(vec![vec![7; 32].into()]),
+            )
+            .unwrap();
+        let mut expected = serde_json::to_value(&challenge).unwrap();
+        expected["publicKey"]["authenticatorSelection"]["residentKey"] =
+            serde_json::json!("required");
+        expected["publicKey"]["authenticatorSelection"]["requireResidentKey"] =
+            serde_json::json!(true);
+        require_resident_registration(&mut challenge).unwrap();
+        // Challenge, RP/user identifiers, excluded keys, UV, attachment,
+        // algorithms and extensions must remain exactly library-generated.
+        assert_eq!(serde_json::to_value(&challenge).unwrap(), expected);
+        challenge.public_key.authenticator_selection = None;
+        let unchanged = serde_json::to_value(&challenge).unwrap();
+        assert_eq!(
+            require_resident_registration(&mut challenge)
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::PermissionDenied
+        );
+        assert_eq!(serde_json::to_value(&challenge).unwrap(), unchanged);
     }
     #[test]
     fn control_audit_binds_actual_action_actor_resource_and_transition_request_id() {

@@ -24,6 +24,12 @@ the service owner or OS administrator; use the browser's **First owner setup**
 at `https://YOUR_HOST:PORT/console/`. The secret expires after ten minutes and
 is consumed when registration succeeds. The server creates the owner ID and
 grants; the browser supplies a display name and a passkey with user verification.
+New owner, additional-key, invitation and recovery enrollment requires an
+authenticator that can store a resident/discoverable credential and perform user
+verification. A conforming browser rejects that request if its authenticator
+cannot provide the requested capability. Existing credentials remain usable for
+explicit principal sign-in. Resident-key browser acceptance is recorded separately from this request
+policy; the server cannot prove resident storage from unsigned client output.
 Each ceremony expires after five minutes. Save the returned principal ID for
 future sign-in and recovery; display names do not identify accounts.
 
