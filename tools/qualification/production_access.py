@@ -7,7 +7,7 @@ from pathlib import Path
 import shutil
 import subprocess
 
-from release_runtime import CandidateFixture, WorkloadReader, STORAGE, directory_bytes, digest
+from release_runtime import CandidateFixture, WorkloadReader, STORAGE, directory_bytes, digest, cpu_pair
 
 
 def options(parser):
@@ -15,9 +15,21 @@ def options(parser):
     parser.add_argument('--deb-receipt', type=Path)
     parser.add_argument('--rpm-receipt', type=Path)
     parser.add_argument('--production-out', type=Path)
+    parser.add_argument('--production-server-cpus', choices=('0-1', '4-5'), default='0-1')
+
+
+def server_placement(args, *, soak):
+    value = getattr(args, 'production_server_cpus', '0-1')
+    selected = cpu_pair(value)
+    if selected & {2, 3} or value not in ('0-1', '4-5'):
+        raise ValueError('production server placement must be 0-1 or 4-5, disjoint from workers 2-3')
+    if value != '0-1' and (soak or not args.production_access):
+        raise ValueError('alternative server placement requires a production outage; soak retains 0-1')
+    return value
 
 
 def validate_options(args):
+    server_placement(args, soak=False)
     paths = (args.deb_receipt, args.rpm_receipt, args.production_out)
     if args.production_access != all(path is not None for path in paths):
         raise ValueError('production access requires all three exact receipt/output paths')
@@ -28,12 +40,14 @@ def validate_options(args):
 class ProductionAccess(CandidateFixture):
     def __init__(self, args, raw_root, *, soak):
         validate_options(args)
+        placement = server_placement(args, soak=soak)
         self.raw_root = Path(raw_root)
         self.soak = soak
         allocated = int(subprocess.check_output(['du', '-s', '-B1', str(STORAGE)]).split()[0])
         if allocated + 5 * 1024**3 > 95_000_000_000:
             raise RuntimeError('5 GiB reservation exceeds 95 GB admission stop')
-        super().__init__(args.deb_receipt, args.rpm_receipt, args.production_out)
+        super().__init__(args.deb_receipt, args.rpm_receipt, args.production_out,
+                         server_cpus=placement, supervisor_cpus='2-3')
         # Match the original bin/examples layout using immutable verified copies.
         examples = self.bins / 'examples'
         examples.mkdir()
@@ -45,6 +59,9 @@ class ProductionAccess(CandidateFixture):
         self.state_root = self.work / 'state'
         self.query_reader = None
         self.receipt['adapter'] = 'production-access-campaign-protocol'
+        self.receipt['adapter_cpu_placement'] = {
+            'server': sorted(cpu_pair(placement)), 'workers': [2, 3],
+            'soak': soak, 'policy_commit': '414fb29'}
         self.receipt['historical_oracles_unchanged'] = True
         source = Path(__file__).resolve().parent
         self.receipt['adapter_harness_sha256'] = {name: digest(source / name) for name in

@@ -6,10 +6,73 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from production_access import ProductionAccess, options, validate_options
+from production_access import ProductionAccess, options, validate_options, server_placement
 
 
 class ProductionAccessTests(unittest.TestCase):
+    def test_outage_placement_has_two_disjoint_cpus_and_soak_keeps_original_pair(self):
+        from itertools import combinations
+        from release_runtime import cpu_pair
+        args = argparse.Namespace(production_access=True)
+        self.assertEqual(server_placement(args, soak=True), '0-1')
+        for placement in ('0-1', '4-5'):
+            args.production_server_cpus = placement
+            selected = cpu_pair(server_placement(args, soak=False))
+            self.assertEqual(len(selected), 2)
+            self.assertFalse(selected & {2, 3})
+        with self.assertRaisesRegex(ValueError, 'soak retains'):
+            server_placement(args, soak=True)
+        args.production_access = False
+        with self.assertRaisesRegex(ValueError, 'production outage'):
+            server_placement(args, soak=False)
+        args.production_access = True
+        # Enumerate every other pair on the host, including overlaps and SMT
+        # siblings, rather than trusting argparse as the only admission guard.
+        for first, second in combinations(range(12), 2):
+            value = f'{first}-{second}'
+            if value in ('0-1', '4-5'):
+                continue
+            args.production_server_cpus = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                server_placement(args, soak=False)
+        for value in ('0', '0-2', '0,0', '0,2', '4,5', 'all', ''):
+            args.production_server_cpus = value
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                server_placement(args, soak=False)
+
+    def test_alternative_placement_requires_explicit_production_mode(self):
+        parser = argparse.ArgumentParser()
+        options(parser)
+        with self.assertRaises(ValueError):
+            validate_options(parser.parse_args(['--production-server-cpus', '4-5']))
+        args = parser.parse_args(['--production-access', '--deb-receipt', '/synthetic/deb',
+            '--rpm-receipt', '/synthetic/rpm', '--production-out', '/synthetic/out',
+            '--production-server-cpus', '4-5'])
+        validate_options(args)
+        self.assertEqual(server_placement(args, soak=False), '4-5')
+
+    def test_constructor_forwards_selected_placement_and_records_it(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as work:
+            root = Path(work)
+            (root / 'bins').mkdir()
+            (root / 'helpers').mkdir()
+            for name in ('spindle_sim', 'server_dump', 'spool_dump'):
+                (root / 'helpers' / name).write_bytes(b'synthetic immutable helper')
+            args = argparse.Namespace(production_access=True, deb_receipt=root / 'deb',
+                rpm_receipt=root / 'rpm', production_out=root / 'out',
+                production_server_cpus='4-5')
+            observed = []
+            def fixture(instance, *paths, **placement):
+                observed.append((paths, placement))
+                instance.work, instance.bins, instance.helpers = root, root / 'bins', root / 'helpers'
+                instance.input_hashes, instance.receipt = {}, {}
+            with patch('release_runtime.CandidateFixture.__init__', new=fixture), \
+                    patch('production_access.subprocess.check_output', return_value=b'0 synthetic\n'):
+                adapter = ProductionAccess(args, root / 'raw', soak=False)
+            self.assertEqual(observed[0][1], {'server_cpus': '4-5', 'supervisor_cpus': '2-3'})
+            self.assertEqual(adapter.receipt['adapter_cpu_placement'], {
+                'server': [4, 5], 'workers': [2, 3], 'soak': False, 'policy_commit': '414fb29'})
+
     def test_partial_or_unselected_receipts_fail_closed(self):
         parser = argparse.ArgumentParser()
         options(parser)
