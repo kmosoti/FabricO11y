@@ -1,6 +1,6 @@
 {
   "format": "fabric-wiki-migration-v1",
-  "wiki_commit": "9c3823f9f70f6794ab084f39b99c2c4abb4951ff",
+  "wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d",
   "source_base": "6ed5659cb0123ccd928d6f9a0ce5a83fad09fbaf",
   "raw_assets_uploaded": 0,
   "original_archive_sha256": "4fb293e4aa1dc52e20c82f3f62e9cd95cf4fe01ab6741672c80c50a89f7215f0",
@@ -1236,6 +1236,352 @@
       "normalizations": {},
       "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-workload-sizing",
       "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-borrowed-log-design.md",
+      "source_sha256": "97e8098859e0f56fe34a6fff1fd8945d6deeef5dd485f7a41c82618ff6de99f4",
+      "page": "Experiment-benchmarks-catalog-borrowed-log-design",
+      "page_sha256": "a536856810d9d1ab33987eed80cb9bff3827d3db2658ec17ac1937601023242a",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-borrowed-log-design",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-labs-capacity.md",
+      "source_sha256": "860bab49ac29fb50d3bf44c109da8ea1ef8a3f50f1503c2cab01cdd9bbb2d3a0",
+      "page": "Experiment-benchmarks-catalog-labs-capacity",
+      "page_sha256": "01e311adb94f56ca974ee6cad7df8f11abcd9d02caeff6b88be527875e372e85",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-labs-capacity",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-labs-operations.md",
+      "source_sha256": "5bf395d35f9a1cf37c41ecea726f28453a84df2a5dcb6139907aa12b2bdfdf9e",
+      "page": "Experiment-benchmarks-catalog-labs-operations",
+      "page_sha256": "3fe18767c743f4b490a7dac18034a1a574a5c6a05ab12019b63ee7a726c4e86a",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-labs-operations",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-labs-query.md",
+      "source_sha256": "2cbf1b4ebb81808de79d890778a2bb966b60ebe26485bf0ceb184ea3df42ecce",
+      "page": "Experiment-benchmarks-catalog-labs-query",
+      "page_sha256": "38cd1614b53c62b74df7309040a5b73c59c19a12c5a5fe25ea6228414d227655",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-labs-query",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-mixed-failure-cleanup.md",
+      "source_sha256": "28bdb19f55562c89d394ddcf50ea260188f2fcafc4bba314f754c1f62db13c10",
+      "page": "Experiment-benchmarks-catalog-mixed-failure-cleanup",
+      "page_sha256": "019738f519d30b1c40b72bfa66116916bb03444fff0852b931d8a4f61e6c1152",
+      "normalizations": {
+        "data_drive_prefix": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-mixed-failure-cleanup",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-capacity-completion-readiness.md",
+      "source_sha256": "c4d5b4223e7db6cdff6a65111de7a305f4ef1d0f8432b90ac3334bce7b08d421",
+      "page": "Experiment-benchmarks-coupled-capacity-completion-readiness",
+      "page_sha256": "96b7ad0a1e0d7429ed9c13afd9c64b11558617bfff00550396d4754f75a940cd",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-capacity-completion-readiness",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-completion-plan.md",
+      "source_sha256": "84053110e6fce00e2cd2743d45d2072d0d0848d36051ac114c01735fe453429f",
+      "page": "Experiment-benchmarks-coupled-completion-plan",
+      "page_sha256": "021c5dc83a1ca576201db71c52a69c72a9256cc3fc192ef7cd331391b1d699d4",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-completion-plan",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-labs-capacity.md",
+      "source_sha256": "d11279ff5c8b6253a911262ba20eb1508889a69618459c7ce3beede2015e4b74",
+      "page": "Experiment-benchmarks-coupled-labs-capacity",
+      "page_sha256": "3f45d68f1313477ef230bda701c62112c818f02c424da1c36b5404a4d018bf5a",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-labs-capacity",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-labs-operations.md",
+      "source_sha256": "76702842f519029d226c1c098516a52650fb6761d2438e34da7f3430ad988b7a",
+      "page": "Experiment-benchmarks-coupled-labs-operations",
+      "page_sha256": "6123a77edbbf1528b1b799a4497a0be39d000029cab49b364b443ac17141dd2f",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-labs-operations",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-labs-plan.md",
+      "source_sha256": "4ff5ed94cc218a34bd41d47ab4056282df01535b009e3a09ed9f18a731d9719f",
+      "page": "Experiment-benchmarks-coupled-labs-plan",
+      "page_sha256": "49c659768f99baa4656d41c5f0c2c1f32baec448c92584fe036ac6c484a797e6",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-labs-plan",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-labs-query.md",
+      "source_sha256": "1b3188e689e5f4932d601b8c5a20dff3684725f036b27fc18f9b3158f1a01967",
+      "page": "Experiment-benchmarks-coupled-labs-query",
+      "page_sha256": "ee5d6fb3ac93082b0eff893412bbcddc8e848f9faf0d4b96dfb7db46fee1aa69",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-labs-query",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-operations-completion-readiness.md",
+      "source_sha256": "e5e9c2762fee8f867b8e624ef4f0717168ab51f6e852fe8317fa5b39eb2a5b08",
+      "page": "Experiment-benchmarks-coupled-operations-completion-readiness",
+      "page_sha256": "2ed38262bfb06ad38f97f51b588c071e66bb34dc8407e996864bed01dc4358cb",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-operations-completion-readiness",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-operations-preparation.md",
+      "source_sha256": "790fe9af4cf12ada7f9d8b58961e52ab412561c747f18413cf83b64a68969342",
+      "page": "Experiment-benchmarks-coupled-operations-preparation",
+      "page_sha256": "297c7d112084886aa2ada8efd648da51d294e5b8c79d516fcd79fccf3f30fb1a",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-operations-preparation",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-query-completion-readiness.md",
+      "source_sha256": "f2e2ed360080a252575ce15913e171eaffce30ec07ac267c7b23c141583f2e5c",
+      "page": "Experiment-benchmarks-coupled-query-completion-readiness",
+      "page_sha256": "8f6389bf4ce0aa4bc9f370e516eed30dda59908fbeb4bbbc9ba5e0eda5b49b00",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-query-completion-readiness",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-query-preparation.md",
+      "source_sha256": "3f9016b7145a0c14dd6850ba7a1f89d03a61b5c5c9e507005b1c8f95337f7256",
+      "page": "Experiment-benchmarks-coupled-query-preparation",
+      "page_sha256": "19cf667ef1f3ffd00355519aa1a2cda11e2b6507b05444aa7ab48429116e109a",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-query-preparation",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/performance-frontier-admission-01.md",
+      "source_sha256": "5b3fcb4e6ca1d3941371e8f06db5979e77b3a07ebb953502cd579e2714cd316b",
+      "page": "Experiment-benchmarks-performance-frontier-admission-01",
+      "page_sha256": "b04703ab6a35f459419cfd80aa2e0cf0907ec84f27993c90d3ebe041e14a63e5",
+      "normalizations": {
+        "data_drive_prefix": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-performance-frontier-admission-01",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/performance-frontier-lab-plan.md",
+      "source_sha256": "e4bac0870a3992df096779fe9f0d0f23f94dcdebd1bd21c453fe4c0d99133d57",
+      "page": "Experiment-benchmarks-performance-frontier-lab-plan",
+      "page_sha256": "a51081ef90799f4d79f28bc8d87309f0f263051839e3a0b230546d481c2a49ee",
+      "normalizations": {
+        "data_drive_prefix": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-performance-frontier-lab-plan",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/performance-frontier-labs/capacity.md",
+      "source_sha256": "5d1112030ba0aabde68882f491ca6554e0b508687bcff944b1c37f9fa07e799b",
+      "page": "Experiment-benchmarks-performance-frontier-labs-capacity",
+      "page_sha256": "b040e6aff387de7e7716d822947b9d5c457727d94126cb04642e3ca9f12780dc",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-performance-frontier-labs-capacity",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/performance-frontier-labs/operations.md",
+      "source_sha256": "483e61ce7316ce98163355b8b12c1f9cc5151a183f76ddc72bb35991e93e6747",
+      "page": "Experiment-benchmarks-performance-frontier-labs-operations",
+      "page_sha256": "f59083bdc8eec407abbb5b78a7127cdf509304815d69173606fd509b6bb3137d",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-performance-frontier-labs-operations",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/performance-frontier-labs/query.md",
+      "source_sha256": "29be35ee90cc4c9ef93766ed000306be1054badb05167c3b28e315bcacfa8638",
+      "page": "Experiment-benchmarks-performance-frontier-labs-query",
+      "page_sha256": "1a0f61eca0569258aec66275a870739af9872815104488878e6afc842a4e43e5",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-performance-frontier-labs-query",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/formal/invariant-consolidation.md",
+      "source_sha256": "05c8798da1c485079c6b061cf6877fad869583733caac04f8f9034aede13ace1",
+      "page": "Experiment-formal-invariant-consolidation",
+      "page_sha256": "ad28a91005a90c00fb3be535832ac25c185af4c7601600ff843aea1a471999c6",
+      "normalizations": {
+        "data_drive_prefix": 2
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-invariant-consolidation",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    }
+  ],
+  "migration_batches": [
+    {
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d",
+      "report_count": 21,
+      "source_paths": [
+        "docs/experiments/benchmarks/catalog-borrowed-log-design.md",
+        "docs/experiments/benchmarks/catalog-labs-capacity.md",
+        "docs/experiments/benchmarks/catalog-labs-operations.md",
+        "docs/experiments/benchmarks/catalog-labs-query.md",
+        "docs/experiments/benchmarks/catalog-mixed-failure-cleanup.md",
+        "docs/experiments/benchmarks/coupled-capacity-completion-readiness.md",
+        "docs/experiments/benchmarks/coupled-completion-plan.md",
+        "docs/experiments/benchmarks/coupled-labs-capacity.md",
+        "docs/experiments/benchmarks/coupled-labs-operations.md",
+        "docs/experiments/benchmarks/coupled-labs-plan.md",
+        "docs/experiments/benchmarks/coupled-labs-query.md",
+        "docs/experiments/benchmarks/coupled-operations-completion-readiness.md",
+        "docs/experiments/benchmarks/coupled-operations-preparation.md",
+        "docs/experiments/benchmarks/coupled-query-completion-readiness.md",
+        "docs/experiments/benchmarks/coupled-query-preparation.md",
+        "docs/experiments/benchmarks/performance-frontier-admission-01.md",
+        "docs/experiments/benchmarks/performance-frontier-lab-plan.md",
+        "docs/experiments/benchmarks/performance-frontier-labs/capacity.md",
+        "docs/experiments/benchmarks/performance-frontier-labs/operations.md",
+        "docs/experiments/benchmarks/performance-frontier-labs/query.md",
+        "docs/experiments/formal/invariant-consolidation.md"
+      ],
+      "archive_location": "$FABRIC_DATA/results/wiki-stage-02/original-reports.tar.gz",
+      "original_archive_sha256": "e7a17947f68cac7d17b74c8169b3923c18f13a0bddb4668a7b02905be9d86962",
+      "raw_assets_uploaded": 0,
+      "publication_receipt": "$FABRIC_DATA/results/wiki-stage-02/publication-receipt.json"
+    }
+  ],
+  "repository_retention_notes": [
+    {
+      "source": "docs/experiments/benchmarks/storage-catalog-rust-lab-plan.md",
+      "reason": "machine-consumed input; original bytes retained",
+      "consumers": [
+        "tools/bench/labs/completion/run_job.py"
+      ],
+      "source_sha256": "49fef0c028c709e0929df6c707c3b5b8458df086bb631973f2afc303d2c99f05"
+    },
+    {
+      "source": "docs/experiments/benchmarks/dev-small-readiness-plan.md",
+      "reason": "machine-consumed input; original bytes retained",
+      "consumers": [
+        "tools/bench/labs/readiness/run_job.py"
+      ],
+      "source_sha256": "248aa5cc7b8c3a44bc2bbf584c17d31689e71a4d0591903bf00781d0bb0dee69"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-capacity-preparation.md",
+      "reason": "machine-consumed input; original bytes retained",
+      "consumers": [
+        "tools/bench/labs/catalog/coupled_borrowed.py"
+      ],
+      "source_sha256": "42de848f70bd520ce3026755570249d219482af2626c3c68e3de2f72cd431e27"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-evidence-attribution-protocol.md",
+      "reason": "Withdrawn draft protocol; preserve its unchanged rejection and decision rules with the executable campaign.",
+      "source_sha256": "9fb4aa2af9bc413e811238cd3bc19d3344112e918d4c251ee70987314e58adbe"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-service-confirmation-protocol.md",
+      "reason": "Draft executable confirmation procedure; versioned procedure remains in repository.",
+      "source_sha256": "4f308fe48cddce753a3b7c7d50291b2f72cf6b2020f2b700416f7eddbea172c3"
+    },
+    {
+      "source": "docs/experiments/benchmarks/dev-small-observation-protocol.md",
+      "reason": "Registered measurement protocol; specification protection applies.",
+      "source_sha256": "6a5a2eecce46228ea53a1a387255bd5435178dad1a1c9f9e7746b1d6c44c528c"
+    },
+    {
+      "source": "docs/experiments/benchmarks/query-frontier-protocol.md",
+      "reason": "Draft executable measurement protocol; procedure and decision rules remain versioned.",
+      "source_sha256": "c1e01c002aad3833aaf476e458dae464e5919c6d56848eb1e8d3b2a8d108c31f"
+    },
+    {
+      "source": "docs/experiments/benchmarks/rca-flow-design.md",
+      "reason": "Mixed record defines synthetic scenarios and negative-control expectations; executable verification input remains versioned.",
+      "source_sha256": "f7dbab8a35c032b24739cfecda3fe9a3b3a9aee0f2469423e84ac709a2a1a8c1"
+    },
+    {
+      "source": "docs/experiments/benchmarks/remote-reducer-shadow-counterexample.md",
+      "reason": "Minimized deterministic regression origin/reproducer; preserve counterexample alongside diagnostic tooling.",
+      "source_sha256": "f41c678ebf3a6f0f69e8d8447ee1d66f523acf5db1ccf946b75d319fb25879f0"
+    },
+    {
+      "source": "docs/experiments/lab-orchestration.md",
+      "reason": "Adopted executable coordination procedure; repository remains canonical.",
+      "source_sha256": "1bf5e53556aa9d9134a7aed0e5f9b41d7afdac3c4a6236815273929282bba069"
     }
   ]
 }
