@@ -56,10 +56,9 @@ fn registry_retains_success_and_failure_output_with_matching_hashes() {
     for (id, status, exit) in [("pass", "passed", 0), ("fail", "failed", 7)] {
         let log = std::fs::read(receipts.join(format!("{id}.log"))).unwrap();
         assert_eq!(log, b"stdout-sentinel\nstderr-sentinel\n");
-        let receipt: Value = serde_json::from_slice(
-            &std::fs::read(receipts.join(format!("{id}.json"))).unwrap(),
-        )
-        .unwrap();
+        let receipt: Value =
+            serde_json::from_slice(&std::fs::read(receipts.join(format!("{id}.json"))).unwrap())
+                .unwrap();
         assert_eq!(
             receipt["output_sha256"],
             "9f4476279ed17e444616ad982db5eb6cd4a34a8a3db47ea94415038e60e56734"
