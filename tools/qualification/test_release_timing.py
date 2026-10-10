@@ -5,7 +5,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from release_timing import native, population, NS
+from release_timing import clearing, native, population, NS
 
 
 class TimingControls(unittest.TestCase):
@@ -54,6 +54,52 @@ class TimingControls(unittest.TestCase):
                 path.write_text('\n'.join(mutant))
                 with self.assertRaises(ValueError):
                     native(path, [source])
+
+    def test_periodic_phase_changes_only_the_old_sampled_decision(self):
+        # Same 10 Hz source and 20 ms service in both windows, with a 50 ms
+        # arrival-phase shift. Sampling catches only the final window's work.
+        entries = []
+        for tick in range(1500):
+            created = tick * NS // 10 + (40_000_000 if tick < 1000 else -10_000_000)
+            entries.append({'created_ns': created, 'ack_ns': created+20_000_000, 'bytes': 500})
+        old = population(entries, 15*NS, 135*NS)
+        new = population(entries, 15*NS, 135*NS, rule='clearing-v2')
+        self.assertFalse(old['passed'])
+        self.assertFalse(new['sampled_v1_passed'])
+        self.assertTrue(new['passed'])
+        self.assertEqual(new['clearing']['max_busy_ns'], 20_000_000)
+
+    def test_fast_individual_acks_do_not_hide_continuous_debt(self):
+        entries = [{'created_ns': i*NS//10, 'ack_ns': i*NS//10+NS//5, 'bytes': 500}
+                   for i in range(70)]
+        result = population(entries, 0, 10*NS, rule='clearing-v2')
+        self.assertLess(result['creation_to_ack_p99_s'], 1)
+        self.assertEqual(result['final_unacked'], 0)
+        self.assertFalse(result['passed'])
+        # Selecting the window first would erase the long warmup/drain chain.
+        self.assertGreater(clearing(entries, 3*NS, 4*NS)['max_busy_ns'], 5*NS)
+        self.assertFalse(clearing(entries, 3*NS, 4*NS)['passed'])
+
+    def test_adjacency_exact_boundary_zero_duration_and_censoring(self):
+        entries = [{'created_ns': i*NS//2, 'ack_ns': (i+1)*NS//2, 'bytes': 50}
+                   for i in range(10)]
+        boundary = clearing(entries, 0, 10*NS)
+        self.assertEqual(boundary['max_busy_ns'], 5*NS)
+        self.assertEqual(boundary['windows'][0]['empty_ns'], 0)
+        self.assertFalse(boundary['passed'])
+        self.assertTrue(clearing([{'created_ns': 2*NS, 'ack_ns': 2*NS, 'bytes': 1}], 0, 10*NS)['passed'])
+        for ack in (None, -1, 0.5):
+            self.assertFalse(clearing([{'created_ns': 0, 'ack_ns': ack, 'bytes': 1}], 0, NS)['passed'])
+
+    def test_rising_peaks_are_reported_when_work_still_clears(self):
+        entries = [{'created_ns': i*NS+NS//4, 'ack_ns': i*NS+NS//2, 'bytes': 500}
+                   for i in range(120) for _ in range(1 if i < 60 else 4)]
+        result = clearing(entries, 0, 120*NS)
+        self.assertTrue(result['passed'])
+        self.assertEqual(result['max_outstanding_count'], 4)
+        self.assertEqual(result['max_outstanding_bytes'], 2000)
+        self.assertGreater(result['continuous_first_last_mean'][1]['bytes'],
+                           result['continuous_first_last_mean'][0]['bytes'])
 
 
 if __name__ == '__main__':

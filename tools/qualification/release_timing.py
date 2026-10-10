@@ -11,7 +11,9 @@ def p99(values):
     return ordered[max(0, math.ceil(.99 * len(ordered)) - 1)] if ordered else None
 
 
-def population(entries, begin_ns, end_ns):
+def population(entries, begin_ns, end_ns, *, rule='sampled-v1'):
+    if rule not in ('sampled-v1', 'clearing-v2'):
+        raise ValueError('unregistered backlog decision')
     if end_ns <= begin_ns:
         raise ValueError('nonpositive measurement window')
     measured = [e for e in entries if begin_ns <= e['created_ns'] < end_ns]
@@ -29,13 +31,80 @@ def population(entries, begin_ns, end_ns):
     means = {name: {'first': sum(s[name] for s in first) / len(first),
                     'last': sum(s[name] for s in last) / len(last)} for name in ('count', 'bytes')}
     peak = p99(latencies)
-    return {'passed': valid and complete and peak is not None and peak <= 1
+    result = {'passed': valid and complete and peak is not None and peak <= 1
             and all(v['last'] <= v['first'] for v in means.values())
             and all(e.get('ack_ns') is not None for e in entries),
             'valid': valid, 'complete_measured_population': complete,
             'measured_batches': len(measured), 'censored': sum(e.get('ack_ns') is None for e in measured),
             'creation_to_ack_p99_s': peak, 'backlog_means': means, 'samples': samples,
             'final_unacked': sum(e.get('ack_ns') is None for e in entries)}
+    if rule == 'clearing-v2':
+        result['sampled_v1_passed'] = result['passed']
+        result['clearing'] = clearing(entries, begin_ns, end_ns)
+        result['passed'] = (valid and complete and peak is not None and peak <= 1
+                            and result['final_unacked'] == 0 and result['clearing']['passed'])
+    result['backlog_rule'] = rule
+    return result
+
+
+def clearing(entries, begin_ns, end_ns):
+    """Full interval union: accepted work must repeatedly drain within 5 s.
+
+    This deliberately makes no stationarity or nonincreasing-occupancy claim.
+    Adjacent intervals are merged before selecting periods crossing the window.
+    """
+    if end_ns <= begin_ns:
+        raise ValueError('nonpositive measurement window')
+    valid = bool(entries) and all(type(e.get('created_ns')) is int and e['created_ns'] >= 0
+                and type(e.get('ack_ns')) is int and e['ack_ns'] >= e['created_ns']
+                and type(e.get('bytes')) is int and e['bytes'] > 0 for e in entries)
+    if not valid:
+        return {'passed': False, 'complete_valid_population': False}
+    events = {}
+    for entry in entries:
+        if entry['ack_ns'] == entry['created_ns']:
+            continue
+        for stamp, direction in [(entry['created_ns'], 1), (entry['ack_ns'], -1)]:
+            delta = events.setdefault(stamp, [0, 0])
+            delta[0] += direction
+            delta[1] += direction * entry['bytes']
+    periods, count, size, opened = [], 0, 0, None
+    max_count = max_bytes = 0
+    ordered = sorted(events)
+    for index, stamp in enumerate(ordered):
+        before = count
+        count += events[stamp][0]
+        size += events[stamp][1]
+        if before == 0 and count > 0:
+            opened = stamp
+        elif before > 0 and count == 0:
+            periods.append((opened, stamp))
+            opened = None
+        # State applies on the interval starting at this timestamp. Including
+        # the next event handles a queue already nonempty at the window start.
+        next_stamp = ordered[index + 1] if index + 1 < len(ordered) else stamp
+        if stamp < end_ns and next_stamp > begin_ns:
+            max_count, max_bytes = max(max_count, count), max(max_bytes, size)
+    relevant = [(left, right) for left, right in periods if left < end_ns and right > begin_ns]
+    longest = max((right-left for left, right in relevant), default=0)
+    windows = []
+    for left in range(begin_ns, end_ns, 5 * NS):
+        right = min(left + 5 * NS, end_ns)
+        occupied = sum(max(0, min(right, b)-max(left, a)) for a,b in relevant)
+        windows.append({'from_ns': left, 'to_ns': right, 'empty_ns': right-left-occupied})
+    means = []
+    for left, right in [(begin_ns, min(begin_ns+30*NS, end_ns)),
+                        (max(begin_ns, end_ns-30*NS), end_ns)]:
+        parts = [(max(0, min(right, e['ack_ns'])-max(left, e['created_ns'])), e['bytes'])
+                 for e in entries]
+        means.append({'count': sum(d for d,_ in parts)/(right-left),
+                      'bytes': sum(d*b for d,b in parts)/(right-left)})
+    return {'passed': longest <= 5 * NS and all(w['empty_ns'] > 0 for w in windows),
+            'complete_valid_population': True, 'max_busy_ns': longest,
+            'busy_periods_intersecting_window': len(relevant),
+            'queue_empty_fraction': sum(w['empty_ns'] for w in windows)/(end_ns-begin_ns),
+            'max_outstanding_count': max_count, 'max_outstanding_bytes': max_bytes,
+            'continuous_first_last_mean': means, 'windows': windows}
 
 
 def native(log, raw_sources):
