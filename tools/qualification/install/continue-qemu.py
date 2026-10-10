@@ -116,6 +116,23 @@ def main():
         facts['exit'] = 0
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as exc:
         facts['error'] = f'{type(exc).__name__}: {exc}'
+        if process is not None and process.poll() is None:
+            try:
+                diagnosis = Q.run([*ssh, 'sudo', 'bash', '-s'], timeout=60,
+                                  check=False, input_text='''set +e
+for f in /root/accept/lifecycle-before.json /root/accept/lifecycle-upgraded.json /root/accept/lifecycle-rebooted.json /root/accept/lifecycle-identity.json /etc/fabrico11y/server.conf /etc/fabrico11y/node.conf; do
+  echo "DIAGNOSTIC $f"; cat "$f"; echo
+done
+echo 'DIAGNOSTIC services'; systemctl status --no-pager fabrico11y-server fabrico11y-node
+echo 'DIAGNOSTIC journal'; journalctl --no-pager -u fabrico11y-server -u fabrico11y-node
+echo 'DIAGNOSTIC source identity'; stat -c '%n device=%d inode=%i bytes=%s' /var/log/fabric-accept/*
+echo 'DIAGNOSTIC filesystems'; findmnt
+echo 'DIAGNOSTIC clock'; date --utc --iso-8601=ns
+''')
+                (result / 'diagnostic.txt').write_text(diagnosis.stdout + diagnosis.stderr)
+                facts['diagnostic_exit'] = diagnosis.returncode
+            except (OSError, subprocess.SubprocessError) as diagnosis_error:
+                facts['diagnostic_error'] = str(diagnosis_error)
     finally:
         if process is not None and process.poll() is None:
             process.terminate()
