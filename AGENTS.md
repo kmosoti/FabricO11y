@@ -47,6 +47,18 @@ Work on `milestone/<capability>` branches ([roadmap](docs/ROADMAP.md)); never na
 
 These need explicit task scope: protocol or wire-format changes, durability or sync-order changes, verifier or oracle changes, new core dependencies, destructive fault runs, privileged installation, qualification runs, releases and tags. A stopped or interrupted run stays so until a new run is recorded. Do not advance into a new milestone because the blueprint mentions it.
 
+## Continuation rule
+
+When the user authorizes closing known gaps, keep actionable items in a persistent
+work queue and continue through implementation, verification and the next admitted
+item. A passing subset or an inventory of shortcomings is a progress checkpoint,
+not a reason to hand the task back. Resolve tooling and harness prerequisites
+within the authorized scope instead of repeatedly listing them as unrun.
+Stop only when the authorized queue is complete, the user pauses it, or a concrete
+external dependency prevents further permitted work after alternatives are tried.
+Keep reporting real failures and assumptions; continuation never relaxes an
+invariant, a registered gate, resource containment or a permission boundary.
+
 ## Working habits
 
 - Keep changes small and explainable; explain the Rust idea, the contract and the trade-off before introducing a mechanism, and keep the [learning path](docs/LEARNING_PATH.md) in step.
