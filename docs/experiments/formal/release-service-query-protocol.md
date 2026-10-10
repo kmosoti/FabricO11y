@@ -27,6 +27,20 @@ I/O, events, task counts and cleanup. Root coordinates aggregate admission withi
 20 GiB. Reserve 5 GiB per cell below the 100 GB laboratory ceiling. Retained
 compact results are at most 50 MiB; source/fixture archives remain disk-accounted.
 
+### Successor CPU placement
+
+Prospective placement amendment registered 2026-10-10 before successor cells:
+R2 retains server logical CPUs 0–1 and workers 2–3. Run the successor fixed-query
+and six main cells sequentially on server CPUs 4–5, with supervisor, browser and
+generator processes restricted to CPUs 2–3. This host has six physical cores and
+SMT sibling pairs 0/6, 1/7, 2/8, 3/9, 4/10 and 5/11; project workloads do not use
+SMT CPUs 6–11. Require actual process affinity receipts and unchanged two-CPU
+server quota, resource caps, workloads and gates. Workers share CPUs 2–3 with R2;
+record that contention and retain offered-work, progress and backlog grading.
+The server placement differs from the preserved first query candidate, so these
+cells cannot establish an isolated service before/after performance comparison.
+Do not add VM workloads during these cells without a separate admitted schedule.
+
 ## Six main cells
 
 For each of 10 and 100 simulated edge identities, run seeds `0xA11FA001`,
