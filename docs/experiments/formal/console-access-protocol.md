@@ -1,6 +1,7 @@
 # Authenticated console acceptance protocol
 
-Revision 3, registered 2026-10-10 before standalone Firefox CTAP 2.1 acceptance.
+Revision 4, registered 2026-10-10 before resident-enrollment acceptance.
+Revision 3 preceded standalone Firefox CTAP 2.1 acceptance.
 Revision 2 preceded the grant/visibility regression rerun; its observations
 retain their original source and fixture identities.
 Revision 1 preceded integrated browser execution; its observations retain their
@@ -66,6 +67,23 @@ the Firefox credential witness was nonresident. Actual resident-credential
 coverage from the original matrix remains unestablished by these diagnostics.
 Standalone acceptance must retain its own exact candidate and fixture identity;
 concurrent causal diagnostics do not fill that cell.
+
+For the resident-enrollment successor, retain the library's required user
+verification and require `residentKey=required` with `requireResidentKey=true`
+in public registration options. Observe actual stored credentials independently
+through the browser's virtual-authenticator inventory after owner and additional
+key enrollment. Every stored credential on the active fixture device must be
+resident and belong to the fixture RP. Archive only counts, resident flags and
+RP IDs, never credential private keys. Client `credProps.rk` is unsigned and
+cannot establish this property as a server security assertion.
+
+The representative negative control changes only the options passed to the
+browser to `residentKey=discouraged` and `requireResidentKey=false`; the original
+server response, UV requirement and real credential creation remain observable.
+It must enroll a real nonresident credential and fail the named resident-inventory
+assertion. A startup, transport or enrollment failure does not satisfy that control.
+This tests detection of the original default-options defect. It does not add
+username-less login or claim that the server can attest credential residency.
 
 ## Admission and algorithm budgets
 
