@@ -227,6 +227,10 @@ class CandidateFixture:
         self.owner = self.bridge.login()
 
     def enroll(self, name, logs=()):
+        # Setup is outside the measured workload. Respect production admission
+        # instead of treating a rate-limit refusal as a successful enrollment.
+        time.sleep(max(0, .15 - (time.monotonic() - getattr(self, '_last_enrollment', 0))))
+        self._last_enrollment = time.monotonic()
         status, value = self.bridge.request('/v1/console/nodes', 'POST',
                       {'name': name, 'logs': list(map(str, logs)), 'metric_interval_s': 15})
         if status != 200 or not value.get('token'):

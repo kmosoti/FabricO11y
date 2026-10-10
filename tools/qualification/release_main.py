@@ -64,7 +64,8 @@ def native_custody(raw, logfile):
 def run(args):
     seconds, warmup = (8, 2) if args.smoke else (135, 15)
     summary = {'classification': 'disposable smoke' if args.smoke else 'registered main cell',
-               'seed': args.seed, 'tier': args.tier, 'seconds': seconds, 'passed': False}
+               'seed': args.seed, 'tier': args.tier, 'seconds': seconds, 'passed': False,
+               'backlog_rule': args.backlog_rule}
     with CandidateFixture(args.deb_receipt, args.rpm_receipt, args.out) as fixture:
         summary_path = fixture.out / 'summary.json'
         try:
@@ -170,6 +171,20 @@ def perform(f, args, seconds, warmup, summary):
         finally:
             finished.set()
 
+    def controller():
+        try:
+            for i in range(args.tier):
+                puts[i] = time.time_ns()
+                status, _ = f.bridge.request(f'/v1/console/nodes/sim{i:04d}/config', 'PUT',
+                                             {'logs': [], 'metric_interval_s': 30})
+                if status != 200:
+                    raise RuntimeError('production configuration update failed')
+                # One operator credential remains subject to normal admission.
+                # Pace changes independently of UI/resourcing/probe schedules.
+                time.sleep(.15)
+        except BaseException as error:
+            failures.append('controller: ' + repr(error))
+
     threads = [threading.Thread(target=fn, daemon=True) for fn in (log_writer, trace_writer, prober)]
     sim = f.spawn([f.helpers / 'spindle_sim', '--server-url', f.origin, '--ca', f.work / 'ca.pem',
                    '--tokens', tokens, '--seed', hex(args.seed), '--seconds', str(seconds),
@@ -188,12 +203,9 @@ def perform(f, args, seconds, warmup, summary):
         elapsed = (now - begin_mono) / NS
         if not configured and elapsed >= (3 if args.smoke else warmup + 45):
             configured = True
-            for i in range(args.tier):
-                puts[i] = time.time_ns()
-                status, _ = f.bridge.request(f'/v1/console/nodes/sim{i:04d}/config', 'PUT',
-                                             {'logs': [], 'metric_interval_s': 30})
-                if status != 200:
-                    raise RuntimeError('production configuration update failed')
+            control = threading.Thread(target=controller, daemon=True)
+            threads.append(control)
+            control.start()
         if not args.smoke and not paused and elapsed >= warmup + 40:
             f.bridge.poll_ui(False); paused = True
         if not args.smoke and paused and not resumed and elapsed >= warmup + 50:
@@ -280,9 +292,11 @@ def perform(f, args, seconds, warmup, summary):
                     'ack_ns': acked.get((i, seq)), 'bytes': recovered_sizes[(node_ids[f'sim{i:04d}'], 1, seq)]}
                    for (i, seq), stamp in made.items()]
     measure_wall = sim_info['began_unix_ns'] + warmup * NS
-    timing = {'simulator': population(sim_entries, measure_wall, sim_info['began_unix_ns'] + seconds * NS)}
+    timing = {'simulator': population(sim_entries, measure_wall,
+              sim_info['began_unix_ns'] + seconds * NS, rule=args.backlog_rule)}
     for name, entries in timings.items():
-        timing[name] = population(entries, begin_mono + warmup * NS, begin_mono + seconds * NS)
+        timing[name] = population(entries, begin_mono + warmup * NS,
+                                 begin_mono + seconds * NS, rule=args.backlog_rule)
     # Independent source-body/offset and trace-parent checks, including every
     # offered item, use native Spool decoding; server bytes already matched above.
     edge_rows = [query_oracle.materialize_record('edge', 1, base64.b64decode(r['bytes']))
@@ -380,6 +394,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--deb-receipt', type=Path, required=True)
     parser.add_argument('--rpm-receipt', type=Path, required=True)
+    parser.add_argument('--backlog-rule', choices=('sampled-v1', 'clearing-v2'), default='sampled-v1')
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--tier', type=int, choices=(10, 100), required=True)
     parser.add_argument('--seed', type=lambda v: int(v, 0), choices=SEEDS, required=True)
