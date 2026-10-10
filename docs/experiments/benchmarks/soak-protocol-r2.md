@@ -60,6 +60,7 @@ server plus all its descendants in a verified subgroup: memory high
 3,000,000,000 bytes, maximum 4,000,000,000 bytes, zero swap, 512 tasks and two CPU
 equivalents. Reuse the existing `completion/cgroups.py` and `enter_group.py`.
 Record actual limits, peak charge, memory events, swap and group population.
+Also record combined server/companion CPU accounting, I/O counters and peak tasks.
 OOM, remaining descendants or failed cleanup invalidate the run. The original
 2 GiB server RSS gate still measures the server alone; combined cgroup charge is
 an additional containment prerequisite, not an interchangeable RSS measure.

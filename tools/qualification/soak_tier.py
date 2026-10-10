@@ -235,7 +235,8 @@ def trial():
     observation = None
     if args.companion:
         resources = {name: (group / name).read_text().strip() for name in
-                     ("memory.peak", "memory.events", "memory.swap.current", "cgroup.events")}
+                     ("memory.peak", "memory.events", "memory.swap.current", "cgroup.events",
+                      "cpu.stat", "io.stat", "pids.peak")}
         companion["resources"] = resources
         events = dict(line.split() for line in resources["memory.events"].splitlines())
         companion["containment_ok"] = ("populated 0" in resources["cgroup.events"]
