@@ -1,9 +1,26 @@
 # Registered release package and lifecycle checks
 
-Status: revision 2 registered 2026-10-10 before candidate RPM adaptation. This extends the
+Status: revision 3 registered 2026-10-10 before stopped-overlay continuation. This extends the
 [baseline installation protocol](installation-acceptance-protocol.md) for the
 owner-selected Debian/Fedora release matrix. No result is recorded here.
 These checks are finite local guest measurements, not deployment qualification.
+
+## Stopped-overlay continuation
+
+A separately recorded continuation may finish L2/removal from an immutable
+stopped trial whose historical baseline exited 0 and whose exact candidate
+L1 upgrade passed, but whose reboot observer failed. Preserve the original
+overall failure. Bind its receipt/acceptance/harness hashes, exact candidate and
+predecessor, source identity, stopped overlay SHA-256 and official backing image.
+Use a new owned overlay with that stopped disk as read-only backing; never
+mutate the retained input. Freeze the saved pre-reboot boot ID, config hashes,
+account identity and exact row witnesses from that disk before L2. A genuinely
+different live boot identity remains required; mere SSH reconnection is insufficient.
+Use stdin for the privileged boot comparison so the unprivileged SSH shell
+cannot expand protected paths. Record each actual phase exit, caps and cleanup
+in a new continuation receipt. This does not qualify unrun baseline criteria on
+the candidate or relabel the original failed run. The final new candidate still
+requires fresh full installation/lifecycle trials.
 
 ## Fixed inputs and containment
 
