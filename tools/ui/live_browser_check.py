@@ -380,11 +380,24 @@ self.addEventListener("fetch",event=>{
             chrome_capabilities['goog:chromeOptions']['args'].append('--remote-debugging-pipe')
         firefox_capabilities={'browserName':'firefox','acceptInsecureCerts':False,'moz:firefoxOptions':{
             'binary':'/usr/bin/firefox','args':['-headless','-profile',str(work/'profile')],
-            'prefs':{'security.enterprise_roots.enabled':False}}}
+            # Firefox 157 dispatches USB before the software manager. A virtual
+            # authenticator belongs to the software manager, so select that
+            # fixture transport explicitly; the server still requires UV.
+            'prefs':{'security.enterprise_roots.enabled':False,
+                     'security.webauth.webauthn_enable_softtoken':True,
+                     'security.webauth.webauthn_enable_usbtoken':False}}}
         info = call('POST','/session',{'capabilities':{'alwaysMatch':firefox_capabilities if args.browser=='firefox' else chrome_capabilities}})
         session = info['sessionId']
         receipt['browser_version_actual'] = info['capabilities']['browserVersion']
         check(receipt['browser_version_actual'] == receipt['browser_version_expected'], 'actual browser matches reviewed version')
+        if args.browser=='firefox':
+            wd('/moz/context',{'context':'chrome'})
+            try:
+                receipt['virtual_authenticator_transport_prefs']=js('return {software:Services.prefs.getBoolPref("security.webauth.webauthn_enable_softtoken",false),usb:Services.prefs.getBoolPref("security.webauth.webauthn_enable_usbtoken",true)}')
+            finally:
+                wd('/moz/context',{'context':'content'})
+            check(receipt['virtual_authenticator_transport_prefs']=={'software':True,'usb':False},
+                  'virtual authenticator dispatch selects software transport instead of physical USB')
         wd('/timeouts', {'script': 35000, 'pageLoad': 30000, 'implicit': 0})
         if args.browser=='chrome':cdp('WebAuthn.enable', {})
         authenticator = add_authenticator()
