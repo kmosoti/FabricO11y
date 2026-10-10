@@ -50,6 +50,8 @@ def main():
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--inject-rejection-defect',choices=('error','status'))
     parser.add_argument('--inject-api-cache-defect', action='store_true')
+    parser.add_argument('--inject-nonresident-enrollment', action='store_true',
+                        help='negative control: weaken only browser enrollment options')
     parser.add_argument('--browser', choices=('chrome','firefox'), default='chrome')
     parser.add_argument('--certutil',type=Path,default=Path(shutil.which('certutil') or str(DATA/'tools/ui/nss-tools-3.129.0-1.fc44/usr/bin/certutil')))
     parser.add_argument('--expired-cursor-probe',action='store_true')
@@ -83,6 +85,7 @@ def main():
                'scope': 'finite virtual CTAP2 desktop/narrow browser integration; not hardware/mobile/installed-app qualification',
                'tls_scope': 'exact fixture leaf SPKI trusted by this isolated browser only; Spindle trusts fixture CA',
                'injected_api_cache_defect': args.inject_api_cache_defect,
+               'injected_nonresident_enrollment': args.inject_nonresident_enrollment,
                'injected_rejection_defect':args.inject_rejection_defect,
                'source_sha256': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                                  for p in (Path(__file__), ROOT / 'tools/ui/browser_producer.py', ROOT / 'tools/packaging/stage_console.py')},
@@ -243,6 +246,24 @@ def main():
             finally:
                 wd('/moz/context',{'context':'content'})
         return cdp('WebAuthn.removeVirtualAuthenticator',{'authenticatorId':identifier})
+
+    def resident_credentials(identifier, label):
+        # Inventory belongs to the browser fixture, not credProps from the page.
+        # Gecko returns only public booleans/RP here; never persist private keys.
+        if args.browser == 'firefox':
+            wd('/moz/context', {'context':'chrome'})
+            try:
+                inventory = js('''return ChromeUtils.importESModule("chrome://remote/content/marionette/webauthn.sys.mjs").webauthn
+                  .getCredentials(arguments[0]).map(c=>({resident:c.isResidentCredential,rp:c.rpId}));''', identifier)
+            finally:
+                wd('/moz/context', {'context':'content'})
+        else:
+            inventory = [{'resident':c.get('isResidentCredential'), 'rp':c.get('rpId')}
+                         for c in cdp('WebAuthn.getCredentials', {'authenticatorId':identifier})['credentials']]
+        receipt.setdefault('resident_credential_witnesses', []).append(
+            {'phase':label, 'count':len(inventory), 'credentials':inventory})
+        check(bool(inventory) and all(c['resident'] is True and c['rp']=='localhost' for c in inventory),
+              label + ' stores actual resident credentials for the fixture RP')
 
     def launch(label, command):
         log = (out / f'{label}.log').open('w')
@@ -424,10 +445,11 @@ self.addEventListener("fetch",event=>{
         js('window.fixtureApiHeaders=[];window.fixtureApiHeadersTruncated=false;const original=window.fetch;window.fetch=async(...args)=>{const response=await original(...args);const url=typeof args[0]==="string"?args[0]:args[0].url;const path=new URL(url,location.href).pathname;if(path.startsWith("/v1/")){if(window.fixtureApiHeaders.length>=512)window.fixtureApiHeadersTruncated=true;else window.fixtureApiHeaders.push({path,cache_control:response.headers.get("cache-control"),csp:response.headers.get("content-security-policy"),coop:response.headers.get("cross-origin-opener-policy"),corp:response.headers.get("cross-origin-resource-policy")});}return response}')
         click('Connect to server')
         wait(lambda: js('return document.body.textContent.includes("Sign in with a passkey") && !document.body.textContent.includes("Working…")'), 'live sign-in locked view')
-        js('''const original=window.fabricPasskey;window.fabricPasskey=async function(register,text){
-          const options=JSON.parse(text).publicKey;window.fixtureCeremonyDiagnostic={register,attestation:options.attestation,authenticatorSelection:options.authenticatorSelection};
+        js('''const weakenResident=arguments[0];const original=window.fabricPasskey;window.fabricPasskey=async function(register,text){
+          const parsed=JSON.parse(text);const options=parsed.publicKey;window.fixtureCeremonyDiagnostic={register,attestation:options.attestation,authenticatorSelection:{...options.authenticatorSelection}};
+          if(register && weakenResident){options.authenticatorSelection.residentKey='discouraged';options.authenticatorSelection.requireResidentKey=false;text=JSON.stringify(parsed);}
           try{const result=await original(register,text);window.fixtureCeremonyDiagnostic.complete=true;return result;}
-          catch(error){window.fixtureCeremonyDiagnostic.errorName=error.name;window.fixtureCeremonyDiagnostic.errorMessage=error.message;throw error;}}''')
+          catch(error){window.fixtureCeremonyDiagnostic.errorName=error.name;window.fixtureCeremonyDiagnostic.errorMessage=error.message;throw error;}}''', args.inject_nonresident_enrollment)
         js('Array.from(document.querySelectorAll("details")).find(e=>e.querySelector("button")?.textContent.trim()==="Create owner passkey").open=true')
         expect(api('/v1/console/auth/register/start','POST',{'bootstrap_secret':'','display_name':'First visitor'}), 403, 'access denied', 'first visitor cannot claim owner without protected bootstrap')
         field('Display name', 'Browser fixture owner')
@@ -437,6 +459,12 @@ self.addEventListener("fetch",event=>{
         click('Create owner passkey')
         wait(lambda: js('return document.body.textContent.includes("Browser fixture owner · human")'), 'actual WebAuthn owner registration',seconds=65 if args.browser=='firefox' else 25)
         check(not bootstrap_file.exists(), 'first owner consumed protected one-time bootstrap')
+        selection=js('return window.fixtureCeremonyDiagnostic.authenticatorSelection')
+        receipt['registration_selection']=selection
+        check(selection.get('residentKey')=='required' and selection.get('requireResidentKey') is True
+              and selection.get('userVerification')=='required',
+              'server enrollment requires resident credentials and user verification')
+        resident_credentials(authenticator, 'owner enrollment')
         expect(api('/v1/console/auth/register/start','POST',{'bootstrap_secret':bootstrap_replay,'display_name':'Replayed owner'}), 403, 'access denied', 'consumed one-time bootstrap cannot start another owner')
         bootstrap_replay=None
         cookies = wd('/cookie', method='GET')
@@ -498,6 +526,7 @@ self.addEventListener("fetch",event=>{
         wait(lambda: api('/v1/console/passkeys')[0] == 200 and len(api('/v1/console/passkeys')[1]) == 2, 'additional WebAuthn passkey')
         code, passkeys = api('/v1/console/passkeys')
         check(code == 200 and len(passkeys) == 2, 'two real virtual-authenticator passkeys enrolled')
+        resident_credentials(authenticator, 'additional key enrollment')
         # Enroll and run an actual second Spindle for an untrusted-text fixture.
         fixture_log=work/'untrusted.log'
         fixture_log.write_text('<img src=x onerror="window.fabricXssMarker=1"><script>window.fabricXssMarker=1</script> browser-xss-fixture\n'+
@@ -936,6 +965,7 @@ self.addEventListener("fetch",event=>{
         invitation=None
         click('Enroll invited passkey')
         wait(lambda:js('return document.body.textContent.includes("Browser fixture human · human")'),'actual invited human WebAuthn registration')
+        resident_credentials(authenticator, 'invited human enrollment')
         check(js('return !document.querySelector(".results")'),'account change contains no previous telemetry display')
         code,invited_inventory=api('/v1/console/nodes')
         check(code==200 and len(invited_inventory['nodes'])==1 and all(n['enrollment_id']==enrollment for n in invited_inventory['nodes']),'invited human inventory obeys explicit immutable scope')
@@ -1001,6 +1031,7 @@ self.addEventListener("fetch",event=>{
             field('One-time setup secret',replacement_secret);replacement_secret=None
             click('Create owner passkey')
             wait(lambda:js('return document.body.textContent.includes("Browser fixture owner · human")'),'real WebAuthn owner enrollment after offline recovery')
+            resident_credentials(authenticator, 'recovered owner enrollment')
             code,recovered_session=api('/v1/console/session')
             check(code==200 and recovered_session['principal_id']==principal_id,'offline owner recovery preserves immutable owner principal')
             check(not bootstrap_file.exists(),'replacement recovery secret consumed once')
