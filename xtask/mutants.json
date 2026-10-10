@@ -527,6 +527,50 @@
         "--test-threads=1"
       ],
       "expect_failing": "corrupt_frame_after_spilling_removes_scratch_and_preserves_custody"
+    },
+    {
+      "id": "M-SELF-SHUTDOWN-STATUS",
+      "contract": "ADR-0026 supervised shutdown reports a nonzero dedicated Spindle exit as server failure",
+      "incorrect_behavior": "ignore a nonzero dedicated Spindle exit once server shutdown has begun",
+      "file": "crates/fabric-server/src/main.rs",
+      "find": "} else if !status.success() {",
+      "replace": "} else if false && !status.success() {",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "-p",
+        "fabric-server",
+        "--bin",
+        "fabric-server",
+        "shutdown_tests",
+        "--",
+        "--test-threads=1"
+      ],
+      "expect_failing": "supervisor_shutdown_nonzero_child_exit_is_failure"
+    },
+    {
+      "id": "M-SELF-SHUTDOWN-DEADLINE",
+      "contract": "ADR-0026 supervised shutdown reports forced dedicated Spindle termination as server failure",
+      "incorrect_behavior": "kill and reap the dedicated Spindle at its shutdown deadline while reporting server success",
+      "file": "crates/fabric-server/src/main.rs",
+      "find": "                        failure.get_or_insert_with(||io::Error::other(\"dedicated Spindle shutdown deadline exceeded; forced kill\"));\n                        child=None;",
+      "replace": "                        child=None;",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "-p",
+        "fabric-server",
+        "--bin",
+        "fabric-server",
+        "shutdown_tests",
+        "--",
+        "--test-threads=1"
+      ],
+      "expect_failing": "supervisor_shutdown_forced_child_kill_is_failure"
     }
   ]
 }
