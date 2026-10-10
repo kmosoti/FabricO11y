@@ -46,3 +46,19 @@ not evidence for production access. Before full trials run boundary controls,
 a genuine finite bridge smoke and a finite adapter smoke. Recheck exact package
 and helper identities after cleanup. All checks and trials use the resource
 launcher. A skipped, interrupted or failed prerequisite is not a passing cell.
+
+## Prospective outage server placement
+
+The production outage adapter may explicitly select server CPUs `4-5` instead
+of its default `0-1`. Both placements contain exactly two logical CPUs and are
+disjoint from supervisor, simulator and browser CPUs `2-3`. The R2 soak retains
+server CPUs `0-1` and rejects the alternative. This follows the
+[successor service placement convention](../formal/release-service-query-protocol.md)
+registered in commit `ab1e5c5`: measured servers have separate physical cores,
+while workers share `2-3` and their overlap is recorded. No SMT siblings `6-11`
+are used. Record selected placement and actual kernel affinities in receipts.
+
+Only CPU placement is selectable; the original outage workload, all three
+serial seeds, 1,800-second outage, drain clock and every gate remain unchanged.
+Concurrent fixtures require explicit aggregate admission within 20 GiB; this
+option does not grant a resource slot or authorize parallel outage seeds.
