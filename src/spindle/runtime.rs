@@ -1122,7 +1122,8 @@ impl Spindle {
     }
 
     /// Read configured logs. New lines, gaps or forward progress through an
-    /// oversized line commit a Batch. Skip-only progress may sample metrics;
+    /// oversized line or stable-identity migration commit a Batch. Cursor-only
+    /// progress may sample metrics;
     /// a poll with no progress writes nothing to the Spool.
     pub fn collect_logs(&mut self) -> io::Result<Option<Cycle>> {
         self.collect(false)
@@ -1164,6 +1165,19 @@ impl Spindle {
     }
 
     fn collect(&mut self, include_metrics: bool) -> io::Result<Option<Cycle>> {
+        self.collect_with_log_reader(include_metrics, log_source::read_lines_costed)
+    }
+
+    fn collect_with_log_reader(
+        &mut self,
+        include_metrics: bool,
+        mut read_log: impl FnMut(
+            &Path,
+            Option<&Cursor>,
+            usize,
+            usize,
+        ) -> io::Result<log_source::ReadResult>,
+    ) -> io::Result<Option<Cycle>> {
         if self.paused() {
             return Ok(None);
         }
@@ -1213,7 +1227,7 @@ impl Spindle {
             let read = {
                 #[cfg(feature = "phase-probe")]
                 let _phase = fabric_frame::probe::span("native_file_collection");
-                log_source::read_lines_costed(path, self.cursors.get(&name), remaining, per_line)
+                read_log(path, self.cursors.get(&name), remaining, per_line)
             };
             match read {
                 Ok(read) => {
@@ -1243,21 +1257,28 @@ impl Spindle {
         }
         debug_assert!(gaps.len() <= MAX_GAPS_PER_BATCH);
         if !include_metrics && lines.is_empty() && gaps.is_empty() {
-            let skip_progress = pending_cursors.iter().any(|cursor| {
-                self.cursors.get(&cursor.path).is_some_and(|old| {
+            let cursor_progress = pending_cursors.iter().any(|cursor| {
+                let prior = self.cursors.get(&cursor.path);
+                let identity_progress = prior.map_or(cursor.btrfs_identity.is_some(), |old| {
+                    old.btrfs_identity != cursor.btrfs_identity
+                });
+                let skip_progress = prior.is_some_and(|old| {
                     old.skipping_oversize
                         && old.path == cursor.path
-                        && old.device == cursor.device
                         && old.inode == cursor.inode
+                        && (old.device == cursor.device
+                            || old.btrfs_identity.is_some()
+                                && old.btrfs_identity == cursor.btrfs_identity)
                         && cursor.offset > old.offset
-                })
+                });
+                identity_progress || skip_progress
             });
-            if !skip_progress {
+            if !cursor_progress {
                 return Ok(None);
             }
-            // Cursor-only Batches are invalid. Commit this bounded skip progress
-            // with real metrics, or the existing host-failure gap. Do not reread
-            // the source or add another gap for the already reported long line.
+            // Cursor-only Batches are invalid. Commit skip progress or stable
+            // identity migration with real metrics or the existing host-failure
+            // gap. Do not reread the source or synthesize a migration gap.
             sampled = self.sample_collection_host(&mut gaps);
             (metrics, updated_history, metric_points) =
                 self.collection_metrics(sampled.as_ref(), now)?;
@@ -1600,6 +1621,7 @@ mod tests {
                     skipping_oversize: false,
                     prefix_len: 0,
                     prefix_crc: 0,
+                    btrfs_identity: None,
                 }],
                 traces: Vec::new(),
             };

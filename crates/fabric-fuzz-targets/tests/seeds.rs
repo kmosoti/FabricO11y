@@ -30,6 +30,7 @@ fn batch(sequence: u64, gaps: Vec<String>, logs: Vec<u8>) -> Vec<u8> {
             skipping_oversize: false,
             prefix_len: 64,
             prefix_crc: 99,
+            btrfs_identity: None,
         }],
         collection_gaps: gaps,
         traces: Vec::new(),

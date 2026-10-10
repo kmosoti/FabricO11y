@@ -365,3 +365,209 @@ fn skip_progress_closing_newline_commits_without_consuming_incomplete_suffix() {
     assert_eq!(fields["log.file.offset.start"], (MIB + 11).to_string());
     assert_eq!(fields["log.file.offset.end"], (MIB + 19).to_string());
 }
+
+fn stable_quiet_read(
+    path: &std::path::Path,
+    prior: Option<&Cursor>,
+    budget: usize,
+    per_line: usize,
+) -> io::Result<log_source::ReadResult> {
+    // Actual ext4 fixture read and prefix checks, followed by the injected
+    // successful namespace observation. No Btrfs or reboot claim from this seam.
+    let mut read = log_source::read_lines_costed(path, prior, budget, per_line)?;
+    read.cursor.btrfs_identity = Some(fabric_frame::envelope::BtrfsIdentity {
+        uuid: vec![9; 16],
+        subvolume_id: 256,
+    });
+    Ok(read)
+}
+
+fn legacy_quiet_spindle(scratch: &Scratch, config: Config) -> Spindle {
+    scratch.prepare();
+    std::fs::write(scratch.0.join("input.log"), b"one\ntwo\nthree\n").unwrap();
+    let mut spindle = Spindle::open_with_paths(config, scratch.paths()).unwrap();
+    let first = spindle.collect_once().unwrap();
+    assert_eq!(first.log_records, 3);
+    assert!(
+        spindle
+            .cursors
+            .values()
+            .next()
+            .unwrap()
+            .btrfs_identity
+            .is_none()
+    );
+    spindle
+}
+
+/// ADR-0028: an EOF poll must acquire stable identity before the next reboot.
+#[test]
+fn quiet_legacy_cursor_identity_migration_commits_without_replaying_rows() {
+    let scratch = Scratch::new();
+    let cfg = scratch.config();
+    let mut spindle = legacy_quiet_spindle(&scratch, cfg.clone());
+    let previous = spindle.cursors.values().next().unwrap().clone();
+    let cycle = spindle
+        .collect_with_log_reader(false, stable_quiet_read)
+        .unwrap()
+        .unwrap();
+    assert_eq!((cycle.log_records, cycle.gaps), (0, 0));
+    assert!(cycle.metric_points > 0);
+    let migrated = spindle.cursors.values().next().unwrap().clone();
+    assert_eq!(migrated.offset, previous.offset);
+    assert_eq!(migrated.prefix_crc, previous.prefix_crc);
+    assert!(migrated.btrfs_identity.is_some());
+    drop(spindle);
+    let reopened = Spindle::open_with_paths(cfg, scratch.paths()).unwrap();
+    assert_eq!(reopened.cursors.values().next().unwrap(), &migrated);
+}
+
+#[test]
+fn quiet_identity_migration_full_spool_preserves_legacy_cursor_and_retry() {
+    let scratch = Scratch::new();
+    let mut cfg = scratch.config();
+    cfg.spool_bytes = 8192;
+    let mut spindle = legacy_quiet_spindle(&scratch, cfg.clone());
+    let previous = spindle.cursors.clone();
+    let history = history_state(&spindle);
+    loop {
+        let filler = Batch {
+            collection_gaps: vec!["capacity fixture".repeat(16)],
+            ..Default::default()
+        };
+        if spindle.journal.append_owned(filler).is_err() {
+            break;
+        }
+    }
+    let sequence = spindle.journal.next_sequence();
+    assert!(
+        spindle
+            .collect_with_log_reader(false, stable_quiet_read)
+            .is_err()
+    );
+    assert_eq!(spindle.cursors, previous);
+    assert_eq!(history_state(&spindle), history);
+    assert_eq!(spindle.journal.next_sequence(), sequence);
+    drop(spindle);
+    cfg.spool_bytes = 1024 * 1024;
+    let mut reopened = Spindle::open_with_paths(cfg, scratch.paths()).unwrap();
+    assert_eq!(reopened.cursors, previous);
+    let retry = reopened
+        .collect_with_log_reader(false, stable_quiet_read)
+        .unwrap()
+        .unwrap();
+    assert_eq!(retry.batch_sequence, sequence);
+    assert_eq!(retry.log_records, 0);
+    assert!(retry.gaps > 0); // Real capacity uncertainty, not a fabricated migration gap.
+    assert!(
+        reopened
+            .cursors
+            .values()
+            .next()
+            .unwrap()
+            .btrfs_identity
+            .is_some()
+    );
+}
+
+#[test]
+fn quiet_identity_migration_host_failure_uses_existing_failure_gap() {
+    let scratch = Scratch::new();
+    let mut spindle = legacy_quiet_spindle(&scratch, scratch.config());
+    let history = history_state(&spindle);
+    std::fs::remove_file(scratch.0.join("stat")).unwrap();
+    let cycle = spindle
+        .collect_with_log_reader(false, stable_quiet_read)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (cycle.log_records, cycle.metric_points, cycle.gaps),
+        (0, 0, 1)
+    );
+    assert_eq!(history_state(&spindle), history);
+    let mut batches = Vec::new();
+    spindle
+        .journal
+        .replay(|batch| {
+            batches.push(batch);
+            Ok(())
+        })
+        .unwrap();
+    assert!(batches[1].collection_gaps[0].starts_with("host metrics unavailable:"));
+    assert!(batches[1].metrics.is_empty());
+    assert!(batches[1].cursors[0].btrfs_identity.is_some());
+}
+
+#[test]
+fn initial_empty_source_commits_identity_once_then_stays_quiet() {
+    let scratch = Scratch::new();
+    scratch.prepare();
+    std::fs::write(scratch.0.join("input.log"), b"").unwrap();
+    let mut spindle = Spindle::open_with_paths(scratch.config(), scratch.paths()).unwrap();
+    assert!(spindle.cursors.is_empty());
+    let first = spindle
+        .collect_with_log_reader(false, stable_quiet_read)
+        .unwrap()
+        .unwrap();
+    assert_eq!((first.log_records, first.gaps), (0, 0));
+    assert!(first.metric_points > 0);
+    let sequence = spindle.journal.next_sequence();
+    let cursor = spindle.cursors.values().next().unwrap().clone();
+    assert_eq!(cursor.offset, 0);
+    assert!(cursor.btrfs_identity.is_some());
+    std::fs::remove_file(scratch.0.join("stat")).unwrap();
+    // Synthetic unchanged successful source observation, not another ext4
+    // observation of the injected Btrfs namespace. No host sample may occur.
+    let quiet = spindle
+        .collect_with_log_reader(false, |_, prior, _, _| {
+            Ok(log_source::ReadResult {
+                cursor: prior.unwrap().clone(),
+                lines: vec![],
+                gaps: vec![],
+                backlog_bytes: 0,
+            })
+        })
+        .unwrap();
+    assert!(quiet.is_none());
+    assert_eq!(spindle.journal.next_sequence(), sequence);
+    assert_eq!(spindle.cursors.values().next().unwrap(), &cursor);
+}
+
+#[test]
+fn stable_skip_progress_commits_after_runtime_device_51_to_32() {
+    let scratch = Scratch::new();
+    scratch.prepare();
+    let mut spindle = Spindle::open_with_paths(scratch.config(), scratch.paths()).unwrap();
+    let first = spindle
+        .collect_with_log_reader(false, |path, prior, budget, cost| {
+            let mut read = stable_quiet_read(path, prior, budget, cost)?;
+            read.cursor.device = 51;
+            Ok(read)
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!((first.log_records, first.gaps), (0, 1));
+    assert_eq!(spindle.cursors.values().next().unwrap().offset, MIB);
+    let second = spindle
+        .collect_with_log_reader(false, |_, prior, _, _| {
+            // Successfully verified source outcome across the recorded device
+            // renumbering. The adapter's actual checks have separate regressions.
+            let mut cursor = prior.unwrap().clone();
+            cursor.device = 32;
+            cursor.offset = 2 * MIB;
+            Ok(log_source::ReadResult {
+                cursor,
+                lines: vec![],
+                gaps: vec![],
+                backlog_bytes: MIB,
+            })
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!((second.log_records, second.gaps), (0, 0));
+    assert!(second.metric_points > 0);
+    let cursor = spindle.cursors.values().next().unwrap();
+    assert_eq!((cursor.device, cursor.offset), (32, 2 * MIB));
+    assert!(cursor.skipping_oversize);
+    assert!(cursor.btrfs_identity.is_some());
+}
