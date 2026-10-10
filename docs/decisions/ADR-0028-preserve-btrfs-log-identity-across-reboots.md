@@ -37,6 +37,9 @@ runtime device, inode and prefix match. A previously stable identity must not
 silently fall back to runtime device identity when its lookup fails. Errors keep
 the prior committed cursor and use the existing visible collection-gap path.
 Other filesystems retain their current device/inode/prefix behavior.
+A successful filesystem-type lookup proving that a replacement is not Btrfs
+is a different filesystem, not a failed identity lookup: restart with the visible
+rotation notice. Only lookup failure preserves the old cursor without reading.
 
 An old cursor without this field first uses the complete existing raw-device,
 inode, length and prefix checks. A subsequent ordinary committed cursor records
