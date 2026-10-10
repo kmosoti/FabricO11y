@@ -3,6 +3,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from types import SimpleNamespace
 
 import release_runtime as runtime
 
@@ -49,6 +50,37 @@ class ArchiveBounds(unittest.TestCase):
                 output.truncate(5 * 1024**3 + 1)
             with self.assertRaisesRegex(RuntimeError, 'live fixture disk'):
                 f.resource_sample()
+
+    def test_external_browser_temporary_is_counted_without_double_profile(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            root=Path(directory);f=self.fixture(root)
+            profile=f.work/'browser';profile.mkdir()
+            temporary=root/'cb-owned';temporary.mkdir()
+            (profile/'profile').write_bytes(b'P'*7)
+            (temporary/'temporary').write_bytes(b'T'*11)
+            f.bridge=SimpleNamespace(work=profile,browser_temporary=temporary)
+            sample=f.storage_sample()
+            self.assertEqual(sample['live_bytes'],18)
+            self.assertEqual(sample['external_browser_temporary_bytes'],11)
+            self.assertEqual(sample['browser_profile_and_temporary_bytes'],18)
+
+    def test_external_temporary_cannot_escape_browser_or_total_budget(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            root=Path(directory);f=self.fixture(root)
+            temporary=root/'cb-owned';temporary.mkdir()
+            f.bridge=SimpleNamespace(work=f.work,browser_temporary=temporary)
+            with (temporary/'oversize').open('wb') as output:
+                output.truncate(512*1024**2+1)
+            with self.assertRaisesRegex(RuntimeError,'profile and temporary'):
+                f.storage_sample()
+            (temporary/'oversize').unlink()
+            (temporary/'one').write_bytes(b'T')
+            # The total cap must include a single external byte at its boundary.
+            f.bridge.work=f.work/'empty-profile';f.bridge.work.mkdir()
+            with (f.work/'fixture').open('wb') as output:
+                output.truncate(5*1024**3)
+            with self.assertRaisesRegex(RuntimeError,'live fixture disk'):
+                f.storage_sample()
 
 
 if __name__ == '__main__':

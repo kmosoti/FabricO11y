@@ -2,10 +2,16 @@
 import base64
 import copy
 import unittest
+import os
+import json
+import tempfile
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import query_oracle as oracle
 from release_fixture import NS, SEEDS, identity, message, query_batch
-from release_query import grade, project_records, query_plan, join_verified_recovery, prepare_projections
+from release_query import ResourceSampler, append_observation, grade, project_records, query_plan, join_verified_recovery, prepare_projections
 
 START = 9_007_199_254_741_123
 
@@ -22,6 +28,36 @@ def page(expected):
 
 
 class FixtureTests(unittest.TestCase):
+    def test_incremental_observations_retain_prefix_and_fail_closed_at_cap(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            path=Path(directory)/'observations.jsonl'
+            value={'status':200,'timestamp':START}
+            append_observation(path,value,max_bytes=1000)
+            completed=path.read_bytes()
+            self.assertEqual(json.loads(completed),value)
+            with self.assertRaisesRegex(RuntimeError,'finite allowance'):
+                append_observation(path,{'later':'X'*1000},max_bytes=len(completed))
+            self.assertEqual(path.read_bytes(),completed)
+
+    def test_sampler_keeps_post_stop_storage_and_stops_on_failure(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            server=SimpleNamespace(poll=lambda:None)
+            fixture=SimpleNamespace(server=server,out=Path(directory),parent=Path(directory),
+                resource_sample=lambda:{'server_hwm_kib':1,'groups':{}},
+                storage_sample=lambda:{'live_bytes':17,'external_browser_temporary_bytes':11})
+            with patch('release_runtime.process_kib',return_value=2),patch('release_runtime.cgroups.snapshot',return_value={}):
+                with ResourceSampler(fixture,interval=60) as meter:
+                    server.poll=lambda:0
+                    meter.observe()
+                self.assertFalse(meter.thread.is_alive())
+                self.assertEqual(meter.samples[-1]['external_browser_temporary_bytes'],11)
+                self.assertEqual(meter.samples[-1]['grader_rss_kib'],2)
+                self.assertEqual(len((fixture.out/'continuous-resources.jsonl').read_text().splitlines()),3)
+                with self.assertRaisesRegex(RuntimeError,'resource sampler failed'):
+                    with ResourceSampler(fixture,interval=60) as failed:
+                        failed.errors.append('injected missing storage observation')
+                self.assertFalse(failed.thread.is_alive())
+
     def test_fixed_plan_counts_bounds_and_reproducibility(self):
         for seed in SEEDS:
             plan = query_plan(seed, START)

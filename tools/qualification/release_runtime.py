@@ -26,7 +26,7 @@ sys.path.insert(0, str(ROOT / 'tools/bench/labs/completion'))
 import cgroups
 sys.path.insert(0, str(ROOT / 'tools/packaging'))
 from stage_candidate import stage_candidate, digest
-from console_bridge import ConsoleBridge, STORAGE, require_limits
+from console_bridge import ConsoleBridge, STORAGE, require_limits, MAX_PROFILE
 from delivery_faults import free_port, openssl
 
 
@@ -248,14 +248,28 @@ class CandidateFixture:
             raise RuntimeError('scoped workload enrollment failed')
         return WorkloadReader(self.origin, self.context, value['token'])
 
-    def resource_sample(self):
+    def storage_sample(self):
+        bridge=getattr(self,'bridge',None)
+        temporary=getattr(bridge,'browser_temporary',None)
+        profile=getattr(bridge,'work',None)
+        temporary_bytes=directory_bytes(temporary) if temporary is not None else 0
+        profile_bytes=directory_bytes(profile) if profile is not None else 0
+        if temporary_bytes+profile_bytes>MAX_PROFILE:
+            raise RuntimeError('owned browser profile and temporary files exceed 512 MiB')
+        outside_profile=(profile_bytes if profile is not None
+                         and not profile.resolve().is_relative_to(self.work.resolve()) else 0)
         live = (directory_bytes(self.work) + directory_bytes(self.out)
-                + sum(directory_bytes(p) for p in self.extra_archives))
+                + sum(directory_bytes(p) for p in self.extra_archives)
+                + temporary_bytes+outside_profile)
         if live > 5 * 1024**3:
             raise RuntimeError('registered live fixture disk budget exceeded')
         if directory_bytes(self.out) > 50 * 1024**2:
             raise RuntimeError('compact evidence exceeds registered 50 MiB budget')
-        return {'monotonic_ns': time.monotonic_ns(), 'live_bytes': live,
+        return {'live_bytes':live,'external_browser_temporary_bytes':temporary_bytes,
+                'browser_profile_and_temporary_bytes':profile_bytes+temporary_bytes}
+
+    def resource_sample(self):
+        return {'monotonic_ns': time.monotonic_ns(), **self.storage_sample(),
                 'server_rss_kib': process_kib(self.server.pid),
                 'server_hwm_kib': process_kib(self.server.pid, 'VmHWM'),
                 'groups': cgroups.snapshot(self.parent)}

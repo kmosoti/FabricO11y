@@ -27,6 +27,16 @@ def file_digest(path):
     return digest.hexdigest()
 
 
+def append_observation(path, value, *, max_bytes):
+    """Close each bounded line before proceeding, preserving completed observations."""
+    encoded=json.dumps(value,separators=(',',':'))+'\n'
+    existing=path.stat().st_size if path.exists() else 0
+    if existing+len(encoded.encode())>max_bytes:
+        raise RuntimeError('incremental observation archive exceeds finite allowance')
+    with path.open('a') as output:
+        output.write(encoded)
+
+
 def query_plan(seed, start_ns, *, smoke=False):
     """Prospectively fixed coordinates; no returned data influences selection."""
     if seed not in SEEDS or start_ns <= 0:
@@ -170,7 +180,52 @@ def grade(records, query, pages, authorized_labels, *, prepared=None):
     return result
 
 
-def perform(f, args, summary):
+class ResourceSampler:
+    """Observe setup, native operation, restart, and post-stop grading alike."""
+    def __init__(self, fixture, interval=1):
+        self.fixture=fixture;self.interval=interval
+        self.samples=[];self.errors=[];self.lock=threading.Lock()
+        self.stop=threading.Event()
+
+    def observe(self):
+        from release_runtime import cgroups, process_kib
+        with self.lock:
+            f=self.fixture
+            if f.server.poll() is None:
+                result=f.resource_sample()
+            else:
+                result={'monotonic_ns':time.monotonic_ns(),**f.storage_sample(),
+                        'groups':cgroups.snapshot(f.parent)}
+            result['grader_rss_kib']=process_kib(__import__('os').getpid())
+            if len(self.samples)>=4000:
+                raise RuntimeError('resource observation allowance exceeded')
+            append_observation(f.out/'continuous-resources.jsonl',result,max_bytes=16*1024**2)
+            self.samples.append(result)
+
+    def run(self):
+        while not self.stop.wait(self.interval):
+            try:self.observe()
+            except BaseException as error:
+                self.errors.append(str(error));return
+
+    def check(self):
+        if self.errors:
+            raise RuntimeError('resource sampler failed: '+self.errors[0])
+
+    def __enter__(self):
+        self.observe()
+        self.thread=threading.Thread(target=self.run,daemon=True)
+        self.thread.start();return self
+
+    def __exit__(self, kind, error, traceback):
+        self.stop.set();self.thread.join(timeout=15)
+        if self.thread.is_alive():
+            raise RuntimeError('resource sampler did not stop')
+        if kind is None:
+            self.observe();self.check()
+
+
+def perform(f, args, summary, meter):
     dependencies=[Path(__file__),Path(oracle.__file__),Path(__file__).with_name('release_fixture.py'),
                   Path(__file__).with_name('release_runtime.py'),Path(__file__).with_name('console_bridge.py'),
                   Path(__file__).with_name('soak_companion.py'),Path(__file__).with_name('release_timing.py'),
@@ -183,6 +238,7 @@ def perform(f, args, summary):
     source_file = f.work/'independent-source.jsonl'
     originals, enrollments = [], []
     for node in range(nodes):
+        meter.check()
         # Console fixture calls stay below its admission limit; no 429 counts
         # as permission evidence or a successful enrollment.
         enrollments.append(f.enroll(f'query{node:04d}'))
@@ -199,24 +255,22 @@ def perform(f, args, summary):
                         'spans':nodes*min(10,batches)*3,'start_ns':start_ns,
                         'source_sha256':file_digest(source_file)}
     reader=f.reader([e['enrollment_id'] for e in enrollments])
-    samples=[]; stop=threading.Event(); sampling_errors=[]; resource_lock=threading.Lock()
-    def sample():
-        while not stop.wait(1):
-            try:
-                with resource_lock:
-                    if f.server.poll() is None:
-                        samples.append(f.resource_sample())
-            except BaseException as error:
-                sampling_errors.append(str(error));return
-    sampler=threading.Thread(target=sample,daemon=True);sampler.start()
+    samples=meter.samples;resource_lock=meter.lock
     acked=[]; ack_lock=threading.Lock()
+    attempt_file=f.work/'actual-attempt-events.jsonl'
+    query_file=f.work/'actual-query-observations.jsonl'
     def deliver(node):
         for record in originals[node*batches:(node+1)*batches]:
             raw=base64.b64decode(record['bytes'])
             sequence=oracle.decode_batch(raw)['sequence']
             began=time.monotonic()
             attempts=[]
+            def record_attempt(event):
+                with ack_lock:
+                    append_observation(attempt_file,{'label':record['label'],'sequence':sequence,**event},
+                                       max_bytes=32*1024**2)
             while True:
+                meter.check()
                 attempted_ns=time.monotonic_ns()
                 request=urllib.request.Request(f.origin+'/v1/batches',data=raw,
                     headers={'authorization':'Bearer '+enrollments[node]['token'],
@@ -224,10 +278,11 @@ def perform(f, args, summary):
                 try:
                     with urllib.request.urlopen(request,context=f.context,timeout=15) as response:
                         status=response.status;answer=json.loads(response.read(65537))
-                    if status!=200 or answer.get('status')!='ack' or answer.get('committed_through')!=sequence:
-                        raise ValueError('fixture Batch received an invalid ACK')
                     attempts.append({'status':status,'answer':answer,'before_ns':attempted_ns,
                                      'after_ns':time.monotonic_ns(),'sha256':hashlib.sha256(raw).hexdigest()})
+                    record_attempt(attempts[-1])
+                    if status!=200 or answer.get('status')!='ack' or answer.get('committed_through')!=sequence:
+                        raise ValueError('fixture Batch received an invalid ACK')
                     with ack_lock:
                         acked.append({'label':record['label'],'sequence':sequence,
                                       'sha256':hashlib.sha256(raw).hexdigest(),'attempts':attempts,
@@ -236,12 +291,14 @@ def perform(f, args, summary):
                 except urllib.error.HTTPError as error:
                     attempts.append({'status':error.code,'before_ns':attempted_ns,
                                      'after_ns':time.monotonic_ns(),'sha256':hashlib.sha256(raw).hexdigest()})
+                    record_attempt(attempts[-1])
                     if error.code not in (429,503) or time.monotonic()-began>120:
                         raise RuntimeError('fixture delivery rejected or failed to drain') from None
                     time.sleep(.2)
                 except (OSError,urllib.error.URLError):
                     attempts.append({'status':'no_response','before_ns':attempted_ns,
                                      'after_ns':time.monotonic_ns(),'sha256':hashlib.sha256(raw).hexdigest()})
+                    record_attempt(attempts[-1])
                     if time.monotonic()-began>120:
                         raise RuntimeError('fixture delivery failed to drain') from None
                     time.sleep(.2)
@@ -271,17 +328,17 @@ def perform(f, args, summary):
                     f.restart()
             f.bridge.poll_ui(True)
             for item in plan:
+                meter.check()
                 elapsed,pages=reader.pages(item['query'])
                 answers.append(dict(item,phase=phase,elapsed_s=elapsed,pages=pages))
+                append_observation(query_file,answers[-1],max_bytes=128*1024**2)
                 # Test calls are paced; successful latency includes every page.
                 time.sleep(.1)
             f.bridge.poll_ui(False)
         with resource_lock:
             f.stop_server()
     finally:
-        stop.set();sampler.join(timeout=3)
-    if sampling_errors:
-        raise RuntimeError('resource sampler failed: '+sampling_errors[0])
+        meter.check()
     recovery=f.work/'verified-recovery.jsonl'
     with recovery.open('wb') as output:
         subprocess.run([str(f.helpers/'server_dump'),str(f.config),'--records'],
@@ -332,9 +389,9 @@ def perform(f, args, summary):
             'generation':batch['generation'],'sequence':batch['sequence'],'bytes':record['bytes']}))
     ledger.append({'type':'end'})
     custody=delivery_oracle.check(json.dumps(record) for record in ledger)
-    summary['delivery_oracle']={'passed':custody.passed,'violations':[v.__dict__ for v in custody.violations]}
+    summary['delivery_oracle']={'passed':custody.passed,'violations':custody.violations}
     archive=f.archive_dir()
-    for source in [source_file,recovery,f.work/'companion-custody/spool.jsonl']:
+    for source in [source_file,recovery,f.work/'companion-custody/spool.jsonl',attempt_file,query_file]:
         with source.open('rb') as incoming,gzip.open(archive/(source.name+'.gz'),'wb') as output:
             shutil.copyfileobj(incoming,output)
     (f.out/'delivery-acks.json').write_text(json.dumps(acked)+'\n')
@@ -360,12 +417,11 @@ def perform(f, args, summary):
     def grader_sample():
         result={'monotonic_ns':time.monotonic_ns(),'grader_rss_kib':process_kib(__import__('os').getpid()),
                 'groups':cgroups.snapshot(f.parent),
-                'live_bytes':sum(directory_bytes(p) for p in [f.work,f.out,archive])}
-        if result['live_bytes']>5*1024**3 or directory_bytes(f.out)>50*1024**2:
-            raise RuntimeError('grader evidence exceeded registered disk budget')
+                **f.storage_sample()}
         return result
     grader_samples=[grader_sample()]
     for index,answer in enumerate(answers):
+        meter.check()
         started=time.monotonic()
         verdict=grade([],answer['query'],answer['pages'],labels,prepared=prepared)
         grader_samples.append(grader_sample())
@@ -382,7 +438,7 @@ def perform(f, args, summary):
     summary['gates']={'all_answers_oracle':all_passed,'all_fixture_acked':len(acked)==source_count,
         'delivery_oracle':custody.passed,
         'query_p99_le_2s':all(p99(values)<=2 for values in groups.values()),
-        'server_rss_le_2gib':bool(samples) and max(s['server_hwm_kib'] for s in samples)<=2*1024**2,
+        'server_rss_le_2gib':bool(samples) and max(s['server_hwm_kib'] for s in samples if 'server_hwm_kib' in s)<=2*1024**2,
         'source_manifest_unchanged':file_digest(source_file)==summary['fixture']['source_sha256'],
         'harness_source_unchanged':all(file_digest(path)==source_hashes[str(path)] for path in dependencies),
         'no_oom':all('oom_kill 0' in group['memory.events'] for sample in samples+grader_samples for group in sample['groups'].values())}
@@ -392,8 +448,7 @@ def perform(f, args, summary):
         json.dump(answers,output)
     # resource_sample requires a live server; disk admission is checked directly.
     from release_runtime import directory_bytes
-    if sum(directory_bytes(p) for p in [f.work,f.out,archive])>5*1024**3:
-        raise RuntimeError('query fixture and archives exceed registered disk budget')
+    summary['final_storage']=f.storage_sample()
 
 
 def main():
@@ -412,9 +467,11 @@ def main():
              'seed':args.seed,'mode':args.mode,'passed':False}
     with CandidateFixture(args.deb_receipt,args.rpm_receipt,args.out,mode=args.mode) as f:
         try:
-            perform(f,args,summary)
+            with ResourceSampler(f) as meter:
+                perform(f,args,summary,meter)
             f.receipt['passed']=summary['passed']
         except BaseException as error:
+            summary['passed']=False
             summary['failure_type']=type(error).__name__
             summary['failure']=str(error)[:1200]
             raise
