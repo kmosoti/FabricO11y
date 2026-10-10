@@ -109,6 +109,37 @@ the separately inspected companion Spool. Rate semantics are checked using the
 unchanged rate oracle and native historical-query tests: the scoped console has
 no unpaginated rate route, and this experiment does not invent one.
 
+### Independent scoped oracle inputs
+
+Prospective amendment, registered before fixed-query execution: the unchanged
+query oracle's historical metadata describes its complete input corpus, whereas
+the production console reports only the requested signal and authorized query
+labels. For each query, project the independently generated corpus to the query
+label intersected with the 100 authorized fixture enrollments, retain only its
+requested signal payload, and preserve the original Batch identity and payload
+bytes within that signal. Omit Batches without that signal. Do not filter by the
+query's substring, metric name, trace ID or time range before oracle evaluation;
+those selections remain the oracle's responsibility. Projection must preserve
+row indices and integers above JavaScript's exact-number range.
+
+This adapter applies only to the declared zero-gap fixture. Any gap in any
+authorized fixture Batch fails admission; any unexpected response gap fails
+grading. It must never silently discard a gap. A general scoped gap-only Batch
+cannot be projected this way: the console can report its redacted gap while
+omitting it from signal receive bounds, whereas the unchanged oracle includes
+every supplied Batch in those bounds and expects original gap text. B4 therefore
+makes no claim about that adapter case; ACCESS gates cover scoped gap redaction.
+Companion gaps remain outside this workload's query grants and are accounted for
+separately in custody checks.
+
+Retain complete original Batches as source/hash/custody witnesses. Obtain only
+`received_ns` from independently inspected recovery metadata after verifying its
+identity and bytes against the generator; never obtain expected telemetry from
+query answers. Record projection and original hashes. Before full execution,
+tests must reject a forbidden-label or other-signal freshness leak and verify
+large integer and row-index preservation using the unchanged independent decoder
+and oracle.
+
 ## Checker controls and completion
 
 Before full cells, one disposable short smoke must exercise the production access,
