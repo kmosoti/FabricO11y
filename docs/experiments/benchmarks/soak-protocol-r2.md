@@ -17,6 +17,13 @@ Use CPUs 0–1 for server and companion, 2–3 for the simulator. Freeze both da
 binaries, simulator, server/spool dump examples, harness dependencies, protocol
 and source identities before execution; recheck SHA-256 values afterward.
 
+For RC-GROUP service acceptance, build these binaries with
+`FABRIC_ROW_GROUP_CHUNKS_EXPERIMENT=1`, without the allocation-counting feature.
+The admitted aligned writer is the sole experimental storage selector; retain
+the default query plan and all workload parameters. Preserve the build command
+receipt with the frozen binary hashes. This run does not promote the selector
+to the production default.
+
 Hypothesis: the current storage implementation satisfies the original memory
 drift and correctness gates with native self-observation present. The adverse
 case is memory growth, latency/backlog degradation, incomplete recovery or an
