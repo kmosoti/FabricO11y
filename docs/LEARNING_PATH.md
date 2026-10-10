@@ -248,6 +248,14 @@ Try it:
 
 The Rust idea: **borrow the decision, own the effect**. The rule that makes stopping sound lives in the core as an executable definition (`fabric_core::query::spec::threshold_walk`, with its theorem as a property); the server's [query.rs](../crates/fabric-server/src/query.rs) and [tail.rs](../crates/fabric-server/src/tail.rs) apply it to files, holding a mutex only while the index is extended and a frame cache only for one query.
 
+The [scoped evidence cache](../crates/fabric-server/src/read_catalog/evidence.rs)
+illustrates a different ownership boundary: derived facts can outlive one query,
+but authorization cannot. Its mutex serializes bounded construction; each caller
+selects current source and signal grants from the immutable summary. A partial
+snapshot uses the exact reader. The
+[integration controls](../crates/fabric-server/tests/scoped_evidence.rs) demonstrate
+why a cached full-Segment maximum would be incorrect for an older page.
+
 The contract: the walk returns the scan's answer, page for page. The trade-off: a few MiB of index per process and a first query that builds it, against reading every source on every query.
 
 Try it:

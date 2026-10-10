@@ -107,6 +107,27 @@ remains in `query`. The default Walk view copies Manifest values; an experimenta
 hidden constructor shares immutable metadata handles, and explicit synchronous
 refresh supports measured maintenance schedules outside the ACK path.
 
+Scoped Segment freshness uses a separate bounded derived cache owned by
+`read_catalog::evidence`. One validated raw scan collects per-label receive
+bounds and separate log, metric and span maxima. A hit applies the current node
+and signal scope; it never caches authority or substitutes a full-Segment
+aggregate for a partial page snapshot. Partial snapshots retain exact raw scans.
+The cache admits at most 8 MiB of conservatively charged resident metadata and
+4,096 descriptors, with one at-most-1-MiB construction under its mutex. These are
+allocation estimates, not RSS bounds; the service cgroup remains authoritative.
+Over-budget or invalid construction falls back to the exact scan without caching
+a partial answer. FIFO eviction bounds retained derived state.
+
+Every query still checks raw availability. Reuse additionally requires unchanged
+raw-file device/inode, length, modification/change timestamps and expected
+Manifest identity; construction checks those stamps again before publication.
+Retention can remove the underlying files and invalidate pages independently of
+the cache. Published contents remain immutable by contract. Stamps cannot detect
+silent corruption that preserves them. The
+[registered repair experiment](../experiments/benchmarks/scoped-evidence-protocol.md)
+compares exact answers and cold/warm cost; native tests cover scope changes,
+partial snapshots, unavailable raw storage and admission/eviction bounds.
+
 Walk journal locators identify the first committed group as well as a path and
 frame offset. Active-file discovery now opens the file before listing sealed
 journals. Before indexing or lazily reading a saved offset, storage verifies

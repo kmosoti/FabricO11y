@@ -229,23 +229,34 @@ pub(crate) fn latest_selected_observation_bytes(
     metrics: bool,
     traces: bool,
 ) -> io::Result<Option<u64>> {
+    let times = latest_signal_observation_bytes(bytes)?;
+    Ok(times
+        .into_iter()
+        .zip([logs, metrics, traces])
+        .filter_map(|(time, selected)| selected.then_some(time).flatten())
+        .max())
+}
+
+/// Validate once and retain separate maxima for logs, metric points and spans.
+/// The three slots never imply authorization; callers select an allowed signal.
+pub(crate) fn latest_signal_observation_bytes(bytes: &[u8]) -> io::Result<[Option<u64>; 3]> {
     let batch = Batch::decode(bytes).map_err(|error| invalid(error.to_string()))?;
     let _: [u8; 16] = batch
         .node_id
         .as_slice()
         .try_into()
         .map_err(|_| invalid("batch node_id is not 16 bytes"))?;
-    let mut newest = None;
-    let mut add = |time: u64| newest = Some(newest.map_or(time, |old: u64| old.max(time)));
+    let mut newest = [None; 3];
+    let mut add = |signal: usize, time: u64| {
+        newest[signal] = Some(newest[signal].map_or(time, |old: u64| old.max(time)));
+    };
     if !batch.logs.is_empty() {
         let request = ExportLogsServiceRequest::decode(batch.logs.as_slice())
             .map_err(|error| invalid(error.to_string()))?;
         for resource in request.resource_logs {
             for scope in resource.scope_logs {
                 for record in scope.log_records {
-                    if logs {
-                        add(record.observed_time_unix_nano);
-                    }
+                    add(0, record.observed_time_unix_nano);
                 }
             }
         }
@@ -262,9 +273,7 @@ pub(crate) fn latest_selected_observation_bytes(
                         _ => continue,
                     };
                     for point in points {
-                        if metrics {
-                            add(point.time_unix_nano);
-                        }
+                        add(1, point.time_unix_nano);
                     }
                 }
             }
@@ -276,9 +285,7 @@ pub(crate) fn latest_selected_observation_bytes(
         for resource in request.resource_spans {
             for scope in resource.scope_spans {
                 for span in scope.spans {
-                    if traces {
-                        add(span.start_time_unix_nano);
-                    }
+                    add(2, span.start_time_unix_nano);
                 }
             }
         }

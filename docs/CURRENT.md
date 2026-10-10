@@ -78,81 +78,63 @@ attempts and exact revision limits remain in the linked records.
 
 ## Release preparation
 
-The owner selected the bounded application release gate (Option B) for development
-and small deployments. The [release plan](milestones/release-readiness.md) fixes
-the candidate/package workflow, proposed 10/100-identity matrix, blockers and
-execution order. The ledger now separates bounded release gates from the broader
-qualification profile; executable registration precedes measurement. No release
-candidate is frozen or published yet.
+The owner selected Option B for development and small deployments. The
+[release plan](milestones/release-readiness.md) tracks B1–B13: Debian/Fedora
+central and edge deployment, 100 GB retained telemetry with separate working
+space, local passkeys and scoped human/workload/AI access, and a Leptos/WASM PWA.
+Apache-2.0 licensing and dependency notices are included. OIDC remains deferred.
+No release tag has been published.
 
-The selected scope includes a central server and remote Spindles on Debian and
-Fedora, with four cross-family forwarding cells and exact `.deb`/`.rpm` acceptance.
-The confirmed release default is `retention_bytes=100000000000` (100 GB decimal)
-of sealed telemetry, with separate bounded journal and working space. Configurable
-age retention remains 24 hours; either limit can expire data first. These are
-implemented defaults. Debian and RPM staging now include the verified console
-and Apache-2.0 license; exact candidate installation and lifecycle checks remain
-tracked by the [package protocol](experiments/formal/installation-release-protocol.md).
+The frozen `c06688c` candidate has exact Debian/RPM payload receipts and console
+build 08. Fresh Fedora installation and upgrade/reboot/removal passed their
+finite checks, including SELinux and service limits. The reboot trial verifies
+[ADR-0028](decisions/ADR-0028-preserve-btrfs-log-identity-across-reboots.md): a
+Btrfs device-number change no longer replays an already collected log. Earlier
+failed package runs remain preserved. Debian successor acceptance and the four
+cross-family forwarding cells are still queued in the
+[installation record](experiments/formal/installation-release-run-01.md).
 
-The release also requires a [Leptos/WASM PWA](milestones/operator-console.md) and
-[local passkeys with scoped human/workload/AI access](architecture/identity-access.md).
-OIDC/SSO is deferred. Production `serve` now requires exact HTTPS origin/RP
-configuration and serves the scoped console API; its legacy master routes are
-denied. The [access adapter](../crates/fabric-server/src/access.rs) implements
-passkeys, sessions, workload rotation/delegation, durable access state and offline
-recovery. Its latest focused run passed 18 tests; seven HTTP tests and three
-scoped CLI tests also passed. The
-[UI crate](../crates/fabric-ui/README.md) connects to real queries and controls;
-its latest native run passed 25 tests and its WASM check/build exited 0. These
-are implementation checks. A Chromium virtual-authenticator trial passed
-82 finite HTTPS workflow/privacy checks, including actual desktop PWA
-installation, launch and removal. An earlier injected API-cache defect was
-rejected at its registered boundary. Final-candidate workflow acceptance is in
-progress; these results do not establish physical-device compatibility. Firefox authenticator
-automation currently fails before credential creation and remains inconclusive.
-B11–B13 require
-security, recovery,
-privacy, browser lifecycle and UI-active resource acceptance.
+The native access adapter, scoped HTTPS APIs and PWA are implemented. Exact-package
+Chrome smoke `console-live-chrome-final-package-02` passed 146 checks. The longer
+run exercised real cursor expiry, then exhausted its 4 MiB producer fixture Spool
+before a later positive query. That failure is preserved; the bounded fixture is
+being corrected before repeating the complete browser run. Automation uses a virtual
+CTAP2 authenticator, not a physical-device compatibility claim. Firefox's compiled
+shell checks passed; automated passkey enrollment remains inconclusive there.
 
-The earlier full-workspace dependency review exposed unmaintained `paste` and
-`rustls-pemfile` dependencies and license-policy gaps missed by root-only checks.
-Local source-preserving UI manifest patches select `pastey`; axum-server 0.8.0
-removes rustls-pemfile. The [dependency policy](dependency-policy.md) records
-separately reviewed license decisions and distribution obligations. The updated
-whole-workspace gate passed `cargo deny --locked --workspace check`, including
-all 350 resolved external packages; the historical failure remains recorded.
-The gate must also run on the frozen release candidate. The full fast profile
-passed all 21 checks in `console-fast-02` (exit 0, 636.8 seconds). This retains the
-earlier 19/21 failure: formatting and an invalid-credential admission fixture were
-corrected without weakening authentication or overload checks. The fast run
-predates the subsequent Btrfs and companion-timing changes, whose focused native
-tests, strict default/all-feature Clippy, layers and core purity exited 0.
-Final-candidate verification remains required.
+The first production million-row Segment cell, `release-query-segment-seed1-01`,
+returned 200/200 oracle-exact answers before and after restart. Exact recovery,
+companion custody and resource gates passed. Its 2-second query gate failed:
+repeated raw-Batch scans for scoped freshness cost roughly 2 seconds per page,
+with a complete five-page query reaching 10.27 seconds. A
+[bounded storage-owned summary](experiments/benchmarks/scoped-evidence-protocol.md)
+reduced repeated raw work in three diagnostic pairs with identical answers. Its
+five cache controls, three History controls,
+eight row controls, seven console controls and snapshot regression passed;
+strict all-feature server Clippy exited 0. All fifteen diagnostic answers also
+passed the independent query oracle. Cold metadata cost remains about 1.46 seconds;
+warm five-page counters fell from roughly 6.6 to 0.28 seconds. These library
+measurements require confirmation on a rebuilt package through HTTPS.
 
-Fedora lifecycle testing exposed repeated log collection after Btrfs changed its
-runtime device number from 51 to 32 across reboot. The failed package/overlay
-receipts remain failed. [ADR-0028](decisions/ADR-0028-preserve-btrfs-log-identity-across-reboots.md)
-and its regression now preserve full filesystem/subvolume identity, with quiet
-migration committed through the ordinary Spool. Native regressions passed on
-`889dfac`; actual corrected-package Fedora upgrade/reboot remains pending.
+The production soak `production-soak-full-01` was interrupted after 1,100 seconds:
+read-only browser inspection confirmed that the harness's automatic re-login
+left the UI locked rather than continuously polling. Its failure evidence and
+unchanged inputs are preserved; processes and browser scratch were cleaned.
+The bridge is being corrected before a fresh full soak. Historical passing R2
+results above remain attributed to their original revision.
 
-The expanded Chrome run `console-live-chrome-extended-22` passed 143 checks
-(exit 0, 53.7 seconds, 517.5 MiB cgroup peak) on console build 08, including actual
-installed standalone PWA launch, passkey recovery, scoped native-source queries,
-logout/cancellation races and worker update/rollback. A concurrent native rebuild
-made the restarted process identity ambiguous; this is a workflow result, not
-single-candidate evidence. Subsequent harness runs snapshot binaries and verify
-their hashes before and after execution. Longer expiry/resource checks and
-exact-package acceptance remain separate.
+Hosted CI run `38067490757` at `189127d` passed all 20 enabled fast checks,
+whole-workspace dependency policy, WASM/build/contrast checks and 19 Firefox
+shell checks. Chrome then failed during session startup before authentication
+checks ran. A sandbox-preserving diagnostic is ready for the next hosted run;
+its cause is not yet established. Bun CI/hooks remain disabled.
 
-The [research wiki](https://github.com/kmosoti/FabricO11y/wiki) is the canonical
-home for research and result reports. Product/operator documentation, architecture,
-registered protocols and executable evidence inputs stay versioned here under the
-[ownership policy](documentation-policy.md#canonical-ownership).
-The [migration manifest](wiki-migration.json) pins 150 published reports to
-verified wiki commits; 144 bodies were replaced by repository compatibility links.
-Six published executable-input bodies and three additional machine-consumed
-plans remain versioned in the repository, with their exclusions recorded.
+The [research wiki](https://github.com/kmosoti/FabricO11y/wiki) owns research and
+result reports. Product/operator documentation, architecture, registered protocols
+and executable evidence inputs stay versioned here under the
+[ownership policy](documentation-policy.md#canonical-ownership). The
+[migration manifest](wiki-migration.json) pins the earlier 150 published reports;
+new candidate findings are being consolidated into the same evidence index.
 
 ## Assumptions and risks
 

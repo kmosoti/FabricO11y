@@ -10,6 +10,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+mod evidence;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum FilterKind {
     None,
@@ -61,6 +63,7 @@ pub(crate) struct ReadCatalog {
     state: Mutex<WalkState>,
     shared_metadata: bool,
     reuse: Option<Mutex<Cache>>,
+    evidence: Mutex<evidence::Cache>,
 }
 
 impl ReadCatalog {
@@ -70,6 +73,7 @@ impl ReadCatalog {
             state: Mutex::new(WalkState::default()),
             shared_metadata: false,
             reuse: None,
+            evidence: Mutex::new(evidence::Cache::default()),
         }
     }
 
@@ -141,6 +145,21 @@ impl ReadCatalog {
 
     pub fn view(&self, request: CatalogRequest<'_>) -> io::Result<Sources> {
         self.view_inner(request, || {})
+    }
+
+    pub(crate) fn scoped_segment_evidence(
+        &self,
+        dir: &Path,
+        manifest: &segment::Manifest,
+        snapshot: fabric_core::query::Snapshot,
+        table: Table,
+        allowed: &HashSet<String>,
+        node: &Option<String>,
+    ) -> io::Result<evidence::Selected> {
+        self.evidence
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .select(dir, manifest, snapshot, table, allowed, node)
     }
 
     #[cfg(test)]

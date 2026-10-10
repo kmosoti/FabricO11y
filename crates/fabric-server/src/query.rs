@@ -803,34 +803,15 @@ impl History {
                 unavailable
                     .push(json!({"segment": manifest.journal_label, "error": e.to_string()}));
             }
-            let evidence = if authorized_nodes.is_some() {
-                let mut bounds = (u64::MAX, 0);
-                let mut by_node: BTreeMap<String, u64> = BTreeMap::new();
-                let mut failure = None;
-                let scanned =
-                    segment::scan_batches_borrowed_one_at_a_time(dir, manifest, |group, entry| {
-                        if failure.is_some() || !snapshot.contains(group) || !node_ok(entry.label) {
-                            return;
-                        }
-                        match scoped_latest(entry.batch) {
-                            Ok(Some(newest)) => {
-                                bounds = (
-                                    bounds.0.min(entry.received_unix_nano),
-                                    bounds.1.max(entry.received_unix_nano),
-                                );
-                                by_node
-                                    .entry(entry.label.to_owned())
-                                    .and_modify(|v| *v = (*v).max(newest))
-                                    .or_insert(newest);
-                            }
-                            Ok(None) => {}
-                            Err(error) => failure = Some(error),
-                        }
-                    });
-                scanned.and(match failure {
-                    Some(e) => Err(e),
-                    None => Ok((bounds, Cow::Owned(by_node))),
-                })
+            let evidence = if let Some(allowed) = authorized_nodes {
+                let table = match query {
+                    Query::Logs { .. } => Table::Logs,
+                    Query::Metrics { .. } | Query::Rate { .. } => Table::Metrics,
+                    Query::Spans { .. } => Table::Spans,
+                };
+                self.catalog
+                    .scoped_segment_evidence(dir, manifest, snapshot, table, allowed, node)
+                    .map(|(bounds, by_node)| (bounds, Cow::Owned(by_node)))
             } else {
                 segment_evidence(dir, manifest, snapshot)
             };

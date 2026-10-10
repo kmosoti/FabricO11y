@@ -17,8 +17,12 @@ flowchart LR
     Q --> R
     R --> A[Answer envelope and page token]
     R --> E[Snapshot evidence]
-    E -->|fully covered| M
-    E -->|boundary| H[Verify every raw Batch digest]
+    E -->|unscoped, fully covered| M
+    E -->|scoped, fully covered| SC[Bounded per-node and signal evidence cache]
+    C -->|owns derived facts, not authority| SC
+    SC -->|apply current scope and unchanged file identity| A
+    SC -->|miss, changed identity or over budget| H[Verify every raw Batch digest]
+    E -->|partial snapshot| H
     S --> H
     H --> F[Borrowed records and typed timestamp reduction]
     F -->|merge only after scan succeeds| A
