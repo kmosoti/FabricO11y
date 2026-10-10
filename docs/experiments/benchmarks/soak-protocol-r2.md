@@ -18,9 +18,12 @@ binaries, simulator, server/spool dump examples, harness dependencies, protocol
 and source identities before execution; recheck SHA-256 values afterward.
 
 For RC-GROUP service acceptance, build these binaries with
-`FABRIC_ROW_GROUP_CHUNKS_EXPERIMENT=1`, without the allocation-counting feature.
-The admitted aligned writer is the sole experimental storage selector; retain
-the default query plan and all workload parameters. Preserve the build command
+`FABRIC_ROW_GROUP_CHUNKS_EXPERIMENT=1` and `FABRIC_PAGE_STORE_EXPERIMENT=1`, without
+the allocation-counting feature. The second selector spills completed encoded
+pages: the separately registered [entropy probe](../formal/encoded-page-memory-protocol.md)
+found that input chunk limits alone did not bound retained encoded pages. Admit
+this combination only after its exactness, fault checks and repeated workload
+campaign pass. Retain the default query plan and all workload parameters. Preserve the build command
 receipt with the frozen binary hashes. This run does not promote the selector
 to the production default.
 
