@@ -1,0 +1,17 @@
+{
+  "status": "passed",
+  "scope": "bundle structure and helper checks only",
+  "original_source_operations": 24,
+  "pinned_source_blobs": 12,
+  "acceptance_cases": 53,
+  "test_references_resolve": true,
+  "receipt_schema_valid": true,
+  "not_run_template_valid": true,
+  "incomplete_receipt_rejected_as_verified": true,
+  "source_checker_selftest": "manifest-checker-selftest.json",
+  "design_probe_results": "design-probe-results.json",
+  "fabric_source_manifest_checked_against_real_checkout": false,
+  "application_tests_run": false,
+  "github_mutations_performed": false,
+  "cloud_scan_run": false
+}

@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Isolated design probes, not tests of FabricO11y or an independent oracle.
+
+Runs deterministic admission/deadline models and an optional Linux syscall
+experiment on synthetic files. No network requests, repository code, or secrets.
+"""
+from __future__ import annotations
+import argparse
+import errno
+import json
+from pathlib import Path
+import platform
+import shutil
+import subprocess
+import tempfile
+
+NS = 1_000_000_000
+
+class Bucket:
+    def __init__(self, rate: int, burst: int):
+        self.rate, self.capacity = rate, burst * NS
+        self.credit, self.at = self.capacity, 0
+    def refill(self, now: int) -> None:
+        if now < self.at:
+            raise ValueError("model clock moved backwards")
+        self.credit = min(self.capacity, self.credit + (now - self.at) * self.rate)
+        self.at = now
+    def debit(self) -> bool:
+        if self.credit < NS:
+            return False
+        self.credit -= NS
+        return True
+
+class AdmissionModel:
+    def __init__(self, kind: str):
+        self.kind = kind
+        self.window, self.window_used = -1, 0
+        self.global_bucket = Bucket(8, 8)
+        self.peers: dict[str, Bucket] = {}
+    def accept(self, peer: str, now: int) -> bool:
+        if self.kind == "fixed_window_baseline":
+            window = now // NS
+            if window != self.window:
+                self.window, self.window_used = window, 0
+            if self.window_used >= 8:
+                return False
+            self.window_used += 1
+            return True
+        global_bucket = self.global_bucket
+        local = self.peers.setdefault(peer, Bucket(2, 4))
+        global_bucket.refill(now)
+        local.refill(now)
+        if self.kind == "global_only":
+            return global_bucket.debit()
+        if self.kind == "global_debit_before_peer":
+            return global_bucket.debit() and local.debit()
+        if self.kind == "atomic_nested":
+            if global_bucket.credit < NS or local.credit < NS:
+                return False
+            global_bucket.debit()
+            local.debit()
+            return True
+        raise ValueError(self.kind)
+
+def admission_trace(kind: str) -> dict:
+    gate = AdmissionModel(kind)
+    honest = attacker = offered = 0
+    for second in range(60):
+        for _ in range(100):
+            attacker += gate.accept("attacker", second * NS)
+        if second % 5 == 0:
+            for offset in (1_000_000, 2_000_000):
+                honest += gate.accept("honest", second * NS + offset)
+                offered += 1
+    return {"candidate": kind, "honest_offered": offered,
+            "honest_admitted": honest, "attacker_admitted": attacker,
+            "trace_seconds": 60, "simulated": True}
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--out", type=Path, required=True)
+    args = parser.parse_args()
+    models = [admission_trace(kind) for kind in
+              ("fixed_window_baseline", "global_only", "global_debit_before_peer", "atomic_nested")]
+    assert models[0]["honest_admitted"] == 0
+    assert models[1]["honest_admitted"] == 0
+    assert models[2]["honest_admitted"] == 0
+    assert models[3]["honest_admitted"] == models[3]["honest_offered"] == 24
+    # A same-peer concurrent request cap is separate from the rate budget.
+    concurrency = {"global_cap": 8, "per_peer_cap": 2,
+                   "single_peer_max_held": min(8, 2), "remaining_global_slots": 6}
+    # Synthetic byte arrivals every four seconds, no complete request.
+    arrivals = list(range(0, 121, 4))
+    assert all(b - a < 30 for a, b in zip(arrivals, arrivals[1:]))
+    deadlines = {"simulated": True, "arrival_interval_seconds": 4,
+                 "inactivity_timeout_seconds": 30, "observation_seconds": 120,
+                 "inactivity_timeout_triggered": False,
+                 "absolute_deadline_seconds": 5,
+                 "absolute_deadline_expiration_seconds": 5}
+    kernel = {"status": "not_run", "reason": "Linux and cc required"}
+    if platform.system() == "Linux" and shutil.which("cc"):
+        source = Path(__file__).with_name("open_policy_probe.c")
+        with tempfile.TemporaryDirectory(prefix="synthetic-open-", dir=Path(__file__).parent) as root:
+            root = Path(root)
+            executable = root / "probe"
+            command = ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                       str(source), "-o", str(executable)]
+            subprocess.run(command, check=True, timeout=20, capture_output=True, text=True)
+            (root / "direct").mkdir()
+            (root / "direct" / "sample.log").write_text("SYNTHETIC_ONLY\n")
+            (root / "leaf.log").symlink_to(root / "direct" / "sample.log")
+            (root / "parent").symlink_to(root / "direct", target_is_directory=True)
+            rows = []
+            for label, path in (("regular", root / "direct" / "sample.log"),
+                                ("leaf_symlink", root / "leaf.log"),
+                                ("parent_symlink", root / "parent" / "sample.log")):
+                for mode in ("legacy", "leaf_only", "all_components"):
+                    run = subprocess.run([str(executable), mode, str(path)], check=True,
+                                         capture_output=True, text=True, timeout=5)
+                    rows.append({"path_case": label, "mode": mode, **json.loads(run.stdout)})
+            index = {(row["path_case"], row["mode"]): row for row in rows}
+            assert index[("parent_symlink", "leaf_only")]["opened"]
+            supported = index[("regular", "all_components")]["opened"]
+            if supported:
+                for case in ("leaf_symlink", "parent_symlink"):
+                    assert not index[(case, "all_components")]["opened"]
+                    assert index[(case, "all_components")]["errno"] == errno.ELOOP
+            kernel = {"status": "observed" if supported else "unavailable",
+                      "machine": platform.machine(), "cases": rows,
+                      "compile_exit": 0, "synthetic_data_only": True,
+                      "scope": "all-component symlink rejection, not race or product validation"}
+        kernel["owned_fixture_cleanup_complete"] = not root.exists()
+    result = {"format_version": 1, "base_commit": "18f6b367d0f34886847ea25b9168e50eb0425300",
+              "fabric_application_code_executed": False,
+              "independent_verification": False,
+              "claim": "design counterexamples and isolated syscall observations only",
+              "admission": models, "concurrency": concurrency, "deadline": deadlines,
+              "kernel_path_resolution": kernel,
+              "production_status": "not_implemented_not_tested"}
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    args.out.write_text(json.dumps(result, indent=2) + "\n")
+    print(json.dumps(result, indent=2))
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,448 @@
+{
+  "schema_version": 1,
+  "spec_id": "FABRIC-SECURITY-HARDENING-2026-10-10",
+  "base_commit": "18f6b367d0f34886847ea25b9168e50eb0425300",
+  "candidate_commit": null,
+  "candidate_id": null,
+  "scope": "application",
+  "status": "not_run",
+  "protocol_sha256": null,
+  "checker_sha256": null,
+  "results": [
+    {
+      "test_id": "A01",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "A02",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "A03",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "A04",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "A05",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "A06",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "A07",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "A08",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "A09",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "A10",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "A11",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "A12",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "A13",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "A14",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "O01",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "O02",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "O03",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "O04",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "O05",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "O06",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "O07",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "O08",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "O09",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "O10",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "O11",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "O12",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "O13",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "O14",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "F01",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "F02",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "F03",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "F04",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "F05",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "F06",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "F07",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "F08",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "F09",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "F10",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "C01",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "C02",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "C03",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "C04",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "C05",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "C06",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "C07",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "C08",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "C09",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "C10",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "G01",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "G02",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "G03",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "G04",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    },
+    {
+      "test_id": "G05",
+      "command": null,
+      "exit": null,
+      "status": "not_run",
+      "observations": [],
+      "negative_control": null
+    }
+  ],
+  "cleanup": {
+    "owned_resources_stopped": null,
+    "owned_scratch_cleaned": null,
+    "retained_failure_evidence": []
+  },
+  "residual_risks": [
+    "No application changes or tests have been completed for this specification.",
+    "Peer quotas do not establish distributed-attack or shared-peer isolation.",
+    "Bounded loopback TCP does not establish hostile-local-user liveness.",
+    "No-symlink resolution does not authenticate file provenance or prevent OS-owner compromise."
+  ]
+}
