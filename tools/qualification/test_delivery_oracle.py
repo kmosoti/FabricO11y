@@ -12,7 +12,6 @@ NID1 = "a0" * 16
 NID2 = "b1" * 16
 D1, D2, D3, D4 = b"payload-one", b"payload-two-", b"payload-three", b"payload-four"
 ORACLE = Path(__file__).with_name("delivery_oracle.py")
-SCRATCH = Path(__file__).resolve().parents[2] / "target" / "alpha-delivery-oracle"
 
 
 def b64(data: bytes) -> str:
@@ -81,8 +80,8 @@ def clean_transcript():
 
 
 def run_cli(text):
-    SCRATCH.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", dir=SCRATCH, suffix=".jsonl", delete=False) as handle:
+    from runner import scratch_root
+    with tempfile.NamedTemporaryFile("w", dir=scratch_root(), suffix=".jsonl", delete=False) as handle:
         handle.write(text)
         path = handle.name
     try:
