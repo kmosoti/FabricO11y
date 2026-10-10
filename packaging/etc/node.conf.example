@@ -2,6 +2,9 @@
 spool_dir=/var/lib/fabrico11y/node/spool
 metric_interval_s=15
 spool_bytes=268435456
+# This standalone edge service keeps its configured destination. Production
+# fabric-node also collects spool_dir/diagnostics/spindle.log automatically;
+# it counts against the 16-source bound and survives remote log replacement.
 # Selected logs need a narrow read ACL for fabricolly, for example:
 #   setfacl -m u:fabricolly:r /var/log/app.log
 # log=/var/log/app.log

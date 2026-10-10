@@ -19,6 +19,9 @@ UMask=0077
 Restart=on-failure
 RestartSec=5s
 KillSignal=SIGTERM
+# Let the supervisor stop/reap its Spindle while HTTP is still available.
+# On timeout systemd still kills every remaining process in this service.
+KillMode=mixed
 TimeoutStopSec=30s
 NoNewPrivileges=yes
 CapabilityBoundingSet=
@@ -34,7 +37,9 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 MemoryAccounting=yes
 TasksAccounting=yes
 IOAccounting=yes
+# These existing bounds cover the server and its dedicated Spindle together.
 MemoryHigh=2560M
+MemorySwapMax=0
 MemoryMax=3072M
 TasksMax=512
 CPUWeight=100

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build the install .deb in a disposable, rootless Debian 12 container.
 
-The Debian 12 build sysroot keeps Rust 1.98's weak pidfd references within the
+The Debian 12 build sysroot keeps Rust 1.99's weak pidfd references within the
 registered GLIBC 2.34 floor; installed-system acceptance still runs on Debian 13.
 """
 from __future__ import annotations
@@ -20,14 +20,16 @@ import time
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools"))
 from resource_group import STORAGE, require_limits
+sys.path.insert(0, str(ROOT / "tools/packaging"))
+from stage_console import stage as stage_console
 sys.path.insert(0, str(ROOT / "tools/qualification"))
 from prepare_soak import MAX_COPY_BYTES, source_paths
 
 DATA_MOUNT = Path("/run/media/kmosoti/data")
 TOOLCHAIN_HOME = STORAGE / "toolchain-cache/rustup"
-TOOLCHAIN = TOOLCHAIN_HOME / "toolchains/1.98.0-x86_64-unknown-linux-gnu"
+TOOLCHAIN = TOOLCHAIN_HOME / "toolchains/1.99.0-x86_64-unknown-linux-gnu"
 IMAGE_TAG = "docker.io/library/debian:12-slim"
-MAX_DATA_BYTES = 100 * 1000**3
+MAX_DATA_BYTES = 95 * 1000**3  # Owner-scoped stop threshold below the 100 GB ceiling.
 RUN_BUDGET_BYTES = 8 * 1024**3
 PULL_TIMEOUT_S = 300
 BUILD_TIMEOUT_S = 1500
@@ -44,12 +46,13 @@ def command(args: list[str], *, timeout: int = 60,
                           check=False, env=env)
 
 
-def require_data_budget() -> None:
+def require_data_budget(*, reserve: bool = True) -> None:
     disk = shutil.disk_usage(DATA_MOUNT)
     project_bytes = file_tree_bytes(STORAGE)
-    if project_bytes + RUN_BUDGET_BYTES > MAX_DATA_BYTES:
+    reserved = RUN_BUDGET_BYTES if reserve else 0
+    if project_bytes + reserved > MAX_DATA_BYTES:
         raise RuntimeError(
-            f"FabricO11y data tree plus {RUN_BUDGET_BYTES} byte run budget exceeds 100 GB: {project_bytes}"
+            f"FabricO11y data tree plus {reserved} byte run budget exceeds the 95 GB stop threshold: {project_bytes}"
         )
     if disk.free < RUN_BUDGET_BYTES:
         raise RuntimeError(
@@ -111,6 +114,19 @@ def source_inventory() -> tuple[list[str], list[str]]:
     known.add(cargo_config)
     if (ROOT / cargo_config).is_file():
         present.add(cargo_config)
+    # Package scripts execute these helpers and ship the selected license.
+    for name in ("tools/resource_group.py", "tools/packaging/stage_console.py", "tools/packaging/dependency_notices.py", "LICENSE", "NOTICE", "tools/ui/build.py"):
+        known.add(name)
+        if (ROOT / name).is_file():
+            present.add(name)
+    ui_inputs = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", "crates/fabric-ui", "vendor"],
+        cwd=ROOT, check=True, capture_output=True,
+    ).stdout.decode().split("\0")
+    for name in ui_inputs:
+        if name and (ROOT / name).is_file():
+            known.add(name)
+            present.add(name)
     for required in ("Cargo.toml", "Cargo.lock", "packaging/build-deb.sh",
                      "packaging/check-glibc.sh"):
         if required not in present:
@@ -210,6 +226,8 @@ def freeze_source(destination: Path, provenance: Path) -> dict[str, object]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", required=True)
+    parser.add_argument("--console-build", type=Path, required=True)
+    parser.add_argument("--family", choices=("debian", "fedora"), default="debian")
     args = parser.parse_args()
     if not re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", args.run_id):
         parser.error("--run-id must be lowercase letters, digits, dash or underscore")
@@ -230,10 +248,10 @@ def main() -> int:
     cargo = TOOLCHAIN / "bin/cargo"
     if not (registry.is_dir() and rustc.is_file() and cargo.is_file()):
         raise RuntimeError(
-            f"missing offline Cargo registry or pinned Rust 1.98.0 toolchain; expected {registry} and {TOOLCHAIN}"
+            f"missing offline Cargo registry or pinned Rust 1.99.0 toolchain; expected {registry} and {TOOLCHAIN}"
         )
     version = command([str(rustc), "--version"])
-    if version.returncode or not version.stdout.startswith("rustc 1.98.0 "):
+    if version.returncode or not version.stdout.startswith("rustc 1.99.0 "):
         raise RuntimeError(f"pinned Rust compiler unavailable: {version.stdout}{version.stderr}")
 
     scratch_root = Path(os.environ["FABRIC_SCRATCH_ROOT"]).resolve(strict=True)
@@ -259,6 +277,10 @@ def main() -> int:
     for path in (target, output, cargo_home_guest):
         path.mkdir()
     registry_copy = cargo_home_guest / "registry"
+    console_build = args.console_build.resolve(strict=True)
+    if not console_build.is_relative_to(STORAGE / "results"):
+        raise RuntimeError("console build must be an owned data-drive result")
+    console = owned / "console"
 
     podman_args = [podman, "--root", str(store / "graph"), "--runroot", str(store / "run"),
                    "--tmpdir", str(store / "tmp"), "--storage-driver", "overlay",
@@ -281,7 +303,9 @@ def main() -> int:
         "cargo_registry_copy_bytes": None,
         "cargo_registry_copy_sha256": None,
         "image_tag_resolved": IMAGE_TAG,
-        "build_command": ["packaging/build-deb.sh", "/out"],
+        "build_command": ["packaging/build-deb.sh" if args.family == "debian" else "packaging/build-rpm.sh", "/out", "/console"],
+        "package_family": args.family,
+        "console_receipt_sha256": None,
         "source": None,
         "commands": [],
         "state": "running",
@@ -312,6 +336,13 @@ def main() -> int:
         return result
 
     try:
+        # Freeze the verified app shell before the container sees it. Any copy
+        # race is rejected when the guest repeats hash validation.
+        stage_console(console_build, owned / "console-verified")
+        console.mkdir()
+        shutil.copytree(console_build / "dist", console / "dist")
+        shutil.copy2(console_build / "build.json", console / "build.json")
+        receipt["console_receipt_sha256"] = sha256(console / "build.json")
         registry_bytes, registry_hash = copy_registry(registry, registry_copy)
         receipt["cargo_registry_copy_bytes"] = registry_bytes
         receipt["cargo_registry_copy_sha256"] = registry_hash
@@ -357,16 +388,23 @@ fi
 printf 'cgroup=%s memory.max=%s memory.swap.max=%s\n' "$actual" "$memory" "$swap"
 apt-get update
 DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-  build-essential binutils ca-certificates dpkg-dev git
-export PATH=/opt/rustup/toolchains/1.98.0-x86_64-unknown-linux-gnu/bin:$PATH
+  build-essential binutils ca-certificates dpkg-dev git python3 rpm pkg-config libssl-dev
+export PATH=/opt/rustup/toolchains/1.99.0-x86_64-unknown-linux-gnu/bin:$PATH
 export RUSTUP_HOME=/opt/rustup CARGO_HOME=/cargo CARGO_TARGET_DIR=/target
+export CARGO_BUILD_JOBS=2 RUST_TEST_THREADS=2
 export TMPDIR=/scratch TMP=/scratch TEMP=/scratch
-rustc --version | grep -q '^rustc 1\.98\.0 '
+rustc --version | grep -q '^rustc 1\.99\.0 '
 command -v git dpkg-deb dpkg-shlibdeps objdump cc >/dev/null
 status=$(git -C /src status --porcelain)
 [ -z "$status" ] || { echo 'private source tree is dirty' >&2; exit 72; }
-SOURCE_DATE_EPOCH=${FABRIC_SOURCE_DATE_EPOCH:?} /src/packaging/build-deb.sh /out
-dpkg-query -W -f='${binary:Package}\t${Version}\n' build-essential binutils ca-certificates dpkg-dev git
+SOURCE_DATE_EPOCH=${FABRIC_SOURCE_DATE_EPOCH:?} /src/packaging/${FABRIC_PACKAGE_BUILDER:?} /out /console
+# Diagnostic recovery helpers share the exact frozen sources and sysroot, but
+# remain separate from the installed package and its payload identity.
+cd /src
+cargo build --offline --locked --release --workspace --example spool_dump --example server_dump
+mkdir -p /out/qualification-helpers
+cp /target/release/examples/spool_dump /target/release/examples/server_dump /out/qualification-helpers/
+dpkg-query -W -f='${binary:Package}\t${Version}\n' build-essential binutils ca-certificates dpkg-dev git python3 rpm pkg-config libssl-dev
 '''
         container = [*podman_args, "run", "--rm", "--name", container_name,
                      "--pull=never", "--cgroups=disabled", "--cgroupns=host",
@@ -375,17 +413,19 @@ dpkg-query -W -f='${binary:Package}\t${Version}\n' build-essential binutils ca-c
                      f"{TOOLCHAIN_HOME}:/opt/rustup:ro", "--volume",
                      f"{cargo_home_guest}:/cargo:rw", "--volume", f"{target}:/target:rw",
                      "--volume", f"{output}:/out:rw",
+                     "--volume", f"{console}:/console:ro",
                      "--volume", f"{store / 'tmp'}:/scratch:rw",
                      "--env", f"FABRIC_EXPECTED_CGROUP={relative}",
                      "--env", f"FABRIC_SOURCE_DATE_EPOCH={source_record['source_date_epoch']}",
-                     "--env", "CARGO_NET_OFFLINE=true", digest, "bash", "-euc", container_script]
+                     "--env", "CARGO_NET_OFFLINE=true",
+                     "--env", "FABRIC_PACKAGE_BUILDER=" + ("build-deb.sh" if args.family == "debian" else "build-rpm.sh"), digest, "bash", "-euc", container_script]
         build_env = dict(env)
         build_env["FABRIC_CONTAINER_NAME"] = container_name
         build_env["TMPDIR"] = str(store / "tmp")
         logged("package-build", container, timeout=BUILD_TIMEOUT_S, run_env=build_env)
-        built = list(output.glob("fabrico11y_*.deb"))
+        built = list(output.glob("fabrico11y_*.deb" if args.family == "debian" else "fabrico11y-*.rpm"))
         if len(built) != 1 or built[0].is_symlink():
-            raise RuntimeError(f"expected exactly one built Debian package, found {built}")
+            raise RuntimeError(f"expected exactly one built package, found {built}")
         package_hash = sha256(built[0])
         output_bytes = file_tree_bytes(owned)
         if output_bytes > RUN_BUDGET_BYTES:
@@ -394,12 +434,21 @@ dpkg-query -W -f='${binary:Package}\t${Version}\n' build-essential binutils ca-c
         shutil.copy2(built[0], final_package)
         if sha256(final_package) != package_hash:
             raise RuntimeError("package hash changed while publishing build artifact")
+        helpers = result_dir / "qualification-helpers"
+        shutil.copytree(output / "qualification-helpers", helpers)
+        helper_manifest = {
+            "classification": "uninstalled recovery helpers; not package payload",
+            "source": source_record,
+            "files": {name: sha256(helpers / name) for name in ("spool_dump", "server_dump")},
+        }
+        (helpers / "manifest.json").write_text(json.dumps(helper_manifest, indent=2) + "\n")
         (result_dir / (built[0].name + ".sha256")).write_text(
             f"{package_hash}  {built[0].name}\n"
         )
-        require_data_budget()
+        require_data_budget(reserve=False)
         receipt.update({"state": "built", "package": str(final_package),
                         "package_sha256": package_hash, "package_bytes": final_package.stat().st_size,
+                        "qualification_helpers": helper_manifest,
                         "owned_bytes_before_cleanup": output_bytes})
     except (OSError, RuntimeError, subprocess.SubprocessError, ValueError) as error:
         receipt.update({"state": "failed", "error": f"{type(error).__name__}: {error}"})

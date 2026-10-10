@@ -1,0 +1,653 @@
+[
+  {
+    "commit": "9b2e313d20c89603ddc0deb7b1133e60c877faed",
+    "crate": "any_spawner",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "any_spawner",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/9b2e313d20c89603ddc0deb7b1133e60c877faed/LICENSE"
+      }
+    ],
+    "version": "0.3.0"
+  },
+  {
+    "commit": "a20e5f7319c896737ad0f2557037817b91ad854f",
+    "crate": "asn1-rs-impl",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "impl",
+    "texts": [
+      {
+        "file": "LICENSE-MIT",
+        "sha256": "a5c61b93b6ee1d104af9920cf020ff3c7efe818e31fe562c72261847a728f513",
+        "url": "https://raw.githubusercontent.com/rusticata/asn1-rs/a20e5f7319c896737ad0f2557037817b91ad854f/LICENSE-MIT"
+      },
+      {
+        "file": "LICENSE-APACHE",
+        "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "url": "https://raw.githubusercontent.com/rusticata/asn1-rs/a20e5f7319c896737ad0f2557037817b91ad854f/LICENSE-APACHE"
+      }
+    ],
+    "version": "0.2.0"
+  },
+  {
+    "commit": "d2c10d53ca5ef033d37ee6462e936e9eb72ad98c",
+    "crate": "base64urlsafedata",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "base64urlsafedata",
+    "texts": [
+      {
+        "file": "LICENSE.md",
+        "sha256": "32ee9dbf6196874fc9d406c54a888a6c4cbb9aa4a7f35b46befeaff43a78fe85",
+        "url": "https://raw.githubusercontent.com/kanidm/webauthn-rs/d2c10d53ca5ef033d37ee6462e936e9eb72ad98c/LICENSE.md"
+      }
+    ],
+    "version": "0.5.5"
+  },
+  {
+    "commit": "4e23d2b6f1cb74ef7eb08b40ef7f14baa85a7285",
+    "crate": "const_str_slice_concat",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "const_str_slice_concat",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/4e23d2b6f1cb74ef7eb08b40ef7f14baa85a7285/LICENSE"
+      }
+    ],
+    "version": "0.1.0"
+  },
+  {
+    "commit": "d523585a01afddd13944be1d88faa4d1db6a3eb4",
+    "crate": "convert_case_extras",
+    "kind": "documentary",
+    "provenance_limit": "Exact published source is retained; no standalone license text was available at its upstream commit.",
+    "selected_license": "MIT",
+    "standard_terms_label": "Standard terms for SPDX identifier declared by exact upstream Cargo.toml; no copyright holder or date inferred.",
+    "texts": [
+      {
+        "file": "STANDARD-TERMS-MIT",
+        "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+        "url": "https://spdx.org/licenses/MIT.html"
+      }
+    ],
+    "version": "0.2.0"
+  },
+  {
+    "commit": "9dc585f3eec048bfc3faf8656e07c4a19273c38f",
+    "crate": "drain_filter_polyfill",
+    "kind": "documentary",
+    "provenance_limit": "Exact published source is retained; no standalone license text was available at its upstream commit.",
+    "selected_license": "Apache-2.0",
+    "standard_terms_label": "Standard terms for SPDX identifier declared by exact upstream Cargo.toml; no copyright holder or date inferred.",
+    "texts": [
+      {
+        "file": "STANDARD-TERMS-Apache-2.0",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "url": "https://www.apache.org/licenses/LICENSE-2.0.txt"
+      }
+    ],
+    "version": "0.1.3"
+  },
+  {
+    "commit": "fbc9ed631ff8c19c5eed02a1d4459e202cff7043",
+    "crate": "either_of",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "either_of",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/fbc9ed631ff8c19c5eed02a1d4459e202cff7043/LICENSE"
+      }
+    ],
+    "version": "0.1.9"
+  },
+  {
+    "commit": "60eebad28ab2578a6322199099b8a07035438008",
+    "crate": "erased",
+    "kind": "documentary",
+    "provenance_limit": "Exact published source is retained; no standalone license text was available at its upstream commit.",
+    "selected_license": "MIT",
+    "standard_terms_label": "Standard terms for SPDX identifier declared by exact upstream Cargo.toml; no copyright holder or date inferred.",
+    "texts": [
+      {
+        "file": "STANDARD-TERMS-MIT",
+        "sha256": "f9c4c77baa3828004ee54b8a4f2db2e88ed44a6237a493965bf551fac0fcb62d",
+        "url": "https://spdx.org/licenses/MIT.html"
+      }
+    ],
+    "version": "0.1.2"
+  },
+  {
+    "commit": "7e163021e59cca4f8e1e35a7c828b5c6b7915953",
+    "crate": "flatbuffers",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "rust/flatbuffers",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+        "url": "https://raw.githubusercontent.com/google/flatbuffers/7e163021e59cca4f8e1e35a7c828b5c6b7915953/LICENSE"
+      }
+    ],
+    "version": "25.12.19"
+  },
+  {
+    "commit": "40c6daa612a90a138ba3e3d70804fcbc5ad4911e",
+    "crate": "gloo-net",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "crates/net",
+    "texts": [
+      {
+        "file": "LICENSE-MIT",
+        "sha256": "5a6f5443ea473f130adbdcf84254761d1292bc79759b5253915d4b5e7afbef66",
+        "url": "https://raw.githubusercontent.com/rustwasm/gloo/40c6daa612a90a138ba3e3d70804fcbc5ad4911e/LICENSE-MIT"
+      },
+      {
+        "file": "LICENSE-APACHE",
+        "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "url": "https://raw.githubusercontent.com/rustwasm/gloo/40c6daa612a90a138ba3e3d70804fcbc5ad4911e/LICENSE-APACHE"
+      }
+    ],
+    "version": "0.6.0"
+  },
+  {
+    "commit": "f3bb1d1a1c33dbcccaf26446aca7d0cea8e9d574",
+    "crate": "gloo-utils",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "crates/utils",
+    "texts": [
+      {
+        "file": "LICENSE-MIT",
+        "sha256": "5a6f5443ea473f130adbdcf84254761d1292bc79759b5253915d4b5e7afbef66",
+        "url": "https://raw.githubusercontent.com/rustwasm/gloo/f3bb1d1a1c33dbcccaf26446aca7d0cea8e9d574/LICENSE-MIT"
+      },
+      {
+        "file": "LICENSE-APACHE",
+        "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "url": "https://raw.githubusercontent.com/rustwasm/gloo/f3bb1d1a1c33dbcccaf26446aca7d0cea8e9d574/LICENSE-APACHE"
+      }
+    ],
+    "version": "0.2.0"
+  },
+  {
+    "commit": "95f574434a11ba607d58bc0018d3ab5a17e7ac8b",
+    "crate": "hydration_context",
+    "kind": "documentary",
+    "provenance_limit": "Published commit was unavailable upstream. Repository MIT notice obtained from exact locked sibling leptos_dom 0.8.8; declared MIT terms and exact published source retained.",
+    "repository_license_source": {
+      "commit": "da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f",
+      "crate": "leptos_dom",
+      "declared_license": "MPL-2.0",
+      "path_in_vcs": "leptos_dom",
+      "texts": [
+        {
+          "file": "LICENSE",
+          "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+          "url": "https://raw.githubusercontent.com/leptos-rs/leptos/da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f/LICENSE"
+        }
+      ],
+      "version": "0.8.8"
+    },
+    "texts": [
+      {
+        "file": "LICENSE.leptos-repository",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f/LICENSE"
+      }
+    ],
+    "version": "0.3.2"
+  },
+  {
+    "commit": "58fe6c1ad0cd175e9c8ec204895a9739d52fda16",
+    "crate": "leptos",
+    "kind": "documentary",
+    "provenance_limit": "Published commit was unavailable upstream. Repository MIT notice obtained from exact locked sibling leptos_dom 0.8.8; declared MIT terms and exact published source retained.",
+    "repository_license_source": {
+      "commit": "da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f",
+      "crate": "leptos_dom",
+      "declared_license": "MPL-2.0",
+      "path_in_vcs": "leptos_dom",
+      "texts": [
+        {
+          "file": "LICENSE",
+          "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+          "url": "https://raw.githubusercontent.com/leptos-rs/leptos/da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f/LICENSE"
+        }
+      ],
+      "version": "0.8.8"
+    },
+    "texts": [
+      {
+        "file": "LICENSE.leptos-repository",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f/LICENSE"
+      }
+    ],
+    "version": "0.8.22"
+  },
+  {
+    "commit": "fbc9ed631ff8c19c5eed02a1d4459e202cff7043",
+    "crate": "leptos_config",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "leptos_config",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/fbc9ed631ff8c19c5eed02a1d4459e202cff7043/LICENSE"
+      }
+    ],
+    "version": "0.8.10"
+  },
+  {
+    "commit": "da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f",
+    "crate": "leptos_dom",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "leptos_dom",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f/LICENSE"
+      }
+    ],
+    "version": "0.8.8"
+  },
+  {
+    "commit": "58fe6c1ad0cd175e9c8ec204895a9739d52fda16",
+    "crate": "leptos_hot_reload",
+    "kind": "documentary",
+    "provenance_limit": "Published commit was unavailable upstream. Repository MIT notice obtained from exact locked sibling leptos_dom 0.8.8; declared MIT terms and exact published source retained.",
+    "repository_license_source": {
+      "commit": "da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f",
+      "crate": "leptos_dom",
+      "declared_license": "MPL-2.0",
+      "path_in_vcs": "leptos_dom",
+      "texts": [
+        {
+          "file": "LICENSE",
+          "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+          "url": "https://raw.githubusercontent.com/leptos-rs/leptos/da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f/LICENSE"
+        }
+      ],
+      "version": "0.8.8"
+    },
+    "texts": [
+      {
+        "file": "LICENSE.leptos-repository",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f/LICENSE"
+      }
+    ],
+    "version": "0.8.7"
+  },
+  {
+    "commit": "58fe6c1ad0cd175e9c8ec204895a9739d52fda16",
+    "crate": "leptos_macro",
+    "kind": "documentary",
+    "provenance_limit": "Published commit was unavailable upstream. Repository MIT notice obtained from exact locked sibling leptos_dom 0.8.8; declared MIT terms and exact published source retained.",
+    "repository_license_source": {
+      "commit": "da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f",
+      "crate": "leptos_dom",
+      "declared_license": "MPL-2.0",
+      "path_in_vcs": "leptos_dom",
+      "texts": [
+        {
+          "file": "LICENSE",
+          "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+          "url": "https://raw.githubusercontent.com/leptos-rs/leptos/da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f/LICENSE"
+        }
+      ],
+      "version": "0.8.8"
+    },
+    "texts": [
+      {
+        "file": "LICENSE.leptos-repository",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f/LICENSE"
+      }
+    ],
+    "version": "0.8.19"
+  },
+  {
+    "commit": "584c3a2d884b0e4dba9e3f822a9b6982cff072c7",
+    "crate": "leptos_server",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "leptos_server",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/584c3a2d884b0e4dba9e3f822a9b6982cff072c7/LICENSE"
+      }
+    ],
+    "version": "0.8.8"
+  },
+  {
+    "commit": "d665dd4b89151e5d797df3db5cd2260cbe1e8fae",
+    "crate": "next_tuple",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "next_tuple",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/d665dd4b89151e5d797df3db5cd2260cbe1e8fae/LICENSE"
+      }
+    ],
+    "version": "0.1.0"
+  },
+  {
+    "commit": "5f2d5115537d08043bba0293c406c4f9b97a4dae",
+    "crate": "oco_ref",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "oco",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/5f2d5115537d08043bba0293c406c4f9b97a4dae/LICENSE"
+      }
+    ],
+    "version": "0.2.1"
+  },
+  {
+    "commit": "19833847cab86c8464c1dfb6d28b1de9c0b50038",
+    "crate": "opentelemetry",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "opentelemetry",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "url": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-rust/19833847cab86c8464c1dfb6d28b1de9c0b50038/LICENSE"
+      }
+    ],
+    "version": "0.33.0"
+  },
+  {
+    "commit": "19833847cab86c8464c1dfb6d28b1de9c0b50038",
+    "crate": "opentelemetry-proto",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "opentelemetry-proto",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "url": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-rust/19833847cab86c8464c1dfb6d28b1de9c0b50038/LICENSE"
+      }
+    ],
+    "version": "0.33.0"
+  },
+  {
+    "commit": "19833847cab86c8464c1dfb6d28b1de9c0b50038",
+    "crate": "opentelemetry_sdk",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "opentelemetry-sdk",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+        "url": "https://raw.githubusercontent.com/open-telemetry/opentelemetry-rust/19833847cab86c8464c1dfb6d28b1de9c0b50038/LICENSE"
+      }
+    ],
+    "version": "0.33.0"
+  },
+  {
+    "commit": "6865c1f951bfa0bc5b107aa69286a110cd6f45ca",
+    "crate": "or_poisoned",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "or_poisoned",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/6865c1f951bfa0bc5b107aa69286a110cd6f45ca/LICENSE"
+      }
+    ],
+    "version": "0.1.0"
+  },
+  {
+    "commit": "584c3a2d884b0e4dba9e3f822a9b6982cff072c7",
+    "crate": "reactive_graph",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "reactive_graph",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/584c3a2d884b0e4dba9e3f822a9b6982cff072c7/LICENSE"
+      }
+    ],
+    "version": "0.2.15"
+  },
+  {
+    "commit": "584c3a2d884b0e4dba9e3f822a9b6982cff072c7",
+    "crate": "reactive_stores",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "reactive_stores",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/584c3a2d884b0e4dba9e3f822a9b6982cff072c7/LICENSE"
+      }
+    ],
+    "version": "0.4.4"
+  },
+  {
+    "commit": "584c3a2d884b0e4dba9e3f822a9b6982cff072c7",
+    "crate": "reactive_stores_macro",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "reactive_stores_macro",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/584c3a2d884b0e4dba9e3f822a9b6982cff072c7/LICENSE"
+      }
+    ],
+    "version": "0.4.4"
+  },
+  {
+    "commit": "9fe0f4616a8224d37d64a53fa91722a08d736952",
+    "crate": "rstml",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "rstml",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "f99321bd5b3678fae12d43f1ae77064b2a0f6db3646c36d5171a38ecd01e744c",
+        "url": "https://raw.githubusercontent.com/rs-tml/rstml/9fe0f4616a8224d37d64a53fa91722a08d736952/LICENSE"
+      }
+    ],
+    "version": "0.13.1"
+  },
+  {
+    "commit": "30fa4e039455bea69c9467e8ec45cad7fce0722f",
+    "crate": "server_fn",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "server_fn",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/30fa4e039455bea69c9467e8ec45cad7fce0722f/LICENSE"
+      }
+    ],
+    "version": "0.8.13"
+  },
+  {
+    "commit": "95f574434a11ba607d58bc0018d3ab5a17e7ac8b",
+    "crate": "server_fn_macro",
+    "kind": "documentary",
+    "provenance_limit": "Published commit was unavailable upstream. Repository MIT notice obtained from exact locked sibling leptos_dom 0.8.8; declared MIT terms and exact published source retained.",
+    "repository_license_source": {
+      "commit": "da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f",
+      "crate": "leptos_dom",
+      "declared_license": "MPL-2.0",
+      "path_in_vcs": "leptos_dom",
+      "texts": [
+        {
+          "file": "LICENSE",
+          "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+          "url": "https://raw.githubusercontent.com/leptos-rs/leptos/da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f/LICENSE"
+        }
+      ],
+      "version": "0.8.8"
+    },
+    "texts": [
+      {
+        "file": "LICENSE.leptos-repository",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f/LICENSE"
+      }
+    ],
+    "version": "0.8.12"
+  },
+  {
+    "commit": "58fe6c1ad0cd175e9c8ec204895a9739d52fda16",
+    "crate": "server_fn_macro_default",
+    "kind": "documentary",
+    "provenance_limit": "Published commit was unavailable upstream. Repository MIT notice obtained from exact locked sibling leptos_dom 0.8.8; declared MIT terms and exact published source retained.",
+    "repository_license_source": {
+      "commit": "da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f",
+      "crate": "leptos_dom",
+      "declared_license": "MPL-2.0",
+      "path_in_vcs": "leptos_dom",
+      "texts": [
+        {
+          "file": "LICENSE",
+          "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+          "url": "https://raw.githubusercontent.com/leptos-rs/leptos/da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f/LICENSE"
+        }
+      ],
+      "version": "0.8.8"
+    },
+    "texts": [
+      {
+        "file": "LICENSE.leptos-repository",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/da62c0cb9a1d814cf480c2f1dae5f67f4ea4773f/LICENSE"
+      }
+    ],
+    "version": "0.8.6"
+  },
+  {
+    "commit": "584c3a2d884b0e4dba9e3f822a9b6982cff072c7",
+    "crate": "tachys",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "tachys",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/584c3a2d884b0e4dba9e3f822a9b6982cff072c7/LICENSE"
+      }
+    ],
+    "version": "0.2.19"
+  },
+  {
+    "commit": "43359694b6596f88d911b9c8d8d92a121c27d0ce",
+    "crate": "throw_error",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "any_error",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "76356e713a0d1ea0bde549f4236b01c750100ab31790019843faa5aec449310f",
+        "url": "https://raw.githubusercontent.com/leptos-rs/leptos/43359694b6596f88d911b9c8d8d92a121c27d0ce/LICENSE"
+      }
+    ],
+    "version": "0.3.1"
+  },
+  {
+    "commit": "d8263b20578e8c49b02851009ae3bc7d43c567bd",
+    "crate": "wasm_split_helpers",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "crates/wasm_split",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "url": "https://raw.githubusercontent.com/WorldSEnder/wasm-split-prototype/d8263b20578e8c49b02851009ae3bc7d43c567bd/LICENSE"
+      }
+    ],
+    "version": "0.2.3"
+  },
+  {
+    "commit": "a3266fe9d998b3f8b0d2111500b7c4b8ec892506",
+    "crate": "wasm_split_macros",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "crates/wasm_split_macros",
+    "texts": [
+      {
+        "file": "LICENSE",
+        "sha256": "a60eea817514531668d7e00765731449fe14d059d3249e0bc93b36de45f759f2",
+        "url": "https://raw.githubusercontent.com/WorldSEnder/wasm-split-prototype/a3266fe9d998b3f8b0d2111500b7c4b8ec892506/LICENSE"
+      }
+    ],
+    "version": "0.2.2"
+  },
+  {
+    "commit": "d2c10d53ca5ef033d37ee6462e936e9eb72ad98c",
+    "crate": "webauthn-attestation-ca",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "attestation-ca",
+    "texts": [
+      {
+        "file": "LICENSE.md",
+        "sha256": "32ee9dbf6196874fc9d406c54a888a6c4cbb9aa4a7f35b46befeaff43a78fe85",
+        "url": "https://raw.githubusercontent.com/kanidm/webauthn-rs/d2c10d53ca5ef033d37ee6462e936e9eb72ad98c/LICENSE.md"
+      }
+    ],
+    "version": "0.5.5"
+  },
+  {
+    "commit": "d2c10d53ca5ef033d37ee6462e936e9eb72ad98c",
+    "crate": "webauthn-rs",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "webauthn-rs",
+    "texts": [
+      {
+        "file": "LICENSE.md",
+        "sha256": "32ee9dbf6196874fc9d406c54a888a6c4cbb9aa4a7f35b46befeaff43a78fe85",
+        "url": "https://raw.githubusercontent.com/kanidm/webauthn-rs/d2c10d53ca5ef033d37ee6462e936e9eb72ad98c/LICENSE.md"
+      }
+    ],
+    "version": "0.5.5"
+  },
+  {
+    "commit": "d2c10d53ca5ef033d37ee6462e936e9eb72ad98c",
+    "crate": "webauthn-rs-core",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "webauthn-rs-core",
+    "texts": [
+      {
+        "file": "LICENSE.md",
+        "sha256": "32ee9dbf6196874fc9d406c54a888a6c4cbb9aa4a7f35b46befeaff43a78fe85",
+        "url": "https://raw.githubusercontent.com/kanidm/webauthn-rs/d2c10d53ca5ef033d37ee6462e936e9eb72ad98c/LICENSE.md"
+      }
+    ],
+    "version": "0.5.5"
+  },
+  {
+    "commit": "d2c10d53ca5ef033d37ee6462e936e9eb72ad98c",
+    "crate": "webauthn-rs-proto",
+    "declared_license": "MPL-2.0",
+    "path_in_vcs": "webauthn-rs-proto",
+    "texts": [
+      {
+        "file": "LICENSE.md",
+        "sha256": "32ee9dbf6196874fc9d406c54a888a6c4cbb9aa4a7f35b46befeaff43a78fe85",
+        "url": "https://raw.githubusercontent.com/kanidm/webauthn-rs/d2c10d53ca5ef033d37ee6462e936e9eb72ad98c/LICENSE.md"
+      }
+    ],
+    "version": "0.5.5"
+  }
+]

@@ -16,8 +16,18 @@ DEB=${1:?usage: acceptance.sh <DEB> [--self-spindle-ca <CA-PATH>] [--memory-stre
 shift
 SELF_SPINDLE_CA=
 A12_MEMORY_STRESSOR=tail
+PACKAGE_FAMILY=debian
+DEFER_REMOVAL=0
+LEGACY_SERVER=0
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --legacy-server) LEGACY_SERVER=1; shift ;;
+    --defer-removal) DEFER_REMOVAL=1; shift ;;
+    --package-family)
+      [ "$#" -ge 2 ] || exit 2
+      PACKAGE_FAMILY=$2; shift 2
+      case "$PACKAGE_FAMILY" in debian|fedora) ;; *) exit 2 ;; esac
+      ;;
     --self-spindle-ca)
       [ "$#" -ge 2 ] && [ -n "$2" ] || { echo "missing self-spindle CA path" >&2; exit 2; }
       SELF_SPINDLE_CA=$2; shift 2
@@ -63,11 +73,33 @@ admin() { fabricctl admin "$W/admin.conf" "$@"; }
 query() { admin query "$1"; }
 show() { systemctl show -P "$2" "$1"; }
 
-echo "ENV systemd $(systemctl --version | head -1 | cut -d' ' -f2) debian $(cat /etc/debian_version) kernel $(uname -r)"
+package_install() {
+  if [ "$PACKAGE_FAMILY" = fedora ]; then rpm -Uvh --replacepkgs "$DEB"; else dpkg -i "$DEB"; fi
+}
+package_remove() {
+  if [ "$PACKAGE_FAMILY" = fedora ]; then rpm -e fabrico11y; else dpkg -r fabrico11y; fi
+}
+package_purge() {
+  if [ "$PACKAGE_FAMILY" = fedora ]; then
+    rpm -e fabrico11y >/dev/null 2>&1 || :
+    rm -rf /var/lib/fabrico11y /etc/fabrico11y
+  else dpkg -P fabrico11y; fi
+}
+package_extract() {
+  if [ "$PACKAGE_FAMILY" = fedora ]; then
+    mkdir -p "$x"
+    (cd "$x" && rpm2cpio "$DEB" | cpio -idm --quiet)
+  else dpkg-deb -x "$DEB" "$x"; fi
+}
+echo "ENV family=$PACKAGE_FAMILY systemd $(systemctl --version | head -1 | cut -d' ' -f2) kernel $(uname -r)"
+cat /etc/os-release
+if [ "$PACKAGE_FAMILY" = fedora ]; then
+  [ "$(getenforce)" = Enforcing ] && pass F1 "SELinux enforcing" || fail F1 "SELinux must remain enforcing"
+fi
 echo "ENV cgroup $(stat -fc %T /sys/fs/cgroup) controllers: $(cat /sys/fs/cgroup/cgroup.controllers 2>/dev/null)"
 
 # A1 sysusers: dry run and a temporary root, applied twice.
-x=$W/pkg; rm -rf "$x"; dpkg-deb -x "$DEB" "$x"
+x=$W/pkg; rm -rf "$x"; package_extract
 conf=$x/usr/lib/sysusers.d/fabrico11y.conf
 r=$W/sysroot; rm -rf "$r"; mkdir -p "$r/etc"
 dry=$(systemd-sysusers --dry-run --root="$r" "$conf" 2>&1); dry_rc=$?
@@ -84,26 +116,49 @@ fi
 
 # A2 collision refusal: a human account, then a non-system group, named fabricolly.
 useradd -m -u 1500 -s /bin/bash fabricolly
-out=$(dpkg -i "$DEB" 2>&1); rc=$?
+out=$(package_install 2>&1); rc=$?
 if [ $rc -ne 0 ] && echo "$out" | grep -q "refusing to install" && [ ! -e /usr/bin/fabric-server ]; then
   pass A2a "human account uid 1500 refused, nothing unpacked"
 else
   fail A2a "rc=$rc"
 fi
-dpkg --purge fabrico11y >/dev/null 2>&1; userdel -r fabricolly 2>/dev/null
+package_purge >/dev/null 2>&1; userdel -r fabricolly 2>/dev/null
 groupadd -g 1600 fabricolly
-out=$(dpkg -i "$DEB" 2>&1); rc=$?
+out=$(package_install 2>&1); rc=$?
 if [ $rc -ne 0 ] && echo "$out" | grep -q "refusing to install" && [ ! -e /usr/bin/fabric-server ]; then
   pass A2b "non-system group gid 1600 refused, nothing unpacked"
 else
   fail A2b "rc=$rc"
 fi
-dpkg --purge fabrico11y >/dev/null 2>&1; groupdel fabricolly 2>/dev/null
+package_purge >/dev/null 2>&1; groupdel fabricolly 2>/dev/null
+
+# Candidate-only root-ID collision checks. The historical predecessor's old
+# preinstall is preserved in migration fixtures and is not credited with these.
+if [ "$LEGACY_SERVER" = 1 ]; then
+  root_before=$(getent passwd root); root_group_before=$(getent group root)
+  groupadd --system fabricolly
+  useradd -M -o -u 0 -g fabricolly -s /usr/sbin/nologin fabricolly
+  out=$(package_install 2>&1); rc=$?
+  if [ "$rc" -ne 0 ] && echo "$out" | grep -q "refusing to install" && [ ! -e /usr/bin/fabric-server ]; then
+    pass A2c "duplicate root UID refused before unpack"
+  else fail A2c "root UID rc=$rc"; fi
+  package_purge >/dev/null 2>&1
+  userdel -f fabricolly >/dev/null 2>&1
+  groupdel fabricolly >/dev/null 2>&1
+  groupadd -o -g 0 fabricolly
+  out=$(package_install 2>&1); rc=$?
+  if [ "$rc" -ne 0 ] && echo "$out" | grep -q "refusing to install" && [ ! -e /usr/bin/fabric-server ]; then
+    pass A2d "duplicate root GID refused before unpack"
+  else fail A2d "root GID rc=$rc"; fi
+  package_purge >/dev/null 2>&1
+  groupdel -f fabricolly >/dev/null 2>&1
+  [ "$(getent passwd root)" = "$root_before" ] && [ "$(getent group root)" = "$root_group_before" ] || fail SETUP "duplicate-ID fixture altered root identity"
+fi
 
 # A3 install, then install again: same identity, exit 0 both times.
-dpkg -i "$DEB" >"$W/install1.log" 2>&1; rc1=$?
+package_install >"$W/install1.log" 2>&1; rc1=$?
 id1=$(getent passwd fabricolly)
-dpkg -i "$DEB" >"$W/install2.log" 2>&1; rc2=$?
+package_install >"$W/install2.log" 2>&1; rc2=$?
 id2=$(getent passwd fabricolly)
 uid=$(id -u fabricolly 2>/dev/null); gid=$(id -g fabricolly 2>/dev/null); pg=$(id -gn fabricolly 2>/dev/null)
 if [ $rc1 -eq 0 ] && [ $rc2 -eq 0 ] && [ "$id1" = "$id2" ] && [ "$uid" -lt 1000 ] && [ "$uid" -gt 0 ] \
@@ -148,12 +203,20 @@ if [ -n "$SELF_SPINDLE_CA" ]; then
   printf 'self_spindle_ca=%s\n' "$SELF_SPINDLE_CA" >> /etc/fabrico11y/server.conf
 fi
 chmod 0644 /etc/fabrico11y/server.conf
+if [ "$PACKAGE_FAMILY" = fedora ]; then
+  restorecon -R /etc/fabrico11y
+fi
 printf 'server_url=https://127.0.0.1:7443\nserver_ca=/etc/fabrico11y/ca.pem\nadmin_token_file=%s/admin-token\n' "$W" > admin.conf
 mkdir -p $LOGDIR && chmod 0755 $LOGDIR
 install -m 0600 /dev/null $LOGDIR/allowed.log
 install -m 0600 /dev/null $LOGDIR/denied.log
 setfacl -m u:fabricolly:r $LOGDIR/allowed.log
 
+if [ "$LEGACY_SERVER" = 1 ]; then
+  mkdir -p /etc/systemd/system/fabrico11y-server.service.d
+  printf '[Service]\nExecStart=\nExecStart=/usr/bin/fabric-server serve-legacy /etc/fabrico11y/server.conf\n' > /etc/systemd/system/fabrico11y-server.service.d/legacy-fixture.conf
+  systemctl daemon-reload
+fi
 systemctl enable --now fabrico11y-server.service >/dev/null 2>&1
 wait_for 30 curl -fsS --cacert /etc/fabrico11y/ca.pem -H "authorization: Bearer $(cat admin-token)" \
   https://127.0.0.1:7443/v1/admin/nodes || fail SETUP "server did not answer"
@@ -422,9 +485,10 @@ else
 fi
 fi
 
+if [ "$DEFER_REMOVAL" = 0 ]; then
 # A13 remove keeps data, configuration and the account; purge removes data and
 # configuration.
-dpkg -r fabrico11y >"$W/remove.log" 2>&1; rc=$?
+package_remove >"$W/remove.log" 2>&1; rc=$?
 stopped=$(systemctl is-active fabrico11y-node.service fabrico11y-server.service | tr '\n' ' ')
 if [ $rc -eq 0 ] && [ ! -e /usr/bin/fabric-server ] && [ -d /var/lib/fabrico11y/server ] \
    && [ -f /etc/fabrico11y/server.conf ] && getent passwd fabricolly >/dev/null && [ "$stopped" != "active active " ]; then
@@ -432,13 +496,31 @@ if [ $rc -eq 0 ] && [ ! -e /usr/bin/fabric-server ] && [ -d /var/lib/fabrico11y/
 else
   fail A13a "rc=$rc stopped='$stopped'"
 fi
-dpkg -P fabrico11y >"$W/purge.log" 2>&1; rc=$?
+package_purge >"$W/purge.log" 2>&1; rc=$?
 if [ $rc -eq 0 ] && [ ! -e /var/lib/fabrico11y ] && [ ! -e /etc/fabrico11y ]; then
-  pass A13b "purge: /var/lib/fabrico11y and /etc/fabrico11y removed"
+  if [ "$PACKAGE_FAMILY" = fedora ]; then
+    pass A13b "explicit guest cleanup after RPM-preserved removal: state/config removed"
+  else pass A13b "purge: /var/lib/fabrico11y and /etc/fabrico11y removed"; fi
 else
   fail A13b "rc=$rc"
 fi
 
+else
+  echo "DEFERRED A13 removal to registered upgrade/reboot lifecycle phases"
+fi
+
+if [ "$PACKAGE_FAMILY" = fedora ]; then
+  [ "$(getenforce)" = Enforcing ] && pass F2 "SELinux remained enforcing through delivery/restart/removal" || fail F2 "SELinux changed mode"
+  audit_status=$(auditctl -s 2>&1); audit_rc=$?
+  if [ "$audit_rc" -ne 0 ] || ! echo "$audit_status" | grep -Eq '^enabled [12]$'; then
+    fail F3 "audit unavailable/disabled: $audit_status"
+  fi
+  ausearch -m AVC,USER_AVC -ts boot > "$W/selinux-avc.log" 2>&1; audit_search_rc=$?
+  [ "$audit_search_rc" -le 1 ] || fail F3 "audit search failed: $audit_search_rc"
+  if grep -E 'comm="(fabric-server|fabric-node|fabricctl)"' "$W/selinux-avc.log"; then
+    fail F3 "Fabric process SELinux denial; retain AVC evidence"
+  else pass F3 "no Fabric process AVC in guest audit"; fi
+fi
 echo "RESULT fails=$FAILS not_run=$NOTRUN"
 [ $FAILS -gt 0 ] && exit 1
 [ $NOTRUN -gt 0 ] && exit 3

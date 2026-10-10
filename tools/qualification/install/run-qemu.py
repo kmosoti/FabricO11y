@@ -69,6 +69,14 @@ def output_text(value: str | bytes | None) -> str:
     return value.decode(errors='replace') if isinstance(value, bytes) else value
 
 
+def changed_boot(ssh: list[str]) -> subprocess.CompletedProcess[str]:
+    # SSH concatenates remote argv. Send shell syntax on stdin so protected
+    # witness files are expanded inside the privileged shell, after sudo.
+    return run([*ssh, 'sudo', 'bash', '-s'],
+               input_text='test "$(cat /proc/sys/kernel/random/boot_id)" != "$(cat /root/accept/lifecycle-boot-id)"\n',
+               timeout=15, check=False)
+
+
 def require_containment() -> dict[str, str]:
     if not os.environ.get('FABRIC_RESOURCE_RUNTIME_SECONDS'):
         raise RuntimeError('invoke through python3 tools/resource_group.py --')
@@ -77,11 +85,16 @@ def require_containment() -> dict[str, str]:
     if rel is None:
         raise RuntimeError('host command is not in cgroup v2')
     group = Path('/sys/fs/cgroup') / rel.lstrip('/')
+    # Owner-admitted VM envelope: leaves room for bounded root/browser peers.
+    run(['systemctl', '--user', 'set-property', '--runtime', group.name,
+         'MemoryHigh=7G', 'MemoryMax=8G'], timeout=30)
+    if (group / 'memory.max').read_text().strip() != str(8 * 1024**3) or (group / 'memory.high').read_text().strip() != str(7 * 1024**3):
+        raise RuntimeError('VM 8 GiB maximum / 7 GiB high not enforced')
     memory = (group / 'memory.max').read_text().strip()
     swap = (group / 'memory.swap.max').read_text().strip()
     if memory == 'max' or int(memory) > MEMORY_LIMIT_BYTES or swap != '0':
         raise RuntimeError(f'host cgroup not bounded: memory.max={memory}, memory.swap.max={swap}')
-    return {'cgroup': rel, 'memory_max': memory, 'memory_swap_max': swap}
+    return {'cgroup': rel, 'memory_max': memory, 'memory_high': (group / 'memory.high').read_text().strip(), 'memory_swap_max': swap}
 
 
 def digest(path: Path, algorithm: str) -> str:
@@ -97,6 +110,25 @@ def executable(name: str) -> str:
     if found is None:
         raise RuntimeError(f'required host tool is unavailable: {name}')
     return found
+
+
+
+def require_data_budget():
+    # Reserve the entire virtual guest disk and 1 GiB for image/log overhead;
+    # sparse backing does not justify promising more capacity than the ceiling.
+    total = 0
+    for base, directories, files in os.walk(DATA, followlinks=False):
+        for name in files:
+            try:
+                total += (Path(base) / name).lstat().st_size
+            except FileNotFoundError:
+                continue
+    reservation = GUEST_DISK_BYTES + 1024**3
+    if total + reservation > 95 * 1000**3:
+        raise RuntimeError(f'DATA {total} plus VM reservation {reservation} exceeds 95 GB stop threshold')
+    if shutil.disk_usage(DATA).free < reservation:
+        raise RuntimeError('insufficient mounted DATA disk capacity for VM reservation')
+    return {'before_bytes': total, 'reservation_bytes': reservation, 'stop_threshold_bytes': 95 * 1000**3}
 
 
 def ssh_base(port: int, key: Path, known_hosts: Path) -> list[str]:
@@ -173,7 +205,7 @@ chown accept:accept /home/accept/fabrico11y-mutated.deb
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--deb', required=True, type=Path,
+    parser.add_argument('--deb', '--package', required=True, type=Path,
                         help='package built from the separately frozen source snapshot')
     parser.add_argument('--source-commit', required=True,
                         help='commit ID of the private frozen source snapshot')
@@ -183,7 +215,24 @@ def main() -> int:
                         help='run one registered negative-control package mutation')
     parser.add_argument('--memory-stressor', choices=('tail', 'parallel'), default='tail',
                         help='A12 fixture; parallel uses the registered concurrent-page stressor')
+    parser.add_argument('--family', choices=('debian', 'fedora'), default='debian')
+    parser.add_argument('--upgrade-from', type=Path, help='strictly older exact package for real lifecycle upgrade and VM reboot')
+    parser.add_argument('--expected-mutation', choices=sorted(MUTATIONS), help='grade a separately built mutated package without Debian repacking')
     args = parser.parse_args()
+    if args.mutate and args.expected_mutation:
+        parser.error('choose repacked mutation or separately built mutation')
+    grading_mutation = args.mutate or args.expected_mutation
+    global IMAGE_NAME, IMAGE_URL, MANIFEST_URL, IMAGE_SHA512
+    if args.family == 'fedora':
+        if args.mutate:
+            parser.error('Fedora mutations must be built as separate exact RPM artifacts')
+        IMAGE_NAME = 'Fedora-Cloud-Base-Generic-44-1.7.x86_64.qcow2'
+        base = 'https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/'
+        IMAGE_URL = base + IMAGE_NAME
+        MANIFEST_URL = base + 'Fedora-Cloud-44-1.7-x86_64-CHECKSUM'
+        IMAGE_SHA512 = '28680fe5b371a5a82ebf43a31926e086a168e59949d03969c5093e7071f90b7f'
+    image_algorithm = 'sha256' if args.family == 'fedora' else 'sha512'
+
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,79}', args.run_id):
         parser.error('--run-id contains unsupported characters')
     if not re.fullmatch(r'[0-9a-fA-F]{40,64}', args.source_commit):
@@ -195,9 +244,15 @@ def main() -> int:
     for tool in ('curl', 'qemu-system-x86_64', 'qemu-img', 'genisoimage',
                  'ssh-keygen', 'ssh', 'scp', 'sha512sum'):
         executable(tool)
+    storage_admission = require_data_budget()
     deb = args.deb.resolve(strict=True)
-    if deb.suffix != '.deb':
-        raise RuntimeError(f'package path must end in .deb: {deb}')
+    suffix = '.rpm' if args.family == 'fedora' else '.deb'
+    if deb.suffix != suffix:
+        raise RuntimeError(f'package path must end in {suffix}: {deb}')
+    previous = args.upgrade_from.resolve(strict=True) if args.upgrade_from else None
+    if previous and (previous.suffix != suffix or grading_mutation):
+        parser.error('upgrade-from must match family and cannot combine with mutation')
+    lifecycle = Path(__file__).with_name('lifecycle.sh').resolve(strict=True)
     acceptance = Path(__file__).with_name('acceptance.sh').resolve(strict=True)
     parallel_helper = Path(__file__).with_name('a12-memory-pressure.py').resolve(strict=True)
     result_dir = DATA / 'results' / 'installation-qemu' / args.run_id
@@ -216,7 +271,7 @@ def main() -> int:
     guest_acceptance_exit: int | None = None
     mutation_package_sha256: str | None = None
     mutation_package_archive: str | None = None
-    mutation_expected_failures = sorted(MUTATION_EXPECTED_FAILURES.get(args.mutate, set()))
+    mutation_expected_failures = sorted(MUTATION_EXPECTED_FAILURES.get(grading_mutation, set()))
     mutation_observed_failures: list[str] = []
     mutation_rejection_confirmed: bool | None = None
     error: str | None = None
@@ -235,7 +290,7 @@ def main() -> int:
     try:
         frozen_sources = result_dir / 'sources'
         frozen_sources.mkdir()
-        for source in (Path(__file__), acceptance, parallel_helper):
+        for source in (Path(__file__), acceptance, parallel_helper, lifecycle):
             shutil.copy2(source, frozen_sources / source.name)
             if digest(source, 'sha256') != digest(frozen_sources / source.name, 'sha256'):
                 raise RuntimeError('VM harness changed during source freeze')
@@ -243,22 +298,27 @@ def main() -> int:
         run([executable('curl'), '--fail', '--location', '--silent', '--show-error',
              '--proto', '=https', '--tlsv1.2', '--output', str(manifest), MANIFEST_URL],
             timeout=90)
-        rows = [line.split() for line in manifest.read_text().splitlines()
-                if line.split() and line.split()[-1] == IMAGE_NAME]
-        if len(rows) != 1 or rows[0][0] != IMAGE_SHA512:
-            raise RuntimeError('official Debian manifest no longer matches the reviewed pinned image hash')
+        if args.family == 'fedora':
+            expected_line = f'SHA256 ({IMAGE_NAME}) = {IMAGE_SHA512}'
+            if expected_line not in manifest.read_text().splitlines():
+                raise RuntimeError('official Fedora checksum differs from the pinned image hash')
+        else:
+            rows = [line.split() for line in manifest.read_text().splitlines()
+                    if line.split() and line.split()[-1] == IMAGE_NAME]
+            if len(rows) != 1 or rows[0][0] != IMAGE_SHA512:
+                raise RuntimeError('official Debian manifest no longer matches the reviewed pinned image hash')
         image_cache = DATA / 'cache' / 'installation-qemu'
         image_cache.mkdir(parents=True, exist_ok=True)
         image = image_cache / IMAGE_NAME
         if image.exists():
-            if digest(image, 'sha512') != IMAGE_SHA512:
+            if digest(image, image_algorithm) != IMAGE_SHA512:
                 raise RuntimeError(f'cached base image hash mismatch; inspect manually: {image}')
         else:
             partial = work_dir / IMAGE_NAME
             run([executable('curl'), '--fail', '--location', '--silent', '--show-error',
                  '--proto', '=https', '--tlsv1.2', '--output', str(partial), IMAGE_URL],
                 timeout=300)
-            if digest(partial, 'sha512') != IMAGE_SHA512:
+            if digest(partial, image_algorithm) != IMAGE_SHA512:
                 raise RuntimeError('downloaded Debian image hash mismatch')
             partial.replace(image)
 
@@ -266,7 +326,13 @@ def main() -> int:
         private_key = work_dir / 'id_ed25519'
         run([executable('ssh-keygen'), '-q', '-t', 'ed25519', '-N', '',
              '-C', args.run_id, '-f', str(private_key)], timeout=30)
-        (work_dir / 'user-data').write_text(cloud_config(pubkey.read_text(), args.run_id))
+        config = cloud_config(pubkey.read_text(), args.run_id)
+        if args.family == 'fedora':
+            config = config.replace('groups: [sudo]', 'groups: [wheel]')
+            config = config.replace('  - procps\n', '  - procps-ng\n  - cpio\n  - rpm\n  - audit\n  - policycoreutils\n  - python3-rpm\n')
+            config = config.replace('enable, --now, ssh]', 'enable, --now, sshd]')
+            config += '  - [systemctl, enable, --now, auditd]\n'
+        (work_dir / 'user-data').write_text(config)
         (work_dir / 'meta-data').write_text(
             'instance-id: fabric-install-' + args.run_id +
             '\nlocal-hostname: fabric-install\n')
@@ -289,7 +355,9 @@ def main() -> int:
                    '-drive', f'file={seed},media=cdrom,readonly=on',
                    '-netdev', f'user,id=net0,hostfwd=tcp:127.0.0.1:{port}-:22',
                    '-device', 'virtio-net-pci,netdev=net0', '-display', 'none',
-                   '-serial', f'file:{qemu_log}', '-monitor', 'none', '-no-reboot']
+                   '-serial', f'file:{qemu_log}', '-monitor', 'none']
+        if not previous:
+            command.append('-no-reboot')
         with qemu_stderr.open('wb') as error_stream:
             qemu = subprocess.Popen(command, stdin=subprocess.DEVNULL,
                                     stdout=subprocess.DEVNULL, stderr=error_stream,
@@ -318,7 +386,7 @@ def main() -> int:
             raise RuntimeError('guest SSH/cloud-init was not ready within 10 minutes: ' + ssh_log[-2000:])
 
         guest_probe = '''set -eu
-printf 'debian='; cat /etc/debian_version
+printf 'os='; . /etc/os-release; echo "$ID:$VERSION_ID"
 printf 'systemd='; systemctl --version | head -1
 printf 'pid1='; ps -p 1 -o comm=
 printf 'cgroup='; stat -fc %T /sys/fs/cgroup
@@ -328,12 +396,13 @@ nproc
 '''
         info = run([*ssh, 'sudo', 'bash', '-s'], input_text=guest_probe, timeout=30)
         guest_info = info.stdout
-        if (not re.search(r'^debian=13(?:\.|$)', guest_info, re.MULTILINE)
-                or not re.search(r'^systemd=systemd 257(?:\s|$)', guest_info, re.MULTILINE)
+        expected_os = 'fedora:44' if args.family == 'fedora' else 'debian:13'
+        if (not re.search(r'^os=' + re.escape(expected_os) + r'$', guest_info, re.MULTILINE)
+                or (args.family == 'debian' and not re.search(r'^systemd=systemd 257(?:\s|$)', guest_info, re.MULTILINE))
                 or not re.search(r'^pid1=systemd\s*$', guest_info, re.MULTILINE)
                 or not re.search(r'^cgroup=cgroup2fs$', guest_info, re.MULTILINE)):
-            raise RuntimeError('guest is not Debian 13/systemd 257 PID 1 with unified cgroup v2: '
-                               + guest_info)
+            raise RuntimeError('guest OS/PID1/cgroup differs from registered family: ' + guest_info)
+
 
         scp = [executable('scp'), '-P', str(port), '-i', str(private_key),
                '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes',
@@ -341,6 +410,9 @@ nproc
                '-o', 'UserKnownHostsFile=' + str(known_hosts)]
         transfers = [(deb, 'accept@127.0.0.1:/home/accept/fabrico11y.deb'),
                      (acceptance, 'accept@127.0.0.1:/home/accept/acceptance.sh')]
+        if previous:
+            transfers += [(previous, 'accept@127.0.0.1:/home/accept/fabrico11y-previous.pkg'),
+                          (lifecycle, 'accept@127.0.0.1:/home/accept/lifecycle.sh')]
         if args.memory_stressor == 'parallel':
             transfers.append((parallel_helper, 'accept@127.0.0.1:/home/accept/a12-memory-pressure.py'))
         for source, target in transfers:
@@ -357,6 +429,8 @@ chown accept:accept /home/accept/a12-memory-pressure.py
 chmod 0755 /home/accept/a12-memory-pressure.py
 sha256sum /home/accept/a12-memory-pressure.py
 '''
+        if previous:
+            setup_script += 'sha256sum /home/accept/fabrico11y-previous.pkg /home/accept/lifecycle.sh\n'
         setup = run([*ssh, 'sudo', 'bash', '-s'], input_text=setup_script,
                     timeout=30, check=False)
         if setup.returncode != 0:
@@ -370,6 +444,9 @@ sha256sum /home/accept/a12-memory-pressure.py
                 and received.get('a12-memory-pressure.py') != parallel_helper_sha256):
             raise RuntimeError('guest A12 parallel helper hash changed during transfer')
 
+        if previous and (received.get('fabrico11y-previous.pkg') != digest(previous, 'sha256')
+                         or received.get('lifecycle.sh') != digest(lifecycle, 'sha256')):
+            raise RuntimeError('previous package or lifecycle helper changed during transfer')
         if args.mutate:
             mutation_package_sha256 = prepare_guest_package(ssh, args.mutate)
             tested_package_sha256 = mutation_package_sha256
@@ -384,10 +461,12 @@ sha256sum /home/accept/a12-memory-pressure.py
             package = '/home/accept/fabrico11y-mutated.deb'
         if time.monotonic() - start_clock > TOTAL_TIMEOUT_S - ACCEPTANCE_TIMEOUT_S:
             raise RuntimeError('bootstrap consumed the reserved acceptance time budget')
+        baseline_package = '/home/accept/fabrico11y-previous.pkg' if previous else package
+        baseline_options = ['--defer-removal'] if previous else ['--legacy-server']
         try:
-            accepted = run([*ssh, 'sudo', 'bash', '/home/accept/acceptance.sh', package,
+            accepted = run([*ssh, 'sudo', 'bash', '/home/accept/acceptance.sh', baseline_package,
                             '--self-spindle-ca', '/etc/fabrico11y/ca.pem',
-                            '--memory-stressor', args.memory_stressor],
+                            '--memory-stressor', args.memory_stressor, '--package-family', args.family, *baseline_options],
                            timeout=ACCEPTANCE_TIMEOUT_S, check=False)
         except subprocess.TimeoutExpired as exc:
             acceptance_log = output_text(exc.stdout) + output_text(exc.stderr)
@@ -397,9 +476,9 @@ sha256sum /home/accept/a12-memory-pressure.py
         acceptance_log = accepted.stdout + accepted.stderr
         mutation_observed_failures = sorted(set(re.findall(
             r'^ACCEPT ([A-Za-z0-9]+) FAIL(?:\s|$)', acceptance_log, flags=re.MULTILINE)))
-        if args.mutate:
+        if grading_mutation:
             mutation_rejection_confirmed = mutation_rejected(
-                args.mutate, accepted.returncode, acceptance_log)
+                grading_mutation, accepted.returncode, acceptance_log)
         fixture_prefix = f'FIXTURE A12 memory-stressor={args.memory_stressor} '
         fixture_selection_line = next((line for line in acceptance_log.splitlines()
                                        if line.startswith(fixture_prefix)), None)
@@ -410,6 +489,34 @@ sha256sum /home/accept/a12-memory-pressure.py
             raise RuntimeError('acceptance output did not attest the transferred parallel helper hash')
         if args.memory_stressor == 'tail' and f'acceptance_sha256={acceptance_sha256}' not in fixture_selection_line:
             raise RuntimeError('acceptance output did not attest the transferred acceptance script hash')
+        if previous and rc == 0:
+            def lifecycle_phase(phase):
+                nonlocal acceptance_log
+                result = run([*ssh, 'sudo', 'bash', '/home/accept/lifecycle.sh', phase,
+                              args.family, '/home/accept/fabrico11y.deb',
+                              '/home/accept/fabrico11y-previous.pkg'], timeout=180, check=False)
+                acceptance_log += result.stdout + result.stderr
+                if result.returncode:
+                    acceptance_log += f'ACCEPT LIFECYCLE FAIL phase={phase} exit={result.returncode}\n'
+                    raise RuntimeError(f'lifecycle phase {phase} failed: {result.stderr[-1000:]}')
+            lifecycle_phase('upgrade')
+            # The guest must actually boot again; reconnect alone is no oracle.
+            reboot = run([*ssh, 'sudo', 'systemctl', 'reboot'], timeout=30, check=False)
+            if reboot.returncode not in (0, 255):
+                raise RuntimeError('guest refused reboot')
+            deadline = time.monotonic() + 180
+            while time.monotonic() < deadline:
+                try:
+                    ready = changed_boot(ssh)
+                    if ready.returncode == 0:
+                        break
+                except subprocess.TimeoutExpired:
+                    pass
+                time.sleep(2)
+            else:
+                raise RuntimeError('guest did not complete a distinct reboot')
+            lifecycle_phase('reboot')
+            lifecycle_phase('remove')
         journal = run([*ssh, 'sudo', 'journalctl', '--no-pager', '-q',
                        '-u', 'fabrico11y-node', '-u', 'fabrico11y-server'],
                       timeout=60, check=False)
@@ -454,28 +561,37 @@ sha256sum /home/accept/a12-memory-pressure.py
                     'qemu_process_cleanup_confirmed': process_cleanup_confirmed,
                 }, indent=2) + '\n')
 
-    if args.mutate:
+    if grading_mutation:
         mutation_rejection_confirmed = mutation_rejected(
-            args.mutate, rc, acceptance_log, error)
+            grading_mutation, rc, acceptance_log, error)
     receipt = {
         'run_id': args.run_id,
+        'package_family': args.family,
+        'storage_admission': storage_admission,
+        'image_digest_algorithm': image_algorithm,
         'classification': 'local VM measurement; not deployment qualification',
         'source_snapshot_commit': args.source_commit,
-        'mutation': args.mutate,
+        'mutation': grading_mutation,
+        'mutation_artifact_mode': 'external-package' if args.expected_mutation else 'guest-debian-repack' if args.mutate else None,
         'mutation_expected_failures': mutation_expected_failures,
         'mutation_observed_failures': mutation_observed_failures,
         'mutation_package_sha256': mutation_package_sha256,
         'mutation_package_archive': mutation_package_archive,
         'mutation_rejection_confirmed': mutation_rejection_confirmed,
         'package': str(deb),
+        'upgrade_from': None if previous is None else str(previous),
+        'upgrade_from_sha256': None if previous is None else digest(previous, 'sha256'),
+        'lifecycle_sha256': digest(lifecycle, 'sha256'),
         'package_sha256': package_sha256,
         'tested_package_sha256': tested_package_sha256,
         'acceptance_sha256': acceptance_sha256,
         'memory_stressor': args.memory_stressor,
         'parallel_helper_sha256': parallel_helper_sha256,
         'fixture_selection_line': fixture_selection_line,
-        'debian_image_url': IMAGE_URL,
-        'debian_image_sha512': IMAGE_SHA512,
+        'image_url': IMAGE_URL,
+        'image_digest': IMAGE_SHA512,
+        'debian_image_url': IMAGE_URL if args.family == 'debian' else None,
+        'debian_image_sha512': IMAGE_SHA512 if args.family == 'debian' else None,
         'host_cgroup': containment,
         'virtualization': {'accelerator': 'tcg', 'guest_memory_mib': GUEST_MEMORY_MIB,
                            'guest_disk_virtual_bytes': GUEST_DISK_BYTES, 'vcpus': 2},
@@ -494,7 +610,7 @@ sha256sum /home/accept/a12-memory-pressure.py
     print(json.dumps(receipt, indent=2))
     if not cleanup_ok:
         return 2
-    if args.mutate:
+    if grading_mutation:
         return 0 if mutation_rejection_confirmed else 1
     return 0 if rc == 0 else 1 if rc == 1 else 3 if rc == 3 else 2
 

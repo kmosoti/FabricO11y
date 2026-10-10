@@ -3,13 +3,26 @@
 # container. Protocol: docs/experiments/formal/installation-acceptance-protocol.md.
 #
 # Usage: run.sh <DEB> <OUT_DIR> [--mutate root-user|no-collision-check|no-memory-max]
+#        [--memory-stressor tail|parallel]
 # Needs Docker. The exit status is acceptance.sh's: 0 every check passed, 1 a
 # check failed, 3 a check could not run here (for example MemoryHigh on a
 # legacy cgroup hierarchy). A mutation injects one packaging defect that the
 # acceptance must reject.
 set -eu
-deb=$(realpath "$1"); out=$(realpath -m "$2"); mutate=${4:-}
-[ "${3:-}" = --mutate ] || [ -z "${3:-}" ] || { echo "usage: run.sh <DEB> <OUT_DIR> [--mutate NAME]" >&2; exit 2; }
+deb=$(realpath "$1"); out=$(realpath -m "$2"); shift 2
+mutate=; memory_stressor=tail
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --mutate)
+      [ "$#" -ge 2 ] || { echo "missing mutation name" >&2; exit 2; }
+      mutate=$2; shift 2 ;;
+    --memory-stressor)
+      [ "$#" -ge 2 ] || { echo "missing A12 memory stressor" >&2; exit 2; }
+      memory_stressor=$2; shift 2
+      case "$memory_stressor" in tail|parallel) ;; *) echo "invalid A12 memory stressor" >&2; exit 2 ;; esac ;;
+    *) echo "usage: run.sh <DEB> <OUT_DIR> [--mutate NAME] [--memory-stressor tail|parallel]" >&2; exit 2 ;;
+  esac
+done
 here=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$out"
 # On a host without the unified hierarchy, systemd 257 boots only in legacy
@@ -52,8 +65,9 @@ done
 echo "system state: $state" > "$out/system-state.txt"
 docker cp "$out/fabrico11y.deb" "$name:/root/fabrico11y.deb"
 docker cp "$here/acceptance.sh" "$name:/root/acceptance.sh"
+docker cp "$here/a12-memory-pressure.py" "$name:/root/a12-memory-pressure.py"
 set +e
-docker exec "$name" bash /root/acceptance.sh /root/fabrico11y.deb > "$out/acceptance.txt" 2>&1
+docker exec "$name" bash /root/acceptance.sh /root/fabrico11y.deb --memory-stressor "$memory_stressor" > "$out/acceptance.txt" 2>&1
 rc=$?
 set -e
 docker exec "$name" journalctl --no-pager -q -u fabrico11y-node -u fabrico11y-server > "$out/journal.txt" 2>&1 || true

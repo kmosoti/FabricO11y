@@ -1,0 +1,8 @@
+# fabricctl access /absolute/path/access.conf node list
+# This client uses an explicitly scoped workload credential, issued by a human
+# with grant.manage. Normal serve does not accept a shared admin token.
+server_url=https://telemetry.example.com:7443
+server_ca=/etc/fabrico11y/ca.pem
+# Absolute path, regular file, owner-only permissions (0600); no symlinks.
+# Store the once-returned 64-character workload token here, never in this config.
+workload_token_file=/home/operator/.config/fabrico11y/workload-token
