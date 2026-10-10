@@ -258,6 +258,10 @@ def perform(f, args, seconds, warmup, summary):
         for kind in ('logs', 'metrics'):
             body = {'kind': kind, 'node': f'sim{index:04d}', 'from_ns': begin_wall,
                     'to_ns': time.time_ns(), 'limit': 1000}
+            if kind == 'metrics':
+                # CX release-main-successor-smoke-02: Metrics requires a name;
+                # an omitted selector correctly returned HTTP 400 before grading.
+                body['name'] = 'sim.metric.0'
             elapsed, pages = reader.pages(body)
             oracle_answers.append({'query': body, 'pages': pages, 'elapsed_s': elapsed})
     final_resource = f.resource_sample()
