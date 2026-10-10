@@ -46,7 +46,8 @@ The respective launcher peaks were 6.1 GiB and 5.5 GiB, with no swap.
 Receipts, frozen guest scripts, acceptance output and witnesses live under
 `results/installation-qemu/TRIAL/`. Commands were
 `python3 -B tools/resource_group.py -- python3 -B tools/qualification/install/run-qemu.py`
-with `--run-id TRIAL --package-family fedora --package` the exact RPM above;
+with `--run-id TRIAL --family fedora --memory-stressor parallel
+--source-commit fca46236a93a6dfb915bfe9e847f05c50d234ffb --package` the exact RPM above;
 the lifecycle trial additionally supplied `--upgrade-from` the disclosed predecessor.
 The archived receipts identify the exact scripts and package hashes used.
 
