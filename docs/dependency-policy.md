@@ -30,3 +30,21 @@ the explicitly named pastey registry package.
 License-text review supports the allowlist decision. Only a recorded
 `cargo deny --workspace --locked check` run can establish the corresponding
 dependency gate result for a particular revision and lockfile.
+
+The passkey adapter adds a narrow MPL-2.0 exception for exactly version 0.5.5
+of `base64urlsafedata`, `webauthn-attestation-ca`, `webauthn-rs`,
+`webauthn-rs-core` and `webauthn-rs-proto`. Other versions and other MPL crates
+remain outside this exception. The upstream MPL files retain their license;
+they are not relicensed under the project's Apache-2.0 license. The
+[Mozilla MPL FAQ](https://www.mozilla.org/en-US/MPL/2.0/FAQ/) sections 8, 11
+and 13 describe distributing a larger work under another license while
+providing the MPL-covered source and its notices.
+
+Binary packages must include the exact locked registry source archives, checked
+against Cargo.lock checksums, and upstream license texts with commit and hash
+provenance. `THIRD-PARTY-NOTICES.json` identifies their local paths under
+`/usr/share/doc/fabrico11y/licenses/source`; source access does not depend on an
+external URL. Package staging fails if any covered source or license text is
+missing or has changed. Keep upstream files and notices intact. This exception
+changes the permitted license scope only; it grants no advisory exemption and
+makes no claim that the whole-workspace dependency gate has run.

@@ -10,7 +10,7 @@ yanked = "deny"
 ignore = []
 
 [licenses]
-# Permissive licences only. The workspace's own crates are unpublished.
+# Permissive licenses by default; exact MPL exceptions are documented below.
 allow = [
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
@@ -25,6 +25,32 @@ allow = [
     "Zlib",
 ]
 confidence-threshold = 0.9
+
+# Exact WebAuthn family only; local source and license bundles are required.
+[[licenses.exceptions]]
+name = "base64urlsafedata"
+version = "=0.5.5"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+name = "webauthn-attestation-ca"
+version = "=0.5.5"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+name = "webauthn-rs"
+version = "=0.5.5"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+name = "webauthn-rs-core"
+version = "=0.5.5"
+allow = ["MPL-2.0"]
+
+[[licenses.exceptions]]
+name = "webauthn-rs-proto"
+version = "=0.5.5"
+allow = ["MPL-2.0"]
 
 [licenses.private]
 ignore = true
