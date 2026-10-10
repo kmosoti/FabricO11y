@@ -1,0 +1,222 @@
+# Console algorithms
+
+Status: native presentation models plus a bounded authenticated browser adapter;
+server authority and release qualification remain separate verification boundaries.
+The console must preserve the [query contract](retained-history.md) and
+[identity boundary](identity-access.md). Pure model code is in
+[model.rs](../../crates/fabric-ui/src/model.rs); deterministic counterexamples are
+in [model tests](../../crates/fabric-ui/tests/model.rs).
+
+<!-- diagram: ../diagrams/operator-console.mmd -->
+```mermaid
+flowchart LR
+    Assets[Packaged public shell] --> Views[Leptos browser views]
+    Assets --> Cache[Allowlisted offline shell cache]
+    Fixture[Explicit synthetic demonstration] --> Model[Pure request tail and chart models]
+    Model --> Views
+    Views --> Controls[Source signal trace and access controls]
+    Controls --> Client[Serialized bounded browser adapter]
+    Client --> Policy[Server session scope and CSRF enforcement]
+    Policy --> History[Scoped journal and Segment query]
+    Policy --> Control[Durable control access and audit]
+    History --> Projection[Exact integer rows and evidence]
+    Projection --> Views
+```
+
+## Live browser adapter
+
+[live.rs](../../crates/fabric-ui/src/live.rs) uses exact Rust JSON integers and
+same-origin version-1 requests. A single local busy slot covers network requests
+and WebAuthn ceremonies. A checked-exhaustion epoch refuses new work after its
+maximum; filter edits, logout and offline/session invalidation reject late
+completions. Superseding a pending query also aborts its transport, while its
+local slot remains occupied until terminal completion. Browser abort is local
+transport completion, not proof that server
+query work stopped: independently bounded server admission retains its permit
+through blocking-worker completion.
+
+Fetch includes same-origin cookies, no-store caching, a compatibility header and
+session-bound CSRF on mutations. A 15-second abort deadline covers both headers
+and body streaming. Content-Length and every streamed chunk are checked against
+8 MiB before copying into the Rust decode buffer. Browser/network-internal
+allocation and retained parsed/DOM representations remain additional memory;
+these wire bounds are not a browser RSS guarantee. Server query pages are capped
+independently. The UI asks for at most 200 rows and half-open windows no longer
+than 24 hours. It lowers the row count to the current grant, labels time presets
+with their actual granted duration, and rejects explicit ranges exceeding that
+grant before fetch. The server independently enforces the same authority.
+
+Session validation precedes data display. Offline notification, logout,
+cross-tab logout and known absolute expiry clear protected transient views and
+invalidate pending results. Logout clears the view before the network response;
+a failed logout explicitly says server-side revocation was not confirmed. During
+a pending read, sign out aborts the read and queues exactly one CSRF logout to
+drain afterward; it does not create a second active transport or automatically
+retry an unsuccessful revocation. API
+401/403 locks the current view. A cross-tab channel transports only the literal
+logout notice, never cookies, credentials or telemetry. WebAuthn JSON conversion
+is limited to ceremony options and credential fields; telemetry never uses JS
+JSON.parse. Fresh passkey verification and every grant are enforced by the
+server, independently of disabled UI controls.
+
+Live tail deliberately differs from the pure identity-deduplicating model below:
+the query projection does not carry complete generation identity. Each accepted
+poll replaces a page snapshot; no cross-poll deduplication is inferred. Retained
+text is capped at 200 rows / 262,144 UTF-8 bytes by refusing an oversized row and
+evicting whole oldest rows. Display refusals/evictions remain distinct from
+collection gaps. Polls use the latest 30-second window on a five-second timer,
+suppress overlap, retain at most one accepted response and stop on errors until
+explicit resume. Polling starts paused and skips callbacks while the document is
+hidden; a configured running schedule resumes on a later visible timer tick.
+There is no automatic retry/backoff claim for this adapter;
+pagination, polling gaps and retention may omit events.
+
+Metric rendering charts at most eight distinct source/name/unit/attribute series
+from the bounded page, using the extrema model below with 32 buckets. Exact raw
+integer values stay visible; approximate coordinates never become query keys.
+Bars do not interpolate between buckets. Collection-gap metadata is shown as
+returned, without placing receive-time gaps on an observation-time axis. Span
+waterfalls subtract integer timestamps before conversion; unavailable-parent
+labels describe this bounded page, not proof of an absent trace-wide parent.
+Exact span-name filtering is optional and preserved by snapshot pagination;
+its UTF-8 editing budget is checked before transport.
+
+The trace related-log action copies the exact applied source and half-open
+window, then searches literal trace-ID text in log bodies. Missing matching text
+is not evidence that the trace has no related logs. Overview refreshes authorized
+inventory and explicitly loads the dedicated companion's recorded process
+observations. Pipeline names custody boundaries and shows returned status values;
+neither view invents health, throughput or unreported backlog. Human-readable UTC
+timestamps retain exact fractional digits and unsigned values in row titles and
+expandable fields. Exact query inputs, evidence and row JSON start collapsed.
+
+Explicit workload/human/delegated scopes are parsed with byte, field and numeric
+bounds, and checked against the current session grant for useful client errors.
+The server rechecks policy, resource scope and fresh verification. A grant editor
+cannot make an empty enrollment scope installation-wide by inference. One-time
+secrets are transient page state with a clear control; they are removed from
+status/result summaries.
+
+## Request ownership
+
+A coordinator owns at most one request token `(session, query, request)`.
+Each epoch/counter is a checked unsigned 64-bit integer: exhaustion refuses the
+transition without partial mutation, except failed login/account switch and logout
+disable display authority when the session epoch cannot advance. Login/account change and logout advance
+the session epoch; filter/query changes advance the query epoch. A completion
+may update display only when its exact token matches both current epochs and
+the live request, and the session is active. Unknown tokens never release work.
+
+Invalidation retains the live token until its matching completion acknowledgement.
+Thus changing filters or logging out rejects stale results but does not manufacture
+another available request slot. A browser abort must not be interpreted as evidence
+that a server blocking worker released its admission permit. If transport cannot
+confirm completion, this coordinator remains busy; a real integration must define
+server cancellation/status or rely on independently enforced server admission.
+The model claims one locally tracked request, not one globally executing query.
+Each transition is O(1), storage O(1). A counterexample is logout followed by login
+while the old result arrives: the old result must be stale, never populate the new account.
+
+## Bounded display tail
+
+Rows have immutable identities `(enrollment, generation, batch sequence, signal,
+ordinal)` and UTF-8 text. Capacity bounds both retained row count `K` (at most
+4,096) and retained text bytes `B` (at most 1 MiB). Byte accounting uses Rust
+string byte length, not Unicode scalar or displayed glyph count. Container and
+identity metadata are separately O(K); these bounds do not claim process RSS.
+Before retaining an accepted row, normalize its string capacity to its UTF-8
+length through boxed-string ownership. A one-byte string with a huge spare
+capacity must not retain that allocation. Duplicate/oversize rows are not copied.
+
+For an identity still retained, equal text is a duplicate; differing text is a
+conflict and neither replaces nor appends. Identity deduplication is bounded to
+the retained window: an evicted identity can reappear. Oversized input or zero
+capacity refuses the incoming row without evicting existing rows. Otherwise evict
+oldest whole rows until both limits admit the new row. Each eviction and oversized
+refusal increments a display-dropped counter; it is not an ingestion/collection gap
+or a claim of server data loss. Duplicate/conflict refusals have distinct statuses.
+The unsigned counter saturates with an explicit saturation flag, never wraps.
+
+The deque scans at most K identities per append: O(K+L) worst case including
+capacity normalization of L incoming bytes, with O(K+B) retained storage. Avoid a second payload copy/index at these
+small fixed limits. Input ownership already exists before this model sees it:
+the transport must bound decode/body allocation independently, including the
+transient incoming allocation during normalization. Zero row or byte capacity
+refuses even empty strings. A counterexample
+is a four-byte emoji admitted to a three-byte buffer by counting characters.
+
+## Poll scheduling
+
+The pure schedule takes supplied monotonic milliseconds; it reads no clock.
+`begin` consumes one due slot and refuses overlapping starts until `finish`.
+The request coordinator must also be free before begin: timer completion or
+browser abort is not request completion. Success schedules from completion time
+(no accumulated catch-up polls), with a configured interval of 1–60,000 ms.
+Retryable failures, including 429/503, use delays of 1, 2, 4, 8, 16, 32 then
+60 seconds; further failures stay at 60 seconds. Effective delay is the maximum
+of the healthy interval, backoff and supplied Retry-After. Failure cannot increase
+polling pressure and a server-requested wait is never shortened. Review found the
+counterexample of a 15 s healthy poll retried in 1 s; the model tests retain it.
+The adapter parses Retry-After into nonnegative milliseconds; malformed values
+fall back to backoff, never zero-delay loops. Success resets backoff. Terminal
+status stops scheduling. Checked deadline overflow or clock rollback leaves no
+due deadline; the integration must stop and report the error rather than restart
+immediately. Logout disables scheduling through terminal completion; epochs
+still reject any late result. State and each transition are O(1).
+
+## Time and chart envelope
+
+Input is at most 65,536 samples in nondecreasing unsigned integer nanoseconds,
+inside an inclusive window `[a,b]` with `a < b`. Reject out-of-order/out-of-window
+data and nonfinite numeric values. `None` represents an explicit gap marker;
+an empty bucket is absence of samples, not invented collection-gap evidence.
+
+Normalize time by integer subtraction before float conversion:
+`x = float(t-a) / float(b-a)`. Converting large absolute timestamps to floats
+first can erase nearby samples. Floats still have finite display precision; do
+not use chart coordinates for query ordering or exact identity.
+For P buckets, map `i = min(P-1, floor((t-a)*P/(b-a)))` using unsigned 128-bit
+arithmetic; this handles the inclusive right edge without overflow. Require
+`1 <= P <= 1,024`. One bucket contains at most two extrema with their exact times
+and a gap flag; total output is P buckets and at most 2P points.
+
+Each bucket retains the first minimum and first maximum numeric sample (stable
+tie policy), without averaging or fabricating values. Gap flags accumulate even
+when valid samples share that bucket. Render independent envelope bars/points;
+do not connect buckets or interpolate across gaps. This is explicitly a display
+reduction: non-extreme samples are omitted, never claimed as exhaustive raw data
+or a resampled/aggregated query result. Gap-only/empty buckets have no extrema.
+If input exceeds the budget, reject it; the API must page or narrow the query.
+This transform costs O(N+P) time and O(P) output/storage. A counterexample is a
+single large spike among otherwise flat values: averaging hides it; extrema retain it.
+
+For ordered inputs, the implementation walks integer boundaries
+`ceil(j * (b-a) / P)` instead of computing a wide-integer quotient per sample.
+It performs at most P such divisions. This has exactly the floor formula's
+partition, including repeated boundaries when `P > b-a` and the inclusive right
+edge. Exhaustive small grids compare it to direct division; the
+[registered ablation](../experiments/benchmarks/console-model-protocol.md) compares
+full output and preparation cost. It does not turn display extrema into raw history.
+
+## Verification boundary
+
+The demonstration accepts at most 4,096 UTF-8 bytes per text filter. Over-limit
+edits retain the previous bounded value, display an error and cannot apply a new
+query. The DOM character limit supplements this byte check; it is not a Unicode
+byte bound. Browser event allocation and future transport decoding remain
+separate from retained Rust presentation-state limits.
+
+Tests specify closed-form outcomes for epoch invalidation, matching/foreign
+completion, exhaustion without mutation, UTF-8 accounting, duplicate conflicts,
+oldest eviction, retained-capacity normalization, polling no-overlap/backoff,
+overflow reporting, integer bucket boundaries, extrema and gaps.
+Representative negative controls demonstrate that character-count admission,
+early float subtraction and averaging disagree with their required outcomes.
+These deterministic model checks do not establish browser cache isolation,
+network freshness, server resource release or leak-free authorization. Record
+real executed commands and exit statuses in release evidence; this page itself
+is not a test receipt.
+
+The [console investigation](https://github.com/kmosoti/FabricO11y/wiki/Console-model-and-interface-run-01)
+records the initial ablation, corrected defects, browser checks and unresolved
+dependency-policy failures with their revision limits.

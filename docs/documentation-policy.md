@@ -1,6 +1,55 @@
 # Documentation policy
 
-This is the repository's architecture-documentation policy, moved unchanged from `AGENTS.md` in the architecture-foundation milestone so that `AGENTS.md` can stay a short operational contract. It applies to humans and agents alike. Where it names concrete paths, the current layout is described in the [documentation landing page](README.md).
+This policy applies to humans and agents. The [documentation landing page](README.md) defines the navigation. The owner selected a separate GitHub wiki for research, experiment results and observations on 2026-10-10; the ownership rules below supersede older instructions that put every research record in this repository.
+
+## Canonical ownership
+
+| Material | Authoritative location |
+| --- | --- |
+| Product promises, operator instructions, current state, roadmap and release plan | This repository |
+| Architecture, diagrams, glossary, ADRs, formal models and invariants | This repository, versioned with the implementation |
+| Registered protocols, decision rules, independent oracles, negative controls, regression fixtures and machine-consumed inputs | This repository; existing specification protection applies |
+| Research, prior-art reviews, experimental results, observations and interpretations | [FabricO11y research wiki](https://github.com/kmosoti/FabricO11y/wiki) |
+| Raw telemetry, credentials, fixtures, binaries and large run archives | Controlled data-drive evidence storage; publish only reviewed, bounded summaries |
+
+Each document has one editable canonical home. Repository links to migrated
+reports are compatibility pointers, not second copies. Historical results retain
+their measured revision, workload, failures and limits. Moving a report never
+makes its results current or qualifies a release. Mixed records that also define
+a registered procedure or are consumed by a harness stay versioned with code;
+the wiki links them instead of replacing their bytes.
+
+Before removing a report body from the repository, record its source path and
+SHA-256, publish the corresponding wiki page, read back the exact Git commit and
+verify the exported bytes. Preserve the original text in an owned data-drive
+archive and repair navigation, including heading links. Retain an explicit
+migration manifest and any exclusions. Do not rewrite historical Git commits.
+An unavailable wiki does not permit discarding the local evidence.
+
+Do not recursively upload evidence directories. Review wiki-bound text for
+credentials and collected payloads; a pattern scan alone is not clearance.
+Keep source hashes and archive locations in the evidence inventory. Private
+archives remain private, and an unavailable raw artifact is identified honestly.
+Future reports go directly to the wiki, with commands, outcomes, measurement
+definitions, revision, resource and cleanup receipts, and interpretation limits.
+
+### Controlled evidence references
+
+Historical procedures and machine inputs retain their original bytes when raw
+run archives move to controlled storage. Their exact private references are
+declared in [controlled-evidence-references.json](controlled-evidence-references.json).
+The documentation checker requires the exact source SHA-256 and exact normalized
+repository-relative target. Only experiment `data/` paths are eligible; absolute
+paths, traversal segments, wildcards and out-of-scope targets are rejected. The
+inventory is bounded to 128 references and 256 KiB. Changes to this exception or
+inventory are verification-policy changes and require their own reasoned commit.
+
+Declared references are counted as **private/unavailable, not validated links**.
+The checker never follows, opens or validates their private targets. They remain
+unavailable in a fresh checkout, whether a local archive symlink exists or not.
+Source hash drift invalidates the declaration. Every unregistered missing link
+or link escaping the repository retains the ordinary failure behavior; the
+declaration does not establish an archive's contents or a historical result.
 
 ## Purpose
 
@@ -13,7 +62,7 @@ The documentation system is designed for two simultaneous consumers:
 
 The documentation must remain:
 
-- repository-native
+- repository-native for the product and verification contract; Git-backed wiki for research
 - text-based
 - Git-friendly
 - GitHub-renderable
@@ -676,11 +725,10 @@ Create ADRs for decisions that materially affect:
 
 # 13. Experiments and ablation work
 
-Store engineering evidence under:
-
-```text
-docs/experiments/
-```
+Keep registered protocols, executable evidence inputs and the evidence index in
+`docs/experiments/`. Store research reports, results and observations in the
+[wiki](https://github.com/kmosoti/FabricO11y/wiki), following canonical ownership
+above. The repository index links the two; it does not duplicate report bodies.
 
 Important architectural claims should be supported by evidence where practical.
 

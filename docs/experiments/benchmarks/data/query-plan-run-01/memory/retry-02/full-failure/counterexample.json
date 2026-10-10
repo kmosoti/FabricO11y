@@ -1,0 +1,12 @@
+{
+  "origin": "allocation-retry-02",
+  "records": 65536,
+  "shape": "broad",
+  "limit": 10000,
+  "actual_first_page_rows": 10000,
+  "continuation_present": true,
+  "violated_harness_assumption": "One first page is a complete pagination transcript.",
+  "product_defect_established": false,
+  "fix_not_applied": "Register a first-page checker or capture pagination outside measured spans.",
+  "lossless_wrapper_roundtrips": 64
+}

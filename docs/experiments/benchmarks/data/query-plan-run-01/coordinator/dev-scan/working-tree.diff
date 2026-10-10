@@ -1,0 +1,1775 @@
+diff --git a/.codex/hooks.json b/.codex/hooks.json
+index dd331d1..070dfca 100644
+--- a/.codex/hooks.json
++++ b/.codex/hooks.json
+@@ -1,5 +1,5 @@
+ {
+-  "description": "Load Fabric O11y context, validate documentation, and record passive local telemetry.",
++  "description": "Load Fabric O11y context and record passive local telemetry; automatic documentation checks are disabled during experimentation.",
+   "hooks": {
+     "SessionStart": [
+       {
+@@ -25,16 +25,6 @@
+       }
+     ],
+     "Stop": [
+-      {
+-        "hooks": [
+-          {
+-            "type": "command",
+-            "command": "python3 \"$(git rev-parse --show-toplevel)/.codex/hooks/run.py\"",
+-            "timeout": 30,
+-            "statusMessage": "Checking Fabric O11y documentation"
+-          }
+-        ]
+-      },
+       {
+         "hooks": [
+           {
+diff --git a/AGENTS.md b/AGENTS.md
+index 341311d..761a684 100644
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -49,6 +49,9 @@ These need explicit task scope: protocol or wire-format changes, durability or s
+ 
+ ## Working habits
+ 
++- Use the mounted data drive at `/run/media/kmosoti/data/FabricO11y` for build caches and experiment scratch. Never silently substitute the system disk or RAM-backed `/tmp` if it is unavailable. Clean owned temporary files after completion; preserve failure evidence before cleanup. Record command/exit status, storage location, resource observations, cleanup outcome and remaining uncertainty in run receipts and the relevant experiment record. The resource launcher sets temporary/build paths and writes cleanup receipts; harnesses must also route explicitly named scratch paths to `FABRIC_SCRATCH_ROOT`.
++- Apply containment and cleanup on `digitalocean-*` hosts too: inspect actual CPU/RAM, available disk and existing services, choose explicit host-appropriate cgroup memory/swap/CPU/task/time limits, and verify enforcement before any project workload. The local 20 GiB allowance does not transfer to smaller remote hosts. Use owned disk-backed scratch; archive observations/failures and remove temporary fixtures, processes and transient units on completion. Preserve frozen Tailscale/OpenSSH infrastructure and do not load `digitalocean-01` while it serves its webserver. Remote hosts may act as edge sources for scoped forwarding tests; verify exact delivery, ACK/custody, latency and resource use across both ends without calling that deployment qualification.
++- Run all project builds, tests, verification, experiments and their validators through `python3 tools/resource_group.py -- COMMAND ...`. This places the entire descendant tree in one cgroup v2 service with 16 GiB memory high, 20 GiB memory max, no swap and a 30-minute deadline. The launcher verifies enforcement and fails closed; never fall back to an uncapped run. Changed limits or longer runs need explicit owner scope. Read-only inspection is exempt. See the [contributor guide](docs/CONTRIBUTING.md#resource-containment).
+ - Keep changes small and explainable; explain the Rust idea, the contract and the trade-off before introducing a mechanism, and keep the [learning path](docs/LEARNING_PATH.md) in step.
+ - Update code, tests, diagrams, architecture pages, glossary, ADRs and `CURRENT.md` in the same logical change.
+ - State assumptions for correctness arguments; register workloads and metrics before performance comparisons.
+diff --git a/Cargo.toml b/Cargo.toml
+index 7a6d229..746b4bd 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -24,6 +24,7 @@ members = [
+ exclude = ["tools", "target", "xtask/fixtures", "fuzz"]
+ 
+ [features]
++phase-probe = ["fabric-frame/phase-probe"]
+ append-attribution = []
+ stage6-alloc-probe = []
+ 
+diff --git a/crates/fabric-frame/Cargo.toml b/crates/fabric-frame/Cargo.toml
+index 896e7c4..5d5635a 100644
+--- a/crates/fabric-frame/Cargo.toml
++++ b/crates/fabric-frame/Cargo.toml
+@@ -5,6 +5,9 @@ edition = "2024"
+ description = "Adapter support: the FAB1 rotating frame log and the version-one Batch envelope codec"
+ publish = false
+ 
++[features]
++phase-probe = []
++
+ [dependencies]
+ crc32fast = "=1.5.2"
+ opentelemetry-proto = { version = "=0.33.0", default-features = false, features = ["gen-tonic-messages", "logs", "metrics", "trace"] }
+diff --git a/crates/fabric-frame/src/frame.rs b/crates/fabric-frame/src/frame.rs
+index 553fe7c..51e4a6e 100644
+--- a/crates/fabric-frame/src/frame.rs
++++ b/crates/fabric-frame/src/frame.rs
+@@ -145,6 +145,8 @@ fn list_sealed(dir: &Path) -> io::Result<Vec<(u64, u64, u64)>> {
+ }
+ 
+ fn sync_dir(dir: &Path) -> io::Result<()> {
++    #[cfg(feature = "phase-probe")]
++    let _phase = crate::probe::span("frame_directory_sync");
+     File::open(dir)?.sync_all()
+ }
+ 
+@@ -565,7 +567,11 @@ impl FrameLog {
+                 .create_new(true)
+                 .open(&in_progress)?;
+             marker.write_all(b"append in progress; reopen verifies the tail\n")?;
++            #[cfg(feature = "phase-probe")]
++            let sync_phase = crate::probe::span("frame_append_intent_sync");
+             marker.sync_all()?;
++            #[cfg(feature = "phase-probe")]
++            drop(sync_phase);
+             sync_dir(&self.dir)?;
+             self.active.seek(SeekFrom::Start(at))?;
+             let mut header = [0_u8; HEADER_BYTES as usize];
+@@ -576,7 +582,11 @@ impl FrameLog {
+             header[12..16].copy_from_slice(&crc32fast::hash(payload).to_le_bytes());
+             self.active.write_all(&header)?;
+             self.active.write_all(payload)?;
++            #[cfg(feature = "phase-probe")]
++            let sync_phase = crate::probe::span("frame_data_or_commit_sync");
+             self.active.sync_all()?;
++            #[cfg(feature = "phase-probe")]
++            drop(sync_phase);
+             after_sync(SyncStage::Data)?;
+             let mut commit = [0_u8; MARKER_BYTES as usize];
+             commit[..4].copy_from_slice(COMMIT_MAGIC);
+@@ -584,7 +594,11 @@ impl FrameLog {
+             let commit_crc = crc32fast::hash(&commit[..12]);
+             commit[12..16].copy_from_slice(&commit_crc.to_le_bytes());
+             self.active.write_all(&commit)?;
++            #[cfg(feature = "phase-probe")]
++            let sync_phase = crate::probe::span("frame_data_or_commit_sync");
+             self.active.sync_all()?;
++            #[cfg(feature = "phase-probe")]
++            drop(sync_phase);
+             after_sync(SyncStage::Marker)?;
+             sync_dir(&self.dir)?;
+             after_sync(SyncStage::DirectoryBeforeClear)?;
+diff --git a/crates/fabric-frame/src/lib.rs b/crates/fabric-frame/src/lib.rs
+index ebb6d41..687456e 100644
+--- a/crates/fabric-frame/src/lib.rs
++++ b/crates/fabric-frame/src/lib.rs
+@@ -5,3 +5,6 @@
+ 
+ pub mod envelope;
+ pub mod frame;
++
++#[cfg(feature = "phase-probe")]
++pub mod probe;
+diff --git a/crates/fabric-server/Cargo.toml b/crates/fabric-server/Cargo.toml
+index 058ef92..41d87f4 100644
+--- a/crates/fabric-server/Cargo.toml
++++ b/crates/fabric-server/Cargo.toml
+@@ -5,6 +5,7 @@ edition = "2024"
+ description = "Fabric O11y central server: authenticated batch intake with durable ACK"
+ 
+ [features]
++phase-probe = ["fabric-frame/phase-probe", "fabric_o11y/phase-probe"]
+ responsibility-alloc-probe = []
+ 
+ [dependencies]
+diff --git a/crates/fabric-server/examples/lab_history_seed.rs b/crates/fabric-server/examples/lab_history_seed.rs
+index c026039..a4c7c16 100644
+--- a/crates/fabric-server/examples/lab_history_seed.rs
++++ b/crates/fabric-server/examples/lab_history_seed.rs
+@@ -28,7 +28,7 @@ fn hex(b: &[u8]) -> String {
+ }
+ fn body(seq: u64, index: usize, len: usize) -> String {
+     let mut s = format!("old-{seq:06}:{index:03} ");
+-    if index % 2 == 0 {
++    if index.is_multiple_of(2) {
+         s.extend(std::iter::repeat_n('R', len.saturating_sub(s.len())));
+     } else {
+         let mut counter = 0;
+diff --git a/crates/fabric-server/examples/responsibility_probe.rs b/crates/fabric-server/examples/responsibility_probe.rs
+index 0b538a3..5224118 100644
+--- a/crates/fabric-server/examples/responsibility_probe.rs
++++ b/crates/fabric-server/examples/responsibility_probe.rs
+@@ -127,6 +127,15 @@ mod process_clock {
+     pub fn now() -> u64 {
+         read(false)
+     }
++    #[cfg(feature = "phase-probe")]
++    pub fn thread_now() -> u64 {
++        let mut ts = Timespec {
++            seconds: 0,
++            nanoseconds: 0,
++        };
++        assert_eq!(unsafe { clock_gettime(3, &mut ts) }, 0);
++        ts.seconds as u64 * 1_000_000_000 + ts.nanoseconds as u64
++    }
+     pub fn resolution() -> u64 {
+         read(true)
+     }
+@@ -418,7 +427,7 @@ fn batch_log_count(bytes: &[u8]) -> usize {
+         .sum()
+ }
+ fn seed_store(path: &Path, groups: &[Group], rotate: u64, timed: bool, per_batch: usize) {
+-    let (intake, thread) = Store::open_with(path, 256 * 1024 * 1024, rotate, CommitMode::GROUPED)
++    let (intake, thread) = Store::open_with(path, 1024 * 1024 * 1024, rotate, CommitMode::GROUPED)
+         .unwrap()
+         .spawn_joinable()
+         .unwrap();
+@@ -440,9 +449,10 @@ fn seed_store(path: &Path, groups: &[Group], rotate: u64, timed: bool, per_batch
+ fn recover(path: &Path) -> Vec<Group> {
+     let mut out = Vec::new();
+     let mut seq = 0;
+-    let store = Store::open_with(path, 256 * 1024 * 1024, 512 * 1024, CommitMode::GROUPED).unwrap();
++    let store =
++        Store::open_with(path, 1024 * 1024 * 1024, 512 * 1024, CommitMode::GROUPED).unwrap();
+     drop(store);
+-    Store::replay(path, 256 * 1024 * 1024, |e| {
++    Store::replay(path, 1024 * 1024 * 1024, |e| {
+         seq += 1;
+         out.push(Group {
+             group_sequence: seq,
+@@ -457,6 +467,110 @@ fn recover(path: &Path) -> Vec<Group> {
+     .unwrap();
+     out
+ }
++
++fn pending_trial(root: &Path, groups: &[Group], count: usize) {
++    use fabric_frame::frame::{ACTIVE, FrameLog};
++    use std::sync::{
++        Arc, Barrier,
++        atomic::{AtomicBool, Ordering},
++    };
++    let state = root.join("state");
++    let journal = state.join("journal");
++    fs::create_dir_all(&journal).unwrap();
++    let mut log = FrameLog::open(
++        &journal,
++        1024 * 1024 * 1024,
++        segment::MAX_GROUP_PAYLOAD,
++        |_, _| Ok(()),
++    )
++    .unwrap();
++    for group in &groups[..groups.len() - 1] {
++        log.append(&group.encode_to_vec()).unwrap();
++    }
++    log.rotate(1).unwrap();
++    log.append(&groups.last().unwrap().encode_to_vec()).unwrap();
++    drop(log);
++    let sealed = journal.join("sealed-00000000000000000001.faj");
++    assert!(sealed.exists() && journal.join(ACTIVE).exists());
++    let scan = History::with_plan(&state, Plan::Scan);
++    let walk = History::with_plan(&state, Plan::Walk);
++    let queries = [
++        json!({"kind":"logs","from_ns":START,"to_ns":START+count as u64,"limit":20}),
++        json!({"kind":"logs","from_ns":START,"to_ns":START+count as u64,"limit":20,
++               "contains":format!("bench-{:04} ", count-128)}),
++    ];
++    let run_query = |i: usize, phase: &str| {
++        let (history, plan) = if i.is_multiple_of(2) {
++            (&scan, "scan")
++        } else {
++            (&walk, "walk")
++        };
++        let q = &queries[(i / 2) % 2];
++        let parsed: Query = serde_json::from_value(q.clone()).unwrap();
++        let began = Instant::now();
++        let answer = history.run(&parsed, groups.len() as u64).unwrap();
++        let wall_ns = began.elapsed().as_nanos() as u64;
++        assert_eq!(answer["complete"], true);
++        assert_eq!(
++            answer["rows"].as_array().unwrap().len(),
++            if (i / 2).is_multiple_of(2) { 20 } else { 1 }
++        );
++        json!({"query":q,"answer":answer,"phase":phase,"plan":plan,"wall_ns":wall_ns})
++    };
++    let mut answers: Vec<_> = (0..4).map(|i| run_query(i, "before")).collect();
++    let done = Arc::new(AtomicBool::new(false));
++    let barrier = Arc::new(Barrier::new(2));
++    let builder = std::env::var("BENCH_BUILDER").unwrap();
++    let (manifest, during) = std::thread::scope(|scope| {
++        let handle = scope.spawn(|| {
++            barrier.wait();
++            let mut answers = Vec::new();
++            for i in 0..30 {
++                if done.load(Ordering::Acquire) {
++                    break;
++                }
++                answers.push(run_query(i, "during"));
++            }
++            answers
++        });
++        barrier.wait();
++        let manifest = measure("pending_read_and_build_segment", count - 128, || {
++            if builder == "reference" {
++                let decoded = segment::read_sealed(&sealed).unwrap();
++                segment::build(&state, 1, &decoded).unwrap()
++            } else {
++                assert_eq!(builder, "bounded");
++                segment::build_sealed(&state, 1, &sealed).unwrap()
++            }
++        });
++        done.store(true, Ordering::Release);
++        (manifest, handle.join().unwrap())
++    });
++    let during_count = during.len();
++    answers.extend(during);
++    answers.extend((0..4).map(|i| run_query(i, "after")));
++    let dir = state.join("segments").join(segment::segment_name(1));
++    segment::verify(&dir, &manifest).unwrap();
++    let mut record = 0;
++    segment::scan_batches(&dir, &manifest, |g, e| {
++        assert_eq!(g, groups[record].group_sequence);
++        assert_eq!(e, groups[record].entries[0]);
++        record += 1;
++    })
++    .unwrap();
++    assert_eq!(record, groups.len() - 1);
++    let mut out = BufWriter::new(fs::File::create(root.join("pending-answers.jsonl")).unwrap());
++    for answer in answers {
++        writeln!(out, "{answer}").unwrap();
++    }
++    out.flush().unwrap();
++    println!(
++        "{}",
++        json!({"stage":"pending_exactness","builder":builder,"during_samples":during_count,
++        "sealed_journal_bytes":fs::metadata(sealed).unwrap().len(),"sealed_records":record,
++        "active_records":1,"raw_custody":true,"whole_process_allocation_overlap":true})
++    );
++}
+ fn main() {
+     // Preserve completed ledger rows when native/assertion failure unwinds.
+     // No successful completion marker is printed by this hook. A kernel kill
+@@ -476,10 +590,25 @@ fn main() {
+     let mode = &a[2];
+     let size: usize = a[3].parse().unwrap();
+     fs::create_dir_all(&root).unwrap();
++    #[cfg(feature = "phase-probe")]
++    if std::env::var("BENCH_PHASES").is_ok_and(|v| v == "1") {
++        fabric_frame::probe::install(|| {
++            #[cfg(feature = "responsibility-alloc-probe")]
++            let (live, peak, total) = allocation::facts();
++            #[cfg(not(feature = "responsibility-alloc-probe"))]
++            let (live, peak, total) = (0, 0, 0);
++            [
++                process_clock::thread_now(),
++                live as u64,
++                peak as u64,
++                total as u64,
++            ]
++        });
++    }
+     let count = env_count("BENCH_RECORDS", 4096);
+     assert!(
+-        (128..=65_536).contains(&count) && count.is_multiple_of(128),
+-        "BENCH_RECORDS must be a multiple of 128 in 128..=65536"
++        (128..=262_144).contains(&count) && count.is_multiple_of(128),
++        "BENCH_RECORDS must be a multiple of 128 in 128..=262144"
+     );
+     let order = std::env::var("BENCH_ORDER").unwrap_or_else(|_| "sorted".into());
+     let observer = std::env::var("BENCH_OBSERVER").unwrap_or_else(|_| "minimal".into());
+@@ -605,6 +734,97 @@ fn main() {
+             );
+             records(&root, &recovered);
+         }
++        "assembly" => {
++            use fabric_o11y::spindle::runtime::{Config, Spindle};
++            let source_a = root.join("app-a.log");
++            let source_b = root.join("app-b.log");
++            fs::write(&source_a, texts[..texts.len() / 2].join("\n") + "\n").unwrap();
++            fs::write(&source_b, texts[texts.len() / 2..].join("\n") + "\n").unwrap();
++            let spool_path = root.join("native-spool");
++            let mut paths = vec![source_a, source_b];
++            let bad = std::env::var("BENCH_BAD_SOURCES").is_ok_and(|s| s == "1");
++            if bad {
++                let invalid = root.join("invalid.log");
++                fs::write(&invalid, [0xff, b'\n']).unwrap();
++                paths.extend([invalid, root.join("missing.log")]);
++            }
++            let mut node = Spindle::open(Config {
++                spool: spool_path.clone(),
++                logs: paths,
++                interval_s: 1,
++                spool_bytes: 256 * 1024 * 1024,
++                server: None,
++                traces_listen: None,
++                max_output_bytes_per_s: None,
++            })
++            .unwrap();
++            let mut seen = 0;
++            let mut gaps = 0;
++            for _ in 0..128 {
++                let cycle = measure("native_collection_otlp_spool", 1, || {
++                    node.collect_once().unwrap()
++                });
++                seen += cycle.log_records;
++                gaps += cycle.gaps;
++                if cycle.log_backlog_bytes == 0 {
++                    break;
++                }
++            }
++            assert_eq!(seen, texts.len());
++            if bad {
++                assert!(gaps >= 2);
++            } else {
++                assert_eq!(gaps, 0);
++            }
++            drop(node);
++            let mut spool = Spool::open(&spool_path, 256 * 1024 * 1024).unwrap();
++            let mut actual = Vec::new();
++            spool
++                .replay(|b| {
++                    actual.push(Group {
++                        group_sequence: b.sequence,
++                        entries: vec![Entry {
++                            label: "fixture".into(),
++                            received_unix_nano: START,
++                            batch: b.encode_to_vec(),
++                        }],
++                    });
++                    Ok(())
++                })
++                .unwrap();
++            records(&root, &actual);
++        }
++        "compression" => {
++            use parquet::file::reader::{FileReader, SerializedFileReader};
++            let state = root.join("state");
++            segment::build(&state, 1, &groups).unwrap();
++            let dir = state.join("segments").join(segment::segment_name(1));
++            let mut compressor = zstd::bulk::Compressor::new(3).unwrap();
++            let mut decompressor = zstd::bulk::Decompressor::new().unwrap();
++            for table in ["logs.parquet", "batches.parquet"] {
++                let reader =
++                    SerializedFileReader::new(fs::File::open(dir.join(table)).unwrap()).unwrap();
++                for rg in 0..reader.num_row_groups() {
++                    let group = reader.get_row_group(rg).unwrap();
++                    for column in 0..group.num_columns() {
++                        let mut pages = group.get_column_page_reader(column).unwrap();
++                        while let Some(page) = pages.get_next_page().unwrap() {
++                            let raw = page.buffer();
++                            let mut compressed = Vec::new();
++                            measure("standalone_page_zstd3_compress", raw.len(), || {
++                                compressed = compressor.compress(raw).unwrap()
++                            });
++                            let mut decoded = Vec::new();
++                            measure("standalone_page_zstd3_decompress", raw.len(), || {
++                                decoded = decompressor.decompress(&compressed, raw.len()).unwrap()
++                            });
++                            assert_eq!(decoded.as_slice(), raw.as_ref());
++                        }
++                    }
++                }
++            }
++            records(&root, &recover(&state));
++        }
+         "processing" | "buffers" => {
+             for _ in 0..repeats(5) {
+                 let mut parsed = Rows::default();
+@@ -660,6 +880,72 @@ fn main() {
+             );
+             records(&root, &recovered);
+         }
++        "pending" => pending_trial(&root, &groups, texts.len()),
++        "memory" => {
++            use fabric_frame::frame::{ACTIVE, FrameLog};
++            let journal = root.join("input");
++            fs::create_dir(&journal).unwrap();
++            let mut log = FrameLog::open(
++                &journal,
++                1024 * 1024 * 1024,
++                segment::MAX_GROUP_PAYLOAD,
++                |_, _| Ok(()),
++            )
++            .unwrap();
++            for group in &groups {
++                log.append(&group.encode_to_vec()).unwrap();
++            }
++            drop(log);
++            let input = journal.join(ACTIVE);
++            let state = root.join("state");
++            let builder = std::env::var("BENCH_BUILDER").unwrap();
++            let manifest = measure("read_and_build_segment", texts.len(), || {
++                if builder == "reference" {
++                    let decoded = segment::read_sealed(&input).unwrap();
++                    segment::build(&state, 1, &decoded).unwrap()
++                } else {
++                    assert_eq!(builder, "bounded");
++                    segment::build_sealed(&state, 1, &input).unwrap()
++                }
++            });
++            let dir = state.join("segments").join(segment::segment_name(1));
++            segment::verify(&dir, &manifest).unwrap();
++            let mut record = 0;
++            segment::scan_batches(&dir, &manifest, |group, entry| {
++                assert_eq!(group, groups[record].group_sequence);
++                assert_eq!(entry, groups[record].entries[0]);
++                record += 1;
++            })
++            .unwrap();
++            assert_eq!(record, groups.len());
++            let mut rows = 0;
++            segment::scan_logs(&dir, &manifest, 0, u64::MAX, |row| {
++                let position = (row.sequence as usize - 1) * 128 + row.index as usize;
++                assert_eq!(row.body, texts[position]);
++                assert_eq!(row.observed_ns, START + ranks[position] as u64);
++                assert_eq!(row.observed_ns, START + rows as u64);
++                assert_eq!(row.node_id, [7; 16]);
++                assert_eq!(row.node, "fixture");
++                assert!(row.attributes.is_empty());
++                rows += 1;
++            })
++            .unwrap();
++            assert_eq!(rows, texts.len());
++            assert!(
++                fs::read_dir(&dir).unwrap().all(|p| !p
++                    .unwrap()
++                    .file_name()
++                    .to_string_lossy()
++                    .contains(".run-"))
++            );
++            println!(
++                "{}",
++                json!({"stage":"memory_exactness","builder":builder,
++                "journal_bytes":fs::metadata(&input).unwrap().len(), "rows":rows,"records":record,
++                "raw_custody":true,"exact_source_rows":true,"spill_leftovers":0,
++                "files":manifest.files})
++            );
++        }
+         "query" => {
+             const ANSWER_LEDGER_BYTES: usize = 256 * 1024 * 1024;
+             for kind in ["tail", "segment"] {
+@@ -806,7 +1092,10 @@ fn main() {
+             assert_eq!(c.inventory()[0].0.revision, repeats(10) as u64 + 1);
+         }
+         "scheduling" => {
+-            assert!([1, 2, 4].contains(&size), "sealing worker cuts are 1/2/4");
++            assert!(
++                [1, 2, 3, 4].contains(&size),
++                "sealing worker cuts are 1/2/3/4"
++            );
+             let rotate_bytes = env_count("BENCH_ROTATE_BYTES", 512 * 1024) as u64;
+             assert!(rotate_bytes > 0);
+             let guard = env_count("BENCH_MEMORY_GUARD_BYTES", 1024 * 1024 * 1024);
+@@ -824,15 +1113,27 @@ fn main() {
+             // Replay obtains the journal lock itself. Snapshot before opening
+             // the writer; a second live owner is a real WouldBlock, not a retry.
+             let mut before = Vec::new();
+-            Store::replay(&state, 256 * 1024 * 1024, |e| {
++            Store::replay(&state, 1024 * 1024 * 1024, |e| {
+                 before.push(e.batch.to_vec());
+                 Ok(())
+             })
+             .unwrap();
+-            let store =
+-                Store::open_with(&state, 256 * 1024 * 1024, rotate_bytes, CommitMode::GROUPED)
+-                    .unwrap();
++            let store = Store::open_with(
++                &state,
++                1024 * 1024 * 1024,
++                rotate_bytes,
++                CommitMode::GROUPED,
++            )
++            .unwrap();
+             let (intake, thread) = store.spawn_joinable().unwrap();
++            let files: Vec<_> = fs::read_dir(state.join("journal")).unwrap().map(|e| {
++                let e=e.unwrap(); json!({"name":e.file_name().to_string_lossy(),"bytes":e.metadata().unwrap().len()})
++            }).collect();
++            fs::write(
++                root.join("journal-files-before.json"),
++                serde_json::to_vec(&files).unwrap(),
++            )
++            .unwrap();
+             measure("native_sealer_pass_inclusive", texts.len(), || {
+                 sealer::pass(
+                     &state,
+@@ -917,6 +1218,14 @@ fn main() {
+         }
+         _ => panic!("unknown mode"),
+     }
++    #[cfg(feature = "phase-probe")]
++    {
++        let mut output = BufWriter::new(fs::File::create(root.join("phases.jsonl")).unwrap());
++        for p in fabric_frame::probe::take() {
++            writeln!(output, "{}", json!({"phase":p.name,"thread":format!("{:?}",p.thread),"depth":p.depth,"start_ns":p.start_ns,"wall_ns":p.wall_ns,"thread_cpu_ns":p.after[0].saturating_sub(p.before[0]),"before":p.before,"after":p.after})).unwrap();
++        }
++        output.flush().unwrap();
++    }
+     let measurements = flush_ledger();
+     println!(
+         "{}",
+diff --git a/crates/fabric-server/src/query.rs b/crates/fabric-server/src/query.rs
+index 1644fea..3259b26 100644
+--- a/crates/fabric-server/src/query.rs
++++ b/crates/fabric-server/src/query.rs
+@@ -312,6 +312,12 @@ impl History {
+         window: &Window,
+         node: &Option<String>,
+     ) -> io::Result<Sources> {
++        #[cfg(feature = "phase-probe")]
++        let _phase = fabric_frame::probe::span("query_scan_source_loading");
++
++        #[cfg(feature = "phase-probe")]
++        let _phase = fabric_frame::probe::span("query_walk_source_loading");
++
+         let mut state = self.walk.lock().unwrap_or_else(|e| e.into_inner());
+         let segments_dir = segment::segments_dir(&self.state_dir)?;
+         let mut covered = Vec::new();
+@@ -598,6 +604,9 @@ impl History {
+     }
+ 
+     fn run_once(&self, query: &Query, committed_group: u64) -> Result<Value, QueryError> {
++        #[cfg(feature = "phase-probe")]
++        let _phase = fabric_frame::probe::span("query_run_inclusive");
++
+         let (node, from, to, limit, page) = match query {
+             Query::Logs {
+                 node,
+@@ -743,6 +752,8 @@ impl History {
+         });
+         gaps.sort_by_key(|g| (g.received_ns, g.node_id, g.sequence));
+ 
++        #[cfg(feature = "phase-probe")]
++        let _execution = fabric_frame::probe::span("query_execute_inclusive_loading");
+         let mut next_page = Value::Null;
+         let rows_json = match query {
+             Query::Logs {
+@@ -1224,6 +1235,10 @@ impl History {
+                 rates(points)
+             }
+         };
++        #[cfg(feature = "phase-probe")]
++        drop(_execution);
++        #[cfg(feature = "phase-probe")]
++        let _output = fabric_frame::probe::span("query_envelope_construct");
+         let retained = if received.0 == u64::MAX {
+             (json!(0), json!(0))
+         } else {
+@@ -1301,6 +1316,9 @@ impl serde::Serialize for QueryShape<'_> {
+ /// Per series of a monotonic cumulative sum: a rate per consecutive pair
+ /// sharing `start_ns` with no decrease, otherwise a reset marker.
+ fn rates(mut points: Vec<MetricRow>) -> Vec<Value> {
++    #[cfg(feature = "phase-probe")]
++    let _phase = fabric_frame::probe::span("query_rates");
++
+     let series = |r: &MetricRow| {
+         (
+             r.node.clone(),
+diff --git a/crates/fabric-server/src/rows.rs b/crates/fabric-server/src/rows.rs
+index 585e95d..dab824b 100644
+--- a/crates/fabric-server/src/rows.rs
++++ b/crates/fabric-server/src/rows.rs
+@@ -13,12 +13,13 @@ use opentelemetry_proto::tonic::collector::trace::v1::ExportTraceServiceRequest;
+ use opentelemetry_proto::tonic::common::v1::{KeyValue, any_value};
+ use opentelemetry_proto::tonic::metrics::v1::{metric, number_data_point};
+ use prost::Message;
++use serde::{Deserialize, Serialize};
+ use std::collections::BTreeMap;
+ use std::io;
+ 
+ pub type Attributes = BTreeMap<String, String>;
+ 
+-#[derive(Clone, Debug, PartialEq)]
++#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+ pub struct LogRow {
+     pub group: u64,
+     pub node: String,
+@@ -30,13 +31,25 @@ pub struct LogRow {
+     pub attributes: Attributes,
+ }
+ 
+-#[derive(Clone, Copy, Debug, PartialEq)]
++#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+ pub enum Number {
+     Int(i64),
+-    Double(f64),
++    Double(#[serde(with = "float_bits")] f64),
+ }
+ 
+-#[derive(Clone, Debug, PartialEq)]
++// Private spill rows must preserve every represented number, including NaN
++// payloads and signed zero. JSON numbers cannot represent all these values.
++mod float_bits {
++    use serde::{Deserialize, Deserializer, Serializer};
++    pub fn serialize<S: Serializer>(value: &f64, serializer: S) -> Result<S::Ok, S::Error> {
++        serializer.serialize_u64(value.to_bits())
++    }
++    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<f64, D::Error> {
++        u64::deserialize(deserializer).map(f64::from_bits)
++    }
++}
++
++#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+ pub struct MetricRow {
+     pub group: u64,
+     pub node: String,
+@@ -56,7 +69,7 @@ pub struct MetricRow {
+ 
+ /// One OTLP span (ADR-0025). Identities are lowercase hex of their bytes,
+ /// empty when absent; `kind` and `status` are the OTLP integers.
+-#[derive(Clone, Debug, PartialEq)]
++#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+ pub struct SpanRow {
+     pub group: u64,
+     pub node: String,
+@@ -114,7 +127,14 @@ fn strings(attributes: &[KeyValue]) -> Attributes {
+ 
+ /// Decode one record into its rows, appending to `out`.
+ pub fn extract(group: u64, entry: &Entry, out: &mut Rows) -> io::Result<()> {
+-    let batch = Batch::decode(entry.batch.as_slice()).map_err(|e| invalid(e.to_string()))?;
++    #[cfg(feature = "phase-probe")]
++    let _phase = fabric_frame::probe::span("otlp_decode_project");
++
++    let batch = {
++        #[cfg(feature = "phase-probe")]
++        let _phase = fabric_frame::probe::span("batch_envelope_decode");
++        Batch::decode(entry.batch.as_slice()).map_err(|e| invalid(e.to_string()))?
++    };
+     let node_id: [u8; 16] = batch
+         .node_id
+         .as_slice()
+@@ -122,8 +142,14 @@ pub fn extract(group: u64, entry: &Entry, out: &mut Rows) -> io::Result<()> {
+         .map_err(|_| invalid("batch node_id is not 16 bytes"))?;
+     let node = entry.label.clone();
+     if !batch.logs.is_empty() {
+-        let request = ExportLogsServiceRequest::decode(batch.logs.as_slice())
+-            .map_err(|e| invalid(e.to_string()))?;
++        let request = {
++            #[cfg(feature = "phase-probe")]
++            let _phase = fabric_frame::probe::span("otlp_logs_decode");
++            ExportLogsServiceRequest::decode(batch.logs.as_slice())
++                .map_err(|e| invalid(e.to_string()))?
++        };
++        #[cfg(feature = "phase-probe")]
++        let _projection = fabric_frame::probe::span("otlp_logs_projection");
+         let mut index = 0_u32;
+         for resource in &request.resource_logs {
+             for scope in &resource.scope_logs {
+@@ -148,8 +174,14 @@ pub fn extract(group: u64, entry: &Entry, out: &mut Rows) -> io::Result<()> {
+         }
+     }
+     if !batch.metrics.is_empty() {
+-        let request = ExportMetricsServiceRequest::decode(batch.metrics.as_slice())
+-            .map_err(|e| invalid(e.to_string()))?;
++        let request = {
++            #[cfg(feature = "phase-probe")]
++            let _phase = fabric_frame::probe::span("otlp_metrics_decode");
++            ExportMetricsServiceRequest::decode(batch.metrics.as_slice())
++                .map_err(|e| invalid(e.to_string()))?
++        };
++        #[cfg(feature = "phase-probe")]
++        let _projection = fabric_frame::probe::span("otlp_metrics_projection");
+         let mut index = 0_u32;
+         for resource in &request.resource_metrics {
+             for scope in &resource.scope_metrics {
+@@ -188,8 +220,14 @@ pub fn extract(group: u64, entry: &Entry, out: &mut Rows) -> io::Result<()> {
+         }
+     }
+     if !batch.traces.is_empty() {
+-        let request = ExportTraceServiceRequest::decode(batch.traces.as_slice())
+-            .map_err(|e| invalid(e.to_string()))?;
++        let request = {
++            #[cfg(feature = "phase-probe")]
++            let _phase = fabric_frame::probe::span("otlp_traces_decode");
++            ExportTraceServiceRequest::decode(batch.traces.as_slice())
++                .map_err(|e| invalid(e.to_string()))?
++        };
++        #[cfg(feature = "phase-probe")]
++        let _projection = fabric_frame::probe::span("otlp_traces_projection");
+         let mut index = 0_u32;
+         for resource in &request.resource_spans {
+             for scope in &resource.scope_spans {
+diff --git a/crates/fabric-server/src/sealer.rs b/crates/fabric-server/src/sealer.rs
+index 9fa3182..10bb052 100644
+--- a/crates/fabric-server/src/sealer.rs
++++ b/crates/fabric-server/src/sealer.rs
+@@ -69,8 +69,12 @@ pub fn pass(
+         segmented,
+         workers,
+         |label| {
+-            let groups = segment::read_sealed(&journal.join(format!("sealed-{label:020}.faj")))?;
+-            segment::build(state_dir, label, &groups).map(|_| ())
++            segment::build_sealed(
++                state_dir,
++                label,
++                &journal.join(format!("sealed-{label:020}.faj")),
++            )
++            .map(|_| ())
+         },
+         |label| intake.reclaim(label),
+     )?;
+diff --git a/crates/fabric-server/src/segment.rs b/crates/fabric-server/src/segment.rs
+index 0d941f1..a5fdda6 100644
+--- a/crates/fabric-server/src/segment.rs
++++ b/crates/fabric-server/src/segment.rs
+@@ -32,6 +32,8 @@ use std::sync::Arc;
+ const VERSION: u32 = 1;
+ const ROW_GROUP: usize = 8192;
+ pub const MAX_GROUP_PAYLOAD: usize = 4 * 1024 * 1024;
++mod bounded;
++pub use bounded::build_sealed;
+ 
+ fn invalid(message: impl Into<String>) -> io::Error {
+     io::Error::new(io::ErrorKind::InvalidData, message.into())
+@@ -79,6 +81,9 @@ fn hex(bytes: &[u8]) -> String {
+ }
+ 
+ fn sync_dir(dir: &Path) -> io::Result<()> {
++    #[cfg(feature = "phase-probe")]
++    let _phase = fabric_frame::probe::span("directory_sync");
++
+     File::open(dir)?.sync_all()
+ }
+ 
+@@ -132,6 +137,9 @@ pub fn spans_schema() -> SchemaRef {
+ }
+ 
+ fn spans_batch(rows: &[SpanRow]) -> io::Result<RecordBatch> {
++    #[cfg(feature = "phase-probe")]
++    let _phase = fabric_frame::probe::span("arrow_spans");
++
+     let strings =
+         |f: fn(&SpanRow) -> &str| Arc::new(StringArray::from_iter_values(rows.iter().map(f)));
+     RecordBatch::try_new(
+@@ -205,6 +213,9 @@ pub fn batches_schema() -> SchemaRef {
+ }
+ 
+ fn logs_batch(rows: &[LogRow]) -> io::Result<RecordBatch> {
++    #[cfg(feature = "phase-probe")]
++    let _phase = fabric_frame::probe::span("arrow_logs");
++
+     RecordBatch::try_new(
+         logs_schema(),
+         vec![
+@@ -232,6 +243,9 @@ fn logs_batch(rows: &[LogRow]) -> io::Result<RecordBatch> {
+ }
+ 
+ fn metrics_batch(rows: &[MetricRow]) -> io::Result<RecordBatch> {
++    #[cfg(feature = "phase-probe")]
++    let _phase = fabric_frame::probe::span("arrow_metrics");
++
+     RecordBatch::try_new(
+         metrics_schema(),
+         vec![
+@@ -279,6 +293,9 @@ fn metrics_batch(rows: &[MetricRow]) -> io::Result<RecordBatch> {
+ }
+ 
+ fn gaps_batch(rows: &[GapRow]) -> io::Result<RecordBatch> {
++    #[cfg(feature = "phase-probe")]
++    let _phase = fabric_frame::probe::span("arrow_gaps");
++
+     RecordBatch::try_new(
+         gaps_schema(),
+         vec![
+@@ -302,6 +319,9 @@ fn gaps_batch(rows: &[GapRow]) -> io::Result<RecordBatch> {
+ }
+ 
+ fn batches_batch(records: &[(u64, Entry)]) -> io::Result<RecordBatch> {
++    #[cfg(feature = "phase-probe")]
++    let _phase = fabric_frame::probe::span("arrow_batches");
++
+     let mut sha = FixedSizeBinaryBuilder::new(32);
+     for (_, entry) in records {
+         sha.append_value(Sha256::digest(&entry.batch))
+@@ -350,6 +370,9 @@ impl<W: Write> Write for HashingWriter<W> {
+ }
+ 
+ fn write_table(path: &Path, batch: &RecordBatch) -> io::Result<FileEntry> {
++    #[cfg(feature = "phase-probe")]
++    let _phase = fabric_frame::probe::span("parquet_encode_compress_write_sync");
++
+     let properties = WriterProperties::builder()
+         .set_max_row_group_row_count(Some(ROW_GROUP))
+         .set_compression(Compression::ZSTD(ZstdLevel::try_new(3).map_err(err)?))
+@@ -362,11 +385,27 @@ fn write_table(path: &Path, batch: &RecordBatch) -> io::Result<FileEntry> {
+     {
+         let mut writer =
+             ArrowWriter::try_new(&mut output, batch.schema(), Some(properties)).map_err(err)?;
+-        writer.write(batch).map_err(err)?;
+-        writer.close().map_err(err)?;
++        {
++            #[cfg(feature = "phase-probe")]
++            let _phase = fabric_frame::probe::span("parquet_writer_write_inclusive");
++            writer.write(batch).map_err(err)?;
++        }
++        {
++            #[cfg(feature = "phase-probe")]
++            let _phase = fabric_frame::probe::span("parquet_writer_finish_inclusive");
++            writer.close().map_err(err)?;
++        }
++    }
++    {
++        #[cfg(feature = "phase-probe")]
++        let _phase = fabric_frame::probe::span("parquet_buffer_flush");
++        output.flush()?;
++    }
++    {
++        #[cfg(feature = "phase-probe")]
++        let _phase = fabric_frame::probe::span("parquet_file_sync");
++        output.inner.get_ref().sync_all()?;
+     }
+-    output.flush()?;
+-    output.inner.get_ref().sync_all()?;
+     Ok(FileEntry {
+         sha256: hex(&output.hash.finalize()),
+         bytes: output.bytes,
+@@ -395,6 +434,9 @@ fn write_filter<R>(
+     rows: &[R],
+     text: impl Fn(&R) -> &str,
+ ) -> io::Result<FileEntry> {
++    #[cfg(feature = "phase-probe")]
++    let _phase = fabric_frame::probe::span("filter_build_write_sync");
++
+     let builder =
+         ParquetRecordBatchReaderBuilder::try_new(File::open(building.join(table))?).map_err(err)?;
+     let mut groups = Vec::new();
+@@ -438,6 +480,9 @@ pub fn read_spans_filter(
+     dir: &Path,
+     manifest: &Manifest,
+ ) -> Option<Vec<crate::text_filter::GroupFilter>> {
++    #[cfg(feature = "phase-probe")]
++    let _phase = fabric_frame::probe::span("parquet_load_project_spans");
++
+     read_filter(dir, manifest, SPANS_FILTER)
+ }
+ 
+@@ -472,6 +517,9 @@ pub fn read_sealed(path: &Path) -> io::Result<Vec<Group>> {
+ 
+ /// Build and commit the segment for sealed journal file `label`.
+ pub fn build(state_dir: &Path, label: u64, groups: &[Group]) -> io::Result<Manifest> {
++    #[cfg(feature = "phase-probe")]
++    let _phase = fabric_frame::probe::span("segment_build");
++
+     let dir = segments_dir(state_dir)?;
+     let building = dir.join(format!(".building-{label:020}"));
+     let _ = fs::remove_dir_all(&building);
+@@ -848,6 +896,9 @@ fn read_logs(
+     to: u64,
+     visit: &mut impl FnMut(LogRow),
+ ) -> io::Result<()> {
++    #[cfg(feature = "phase-probe")]
++    let _phase = fabric_frame::probe::span("parquet_load_project_logs");
++
+     for batch in builder.with_row_groups(groups).build().map_err(err)? {
+         let batch = batch.map_err(err)?;
+         let (g, n, id, s, i, t, b, a) = (
+@@ -912,6 +963,9 @@ fn read_metrics(
+     to: u64,
+     visit: &mut impl FnMut(MetricRow),
+ ) -> io::Result<()> {
++    #[cfg(feature = "phase-probe")]
++    let _phase = fabric_frame::probe::span("parquet_load_project_metrics");
++
+     for batch in builder.with_row_groups(groups).build().map_err(err)? {
+         let batch = batch.map_err(err)?;
+         let vi = col::<Int64Array>(&batch, 11)?;
+diff --git a/crates/fabric-server/tests/control.rs b/crates/fabric-server/tests/control.rs
+index 560ccfa..486ef0a 100644
+--- a/crates/fabric-server/tests/control.rs
++++ b/crates/fabric-server/tests/control.rs
+@@ -21,9 +21,7 @@ struct Scratch(PathBuf);
+ impl Scratch {
+     fn new() -> Self {
+         let id = NEXT.fetch_add(1, Ordering::Relaxed);
+-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+-            .join("../../target")
+-            .join(format!("control-test-{}-{id}", std::process::id()));
++        let path = std::env::temp_dir().join(format!("control-test-{}-{id}", std::process::id()));
+         fs::create_dir_all(&path).unwrap();
+         Self(path.canonicalize().unwrap())
+     }
+diff --git a/crates/fabric-server/tests/delivery.rs b/crates/fabric-server/tests/delivery.rs
+index d0f47c1..aecbdd7 100644
+--- a/crates/fabric-server/tests/delivery.rs
++++ b/crates/fabric-server/tests/delivery.rs
+@@ -22,9 +22,7 @@ struct Scratch(PathBuf);
+ impl Scratch {
+     fn new() -> Self {
+         let id = NEXT.fetch_add(1, Ordering::Relaxed);
+-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+-            .join("../../target")
+-            .join(format!("delivery-test-{}-{id}", std::process::id()));
++        let path = std::env::temp_dir().join(format!("delivery-test-{}-{id}", std::process::id()));
+         fs::create_dir_all(&path).unwrap();
+         Self(path.canonicalize().unwrap())
+     }
+diff --git a/crates/fabric-server/tests/history.rs b/crates/fabric-server/tests/history.rs
+index cf05830..3da3908 100644
+--- a/crates/fabric-server/tests/history.rs
++++ b/crates/fabric-server/tests/history.rs
+@@ -33,9 +33,7 @@ struct Scratch(PathBuf);
+ impl Scratch {
+     fn new() -> Self {
+         let id = NEXT.fetch_add(1, Ordering::Relaxed);
+-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+-            .join("../../target")
+-            .join(format!("history-test-{}-{id}", std::process::id()));
++        let path = std::env::temp_dir().join(format!("history-test-{}-{id}", std::process::id()));
+         let _ = fs::remove_dir_all(&path);
+         fs::create_dir_all(&path).unwrap();
+         Self(path.canonicalize().unwrap())
+diff --git a/docs/CONTRIBUTING.md b/docs/CONTRIBUTING.md
+index fabfcf2..9134f1a 100644
+--- a/docs/CONTRIBUTING.md
++++ b/docs/CONTRIBUTING.md
+@@ -26,6 +26,73 @@ Acceptance rests on executable evidence, not on anyone's approval ([ADR-0018](de
+ 
+ Documentation tooling needs Bun 1.4.0 and Python 3: `bun install --cwd tools/docs --frozen-lockfile`, then `bun tools/docs/check.mjs`. The [checker](../tools/docs/check.mjs) verifies relative links and heading fragments, Mermaid syntax, marked diagram copies, JSON syntax and duplicate ADR numbers; it performs no network access or writes and does not decide whether prose is true. Canonical diagrams live in `docs/diagrams/*.mmd`; a page may repeat one after a `<!-- diagram: relative/path.mmd -->` comment, and the checker requires the copy to match. When changing the checker or hooks, also run `bun tools/docs/check.test.mjs` and `python3 -B tools/docs/test_hooks.py`.
+ 
++## Resource containment
++
++Run project workloads, including builds, tests, mutants, experiment harnesses,
++validators and documentation checks, through the repository launcher:
++
++```sh
++python3 tools/resource_group.py -- cargo xtask checks --profile fast
++python3 tools/resource_group.py -- cargo xtask mutants
++python3 tools/resource_group.py -- python3 tools/bench/run_performance_refinement.py --help
++```
++
++The whole command tree shares a systemd user service with `MemoryHigh=16G`,
++`MemoryMax=20G`, `MemorySwapMax=0`, group OOM termination and a 30-minute deadline.
++These are workstation protection limits, not product capacity promises. The
++launcher checks its actual cgroup v2 limits before executing the command; missing
++systemd user access or unenforced limits mean NOT RUN, with no uncapped fallback.
++Launch workloads sequentially: multiple capped services still add their budgets.
++Use the mounted data drive at `/run/media/kmosoti/data/FabricO11y`: the launcher
++sets `CARGO_TARGET_DIR` to its `cargo` directory, `FABRIC_SCRATCH_ROOT` to `scratch`,
++and `TMPDIR`, `TMP` and `TEMP` to a unique owned directory per invocation.
++It refuses to run if the data drive is unmounted. Harnesses with explicit scratch
++paths must use `FABRIC_SCRATCH_ROOT`; an environment variable cannot redirect a
++hardcoded path. `/tmp` on the Fedora workstation is tmpfs.
++
++After a successful command, the launcher stops the service and removes its owned
++temporary directory. On failure or interruption it moves that directory to the
++drive's `evidence` directory after stopping the service; if stopping cannot be
++confirmed, it retains the directory in place. It never deletes shared build
++caches or unrelated files. Each invocation records command, exit, elapsed time,
++storage, containment limits and cleanup/retained-evidence paths under
++`target/resource-containment/runs`. Harnesses must retain measured observations,
++exactness results and meaningful failures in their experiment records before
++removing owned trial scratch. Review retained failure files before pruning them.
++Higher limits or longer runs require explicit owner scope. Read-only
++inspection is exempt.
++
++On 2026-10-04 at 10:21:20, the Fedora kernel reported a global OOM and killed
++`query_spec-bcbf` with 25,047,920 KiB anonymous RSS during the interrupted mutant
++continuation. Probe-only address-space limits did not contain this verification
++process. Preserve that interruption as failure evidence; do not count a cgroup
++OOM, timeout or resource refusal as a successful verification result.
++
++## Remote resource discipline
++
++The existing remote-host contract names `digitalocean-01` and `digitalocean-02`,
++accessed as `dev` through OpenSSH over Tailscale. Host availability, installed
++project state and resources must be inspected before each remote workload;
++these names do not establish current capacity. Keep the base access
++infrastructure unchanged.
++
++On each host, inspect CPU quotas, available RAM/swap, disk space, ancestor cgroup
++limits and active services. Choose and verify host-appropriate cgroup v2 memory,
++swap, CPU, task and deadline limits for the complete project process tree before
++launch. Refuse an uncapped fallback. The workstation's 20 GiB allowance applies
++only locally; its launcher has a workstation-specific data-drive path. Use an
++owned disk-backed directory on the remote host, not an assumed copy of that path.
++Do not run loads on `digitalocean-01` while its webserver is serving.
++
++Remote machines can supply edge-source traffic to a receiver in a scoped
++forwarding experiment. Record source/receiver identities, revision, workload,
++network path, limits, exact delivered records, durable ACK/custody results,
++latency and resource observations on both ends. At completion, stop owned
++processes and transient services, retain useful observations and failure
++fixtures, and remove owned temporary data on both machines; record the cleanup
++outcome. Do not change installed defaults, open public ports, or claim deployment
++qualification from an exploratory forwarding run.
++
+ ## Verification tools
+ 
+ Each tool answers one question ([verification strategy](formal/verification-strategy.md), [ADR-0021](decisions/ADR-0021-add-property-model-fuzz-and-simulation-checks.md)). Use the one that fits the change; every new check ships with a registered mutant or control that makes it fail.
+@@ -49,7 +116,7 @@ Rules for these tools:
+ 
+ ## Skills and hooks
+ 
+-Repository skills in `.agents/skills` are ordinary Markdown: [fabric-architecture](../.agents/skills/fabric-architecture/SKILL.md), [fabric-lesson](../.agents/skills/fabric-lesson/SKILL.md) and [fabric-experiment](../.agents/skills/fabric-experiment/SKILL.md). [.codex/hooks.json](../.codex/hooks.json) runs [read-only handlers](../.codex/hooks/run.py): `SessionStart` supplies a bounded copy of `CURRENT.md`; `Stop` runs the documentation checker and reports missing tools as skipped, never as success. Hooks need runtime trust in Codex (`/hooks`); without it, run the commands by hand. The same configuration holds silent [agent-telemetry](../tools/telemetry/README.md) observers that write under ignored `.local/`; validate them with `python3 -B tools/telemetry/test_contract.py` and `python3 -B tools/telemetry/test_cli.py`.
++Repository skills in `.agents/skills` are ordinary Markdown: [fabric-architecture](../.agents/skills/fabric-architecture/SKILL.md), [fabric-lesson](../.agents/skills/fabric-lesson/SKILL.md) and [fabric-experiment](../.agents/skills/fabric-experiment/SKILL.md). [.codex/hooks.json](../.codex/hooks.json) runs [read-only handlers](../.codex/hooks/run.py): `SessionStart` supplies a bounded copy of `CURRENT.md`. The Bun documentation `Stop` hook is disabled by owner direction during experimentation; the checker remains available manually. Hooks need runtime trust in Codex (`/hooks`). The same configuration holds silent [agent-telemetry](../tools/telemetry/README.md) observers that write under ignored `.local/`; validate them with `python3 -B tools/telemetry/test_contract.py` and `python3 -B tools/telemetry/test_cli.py`.
+ 
+ ## Editor tools
+ 
+diff --git a/docs/CURRENT.md b/docs/CURRENT.md
+index 049e770..3dbd17d 100644
+--- a/docs/CURRENT.md
++++ b/docs/CURRENT.md
+@@ -2,7 +2,34 @@
+ 
+ ## Active work
+ 
+-Milestone **bounded sealer** ([record](milestones/bounded-sealer.md)): design accepted, implementation not started. The sealer will build each Segment by external merge sort, so its memory stops growing with the journal file ([ADR-0022](decisions/ADR-0022-build-segments-by-external-merge-sort.md), [sealer view](architecture/sealer.md)). Its acceptance protocol is registered; the comparison that chose the algorithm is an exploratory [study](experiments/benchmarks/sealer-study-run-01.md). Merged: the [architecture foundation](milestones/architecture-foundation.md), [verification foundation](milestones/verification-foundation.md), [semantic kernels](milestones/semantic-kernels.md), [history qualification](milestones/history-qualification.md), [delivery and recovery qualification](milestones/delivery-recovery.md), [Linux installation qualification](milestones/linux-installation.md) and [verification tooling](milestones/verification-tooling.md). The remaining target-host runs are in the [qualification runbook](qualification-runbook.md).
++[Standing lab orchestration](experiments/lab-orchestration.md) adopts three
++persistent lab responsibilities with task-based Luna assistance, PI review,
++budget checkpoints and separate workload admission. The coordination policy
++itself changes no qualification gate.
++
++The [development/small lab campaign plan](experiments/benchmarks/dev-small-lab-plan.md)
++now specifies an explicit memory-attribution matrix, first-seal probes, separate
++query/retention cells, mixed-signal integration and deployment-limit tests, with
++staged budgets and profile-use decision rules. Its initial
++[registered screen, run 02](experiments/benchmarks/dev-small-labs-run-02.md)
++completed eight native cells with exact custody/query checks and valid clocks;
++C1-6 was deferred before launch by time/evidence admission limits. With the same
++small offer, Scan increased sampled phase peak server RSS about 7.8x and balanced
++CPU 5.7–8.7x versus query-off. H256 history alone changed RSS/CPU less than 2%;
++with queries it added 53% CPU. Jittered fresh/near-seal development visibility
++maxima were 1.06/1.29 seconds; the near-seal run published one Segment and reached
++338 MiB server HWM. These single-cell results nominate query materialization and
++pending-journal occupancy for Q2a/confirmation; no runtime optimization or release
++qualification follows. Longer lifecycle, mixed signals, tight deployment limits,
++recovery, full builder acceptance and installation retain their prerequisites.
++
++[Coordinated memory/query/recovery investigation](experiments/benchmarks/readiness-labs-run-01.md): three isolated labs prepared experiments; root ran them sequentially under the 20 GiB cgroup envelope. Reconstructed 64 MiB shapes used 32.96–43.74 MiB incremental builder heap, with exact ordered rows. The large-row checker failed on physical filter-group counts; retained-file validation supports a checker error, and the original failure remains recorded. Nine selected recovery tests passed. Query-off recovered 300,000 logs at 63.41 MiB sampled server RSS, but a 380-second wall/monotonic discontinuity invalidated Scan. The missing-phase annotation repair and independent accounting audit passed; reviewed failure scratch was cleaned after compact evidence preservation. The full fast profile passed sixteen checks and failed only a private-fixture Clippy lint; targeted formatting/Clippy passed after correction. Walk, scaling, long lifecycle and supported installation remain deferred; no new optimization or release qualification is claimed.
++
++[Development/small consumer observation](experiments/benchmarks/dev-small-observation-run-01.md): both finite native profiles met their criteria with concurrent HTTP queries; 3,000 / 300,000 exact logs, no retries, and collection-to-ACK-observation p99 27.8 / 54.2 ms. Server RSS peaked at 30.6 / 484.5 MiB; successful Spool acceptance was about 1 / 20 batches/s while payloads grew through the burst. Phase CPU, IO, cgroup memory, backlog and sampled query visibility are recorded. Small's absent-text query p99 was 725 ms. Development did not reach a seal; soak, tighter deployment budgets and a controlled query-plan comparison remain unrun. The separate protocol commit is blocked by read-only Git metadata; its pre-run content/hash is preserved with the evidence.
++
++Bounded-sealer speed follow-up: the [registered local comparison](experiments/benchmarks/sealer-speed-run-01.md) replaces JSON scratch rows with a compact binary representation and avoids unnecessary intermediate run rewrites. Across three alternating pairs per size, builds improved 10.2% at 65 MiB and 20.7% at 261 MiB, with unchanged incremental heap (30.8 / 32.1 MiB) and byte-identical final files. All 168 pending-journal first-page answers matched. Complete materialization still takes seconds; near-instant builds and native ACK-to-queryable latency are not established. Full workload-shape acceptance and soak remain unfinished.
++
++Milestone **bounded sealer** ([record](milestones/bounded-sealer.md)): candidate implemented on `milestone/streaming-segment-output`; the full registered acceptance and soak remain unrun. The production build path now uses external merge sort. The [finite ingestion-memory screen](experiments/benchmarks/ingestion-memory-run-01.md) measured about 90% less incremental builder heap at 64 MiB and 97% less at 256 MiB, with increased build time. Exact pending-journal answers were checked before, during and after sealing. These results do not establish a process-wide memory ceiling or ACK-to-queryable latency ([ADR-0022](decisions/ADR-0022-build-segments-by-external-merge-sort.md), [sealer view](architecture/sealer.md)). Its acceptance protocol is registered; the comparison that chose the algorithm is an exploratory [study](experiments/benchmarks/sealer-study-run-01.md). Merged: the [architecture foundation](milestones/architecture-foundation.md), [verification foundation](milestones/verification-foundation.md), [semantic kernels](milestones/semantic-kernels.md), [history qualification](milestones/history-qualification.md), [delivery and recovery qualification](milestones/delivery-recovery.md), [Linux installation qualification](milestones/linux-installation.md) and [verification tooling](milestones/verification-tooling.md). The remaining target-host runs are in the [qualification runbook](qualification-runbook.md).
+ 
+ Research in step with it ([design consolidation](research/design-consolidation.md) collapses it into decisions with their gates; [experiment durability](research/experiment-durability.md) says what of the research loop is reproducible from a clean clone): the [storage direction](research/storage-direction.md) (one record spine for logs, metrics and traces; measured on real text in [storage layout run 01](experiments/benchmarks/storage-layout-run-01.md)), the proposed [Observation record and FOB1 codec](decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md) ([fabric-observation](../crates/fabric-observation/src/lib.rs), tested and fuzzed, wired to nothing), the [executable query specification](formal/query-semantics.md) in the core with its theorems as properties and bounded proofs, and the query prototypes of ledger [L-04](research/ledger.md#l-04-the-threshold-algorithm-over-source-bounds) and [L-05](research/ledger.md#l-05-budget-bounded-answers-with-sound-partial-completeness), with the [optimality bounds](research/optimality-bounds.md) measuring each against its floor: the prototypes within 2× of every measured bound on the fixtures, the tail answered from canonical blocks at 0.26 to 0.28 of stock on its slowest shape (0.08 with a trigram filter per block), and a node-presence set shown to have nothing to skip below fleet scale; a trigram filter per row group (ledger [L-25](research/ledger.md#l-25-a-text-filter-per-row-group)) takes a no-match text search on Segments from about 120 ms to under 10 and awaits a product-contract decision. All of it is research: no prototype is wired into the product.
+ 
+@@ -60,9 +87,11 @@ Crates: `fabric-core` (core), `fabric-ports` (ports), `fabric-app` (app), `fabri
+ 
+ ## Known risks
+ 
++- Owner-directed workstation/remote discipline: future local builds and experiments use `/run/media/kmosoti/data/FabricO11y` through the 20 GiB cgroup launcher, with per-invocation cleanup receipts and retained failure evidence. Six containment/storage checks exited 0; they do not measure forwarding performance. Remote hosts require their own measured budgets and cleanup on both ends; no remote workload was started for this update. Bun documentation CI is removed during experimentation; its three checks remain in the optional `documentation` profile (policy commit `e489e2f`). CI selection validation exited 0, not a full build pass.
++- Fedora workstation protection: the kernel reported a global OOM on 2026-10-04 at 10:21:20, killing `query_spec-bcbf` at 25,047,920 KiB anonymous RSS during the mutant continuation. The continuation remains interrupted. Project workloads must now use the [bounded cgroup launcher](CONTRIBUTING.md#resource-containment), covering builds, tests, harnesses and validators together; probe-only address-space limits were insufficient. The exact runaway allocation mechanism remains unverified; containment does not qualify product memory bounds.
+ - Qualification is outstanding (below); earlier passing measurements belong to earlier revisions.
+ - One host runs server, simulator and harness in fleet tiers; CPU contention distorts p99.
+-- The server's sealer holds about ten times a journal file in memory while it builds a Segment, and the allocator keeps it: server RSS plateaus near 536 MiB after the first seal at 100 identities ([soak run 01](experiments/benchmarks/soak-run-01.md)). [ADR-0022](decisions/ADR-0022-build-segments-by-external-merge-sort.md) accepts a bounded replacement; it is not implemented.
++- The historical whole-file sealer caused retained RSS growth ([soak run 01](experiments/benchmarks/soak-run-01.md)). The candidate replacement now limits major payload buffers and measured about 31–32 MiB incremental builder heap on 65–261 MiB journals in the [finite screen](experiments/benchmarks/ingestion-memory-run-01.md). Full workload-shape acceptance and soak remain unrun; query tail decoding, metadata and concurrent workers remain independent process-memory risks.
+ - An ineffective I/O controller on WSL must be reported, never counted as enforcement.
+ 
+ ## Outstanding qualification
+diff --git a/docs/LEARNING_PATH.md b/docs/LEARNING_PATH.md
+index b6524df..3ab91a9 100644
+--- a/docs/LEARNING_PATH.md
++++ b/docs/LEARNING_PATH.md
+@@ -133,13 +133,20 @@ Try it:
+ 
+ ## Stage 11 — Sort more data than fits in memory
+ 
+-**Status: bounded-sealer milestone, design only.** The sealer turns a 64 MiB journal file into a Segment, and today it needs about 356 MiB to do it. The fix is an algorithm older than databases: sort in pieces, then merge.
++**Status: candidate implemented; full milestone acceptance incomplete.** The [finite screen](experiments/benchmarks/ingestion-memory-run-01.md) compares the retained whole-file reference with capped runs and merging. Sort in pieces, then merge, trading extra disk work for lower live heap.
+ 
+ 1. Read the file as a stream, a frame at a time, and cut the rows into **runs** of a fixed size.
+ 2. Sort each run in memory and write it to a scratch file.
+-3. Open every run and keep only its front row in memory, in a min-heap. Pop the smallest, write it, and refill from the run it came from.
++3. Merge at most sixteen runs at once, keeping their front rows in a min-heap. Use multiple passes when there are more runs. Pop the smallest, write it, and refill from that run.
+ 
+-Memory is one run plus one row per run, whatever the file's size. The [sealer view](architecture/sealer.md) has the diagram, the steps and a ten-row worked example.
++The [speed investigation](experiments/benchmarks/sealer-speed-run-01.md) shows
++why representation and scheduling matter even after choosing the algorithm:
++private binary rows avoid JSON parsing, and eighteen runs need only three
++merged into one to reach sixteen. Keeping all untouched runs on disk saves
++work without raising the live-row limit. Try the boundary cases with
++`python3 tools/resource_group.py -- cargo test -p fabric-server segment::bounded`.
++
++Major payload buffers are capped per sorted table, with at most sixteen merge heads. A decoded frame, writer metadata and filters have additional costs; the measured screen is not a universal heap proof. The [sealer view](architecture/sealer.md) has the diagram, the steps and a ten-row worked example.
+ 
+ The Rust ideas:
+ 
+@@ -156,7 +163,7 @@ Try it:
+ 
+ 1. Run the [worked example](architecture/sealer.md#a-worked-example) by hand with a run size of three. How many runs are there? How many rows does the merge hold at once?
+ 2. Read the [study's heap table](experiments/benchmarks/sealer-study-run-01.md#results). Why did a limit of 16,384 rows fail on 16 KiB rows, and what does the design count instead?
+-3. After the milestone merges, run `cargo test -p fabric-server` and find the test that fails when a run is kept in memory.
++3. Run `python3 tools/resource_group.py -- cargo test -p fabric-server segment::bounded::tests` and inspect stable-tie, floating-point and multi-pass merge regressions in `segment/bounded.rs`. The full registered retain-runs mutant remains unrun.
+ 
+ ## Stage 12 — One record for every signal, built from the bytes up
+ 
+@@ -213,3 +220,17 @@ For each new component, answer these in plain language before coding:
+ **Streaming output experiment.** The [table writer](../crates/fabric-server/src/segment.rs) on the streaming-output branch uses a buffered sink and hashes only bytes accepted by `Write`. It flushes before file sync. [Run 01](experiments/benchmarks/streaming-output-local-run-01.md) shows why removing a whole-file output buffer can preserve every byte and still miss a peak-heap target: decoded rows and Arrow arrays remain. Lower RSS and lower live heap are different observations.
+ 
+ The [Fedora refinement protocol](experiments/benchmarks/performance-refinement-fedora-protocol.md) connects typed counter inputs to fidelity: an `i64` retains information a premature `f64` conversion loses. Structural maps define identity; cached display keys define presentation order. The independent rate oracle and HTTP/Segment/restart regression check these two responsibilities separately.
++
++The [development/small observation](experiments/benchmarks/dev-small-observation-run-01.md)
++connects custody transitions to performance units: source logs offered, successful
++Spool batches, and server ACKs are different counters. Larger batches can carry
++three times the log rate without increasing batch rate. Keep epoch nanoseconds
++as integers when assigning phases; its independent accounting check found a
++floating-point boundary error even though the native workload preserved all data.
++
++The [matched native lab screen](experiments/benchmarks/dev-small-labs-run-02.md)
++connects Rust ownership to allocation lifetime: bounded builder buffers do not
++bound query-owned decoded rows, concurrent copies or allocator-retained RSS.
++Compare query-on/off with and without history before attributing process memory
++to ingestion. Explain why a 1 Hz publication sample brackets a transition without
++proving that a particular request overlapped its builder.
+diff --git a/docs/ROADMAP.md b/docs/ROADMAP.md
+index cdfdaf3..60ccb6f 100644
+--- a/docs/ROADMAP.md
++++ b/docs/ROADMAP.md
+@@ -11,7 +11,7 @@ Planning is by milestone: a stable engineering objective with its own branch `mi
+ | 5 | Delivery and recovery qualification | `milestone/delivery-recovery` | Run the registered [outage](experiments/benchmarks/alpha-phase5-outage-protocol.md) and [stress](experiments/benchmarks/alpha-phase5-stress-protocol.md) protocols; register and run a soak | [milestone record](milestones/delivery-recovery.md): outage and stress passing on a four-CPU host; the soak failed its RSS-growth gate, with a next action |
+ | 6 | Linux installation qualification | `milestone/linux-installation` | Running-installation acceptance on a disposable systemd host | [milestone record](milestones/linux-installation.md): inconclusive in a legacy-hierarchy container; a unified-hierarchy host decides the gate |
+ | 7 | Verification tooling | `milestone/verification-tooling` | Property tests, Kani proofs of the core, fuzzing of untrusted-input decoders, turmoil network simulation, a cargo-deny dependency policy, a coverage report and Clippy on every crate ([ADR-0021](decisions/ADR-0021-add-property-model-fuzz-and-simulation-checks.md)) | [milestone record](milestones/verification-tooling.md): merged |
+-| 8 | Bounded sealer | `milestone/bounded-sealer` | Build each Segment by external merge sort with memory that does not grow with the journal file, producing the same Segments and the same answers; rerun the registered soak unchanged ([ADR-0022](decisions/ADR-0022-build-segments-by-external-merge-sort.md)) | [milestone record](milestones/bounded-sealer.md): design accepted, implementation not started |
++| 8 | Bounded sealer | `milestone/bounded-sealer` | Build each Segment by external merge sort with memory that does not grow with the journal file, producing the same Segments and the same answers; rerun the registered soak unchanged ([ADR-0022](decisions/ADR-0022-build-segments-by-external-merge-sort.md)) | [milestone record](milestones/bounded-sealer.md): candidate implemented; finite memory/query screen recorded, full acceptance and soak unrun |
+ | 9 | Release readiness | `milestone/release-readiness` | Operator reference, recovery guide, checksums; every gate in the [capability ledger](QUALIFICATION.md#capability-ledger) has a recorded command, exit and evidence; then a tag | the ledger |
+ 
+ The historical source branch `alpha/controlled-linux-collection` stays available until its work is integrated; it is not deleted automatically.
+diff --git a/docs/architecture/retained-history.md b/docs/architecture/retained-history.md
+index 1c761b6..1ca2ab3 100644
+--- a/docs/architecture/retained-history.md
++++ b/docs/architecture/retained-history.md
+@@ -56,7 +56,20 @@ The sealer attempts ordered reclaim before starting pending builds and after eac
+ 
+ On the experimental streaming-output branch, Parquet table bytes flow through a 256 KiB buffered file sink with incremental hashing and flush-before-sync. The [local pilot](../experiments/benchmarks/streaming-output-local-run-01.md) preserved exact output but missed its primary heap target; decoded Groups, projected rows and Arrow arrays still scale with the whole file.
+ 
+-Today the sealer builds a Segment from the whole journal file in memory (a peak of about 5.5 times the file). [ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md) accepts a bounded external merge sort that produces the same Segment; the [sealer view](sealer.md) describes it. This contract does not change.
++The current branch routes sealer workers through `segment::build_sealed`: one frame, byte-capped sorted runs, at most sixteen merge readers and bounded Arrow chunks. The whole-file `segment::build` remains the differential reference. The [finite screen](../experiments/benchmarks/ingestion-memory-run-01.md) measures the memory/time trade-off; full bounded-sealer acceptance remains unrun. The [sealer view](sealer.md) describes the candidate. Query reads include active and uncovered sealed journals, so publication is not a prerequisite for visibility. Query tail decoding and metadata still have independent memory costs. No 30-second freshness guarantee has been added.
++
++The subsequent [speed screen](../experiments/benchmarks/sealer-speed-run-01.md)
++uses compact private spill records and avoids rewriting runs unnecessarily.
++It retains the same table bytes and query contract on its measured fixtures;
++fast Segment materialization and ACK-to-queryable latency remain separate metrics.
++
++The [native lab screen](../experiments/benchmarks/dev-small-labs-run-02.md)
++compares fresh/H256 history with Scan on/off under matched small offers. Scan
++raised sampled phase peak RSS about 7.8x; stored history mainly added query CPU.
++These finite observations nominate query row materialization for further study;
++they select no default or new mechanism. Jittered development probes returned
++all selected tags before/after a first publication, with exact quiescent answers;
++the sampled publication bracket does not prove overlap with a running builder.
+ 
+ ## Invariants
+ 
+diff --git a/docs/architecture/sealer.md b/docs/architecture/sealer.md
+index 3f9f6bb..7853499 100644
+--- a/docs/architecture/sealer.md
++++ b/docs/architecture/sealer.md
+@@ -1,12 +1,12 @@
+ # Sealer
+ 
+-**Status: accepted design, not yet implemented** ([ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md)). Today's sealer builds each Segment in memory; [Current behavior](#current-behavior) says how. Nothing below is **Implemented** or **Tested** in the [evidence-state](../QUALIFICATION.md#evidence-states) sense until the [bounded-sealer milestone](../milestones/bounded-sealer.md) records its commands and exits. The design changes no persisted format and no query answer.
++**Status: candidate implemented on the active branch; full acceptance incomplete** ([ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md)). Production workers use `segment::build_sealed`; the whole-file builder remains a differential reference. The [finite screen](../experiments/benchmarks/ingestion-memory-run-01.md) records measured heap/time and pending-journal query evidence. The registered four-shape suite, crash-stage suite, mutants and soak remain unrun. Schemas, Batch custody and publication order are unchanged.
+ 
+ The sealer is part of [retained history](retained-history.md). It runs after ingestion has finished with a record: the [delivery](delivery.md) path has already synced the Batch to the journal and sent the ACK. The sealer never delays an ACK directly. It shares CPUs and the disk with the commit thread, and the journal cannot shrink until it finishes.
+ 
+ ## The five questions
+ 
+-1. **What does it receive and produce?** It receives one sealed server journal file, `sealed-<label>.faj`, a frame log of Groups of Batches. It produces one Segment, `segments/seg-<label>`: four Zstd Parquet files and a manifest ([ADR-0020](../decisions/ADR-0020-store-sealed-history-as-parquet-segments.md)).
++1. **What does it receive and produce?** It receives one sealed server journal file, `sealed-<label>.faj`, a frame log of Groups of Batches. It produces one Segment, `segments/seg-<label>`: four mandatory Zstd Parquet files, optional spans and a manifest ([ADR-0020](../decisions/ADR-0020-store-sealed-history-as-parquet-segments.md)).
+ 2. **What promise does it make?** A query over the Segment returns what a query over the journal file would, with the same rows in the same order. A Segment is visible only when complete.
+ 3. **Who owns the data before and after?** The journal file belongs to the journal until the Segment's rename commits. Then the commit thread checkpoints stream state and deletes the file. Until the rename, nothing the sealer does can lose a record.
+ 4. **What can fail, and how is it visible?** A read error, a corrupt frame, a full disk or a crash. The build directory is removed, the journal file stays, and the error is logged on every pass until a retry succeeds ([failure states](#failure-states)).
+@@ -21,13 +21,14 @@ flowchart LR
+         Sealed[("Sealed journal file")]
+         Reclaim["Commit thread: checkpoint, delete file"]
+     end
+-    subgraph Sealer["Sealer thread, one build at a time"]
++    subgraph Sealer["Sealer worker, one file per build"]
+         Reader["Frame reader: one frame, at most 4 MiB"]
+         Router["Router: one Group, rows extracted per entry"]
+         LogRuns["Log run builder: sort at 32,768 rows or 16 MiB"]
+         MetricRuns["Metric run builder: sort at 32,768 rows or 16 MiB"]
++        SpanRuns["Span run builder: sort at 32,768 rows or 16 MiB"]
+         Runs[("Spill runs in .building-label, not synced")]
+-        Merge["Merge: heap of one row per run"]
++        Merge["Merge: at most 16 heads, skip unnecessary rewrites"]
+         Chunker["Raw Batches and gaps: journal order, 4 MiB chunks"]
+         Writers["Table writers: row group at 8,192 rows or 8 MiB, SHA-256 while writing"]
+     end
+@@ -37,20 +38,22 @@ flowchart LR
+     Sealed --> Reader --> Router
+     Router -->|log rows| LogRuns
+     Router -->|metric points| MetricRuns
++    Router -->|spans| SpanRuns
+     Router -->|entries and gaps| Chunker
+     LogRuns -->|sorted run| Runs
+     MetricRuns -->|sorted run| Runs
++    SpanRuns -->|sorted run| Runs
+     Runs --> Merge
+     Merge -->|rows in contract order| Writers
+     Chunker --> Writers
+-    Writers -->|four Parquet files and the text filter, manifest last| Building
++    Writers -->|four mandatory tables, optional spans, both filters, manifest last| Building
+     Building -->|sync, then rename| Segment
+     Segment -->|then| Reclaim
+     Reclaim -->|deletes| Sealed
+     Segment --> Retention
+ ```
+ 
+-Reading the diagram: rows for the two sorted tables (logs and metrics) take the long road through sorted runs on disk and a merge. The raw Batches and the gaps keep journal order, so they go straight to their writers. Everything is a stream except the two run builders, and those are capped.
++Reading the diagram: rows for the three sorted tables (logs, metrics and spans) take the long road through sorted runs on disk and a merge. The raw Batches and the gaps keep journal order, so they go straight to their writers. Everything is a stream except the three run builders, and those are capped.
+ 
+ The code stays in `fabric-server`, which is a composition root that holds its adapters ([system view](system.md#layers)). External sorting is a mechanism, not domain meaning: the order it must produce is already the contract's, and the retention decision stays in `fabric-core`. The design adds no crate, no dependency, no port and no configuration key.
+ 
+@@ -67,24 +70,28 @@ for each frame in the file, in order:    one frame in memory, at most 4 MiB
+         rows = extract(group_sequence, entry)
+         gaps_writer.write(rows.gaps)
+         for each log row:    log_run.push(row)           32,768 rows or 16 MiB
++        for each span:       span_run.push(span)        32,768 rows or 16 MiB
+         for each metric:     metric_run.push(point)      32,768 rows or 16 MiB
+         when a run is full:  sort it by key, spill it as a run file
+     update the manifest totals (first and last group, record count,
+         receive-time bounds, newest time per node)
+ spill the last partial run of each table
+-for each of logs, metrics:
+-    heap = one row from the front of each run
++for each of logs, metrics, spans:
++    merge contiguous batches of at most 16 runs until at most 16 remain
++        rewrite only enough runs to reach 16 when possible
++        rename untouched runs into the next level
++    heap = one row from the front of each remaining run
+     while heap is not empty:
+         row = heap.pop_min()
+         group_buffer.push(row)
+         if the buffer holds 8,192 rows or 8 MiB: write it as one row group
+         heap.push(next row of the same run)
+     delete the runs
+-close the four writers (sync each file), write and sync the manifest,
++close the table writers (sync each file), write and sync the manifest,
+ sync the directory, rename to seg-L, sync the segments directory
+ ```
+ 
+-The key is `(time, node identity, sequence, index)`, where time is `observed_ns` for logs and `time_ns` for metric points. It is unique for every row, so the merged order does not depend on how rows fell into runs.
++The key is `(time, node identity, sequence, index)`, where time is `observed_ns` for logs and `time_ns` for metric points. Stable sorting and earlier-run tie precedence preserve journal order even for repeated keys.
+ 
+ ### A worked example
+ 
+@@ -107,7 +114,11 @@ The output is `0 1 2 3 4 5 6 7 8 9`, in three row groups with disjoint time rang
+ 
+ Sorting each row-group-sized chunk alone is the same pipeline without the merge. It is the fastest and smallest option, but it leaves row groups whose time ranges overlap whenever rows arrive out of order, such as when a node comes back from an outage and sends its backlog. A query skips row groups by their time range, so overlapping ranges make every later query read more, for as long as the Segment lives. The merge buys disjoint ranges. The [study](../experiments/benchmarks/sealer-study-run-01.md) measured the difference: up to 5.7 times more rows read.
+ 
+-## Budgets
++## Historical prototype budgets
++
++These figures belong to the original two-sorted-table prototype. Current
++three-signal buffers and metadata limits are described under Current behavior;
++current finite measurements are in the linked run records.
+ 
+ | Resource | Design | Measured on the prototype |
+ | --- | --- | --- |
+@@ -133,7 +144,7 @@ sequenceDiagram
+     S->>J: read frames in order, once
+     S->>B: spill sorted runs, no sync
+     Note over S,B: Crash or error here: the journal file is intact, the build directory is removed, the next pass starts over
+-    S->>B: merge runs into logs and metrics, write Batches and gaps
++    S->>B: merge runs into logs, metrics and spans, write Batches and gaps
+     S->>B: delete the runs
+     S->>B: sync each table file as it closes
+     S->>B: write the manifest, sync it, sync the directory
+@@ -171,7 +182,20 @@ These are claims of the design. The milestone assigns each a check, and the [ver
+ 
+ ## Current behavior
+ 
+-Until the milestone merges, `segment::build` reads the whole file into memory, clones every entry, extracts all rows, sorts them in one pass and builds each Parquet file in a buffer. The peak is about 5.5 times the journal file (356 MiB for 64 MiB), and the allocator keeps it afterwards ([soak run 01](../experiments/benchmarks/soak-run-01.md)). The output is the format this design keeps.
++The candidate reads one encoded frame (at most 4 MiB), releases that payload after decoding, and processes entries individually. Three sorted run buffers each stop at 32,768 rows or 16 MiB estimated owned bytes. Raw Batch/gap chunks use 4 MiB; sorted output chunks use 8,192 rows or 8 MiB, with an explicit Parquet flush per chunk. Merge fan-in is sixteen with multi-pass compaction. Run buffers are released before merging. A cleanup guard removes owned build directories on errors while leaving the input journal intact. Floating-point values in private spill files are encoded as bits.
++
++The [speed investigation](../experiments/benchmarks/sealer-speed-run-01.md)
++replaces JSON scratch records with compact binary scalars and length-prefixed
++UTF-8. At a fan-in boundary, only enough contiguous runs are merged to reach
++sixteen; other run files move by rename. For eighteen runs this merges three
++and carries fifteen forward, instead of rewriting eighteen. Stable ties,
++table chunks, filters and publication ordering are preserved. The private
++[codec](../../crates/fabric-server/src/segment/bounded/spill.rs) rejects invalid
++lengths, UTF-8, scalar tags, duplicate attributes and trailing bytes.
++
++These are payload-buffer limits, not a universal process bound: a decoded frame can expand, large individual rows can exceed a chunk target, and node freshness, filters and Parquet metadata grow. Each concurrent worker owns its buffers. Query Scan still decodes uncovered journal Groups, and Walk keeps a tail index. The [finite screen](../experiments/benchmarks/ingestion-memory-run-01.md) measured one builder with shuffled 1 KiB logs, not all those costs together.
++
++Active and uncovered sealed journals are query sources before Segment publication. The owner's 30 seconds after ACK is experimental processing headroom, not a deliberate delay or a changed freshness contract. The [native lab screen](../experiments/benchmarks/dev-small-labs-run-02.md) records sampled source-write and ACK-stdout-observation to visibility around a first publication. These are polling bounds, not direct durability-to-queryable instrumentation. Its Scan/query-off matrix nominates query materialization as a separate memory cost; it does not replace builder heap acceptance.
+ 
+ Since [ADR-0025](../decisions/ADR-0025-carry-traces-as-a-third-signal.md) the sealer builds up to `seal_workers` Segments at once (default half the CPUs, one to four), one thread per journal file, because a Segment depends only on its own file. Journal files are still reclaimed strictly oldest first, and not past the first file whose build failed, so the commit thread's checkpoint-then-delete order and the replay rules are unchanged. Peak memory is the per-build peak times the workers, which is why the default stops at four under the server's 3 GiB ceiling until this design's flat-memory build lands.
+ 
+@@ -181,3 +205,4 @@ Since [ADR-0025](../decisions/ADR-0025-carry-traces-as-a-third-signal.md) the se
+ - [Storage](storage.md) (the frame log and the journal)
+ - [ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md) and the [study](../experiments/benchmarks/sealer-study-run-01.md)
+ - [Bounded-sealer milestone](../milestones/bounded-sealer.md)
++- [Coordinated lab investigation](../experiments/benchmarks/readiness-labs-run-01.md): finite shape measurements, physical filter-layout validation and remaining acceptance gaps.
+diff --git a/docs/architecture/spindle.md b/docs/architecture/spindle.md
+index feceec6..bbd7373 100644
+--- a/docs/architecture/spindle.md
++++ b/docs/architecture/spindle.md
+@@ -31,3 +31,10 @@ The prefix witness detects an ordinary same-inode replacement whose first witnes
+ `fabric-node` takes one local config path for `collect` (one cycle) or `run` (repeated cycles at interval boundaries). In `run`, SIGTERM or SIGINT ends the loop after the current cycle. If a cycle cannot commit, the node writes a `coverage-unknown` marker holding the attempt time, by synced rename; an existing marker it cannot read still means coverage is unknown, reported as "since an unrecorded time"; the next committed batch carries one `coverage unknown since <ns>` gap and the marker is then removed. A full spool keeps failing until space exists, so the notice appears only once a later batch commits. The config values are a spool path, selected log paths, metric interval, spool byte ceiling and, optionally, a delivery target given by `server_url`, `server_ca` and `token_file` together. With a target, the server's [central control](control-plane.md) may replace the log paths and interval; the node validates that view with the same rules, stores it as `applied-config.json` and runs it, including after a restart while the server is down. `run` samples metrics on the interval and reads logs every second, committing a logs-only batch only when there are new lines or gaps. With a target, `run` delivers pending batches between polls, one at a time, backing off from 250 ms to 5 s after a failed attempt; `collect` never sends. The cycle line reports `acked_through`. File-loaded and directly constructed configs use the same validation and log-path normalization before opening a spool. `fabricctl inspect` reads the same config to report journal identity, committed batch/metric/log counts, OTLP payload bytes, used bytes and coverage status. Inspection is read-only and can see an incomplete suffix during a concurrent append; it does not repair the journal. An in-progress marker under a live writer lock makes inspection retryable. A dead writer's in-progress marker reports `interrupted_append=true` with the counts reopen will keep. A recorded `recovery-required` reports that status and file size, with no records counted as committed. A marker appearing during a scan makes inspection retryable. Counter history holds only the latest complete sampled series, and restart replay holds cursors only for currently configured paths, so obsolete boots/devices and removed log sources do not accumulate in memory. Remote configuration arrives through [central control](control-plane.md). The [qualification ledger](../QUALIFICATION.md#capability-ledger) and [storage](storage.md) set the durable and qualification boundaries.
+ 
+ The [native scaled-volume pilot](../experiments/benchmarks/native-scaled-spindle-run-01.md) exercised this collection/Spool/native-sender path with 20 real Spindles. All 350,000 / 3.5 million source logs survived exact recovery. Medium met finite criteria; enterprise timing failed despite small node RSS, with backlog accumulating in original app files. Collection-to-ingestion latency therefore does not substitute for source-file-to-ingestion latency; no many-host or sustained-capacity qualification follows.
++
++The [development/small consumer observation](../experiments/benchmarks/dev-small-observation-run-01.md)
++measures successful Spool cycle output separately from delivery attempts and
++server ACKs, alongside CPU, memory, backlog and live HTTP queries. A successful
++cycle is an observation after local durable append; the ACK line precedes local
++ACK-cursor persistence. Neither line exposes a complete Spool append-attempt
++denominator. These measurement boundaries add no new custody transition.
+diff --git a/docs/architecture/system.md b/docs/architecture/system.md
+index d29d072..dabe0bb 100644
+--- a/docs/architecture/system.md
++++ b/docs/architecture/system.md
+@@ -49,7 +49,7 @@ The canonical source is [system.mmd](../diagrams/system.mmd).
+ | Spool | Durable `FAB1` frame log of Batches with an ACK cursor and whole-file reclaim | [src/spindle/spool.rs](../../src/spindle/spool.rs), [fabric-frame](../../crates/fabric-frame/src/frame.rs) | [storage](storage.md) |
+ | Delivery | One Batch in flight per Strand, exact stored bytes, ACK only after durable commit | [fabric-core delivery](../../crates/fabric-core/src/delivery.rs), [fabric-app delivery](../../crates/fabric-app/src/delivery.rs), [store](../../crates/fabric-server/src/store.rs) | [delivery](delivery.md) |
+ | Server journal | Grouped two-sync commits, Strand and binding state by replay, checkpoint before reclaim | [store](../../crates/fabric-server/src/store.rs) | [storage](storage.md) |
+-| Retained history | Zstd Parquet Segments, sealing off the commit path, retention by age and bytes | [segment](../../crates/fabric-server/src/segment.rs), [sealer](../../crates/fabric-server/src/sealer.rs) | [retained history](retained-history.md), [sealer design](sealer.md) |
++| Retained history | Zstd Parquet Segments, external-sort sealing off the commit path, retention by age and bytes | [segment](../../crates/fabric-server/src/segment.rs), [bounded builder](../../crates/fabric-server/src/segment/bounded.rs), [sealer](../../crates/fabric-server/src/sealer.rs) | [retained history](retained-history.md), [sealer candidate](sealer.md) |
+ | Query | Log, metric and rate queries with completeness, freshness, gaps and snapshot-bound pages | [query](../../crates/fabric-server/src/query.rs) | [retained history](retained-history.md) |
+ | Control | Enrollment, desired and applied configuration, pause, resume, revoke | [control](../../crates/fabric-server/src/control.rs) | [control](control-plane.md) |
+ | `fabricctl` | Local Spool inspection and the admin HTTPS client | [src/bin/fabricctl.rs](../../src/bin/fabricctl.rs) | [operations](../operations.md) |
+diff --git a/docs/decisions/ADR-0022-build-segments-by-external-merge-sort.md b/docs/decisions/ADR-0022-build-segments-by-external-merge-sort.md
+index ea7fd8d..32bafc3 100644
+--- a/docs/decisions/ADR-0022-build-segments-by-external-merge-sort.md
++++ b/docs/decisions/ADR-0022-build-segments-by-external-merge-sort.md
+@@ -2,12 +2,17 @@
+ 
+ ## Status
+ 
+-Accepted on 2026-10-01 in the bounded-sealer milestone. The owner chose this candidate after an exploratory comparison of seven. The decision is accepted and the implementation has not started: every statement below about what the sealer does after this change describes a design, and the [sealer view](../architecture/sealer.md) says so too.
++Accepted on 2026-10-01 in the bounded-sealer milestone. The owner chose this candidate after an exploratory comparison of seven. A candidate is now implemented on the active branch; the [finite screen](../experiments/benchmarks/ingestion-memory-run-01.md) records limited memory/query evidence, not full milestone acceptance. The decision and registered acceptance below remain unchanged. The [sealer view](../architecture/sealer.md) describes current implementation details, including spans and per-file workers introduced by ADR-0025, and sixteen-way multi-pass merging. The original single-thread, two-sorted-table description below belongs to the decision's historical context; its claimed universal memory bound has not been established.
+ 
+ It changes no bytes. The Segment layout, manifest version, table schemas, row order, row-group size, commit protocol and every reader stay as [ADR-0020](ADR-0020-store-sealed-history-as-parquet-segments.md) and the [retained-history contract](../architecture/retained-history.md) define them.
+ 
+ ## Context
+ 
++Implementation follow-up: the [speed investigation](../experiments/benchmarks/sealer-speed-run-01.md)
++uses compact binary scratch records and rewrites only enough contiguous runs
++to meet fan-in on a partial pass. These refine disposable scratch processing;
++the decision, persistent formats and acceptance protocol below are unchanged.
++
+ The sealer turns each sealed server journal file into a Segment. Today `segment::build` does it in memory, all at once:
+ 
+ - it decodes the whole file into Groups;
+@@ -114,3 +119,4 @@ This decision is falsified by any of these:
+ - [ADR-0018](ADR-0018-accept-work-on-executable-evidence.md) (executable evidence)
+ - [Sealer view](../architecture/sealer.md)
+ - [Sealer study, run 01](../experiments/benchmarks/sealer-study-run-01.md)
++- [Coordinated memory/query/recovery investigation](../experiments/benchmarks/readiness-labs-run-01.md): reconstructed shape evidence and a physical-index-count checker counterexample; full acceptance remains incomplete.
+diff --git a/docs/diagrams/sealer-commit.mmd b/docs/diagrams/sealer-commit.mmd
+index 57833f6..82a94e7 100644
+--- a/docs/diagrams/sealer-commit.mmd
++++ b/docs/diagrams/sealer-commit.mmd
+@@ -8,7 +8,7 @@ sequenceDiagram
+     S->>J: read frames in order, once
+     S->>B: spill sorted runs, no sync
+     Note over S,B: Crash or error here: the journal file is intact, the build directory is removed, the next pass starts over
+-    S->>B: merge runs into logs and metrics, write Batches and gaps
++    S->>B: merge runs into logs, metrics and spans, write Batches and gaps
+     S->>B: delete the runs
+     S->>B: sync each table file as it closes
+     S->>B: write the manifest, sync it, sync the directory
+diff --git a/docs/diagrams/sealer.mmd b/docs/diagrams/sealer.mmd
+index 6ac1ef9..7cfbdf1 100644
+--- a/docs/diagrams/sealer.mmd
++++ b/docs/diagrams/sealer.mmd
+@@ -3,13 +3,14 @@ flowchart LR
+         Sealed[("Sealed journal file")]
+         Reclaim["Commit thread: checkpoint, delete file"]
+     end
+-    subgraph Sealer["Sealer thread, one build at a time"]
++    subgraph Sealer["Sealer worker, one file per build"]
+         Reader["Frame reader: one frame, at most 4 MiB"]
+         Router["Router: one Group, rows extracted per entry"]
+         LogRuns["Log run builder: sort at 32,768 rows or 16 MiB"]
+         MetricRuns["Metric run builder: sort at 32,768 rows or 16 MiB"]
++        SpanRuns["Span run builder: sort at 32,768 rows or 16 MiB"]
+         Runs[("Spill runs in .building-label, not synced")]
+-        Merge["Merge: heap of one row per run"]
++        Merge["Merge: at most 16 heads, skip unnecessary rewrites"]
+         Chunker["Raw Batches and gaps: journal order, 4 MiB chunks"]
+         Writers["Table writers: row group at 8,192 rows or 8 MiB, SHA-256 while writing"]
+     end
+@@ -19,13 +20,15 @@ flowchart LR
+     Sealed --> Reader --> Router
+     Router -->|log rows| LogRuns
+     Router -->|metric points| MetricRuns
++    Router -->|spans| SpanRuns
+     Router -->|entries and gaps| Chunker
+     LogRuns -->|sorted run| Runs
+     MetricRuns -->|sorted run| Runs
++    SpanRuns -->|sorted run| Runs
+     Runs --> Merge
+     Merge -->|rows in contract order| Writers
+     Chunker --> Writers
+-    Writers -->|four Parquet files and the text filter, manifest last| Building
++    Writers -->|four mandatory tables, optional spans, both filters, manifest last| Building
+     Building -->|sync, then rename| Segment
+     Segment -->|then| Reclaim
+     Reclaim -->|deletes| Sealed
+diff --git a/docs/experiments/README.md b/docs/experiments/README.md
+index 3474ce0..7925054 100644
+--- a/docs/experiments/README.md
++++ b/docs/experiments/README.md
+@@ -12,6 +12,9 @@ Product evidence is indexed by capability. Record file names keep their historic
+ | Local medium/enterprise native Spindle volume | [native protocol](benchmarks/native-scaled-spindle-protocol.md), [monitor retry revision 2](benchmarks/native-scaled-spindle-protocol-r2.md) | [run 01](benchmarks/native-scaled-spindle-run-01.md): exact source recovery in both; enterprise timing failed, source backlog measured |
+ | Local medium/enterprise simulation and recovered concurrency | [scaled protocol](benchmarks/medium-enterprise-local-protocol.md), [worker control](benchmarks/recovered-worker-control-protocol.md) | [run 01](benchmarks/scaled-fleet-local-run-01.md): medium passed finite criteria; enterprise timing failed, custody preserved |
+ | Local development and small workloads | [sequential native protocol](benchmarks/dev-small-local-protocol.md) | [run 01](benchmarks/dev-small-local-run-01.md): both finite pilots met their criteria; dual data clocks, exact source recovery, process resources |
++| Development and small with concurrent queries | [observation protocol](benchmarks/dev-small-observation-protocol.md) | [observation run 01](benchmarks/dev-small-observation-run-01.md): phase CPU, Spool/ACK rates, resources and consumer clocks |
++| Coordinated memory, query and recovery labs | [hypotheses and execution plan](benchmarks/dev-small-readiness-plan.md) | [run 01](benchmarks/readiness-labs-run-01.md): memory-layout counterexample, scoped recovery evidence, clock-interrupted query comparison |
++| Development/small memory attribution and availability | [screen protocol](benchmarks/dev-small-labs-screen-protocol.md), [fractional-probe addendum](benchmarks/dev-small-labs-screen-r2.md) | [run 02](benchmarks/dev-small-labs-run-02.md): eight native cells, query CPU/RSS nomination, first publication; C1-6 deferred |
+ | Streaming Segment output | [local pilot protocol](benchmarks/streaming-output-local-protocol.md) | [local run 01](benchmarks/streaming-output-local-run-01.md): primary heap target not met, exact output preserved |
+ | Journal reclaim progress | [local mechanism protocol](benchmarks/journal-reclaim-local-protocol.md) | [local run 01](benchmarks/journal-reclaim-local-run-01.md); mixed-load performance unmeasured |
+ | Recovery and stress | [outage protocol](benchmarks/alpha-phase5-outage-protocol.md), [stress protocol](benchmarks/alpha-phase5-stress-protocol.md), [stress revision 2 for a four-CPU host](benchmarks/stress-protocol-r2.md), [soak protocol](benchmarks/soak-protocol.md) | [outage run 01](benchmarks/outage-run-01.md) (registered protocol, four-CPU host); [stress run 01](benchmarks/stress-run-01.md) (revision 2); [soak run 01](benchmarks/soak-run-01.md) (failed: RSS growth gate) |
+@@ -22,6 +25,17 @@ Frozen reviewer probes, verdicts and parent notes from earlier language-model re
+ 
+ ## Research
+ 
++The [standing lab orchestration](lab-orchestration.md) records the adopted
++budgeted coordination workflow, three persistent lab responsibilities and the
++draft development/small experiment queue. It changes no qualification gate and
++records no new measurements.
++
++The [development/small lab campaign](benchmarks/dev-small-lab-plan.md) details
++the planned experiments, aims, measurements and decision rules, from memory
++attribution and first sealing through recovery, soak and installed integration.
++Its initial [screen](benchmarks/dev-small-labs-run-02.md) has local diagnostic
++results; later campaign experiments and qualification remain separate work.
++
+ The [responsibility experiment design](benchmarks/responsibility-experiment-design.md) specifies parallel preparation versus sequential measurements and preserves a partial initial isolation run. [Revision-2 protocol](benchmarks/responsibility-isolation-protocol-r2.md) and [results](benchmarks/responsibility-isolation-r2-run-01.md) record corrected all-mode preflight, observer calibration and 290 sequential native boundary trials; exact checks passed for that finite screen. Coverage gaps, unstable timing populations and later composite work remain explicit; no shipping defaults were selected.
+ 
+ The [pre-tier responsibility benchmark audit](benchmarks/responsibility-benchmark-audit.md) maps six functional and two supporting groups to current tools, missing measurements, candidate inefficiencies and correctness controls. Full phase/observer attribution is a prerequisite for the next development/small/moderate consumer tests; no new performance result is claimed.
+@@ -30,8 +44,14 @@ The [pre-tier responsibility benchmark audit](benchmarks/responsibility-benchmar
+ 
+ The [workload sizing model](../research/workload-sizing.md) calculates development, small, moderate and enterprise resource budgets from frozen evidence and editable assumptions. It records no new performance measurements.
+ 
++The [ingestion-memory run](benchmarks/ingestion-memory-run-01.md) records a candidate external-sort builder and exact query access to pending journals under separately registered finite screens. It does not complete bounded-sealer acceptance or establish a freshness guarantee.
++
+ Research results do not become product behavior without an ADR.
+ 
++The [bounded sealer speed investigation](benchmarks/sealer-speed-run-01.md)
++profiles the retained-memory candidate and compares private binary spills and
++partial merge passes under a [registered protocol](benchmarks/sealer-speed-protocol.md).
++
+ The [local prototype completion contract](ablation/end-to-end-prototype.md) is closed
+ with linked evidence. [Claude's hypothesis study](ablation/claude-hypotheses.md) traces
+ the original proposals and counterexamples to the later registered experiments.
+diff --git a/docs/experiments/benchmarks/data/performance-refinement-fedora-run-01/mutants.txt b/docs/experiments/benchmarks/data/performance-refinement-fedora-run-01/mutants.txt
+index 6ce96f8..44c911e 100644
+--- a/docs/experiments/benchmarks/data/performance-refinement-fedora-run-01/mutants.txt
++++ b/docs/experiments/benchmarks/data/performance-refinement-fedora-run-01/mutants.txt
+@@ -8,3 +8,12 @@ M-SPOOL-RECLAIM caught             reclaim_keeps_the_file_holding_the_first_unac
+ M-SPOOL-KNOWN  caught             reported_sync_errors_quarantine_and_record_known_failure SPOOL-3 interrupted-append recovery does not clear a known I/O failure
+ M-CTRL-REVOKE  caught             admin_api_configures_pauses_and_revokes_a_polling_node CTRL-2 a revoked identity cannot continue sending
+ M-CTRL-INVALID caught             admin_api_configures_pauses_and_revokes_a_polling_node CTRL-1 an invalid desired configuration does not become active
++M-HIST-CORRUPT caught             a_corrupt_segment_makes_the_answer_incomplete HIST-3 a missing or corrupt Segment never yields a complete answer
++M-HIST-GONE    caught             retention_removes_old_segments_and_stream_state_survives_it HIST-5 a page whose snapshot is no longer retained answers Gone
++M-HIST-RESET   caught             sealed_history_answers_exactly_and_pages_are_stable HIST-6 counter resets produce reset markers, not rates
++M-HIST-SEGMENT caught             journal_and_segment_representations_answer_identically HIST-1 journal and Segment representations answer identically
++M-CTRL-TERMINAL caught             revocation_is_terminal_for_every_request CTRL-2 revocation is terminal
++M-RET-AGE      caught             retention_matches_the_base_on_every_small_history HIST-5 retention deletes only Segments older than the age limit
++M-COL-RESET    caught             counters_preserve_start_then_reset_on_decrease_and_boot_change SPOOL-1 fidelity: a counter decrease starts a new series
++M-COL-CURSOR   caught             cursor_checks_match_the_base_for_every_small_case SPOOL-1 a cursor without a witness never skips a recreated file
++M-PROP-GROUP   caught             a_commit_group_decides_like_one_batch_at_a_time DEL-5 bindings made earlier in a commit group bind later Batches of the same group
+diff --git a/docs/experiments/benchmarks/performance-refinement-fedora-protocol.md b/docs/experiments/benchmarks/performance-refinement-fedora-protocol.md
+index 7d23a57..4860f47 100644
+--- a/docs/experiments/benchmarks/performance-refinement-fedora-protocol.md
++++ b/docs/experiments/benchmarks/performance-refinement-fedora-protocol.md
+@@ -24,7 +24,12 @@ Run the fast profile and documentation check, retaining failures and receipts.
+ Capture CPU model/topology/affinity, RAM/swap, storage/mounts, all ancestor cgroup
+ limits/events, process limits, toolchain and source revision. Compare with the
+ cloud's four CPU equivalents / shared 16 GiB, rather than transferring its numbers.
+-Use repository `target/performance-refinement` for scratch on physical storage;
++Owner-directed storage amendment, 2026-10-04: use
++`$FABRIC_SCRATCH_ROOT/performance-refinement` on the mounted data drive through
++the [resource launcher](../../../tools/resource_group.py), replacing repository
++`target/performance-refinement` for future trial scratch. Keep observations and
++failure evidence before owned-file cleanup, and record the changed filesystem
++when interpreting measurements. Earlier results retain their original storage.
+ `/tmp` on this Fedora host is tmpfs and is unsuitable for storage costs. Do not
+ flush global caches, stop unrelated services or delete unrelated files. Do not
+ run loads on digitalocean-01 while its webserver is serving. Source, producer,
+diff --git a/docs/formal/verification-matrix.md b/docs/formal/verification-matrix.md
+index eae194b..5843ccd 100644
+--- a/docs/formal/verification-matrix.md
++++ b/docs/formal/verification-matrix.md
+@@ -74,9 +74,9 @@ These run on the current head in addition to the Verification column above ([ADR
+ | HIST-5 | the shortest sufficient retention prefix | the same, up to three Segments over full ranges | — | — | M-PROP-RET-BYTES, M-KANI-RET-SATURATE |
+ | HIST-6 | rates only from uninterrupted series | rates finite and non-negative | — | — | CX-RATE-NON-FINITE regression |
+ 
+-## Sealer (design accepted, not implemented)
++## Sealer (candidate implemented, full acceptance incomplete)
+ 
+-Claims of the [sealer design](../architecture/sealer.md) ([ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md)). No check exists yet, so every status is **Not run**; the [milestone](../milestones/bounded-sealer.md) names the check each claim will get, and its mutants are registered in a policy commit before the implementation.
++Claims of the [sealer design](../architecture/sealer.md) ([ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md)). Targeted candidate tests and a [finite memory/query screen](../experiments/benchmarks/ingestion-memory-run-01.md) now exist, but the full registered checks below remain **Not run**; the [milestone](../milestones/bounded-sealer.md) names the check each claim will get, and its mutants are registered in a policy commit before the implementation.
+ 
+ | ID | Contract | Spec | Planned verification | Planned negative control | Status | Unchecked |
+ | --- | --- | --- | --- | --- | --- | --- |
+diff --git a/docs/glossary.md b/docs/glossary.md
+index db29fe7..246a6b9 100644
+--- a/docs/glossary.md
++++ b/docs/glossary.md
+@@ -22,6 +22,7 @@ Terms mean one thing each across code, documents, diagrams and experiments. When
+ | Observation | The proposed one record for a log line, a metric point or a span: the query key `(time_ns, node_id, generation, sequence, index)`, optional trace locators, typed attributes and one signal payload ([ADR-0023](decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md)). Not yet emitted or stored. |
+ | FOB1 | The Observation's canonical block encoding: dictionaries in first-use order, delta-coded columns, a CRC trailer; one byte string per valid block and one block per accepted byte string, so a hash of the bytes is a hash of the records. |
+ | Canonical encoding | An encoding in which `decode(encode(b)) == b` for every valid value and `encode(decode(x)) == x` for every accepted byte string; the decoder rejects every other form. |
++| Sorted run | A private binary scratch file of rows sorted by the query order key. The candidate sealer caps runs by estimated owned bytes and row count, then merges at most sixteen at once, carrying unneeded inputs forward by rename. It is not durable custody. |
+ | Sealer | The server's background thread that turns each sealed journal file into a Segment, then lets the commit thread delete the file, and applies retention. It runs after ingestion and never sits on the ACK path. |
+ | Run | A sorted batch of log rows or metric points, spilled to a scratch file while a Segment is built. Runs are merged into the final table and deleted before the Segment commits; they are not a durable format. |
+ | Retention | Deleting whole Segments, oldest first, when the age or byte limit is exceeded; the retained window is reported with every answer. |
+diff --git a/docs/milestones/bounded-sealer.md b/docs/milestones/bounded-sealer.md
+index 0607e37..82233c1 100644
+--- a/docs/milestones/bounded-sealer.md
++++ b/docs/milestones/bounded-sealer.md
+@@ -1,6 +1,6 @@
+ # Milestone: bounded sealer
+ 
+-Status: **design accepted; implementation not started** ([ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md)). Base: `main` at `58b694d` (verification tooling merged). This milestone replaces how the sealer builds a Segment, so that its memory no longer grows with the journal file. It changes no wire or persisted format and no query answer, and it is not qualification.
++Status: **candidate implemented; full acceptance incomplete**. The [finite ingestion-memory and pending-query screen](../experiments/benchmarks/ingestion-memory-run-01.md) is narrower than the acceptance protocol below; it does not complete BS-1 to BS-9 ([ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md)). Base: `main` at `58b694d` (verification tooling merged). This milestone replaces how the sealer builds a Segment, so that its memory no longer grows with the journal file. It changes no wire or persisted format and no query answer, and it is not qualification.
+ 
+ Why: [soak run 01](../experiments/benchmarks/soak-run-01.md) failed its `no_rss_growth` gate. The sealer's working set, about ten times a journal file, is the analysed cause, and its recorded next action is to bound that working set and rerun the registered soak unchanged.
+ 
+diff --git a/src/spindle/runtime.rs b/src/spindle/runtime.rs
+index 58b1817..25cada8 100644
+--- a/src/spindle/runtime.rs
++++ b/src/spindle/runtime.rs
+@@ -243,6 +243,9 @@ fn metric_request(
+     history: &History,
+     extra: Vec<Metric>,
+ ) -> io::Result<(Vec<u8>, History, usize)> {
++    #[cfg(feature = "phase-probe")]
++    let _phase = fabric_frame::probe::span("native_otlp_metrics_assembly");
++
+     // A complete host sample replaces prior series. Retaining old device or
+     // boot identities would make RAM grow across a bounded spool's lifetime.
+     let mut next = History::new();
+@@ -312,6 +315,9 @@ fn metric_request(
+ }
+ 
+ fn encoded_logs(lines: &[log_source::Line], hostname: &str, boot_id: &str, now: u64) -> Vec<u8> {
++    #[cfg(feature = "phase-probe")]
++    let _phase = fabric_frame::probe::span("native_otlp_logs_assembly");
++
+     let records = lines
+         .iter()
+         .map(|line| LogRecord {
+@@ -803,6 +809,9 @@ impl Spindle {
+     /// One full cycle: host metrics and every configured log. Always commits
+     /// a batch (metrics, lines or at least a gap).
+     pub fn collect_once(&mut self) -> io::Result<Cycle> {
++        #[cfg(feature = "phase-probe")]
++        let _phase = fabric_frame::probe::span("native_collection_inclusive");
++
+         if self.paused() {
+             return Err(io::Error::other("collection is paused by the server"));
+         }
+@@ -836,7 +845,12 @@ impl Spindle {
+             gaps.push(unknown.notice());
+         }
+         let sampled = if include_metrics {
+-            match host::sample(&self.host_paths) {
++            let observation = {
++                #[cfg(feature = "phase-probe")]
++                let _phase = fabric_frame::probe::span("native_host_observation");
++                host::sample(&self.host_paths)
++            };
++            match observation {
+                 Ok(snapshot) => Some(snapshot),
+                 Err(error) => {
+                     gaps.push(bounded_gap(format!("host metrics unavailable: {error}")));
+@@ -880,8 +894,12 @@ impl Spindle {
+             let path = &self.config.logs[(first + index) % count];
+             let name = path.to_string_lossy().to_string();
+             let per_line = name.len() + LOG_LINE_OVERHEAD;
+-            match log_source::read_lines_costed(path, self.cursors.get(&name), remaining, per_line)
+-            {
++            let read = {
++                #[cfg(feature = "phase-probe")]
++                let _phase = fabric_frame::probe::span("native_file_collection");
++                log_source::read_lines_costed(path, self.cursors.get(&name), remaining, per_line)
++            };
++            match read {
+                 Ok(read) => {
+                     log_backlog_bytes = log_backlog_bytes.saturating_add(read.backlog_bytes);
+                     remaining = remaining.saturating_sub(
+diff --git a/tools/bench/run_dev_small.py b/tools/bench/run_dev_small.py
+index 0c11bc0..d8914d0 100644
+--- a/tools/bench/run_dev_small.py
++++ b/tools/bench/run_dev_small.py
+@@ -42,7 +42,15 @@ def compare(expected, seen):
+ 
+ 
+ def footprint(path):
+-    return sum(p.stat().st_size for p in path.rglob('*') if p.is_file())
++    total = 0
++    for p in path.rglob('*'):
++        try:
++            if p.is_file():
++                total += p.stat().st_size
++        except FileNotFoundError:
++            # Concurrent journal/Spool rename and reclaim is normal.
++            continue
++    return total
+ 
+ 
+ def process_stats(pid):
+@@ -52,7 +60,7 @@ def process_stats(pid):
+             'rss_kib': int(status['VmRSS'].split()[0]), 'hwm_kib': int(status['VmHWM'].split()[0])}
+ 
+ 
+-def trial(root, bins, name, server_cpus, node_cpus):
++def trial(root, bins, name, server_cpus, node_cpus, observer=None, query_plan=None):
+     root.mkdir()
+     (root / 'owned').write_text('dev-small protocol run 01\n')
+     nodes_count, per_tick = (1, 1) if name == 'development' else (20, 5)
+@@ -62,6 +70,11 @@ def trial(root, bins, name, server_cpus, node_cpus):
+     (root / 'admin-token').write_text(admin+'\n')
+     conf = root / 'server.conf'
+     conf.write_text(f'listen=127.0.0.1:{port}\ntls_cert={root}/server.pem\ntls_key={root}/server.key\nstate_dir={root}/state\nadmin_token_file={root}/admin-token\njournal_bytes=536870912\njournal_file_bytes=67108864\nretention_s=86400\nretention_bytes=536870912\nseal_workers=1\n')
++    if query_plan is not None:
++        if query_plan not in ('scan', 'walk'):
++            raise ValueError('query_plan must be scan or walk')
++        with conf.open('a') as stream:
++            stream.write(f'query_plan={query_plan}\n')
+     kids, readers, node_events, samples, expected = [], [], {}, [], {}
+     stop = threading.Event()
+     errors = []
+@@ -123,15 +136,18 @@ def trial(root, bins, name, server_cpus, node_cpus):
+                     if any(p.poll() is not None for p in kids):
+                         raise RuntimeError('child exited before shutdown')
+                     size = footprint(root)
+-                    if size > 3*2**30 or shutil.disk_usage(root).free < 4*2**30:
++                    if size > (4 if observer else 3)*2**30 or shutil.disk_usage(root).free < 4*2**30:
+                         raise RuntimeError('disk bound reached')
+                     journal = root/'state/journal'
+                     wall = time.time_ns(); mono = time.monotonic_ns()
+-                    samples.append({'wall_ns': wall, 'mono_ns': mono, 'state_bytes': size,
++                    row = {'wall_ns': wall, 'mono_ns': mono, 'state_bytes': size,
+                         'server': process_stats(server.pid), 'nodes': [process_stats(p.pid) for p in kids[1:]],
+                         'journal_bytes': footprint(journal),
+                         'sealed_files': len(list(journal.glob('sealed-*.faj'))),
+-                        'segments': len(list((root/'state/segments').glob('seg-*')))})
++                        'segments': len(list((root/'state/segments').glob('seg-*')))}
++                    if observer:
++                        row.update(observer.sample(root, kids, node_events))
++                    samples.append(row)
+                 except Exception as e:
+                     errors.append(str(e)); stop.set(); return
+                 stop.wait(1)
+@@ -139,6 +155,8 @@ def trial(root, bins, name, server_cpus, node_cpus):
+         # Startup wait remains bounded and interruptible.
+         stop.wait(5)
+         offer_start = time.monotonic()
++        if observer:
++            observer.start(api, time.time_ns(), nodes_count)
+         with gzip.open(root/'sources.jsonl.gz', 'wt') as src:
+             for tick in range(1800):
+                 stop.wait(max(0, offer_start+tick*.1-time.monotonic()))
+@@ -160,14 +178,20 @@ def trial(root, bins, name, server_cpus, node_cpus):
+                     for tag, body, sha in rows:
+                         expected[tag] = (sha, t, phase)
+                         src.write(json.dumps([tag, sha, t, phase, late_ms])+'\n')
++                    if observer and tick % 50 == 0 and i == (tick//50) % nodes_count:
++                        observer.target(rows[0][0], rows[0][2], t, phase)
+         offer_elapsed = time.monotonic()-offer_start
+         stop.wait(20)
+         if errors:
+             raise RuntimeError('; '.join(errors))
++        if observer:
++            observer.stop()
+         stop.set(); sampler.join(5)
+         for p in kids[1:]: p.send_signal(signal.SIGTERM)
+         for p in kids[1:]: p.wait(timeout=30)
+         for t in readers: t.join(5)
++        if observer:
++            observer.quiescent(api)
+         server.send_signal(signal.SIGTERM); server.wait(timeout=30)
+         if any(p.returncode != 0 for p in kids):
+             raise RuntimeError('nonzero graceful child exit')
+@@ -246,13 +270,21 @@ def trial(root, bins, name, server_cpus, node_cpus):
+                    'non_ack_attempts': retries, 'clock_offset_range_ms': max(offsets)-min(offsets),
+                    'gates': gates, 'passed': all(gates.values()), 'child_exits': [p.returncode for p in kids]}
+         dump(root/'summary.json', summary)
++        if observer:
++            observer.finish(root, summary, samples, node_events)
+         (root/'recovered.jsonl').unlink()  # owned decoded replay; preserve hashes/data clocks instead
+         print(json.dumps({'deployment': name, 'passed': summary['passed'], 'latency_ms': latency_stats['all'], 'server_rss_mib': server_peak}), flush=True)
+         return summary
+     finally:
+         stop.set()
++        if observer:
++            observer.stop()
+         for p in kids:
+             if p.poll() is None: p.kill(); p.wait(timeout=10)
++        for t in readers:
++            t.join(5)
++        if 'sampler' in locals():
++            sampler.join(5)
+         for f in logs:
+             if not f.closed: f.close()
+ 
+diff --git a/xtask/src/mutants.rs b/xtask/src/mutants.rs
+index e9bb8cb..9e9cdb6 100644
+--- a/xtask/src/mutants.rs
++++ b/xtask/src/mutants.rs
+@@ -140,7 +140,10 @@ pub fn run_all(root: &Path, registry: &Path, only: Option<&str>) -> Result<bool,
+     if mutants.is_empty() {
+         return Err("no mutants selected".into());
+     }
+-    let work = root.join("target/semantic-mutants");
++    let work = std::env::var_os("FABRIC_SCRATCH_ROOT")
++        .map(PathBuf::from)
++        .unwrap_or_else(|| root.join("target"))
++        .join("semantic-mutants");
+     let tree = work.join("tree");
+     let cargo_target = work.join("cargo");
+     let logs = work.join("logs");

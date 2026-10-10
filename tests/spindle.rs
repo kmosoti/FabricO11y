@@ -18,9 +18,11 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Self {
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("target")
-            .join(format!("spindle-test-{}-{id}", std::process::id()));
+        let path = PathBuf::from(
+            std::env::var_os("FABRIC_SCRATCH_ROOT")
+                .expect("run tests through the resource launcher"),
+        )
+        .join(format!("spindle-test-{}-{id}", std::process::id()));
         fs::create_dir(&path).unwrap();
         Self(path)
     }
@@ -567,6 +569,11 @@ fn sigterm_stops_run_between_cycles_and_leaves_a_reopenable_spool() {
         .unwrap();
     let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
     assert!(lines.next().unwrap().unwrap().starts_with("batch=1 "));
+    // The CLI now pins its own diagnostics. Compare exact producer bodies,
+    // rather than assuming this process collects only the application line.
+    // The later stopping marker is intentionally outside the committed prefix.
+    let diagnostics = fs::read_to_string(scratch.path("spool/diagnostics/spindle.log")).unwrap();
+    assert!(diagnostics.contains("event=process_sample"));
     // SAFETY: kill with a valid child pid and signal number.
     assert_eq!(unsafe { libc::kill(child.id() as i32, libc::SIGTERM) }, 0);
     let started = std::time::Instant::now();
@@ -584,7 +591,30 @@ fn sigterm_stops_run_between_cycles_and_leaves_a_reopenable_spool() {
     let cfg = Config::load(&conf).unwrap();
     let report = inspect(&cfg).unwrap();
     assert!(!report.interrupted_append && !report.recovery_required);
-    assert_eq!(report.log_records, 1);
+    let mut expected = vec!["one".to_owned()];
+    expected.extend(diagnostics.lines().map(str::to_owned));
+    let mut actual: Vec<_> = batches(&cfg)
+        .into_iter()
+        .flat_map(|batch| {
+            ExportLogsServiceRequest::decode(batch.logs.as_slice())
+                .unwrap()
+                .resource_logs
+                .into_iter()
+                .flat_map(|resource| resource.scope_logs)
+                .flat_map(|scope| scope.log_records)
+                .map(|record| {
+                    let Some(any_value::Value::StringValue(body)) = record.body.unwrap().value
+                    else {
+                        panic!("expected string log body");
+                    };
+                    body
+                })
+        })
+        .collect();
+    expected.sort();
+    actual.sort();
+    assert_eq!(report.log_records, expected.len());
+    assert_eq!(actual, expected);
     let mut node = Spindle::open(cfg).unwrap();
     assert!(node.collect_once().is_ok());
 }
@@ -1098,4 +1128,51 @@ fn a_log_heavy_node_rotates_its_spool_between_metric_intervals() {
         with_metrics >= files.len(),
         "every file starts with a metrics Batch"
     );
+}
+
+/// Origin: release cross-host timing investigation. A committed event is only
+/// evidence after the Batch is durable; it must survive a fresh Spool reopen.
+#[test]
+fn optional_timing_follows_durable_commit_and_is_bounded() {
+    let scratch = Scratch::new();
+    write_host(&scratch.0, "cccccccc-cccc-cccc-cccc-cccccccccccc", 1000, 8);
+    let cfg = config(&scratch.0, 64 * 1024 * 1024);
+    let mut node = Spindle::open_with_paths(cfg.clone(), host_paths(&scratch.0)).unwrap();
+    node.collect_once().unwrap();
+    assert!(node.take_timing_events().0.is_empty());
+    node.enable_timing_events();
+    let cycle = node.collect_once().unwrap();
+    let (events, dropped) = node.take_timing_events();
+    assert_eq!(dropped, 0);
+    assert_eq!(events.len(), 3);
+    assert_eq!(events[2].stage, "spool_committed");
+    assert!(events.iter().all(|e| e.sequence == cycle.batch_sequence));
+    for adjacent in events.windows(2) {
+        assert!(adjacent[0].stamp.monotonic_after_ns <= adjacent[1].stamp.monotonic_before_ns);
+        assert!(
+            adjacent[0].stamp.boot_monotonic_ns.unwrap()
+                <= adjacent[1].stamp.boot_monotonic_ns.unwrap()
+        );
+    }
+    let expected = (
+        events[2].node_id.to_vec(),
+        events[2].generation,
+        events[2].sequence,
+    );
+    drop(node);
+    let committed = batches(&cfg);
+    assert!(
+        committed
+            .iter()
+            .any(|b| (b.node_id.clone(), b.generation, b.sequence) == expected)
+    );
+    let mut node = Spindle::open_with_paths(cfg, host_paths(&scratch.0)).unwrap();
+    node.enable_timing_events();
+    for _ in 0..100 {
+        node.collect_once().unwrap();
+    }
+    let (events, dropped) = node.take_timing_events();
+    assert_eq!(events.len(), 256);
+    assert_eq!(dropped, 44);
+    assert!(node.take_timing_events().0.is_empty());
 }

@@ -7,4 +7,22 @@ admin_token_file=/etc/fabrico11y/admin-token
 state_dir=/var/lib/fabrico11y/server
 journal_bytes=21474836480
 retention_s=86400
-retention_bytes=21474836480
+# Sealed telemetry: 100 GB decimal; journal and working scratch are separate.
+retention_bytes=100000000000
+# REQUIRED for normal serve: replace this example hostname with your trusted
+# HTTPS origin and RP hostname. Browser access requires its certificate trust.
+console_dir=/usr/share/fabrico11y/console
+access_origin=https://telemetry.example.com:7443
+access_rp_id=telemetry.example.com
+# Every production launch owns a dedicated local fabric-node process.
+# Its token/config/64 MiB Spool persist under state_dir/self-spindle;
+# its 64 KiB/s delivery and 15 s samples share this server service's bounds.
+# The listener's loopback IP is the default local HTTPS destination. Its
+# certificate SAN must match; use localhost below if that is its SAN instead.
+# The default trust input is tls_cert; set an issuing CA for a CA-signed leaf.
+# self_spindle_url=https://localhost:7443
+# self_spindle_ca=/etc/fabrico11y/ca.pem
+# Default executable: fabric-node beside fabric-server (installed /usr/bin).
+# self_spindle_executable=/usr/bin/fabric-node
+# Server diagnostics: state_dir/diagnostics/server.log (plus one rotation).
+# Both server and child diagnostic files are automatically selected sources.

@@ -1,0 +1,7 @@
+{
+  "phase": "preflight",
+  "status": "failed",
+  "error": "probe exit 101",
+  "completed_trials": 44,
+  "scratch_empty": true
+}

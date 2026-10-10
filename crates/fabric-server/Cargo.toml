@@ -2,16 +2,24 @@
 name = "fabric-server"
 version = "0.1.0"
 edition = "2024"
+publish = false
+license = "Apache-2.0"
 description = "Fabric O11y central server: authenticated batch intake with durable ACK"
 
+[features]
+phase-probe = ["fabric-frame/phase-probe", "fabric_o11y/phase-probe"]
+responsibility-alloc-probe = []
+
 [dependencies]
+fabric-adapter-linux = { path = "../fabric-adapter-linux" }
+libc = "=0.2.189"
 fabric-app = { path = "../fabric-app" }
 fabric-core = { path = "../fabric-core" }
 fabric-frame = { path = "../fabric-frame" }
 fabric-observation = { path = "../fabric-observation" }
 fabric-ports = { path = "../fabric-ports" }
 axum = { version = "=0.8.9", default-features = false, features = ["http1", "tokio", "json"] }
-axum-server = { version = "=0.7.3", features = ["tls-rustls-no-provider"] }
+axum-server = { version = "=0.8.0", features = ["tls-rustls-no-provider"] }
 arrow-array = "=60.0.0"
 arrow-schema = "=60.0.0"
 opentelemetry-proto = { version = "=0.33.0", default-features = false, features = ["gen-tonic-messages", "logs", "metrics", "trace"] }
@@ -21,10 +29,13 @@ rustls = { version = "=0.23.45", default-features = false, features = ["ring", "
 serde = { version = "=1.0.228", features = ["derive"] }
 serde_json = "=1.0.150"
 sha2 = "=0.10.9"
+subtle = "=2.6.1"
+webauthn-rs = "=0.5.5"
 zstd = { version = "=0.14.0", default-features = false }
 tokio = { version = "=1.53.1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal"] }
 
 [dev-dependencies]
+tower = { version = "=0.5.3", features = ["util"] }
 # End-to-end tests run a real Spindle against the server.
 fabric_o11y = { path = "../.." }
 ureq = { version = "=3.3.0", default-features = false, features = ["rustls-no-provider"] }

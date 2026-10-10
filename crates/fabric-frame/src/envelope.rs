@@ -15,6 +15,17 @@ pub const MAX_BATCH: usize = 1024 * 1024;
 pub const MAX_GAPS_PER_BATCH: usize = 2 + 16 * 8;
 pub const MAX_GAP_BYTES: usize = 256;
 
+/// Full Btrfs filesystem and containing-subvolume identity (ADR-0028).
+/// These bytes supplement the legacy runtime-device witness; they do not
+/// authenticate filesystem clones or replace the consumed-prefix guard.
+#[derive(Clone, PartialEq, Message)]
+pub struct BtrfsIdentity {
+    #[prost(bytes, tag = "1")]
+    pub uuid: Vec<u8>,
+    #[prost(uint64, tag = "2")]
+    pub subvolume_id: u64,
+}
+
 #[derive(Clone, PartialEq, Message)]
 pub struct Cursor {
     #[prost(string, tag = "1")]
@@ -31,6 +42,9 @@ pub struct Cursor {
     pub prefix_len: u32,
     #[prost(uint32, tag = "7")]
     pub prefix_crc: u32,
+    /// Additive identity witness. Absence retains the exact legacy encoding.
+    #[prost(message, optional, tag = "8")]
+    pub btrfs_identity: Option<BtrfsIdentity>,
 }
 
 /// Versioned Fabric envelope. `metrics` and `logs` are serialized OTLP export
@@ -98,6 +112,15 @@ impl Batch {
                 .any(|gap| gap.len() > MAX_GAP_BYTES)
         {
             return Err(invalid("Fabric batch field exceeds local profile cap"));
+        }
+        if self.cursors.iter().any(|cursor| {
+            cursor.btrfs_identity.as_ref().is_some_and(|identity| {
+                identity.uuid.len() != 16
+                    || identity.uuid.iter().all(|byte| *byte == 0)
+                    || identity.subvolume_id == 0
+            })
+        }) {
+            return Err(invalid("invalid Btrfs cursor identity"));
         }
         if !self.metrics.is_empty() {
             ExportMetricsServiceRequest::decode(self.metrics.as_slice())

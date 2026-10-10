@@ -1,0 +1,88 @@
+   Compiling fabric-server v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-server)
+error[E0432]: unresolved import `fabric_core::delivery::Answer`
+ --> crates/fabric-server/examples/responsibility_probe.rs:2:5
+  |
+2 | use fabric_core::delivery::Answer;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^------
+  |                            |
+  |                            no `Answer` in `delivery`
+
+error[E0599]: no method named `replay` found for struct `Store` in the current scope
+   --> crates/fabric-server/examples/responsibility_probe.rs:249:10
+    |
+248 | /     store
+249 | |         .replay(|e| {
+    | |         -^^^^^^ this is an associated function, not a method
+    | |_________|
+    |
+    |
+    = note: found the following associated functions; to be used as methods, functions must have a `self` parameter
+    = note: the candidate is defined in an impl for the type `Store`
+help: use associated function syntax instead
+    |
+248 ~     Store::replay(|e| {
+249 +             seq += 1;
+250 +             out.push(Group {
+251 +                 group_sequence: seq,
+252 +                 entries: vec![Entry {
+253 +                     label: e.label.to_string(),
+254 +                     batch: e.batch.to_vec(),
+255 +                     received_unix_nano: e.received_ns,
+256 +                 }],
+257 +             });
+258 +             Ok(())
+259 +         })
+    |
+
+error[E0599]: no method named `replay` found for struct `Store` in the current scope
+   --> crates/fabric-server/examples/responsibility_probe.rs:493:18
+    |
+492 | /             store
+493 | |                 .replay(|e| {
+    | |                 -^^^^^^ this is an associated function, not a method
+    | |_________________|
+    |
+    |
+    = note: found the following associated functions; to be used as methods, functions must have a `self` parameter
+    = note: the candidate is defined in an impl for the type `Store`
+help: use associated function syntax instead
+    |
+492 ~             Store::replay(|e| {
+493 +                     before.push(e.batch.to_vec());
+494 +                     Ok(())
+495 +                 })
+    |
+
+Some errors have detailed explanations: E0432, E0599.
+For more information about an error, try `rustc --explain E0432`.
+error: could not compile `fabric-server` (example "responsibility_probe") due to 3 previous errors
+   Compiling fabric-server v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-server)
+warning: variable does not need to be mutable
+   --> crates/fabric-server/examples/responsibility_probe.rs:487:17
+    |
+487 |             let mut store =
+    |                 ----^^^^^
+    |                 |
+    |                 help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `fabric-server` (example "responsibility_probe") generated 1 warning (run `cargo fix --example "responsibility_probe" -p fabric-server` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 3.61s
+   Compiling fabric-server v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-server)
+warning: variable does not need to be mutable
+   --> crates/fabric-server/examples/responsibility_probe.rs:487:17
+    |
+487 |             let mut store =
+    |                 ----^^^^^
+    |                 |
+    |                 help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
+
+warning: `fabric-server` (example "responsibility_probe") generated 1 warning (run `cargo fix --example "responsibility_probe" -p fabric-server` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 19.10s
+   Compiling fabric-server v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-server)
+    Finished `release` profile [optimized] target(s) in 3.52s
+   Compiling fabric-server v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-server)
+    Finished `release` profile [optimized] target(s) in 3.97s

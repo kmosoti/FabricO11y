@@ -1,12 +1,14 @@
 import json
-import shutil
+import os
 import subprocess
 import sys
 import time
+import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
-from runner import MARKER, clear_owned, live_bytes, owned_root, run
+from runner import MARKER, clear_owned, live_bytes, owned_root, run, scratch_root
 
 
 def process_start(pid):
@@ -18,15 +20,45 @@ def process_start(pid):
 
 class RunnerControls(unittest.TestCase):
     def setUp(self):
-        self.path = Path(__file__).resolve().parents[2] / "target" / "alpha-runner-test"
-        if self.path.exists():
-            self.assertTrue((self.path / ".fabric-alpha-owned").is_file())
-            self.assertFalse(self.path.is_symlink())
-            shutil.rmtree(self.path)
+        self.directory = tempfile.TemporaryDirectory(dir=scratch_root(), prefix="runner-controls-")
+        self.addCleanup(self.directory.cleanup)
+        self.path = Path(self.directory.name) / "target" / "alpha-runner-test"
         owned_root(self.path)
 
     def tearDown(self):
-        shutil.rmtree(self.path)
+        clear_owned(self.path)
+
+    def test_outside_scratch_is_rejected_before_creation_or_launch(self):
+        outside = (Path(__file__).resolve().parents[2] / "target"
+                   / ("runner-outside-" + Path(self.directory.name).name) / "target" / "alpha-rejected")
+        self.assertFalse(outside.exists())
+        self.assertFalse(outside.parent.exists())
+        with mock.patch("runner.subprocess.Popen") as child:
+            with self.assertRaises(ValueError):
+                run(outside, [sys.executable, "-c", "pass"], 2, 100_000, 100_000)
+            child.assert_not_called()
+        self.assertFalse(outside.exists())
+        self.assertFalse(outside.parent.exists())
+
+    def test_missing_scratch_environment_fails_before_creation(self):
+        path = self.path.with_name("alpha-missing-environment")
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(ValueError):
+                owned_root(path)
+        self.assertFalse(path.exists())
+
+    def test_symlink_target_is_rejected_before_creation_or_launch(self):
+        base = Path(self.directory.name)
+        destination = base / "destination"
+        destination.mkdir()
+        link = base / "linked" / "target"
+        link.parent.mkdir()
+        link.symlink_to(destination, target_is_directory=True)
+        with mock.patch("runner.subprocess.Popen") as child:
+            with self.assertRaises(ValueError):
+                run(link / "alpha-linked", [sys.executable, "-c", "pass"], 2, 100_000, 100_000)
+            child.assert_not_called()
+        self.assertFalse((destination / "alpha-linked").exists())
 
     def test_duration_violation_fails(self):
         result = run(self.path, [sys.executable, "-c", "import time; time.sleep(2)"],

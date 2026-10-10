@@ -1,0 +1,17 @@
+flowchart LR
+    Human[Human passkey] --> Ceremony[Exact origin and RP ceremony]
+    Ceremony --> Session[Opaque bounded session]
+    Agent[System or AI workload token] --> Credential[Expiring scoped credential]
+    Session --> Authority[Current principal and policy]
+    Credential --> Authority
+    Authority --> Gate[Action and enrollment and signal checks]
+    Gate --> Query[Scoped source selection and evidence]
+    Query --> Recheck[Publication-time authority recheck]
+    Recheck --> Answer[Bounded no-store answer]
+    Gate --> Intent[Durable mutation intent]
+    Intent --> Control[Spindle control publication]
+    Control --> Audit[Durable outcome audit]
+    Host[Stopped service and host custody] --> Recovery[Protected owner recovery]
+    Recovery --> Epoch[New credential epoch]
+    Epoch --> Authority
+    Spindle[Separate Spindle credential] --> Intake[Durable intake and config polling]

@@ -1,6 +1,49 @@
 # Experiments
 
-Product evidence is indexed by capability. Record file names keep their historical `alpha-phase*` prefixes (the release-stage and phase names they were written under); the capability column is the current classification, and the [qualification ledger](../QUALIFICATION.md#capability-ledger) says what each record establishes and for which revision.
+Research, experiment reports and observations belong in the
+[research wiki](https://github.com/kmosoti/FabricO11y/wiki). This index connects
+those reports to the registered protocols and executable evidence kept here.
+Follow the [ownership policy](../documentation-policy.md#canonical-ownership);
+historical measurements retain their original revision and limitations.
+
+The [wiki index](https://github.com/kmosoti/FabricO11y/wiki/Index) now contains
+151 migrated historical reports. The [migration manifest](../wiki-migration.json) records
+their source hashes and verified wiki commit: 145 repository bodies became
+compatibility pointers; six mixed records retain their bodies because harnesses
+consume or regenerate them. Registered protocols, fixtures and raw evidence were
+not moved into the public wiki.
+
+The [supplemental evidence inventory](https://github.com/kmosoti/FabricO11y/wiki/Supplemental-research-migration-2026-10-10)
+records the later research migration and private raw-archive relocation.
+Completely untracked run archives remain in controlled data-drive storage;
+local `data/` symlinks are unavailable in a fresh checkout. Historical references
+to those archives identify private evidence, not public downloads. Tracked
+fixtures and machine-consumed documentation remain versioned here.
+
+## Recent investigations
+
+Finite release checkpoints: [package installation](formal/installation-release-run-01.md), [scoped evidence cache](benchmarks/scoped-evidence-cache-run-01.md), and [production-access campaign prerequisites](benchmarks/production-access-campaign-run-01.md). These retain their exact revisions, failures and limits; successor campaign acceptance is separate.
+
+| Area | Records | Scope or status |
+| --- | --- | --- |
+| Console algorithms and interface | [Protocol](benchmarks/console-model-protocol.md), [results](https://github.com/kmosoti/FabricO11y/wiki/Console-model-and-interface-run-01), [art direction](../architecture/console-art-direction.md) | Bounded native models, ordered chart-boundary ablation, synthetic Leptos/PWA browser checks and palette corrections; authenticated release and human usability acceptance remain separate. |
+| Readiness continuation | [Protocol](formal/readiness-continuation-protocol.md), [execution](formal/readiness-continuation-results.md), [companion soak](benchmarks/soak-protocol-r2.md) | Completed: merge/retention/recovery checks, bounded writer adoption, model/fuzz tooling, isolated installation acceptance and full companion soak. |
+| Bounded writer defaults | [Default run 01](formal/bounded-writer-default-run-01.md), [combined campaign](formal/encoded-page-memory-run-01.md), [native R2 soak](benchmarks/soak-run-02.md) | Normal writer enabled; unflagged bounded/recovery checks, loaded-binary equivalence, all 17 final fast checks and three documentation checks passed on the recorded snapshot. |
+| Invariant audit | [Consolidation](formal/invariant-consolidation.md) | Control publication, Spool exhaustion, trustworthy launcher completion and current evidence gaps. |
+| Server self-observation | [Findings](formal/server-self-observation-findings.md), [protocol](formal/server-self-observation-protocol.md) | Local diagnostic forwarding, credential/Spool recovery, pinned sources, bounded files, TLS rejection and process lifecycle. No installed-service qualification. |
+| Application and deployment | [Investigation cards](../research/application-use-cases.md) | Proposed lab-owned RCA, APM, configuration, build, website and agent workflows; execution requires registered protocols. |
+| RCA and restart | [Findings](benchmarks/rca-journal-findings.md), [scenario design](benchmarks/rca-flow-design.md) | Seven synthetic scenarios across Scan/Walk; published-storage and interpretation grading remain open. |
+| Server pressure and reference engines | [Findings](benchmarks/hammer-reference-findings.md) | 4 GB server, Arrow/DuckDB/Vortex workloads, remote delivery and journal-identity defects; strict closeout remains incomplete because one launcher receipt is missing. |
+| Service recovery and ownership | [Recovery findings](benchmarks/service-recovery-research-findings.md), [native frontier](benchmarks/native-frontier-findings.md) | Finite recovery evidence and opt-in admission/ownership mechanisms; no long-soak or production nomination claim. |
+| Cross-system workloads | [Sweep](benchmarks/cross-system-sweep-findings.md), [continuation](benchmarks/cross-system-continuation-findings.md), [catalog execution](benchmarks/catalog-cross-system-findings.md) | Matched engines, source dissections, native RowSet/Store comparisons and ordered-prefix progress; includes counterexamples and holdouts. |
+| Catalog correctness and progress | [Range evidence](benchmarks/catalog-range-evidence-findings.md), [ownership transitions](benchmarks/catalog-transition-ownership-findings.md), [native lifecycle](benchmarks/catalog-native-lifecycle-findings.md), [log progress](benchmarks/catalog-log-progress-findings.md) | Reproduced defects, corrections, exact checks, resource records and remaining investigations. |
+| Catalog algorithms and delivery | [Algorithm round](benchmarks/catalog-algorithm-round-findings.md), [delivery read](benchmarks/catalog-delivery-read-findings.md) | Finite query/commit comparisons, rejected candidates and append ownership results. |
+| Catalog lab queue | [Run 01](benchmarks/catalog-labs-run-01.md), [queue](benchmarks/catalog-lab-queue.json), [Rust lab plan](benchmarks/storage-catalog-rust-lab-plan.md) | Preparation and queued storage-map/lifecycle experiments; no new acceptance result. |
+| Performance frontier | [Lab plan](benchmarks/performance-frontier-lab-plan.md), [completion evidence](benchmarks/lab-completion-run-01.md) | Capacity, query and operations preparation, distinct from registered results. |
+
+## Product evidence by capability
+
+File names retain their historical `alpha-phase*` prefixes. The capability column is the current classification; the [qualification ledger](../QUALIFICATION.md#capability-ledger) states what each record establishes and for which revision.
 
 | Capability | Registered protocols | Results and formal records |
 | --- | --- | --- |
@@ -8,44 +51,36 @@ Product evidence is indexed by capability. Record file names keep their historic
 | Spindle local collection | [native protocol](benchmarks/alpha-phase1-native-protocol.md) | [native run 01](benchmarks/alpha-phase1-native-run-01.md) (superseded), [native run 02](benchmarks/alpha-phase1-native-run-02.md), [journal length repair](formal/alpha-journal-length-repair.md), [log-reader repair](formal/alpha-log-reader-repair.md), [review checkpoint](formal/alpha-phase1-review-checkpoint.md), [close-out review](formal/alpha-phase1-closeout-review.md) |
 | Delivery | [delivery protocol](benchmarks/alpha-phase2-delivery-protocol.md) | [fault runs](formal/alpha-phase2-delivery-faults.md), [ten-process run](benchmarks/alpha-phase2-delivery-run-01.md) |
 | Control and fleet | [fleet protocol](benchmarks/alpha-phase3-fleet-protocol.md) | [fleet run 01](benchmarks/alpha-phase3-fleet-run-01.md) |
-| Retained history and query | [history protocol](benchmarks/alpha-phase4-history-protocol.md), [revision 2 for a four-CPU host](benchmarks/history-protocol-r2.md) | [history run 01](benchmarks/history-run-01.md) (revision 2, four-CPU host; not target-profile qualification); exploratory: [sealer study run 01](benchmarks/sealer-study-run-01.md), [collection-to-query latency run 01](benchmarks/e2e-latency-run-01.md), [query attribution run 01](benchmarks/query-attribution-run-01.md), [retention-scale run 01](benchmarks/retention-scale-run-01.md), [tail-index run 01](benchmarks/tail-index-run-01.md), [threshold run 01](benchmarks/topk-run-01.md), [budget run 01](benchmarks/budget-run-01.md), [real-corpus query run 01](benchmarks/real-corpus-query-run-01.md), [optimality run 01](benchmarks/optimality-run-01.md), [storage layout run 01](benchmarks/storage-layout-run-01.md), [observation encoding run 01](benchmarks/observation-encoding-run-01.md) |
+| Retained history and query | [history protocol](benchmarks/alpha-phase4-history-protocol.md), [revision 2 for a four-CPU host](benchmarks/history-protocol-r2.md) | [history run 01](benchmarks/history-run-01.md) (revision 2, four-CPU host; not target-profile qualification); exploratory: [sealer study](benchmarks/sealer-study-run-01.md), [collection-to-query latency](benchmarks/e2e-latency-run-01.md), [query attribution](benchmarks/query-attribution-run-01.md), [retention scale](benchmarks/retention-scale-run-01.md), [tail index](benchmarks/tail-index-run-01.md), [threshold](benchmarks/topk-run-01.md), [budget](benchmarks/budget-run-01.md), [real-corpus query](benchmarks/real-corpus-query-run-01.md), [optimality](benchmarks/optimality-run-01.md), [storage layout](benchmarks/storage-layout-run-01.md), [observation encoding](benchmarks/observation-encoding-run-01.md) |
+| Local medium/enterprise native Spindle volume | [native protocol](benchmarks/native-scaled-spindle-protocol.md), [monitor retry revision 2](benchmarks/native-scaled-spindle-protocol-r2.md) | [run 01](benchmarks/native-scaled-spindle-run-01.md): exact source recovery in both; enterprise timing failed, source backlog measured |
+| Local medium/enterprise simulation and recovered concurrency | [scaled protocol](benchmarks/medium-enterprise-local-protocol.md), [worker control](benchmarks/recovered-worker-control-protocol.md) | [run 01](benchmarks/scaled-fleet-local-run-01.md): medium passed finite criteria; enterprise timing failed, custody preserved |
+| Local development and small workloads | [sequential native protocol](benchmarks/dev-small-local-protocol.md) | [run 01](benchmarks/dev-small-local-run-01.md): both finite pilots met their criteria; dual data clocks, exact source recovery and process resources |
+| Development and small with concurrent queries | [observation protocol](benchmarks/dev-small-observation-protocol.md) | [observation run 01](benchmarks/dev-small-observation-run-01.md): phase CPU, Spool/ACK rates, resources and consumer clocks |
+| Coordinated memory, query and recovery labs | [hypotheses and execution plan](benchmarks/dev-small-readiness-plan.md) | [run 01](benchmarks/readiness-labs-run-01.md): memory-layout counterexample, scoped recovery evidence and clock-interrupted query comparison |
+| Development/small memory attribution and availability | [screen protocol](benchmarks/dev-small-labs-screen-protocol.md), [fractional-probe addendum](benchmarks/dev-small-labs-screen-r2.md) | [run 02](benchmarks/dev-small-labs-run-02.md): eight native cells, query CPU/RSS nomination and first publication; C1-6 deferred |
+| Fixed-demand query-plan comparison and allocation | [query-plan protocol](benchmarks/query-plan-protocol.md) | [run 01](benchmarks/query-plan-run-01.md): paired native comparison and retained profiling-harness counterexamples |
+| Streaming Segment output | [local pilot protocol](benchmarks/streaming-output-local-protocol.md) | [local run 01](benchmarks/streaming-output-local-run-01.md): primary heap target not met; exact output preserved |
+| Journal reclaim progress | [local mechanism protocol](benchmarks/journal-reclaim-local-protocol.md) | [local run 01](benchmarks/journal-reclaim-local-run-01.md); mixed-load performance unmeasured |
 | Recovery and stress | [outage protocol](benchmarks/alpha-phase5-outage-protocol.md), [stress protocol](benchmarks/alpha-phase5-stress-protocol.md), [stress revision 2 for a four-CPU host](benchmarks/stress-protocol-r2.md), [soak protocol](benchmarks/soak-protocol.md) | [outage run 01](benchmarks/outage-run-01.md) (registered protocol, four-CPU host); [stress run 01](benchmarks/stress-run-01.md) (revision 2); [soak run 01](benchmarks/soak-run-01.md) (failed: RSS growth gate) |
-| Packaging and installation | [installation acceptance protocol](formal/installation-acceptance-protocol.md) | [static packaging checks](formal/alpha-phase5-packaging-static.md); running installation not run |
+| Packaging and installation | [installation acceptance protocol](formal/installation-acceptance-protocol.md), [A12 stimulus diagnosis](formal/installation-a12-stimulus-run-01.md) | [Installation run 02](formal/installation-acceptance-run-02.md) passed all seventeen checks and rejected all three required controls in a Debian 13 unified-cgroup VM; exact release packages still require acceptance |
 | Architecture | — | [no_std core experiment](formal/core-no-std.md); fault rerun and mutant results in the [milestone record](../milestones/architecture-foundation.md) |
 
-Frozen reviewer probes, verdicts and parent notes from earlier language-model reviews are kept under [data/alpha-review](benchmarks/data/alpha-review/README.md) as historical evidence; review is no longer a gate ([ADR-0018](../decisions/ADR-0018-accept-work-on-executable-evidence.md)).
+Historical reviewer probes, verdicts and notes remain under [data/alpha-review](benchmarks/data/alpha-review/README.md), as recorded by [ADR-0018](../decisions/ADR-0018-accept-work-on-executable-evidence.md).
 
-## Research
+## Research and preparation
 
-Research results do not become product behavior without an ADR.
+| Area | Records | Scope or status |
+| --- | --- | --- |
+| Coupled completion and labs | [Preparation](benchmarks/coupled-completion-plan.md), [run 01](benchmarks/coupled-labs-run-01.md), [queue](benchmarks/coupled-lab-queue.json) | Admitted availability/pruning, attribute-cost and descriptor-reuse diagnostics; unresolved gates and deferred work stay in the queue. |
+| Lab operations and development/small campaign | [Orchestration](lab-orchestration.md), [campaign plan](benchmarks/dev-small-lab-plan.md), [screen](benchmarks/dev-small-labs-run-02.md) | Budgeted coordination and planned memory, sealing, recovery, soak and installation work; screen results remain diagnostic. |
+| Responsibility measurements | [Experiment design](benchmarks/responsibility-experiment-design.md), [revision-2 protocol](benchmarks/responsibility-isolation-protocol-r2.md), [run 01](benchmarks/responsibility-isolation-r2-run-01.md), [benchmark audit](benchmarks/responsibility-benchmark-audit.md) | Sequential boundary trials and measurement gaps; no shipping defaults selected. |
+| Sealing models | [Adaptive hypotheses](benchmarks/adaptive-sealing-hypotheses.md), [pipeline model](../research/sealing-pipeline-model.md), [experiment design](benchmarks/sealing-pipeline-experiment-design.md), [workload sizing](../research/workload-sizing.md) | Models and experiment routes; R0 has a separately registered local result, other routes remain unrun. |
+| Sealer implementation studies | [Ingestion-memory run](benchmarks/ingestion-memory-run-01.md), [speed protocol](benchmarks/sealer-speed-protocol.md), [speed run](benchmarks/sealer-speed-run-01.md) | Finite builder memory/time screens; bounded-sealer acceptance and freshness guarantees remain open. |
+| Local prototype lifecycle and costs | [Completion contract](ablation/end-to-end-prototype.md), [hypothesis history](ablation/claude-hypotheses.md), [E3R retry run](ablation/resume-e3-run-01.md), [S0 append attribution](benchmarks/append-attribution-s0.md), [E2R seal model](ablation/seal-e2-run-01.md), [group-seal cost](benchmarks/group-seal-cost-run-01.md), [S2 durable snapshot](ablation/durable-snapshot-s2-run-01.md), [local lifecycle](ablation/local-prototype-run-01.md), [S3/S4 correctness](ablation/columnar-selective-s3-s4-run-01.md), [measured costs](benchmarks/research-costs-run-01.md) | Prototype evidence; JSON remains its lifecycle baseline and synthetic results select no production format. Protocols: [receipt](benchmarks/receipt-resume-cost-protocol.md), [layout](benchmarks/columnar-selective-s3-s4-protocol.md), [sidecar](benchmarks/collection-sidecar-s5-protocol.md). |
+| Storage and query research | [Storage agenda](ablation/observability-storage-research.md), [S1 protocol](ablation/storage-query-s1-protocol.md), [S1 run](ablation/storage-query-s1-run-01.md), [E1R protocol](ablation/coverage-e1-protocol.md), [E1R result](ablation/coverage-e1-run-01.md) | Exact scan and in-memory summaries plus metadata-authentication coverage; no storage migration or disk-pruning result. |
+| Batching, delivery and transport | [Stage 3 batch-size probe](benchmarks/batch-size-stage3.md), [generator ablation](benchmarks/generator-library-stage3.md), [Stage 4 delivery model](formal/delivery-ownership.md), [Stage 5 implementation checks](formal/delivery-rust-stage5.md), [Stage 6 local-log baseline](benchmarks/local-log-stage6.md), [transport study](ablation/receiver-driven-transport.md), [H1 receiver-credit run](ablation/receiver-credit-h1-run-01.md), [M2 unscheduled-prefix run](ablation/unscheduled-prefix-m2-run-01.md), [credit/ownership check](formal/transport-credit-ownership.md) | Batch and delivery studies retain their historical controls; no network protocol or real-host transport measurement. |
+| Development tooling and illustrative material | [Agent telemetry check](formal/agent-telemetry-merge.md), [architecture blueprint](../architecture.md) | Bounded evidence-algebra check; blueprint numbers are illustrative, not product measurements. |
 
-The [local prototype completion contract](ablation/end-to-end-prototype.md) is closed
-with linked evidence. [Claude's hypothesis study](ablation/claude-hypotheses.md) traces
-the original proposals and counterexamples to the later registered experiments.
-[E3R](ablation/resume-e3-run-01.md) checks snapshot-bound retries;
-[S0](benchmarks/append-attribution-s0.md) measures append attribution with a perturbation
-flag. The [E2R model](ablation/seal-e2-run-01.md) and
-[cost result](benchmarks/group-seal-cost-run-01.md) preserve its repaired contract and
-mixed CPU/throughput gates.
+Performance records should state the hypothesis, workload and seed, baseline, changed variable, commands, environment, predefined metrics, results, limitations and decision impact. Formal records should state the property, assumptions, model/code relation, bounds, tool version, command and counterexamples. Bounded model results do not establish unbounded implementation correctness.
 
-[S2](ablation/durable-snapshot-s2-run-01.md) checks durable snapshot/checkpoint behavior.
-The [local lifecycle](ablation/local-prototype-run-01.md) checks offline collection,
-bounded ingestion and separate-process query/resume. [S3/S4 correctness](ablation/columnar-selective-s3-s4-run-01.md)
-checks hybrid layout and postings. [Measured receipt/layout/sidecar costs](benchmarks/research-costs-run-01.md)
-include favorable and unfavorable results under the registered
-[receipt](benchmarks/receipt-resume-cost-protocol.md),
-[layout](benchmarks/columnar-selective-s3-s4-protocol.md) and
-[sidecar](benchmarks/collection-sidecar-s5-protocol.md) protocols. JSON remains the
-prototype lifecycle baseline; these synthetic results select no production format.
-
-The [observability storage agenda](ablation/observability-storage-research.md) contains the corrected survey and staged storage/query experiments. [S1](ablation/storage-query-s1-run-01.md) implements an exact scan oracle and optional block summaries over a replayed in-memory snapshot; its [protocol](ablation/storage-query-s1-protocol.md) fixes workloads and gates. It does not migrate storage or measure disk pruning. The [E1R coverage result](ablation/coverage-e1-run-01.md) records a separate metadata-authentication correctness cell, its [protocol](ablation/coverage-e1-protocol.md), independent oracle and failing mutations. It distinguishes query completeness from raw retention.
-
-The [original Stage 3 batch-size probe](benchmarks/batch-size-stage3.md) compares four batch sizes using the archived hand-written generator and selects no winner. The [generator library ablation](benchmarks/generator-library-stage3.md) compares that archived generator with the current `fake` adapter. The [Stage 4 delivery model](formal/delivery-ownership.md) checks a target ACK rule with TLC; [Stage 5 implementation checks](formal/delivery-rust-stage5.md) exercise the local log and recovery path. The [Stage 6 local-log baseline](benchmarks/local-log-stage6.md) preregisters and reports one measured workload with preserved raw samples; it selects no optimization. The [Homa/SIRD receiver-driven transport study](ablation/receiver-driven-transport.md) remains the broader research plan. Its [H1 receiver-credit comparison](ablation/receiver-credit-h1-run-01.md), [M2 unscheduled-prefix comparison](ablation/unscheduled-prefix-m2-run-01.md), and [finite credit/ownership check](formal/transport-credit-ownership.md) now have results, but no network protocol or real-host transport measurement exists. Separately, the [agent telemetry formal check](formal/agent-telemetry-merge.md) verifies a development tool's evidence algebra with Z3 and a bounded implementation comparison. Numbers in the [blueprint](../architecture.md) are illustrative examples, not Fabric O11y measurements.
-
-For a performance experiment, record the hypothesis, workload and seed, compared contract, baseline, changed variable, exact commands, toolchain and machine, metrics, results, interpretation, limitations, and decision impact. Define the metrics before running comparisons. Preserve raw results when a conclusion depends on them.
-
-For a formal claim, state the property, assumptions, model-to-code correspondence, explored bounds, exact tool version and command, and counterexamples or result. A bounded check of a model does not establish unbounded correctness of the Rust implementation.
-
-The repeatable input, bounded buffer, and local commit/replay path are implemented. A broader comparison still needs a representative workload and chosen resource and latency metrics. The [learning path](../LEARNING_PATH.md) moves from the delivery model and log into measurement. Use the [experiment skill](../../.agents/skills/fabric-experiment/SKILL.md) for a scoped investigation.
-
-Create an experiment document when there is an actual hypothesis to evaluate. Link resulting evidence from the relevant architecture page and ADR. Documentation-tool checks belong in the [contributor workflow](../CONTRIBUTING.md); they are not application performance experiments.
+The learning path covers the delivery model, log and measurement ([learning path](../LEARNING_PATH.md)); scoped experiments follow the [experiment skill](../../.agents/skills/fabric-experiment/SKILL.md). Create a record for a concrete hypothesis and link results from the relevant architecture view and ADR. Documentation checks are in the [contributor workflow](../CONTRIBUTING.md).

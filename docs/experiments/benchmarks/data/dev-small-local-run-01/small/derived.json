@@ -1,0 +1,39 @@
+{
+  "producer_lateness_ms": {
+    "p50": 0.13428199963527732,
+    "p99": 0.3595649977796711,
+    "max": 2.0515419964795
+  },
+  "segments": [
+    {
+      "segment": "seg-00000000000000001020",
+      "input_batch_bytes": 67092545,
+      "output_manifest_file_bytes": 44794318,
+      "ratio": 0.6676497068340455
+    },
+    {
+      "segment": "seg-00000000000000001647",
+      "input_batch_bytes": 67344680,
+      "output_manifest_file_bytes": 44916386,
+      "ratio": 0.6669626464926406
+    },
+    {
+      "segment": "seg-00000000000000001333",
+      "input_batch_bytes": 67362100,
+      "output_manifest_file_bytes": 44906729,
+      "ratio": 0.6666468088138582
+    },
+    {
+      "segment": "seg-00000000000000000001",
+      "input_batch_bytes": 67055692,
+      "output_manifest_file_bytes": 44488700,
+      "ratio": 0.6634589648258347
+    },
+    {
+      "segment": "seg-00000000000000001947",
+      "input_batch_bytes": 67052555,
+      "output_manifest_file_bytes": 44506824,
+      "ratio": 0.6637602996634505
+    }
+  ]
+}

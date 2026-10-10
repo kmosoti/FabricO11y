@@ -1,0 +1,10 @@
+flowchart LR
+    Supervisor[Production server CLI] -->|owns lifecycle and separate credential| Node[Dedicated Spindle process]
+    Supervisor -->|periodic samples and state changes| ServerLog[Bounded server diagnostic file]
+    Node -->|periodic samples and state changes| NodeLog[Bounded Spindle diagnostic file]
+    ServerLog -->|pinned local source| Node
+    NodeLog -->|pinned local source| Node
+    Node -->|normal committed Batch| Spool[(Private persistent Spool)]
+    Spool -->|authenticated verified local HTTPS| Intake[Same server intake]
+    Intake -->|durable commit before ACK| Journal[(Server journal and Segments)]
+    Journal --> Query[Ordinary evidence queries]

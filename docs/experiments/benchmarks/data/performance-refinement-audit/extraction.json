@@ -1,0 +1,7 @@
+{
+  "scope": "Exact extracted production rates function and row types, current fabric-core; excludes HTTP, history loading and OTLP decoding",
+  "revision": "dfe7a3d0d9391fe79faa29318c586c1f40b567f9",
+  "function_sha256": "07428c82893ccbbdc4108d5d51d36b583b7b3759e5defc095b8bf036047ed651",
+  "types_sha256": "c4bb45b2c169d6099780344ead281630e877f420b77805bc6d3f02d1cf05ee9d",
+  "source_sha256": "69bd64cf61b5457eafae755a5c9f3ef647563ee48a66206cb488ac5ffcc4f169"
+}

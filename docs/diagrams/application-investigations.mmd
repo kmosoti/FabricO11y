@@ -1,0 +1,10 @@
+flowchart LR
+    Browser[Browser events - proposed] --> Intake[Same-origin application intake - proposed]
+    Nomos[Nomos and build records - proposed] --> Adapter[Server-side adapter - proposed]
+    Intake --> Adapter
+    Adapter -->|bounded local logs or supported trace exports| Node[Existing Spindle]
+    App[Instrumented backend] -->|local logs and traces| Node
+    Node --> Spool[(Spool)]
+    Spool --> Server[Fabric server]
+    Server --> Query[Existing query API]
+    Query --> Client[Investigation and comparison client - proposed]

@@ -4,28 +4,42 @@ Terms mean one thing each across code, documents, diagrams and experiments. When
 
 ## Product
 
+The [operator console](milestones/operator-console.md) uses a **display envelope**:
+bounded per-time-bucket extrema with explicit gap markers, not an aggregate or
+exhaustive raw history. A **display eviction** removes an older row from bounded
+browser memory; it is not server retention or evidence of collection loss.
+A **principal** in the intended [access design](architecture/identity-access.md)
+is a persistent human, workload or Spindle identity; a credential authenticates
+that principal, and a grant limits its permitted actions/resources.
+
 | Term | Meaning here |
 | --- | --- |
 | Spindle | The host-resident collection and runtime role: observes one host, reads configured sources, builds Batches, keeps collection state, retains unacknowledged Batches in its Spool, applies validated configuration and delivers to Fabric Server. Run by the `fabric-node` executable; code in `src/spindle`. Not a synonym for any process, worker or remote machine. |
+| Dedicated server Spindle | The one `fabric-node` child owned by a production server CLI, with its own credential and persistent Spool. It collects both processes' bounded diagnostics and forwards to that server. Edge Spindles keep their configured destination; there is no recursive collector chain ([ADR-0026](decisions/ADR-0026-launch-a-dedicated-spindle-with-each-server.md)). |
 | Spindle ID | `SpindleId`: the Spindle's stable 16-byte identity. On the wire and on disk it is the envelope's `node_id` field. |
 | Node (persisted name) | The spelling used by existing routes (`/v1/admin/nodes`), JSON keys, configuration files, the `fabric-node` binary and systemd unit. It names a Spindle or its enrollment; it is kept for compatibility, not as a separate concept. |
 | Generation | A non-zero counter in the Spindle identity file. A new generation starts a new Strand at sequence 1. |
 | Strand | One ordered telemetry lineage of one Spindle generation: `StrandId = (SpindleId, generation)`. The scope of sequence ordering, duplicate-retry identity, gap detection, deduplication and acknowledged progress. Not a connection, session, thread, file, Segment or query result. Called a "stream" in older code and records. |
 | Sequence | A Batch's position on its Strand: 1, 2, 3, ... Sequence 0 does not exist; no sequence follows `u64::MAX`. |
-| Batch | The version-one Fabric envelope: Strand identity, sequence, exact encoded OTLP metrics and logs bytes, source cursors and collection gaps (`fabric_frame::envelope::Batch`). Retries send its exact stored bytes. |
+| Batch | The version-one Fabric envelope: Strand identity, sequence, exact encoded OTLP metrics, logs and traces bytes, source cursors and collection gaps (`fabric_frame::envelope::Batch`). Collection moves its owned candidate into Spool append; source state advances after durable commit. Retries send its exact stored bytes. |
 | Spool | The Spindle's durable `FAB1` frame log of Batches with an ACK cursor; whole sealed files at or below the cursor are reclaimed. |
 | Delivery | Transfer of custody of a Batch from the Spool to the server: one Batch in flight per Strand, oldest unacknowledged first ([ADR-0013](decisions/ADR-0013-deliver-batches-in-order-with-bounded-dedup.md)). |
 | Custody | Responsibility for preserving telemetry. The Spindle holds it until an ACK that follows the server's durable commit. |
+| Admission permit | Temporary ownership of capacity before expensive work: the HTTP batch and query routes have independent pools. A blocking query owns its permit until work completes or unwinds, even if its async caller disappears. It is not a durable ACK or a retention lease. |
 | ACK | The server's answer `ack` with `committed_through`, sent only after the group holding the Batch (or the earlier Batch it acknowledges) completed data and marker syncs. |
 | Server journal | The server's `FAB1` frame log of committed groups of Batches, replayed to rebuild Strand and binding state. |
 | Segment | An immutable directory of Zstd Parquet files plus a manifest written last, covering a contiguous range of journal groups. |
+| Journal locator | A saved journal first-group identity, file path and frame offset. A path alone is not file identity: storage verifies the first group before using an offset and resolves a rotated active file through its sealed name. |
+| Borrowed raw record | `segment::RecordRef`: label, receive time and exact Batch bytes borrowed from a live Arrow batch during a reader callback. The reader checks the Batch digest before visitation; the view grants no retention lease and cannot outlive its owner. |
 | Observation | The proposed one record for a log line, a metric point or a span: the query key `(time_ns, node_id, generation, sequence, index)`, optional trace locators, typed attributes and one signal payload ([ADR-0023](decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md)). Not yet emitted or stored. |
 | FOB1 | The Observation's canonical block encoding: dictionaries in first-use order, delta-coded columns, a CRC trailer; one byte string per valid block and one block per accepted byte string, so a hash of the bytes is a hash of the records. |
 | Canonical encoding | An encoding in which `decode(encode(b)) == b` for every valid value and `encode(decode(x)) == x` for every accepted byte string; the decoder rejects every other form. |
+| Sorted run | A private binary scratch file of rows sorted by the query order key. The candidate sealer caps runs by estimated owned bytes and row count, then merges at most sixteen at once, carrying unneeded inputs forward by rename. It is not durable custody. |
 | Sealer | The server's background thread that turns each sealed journal file into a Segment, then lets the commit thread delete the file, and applies retention. It runs after ingestion and never sits on the ACK path. |
 | Run | A sorted batch of log rows or metric points, spilled to a scratch file while a Segment is built. Runs are merged into the final table and deleted before the Segment commits; they are not a durable format. |
 | Retention | Deleting whole Segments, oldest first, when the age or byte limit is exceeded; the retained window is reported with every answer. |
 | Snapshot | The group range a query answer was computed from; a page token binds it. |
+| Read catalog | Internal server storage module owning Walk's derived journal index and immutable Segment metadata cache. Its physical source view does not decide query row semantics or confer retention/file leases. Cached metadata assumes immutable published contents and no label reuse; shared metadata and proactive refresh remain experimental ([CQ1](experiments/benchmarks/catalog-boundary-protocol.md)). |
 | Completeness | Whether every Segment and journal file that could hold matching rows was read and verified (`complete`), with the unavailable ones listed. |
 | Freshness | Per Spindle, the newest observation or point time retained, reported with every answer. |
 | Collection gap | A recorded interval or source failure during which telemetry was not collected, carried in a Batch; never silently omitted. |

@@ -3,3 +3,6 @@
 __pycache__/
 /.local/
 /.claude/worktrees/
+
+# Raw experiment archives belong on DATA; existing tracked fixtures stay tracked.
+docs/experiments/**/data/

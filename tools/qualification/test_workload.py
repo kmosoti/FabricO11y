@@ -3,6 +3,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -11,8 +12,14 @@ from workload import SEEDS, entropy_body, records_at
 
 
 class WorkloadContract(unittest.TestCase):
+    def setUp(self):
+        from runner import scratch_root
+        self.directory = tempfile.TemporaryDirectory(dir=scratch_root(), prefix="workload-controls-")
+        self.addCleanup(self.directory.cleanup)
+        self.target = Path(self.directory.name) / "target"
+
     def test_independent_registered_fixture(self):
-        root = Path(__file__).resolve().parents[2] / "target" / "alpha-phase0-fixture-test"
+        root = self.target / "alpha-phase0-fixture-test"
         # Fresh disposable output is needed because the emitter refuses overwrite.
         from runner import owned_root, live_bytes
         import shutil
@@ -73,7 +80,7 @@ class WorkloadContract(unittest.TestCase):
 
     def test_every_registered_seed_matches_exact_oracle(self):
         from runner import clear_owned, owned_root
-        root = Path(__file__).resolve().parents[2] / "target" / "alpha-all-seeds-test"
+        root = self.target / "alpha-all-seeds-test"
         if root.exists():
             clear_owned(root)
         owned_root(root)
@@ -85,7 +92,7 @@ class WorkloadContract(unittest.TestCase):
 
     def test_paced_source_preserves_schedule_and_accounts_offers(self):
         from runner import clear_owned, owned_root
-        root = Path(__file__).resolve().parents[2] / "target" / "alpha-paced-test"
+        root = self.target / "alpha-paced-test"
         if root.exists():
             clear_owned(root)
         owned_root(root)
@@ -108,7 +115,7 @@ class WorkloadContract(unittest.TestCase):
         clear_owned(root)
 
     def test_rate_oracle_rejects_overrun_and_balance(self):
-        root = Path(__file__).resolve().parents[2] / "target" / "alpha-rate-test"
+        root = self.target / "alpha-rate-test"
         from runner import owned_root
         import shutil
         if root.exists():

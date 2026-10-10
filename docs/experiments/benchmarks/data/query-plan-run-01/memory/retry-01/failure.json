@@ -1,0 +1,5 @@
+{
+  "status": "failed",
+  "error": "RuntimeError('tail/segment exact record ledgers differ; evidence preserved')",
+  "scratch_preserved": "/run/media/kmosoti/data/FabricO11y/scratch/work-zwh0vn5m/memory/allocation-retry-01/tmp/query-allocation-profile"
+}

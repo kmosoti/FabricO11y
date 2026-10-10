@@ -3,6 +3,18 @@
   "description": "Counterexamples kept as deterministic regression fixtures. `cargo xtask check-counterexamples` requires each reproducer test to exist in its file and each fix commit to exist. Removing an entry is a trust-boundary change.",
   "counterexamples": [
     {
+      "id": "CX-BTRFS-REBOOT-LOG-REPLAY",
+      "origin": "Fedora 44 exact-package lifecycle continuation release-fedora44-lifecycle-continue-02, 2026-10-10",
+      "defect": "Btrfs changed runtime st_dev from 51 to 32 across reboot; the old raw-device comparison reread three already committed lines at unchanged inode 2505 and source offsets",
+      "seed_or_trace": "three newline records at offsets 0, 25, 51, 78; same file content, inode and Btrfs namespace; original candidate RPM SHA256 5ee0e862d1faf35607e7a407d6461f246a59ec8c8ed85e43f745973d3beeba4a",
+      "contract": "SPOOL-1",
+      "reproducer": {
+        "file": "crates/fabric-adapter-linux/src/log_source.rs",
+        "test": "actual_fedora_51_to_32_counterexample_keeps_three_consumed_lines_consumed"
+      },
+      "fix_commit": "889dfac"
+    },
+    {
       "id": "CX-SPOOL-LENGTH",
       "origin": "review of the Spool journal (see docs/experiments/formal/alpha-journal-length-repair.md)",
       "defect": "A corrupted frame length made reopen truncate two committed Batches",
@@ -193,6 +205,18 @@
         "test": "a_boundary_never_sits_at_the_page_start"
       },
       "fix_commit": "bf74770"
+    },
+    {
+      "id": "CX-RAW-TABLE-COMPLETE",
+      "origin": "catalog-coupled-o6-raw-red-01; docs/experiments/benchmarks/coupled-availability-decision.md",
+      "defect": "Deleting retained batches.parquet left projected queries complete despite lost raw custody",
+      "seed_or_trace": "fixture seed7, eight Groups; remove only batches.parquet after verifying intact Segment; 48 log rows survive but completeness must be false",
+      "contract": "HIST-3",
+      "reproducer": {
+        "file": "crates/fabric-server/tests/completion_storage.rs",
+        "test": "missing_raw_batches_preserve_projection_rows_but_mark_incomplete"
+      },
+      "fix_commit": "73447a2"
     }
   ]
 }

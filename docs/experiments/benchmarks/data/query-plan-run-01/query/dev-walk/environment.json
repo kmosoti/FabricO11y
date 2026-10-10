@@ -1,0 +1,65 @@
+{
+  "command": [
+    "tools/bench/labs/query_compare/run.py",
+    "--cell",
+    "dev-walk"
+  ],
+  "cell": "dev-walk",
+  "nodes": 1,
+  "rates": [
+    10,
+    30,
+    10
+  ],
+  "history": "H0",
+  "near_rotation": false,
+  "timed_queries": "walk",
+  "query_plan": "walk",
+  "campaign_protocol": {
+    "path": "docs/experiments/benchmarks/query-plan-protocol.md",
+    "sha256": "99038b6401978a8a7ae8d46e482b042c969da5b179477aabca1f7fe49582638f"
+  },
+  "binaries": {
+    "fabric-server": "4303294fab100b0bc01c4964e8a86f1b3b229826bda5d79aa0487d08f3cbf7d5",
+    "fabric-node": "96608ffd0f19cbb6b50fcca506dac544eba2cc3bd37c0b3152ef2d53b84f3b23",
+    "examples/server_dump": "2e65765141df3a8d1725268a2fc835406d6f767780ca064dda85c35751c586e9",
+    "examples/lab_history_seed": "81e4710e74b926a9b083d4c7e70dc6807cad8638fca43c54e9d376e68be67b4a"
+  },
+  "revision": "37af74e86a6d54e6662e392f096c7ab685ef1b34",
+  "protocol_sha256": "814b5cb02252f5179fc903ce0d7436085f00da02f6351240a69c0daac617c7f0",
+  "server_cpus": [
+    0,
+    1
+  ],
+  "client_cpus": [
+    2,
+    3
+  ],
+  "protocol_addenda": {
+    "docs/experiments/benchmarks/dev-small-labs-screen-r2.md": "e62a6739d70ac4407f9d5104788e273ecaf68fb8d8357521615677a3048a5750"
+  },
+  "storage": "/run/media/kmosoti/data/FabricO11y/scratch/work-r4we3w1r/query/dev-walk/tmp/dev-walk",
+  "uname": [
+    "Linux",
+    "fedora-blade",
+    "7.2.8-200.fc44.x86_64",
+    "#1 SMP PREEMPT_DYNAMIC Fri Sep 25 21:05:44 UTC 2026",
+    "x86_64"
+  ],
+  "sources": {
+    "tools/bench/labs/query_compare/profile.py": "d075e587d9c1e0f990e0b795ea4182bec15cca50028fec203016182a4969aa8f",
+    "tools/bench/labs/query_compare/run_job.py": "6ae9032b6c895230e82a20a6cfbc8413ca03124d70e25c9d33304f36d7c2e9ba",
+    "tools/bench/labs/query_compare/run.py": "091247ee5cc65486c2c2620eec67fc1fa955a92263d4223c2f3c431e6478d54b",
+    "tools/bench/labs/query_compare/consumer.py": "9c904b876c0d84845f8edf2ac4c1f1b317444c31123cf7f8c3e7042fa585d100",
+    "tools/bench/labs/query_compare/audit.py": "514da49f17cf27c61ac6d5afa66f1b15e75b6ca4a790bb7a0002b9aff7c93fc9",
+    "tools/bench/labs/dev_small/measurement.py": "089ad74e37965c28c54fe95a16ab76ca85192301b19083eeed2a8ad63c9754ef",
+    "tools/bench/labs/dev_small/run_job.py": "b502521c8da68801cfbbce3e153103227e459f76eac9b33790e2309a85e1bf59",
+    "tools/bench/labs/dev_small/native.py": "df871e1da85fc1361528389a7932a30b7adcbd8ad2bc587287e3beae1b6d674e",
+    "tools/bench/labs/dev_small/audit.py": "63dfd409e4f0d4fdfb67a441e313b4210f6b6749a15ff7870c16426162235529",
+    "tools/bench/labs/dev_small/archive.py": "30153fa6f0e0e7b10ede874d1fb8cfb319ce905496af2c469039ecc5e4e1d334",
+    "tools/bench/labs/dev_small/run.py": "05d0fc241994227f129611d6fac89a19c7d9644d440aba69dd6d1676b9c5b06e",
+    "tools/bench/labs/dev_small/prepare.py": "df4aff47711762594329a9fcb4c82345e27703fa45240db17df89b64c358d8fe",
+    "tools/bench/observe_dev_small.py": "9bdeed2b6a2a4a2404a120cf1b035446a82b80b50b7a33bbd4df6cf26dddec1f",
+    "tools/qualification/query_oracle.py": "fc696ee1173093c258ff4451c4a796dd8e5832761f9e0ff49f89a922b411d23a"
+  }
+}

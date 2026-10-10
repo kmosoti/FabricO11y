@@ -4,6 +4,13 @@
 
 Accepted for the planned alpha; not implemented or installation tested.
 
+Later [ADR-0026](ADR-0026-launch-a-dedicated-spindle-with-each-server.md)
+supplements the process topology: the production server CLI owns a dedicated
+Spindle child inside the server service's existing cgroup. The two installed
+units, static service identity and unchanged numeric limits remain; the
+standalone node unit still serves edge collection. This addition does not
+retroactively change the installation evidence recorded here.
+
 ## Context
 
 One operator-controlled Debian 13/WSL2 host needs two long-running services with durable local state, host metric read access, bounded resources and a reviewable Unix privilege boundary.

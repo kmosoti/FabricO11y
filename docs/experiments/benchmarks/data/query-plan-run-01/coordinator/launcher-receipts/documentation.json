@@ -1,0 +1,28 @@
+{
+  "unit": "fabric-work-655af82b14ce4741a4517b51d51fad06",
+  "command": [
+    "python3",
+    "tools/bench/labs/query_compare/run_job.py",
+    "--id",
+    "documentation",
+    "--lab",
+    "recovery",
+    "--stage",
+    "overhead",
+    "--seconds",
+    "30",
+    "--",
+    "python3",
+    "-c",
+    "from pathlib import Path; import subprocess; paths=list(Path('tools/bench/labs/query_compare').glob('*.py'))+[Path('tools/bench/labs')/n for n in ('summarize_query_plan.py','cleanup_query_plan.py','preserve_query_profile_failure.py','compact_query_profile_failure.py','verify_query_profile_archive.py')]; [compile(p.read_text(),str(p),'exec') for p in paths]; print('Compiled',len(paths),'Python helpers'); subprocess.run(['bun','tools/docs/check.mjs'],check=True)"
+  ],
+  "exit": 1,
+  "started_unix": 1791223886.3760211,
+  "elapsed_s": 0.8228240013122559,
+  "data_drive": "/run/media/kmosoti/data",
+  "temporary": "/run/media/kmosoti/data/FabricO11y/scratch/work-jraz2zgk",
+  "temporary_removed": true,
+  "retained_failure_evidence": "/run/media/kmosoti/data/FabricO11y/evidence/fabric-work-655af82b14ce4741a4517b51d51fad06",
+  "memory_max_bytes": 21474836480,
+  "swap_max_bytes": 0
+}

@@ -1,0 +1,61 @@
+   Compiling cc v1.5.1
+   Compiling syn v2.0.119
+   Compiling ring v0.17.14
+   Compiling ppv-lite86 v0.2.21
+   Compiling slab v0.4.12
+   Compiling futures-util v0.3.34
+   Compiling rand_chacha v0.9.0
+   Compiling prost-derive v0.14.4
+   Compiling futures-executor v0.3.34
+   Compiling rand v0.9.5
+   Compiling serde_core v1.0.228
+   Compiling httparse v1.10.1
+   Compiling opentelemetry_sdk v0.33.0
+   Compiling prost v0.14.4
+   Compiling rustls v0.23.45
+   Compiling opentelemetry-proto v0.33.0
+   Compiling rustls-webpki v0.103.15
+   Compiling http v1.5.0
+   Compiling ureq-proto v0.6.0
+   Compiling fabric-frame v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-frame)
+   Compiling serde_derive v1.0.228
+   Compiling serde_json v1.0.150
+   Compiling fabric-adapter-linux v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-adapter-linux)
+   Compiling ureq v3.3.0
+   Compiling serde v1.0.228
+   Compiling fabric_o11y v0.1.0 (/workspace/FabricO11y-journal-reclaim)
+    Finished `test` profile [unoptimized] target(s) in 13.51s
+     Running unittests examples/spindle_sim.rs (/workspace/scratch/fabrico11y-target/debug/examples/spindle_sim-317e24c3cc39b67f)
+
+running 1 test
+test tests::entropy_body_matches_the_phase0_python_generator ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling fabric_o11y v0.1.0 (/workspace/FabricO11y-journal-reclaim)
+    Finished `release` profile [optimized] target(s) in 1.50s
+   Compiling fabric-server v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-server)
+    Finished `release` profile [optimized] target(s) in 1.20s
+   Compiling fabric_o11y v0.1.0 (/workspace/FabricO11y-journal-reclaim)
+    Finished `test` profile [unoptimized] target(s) in 0.25s
+     Running unittests examples/spindle_sim.rs (/workspace/scratch/fabrico11y-target/debug/examples/spindle_sim-317e24c3cc39b67f)
+
+running 1 test
+test tests::entropy_body_matches_the_phase0_python_generator ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling fabric_o11y v0.1.0 (/workspace/FabricO11y-journal-reclaim)
+    Finished `release` profile [optimized] target(s) in 1.36s
+   Compiling fabric_o11y v0.1.0 (/workspace/FabricO11y-journal-reclaim)
+    Finished `test` profile [unoptimized] target(s) in 0.31s
+     Running unittests examples/spindle_sim.rs (/workspace/scratch/fabrico11y-target/debug/examples/spindle_sim-317e24c3cc39b67f)
+
+running 2 tests
+test tests::entropy_body_matches_the_phase0_python_generator ... ok
+test tests::sized_workload_preserves_clock_and_exact_event_count ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+   Compiling fabric_o11y v0.1.0 (/workspace/FabricO11y-journal-reclaim)
+    Finished `release` profile [optimized] target(s) in 1.37s

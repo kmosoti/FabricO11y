@@ -1,0 +1,123 @@
+{
+  "lab": "recovery",
+  "version": 1,
+  "first_wave_runtime_budget_s": 900,
+  "jobs": [
+    {
+      "id": "R-spill",
+      "status": "ready",
+      "hypothesis": "H1 exact retained custody and clean restart/retry; H0 any data/answer loss or unsafe leftovers",
+      "prerequisite_ids": [
+        "candidate-freeze",
+        "containment-storage-preflight"
+      ],
+      "command": [
+        "python3",
+        "tools/bench/labs/readiness/recovery/run.py",
+        "--group",
+        "spill",
+        "--out",
+        "docs/experiments/benchmarks/data/readiness-labs-run-01/recovery/spill"
+      ],
+      "runtime_bound_s": 300,
+      "scratch_bound_bytes": 4294967296,
+      "free_space_reserve_bytes": 4294967296,
+      "evidence_bound_bytes": 52428800,
+      "expected_artifacts": [
+        "docs/experiments/benchmarks/data/readiness-labs-run-01/recovery/spill/result.json",
+        "docs/experiments/benchmarks/data/readiness-labs-run-01/recovery/spill/NN.txt",
+        "root cgroup/resource/cleanup receipt"
+      ],
+      "decision_rule": "Exit 0, all named exact tests selected (one passed, none ignored per cargo command), negative controls reject zero/ignored tests, complete logs/receipts, no unsafe resource state. Supports only mapped source stages; not full BS-4/BS-5 or installation.",
+      "cleanup_owner": "root launcher owns TMPDIR and FABRIC_LAB_SCRATCH; existing fixture destructors clean on success; archive/minimize failure before launcher cleanup"
+    },
+    {
+      "id": "R-custody",
+      "status": "ready",
+      "hypothesis": "H1 exact retained custody and clean restart/retry; H0 any data/answer loss or unsafe leftovers",
+      "prerequisite_ids": [
+        "candidate-freeze",
+        "containment-storage-preflight"
+      ],
+      "command": [
+        "python3",
+        "tools/bench/labs/readiness/recovery/run.py",
+        "--group",
+        "custody",
+        "--out",
+        "docs/experiments/benchmarks/data/readiness-labs-run-01/recovery/custody"
+      ],
+      "runtime_bound_s": 300,
+      "scratch_bound_bytes": 4294967296,
+      "free_space_reserve_bytes": 4294967296,
+      "evidence_bound_bytes": 52428800,
+      "expected_artifacts": [
+        "docs/experiments/benchmarks/data/readiness-labs-run-01/recovery/custody/result.json",
+        "docs/experiments/benchmarks/data/readiness-labs-run-01/recovery/custody/NN.txt",
+        "root cgroup/resource/cleanup receipt"
+      ],
+      "decision_rule": "Exit 0, all named exact tests selected (one passed, none ignored per cargo command), negative controls reject zero/ignored tests, complete logs/receipts, no unsafe resource state. Supports only mapped source stages; not full BS-4/BS-5 or installation.",
+      "cleanup_owner": "root launcher owns TMPDIR and FABRIC_LAB_SCRATCH; existing fixture destructors clean on success; archive/minimize failure before launcher cleanup"
+    },
+    {
+      "id": "R-history",
+      "status": "ready",
+      "hypothesis": "H1 exact retained custody and clean restart/retry; H0 any data/answer loss or unsafe leftovers",
+      "prerequisite_ids": [
+        "candidate-freeze",
+        "containment-storage-preflight"
+      ],
+      "command": [
+        "python3",
+        "tools/bench/labs/readiness/recovery/run.py",
+        "--group",
+        "history",
+        "--out",
+        "docs/experiments/benchmarks/data/readiness-labs-run-01/recovery/history"
+      ],
+      "runtime_bound_s": 300,
+      "scratch_bound_bytes": 4294967296,
+      "free_space_reserve_bytes": 4294967296,
+      "evidence_bound_bytes": 52428800,
+      "expected_artifacts": [
+        "docs/experiments/benchmarks/data/readiness-labs-run-01/recovery/history/result.json",
+        "docs/experiments/benchmarks/data/readiness-labs-run-01/recovery/history/NN.txt",
+        "root cgroup/resource/cleanup receipt"
+      ],
+      "decision_rule": "Exit 0, all named exact tests selected (one passed, none ignored per cargo command), negative controls reject zero/ignored tests, complete logs/receipts, no unsafe resource state. Supports only mapped source stages; not full BS-4/BS-5 or installation.",
+      "cleanup_owner": "root launcher owns TMPDIR and FABRIC_LAB_SCRATCH; existing fixture destructors clean on success; archive/minimize failure before launcher cleanup"
+    },
+    {
+      "id": "R-install",
+      "status": "blocked_environment",
+      "hypothesis": "Installed frozen profile enforces contract on disposable supported unified-cgroup host",
+      "prerequisite_ids": [
+        "disposable-supported-host",
+        "explicit-privileged-install-scope",
+        "containment-audit",
+        "frozen-deb"
+      ],
+      "command": [
+        "bash",
+        "tools/qualification/install/run.sh",
+        "/run/media/kmosoti/data/FabricO11y/evidence/readiness-install/fabrico11y.deb",
+        "/run/media/kmosoti/data/FabricO11y/evidence/readiness-install/clean"
+      ],
+      "runtime_bound_s": 1800,
+      "scratch_bound_bytes": 4294967296,
+      "free_space_reserve_bytes": 4294967296,
+      "expected_artifacts": [
+        "acceptance.txt",
+        "host.txt",
+        "journal.txt",
+        "deb.sha256",
+        "image.txt",
+        "source and resource receipts",
+        "mutation runs root-user/no-collision-check/no-memory-max"
+      ],
+      "decision_rule": "Existing installation protocol: clean exit0 all gates on unified host, each mutation rejects named gate; exit3 inconclusive, unavailable host unrun. Docker privileged container cannot be assumed contained by calling launcher.",
+      "cleanup_owner": "existing run.sh container trap plus separately verified disposable host cleanup; preserve user data until explicit disposable purge step",
+      "blocker": "Fedora44 host is outside supported Debian family; PID1 codex; docker executable/socket absent from read-only inspection; no disposable supported host provided. No host mutation authorized."
+    }
+  ]
+}

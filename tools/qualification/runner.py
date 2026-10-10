@@ -1,4 +1,4 @@
-"""Sample a trusted alpha command in an owned target/alpha-* directory.
+"""Sample a trusted alpha command in an owned scratch-root target/alpha-* directory.
 
 Polling detects violations during and after execution. Arbitrary children can
 write beyond a disk budget between samples; our generators enforce byte caps
@@ -39,11 +39,29 @@ def validate_limits(duration_s, disk_bytes, max_output_bytes):
         raise ValueError("evidence budget outside registered range")
 
 
+def scratch_root() -> Path:
+    value = os.environ.get("FABRIC_SCRATCH_ROOT")
+    if not value:
+        raise ValueError("FABRIC_SCRATCH_ROOT is required")
+    root = Path(value)
+    if not root.is_absolute() or root.is_symlink() or not root.is_dir():
+        raise ValueError("scratch root must be an existing absolute, non-symlink directory")
+    return root.resolve(strict=True)
+
+
 def owned_root(path: Path) -> Path:
-    target = (Path(__file__).resolve().parents[2] / "target").resolve()
+    scratch = scratch_root()
     path = path.absolute()
-    if path.is_symlink() or not path.name.startswith("alpha-") or path.parent.resolve() != target:
-        raise ValueError("output must be a direct, non-symlink target/alpha-* child")
+    if (".." in path.parts or not path.name.startswith("alpha-")
+            or path.parent.name != "target" or not path.is_relative_to(scratch)):
+        raise ValueError("output must be a target/alpha-* child inside FABRIC_SCRATCH_ROOT")
+    for member in (path, *path.parents):
+        if member == scratch:
+            break
+        if member.is_symlink():
+            raise ValueError("output ancestry must not contain symlinks")
+    if not path.resolve().is_relative_to(scratch):
+        raise ValueError("resolved output escapes FABRIC_SCRATCH_ROOT")
     if path.exists():
         marker = path / MARKER
         if (not path.is_dir() or marker.is_symlink() or not marker.is_file()

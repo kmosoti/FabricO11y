@@ -37,9 +37,9 @@ fn sealed_labels(journal: &Path) -> io::Result<Vec<u64>> {
     Ok(labels)
 }
 
-/// The default number of Segments built at once: half the CPUs, one to four. Each
-/// build of a 64 MiB journal file peaks near 5.5 times the file in memory today
-/// (ADR-0022 will flatten that), so four stay inside the server's 3 GiB ceiling.
+/// The default number of Segments built at once: half the CPUs, one to four.
+/// Each bounded builder owns its runs and writer buffers; the worker count alone
+/// does not establish a bound on total server memory.
 pub fn default_workers() -> usize {
     std::thread::available_parallelism()
         .map(|n| n.get() / 2)
@@ -50,7 +50,8 @@ pub fn default_workers() -> usize {
 /// One pass: seal every sealed journal file, `workers` at a time, then apply
 /// retention. Segments are independent, so they are built in parallel; journal files
 /// are reclaimed strictly oldest first, and not past the first file whose Segment
-/// could not be built (ADR-0025).
+/// could not be built (ADR-0025). Reclaim runs before builds and after each
+/// ordered worker join, so a later sibling does not hold a completed prefix.
 pub fn pass(
     state_dir: &Path,
     intake: &Intake,
@@ -63,60 +64,20 @@ pub fn pass(
         .map(|(l, _)| l)
         .collect();
     let sealed = sealed_labels(&journal)?;
-    let pending: Vec<u64> = sealed
-        .iter()
-        .copied()
-        .filter(|l| !segmented.contains(l))
-        .collect();
-    let mut failed: Option<(u64, io::Error)> = None;
-    for chunk in pending.chunks(workers.max(1)) {
-        let results: Vec<(u64, io::Result<()>)> = std::thread::scope(|scope| {
-            let handles: Vec<_> = chunk
-                .iter()
-                .map(|&label| {
-                    let journal = &journal;
-                    scope.spawn(move || {
-                        let groups =
-                            segment::read_sealed(&journal.join(format!("sealed-{label:020}.faj")))?;
-                        segment::build(state_dir, label, &groups).map(|_| ())
-                    })
-                })
-                .collect();
-            chunk
-                .iter()
-                .zip(handles)
-                .map(|(&label, h)| {
-                    (
-                        label,
-                        h.join()
-                            .unwrap_or_else(|_| Err(io::Error::other("sealing thread panicked"))),
-                    )
-                })
-                .collect()
-        });
-        for (label, result) in results {
-            if let Err(error) = result
-                && failed.as_ref().is_none_or(|(l, _)| label < *l)
-            {
-                failed = Some((label, error));
-            }
-        }
-        if failed.is_some() {
-            break;
-        }
-    }
-    for label in sealed {
-        if failed.as_ref().is_some_and(|(l, _)| label >= *l) {
-            break;
-        }
-        intake.reclaim(label)?;
-    }
-    if let Some((label, error)) = failed {
-        return Err(io::Error::new(
-            error.kind(),
-            format!("sealing {label}: {error}"),
-        ));
-    }
+    build_and_reclaim(
+        &sealed,
+        segmented,
+        workers,
+        |label| {
+            segment::build_sealed(
+                state_dir,
+                label,
+                &journal.join(format!("sealed-{label:020}.faj")),
+            )
+            .map(|_| ())
+        },
+        |label| intake.reclaim(label),
+    )?;
     let segments_dir = segment::segments_dir(state_dir)?;
     let mut store = SegmentDir {
         state_dir,
@@ -125,6 +86,86 @@ pub fn pass(
     apply_retention(&mut store, &SystemClock, retention)
         .map(|_| ())
         .map_err(|StoreFailed(why)| io::Error::other(why))
+}
+
+// The sorted snapshot is fixed for this pass. Publication can finish out of
+// order, but only its contiguous oldest prefix may release journal capacity.
+// Keep these callbacks private: they expose scheduling to deterministic tests,
+// while production still uses the existing Segment and Intake effects.
+fn build_and_reclaim(
+    sealed: &[u64],
+    mut published: BTreeSet<u64>,
+    workers: usize,
+    build: impl Fn(u64) -> io::Result<()> + Sync,
+    mut reclaim: impl FnMut(u64) -> io::Result<()>,
+) -> io::Result<()> {
+    let pending: Vec<u64> = sealed
+        .iter()
+        .copied()
+        .filter(|l| !published.contains(l))
+        .collect();
+    let mut next = 0;
+    reclaim_prefix(sealed, &published, &mut next, &mut reclaim)?;
+    for chunk in pending.chunks(workers.max(1)) {
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = chunk
+                .iter()
+                .map(|&label| {
+                    let build = &build;
+                    scope.spawn(move || build(label))
+                })
+                .collect();
+            let mut failed = None;
+            let mut reclaim_failed = None;
+            // Later completions cannot advance the oldest eligible prefix.
+            // Consume handles in that order without waiting for the whole group.
+            for (&label, handle) in chunk.iter().zip(handles) {
+                match handle
+                    .join()
+                    .unwrap_or_else(|_| Err(io::Error::other("sealing thread panicked")))
+                {
+                    Ok(()) => {
+                        published.insert(label);
+                    }
+                    Err(error) if failed.is_none() => failed = Some((label, error)),
+                    Err(_) => {}
+                }
+                if reclaim_failed.is_none() {
+                    reclaim_failed =
+                        reclaim_prefix(sealed, &published, &mut next, &mut reclaim).err();
+                }
+                // A failed checkpoint stops reclamation, but every started
+                // worker must still be joined, including a panicking sibling.
+            }
+            if let Some(error) = reclaim_failed {
+                return Err(error);
+            }
+            if let Some((label, error)) = failed {
+                return Err(io::Error::new(
+                    error.kind(),
+                    format!("sealing {label}: {error}"),
+                ));
+            }
+            Ok(())
+        })?;
+    }
+    Ok(())
+}
+
+fn reclaim_prefix(
+    sealed: &[u64],
+    published: &BTreeSet<u64>,
+    next: &mut usize,
+    reclaim: &mut impl FnMut(u64) -> io::Result<()>,
+) -> io::Result<()> {
+    while let Some(&label) = sealed.get(*next) {
+        if !published.contains(&label) {
+            break;
+        }
+        reclaim(label)?;
+        *next += 1;
+    }
+    Ok(())
 }
 
 /// The Segment directory as the retention use case's `SegmentStore` port.
@@ -185,4 +226,409 @@ pub fn spawn(
                 }
             }
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::store::{Answer, CommitMode, Store, Submission, identify_strand};
+    use fabric_frame::envelope::Batch;
+    use prost::Message;
+    use std::sync::{Mutex, mpsc};
+
+    #[test]
+    fn published_prefix_is_reclaimed_before_building() {
+        let reclaimed = Mutex::new(Vec::new());
+        build_and_reclaim(
+            &[1, 2, 3, 4],
+            BTreeSet::from([1, 2, 4]),
+            2,
+            |label| {
+                assert_eq!(label, 3);
+                assert_eq!(*reclaimed.lock().unwrap(), [1, 2]);
+                Ok(())
+            },
+            |label| {
+                reclaimed.lock().unwrap().push(label);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(*reclaimed.lock().unwrap(), [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn completed_prefix_reclaims_while_sibling_is_blocked() {
+        let (release, released) = mpsc::channel();
+        let released = Mutex::new(released);
+        let (started, starts) = mpsc::channel();
+        let (built, builds) = mpsc::channel();
+        let (reclaimed, reclaims) = mpsc::channel();
+        let (finished, finishes) = mpsc::channel();
+
+        std::thread::scope(|scope| {
+            let run = scope.spawn(|| {
+                let result = build_and_reclaim(
+                    &[1, 2, 3],
+                    BTreeSet::new(),
+                    3,
+                    |label| {
+                        started.send(label).unwrap();
+                        if label == 2 {
+                            released
+                                .lock()
+                                .unwrap()
+                                .recv_timeout(Duration::from_secs(10))
+                                .unwrap();
+                        }
+                        built.send(label).unwrap();
+                        Ok(())
+                    },
+                    |label| {
+                        reclaimed.send(label).unwrap();
+                        Ok(())
+                    },
+                );
+                finished.send(result).unwrap();
+            });
+
+            let mut start_labels = Vec::new();
+            for _ in 0..3 {
+                if let Ok(label) = starts.recv_timeout(Duration::from_secs(1)) {
+                    start_labels.push(label);
+                }
+            }
+
+            let mut built_labels = Vec::new();
+            for _ in 0..2 {
+                if let Ok(label) = builds.recv_timeout(Duration::from_secs(1)) {
+                    built_labels.push(label);
+                }
+            }
+            built_labels.sort_unstable();
+            let first_reclaim = reclaims.recv_timeout(Duration::from_secs(1)).ok();
+            let crossed_hole = reclaims.try_recv().is_ok();
+
+            // Always unblock label 2 before assertions or joining the scoped worker.
+            let _ = release.send(());
+            let result = finishes.recv_timeout(Duration::from_secs(1));
+            run.join().unwrap();
+
+            assert_eq!(start_labels.len(), 3, "all siblings must have started");
+            assert_eq!(
+                built_labels,
+                [1, 3],
+                "labels 1 and 3 must finish before label 2 is released"
+            );
+            assert_eq!(
+                first_reclaim,
+                Some(1),
+                "completed prefix was retained behind a blocked sibling"
+            );
+            assert!(!crossed_hole, "reclamation crossed blocked label 2");
+            result.unwrap().unwrap();
+
+            let mut final_reclaims = vec![first_reclaim.unwrap()];
+            final_reclaims.extend(reclaims.try_iter());
+            assert_eq!(final_reclaims, [1, 2, 3]);
+        });
+    }
+
+    #[test]
+    fn reclaim_failure_waits_for_started_siblings() {
+        let (release, released) = mpsc::channel();
+        let released = Mutex::new(released);
+        let (started, starts) = mpsc::channel();
+        let (built, builds) = mpsc::channel();
+        let (reclaimed, reclaims) = mpsc::channel();
+        let (finished, finishes) = mpsc::channel();
+
+        std::thread::scope(|scope| {
+            let run = scope.spawn(|| {
+                let result = build_and_reclaim(
+                    &[1, 2, 3, 4],
+                    BTreeSet::new(),
+                    3,
+                    |label| {
+                        started.send(label).unwrap();
+                        if label == 2 {
+                            released
+                                .lock()
+                                .unwrap()
+                                .recv_timeout(Duration::from_secs(10))
+                                .unwrap();
+                        }
+                        built.send(label).unwrap();
+                        Ok(())
+                    },
+                    |label| {
+                        reclaimed.send(label).unwrap();
+                        Err(io::Error::other("injected checkpoint failure"))
+                    },
+                );
+                finished.send(result).unwrap();
+            });
+
+            let mut start_labels = Vec::new();
+            for _ in 0..3 {
+                if let Ok(label) = starts.recv_timeout(Duration::from_secs(1)) {
+                    start_labels.push(label);
+                }
+            }
+            let returned_while_blocked = finishes.recv_timeout(Duration::from_secs(1)).is_ok();
+
+            // A reclaim error must not detach the already-started sibling.
+            let _ = release.send(());
+            let result = finishes.recv_timeout(Duration::from_secs(1));
+            run.join().unwrap();
+
+            let attempted = reclaims.try_iter().collect::<Vec<_>>();
+            let mut built_labels = builds.try_iter().collect::<Vec<_>>();
+            built_labels.sort_unstable();
+            assert_eq!(start_labels.len(), 3, "all siblings must have started");
+            assert!(
+                !returned_while_blocked,
+                "reclaim failure returned before the blocked sibling finished"
+            );
+            assert_eq!(attempted, [1]);
+            assert_eq!(
+                built_labels,
+                [1, 2, 3],
+                "the later chunk must not start after reclaim fails"
+            );
+            assert_eq!(
+                result.unwrap().unwrap_err().to_string(),
+                "injected checkpoint failure"
+            );
+        });
+    }
+
+    #[test]
+    fn completed_group_reclaims_while_later_group_is_blocked() {
+        for workers in [1, 2] {
+            let reclaimed = Mutex::new(Vec::new());
+            let (release, released) = mpsc::channel();
+            let released = Mutex::new(released);
+            let (entered, waiting) = mpsc::channel();
+            std::thread::scope(|scope| {
+                let run = scope.spawn(|| {
+                    build_and_reclaim(
+                        &[1, 2, 3, 4],
+                        BTreeSet::new(),
+                        workers,
+                        |label| {
+                            if label == workers as u64 + 1 {
+                                entered.send(()).unwrap();
+                                released
+                                    .lock()
+                                    .unwrap()
+                                    .recv_timeout(Duration::from_secs(10))
+                                    .unwrap();
+                            }
+                            Ok(())
+                        },
+                        |label| {
+                            reclaimed.lock().unwrap().push(label);
+                            Ok(())
+                        },
+                    )
+                });
+                let arrived = waiting.recv_timeout(Duration::from_secs(5));
+                let prefix = reclaimed.lock().unwrap().clone();
+                // Release even on timeout: the assertion must not strand a worker.
+                let _ = release.send(());
+                let result = run.join().unwrap();
+                assert!(arrived.is_ok(), "later worker did not reach its barrier");
+                result.unwrap();
+                assert_eq!(prefix, (1..=workers as u64).collect::<Vec<_>>());
+            });
+            assert_eq!(*reclaimed.lock().unwrap(), [1, 2, 3, 4]);
+        }
+    }
+
+    #[test]
+    fn failure_or_panic_never_reclaims_across_a_hole() {
+        for panic in [false, true] {
+            let built = Mutex::new(Vec::new());
+            let mut reclaimed = Vec::new();
+            let error = build_and_reclaim(
+                &[1, 2, 3, 4],
+                BTreeSet::from([1]),
+                2,
+                |label| {
+                    built.lock().unwrap().push(label);
+                    if label == 2 {
+                        assert!(!panic, "injected worker panic");
+                        return Err(io::Error::other("injected build failure"));
+                    }
+                    Ok(())
+                },
+                |label| {
+                    reclaimed.push(label);
+                    Ok(())
+                },
+            )
+            .unwrap_err();
+            assert!(error.to_string().starts_with("sealing 2:"));
+            assert_eq!(reclaimed, [1]);
+            let mut built = built.into_inner().unwrap();
+            built.sort_unstable();
+            assert_eq!(built, [2, 3]);
+        }
+    }
+
+    #[test]
+    fn successful_prefix_in_a_failed_group_is_reclaimed() {
+        let mut reclaimed = Vec::new();
+        let error = build_and_reclaim(
+            &[1, 2, 3, 4],
+            BTreeSet::new(),
+            2,
+            |label| {
+                if label == 2 {
+                    Err(io::Error::other("injected"))
+                } else {
+                    Ok(())
+                }
+            },
+            |label| {
+                reclaimed.push(label);
+                Ok(())
+            },
+        )
+        .unwrap_err();
+        assert!(error.to_string().starts_with("sealing 2:"));
+        assert_eq!(reclaimed, [1]);
+    }
+
+    #[test]
+    fn reclaim_error_stops_new_groups_and_retry_skips_published_labels() {
+        let built = Mutex::new(BTreeSet::new());
+        let mut attempted = Vec::new();
+        let error = build_and_reclaim(
+            &[1, 2, 3, 4],
+            BTreeSet::new(),
+            2,
+            |label| {
+                built.lock().unwrap().insert(label);
+                Ok(())
+            },
+            |label| {
+                attempted.push(label);
+                Err(io::Error::other("checkpoint failed"))
+            },
+        )
+        .unwrap_err();
+        assert_eq!(error.to_string(), "checkpoint failed");
+        assert_eq!(attempted, [1]);
+        let published = built.into_inner().unwrap();
+        assert_eq!(published, BTreeSet::from([1, 2]));
+        let retry_built = Mutex::new(BTreeSet::new());
+        let mut reclaimed = Vec::new();
+        build_and_reclaim(
+            &[1, 2, 3, 4],
+            published,
+            2,
+            |label| {
+                retry_built.lock().unwrap().insert(label);
+                Ok(())
+            },
+            |label| {
+                reclaimed.push(label);
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(retry_built.into_inner().unwrap(), BTreeSet::from([3, 4]));
+        assert_eq!(reclaimed, [1, 2, 3, 4]);
+    }
+
+    fn submit(intake: &Intake, bytes: &[u8]) -> Answer {
+        let (strand, sequence) = identify_strand(bytes).unwrap();
+        let (reply, answer) = tokio::sync::oneshot::channel();
+        intake.submit(Submission {
+            label: "fixture".into(),
+            strand,
+            sequence,
+            bytes: bytes.to_vec(),
+            reply,
+        });
+        answer.blocking_recv().unwrap()
+    }
+
+    #[test]
+    fn real_checkpoint_failure_preserves_journal_and_retry_preserves_exact_bytes() {
+        let dir = std::env::temp_dir().join(format!(
+            "fabric-reclaim-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let limit = 16 * 1024 * 1024;
+        let (intake, thread) = Store::open_with(&dir, limit, 1024, CommitMode::INDIVIDUAL)
+            .unwrap()
+            .spawn_joinable()
+            .unwrap();
+        let batches: Vec<_> = (1..=5)
+            .map(|sequence| {
+                Batch {
+                    version: 1,
+                    node_id: vec![7; 16],
+                    generation: 1,
+                    sequence,
+                    collection_gaps: vec!["fixture".repeat(32); 8],
+                    ..Default::default()
+                }
+                .encode_to_vec()
+            })
+            .collect();
+        for (i, bytes) in batches.iter().enumerate() {
+            assert_eq!(submit(&intake, bytes), Answer::Ack(i as u64 + 1));
+        }
+        let journal = dir.join("journal");
+        let sealed = sealed_labels(&journal).unwrap();
+        assert_eq!(sealed.len(), 4);
+        let first = sealed[0];
+        let groups =
+            segment::read_sealed(&journal.join(format!("sealed-{first:020}.faj"))).unwrap();
+        segment::build(&dir, first, &groups).unwrap();
+        let retention = Retention {
+            max_age_s: u64::MAX,
+            max_bytes: u64::MAX,
+        };
+        // File::create cannot replace this owned directory: checkpoint fails
+        // before deletion, without disk exhaustion or privileged fault injection.
+        std::fs::create_dir(dir.join("streams.json.tmp")).unwrap();
+        assert!(pass(&dir, &intake, retention, 2).is_err());
+        assert_eq!(sealed_labels(&journal).unwrap(), sealed);
+        assert_eq!(segment::list(&dir).unwrap().len(), 1);
+        std::fs::remove_dir(dir.join("streams.json.tmp")).unwrap();
+        pass(&dir, &intake, retention, 2).unwrap();
+        assert!(sealed_labels(&journal).unwrap().is_empty());
+        drop(intake);
+        thread.join().unwrap();
+        let store = Store::open(&dir, limit, CommitMode::INDIVIDUAL).unwrap();
+        assert_eq!(store.committed_through(&([7; 16], 1)), 5);
+        let (intake, thread) = store.spawn_joinable().unwrap();
+        assert_eq!(submit(&intake, &batches[4]), Answer::Ack(5));
+        let mut different = Batch::decode(batches[4].as_slice()).unwrap();
+        different.collection_gaps.push("different bytes".into());
+        assert_eq!(
+            submit(&intake, &different.encode_to_vec()),
+            Answer::Conflict(5)
+        );
+        drop(intake);
+        thread.join().unwrap();
+        let mut replayed = Vec::new();
+        Store::replay(&dir, limit, |entry| {
+            replayed.push(entry.batch.clone());
+            Ok(())
+        })
+        .unwrap();
+        assert_eq!(replayed, batches);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 }

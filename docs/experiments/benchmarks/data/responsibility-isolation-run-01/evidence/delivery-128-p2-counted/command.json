@@ -1,0 +1,15 @@
+[
+  "prlimit",
+  "--as=2147483648",
+  "--",
+  "taskset",
+  "-c",
+  "0,1",
+  "/workspace/scratch/responsibility-frozen/counted",
+  "/workspace/scratch/responsibility-run-01/scratch/delivery-128-p2-counted",
+  "delivery",
+  "128",
+  "https://127.0.0.1:58679",
+  "/workspace/scratch/responsibility-run-01/scratch/delivery-128-p2-counted/ca.pem",
+  "/workspace/scratch/responsibility-run-01/scratch/delivery-128-p2-counted/token"
+]

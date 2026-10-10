@@ -2,11 +2,58 @@
 
 ## Status
 
-Accepted on 2026-10-01 in the bounded-sealer milestone. The owner chose this candidate after an exploratory comparison of seven. The decision is accepted and the implementation has not started: every statement below about what the sealer does after this change describes a design, and the [sealer view](../architecture/sealer.md) says so too.
+Accepted on 2026-10-01 in the bounded-sealer milestone; input/group ownership amended on 2026-10-10 below. The owner chose external merge after an exploratory comparison of seven candidates. The [sealer view](../architecture/sealer.md) describes the implementation, including spans and per-file workers introduced by ADR-0025, and sixteen-way multi-pass merging. The original single-thread, two-sorted-table description below belongs to the decision's historical context; its claimed universal memory bound has not been established. Registered acceptance thresholds remain unchanged.
 
-It changes no bytes. The Segment layout, manifest version, table schemas, row order, row-group size, commit protocol and every reader stay as [ADR-0020](ADR-0020-store-sealed-history-as-parquet-segments.md) and the [retained-history contract](../architecture/retained-history.md) define them.
+The Segment layout, manifest version, table schemas, row order, commit protocol and readers remain compatible with [ADR-0020](ADR-0020-store-sealed-history-as-parquet-segments.md) and the [retained-history contract](../architecture/retained-history.md). The amendment states which physical group boundaries change; byte equality is attached to its measured reference, not every historical writer.
 
 ## Context
+
+Implementation follow-up: the [speed investigation](../experiments/benchmarks/sealer-speed-run-01.md)
+uses compact binary scratch records and rewrites only enough contiguous runs
+to meet fan-in on a partial pass. These refine disposable scratch processing;
+the decision, persistent formats and acceptance protocol below are unchanged.
+
+The [readiness continuation](../experiments/formal/readiness-continuation-results.md)
+records an opt-in aligned-input writer with reference physical row groups:
+eight cells with three pairs passed the original builder gates, and eight
+supplemental spill replays preserved inputs/manifests. Named merge, cleanup
+and heap mutants were caught; finite syscall/kill cuts were independently
+query-graded. The subsequent combined disk-PageStore campaign and
+[companion-compatible soak](../experiments/benchmarks/soak-run-02.md) passed
+their registered gates. The original failed soak and failed intermediate
+candidates retain their outcomes.
+
+## Input and encoded-page ownership amendment, 2026-10-10
+
+The normal writer separates owned input chunks from physical Parquet groups.
+Logs use encoder-aligned 1,024-row input chunks with an estimated 17 MiB target;
+metrics and spans retain 8,192-row/8 MiB input targets. All sorted tables retain
+8,192-row physical groups across input writes. Raw Batch/gap chunks keep explicit
+physical flushing. One oversized row is preserved even above an input target;
+these estimates are not absolute allocation bounds.
+
+Every table stores completed encoded pages in private disk scratch and loads
+each consumed key on demand. Page files must be removed before manifest
+publication. Any read, write or cleanup error prevents publication and retains
+journal custody. This supersedes the original 8 MiB physical-group closure for
+sorted tables. It changes neither encoding nor schemas, readers, manifest
+version, ordering, custody, publication or sync order. Physical bytes can differ
+from the former bounded writer when its byte cap closed a group early; recorded
+byte equality is to the retained whole-file reference on the measured inputs.
+
+The reason is an executable counterexample: bounded input alone used
+136.45 MiB of incremental heap on high-entropy logs. Disk-backed page ownership
+reduced that probe to 40.07 MiB with exact output. The repeated eight-cell,
+three-pair campaign passed the original 80 MiB ceiling and 10% scaling rule;
+the full R2 soak passed all ten original gates with exact simulator and companion
+custody. The [encoded-page record](../experiments/formal/encoded-page-memory-run-01.md)
+and [soak record](../experiments/benchmarks/soak-run-02.md) retain commands and
+limits. This decision admits that tested path as the default, subject to an
+unflagged build and regression verification. It does not assert an arbitrary-input
+heap bound, deployment qualification, or completion of the milestone's merge/CI
+requirements. Legacy build selectors accepting `1` remain compatible.
+
+## Original design context
 
 The sealer turns each sealed server journal file into a Segment. Today `segment::build` does it in memory, all at once:
 
@@ -114,3 +161,4 @@ This decision is falsified by any of these:
 - [ADR-0018](ADR-0018-accept-work-on-executable-evidence.md) (executable evidence)
 - [Sealer view](../architecture/sealer.md)
 - [Sealer study, run 01](../experiments/benchmarks/sealer-study-run-01.md)
+- [Coordinated memory/query/recovery investigation](../experiments/benchmarks/readiness-labs-run-01.md): reconstructed shape evidence and a physical-index-count checker counterexample; full acceptance remains incomplete.

@@ -1,0 +1,10 @@
+flowchart LR
+    Admin[Read admin token] --> TLS[Load TLS certificate and key]
+    TLS -->|valid| Store[Open control and Store]
+    TLS -->|missing or invalid| Error[Return error before workers own journal]
+    Store --> Owner[Commit worker and cleanup owner]
+    Owner --> Workers[Register sealer worker]
+    Workers --> HTTPS[Serve HTTPS]
+    HTTPS -->|return or cancellation| Stop[Signal HTTP and sealer stop]
+    Stop --> Join[Join both workers off executor]
+    Join --> Release[Journal ownership released]

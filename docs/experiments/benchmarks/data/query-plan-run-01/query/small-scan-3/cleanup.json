@@ -1,0 +1,9 @@
+{
+  "status": "passed",
+  "work": "/run/media/kmosoti/data/FabricO11y/scratch/work-xxwhf27v/query/small-scan-3/tmp/small-scan-3",
+  "removed": true,
+  "logical_bytes": 555467325,
+  "elapsed_s": 282.70089280299726,
+  "retained_lab_bytes": 34293714,
+  "failure_moves_with_launcher": false
+}

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 description = "Linux collection adapter for the Spindle: bounded procfs/statvfs sampling and newline log reading"
 publish = false
+license = "Apache-2.0"
 
 [dependencies]
 crc32fast = "=1.5.2"

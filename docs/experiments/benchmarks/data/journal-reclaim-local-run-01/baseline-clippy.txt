@@ -1,0 +1,123 @@
+ Downloading crates ...
+  Downloaded bit-set v0.8.0
+  Downloaded rand_xorshift v0.4.0
+  Downloaded bit-vec v0.8.0
+  Downloaded fastrand v2.5.0
+  Downloaded rand_distr v0.5.1
+  Downloaded regex-syntax v0.8.11
+  Downloaded scoped-tls v1.0.1
+  Downloaded quick-error v1.2.3
+  Downloaded rustix v1.1.5
+  Downloaded tracing-attributes v0.1.31
+  Downloaded tempfile v3.27.0
+  Downloaded unarray v0.1.4
+  Downloaded proptest v1.11.0
+  Downloaded turmoil v0.7.2
+  Downloaded wait-timeout v0.2.1
+  Downloaded rusty-fork v0.3.1
+  Downloaded try-lock v0.2.5
+  Downloaded want v0.3.1
+  Downloaded linux-raw-sys v0.12.1
+    Blocking waiting for file lock on build directory
+    Checking libc v0.2.189
+    Checking cfg-if v1.0.5
+   Compiling syn v2.0.119
+    Checking bytes v1.11.1
+    Checking once_cell v1.21.4
+    Checking getrandom v0.3.4
+    Checking pin-project-lite v0.2.17
+    Checking itoa v1.0.18
+    Checking futures-core v0.3.34
+    Checking rand_core v0.9.5
+    Checking fabric-core v0.1.0 (/workspace/FabricO11y-review-5f0c52f/crates/fabric-core)
+    Checking futures-sink v0.3.34
+    Checking slab v0.4.12
+    Checking typenum v1.20.1
+    Checking generic-array v0.14.7
+    Checking serde_core v1.0.228
+   Compiling zerocopy-derive v0.8.59
+    Checking futures-channel v0.3.34
+    Checking http v1.5.0
+    Checking futures-task v0.3.34
+    Checking futures-util v0.3.34
+    Checking zerocopy v0.8.59
+    Checking zmij v1.0.23
+    Checking crypto-common v0.1.7
+    Checking block-buffer v0.10.4
+    Checking percent-encoding v2.3.2
+    Checking memchr v2.8.3
+    Checking serde_json v1.0.150
+    Checking thiserror v2.0.21
+    Checking digest v0.10.7
+    Checking zeroize v1.9.0
+    Checking cpufeatures v0.2.17
+    Checking sha2 v0.10.9
+    Checking rustls-pki-types v1.15.1
+    Checking ppv-lite86 v0.2.21
+   Compiling prost-derive v0.14.4
+    Checking rand_chacha v0.9.0
+    Checking rand v0.9.5
+    Checking opentelemetry v0.33.0
+    Checking httparse v1.10.1
+    Checking futures-executor v0.3.34
+    Checking getrandom v0.2.17
+    Checking untrusted v0.9.0
+    Checking opentelemetry_sdk v0.33.0
+    Checking ring v0.17.14
+    Checking prost v0.14.4
+    Checking log v0.4.34
+    Checking rand_core v0.10.1
+    Checking rustls-webpki v0.103.15
+    Checking opentelemetry-proto v0.33.0
+    Checking crc32fast v1.5.2
+    Checking subtle v2.6.1
+    Checking rustls v0.23.45
+    Checking getrandom v0.4.3
+    Checking fabric-frame v0.1.0 (/workspace/FabricO11y-review-5f0c52f/crates/fabric-frame)
+   Compiling serde_derive v1.0.228
+    Checking libm v0.2.16
+    Checking serde v1.0.228
+    Checking num-traits v0.2.19
+    Checking cpufeatures v0.3.1
+    Checking chacha20 v0.10.2
+    Checking base64 v0.22.1
+    Checking rand v0.10.3
+    Checking ureq-proto v0.6.0
+    Checking deunicode v1.6.2
+    Checking utf8-zero v0.8.1
+    Checking fake v5.1.0
+    Checking ureq v3.3.0
+    Checking fabric-adapter-linux v0.1.0 (/workspace/FabricO11y-review-5f0c52f/crates/fabric-adapter-linux)
+    Checking bitflags v2.13.2
+    Checking fnv v1.0.7
+    Checking fabric_o11y v0.1.0 (/workspace/FabricO11y-review-5f0c52f)
+    Checking errno v0.3.14
+    Checking hashbrown v0.17.1
+    Checking signal-hook-registry v1.4.8
+    Checking socket2 v0.6.5
+    Checking mio v1.2.3
+    Checking num-integer v0.1.47
+    Checking tokio v1.53.1
+    Checking num-bigint v0.5.1
+    Checking half v2.7.1
+   Compiling tracing-attributes v0.1.31
+    Checking tracing-core v0.1.36
+    Checking fabric-observation v0.1.0 (/workspace/FabricO11y-review-5f0c52f/crates/fabric-observation)
+error: using `chunks_exact` with a constant chunk size
+  --> crates/fabric-observation/src/crc32.rs:81:28
+   |
+81 |     let mut chunks = bytes.chunks_exact(8);
+   |                            ^^^^^^^^^^^^^^^
+   |
+help: consider using `as_chunks::<8>()` instead
+  --> crates/fabric-observation/src/crc32.rs:81:28
+   |
+81 |     let mut chunks = bytes.chunks_exact(8);
+   |                            ^^^^^^^^^^^^^^^
+   = note: you can access the chunks using `chunks.0.iter()`, and the remainder using `chunks.1`
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.98.0/index.html#chunks_exact_to_as_chunks
+   = note: `-D clippy::chunks-exact-to-as-chunks` implied by `-D warnings`
+   = help: to override `-D warnings` add `#[allow(clippy::chunks_exact_to_as_chunks)]`
+
+error: could not compile `fabric-observation` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

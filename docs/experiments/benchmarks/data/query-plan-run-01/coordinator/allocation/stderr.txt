@@ -1,0 +1,10 @@
+resource group: /user.slice/user-1000.slice/user@1000.service/app.slice/fabric-work-27666822b83b4f37b2580ea7a762aaa4.service; memory.max=21474836480; swap.max=0
+Traceback (most recent call last):
+  File "/home/kmosoti/Projects/moiric/FabricO11y/tools/bench/labs/query_compare/profile.py", line 242, in <module>
+    main()
+    ~~~~^^
+  File "/home/kmosoti/Projects/moiric/FabricO11y/tools/bench/labs/query_compare/profile.py", line 205, in main
+    fixture = collect(trial, evidence, variant, population, deadline)
+  File "/home/kmosoti/Projects/moiric/FabricO11y/tools/bench/labs/query_compare/profile.py", line 121, in collect
+    raise RuntimeError('fixture/tail/segment raw records differ; evidence preserved')
+RuntimeError: fixture/tail/segment raw records differ; evidence preserved

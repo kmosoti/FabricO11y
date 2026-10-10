@@ -1,0 +1,39 @@
+--- a/crates/fabric-server/src/tail.rs
++++ b/crates/fabric-server/src/tail.rs
+@@ -385,7 +385,27 @@
+         journal_dir: &Path,
+         covered: &[(u64, u64)],
+     ) -> io::Result<HashMap<u64, PathBuf>> {
++        self.extend_inner(journal_dir, covered, || {})
++    }
++
++    #[cfg(test)]
++    pub(crate) fn extend_at_discovery_cut(
++        &mut self,
++        journal_dir: &Path,
++        covered: &[(u64, u64)],
++        after_discovery: impl FnOnce(),
++    ) -> io::Result<HashMap<u64, PathBuf>> {
++        self.extend_inner(journal_dir, covered, after_discovery)
++    }
++
++    fn extend_inner(
++        &mut self,
++        journal_dir: &Path,
++        covered: &[(u64, u64)],
++        after_discovery: impl FnOnce(),
++    ) -> io::Result<HashMap<u64, PathBuf>> {
+         let files = Self::files(journal_dir)?;
++        after_discovery();
+         let mut rows = Rows::default();
+         for (first, path, len) in &files {
+             let file = match File::open(path) {
+@@ -797,3 +817,8 @@
+         );
+     }
+ }
++
++// Draft regressions integrate only after the frozen diagnostic has finished.
++#[cfg(test)]
++#[path = "../../../tools/bench/labs/hammer/tail_identity_tests.rs.txt"]
++mod tail_identity_tests;

@@ -1,0 +1,337 @@
+{
+  "schema_version": 1,
+  "pins": "docs/research/cross-system-lab-queue.json#source_revisions",
+  "selection": "Exact mechanism paths plus at most 12 fallback regular source/document names; missing exact paths remain explicit.",
+  "repositories": [
+    {
+      "id": "datafusion_comet",
+      "repo": "apache/datafusion-comet",
+      "pin_key": "datafusion_comet",
+      "paths": [
+        "native/core/src/alloc_accounting.rs",
+        "native/core/src/execution/memory_pools/fair_pool.rs"
+      ],
+      "fallback_patterns": [
+        "*memory_pool*",
+        "*alloc_account*"
+      ],
+      "mechanism": "Reservations versus observed allocation"
+    },
+    {
+      "id": "feldera",
+      "repo": "feldera/feldera",
+      "pin_key": "feldera",
+      "paths": [
+        "crates/dbsp/src/trace/spine_async.rs",
+        "crates/dbsp/src/trace/spine_async/list_merger.rs"
+      ],
+      "fallback_patterns": [
+        "*spine_async*",
+        "*list_merger*"
+      ],
+      "mechanism": "Consumed work versus emitted-row fuel"
+    },
+    {
+      "id": "feldera_storage_design",
+      "repo": "feldera/storage-design",
+      "pin_key": "feldera_storage_design",
+      "paths": [
+        "README.md"
+      ],
+      "fallback_patterns": [
+        "*storage*",
+        "*design*"
+      ],
+      "mechanism": "Storage proposal versus implementation"
+    },
+    {
+      "id": "vortex",
+      "repo": "vortex-data/vortex",
+      "pin_key": "vortex",
+      "paths": [
+        "encodings/fsst/src/kernel.rs",
+        "encodings/fsst/src/compute/filter.rs",
+        "encodings/fsst/src/compute/like.rs",
+        "encodings/fsst/src/dfa/mod.rs"
+      ],
+      "fallback_patterns": [
+        "*fsst*compute*",
+        "*filter*execute*take*"
+      ],
+      "mechanism": "Compressed execution and canonicalization fallback"
+    },
+    {
+      "id": "lance",
+      "repo": "lance-format/lance",
+      "pin_key": "lance",
+      "paths": [
+        "rust/lance/src/io/exec/filtered_read.rs",
+        "rust/lance/src/index/scalar.rs"
+      ],
+      "fallback_patterns": [
+        "*scalar*index*",
+        "*filtered_read*"
+      ],
+      "mechanism": "Selection and stable identity costs"
+    },
+    {
+      "id": "redb",
+      "repo": "cberner/redb",
+      "pin_key": "redb",
+      "paths": [
+        "docs/design.md",
+        "src/tree_store/page_store/page_manager.rs"
+      ],
+      "fallback_patterns": [
+        "*transaction_tracker*",
+        "*page_manager*"
+      ],
+      "mechanism": "Committed roots and reclamation"
+    },
+    {
+      "id": "fjall",
+      "repo": "fjall-rs/fjall",
+      "pin_key": "fjall",
+      "paths": [
+        "README.md",
+        "src/keyspace/mod.rs"
+      ],
+      "fallback_patterns": [
+        "*compaction*",
+        "*journal*"
+      ],
+      "mechanism": "Buffered storage and maintenance"
+    },
+    {
+      "id": "tantivy",
+      "repo": "quickwit-oss/tantivy",
+      "pin_key": "tantivy",
+      "paths": [
+        "src/indexer/segment_writer.rs",
+        "src/fastfield/mod.rs"
+      ],
+      "fallback_patterns": [
+        "*postings*",
+        "*fastfield*"
+      ],
+      "mechanism": "Postings versus columns"
+    },
+    {
+      "id": "quickwit",
+      "repo": "quickwit-oss/quickwit",
+      "pin_key": "quickwit",
+      "paths": [
+        "quickwit/quickwit-indexing/src/actors/merge_executor.rs"
+      ],
+      "fallback_patterns": [
+        "*merge_executor*",
+        "*split_store*"
+      ],
+      "mechanism": "Index publication and merges"
+    },
+    {
+      "id": "clickhouse",
+      "repo": "ClickHouse/ClickHouse",
+      "pin_key": "clickhouse",
+      "paths": [
+        "src/Storages/MergeTree/MergeTreeIndexMinMax.cpp",
+        "src/Storages/MergeTree/MergeTreeReadPool.cpp"
+      ],
+      "fallback_patterns": [
+        "*MergeTreeIndex*",
+        "*MergeTreeReadPool*"
+      ],
+      "mechanism": "Pruning and read scheduling"
+    },
+    {
+      "id": "duckdb",
+      "repo": "duckdb/duckdb",
+      "pin_key": "duckdb",
+      "paths": [
+        "src/storage/buffer_manager.cpp",
+        "src/storage/standard_buffer_manager.cpp"
+      ],
+      "fallback_patterns": [
+        "*buffer_pool*",
+        "*row_group*"
+      ],
+      "mechanism": "Buffer ownership and spill"
+    },
+    {
+      "id": "greptimedb",
+      "repo": "GreptimeTeam/greptimedb",
+      "pin_key": "greptimedb",
+      "paths": [
+        "src/mito2/src/sst/index.rs"
+      ],
+      "fallback_patterns": [
+        "*inverted_index*",
+        "*bloom*"
+      ],
+      "mechanism": "Predicate-specific index cost"
+    },
+    {
+      "id": "tempo",
+      "repo": "grafana/tempo",
+      "pin_key": "tempo",
+      "paths": [
+        "tempodb/encoding/vparquet4/block.go",
+        "tempodb/encoding/vparquet4/block_findtracebyid.go"
+      ],
+      "fallback_patterns": [
+        "*block_findtracebyid*",
+        "*block_search*"
+      ],
+      "mechanism": "Trace retrieval completeness"
+    },
+    {
+      "id": "roaring",
+      "repo": "RoaringBitmap/roaring-rs",
+      "pin_key": "roaring",
+      "paths": [
+        "roaring/src/bitmap/container.rs",
+        "roaring/src/bitmap/ops.rs"
+      ],
+      "fallback_patterns": [
+        "*container*",
+        "*intersection*"
+      ],
+      "mechanism": "Container density and set operations"
+    },
+    {
+      "id": "vector",
+      "repo": "vectordotdev/vector",
+      "pin_key": "vector",
+      "paths": [
+        "src/sinks/util/adaptive_concurrency/controller.rs"
+      ],
+      "fallback_patterns": [
+        "*adaptive_concurrency*",
+        "*buffers*topology*"
+      ],
+      "mechanism": "Latency feedback and durable buffering"
+    },
+    {
+      "id": "otel_collector",
+      "repo": "open-telemetry/opentelemetry-collector-contrib",
+      "pin_key": "otel_collector",
+      "paths": [
+        "receiver/otelarrowreceiver/README.md",
+        "receiver/otelarrowreceiver/receiver.go"
+      ],
+      "fallback_patterns": [
+        "*otelarrowreceiver*"
+      ],
+      "mechanism": "Arrow transport conversion and ownership"
+    },
+    {
+      "id": "foundationdb",
+      "repo": "apple/foundationdb",
+      "pin_key": "foundationdb",
+      "paths": [
+        "flow/DeterministicRandom.h",
+        "fdbrpc/SimulatedNetwork.h"
+      ],
+      "fallback_patterns": [
+        "*Simulation*",
+        "*simulated*"
+      ],
+      "mechanism": "Deterministic failure schedules"
+    },
+    {
+      "id": "shuttle",
+      "repo": "awslabs/shuttle",
+      "pin_key": "shuttle",
+      "paths": [
+        "src/runtime/mod.rs",
+        "src/scheduler/mod.rs"
+      ],
+      "fallback_patterns": [
+        "*scheduler*",
+        "*runtime*"
+      ],
+      "mechanism": "Schedule exploration bounds"
+    },
+    {
+      "id": "loom",
+      "repo": "tokio-rs/loom",
+      "pin_key": "loom",
+      "paths": [
+        "src/rt/execution.rs",
+        "src/model.rs"
+      ],
+      "fallback_patterns": [
+        "*rt*schedule*",
+        "*rt*thread*"
+      ],
+      "mechanism": "Modeled concurrency and bounded exploration"
+    },
+    {
+      "id": "fail_rs",
+      "repo": "tikv/fail-rs",
+      "pin_key": "fail_rs",
+      "paths": [
+        "src/lib.rs"
+      ],
+      "fallback_patterns": [
+        "*failpoint*"
+      ],
+      "mechanism": "Failure injection scope"
+    },
+    {
+      "id": "proptest",
+      "repo": "proptest-rs/proptest",
+      "pin_key": "proptest",
+      "paths": [
+        "proptest/src/test_runner/runner.rs",
+        "proptest/src/test_runner/failure_persistence/mod.rs"
+      ],
+      "fallback_patterns": [
+        "*failure_persistence*",
+        "*test_runner*"
+      ],
+      "mechanism": "Shrinking and persisted counterexamples"
+    },
+    {
+      "id": "prometheus",
+      "repo": "prometheus/prometheus",
+      "pin_key": "prometheus",
+      "paths": [
+        "tsdb/chunkenc/xor.go",
+        "tsdb/chunkenc/histogram.go"
+      ],
+      "fallback_patterns": [
+        "*chunkenc*"
+      ],
+      "mechanism": "Numeric encoding exactness"
+    },
+    {
+      "id": "slatedb",
+      "repo": "slatedb/slatedb",
+      "pin_key": "slatedb",
+      "paths": [
+        "src/manifest/store.rs",
+        "src/db.rs"
+      ],
+      "fallback_patterns": [
+        "*manifest*",
+        "*compactor*"
+      ],
+      "mechanism": "Manifest publication and remote maintenance"
+    },
+    {
+      "id": "differential_dataflow",
+      "repo": "TimelyDataflow/differential-dataflow",
+      "pin_key": "differential_dataflow",
+      "paths": [
+        "src/trace/implementations/spine_fueled.rs",
+        "src/trace/implementations/ord.rs"
+      ],
+      "fallback_patterns": [
+        "*spine*",
+        "*merge_batcher*"
+      ],
+      "mechanism": "Incremental trace merge fuel"
+    }
+  ]
+}

@@ -28,14 +28,18 @@ flowchart LR
         Commit -->|grouped two-sync append| Journal
         Journal -->|sealed files| Sealer
         Sealer -->|manifest last| Segments
+        Sealer -->|published prefix before and between build groups| Commit
+        Commit -->|checkpoint then oldest journal reclaim| Journal
         Journal -->|unsealed tail| Query
         Segments -->|snapshot-bound reads| Query
     end
     Spool -->|oldest unacknowledged Batch over TLS| Intake
     Commit -->|ACK after durable commit| Spindle
     Control -->|desired configuration poll| Spindle
-    CLI[fabricctl] -->|admin HTTPS| Control
-    CLI -->|admin query| Query
+    UI[Leptos PWA] -->|passkey session| Access[Scoped console API]
+    CLI[fabricctl] -->|workload credential| Access
+    Access -->|authorized mutation| Control
+    Access -->|authorized sources and signals| Query
     CLI -->|local inspect| Spool
 ```
 
@@ -47,10 +51,81 @@ The canonical source is [system.mmd](../diagrams/system.mmd).
 | Spool | Durable `FAB1` frame log of Batches with an ACK cursor and whole-file reclaim | [src/spindle/spool.rs](../../src/spindle/spool.rs), [fabric-frame](../../crates/fabric-frame/src/frame.rs) | [storage](storage.md) |
 | Delivery | One Batch in flight per Strand, exact stored bytes, ACK only after durable commit | [fabric-core delivery](../../crates/fabric-core/src/delivery.rs), [fabric-app delivery](../../crates/fabric-app/src/delivery.rs), [store](../../crates/fabric-server/src/store.rs) | [delivery](delivery.md) |
 | Server journal | Grouped two-sync commits, Strand and binding state by replay, checkpoint before reclaim | [store](../../crates/fabric-server/src/store.rs) | [storage](storage.md) |
-| Retained history | Zstd Parquet Segments, sealing off the commit path, retention by age and bytes | [segment](../../crates/fabric-server/src/segment.rs), [sealer](../../crates/fabric-server/src/sealer.rs) | [retained history](retained-history.md), [sealer design](sealer.md) |
+| Retained history | Zstd Parquet Segments, external-sort sealing off the commit path, retention by age and bytes | [segment](../../crates/fabric-server/src/segment.rs), [bounded builder](../../crates/fabric-server/src/segment/bounded.rs), [sealer](../../crates/fabric-server/src/sealer.rs) | [retained history](retained-history.md), [sealer candidate](sealer.md) |
 | Query | Log, metric and rate queries with completeness, freshness, gaps and snapshot-bound pages | [query](../../crates/fabric-server/src/query.rs) | [retained history](retained-history.md) |
 | Control | Enrollment, desired and applied configuration, pause, resume, revoke | [control](../../crates/fabric-server/src/control.rs) | [control](control-plane.md) |
 | `fabricctl` | Local Spool inspection and the admin HTTPS client | [src/bin/fabricctl.rs](../../src/bin/fabricctl.rs) | [operations](../operations.md) |
+
+## Server startup
+
+The production `fabric-server serve` CLI now owns a dedicated local Spindle
+([ADR-0026](../decisions/ADR-0026-launch-a-dedicated-spindle-with-each-server.md)).
+Its process owner holds a state-directory lock, provisions a separate durable
+credential and starts the sibling `fabric-node` after the actual HTTPS listener
+is available. The child verifies TLS and authentication on its initial config
+poll. A child exit fails the supervisor; normal shutdown offers the child time
+to finish its current cycle while HTTP remains available. Both processes inherit
+the server service's cgroup. The [deployment view](deployment.md) documents
+limits, paths, overrides and operator pause behavior.
+
+<!-- diagram: ../diagrams/self-observation.mmd -->
+```mermaid
+flowchart LR
+    Supervisor[Production server CLI] -->|owns lifecycle and separate credential| Node[Dedicated Spindle process]
+    Supervisor -->|periodic samples and state changes| ServerLog[Bounded server diagnostic file]
+    Node -->|periodic samples and state changes| NodeLog[Bounded Spindle diagnostic file]
+    ServerLog -->|pinned local source| Node
+    NodeLog -->|pinned local source| Node
+    Node -->|normal committed Batch| Spool[(Private persistent Spool)]
+    Spool -->|authenticated verified local HTTPS| Intake[Same server intake]
+    Intake -->|durable commit before ACK| Journal[(Server journal and Segments)]
+    Journal --> Query[Ordinary evidence queries]
+```
+
+The canonical source is [self-observation.mmd](../diagrams/self-observation.mmd).
+Periodic samples and state transitions avoid per-Batch logging feedback. These
+files are best effort until committed to the Spool; they do not replace custody
+records or independently observe a failed host. Edge Spindles retain their
+configured destination. Library embedding through `fabric_server::serve` leaves
+process composition to the caller.
+
+The library serving primitive validates the admin token and TLS certificate/key before opening
+the Store and starting commit/sealer workers. This order prevents a TLS error
+from returning while a background owner keeps the journal locked. The
+[startup counterexample and native lifecycle](../experiments/benchmarks/catalog-native-lifecycle-findings.md)
+record the original failure and same-process retry correction. A private
+[worker owner](../../crates/fabric-server/src/lifecycle_workers.rs) now starts
+cleanup immediately after commit startup. Dropping the serving future signals
+HTTP and sealer shutdown; the already-scheduled cleanup joins both workers off
+the executor. Ordinary completion waits for cleanup and reports worker panics,
+preserving a primary startup/bind error. The
+[transition investigation](../experiments/benchmarks/catalog-transition-ownership-findings.md)
+reproduced cancellation's former journal-lock leak. A blocking filesystem call
+can still delay termination.
+
+<!-- diagram: ../diagrams/server-startup.mmd -->
+```mermaid
+flowchart LR
+    Admin[Read admin token] --> TLS[Load TLS certificate and key]
+    TLS -->|valid| Store[Open control and Store]
+    TLS -->|missing or invalid| Error[Return error before workers own journal]
+    Store --> Owner[Commit worker and cleanup owner]
+    Owner --> Workers[Register sealer worker]
+    Workers --> HTTPS[Serve HTTPS]
+    HTTPS -->|return or cancellation| Stop[Signal HTTP and sealer stop]
+    Stop --> Join[Join both workers off executor]
+    Join --> Release[Journal ownership released]
+```
+
+The canonical source is [server-startup.mmd](../diagrams/server-startup.mmd).
+
+HTTP admits at most 16 batch requests and two query requests through independent
+nonwaiting pools before buffering their bodies. Overload returns 503 with
+Retry-After 1. A query's Rust-owned permit moves into its blocking scan, so a
+cancelled async waiter cannot admit another scan while that work continues.
+These limits cover those request/work stages; they do not bound all connection,
+response or administrative-route memory. See the [delivery boundary](delivery.md)
+and [query implementation](retained-history.md#implementation-notes).
 
 ## Layers
 
@@ -92,7 +167,7 @@ The canonical source is [layers.mmd](../diagrams/layers.mmd).
 | [fabric-ports](../../crates/fabric-ports/src/lib.rs) | ports | `DurableJournal`, `Clock`, `SegmentStore` |
 | [fabric-app](../../crates/fabric-app/src/lib.rs) | app | `commit_group` (delivery) and `apply_retention` (retention) |
 | [fabric-frame](../../crates/fabric-frame/src/lib.rs) | adapter support | the `FAB1` rotating frame log and the version-one `Batch` envelope |
-| [fabric-observation](../../crates/fabric-observation/src/lib.rs) | adapter support | the version-one `Observation` record (line, point or span) and its canonical `FOB1` block codec, built from the bits up as a [tower of levels](observation.md) with no dependencies; proposed in [ADR-0023](../decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md), not yet wired to anything |
+| [fabric-observation](../../crates/fabric-observation/src/lib.rs) | adapter support | the version-one `Observation` record (line, point or span) and its canonical `FOB1` block codec, built from the bits up as a [tower of levels](observation.md) with no dependencies; accepted in [ADR-0023](../decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md) for the opt-in Walk plan’s in-memory journal-tail blocks |
 | [fabric-server](../../crates/fabric-server/src/lib.rs) | composition root | HTTP/TLS, the journal adapter, control, segments, sealer, query, and `main` |
 | [fabric-adapter-linux](../../crates/fabric-adapter-linux/src/lib.rs) | adapter | bounded `/proc` and `statvfs` sampling and newline log reading for the Spindle |
 | root package `fabric_o11y` | composition root | the Spindle runtime, its Spool and HTTP client; `fabric-node`, `fabricctl`; the FOL2 demonstration |

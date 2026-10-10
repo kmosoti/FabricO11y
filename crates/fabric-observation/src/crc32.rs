@@ -78,8 +78,8 @@ pub fn bitwise(bytes: &[u8]) -> u32 {
 /// one byte per step through `TABLE[0]` for the remainder.
 pub fn hash(bytes: &[u8]) -> u32 {
     let mut crc = !0_u32;
-    let mut chunks = bytes.chunks_exact(8);
-    for c in &mut chunks {
+    let (chunks, remainder) = bytes.as_chunks::<8>();
+    for c in chunks {
         let lo = crc ^ unpack_le4(c[0], c[1], c[2], c[3]);
         crc = TABLE[7][(lo & 0xFF) as usize]
             ^ TABLE[6][((lo >> 8) & 0xFF) as usize]
@@ -90,7 +90,7 @@ pub fn hash(bytes: &[u8]) -> u32 {
             ^ TABLE[1][c[6] as usize]
             ^ TABLE[0][c[7] as usize];
     }
-    for b in chunks.remainder() {
+    for b in remainder {
         crc = TABLE[0][((crc ^ u32::from(*b)) & 0xFF) as usize] ^ (crc >> 8);
     }
     !crc

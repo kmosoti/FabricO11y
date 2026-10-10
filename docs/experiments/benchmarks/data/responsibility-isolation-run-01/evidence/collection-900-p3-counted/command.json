@@ -1,0 +1,12 @@
+[
+  "prlimit",
+  "--as=2147483648",
+  "--",
+  "taskset",
+  "-c",
+  "0,1",
+  "/workspace/scratch/responsibility-frozen/counted",
+  "/workspace/scratch/responsibility-run-01/scratch/collection-900-p3-counted",
+  "collection",
+  "900"
+]

@@ -1,0 +1,34 @@
+{
+  "bounds": null,
+  "candidate_commit": "940646949c544a6e181063636439dbccd3dcde98",
+  "check_id": "core-purity",
+  "command": [
+    "cargo",
+    "xtask",
+    "check-core-purity"
+  ],
+  "duration_ms": 187,
+  "exit_code": 0,
+  "expected": "exit 0",
+  "fixtures": null,
+  "negative_controls": "xtask/tests/gates.rs",
+  "oracle_revision": "none",
+  "output_sha256": "30389fa0e43bc032041edef4a93bdecad8cdf806ec9f6fffd3389387e9c773a1",
+  "profile": "fast",
+  "property_ids": [
+    "ARCH-2"
+  ],
+  "receipt_version": 1,
+  "result": "passed",
+  "scope": "Core dependency allowlist, denied categories, build script, features, required attributes, syntactic guards, transitive closure",
+  "specification_revision": "47b2c38ad609e03531eb0767a99a343a41d1b513",
+  "toolchain": {
+    "bun": "1.4.0",
+    "cargo": "cargo 1.98.0 (797e8a9bc 2026-08-05)",
+    "python3": "Python 3.12.14",
+    "rustc": "rustc 1.98.0 (88d9e12ae 2026-08-18)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "Determinism of individual functions; block comments and strings in the source guard.",
+  "worktree_dirty": false
+}

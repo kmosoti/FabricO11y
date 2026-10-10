@@ -1,8 +1,8 @@
 flowchart LR
-    Host[Linux procfs and root filesystem] -->|bounded samples| Node[Spindle]
-    Files[Selected newline files] -->|bounded lines| Node
+    Host[Linux procfs and root filesystem] -->|bounded metrics; interval or progress| Node[Spindle]
+    Files[Selected newline files] -->|bounded lines and skip progress| Node
     Apps[Local applications] -->|OTLP/HTTP traces on loopback, answered after commit| Node
-    Node -->|OTLP metrics, logs and traces in FAB1| Spool[(Spool)]
+    Node -->|owned Batch; validate and encode FAB1| Spool[(Spool)]
     Spool -->|committed cursor and counters on restart| Node
     Spool -->|read-only inspection| CLI[fabricctl inspect]
     Node -->|capacity failure| Unknown[(Coverage unknown marker)]

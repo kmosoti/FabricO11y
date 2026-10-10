@@ -35,6 +35,7 @@ MemoryAccounting=yes
 TasksAccounting=yes
 IOAccounting=yes
 MemoryHigh=128M
+MemorySwapMax=0
 MemoryMax=256M
 TasksMax=128
 CPUWeight=100

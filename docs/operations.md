@@ -1,45 +1,121 @@
 # Operating FabricO11y
 
-This guide is for an operator of one controlled Linux installation. It describes what the code does today; the [capability ledger](QUALIFICATION.md#capability-ledger) says which gates have passed. The package's running-install acceptance has **not** been run, so treat installation as untested.
+This guide covers one central server and remote Linux Spindles. The
+[current state](CURRENT.md) records tested artifacts and acceptance limits;
+the [release plan](milestones/release-readiness.md) defines the supported matrix.
 
 ## Build and install
 
-```sh
-cargo fetch --locked                      # once, on a machine with network access
-packaging/build-deb.sh target/package-out # needs rustc 1.98.0, dpkg-deb, dpkg-shlibdeps, objdump
-sudo apt install ./target/package-out/fabrico11y_0.1.0~alpha.1_$(dpkg --print-architecture).deb
-```
-
-The package targets Debian-family distributions with glibc 2.34 or newer and systemd 249 or newer: Debian 12 and 13, Ubuntu 22.04 and 24.04, and distributions derived from them ([ADR-0025](decisions/ADR-0025-carry-traces-as-a-third-signal.md)). Its `Depends` line is computed from the binaries by `dpkg-shlibdeps` (today `libc6 (>= 2.34), libgcc-s1 (>= 4.2)`) plus `systemd (>= 249)`, and the build fails if a binary would need a newer glibc ([check-glibc.sh](../packaging/check-glibc.sh)), so a package built on a newer host still installs on the oldest supported one. The registered qualification runs used Debian 13; the other distributions are covered by the package's declared dependencies and by building and testing on Ubuntu 24.04, not by a registered run. On 2026-10-03 the package was built on Ubuntu 24.04 (glibc 2.39, systemd 255) with rustc 1.98.0: the glibc check found every binary's newest symbol at `GLIBC_2.34`, `dpkg-deb -f` showed `Depends: libc6 (>= 2.34), libgcc-s1 (>= 4.2), systemd (>= 249)`, the `.deb` was 5.3 MB, and `apt-get install --simulate` resolved it with no other packages. It was not installed: installation on that host is a privileged step outside the task's scope.
+Build the native binaries and console together using the
+[package instructions](../packaging/README.md), Rust 1.99.0 and the resource
+launcher. Install the selected, checksum-verified artifact with
+`sudo apt install ./PACKAGE.deb` on Debian or `sudo dnf install ./PACKAGE.rpm`
+on Fedora. Services remain disabled until configured. The finite acceptance
+matrix targets Debian 13 and Fedora 44 x86_64, systemd and unified cgroup v2;
+a compatible dependency list alone does not establish another OS's acceptance.
 
 The package installs `fabric-node`, `fabric-server` and `fabricctl` in `/usr/bin`, the units `fabrico11y-node.service` and `fabrico11y-server.service` in `system-fabrico11y.slice`, and a sysusers file that creates the system user and group `fabricolly`. Installation refuses an existing `fabricolly` account that is not a non-login system account with primary group `fabricolly`. Examples are in `/usr/share/doc/fabrico11y/examples`.
 
 ## Server
 
-1. Create `/etc/fabrico11y/server.conf` from the example. Provide a TLS certificate and key signed by a CA your nodes trust, and an admin token of at least 32 printable characters. Make the key and token `0640 root:fabricolly`.
+1. Create `/etc/fabrico11y/server.conf` from the example. Provide a TLS certificate and key trusted by both browsers and Spindles. Configure the exact `access_origin`, hostname-only `access_rp_id`, and packaged `console_dir`. The current configuration also requires a legacy admin-token file of at least 32 printable characters; normal serving does not accept that token on its disabled master routes. Make the key and token `0640 root:fabricolly`.
 2. `sudo systemctl enable --now fabrico11y-server.service`.
+3. Follow [first-owner setup](access-operations.md#configure-and-enroll-the-first-owner) to read the protected local bootstrap secret and enroll a passkey at `https://YOUR_HOST:PORT/console/`. Add a second passkey and save the immutable owner ID for recovery.
 
-Keys: `listen`, `tls_cert`, `tls_key`, `state_dir`, `admin_token_file`, and optionally `journal_bytes` (default 20 GiB), `journal_file_bytes` (64 MiB; the unit sealed into a segment), `retention_s` (86,400), `retention_bytes` (20 GiB) `seal_workers` (Segments built at once; default half the CPUs, one to four) and `query_plan` (`scan`, or `walk` for the key-ordered walk of [ADR-0024](decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md), which answers identically and reads only the sources an answer needs). Retention keeps at most the age and at most the bytes given, deleting whole segments oldest first.
+Storage settings include `journal_bytes` (20 GiB), `journal_file_bytes` (64 MiB),
+`retention_s` (86,400 seconds), `retention_bytes` (100,000,000,000 bytes) and
+`seal_workers` (half the CPUs, bounded to one through four by default). Retention
+deletes whole sealed Segments oldest first when either age or bytes exceed policy.
+Reserve additional bounded space for the journal, sealing work and Spools;
+100 GB is the retained-telemetry limit, not a total filesystem ceiling. The
+console reports this policy read-only. Apply configuration changes by editing
+the server file and restarting the service.
 
-## Admin client
+Every production server launch also starts its dedicated `fabric-node` sibling.
+Build/install both binaries. Its private token, generated config and persistent
+Spool live under `state_dir/self-spindle`; server process logs live under
+`state_dir/diagnostics`. The local collector reports as `fabric-server-self` in
+the node inventory. It collects both processes' diagnostics and normal host and
+output metrics, using the same durable delivery and query paths as edge data.
+The server service's existing cgroup limit covers both processes.
 
-Create an admin client file readable only by the operator:
+For a CA-signed certificate, set `self_spindle_ca` to the CA PEM file. The default
+trust input is `tls_cert`, suitable for a trusted self-signed certificate. The
+certificate must cover the local listener IP (loopback for a wildcard bind), or
+use `self_spindle_url=https://localhost:PORT` with a matching localhost SAN and
+loopback listener. The URL cannot redirect the child to a different server.
+`self_spindle_executable` optionally selects an absolute `fabric-node` path.
+See [deployment](architecture/deployment.md) for shutdown, pause and storage bounds.
+
+Inspect process samples in Explore by selecting logs from `fabric-server-self`
+and filtering for `event=process_sample`, within an authorized time window.
+
+These records contain process RSS, high-water RSS and CPU ticks with tick rate.
+They are log bodies, not a new generic metrics receiver. A printed listener/PID
+confirms process startup; query the received observations to check delivery.
+
+## Network and certificate setup
+
+Choose a stable server hostname before enrolling passkeys. Its certificate SAN
+must match the hostname used by browsers and remote Spindles; the dedicated local
+Spindle also needs the loopback or local-listener SAN described above. A private
+CA can issue a certificate containing both names. Install that CA in each
+browser's trusted certificate store, and configure `server_ca` on edges and
+`self_spindle_ca` on the server. A browser certificate exception or a disabled
+TLS check is not a substitute for this setup. Never copy the CA's private key
+to an edge.
+
+Check the configured names and trust before enabling collection:
+
+```sh
+openssl verify -CAfile /etc/fabrico11y/ca.pem /etc/fabrico11y/server.pem
+openssl x509 -in /etc/fabrico11y/server.pem -noout -ext subjectAltName
+```
+
+Bind the central listener to an intended private/LAN/VPN address when possible.
+In the host firewall and any cloud firewall, allow its configured TCP port
+(7443 in the example) only from the edge and operator networks. Include IPv6
+rules if using an IPv6 listener. Edges initiate outbound HTTPS; they do not need
+an inbound Fabric port. The optional OTLP receiver stays on loopback port 4318
+and is for applications on that edge. Preserve SSH/VPN administration when
+editing existing firewall rules. Packages do not change those rules.
+
+Visit the configured HTTPS origin without a certificate error, complete owner
+enrollment, then confirm that the companion appears and its diagnostic records
+are queryable. Check remote delivery separately after enrolling an edge; a
+listening port alone does not establish certificate trust or durable custody.
+
+## Scoped client and Spindle controls
+
+In console Settings, issue a workload credential with only the required query
+and Spindle-control grants. Store its once-returned token in a regular,
+owner-only file with mode 0600. Configure the client:
 
 ```text
 server_url=https://fabric-server.example:7443
 server_ca=/etc/fabrico11y/ca.pem
-admin_token_file=/etc/fabrico11y/admin-token
+workload_token_file=/home/operator/.config/fabrico11y/workload-token
 ```
 
 ```sh
-fabricctl admin admin.conf node add web01 --log /var/log/app.log --interval 15   # prints the node token once
-fabricctl admin admin.conf node list
-fabricctl admin admin.conf node config web01 --log /var/log/app.log --log /var/log/other.log --interval 30
-fabricctl admin admin.conf node pause web01      # resume, revoke likewise
-fabricctl admin admin.conf query '{"kind":"logs","node":"web01","from_ns":0,"to_ns":9000000000000000000,"contains":"error","limit":100}'
+fabricctl access access.conf node add web01 --log /var/log/app.log --interval 15
+fabricctl access access.conf node list
+fabricctl access access.conf node config web01 --log /var/log/app.log --interval 30
+fabricctl access access.conf node pause web01
+fabricctl access access.conf node resume web01
 ```
 
-The query kinds, fields and answer envelope are defined in [retained history](architecture/retained-history.md). Answers report `complete`, the retained window, per-node freshness and collection gaps; follow `next_page` for more rows.
+`node add` returns the Spindle token once. Enrollment grants require an explicit
+namespace and quota; configuration grants constrain log paths and sample intervals.
+The UI exposes the same operations. See [access operations](access-operations.md)
+for scope examples, token rotation, delegated agents and recovery.
+
+`fabricctl access access.conf query '<QUERY_JSON>'` supports logs, metric points
+and spans with a window of at most 24 hours and at most 1,000 rows, further
+restricted by the grant. [Query answers](architecture/retained-history.md) include
+completeness, scoped freshness and gaps; follow the opaque `next_page` handle.
+Legacy `fabricctl admin` works only with the explicit `serve-legacy` migration
+mode. It does not provide the scoped console boundary.
 
 ## Node
 
@@ -48,7 +124,7 @@ The query kinds, fields and answer envelope are defined in [retained history](ar
 3. Optionally set `traces_listen=127.0.0.1:4318` so local applications can export traces to the node, with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces` and `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf` in their environment. The node answers an export only after it is in the spool; spans are queried with `{"kind":"spans", ...}` ([retained history](architecture/retained-history.md)).
 4. `sudo systemctl enable --now fabrico11y-node.service`.
 
-The node samples host metrics on its interval, reads logs every second, keeps every batch in its spool until the server acknowledges it, and polls for configuration every 5 s. Log paths and interval set through `fabricctl admin ... node config` replace the local file's values once the node has validated and stored them; the spool, its ceiling and the server target stay local. `fabricctl inspect /etc/fabrico11y/node.conf` reports the spool: batches, acknowledged sequence, backlog, and any recovery state.
+The node samples host metrics on its interval, reads logs every second, keeps every batch in its spool until the server acknowledges it, and polls for configuration every 5 s. Log paths and interval set through scoped `node config` replace the local file's values once the node has validated and stored them; the spool, its ceiling and the server target stay local. The CLI always adds its own bounded diagnostic source; server-owned nodes also retain the server source. These pins share the sixteen-source ceiling and survive remote replacement. Edge diagnostics go to the existing configured server. `fabricctl inspect /etc/fabrico11y/node.conf` reports the spool: batches, acknowledged sequence, backlog, and any recovery state.
 
 ## Recovery states
 
@@ -62,8 +138,79 @@ The node samples host metrics on its interval, reads logs every second, keeps ev
 | Query answer `complete: false` with `unavailable` entries | A segment could not be read. | Other data is still answered. Check the segment's files against its manifest; restore the segment from a backup if you keep one. |
 | HTTP 410 on a page | Retention removed data the page's snapshot covered. | Start the query again from the first page. |
 
-Stopping either service with `systemctl stop` finishes the work in progress: the node stops between cycles, and the server answers every in-flight request and releases its journal before exiting.
+`systemctl stop` requests graceful shutdown: the node stops between cycles, and
+the server drains requests and releases its journal. The packaged 30-second stop
+deadline bounds shutdown; systemd terminates remaining processes if it expires.
+Clients retain unacknowledged Spool data for retry after restart.
+
+## Upgrade, backup and removal
+
+Check the candidate's recorded compatibility and package checksum before an
+upgrade. Use the server, Spindles, CLI and console from the same tested candidate;
+mixed-version compatibility is not established. The tested predecessor fixture
+in the [installation record](experiments/formal/installation-release-run-01.md)
+is specific evidence, not a promise that arbitrary older state can be upgraded
+or that new state can be read by an older executable.
+
+Stop the affected services before copying state or replacing the package:
+
+```sh
+sudo systemctl stop fabrico11y-node.service fabrico11y-server.service
+```
+
+Back up `/etc/fabrico11y` and the complete `/var/lib/fabrico11y` tree, including
+access state, journals, Segments, manifests and every Spool. Include any configured
+state/Spool directories and key files outside those defaults. Keep ownership,
+permissions and protected credential material intact in controlled backup storage.
+Do not run a copied Spool alongside the original: both would share an identity.
+A copied configuration alone cannot recover acknowledged telemetry.
+
+Install the checksum-verified `.deb` with `sudo apt install ./PACKAGE.deb`, or
+the `.rpm` with `sudo dnf install ./PACKAGE.rpm`. The package reloads unit
+definitions and preserves operator configuration; it does not perform the
+operator's service restart. Explicitly start the roles configured on that host.
+For a central-only host, start `fabrico11y-server.service`; it starts its own
+dedicated Spindle. An edge starts `fabrico11y-node.service`. Confirm service status,
+fresh login, exact retained queries and drained pending Spools. Server restart
+invalidates browser sessions and delegated credentials. The PWA may request a
+reload to activate its new coherent shell.
+
+To remove executables while retaining state, use `sudo apt remove fabrico11y`
+or `sudo dnf remove fabrico11y`. Both stop the services and preserve configuration,
+telemetry and the service account. Verify that both services are inactive.
+
+A deliberate reset destroys retained telemetry, credentials and pending Spool
+data. After stopping/removing the services and deciding what backup to retain,
+Debian's `sudo apt purge fabrico11y` deletes the default `/etc/fabrico11y` and
+`/var/lib/fabrico11y` trees. RPM removal has no purge operation; an operator who
+intends that same reset can explicitly remove those two directories after
+`dnf remove`. Custom paths are outside that default cleanup. Reinstallation with
+empty state requires fresh owner and edge enrollment. Restoring an older access
+snapshot requires the [offline owner recovery](access-operations.md#offline-owner-recovery)
+procedure before reopening remote access; package rollback alone does not rotate
+old credentials or restore lost telemetry.
 
 ## Limits
 
-One operator-controlled installation, TLS with operator-provided certificates, no UI and no general OTLP receiver. Physical power loss has not been tested. See the [product contract](PRODUCT-CONTRACT.md) and [qualification](QUALIFICATION.md) for the gates and their status.
+One operator-controlled installation with operator-trusted TLS and a same-origin
+PWA. The Spindle accepts traces through its loopback OTLP/HTTP endpoint; a general
+OTLP receiver is outside this release. The offline PWA contains only its public
+shell and requires a confirmed online session to display telemetry. Physical
+power loss and unrecorded browser/device combinations are not qualified. See
+the [product contract](PRODUCT-CONTRACT.md) and [qualification](QUALIFICATION.md).
+
+## Uncertain control publication
+
+If an administrative change reports `control publication uncertain; reopen
+required`, or subsequent node requests are refused after a directory-sync error,
+resolve the storage error and restart the server to reload `control.json`.
+The live instance refuses authentication and further changes because the renamed
+state may differ from its previous in-memory inventory. An oversized inventory
+update is rejected before publication and leaves the existing state usable.
+
+## Reporting problems
+
+Use the [bug-reporting guide](CONTRIBUTING.md#reporting-bugs) for operational
+defects and the [private security channel](../SECURITY.md) for suspected
+vulnerabilities. Include the exact package version and checksum with a minimal
+synthetic reproduction.

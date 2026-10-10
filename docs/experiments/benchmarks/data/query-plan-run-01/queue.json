@@ -1,0 +1,222 @@
+{
+  "scope": "Command outcomes; scientific acceptance is recorded separately in the run record.",
+  "completed_execution_seconds": 2302.5028709269754,
+  "jobs": [
+    {
+      "id": "controls",
+      "lab": "coordinator",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791221128131875203,
+      "elapsed_s": 0.5016453040007036,
+      "scratch_removed": true
+    },
+    {
+      "id": "native-build",
+      "lab": "coordinator",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791221136103871950,
+      "elapsed_s": 1.507084113000019,
+      "scratch_removed": true
+    },
+    {
+      "id": "allocation",
+      "lab": "memory",
+      "state": "failed",
+      "exit": 1,
+      "started_unix_ns": 1791221150151010939,
+      "elapsed_s": 4.023942039995745,
+      "scratch_removed": false
+    },
+    {
+      "id": "dev-scan",
+      "lab": "query",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791221206406379631,
+      "elapsed_s": 206.91044671599957,
+      "scratch_removed": true
+    },
+    {
+      "id": "allocation-retry-01",
+      "lab": "memory",
+      "state": "failed",
+      "exit": 1,
+      "started_unix_ns": 1791221449217067764,
+      "elapsed_s": 1.5021673449955415,
+      "scratch_removed": false
+    },
+    {
+      "id": "allocation-retry-02",
+      "lab": "memory",
+      "state": "failed",
+      "exit": 1,
+      "started_unix_ns": 1791221489827051421,
+      "elapsed_s": 23.703797328998917,
+      "scratch_removed": false
+    },
+    {
+      "id": "dev-walk",
+      "lab": "query",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791221574091323858,
+      "elapsed_s": 206.96306545400148,
+      "scratch_removed": true
+    },
+    {
+      "id": "preserve-profile",
+      "lab": "recovery",
+      "state": "failed",
+      "exit": 1,
+      "started_unix_ns": 1791221795576800448,
+      "elapsed_s": 9.006396685996151,
+      "scratch_removed": false
+    },
+    {
+      "id": "compact-profile",
+      "lab": "recovery",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791221841563983597,
+      "elapsed_s": 2.50245646500116,
+      "scratch_removed": true
+    },
+    {
+      "id": "small-scan-1",
+      "lab": "query",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791221857955368421,
+      "elapsed_s": 284.3040962990053,
+      "scratch_removed": true
+    },
+    {
+      "id": "small-walk-1",
+      "lab": "query",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791222155950284721,
+      "elapsed_s": 280.11834618299326,
+      "scratch_removed": true
+    },
+    {
+      "id": "small-walk-2",
+      "lab": "query",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791222446778270672,
+      "elapsed_s": 280.15530364599545,
+      "scratch_removed": true
+    },
+    {
+      "id": "small-scan-2",
+      "lab": "query",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791222738470603716,
+      "elapsed_s": 283.1832209339991,
+      "scratch_removed": true
+    },
+    {
+      "id": "small-scan-3",
+      "lab": "query",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791223034251965114,
+      "elapsed_s": 283.16471381500014,
+      "scratch_removed": true
+    },
+    {
+      "id": "small-walk-3",
+      "lab": "query",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791223326189018008,
+      "elapsed_s": 280.23714972400194,
+      "scratch_removed": true
+    },
+    {
+      "id": "consolidate",
+      "lab": "recovery",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791223613064613072,
+      "elapsed_s": 0.5010924309972324,
+      "scratch_removed": true
+    },
+    {
+      "id": "verify-profile-archive",
+      "lab": "recovery",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791223624620937116,
+      "elapsed_s": 4.50319585899706,
+      "scratch_removed": true
+    },
+    {
+      "id": "fast-checks",
+      "lab": "recovery",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791223668733484847,
+      "elapsed_s": 145.70753386599972,
+      "scratch_removed": true
+    },
+    {
+      "id": "audit-controls",
+      "lab": "recovery",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791223826825800744,
+      "elapsed_s": 0.5016228280001087,
+      "scratch_removed": true
+    },
+    {
+      "id": "cleanup",
+      "lab": "recovery",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791223843715104859,
+      "elapsed_s": 0.5007985479969648,
+      "scratch_removed": true
+    },
+    {
+      "id": "documentation",
+      "lab": "recovery",
+      "state": "failed",
+      "exit": 1,
+      "started_unix_ns": 1791223886677885747,
+      "elapsed_s": 0.5016687199968146,
+      "scratch_removed": false
+    },
+    {
+      "id": "documentation-retry",
+      "lab": "recovery",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791223922738599785,
+      "elapsed_s": 1.0011134740052512,
+      "scratch_removed": true
+    },
+    {
+      "id": "cleanup-final",
+      "lab": "recovery",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791223956607668306,
+      "elapsed_s": 0.5009335340000689,
+      "scratch_removed": true
+    },
+    {
+      "id": "documentation-final",
+      "lab": "recovery",
+      "state": "passed",
+      "exit": 0,
+      "started_unix_ns": 1791224024053179436,
+      "elapsed_s": 1.0010796139977174,
+      "scratch_removed": true
+    }
+  ]
+}

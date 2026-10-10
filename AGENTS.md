@@ -47,8 +47,23 @@ Work on `milestone/<capability>` branches ([roadmap](docs/ROADMAP.md)); never na
 
 These need explicit task scope: protocol or wire-format changes, durability or sync-order changes, verifier or oracle changes, new core dependencies, destructive fault runs, privileged installation, qualification runs, releases and tags. A stopped or interrupted run stays so until a new run is recorded. Do not advance into a new milestone because the blueprint mentions it.
 
+## Continuation rule
+
+When the user authorizes closing known gaps, keep actionable items in a persistent
+work queue and continue through implementation, verification and the next admitted
+item. A passing subset or an inventory of shortcomings is a progress checkpoint,
+not a reason to hand the task back. Resolve tooling and harness prerequisites
+within the authorized scope instead of repeatedly listing them as unrun.
+Stop only when the authorized queue is complete, the user pauses it, or a concrete
+external dependency prevents further permitted work after alternatives are tried.
+Keep reporting real failures and assumptions; continuation never relaxes an
+invariant, a registered gate, resource containment or a permission boundary.
+
 ## Working habits
 
+- Use the mounted data drive at `/run/media/kmosoti/data/FabricO11y` for build caches and experiment scratch. Never silently substitute the system disk or RAM-backed `/tmp` if it is unavailable. Clean owned temporary files after completion; preserve failure evidence before cleanup. Record command/exit status, storage location, resource observations, cleanup outcome and remaining uncertainty in run receipts and the relevant experiment record. The resource launcher sets temporary/build paths and writes cleanup receipts; harnesses must also route explicitly named scratch paths to `FABRIC_SCRATCH_ROOT`.
+- Apply containment and cleanup on `digitalocean-*` hosts too: inspect actual CPU/RAM, available disk and existing services, choose explicit host-appropriate cgroup memory/swap/CPU/task/time limits, and verify enforcement before any project workload. The local 20 GiB allowance does not transfer to smaller remote hosts. Use owned disk-backed scratch; archive observations/failures and remove temporary fixtures, processes and transient units on completion. Preserve frozen Tailscale/OpenSSH infrastructure and do not load `digitalocean-01` while it serves its webserver. Remote hosts may act as edge sources for scoped forwarding tests; verify exact delivery, ACK/custody, latency and resource use across both ends without calling that deployment qualification.
+- Run all project builds, tests, verification, experiments and their validators through `python3 tools/resource_group.py -- COMMAND ...`. This places the entire descendant tree in one cgroup v2 service with 16 GiB memory high, 20 GiB memory max, no swap and a 30-minute deadline. The launcher verifies enforcement and fails closed; never fall back to an uncapped run. Changed limits or longer runs need explicit owner scope. Read-only inspection is exempt. See the [contributor guide](docs/CONTRIBUTING.md#resource-containment).
 - Keep changes small and explainable; explain the Rust idea, the contract and the trade-off before introducing a mechanism, and keep the [learning path](docs/LEARNING_PATH.md) in step.
 - Update code, tests, diagrams, architecture pages, glossary, ADRs and `CURRENT.md` in the same logical change.
 - State assumptions for correctness arguments; register workloads and metrics before performance comparisons.

@@ -1,22 +1,62 @@
 #!/bin/bash
 # Running-installation acceptance, executed as root INSIDE a disposable
-# Debian 13 systemd container (see run.sh). Never run it on a real host: it
+# Debian 13 systemd container or VM (see run.sh and run-qemu.py). Never run it
+# on a real host: it
 # creates and deletes the fabricolly account, installs and purges the package
 # and starts services. Protocol:
 # docs/experiments/formal/installation-acceptance-protocol.md.
 #
-# Usage: acceptance.sh <DEB>
+# Usage: acceptance.sh <DEB> [--self-spindle-ca <CA-PATH>]
+#        [--memory-stressor tail|parallel]
 # Prints one line per check, "ACCEPT <ID> PASS|FAIL|NOT-RUN <detail>". Exits 1
 # if any check failed, 3 if none failed but one could not run in this
 # environment, and 0 only when every check ran and passed.
 set -u
-DEB=$1
+DEB=${1:?usage: acceptance.sh <DEB> [--self-spindle-ca <CA-PATH>] [--memory-stressor tail|parallel]}
+shift
+SELF_SPINDLE_CA=
+A12_MEMORY_STRESSOR=tail
+PACKAGE_FAMILY=debian
+DEFER_REMOVAL=0
+LEGACY_SERVER=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --legacy-server) LEGACY_SERVER=1; shift ;;
+    --defer-removal) DEFER_REMOVAL=1; shift ;;
+    --package-family)
+      [ "$#" -ge 2 ] || exit 2
+      PACKAGE_FAMILY=$2; shift 2
+      case "$PACKAGE_FAMILY" in debian|fedora) ;; *) exit 2 ;; esac
+      ;;
+    --self-spindle-ca)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || { echo "missing self-spindle CA path" >&2; exit 2; }
+      SELF_SPINDLE_CA=$2; shift 2
+      case "$SELF_SPINDLE_CA" in
+        /*) ;;
+        *) echo "self-spindle CA path must be absolute" >&2; exit 2 ;;
+      esac
+      case "$SELF_SPINDLE_CA" in
+        *[!A-Za-z0-9_./-]*) echo "self-spindle CA path contains unsupported characters" >&2; exit 2 ;;
+      esac
+      ;;
+    --memory-stressor)
+      [ "$#" -ge 2 ] || { echo "missing A12 memory stressor" >&2; exit 2; }
+      A12_MEMORY_STRESSOR=$2; shift 2
+      case "$A12_MEMORY_STRESSOR" in
+        tail|parallel) ;;
+        *) echo "unsupported A12 memory stressor: $A12_MEMORY_STRESSOR" >&2; exit 2 ;;
+      esac
+      ;;
+    *) echo "usage: acceptance.sh <DEB> [--self-spindle-ca <CA-PATH>] [--memory-stressor tail|parallel]" >&2; exit 2 ;;
+  esac
+done
 FAILS=0
 NOTRUN=0
 UNIFIED=0; [ "$(stat -fc %T /sys/fs/cgroup)" = cgroup2fs ] && UNIFIED=1
 W=/root/accept
 mkdir -p "$W"
 LOGDIR=/var/log/fabric-accept
+SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 
 pass() { echo "ACCEPT $1 PASS ${*:2}"; }
 fail() { echo "ACCEPT $1 FAIL ${*:2}"; FAILS=$((FAILS + 1)); }
@@ -33,11 +73,33 @@ admin() { fabricctl admin "$W/admin.conf" "$@"; }
 query() { admin query "$1"; }
 show() { systemctl show -P "$2" "$1"; }
 
-echo "ENV systemd $(systemctl --version | head -1 | cut -d' ' -f2) debian $(cat /etc/debian_version) kernel $(uname -r)"
+package_install() {
+  if [ "$PACKAGE_FAMILY" = fedora ]; then rpm -Uvh --replacepkgs "$DEB"; else dpkg -i "$DEB"; fi
+}
+package_remove() {
+  if [ "$PACKAGE_FAMILY" = fedora ]; then rpm -e fabrico11y; else dpkg -r fabrico11y; fi
+}
+package_purge() {
+  if [ "$PACKAGE_FAMILY" = fedora ]; then
+    rpm -e fabrico11y >/dev/null 2>&1 || :
+    rm -rf /var/lib/fabrico11y /etc/fabrico11y
+  else dpkg -P fabrico11y; fi
+}
+package_extract() {
+  if [ "$PACKAGE_FAMILY" = fedora ]; then
+    mkdir -p "$x"
+    (cd "$x" && rpm2cpio "$DEB" | cpio -idm --quiet)
+  else dpkg-deb -x "$DEB" "$x"; fi
+}
+echo "ENV family=$PACKAGE_FAMILY systemd $(systemctl --version | head -1 | cut -d' ' -f2) kernel $(uname -r)"
+cat /etc/os-release
+if [ "$PACKAGE_FAMILY" = fedora ]; then
+  [ "$(getenforce)" = Enforcing ] && pass F1 "SELinux enforcing" || fail F1 "SELinux must remain enforcing"
+fi
 echo "ENV cgroup $(stat -fc %T /sys/fs/cgroup) controllers: $(cat /sys/fs/cgroup/cgroup.controllers 2>/dev/null)"
 
 # A1 sysusers: dry run and a temporary root, applied twice.
-x=$W/pkg; rm -rf "$x"; dpkg-deb -x "$DEB" "$x"
+x=$W/pkg; rm -rf "$x"; package_extract
 conf=$x/usr/lib/sysusers.d/fabrico11y.conf
 r=$W/sysroot; rm -rf "$r"; mkdir -p "$r/etc"
 dry=$(systemd-sysusers --dry-run --root="$r" "$conf" 2>&1); dry_rc=$?
@@ -54,26 +116,49 @@ fi
 
 # A2 collision refusal: a human account, then a non-system group, named fabricolly.
 useradd -m -u 1500 -s /bin/bash fabricolly
-out=$(dpkg -i "$DEB" 2>&1); rc=$?
+out=$(package_install 2>&1); rc=$?
 if [ $rc -ne 0 ] && echo "$out" | grep -q "refusing to install" && [ ! -e /usr/bin/fabric-server ]; then
   pass A2a "human account uid 1500 refused, nothing unpacked"
 else
   fail A2a "rc=$rc"
 fi
-dpkg --purge fabrico11y >/dev/null 2>&1; userdel -r fabricolly 2>/dev/null
+package_purge >/dev/null 2>&1; userdel -r fabricolly 2>/dev/null
 groupadd -g 1600 fabricolly
-out=$(dpkg -i "$DEB" 2>&1); rc=$?
+out=$(package_install 2>&1); rc=$?
 if [ $rc -ne 0 ] && echo "$out" | grep -q "refusing to install" && [ ! -e /usr/bin/fabric-server ]; then
   pass A2b "non-system group gid 1600 refused, nothing unpacked"
 else
   fail A2b "rc=$rc"
 fi
-dpkg --purge fabrico11y >/dev/null 2>&1; groupdel fabricolly 2>/dev/null
+package_purge >/dev/null 2>&1; groupdel fabricolly 2>/dev/null
+
+# Candidate-only root-ID collision checks. The historical predecessor's old
+# preinstall is preserved in migration fixtures and is not credited with these.
+if [ "$LEGACY_SERVER" = 1 ]; then
+  root_before=$(getent passwd root); root_group_before=$(getent group root)
+  groupadd --system fabricolly
+  useradd -M -o -u 0 -g fabricolly -s /usr/sbin/nologin fabricolly
+  out=$(package_install 2>&1); rc=$?
+  if [ "$rc" -ne 0 ] && echo "$out" | grep -q "refusing to install" && [ ! -e /usr/bin/fabric-server ]; then
+    pass A2c "duplicate root UID refused before unpack"
+  else fail A2c "root UID rc=$rc"; fi
+  package_purge >/dev/null 2>&1
+  userdel -f fabricolly >/dev/null 2>&1
+  groupdel fabricolly >/dev/null 2>&1
+  groupadd -o -g 0 fabricolly
+  out=$(package_install 2>&1); rc=$?
+  if [ "$rc" -ne 0 ] && echo "$out" | grep -q "refusing to install" && [ ! -e /usr/bin/fabric-server ]; then
+    pass A2d "duplicate root GID refused before unpack"
+  else fail A2d "root GID rc=$rc"; fi
+  package_purge >/dev/null 2>&1
+  groupdel -f fabricolly >/dev/null 2>&1
+  [ "$(getent passwd root)" = "$root_before" ] && [ "$(getent group root)" = "$root_group_before" ] || fail SETUP "duplicate-ID fixture altered root identity"
+fi
 
 # A3 install, then install again: same identity, exit 0 both times.
-dpkg -i "$DEB" >"$W/install1.log" 2>&1; rc1=$?
+package_install >"$W/install1.log" 2>&1; rc1=$?
 id1=$(getent passwd fabricolly)
-dpkg -i "$DEB" >"$W/install2.log" 2>&1; rc2=$?
+package_install >"$W/install2.log" 2>&1; rc2=$?
 id2=$(getent passwd fabricolly)
 uid=$(id -u fabricolly 2>/dev/null); gid=$(id -g fabricolly 2>/dev/null); pg=$(id -gn fabricolly 2>/dev/null)
 if [ $rc1 -eq 0 ] && [ $rc2 -eq 0 ] && [ "$id1" = "$id2" ] && [ "$uid" -lt 1000 ] && [ "$uid" -gt 0 ] \
@@ -114,13 +199,24 @@ journal_bytes=21474836480
 retention_s=86400
 retention_bytes=21474836480
 EOF
+if [ -n "$SELF_SPINDLE_CA" ]; then
+  printf 'self_spindle_ca=%s\n' "$SELF_SPINDLE_CA" >> /etc/fabrico11y/server.conf
+fi
 chmod 0644 /etc/fabrico11y/server.conf
+if [ "$PACKAGE_FAMILY" = fedora ]; then
+  restorecon -R /etc/fabrico11y
+fi
 printf 'server_url=https://127.0.0.1:7443\nserver_ca=/etc/fabrico11y/ca.pem\nadmin_token_file=%s/admin-token\n' "$W" > admin.conf
 mkdir -p $LOGDIR && chmod 0755 $LOGDIR
 install -m 0600 /dev/null $LOGDIR/allowed.log
 install -m 0600 /dev/null $LOGDIR/denied.log
 setfacl -m u:fabricolly:r $LOGDIR/allowed.log
 
+if [ "$LEGACY_SERVER" = 1 ]; then
+  mkdir -p /etc/systemd/system/fabrico11y-server.service.d
+  printf '[Service]\nExecStart=\nExecStart=/usr/bin/fabric-server serve-legacy /etc/fabrico11y/server.conf\n' > /etc/systemd/system/fabrico11y-server.service.d/legacy-fixture.conf
+  systemctl daemon-reload
+fi
 systemctl enable --now fabrico11y-server.service >/dev/null 2>&1
 wait_for 30 curl -fsS --cacert /etc/fabrico11y/ca.pem -H "authorization: Bearer $(cat admin-token)" \
   https://127.0.0.1:7443/v1/admin/nodes || fail SETUP "server did not answer"
@@ -262,31 +358,108 @@ else
 fi
 
 # A12 memory and task pressure are contained in the slice; the services survive.
+if [ "$A12_MEMORY_STRESSOR" = parallel ] && [ "$UNIFIED" -eq 0 ]; then
+  echo "FIXTURE A12 memory-stressor=parallel helper_sha256=unavailable reason=requires-cgroup-v2"
+  notrun A12 "parallel memory stressor requires unified cgroup v2; use the historical tail default on legacy hierarchies"
+else
 n_before=$(show fabrico11y-node.service NRestarts); s_before=$(show fabrico11y-server.service NRestarts)
-# hog <unit> <limit bytes> <systemd-run properties...>: runs `tail /dev/zero`
-# (unbounded memory) and samples MemoryCurrent until it ends. Contained means
+# hog <unit> <limit bytes> <worker bytes> <require kernel OOM> <properties...>:
+# runs the selected fixture and samples MemoryCurrent until it ends. Contained means
 # the peak stayed within the limit and the kernel killed it: Result=oom-kill
 # on the unified hierarchy; on the legacy one systemd cannot see OOM events,
 # so a SIGKILL (Result=signal, status 9) before RuntimeMaxSec is required.
 hog() {
-  local unit=$1 limit=$2; shift 2
-  systemd-run --quiet --unit="$unit" --slice=system-fabrico11y.slice -p RuntimeMaxSec=300 "$@" tail /dev/zero
+  local unit=$1 limit=$2 worker_bytes=$3 require_kernel_oom=$4 expected_high=$5 expected_tasks=$6
+  shift 6
+  local before_max=0 before_group=0 after_max=0 after_group=0
+  if [ "$require_kernel_oom" = 1 ] && [ "$UNIFIED" = 1 ]; then
+    local slice_events=/sys/fs/cgroup/system.slice/system-fabrico11y.slice/memory.events
+    while read -r event value; do
+      case "$event" in max) before_max=$value ;; oom_group_kill) before_group=$value ;; esac
+    done < "$slice_events"
+  fi
+  if [ "$A12_MEMORY_STRESSOR" = parallel ]; then
+    systemd-run --quiet --unit="$unit" --slice=system-fabrico11y.slice \
+      -p RuntimeMaxSec=300 -p OOMPolicy=kill -p MemorySwapMax=0 "$@" \
+      python3 "$SCRIPT_DIR/a12-memory-pressure.py" --parallel-bytes "$worker_bytes" \
+        --memory-high-bytes "$expected_high" --memory-max-bytes "$limit" --tasks-max "$expected_tasks"
+  else
+    systemd-run --quiet --unit="$unit" --slice=system-fabrico11y.slice -p RuntimeMaxSec=300 "$@" tail /dev/zero
+  fi
   local peak=0 cur
   while [ "$(systemctl is-active "$unit" 2>/dev/null)" = active ]; do
     cur=$(show "$unit" MemoryCurrent); case "$cur" in ''|'[not set]') ;; *) [ "$cur" -gt "$peak" ] && peak=$cur ;; esac
     sleep 0.2
   done
-  local result status
+  local result status max_events=0 oom_group_events=0 events_state=not-checked
   result=$(show "$unit" Result); status=$(show "$unit" ExecMainStatus)
+  if [ "$require_kernel_oom" = 1 ] && [ "$UNIFIED" = 1 ]; then
+    local slice_events=/sys/fs/cgroup/system.slice/system-fabrico11y.slice/memory.events event value
+    while read -r event value; do
+      case "$event" in max) after_max=$value ;; oom_group_kill) after_group=$value ;; esac
+    done < "$slice_events"
+    max_events=$((after_max - before_max))
+    oom_group_events=$((after_group - before_group))
+    events_state="slice-delta max=$max_events oom_group_kill=$oom_group_events"
+  fi
   systemctl reset-failed "$unit" 2>/dev/null
   local contained=0
-  if [ "$peak" -le "$limit" ] && { [ "$result" = oom-kill ] || { [ "$UNIFIED" = 0 ] && [ "$result" = signal ] && [ "$status" = 9 ]; }; }; then
+  local event_check=1
+  if [ "$require_kernel_oom" = 1 ] && [ "$UNIFIED" = 1 ] \
+     && { [ "$max_events" -le 0 ] || [ "$oom_group_events" -le 0 ]; }; then event_check=0; fi
+  if [ "$peak" -le "$limit" ] && [ "$event_check" = 1 ] \
+     && { [ "$result" = oom-kill ] || { [ "$UNIFIED" = 0 ] && [ "$result" = signal ] && [ "$status" = 9 ]; }; }; then
     contained=1
   fi
-  echo "$contained $result/$status peak=$peak limit=$limit"
+  echo "$contained $result/$status peak=$peak limit=$limit events=$events_state"
 }
-mem=$(hog fabric-accept-mem $((256 << 20)) -p MemoryHigh=128M -p MemoryMax=256M -p TasksMax=128)
-slice_hog=$(hog fabric-accept-slice $((3328 << 20)))
+positive_control='not-used'; positive_control_ok=1
+if [ "$A12_MEMORY_STRESSOR" = parallel ]; then
+  helper=$SCRIPT_DIR/a12-memory-pressure.py
+  helper_sha=$(sha256sum "$helper" | awk '{print $1}')
+  page_bytes=$(getconf PAGESIZE)
+  node_worker_bytes=$(((((2 * (256 << 20) + 95) / 96 + page_bytes - 1) / page_bytes) * page_bytes))
+  slice_worker_bytes=$(((((2 * (3328 << 20) + 95) / 96 + page_bytes - 1) / page_bytes) * page_bytes))
+  echo "FIXTURE A12 memory-stressor=parallel helper_sha256=$helper_sha workers=96 node_worker_bytes=$node_worker_bytes slice_worker_bytes=$slice_worker_bytes"
+  if command -v python3 >/dev/null 2>&1 && [ -f "$helper" ]; then
+    systemd-run --quiet --unit=fabric-accept-mem-control --slice=system-fabrico11y.slice \
+      -p Type=exec -p RemainAfterExit=yes \
+      -p RuntimeMaxSec=15 -p MemoryHigh=128M -p MemoryMax=256M -p MemorySwapMax=0 -p TasksMax=128 \
+      python3 "$helper" --control --memory-high-bytes $((128 << 20)) \
+        --memory-max-bytes $((256 << 20)) --tasks-max 128
+    control_peak=0; cur=0; control_end=$((SECONDS + 20))
+    while [ "$(show fabric-accept-mem-control SubState)" = running ] && [ "$SECONDS" -lt "$control_end" ]; do
+      cur=$(show fabric-accept-mem-control MemoryCurrent)
+      case "$cur" in ''|'[not set]') ;; *) [ "$cur" -gt "$control_peak" ] && control_peak=$cur ;; esac
+      sleep 0.2
+    done
+    control_result=$(show fabric-accept-mem-control Result)
+    control_status=$(show fabric-accept-mem-control ExecMainStatus)
+    control_state=$(show fabric-accept-mem-control SubState)
+    systemctl stop fabric-accept-mem-control 2>/dev/null
+    systemctl reset-failed fabric-accept-mem-control 2>/dev/null
+    positive_control_ok=0
+    if [ "$control_peak" -ge $((24 << 20)) ] && [ "$control_peak" -lt $((128 << 20)) ] \
+       && [ "$control_state" = exited ] && [ "$control_result" = success ] \
+       && [ "$control_status" = 0 ]; then positive_control_ok=1; fi
+    positive_control="$control_result/$control_status state=$control_state peak=$control_peak high=$((128 << 20))"
+  else
+    positive_control_ok=0; positive_control='python3-or-fixture-unavailable'
+  fi
+else
+  echo "FIXTURE A12 memory-stressor=tail acceptance_sha256=$(sha256sum "$0" | awk '{print $1}')"
+fi
+if [ "$A12_MEMORY_STRESSOR" = parallel ] && [ "$positive_control_ok" -ne 1 ]; then
+  echo "A12 parallel positive control failed: $positive_control" >&2
+fi
+if [ "$A12_MEMORY_STRESSOR" = parallel ]; then
+  mem=$(hog fabric-accept-mem $((256 << 20)) "$node_worker_bytes" 1 $((128 << 20)) 128 \
+    -p MemoryHigh=128M -p MemoryMax=256M -p TasksMax=128)
+  slice_hog=$(hog fabric-accept-slice $((3328 << 20)) "$slice_worker_bytes" 1 $((2816 << 20)) 640)
+else
+  mem=$(hog fabric-accept-mem $((256 << 20)) 0 0 0 0 -p MemoryHigh=128M -p MemoryMax=256M -p TasksMax=128)
+  slice_hog=$(hog fabric-accept-slice $((3328 << 20)) 0 0 0 0)
+fi
 # A process tree that tries to exceed the Spindle's task limit.
 systemd-run --quiet --unit=fabric-accept-tasks --slice=system-fabrico11y.slice -p TasksMax=128 \
   bash -c 'for i in $(seq 300); do sleep 120 & done; wait' >/dev/null 2>&1
@@ -302,17 +475,20 @@ n_after=$(show fabrico11y-node.service NRestarts); s_after=$(show fabrico11y-ser
 alive=$(systemctl is-active fabrico11y-node.service fabrico11y-server.service | tr '\n' ' ')
 echo "accept-line-after-pressure" >> $LOGDIR/allowed.log
 wait_for 60 has_line accept-line-after-pressure; after=$?
-if [ "${mem%% *}" = 1 ] && [ "${slice_hog%% *}" = 1 ] && [ "$tasks_now" -le 128 ] && [ "$tasks_now" -ge 100 ] \
+if [ "${mem%% *}" = 1 ] && [ "${slice_hog%% *}" = 1 ] && [ "$positive_control_ok" = 1 ] \
+   && [ "$tasks_now" -le 128 ] && [ "$tasks_now" -ge 100 ] \
    && [ "$fork_errors" -gt 0 ] && [ "$n_before" = "$n_after" ] && [ "$s_before" = "$s_after" ] \
    && [ "$alive" = "active active " ] && [ $after -eq 0 ]; then
-  pass A12 "service-limit hog: ${mem#* }; slice-limit hog: ${slice_hog#* }; task tree peaked at TasksCurrent=$tasks_now with $fork_errors fork-failure lines; services active, NRestarts unchanged, delivery continued"
+  pass A12 "memory-stressor=$A12_MEMORY_STRESSOR; positive control=$positive_control; service-limit hog: ${mem#* }; slice-limit hog: ${slice_hog#* }; task tree peaked at TasksCurrent=$tasks_now with $fork_errors fork-failure lines; services active, NRestarts unchanged, delivery continued"
 else
-  fail A12 "mem=[$mem] slice=[$slice_hog] tasks=$tasks_now forks=$fork_errors restarts node $n_before->$n_after server $s_before->$s_after alive='$alive' after=$after"
+  fail A12 "memory-stressor=$A12_MEMORY_STRESSOR positive-control=[$positive_control]; mem=[$mem] slice=[$slice_hog] tasks=$tasks_now forks=$fork_errors restarts node $n_before->$n_after server $s_before->$s_after alive='$alive' after=$after"
+fi
 fi
 
+if [ "$DEFER_REMOVAL" = 0 ]; then
 # A13 remove keeps data, configuration and the account; purge removes data and
 # configuration.
-dpkg -r fabrico11y >"$W/remove.log" 2>&1; rc=$?
+package_remove >"$W/remove.log" 2>&1; rc=$?
 stopped=$(systemctl is-active fabrico11y-node.service fabrico11y-server.service | tr '\n' ' ')
 if [ $rc -eq 0 ] && [ ! -e /usr/bin/fabric-server ] && [ -d /var/lib/fabrico11y/server ] \
    && [ -f /etc/fabrico11y/server.conf ] && getent passwd fabricolly >/dev/null && [ "$stopped" != "active active " ]; then
@@ -320,13 +496,31 @@ if [ $rc -eq 0 ] && [ ! -e /usr/bin/fabric-server ] && [ -d /var/lib/fabrico11y/
 else
   fail A13a "rc=$rc stopped='$stopped'"
 fi
-dpkg -P fabrico11y >"$W/purge.log" 2>&1; rc=$?
+package_purge >"$W/purge.log" 2>&1; rc=$?
 if [ $rc -eq 0 ] && [ ! -e /var/lib/fabrico11y ] && [ ! -e /etc/fabrico11y ]; then
-  pass A13b "purge: /var/lib/fabrico11y and /etc/fabrico11y removed"
+  if [ "$PACKAGE_FAMILY" = fedora ]; then
+    pass A13b "explicit guest cleanup after RPM-preserved removal: state/config removed"
+  else pass A13b "purge: /var/lib/fabrico11y and /etc/fabrico11y removed"; fi
 else
   fail A13b "rc=$rc"
 fi
 
+else
+  echo "DEFERRED A13 removal to registered upgrade/reboot lifecycle phases"
+fi
+
+if [ "$PACKAGE_FAMILY" = fedora ]; then
+  [ "$(getenforce)" = Enforcing ] && pass F2 "SELinux remained enforcing through delivery/restart/removal" || fail F2 "SELinux changed mode"
+  audit_status=$(auditctl -s 2>&1); audit_rc=$?
+  if [ "$audit_rc" -ne 0 ] || ! echo "$audit_status" | grep -Eq '^enabled [12]$'; then
+    fail F3 "audit unavailable/disabled: $audit_status"
+  fi
+  ausearch -m AVC,USER_AVC -ts boot > "$W/selinux-avc.log" 2>&1; audit_search_rc=$?
+  [ "$audit_search_rc" -le 1 ] || fail F3 "audit search failed: $audit_search_rc"
+  if grep -E 'comm="(fabric-server|fabric-node|fabricctl)"' "$W/selinux-avc.log"; then
+    fail F3 "Fabric process SELinux denial; retain AVC evidence"
+  else pass F3 "no Fabric process AVC in guest audit"; fi
+fi
 echo "RESULT fails=$FAILS not_run=$NOTRUN"
 [ $FAILS -gt 0 ] && exit 1
 [ $NOTRUN -gt 0 ] && exit 3

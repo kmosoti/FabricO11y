@@ -33,9 +33,7 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn new() -> Self {
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("../../target")
-            .join(format!("history-test-{}-{id}", std::process::id()));
+        let path = std::env::temp_dir().join(format!("history-test-{}-{id}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
         fs::create_dir_all(&path).unwrap();
         Self(path.canonicalize().unwrap())
@@ -135,6 +133,9 @@ fn config(root: &Path, file_bytes: u64, retention_bytes: u64) -> Config {
         tls_key: root.join("server.key"),
         state_dir: root.join("server-state"),
         admin_token_file: root.join("admin-token"),
+        console_dir: None,
+        access_origin: None,
+        access_rp_id: None,
         journal_bytes: 256 * 1024 * 1024,
         journal_file_bytes: file_bytes,
         retention_s: 86400,
@@ -145,7 +146,7 @@ fn config(root: &Path, file_bytes: u64, retention_bytes: u64) -> Config {
 }
 
 struct Running {
-    handle: axum_server::Handle,
+    handle: axum_server::Handle<std::net::SocketAddr>,
     thread: Option<std::thread::JoinHandle<std::io::Result<()>>>,
     addr: SocketAddr,
 }
@@ -1138,4 +1139,128 @@ fn a_block_tail_answers_as_the_scan_does() {
         pages_upto(&walk, &mut drain.clone(), 1 << 40, 10_000),
         pages_upto(&scan, &mut drain.clone(), 1 << 40, 10_000)
     );
+}
+
+/// CX-RATE-IDENTITY / CX-RATE-I53: retained function-level audit failures,
+/// extended through OTLP, durable delivery, HTTP, both plans and sealing/restart.
+/// The unchanged Python oracle supplies expected rows, including mixed numbers.
+#[test]
+fn rate_counterexamples_survive_delivery_sealing_and_restart() {
+    use number_data_point::Value::{AsDouble, AsInt};
+    let scratch = Scratch::new();
+    make_certs(&scratch.0);
+    let tokens = enroll(&scratch, &["node-a", "node-padding"]);
+    let mut points = Vec::new();
+    let mut add = |attributes: Vec<KeyValue>, values: Vec<number_data_point::Value>| {
+        for (index, value) in values.into_iter().enumerate() {
+            points.push(NumberDataPoint {
+                attributes: attributes.clone(),
+                start_time_unix_nano: 1,
+                time_unix_nano: (index as u64 + 1) * 1_000_000_000,
+                value: Some(value),
+                ..Default::default()
+            });
+        }
+    };
+    // Neither singleton may invent a cross-series rate.
+    add(vec![kv("a=b", "c")], vec![AsInt(10)]);
+    add(vec![kv("a", "b=c")], vec![AsInt(20)]);
+    // Two multi-point maps with the same old display key must stay independent.
+    add(vec![kv("x=y", "z")], vec![AsInt(10), AsInt(11)]);
+    add(vec![kv("x", "y=z")], vec![AsInt(100), AsInt(120)]);
+    add(
+        vec![kv("case", "integer")],
+        vec![AsInt(1 << 53), AsInt((1 << 53) + 1), AsInt(1 << 53)],
+    );
+    add(
+        vec![kv("case", "extremes")],
+        vec![AsInt(i64::MIN), AsInt(i64::MAX), AsInt(i64::MIN)],
+    );
+    add(
+        vec![kv("case", "mixed-decrease")],
+        vec![AsInt((1 << 53) + 1), AsDouble((1u64 << 53) as f64)],
+    );
+    add(
+        vec![kv("case", "mixed-increase")],
+        vec![
+            AsDouble((1u64 << 53) as f64),
+            AsInt((1 << 53) + 1),
+            AsDouble((1u64 << 53) as f64 + 2.0),
+        ],
+    );
+    add(
+        vec![kv("case", "mixed-fraction")],
+        vec![AsInt(-2), AsDouble(-1.5), AsInt(-1), AsDouble(-1.25)],
+    );
+    // Many two-point series, deliberately distinct despite a common prefix.
+    for series in 0..2048 {
+        add(
+            vec![kv("series", &format!("{series:04}"))],
+            vec![AsInt((1 << 53) + series), AsInt((1 << 53) + series + 1)],
+        );
+    }
+    let q = json!({"kind":"rate", "node":"node-a", "name":"precision.counter", "from_ns":0, "to_ns":10_000_000_000u64});
+    let mut cfg = config(&scratch.0, 1 << 28, 1 << 30);
+    let server = start(cfg.clone());
+    let send = sender(&scratch.0, server.addr, &tokens[0]);
+    let mut spool = Spool::open(scratch.path("spool-a"), 64 << 20).unwrap();
+    for chunk in points.chunks(512) {
+        let request = ExportMetricsServiceRequest {
+            resource_metrics: vec![ResourceMetrics {
+                scope_metrics: vec![ScopeMetrics {
+                    metrics: vec![Metric {
+                        name: "precision.counter".into(),
+                        data: Some(metric::Data::Sum(Sum {
+                            data_points: chunk.to_vec(),
+                            aggregation_temporality: 2,
+                            is_monotonic: true,
+                        })),
+                        ..Default::default()
+                    }],
+                    ..Default::default()
+                }],
+                ..Default::default()
+            }],
+        };
+        let batch = spool
+            .append(&Batch {
+                version: 1,
+                metrics: request.encode_to_vec(),
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(matches!(
+            send.send(&batch.encode_to_vec()),
+            Delivery::Ack(_)
+        ));
+    }
+    let (status, tail) = query(&scratch.0, server.addr, &q);
+    assert_eq!(status, 200);
+    assert_eq!(tail["rows"].as_array().unwrap().len(), 2060);
+    server.stop();
+    let verdict = oracle(&scratch, &cfg, &q, std::slice::from_ref(&tail), None);
+    assert_eq!(verdict["passed"], true, "{verdict}");
+    // Reopened walk answers the journal, then small rotation seals these Batches.
+    cfg.query_plan = Plan::Walk;
+    let server = start(cfg.clone());
+    assert_eq!(query(&scratch.0, server.addr, &q).1["rows"], tail["rows"]);
+    server.stop();
+    cfg.journal_file_bytes = 16 * 1024;
+    let server = start(cfg.clone());
+    let padding = sender(&scratch.0, server.addr, &tokens[1]);
+    deliver(&scratch.path("spool-padding"), &padding, 1000, 1);
+    wait_for_segments(&cfg.state_dir, 1);
+    let sealed = query(&scratch.0, server.addr, &q).1;
+    assert_eq!(sealed["rows"], tail["rows"]);
+    server.stop();
+    for plan in [Plan::Scan, Plan::Walk] {
+        cfg.query_plan = plan;
+        let server = start(cfg.clone());
+        let (status, answer) = query(&scratch.0, server.addr, &q);
+        assert_eq!(status, 200);
+        assert_eq!(answer["rows"], tail["rows"]);
+        server.stop();
+        let verdict = oracle(&scratch, &cfg, &q, &[answer], None);
+        assert_eq!(verdict["passed"], true, "{verdict}");
+    }
 }

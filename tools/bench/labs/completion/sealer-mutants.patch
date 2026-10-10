@@ -1,0 +1,140 @@
+--- a/crates/fabric-server/examples/completion_builder.rs
++++ b/crates/fabric-server/examples/completion_builder.rs
+@@ -513,6 +513,62 @@
+     )
+ }
+ 
++
++#[cfg(all(test, feature = "responsibility-alloc-probe"))]
++mod heap_acceptance_tests {
++    use super::*;
++
++    #[test]
++    fn bounded_registered_steady_128_heap_stays_below_ceiling() -> Result<(), Box<dyn std::error::Error>> {
++        // The launcher owns the data-drive scratch root. No system-disk fallback.
++        // One filtered libtest runs alone, so unrelated tests cannot affect PEAK.
++        let scratch_root = PathBuf::from(std::env::var("FABRIC_SCRATCH_ROOT")?).canonicalize()?;
++        let work = scratch_root.join(format!("sealer-heap-mutant-{}", std::process::id()));
++        std::fs::create_dir(&work)?;
++        let fixture = work.join("fixture");
++        generate("steady", &fixture, 128 * 1024 * 1024)?;
++        let input = fixture.join("sealed-00000000000000000001.faj");
++        // run snapshots allocator counters after fixture generation and before
++        // readback. This asserts the registered ceiling, not a buffer estimate.
++        let measured = run(&work.join("state"), &input, "bounded")?;
++        let peak = measured["incremental_peak_heap_bytes"].as_u64()
++            .ok_or("counting allocator measurement missing")?;
++        let logs = measured["logical_row_counts"]["logs"].as_u64()
++            .ok_or("logical log count missing")?;
++        let ceiling = 80 * 1024 * 1024_u64;
++        let receipts = PathBuf::from(std::env::var("CARGO_TARGET_DIR")?)
++            .join("verification/sealer-heap-mutant");
++        std::fs::create_dir_all(&receipts)?;
++        let receipt = receipts.join(format!("steady-128-{}.json", std::process::id()));
++        let mut evidence = json!({
++            "origin":"registered BS-3 steady-128; M-SEAL-RETAIN-RUNS sensitivity",
++            "seed":0xA11FA001_u64,"input_sha256":measured["input_sha256"],
++            "journal_bytes":measured["journal_bytes"],"logical_log_rows":logs,
++            "minimum_log_body_bytes":logs * 512,"ceiling_bytes":ceiling,
++            "incremental_peak_heap_bytes":peak,
++            "heap_start_bytes":measured["heap_start_bytes"],
++            "heap_after_bytes":measured["heap_after_bytes"],
++            "allocator_counted":measured["allocator_counted"],
++            "leftovers":measured["leftovers"],"scratch":work,
++            "command":std::env::args().collect::<Vec<_>>(),
++            "executable_sha256":digest(&std::env::current_exe()?)?,
++            "cleanup_removed":false,
++            "scope":"one registered ceiling witness, not full BS-3 acceptance"
++        });
++        // Preserve the reproducible fixture identity and observed violation
++        // before cleaning owned scratch; never dump telemetry bodies on panic.
++        std::fs::write(&receipt, serde_json::to_vec_pretty(&evidence)?)?;
++        std::fs::remove_dir_all(&work)?;
++        evidence["cleanup_removed"] = json!(true);
++        std::fs::write(&receipt, serde_json::to_vec_pretty(&evidence)?)?;
++        assert!(logs * 512 > ceiling, "registered fixture is too small to expose retained log payloads");
++        assert!(measured["allocator_counted"].as_bool() == Some(true));
++        assert!(measured["leftovers"].as_array().is_some_and(Vec::is_empty));
++        assert!(peak <= ceiling, "incremental heap {peak} exceeds {ceiling}; receipt {}", receipt.display());
++        Ok(())
++    }
++}
++
+ fn main() -> Result<(), Box<dyn std::error::Error>> {
+     let args: Vec<_> = std::env::args().skip(1).collect();
+     let scratch = PathBuf::from(std::env::var("FABRIC_SCRATCH_ROOT")?).canonicalize()?;
+--- a/xtask/mutants.json
++++ b/xtask/mutants.json
+@@ -461,6 +461,72 @@
+         "fabric-sim"
+       ],
+       "expect_failing": "delivery_survives_partitions_and_lost_answers"
++    },
++    {
++      "id": "M-SEAL-MERGE-ORDER",
++      "contract": "SEAL-2 merged rows equal the independently sorted contract order",
++      "incorrect_behavior": "sort each spill run in descending contract order",
++      "file": "crates/fabric-server/src/segment/bounded.rs",
++      "find": "rows.sort_by_key(Row::key);",
++      "replace": "rows.sort_by_key(|row| Reverse(row.key()));",
++      "command": [
++        "cargo",
++        "test",
++        "--offline",
++        "--locked",
++        "-p",
++        "fabric-server",
++        "--lib",
++        "generated_merge_matches_independent_stable_sort_across_run_sizes",
++        "--",
++        "--test-threads=1"
++      ],
++      "expect_failing": "generated_merge_matches_independent_stable_sort_across_run_sizes"
++    },
++    {
++      "id": "M-SEAL-RETAIN-RUNS",
++      "contract": "SEAL-3 registered builder peak heap remains at or below 80 MiB",
++      "incorrect_behavior": "leak every owned row after its successful spill write, retaining payload proportional to input size",
++      "file": "crates/fabric-server/src/segment/bounded.rs",
++      "find": "                write_row(&mut output, &row)?;\n            }\n        }\n        output.flush()?;",
++      "replace": "                write_row(&mut output, &row)?;\n            }\n            std::mem::forget(row);\n        }\n        output.flush()?;",
++      "command": [
++        "cargo",
++        "test",
++        "--offline",
++        "--locked",
++        "-p",
++        "fabric-server",
++        "--example",
++        "completion_builder",
++        "--features",
++        "responsibility-alloc-probe",
++        "bounded_registered_steady_128_heap_stays_below_ceiling",
++        "--",
++        "--test-threads=1"
++      ],
++      "expect_failing": "bounded_registered_steady_128_heap_stays_below_ceiling"
++    },
++    {
++      "id": "M-SEAL-SPILL-LEFT",
++      "contract": "SEAL-4 failed builds leave no spill run or building directory",
++      "incorrect_behavior": "skip owned building-directory removal on a build error",
++      "file": "crates/fabric-server/src/segment/bounded.rs",
++      "find": "if let Err(error) = fs::remove_dir_all(&self.0)",
++      "replace": "if let Err(error) = Ok::<(), io::Error>(())",
++      "command": [
++        "cargo",
++        "test",
++        "--offline",
++        "--locked",
++        "-p",
++        "fabric-server",
++        "--lib",
++        "corrupt_frame_after_spilling_removes_scratch_and_preserves_custody",
++        "--",
++        "--test-threads=1"
++      ],
++      "expect_failing": "corrupt_frame_after_spilling_removes_scratch_and_preserves_custody"
+     }
+   ]
+ }

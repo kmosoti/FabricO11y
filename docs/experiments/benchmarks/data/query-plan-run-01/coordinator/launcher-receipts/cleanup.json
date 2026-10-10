@@ -1,0 +1,27 @@
+{
+  "unit": "fabric-work-e9ed473985fe46bdbe4450572484e2aa",
+  "command": [
+    "python3",
+    "tools/bench/labs/query_compare/run_job.py",
+    "--id",
+    "cleanup",
+    "--lab",
+    "recovery",
+    "--stage",
+    "overhead",
+    "--seconds",
+    "30",
+    "--",
+    "python3",
+    "tools/bench/labs/cleanup_query_plan.py"
+  ],
+  "exit": 0,
+  "started_unix": 1791223843.4115741,
+  "elapsed_s": 0.8240892887115479,
+  "data_drive": "/run/media/kmosoti/data",
+  "temporary": "/run/media/kmosoti/data/FabricO11y/scratch/work-a5zkdf3l",
+  "temporary_removed": true,
+  "retained_failure_evidence": null,
+  "memory_max_bytes": 21474836480,
+  "swap_max_bytes": 0
+}

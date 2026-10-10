@@ -1,0 +1,88 @@
+{
+  "problems": [],
+  "counts": {
+    "seed_batches": 0,
+    "recovered_batches": 3640,
+    "live_cycles": 3640,
+    "live_acks": 3640,
+    "source_logs": 300000,
+    "clock_rows": 300000,
+    "resource_samples": 203,
+    "query_verdicts": 3
+  },
+  "clock": {
+    "samples": 203,
+    "realtime_range_ns": 698,
+    "suspend_range_ns": 1087,
+    "boottime_available": true,
+    "phases": {
+      "normal": {
+        "samples": 60,
+        "server_cpu_cores": 0.13622272325960716,
+        "reason": null
+      },
+      "burst": {
+        "samples": 59,
+        "server_cpu_cores": 0.29184921658298535,
+        "reason": null
+      },
+      "recovery": {
+        "samples": 60,
+        "server_cpu_cores": 0.2750713153754143,
+        "reason": null
+      }
+    },
+    "timing_eligible": true
+  },
+  "query_provenance": {
+    "oracle_path": "tools/qualification/query_oracle.py",
+    "oracle_sha256": "fc696ee1173093c258ff4451c4a796dd8e5832761f9e0ff49f89a922b411d23a",
+    "replay_sha256": "7cb2e24c4c91f5ca37bd05d78e4bc388ce6082246a48f7fa270350d157fefc9e",
+    "verdict_file": "query-verdicts.json",
+    "negative_controls": 2
+  },
+  "artifact_hashes_checked": 37,
+  "environment_keys": [
+    "binaries",
+    "campaign_protocol",
+    "cell",
+    "client_cpus",
+    "command",
+    "history",
+    "near_rotation",
+    "nodes",
+    "protocol_addenda",
+    "protocol_sha256",
+    "query_plan",
+    "rates",
+    "revision",
+    "server_cpus",
+    "sources",
+    "storage",
+    "timed_queries",
+    "uname"
+  ],
+  "passed": true,
+  "query_workload": {
+    "problems": [],
+    "ordinary_count": 200,
+    "visibility_count": 36,
+    "max_lateness_ns": 7089901,
+    "max_concurrency": 2,
+    "started_phase_shape_counts": {
+      "0:absent_text": 20,
+      "0:cpu_metrics": 20,
+      "0:recent_logs": 20,
+      "1:absent_text": 20,
+      "1:cpu_metrics": 20,
+      "1:recent_logs": 20,
+      "2:absent_text": 20,
+      "2:cpu_metrics": 20,
+      "2:recent_logs": 20,
+      "3:absent_text": 7,
+      "3:cpu_metrics": 6,
+      "3:recent_logs": 7
+    },
+    "passed": true
+  }
+}

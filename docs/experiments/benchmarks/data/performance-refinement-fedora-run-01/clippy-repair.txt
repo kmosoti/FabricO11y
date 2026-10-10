@@ -1,0 +1,25 @@
+   Compiling ring v0.17.14
+    Checking fabric-observation v0.1.0 (/home/kmosoti/Projects/moiric/FabricO11y/crates/fabric-observation)
+    Checking xtask v0.1.0 (/home/kmosoti/Projects/moiric/FabricO11y/xtask)
+    Checking fabric-properties v0.1.0 (/home/kmosoti/Projects/moiric/FabricO11y/crates/fabric-properties)
+   Compiling rustls v0.23.45
+    Checking rustls-webpki v0.103.15
+    Checking ureq v3.3.0
+    Checking tokio-rustls v0.26.5
+    Checking axum-server v0.7.3
+    Checking fabric-server v0.1.0 (/home/kmosoti/Projects/moiric/FabricO11y/crates/fabric-server)
+    Checking fabric_o11y v0.1.0 (/home/kmosoti/Projects/moiric/FabricO11y)
+    Checking fabric-fuzz-targets v0.1.0 (/home/kmosoti/Projects/moiric/FabricO11y/crates/fabric-fuzz-targets)
+    Checking fabric-sim v0.1.0 (/home/kmosoti/Projects/moiric/FabricO11y/crates/fabric-sim)
+error: the borrowed expression implements the required traits
+    --> crates/fabric-server/tests/history.rs:1205:33
+     |
+1205 |     let mut spool = Spool::open(&scratch.path("spool-a"), 64 << 20).unwrap();
+     |                                 ^^^^^^^^^^^^^^^^^^^^^^^^ help: change this to: `scratch.path("spool-a")`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_borrows_for_generic_args
+     = note: `-D clippy::needless-borrows-for-generic-args` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::needless_borrows_for_generic_args)]`
+
+error: could not compile `fabric-server` (test "history") due to 1 previous error
+warning: build failed, waiting for other jobs to finish...

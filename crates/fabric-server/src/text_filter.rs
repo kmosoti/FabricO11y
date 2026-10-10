@@ -55,6 +55,49 @@ pub struct GroupFilter {
     words: Vec<u64>,
 }
 
+/// Experiment-only group accumulation across bounded input chunks. Retains
+/// distinct trigrams, never the bodies; its bitmap occupies exactly 2 MiB.
+pub(crate) struct GroupAccumulator {
+    seen: Vec<u64>,
+    distinct: usize,
+}
+
+impl GroupAccumulator {
+    pub(crate) fn new() -> Self {
+        Self {
+            seen: vec![0; (1 << 24) / 64],
+            distinct: 0,
+        }
+    }
+
+    pub(crate) fn push(&mut self, body: &str) {
+        for w in body.as_bytes().windows(3) {
+            let t = trigram(w) as usize;
+            let word = &mut self.seen[t / 64];
+            let bit = 1_u64 << (t % 64);
+            self.distinct += usize::from(*word & bit == 0);
+            *word |= bit;
+        }
+    }
+
+    pub(crate) fn finish(self) -> GroupFilter {
+        let bits = (self.distinct * 8)
+            .next_power_of_two()
+            .clamp(MIN_BITS, MAX_BITS);
+        let mut words = vec![0_u64; bits / 64];
+        for (index, mut word) in self.seen.into_iter().enumerate() {
+            while word != 0 {
+                let t = (index * 64 + word.trailing_zeros() as usize) as u32;
+                word &= word - 1;
+                let (a, b) = positions(t, bits);
+                words[a / 64] |= 1 << (a % 64);
+                words[b / 64] |= 1 << (b % 64);
+            }
+        }
+        GroupFilter { words }
+    }
+}
+
 impl GroupFilter {
     /// The filter of the bodies of one row group.
     pub fn build<'a>(bodies: impl IntoIterator<Item = &'a str>) -> Self {
@@ -150,8 +193,10 @@ pub fn decode(bytes: &[u8]) -> io::Result<Vec<GroupFilter>> {
     let mut out = Vec::with_capacity(groups);
     for bits in sizes {
         let words = bytes[at..at + bits / 8]
-            .chunks_exact(8)
-            .map(|c| u64::from_le_bytes(c.try_into().expect("eight bytes")))
+            .as_chunks::<8>()
+            .0
+            .iter()
+            .map(|c| u64::from_le_bytes(*c))
             .collect();
         out.push(GroupFilter { words });
         at += bits / 8;
@@ -162,6 +207,30 @@ pub fn decode(bytes: &[u8]) -> io::Result<Vec<GroupFilter>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn incremental_groups_match_independent_whole_group_filters() {
+        let bodies: Vec<_> = (0..2000)
+            .map(|index| format!("row-{index}:λ\0\"\\{}", "x".repeat(index % 97)))
+            .collect();
+        for count in [0, 1, 17, bodies.len()] {
+            let mut accumulated = GroupAccumulator::new();
+            assert_eq!(accumulated.seen.len() * size_of::<u64>(), 2 * 1024 * 1024);
+            for chunk in bodies[..count].chunks(13) {
+                for body in chunk {
+                    accumulated.push(body);
+                }
+            }
+            let actual = accumulated.finish();
+            let expected = GroupFilter::build(bodies[..count].iter().map(String::as_str));
+            assert_eq!(encode(std::slice::from_ref(&actual)), encode(&[expected]));
+            for body in &bodies[..count] {
+                for trigram in body.as_bytes().windows(3) {
+                    assert!(actual.may_contain(trigram));
+                }
+            }
+        }
+    }
 
     #[test]
     fn a_group_never_rejects_a_substring_of_its_bodies() {

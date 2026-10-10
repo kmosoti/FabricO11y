@@ -1,0 +1,914 @@
+[
+  {
+    "query": {
+      "kind": "logs",
+      "from_ns": 0,
+      "to_ns": 9000000000000000000,
+      "limit": 7,
+      "node": "node00",
+      "contains": "load-00:000"
+    },
+    "pages": [
+      {
+        "complete": true,
+        "freshness": {
+          "node00": 1791221769399372266
+        },
+        "gaps": [],
+        "next_page": "7b226166746572223a5b313739313232313538303430303633343634372c226263333736396638623030616233653136633238656639353132613739373761222c332c355d2c226e6577657374223a3138332c226f6c64657374223a312c227175657279223a7b22636f6e7461696e73223a226c6f61642d30303a303030222c2266726f6d5f6e73223a302c226b696e64223a226c6f6773222c226c696d6974223a372c226e6f6465223a226e6f64653030222c22746f5f6e73223a393030303030303030303030303030303030307d7d",
+        "retained_from_ns": 1791221574450742728,
+        "retained_to_ns": 1791221769441787479,
+        "rows": [
+          {
+            "attributes": {
+              "log.file.device": "64513",
+              "log.file.inode": "13632184",
+              "log.file.offset.end": "901",
+              "log.file.offset.start": "0",
+              "log.file.path": "/run/media/kmosoti/data/FabricO11y/scratch/work-r4we3w1r/query/dev-walk/tmp/dev-walk/node00.log"
+            },
+            "body": "load-00:0000:00 RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR",
+            "index": 0,
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "observed_ns": 1791221579400348771,
+            "sequence": 2
+          },
+          {
+            "attributes": {
+              "log.file.device": "64513",
+              "log.file.inode": "13632184",
+              "log.file.offset.end": "1802",
+              "log.file.offset.start": "901",
+              "log.file.path": "/run/media/kmosoti/data/FabricO11y/scratch/work-r4we3w1r/query/dev-walk/tmp/dev-walk/node00.log"
+            },
+            "body": "load-00:0001:00 QgLWkH<Z&m$N}n<KUE+b#F6j$nKx&e3Y0`z-lxDc(aB#Kk=Q$hic}HfU$2Ex?{4}~XS-fg#?~PeBlw?d_(_#kk?`esoEiz#dk0Y6jE2#xs&Se27s=;TLYuXr2SR>5j>cnU87Bv^pkquKvmcTqyAHWviDA-yEqa)Xl&LM4%sXO0g{`#AHy18s9~~0;qJBBZXzy1d3P-lF(&N#bjUi)EfegR~ubYJl6eANEuoXS22D+yWXJS4J=E$}1o6n3<y>Ig3?lTv-0E8u#!;YTcCs_P_*T)dLqMG|Gdn$$Kc<_tLvM05gw3Mg=S25=pB%XBL@`~2Ke8ZV^J$kjIvU4%i>1X5X=(tuVgkPyWuf(-Npqp?Be5;cX-*IOve%ix)h_!1*>|w!deYYf6MlXgxw`U8g7<Ev+mP>Fmb#k3)V<*6DVgu8-aU83E+zHL?!rLf4*D#P<S7?DG(J`mFL|Va<Yi%G?&y-+bchS*)Bg_vNV+%y%nTUMdBRg#qdmm(r*lK>q^+AO4C5)F)mz-w{B?o4MWaiU1345KTi&~wSj$eQ|M1xU5n*ok==W!0YHk_Y4<t4&j`pI>yiAu`v({ew+7InP;W;yXL`=Ccb!I4dwcg<bLR%zzRfj)*@ViO0$f8z=V(mk1qk9tllk{XHW4sKKT7|x0#{-slvKAnB+6n}0yhxFt4V^ksuI!PVXk|RTd(M!J%r=-+AJN_Qt$v4JBK=d%nkpM}H3Ja^IwkS8CH6fpynaw@&kN5&PAtE^aQw=`r3h}~)5AhXJy3Zq@KY@hk>S^d3wa8hAV%&ioHS<Z}&Tn6BZCXr#@9FY$_YmUN&EL~lS62mHNvWR(<9}29E#iP-$oV@nYF8_sd+GXTh`=SpV??wIG<k55&(jyUYrFMu!zDs",
+            "index": 0,
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "observed_ns": 1791221580400634647,
+            "sequence": 3
+          },
+          {
+            "attributes": {
+              "log.file.device": "64513",
+              "log.file.inode": "13632184",
+              "log.file.offset.end": "2703",
+              "log.file.offset.start": "1802",
+              "log.file.path": "/run/media/kmosoti/data/FabricO11y/scratch/work-r4we3w1r/query/dev-walk/tmp/dev-walk/node00.log"
+            },
+            "body": "load-00:0002:00 RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR",
+            "index": 1,
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "observed_ns": 1791221580400634647,
+            "sequence": 3
+          },
+          {
+            "attributes": {
+              "log.file.device": "64513",
+              "log.file.inode": "13632184",
+              "log.file.offset.end": "3604",
+              "log.file.offset.start": "2703",
+              "log.file.path": "/run/media/kmosoti/data/FabricO11y/scratch/work-r4we3w1r/query/dev-walk/tmp/dev-walk/node00.log"
+            },
+            "body": "load-00:0003:00 )Bm7={qR`hTY8pA>|KpLB;^<&=$3$YtSjsSC-HY_B7&PzMTCO;@dt}?v=(+Wend@iu?9n&9ewyeqXQX~Sc8|<B34EWF9^PfG!AY7#;j7|y{!D*giz0C#)FK%3QKy(1ZiDmINQS7CcP34*q}^t?d+<1urQ+F4}aSUp7{}<APByk<k_)xdws~8o@k$dTqLyq1x&$%ecUvkc#;6ncG_Cu9jhE-uLRkQpSGAMN1wIeb3sAZU;C#lpOtfq@3vCf9s2GdSey{=ax30_Hvt09qwZ7WD}f!pU<_&)jXc`Ip+b=bxkf3~PxzD*$9qA)MJ`8i5B}Lgwooo7$2}WXxDp~lTnKJ8{#wf9uf!H6_{eu<sa@e5<q$#4o621b=JHpE9Ms0U3o+GfA3$TkaPJI>1x#Gcw|UiG!)7kdFL~m}#2!Y<pojL0qio8deG1hCN?`C=pD~3r`Q3<=j|BtQ2hVqvxwSC)*r~Vr`KNFl%O&pw;-MA=z`&{&!b<h+a?dEzLsT{sP>aM%bU2>)lUd!~ZDOiJP_m!$;$-8;(u$MZ<%Y@|N<<P>i(`j4X>_ry*%dOAQ-?eh1O@)WTff?_Fq%D(YSfbApqj>N`dPmgING>ZK%$v1VV!E>g{}^8%|Z;l9|k9@=(a>GDaUb$3jinB($_kk@PjzZiq<||wKW}&!!XB*993yUSL>=S1(07(OdIqWKF?^RSY!5#-d*WUFOAJJAh@XZ=5ir|n&^0OS!a~qpt@jaGN(oeaDj)w_y2r_FrqHB^HxNw4b<WLBHo~w71m@+v>s%`L{jcxD&0{O6BNXf8V=FK4>n-OOLp2|M6Bp#^?xtz^0daDo+S)WpZ4vI(r)o#ylTBLCZScJC5EB2&*hMWhaevLKMsC;7Fk6hH8s!Q(I3K",
+            "index": 2,
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "observed_ns": 1791221580400634647,
+            "sequence": 3
+          },
+          {
+            "attributes": {
+              "log.file.device": "64513",
+              "log.file.inode": "13632184",
+              "log.file.offset.end": "4505",
+              "log.file.offset.start": "3604",
+              "log.file.path": "/run/media/kmosoti/data/FabricO11y/scratch/work-r4we3w1r/query/dev-walk/tmp/dev-walk/node00.log"
+            },
+            "body": "load-00:0004:00 RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR",
+            "index": 3,
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "observed_ns": 1791221580400634647,
+            "sequence": 3
+          },
+          {
+            "attributes": {
+              "log.file.device": "64513",
+              "log.file.inode": "13632184",
+              "log.file.offset.end": "5406",
+              "log.file.offset.start": "4505",
+              "log.file.path": "/run/media/kmosoti/data/FabricO11y/scratch/work-r4we3w1r/query/dev-walk/tmp/dev-walk/node00.log"
+            },
+            "body": "load-00:0005:00 JB8<CV>W;-QG-w|2dFM49Uel97TF>vushzU=(c_Vgr6$|tp@=hunixgSjd;qt;O2K8!wm>&G-be>`9{20;j0QT%9$V-(cpz)!e7)n-O<l*U<hgYAQt&_z&tx`rh^c(#r6S(hSRiNG{UIh=-29EycX+vP~jk%@y^W9<jC4{MR`jfGt-5fSl#GUGT5lsS=nU2Ir@#GoGC~&@y<FP(-sFr?uEyt`@42*ocxZI>j0JQ7BtO%SbUXknl00nV<!hK=LJxNO0-75$zvJ?o%qxcs#_@uY7>65uc5g-$txtBX*v(y*>mGa6NfimD6{rjF`eyNT|^*N_JNLf6?$~jJCxsOjO>JNSvf{8pe^?5K_Sx5+%9pL!*@6G^d+W6*bGy<yWe}0)3cYIav*pnc{y__Sc1Wv%8z92~bg?RXwH!!5Sghc+A|YvUMd}X{N6i!NvH26>db;(sEA;+(-gav_*E8G0&J)LzND#iAcW*ZQ0owmEIP_j^6bEm#pELc}3%6jSidaG;=N%t>a{-dzeDh<$WVKUD6}Xjso+4&7h2~;d|=zG?8Xhd%Y;OHqGdBXBx<9Fkw7Vn062JMr4ybfn(QBB!#6*9|)TKXV82%%JET1`$AxM+|_x7b(4Z$pf!~mZmZz)yq@<EcNNITHlC!-2t?ce@0Y+F93{P1ftgas%&vL}Glvc6utE!K%+GWd)Xg9#hs_JRQRrKHw*5CK!WZ`JYw?)J!~<O^cdYhfY2}2#*a6$XGp=p|;`TH!IPS5Z&+8jmaeXu#9C)ZMWYFOMY{8`g-aZCksVahSsQp8babp1BxMJS#URSSboj7=eEJz&&koM1bl41c)FgU%RpD$-2ILO7QLc;OBlp)M(bnC77C1YaWJ}w&sl+eIFywyI!ZKyG@<c8j",
+            "index": 4,
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "observed_ns": 1791221580400634647,
+            "sequence": 3
+          },
+          {
+            "attributes": {
+              "log.file.device": "64513",
+              "log.file.inode": "13632184",
+              "log.file.offset.end": "6307",
+              "log.file.offset.start": "5406",
+              "log.file.path": "/run/media/kmosoti/data/FabricO11y/scratch/work-r4we3w1r/query/dev-walk/tmp/dev-walk/node00.log"
+            },
+            "body": "load-00:0006:00 RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR",
+            "index": 5,
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "observed_ns": 1791221580400634647,
+            "sequence": 3
+          }
+        ],
+        "snapshot": "g1-183",
+        "unavailable": []
+      },
+      {
+        "complete": true,
+        "freshness": {
+          "node00": 1791221769399372266
+        },
+        "gaps": [],
+        "next_page": null,
+        "retained_from_ns": 1791221574450742728,
+        "retained_to_ns": 1791221769441787479,
+        "rows": [
+          {
+            "attributes": {
+              "log.file.device": "64513",
+              "log.file.inode": "13632184",
+              "log.file.offset.end": "7208",
+              "log.file.offset.start": "6307",
+              "log.file.path": "/run/media/kmosoti/data/FabricO11y/scratch/work-r4we3w1r/query/dev-walk/tmp/dev-walk/node00.log"
+            },
+            "body": "load-00:0007:00 4sqYzDOs|*p1X5Thm)Td1JtrYK~c;BU8$aTlI+udoa3Y2%QLGaZl+`?Wl&Q6CU-}I9$(w=v#M6?(y`u7sTg*$3P}*QARs->>UB|-`NQW3VLb?)>+QndAj~}kf#v`0b+%F5Ma&oX)URO!s(@`j*I_Xrq&6eYk@iL0M_FONHO_FN<{-t-`3#8w20WD>SC?cU`3b+uR#MD&@pN^-0}d(NtTOcw&aa%dplRz#@A*6fu>>dTfoTnq9Esn5sN2y8ROMNmwaH^%q~n1QG|}8#<7L_zbIU`ps6PHqP3dnLALjrkE8bi8tYhZ#*DkbhxdxwU;<QHerqu!d+R+%fk(#VchyM7TdejTca64nB;KVuX%e!<4Pf%BJCWW>L8rg<2c7jATMP2oHTKova>Lhx#z8Y9TkfdIJU4!{G&U=~(-0;RBkc1Up*t^#T+bWhL$^ch9e~rdz<vMYDz)rZnMSZ5EOA6jCm0~L$j~1ETKi|F~{Y%yF?TnKzK7Hq?h!yap*fz=5$&xfY(uGc{p!;KK;+x+9L85TgRMnJQ$gwO}tSQBEbI!M~n$G+qjG&LtZO4io!f-y+j&#P|6g1=VO0pF*DPr^{)M-}jVe@{kJ3sMAO!yI0k!VT}Fah9wbYC_LRkD*SOO`-=95h*<ACjKjo)x>kn5nZQM;a`d+MNYEYt<I}apI%Qlp`i<FY1dbAjcC_vwx60y3Fo3K6{6;pw?EgtB%4RWE>v0Wv~{XYVL(&UHKr-j`ix@AJ-<A&U$|q5$h;m7pZXBQcYi*qjTbd0GwzcqvMnjmOmGZL(UC781uPnEBJ2uJ*)dDqZ3)HrPH7mNYZ90fcKu+H&FXsH0I(*8Bq`%TCN}@rW+6SyeOV~kO`u*E*668^EHUW=N1nTdI%X1qT=v",
+            "index": 6,
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "observed_ns": 1791221580400634647,
+            "sequence": 3
+          },
+          {
+            "attributes": {
+              "log.file.device": "64513",
+              "log.file.inode": "13632184",
+              "log.file.offset.end": "8109",
+              "log.file.offset.start": "7208",
+              "log.file.path": "/run/media/kmosoti/data/FabricO11y/scratch/work-r4we3w1r/query/dev-walk/tmp/dev-walk/node00.log"
+            },
+            "body": "load-00:0008:00 RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR",
+            "index": 7,
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "observed_ns": 1791221580400634647,
+            "sequence": 3
+          },
+          {
+            "attributes": {
+              "log.file.device": "64513",
+              "log.file.inode": "13632184",
+              "log.file.offset.end": "9010",
+              "log.file.offset.start": "8109",
+              "log.file.path": "/run/media/kmosoti/data/FabricO11y/scratch/work-r4we3w1r/query/dev-walk/tmp/dev-walk/node00.log"
+            },
+            "body": "load-00:0009:00 E+~6%Q4FdGdvB9o0$<;s=Ial}tVXF49T5c4$cYrFPDZFcyrCz1qm^kBOhs9D{tn4b4@(OZ15SDgo@QpyZHfhSNX6yE>q|qPgb7Xc`EYd}t@$ncA?`LM_45)yq|skCZg=T(Tf#4b$6i~iKD3s(`-v;fQy%se)3r$}VZVZ8fLQC8En1)km2KjuOB6}g!xSWZG-?lt&l%x-rffpXEYOPpBxV`)A}a(X>8w`}X<B0@!nCyi>@Q3C#eH%Ym!(S9TKSgoIPj>^1uFev4`8DSCe}AK^{yB#eOByk0BO?dbz?Xb-0~I90nLR|T|xnPNB#CYm(&N?pzOwer#%h&bRXEklJs;r@)SZSS2B?47}-0jUaKd%y09ZzsK;aHY7tYXZpyhso(t?q3KI==)_vUM!h5AlP%nOyJ21OG&5jGdc>z>};X`nBM4ZKBE>S$j$N}7xl;2S9krai$9*oJ|A%Mja2(^@I8VnJI7x%!sH;8h9OL%uQC>g{HMcJcpq-<<oMYu2;Xxi)ZfM}}dd(Z!8<rK?^OL3>EE)w{^OkT2OgczY&iDB<gd;`5?3|uQj&lxWBnq&(BQAIp@#<DzIB80u{nDNNcdAQG_c(2sMl3@6PtR|ZA1onmb6Y6wx5o#@O{g9DAa=+N7DW7dXt!8`JaP=_-xeM74Og8*P=P#B&kYSG~e$dZeYEsp_S!2X20vn>b{*QhFY`jt-!~RWi3FzRxu!`{}V^jPh28LK{f6JX>fbBATQj=XJUYDE*2lqR}IKL-7PAD!TlrwN%&q4}^AmGXY7<g9AJ3z3Q3dnw#T=?92M*>#p`-xhFb~T)Rg>E0e4L|W_yP$gCjVo8Jp&d{@r=JFWwLgN{^C5eK+3>r@2kK5H^aO(wC@MwTpropkDcp{MbRU|",
+            "index": 8,
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "observed_ns": 1791221580400634647,
+            "sequence": 3
+          }
+        ],
+        "snapshot": "g1-183",
+        "unavailable": []
+      }
+    ]
+  },
+  {
+    "query": {
+      "kind": "logs",
+      "from_ns": 0,
+      "to_ns": 9000000000000000000,
+      "limit": 50,
+      "contains": "ABSENT-profile-sentinel"
+    },
+    "pages": [
+      {
+        "complete": true,
+        "freshness": {
+          "node00": 1791221769399372266
+        },
+        "gaps": [],
+        "next_page": null,
+        "retained_from_ns": 1791221574450742728,
+        "retained_to_ns": 1791221769441787479,
+        "rows": [],
+        "snapshot": "g1-183",
+        "unavailable": []
+      }
+    ]
+  },
+  {
+    "query": {
+      "kind": "metrics",
+      "from_ns": 0,
+      "to_ns": 9000000000000000000,
+      "limit": 50,
+      "node": "node00",
+      "name": "system.cpu.time"
+    },
+    "pages": [
+      {
+        "complete": true,
+        "freshness": {
+          "node00": 1791221769399372266
+        },
+        "gaps": [],
+        "next_page": null,
+        "retained_from_ns": 1791221574450742728,
+        "retained_to_ns": 1791221769441787479,
+        "rows": [
+          {
+            "attributes": {
+              "state": "user"
+            },
+            "index": 0,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 1,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221574443663368,
+            "unit": "s",
+            "value": 18586.2
+          },
+          {
+            "attributes": {
+              "state": "system"
+            },
+            "index": 1,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 1,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221574443663368,
+            "unit": "s",
+            "value": 4602.64
+          },
+          {
+            "attributes": {
+              "state": "idle"
+            },
+            "index": 2,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 1,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221574443663368,
+            "unit": "s",
+            "value": 506267.95
+          },
+          {
+            "attributes": {
+              "state": "user"
+            },
+            "index": 0,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 12,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221589399375898,
+            "unit": "s",
+            "value": 18587.26
+          },
+          {
+            "attributes": {
+              "state": "system"
+            },
+            "index": 1,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 12,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221589399375898,
+            "unit": "s",
+            "value": 4603.16
+          },
+          {
+            "attributes": {
+              "state": "idle"
+            },
+            "index": 2,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 12,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221589399375898,
+            "unit": "s",
+            "value": 506446.05
+          },
+          {
+            "attributes": {
+              "state": "user"
+            },
+            "index": 0,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 27,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221604399422850,
+            "unit": "s",
+            "value": 18588.36
+          },
+          {
+            "attributes": {
+              "state": "system"
+            },
+            "index": 1,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 27,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221604399422850,
+            "unit": "s",
+            "value": 4603.82
+          },
+          {
+            "attributes": {
+              "state": "idle"
+            },
+            "index": 2,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 27,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221604399422850,
+            "unit": "s",
+            "value": 506624.52
+          },
+          {
+            "attributes": {
+              "state": "user"
+            },
+            "index": 0,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 42,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221619399373202,
+            "unit": "s",
+            "value": 18589.54
+          },
+          {
+            "attributes": {
+              "state": "system"
+            },
+            "index": 1,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 42,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221619399373202,
+            "unit": "s",
+            "value": 4604.39
+          },
+          {
+            "attributes": {
+              "state": "idle"
+            },
+            "index": 2,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 42,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221619399373202,
+            "unit": "s",
+            "value": 506802.97
+          },
+          {
+            "attributes": {
+              "state": "user"
+            },
+            "index": 0,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 57,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221634399379198,
+            "unit": "s",
+            "value": 18592.05
+          },
+          {
+            "attributes": {
+              "state": "system"
+            },
+            "index": 1,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 57,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221634399379198,
+            "unit": "s",
+            "value": 4605.02
+          },
+          {
+            "attributes": {
+              "state": "idle"
+            },
+            "index": 2,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 57,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221634399379198,
+            "unit": "s",
+            "value": 506980.1
+          },
+          {
+            "attributes": {
+              "state": "user"
+            },
+            "index": 0,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 72,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221649399346922,
+            "unit": "s",
+            "value": 18593.23
+          },
+          {
+            "attributes": {
+              "state": "system"
+            },
+            "index": 1,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 72,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221649399346922,
+            "unit": "s",
+            "value": 4605.57
+          },
+          {
+            "attributes": {
+              "state": "idle"
+            },
+            "index": 2,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 72,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221649399346922,
+            "unit": "s",
+            "value": 507158.65
+          },
+          {
+            "attributes": {
+              "state": "user"
+            },
+            "index": 0,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 87,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221664399375237,
+            "unit": "s",
+            "value": 18594.58
+          },
+          {
+            "attributes": {
+              "state": "system"
+            },
+            "index": 1,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 87,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221664399375237,
+            "unit": "s",
+            "value": 4606.2
+          },
+          {
+            "attributes": {
+              "state": "idle"
+            },
+            "index": 2,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 87,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221664399375237,
+            "unit": "s",
+            "value": 507336.91
+          },
+          {
+            "attributes": {
+              "state": "user"
+            },
+            "index": 0,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 102,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221679399383132,
+            "unit": "s",
+            "value": 18595.7
+          },
+          {
+            "attributes": {
+              "state": "system"
+            },
+            "index": 1,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 102,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221679399383132,
+            "unit": "s",
+            "value": 4606.66
+          },
+          {
+            "attributes": {
+              "state": "idle"
+            },
+            "index": 2,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 102,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221679399383132,
+            "unit": "s",
+            "value": 507515.52
+          },
+          {
+            "attributes": {
+              "state": "user"
+            },
+            "index": 0,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 117,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221694399388661,
+            "unit": "s",
+            "value": 18597.11
+          },
+          {
+            "attributes": {
+              "state": "system"
+            },
+            "index": 1,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 117,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221694399388661,
+            "unit": "s",
+            "value": 4607.24
+          },
+          {
+            "attributes": {
+              "state": "idle"
+            },
+            "index": 2,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 117,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221694399388661,
+            "unit": "s",
+            "value": 507693.81
+          },
+          {
+            "attributes": {
+              "state": "user"
+            },
+            "index": 0,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 132,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221709399346871,
+            "unit": "s",
+            "value": 18598.43
+          },
+          {
+            "attributes": {
+              "state": "system"
+            },
+            "index": 1,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 132,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221709399346871,
+            "unit": "s",
+            "value": 4607.87
+          },
+          {
+            "attributes": {
+              "state": "idle"
+            },
+            "index": 2,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 132,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221709399346871,
+            "unit": "s",
+            "value": 507872.16
+          },
+          {
+            "attributes": {
+              "state": "user"
+            },
+            "index": 0,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 147,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221724399346737,
+            "unit": "s",
+            "value": 18599.72
+          },
+          {
+            "attributes": {
+              "state": "system"
+            },
+            "index": 1,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 147,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221724399346737,
+            "unit": "s",
+            "value": 4608.5
+          },
+          {
+            "attributes": {
+              "state": "idle"
+            },
+            "index": 2,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 147,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221724399346737,
+            "unit": "s",
+            "value": 508050.46
+          },
+          {
+            "attributes": {
+              "state": "user"
+            },
+            "index": 0,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 162,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221739399374279,
+            "unit": "s",
+            "value": 18601.11
+          },
+          {
+            "attributes": {
+              "state": "system"
+            },
+            "index": 1,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 162,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221739399374279,
+            "unit": "s",
+            "value": 4609.01
+          },
+          {
+            "attributes": {
+              "state": "idle"
+            },
+            "index": 2,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 162,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221739399374279,
+            "unit": "s",
+            "value": 508228.8
+          },
+          {
+            "attributes": {
+              "state": "user"
+            },
+            "index": 0,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 177,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221754399372956,
+            "unit": "s",
+            "value": 18602.2
+          },
+          {
+            "attributes": {
+              "state": "system"
+            },
+            "index": 1,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 177,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221754399372956,
+            "unit": "s",
+            "value": 4609.51
+          },
+          {
+            "attributes": {
+              "state": "idle"
+            },
+            "index": 2,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 177,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221754399372956,
+            "unit": "s",
+            "value": 508407.39
+          },
+          {
+            "attributes": {
+              "state": "user"
+            },
+            "index": 0,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 183,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221769399372266,
+            "unit": "s",
+            "value": 18604.82
+          },
+          {
+            "attributes": {
+              "state": "system"
+            },
+            "index": 1,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 183,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221769399372266,
+            "unit": "s",
+            "value": 4610.13
+          },
+          {
+            "attributes": {
+              "state": "idle"
+            },
+            "index": 2,
+            "kind": "sum",
+            "monotonic": true,
+            "name": "system.cpu.time",
+            "node": "node00",
+            "node_id": "bc3769f8b00ab3e16c28ef9512a7977a",
+            "sequence": 183,
+            "start_ns": 1791085187000000000,
+            "time_ns": 1791221769399372266,
+            "unit": "s",
+            "value": 508584.39
+          }
+        ],
+        "snapshot": "g1-183",
+        "unavailable": []
+      }
+    ]
+  }
+]

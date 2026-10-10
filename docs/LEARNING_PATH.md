@@ -1,5 +1,19 @@
 # Learning path
 
+## Rust mechanisms in the running system
+
+| Mechanism | Contract and trade-off | Source or evidence |
+| --- | --- | --- |
+| Checked UI epochs, normalized string capacity and integer bucket boundaries | Late results cannot enter a new account/query; retained allocation follows payload bounds; sorted timestamps allow O(P) boundary divisions rather than O(N), preserving extrema and gaps. Browser work remains separate from server custody. | [UI model](../crates/fabric-ui/src/model.rs), [counterexamples](../crates/fabric-ui/tests/model.rs), [derivation](architecture/console-algorithms.md) |
+| Captured authority and publication-time validation | Rust ownership keeps a request's captured authority valid as data; it cannot make that authority current after logout, expiry or policy change. Recheck before releasing a read, and serialize mutation authorization with durable intent/outcome publication. | [Access state](../crates/fabric-server/src/access.rs), [barrier regressions](../crates/fabric-server/src/console_tests.rs), [identity boundary](architecture/identity-access.md) |
+| Checked arithmetic before effects | Sequence exhaustion must refuse before journal writes or cursor movement. | [Spool](../src/spindle/spool.rs), [invariant audit](experiments/formal/invariant-consolidation.md) |
+| Explicit poisoned state | A failed directory sync after rename makes publication uncertain; an in-memory rollback cannot restore authorization. | [Control](../crates/fabric-server/src/control.rs) |
+| `Drop` and process ownership | Graceful stop, kill/reap and parent-death signaling cover different lifecycle failures; queried diagnostics still need an independent delivery check. | [Companion](../crates/fabric-server/src/companion.rs), [ADR-0026](decisions/ADR-0026-launch-a-dedicated-spindle-with-each-server.md), [native smoke](../tools/self_observation_smoke.py) |
+| `File` versus `PathBuf` ownership | A path can name a different journal after rotation. Bounded identity reads preserve snapshot bytes without pinning every file. | [Tail](../crates/fabric-server/src/tail.rs), [regressions](../crates/fabric-server/src/tail_identity_tests.rs) |
+| `Vec::clear` and payload lifetime | Fewer live allocations need not lower RSS; earlier predicates can regress other query populations. | [Native ownership](experiments/benchmarks/native-frontier-findings.md), [workload sweep](experiments/benchmarks/cross-system-sweep-findings.md) |
+| Borrowed records and higher-ranked callbacks | Storage owns Arrow buffers; a callback consumes views without retaining them. Exact digest checks still apply to excluded records. | [Range evidence](experiments/benchmarks/catalog-range-evidence-findings.md) |
+| Owned permits, worker joins and `Cow` | Cancellation does not end blocking work. Permits follow that work; snapshot metadata is borrowed only when fully covered. | [Transition investigation](experiments/benchmarks/catalog-transition-ownership-findings.md), [source dissections](research/cross-system-source-synthesis.md) |
+
 This project is deliberately split into short stages. Finish one stage, run it, and be able to explain its contract before moving on. The longer-term architecture is in [`architecture.md`](architecture.md); this page is the route through it.
 
 Read [current project state](CURRENT.md) for what actually exists and [system architecture](architecture/system.md) for its boundaries. Stage 4 is a checked target model, Stage 5 has a local log and replay path, Stage 6 has its first measured baseline, and Stage 7 remains planned work.
@@ -86,6 +100,14 @@ For the Spindle's [Spool](../src/spindle/spool.rs), `append` borrows the caller'
 
 Trace one [Spindle](architecture/spindle.md) cycle: build an owned OTLP batch from bounded host and log reads; move its source cursor only after the batch commits. Run `cargo test --offline --locked --test spindle --test log_source` to observe source errors, gap bounds, same-inode replacement and spool exhaustion. The small prefix witness detects changed consumed bytes but cannot prove an unchanged file when the witness matches.
 
+The Btrfs cursor fix illustrates `Result<Option<T>>`: `Ok(Some(identity))` is a
+stable namespace, `Ok(None)` is a successfully identified different filesystem
+type, and `Err` is an unknown identity. Collapsing the last two would turn an
+unavailable lookup into permission to reread or skip data. The
+[adapter regressions](../crates/fabric-adapter-linux/src/log_source.rs) and
+[quiet migration tests](../src/spindle/skip_progress_tests.rs) check the distinct
+outcomes and commit-before-cursor rule.
+
 Once the core pipeline has understandable behavior, add ingestion protocols, a query path, an API, and a UI in small slices. Keep external formats and storage engines at the edges of the domain model. Before selecting a network ingestion mechanism, work through the [Homa/SIRD receiver-driven transport study](experiments/ablation/receiver-driven-transport.md). Its first [H1 packet-slot ablation](experiments/ablation/receiver-credit-h1-run-01.md) compares fixed sender windows with receiver credits; the [finite model](experiments/formal/transport-credit-ownership.md) checks that credit permission and durable ACK ownership remain distinct. Try the tiny simulator tests, then read the raw result: receiver credits lower modeled switch peaks while increasing sender waiting. The priority, active-grant, sender/core feedback, sink-limited, and real-host cells remain to be built. There is no application network transport to benchmark yet.
 
 From the repository root, run `cargo test --offline --locked --manifest-path tools/transport-sim/Cargo.toml one_message_serialization_and_propagation`. In that small test, M0 sends its first packet at tick `0`, finishes the three-packet message at tick `7`, and receives the modeled durable ACK at tick `11`. M1 waits for an announcement and credit, first sends at tick `8`, finishes at tick `15`, and gets its ACK at tick `19`. Trace the `Event` enum and `MessageState` in [the simulator](../tools/transport-sim/src/lib.rs): `Option<u64>` records which milestones have actually occurred, and `Result` stops a run that violates a cap or invariant. The simulation owns packet copies in its queues; the sender's retained message remains its retry responsibility until the durable ACK event.
@@ -96,7 +118,7 @@ From the repository root, run `cargo test --offline --locked --manifest-path too
 
 **Control.** Configuration flows the other way. The server stores a desired revision per node; the node polls, validates with the same `Config::validate` as a local file, stores the view by synced rename, and only then activates it. Read [central control](architecture/control-plane.md) and run `cargo test --offline --locked -p fabric-server --test control`. The idea: validation and durability come before activation, so a restart never runs something it could not have accepted.
 
-**Retention.** Sealed journal files become immutable Parquet [segments](../crates/fabric-server/src/segment.rs); a directory rename is the commit point, and the commit thread writes a stream checkpoint before it deletes the journal file. Queries bind pages to a range of group numbers rather than to files, because records move from the journal into segments but never change group. Run `cargo test --offline --locked -p fabric-server --test history`; its answers are graded by an independent [query oracle](../tools/qualification/QUERY_ORACLE.md) written before the query code. The idea: an exact scan is the reference, and every optimization must agree with it.
+**Retention.** Sealed journal files become immutable Parquet [segments](../crates/fabric-server/src/segment.rs); a directory rename is the commit point, and the commit thread writes a stream checkpoint before it deletes the journal file. Queries bind pages to a range of group numbers rather than to files, because records move from the journal into segments but never change group. Run `cargo test --offline --locked -p fabric-server --test history`; its answers are graded by an independent [query oracle](../tools/qualification/QUERY_ORACLE.md) written before the query code. The idea: an exact scan is the reference, and every optimization must agree with it. The [sealer scheduler](../crates/fabric-server/src/sealer.rs) distinguishes publication from reclamation: builds may finish out of order, while deletion advances only through the oldest published prefix. Scoped thread handles retain worker ownership. Joining in label order permits reclaim after each completed prefix without a completion queue; even after reclaim fails, every started worker is joined. Run `cargo test --locked -p fabric-server --lib sealer::tests`; its blocked-worker controls cover both sibling and later-group progress, and its checkpoint fixture verifies exact replay after restart. The trade-off still to measure is checkpoint work competing with ACKs.
 
 **Packaging.** [packaging/](../packaging/) turns the binaries into two sandboxed systemd services under one slice, running as the static `fabricolly` user. Run `packaging/build-deb.sh target/package-out` twice and compare the SHA-256 values to see a reproducible build.
 
@@ -133,13 +155,47 @@ Try it:
 
 ## Stage 11 — Sort more data than fits in memory
 
-**Status: bounded-sealer milestone, design only.** The sealer turns a 64 MiB journal file into a Segment, and today it needs about 356 MiB to do it. The fix is an algorithm older than databases: sort in pieces, then merge.
+**Status: normal writer adopted and verified.** The [continuation](experiments/formal/readiness-continuation-results.md) records builder/recovery checks, 17 final fast checks and three documentation checks; the [native R2 trial](experiments/benchmarks/soak-run-02.md) passed all ten service gates. The whole-file builder remains an independent reference. Sort in pieces, then merge, trading extra disk work for lower live heap.
 
 1. Read the file as a stream, a frame at a time, and cut the rows into **runs** of a fixed size.
 2. Sort each run in memory and write it to a scratch file.
-3. Open every run and keep only its front row in memory, in a min-heap. Pop the smallest, write it, and refill from the run it came from.
+3. Merge at most sixteen runs at once, keeping their front rows in a min-heap. Use multiple passes when there are more runs. Pop the smallest, write it, and refill from that run.
 
-Memory is one run plus one row per run, whatever the file's size. The [sealer view](architecture/sealer.md) has the diagram, the steps and a ten-row worked example.
+The [speed investigation](experiments/benchmarks/sealer-speed-run-01.md) shows
+why representation and scheduling matter even after choosing the algorithm:
+private binary rows avoid JSON parsing, and eighteen runs need only three
+merged into one to reach sixteen. Keeping all untouched runs on disk saves
+work without raising the live-row limit. Try the boundary cases with
+`python3 tools/resource_group.py -- cargo test -p fabric-server segment::bounded`.
+
+Major payload buffers are capped per sorted table, with at most sixteen merge heads. A decoded frame, writer metadata and filters have additional costs; the measured screen is not a universal heap proof. The [sealer view](architecture/sealer.md) has the diagram, the steps and a ten-row worked example.
+
+The normal writer teaches a second ownership
+boundary: an Arrow input chunk can be released while the Parquet writer
+still owns encoded state for a physical row group. Logs align input to
+1,024-row encoder batches with a 17 MiB estimated byte target; metrics and spans
+retain their 8,192-row/8 MiB estimated input bounds. All sorted tables retain
+8,192-row physical groups. A single oversized row is preserved despite exceeding
+the input target, so the estimates are not absolute heap bounds. Filters must
+accumulate over the physical group's rows, not reset at each input chunk. The
+combined campaign measured about 37.3 MiB incremental heap at steady256 and
+39.5 MiB at bigrows64. These finite measurements do not establish an
+arbitrary-input or whole-server bound.
+
+The [encoded-page probe](experiments/formal/encoded-page-memory-run-01.md) shows
+why the next owner matters: high-entropy logs raised heap to 143,075,502 bytes
+despite bounded input chunks. The normal writer now moves completed Parquet
+blobs from every table into private disk scratch,
+retaining locators and loading one consumed key at a time. The same probe then
+used 42,011,899 bytes and preserved exact files. Read
+[page_store.rs](../crates/fabric-server/src/segment/bounded/page_store.rs): a key
+can be taken once, and failed deletion prevents publication. This trades resident
+payload for scratch I/O; the finite result does not bound arbitrary blobs or
+metadata. Legacy `FABRIC_ROW_GROUP_CHUNKS_EXPERIMENT=1` and
+`FABRIC_PAGE_STORE_EXPERIMENT=1` remain accepted but are no longer required.
+Unflagged bounded/recovery checks passed, and loaded-ELF comparison connects
+the normal server path to the accepted frozen trial; full-file hashes are not
+identical. The continuation records the exact receipts and remaining final checks.
 
 The Rust ideas:
 
@@ -156,7 +212,9 @@ Try it:
 
 1. Run the [worked example](architecture/sealer.md#a-worked-example) by hand with a run size of three. How many runs are there? How many rows does the merge hold at once?
 2. Read the [study's heap table](experiments/benchmarks/sealer-study-run-01.md#results). Why did a limit of 16,384 rows fail on 16 KiB rows, and what does the design count instead?
-3. After the milestone merges, run `cargo test -p fabric-server` and find the test that fails when a run is kept in memory.
+3. Run `python3 tools/resource_group.py -- cargo test -p fabric-server segment::bounded` and inspect stable ties, the 64-seed byte-limit checks and fan-in boundaries. The named merge-order, spill-left and retain-runs mutants were caught in the continuation; the retain-runs defect failed the registered steady128 heap ceiling.
+4. Run `python3 tools/resource_group.py -- cargo test -p fabric-server --test completion_storage named_sealer_kill_cuts_recover_exact_custody_and_oracle_query_chains -- --exact`. Why does comparing a recovered manifest alone give weaker evidence than grading query chains against the predeclared source ledger before and after restart?
+5. Read [spool_enospc.rs](../tests/spool_enospc.rs): a real scoped ENOSPC leaves prior unACKed bytes intact but marks the writer quarantined. Explain why readable bytes do not authorize normal reopening after a reported I/O failure, and how the no-hit control distinguishes successful injection from a test that never reached its intended syscall.
 
 ## Stage 12 — One record for every signal, built from the bytes up
 
@@ -190,6 +248,14 @@ Try it:
 
 The Rust idea: **borrow the decision, own the effect**. The rule that makes stopping sound lives in the core as an executable definition (`fabric_core::query::spec::threshold_walk`, with its theorem as a property); the server's [query.rs](../crates/fabric-server/src/query.rs) and [tail.rs](../crates/fabric-server/src/tail.rs) apply it to files, holding a mutex only while the index is extended and a frame cache only for one query.
 
+The [scoped evidence cache](../crates/fabric-server/src/read_catalog/evidence.rs)
+illustrates a different ownership boundary: derived facts can outlive one query,
+but authorization cannot. Its mutex serializes bounded construction; each caller
+selects current source and signal grants from the immutable summary. A partial
+snapshot uses the exact reader. The
+[integration controls](../crates/fabric-server/tests/scoped_evidence.rs) demonstrate
+why a cached full-Segment maximum would be incorrect for an older page.
+
 The contract: the walk returns the scan's answer, page for page. The trade-off: a few MiB of index per process and a first query that builds it, against reading every source on every query.
 
 Try it:
@@ -209,3 +275,115 @@ For each new component, answer these in plain language before coding:
 3. Who owns the data before and after it runs?
 4. What can fail, and how will that failure be visible?
 5. What measurement or model could prove the design wrong?
+
+**Streaming output experiment.** The [table writer](../crates/fabric-server/src/segment.rs) on the streaming-output branch uses a buffered sink and hashes only bytes accepted by `Write`. It flushes before file sync. [Run 01](experiments/benchmarks/streaming-output-local-run-01.md) shows why removing a whole-file output buffer can preserve every byte and still miss a peak-heap target: decoded rows and Arrow arrays remain. Lower RSS and lower live heap are different observations.
+
+The [Fedora refinement protocol](experiments/benchmarks/performance-refinement-fedora-protocol.md) connects typed counter inputs to fidelity: an `i64` retains information a premature `f64` conversion loses. Structural maps define identity; cached display keys define presentation order. The independent rate oracle and HTTP/Segment/restart regression check these two responsibilities separately.
+
+The [development/small observation](experiments/benchmarks/dev-small-observation-run-01.md)
+connects custody transitions to performance units: source logs offered, successful
+Spool batches, and server ACKs are different counters. Larger batches can carry
+three times the log rate without increasing batch rate. Keep epoch nanoseconds
+as integers when assigning phases; its independent accounting check found a
+floating-point boundary error even though the native workload preserved all data.
+
+The [matched native lab screen](experiments/benchmarks/dev-small-labs-run-02.md)
+connects Rust ownership to allocation lifetime: bounded builder buffers do not
+bound query-owned decoded rows, concurrent copies or allocator-retained RSS.
+Compare query-on/off with and without history before attributing process memory
+to ingestion. Explain why a 1 Hz publication sample brackets a transition without
+proving that a particular request overlapped its builder.
+
+The [fixed-demand query comparison](experiments/benchmarks/query-plan-run-01.md)
+separates consumer work from plan cost: offer the same requests at the same cadence
+before comparing CPU. Its profiling counterexample also separates one exact page
+from a complete pagination transcript. Explain why a valid continuation token
+must not be interpreted as lost rows, and why receive timestamps can differ when
+identical Batch bytes reach storage through different fixture construction paths.
+
+The [catalog controls](experiments/benchmarks/catalog-cold-lifetime-findings.md)
+connect `Arc` and `Weak` to two separate lifetimes: a held Sources view owns
+metadata allocations, while retention may delete their described files. Pointer
+identity distinguishes a shared owner from a same-content allocation; aborting
+and joining a paused task releases its owners. Explain why neither surviving
+metadata nor a cached locator makes an expired page valid. The preserved
+[discovery counterexample](experiments/benchmarks/catalog-discovery-race-findings.md)
+also shows why fallible source acquisition must report movement as `Interrupted`
+instead of converting a publication/reclaim gap into a successful empty answer.
+
+The [descriptor reuse screen](experiments/benchmarks/coupled-query-findings.md)
+extends this exercise: explain snapshot retirement through `Weak`, invalidation
+when published labels change, and fallback when admission limits are exceeded.
+Distinguish a structural cap and estimated charged bytes from measured allocator
+usage or process RSS; ownership of metadata still does not own a file lease.
+
+The [coupled completion record](experiments/benchmarks/coupled-completion-run-01.md)
+connects three further boundaries to executable controls. First, read
+`check_raw_available` in [segment.rs](../crates/fabric-server/src/segment.rs) and
+compare the original query oracle with the separately scoped
+[availability companion](../tools/qualification/projection_availability_oracle.py).
+Explain why missing raw custody makes an answer incomplete while surviving
+projection rows and producer-derived metadata remain, and why a size/schema/footer
+check does not authenticate raw page contents. The companion's all-raw-lost case
+requires a nonempty matching producer population; empty-window semantics are not
+claimed by that fixture.
+
+Next, trace `Runs::push` in [bounded.rs](../crates/fabric-server/src/segment/bounded.rs):
+its strict compile selector permits 8/16/32 MiB, default 16, and counts estimated
+owned bytes separately for each signal. Explain why an oversized single row is
+an explicit exception. The [native pruning protocol](experiments/benchmarks/coupled-pruning-native-protocol.md)
+checks real group bounds and exact query chains; 42 finite chains and matching
+Manifest/table files do not measure actual query IO or prove all workload shapes.
+
+Finally, trace `deliver_with_one_prepared` in
+[runtime.rs](../src/spindle/runtime.rs). The caller owns mutable Spool/cursor/config/
+meter state; the scoped worker owns immutable request bytes and joins before ACK
+processing. Explain why retrying N with durable N+1 forbids preparing N+2, and why
+private-worker controls differ from a real TLS performance pilot. Six controls
+passed in controls02; subsequent service screens did not nominate overlap and
+the production CLI remains serial. The [overlap protocol](experiments/benchmarks/coupled-overlap-protocol.md)
+rejects trace listeners rather than extending that experiment's ownership scope.
+
+The [delivery work investigation](experiments/benchmarks/catalog-delivery-read-findings.md)
+then connects a move to a measurable ownership property: `append_owned` preserves
+the addresses of signal buffers, cursor paths and gap strings through durable
+append, while the borrowed compatibility method clones them. Explain why moving
+a `Vec` transfers its allocation, why source cursor/history updates must still
+wait for commit, and why fewer requested allocations do not imply the same
+percentage reduction in RSS or wall time. Compare this with the rejected ACK
+cache: less work is not sufficient when evidence is mixed and error detection
+changes. The observer ablation also shows why measurement overhead must be
+separated from product cost.
+
+The [algorithm round](experiments/benchmarks/catalog-algorithm-round-findings.md)
+extends ownership into data-structure choice. Explain why a heap needs rank keys
+but payloads can live in dense reusable slots, and why slot numbers cannot replace
+admission order when keys tie. Trace `GroupPlan` from one inline binding through
+a compact list to indexed bindings; show how promotion preserves the first
+forward mapping and every reverse mapping. Its initially slower eight-source
+case illustrates why asymptotic improvement alone is insufficient for small
+deployments. Finally, compare `Option<History>` with cloning unchanged state:
+absence of a replacement means retain the current owner, while a new owner still
+cannot become authoritative until the Spool commit succeeds.
+
+The [progress and projection round](experiments/benchmarks/catalog-log-progress-findings.md)
+connects that ownership rule to liveness. A bounded reader can advance its local
+skip cursor while the collector repeatedly refuses an empty Batch. Trace how a
+real late metric sample lets that progress use the existing durable commit path,
+and why a full Spool must still preserve the old cursor/history. Then compare
+borrowing a decoded log tree with consuming it in
+[rows.rs](../crates/fabric-server/src/rows.rs): moving Strings avoids redundant
+copies while map construction must preserve duplicate and non-string behavior.
+Use the counterexample and exact pointer/output controls; distinguish extraction
+timing from end-to-end service performance.
+
+The [native lifecycle round](experiments/benchmarks/catalog-native-lifecycle-findings.md)
+then crosses the component boundaries. In
+[server composition](../crates/fabric-server/src/lib.rs), explain why a fallible
+TLS load must precede spawning workers that own an Intake: dropping a join handle
+does not join its thread, and another owner can keep the journal locked. Read the
+failed startup trace before the corrected retry. In
+[the native integration test](../crates/fabric-server/tests/native_lifecycle.rs),
+compare producer frames with recovered bytes before asking the Python oracle to
+grade queries. Explain why agreement between a query and incomplete recovered
+input alone would not establish end-to-end custody.

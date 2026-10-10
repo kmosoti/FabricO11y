@@ -1,0 +1,184 @@
+{
+  "scope": "Extracted production Rust rate transformation vs unchanged independent Python oracle rate-row function; no HTTP/History/OTLP integration claim",
+  "query": {
+    "kind": "rate",
+    "name": "counter",
+    "from_ns": 0,
+    "to_ns": 3000000000
+  },
+  "cases": {
+    "attribute_key_collision": {
+      "input_points": [
+        {
+          "node": "node",
+          "node_id": "00000000000000000000000000000000",
+          "sequence": 1,
+          "index": 0,
+          "name": "counter",
+          "unit": "1",
+          "kind": "sum",
+          "monotonic": true,
+          "time_ns": 1000000000,
+          "start_ns": 1,
+          "value": 10,
+          "attributes": {
+            "a=b": "c"
+          }
+        },
+        {
+          "node": "node",
+          "node_id": "00000000000000000000000000000000",
+          "sequence": 1,
+          "index": 1,
+          "name": "counter",
+          "unit": "1",
+          "kind": "sum",
+          "monotonic": true,
+          "time_ns": 2000000000,
+          "start_ns": 1,
+          "value": 20,
+          "attributes": {
+            "a": "b=c"
+          }
+        }
+      ],
+      "expected_rows": [],
+      "actual_rows": [
+        {
+          "attributes": {
+            "a": "b=c"
+          },
+          "name": "counter",
+          "node": "node",
+          "rate": 10.0,
+          "reset": false,
+          "time_ns": 2000000000
+        }
+      ],
+      "equal": false
+    },
+    "large_integer_increment": {
+      "input_points": [
+        {
+          "node": "node",
+          "node_id": "00000000000000000000000000000000",
+          "sequence": 1,
+          "index": 0,
+          "name": "counter",
+          "unit": "1",
+          "kind": "sum",
+          "monotonic": true,
+          "time_ns": 1000000000,
+          "start_ns": 1,
+          "value": 9007199254740992,
+          "attributes": {
+            "a": "b"
+          }
+        },
+        {
+          "node": "node",
+          "node_id": "00000000000000000000000000000000",
+          "sequence": 1,
+          "index": 1,
+          "name": "counter",
+          "unit": "1",
+          "kind": "sum",
+          "monotonic": true,
+          "time_ns": 2000000000,
+          "start_ns": 1,
+          "value": 9007199254740993,
+          "attributes": {
+            "a": "b"
+          }
+        }
+      ],
+      "expected_rows": [
+        {
+          "node": "node",
+          "name": "counter",
+          "attributes": {
+            "a": "b"
+          },
+          "time_ns": 2000000000,
+          "reset": false,
+          "rate": 1.0
+        }
+      ],
+      "actual_rows": [
+        {
+          "attributes": {
+            "a": "b"
+          },
+          "name": "counter",
+          "node": "node",
+          "rate": 0.0,
+          "reset": false,
+          "time_ns": 2000000000
+        }
+      ],
+      "equal": false
+    },
+    "large_integer_decrease": {
+      "input_points": [
+        {
+          "node": "node",
+          "node_id": "00000000000000000000000000000000",
+          "sequence": 1,
+          "index": 0,
+          "name": "counter",
+          "unit": "1",
+          "kind": "sum",
+          "monotonic": true,
+          "time_ns": 1000000000,
+          "start_ns": 1,
+          "value": 9007199254740993,
+          "attributes": {
+            "a": "b"
+          }
+        },
+        {
+          "node": "node",
+          "node_id": "00000000000000000000000000000000",
+          "sequence": 1,
+          "index": 1,
+          "name": "counter",
+          "unit": "1",
+          "kind": "sum",
+          "monotonic": true,
+          "time_ns": 2000000000,
+          "start_ns": 1,
+          "value": 9007199254740992,
+          "attributes": {
+            "a": "b"
+          }
+        }
+      ],
+      "expected_rows": [
+        {
+          "node": "node",
+          "name": "counter",
+          "attributes": {
+            "a": "b"
+          },
+          "time_ns": 2000000000,
+          "reset": true,
+          "rate": null
+        }
+      ],
+      "actual_rows": [
+        {
+          "attributes": {
+            "a": "b"
+          },
+          "name": "counter",
+          "node": "node",
+          "rate": 0.0,
+          "reset": false,
+          "time_ns": 2000000000
+        }
+      ],
+      "equal": false
+    }
+  },
+  "all_equal": false
+}

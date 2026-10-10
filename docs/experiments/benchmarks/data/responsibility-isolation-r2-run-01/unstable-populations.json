@@ -1,0 +1,147 @@
+[
+  {
+    "case": "processing-128",
+    "stage": "sort_log_rows",
+    "cv": 0.21865822216133354
+  },
+  {
+    "case": "query-128",
+    "stage": "query_tail_scan_empty_first",
+    "cv": 0.20782673037433022
+  },
+  {
+    "case": "query-128",
+    "stage": "answer_json_serialize_tail_scan_empty_first",
+    "cv": 0.34239327349981574
+  },
+  {
+    "case": "query-128",
+    "stage": "answer_json_serialize_tail_scan_empty_warm",
+    "cv": 0.3350655457935114
+  },
+  {
+    "case": "query-128",
+    "stage": "query_tail_scan_selective_first",
+    "cv": 0.23584158905129088
+  },
+  {
+    "case": "query-128",
+    "stage": "answer_json_serialize_tail_scan_selective_first",
+    "cv": 1.7204258906960328
+  },
+  {
+    "case": "query-128",
+    "stage": "answer_json_serialize_tail_scan_selective_warm",
+    "cv": 0.24702036924562196
+  },
+  {
+    "case": "query-128",
+    "stage": "answer_json_serialize_segment_scan_empty_first",
+    "cv": 2.071222750729484
+  },
+  {
+    "case": "query-128",
+    "stage": "answer_json_serialize_segment_scan_empty_warm",
+    "cv": 0.48908350841505865
+  },
+  {
+    "case": "query-128",
+    "stage": "answer_json_serialize_segment_scan_selective_first",
+    "cv": 0.23331309719588625
+  },
+  {
+    "case": "query-128",
+    "stage": "query_segment_scan_broad_first",
+    "cv": 0.20156161936652875
+  },
+  {
+    "case": "query-900",
+    "stage": "query_tail_scan_empty_first",
+    "cv": 0.38405216129741016
+  },
+  {
+    "case": "query-900",
+    "stage": "answer_json_serialize_tail_scan_empty_first",
+    "cv": 0.24156901770673112
+  },
+  {
+    "case": "query-900",
+    "stage": "query_tail_scan_selective_first",
+    "cv": 0.5535809080317469
+  },
+  {
+    "case": "query-900",
+    "stage": "answer_json_serialize_tail_scan_selective_first",
+    "cv": 0.20440701418486662
+  },
+  {
+    "case": "query-900",
+    "stage": "query_tail_scan_broad_first",
+    "cv": 0.3359014388193719
+  },
+  {
+    "case": "query-900",
+    "stage": "answer_json_serialize_tail_walk_selective_first",
+    "cv": 0.6273442763121937
+  },
+  {
+    "case": "query-900",
+    "stage": "query_tail_walk_selective_warm",
+    "cv": 0.2584413176450598
+  },
+  {
+    "case": "query-900",
+    "stage": "answer_json_serialize_tail_walk_selective_warm",
+    "cv": 0.2090349513142399
+  },
+  {
+    "case": "query-900",
+    "stage": "answer_json_serialize_segment_scan_empty_warm",
+    "cv": 0.22583401267516903
+  },
+  {
+    "case": "query-900",
+    "stage": "answer_json_serialize_segment_scan_broad_first",
+    "cv": 0.29918225829060807
+  },
+  {
+    "case": "query-900",
+    "stage": "query_segment_scan_broad_warm",
+    "cv": 0.38550799133383
+  },
+  {
+    "case": "query-900",
+    "stage": "answer_json_serialize_segment_walk_empty_first",
+    "cv": 0.23162311380492054
+  },
+  {
+    "case": "query-900",
+    "stage": "answer_json_serialize_segment_walk_empty_warm",
+    "cv": 0.2018970425831463
+  },
+  {
+    "case": "query-3500",
+    "stage": "query_tail_scan_empty_first",
+    "cv": 0.49317163337122055
+  },
+  {
+    "case": "query-3500",
+    "stage": "query_tail_scan_empty_warm",
+    "cv": 0.274745108016925
+  },
+  {
+    "case": "query-3500",
+    "stage": "query_tail_scan_selective_first",
+    "cv": 0.34262931356330745
+  },
+  {
+    "case": "query-3500",
+    "stage": "query_tail_walk_empty_warm",
+    "cv": 0.4332973898808752
+  },
+  {
+    "case": "query-3500",
+    "stage": "answer_json_serialize_segment_scan_empty_first",
+    "cv": 1.6670827404573012
+  }
+]

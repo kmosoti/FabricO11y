@@ -1,4 +1,4 @@
-name: Rust
+name: Rust and console
 
 on: [push, pull_request]
 
@@ -7,32 +7,82 @@ permissions:
 
 jobs:
   fast-checks:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
         with:
-          # Full history: the counterexample registry names fix commits.
           fetch-depth: 0
+      - name: Prepare disk storage and enforced cgroups
+        run: bash tools/ci/prepare-resource-host.sh
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.98.0
+          toolchain: 1.99.0
           components: rustfmt, clippy
-      - uses: oven-sh/setup-bun@v2
+          targets: wasm32-unknown-unknown
+      - uses: browser-actions/setup-firefox@v1
+        id: firefox
         with:
-          bun-version: 1.4.0
-      - name: Install documentation dependencies
-        run: bun install --cwd tools/docs --frozen-lockfile
-      # Every check in xtask/checks.json with profile "fast": formatting,
-      # locked compilation, workspace tests, clippy on the inner layers, the
-      # layer and core-purity gates, the qualification-runner, workload/rate,
-      # delivery-oracle and query-oracle suites, and documentation integrity.
-      # A missing tool yields INCOMPLETE (exit 3), which fails the job.
-      - name: Run the fast check registry
-        run: cargo xtask checks --profile fast
-      - name: Keep the verification receipts
+          firefox-version: '157.0'
+      - name: Install browser and image tools
+        run: |
+          sudo ln -sf '${{ steps.firefox.outputs.firefox-path }}' /usr/bin/firefox
+          sudo apt-get update
+          sudo apt-get install -y imagemagick pkg-config libssl-dev libnss3 libgbm1 libasound2t64
+          if ! command -v magick >/dev/null; then
+            printf '#!/bin/sh\nexec convert "$@"\n' | sudo tee /usr/local/bin/magick >/dev/null
+            sudo chmod +x /usr/local/bin/magick
+          fi
+      - name: Fetch pinned UI tooling
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/install-ui-tools.py
+      - name: Install dependency checker
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-deny 0.20.2
+      - name: Run fast registry
+        run: python3 -B tools/resource_group.py -- cargo xtask checks --profile fast
+      - name: Check whole workspace dependency policy including WASM
+        run: python3 -B tools/resource_group.py -- cargo deny --locked --workspace check
+      - name: Check WASM compilation
+        run: python3 -B tools/resource_group.py -- cargo check --locked -p fabric-ui --target wasm32-unknown-unknown
+      - name: Check UI contrast
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ui/contrast_check.py
+      - name: Build complete console
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ui/build.py --out /run/media/kmosoti/data/FabricO11y/results/ci-console
+      - name: Check compiled console in Firefox
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ui/browser_check.py --build /run/media/kmosoti/data/FabricO11y/results/ci-console --out /run/media/kmosoti/data/FabricO11y/results/ci-browser
+      - name: Install pinned Chrome and matching driver
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ui/install_browser.py
+      - name: Verify Chrome namespace and seccomp sandbox with startup diagnostics
+        run: |
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/test_chrome_sandbox.py
+          python3 -B tools/resource_group.py -- env GITHUB_ACTIONS=true python3 -B tools/ci/chrome-sandbox.py
+      - name: Build native authenticated browser fixture
+        run: python3 -B tools/resource_group.py -- cargo build --locked --workspace --bins
+      - name: Check actual passkeys and scoped native HTTPS console in Chrome
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ui/live_browser_check.py --browser chrome --build /run/media/kmosoti/data/FabricO11y/results/ci-console --server /run/media/kmosoti/data/FabricO11y/cargo/debug/fabric-server --spindle /run/media/kmosoti/data/FabricO11y/cargo/debug/fabric-node --out /run/media/kmosoti/data/FabricO11y/results/ci-live-browser
+      - name: Require the exact API-cache negative-control failure
+        run: |
+          set +e
+          python3 -B tools/resource_group.py -- python3 -B tools/ui/live_browser_check.py --browser chrome --build /run/media/kmosoti/data/FabricO11y/results/ci-console --server /run/media/kmosoti/data/FabricO11y/cargo/debug/fabric-server --spindle /run/media/kmosoti/data/FabricO11y/cargo/debug/fabric-node --out /run/media/kmosoti/data/FabricO11y/results/ci-live-browser-defect --inject-api-cache-defect
+          defect_status=$?
+          set -e
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/check-browser-defect.py "$defect_status" /run/media/kmosoti/data/FabricO11y/results/ci-live-browser-defect/browser.json
+      - name: Check packaging contracts and defect rejection
+        run: python3 -B tools/resource_group.py -- python3 -B tools/packaging/test_packaging.py
+      - name: Remove exact hosted Chrome AppArmor attachment
+        if: always()
+        run: python3 -B tools/resource_group.py -- env GITHUB_ACTIONS=true python3 -B tools/ci/chrome-sandbox.py --cleanup
+      - name: Keep receipts and console identity
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: verification-receipts
-          path: target/verification/receipts/
+          path: |
+            target/verification/receipts/
+            target/resource-containment/runs/
+            /run/media/kmosoti/data/FabricO11y/results/ci-console/build.json
+            /run/media/kmosoti/data/FabricO11y/results/ci-browser/
+            /run/media/kmosoti/data/FabricO11y/results/ci-live-browser/
+            /run/media/kmosoti/data/FabricO11y/results/ci-live-browser-defect/
+            /run/media/kmosoti/data/FabricO11y/results/ci-tool-install/
+            /run/media/kmosoti/data/FabricO11y/results/ci-chrome-sandbox/
           if-no-files-found: warn

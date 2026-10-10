@@ -1,0 +1,13 @@
+{
+  "origin": "catalog-many-s-64-r-1-plain-p-1; retained catalog-many-segment-run-01/S-64-R-1-plain-p-1/failure.json and clone/timings.json",
+  "seed": 42,
+  "rows": 65536,
+  "segments": 64,
+  "readers": 1,
+  "shape": "broad",
+  "bad_query": {"kind":"logs","from_ns":1600000000000000000,"to_ns":1600000000000065536,"limit":1000,"contains":null},
+  "expected_rejection": {"rule":"MALFORMED","detail":"query: field 'contains' must be str"},
+  "corrected_query": {"kind":"logs","from_ns":1600000000000000000,"to_ns":1600000000000065536,"limit":1000},
+  "contract": "Optional broad text predicate is omitted in canonical query JSON; oracle is unchanged",
+  "fix": "Native serialization, grader query and artifact-association expected query omit contains for broad; Rust Option remains None"
+}

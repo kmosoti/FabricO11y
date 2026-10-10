@@ -1,0 +1,125 @@
+{
+  "schema": 1,
+  "crates": [
+    {
+      "name": "either_of",
+      "version": "0.1.9",
+      "source": "https://static.crates.io/crates/either_of/either_of-0.1.9.crate",
+      "archive_sha256": "5060e0a4cbf26a87550792688ade88e6b8aec9208613631a7a363bda7bc2d4cd",
+      "path": "vendor/either_of",
+      "upstream_vcs": {
+        "git": {
+          "sha1": "fbc9ed631ff8c19c5eed02a1d4459e202cff7043"
+        },
+        "path_in_vcs": "either_of"
+      },
+      "modified": [
+        "Cargo.toml"
+      ],
+      "added": [
+        "FABRIC-PATCH.md"
+      ],
+      "patch": {
+        "dependency_alias": "paste",
+        "package": "pastey",
+        "version": "=0.2.3"
+      }
+    },
+    {
+      "name": "leptos",
+      "version": "0.8.22",
+      "source": "https://static.crates.io/crates/leptos/leptos-0.8.22.crate",
+      "archive_sha256": "713ee6895e3d1126ea9781280d01414f5643f3f201a949b71efffac07d735f00",
+      "path": "vendor/leptos",
+      "upstream_vcs": {
+        "git": {
+          "sha1": "58fe6c1ad0cd175e9c8ec204895a9739d52fda16"
+        },
+        "path_in_vcs": "leptos"
+      },
+      "modified": [
+        "Cargo.toml"
+      ],
+      "added": [
+        "FABRIC-PATCH.md"
+      ],
+      "patch": {
+        "dependency_alias": "paste",
+        "package": "pastey",
+        "version": "=0.2.3"
+      }
+    },
+    {
+      "name": "reactive_graph",
+      "version": "0.2.15",
+      "source": "https://static.crates.io/crates/reactive_graph/reactive_graph-0.2.15.crate",
+      "archive_sha256": "79f11fac67625645add76313dab8dae510fca0654d96ef98fd8f961a7d2e22c1",
+      "path": "vendor/reactive_graph",
+      "upstream_vcs": {
+        "git": {
+          "sha1": "584c3a2d884b0e4dba9e3f822a9b6982cff072c7"
+        },
+        "path_in_vcs": "reactive_graph"
+      },
+      "modified": [
+        "Cargo.toml"
+      ],
+      "added": [
+        "FABRIC-PATCH.md"
+      ],
+      "patch": {
+        "dependency_alias": "paste",
+        "package": "pastey",
+        "version": "=0.2.3"
+      }
+    },
+    {
+      "name": "reactive_stores",
+      "version": "0.4.4",
+      "source": "https://static.crates.io/crates/reactive_stores/reactive_stores-0.4.4.crate",
+      "archive_sha256": "a29e469b556f25486678e9f5f65fa21a0351d98affde9a7eea9fee286bf8ebd6",
+      "path": "vendor/reactive_stores",
+      "upstream_vcs": {
+        "git": {
+          "sha1": "584c3a2d884b0e4dba9e3f822a9b6982cff072c7"
+        },
+        "path_in_vcs": "reactive_stores"
+      },
+      "modified": [
+        "Cargo.toml"
+      ],
+      "added": [
+        "FABRIC-PATCH.md"
+      ],
+      "patch": {
+        "dependency_alias": "paste",
+        "package": "pastey",
+        "version": "=0.2.3"
+      }
+    },
+    {
+      "name": "tachys",
+      "version": "0.2.19",
+      "source": "https://static.crates.io/crates/tachys/tachys-0.2.19.crate",
+      "archive_sha256": "e47e2220bb9d2a3be976a22a0fb7685a0b84499bb11ea5cb3bbc82907675ac68",
+      "path": "vendor/tachys",
+      "upstream_vcs": {
+        "git": {
+          "sha1": "584c3a2d884b0e4dba9e3f822a9b6982cff072c7"
+        },
+        "path_in_vcs": "tachys"
+      },
+      "modified": [
+        "Cargo.toml"
+      ],
+      "added": [
+        "FABRIC-PATCH.md"
+      ],
+      "patch": {
+        "dependency_alias": "paste",
+        "package": "pastey",
+        "version": "=0.2.3"
+      }
+    }
+  ]
+}

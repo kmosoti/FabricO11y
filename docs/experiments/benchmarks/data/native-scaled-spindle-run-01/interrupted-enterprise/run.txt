@@ -1,0 +1,12 @@
+{"name": "medium", "passed": true, "gates": {"all_exact_source_logs": true, "no_gaps": true, "ack_hash_custody": true, "contiguous_sequences": true, "clean_exits": true, "drained_within_120s": true, "producer_lag_p99_le_100ms": true, "ingest_p99_le_1s": true, "ack_p99_le_1s": true, "source_ingest_p99_le_2s": true, "server_rss_le_2gib": true, "node_rss_le_64mib": true, "offset_range_le_5ms": true}, "latency_ms": {"ingest": {"samples": 350000, "p50": 15.583807, "p99": 102.994999, "max": 120.738562, "negative": 0}, "ack": {"samples": 350000, "p50": 22.199826, "p99": 126.698031, "max": 132.973008, "negative": 0}, "source_ingest": {"samples": 350000, "p50": 527.970953, "p99": 1013.62326, "max": 1095.337245, "negative": 0}, "scheduled_ingest": {"samples": 350000, "p50": 530.837748, "p99": 1021.850522, "max": 1105.061652, "negative": 0}, "source_ack": {"samples": 350000, "p50": 535.387076, "p99": 1025.765463, "max": 1108.325129, "negative": 0}}, "server_rss_mib": 470.38671875, "drain_s": 1.002805685995554}
+Traceback (most recent call last):
+  File "/workspace/FabricO11y-journal-reclaim/tools/bench/run_native_scaled.py", line 146, in <module>
+    if __name__=='__main__':main()
+                            ^^^^^^
+  File "/workspace/FabricO11y-journal-reclaim/tools/bench/run_native_scaled.py", line 143, in main
+    try:trial(root/name,bins,name,per_tick,cpus)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/FabricO11y-journal-reclaim/tools/bench/run_native_scaled.py", line 65, in trial
+    if stop.wait(.2):raise RuntimeError('; '.join(errors))
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: [Errno 2] No such file or directory: '/workspace/scratch/native-scaled-run-01/enterprise/node11-spool/append-in-progress'

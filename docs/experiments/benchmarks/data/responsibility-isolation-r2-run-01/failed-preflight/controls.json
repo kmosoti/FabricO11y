@@ -1,0 +1,6 @@
+{
+  "changed_body_rejected": true,
+  "missing_body_rejected": true,
+  "duplicate_body_rejected": true,
+  "changed_ack_hash_rejected": true
+}

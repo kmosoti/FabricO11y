@@ -1,0 +1,1631 @@
+{
+  "format": "fabric-wiki-migration-v1",
+  "wiki_commit": "3cecc10d988c012aea21628f43b76f1e6cc0fe67",
+  "source_base": "6ed5659cb0123ccd928d6f9a0ce5a83fad09fbaf",
+  "raw_assets_uploaded": 0,
+  "original_archive_sha256": "4fb293e4aa1dc52e20c82f3f62e9cd95cf4fe01ab6741672c80c50a89f7215f0",
+  "archive_location": "$FABRIC_DATA/results/wiki-stage-01/original-reports.tar.gz",
+  "reports": [
+    {
+      "source": "docs/experiments/ablation/columnar-selective-s3-s4-run-01.md",
+      "source_sha256": "d37a9728156e7590a5f02c86f0bfcddebead73b6b328c9c3dda5ccc135abe02c",
+      "page": "Experiment-ablation-columnar-selective-s3-s4-run-01",
+      "page_sha256": "8d897c502f059d941a978be51ae162a8e9aed4f9aa07b85e9f487cff79d03539",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-ablation-columnar-selective-s3-s4-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/ablation/coverage-e1-run-01.md",
+      "source_sha256": "c810f7e3baf70d524a6c21bde9a4804ad953a0c42e681fde46c04199f2e2b1e7",
+      "page": "Experiment-ablation-coverage-e1-run-01",
+      "page_sha256": "b6c1dd4de2feeb0e21ddd224033af8b753a80d495e446ab0ec6205b2564a227e",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-ablation-coverage-e1-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/ablation/durable-snapshot-s2-run-01.md",
+      "source_sha256": "8d6337a47271d1a61891d40c1c40368727a0b94fa62f7018213f50202d1f4f8c",
+      "page": "Experiment-ablation-durable-snapshot-s2-run-01",
+      "page_sha256": "a1fce7998a4b87d9c0349af08d6e29eb1ee52e7dd365312035383470bbbfac17",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-ablation-durable-snapshot-s2-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/ablation/local-prototype-run-01.md",
+      "source_sha256": "364f92ab08349e8a22b31b69f2e9fd2ba94a918740c39f4aecd1afe2ec46c3a3",
+      "page": "Experiment-ablation-local-prototype-run-01",
+      "page_sha256": "d50c4ccc169d37de94c88fd518fbca80a58387811db994af2795fd7efe0bb787",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-ablation-local-prototype-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/ablation/receiver-credit-h1-run-01.md",
+      "source_sha256": "0092844cd403151ee158ab9f9844e117f66b2e13626ae45e3b6d67d6606b1a2b",
+      "page": "Experiment-ablation-receiver-credit-h1-run-01",
+      "page_sha256": "002132289ca19e3397ec4308890ff906edcdfd2d2935573e443dd3de3f021b63",
+      "normalizations": {},
+      "repository_body_retained_for": [
+        "tools/bench/run_transport_h1.sh"
+      ],
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-ablation-receiver-credit-h1-run-01",
+      "repository_state": "retained_executable_input"
+    },
+    {
+      "source": "docs/experiments/ablation/resume-e3-run-01.md",
+      "source_sha256": "44072d080386e02f72ddc0b8955cce7bf14e1bc165230c3e4973da686361e007",
+      "page": "Experiment-ablation-resume-e3-run-01",
+      "page_sha256": "6be47fee9121036242ed1a19264a4a6f0767f44c1d95b12c9d3be3474fe90b8e",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-ablation-resume-e3-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/ablation/seal-e2-run-01.md",
+      "source_sha256": "78f6cc005d9eb402f53f02ab2283dbedd791380cf23e929fc7812bc9be22f5ff",
+      "page": "Experiment-ablation-seal-e2-run-01",
+      "page_sha256": "8fabbc3a8371ea1a8eae4ff950d37fe2decfc21fa1defd4a8bed1ad42acf840b",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-ablation-seal-e2-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/ablation/storage-query-s1-run-01.md",
+      "source_sha256": "e05a0e574d2f7752dfd75085849a15659ccd343ffd440137bf7f3e2a7c1307d6",
+      "page": "Experiment-ablation-storage-query-s1-run-01",
+      "page_sha256": "ca72c8d4b69310ceea29070de5da2ace35054df0a7d90b0590939b514fb7d615",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-ablation-storage-query-s1-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/ablation/unscheduled-prefix-m2-run-01.md",
+      "source_sha256": "1270d509126b6335f47af77145ac461fa2ff26839bbfb68c7ae8f9fd9ae1d0cb",
+      "page": "Experiment-ablation-unscheduled-prefix-m2-run-01",
+      "page_sha256": "68e4f3aaf38e70ca3617684c54264cd2e59682ab111e819019d2c4d9b3a7d76e",
+      "normalizations": {},
+      "repository_body_retained_for": [
+        "tools/transport-sim/tests/m2_contract.rs",
+        "tools/bench/run_transport_m2.sh"
+      ],
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-ablation-unscheduled-prefix-m2-run-01",
+      "repository_state": "retained_executable_input"
+    },
+    {
+      "source": "docs/experiments/benchmarks/alpha-phase1-native-run-01.md",
+      "source_sha256": "92032e38d81798a158dd4d04842a7e8858c23e26f4ab98f8b9f4bb28c3c14186",
+      "page": "Experiment-benchmarks-alpha-phase1-native-run-01",
+      "page_sha256": "8e1565d44bfc2cbc586ce520a4fc5a2a708c7b1a1a13bfb74bf5112f46352cec",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-alpha-phase1-native-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/alpha-phase1-native-run-02.md",
+      "source_sha256": "d4241dad72358c74abec3b61db9dffa09e6d2ed3ba56988d756cbb34494d07dc",
+      "page": "Experiment-benchmarks-alpha-phase1-native-run-02",
+      "page_sha256": "1ec4d301cad59f8553a2ff1013a902a1465d7a3629b48ea2fbcc24b0b9e72920",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-alpha-phase1-native-run-02",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/alpha-phase2-delivery-run-01.md",
+      "source_sha256": "c11c6f427e9c5ab1b3bc2ae4e6f00047c200cdb8fe8bc20ceded938c12abb90f",
+      "page": "Experiment-benchmarks-alpha-phase2-delivery-run-01",
+      "page_sha256": "a8f84454a8129b7e70877a23bf20af2e3ae36f2e9fac23e96298e5c9dd2b569a",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-alpha-phase2-delivery-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/alpha-phase3-fleet-run-01.md",
+      "source_sha256": "735f15090f1f6a72293f80f57c57ef43858163fc5fcad9e58d327c5d03ecfaed",
+      "page": "Experiment-benchmarks-alpha-phase3-fleet-run-01",
+      "page_sha256": "c86c9ad025c7881e18454ef12faf5fd30f53b7f730cb921252dd49f6b2e3382e",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-alpha-phase3-fleet-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/block-tail-run-01.md",
+      "source_sha256": "0965aea39bbdea97052f29da07fd573ab8ade17412f35a244273df605d661d95",
+      "page": "Experiment-benchmarks-block-tail-run-01",
+      "page_sha256": "49bf20013613316536e113cc756079e7549e8afd26a73b564cb2366e4b5a9e96",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-block-tail-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/budget-run-01.md",
+      "source_sha256": "f4822c46e47ff82ded0ecfe213505c44b2f1483c8bd3ede085eb392312604fab",
+      "page": "Experiment-benchmarks-budget-run-01",
+      "page_sha256": "55a0852148a90bbbff853cd468256ba609c40dce0550d96feef9a9a3cb12ed43",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-budget-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-algorithm-round-findings.md",
+      "source_sha256": "5e5f0c69af3975e459a44a6e84ad3a6e86f749c78be2a397f6e039610e0e852f",
+      "page": "Experiment-benchmarks-catalog-algorithm-round-findings",
+      "page_sha256": "71cb1c5e3402910b8dca6121e5cb1a412378e3c096d9f121b415261e1d1f689f",
+      "normalizations": {
+        "FabricO11y": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-algorithm-round-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-borrowed-log-findings.md",
+      "source_sha256": "d9ae08d8aac10b9beabde048c08cad21e1c8114c32f3a14854525eb968cda22f",
+      "page": "Experiment-benchmarks-catalog-borrowed-log-findings",
+      "page_sha256": "e8174cd4411c6a32782140ab9dffbbf0bc99254ad4d6f53cf82bd8fa11eeacc3",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-borrowed-log-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-boundary-findings.md",
+      "source_sha256": "9c61c1e5210ef30867b70d3f35d8fe12fb41b1da612442f6f53d0aab892babaa",
+      "page": "Experiment-benchmarks-catalog-boundary-findings",
+      "page_sha256": "86075f5b9e4e037e40ae6c180e576e0e7dff9ff14437042a18156936d32e17f5",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-boundary-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-builder-spill-findings.md",
+      "source_sha256": "c800dc5b679b9d95ab3941a277983c1686f640ae07369f9f8da89e5afd1c03d1",
+      "page": "Experiment-benchmarks-catalog-builder-spill-findings",
+      "page_sha256": "459cc11b16f8c779e4c30ff6f4f7ae4f8602345cbbc905db0129d659df76f254",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-builder-spill-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-cold-lifetime-findings.md",
+      "source_sha256": "576726de6abf4d607fb2fbe127173cc69ab54dac33e386302a0b9d25d0a59b1b",
+      "page": "Experiment-benchmarks-catalog-cold-lifetime-findings",
+      "page_sha256": "ae9aab2c323de702512933d3e38bb6270a82474ab488b262c1de7ee0738c9454",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-cold-lifetime-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-coverage-findings.md",
+      "source_sha256": "a74c9b1627ca3b5782ffbc87ee2c7ef5c9f108cc3434077b6c437793ce375eeb",
+      "page": "Experiment-benchmarks-catalog-coverage-findings",
+      "page_sha256": "19978798d6717bd0637b3fb45975077fe98db78c89a0d1274f351a20d51b0ef3",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-coverage-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-cross-system-findings.md",
+      "source_sha256": "dde1f9f2dda038a3efec212839bb04692375506819791a2e0ce338d494ceeb02",
+      "page": "Experiment-benchmarks-catalog-cross-system-findings",
+      "page_sha256": "c0499502bf004e215a329544d0836a2fbd7a932a43494411b841bde63f95450d",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-cross-system-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-delivery-read-findings.md",
+      "source_sha256": "eb60bad0a86045ac1dae39dcde2e3976386738ca49369bd5cd92a928bb00b947",
+      "page": "Experiment-benchmarks-catalog-delivery-read-findings",
+      "page_sha256": "2a0fb17e6739d329b3f5f8f1a2d6bd85a8a3c740aa2a2d5856bdbb155923bfd9",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-delivery-read-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-discovery-race-findings.md",
+      "source_sha256": "402a17cce17f75e77eccbc05c4158c5ff9e3cdede4e22d9012a1d069b73efbf4",
+      "page": "Experiment-benchmarks-catalog-discovery-race-findings",
+      "page_sha256": "3c116327d97a0d6e7ca495ee5ef26a5fa75d0acc004f585dd3f8ba69b485112b",
+      "normalizations": {
+        "FabricO11y": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-discovery-race-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-integration-findings.md",
+      "source_sha256": "7aefe470433445b338fef730ce7f326ce8b4c9496cc8ef7a2d437a54fa15bfce",
+      "page": "Experiment-benchmarks-catalog-integration-findings",
+      "page_sha256": "e3cae1826f56776718f4bf5c867964b4b6d5ca86283f962be6379a6bb4492218",
+      "normalizations": {
+        "FabricO11y": 2
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-integration-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-labs-run-01.md",
+      "source_sha256": "650db84250aade34a607b6c3dbcd0355c28891b4d7f10422e439163c995d6158",
+      "page": "Experiment-benchmarks-catalog-labs-run-01",
+      "page_sha256": "3915f72d08736266b142b284d0953eda940e8776a27f83bfafe399c3e1df2730",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-labs-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-log-progress-findings.md",
+      "source_sha256": "f82341fb97775dfcc0ef4e905bff41c8be237218f0c1cfa8671b0c356ac2009e",
+      "page": "Experiment-benchmarks-catalog-log-progress-findings",
+      "page_sha256": "51f9c985628bf29f4b3c4c7a0aa0db7a9d89e211c78ed0d7a9b5cf055957efea",
+      "normalizations": {
+        "FabricO11y": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-log-progress-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-maintenance-findings.md",
+      "source_sha256": "0ebbe4a05d70bd25c8e1ab14057573e69993469f862764da51c8df0949534a39",
+      "page": "Experiment-benchmarks-catalog-maintenance-findings",
+      "page_sha256": "77b631f3b889918a82ba3268e27dedbbd7ba66eb54b60ff993b5ca682acc375d",
+      "normalizations": {
+        "FabricO11y": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-maintenance-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-many-segment-findings.md",
+      "source_sha256": "630c615b1312c54444fad0d60f503da7ba01a0c2629831af0892c9a5c901752f",
+      "page": "Experiment-benchmarks-catalog-many-segment-findings",
+      "page_sha256": "5bb152f3e532f48e5ab358bbe0903c846f212ad444b6ca6b8b5a674ed5c02318",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-many-segment-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-metadata-findings.md",
+      "source_sha256": "187a3a57efeed8551f63ebdfadaa75d029640010e8af2264d23a146e6ef740b3",
+      "page": "Experiment-benchmarks-catalog-metadata-findings",
+      "page_sha256": "1d39a197f23950879b8dc27accc91e4fcc93daf2c4e4fbfdfdf1ac6b3b863a68",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-metadata-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-mixed-bounds-findings.md",
+      "source_sha256": "e1617533d578c68306039d98a47ac9ee6e2574c71c9be76b91fe55d9c5d427ef",
+      "page": "Experiment-benchmarks-catalog-mixed-bounds-findings",
+      "page_sha256": "2213071b6db8d2245b424e7d405fa606b6057e1dac47a12a33edbb47091d4230",
+      "normalizations": {
+        "FabricO11y": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-mixed-bounds-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-native-lifecycle-findings.md",
+      "source_sha256": "cba6bcecf2815ad1a7a6bc6bc347882919015ed78b64ef2b34489455759e0535",
+      "page": "Experiment-benchmarks-catalog-native-lifecycle-findings",
+      "page_sha256": "552fb5623dc3ed3051e7db3c3818895e174b5f382c06d1c085711fe7f45466e7",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-native-lifecycle-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-paused-cuts-findings.md",
+      "source_sha256": "a251e6b1766fea30ca8dc476525d69071a8d90c6ee907e5b1154e32a31449300",
+      "page": "Experiment-benchmarks-catalog-paused-cuts-findings",
+      "page_sha256": "99ddf2841b23ccb7ee821adb0f4441b97fbb9a7bb476d12580e532f96bfe721b",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-paused-cuts-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-range-evidence-findings.md",
+      "source_sha256": "9948b6aad9b20a395e854daa733e9c6b631ebc84728f3440fbc64bd9b6de2a15",
+      "page": "Experiment-benchmarks-catalog-range-evidence-findings",
+      "page_sha256": "e388ca42f35179792ea00344536af3ade89e6c84af0a36e6ece47be802596ea5",
+      "normalizations": {},
+      "repository_body_retained_for": [
+        "tools/bench/labs/catalog/range_closeout_retry.py",
+        "tools/bench/labs/catalog/range_closeout.py"
+      ],
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-range-evidence-findings",
+      "repository_state": "retained_executable_input"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-scan-discovery-race-findings.md",
+      "source_sha256": "8cd1b12a00ecf3c722ef152f32d66d8a6233cbe9b0ce9b159b9bd1d00745b7b7",
+      "page": "Experiment-benchmarks-catalog-scan-discovery-race-findings",
+      "page_sha256": "3c0d2b94eb401074f462755e715a372fa852d3097c14a77945202f625c672730",
+      "normalizations": {
+        "FabricO11y": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-scan-discovery-race-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-spill-findings.md",
+      "source_sha256": "d6c66bb87fecb534ae5c9e26ea6e450e3a8ae4b1b08d3c8ccdfc15e360d6a059",
+      "page": "Experiment-benchmarks-catalog-spill-findings",
+      "page_sha256": "61a2d8c3eba7989c6f731a69ca0b92ff441f9b0baed563c1b0959f0043b2e5ff",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-spill-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-transition-ownership-findings.md",
+      "source_sha256": "6ad5703f40a73b433733bbf6f04fb19f4da211e4ac92b7a4549f4905964d339a",
+      "page": "Experiment-benchmarks-catalog-transition-ownership-findings",
+      "page_sha256": "0c6329b83d8e5e6a276e402d6d285fc8b3a075fafc6f4381b16be65262b62107",
+      "normalizations": {
+        "FabricO11y": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-transition-ownership-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-capacity-findings.md",
+      "source_sha256": "a2d324e076b15180f6fb9b2b116707987a6ccc4a4145d6549fc1a087e2378c18",
+      "page": "Experiment-benchmarks-coupled-capacity-findings",
+      "page_sha256": "20c2a9b856e5f6d83020278bbd24a71dc38d73f54d2a105dfa7ece207266e19c",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-capacity-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-completion-run-01.md",
+      "source_sha256": "60b63cb5e31051939cdfb40436b24be707b1d496f04ee66305a5de8d3e5d01ff",
+      "page": "Experiment-benchmarks-coupled-completion-run-01",
+      "page_sha256": "c2b57425334f2f044ea7edc7a2824ba6030688171a7a244a5cc97c035d4947ca",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-completion-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-labs-run-01.md",
+      "source_sha256": "c3ae40c98fd4a5531ab3ab1814fe3724b681b92f212ed35379df373a1bc1a450",
+      "page": "Experiment-benchmarks-coupled-labs-run-01",
+      "page_sha256": "0cdbb1a774ba9a4575366175e7dc34449dbf7da2a607c99c0ec5cbb01d3cfad2",
+      "normalizations": {
+        "FabricO11y": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-labs-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-query-findings.md",
+      "source_sha256": "c43cdbcc8d442ff8d98fffea1968cac6bf1775c31f9e0b7b95dc840c47565e92",
+      "page": "Experiment-benchmarks-coupled-query-findings",
+      "page_sha256": "331133f8d5e93abc8d8db76741b47a24f1f45ae89326935ad08e48bf991a7430",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-query-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-continuation-findings.md",
+      "source_sha256": "5ce22f6cfefaab1ef8dd292d1254fe34f9d10554e0b2e054bb719e54d8decb23",
+      "page": "Experiment-benchmarks-cross-system-continuation-findings",
+      "page_sha256": "1bc5282f9e0d81aa2d86a15f989667fb95b81e7769db0ae1dc7a3649b4dd8f96",
+      "normalizations": {},
+      "repository_body_retained_for": [
+        "tools/bench/labs/cross_system/finalize.py"
+      ],
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-cross-system-continuation-findings",
+      "repository_state": "retained_executable_input"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-operations-sweep-findings.md",
+      "source_sha256": "83241007dcba41182d73791cfeeb0202b30be3e131e0c3e324fbe6299189131b",
+      "page": "Experiment-benchmarks-cross-system-operations-sweep-findings",
+      "page_sha256": "bd6aa467c53134a5895ccf7c44bed62e92b6bbd67d476f247ba004034a0627fd",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-cross-system-operations-sweep-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-query-sweep-findings.md",
+      "source_sha256": "8d22f66729f0cee2bb1b72f481594ac467d8a61956dbad922351f135b4bff774",
+      "page": "Experiment-benchmarks-cross-system-query-sweep-findings",
+      "page_sha256": "55ef7aeb1dd5c4089e5e82d23b8f2f5b8affddb27bfe74268dc08d92c009b6b7",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-cross-system-query-sweep-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-rowset-sweep-findings.md",
+      "source_sha256": "189865e9b68026a32bf37d7d74bc2a37a75b375f041ba24b4685f9882abb8c33",
+      "page": "Experiment-benchmarks-cross-system-rowset-sweep-findings",
+      "page_sha256": "efe803abc573ed3244b91617d78b2f63e35484f807e38d77c49f467fdafb20a0",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-cross-system-rowset-sweep-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-storage-sweep-findings.md",
+      "source_sha256": "ded900068a5eae4a4e12e663e38173f7ff98980e46ff8df8b9941e02382c26c4",
+      "page": "Experiment-benchmarks-cross-system-storage-sweep-findings",
+      "page_sha256": "e260e0f75d453ae804fa5acfee2359588ee34ea9ef5f51b742249d6c8167cccc",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-cross-system-storage-sweep-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-sweep-findings.md",
+      "source_sha256": "c22e3e1008201aebd8dd8f50d154b74b9e9b87b8dd85bed2379fcf0b4a61cf2d",
+      "page": "Experiment-benchmarks-cross-system-sweep-findings",
+      "page_sha256": "ccd13f27dd2969591709bf2dec89e17979e6be93902f5dd3ea2ccf023bfb03fe",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-cross-system-sweep-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/dev-small-labs-run-02.md",
+      "source_sha256": "f7220032f136309baa29a59fa1ec732eb461536b128c17b810ca282d1b6ed5c0",
+      "page": "Experiment-benchmarks-dev-small-labs-run-02",
+      "page_sha256": "e0dc3c908aca093e1280a0017a0471bb94e435861927b02d0f49b2b52e7387c2",
+      "normalizations": {
+        "FabricO11y": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-dev-small-labs-run-02",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/dev-small-local-run-01.md",
+      "source_sha256": "febf3a6109d152097709564ea9e0ae4503b237b4c8045035c895c6b89841960f",
+      "page": "Experiment-benchmarks-dev-small-local-run-01",
+      "page_sha256": "6fe941c2c171fb1cd36be2741d01d71c4d4ed1e3ea9ad5bb5f3110fba1c485bb",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-dev-small-local-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/dev-small-observation-run-01.md",
+      "source_sha256": "3e2dd81821fbffb787df86a5cb204e1a5c14b8868bf583ec20979561a3bb9df1",
+      "page": "Experiment-benchmarks-dev-small-observation-run-01",
+      "page_sha256": "8db5780ac80ac64cdc562fb1a8a88b413debbea00c58e8517959245ae1f4836e",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-dev-small-observation-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/e2e-latency-run-01.md",
+      "source_sha256": "b96ad79378c29e188e1db42a4b32b4ac503f9cea687fc8b005a6ac8f8f3ad692",
+      "page": "Experiment-benchmarks-e2e-latency-run-01",
+      "page_sha256": "21ba1ab6e928926a10f78d7033c43e326a608d67d7c3ecf4a33b6af2d0b70e8f",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-e2e-latency-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/group-seal-cost-run-01.md",
+      "source_sha256": "81c147054b9d951325b9e65f3fb5e2e92ea74c1142f829db8503e750fa8b0006",
+      "page": "Experiment-benchmarks-group-seal-cost-run-01",
+      "page_sha256": "3a8c763eea68d3de25655f08177af243bf69924d94b2c2eb0c2fdec4bb9e40f1",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-group-seal-cost-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/hammer-reference-findings.md",
+      "source_sha256": "a9be4b9885b5ce142f33599f56a32cf9b86aee5805ea4e6366eaa74b6c98a4a5",
+      "page": "Experiment-benchmarks-hammer-reference-findings",
+      "page_sha256": "da21677a63a236466a1abbce9fb9b67c06029b0ec69866b51df5ee3ca2d84618",
+      "normalizations": {
+        "FabricO11y": 2,
+        "edge_host_labels": 3
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-hammer-reference-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/history-run-01.md",
+      "source_sha256": "e2e0108d45e6fcffbd0bbbe8c8b72025172f1f68e3805b0a9f6c72b7e1d73d5c",
+      "page": "Experiment-benchmarks-history-run-01",
+      "page_sha256": "3ea210bffa8a09bde2ce5e367fdb11717ab98f21b53f31bb719fe34c9743f8c0",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-history-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/ingest-run-01.md",
+      "source_sha256": "2e1e339d6cc909249045d6b00594df422fa0ae2228fe230e3b41dbd8595b36d3",
+      "page": "Experiment-benchmarks-ingest-run-01",
+      "page_sha256": "97defc8f724272892fe76df53fad8d1e8eb16918f67f44148834296c03ba721e",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-ingest-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/ingestion-memory-run-01.md",
+      "source_sha256": "813ab2f881458e0359b4ddf0937aa46e274c0e0e851b03ce2e7e8078590cb98f",
+      "page": "Experiment-benchmarks-ingestion-memory-run-01",
+      "page_sha256": "38850c1f28aafcfcbac130096c876df9a92835535d0db1edcda49c755d641098",
+      "normalizations": {
+        "FabricO11y": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-ingestion-memory-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/journal-reclaim-local-run-01.md",
+      "source_sha256": "aecd9ddad4c5c152f798dccc2dd416793e1f9226b6974c15ef90e423e0afb513",
+      "page": "Experiment-benchmarks-journal-reclaim-local-run-01",
+      "page_sha256": "bb0720fa99f2461e0395819f73bf18552d6f62e55b98b291b9cea721e3bcffd7",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-journal-reclaim-local-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/lab-completion-run-01.md",
+      "source_sha256": "6bd346163489c2ad745ef3e39da850c6691a9dc1f9d6c16562855e60d932638a",
+      "page": "Experiment-benchmarks-lab-completion-run-01",
+      "page_sha256": "0bbd3090ec9c5743d9406b5c181bff29b2f34a22610da5e828d0e328001b632f",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-lab-completion-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/native-frontier-findings.md",
+      "source_sha256": "98b4aeb45d36e877fbcd2559ae67592777d1b4a0e6fa805c5e2cfc0e65667596",
+      "page": "Experiment-benchmarks-native-frontier-findings",
+      "page_sha256": "dd2e0a6164629eb312475b3ef769f13dee295dd7d1cf65d2f01f37216c6b22d3",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-native-frontier-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/native-key-first-findings.md",
+      "source_sha256": "c466ecb2f1aa734056b7ac1d54704c635b06974ccdbe15ac8cac5f6128c8f61d",
+      "page": "Experiment-benchmarks-native-key-first-findings",
+      "page_sha256": "138ad5ab93ea83f257b7824c989deb059a10687434ae7a36cbdd80e5842c8be5",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-native-key-first-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/native-ownership-findings.md",
+      "source_sha256": "e6210719cbea17c39570006251beedc7359dc7d989cb79e877de9e537819f602",
+      "page": "Experiment-benchmarks-native-ownership-findings",
+      "page_sha256": "881a05454df671070c889bcbfb047901110115f4d42bbbf8c3745edd20e48bb0",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-native-ownership-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/native-resource-findings.md",
+      "source_sha256": "33de3bdd0dbc8d739188a4b67bd52c9e912fb889b56fc2766c56079f5d768c28",
+      "page": "Experiment-benchmarks-native-resource-findings",
+      "page_sha256": "c704da1dd44585a77c7bd82232123e4d0740834bde259d60598cf3ad7998d775",
+      "normalizations": {
+        "FabricO11y": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-native-resource-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/native-scaled-spindle-run-01.md",
+      "source_sha256": "8c0e9e876396ef3f7146a8eeb2fdbdfa1ed502f92753fd56a842131eb2214511",
+      "page": "Experiment-benchmarks-native-scaled-spindle-run-01",
+      "page_sha256": "596bc7e119aaa13c9fb4766e7e32c5384ae18366dec63bad6c30242d002e3871",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-native-scaled-spindle-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/observation-encoding-run-01.md",
+      "source_sha256": "2c03f65ac87875191f297f39fec2bd9121db69406278a1316c519f45e3104f7a",
+      "page": "Experiment-benchmarks-observation-encoding-run-01",
+      "page_sha256": "9838aece965ef5d49a2ca0ed267d942ddb55645252ce4e0eeaa89c84ce0eb5a4",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-observation-encoding-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/optimality-run-01.md",
+      "source_sha256": "a949d424c35e0fa9359046956c81f18a2fb7ec6757044a99dcbb234a34e4f519",
+      "page": "Experiment-benchmarks-optimality-run-01",
+      "page_sha256": "4f27cf84ff0aa2f8294ff690ccea6390bbd251db2237e775293049099f0406b9",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-optimality-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/outage-run-01.md",
+      "source_sha256": "d5d4511227a2765373f592ce3ffc468a2f04e2cafdd2c05ac11fc158f8608997",
+      "page": "Experiment-benchmarks-outage-run-01",
+      "page_sha256": "2aa83f42f4c2d5e037f0e884cf9f11bb499b29587a27a1fa3ed359a0c2f4bc2b",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-outage-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/performance-frontier-run-01.md",
+      "source_sha256": "4d193d1c6292cb708cdc3f8428e8863bcca2a171e8e3c5fe270a93ae087505cb",
+      "page": "Experiment-benchmarks-performance-frontier-run-01",
+      "page_sha256": "06e7de3db6fcd0ef8269f0be79185a50d669dc4ebf1adba27d5890f680e2acfa",
+      "normalizations": {
+        "FabricO11y": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-performance-frontier-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/performance-refinement-fedora-run-01.md",
+      "source_sha256": "018ea50b5a5bcb499dc93e7184556eff3692bc04be3b49d53ed44ac876871e47",
+      "page": "Experiment-benchmarks-performance-refinement-fedora-run-01",
+      "page_sha256": "1e3112fe3a7fdedb9f1bd33aa003507e82b84e1c2c96c50204090d981834fbc0",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-performance-refinement-fedora-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/query-attribution-run-01.md",
+      "source_sha256": "029f1d00ceca387d27c50405af19d4f215a5281e62b9c5d18d2eff2c9fd99d70",
+      "page": "Experiment-benchmarks-query-attribution-run-01",
+      "page_sha256": "b064285c7cc4fc843e0c7054bce1eca4899c4ae8ac7826ec52807d3d479325cf",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-query-attribution-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/query-plan-run-01.md",
+      "source_sha256": "b62a8e39b2456e897c206f96592758fc902343fdbddb13c665693f4264522a93",
+      "page": "Experiment-benchmarks-query-plan-run-01",
+      "page_sha256": "8e6cb839568f3ac9404a24179556130320c904a4473fe310c662063f7124234b",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-query-plan-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/query-walk-run-01.md",
+      "source_sha256": "953a32b9ff1c000aa66f2c0b8c54338a81a350bb59ec3369cc64665bb237c539",
+      "page": "Experiment-benchmarks-query-walk-run-01",
+      "page_sha256": "eb6424ad560f00aed52a0094a36ee0d0c77ffc1ba1e45b255a890c229f1bddc0",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-query-walk-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/rca-journal-findings.md",
+      "source_sha256": "fa79193aa46579fa5e0fecf43ee78fa1cac5ad213e420ceab3aa5655a3461b0c",
+      "page": "Experiment-benchmarks-rca-journal-findings",
+      "page_sha256": "9190982c6c25253daa959963f409c8d66a153ecebc33592c22dd09ef0d0dab48",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-rca-journal-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/readiness-labs-run-01.md",
+      "source_sha256": "b4eda1a25ae3bb6921c8a01b153625e0d2c4a8d7030223ef9090bcbfb9209448",
+      "page": "Experiment-benchmarks-readiness-labs-run-01",
+      "page_sha256": "4e5bb969a1b46566f627ffaeb4d77e44a7a576c70366116239b9e21d1fe9658d",
+      "normalizations": {
+        "FabricO11y": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-readiness-labs-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/real-corpus-query-run-01.md",
+      "source_sha256": "c5df3ff070b026c1a351193dd273a49e0dcadb430479b6e921711b0aedb6c7bf",
+      "page": "Experiment-benchmarks-real-corpus-query-run-01",
+      "page_sha256": "a98f7fab781cde1b8289bf922fe60af30c9b2f532e8bf6d1280cb40ffee7bd80",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-real-corpus-query-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/research-costs-run-01.md",
+      "source_sha256": "10b98d3b0ab61339d07bb39de0689c4a25ea0a5c16566d2f0637a2fe5324f6db",
+      "page": "Experiment-benchmarks-research-costs-run-01",
+      "page_sha256": "c6501482c49fcc19193cc36a4188c27511091ced0d9f728550d6a3463cdbb2aa",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-research-costs-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/responsibility-isolation-r2-run-01.md",
+      "source_sha256": "93f3dde0b3d4ab0d40c6a4ff149ed1d0ac0deffd3ff3f43affe88b370132b27d",
+      "page": "Experiment-benchmarks-responsibility-isolation-r2-run-01",
+      "page_sha256": "bf42dcb816b31fb94541a024b0c38630b8833dd231c1d3606612484f88fae5a4",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-responsibility-isolation-r2-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/retention-scale-run-01.md",
+      "source_sha256": "1b3b4f7f7a6486fdeafca1f6a7fc2a312c54683cfcc99e771458536bb640b50c",
+      "page": "Experiment-benchmarks-retention-scale-run-01",
+      "page_sha256": "d75df780b076899e76b2895702f87702cb41755abf8d63d96a2ad01b2bfe39db",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-retention-scale-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/scaled-fleet-local-run-01.md",
+      "source_sha256": "f5a94127c4e7692947caaea103a55f54ebdfd13bb1952a31e6350a60cc539583",
+      "page": "Experiment-benchmarks-scaled-fleet-local-run-01",
+      "page_sha256": "ff1d1fc7beb9b885c2e02b48db3304eeca1485c1643be34fa4d8673f6a0ab9fa",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-scaled-fleet-local-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/sealer-profile-run-01.md",
+      "source_sha256": "e7b90dddaa336b9ac0897e0c88de36a2bee5fa415e5e79498381db8e86db5fc5",
+      "page": "Experiment-benchmarks-sealer-profile-run-01",
+      "page_sha256": "072da797c6a98a6be71230235609fb2b86587a64304fa58983c9a0706f5fc853",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-sealer-profile-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/sealer-speed-run-01.md",
+      "source_sha256": "3a0d49857cd51b354e16987c96dd8cc21e2bf7ae5578d67e25e5d9530869c5dd",
+      "page": "Experiment-benchmarks-sealer-speed-run-01",
+      "page_sha256": "a305007cdf08d99001c288a0ce6cef76188531b4725eada80889fc2b022b3e1a",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-sealer-speed-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/sealer-study-run-01.md",
+      "source_sha256": "2c016a5612394c5c9875a056e40a53191c453af72e377824ed61e718c11b3609",
+      "page": "Experiment-benchmarks-sealer-study-run-01",
+      "page_sha256": "c6124a0b607d498588e40a1a4432bdfc3606ee6948538ae29edf5c8dbeee6466",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-sealer-study-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/service-recovery-research-findings.md",
+      "source_sha256": "331adb7b60df0e9226fb3bf89212fd62f63f176f82e05a7ff64ea41166de9ec1",
+      "page": "Experiment-benchmarks-service-recovery-research-findings",
+      "page_sha256": "c0d254232de6e9dfa6e2ecae03eb9f470fe428f638c4b5be7a9b2d81ddddb303",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-service-recovery-research-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/soak-run-01.md",
+      "source_sha256": "72dc989d9af4b82fbc15fea97548e655e16b2a52b18234f7e82b4fdf0fe6c783",
+      "page": "Experiment-benchmarks-soak-run-01",
+      "page_sha256": "c299e94aefcd57ecf286ac141a22738f6e94b9e7bfaceabdb2001f539cb2506a",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-soak-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/soak-run-02.md",
+      "source_sha256": "c70f25627a065d8fb252787e904706f955ca18bd87487edfe96bb98ffa741456",
+      "page": "Experiment-benchmarks-soak-run-02",
+      "page_sha256": "a6a96ddf52019060500f02bf177f1d529171dd5d9113e4f6b9370507e44708e2",
+      "normalizations": {
+        "FabricO11y": 7
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-soak-run-02",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/spindle-run-01.md",
+      "source_sha256": "492aaf3712d82fd33173b5881dd5b1ddafe6dd88fd1597d1c8c66b6979a14529",
+      "page": "Experiment-benchmarks-spindle-run-01",
+      "page_sha256": "3a2c6d41fcb625bebff84eb6382aced13b4ece04a4086a7e4221857f7f6482fd",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-spindle-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/storage-layout-run-01.md",
+      "source_sha256": "c3c60949b83ace5554b49586d8b5c4134bdba67659c0c5224eb68d1eac87250b",
+      "page": "Experiment-benchmarks-storage-layout-run-01",
+      "page_sha256": "525fba85172207b446f646584bc16e8af01f3df5b1183d5d7f502cca91a9c5d8",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-storage-layout-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/streaming-output-local-run-01.md",
+      "source_sha256": "788335b8f2a490e5ead46b52cb595a079f5ab2e72887e740e65cb1bef0031ec4",
+      "page": "Experiment-benchmarks-streaming-output-local-run-01",
+      "page_sha256": "4561a37a1646f657e4c66a5ec17ed6b189f05e02a7d61fba0cee8486ba9006b2",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-streaming-output-local-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/stress-run-01.md",
+      "source_sha256": "a3eeb5036a7677b4c8495b9a67415b0abe8cb9f04dea4a1042f4d6e0d239a7ef",
+      "page": "Experiment-benchmarks-stress-run-01",
+      "page_sha256": "b226b2ddd536065bc876fa0fb46cf109c4a85083c121932dca940d87bee06736",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-stress-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/tail-index-run-01.md",
+      "source_sha256": "09952ff42a4a3780a0fc65bee9a9fd82696fea10617d62d097a0d54627764c24",
+      "page": "Experiment-benchmarks-tail-index-run-01",
+      "page_sha256": "cda5ac7b3622e318bf00bf89e367a36fe75dcff0907bee1a0662bfa261465517",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-tail-index-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/text-filter-run-01.md",
+      "source_sha256": "49d351c00c89b771ee96579b5ab2c56c7160251cbf626518b467fef7a86e78b5",
+      "page": "Experiment-benchmarks-text-filter-run-01",
+      "page_sha256": "190cbb3eb106a59713144c0611e705338ecb584d597fbc46c144a7214a6e9d64",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-text-filter-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/topk-run-01.md",
+      "source_sha256": "69a87c3d5af9412af8c823009584e6ca63b34344038759891478929e7fe461d4",
+      "page": "Experiment-benchmarks-topk-run-01",
+      "page_sha256": "9fc8b30722b1bc0c45fa55f570e928272535db4b3073a9201180bfe6413b514d",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-topk-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/formal/bounded-writer-default-run-01.md",
+      "source_sha256": "d6437b7c3319ebc57992caf4e6e89d97693b6ded20923986baa92cedd9b0abfe",
+      "page": "Experiment-formal-bounded-writer-default-run-01",
+      "page_sha256": "da720b18407eb707e6ee20c84e42bf40c4b6ed07c7625cf79bb776c21052026b",
+      "normalizations": {
+        "FabricO11y": 4
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-bounded-writer-default-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/formal/encoded-page-memory-run-01.md",
+      "source_sha256": "b987f767aa98eeaa49067cccfb4c04a1986bf88f45406407e332b827c2e0c4a6",
+      "page": "Experiment-formal-encoded-page-memory-run-01",
+      "page_sha256": "4f8b72d936b4ee6c39163f040b0f593781291a9d4ecc4b21a31f3e8793fb5104",
+      "normalizations": {
+        "FabricO11y": 9
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-encoded-page-memory-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/formal/installation-a12-stimulus-run-01.md",
+      "source_sha256": "5b9f63d22eb59091e5df17babb74ea9a39f2bf079bf58c7e50f2690086c4fc50",
+      "page": "Experiment-formal-installation-a12-stimulus-run-01",
+      "page_sha256": "a63d00f76618b553ac14aebc49ad52c831a52b4a59a3f17af6e5576306218266",
+      "normalizations": {
+        "FabricO11y": 3
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-a12-stimulus-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/formal/installation-acceptance-run-01.md",
+      "source_sha256": "a2c8c871a0080b8cc77a5eb4d1292ba29718a9bb1b4ec5cec07fd213921bac56",
+      "page": "Experiment-formal-installation-acceptance-run-01",
+      "page_sha256": "75b652bb050617fc4af0c065ce843cd3331b74a77552da4ca61c2346d7c3196b",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-acceptance-run-01",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/formal/installation-acceptance-run-02.md",
+      "source_sha256": "2edb93c661e2b0b5913fbfecccf75ca5148f55138b4c7d69a1fa62fdbc31c87b",
+      "page": "Experiment-formal-installation-acceptance-run-02",
+      "page_sha256": "833ded44fed6aac35f33a88f82a2abd157a95d712f0690b70a2affb3598f3f35",
+      "normalizations": {
+        "FabricO11y": 3
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-acceptance-run-02",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/formal/readiness-continuation-results.md",
+      "source_sha256": "9c578baab21637409702e9f9c6c107f3efd2f3b975e6621d5bd1f02e5d84601d",
+      "page": "Experiment-formal-readiness-continuation-results",
+      "page_sha256": "be252be4b5441a2fb56b0fbc5d070f71d9a968ea0e813b3cda265d7dfe6329c7",
+      "normalizations": {
+        "FabricO11y": 49,
+        "kmosoti": 2
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-readiness-continuation-results",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/formal/server-self-observation-findings.md",
+      "source_sha256": "51bfcd5a31e89f5271d24264bcaf354cb159411b49ff2d07086897020a3e06ca",
+      "page": "Experiment-formal-server-self-observation-findings",
+      "page_sha256": "4d1410cb3c68132d8731f82aa355a98be063e9fe09ebb52ac9e7d4594c49e7c6",
+      "normalizations": {
+        "FabricO11y": 6
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-server-self-observation-findings",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/application-use-cases.md",
+      "source_sha256": "ebce969d9248d4c216862cde549aba464bae4eb42fc41e8ada5332987873300a",
+      "page": "Research-application-use-cases",
+      "page_sha256": "20df80f030d9683e50239bc455650ead2bf165bac0304e7acc5b38de11cf6cef",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-application-use-cases",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/consumer-performance.md",
+      "source_sha256": "213fbdd9e81d0a5f2cf83466f3894329ca223335a4edce4edea2f07546d2f9a3",
+      "page": "Research-consumer-performance",
+      "page_sha256": "5de76ce4077961913e68c87f6e9bf878fe311924fa1f6bd69d8bfbc7974597d0",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-consumer-performance",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/coupled-performance-review.md",
+      "source_sha256": "4958eee9b859d578addf5b3cdc3e5e91feed2ca867c119caa5bf9d972136d4e3",
+      "page": "Research-coupled-performance-review",
+      "page_sha256": "0a402ea548a346a5110f8f5127ab9d1183673e0d8dd36d10a82a75143f774fdb",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-coupled-performance-review",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/cross-system-candidate-screen.md",
+      "source_sha256": "6d680053dc04c075bc04941d904185b24a178ca4542818c5514fbe180c57b113",
+      "page": "Research-cross-system-candidate-screen",
+      "page_sha256": "d276385348d7b07ecf6648b39e328cd89e23a51d57b448015bac00ad86ad1266",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-cross-system-candidate-screen",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/cross-system-operations-dissection.md",
+      "source_sha256": "1f01339937efeb5ce973938817f36293a6de972ae7e5d24a02071c2af491ac67",
+      "page": "Research-cross-system-operations-dissection",
+      "page_sha256": "0a5c88d8f21b31802cb64f1403ec182772089a70808f17cd63a977c4e7edb7ba",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-cross-system-operations-dissection",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/cross-system-performance-program.md",
+      "source_sha256": "def4e77450fba9c2177280ffc6ea871e5d20402dd62638192343f22c23d1948b",
+      "page": "Research-cross-system-performance-program",
+      "page_sha256": "ae1900359a8214c4830553f9f536ad636143a2f4765f2a6e1d000bc7ec63f7fe",
+      "normalizations": {
+        "FabricO11y": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-cross-system-performance-program",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/cross-system-query-dissection.md",
+      "source_sha256": "4ba4595200df35e1135aa43e27d82c185ee9096ffa15e5a939829985eba5e258",
+      "page": "Research-cross-system-query-dissection",
+      "page_sha256": "04a1b2ea3ed9a9472c7b77d5b1d96f4415ef84ab006be537bc4f97e0e9a21b22",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-cross-system-query-dissection",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/cross-system-query-vectors.md",
+      "source_sha256": "49da4169c5b5a562ea1e46619eb6e08d98cf8a97b88c3d0bbf57f43c5a294635",
+      "page": "Research-cross-system-query-vectors",
+      "page_sha256": "b0291acfef4d30796f6bdbc5cd574befbaef731163c153697cb6d51dd9a9d154",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-cross-system-query-vectors",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/cross-system-source-synthesis.md",
+      "source_sha256": "1aa6e2748af7f23acc6151e895602afb72d37afd08aabcdc7231c80427ba50dd",
+      "page": "Research-cross-system-source-synthesis",
+      "page_sha256": "70bd2d6fe221fcb02126e99424712e15537cb96afdceeae68ae141fadd036e55",
+      "normalizations": {},
+      "repository_body_retained_for": [
+        "tools/bench/labs/cross_system/finalize.py"
+      ],
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-cross-system-source-synthesis",
+      "repository_state": "retained_executable_input"
+    },
+    {
+      "source": "docs/research/cross-system-storage-dissection.md",
+      "source_sha256": "bbb33118087f176a4128b2fcbc892f5bc74af6077890b2260700ceb8078969be",
+      "page": "Research-cross-system-storage-dissection",
+      "page_sha256": "6935b1d1c7a44bd4ab1946b48ff66a91de8631af1a8b821778febb65cec8fb6d",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-cross-system-storage-dissection",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/cross-system-sweep-vectors.md",
+      "source_sha256": "b55fa07c952787d661f6f29b29030a7d322d217d571ec6710cfc1d65b90d75a4",
+      "page": "Research-cross-system-sweep-vectors",
+      "page_sha256": "f0066cebbd1cf28f79388771a7e738c7ac2209e9144c8bfb6510d327f6a4dbb0",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-cross-system-sweep-vectors",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/design-consolidation.md",
+      "source_sha256": "673c183675cb15bfdc622248cbc693cf335721da3b6a2112c080eb7893b28296",
+      "page": "Research-design-consolidation",
+      "page_sha256": "fc98c1f384271dc2db7fbf84f320d0c99fe86569ed2528e23dbe8e5113f9f1e6",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-design-consolidation",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/development-moderate-plan.md",
+      "source_sha256": "b74a08889653cecba30825194533ead2154ff28aa3e969ecf362bb9b8231bc69",
+      "page": "Research-development-moderate-plan",
+      "page_sha256": "8f3b96741e3bd532769eda36d8c99a84e612d302daa0b53d46da859f03202e05",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-development-moderate-plan",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/experiment-durability.md",
+      "source_sha256": "b179689f8410db9b0b2b96266b0479f11ac3e85791585b0b7da1893dae488cb8",
+      "page": "Research-experiment-durability",
+      "page_sha256": "cd9e1eaf453f044bd0a22db9ac50e10d8dc580a2efc69cdb8b278ff25efd8870",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-experiment-durability",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/frontier-map.md",
+      "source_sha256": "8d765eefdc1e29638156a15df30dbd66d5aca72381a1e7698af63c5801891fce",
+      "page": "Research-frontier-map",
+      "page_sha256": "5b72f372e37f0309f4d710c9e93ec95ecd2aa13794bff5aeaac20c195ca6c671",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-frontier-map",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/generator-verifier.md",
+      "source_sha256": "932296cb9669eca81299cbf02cd299c776018a84553851801229ef3a30973b41",
+      "page": "Research-generator-verifier",
+      "page_sha256": "1ba0ec88148dd28d215a435bed507d9cbc16ee7cff5c65da82ef0f88b5be0606",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-generator-verifier",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/hypotheses.md",
+      "source_sha256": "d1bdeb863a27f9fe3d98086f2be5991bdb6e004dbbdac64f544516a299d52537",
+      "page": "Research-hypotheses",
+      "page_sha256": "e29f8d2f69d6ecf1f4c1d15718f23deb0c26468bc4573a49e26ce5fa99de4611",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-hypotheses",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/ledger.md",
+      "source_sha256": "5edd075a4fb7ef0d656966be3f3b1ef2feb2db6eef45a4856cfa998c85c5a41c",
+      "page": "Research-ledger",
+      "page_sha256": "e46165d715d29ebb05a2e7e2330c06b77ebc1f7168af7d15a3315ba52c7a6f49",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-ledger",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/native-admission-model.md",
+      "source_sha256": "d6599215d9037168056d9d6bf93594eb343c7489c1db65f2ff72fbde35f9b0b1",
+      "page": "Research-native-admission-model",
+      "page_sha256": "61a5a21da4a66569535109a1c052341d2dc8cbacb97f1fa61a7e816475b91094",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-native-admission-model",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/native-ownership-model.md",
+      "source_sha256": "a3d775425293c89112a639bfb31b3d2286ba69cc3ebc0296a2b361e862f426d1",
+      "page": "Research-native-ownership-model",
+      "page_sha256": "344a5351f37df7a8ac9631c16e57325d29dc9b5cb3078ca9a862e08c628aad05",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-native-ownership-model",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/observation-model.md",
+      "source_sha256": "1b4b46e6a9e23200d15a5fa004e305532f2b2afc0aa2426f05eef18cc406d99a",
+      "page": "Research-observation-model",
+      "page_sha256": "9c8ed7bb0e639de394aedba56ed22886901bf55813f785f9ab2b157cf24c6e39",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-observation-model",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/optimality-bounds.md",
+      "source_sha256": "70644bccfaf118a111a7cc1304192ccd4bb07e1643cd2148173559a5a9b383a6",
+      "page": "Research-optimality-bounds",
+      "page_sha256": "7dd2be65eede8efbada71b7ef9fff72018537d6d9c2b76d0b9795d0208bf87d2",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-optimality-bounds",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/performance-refinement-audit.md",
+      "source_sha256": "f91f015c40188ae10f1b39dc617e04946b5b060d7892bad9ca67049c58bc96d4",
+      "page": "Research-performance-refinement-audit",
+      "page_sha256": "4f148855ca76c62275659faf72088b0d29ace061728f4e4eddc26343fc99ea8a",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-performance-refinement-audit",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/query-engine-direction.md",
+      "source_sha256": "dcc92654a7ea9b39356aee3147f9be089e98ecd29584a5bf6e7f823da112ed98",
+      "page": "Research-query-engine-direction",
+      "page_sha256": "05da7ab5152011c71777fbfa990cb9d03806d77e53c2e9a97e4f69ef783f7364",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-query-engine-direction",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/range-evidence-and-work-ownership.md",
+      "source_sha256": "c92dbac17f0c300886d086aba5addb01340d507b75b822536abf811d98118e69",
+      "page": "Research-range-evidence-and-work-ownership",
+      "page_sha256": "3d0d498ee15373528c1fa67674489335608c56171d927afea436b94f9debf787",
+      "normalizations": {},
+      "repository_body_retained_for": [
+        "tools/bench/labs/catalog/range_closeout.py"
+      ],
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-range-evidence-and-work-ownership",
+      "repository_state": "retained_executable_input"
+    },
+    {
+      "source": "docs/research/scaling-design.md",
+      "source_sha256": "75640df440c175084c11b9698e5c96df7e2fbf89bc1ce51f2e7814f15ede4ad4",
+      "page": "Research-scaling-design",
+      "page_sha256": "73f9665b0d8d0337d6946d7c3c55aa9240d7e6cfd30951e7dce5c8395b2c3bc0",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-scaling-design",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/sealing-pipeline-model.md",
+      "source_sha256": "99e8b2260dab73598593fab2be9678b5b9c659520cf49f99f54f116595e6cb62",
+      "page": "Research-sealing-pipeline-model",
+      "page_sha256": "bb897bb20c629358a21dbd5b87b563207297b65736c8119dc61fa96de977eec0",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-sealing-pipeline-model",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/storage-direction.md",
+      "source_sha256": "537d3d655a1d307115d75ba688af66a546aa4480437c3749307d886b77cdd822",
+      "page": "Research-storage-direction",
+      "page_sha256": "7447aa63b1f25b642f3a7047fe3c730adc3e6d33de523185c48f6a1032e1564d",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-storage-direction",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/storage-prior-art.md",
+      "source_sha256": "323552685328814e1baf883640b8ecbc5da5f6dde62b9e20954fded30b04bafe",
+      "page": "Research-storage-prior-art",
+      "page_sha256": "7a40afab53d56684be59de2a08d77f5cf3c01e404921d6824b3854ec2faea04e",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-storage-prior-art",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/turso-source-review.md",
+      "source_sha256": "b1ea46418d7318eb5712535a0ce0cebfee379f03db035635a08147a2b4e03739",
+      "page": "Research-turso-source-review",
+      "page_sha256": "f9984b30c7d29fc5d5850a0597be7339c0fcfc03edd227b263efb4845b4b9956",
+      "normalizations": {
+        "FabricO11y": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-turso-source-review",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/research/workload-sizing.md",
+      "source_sha256": "67b7dfc48bf08eb11d415ae3f7fc44782ba8f799c6ac2744df0f57cc8458a5c4",
+      "page": "Research-workload-sizing",
+      "page_sha256": "64f1dab0ed189941f8cc4377f2ee0bfe3d877a42d634e6177b3e2fb1beb53b3c",
+      "normalizations": {},
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Research-workload-sizing",
+      "repository_state": "compatibility_pointer"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-borrowed-log-design.md",
+      "source_sha256": "97e8098859e0f56fe34a6fff1fd8945d6deeef5dd485f7a41c82618ff6de99f4",
+      "page": "Experiment-benchmarks-catalog-borrowed-log-design",
+      "page_sha256": "a536856810d9d1ab33987eed80cb9bff3827d3db2658ec17ac1937601023242a",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-borrowed-log-design",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-labs-capacity.md",
+      "source_sha256": "860bab49ac29fb50d3bf44c109da8ea1ef8a3f50f1503c2cab01cdd9bbb2d3a0",
+      "page": "Experiment-benchmarks-catalog-labs-capacity",
+      "page_sha256": "01e311adb94f56ca974ee6cad7df8f11abcd9d02caeff6b88be527875e372e85",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-labs-capacity",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-labs-operations.md",
+      "source_sha256": "5bf395d35f9a1cf37c41ecea726f28453a84df2a5dcb6139907aa12b2bdfdf9e",
+      "page": "Experiment-benchmarks-catalog-labs-operations",
+      "page_sha256": "3fe18767c743f4b490a7dac18034a1a574a5c6a05ab12019b63ee7a726c4e86a",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-labs-operations",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-labs-query.md",
+      "source_sha256": "2cbf1b4ebb81808de79d890778a2bb966b60ebe26485bf0ceb184ea3df42ecce",
+      "page": "Experiment-benchmarks-catalog-labs-query",
+      "page_sha256": "38cd1614b53c62b74df7309040a5b73c59c19a12c5a5fe25ea6228414d227655",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-labs-query",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-mixed-failure-cleanup.md",
+      "source_sha256": "28bdb19f55562c89d394ddcf50ea260188f2fcafc4bba314f754c1f62db13c10",
+      "page": "Experiment-benchmarks-catalog-mixed-failure-cleanup",
+      "page_sha256": "019738f519d30b1c40b72bfa66116916bb03444fff0852b931d8a4f61e6c1152",
+      "normalizations": {
+        "data_drive_prefix": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-catalog-mixed-failure-cleanup",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-capacity-completion-readiness.md",
+      "source_sha256": "c4d5b4223e7db6cdff6a65111de7a305f4ef1d0f8432b90ac3334bce7b08d421",
+      "page": "Experiment-benchmarks-coupled-capacity-completion-readiness",
+      "page_sha256": "96b7ad0a1e0d7429ed9c13afd9c64b11558617bfff00550396d4754f75a940cd",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-capacity-completion-readiness",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-completion-plan.md",
+      "source_sha256": "84053110e6fce00e2cd2743d45d2072d0d0848d36051ac114c01735fe453429f",
+      "page": "Experiment-benchmarks-coupled-completion-plan",
+      "page_sha256": "021c5dc83a1ca576201db71c52a69c72a9256cc3fc192ef7cd331391b1d699d4",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-completion-plan",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-labs-capacity.md",
+      "source_sha256": "d11279ff5c8b6253a911262ba20eb1508889a69618459c7ce3beede2015e4b74",
+      "page": "Experiment-benchmarks-coupled-labs-capacity",
+      "page_sha256": "3f45d68f1313477ef230bda701c62112c818f02c424da1c36b5404a4d018bf5a",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-labs-capacity",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-labs-operations.md",
+      "source_sha256": "76702842f519029d226c1c098516a52650fb6761d2438e34da7f3430ad988b7a",
+      "page": "Experiment-benchmarks-coupled-labs-operations",
+      "page_sha256": "6123a77edbbf1528b1b799a4497a0be39d000029cab49b364b443ac17141dd2f",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-labs-operations",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-labs-plan.md",
+      "source_sha256": "4ff5ed94cc218a34bd41d47ab4056282df01535b009e3a09ed9f18a731d9719f",
+      "page": "Experiment-benchmarks-coupled-labs-plan",
+      "page_sha256": "49c659768f99baa4656d41c5f0c2c1f32baec448c92584fe036ac6c484a797e6",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-labs-plan",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-labs-query.md",
+      "source_sha256": "1b3188e689e5f4932d601b8c5a20dff3684725f036b27fc18f9b3158f1a01967",
+      "page": "Experiment-benchmarks-coupled-labs-query",
+      "page_sha256": "ee5d6fb3ac93082b0eff893412bbcddc8e848f9faf0d4b96dfb7db46fee1aa69",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-labs-query",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-operations-completion-readiness.md",
+      "source_sha256": "e5e9c2762fee8f867b8e624ef4f0717168ab51f6e852fe8317fa5b39eb2a5b08",
+      "page": "Experiment-benchmarks-coupled-operations-completion-readiness",
+      "page_sha256": "2ed38262bfb06ad38f97f51b588c071e66bb34dc8407e996864bed01dc4358cb",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-operations-completion-readiness",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-operations-preparation.md",
+      "source_sha256": "790fe9af4cf12ada7f9d8b58961e52ab412561c747f18413cf83b64a68969342",
+      "page": "Experiment-benchmarks-coupled-operations-preparation",
+      "page_sha256": "297c7d112084886aa2ada8efd648da51d294e5b8c79d516fcd79fccf3f30fb1a",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-operations-preparation",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-query-completion-readiness.md",
+      "source_sha256": "f2e2ed360080a252575ce15913e171eaffce30ec07ac267c7b23c141583f2e5c",
+      "page": "Experiment-benchmarks-coupled-query-completion-readiness",
+      "page_sha256": "8f6389bf4ce0aa4bc9f370e516eed30dda59908fbeb4bbbc9ba5e0eda5b49b00",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-query-completion-readiness",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-query-preparation.md",
+      "source_sha256": "3f9016b7145a0c14dd6850ba7a1f89d03a61b5c5c9e507005b1c8f95337f7256",
+      "page": "Experiment-benchmarks-coupled-query-preparation",
+      "page_sha256": "19cf667ef1f3ffd00355519aa1a2cda11e2b6507b05444aa7ab48429116e109a",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-coupled-query-preparation",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/performance-frontier-admission-01.md",
+      "source_sha256": "5b3fcb4e6ca1d3941371e8f06db5979e77b3a07ebb953502cd579e2714cd316b",
+      "page": "Experiment-benchmarks-performance-frontier-admission-01",
+      "page_sha256": "b04703ab6a35f459419cfd80aa2e0cf0907ec84f27993c90d3ebe041e14a63e5",
+      "normalizations": {
+        "data_drive_prefix": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-performance-frontier-admission-01",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/performance-frontier-lab-plan.md",
+      "source_sha256": "e4bac0870a3992df096779fe9f0d0f23f94dcdebd1bd21c453fe4c0d99133d57",
+      "page": "Experiment-benchmarks-performance-frontier-lab-plan",
+      "page_sha256": "a51081ef90799f4d79f28bc8d87309f0f263051839e3a0b230546d481c2a49ee",
+      "normalizations": {
+        "data_drive_prefix": 1
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-performance-frontier-lab-plan",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/performance-frontier-labs/capacity.md",
+      "source_sha256": "5d1112030ba0aabde68882f491ca6554e0b508687bcff944b1c37f9fa07e799b",
+      "page": "Experiment-benchmarks-performance-frontier-labs-capacity",
+      "page_sha256": "b040e6aff387de7e7716d822947b9d5c457727d94126cb04642e3ca9f12780dc",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-performance-frontier-labs-capacity",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/performance-frontier-labs/operations.md",
+      "source_sha256": "483e61ce7316ce98163355b8b12c1f9cc5151a183f76ddc72bb35991e93e6747",
+      "page": "Experiment-benchmarks-performance-frontier-labs-operations",
+      "page_sha256": "f59083bdc8eec407abbb5b78a7127cdf509304815d69173606fd509b6bb3137d",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-performance-frontier-labs-operations",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/benchmarks/performance-frontier-labs/query.md",
+      "source_sha256": "29be35ee90cc4c9ef93766ed000306be1054badb05167c3b28e315bcacfa8638",
+      "page": "Experiment-benchmarks-performance-frontier-labs-query",
+      "page_sha256": "1a0f61eca0569258aec66275a870739af9872815104488878e6afc842a4e43e5",
+      "normalizations": {
+        "data_drive_prefix": 0
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-performance-frontier-labs-query",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/formal/invariant-consolidation.md",
+      "source_sha256": "05c8798da1c485079c6b061cf6877fad869583733caac04f8f9034aede13ace1",
+      "page": "Experiment-formal-invariant-consolidation",
+      "page_sha256": "ad28a91005a90c00fb3be535832ac25c185af4c7601600ff843aea1a471999c6",
+      "normalizations": {
+        "data_drive_prefix": 2
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-invariant-consolidation",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d"
+    },
+    {
+      "source": "docs/experiments/formal/installation-release-run-01.md",
+      "source_sha256": "6636c6e5c05f5160dca4d01c87ded9756e424a8aa043f1cb8677ccbb7598904c",
+      "page": "Experiment-formal-installation-release-run-01",
+      "page_sha256": "733b7e025f4394f0df6d0fe34ba780bdb0225abb6cf3cc8ae5658bf135ed3e28",
+      "normalizations": {
+        "relative_links": true,
+        "data_drive_prefix": true
+      },
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-release-run-01",
+      "repository_state": "compatibility_pointer",
+      "published_wiki_commit": "3cecc10d988c012aea21628f43b76f1e6cc0fe67"
+    }
+  ],
+  "migration_batches": [
+    {
+      "published_wiki_commit": "9d171d0b887f04879b1899621cb0c422bcd4214d",
+      "report_count": 21,
+      "source_paths": [
+        "docs/experiments/benchmarks/catalog-borrowed-log-design.md",
+        "docs/experiments/benchmarks/catalog-labs-capacity.md",
+        "docs/experiments/benchmarks/catalog-labs-operations.md",
+        "docs/experiments/benchmarks/catalog-labs-query.md",
+        "docs/experiments/benchmarks/catalog-mixed-failure-cleanup.md",
+        "docs/experiments/benchmarks/coupled-capacity-completion-readiness.md",
+        "docs/experiments/benchmarks/coupled-completion-plan.md",
+        "docs/experiments/benchmarks/coupled-labs-capacity.md",
+        "docs/experiments/benchmarks/coupled-labs-operations.md",
+        "docs/experiments/benchmarks/coupled-labs-plan.md",
+        "docs/experiments/benchmarks/coupled-labs-query.md",
+        "docs/experiments/benchmarks/coupled-operations-completion-readiness.md",
+        "docs/experiments/benchmarks/coupled-operations-preparation.md",
+        "docs/experiments/benchmarks/coupled-query-completion-readiness.md",
+        "docs/experiments/benchmarks/coupled-query-preparation.md",
+        "docs/experiments/benchmarks/performance-frontier-admission-01.md",
+        "docs/experiments/benchmarks/performance-frontier-lab-plan.md",
+        "docs/experiments/benchmarks/performance-frontier-labs/capacity.md",
+        "docs/experiments/benchmarks/performance-frontier-labs/operations.md",
+        "docs/experiments/benchmarks/performance-frontier-labs/query.md",
+        "docs/experiments/formal/invariant-consolidation.md"
+      ],
+      "archive_location": "$FABRIC_DATA/results/wiki-stage-02/original-reports.tar.gz",
+      "original_archive_sha256": "e7a17947f68cac7d17b74c8169b3923c18f13a0bddb4668a7b02905be9d86962",
+      "raw_assets_uploaded": 0,
+      "publication_receipt": "$FABRIC_DATA/results/wiki-stage-02/publication-receipt.json"
+    },
+    {
+      "published_wiki_commit": "3cecc10d988c012aea21628f43b76f1e6cc0fe67",
+      "report_count": 1,
+      "source_paths": [
+        "docs/experiments/formal/installation-release-run-01.md"
+      ],
+      "archive_location": "$FABRIC_DATA/results/wiki-stage-03/original-reports.tar.gz",
+      "original_archive_sha256": "d9b1bfc80cc2af13a933c0f12260b2858b91fde170cb73fcce9c19a7c6733795",
+      "raw_assets_uploaded": 0,
+      "publication_receipt": "$FABRIC_DATA/results/wiki-stage-03/publication-receipt.json"
+    }
+  ],
+  "repository_retention_notes": [
+    {
+      "source": "docs/experiments/benchmarks/storage-catalog-rust-lab-plan.md",
+      "reason": "machine-consumed input; original bytes retained",
+      "consumers": [
+        "tools/bench/labs/completion/run_job.py"
+      ],
+      "source_sha256": "49fef0c028c709e0929df6c707c3b5b8458df086bb631973f2afc303d2c99f05"
+    },
+    {
+      "source": "docs/experiments/benchmarks/dev-small-readiness-plan.md",
+      "reason": "machine-consumed input; original bytes retained",
+      "consumers": [
+        "tools/bench/labs/readiness/run_job.py"
+      ],
+      "source_sha256": "248aa5cc7b8c3a44bc2bbf584c17d31689e71a4d0591903bf00781d0bb0dee69"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-capacity-preparation.md",
+      "reason": "machine-consumed input; original bytes retained",
+      "consumers": [
+        "tools/bench/labs/catalog/coupled_borrowed.py"
+      ],
+      "source_sha256": "42de848f70bd520ce3026755570249d219482af2626c3c68e3de2f72cd431e27"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-evidence-attribution-protocol.md",
+      "reason": "Withdrawn draft protocol; preserve its unchanged rejection and decision rules with the executable campaign.",
+      "source_sha256": "9fb4aa2af9bc413e811238cd3bc19d3344112e918d4c251ee70987314e58adbe"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-service-confirmation-protocol.md",
+      "reason": "Draft executable confirmation procedure; versioned procedure remains in repository.",
+      "source_sha256": "4f308fe48cddce753a3b7c7d50291b2f72cf6b2020f2b700416f7eddbea172c3"
+    },
+    {
+      "source": "docs/experiments/benchmarks/dev-small-observation-protocol.md",
+      "reason": "Registered measurement protocol; specification protection applies.",
+      "source_sha256": "6a5a2eecce46228ea53a1a387255bd5435178dad1a1c9f9e7746b1d6c44c528c"
+    },
+    {
+      "source": "docs/experiments/benchmarks/query-frontier-protocol.md",
+      "reason": "Draft executable measurement protocol; procedure and decision rules remain versioned.",
+      "source_sha256": "c1e01c002aad3833aaf476e458dae464e5919c6d56848eb1e8d3b2a8d108c31f"
+    },
+    {
+      "source": "docs/experiments/benchmarks/rca-flow-design.md",
+      "reason": "Mixed record defines synthetic scenarios and negative-control expectations; executable verification input remains versioned.",
+      "source_sha256": "f7dbab8a35c032b24739cfecda3fe9a3b3a9aee0f2469423e84ac709a2a1a8c1"
+    },
+    {
+      "source": "docs/experiments/benchmarks/remote-reducer-shadow-counterexample.md",
+      "reason": "Minimized deterministic regression origin/reproducer; preserve counterexample alongside diagnostic tooling.",
+      "source_sha256": "f41c678ebf3a6f0f69e8d8447ee1d66f523acf5db1ccf946b75d319fb25879f0"
+    },
+    {
+      "source": "docs/experiments/lab-orchestration.md",
+      "reason": "Adopted executable coordination procedure; repository remains canonical.",
+      "source_sha256": "1bf5e53556aa9d9134a7aed0e5f9b41d7afdac3c4a6236815273929282bba069"
+    }
+  ],
+  "direct_publications": [
+    {
+      "page": "Experiment-benchmarks-scoped-evidence-cache-run-01",
+      "page_sha256": "791aec6ced6073d2812377dce97e381094e6ecf29476168a692b9f876e9a6bd7",
+      "draft_sha256": "dc951703f9a156d2102dfbc827c91a4b7e82036dfa122e55177f63f6e6235cc4",
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-scoped-evidence-cache-run-01",
+      "repository_state": "direct_canonical_publication",
+      "published_wiki_commit": "3cecc10d988c012aea21628f43b76f1e6cc0fe67",
+      "source": "docs/experiments/benchmarks/scoped-evidence-cache-run-01.md"
+    },
+    {
+      "page": "Experiment-benchmarks-production-access-campaign-run-01",
+      "page_sha256": "15b2f2f66782e297c2c46e1b9accc6f6432a48cc7f6a9557e1f69fa4781951f7",
+      "draft_sha256": "15b2f2f66782e297c2c46e1b9accc6f6432a48cc7f6a9557e1f69fa4781951f7",
+      "wiki_url": "https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-production-access-campaign-run-01",
+      "repository_state": "direct_canonical_publication",
+      "published_wiki_commit": "3cecc10d988c012aea21628f43b76f1e6cc0fe67",
+      "source": "docs/experiments/benchmarks/production-access-campaign-run-01.md"
+    }
+  ]
+}

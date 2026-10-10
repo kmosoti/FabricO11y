@@ -1,0 +1,12 @@
+flowchart LR
+    Assets[Packaged public shell] --> Views[Leptos browser views]
+    Assets --> Cache[Allowlisted offline shell cache]
+    Fixture[Explicit synthetic demonstration] --> Model[Pure request tail and chart models]
+    Model --> Views
+    Views --> Controls[Source signal trace and access controls]
+    Controls --> Client[Serialized bounded browser adapter]
+    Client --> Policy[Server session scope and CSRF enforcement]
+    Policy --> History[Scoped journal and Segment query]
+    Policy --> Control[Durable control access and audit]
+    History --> Projection[Exact integer rows and evidence]
+    Projection --> Views

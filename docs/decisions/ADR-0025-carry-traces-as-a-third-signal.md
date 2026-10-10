@@ -18,7 +18,9 @@ Fabric carried host metrics and file logs. The contract excluded traces and trac
 
 **Query.** `{"kind":"spans","node":N?,"from_ns":A,"to_ns":B,"trace_id":T?,"name":S?,"limit":L,"page":P?}` returns span rows with `start_ns` in `[A, B)`, from node `N`, with trace ID `T` and name `S` exactly when given, in the order above, paginated like logs. Freshness counts span start times. Both query plans answer it; the walk orders tail entries, tail blocks and row groups by their lowest start time and skips row groups and blocks whose filter lacks the trace ID.
 
-**Throughput.** The Spindle's per-pass collection limits rise (8,192 lines and 1 MiB per file, 768 KiB of bodies per Batch, encoding overhead counted against the cap) and a pass that leaves a backlog is followed by another once delivery catches up. The server seals journal files on several threads, committing Segments in journal order.
+**Throughput.** The Spindle's per-pass collection limits rise (8,192 lines and 1 MiB per file, 768 KiB of bodies per Batch, encoding overhead counted against the cap) and a pass that leaves a backlog is followed by another once delivery catches up. The server seals journal files on several threads; Segment publication may complete out of order, while journal reclamation proceeds strictly oldest first.
+
+Implementation clarification: the earlier wording, “committing Segments in journal order,” conflated publication with reclaim. At `5f0c52f`, each worker calls `segment::build` independently and the sealer later reclaims in label order. The [journal-reclaim investigation](../milestones/journal-reclaim-progress.md) changes when the contiguous published prefix is reclaimed, preserving the existing publication, checkpoint and deletion semantics.
 
 **Distribution.** The package declares its dependencies from the binaries (`dpkg-shlibdeps`) and the oldest systemd whose features the units use, and a check fails if a binary needs glibc newer than 2.34.
 

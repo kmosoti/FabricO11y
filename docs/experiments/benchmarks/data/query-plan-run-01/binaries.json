@@ -1,0 +1,6 @@
+{
+  "fabric-server": "4303294fab100b0bc01c4964e8a86f1b3b229826bda5d79aa0487d08f3cbf7d5",
+  "fabric-node": "96608ffd0f19cbb6b50fcca506dac544eba2cc3bd37c0b3152ef2d53b84f3b23",
+  "examples/server_dump": "2e65765141df3a8d1725268a2fc835406d6f767780ca064dda85c35751c586e9",
+  "examples/lab_history_seed": "81e4710e74b926a9b083d4c7e70dc6807cad8638fca43c54e9d376e68be67b4a"
+}

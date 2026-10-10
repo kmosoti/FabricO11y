@@ -1,0 +1,221 @@
+{
+  "format": "fabric-private-evidence-references-v1",
+  "references": [
+    {
+      "source": "docs/experiments/benchmarks/catalog-boundary-protocol.md",
+      "source_sha256": "edbc48568c5f36263cad448028cab9c81930716179e7143c99786830680c3570",
+      "target": "docs/experiments/benchmarks/data/catalog-preboundary-build-01/receipt.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-boundary-protocol.md",
+      "source_sha256": "edbc48568c5f36263cad448028cab9c81930716179e7143c99786830680c3570",
+      "target": "docs/experiments/benchmarks/data/catalog-preboundary-build-02/receipt.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-many-segment-query-correction-protocol.md",
+      "source_sha256": "ae43af5fb8a0c2d7027b4e4ff88abfb3f11a4882beef866b0ae6e5ccbce0f621",
+      "target": "docs/experiments/benchmarks/data/catalog-many-segment-run-01/S-64-R-1-plain-p-1/failure.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-owned-append-protocol.md",
+      "source_sha256": "d1c44dda8b45cfcbb4416513573bc3222a96e8a334eabf332ddc0eb32adf372a",
+      "target": "docs/experiments/benchmarks/data/catalog-delivery-read-01/probe-comparison.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-owned-append-protocol.md",
+      "source_sha256": "d1c44dda8b45cfcbb4416513573bc3222a96e8a334eabf332ddc0eb32adf372a",
+      "target": "docs/experiments/benchmarks/data/catalog-delivery-read-01/source/src/spindle/spool.rs",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-range-evidence-findings.md",
+      "source_sha256": "9948b6aad9b20a395e854daa733e9c6b631ebc84728f3440fbc64bd9b6de2a15",
+      "target": "docs/experiments/benchmarks/data/catalog-range-borrowed-01/summary.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-range-evidence-findings.md",
+      "source_sha256": "9948b6aad9b20a395e854daa733e9c6b631ebc84728f3440fbc64bd9b6de2a15",
+      "target": "docs/experiments/benchmarks/data/catalog-range-closeout-01/receipt.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-range-evidence-findings.md",
+      "source_sha256": "9948b6aad9b20a395e854daa733e9c6b631ebc84728f3440fbc64bd9b6de2a15",
+      "target": "docs/experiments/benchmarks/data/catalog-range-evidence-checks-01/receipt.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-range-evidence-findings.md",
+      "source_sha256": "9948b6aad9b20a395e854daa733e9c6b631ebc84728f3440fbc64bd9b6de2a15",
+      "target": "docs/experiments/benchmarks/data/catalog-range-evidence-fixed-01/summary.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-range-evidence-findings.md",
+      "source_sha256": "9948b6aad9b20a395e854daa733e9c6b631ebc84728f3440fbc64bd9b6de2a15",
+      "target": "docs/experiments/benchmarks/data/catalog-range-evidence-screen-01/summary.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-range-evidence-findings.md",
+      "source_sha256": "9948b6aad9b20a395e854daa733e9c6b631ebc84728f3440fbc64bd9b6de2a15",
+      "target": "docs/experiments/benchmarks/data/lab-completion-run-01/coordinator/catalog-range-borrowed-01/receipt.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-range-evidence-findings.md",
+      "source_sha256": "9948b6aad9b20a395e854daa733e9c6b631ebc84728f3440fbc64bd9b6de2a15",
+      "target": "docs/experiments/benchmarks/data/lab-completion-run-01/coordinator/catalog-range-closeout-02/receipt.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-range-evidence-findings.md",
+      "source_sha256": "9948b6aad9b20a395e854daa733e9c6b631ebc84728f3440fbc64bd9b6de2a15",
+      "target": "docs/experiments/benchmarks/data/lab-completion-run-01/coordinator/catalog-range-evidence-fixed-01/receipt.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-range-evidence-findings.md",
+      "source_sha256": "9948b6aad9b20a395e854daa733e9c6b631ebc84728f3440fbc64bd9b6de2a15",
+      "target": "docs/experiments/benchmarks/data/lab-completion-run-01/coordinator/catalog-range-evidence-screen-01/receipt.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/catalog-small-binding-protocol.md",
+      "source_sha256": "50ed6bde5694a1d9065dd1785bd700f6648acf91dc9168f317f51c4ef139b09b",
+      "target": "docs/experiments/benchmarks/data/catalog-algorithm-round-01/summary.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-c5-preservation-review.md",
+      "source_sha256": "e50105b705d8e404e510df98e05ac1637d1768514864abde8206dc70bc464d27",
+      "target": "docs/experiments/benchmarks/data/catalog-borrowed-c5-run-01/admission-only.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-c5-preservation-review.md",
+      "source_sha256": "e50105b705d8e404e510df98e05ac1637d1768514864abde8206dc70bc464d27",
+      "target": "docs/experiments/benchmarks/data/catalog-borrowed-c5-run-01/projection.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/coupled-reclamation-protocol.md",
+      "source_sha256": "def828de6be4cb7990c0c441bd49a2c9dbc7b259495d8cbfde671b5e9145d9c2",
+      "target": "docs/experiments/benchmarks/data/catalog-overlap-freeze-01/freeze.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-continuation-findings.md",
+      "source_sha256": "5ce22f6cfefaab1ef8dd292d1254fe34f9d10554e0b2e054bb719e54d8decb23",
+      "target": "docs/experiments/benchmarks/data/cross-system-run-01/coordinator",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-continuation-findings.md",
+      "source_sha256": "5ce22f6cfefaab1ef8dd292d1254fe34f9d10554e0b2e054bb719e54d8decb23",
+      "target": "docs/experiments/benchmarks/data/cross-system-run-01/coordinator/cleanup-1791499378565043382.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-continuation-findings.md",
+      "source_sha256": "5ce22f6cfefaab1ef8dd292d1254fe34f9d10554e0b2e054bb719e54d8decb23",
+      "target": "docs/experiments/benchmarks/data/cross-system-run-01/coordinator/final-docs-02/receipt.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-continuation-findings.md",
+      "source_sha256": "5ce22f6cfefaab1ef8dd292d1254fe34f9d10554e0b2e054bb719e54d8decb23",
+      "target": "docs/experiments/benchmarks/data/cross-system-run-01/coordinator/final-fast-01/receipt.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-continuation-findings.md",
+      "source_sha256": "5ce22f6cfefaab1ef8dd292d1254fe34f9d10554e0b2e054bb719e54d8decb23",
+      "target": "docs/experiments/benchmarks/data/cross-system-run-01/coordinator/source-checks-01/receipt.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-continuation-findings.md",
+      "source_sha256": "5ce22f6cfefaab1ef8dd292d1254fe34f9d10554e0b2e054bb719e54d8decb23",
+      "target": "docs/experiments/benchmarks/data/cross-system-run-01/memory/census-02/complete.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-continuation-findings.md",
+      "source_sha256": "5ce22f6cfefaab1ef8dd292d1254fe34f9d10554e0b2e054bb719e54d8decb23",
+      "target": "docs/experiments/benchmarks/data/cross-system-run-01/memory/census-03/complete.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-continuation-findings.md",
+      "source_sha256": "5ce22f6cfefaab1ef8dd292d1254fe34f9d10554e0b2e054bb719e54d8decb23",
+      "target": "docs/experiments/benchmarks/data/cross-system-run-01/operations/prefix-load-04/receipt.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-continuation-findings.md",
+      "source_sha256": "5ce22f6cfefaab1ef8dd292d1254fe34f9d10554e0b2e054bb719e54d8decb23",
+      "target": "docs/experiments/benchmarks/data/cross-system-run-01/query/census-01/cleanup.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-continuation-findings.md",
+      "source_sha256": "5ce22f6cfefaab1ef8dd292d1254fe34f9d10554e0b2e054bb719e54d8decb23",
+      "target": "docs/experiments/benchmarks/data/cross-system-run-01/query/census-borrowed-01/cleanup.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-continuation-findings.md",
+      "source_sha256": "5ce22f6cfefaab1ef8dd292d1254fe34f9d10554e0b2e054bb719e54d8decb23",
+      "target": "docs/experiments/benchmarks/data/cross-system-run-01/report.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/cross-system-continuation-findings.md",
+      "source_sha256": "5ce22f6cfefaab1ef8dd292d1254fe34f9d10554e0b2e054bb719e54d8decb23",
+      "target": "docs/experiments/benchmarks/data/cross-system-run-01/resource-summary.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/rca-flow-design.md",
+      "source_sha256": "f7dbab8a35c032b24739cfecda3fe9a3b3a9aee0f2469423e84ac709a2a1a8c1",
+      "target": "docs/experiments/benchmarks/data/hammer-reference-01/coordinator/rca-preparation-01/receipt.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/rca-flow-design.md",
+      "source_sha256": "f7dbab8a35c032b24739cfecda3fe9a3b3a9aee0f2469423e84ac709a2a1a8c1",
+      "target": "docs/experiments/benchmarks/data/hammer-reference-01/query/rca-preparation-01/result.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/remote-reducer-shadow-counterexample.md",
+      "source_sha256": "f41c678ebf3a6f0f69e8d8447ee1d66f523acf5db1ccf946b75d319fb25879f0",
+      "target": "docs/experiments/benchmarks/data/hammer-reference-01/query/remote-reduce-eight-02/remote-reduction.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/experiments/benchmarks/remote-reducer-shadow-counterexample.md",
+      "source_sha256": "f41c678ebf3a6f0f69e8d8447ee1d66f523acf5db1ccf946b75d319fb25879f0",
+      "target": "docs/experiments/benchmarks/data/hammer-reference-01/query/remote-reduce-two-02/remote-reduction.json",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/research/cross-system-source-synthesis.md",
+      "source_sha256": "1aa6e2748af7f23acc6151e895602afb72d37afd08aabcdc7231c80427ba50dd",
+      "target": "docs/experiments/benchmarks/data/cross-system-run-01/source",
+      "status": "private_unavailable_not_validated"
+    },
+    {
+      "source": "docs/research/cross-system-source-synthesis.md",
+      "source_sha256": "1aa6e2748af7f23acc6151e895602afb72d37afd08aabcdc7231c80427ba50dd",
+      "target": "docs/experiments/benchmarks/data/cross-system-sweep-01/source",
+      "status": "private_unavailable_not_validated"
+    }
+  ]
+}

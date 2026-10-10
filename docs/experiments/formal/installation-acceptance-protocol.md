@@ -1,6 +1,6 @@
 # Registered running-installation acceptance
 
-Status: registered on 2026-09-28 in the Linux-installation milestone, before any acceptance run. Three development runs of the harness preceded this registration; they fixed the harness and are not results. Results go in a separate run record. This protocol turns the acceptance list of the [installation contract](../../PRODUCT-CONTRACT.md#linux-installation-contract) into checks with pass rules. It changes no unit, directive or default.
+Status: revision 1 registered on 2026-09-28 in the Linux-installation milestone, before any acceptance run. Revision 2 was registered on 2026-10-09 after the first unified-cgroup VM run showed that the historical A12 tail stimulus timed out below both hard limits. Results remain in separate run records. This protocol turns the acceptance list of the [installation contract](../../PRODUCT-CONTRACT.md#linux-installation-contract) into checks with pass rules. It changes no shipped unit, directive or default.
 
 ## Environment
 
@@ -65,22 +65,32 @@ The package is built by [`packaging/build-deb.sh`](../../../packaging/build-deb.
 
 The check passes when the outage line arrives within 90 s and the earlier line is still answered.
 
-**A12 detail.** The check runs these steps inside `system-fabrico11y.slice`:
+**A12 detail.** The check runs these steps inside `system-fabrico11y.slice`. The acceptance script accepts `--memory-stressor tail|parallel`; `tail` remains the default and preserves revision 1 behavior. The registered unified-cgroup VM rerun selects `parallel` explicitly with `run-qemu.py --memory-stressor parallel`. A run records the selected fixture and its source hash in both the acceptance output and VM receipt. The `parallel` fixture is not used on the legacy hierarchy; there A12 remains the historical tail test and its legacy SIGKILL rule below applies.
 
-1. It starts a transient unit that allocates memory without bound (`tail /dev/zero`) under the node's own limits (`MemoryHigh=128M`, `MemoryMax=256M`, `TasksMax=128`).
-2. It starts a second hog that is bounded only by the slice.
-3. It starts a `bash` process tree that tries to start 300 tasks under `TasksMax=128`. Sampled `TasksCurrent` must peak between 100 and 128, and fork failures must be logged.
+For the registered `parallel` fixture (unified cgroup v2 only):
+
+1. A bounded positive control runs a 32 MiB `MAP_POPULATE` allocation under the node's limits (`MemoryHigh=128M`, `MemoryMax=256M`, `TasksMax=128`). It must exit successfully, and sampled `MemoryCurrent` must reach at least 24 MiB while remaining below `MemoryHigh`.
+2. Each memory hog runs 96 workers in one transient unit. Given hard limit `L` and page size `P`, each worker maps and dirties `P * ceil(ceil(2L/96)/P)` private anonymous bytes, then holds them. That requests slightly more than twice the hard limit: 5,595,136 bytes per worker for the node's 256 MiB limit, and 72,704,000 bytes per worker for the slice's 3328 MiB limit. The count stays within the node's 128-task cap. Every fixture cgroup has `MemorySwapMax=0`; the helper checks the effective inherited `memory.high`, `memory.max`, `memory.swap.max` and `pids.max` before allocating. Each hog has `RuntimeMaxSec=300` and `OOMPolicy=kill`, so systemd must report `Result=oom-kill`. The acceptance script samples the stable parent slice's hierarchical `memory.events` before and after each hog and requires positive deltas for `max` and `oom_group_kill`; a high-threshold stall, timeout or other kill cannot substitute. This transient-unit response does not alter either service's resource policy. The [Debian systemd 257 service documentation](https://manpages.debian.org/trixie/systemd/systemd.service.5.en.html) describes `OOMPolicy=kill` and its `memory.oom.group` behavior; the [kernel cgroup v2 documentation](https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files) defines the memory event counters.
+3. It starts the existing `bash` process tree that tries to start 300 tasks under `TasksMax=128`. Sampled `TasksCurrent` must peak between 100 and 128, and fork failures must be logged.
+
+The historical `tail` fixture performs the same two memory-hog and task-tree steps as revision 1. It remains available for compatibility and is not evidence for the revised parallel fixture.
+
+The successful positive-control unit uses `Type=exec` and `RemainAfterExit=yes`
+until its exit status and samples have been collected, then is explicitly
+stopped. This prevents successful transient-unit garbage collection from erasing
+the evidence; the sampling loop requires `SubState=exited` within its deadline.
+See [systemd-run](https://manpages.debian.org/trixie/systemd/systemd-run.1.en.html).
 
 For each hog, `MemoryCurrent` is sampled every 0.2 s and must never exceed the limit, and the kernel must kill the hog:
 
 - on the unified hierarchy, `Result=oom-kill`;
 - on the legacy hierarchy, where systemd cannot observe OOM events, `Result=signal` with status 9 before `RuntimeMaxSec=300`.
 
-The check passes when, after all three, both services are active with unchanged `NRestarts` and a new log line is still delivered.
+The check passes when the selected fixture's positive control succeeds (parallel only), both memory hogs satisfy their limit and OOM-result rules, the task tree satisfies its peak/fork-failure rule, and both services remain active with unchanged `NRestarts` while a new log line is delivered.
 
 ## Negative controls
 
-`run.sh --mutate <name>` injects one packaging defect before the run. Each must fail at least its named check:
+`run-qemu.py --mutate <name>` injects one packaging defect before the local VM run (`run.sh --mutate <name>` remains available for the container path). The runner records the original and mutated package hashes, the expected failed check IDs, the observed failed IDs and whether the named rejection was confirmed. It returns success for a mutation trial only if the acceptance script exits 1, every named check below is observed failed, and no check is `NOT-RUN`; an unrelated failure alone never counts as a rejected mutation.
 
 | Mutation | Defect | Must fail |
 | --- | --- | --- |
@@ -93,7 +103,7 @@ The check passes when, after all three, both services are active with unchanged 
 **Pass.** The running installation passes when both of these hold:
 
 - the unmutated package passes every check (exit 0) on a unified-hierarchy host;
-- each mutation fails its named check.
+- each mutation is rejected at its named check, as confirmed by the runner's grading receipt.
 
 **Inconclusive.** On a legacy-hierarchy host with no check failed (exit 3), the result is **Inconclusive**. Everything else is shown, but `MemoryHigh` enforcement and the unified-hierarchy behavior the contract assumes are not.
 

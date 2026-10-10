@@ -1,0 +1,113 @@
+{
+  "jobs": [
+    {
+      "id": "allocation",
+      "exit": 1,
+      "service_state": "inactive",
+      "removed_bytes": 40096512,
+      "preserved_failure": "recovery/allocation-failure.tar.gz",
+      "scratch_removed": true
+    },
+    {
+      "id": "allocation-retry-01",
+      "exit": 1,
+      "service_state": "inactive",
+      "removed_bytes": 40096521,
+      "preserved_failure": "recovery/allocation-retry-01-failure.tar.gz",
+      "scratch_removed": true
+    },
+    {
+      "id": "allocation-retry-02",
+      "exit": 1,
+      "service_state": "inactive",
+      "removed_bytes": 1016113860,
+      "preserved_failure": "recovery/allocation-retry-02-failure.tar.gz",
+      "scratch_removed": true
+    },
+    {
+      "id": "audit-controls",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "compact-profile",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "consolidate",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "controls",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "dev-scan",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "dev-walk",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "fast-checks",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "native-build",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "preserve-profile",
+      "exit": 1,
+      "service_state": "inactive",
+      "removed_bytes": 0,
+      "preserved_failure": "recovery/preserve-profile-failure.tar.gz",
+      "scratch_removed": true
+    },
+    {
+      "id": "small-scan-1",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "small-scan-2",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "small-scan-3",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "small-walk-1",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "small-walk-2",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "small-walk-3",
+      "exit": 0,
+      "service_state": "inactive"
+    },
+    {
+      "id": "verify-profile-archive",
+      "exit": 0,
+      "service_state": "inactive"
+    }
+  ],
+  "shared_cache": "preserved",
+  "remote": "none"
+}

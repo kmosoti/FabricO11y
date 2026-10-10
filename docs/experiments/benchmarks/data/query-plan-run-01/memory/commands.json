@@ -1,0 +1,51 @@
+[
+  {
+    "argv": [
+      "cargo",
+      "build",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "fabric-server",
+      "--example",
+      "responsibility_probe"
+    ],
+    "exit": 0
+  },
+  {
+    "argv": [
+      "cargo",
+      "build",
+      "--offline",
+      "--locked",
+      "--release",
+      "-p",
+      "fabric-server",
+      "--example",
+      "responsibility_probe",
+      "--features",
+      "responsibility-alloc-probe,phase-probe"
+    ],
+    "exit": 0
+  },
+  {
+    "argv": [
+      "/run/media/kmosoti/data/FabricO11y/scratch/work-wi0biz60/memory/allocation/tmp/query-allocation-profile/bin/plain",
+      "/run/media/kmosoti/data/FabricO11y/scratch/work-wi0biz60/memory/allocation/tmp/query-allocation-profile/preflight-plain",
+      "query",
+      "1024"
+    ],
+    "exit": 0,
+    "bench_env": {
+      "BENCH_RECORDS": "128",
+      "BENCH_BODY_SIZE": "1024",
+      "BENCH_ORDER": "shuffled",
+      "BENCH_QUERY_REPEATS": "3",
+      "BENCH_OBSERVER": "minimal",
+      "BENCH_PREFLIGHT": "0",
+      "BENCH_QUERY_ROTATION": "0",
+      "BENCH_PHASES": "0"
+    }
+  }
+]

@@ -1,0 +1,12 @@
+{
+  "measurement_path": "/home/kmosoti/Projects/moiric/FabricO11y/tools/bench/labs/dev_small/measurement.py",
+  "measurement_sha256": "089ad74e37965c28c54fe95a16ab76ca85192301b19083eeed2a8ad63c9754ef",
+  "oracle_path": "/home/kmosoti/Projects/moiric/FabricO11y/tools/qualification/query_oracle.py",
+  "oracle_sha256": "fc696ee1173093c258ff4451c4a796dd8e5832761f9e0ff49f89a922b411d23a",
+  "recovered_sha256": "182f3706a283424b86b3c7bfbb53ce895bcdb37d0903584977dc38fb8636c482",
+  "verdict_file": "query-verdicts.json",
+  "quiescent_query_count": 3,
+  "negative_control_count": 2,
+  "seeded_sentinel_count": 0,
+  "note": "The archived final verdicts and missing/changed controls are from the unchanged Python oracle."
+}

@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
 const ownDir = path.dirname(fileURLToPath(import.meta.url));
 const candidate = path.resolve(process.argv[2] ?? path.join(ownDir, 'check.mjs'));
@@ -31,6 +32,17 @@ function fixture(root) {
   put(root, 'docs/architecture/graph.json', '{"nodes":[],"edges":[]}\n');
 }
 
+function privateReference(root, { sourceText, target, hash, count = 1 } = {}) {
+  const source = 'docs/README.md';
+  target ??= 'docs/experiments/benchmarks/data/private-run/receipt.json';
+  put(root, source, sourceText ?? '# Evidence\n\n[Private](experiments/benchmarks/data/private-run/receipt.json)\n');
+  const source_sha256 = hash ?? createHash('sha256').update(fs.readFileSync(path.join(root, source))).digest('hex');
+  put(root, 'docs/controlled-evidence-references.json', JSON.stringify({
+    format: 'fabric-private-evidence-references-v1',
+    references: Array.from({ length: count }, () => ({ source, source_sha256, target, status: 'private_unavailable_not_validated' })),
+  }));
+}
+
 function snapshot(base) {
   const entries = [];
   function visit(dir) {
@@ -48,6 +60,62 @@ function snapshot(base) {
 }
 
 const cases = [
+  {
+    name: 'exact private reference is declared unavailable in a fresh checkout', valid: true,
+    outputPattern: /Declared private\/unavailable evidence references: 1; not validated links\./,
+    change({ root }) { privateReference(root); },
+  },
+  {
+    name: 'private reference source hash drift is rejected', valid: false,
+    change({ root }) { privateReference(root); fs.appendFileSync(path.join(root, 'docs/README.md'), '\nChanged source.\n'); },
+  },
+  {
+    name: 'declared private archive symlink is not traversed or validated', valid: true,
+    outputPattern: /Declared private\/unavailable evidence references: 1; not validated links\./,
+    change({ root, outside }) {
+      privateReference(root);
+      put(outside, 'bad.md', '# Private payload\n\n[Broken](missing.md)\n');
+      fs.mkdirSync(path.join(root, 'docs/experiments/benchmarks/data'), { recursive: true });
+      fs.symlinkSync(outside, path.join(root, 'docs/experiments/benchmarks/data/private-run'), 'dir');
+    },
+  },
+  {
+    name: 'private reference wildcard target is rejected', valid: false,
+    change({ root }) { privateReference(root, { target: 'docs/experiments/benchmarks/data/private-run/*' }); },
+  },
+  {
+    name: 'forged private reference source hash is rejected', valid: false,
+    change({ root }) { privateReference(root, { hash: '0'.repeat(64) }); },
+  },
+  {
+    name: 'private reference outside experiment data is rejected', valid: false,
+    change({ root }) { privateReference(root, { target: 'docs/architecture/system.md' }); },
+  },
+  {
+    name: 'private reference traversal target is rejected', valid: false,
+    change({ root }) { privateReference(root, { target: 'docs/experiments/benchmarks/data/../outside.json' }); },
+  },
+  {
+    name: 'private reference absolute target is rejected', valid: false,
+    change({ root }) { privateReference(root, { target: '/etc/passwd' }); },
+  },
+  {
+    name: 'private reference bound is enforced', valid: false,
+    change({ root }) { privateReference(root, { count: 129 }); },
+  },
+  {
+    name: 'unregistered missing evidence link is rejected', valid: false,
+    change({ root }) { privateReference(root, { sourceText: '# Evidence\n\n[Private](experiments/benchmarks/data/private-run/receipt.json)\n[Unknown](experiments/benchmarks/data/unknown-run/receipt.json)\n' }); },
+  },
+  {
+    name: 'unregistered experiment data symlink outside root is rejected', valid: false,
+    change({ root, outside }) {
+      put(outside, 'receipt.json', '{}\n');
+      fs.mkdirSync(path.join(root, 'docs/experiments/benchmarks/data'), { recursive: true });
+      fs.symlinkSync(outside, path.join(root, 'docs/experiments/benchmarks/data/private-run'), 'dir');
+      put(root, 'docs/README.md', '# Evidence\n\n[Outside](experiments/benchmarks/data/private-run/receipt.json)\n');
+    },
+  },
   {
     name: 'absolute file URI is rejected', valid: false,
     change({ root }) { put(root, 'docs/README.md', '# Architecture\n\n[Outside](file:///etc/passwd)\n'); },
@@ -257,7 +325,8 @@ for (const test of cases) {
     const diagnostic = `${result.stdout ?? ''}${result.stderr ?? ''}`.trim();
     const actual = result.error ? `spawn error: ${result.error.message}` : result.signal ? `signal ${result.signal}` : `exit ${result.status}`;
     const exitMatches = !result.error && !result.signal && (test.valid ? result.status === 0 : result.status !== 0 && result.status !== null);
-    const diagnosticMatches = test.valid || diagnostic.length > 0;
+    const diagnosticMatches = (test.valid || diagnostic.length > 0)
+      && (!test.outputPattern || test.outputPattern.test(diagnostic));
     const passed = exitMatches && diagnosticMatches && unchanged;
     if (!passed) failures++;
     console.log(`${passed ? 'PASS' : 'FAIL'} ${test.name}: expected ${test.valid ? 'exit 0' : 'nonzero exit with diagnostic'}, got ${actual}${!diagnosticMatches ? ', no diagnostic' : ''}${!unchanged ? ', fixture changed' : ''}`);

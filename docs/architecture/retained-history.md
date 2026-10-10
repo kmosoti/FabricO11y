@@ -1,6 +1,6 @@
 # Retained history and query
 
-Status: this contract was written before implementation, and an independent [exact-scan oracle](../../tools/qualification/QUERY_ORACLE.md) was built from it first. The [server](../../crates/fabric-server/src/query.rs) implements it and its integration tests are graded by that oracle. Latency, freshness and the journal-versus-Segment comparison were measured under [protocol revision 2](../experiments/benchmarks/history-protocol-r2.md) on a four-CPU host and passed every gate ([history run 01](../experiments/benchmarks/history-run-01.md)); the target profile is not qualified ([capability ledger](../QUALIFICATION.md#capability-ledger)). The Segment format is [ADR-0020](../decisions/ADR-0020-store-sealed-history-as-parquet-segments.md). The [product contract](../PRODUCT-CONTRACT.md#completeness-contract) owns the promises. The window, page, snapshot, completeness and counter-step rules are [`fabric_core::query`](../../crates/fabric-core/src/query.rs); retention eligibility is [`fabric_core::retention`](../../crates/fabric-core/src/retention.rs), applied by the `apply_retention` use case over the `SegmentStore` port.
+Status: this contract was written before implementation, and an independent [exact-scan oracle](../../tools/qualification/QUERY_ORACLE.md) was built from it first. The [server](../../crates/fabric-server/src/query.rs) implements it; ordinary exact-query integration tests are graded by that oracle. Partial-projection availability has the separately scoped companion described below. Latency, freshness and the journal-versus-Segment comparison were measured under [protocol revision 2](../experiments/benchmarks/history-protocol-r2.md) on a four-CPU host and passed every gate ([history run 01](../experiments/benchmarks/history-run-01.md)); the target profile is not qualified ([capability ledger](../QUALIFICATION.md#capability-ledger)). The Segment format is [ADR-0020](../decisions/ADR-0020-store-sealed-history-as-parquet-segments.md). The [product contract](../PRODUCT-CONTRACT.md#completeness-contract) owns the promises. The window, page, snapshot, completeness and counter-step rules are [`fabric_core::query`](../../crates/fabric-core/src/query.rs); retention eligibility is [`fabric_core::retention`](../../crates/fabric-core/src/retention.rs), applied by the `apply_retention` use case over the `SegmentStore` port.
 
 ## Data model
 
@@ -17,15 +17,21 @@ Resource attributes are not needed by the registered queries; `node` identifies 
 
 Sealed history is a set of immutable **segments**. Each segment is a directory holding a manifest written last (with a directory sync) and Zstd-compressed Parquet files: a `batches` table that retains every record exactly (label, receive time, node identity, sequence, SHA-256 and the exact batch bytes) and projected `logs` and `metrics` tables for queries, a `spans.parquet` table with a `spans_filter.bin` of trigram filters over each row group's hex trace IDs when the journal file held spans ([ADR-0025](../decisions/ADR-0025-carry-traces-as-a-third-signal.md)), and an optional `text_filter.bin` with one trigram Bloom filter per `logs` row group ([ADR-0024](../decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md) part 2). A segment covers a contiguous range of server journal groups; the journal files it covers are deleted only after its manifest is durable. A segment without a manifest is incomplete and removed at startup. Queries read sealed segments plus the unsealed journal tail.
 
-**Retention** keeps at most 24 h and at most 20 GiB of sealed segments by default, set by the server keys `retention_s` and `retention_bytes`, and deletes whole segments, oldest first, when either limit is exceeded. Stream deduplication state does not depend on retained data: the server writes a stream checkpoint before it reclaims journal files. The **retained window** is `[oldest retained receive time, newest receive time]`.
+**Retention** keeps at most 24 h and at most 100 GB decimal of sealed segments by default, set by the server keys `retention_s` and `retention_bytes`, and deletes whole segments, oldest first, when either limit is exceeded. The separate journal ceiling remains 20 GiB. Stream deduplication state does not depend on retained data: the server writes a stream checkpoint before it reclaims journal files. The **retained window** is `[oldest retained receive time, newest receive time]`.
 
 ## Queries
 
 All times are Unix nanoseconds; ranges are half-open `[from_ns, to_ns)`.
 
+The history semantics below also serve internal and legacy callers. The
+[scoped console adapter](identity-access.md) applies tighter admission: at most
+1,000 rows, a 24-hour window, scope filtering before selection, opaque authorized
+page handles and no unpaginated rate queries. These bounds do not change the
+independent history oracle.
+
 1. **Log search** `{"kind":"logs","node":N?,"from_ns":A,"to_ns":B,"contains":S?,"limit":L,"page":P?}`: log rows with `observed_ns` in range, from node `N` if given, whose `body` contains the substring `S` (exact, case-sensitive, UTF-8) if given. Order: `observed_ns`, then `node_id`, `sequence`, `index`.
 2. **Metric history** `{"kind":"metrics","node":N?,"name":M,"from_ns":A,"to_ns":B,"limit":L,"page":P?}`: metric points named `M` with `time_ns` in range, from node `N` if given. Order: `time_ns`, then `node_id`, `sequence`, `index`.
-3. **Counter rate** `{"kind":"rate","node":N?,"name":M,"from_ns":A,"to_ns":B}`: for each series (node, name and attribute map) of a monotonic cumulative sum, over consecutive points in range ordered by `time_ns`: if both points share `start_ns` and the value did not decrease, one rate `(v2 - v1) / ((t2 - t1) / 1e9)` per second at `t2`; otherwise one **reset** marker at `t2` and no rate for that interval. Series order: node, then attributes as sorted `key=value` pairs; within a series, time order.
+3. **Counter rate** `{"kind":"rate","node":N?,"name":M,"from_ns":A,"to_ns":B}`: for each series (node, name and attribute map) of a monotonic cumulative sum, over consecutive points in range ordered by `time_ns`: if both points share `start_ns` and the value did not decrease, one rate `(v2 - v1) / ((t2 - t1) / 1e9)` per second at `t2`; otherwise one **reset** marker at `t2` and no rate for that interval. Series order: node, then attributes as sorted `key=value` pairs; maps with identical display pairs are ordered by their structural sorted key/value entries, without merging their identities. Within a series, time order, then Spindle identity, sequence and point index. Integer pairs compare and subtract exactly before rate conversion; mixed numeric pairs compare represented values exactly and use floating-point subtraction. This clarification preserves existing unambiguous presentation order and the independent oracle; see the [Fedora refinement protocol](../experiments/benchmarks/performance-refinement-fedora-protocol.md).
 
 4. **Span search** `{"kind":"spans","node":N?,"from_ns":A,"to_ns":B,"trace_id":T?,"name":S?,"limit":L,"page":P?}`: span rows with `start_ns` in range, from node `N`, with trace ID `T` (exact, lowercase hex) and name `S` (exact) when given. Order: `start_ns`, then `node_id`, `sequence`, `index`.
 
@@ -48,13 +54,186 @@ Where this contract was silent, the implementation follows the oracle's document
 
 ## Implementation notes
 
+Page metadata obeys the same group snapshot as its rows. A Segment wholly inside
+the snapshot supplies its borrowed manifest receive bounds and freshness. If a
+Segment crosses either boundary, the query scans verified raw records with an
+Arrow batch size of one, derives evidence only from included groups and merges
+it only after successful completion. Storage supplies a borrowed `RecordRef`
+through a callback whose lifetime cannot outlive its Arrow owner. The timestamp
+reducer fully decodes the same typed payloads without constructing query Rows;
+freshness allocates a node key only on its first insertion. Every raw Batch
+digest is still checked, even for excluded groups. Failed raw evidence marks unavailability;
+it cannot substitute the entire manifest's future metadata. Parquet page buffers
+remain reader-owned. [Range-evidence ablations](../experiments/benchmarks/catalog-range-evidence-findings.md)
+measure direct reduction and copy elimination; full repeated-page costs remain
+unmeasured. The
+[transition counterexample](../experiments/benchmarks/catalog-transition-ownership-findings.md)
+covers publication, restarted readers and retention with the independent oracle.
+
+The HTTP query route admits two requests before body buffering and moves each
+permit into the blocking query closure. Completion or unwind releases capacity;
+cancelling the HTTP waiter alone does not. This bounds simultaneous admitted
+query work, independently of the batch route's 16 slots. It does not establish
+a bound on each query's memory or a throughput optimum.
+
+The [row extractor](../../crates/fabric-server/src/rows.rs) consumes decoded log
+records and moves their body and string-attribute allocations into rows. Missing
+or non-string bodies remain empty; only string attributes enter the map, with
+the last string value winning duplicate keys. Later non-string values do not
+erase an earlier string. Node labels still copy per row; other signals and decode
+order use their existing paths, including partial output before a later decode
+error. The [ownership comparison](../experiments/benchmarks/catalog-log-progress-findings.md)
+measures whole extraction and exact compatibility, separately from query-service
+latency or retained storage. OTLP dictionary indices retain their legacy handling;
+this optimization does not introduce a dictionary resolver.
+
+The private [row selector](../../crates/fabric-server/src/query/selection.rs)
+keeps rank keys in a heap and payloads in reusable dense slots. An accepted
+replacement reuses the evicted row's slot; a separate admission ordinal preserves
+equal-key ordering independently of slot reuse. It retains at most `limit + 1`
+row slots and allocates only as rows arrive; vector allocation capacity may round
+above that logical count. This removes a second ordered payload index. The
+[finite comparison](../experiments/benchmarks/catalog-algorithm-round-findings.md)
+preserved exact rows and threshold decisions, with a replacement-heavy timing
+gain and some low-churn cost. This bounds selected rows, separately from storage
+decoding, source metadata and response buffers.
+
+Walk physical discovery and derived cache state belong to the internal
+[`read_catalog`](../../crates/fabric-server/src/read_catalog.rs) module. Its view
+contains journal locators, row-group bounds, optional filters and metadata;
+[`query`](../../crates/fabric-server/src/query.rs) keeps row meaning, threshold
+selection, page validation and response construction. Scan source acquisition
+remains in `query`. The default Walk view copies Manifest values; an experimental
+hidden constructor shares immutable metadata handles, and explicit synchronous
+refresh supports measured maintenance schedules outside the ACK path.
+
+Scoped Segment freshness uses a separate bounded derived cache owned by
+`read_catalog::evidence`. One validated raw scan collects per-label receive
+bounds and separate log, metric and span maxima. A hit applies the current node
+and signal scope; it never caches authority or substitutes a full-Segment
+aggregate for a partial page snapshot. Partial snapshots retain exact raw scans.
+The cache admits at most 8 MiB of conservatively charged resident metadata and
+4,096 descriptors, with one at-most-1-MiB construction under its mutex. These are
+allocation estimates, not RSS bounds; the service cgroup remains authoritative.
+Over-budget or invalid construction falls back to the exact scan without caching
+a partial answer. FIFO eviction bounds retained derived state.
+
+Every query still checks raw availability. Reuse additionally requires unchanged
+raw-file device/inode, length, modification/change timestamps and expected
+Manifest identity; construction checks those stamps again before publication.
+Retention can remove the underlying files and invalidate pages independently of
+the cache. Published contents remain immutable by contract. Stamps cannot detect
+silent corruption that preserves them. The
+[registered repair experiment](../experiments/benchmarks/scoped-evidence-protocol.md)
+compares exact answers and cold/warm cost; native tests cover scope changes,
+partial snapshots, unavailable raw storage and admission/eviction bounds.
+
+Walk journal locators identify the first committed group as well as a path and
+frame offset. Active-file discovery now opens the file before listing sealed
+journals. Before indexing or lazily reading a saved offset, storage verifies
+the first group on the opened handle and follows its immutable sealed filename
+after rotation. Eager and lazy entry reads also check the expected group. This
+prevents a replacement active pathname from substituting future data or applying
+an old offset to a shorter file. Handles live only for individual operations
+(at most two during discovery), so the view adds no query-long file lease.
+Committed journal bytes and first-group labels must remain immutable/unique;
+publication/reclaim can still require the existing bounded retry. Genuine frame
+corruption remains an error. See the [identity regressions](../../crates/fabric-server/src/tail_identity_tests.rs)
+and [pressure investigation](../experiments/benchmarks/hammer-reference-findings.md).
+
+An opt-in experimental descriptor cache reuses immutable published descriptors
+through `Arc` snapshots. It permits four held snapshots, retains old generations
+through `Weak`, invalidates on publication-label changes, and falls back to lazy
+acquisition on structural or estimated-byte limits. Its 8 MiB charged-byte model
+is an estimate, not an allocator or process-RSS guarantee. Each acquisition still
+checks discovery movement and refreshes journal coverage. It adds no file lease;
+retention and `Gone` remain authoritative. The [coupled screen](../experiments/benchmarks/coupled-query-findings.md)
+records selected lifecycle controls and a single paired workload, without default
+promotion or exhaustive race proof.
+
+Both acquisition paths now compare published Segment label sets before and after
+journal discovery. A changed set returns `Interrupted` to History's existing
+three-attempt movement retry. The deterministic [Walk](../experiments/benchmarks/catalog-discovery-race-findings.md)
+and [Scan](../experiments/benchmarks/catalog-scan-discovery-race-findings.md)
+counterexamples previously returned silent empty coverage across publication and
+reclaim; unchanged regressions passed on the correction. The
+[cold/shared controls](../experiments/benchmarks/catalog-cold-lifetime-findings.md)
+cover four additional selected Walk states. This consistency check is not an
+atomic filesystem snapshot or proof of all discovery races. Cached metadata
+assumes immutable published Segment contents and no reuse of a Segment label;
+uncached named directories lacking manifests now trigger bounded movement errors.
+
+Metadata ownership and logical retention are separate. Actual Sources
+[lifetime controls](../experiments/benchmarks/catalog-cold-lifetime-findings.md)
+show shared Manifest/filter allocations surviving while held views exist and
+releasing after their last owner or aborted-and-joined task releases them.
+Retention still deletes files while those views are held. Neither handle lifetime
+nor a cached descriptor grants access to an expired page snapshot or pins a file;
+[paused cuts](../experiments/benchmarks/catalog-paused-cuts-findings.md) preserve
+`Gone` for expired pages. The [physical ownership diagram](../diagrams/read-catalog.mmd)
+shows this narrow internal boundary. [CQ1](../experiments/benchmarks/catalog-boundary-protocol.md)
+comparative overhead remains under investigation; these lifetime controls do not
+establish a product memory bound or qualification.
+
 Each sealed server journal file (64 MiB by default, `journal_file_bytes`) becomes one segment, built by a background sealer off the commit path. The commit thread then writes the stream checkpoint `streams.json` and deletes the journal file; on startup a journal file whose segment already exists is reclaimed before serving, and incomplete builds are removed. Queries read segments with Parquet row-group statistics on the time column and the journal tail by decoding frames, keep the `limit + 1` smallest rows in a bounded heap, and bind pages to the group range `[oldest retained, newest committed]`. A segment whose file size, schema or row count differs from its manifest, or that fails to decode, is reported in `unavailable`; whole-file SHA-256 checks are available through `segment::verify` rather than on every query. `fabricctl admin <ADMIN_CONFIG> query '<JSON>'` sends a query.
+
+Raw custody availability is checked separately from query projection availability.
+`segment::check_raw_available` opens `batches.parquet` against its Manifest entry:
+existence, file size, Arrow schema and Parquet footer row count must agree.
+Failure adds `unavailable` and makes the answer incomplete while surviving
+projection rows, Manifest receive bounds/freshness and readable gaps remain in
+the answer. This check does not decode raw pages or verify their hashes; damage
+that preserves those checked properties is outside its guarantee. Whole-file
+verification remains `segment::verify`.
+
+The [availability decision](../experiments/benchmarks/coupled-availability-decision.md)
+and [registered protocol](../experiments/benchmarks/coupled-availability-protocol.md)
+keep the original whole-record query oracle unchanged. A separate
+[producer-derived companion](../../tools/qualification/projection_availability_oracle.py)
+uses every producer record for metadata and excludes only unavailable requested
+projections from expected rows. Its all-raw-lost mode is restricted to a nonempty
+matching producer population with intact projections/Manifest/gaps; it does not
+specify empty-window raw loss, arbitrary mixed corruption or unknown metadata.
+The [coupled completion record](../experiments/benchmarks/coupled-completion-run-01.md)
+records partial-projection, raw-loss and integrity controls and preserved failures.
+
+The sealer attempts ordered reclaim before starting pending builds and after each worker group. A private scheduler tracks the contiguous published prefix of the captured sealed labels; a failed or panicking build leaves a hole that later successes cannot cross. A reclaim error stops the pass before another group launches. The existing commit-thread checkpoint and deletion operation remains authoritative. Retention still runs only after a successful pass. This can release capacity while later builds remain pending; its mixed-load cost is [unmeasured](../milestones/journal-reclaim-progress.md).
 
 **Query plans** ([ADR-0024](../decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md)). The server key `query_plan` selects how a query reads its sources; both plans return the same answers, page for page. `scan` (the default) is the path above: every journal entry of the snapshot decoded, every row group the window's statistics admit read. `walk` keeps a per-process key index of the journal tail (group, frame position, node, receive time, and the time bounds of each entry's log rows and metric points, about 72 bytes per entry, extended by the frames appended since the last query and pruned of entries a Segment now covers) and a cache of Segment manifests and row-group bounds by label. A query then orders its sources (tail entries and row groups) by the smallest key each can hold and stops when the bounded heap is full and its largest key is below the next source's bound, the threshold rule of `fabric_core::query::spec::threshold_walk`; entries are decoded through a 64-frame cache only when reached. Answer fields that need every entry (receive bounds, freshness) come from the index, and entries with gaps in the window are decoded for `gaps`. For a `contains` needle of three or more bytes the walk also skips every row group whose text filter lacks one of the needle's trigrams; a filter is used only after its size, SHA-256 and group count match the manifest, so a missing or corrupt filter makes the walk read the group exactly, and never makes an answer incomplete. The walk reads the tail mostly as **blocks** (ADR-0024 part 3): as the index reads new frames, their rows are gathered per journal file into FOB1 blocks of 4,096 records, closed at a frame boundary, Zstd-compressed, each with a trigram filter over its log bodies; a block is one source, decoded through `decode_view` and filtered on borrowed fields before any row is built, and skipped when its filter lacks the needle. Blocks are derived from the journal, which stays the durable record; they live in memory, leave with their file or when a Segment covers them, and are rebuilt after a restart. Entries after a file's last complete block, and entries of a block the codec refused, are read from the journal. A rate cannot stop and reads the entries and row groups whose bounds meet the window. A Segment whose bounds cannot be read is reported in `unavailable`, as the scan reports one it cannot read.
 
-Today the sealer builds a Segment from the whole journal file in memory (a peak of about 5.5 times the file). [ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md) accepts a bounded external merge sort that produces the same Segment; the [sealer view](sealer.md) describes it. This contract does not change.
+On the experimental streaming-output branch, Parquet table bytes flow through a 256 KiB buffered file sink with incremental hashing and flush-before-sync. The [local pilot](../experiments/benchmarks/streaming-output-local-run-01.md) preserved exact output but missed its primary heap target; decoded Groups, projected rows and Arrow arrays still scale with the whole file.
+
+The current branch routes sealer workers through `segment::build_sealed`: one frame, byte-capped sorted runs, at most sixteen merge readers and bounded Arrow chunks. The whole-file `segment::build` remains the differential reference. The [finite screen](../experiments/benchmarks/ingestion-memory-run-01.md) measures the memory/time trade-off; full bounded-sealer acceptance remains unrun. The [sealer view](sealer.md) describes the candidate. Query reads include active and uncovered sealed journals, so publication is not a prerequisite for visibility. Query tail decoding and metadata still have independent memory costs. No 30-second freshness guarantee has been added.
+
+The subsequent [speed screen](../experiments/benchmarks/sealer-speed-run-01.md)
+uses compact private spill records and avoids rewriting runs unnecessarily.
+It retains the same table bytes and query contract on its measured fixtures;
+fast Segment materialization and ACK-to-queryable latency remain separate metrics.
+
+The [native lab screen](../experiments/benchmarks/dev-small-labs-run-02.md)
+compares fresh/H256 history with Scan on/off under matched small offers. Scan
+raised sampled phase peak RSS about 7.8x; stored history mainly added query CPU.
+These finite observations nominate query row materialization for further study;
+they select no default or new mechanism. Jittered development probes returned
+all selected tags before/after a first publication, with exact quiescent answers;
+the sampled publication bracket does not prove overlap with a running builder.
+
+The [fixed-demand follow-up](../experiments/benchmarks/query-plan-run-01.md)
+completed three small Scan/Walk pairs with exact custody/query and timing guards.
+Walk reduced median paired balanced CPU by 42.2% and sampled phase-peak RSS by
+64.1%, with all declared latency/ACK/backlog guards satisfied. This nominates the
+existing opt-in Walk plan for deployment/lifecycle testing; defaults and query
+contracts are unchanged. The separate allocation study was inconclusive because
+its first-page probe did not provide the oracle's required pagination transcript.
 
 ## Invariants
+
+The [key-first admission experiment](../experiments/benchmarks/native-key-first-findings.md)
+tests full canonical-key eligibility before literal matching and cloning inside
+existing readers. It retains raw digest checks, typed validation and incomplete
+evidence behavior. The opt-in passed complete-chain checks but failed performance
+guards; default query admission is unchanged. It adds no storage index or source
+pruning boundary.
 
 - Query execution never mutates stored telemetry.
 - Row order is total, so pages never repeat or skip a row within one snapshot.

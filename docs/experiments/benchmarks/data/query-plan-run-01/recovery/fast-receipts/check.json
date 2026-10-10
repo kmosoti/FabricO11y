@@ -1,0 +1,34 @@
+{
+  "bounds": null,
+  "candidate_commit": "37af74e86a6d54e6662e392f096c7ab685ef1b34",
+  "check_id": "check",
+  "command": [
+    "cargo",
+    "check",
+    "--workspace",
+    "--locked",
+    "--all-targets"
+  ],
+  "duration_ms": 130,
+  "exit_code": 0,
+  "expected": "exit 0",
+  "fixtures": null,
+  "negative_controls": null,
+  "oracle_revision": "none",
+  "output_sha256": "4cf86278c1e6d659943a46a3d7e3da429ac15be90f0f17742e24ef85228e7d3e",
+  "profile": "fast",
+  "property_ids": [],
+  "receipt_version": 1,
+  "result": "passed",
+  "scope": "Locked compilation of every workspace target",
+  "specification_revision": "none",
+  "toolchain": {
+    "bun": "unavailable",
+    "cargo": "cargo 1.99.0 (5f94df478 2026-08-27)",
+    "python3": "Python 3.14.7",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)"
+  },
+  "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
+  "unchecked_behavior": "Research packages under tools/ are separate workspaces and not compiled.",
+  "worktree_dirty": true
+}

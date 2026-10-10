@@ -10,7 +10,7 @@ RUN if [ -n "$PROXY" ]; then \
       sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.list.d/debian.sources; \
     fi \
  && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    systemd systemd-sysv dbus acl openssl ca-certificates procps curl \
+    systemd systemd-sysv dbus acl openssl ca-certificates procps curl python3 \
  && apt-get clean && rm -f /etc/apt/apt.conf.d/99proxy /tmp/proxy-ca.crt
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]

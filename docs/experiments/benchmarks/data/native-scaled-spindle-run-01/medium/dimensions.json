@@ -1,0 +1,83 @@
+{
+  "post_hoc_not_new_acceptance_gates": true,
+  "cpu_windows": {
+    "scheduled_25s": {
+      "sample_count": 25,
+      "observed_seconds": 24.244713996,
+      "server_cpu_equivalents": 0.2594379954755396,
+      "nodes_cpu_equivalents": 0.17529594288887812
+    },
+    "whole_monitored_phase": {
+      "sample_count": 51,
+      "observed_seconds": 50.399658096,
+      "server_cpu_equivalents": 0.1273818165149324,
+      "nodes_cpu_equivalents": 0.09027839020918106
+    }
+  },
+  "recomputed_clocks_ms": {
+    "ingest": {
+      "samples": 350000,
+      "p50": 15.583807,
+      "p99": 102.994999,
+      "max": 120.738562,
+      "negative": 0
+    },
+    "ack": {
+      "samples": 350000,
+      "p50": 22.199826,
+      "p99": 126.698031,
+      "max": 132.973008,
+      "negative": 0
+    },
+    "source_ingest": {
+      "samples": 350000,
+      "p50": 527.970953,
+      "p99": 1013.62326,
+      "max": 1095.337245,
+      "negative": 0
+    },
+    "scheduled_ingest": {
+      "samples": 350000,
+      "p50": 530.837748,
+      "p99": 1021.850522,
+      "max": 1105.061652,
+      "negative": 0
+    },
+    "source_ack": {
+      "samples": 350000,
+      "p50": 535.387076,
+      "p99": 1025.765463,
+      "max": 1108.325129,
+      "negative": 0
+    },
+    "source_collection_wait": {
+      "samples": 350000,
+      "p50": 506.634108,
+      "p99": 991.380042,
+      "max": 1002.901922,
+      "negative": 641
+    }
+  },
+  "exact_ack_hash_map_recheck": true,
+  "ack_hash_map_size": 692,
+  "peak_aggregate_reported_source_backlog_bytes": 7408923,
+  "reported_source_backlog_at_last_scheduled_window_sample_bytes": 0,
+  "peak_journal_disk_bytes": 98589795,
+  "shared_cgroup_memory_range_bytes": [
+    11081244672,
+    12176551936
+  ],
+  "server_rss_first_last_mib": [
+    8.203125,
+    303.48828125
+  ],
+  "server_proc_io_delta": {
+    "rchar": 338150477,
+    "wchar": 624274060,
+    "syscr": 1753,
+    "syscw": 4887,
+    "read_bytes": 0,
+    "write_bytes": 630185984,
+    "cancelled_write_bytes": 0
+  }
+}

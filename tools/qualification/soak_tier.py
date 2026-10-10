@@ -14,9 +14,11 @@ correctness with bytes projected to SHA-256. The gates are decided by
 import argparse
 import base64
 import hashlib
+import importlib.util
 import json
 import random
 import signal
+import shutil
 import subprocess
 import sys
 import threading
@@ -41,6 +43,8 @@ SAMPLE_EVERY = 5
 SEAL_WAIT = 300
 RSS_LIMIT_KIB = 2 * 1024 * 1024
 CHILDREN = []
+COMPANION_GROUP = None
+PRODUCTION = None
 
 
 def evaluate(m):
@@ -75,6 +79,24 @@ def main():
             if child.poll() is None:
                 child.kill()
                 child.wait(timeout=10)
+        if PRODUCTION is not None:
+            (PRODUCTION.raw_root / "tokens").unlink(missing_ok=True)
+            PRODUCTION.close()
+        if COMPANION_GROUP is not None:
+            group, root = COMPANION_GROUP
+            populated = "populated 1" in (group / "cgroup.events").read_text()
+            if populated:
+                (group / "cgroup.kill").write_text("1")
+            deadline = time.monotonic() + 10
+            while "populated 1" in (group / "cgroup.events").read_text() and time.monotonic() < deadline:
+                time.sleep(0.05)
+            empty = "populated 0" in (group / "cgroup.events").read_text()
+            (root / "companion-group-cleanup.json").write_text(json.dumps(
+                {"forced_kill": populated, "empty": empty}) + "\n")
+            if empty:
+                group.rmdir()
+            else:
+                raise RuntimeError("companion cgroup remains populated")
 
 
 def trial():
@@ -85,7 +107,16 @@ def trial():
     parser.add_argument("--sim-cpus", required=True)
     # Two 30 s windows after a 10 s warmup, to try the harness; never a trial.
     parser.add_argument("--smoke", action="store_true")
+    parser.add_argument("--companion", action="store_true",
+                        help="registered R2: strict independent companion custody and 4 GB containment")
+    from production_access import options, validate_options, ProductionAccess
+    options(parser)
     args = parser.parse_args()
+    validate_options(args)
+    if args.production_access and (args.server_cpus != "0-1" or args.sim_cpus != "2-3"):
+        raise SystemExit("production soak retains registered CPUs 0-1 and 2-3")
+    if args.production_access and not args.companion:
+        raise SystemExit("production soak requires strict companion custody")
     global WARMUP, WINDOW, WINDOWS, SECONDS
     if args.smoke:
         WARMUP, WINDOW, WINDOWS = 10, 30, 2
@@ -96,34 +127,79 @@ def trial():
     if (root / ".fabric-alpha-owned").read_text() != "fabric-alpha-runner-v1\n":
         raise SystemExit("soak trial must run inside a runner-owned directory")
     bins = Path(args.bin_dir).resolve(strict=True)
+    companion = None
+    group = None
+    if args.companion:
+        import soak_companion
+        companion = {"passed": False, "error": None}
+        for binary in (bins / "fabric-node", bins / "examples/spool_dump"):
+            if not binary.is_file():
+                raise SystemExit(f"companion binary missing: {binary}")
+        # Reuse the existing attested delegated-group tools. A frozen mini-tree
+        # keeps copies adjacent to this harness; the source tree uses originals.
+        support = HERE if (HERE / "cgroups.py").is_file() else HERE.parent / "bench/labs/completion"
+        spec = importlib.util.spec_from_file_location("soak_cgroups", support / "cgroups.py")
+        cgroups = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cgroups)
+        if not args.production_access:
+            parent = cgroups.delegate()
+            group, limits = cgroups.subgroup(parent, "soak-server", 4_000_000_000,
+                                             3_000_000_000, 512, 2)
+            global COMPANION_GROUP
+            COMPANION_GROUP = (group, root)
+            companion["containment_limits"] = limits
     rng = random.Random(args.seed)
-    make_certs(root)
-    port = free_port()
-    admin_token = hashlib.sha256(f"admin:{args.seed}".encode()).hexdigest()
-    (root / "admin-token").write_text(admin_token + "\n")
-    server_conf = root / "server.conf"
-    server_conf.write_text(
-        f"listen=127.0.0.1:{port}\ntls_cert={root}/server.pem\ntls_key={root}/server.key\n"
-        f"state_dir={root}/server-state\nadmin_token_file={root}/admin-token\n"
-        f"journal_bytes=4294967296\njournal_file_bytes={64 * 1024 * 1024}\n")
-    server = subprocess.Popen(["taskset", "-c", args.server_cpus, str(bins / "fabric-server"), "serve", str(server_conf)],
-                              stdout=open(root / "server.log", "wb"), stderr=subprocess.STDOUT)
-    CHILDREN.append(server)
-    admin = AdminClient(port, root / "ca.pem", admin_token)
-    deadline = time.monotonic() + 15
-    while True:
-        try:
-            admin.call("GET")
-            break
-        except OSError:
-            if time.monotonic() > deadline or server.poll() is not None:
-                raise SystemExit("server did not start")
-            time.sleep(0.1)
-    tokens = [admin.call("POST", body={"name": f"sim{i:04d}", "metric_interval_s": 15})["token"]
-              for i in range(IDENTITIES)]
+    global PRODUCTION
+    if args.production_access:
+        PRODUCTION = ProductionAccess(args, root, soak=True)
+        bins, server_conf, server = PRODUCTION.bins, PRODUCTION.config, PRODUCTION.server
+        state_root, group = PRODUCTION.state_root, PRODUCTION.server_group
+        companion["containment_limits"] = PRODUCTION.receipt["server_limits"]
+        port = int(PRODUCTION.origin.rsplit(':', 1)[1])
+        shutil.copy2(PRODUCTION.work / 'ca.pem', root / 'ca.pem')
+        admin = PRODUCTION
+        enrolled = enroll_sources(admin, IDENTITIES)
+        tokens = [value['token'] for value in enrolled]
+        PRODUCTION.issue_reader([value['enrollment_id'] for value in enrolled], SECONDS + SEAL_WAIT + 300)
+        class QueryAdapter:
+            call = staticmethod(PRODUCTION.query_call)
+        query = QueryAdapter()
+        PRODUCTION.bridge.poll_ui(True)
+    else:
+        make_certs(root)
+        port = free_port()
+        admin_token = hashlib.sha256(f"admin:{args.seed}".encode()).hexdigest()
+        (root / "admin-token").write_text(admin_token + "\n")
+        server_conf = root / "server.conf"
+        server_conf.write_text(
+            f"listen=127.0.0.1:{port}\ntls_cert={root}/server.pem\ntls_key={root}/server.key\n"
+            f"state_dir={root}/server-state\nadmin_token_file={root}/admin-token\n"
+            f"journal_bytes=4294967296\njournal_file_bytes={64 * 1024 * 1024}\n"
+            + (f"self_spindle_ca={root}/ca.pem\n" if args.companion else ""))
+        server_command = ["taskset", "-c", args.server_cpus, str(bins / "fabric-server"), "serve-legacy", str(server_conf)]
+        if args.companion:
+            server_command = [sys.executable, str(support / "enter_group.py"), str(group)] + server_command
+        server = subprocess.Popen(server_command,
+                                  stdout=open(root / "server.log", "wb"), stderr=subprocess.STDOUT)
+        CHILDREN.append(server)
+        admin = AdminClient(port, root / "ca.pem", admin_token)
+        deadline = time.monotonic() + 15
+        while True:
+            try:
+                admin.call("GET")
+                break
+            except OSError:
+                if time.monotonic() > deadline or server.poll() is not None:
+                    raise SystemExit("server did not start")
+                time.sleep(0.1)
+        tokens = [admin.call("POST", body={"name": f"sim{i:04d}", "metric_interval_s": 15})["token"]
+                  for i in range(IDENTITIES)]
+        (root / "tokens").write_text("\n".join(tokens) + "\n")
+        query = AdminClient(port, root / "ca.pem", admin_token)
+        query.base = f"https://127.0.0.1:{port}/v1/admin/query"
+        state_root = root / "server-state"
     (root / "tokens").write_text("\n".join(tokens) + "\n")
-    query = AdminClient(port, root / "ca.pem", admin_token)
-    query.base = f"https://127.0.0.1:{port}/v1/admin/query"
+    (root / "tokens").chmod(0o600)
     sim = subprocess.Popen(["taskset", "-c", args.sim_cpus, str(bins / "examples" / "spindle_sim"),
                             "--server-url", f"https://127.0.0.1:{port}", "--ca", str(root / "ca.pem"),
                             "--tokens", str(root / "tokens"), "--seed", hex(args.seed),
@@ -133,6 +209,8 @@ def trial():
     began = time.monotonic()
     probes = {"query_s": [], "failed": 0, "incomplete": 0, "examples": []}
     management = {"ok": 0, "failed": 0}
+    sampling_errors = []
+    next_bound_sample = [0.0]
     samples = []  # (seconds since start, VmRSS KiB, CPU seconds)
 
     def prober():
@@ -169,6 +247,14 @@ def trial():
 
     def sampler():
         while sim.poll() is None:
+            if PRODUCTION is not None and time.monotonic() >= next_bound_sample[0]:
+                try:
+                    PRODUCTION.sample_bound()
+                    next_bound_sample[0] = time.monotonic() + 60
+                except Exception as error:
+                    sampling_errors.append(type(error).__name__)
+                    sim.terminate()
+                    return
             samples.append((time.monotonic() - began, status_kib(server.pid, "VmRSS"), cpu_s(server.pid)))
             time.sleep(SAMPLE_EVERY)
 
@@ -178,31 +264,69 @@ def trial():
     sim.wait()
     for t in threads:
         t.join(timeout=120)
+    if sampling_errors:
+        raise RuntimeError("production resource prerequisite failed: " + sampling_errors[0])
     sim_exit = sim.returncode
-    journal = root / "server-state" / "journal"
+    journal = state_root / "journal"
     seal_deadline = time.monotonic() + SEAL_WAIT
     while any(journal.glob("sealed-*.faj")) and time.monotonic() < seal_deadline:
         time.sleep(1)
     sealed_left = len(list(journal.glob("sealed-*.faj")))
-    segments = len(list((root / "server-state" / "segments").glob("seg-*")))
+    segments = len(list((state_root / "segments").glob("seg-*")))
     server_hwm = status_kib(server.pid, "VmHWM")
+    if PRODUCTION is not None:
+        PRODUCTION.bridge.poll_ui(False)
     server.send_signal(signal.SIGTERM)
     server_exit = server.wait(timeout=120)
 
+    observation = None
+    if args.companion:
+        resources = {name: (group / name).read_text().strip() for name in
+                     ("memory.peak", "memory.events", "memory.swap.current", "cgroup.events",
+                      "cpu.stat", "io.stat", "pids.peak")}
+        companion["resources"] = resources
+        events = dict(line.split() for line in resources["memory.events"].splitlines())
+        companion["containment_ok"] = ("populated 0" in resources["cgroup.events"]
+            and resources["memory.swap.current"] == "0"
+            and int(events.get("oom", 0)) == 0 and int(events.get("oom_kill", 0)) == 0)
+        try:
+            observation = soak_companion.dump_stopped_spool(
+                bins / "examples/spool_dump", state_root / "self-spindle/node.conf",
+                root / "companion-custody", processes_stopped=companion["containment_ok"])
+            companion["observation"] = {key: value for key, value in observation.items()
+                                        if key != "projected_sources"}
+        except (OSError, ValueError) as error:
+            companion["error"] = str(error)
+
     # Streamed: the dump of a soak is too large to hold in memory twice.
     transcript = root / "sim" / "transcript.jsonl"
+    companion_recovered = []
     with open(root / "dump.err", "wb") as err, open(transcript, "a") as out:
+        if observation is not None:
+            for source in observation["projected_sources"]:
+                out.write(json.dumps(source) + "\n")
         dump = subprocess.Popen([str(bins / "examples" / "server_dump"), str(server_conf)],
                                 stdout=subprocess.PIPE, stderr=err, text=True)
+        CHILDREN.append(dump)
         for line in dump.stdout:
             record = json.loads(line)
             record["bytes"] = base64.b64encode(hashlib.sha256(base64.b64decode(record["bytes"])).digest()).decode()
+            if observation is not None and (record["node_id"], record["generation"]) == tuple(observation["stream"]):
+                companion_recovered.append(record)
             out.write(json.dumps(record) + "\n")
         out.write('{"type": "end"}\n')
         if dump.wait(timeout=1800):
             raise SystemExit("server_dump failed; see dump.err")
     with open(transcript) as source:
         verdict = delivery_oracle.check(source)
+    if args.companion:
+        if observation is not None:
+            try:
+                companion["custody"] = soak_companion.validate_recovery(observation, companion_recovered)
+                companion["passed"] = companion["containment_ok"] and companion["custody"]["passed"]
+            except ValueError as error:
+                companion["error"] = str(error)
+        (root / "companion-summary.json").write_text(json.dumps(companion, sort_keys=True) + "\n")
 
     began_ns = json.loads((root / "sim" / "sim-summary.json").read_text())["began_unix_ns"]
     ack_ms = [[] for _ in range(WINDOWS)]
@@ -236,7 +360,7 @@ def trial():
             cpu[index].append(seconds)
     live_bytes = sum(p.stat().st_size for p in root.rglob("*") if p.is_file())
     measurements = {
-        "oracle_passed": verdict.passed, "sim_exit": sim_exit, "server_exit": server_exit,
+        "oracle_passed": verdict.passed and (companion is None or companion["passed"]), "sim_exit": sim_exit, "server_exit": server_exit,
         "ack_ms_by_window": ack_ms, "backlog": backlog, "server_vmhwm_kib": server_hwm,
         "rss_kib_by_window": rss, "query_s": probes["query_s"], "query_failed": probes["failed"],
         "query_incomplete": probes["incomplete"], "management_ok": management["ok"],
@@ -246,7 +370,9 @@ def trial():
     summary = {
         "seed": args.seed, "identities": IDENTITIES, "seconds": SECONDS, "smoke": args.smoke,
         "passed": all(gates.values()),
-        "gates": gates, "violations": [v.__dict__ for v in verdict.violations][:5],
+        "gates": gates, "violations": verdict.violations[:5],
+        "access_mode": "production-passkey-scoped-workload" if args.production_access else "explicit-legacy-admin",
+        "companion": companion, "protocol_revision": "R2" if args.companion else "R1",
         "server_cpus": args.server_cpus, "sim_cpus": args.sim_cpus,
         "sim_exit": sim_exit, "server_exit": server_exit,
         "batches_created": len(created), "batches_acked": len(acked),
@@ -267,8 +393,23 @@ def trial():
         "server_vmhwm_kib": server_hwm, "live_bytes_end": live_bytes,
     }
     (root / "soak-summary.json").write_text(json.dumps(summary, sort_keys=True) + "\n")
+    if PRODUCTION is not None:
+        PRODUCTION.receipt["passed"] = summary["passed"]
     print(json.dumps(summary, sort_keys=True))
     return 0 if summary["passed"] else 1
+
+
+def enroll_sources(admin, identities):
+    """Pace unmeasured setup below production credential verification admission.
+
+    Each enrollment makes a session check and control call. Do not retry denied
+    mutations: an unexpected response must remain a fixture failure.
+    """
+    enrolled = []
+    for index in range(identities):
+        time.sleep(.15)
+        enrolled.append(admin.call("POST", body={"name": f"sim{index:04d}", "metric_interval_s": 15}))
+    return enrolled
 
 
 def _count_le(ordered, value):

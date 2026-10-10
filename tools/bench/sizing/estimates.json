@@ -1,0 +1,199 @@
+{
+  "status": "planning estimates; no new deployment performance measurements",
+  "evidence_sha256": "a67cb35825d9810a03f91290af2f7631c97a695de5bafd1a9aff7c0d12f53f15",
+  "calibration": {
+    "baseline_slowest_64mib_entropy_build_mib_s": 62.548612169297385,
+    "derated_worker_service_mib_s": 31.274306084648693,
+    "boundary": "instrumented single Segment build with resident input; excludes live ingest and journal replay"
+  },
+  "assumptions": {
+    "encoded_bytes_per_event": 1024,
+    "burst_multiplier": 3,
+    "burst_seconds": 60,
+    "outage_seconds": 3600,
+    "storage_ratios": [
+      0.5,
+      1.6
+    ],
+    "service_derating": 0.5,
+    "network_margin": 1.2,
+    "disk_margin": 1.25,
+    "file_mib": 64,
+    "journal_floor_gib": 20,
+    "fixed_server_gib": 1,
+    "builder_gib": 0.625,
+    "builder_margin": 1.25,
+    "host_reserve_gib": 1,
+    "memory_target_fraction": 0.75
+  },
+  "results": [
+    {
+      "name": "development",
+      "nodes": 1,
+      "events_per_second": 10,
+      "retention_days": 1,
+      "trial_vcpus": 2,
+      "trial_ram_gib": 4,
+      "average_mib_s": 0.009765625,
+      "peak_mib_s": 0.029296875,
+      "encoded_input_gib_per_day": 0.823974609375,
+      "peak_network_mbit_s_with_margin": 0.294912,
+      "average_workers_model": 1,
+      "peak_workers_model": 1,
+      "peak_sealing_utilization_model": 0.0009367713841740734,
+      "burst_backlog_gib_with_average_workers": 0.0,
+      "post_burst_drain_seconds_model": 0.0,
+      "journal_budget_gib": 20.0,
+      "server_memory_allowance_gib": 1.78125,
+      "host_memory_floor_gib_model": 3.375,
+      "exceeds_default_server_3gib_limit": false,
+      "workers_exceed_config_max_16": false,
+      "per_node_one_hour_spool_mib_average": 35.15625,
+      "per_node_one_hour_spool_mib_peak": 105.46875,
+      "storage": [
+        {
+          "stored_bytes_per_input_byte": 0.5,
+          "retained_gib": 0.4119873046875,
+          "state_device_gib": 25.632171630859375,
+          "disk_write_mib_s_at_peak": 0.0439453125,
+          "disk_read_mib_s_at_peak": 0.029296875,
+          "default_20gib_retention_hours": 1165.0844444444444
+        },
+        {
+          "stored_bytes_per_input_byte": 1.6,
+          "retained_gib": 1.318359375,
+          "state_device_gib": 26.85107421875,
+          "disk_write_mib_s_at_peak": 0.076171875,
+          "disk_read_mib_s_at_peak": 0.029296875,
+          "default_20gib_retention_hours": 364.0888888888889
+        }
+      ]
+    },
+    {
+      "name": "small",
+      "nodes": 20,
+      "events_per_second": 1000,
+      "retention_days": 7,
+      "trial_vcpus": 2,
+      "trial_ram_gib": 4,
+      "average_mib_s": 0.9765625,
+      "peak_mib_s": 2.9296875,
+      "encoded_input_gib_per_day": 82.3974609375,
+      "peak_network_mbit_s_with_margin": 29.4912,
+      "average_workers_model": 1,
+      "peak_workers_model": 1,
+      "peak_sealing_utilization_model": 0.09367713841740734,
+      "burst_backlog_gib_with_average_workers": 0.0,
+      "post_burst_drain_seconds_model": 0.0,
+      "journal_budget_gib": 20.0,
+      "server_memory_allowance_gib": 1.78125,
+      "host_memory_floor_gib_model": 3.375,
+      "exceeds_default_server_3gib_limit": false,
+      "workers_exceed_config_max_16": false,
+      "per_node_one_hour_spool_mib_average": 175.78125,
+      "per_node_one_hour_spool_mib_peak": 527.34375,
+      "storage": [
+        {
+          "stored_bytes_per_input_byte": 0.5,
+          "retained_gib": 288.39111328125,
+          "state_device_gib": 385.6060791015625,
+          "disk_write_mib_s_at_peak": 4.39453125,
+          "disk_read_mib_s_at_peak": 2.9296875,
+          "default_20gib_retention_hours": 11.650844444444445
+        },
+        {
+          "stored_bytes_per_input_byte": 1.6,
+          "retained_gib": 922.8515625,
+          "state_device_gib": 1178.767578125,
+          "disk_write_mib_s_at_peak": 7.6171875,
+          "disk_read_mib_s_at_peak": 2.9296875,
+          "default_20gib_retention_hours": 3.640888888888889
+        }
+      ]
+    },
+    {
+      "name": "moderate",
+      "nodes": 200,
+      "events_per_second": 10000,
+      "retention_days": 14,
+      "trial_vcpus": 4,
+      "trial_ram_gib": 8,
+      "average_mib_s": 9.765625,
+      "peak_mib_s": 29.296875,
+      "encoded_input_gib_per_day": 823.974609375,
+      "peak_network_mbit_s_with_margin": 294.912,
+      "average_workers_model": 1,
+      "peak_workers_model": 1,
+      "peak_sealing_utilization_model": 0.9367713841740734,
+      "burst_backlog_gib_with_average_workers": 0.0,
+      "post_burst_drain_seconds_model": 0.0,
+      "journal_budget_gib": 102.996826171875,
+      "server_memory_allowance_gib": 1.78125,
+      "host_memory_floor_gib_model": 3.375,
+      "exceeds_default_server_3gib_limit": false,
+      "workers_exceed_config_max_16": false,
+      "per_node_one_hour_spool_mib_average": 175.78125,
+      "per_node_one_hour_spool_mib_peak": 527.34375,
+      "storage": [
+        {
+          "stored_bytes_per_input_byte": 0.5,
+          "retained_gib": 5767.822265625,
+          "state_device_gib": 7338.641052246094,
+          "disk_write_mib_s_at_peak": 43.9453125,
+          "disk_read_mib_s_at_peak": 29.296875,
+          "default_20gib_retention_hours": 1.1650844444444444
+        },
+        {
+          "stored_bytes_per_input_byte": 1.6,
+          "retained_gib": 18457.03125,
+          "state_device_gib": 23200.238220214844,
+          "disk_write_mib_s_at_peak": 76.171875,
+          "disk_read_mib_s_at_peak": 29.296875,
+          "default_20gib_retention_hours": 0.3640888888888889
+        }
+      ]
+    },
+    {
+      "name": "enterprise",
+      "nodes": 2000,
+      "events_per_second": 100000,
+      "retention_days": 30,
+      "trial_vcpus": 16,
+      "trial_ram_gib": 32,
+      "average_mib_s": 97.65625,
+      "peak_mib_s": 292.96875,
+      "encoded_input_gib_per_day": 8239.74609375,
+      "peak_network_mbit_s_with_margin": 2949.12,
+      "average_workers_model": 4,
+      "peak_workers_model": 10,
+      "peak_sealing_utilization_model": 0.9367713841740734,
+      "burst_backlog_gib_with_average_workers": 9.836222206722963,
+      "post_burst_drain_seconds_model": 367.05298490505817,
+      "journal_budget_gib": 1029.96826171875,
+      "server_memory_allowance_gib": 8.8125,
+      "host_memory_floor_gib_model": 12.75,
+      "exceeds_default_server_3gib_limit": true,
+      "workers_exceed_config_max_16": false,
+      "per_node_one_hour_spool_mib_average": 175.78125,
+      "per_node_one_hour_spool_mib_peak": 527.34375,
+      "storage": [
+        {
+          "stored_bytes_per_input_byte": 0.5,
+          "retained_gib": 123596.19140625,
+          "state_device_gib": 155783.87145996094,
+          "disk_write_mib_s_at_peak": 439.453125,
+          "disk_read_mib_s_at_peak": 292.96875,
+          "default_20gib_retention_hours": 0.11650844444444446
+        },
+        {
+          "stored_bytes_per_input_byte": 1.6,
+          "retained_gib": 395507.8125,
+          "state_device_gib": 495674.25720214844,
+          "disk_write_mib_s_at_peak": 761.71875,
+          "disk_read_mib_s_at_peak": 292.96875,
+          "default_20gib_retention_hours": 0.036408888888888886
+        }
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # Product contract
 
-This is the highest-priority source of truth for what FabricO11y promises (see the [source-of-truth hierarchy](README.md#source-of-truth)). It states intended behavior. Whether a promise is implemented, tested, measured or qualified is recorded in the [qualification ledger](QUALIFICATION.md#capability-ledger) and the [verification matrix](formal/verification-matrix.md); nothing here is a release claim. The text below migrated from the release-stage contract at base `9b3a2b4` (`docs/ALPHA.md`); numeric targets, defaults and gate requirements are unchanged.
+This is the highest-priority source of truth for what FabricO11y promises (see the [source-of-truth hierarchy](README.md#source-of-truth)). It states intended behavior. Whether a promise is implemented, tested, measured or qualified is recorded in the [qualification ledger](QUALIFICATION.md#capability-ledger) and the [verification matrix](formal/verification-matrix.md); nothing here is a release claim. The original contract migrated from base `9b3a2b4` (`docs/ALPHA.md`). The owner expanded the release scope on 2026-10-10 to Debian/Fedora deployment, 100 GB retained telemetry, a PWA and scoped human/workload access. These requirements do not retroactively change historical protocols or establish implementation evidence.
 
 ## Thesis
 
@@ -24,7 +24,20 @@ Every promise below belongs to one of five correctness dimensions:
 
 ## Product boundary
 
-The first target profile is one operator-controlled x86_64 Linux installation of a Debian-family distribution with glibc 2.34 or newer and systemd 249 or newer (Debian 12 and 13, Ubuntu 22.04 and 24.04, and distributions derived from them, natively or under WSL2): outbound Spindles (the `fabric-node` executable) collecting CPU, memory, filesystem, disk, network and configured newline-delimited logs, and receiving OpenTelemetry traces that local applications export to the Spindle's loopback OTLP/HTTP endpoint ([ADR-0025](decisions/ADR-0025-carry-traces-as-a-third-signal.md)); one Fabric Server for authenticated delivery, durable storage, query and control; `fabricctl` and an HTTP API. Spindles retain the last valid configuration during disconnection. There is no external Collector requirement, general OTLP receiver (the Spindle's trace endpoint accepts only OTLP/HTTP protobuf trace exports on loopback), arbitrary remote compute, UI, or scale claim beyond the [qualification gates](QUALIFICATION.md). Real-server qualification follows local qualification. The release that first targets this profile is tagged, not named in the architecture ([ADR-0019](decisions/ADR-0019-keep-release-maturity-in-tags.md)).
+The first release targets one operator-controlled central server and remote
+Spindles on x86_64 Debian-family and Fedora-family Linux with systemd and unified
+cgroup v2. Exact supported OS images and dependency floors are pinned and tested
+under the [bounded release plan](milestones/release-readiness.md); compatibility
+with every derivative or WSL configuration is not implied. Spindles collect CPU,
+memory, filesystem, disk, network and configured newline-delimited logs, and
+receive local applications' loopback OTLP/HTTP protobuf trace exports
+([ADR-0025](decisions/ADR-0025-carry-traces-as-a-third-signal.md)). The server owns
+authenticated delivery, durable storage, query, control and a Rust Leptos/WASM
+operator console delivered as a PWA. `fabricctl` and the HTTP API support scoped
+machine clients. Spindles retain last-valid configuration during disconnection.
+There is no external Collector requirement, general OTLP receiver, arbitrary
+remote compute or capacity claim beyond the named acceptance profile. Release
+maturity remains a tag ([ADR-0019](decisions/ADR-0019-keep-release-maturity-in-tags.md)).
 
 ## Fidelity: the envelope and telemetry semantics
 
@@ -44,19 +57,99 @@ A full Spool retains unacknowledged records, refuses new durable collection and 
 
 ## Freshness contract
 
-Every query answer reports, per Spindle with any retained record, the newest observation, point or span start time retained, so a caller can tell a quiet Spindle from a stale one. The registered freshness target (observation to queryable, p99) is in the [decision rule](QUALIFICATION.md#registered-workload-and-decision-rule).
+Every query answer reports, within the caller's authorized scope, per Spindle with any retained record, the newest observation, point or span start time retained, so a caller can tell a quiet Spindle from a stale one. The registered freshness target (observation to queryable, p99) is in the [decision rule](QUALIFICATION.md#registered-workload-and-decision-rule).
 
 ## Boundedness contract
 
-All active queues are byte bounded. Defaults: 15 s metrics, 256 MiB Spindle Spool, server retention of at most 24 h and at most 20 GiB of sealed Segments with the actual retained boundary reported. Test overrides must stay inside the aggregate test budget. Collection limits (log paths, lines, bytes per pass, devices, gap counts) are listed in the [Spindle view](architecture/spindle.md).
+All active queues are byte bounded. Intended shipped defaults: 15 s metrics,
+256 MiB Spindle Spool, server retention of at most 24 h and at most
+100,000,000,000 bytes (100 GB decimal) of sealed telemetry. Both retention limits
+are configurable; whichever expires data first controls whole-Segment deletion,
+and answers report the actual retained boundary. Journals, sealing workspace,
+Spools, access state and audit have separate bounded allowances and declared disk
+headroom; 100 GB is not an aggregate disk ceiling. Custody data cannot be deleted
+to meet retention. The code default is 100 GB of Segments; the
+[release queue](milestones/release-readiness.md#execution-queue) owns candidate
+regression evidence. Test overrides stay within the aggregate test budget.
+Collection limits are listed in the [Spindle view](architecture/spindle.md).
 
 ## Control and security contract
 
 TLS protects Spindle and admin traffic. Spindle credentials are revocable and distinct from admin credentials. A configuration has desired and applied revisions, validates before activation, obeys local permissions and resource ceilings, and can be paused ([ADR-0014](decisions/ADR-0014-manage-nodes-through-server-control-state.md)).
 
+The release requires local WebAuthn passkeys for human sign-in, bounded server-side
+sessions, protected first-owner enrollment and tested owner recovery. OIDC/SSO is
+optional later work. Humans, workload clients (including AI) and Spindles have
+distinct persistent principals and credentials. The server denies requests unless
+their action and resource scope are authorized. Machine credentials are individually
+revocable; workload credentials expire. Human delegation to AI cannot exceed the
+current intersection of actor, delegator and delegation grants. Prompts and client
+claims cannot expand authority. No shared administrator secret is embedded in the UI.
+
+Read scopes cover Spindle enrollments and signal classes. Rows, inventory,
+pagination, aggregates, completeness, freshness and errors enforce the same scope.
+Unknown coverage inside that scope stays visible; excluded identities do not leak
+through metadata. Policy changes invalidate affected sessions/grants/cursors as
+specified in the [identity view](architecture/identity-access.md). Authorization
+and mutation publication are synchronized; uncertain access-state writes fail
+closed. A Batch admitted before committed revocation may finish its existing
+custody transition; revocation cannot undo ACKs or bytes already disclosed.
+Security changes are durably audited within separately bounded storage.
+
+The threat boundary trusts the host administrator and serving HTTPS origin.
+Scoped access is not general multitenant isolation or a guarantee against all
+vulnerabilities. Explicit legacy administration does not satisfy these release
+requirements; normal `serve` requires the scoped passkey boundary.
+[ADR-0027](decisions/ADR-0027-ship-a-scoped-passkey-pwa-console.md)
+records that boundary and its verification obligations.
+
+## Operator console contract
+
+The same-origin PWA provides light/dark desktop and mobile layouts for overview,
+bounded log/metric/span exploration, trace detail, near-live log polling, pipeline
+state and scoped settings. It displays actual evidence and its freshness, gaps,
+retention and completeness. No inferred causal link or illustrative mockup number
+is presented as measured. It uses the server's authorization for every action;
+hiding a button is not an access control.
+
+Only public application-shell assets are cached for offline startup. Credentials,
+telemetry and API responses are never persisted by application offline storage;
+disconnected startup requires reconnection to access data. Logout/account changes
+clear transient results, and stale responses cannot restore them. No offline
+mutation queue is provided. Packaged assets, API compatibility, passkey workflows,
+accessibility and browser/install behavior must pass the
+[console gates](milestones/operator-console.md#boundedness-and-acceptance) on the
+release candidate. Implementation does not waive those candidate acceptance gates.
+
 ## Linux installation contract
 
-Status: packaging exists and passes static checks; the running-installation acceptance ran in a Debian 13 systemd container and is inconclusive, because `MemoryHigh` enforcement needs a unified cgroup hierarchy ([ledger](QUALIFICATION.md#capability-ledger)).
+Every production `fabric-server serve` invocation owns one dedicated local
+Spindle process with its own persistent identity, node credential and bounded
+Spool. Its destination is that server's HTTPS listener; TLS verification remains
+enabled. Server and Spindle operational diagnostics are bounded local files,
+automatically collected through the ordinary Spool/ACK path. Emit periodic
+process samples and state transitions, not a new self-log per collected or
+delivered Batch. Diagnostics are best effort before Spool commit: rotation or
+unavailable collection must not be presented as complete evidence. A Spindle
+collects its own diagnostics; it does not spawn another Spindle. Edge Spindles
+keep their configured destination.
+
+The production CLI supervises and reaps its companion and stops serving if that
+process exits unexpectedly. The library serving primitive remains available for
+embedded composition and isolated tests; it does not implicitly launch processes.
+The companion inherits its server service's cgroup; existing numeric service and
+aggregate limits below are not increased. The server unit's bound covers the
+combined server and companion. Operational logs retain at most two 256 KiB files
+per process; a managed companion uses a 64 MiB Spool and 64 KiB/s output cap.
+Its local diagnostics and the server diagnostic file consume two of the existing
+sixteen log-source slots. Automatic self-observation is a capability to verify,
+not a new qualification claim.
+
+Status: the Debian 12-built package passed all seventeen running-installation
+checks in a Debian 13 unified-cgroup VM, and all three required mutations were
+rejected at their named checks ([run 02](experiments/formal/installation-acceptance-run-02.md)).
+This verifies that package and guest configuration; deployment qualification
+remains a separate claim in the [ledger](QUALIFICATION.md#capability-ledger).
 
 Ship only `fabrico11y-node.service`, `fabrico11y-server.service`, `fabricctl`, and one `system-fabrico11y.slice` for their aggregate resource bound. The slice name deliberately places it beneath `system.slice`; both services set `Slice=system-fabrico11y.slice`. The package installs `/usr/lib/sysusers.d/fabrico11y.conf` with `g fabricolly -` followed by `u! fabricolly -:fabricolly "Fabric O11y service" - /usr/sbin/nologin`. The static system user **and primary group** are exactly `fabricolly`. Both units explicitly set `User=fabricolly` and `Group=fabricolly`. Package installation must inspect an existing account/group for the expected non-login service identity and primary group, refusing a collision instead of silently commandeering it. Vendor files live under `/usr/lib`; administrator overrides live under `/etc`. The Rust daemons never create accounts, chown installation paths, or manage cgroups. [Debian's systemd 257 sysusers documentation](https://manpages.debian.org/trixie/systemd/sysusers.d.5.en.html) specifies these entries and the vendor/administrator precedence.
 
@@ -70,7 +163,7 @@ Installation acceptance must exercise sysusers dry run and temporary root, repea
 
 ## Non-goals of the first profile
 
-A general OTLP receiver, a UI, SQLite, `rcgen`, an async runtime in the Spindle, inotify watchers, plugin boundaries, dynamic users, polkit helpers, and any index beyond Parquet row-group statistics and the per-row-group trigram filter of [ADR-0024](decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md) (part 2), unless a registered gate fails. The trigram filter is an optional index under the rule above: a missing or corrupt filter triggers an exact scan and never changes an answer. Every feature or configuration value must have a current consumer and a test.
+A general OTLP receiver, OIDC federation, an alert rule/notification engine, browser telemetry SDKs, SQLite, `rcgen`, an async runtime in the Spindle, inotify watchers, plugin boundaries, dynamic users, polkit helpers, and any index beyond Parquet row-group statistics and the per-row-group trigram filter of [ADR-0024](decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md) (part 2), unless a registered gate fails. The trigram filter is an optional index under the rule above: a missing or corrupt filter triggers an exact scan and never changes an answer. Every feature or configuration value must have a current consumer and a test.
 
 ## Changing this contract
 

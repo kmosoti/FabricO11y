@@ -1,0 +1,2 @@
+resource group: /user.slice/user-1000.slice/user@1000.service/app.slice/fabric-work-8d85c7f9fa8143ea9745384defaaa727.service; memory.max=21474836480; swap.max=0
+resource group: /user.slice/user-1000.slice/user@1000.service/app.slice/fabric-work-8d85c7f9fa8143ea9745384defaaa727.service; memory.max=21474836480; swap.max=0

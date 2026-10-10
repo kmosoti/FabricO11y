@@ -461,6 +461,116 @@
         "fabric-sim"
       ],
       "expect_failing": "delivery_survives_partitions_and_lost_answers"
+    },
+    {
+      "id": "M-SEAL-MERGE-ORDER",
+      "contract": "SEAL-2 merged rows equal the independently sorted contract order",
+      "incorrect_behavior": "sort each spill run in descending contract order",
+      "file": "crates/fabric-server/src/segment/bounded.rs",
+      "find": "rows.sort_by_key(Row::key);",
+      "replace": "rows.sort_by_key(|row| Reverse(row.key()));",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "-p",
+        "fabric-server",
+        "--lib",
+        "generated_merge_matches_independent_stable_sort_across_run_sizes",
+        "--",
+        "--test-threads=1"
+      ],
+      "expect_failing": "generated_merge_matches_independent_stable_sort_across_run_sizes"
+    },
+    {
+      "id": "M-SEAL-RETAIN-RUNS",
+      "contract": "SEAL-3 registered builder peak heap remains at or below 80 MiB",
+      "incorrect_behavior": "leak every owned row after its successful spill write, retaining payload proportional to input size",
+      "file": "crates/fabric-server/src/segment/bounded.rs",
+      "find": "                write_row(&mut output, &row)?;\n            }\n        }\n        output.flush()?;",
+      "replace": "                write_row(&mut output, &row)?;\n            }\n            std::mem::forget(row);\n        }\n        output.flush()?;",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "-p",
+        "fabric-server",
+        "--example",
+        "completion_builder",
+        "--features",
+        "responsibility-alloc-probe",
+        "bounded_registered_steady_128_heap_stays_below_ceiling",
+        "--",
+        "--test-threads=1"
+      ],
+      "expect_failing": "bounded_registered_steady_128_heap_stays_below_ceiling"
+    },
+    {
+      "id": "M-SEAL-SPILL-LEFT",
+      "contract": "SEAL-4 failed builds leave no spill run or building directory",
+      "incorrect_behavior": "skip owned building-directory removal on a build error",
+      "file": "crates/fabric-server/src/segment/bounded.rs",
+      "find": "if let Err(error) = fs::remove_dir_all(&self.0)",
+      "replace": "if let Err(error) = Ok::<(), io::Error>(())",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "-p",
+        "fabric-server",
+        "--lib",
+        "corrupt_frame_after_spilling_removes_scratch_and_preserves_custody",
+        "--",
+        "--test-threads=1"
+      ],
+      "expect_failing": "corrupt_frame_after_spilling_removes_scratch_and_preserves_custody"
+    },
+    {
+      "id": "M-SELF-SHUTDOWN-STATUS",
+      "contract": "ADR-0026 supervised shutdown reports a nonzero dedicated Spindle exit as server failure",
+      "incorrect_behavior": "ignore a nonzero dedicated Spindle exit once server shutdown has begun",
+      "file": "crates/fabric-server/src/main.rs",
+      "find": "} else if !status.success() {",
+      "replace": "} else if false && !status.success() {",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "-p",
+        "fabric-server",
+        "--bin",
+        "fabric-server",
+        "shutdown_tests",
+        "--",
+        "--test-threads=1"
+      ],
+      "expect_failing": "supervisor_shutdown_nonzero_child_exit_is_failure"
+    },
+    {
+      "id": "M-SELF-SHUTDOWN-DEADLINE",
+      "contract": "ADR-0026 supervised shutdown reports forced dedicated Spindle termination as server failure",
+      "incorrect_behavior": "kill and reap the dedicated Spindle at its shutdown deadline while reporting server success",
+      "file": "crates/fabric-server/src/main.rs",
+      "find": "                        failure.get_or_insert_with(||io::Error::other(\"dedicated Spindle shutdown deadline exceeded; forced kill\"));\n                        child=None;",
+      "replace": "                        child=None;",
+      "command": [
+        "cargo",
+        "test",
+        "--offline",
+        "--locked",
+        "-p",
+        "fabric-server",
+        "--bin",
+        "fabric-server",
+        "shutdown_tests",
+        "--",
+        "--test-threads=1"
+      ],
+      "expect_failing": "supervisor_shutdown_forced_child_kill_is_failure"
     }
   ]
 }

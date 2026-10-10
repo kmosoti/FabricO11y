@@ -1,0 +1,48 @@
+{
+  "command": [
+    "tools/bench/labs/query_compare/profile.py",
+    "--out",
+    "docs/experiments/benchmarks/data/query-plan-run-01/memory"
+  ],
+  "revision": "0144bc02b97e2de9b56b83070ece8a34f8ce6f7d",
+  "binaries": {
+    "plain": "c017b1a4435670c75cc55526895e40787cbc5d4540c50b4f9fcaad3c7c908a03",
+    "counted": "34912775d307efc822c8750ba28fb484a47996acadd5b70a39c14178f818357c"
+  },
+  "harness_sha256": "cf64f94b7f538d22836f0d59ec04ef46da36c17a338d61e7cbaf5ee4d2a85835",
+  "grader_sha256": "45a697467cdf97a35f83ff1b305ddd5e56419347aa909e98f5796bec86235e47",
+  "oracle_sha256": "fc696ee1173093c258ff4451c4a796dd8e5832761f9e0ff49f89a922b411d23a",
+  "storage": "/run/media/kmosoti/data/FabricO11y/scratch/work-wi0biz60/memory/allocation/tmp/query-allocation-profile",
+  "uname": [
+    "Linux",
+    "fedora-blade",
+    "7.2.8-200.fc44.x86_64",
+    "#1 SMP PREEMPT_DYNAMIC Fri Sep 25 21:05:44 UTC 2026",
+    "x86_64"
+  ],
+  "cpu_affinity": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11
+  ],
+  "build_seconds": 3.3421065430011367,
+  "limits": {
+    "scratch_bytes": 4294967296,
+    "evidence_bytes": 52428800
+  },
+  "build_settings": {
+    "RUSTFLAGS": null,
+    "CARGO_TARGET_DIR": "/run/media/kmosoti/data/FabricO11y/cargo",
+    "CARGO_BUILD_JOBS": null
+  },
+  "interpretation": "single allocation screen; first resets History only; OS page cache warm; fixed Scan then Walk, tail then Segment order; counted timings include combined allocator and phase observer cost; nested global allocator snapshots overlap and must not be summed as exclusive ownership; no metrics or rates"
+}

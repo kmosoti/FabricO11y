@@ -1,0 +1,33 @@
+{
+  "argv": [
+    "prlimit",
+    "--as=2147483648",
+    "--",
+    "taskset",
+    "-c",
+    "0,1,2,3,4",
+    "/workspace/scratch/responsibility-v2-frozen/counted",
+    "/workspace/scratch/responsibility-v2-preflight-02/scratch/control-20-p0-counted-minimal",
+    "control",
+    "20"
+  ],
+  "bench_env": {
+    "BENCH_RECORDS": "4096",
+    "BENCH_ORDER": "sorted",
+    "BENCH_BODY_SIZE": "900",
+    "BENCH_QUERY_REPEATS": "3",
+    "BENCH_OBSERVER": "minimal",
+    "BENCH_PREFLIGHT": "1",
+    "BENCH_QUERY_ROTATION": "0"
+  },
+  "case": {
+    "id": "control-20",
+    "mode": "control",
+    "size": 20,
+    "records": 4096,
+    "order": "sorted"
+  },
+  "phase": "preflight",
+  "observer": "minimal",
+  "predicted_logical_bytes": 141721600
+}

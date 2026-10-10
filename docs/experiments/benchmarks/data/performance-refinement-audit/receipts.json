@@ -1,0 +1,17 @@
+{
+  "kind": "focused correctness diagnostic, not performance comparison",
+  "rust_command": "cargo run --offline --quiet --manifest-path /workspace/scratch/performance-refinement-audit/rate-check/Cargo.toml",
+  "rust_exit": 0,
+  "oracle_comparison_exit": 1,
+  "production_modified": false,
+  "scope": "Exact extracted rates function, current core counter_step and unchanged Python rate-row oracle. No decoder/History/HTTP integration execution.",
+  "source_revision": "dfe7a3d0d9391fe79faa29318c586c1f40b567f9",
+  "reproducer_command": "python3 -B docs/experiments/benchmarks/data/performance-refinement-audit/reproduce.py",
+  "reproducer_exit": 1,
+  "reproducer_outcome": "All three retained rate mismatches reproduced; no execution failure.",
+  "documentation_command": "bun tools/docs/check.mjs",
+  "documentation_exit": 0,
+  "whitespace_command": "git diff --check",
+  "whitespace_exit": 0,
+  "fast_profile": "Not rerun for this audit-only change; prior failure remains documented."
+}

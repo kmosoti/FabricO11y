@@ -1,0 +1,343 @@
+{
+  "audit_revision": "440aaef9d8a444811549dccf4a793d38a95d812d",
+  "benchmark_executed": false,
+  "ready_for_three_tier_responsibility_attribution": false,
+  "groups": [
+    {
+      "responsibility": "collection",
+      "sources": [
+        {
+          "path_from_repo_root": "crates/fabric-adapter-linux/src/log_source.rs",
+          "sha256": "89f78e57ae8bf977b7aeea0dd744e54a79f0a341ab826d822e143ad2dda6f7d0"
+        },
+        {
+          "path_from_repo_root": "crates/fabric-adapter-linux/src/host.rs",
+          "sha256": "d1b1cb1cf4f9571086a44f79324d057a764233e555ee73c91a5020eb6e04e354"
+        },
+        {
+          "path_from_repo_root": "src/spindle/runtime.rs",
+          "sha256": "2e8ffa2452939730612a63530719f44081b4e678afeffd89dbaa2c628bbba3a9"
+        }
+      ],
+      "evidence": [
+        {
+          "path_from_repo_root": "docs/experiments/benchmarks/spindle-run-01.md",
+          "sha256": "492aaf3712d82fd33173b5881dd5b1ddafe6dd88fd1597d1c8c66b6979a14529"
+        },
+        {
+          "path_from_repo_root": "docs/experiments/benchmarks/dev-small-local-run-01.md",
+          "sha256": "febf3a6109d152097709564ea9e0ae4503b237b4c8045035c895c6b89841960f"
+        }
+      ],
+      "candidate_boundaries": [
+        "read_lines_costed",
+        "Runtime::collect_logs",
+        "Runtime::collect_once"
+      ],
+      "coverage_status": "aggregate_callable_phase_harness_missing",
+      "current_complete_isolated_phase_measurement": false,
+      "required_measurements": [
+        "poll_wait",
+        "source_reads",
+        "validation_cursors",
+        "otlp_encode",
+        "spool_append_separate"
+      ]
+    },
+    {
+      "responsibility": "delivery",
+      "sources": [
+        {
+          "path_from_repo_root": "src/spindle/sender.rs",
+          "sha256": "2f5af37193c4b947693f7c727d7567b11489c1c31aa5df7898b1d0ac582c45b7"
+        },
+        {
+          "path_from_repo_root": "src/spindle/runtime.rs",
+          "sha256": "2e8ffa2452939730612a63530719f44081b4e678afeffd89dbaa2c628bbba3a9"
+        },
+        {
+          "path_from_repo_root": "src/spindle/spool.rs",
+          "sha256": "2a5c39e9c7ddcc34617adb4654c1d52306ccc6a1e4beb86edd886d490d3bb161"
+        }
+      ],
+      "evidence": [
+        {
+          "path_from_repo_root": "docs/experiments/benchmarks/native-scaled-spindle-run-01.md",
+          "sha256": "8c0e9e876396ef3f7146a8eeb2fdbdfa1ed502f92753fd56a842131eb2214511"
+        }
+      ],
+      "candidate_boundaries": [
+        "Runtime::deliver",
+        "Sender::send",
+        "Spool::next_unacked",
+        "Spool::record_ack"
+      ],
+      "coverage_status": "aggregate_runnable_attempt_timer_partial",
+      "current_complete_isolated_phase_measurement": false,
+      "required_measurements": [
+        "spool_read_decode",
+        "throttle_backoff",
+        "transport_answer",
+        "ack_persist_reclaim",
+        "observation_hash_output"
+      ]
+    },
+    {
+      "responsibility": "storage",
+      "sources": [
+        {
+          "path_from_repo_root": "src/spindle/spool.rs",
+          "sha256": "2a5c39e9c7ddcc34617adb4654c1d52306ccc6a1e4beb86edd886d490d3bb161"
+        },
+        {
+          "path_from_repo_root": "crates/fabric-server/src/store.rs",
+          "sha256": "da2bf256fb8e5c9d8b1ab2c41686941401ed03b25feeb3c5c0b5133967cb40ce"
+        },
+        {
+          "path_from_repo_root": "crates/fabric-server/src/sealer.rs",
+          "sha256": "432d676986206d81cc1e8f70ffd04a76cb395d09c1c9253debf794ff4e73ec96"
+        },
+        {
+          "path_from_repo_root": "crates/fabric-server/src/segment.rs",
+          "sha256": "30900aa411df1b1de5b85aa48e64cc557f650be23deedddca3d80343ead577ca"
+        }
+      ],
+      "evidence": [
+        {
+          "path_from_repo_root": "docs/experiments/benchmarks/journal-reclaim-local-run-01.md",
+          "sha256": "aecd9ddad4c5c152f798dccc2dd416793e1f9226b6974c15ef90e423e0afb513"
+        },
+        {
+          "path_from_repo_root": "docs/experiments/benchmarks/append-attribution-s0.md",
+          "sha256": "4867ea6cf4b68c54e9ca4767761fabca4a346d14b435658d3d49de6b7caafa1a"
+        }
+      ],
+      "candidate_boundaries": [
+        "Spool::append/replay",
+        "server commit/reclaim",
+        "segment publication"
+      ],
+      "coverage_status": "native_phase_harness_missing_legacy_FOL2_not_substitute",
+      "current_complete_isolated_phase_measurement": false,
+      "required_measurements": [
+        "queue_wait",
+        "native_encode_write_sync",
+        "checkpoint_reclaim",
+        "read_amplification",
+        "recovery_retention"
+      ]
+    },
+    {
+      "responsibility": "processing",
+      "sources": [
+        {
+          "path_from_repo_root": "crates/fabric-server/src/rows.rs",
+          "sha256": "5ed6d59d86ce33f07cd6fdf24ae941df7a817b0740b2f96db2d8e64b36f96501"
+        },
+        {
+          "path_from_repo_root": "crates/fabric-server/src/segment.rs",
+          "sha256": "30900aa411df1b1de5b85aa48e64cc557f650be23deedddca3d80343ead577ca"
+        },
+        {
+          "path_from_repo_root": "crates/fabric-server/examples/seal_output_probe.rs",
+          "sha256": "a3b0ce8bc91883ac65fb96746eb225c2b7379840043f255d8e302eed8be86c93"
+        }
+      ],
+      "evidence": [
+        {
+          "path_from_repo_root": "docs/experiments/benchmarks/streaming-output-local-run-01.md",
+          "sha256": "788335b8f2a490e5ead46b52cb595a079f5ab2e72887e740e65cb1bef0031ec4"
+        },
+        {
+          "path_from_repo_root": "docs/experiments/benchmarks/sealer-profile-run-01.md",
+          "sha256": "e7b90dddaa336b9ac0897e0c88de36a2bee5fa415e5e79498381db8e86db5fc5"
+        }
+      ],
+      "candidate_boundaries": [
+        "rows parsing",
+        "segment::build",
+        "seal_output_probe"
+      ],
+      "coverage_status": "isolated_aggregate_probe_runnable_phase_attribution_missing",
+      "current_complete_isolated_phase_measurement": false,
+      "required_measurements": [
+        "decode_projection",
+        "sort",
+        "arrow_materialization",
+        "compression_filter",
+        "copy_and_allocation_lifetimes"
+      ]
+    },
+    {
+      "responsibility": "query",
+      "sources": [
+        {
+          "path_from_repo_root": "crates/fabric-server/src/http.rs",
+          "sha256": "254e99588794639b6c0725617435c868bae01367302d22838a02ff3b71f81e9e"
+        },
+        {
+          "path_from_repo_root": "crates/fabric-server/src/query.rs",
+          "sha256": "1725685737c5eadacd993fbcdd8ba0252f21c61584176deade2481dfcd63aa83"
+        },
+        {
+          "path_from_repo_root": "crates/fabric-server/src/tail.rs",
+          "sha256": "57878d8b37da8943743e446a0fc7e275e0737050072038e0b8fdc0948e0f0674"
+        }
+      ],
+      "evidence": [
+        {
+          "path_from_repo_root": "docs/experiments/benchmarks/query-attribution-run-01.md",
+          "sha256": "029f1d00ceca387d27c50405af19d4f215a5281e62b9c5d18d2eff2c9fd99d70"
+        },
+        {
+          "path_from_repo_root": "docs/research/consumer-performance.md",
+          "sha256": "213fbdd9e81d0a5f2cf83466f3894329ca223335a4edce4edea2f07546d2f9a3"
+        }
+      ],
+      "candidate_boundaries": [
+        "History::run",
+        "POST /v1/admin/query"
+      ],
+      "coverage_status": "callable_historical_benchmarks_current_phase_consumer_harness_missing",
+      "current_complete_isolated_phase_measurement": false,
+      "required_measurements": [
+        "dispatch_lock_wait",
+        "plan_read_decode",
+        "filter_rate_heap",
+        "json_response",
+        "first_query_visibility"
+      ]
+    },
+    {
+      "responsibility": "control_scheduling",
+      "sources": [
+        {
+          "path_from_repo_root": "crates/fabric-server/src/control.rs",
+          "sha256": "c962ec169f09cedcab6cc87246957240b400e6b5ce8f2adfb4b657a7df78ca9a"
+        },
+        {
+          "path_from_repo_root": "crates/fabric-server/src/sealer.rs",
+          "sha256": "432d676986206d81cc1e8f70ffd04a76cb395d09c1c9253debf794ff4e73ec96"
+        },
+        {
+          "path_from_repo_root": "src/spindle/runtime.rs",
+          "sha256": "2e8ffa2452939730612a63530719f44081b4e678afeffd89dbaa2c628bbba3a9"
+        }
+      ],
+      "evidence": [
+        {
+          "path_from_repo_root": "docs/experiments/benchmarks/alpha-phase3-fleet-run-01.md",
+          "sha256": "735f15090f1f6a72293f80f57c57ef43858163fc5fcad9e58d327c5d03ecfaed"
+        },
+        {
+          "path_from_repo_root": "docs/experiments/benchmarks/journal-reclaim-local-run-01.md",
+          "sha256": "aecd9ddad4c5c152f798dccc2dd416793e1f9226b6974c15ef90e423e0afb513"
+        }
+      ],
+      "candidate_boundaries": [
+        "Control enrollment/config/poll",
+        "sealer::pass",
+        "native runtime loop"
+      ],
+      "coverage_status": "flows_and_mechanism_tests_exist_current_timing_harness_missing",
+      "current_complete_isolated_phase_measurement": false,
+      "required_measurements": [
+        "inventory_cardinality",
+        "poll_persist_lock",
+        "desired_applied_delay",
+        "worker_occupancy_barrier",
+        "fairness_queue_age"
+      ]
+    },
+    {
+      "responsibility": "buffer_ownership",
+      "sources": [
+        {
+          "path_from_repo_root": "crates/fabric-server/examples/seal_output_probe.rs",
+          "sha256": "a3b0ce8bc91883ac65fb96746eb225c2b7379840043f255d8e302eed8be86c93"
+        },
+        {
+          "path_from_repo_root": "crates/fabric-server/src/query.rs",
+          "sha256": "1725685737c5eadacd993fbcdd8ba0252f21c61584176deade2481dfcd63aa83"
+        },
+        {
+          "path_from_repo_root": "crates/fabric-server/src/tail.rs",
+          "sha256": "57878d8b37da8943743e446a0fc7e275e0737050072038e0b8fdc0948e0f0674"
+        },
+        {
+          "path_from_repo_root": "src/spindle/spool.rs",
+          "sha256": "2a5c39e9c7ddcc34617adb4654c1d52306ccc6a1e4beb86edd886d490d3bb161"
+        }
+      ],
+      "evidence": [
+        {
+          "path_from_repo_root": "docs/experiments/benchmarks/streaming-output-local-run-01.md",
+          "sha256": "788335b8f2a490e5ead46b52cb595a079f5ab2e72887e740e65cb1bef0031ec4"
+        },
+        {
+          "path_from_repo_root": "docs/research/sealing-pipeline-model.md",
+          "sha256": "99e8b2260dab73598593fab2be9678b5b9c659520cf49f99f54f116595e6cb62"
+        }
+      ],
+      "candidate_boundaries": [
+        "Counted allocator",
+        "result heap",
+        "caches",
+        "native byte queues"
+      ],
+      "coverage_status": "partial_build_allocation_RSS_not_complete_ownership",
+      "current_complete_isolated_phase_measurement": false,
+      "required_measurements": [
+        "live_peak_cumulative_allocations",
+        "capacity_lifetime",
+        "copy_bytes",
+        "cache_charges",
+        "queue_bytes_age"
+      ]
+    },
+    {
+      "responsibility": "self_observation",
+      "sources": [
+        {
+          "path_from_repo_root": "src/spindle/meter.rs",
+          "sha256": "ed333271354df43ca61cb40064cbecf9db8a95a92aeb5bc4a8ad6a41974244a3"
+        },
+        {
+          "path_from_repo_root": "src/spindle/runtime.rs",
+          "sha256": "2e8ffa2452939730612a63530719f44081b4e678afeffd89dbaa2c628bbba3a9"
+        },
+        {
+          "path_from_repo_root": "tools/bench/run_native_scaled.py",
+          "sha256": "af97d3de63533ad706f880a9c84b3f81334c475a0686a9acac2c0f1c56eaecb8"
+        },
+        {
+          "path_from_repo_root": "tools/bench/analyze_native_scaled.py",
+          "sha256": "e1baa2b968b40065b4073b4490830fe1abfae7d88e0e807d693ce283e2ff214f"
+        },
+        {
+          "path_from_repo_root": "tools/bench/check_native_scaled_controls.py",
+          "sha256": "6b83ae18f422519d03bac1d459da917fe10f196ea7581203c136fed16497598a"
+        }
+      ],
+      "evidence": [
+        {
+          "path_from_repo_root": "docs/experiments/benchmarks/native-scaled-spindle-run-01.md",
+          "sha256": "8c0e9e876396ef3f7146a8eeb2fdbdfa1ed502f92753fd56a842131eb2214511"
+        }
+      ],
+      "candidate_boundaries": [
+        "meter/stdout",
+        "process/resource/inventory sampler"
+      ],
+      "coverage_status": "sampler_runnable_overhead_and_category_baselines_missing",
+      "current_complete_isolated_phase_measurement": false,
+      "required_measurements": [
+        "observer_cpu_io_allocations",
+        "sample_population_and_races",
+        "clock_validation",
+        "cgroup_categories_events",
+        "instrumentation_perturbation"
+      ]
+    }
+  ]
+}

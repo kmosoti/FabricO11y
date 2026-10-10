@@ -73,16 +73,20 @@ fn b64(bytes: &[u8]) -> String {
 
 /// The phase-0 high-entropy body: base85 of 13 chained SHA-256 digests.
 fn entropy_body(seed: u64, node: usize, tick: u64) -> String {
+    entropy_body_sized(seed, node, tick, 512)
+}
+
+fn entropy_body_sized(seed: u64, node: usize, tick: u64, body_bytes: usize) -> String {
     let source = format!("fabric-alpha-v1:{seed}:{node}:{tick}");
     let mut raw = Vec::with_capacity(13 * 32);
-    for i in 0_u16..13 {
+    for i in 0_u16..body_bytes.div_ceil(40) as u16 {
         let mut h = Sha256::new();
         h.update(source.as_bytes());
         h.update(b":");
         h.update(i.to_be_bytes());
         raw.extend_from_slice(&h.finalize());
     }
-    base85(&raw)[..512].to_owned()
+    base85(&raw)[..body_bytes].to_owned()
 }
 
 /// Python's `base64.b85encode` alphabet and padding.
@@ -128,6 +132,17 @@ fn resource(index: usize) -> Resource {
 /// The registered offer for one identity in one second; `factor` > 1 is a
 /// burst of that many times the registered log rate.
 fn offer(seed: u64, index: usize, second: u64, now: u64, factor: u64) -> (Vec<u8>, Vec<u8>) {
+    offer_sized(seed, index, second, now, factor, 512)
+}
+
+fn offer_sized(
+    seed: u64,
+    index: usize,
+    second: u64,
+    now: u64,
+    factor: u64,
+    body_bytes: usize,
+) -> (Vec<u8>, Vec<u8>) {
     let records = (0..2 * factor)
         .map(|half| {
             // Registered ticks for the first two; burst extras get distinct ticks.
@@ -137,9 +152,13 @@ fn offer(seed: u64, index: usize, second: u64, now: u64, factor: u64) -> (Vec<u8
                 1_000_000 + second * 100 + half
             };
             let body = if tick.is_multiple_of(2) {
-                "R".repeat(512)
+                "R".repeat(body_bytes)
             } else {
-                entropy_body(seed, index, tick)
+                if body_bytes == 512 {
+                    entropy_body(seed, index, tick)
+                } else {
+                    entropy_body_sized(seed, index, tick, body_bytes)
+                }
             };
             LogRecord {
                 observed_time_unix_nano: now,
@@ -235,6 +254,8 @@ struct Args {
     seed: u64,
     seconds: u64,
     workers: usize,
+    log_factor: u64,
+    body_bytes: usize,
     out: PathBuf,
     /// Seconds `[from, to)` offered at `factor` times the log rate.
     burst: Option<(u64, u64, u64)>,
@@ -255,6 +276,20 @@ fn parse() -> Result<Args, String> {
     if !SEEDS.contains(&seed) {
         return Err("unregistered seed".into());
     }
+    let log_factor = map
+        .get("log-factor")
+        .map_or(Ok(1_u64), |v| v.parse())
+        .map_err(|_| "bad --log-factor")?;
+    let body_bytes = map
+        .get("body-bytes")
+        .map_or(Ok(512_usize), |v| v.parse())
+        .map_err(|_| "bad --body-bytes")?;
+    if !(1..=100).contains(&log_factor)
+        || !(1..=16384).contains(&body_bytes)
+        || log_factor as usize * 2 * body_bytes > 900_000
+    {
+        return Err("log factor/body size exceeds bounded fixture limits".into());
+    }
     Ok(Args {
         url: get("server-url")?,
         ca: PathBuf::from(get("ca")?),
@@ -262,6 +297,8 @@ fn parse() -> Result<Args, String> {
         seed,
         seconds: get("seconds")?.parse().map_err(|_| "bad --seconds")?,
         workers: get("workers")?.parse().map_err(|_| "bad --workers")?,
+        log_factor,
+        body_bytes,
         out: PathBuf::from(get("out")?),
         burst: match (
             map.get("burst-from"),
@@ -344,7 +381,13 @@ fn run(args: Args) -> std::io::Result<()> {
     for mut slice in slices {
         let shared = Arc::clone(&shared);
         let stop = Arc::clone(&stop);
-        let (seed, seconds, burst) = (args.seed, args.seconds, args.burst);
+        let (seed, seconds, burst, log_factor, body_bytes) = (
+            args.seed,
+            args.seconds,
+            args.burst,
+            args.log_factor,
+            args.body_bytes,
+        );
         handles.push(std::thread::spawn(move || {
             let mut next_second = 0_u64;
             loop {
@@ -357,7 +400,11 @@ fn run(args: Args) -> std::io::Result<()> {
                             Some((from, to, f)) if (from..to).contains(&next_second) => f,
                             _ => 1,
                         };
-                        let (logs, metrics) = offer(seed, id.index, next_second, now, factor);
+                        let (logs, metrics) = if log_factor == 1 && body_bytes == 512 {
+                            offer(seed, id.index, next_second, now, factor)
+                        } else {
+                            offer_sized(seed, id.index, next_second, now, factor * log_factor, body_bytes)
+                        };
                         let batch = Batch {
                             version: 1,
                             node_id: id.node_id.to_vec(),
@@ -382,8 +429,8 @@ fn run(args: Args) -> std::io::Result<()> {
                         log_event(
                             &shared,
                             format!(
-                                "{{\"e\":\"created\",\"id\":{},\"seq\":{},\"t\":{now}}}",
-                                id.index, id.next_sequence
+                                "{{\"e\":\"created\",\"id\":{},\"seq\":{},\"t\":{now},\"generated_ns\":{}}}",
+                                id.index, id.next_sequence, unix_ns()
                             ),
                         );
                         id.pending.push_back((id.next_sequence, now, bytes));
@@ -508,6 +555,25 @@ fn run(args: Args) -> std::io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sized_workload_preserves_clock_and_exact_event_count() {
+        for factor in [25, 75] {
+            let (logs, _) = offer_sized(0xA11FA001, 7, 12, 123456, factor, 900);
+            let decoded = ExportLogsServiceRequest::decode(logs.as_slice()).unwrap();
+            let rows = &decoded.resource_logs[0].scope_logs[0].log_records;
+            assert_eq!(rows.len(), (2 * factor) as usize);
+            for row in rows {
+                assert_eq!(row.observed_time_unix_nano, 123456);
+                let Some(any_value::Value::StringValue(body)) =
+                    row.body.as_ref().and_then(|v| v.value.as_ref())
+                else {
+                    panic!("string body required")
+                };
+                assert_eq!(body.len(), 900);
+            }
+        }
+    }
 
     #[test]
     fn entropy_body_matches_the_phase0_python_generator() {

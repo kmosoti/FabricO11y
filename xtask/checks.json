@@ -287,7 +287,7 @@
     },
     {
       "id": "docs",
-      "profile": "fast",
+      "profile": "documentation",
       "command": [
         "bun",
         "tools/docs/check.mjs"
@@ -305,7 +305,7 @@
     },
     {
       "id": "docs-checker-probes",
-      "profile": "fast",
+      "profile": "documentation",
       "command": [
         "bun",
         "tools/docs/check.test.mjs"
@@ -323,7 +323,7 @@
     },
     {
       "id": "hooks",
-      "profile": "fast",
+      "profile": "documentation",
       "command": [
         "python3",
         "-B",
@@ -774,6 +774,7 @@
         "cargo",
         "deny",
         "--locked",
+        "--workspace",
         "check"
       ],
       "scope": "cargo-deny: RustSec advisories, yanked crates, licence allow-list, wildcard requirements and sources (deny.toml)",
@@ -809,6 +810,60 @@
       "expected": "exit 0",
       "contracts": [],
       "unchecked": "Coverage says what ran, not what was asserted; binaries started as subprocesses are not instrumented."
+    },
+    {
+      "id": "wasm-check",
+      "profile": "fast",
+      "command": [
+        "cargo",
+        "check",
+        "--locked",
+        "-p",
+        "fabric-ui",
+        "--target",
+        "wasm32-unknown-unknown"
+      ],
+      "requires": [
+        "cargo"
+      ],
+      "scope": "Locked WASM compilation; native workspace compilation cannot establish browser compilation.",
+      "expected": "exit 0",
+      "contracts": [],
+      "unchecked": "Locked WASM compilation; native workspace compilation cannot establish browser compilation."
+    },
+    {
+      "id": "ui-palette",
+      "profile": "fast",
+      "command": [
+        "python3",
+        "-B",
+        "tools/ui/contrast_check.py"
+      ],
+      "requires": [
+        "python3"
+      ],
+      "scope": "Deterministic selected UI text contrast; no whole accessibility conformance claim.",
+      "expected": "exit 0",
+      "contracts": [],
+      "unchecked": "Deterministic selected UI text contrast; no whole accessibility conformance claim."
+    },
+    {
+      "id": "package-contracts",
+      "profile": "fast",
+      "command": [
+        "python3",
+        "-B",
+        "tools/packaging/test_packaging.py"
+      ],
+      "requires": [
+        "python3",
+        "sh",
+        "bash"
+      ],
+      "scope": "Exact package shell identities and deliberately corrupted assets; no installed-system acceptance claim.",
+      "expected": "exit 0",
+      "contracts": [],
+      "unchecked": "Exact package shell identities and deliberately corrupted assets; no installed-system acceptance claim."
     }
   ]
 }

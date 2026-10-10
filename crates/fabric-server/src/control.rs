@@ -18,6 +18,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const STATE: &str = "control.json";
 const MAX_STATE_BYTES: u64 = 16 * 1024 * 1024;
 pub const MAX_NODES: usize = 4096;
+/// One local credential per server state directory, never the administrator token.
+pub const SELF_SPINDLE_NAME: &str = "fabric-server-self";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -77,6 +79,15 @@ pub struct NodeRecord {
     pub enrolled_unix_s: u64,
 }
 
+impl NodeRecord {
+    /// Stable enrollment identity, independent of its display label. Existing
+    /// credentials are immutable and revoked records/names are never reused.
+    /// A future credential-rotation migration must persist this identity first.
+    pub fn enrollment_id(&self) -> String {
+        sha256_hex(format!("fabric-enrollment-v1:{}", self.token_sha256).as_bytes())
+    }
+}
+
 #[derive(Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Stored {
@@ -106,6 +117,9 @@ pub struct Control {
     nodes: BTreeMap<String, NodeRecord>,
     by_token: HashMap<[u8; 32], String>,
     observed: HashMap<String, Observed>,
+    /// A published rename with failed directory sync requires reopen before
+    /// memory may authorize or publish another administrative transition.
+    poisoned: bool,
 }
 
 fn invalid(message: &str) -> io::Error {
@@ -177,6 +191,7 @@ impl Control {
             nodes: BTreeMap::new(),
             by_token: HashMap::new(),
             observed: HashMap::new(),
+            poisoned: false,
         };
         for record in stored.nodes {
             let hash = parse_hex32(&record.token_sha256).ok_or_else(|| {
@@ -196,13 +211,35 @@ impl Control {
         Ok(control)
     }
 
-    fn persist(&self) -> io::Result<()> {
+    fn ensure_healthy(&self) -> io::Result<()> {
+        if self.poisoned {
+            return Err(io::Error::other(
+                "control publication uncertain; reopen required",
+            ));
+        }
+        Ok(())
+    }
+
+    fn persist(&mut self) -> io::Result<()> {
+        self.persist_with(|dir| File::open(dir)?.sync_all())
+    }
+
+    fn persist_with(
+        &mut self,
+        sync_directory: impl FnOnce(&Path) -> io::Result<()>,
+    ) -> io::Result<()> {
+        self.ensure_healthy()?;
         let stored = Stored {
             version: 1,
             nodes: self.nodes.values().cloned().collect(),
         };
         let text =
             serde_json::to_vec_pretty(&stored).map_err(|e| io::Error::other(e.to_string()))?;
+        // Every accepted publication must remain readable by open, including
+        // JSON escaping and formatting overhead across the whole inventory.
+        if text.len() as u64 > MAX_STATE_BYTES {
+            return Err(invalid("control state exceeds its size cap"));
+        }
         let staged = self.dir.join("control.json.tmp");
         let mut out = OpenOptions::new()
             .write(true)
@@ -212,16 +249,21 @@ impl Control {
         out.write_all(&text)?;
         out.sync_all()?;
         fs::rename(&staged, self.dir.join(STATE))?;
-        File::open(&self.dir)?.sync_all()
+        if let Err(error) = sync_directory(&self.dir) {
+            self.poisoned = true;
+            return Err(error);
+        }
+        Ok(())
     }
 
-    /// Apply a change to one record and persist it; roll back on failure so
-    /// memory never claims a state that is not durable.
+    /// Apply and persist one transition. Failure restores the previous record;
+    /// uncertainty after rename additionally disables authority until reopen.
     fn change(
         &mut self,
         name: &str,
         edit: impl FnOnce(&mut NodeRecord) -> io::Result<()>,
     ) -> io::Result<NodeRecord> {
+        self.ensure_healthy()?;
         let before = self
             .nodes
             .get(name)
@@ -249,6 +291,7 @@ impl Control {
         name: &str,
         desired: DesiredConfig,
     ) -> io::Result<(NodeRecord, String)> {
+        self.ensure_healthy()?;
         if !valid_name(name) {
             return Err(invalid("node name must be 1-64 of [A-Za-z0-9._-]"));
         }
@@ -293,6 +336,53 @@ impl Control {
         })
     }
 
+    /// Bootstrap a local credential already durably stored by the CLI. A retry
+    /// after token publication reuses it; existing/revoked identities are never
+    /// replaced or silently reactivated. Uses the ordinary control publication.
+    pub fn ensure_self_spindle(&mut self, token: &str, desired: DesiredConfig) -> io::Result<()> {
+        self.ensure_healthy()?;
+        if token.len() != 64 || !token.bytes().all(|b| b.is_ascii_hexdigit()) {
+            return Err(invalid("local Spindle token must be 64 hexadecimal bytes"));
+        }
+        let hash = sha256_hex(token.as_bytes());
+        if let Some(existing) = self.nodes.get(SELF_SPINDLE_NAME) {
+            if existing.token_sha256 != hash || existing.status == Status::Revoked {
+                return Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "local Spindle identity differs or is revoked; restore its credential or resolve enrollment explicitly",
+                ));
+            }
+            return Ok(());
+        }
+        check_desired(&desired)?;
+        if self.nodes.len() >= MAX_NODES
+            || self
+                .nodes
+                .values()
+                .any(|record| record.token_sha256 == hash)
+        {
+            return Err(invalid(
+                "local Spindle enrollment is full or credential is already assigned",
+            ));
+        }
+        let record = NodeRecord {
+            name: SELF_SPINDLE_NAME.into(),
+            token_sha256: hash.clone(),
+            status: Status::Active,
+            revision: 1,
+            desired,
+            enrolled_unix_s: unix_s(),
+        };
+        self.nodes.insert(SELF_SPINDLE_NAME.into(), record);
+        if let Err(error) = self.persist() {
+            self.nodes.remove(SELF_SPINDLE_NAME);
+            return Err(error);
+        }
+        self.by_token
+            .insert(parse_hex32(&hash).unwrap(), SELF_SPINDLE_NAME.into());
+        Ok(())
+    }
+
     pub fn set_status(&mut self, name: &str, status: Status) -> io::Result<NodeRecord> {
         self.change(name, |r| {
             r.status = kernel::set_status(r.status.into(), status.into())
@@ -304,6 +394,9 @@ impl Control {
 
     /// The node name for a presented bearer token, if it is enrolled and not revoked.
     pub fn authenticate(&self, token: &str) -> Option<String> {
+        if self.poisoned {
+            return None;
+        }
         let digest: [u8; 32] = Sha256::digest(token.as_bytes()).into();
         self.by_token.get(&digest).cloned()
     }
@@ -315,6 +408,9 @@ impl Control {
         applied_revision: u64,
         error: Option<String>,
     ) -> Option<NodeView> {
+        if self.poisoned {
+            return None;
+        }
         let record = self.nodes.get(name)?;
         self.observed.insert(
             name.to_owned(),
@@ -342,5 +438,76 @@ impl Control {
                 )
             })
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod publication_tests {
+    use super::*;
+
+    #[test]
+    fn a_failed_postrename_sync_stops_authorization_until_reopen() {
+        let root = std::env::var_os("FABRIC_SCRATCH_ROOT")
+            .expect("run tests through the resource launcher");
+        let path = PathBuf::from(root).join(format!("control-sync-{}", std::process::id()));
+        fs::create_dir(&path).unwrap();
+        let result = std::panic::catch_unwind(|| {
+            let mut control = Control::open(&path).unwrap();
+            let (_, token) = control
+                .enroll(
+                    "edge",
+                    DesiredConfig {
+                        logs: vec![],
+                        metric_interval_s: 15,
+                    },
+                )
+                .unwrap();
+            assert_eq!(control.authenticate(&token).as_deref(), Some("edge"));
+            let before = control.nodes["edge"].clone();
+            control.nodes.get_mut("edge").unwrap().status = Status::Revoked;
+            let error = control
+                .persist_with(|_| Err(io::Error::other("injected directory sync failure")))
+                .unwrap_err();
+            assert_eq!(error.to_string(), "injected directory sync failure");
+            // Administrative callers restore their previous in-memory record
+            // on error. The failed sync cannot turn that rollback into authority.
+            control.nodes.insert("edge".into(), before);
+            assert!(control.authenticate(&token).is_none());
+            assert!(control.poll("edge", 1, None).is_none());
+            assert!(control.set_status("edge", Status::Active).is_err());
+            assert!(
+                control
+                    .enroll(
+                        "new",
+                        DesiredConfig {
+                            logs: vec![],
+                            metric_interval_s: 15
+                        }
+                    )
+                    .is_err()
+            );
+            assert!(
+                control
+                    .ensure_self_spindle(
+                        &"aa".repeat(32),
+                        DesiredConfig {
+                            logs: vec![],
+                            metric_interval_s: 15
+                        }
+                    )
+                    .is_err()
+            );
+            drop(control);
+            // A real rename occurred before the injected failure. Reopen
+            // reconciles the published state and preserves terminal revocation.
+            let mut reopened = Control::open(&path).unwrap();
+            assert!(reopened.authenticate(&token).is_none());
+            assert_eq!(reopened.inventory()[0].0.status, Status::Revoked);
+            assert!(reopened.set_status("edge", Status::Active).is_err());
+        });
+        fs::remove_dir_all(&path).expect("remove owned control sync scratch");
+        if let Err(panic) = result {
+            std::panic::resume_unwind(panic);
+        }
     }
 }

@@ -118,6 +118,88 @@ pub fn counter_step(previous: CounterPoint, next: CounterPoint) -> CounterStep {
     CounterStep::Reset
 }
 
+/// Counter values retain their OTLP type until the delta has been formed.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum CounterNumber {
+    Int(i64),
+    Double(f64),
+}
+
+/// A typed counter point; integer precision is part of the input contract.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CounterSample {
+    pub start_ns: u64,
+    pub time_ns: u64,
+    pub value: CounterNumber,
+}
+
+// Compare an integer with a double without rounding the integer to 53 bits.
+// Inside the i64 range, truncation is exact; the fractional part breaks ties.
+fn int_double_cmp(integer: i64, double: f64) -> Option<core::cmp::Ordering> {
+    use core::cmp::Ordering;
+    if !double.is_finite() {
+        return None;
+    }
+    if double >= 9_223_372_036_854_775_808.0 {
+        return Some(Ordering::Less);
+    }
+    if double < -9_223_372_036_854_775_808.0 {
+        return Some(Ordering::Greater);
+    }
+    let truncated = double as i64;
+    match integer.cmp(&truncated) {
+        Ordering::Equal => (truncated as f64).partial_cmp(&double),
+        order => Some(order),
+    }
+}
+
+/// Typed refinement of `counter_step`: integer deltas are exact in i128,
+/// then rounded once for the rate. Mixed deltas use floating subtraction,
+/// but decrease detection compares the represented values without rounding.
+pub fn counter_step_numbers(previous: CounterSample, next: CounterSample) -> CounterStep {
+    use CounterNumber::{Double, Int};
+    use core::cmp::Ordering;
+    let order = match (previous.value, next.value) {
+        (Int(a), Int(b)) => Some(a.cmp(&b)),
+        (Int(a), Double(b)) => int_double_cmp(a, b),
+        (Double(a), Int(b)) => int_double_cmp(b, a).map(Ordering::reverse),
+        (Double(a), Double(b)) if a.is_finite() && b.is_finite() => a.partial_cmp(&b),
+        _ => None,
+    };
+    // Retain the original temporal/reset kernel as the deciding boundary.
+    // A represented decrease is encoded as a decreasing normalized pair even
+    // when floating subtraction would round its delta to zero.
+    let normalized = |a, b| {
+        counter_step(
+            CounterPoint {
+                start_ns: previous.start_ns,
+                time_ns: previous.time_ns,
+                value: a,
+            },
+            CounterPoint {
+                start_ns: next.start_ns,
+                time_ns: next.time_ns,
+                value: b,
+            },
+        )
+    };
+    match order {
+        Some(Ordering::Greater) => return normalized(1.0, 0.0),
+        None => return CounterStep::Reset,
+        _ => {}
+    }
+    let delta = match (previous.value, next.value) {
+        (Int(a), Int(b)) => i128::from(b).checked_sub(i128::from(a)).map(|d| d as f64),
+        (Int(a), Double(b)) => Some(b - a as f64),
+        (Double(a), Int(b)) => Some(b as f64 - a),
+        (Double(a), Double(b)) => Some(b - a),
+    };
+    if let Some(delta) = delta {
+        return normalized(0.0, delta);
+    }
+    CounterStep::Reset
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -211,5 +293,92 @@ mod tests {
             CounterStep::Reset
         );
         assert_eq!(counter_step(p(1, 1.0), p(2, f64::NAN)), CounterStep::Reset);
+    }
+}
+
+#[cfg(test)]
+mod typed_counter_tests {
+    use super::*;
+    use CounterNumber::{Double, Int};
+
+    fn step(a: CounterNumber, b: CounterNumber) -> CounterStep {
+        counter_step_numbers(
+            CounterSample {
+                start_ns: 1,
+                time_ns: 1_000_000_000,
+                value: a,
+            },
+            CounterSample {
+                start_ns: 1,
+                time_ns: 2_000_000_000,
+                value: b,
+            },
+        )
+    }
+
+    #[test]
+    fn integer_deltas_and_mixed_comparisons_keep_precision() {
+        assert_eq!(
+            step(Int(1 << 53), Int((1 << 53) + 1)),
+            CounterStep::Rate(1.0)
+        );
+        assert_eq!(step(Int((1 << 53) + 1), Int(1 << 53)), CounterStep::Reset);
+        assert_eq!(
+            step(Int(i64::MIN), Int(i64::MAX)),
+            CounterStep::Rate(u64::MAX as f64)
+        );
+        assert_eq!(
+            step(Int(i64::MAX), Double(9_223_372_036_854_775_808.0)),
+            CounterStep::Rate(0.0)
+        );
+        assert_eq!(
+            step(Double(9_223_372_036_854_775_808.0), Int(i64::MAX)),
+            CounterStep::Reset
+        );
+        assert_eq!(
+            step(Int((1 << 53) + 1), Double((1u64 << 53) as f64)),
+            CounterStep::Reset
+        );
+        assert_eq!(
+            step(Double((1u64 << 53) as f64), Int((1 << 53) + 1)),
+            CounterStep::Rate(0.0)
+        );
+        assert_eq!(step(Int(-2), Double(-1.5)), CounterStep::Rate(0.5));
+        assert_eq!(step(Double(-1.5), Int(-2)), CounterStep::Reset);
+        for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            assert_eq!(step(Int(0), Double(value)), CounterStep::Reset);
+            assert_eq!(step(Double(value), Int(0)), CounterStep::Reset);
+        }
+    }
+
+    #[test]
+    fn double_refinement_preserves_the_legacy_step() {
+        let values = [
+            -f64::MAX,
+            -1.5,
+            0.0,
+            0.5,
+            1.0,
+            f64::MAX,
+            f64::INFINITY,
+            f64::NAN,
+        ];
+        for a in values {
+            for b in values {
+                let old = counter_step(
+                    CounterPoint {
+                        start_ns: 1,
+                        time_ns: 1_000_000_000,
+                        value: a,
+                    },
+                    CounterPoint {
+                        start_ns: 1,
+                        time_ns: 2_000_000_000,
+                        value: b,
+                    },
+                );
+                assert_eq!(step(Double(a), Double(b)), old);
+            }
+        }
     }
 }

@@ -1,0 +1,724 @@
+{
+  "verdicts": [
+    {
+      "file": "answer-segment-scan-broad.jsonl",
+      "index": 0,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 128,
+        "answered_rows": 128
+      },
+      "answer_sha256": "68db5ae2580403e3d4f82d3bea2d2ffffb7a9fc90bd212bedf95c8fbd363412e"
+    },
+    {
+      "file": "answer-segment-scan-broad.jsonl",
+      "index": 1,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 128,
+        "answered_rows": 128
+      },
+      "answer_sha256": "68db5ae2580403e3d4f82d3bea2d2ffffb7a9fc90bd212bedf95c8fbd363412e"
+    },
+    {
+      "file": "answer-segment-scan-broad.jsonl",
+      "index": 2,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 128,
+        "answered_rows": 128
+      },
+      "answer_sha256": "68db5ae2580403e3d4f82d3bea2d2ffffb7a9fc90bd212bedf95c8fbd363412e"
+    },
+    {
+      "file": "answer-segment-scan-broad.jsonl",
+      "index": 3,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 128,
+        "answered_rows": 128
+      },
+      "answer_sha256": "68db5ae2580403e3d4f82d3bea2d2ffffb7a9fc90bd212bedf95c8fbd363412e"
+    },
+    {
+      "file": "answer-segment-scan-common.jsonl",
+      "index": 0,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 64,
+        "answered_rows": 64
+      },
+      "answer_sha256": "7042ae4ecf25271384538ec153fc23eba9a1399c7b68dc9df8035c536a212493"
+    },
+    {
+      "file": "answer-segment-scan-common.jsonl",
+      "index": 1,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 64,
+        "answered_rows": 64
+      },
+      "answer_sha256": "7042ae4ecf25271384538ec153fc23eba9a1399c7b68dc9df8035c536a212493"
+    },
+    {
+      "file": "answer-segment-scan-common.jsonl",
+      "index": 2,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 64,
+        "answered_rows": 64
+      },
+      "answer_sha256": "7042ae4ecf25271384538ec153fc23eba9a1399c7b68dc9df8035c536a212493"
+    },
+    {
+      "file": "answer-segment-scan-common.jsonl",
+      "index": 3,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 64,
+        "answered_rows": 64
+      },
+      "answer_sha256": "7042ae4ecf25271384538ec153fc23eba9a1399c7b68dc9df8035c536a212493"
+    },
+    {
+      "file": "answer-segment-scan-empty.jsonl",
+      "index": 0,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 0,
+        "answered_rows": 0
+      },
+      "answer_sha256": "c7ea948a4e5ac3c90024e5406bebf009d4130f7297988e54ef1b9b6c15b43757"
+    },
+    {
+      "file": "answer-segment-scan-empty.jsonl",
+      "index": 1,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 0,
+        "answered_rows": 0
+      },
+      "answer_sha256": "c7ea948a4e5ac3c90024e5406bebf009d4130f7297988e54ef1b9b6c15b43757"
+    },
+    {
+      "file": "answer-segment-scan-empty.jsonl",
+      "index": 2,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 0,
+        "answered_rows": 0
+      },
+      "answer_sha256": "c7ea948a4e5ac3c90024e5406bebf009d4130f7297988e54ef1b9b6c15b43757"
+    },
+    {
+      "file": "answer-segment-scan-empty.jsonl",
+      "index": 3,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 0,
+        "answered_rows": 0
+      },
+      "answer_sha256": "c7ea948a4e5ac3c90024e5406bebf009d4130f7297988e54ef1b9b6c15b43757"
+    },
+    {
+      "file": "answer-segment-scan-selective.jsonl",
+      "index": 0,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 1,
+        "answered_rows": 1
+      },
+      "answer_sha256": "be74d2d557cc10d94cae5255a79241a75955e372f742986d215cb4b369f7f095"
+    },
+    {
+      "file": "answer-segment-scan-selective.jsonl",
+      "index": 1,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 1,
+        "answered_rows": 1
+      },
+      "answer_sha256": "be74d2d557cc10d94cae5255a79241a75955e372f742986d215cb4b369f7f095"
+    },
+    {
+      "file": "answer-segment-scan-selective.jsonl",
+      "index": 2,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 1,
+        "answered_rows": 1
+      },
+      "answer_sha256": "be74d2d557cc10d94cae5255a79241a75955e372f742986d215cb4b369f7f095"
+    },
+    {
+      "file": "answer-segment-scan-selective.jsonl",
+      "index": 3,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 1,
+        "answered_rows": 1
+      },
+      "answer_sha256": "be74d2d557cc10d94cae5255a79241a75955e372f742986d215cb4b369f7f095"
+    },
+    {
+      "file": "answer-segment-walk-broad.jsonl",
+      "index": 0,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 128,
+        "answered_rows": 128
+      },
+      "answer_sha256": "68db5ae2580403e3d4f82d3bea2d2ffffb7a9fc90bd212bedf95c8fbd363412e"
+    },
+    {
+      "file": "answer-segment-walk-broad.jsonl",
+      "index": 1,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 128,
+        "answered_rows": 128
+      },
+      "answer_sha256": "68db5ae2580403e3d4f82d3bea2d2ffffb7a9fc90bd212bedf95c8fbd363412e"
+    },
+    {
+      "file": "answer-segment-walk-broad.jsonl",
+      "index": 2,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 128,
+        "answered_rows": 128
+      },
+      "answer_sha256": "68db5ae2580403e3d4f82d3bea2d2ffffb7a9fc90bd212bedf95c8fbd363412e"
+    },
+    {
+      "file": "answer-segment-walk-broad.jsonl",
+      "index": 3,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 128,
+        "answered_rows": 128
+      },
+      "answer_sha256": "68db5ae2580403e3d4f82d3bea2d2ffffb7a9fc90bd212bedf95c8fbd363412e"
+    },
+    {
+      "file": "answer-segment-walk-common.jsonl",
+      "index": 0,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 64,
+        "answered_rows": 64
+      },
+      "answer_sha256": "7042ae4ecf25271384538ec153fc23eba9a1399c7b68dc9df8035c536a212493"
+    },
+    {
+      "file": "answer-segment-walk-common.jsonl",
+      "index": 1,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 64,
+        "answered_rows": 64
+      },
+      "answer_sha256": "7042ae4ecf25271384538ec153fc23eba9a1399c7b68dc9df8035c536a212493"
+    },
+    {
+      "file": "answer-segment-walk-common.jsonl",
+      "index": 2,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 64,
+        "answered_rows": 64
+      },
+      "answer_sha256": "7042ae4ecf25271384538ec153fc23eba9a1399c7b68dc9df8035c536a212493"
+    },
+    {
+      "file": "answer-segment-walk-common.jsonl",
+      "index": 3,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 64,
+        "answered_rows": 64
+      },
+      "answer_sha256": "7042ae4ecf25271384538ec153fc23eba9a1399c7b68dc9df8035c536a212493"
+    },
+    {
+      "file": "answer-segment-walk-empty.jsonl",
+      "index": 0,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 0,
+        "answered_rows": 0
+      },
+      "answer_sha256": "c7ea948a4e5ac3c90024e5406bebf009d4130f7297988e54ef1b9b6c15b43757"
+    },
+    {
+      "file": "answer-segment-walk-empty.jsonl",
+      "index": 1,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 0,
+        "answered_rows": 0
+      },
+      "answer_sha256": "c7ea948a4e5ac3c90024e5406bebf009d4130f7297988e54ef1b9b6c15b43757"
+    },
+    {
+      "file": "answer-segment-walk-empty.jsonl",
+      "index": 2,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 0,
+        "answered_rows": 0
+      },
+      "answer_sha256": "c7ea948a4e5ac3c90024e5406bebf009d4130f7297988e54ef1b9b6c15b43757"
+    },
+    {
+      "file": "answer-segment-walk-empty.jsonl",
+      "index": 3,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 0,
+        "answered_rows": 0
+      },
+      "answer_sha256": "c7ea948a4e5ac3c90024e5406bebf009d4130f7297988e54ef1b9b6c15b43757"
+    },
+    {
+      "file": "answer-segment-walk-selective.jsonl",
+      "index": 0,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 1,
+        "answered_rows": 1
+      },
+      "answer_sha256": "be74d2d557cc10d94cae5255a79241a75955e372f742986d215cb4b369f7f095"
+    },
+    {
+      "file": "answer-segment-walk-selective.jsonl",
+      "index": 1,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 1,
+        "answered_rows": 1
+      },
+      "answer_sha256": "be74d2d557cc10d94cae5255a79241a75955e372f742986d215cb4b369f7f095"
+    },
+    {
+      "file": "answer-segment-walk-selective.jsonl",
+      "index": 2,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 1,
+        "answered_rows": 1
+      },
+      "answer_sha256": "be74d2d557cc10d94cae5255a79241a75955e372f742986d215cb4b369f7f095"
+    },
+    {
+      "file": "answer-segment-walk-selective.jsonl",
+      "index": 3,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 1,
+        "answered_rows": 1
+      },
+      "answer_sha256": "be74d2d557cc10d94cae5255a79241a75955e372f742986d215cb4b369f7f095"
+    },
+    {
+      "file": "answer-tail-scan-broad.jsonl",
+      "index": 0,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 128,
+        "answered_rows": 128
+      },
+      "answer_sha256": "87ccccd3a753d46d533f4799c860787d755cb51e7c543f344d0b752e03b21dfd"
+    },
+    {
+      "file": "answer-tail-scan-broad.jsonl",
+      "index": 1,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 128,
+        "answered_rows": 128
+      },
+      "answer_sha256": "87ccccd3a753d46d533f4799c860787d755cb51e7c543f344d0b752e03b21dfd"
+    },
+    {
+      "file": "answer-tail-scan-broad.jsonl",
+      "index": 2,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 128,
+        "answered_rows": 128
+      },
+      "answer_sha256": "87ccccd3a753d46d533f4799c860787d755cb51e7c543f344d0b752e03b21dfd"
+    },
+    {
+      "file": "answer-tail-scan-broad.jsonl",
+      "index": 3,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 128,
+        "answered_rows": 128
+      },
+      "answer_sha256": "87ccccd3a753d46d533f4799c860787d755cb51e7c543f344d0b752e03b21dfd"
+    },
+    {
+      "file": "answer-tail-scan-common.jsonl",
+      "index": 0,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 64,
+        "answered_rows": 64
+      },
+      "answer_sha256": "4ff06dd3871d417ff3106d6867b1151dbfd1d35838dcfb9cfa3aa10857da7fbd"
+    },
+    {
+      "file": "answer-tail-scan-common.jsonl",
+      "index": 1,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 64,
+        "answered_rows": 64
+      },
+      "answer_sha256": "4ff06dd3871d417ff3106d6867b1151dbfd1d35838dcfb9cfa3aa10857da7fbd"
+    },
+    {
+      "file": "answer-tail-scan-common.jsonl",
+      "index": 2,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 64,
+        "answered_rows": 64
+      },
+      "answer_sha256": "4ff06dd3871d417ff3106d6867b1151dbfd1d35838dcfb9cfa3aa10857da7fbd"
+    },
+    {
+      "file": "answer-tail-scan-common.jsonl",
+      "index": 3,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 64,
+        "answered_rows": 64
+      },
+      "answer_sha256": "4ff06dd3871d417ff3106d6867b1151dbfd1d35838dcfb9cfa3aa10857da7fbd"
+    },
+    {
+      "file": "answer-tail-scan-empty.jsonl",
+      "index": 0,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 0,
+        "answered_rows": 0
+      },
+      "answer_sha256": "d2075c3f142f329330e043acf5cd2386f2599dd0004f63452a9bf21c41532d1b"
+    },
+    {
+      "file": "answer-tail-scan-empty.jsonl",
+      "index": 1,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 0,
+        "answered_rows": 0
+      },
+      "answer_sha256": "d2075c3f142f329330e043acf5cd2386f2599dd0004f63452a9bf21c41532d1b"
+    },
+    {
+      "file": "answer-tail-scan-empty.jsonl",
+      "index": 2,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 0,
+        "answered_rows": 0
+      },
+      "answer_sha256": "d2075c3f142f329330e043acf5cd2386f2599dd0004f63452a9bf21c41532d1b"
+    },
+    {
+      "file": "answer-tail-scan-empty.jsonl",
+      "index": 3,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 0,
+        "answered_rows": 0
+      },
+      "answer_sha256": "d2075c3f142f329330e043acf5cd2386f2599dd0004f63452a9bf21c41532d1b"
+    },
+    {
+      "file": "answer-tail-scan-selective.jsonl",
+      "index": 0,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 1,
+        "answered_rows": 1
+      },
+      "answer_sha256": "f764b00610c7064aa2701b3183be99de44c88a292e8a76ae28ec61af34737e09"
+    },
+    {
+      "file": "answer-tail-scan-selective.jsonl",
+      "index": 1,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 1,
+        "answered_rows": 1
+      },
+      "answer_sha256": "f764b00610c7064aa2701b3183be99de44c88a292e8a76ae28ec61af34737e09"
+    },
+    {
+      "file": "answer-tail-scan-selective.jsonl",
+      "index": 2,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 1,
+        "answered_rows": 1
+      },
+      "answer_sha256": "f764b00610c7064aa2701b3183be99de44c88a292e8a76ae28ec61af34737e09"
+    },
+    {
+      "file": "answer-tail-scan-selective.jsonl",
+      "index": 3,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 1,
+        "answered_rows": 1
+      },
+      "answer_sha256": "f764b00610c7064aa2701b3183be99de44c88a292e8a76ae28ec61af34737e09"
+    },
+    {
+      "file": "answer-tail-walk-broad.jsonl",
+      "index": 0,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 128,
+        "answered_rows": 128
+      },
+      "answer_sha256": "87ccccd3a753d46d533f4799c860787d755cb51e7c543f344d0b752e03b21dfd"
+    },
+    {
+      "file": "answer-tail-walk-broad.jsonl",
+      "index": 1,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 128,
+        "answered_rows": 128
+      },
+      "answer_sha256": "87ccccd3a753d46d533f4799c860787d755cb51e7c543f344d0b752e03b21dfd"
+    },
+    {
+      "file": "answer-tail-walk-broad.jsonl",
+      "index": 2,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 128,
+        "answered_rows": 128
+      },
+      "answer_sha256": "87ccccd3a753d46d533f4799c860787d755cb51e7c543f344d0b752e03b21dfd"
+    },
+    {
+      "file": "answer-tail-walk-broad.jsonl",
+      "index": 3,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 128,
+        "answered_rows": 128
+      },
+      "answer_sha256": "87ccccd3a753d46d533f4799c860787d755cb51e7c543f344d0b752e03b21dfd"
+    },
+    {
+      "file": "answer-tail-walk-common.jsonl",
+      "index": 0,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 64,
+        "answered_rows": 64
+      },
+      "answer_sha256": "4ff06dd3871d417ff3106d6867b1151dbfd1d35838dcfb9cfa3aa10857da7fbd"
+    },
+    {
+      "file": "answer-tail-walk-common.jsonl",
+      "index": 1,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 64,
+        "answered_rows": 64
+      },
+      "answer_sha256": "4ff06dd3871d417ff3106d6867b1151dbfd1d35838dcfb9cfa3aa10857da7fbd"
+    },
+    {
+      "file": "answer-tail-walk-common.jsonl",
+      "index": 2,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 64,
+        "answered_rows": 64
+      },
+      "answer_sha256": "4ff06dd3871d417ff3106d6867b1151dbfd1d35838dcfb9cfa3aa10857da7fbd"
+    },
+    {
+      "file": "answer-tail-walk-common.jsonl",
+      "index": 3,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 64,
+        "answered_rows": 64
+      },
+      "answer_sha256": "4ff06dd3871d417ff3106d6867b1151dbfd1d35838dcfb9cfa3aa10857da7fbd"
+    },
+    {
+      "file": "answer-tail-walk-empty.jsonl",
+      "index": 0,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 0,
+        "answered_rows": 0
+      },
+      "answer_sha256": "d2075c3f142f329330e043acf5cd2386f2599dd0004f63452a9bf21c41532d1b"
+    },
+    {
+      "file": "answer-tail-walk-empty.jsonl",
+      "index": 1,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 0,
+        "answered_rows": 0
+      },
+      "answer_sha256": "d2075c3f142f329330e043acf5cd2386f2599dd0004f63452a9bf21c41532d1b"
+    },
+    {
+      "file": "answer-tail-walk-empty.jsonl",
+      "index": 2,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 0,
+        "answered_rows": 0
+      },
+      "answer_sha256": "d2075c3f142f329330e043acf5cd2386f2599dd0004f63452a9bf21c41532d1b"
+    },
+    {
+      "file": "answer-tail-walk-empty.jsonl",
+      "index": 3,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 0,
+        "answered_rows": 0
+      },
+      "answer_sha256": "d2075c3f142f329330e043acf5cd2386f2599dd0004f63452a9bf21c41532d1b"
+    },
+    {
+      "file": "answer-tail-walk-selective.jsonl",
+      "index": 0,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 1,
+        "answered_rows": 1
+      },
+      "answer_sha256": "f764b00610c7064aa2701b3183be99de44c88a292e8a76ae28ec61af34737e09"
+    },
+    {
+      "file": "answer-tail-walk-selective.jsonl",
+      "index": 1,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 1,
+        "answered_rows": 1
+      },
+      "answer_sha256": "f764b00610c7064aa2701b3183be99de44c88a292e8a76ae28ec61af34737e09"
+    },
+    {
+      "file": "answer-tail-walk-selective.jsonl",
+      "index": 2,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 1,
+        "answered_rows": 1
+      },
+      "answer_sha256": "f764b00610c7064aa2701b3183be99de44c88a292e8a76ae28ec61af34737e09"
+    },
+    {
+      "file": "answer-tail-walk-selective.jsonl",
+      "index": 3,
+      "verdict": {
+        "passed": true,
+        "violations": [],
+        "expected_rows": 1,
+        "answered_rows": 1
+      },
+      "answer_sha256": "f764b00610c7064aa2701b3183be99de44c88a292e8a76ae28ec61af34737e09"
+    }
+  ],
+  "controls": {
+    "changed_query_rejected": true,
+    "missing_query_rejected": true,
+    "duplicate_query_rejected": true
+  },
+  "ledger_controls": {
+    "only_received_ns_ignored": true,
+    "rejected": {
+      "changed_batch": true,
+      "changed_hash": true,
+      "changed_label": true,
+      "missing_record": true,
+      "duplicate_record": true
+    }
+  },
+  "grading_seconds": 0.17418582399841398
+}

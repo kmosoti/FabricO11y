@@ -2,7 +2,7 @@
 
 ## Purpose and provenance
 
-This page connects the Stage 4 **target contract** to the Stage 5 local implementation. The default [Rust demo](../../src/main.rs) still prints volatile batches. The optional `write` path uses [EventLog](../../src/log.rs) to establish a local durable commit before printing `committed event N`. No network ACK or general upstream sender exists.
+This page connects the original local delivery model to the network implementation described below. The default [Rust demo](../../src/main.rs) still prints volatile batches. The optional `write` path uses [EventLog](../../src/log.rs) to establish a local durable commit before printing `committed event N`. The separate Spindle/server path implements network delivery and ACKs.
 
 The question is when a sender may discard its retryable copy. [ADR-0005](../decisions/ADR-0005-ack-after-durable-commit.md) chooses the rule: the sender may forget an event only after it receives an acknowledgement that follows a durable receiver commit. Here, successful `append(&Event)` is the receiver-side commit, and the CLI's commit line is a local observation after success.
 
@@ -28,6 +28,16 @@ The diagram shows the primary path for one event in the target protocol. The [TL
 
 ## Network delivery path
 
+The HTTP batch route admits up to 16 requests before body extraction. Excess
+requests receive the existing unavailable response with status 503 and
+Retry-After 1. This pool is independent from the two query slots. Once extracted,
+the request's exact bytes move into a Submission and the original HTTP body is
+dropped before waiting for ACK. The downstream 64 MiB queue remains separately
+bounded; admission is permission to use resources, while durable ACK transfers
+custody. A cancelled reply receiver does not roll back a submitted commit. The
+[transition investigation](../experiments/benchmarks/catalog-transition-ownership-findings.md)
+records witnessed partial-body refusals and the limits of that evidence.
+
 Implemented: `fabric-node run` (the Spindle) sends the oldest unacknowledged Spool batch, as its exact stored bytes, to the [Fabric Server](../../crates/fabric-server/src/lib.rs) over HTTPS with a bearer token. The server's single commit thread applies the [ADR-0013](../decisions/ADR-0013-deliver-batches-in-order-with-bounded-dedup.md) rule, appends new batches to its own [frame log](../../crates/fabric-frame/src/frame.rs) as one grouped frame (50 ms or 1 MiB), and answers only after that frame's data and marker syncs. The Spindle then writes its ACK cursor by synced rename and may delete sealed Spool files at or below it. A lost ACK is a retry of the same identity and bytes, which the server acknowledges again without a second record. The same Strand and sequence with different bytes is refused and never replaces the committed batch. A credential label binds to one Spindle identity on its first commit.
 
 The commit path is split by layer ([ADR-0015](../decisions/ADR-0015-adopt-a-hexagonal-architecture.md)):
@@ -40,6 +50,18 @@ The commit path is split by layer ([ADR-0015](../decisions/ADR-0015-adopt-a-hexa
 | adapter / composition root | [`Store`](../../crates/fabric-server/src/store.rs) | SHA-256 of the exact bytes, the frame append and syncs, replayed Strand and binding state, the system clock, the HTTP answer |
 
 The extraction is guarded by an exhaustive differential test against a frozen transcription of the base decision loop ([crates/fabric-app/tests/delivery.rs](../../crates/fabric-app/tests/delivery.rs)). One counterexample was kept: at the base, `last + 1` overflowed for a Strand at `u64::MAX`; the kernel uses `next_sequence`, so an exhausted Strand accepts no successor.
+
+Within `GroupPlan`, the first credential/Spindle binding stays inline. Additional
+distinct reverse bindings use a compact list until there are 32 total; the 33rd
+promotes the list into credential and Spindle indexes. Repeated accepted Batches
+do not add another binding. The first staged forward mapping and every accepted
+reverse mapping survive promotion, including when supplied durable facts change;
+explicit durable credential facts still take precedence. These are ephemeral
+group decisions; persistence and ACK ownership remain in the application and
+adapter layers. The [algorithm comparison](../experiments/benchmarks/catalog-algorithm-round-findings.md)
+records why indexing every small group was rejected and the compact prefix was
+retained. The 32-binding crossover is a measured local choice, not a universal
+optimum.
 
 [Fault runs](../experiments/formal/alpha-phase2-delivery-faults.md) graded by the [delivery oracle](../../tools/qualification/DELIVERY_ORACLE.md) pass for three Spindles under server kills, Spindle kills and an outage; the [ten-process run](../experiments/benchmarks/alpha-phase2-delivery-run-01.md) measured ACK latency in both commit modes. Those records belong to the revisions they name.
 

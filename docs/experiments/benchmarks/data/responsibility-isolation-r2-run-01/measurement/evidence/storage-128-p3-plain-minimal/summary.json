@@ -1,0 +1,183 @@
+{
+  "label": "storage-128-p3-plain-minimal",
+  "case_id": "storage-128",
+  "mode": "storage",
+  "size": 128,
+  "pair": 3,
+  "variant": "plain",
+  "observer": "minimal",
+  "phase": "measure",
+  "elapsed_process_s": 0.22283543199591804,
+  "exit": 0,
+  "fixture": {
+    "allocator_counted": false,
+    "answer_ledger_limit_bytes": 268435456,
+    "body_bytes": 128,
+    "cpu_clock": "CLOCK_PROCESS_CPUTIME_ID",
+    "cpu_clock_resolution_ns": 1,
+    "encoded_batch_bytes": 599168,
+    "encoded_group_bytes": 600096,
+    "ledger_capacity": 4096,
+    "observer": "minimal",
+    "observer_batch_iterations": 20000,
+    "preflight": false,
+    "query_warm_repeats": 3,
+    "records": 4096,
+    "scheduling_memory_guard_bytes": 1073741824,
+    "scheduling_rotate_bytes": 524288,
+    "seed": 42,
+    "size": 128,
+    "source_bytes": 528384,
+    "source_sha256": "553791a478df1471bd645d0c8a4b785865c9bc73e0418918c5589d7af143cc85",
+    "stage": "fixture",
+    "timestamp_order": "sorted",
+    "timestamp_ranks_sha256": "b83e23eb1db808bf694ae4894d62b50c9840bcd869ba7ac2456f40ddf0530bf3"
+  },
+  "complete": {
+    "cpu_clock_resolution_ns": 1,
+    "ledger_events": 131,
+    "mode": "storage",
+    "observer": "minimal",
+    "stage": "complete",
+    "vm_hwm_kib": 8824
+  },
+  "source_sha256": "553791a478df1471bd645d0c8a4b785865c9bc73e0418918c5589d7af143cc85",
+  "source_bytes": 528384,
+  "records_sha256": "f600a29ee6596cf4a197a773b8633bbeea57a92f3d6a702c1a4c7ffb2c17cf46",
+  "records": 4096,
+  "exact_fixture_bodies": true,
+  "oracle": [],
+  "controls": {},
+  "stats": {
+    "spool_clone_encode_append_sync": {
+      "wall_ms": {
+        "samples": 32,
+        "p50": 1.006513,
+        "p99": null,
+        "p99_status": "insufficient_population",
+        "min": 0.954166,
+        "max": 1.196635,
+        "sum": 32.761664
+      },
+      "units": 4096,
+      "cpu_ns": 8449124,
+      "proc_io": {},
+      "max_baseline_live_bytes": null,
+      "max_peak_live_bytes": null,
+      "max_incremental_peak_bytes": null,
+      "cumulative_requested_bytes": 0
+    },
+    "spool_read_decode": {
+      "wall_ms": {
+        "samples": 32,
+        "p50": 0.005879,
+        "p99": null,
+        "p99_status": "insufficient_population",
+        "min": 0.005067,
+        "max": 0.017727,
+        "sum": 0.201869
+      },
+      "units": 4096,
+      "cpu_ns": 208749,
+      "proc_io": {},
+      "max_baseline_live_bytes": null,
+      "max_peak_live_bytes": null,
+      "max_incremental_peak_bytes": null,
+      "cumulative_requested_bytes": 0
+    },
+    "spool_ack_persist_advance": {
+      "wall_ms": {
+        "samples": 32,
+        "p50": 0.501113,
+        "p99": null,
+        "p99_status": "insufficient_population",
+        "min": 0.42535,
+        "max": 0.590515,
+        "sum": 15.659431
+      },
+      "units": 4096,
+      "cpu_ns": 4674151,
+      "proc_io": {},
+      "max_baseline_live_bytes": null,
+      "max_peak_live_bytes": null,
+      "max_incremental_peak_bytes": null,
+      "cumulative_requested_bytes": 0
+    },
+    "spool_open_recovery": {
+      "wall_ms": {
+        "samples": 1,
+        "p50": 0.777924,
+        "p99": null,
+        "p99_status": "insufficient_population",
+        "min": 0.777924,
+        "max": 0.777924,
+        "sum": 0.777924
+      },
+      "units": 4096,
+      "cpu_ns": 647491,
+      "proc_io": {},
+      "max_baseline_live_bytes": null,
+      "max_peak_live_bytes": null,
+      "max_incremental_peak_bytes": null,
+      "cumulative_requested_bytes": 0
+    },
+    "spool_replay_decode": {
+      "wall_ms": {
+        "samples": 1,
+        "p50": 0.150613,
+        "p99": null,
+        "p99_status": "insufficient_population",
+        "min": 0.150613,
+        "max": 0.150613,
+        "sum": 0.150613
+      },
+      "units": 4096,
+      "cpu_ns": 150964,
+      "proc_io": {},
+      "max_baseline_live_bytes": null,
+      "max_peak_live_bytes": null,
+      "max_incremental_peak_bytes": null,
+      "cumulative_requested_bytes": 0
+    },
+    "server_submit_to_durable_answer": {
+      "wall_ms": {
+        "samples": 32,
+        "p50": 3.441424,
+        "p99": null,
+        "p99_status": "insufficient_population",
+        "min": 3.336839,
+        "max": 3.905743,
+        "sum": 111.246014
+      },
+      "units": 4096,
+      "cpu_ns": 12415092,
+      "proc_io": {},
+      "max_baseline_live_bytes": null,
+      "max_peak_live_bytes": null,
+      "max_incremental_peak_bytes": null,
+      "cumulative_requested_bytes": 0
+    },
+    "server_open_replay": {
+      "wall_ms": {
+        "samples": 1,
+        "p50": 2.198752,
+        "p99": null,
+        "p99_status": "insufficient_population",
+        "min": 2.198752,
+        "max": 2.198752,
+        "sum": 2.198752
+      },
+      "units": 4096,
+      "cpu_ns": 1735564,
+      "proc_io": {},
+      "max_baseline_live_bytes": null,
+      "max_peak_live_bytes": null,
+      "max_incremental_peak_bytes": null,
+      "cumulative_requested_bytes": 0
+    }
+  },
+  "sampled_peak_process_hwm_mib": null,
+  "sample_count": 0,
+  "server_cpu_seconds_tick_estimate": null,
+  "server_peak_hwm_mib": null
+}

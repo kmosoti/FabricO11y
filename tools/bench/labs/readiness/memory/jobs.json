@@ -1,0 +1,106 @@
+{
+  "protocol": "tools/bench/labs/readiness/memory/protocol.md",
+  "jobs": [
+    {
+      "id": "M-build",
+      "state": "ready",
+      "hypothesis": "Private harness compiles against frozen current source",
+      "prerequisite_ids": [],
+      "command": [
+        "cargo",
+        "build",
+        "--offline",
+        "--release",
+        "-p",
+        "fabric-server",
+        "--example",
+        "readiness_memory_lab"
+      ],
+      "runtime_seconds": 900,
+      "scratch_max_bytes": 4294967296,
+      "expected_artifacts": [
+        "$CARGO_TARGET_DIR/release/examples/readiness_memory_lab"
+      ],
+      "decision_rule": "exit0 and binary present; not memory evidence",
+      "cleanup_owner": "coordinator build cache"
+    },
+    {
+      "id": "M-controls",
+      "state": "ready",
+      "hypothesis": "comparison checker rejects changed/dropped rows, header, heap, leftover and growth defects",
+      "prerequisite_ids": [],
+      "command": [
+        "python3",
+        "tools/bench/labs/readiness/memory/run.py",
+        "--phase",
+        "controls",
+        "--destination",
+        "docs/experiments/benchmarks/data/readiness-labs-run-01/memory/controls"
+      ],
+      "runtime_seconds": 30,
+      "scratch_max_bytes": 0,
+      "expected_artifacts": [
+        "negative-controls.json",
+        "complete.json"
+      ],
+      "decision_rule": "exit0; unchanged accepted; all six mutations rejected; actual changed/dropped framed-row digest differs; renamed-run inventory race tolerated; permission error propagated",
+      "cleanup_owner": "none; compact evidence only"
+    },
+    {
+      "id": "M-shapes",
+      "state": "ready",
+      "hypothesis": "Four64MiB screens preserve ordered rows/custody and <=80MiB heap",
+      "prerequisite_ids": [
+        "M-build",
+        "M-controls"
+      ],
+      "command": [
+        "python3",
+        "tools/bench/labs/readiness/memory/run.py",
+        "--phase",
+        "shapes",
+        "--destination",
+        "docs/experiments/benchmarks/data/readiness-labs-run-01/memory/shapes"
+      ],
+      "runtime_seconds": 1500,
+      "scratch_max_bytes": 4294967296,
+      "expected_artifacts": [
+        "complete.json",
+        "negative-controls.json",
+        "steady-64/pair.json",
+        "outage-64/pair.json",
+        "adversarial-64/pair.json",
+        "bigrows-64/pair.json"
+      ],
+      "decision_rule": "exit0; four successful pairs; all exactness/heap/leftover gates true; negatives rejected; cleanup true",
+      "cleanup_owner": "runner successful states; launcher failure evidence"
+    },
+    {
+      "id": "M-scale",
+      "state": "ready",
+      "hypothesis": "steady256 heap <=1.10*steady64 and <=80MiB with exact output",
+      "prerequisite_ids": [
+        "M-shapes"
+      ],
+      "command": [
+        "python3",
+        "tools/bench/labs/readiness/memory/run.py",
+        "--phase",
+        "scale",
+        "--destination",
+        "docs/experiments/benchmarks/data/readiness-labs-run-01/memory/scale",
+        "--baseline",
+        "docs/experiments/benchmarks/data/readiness-labs-run-01/memory/shapes/steady-64/pair.json"
+      ],
+      "runtime_seconds": 900,
+      "scratch_max_bytes": 4294967296,
+      "expected_artifacts": [
+        "complete.json",
+        "negative-controls.json",
+        "steady-256/pair.json"
+      ],
+      "decision_rule": "exit0; exactness/heap/leftover/scale gates true; negatives rejected; cleanup true; measured binary and protocol hashes equal64 baseline",
+      "cleanup_owner": "runner successful states; launcher failure evidence"
+    }
+  ]
+}

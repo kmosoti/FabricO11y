@@ -28,17 +28,23 @@ permissions:
 
 jobs:
   extended:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v5
         with:
           # Full history: the counterexample registry names fix commits.
           fetch-depth: 0
+      - name: Prepare disk storage and enforced cgroups
+        run: bash tools/ci/prepare-resource-host.sh
       - uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: 1.98.0
+          toolchain: 1.99.0
           components: rustfmt, clippy
+      - name: Install native crypto prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -49,29 +55,32 @@ jobs:
           curl -fsSL -o target/tools/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.1/tla2tools.jar
           echo "d532ba31aafe17afba1130f92410d9257454ff7393d1eb2fe032f0c07f352da5  target/tools/tla2tools.jar" | sha256sum --check
       - name: Install cargo-mutants
-        run: cargo install cargo-mutants --version 27.1.0 --locked
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-mutants 27.1.0
       - name: Install cargo-deny and cargo-llvm-cov
         run: |
           rustup component add llvm-tools-preview
-          cargo install cargo-deny --version 0.20.2 --locked
-          cargo install cargo-llvm-cov --version 0.9.1 --locked
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-deny 0.20.2
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-llvm-cov 0.9.1
       # cargo-fuzz needs nightly; the fuzz run is time-boxed, so the floating
       # channel is acceptable. Kani brings its own pinned toolchain.
       - name: Install cargo-fuzz and nightly
         run: |
           rustup toolchain install nightly --profile minimal
-          cargo install cargo-fuzz --version 0.13.2 --locked
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-fuzz 0.13.2
       - name: Install Kani
         run: |
-          cargo install kani-verifier --version 0.68.0 --locked
-          cargo kani setup
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py kani-verifier 0.68.0
+          python3 -B tools/resource_group.py -- cargo kani setup
       # Exit 3 (INCOMPLETE: an environment was unavailable) fails the job too.
       - name: Run the extended check registry
-        run: cargo xtask checks --profile extended
+        run: python3 -B tools/resource_group.py -- cargo xtask checks --profile extended
       - name: Keep the verification receipts
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: extended-verification-receipts
-          path: target/verification/receipts/
+          path: |
+            target/verification/receipts/
+            target/resource-containment/runs/
+            /run/media/kmosoti/data/FabricO11y/results/ci-tool-install/
           if-no-files-found: warn

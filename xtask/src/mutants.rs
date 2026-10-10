@@ -140,7 +140,10 @@ pub fn run_all(root: &Path, registry: &Path, only: Option<&str>) -> Result<bool,
     if mutants.is_empty() {
         return Err("no mutants selected".into());
     }
-    let work = root.join("target/semantic-mutants");
+    let work = std::env::var_os("FABRIC_SCRATCH_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| root.join("target"))
+        .join("semantic-mutants");
     let tree = work.join("tree");
     let cargo_target = work.join("cargo");
     let logs = work.join("logs");

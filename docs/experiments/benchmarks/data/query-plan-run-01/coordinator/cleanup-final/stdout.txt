@@ -1,0 +1,1 @@
+{"completed_jobs": 22, "cleanup_report": "/home/kmosoti/Projects/moiric/FabricO11y/docs/experiments/benchmarks/data/query-plan-run-01/cleanup-final.json"}

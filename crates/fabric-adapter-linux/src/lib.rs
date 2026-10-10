@@ -3,5 +3,7 @@
 //! cursor means is decided by `fabric_core::collection`; this crate performs
 //! the reads and checksums.
 
+mod btrfs_identity;
 pub mod host;
 pub mod log_source;
+pub mod operational_log;

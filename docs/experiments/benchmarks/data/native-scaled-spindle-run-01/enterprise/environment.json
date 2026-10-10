@@ -1,0 +1,26 @@
+{
+  "revision": "9eb15a7609cf7914a3817fed3c499aea6fe6adc5",
+  "affinity": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "cpu_max": "400000 100000",
+  "memory_max": "17179869184",
+  "uname": [
+    "Linux",
+    "b8dcc9b48b6c",
+    "6.18.44",
+    "#1 SMP Sat Sep 26 20:02:31 UTC 2026",
+    "x86_64"
+  ],
+  "harness_sha256": "af97d3de63533ad706f880a9c84b3f81334c475a0686a9acac2c0f1c56eaecb8",
+  "binaries": {
+    "fabric-server": "2a743e003dfe76fb30960b98e3a16c114cd384cd08adf23a071625ef3e320f31",
+    "fabric-node": "d01edddce960a709df5e1251ca28358b5a9dac35ac8ca4963ff2bd49d7049682",
+    "native_source": "c4468a075c9f5de2ab3c8285d6ebea7b5ffa1c600db90abb2a820c410a55a386",
+    "examples/server_dump": "d2cb1a06ca337c8c1ab60ce50d4f2fd388922719136f428dc8634028230b00ed"
+  }
+}

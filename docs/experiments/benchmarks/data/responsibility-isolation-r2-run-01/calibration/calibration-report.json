@@ -1,0 +1,52 @@
+{
+  "stage": "observer_hash_format_batch",
+  "baseline_wall_ms": [
+    1508.805279,
+    1505.5872,
+    1511.79206,
+    1508.957361,
+    1502.676234
+  ],
+  "comparisons": {
+    "allocator": {
+      "ratios": [
+        1.0249139577672435,
+        1.0157903142375282,
+        1.0156260259760856,
+        1.008970098393655,
+        1.0439610945493931
+      ],
+      "median_ratio": 1.0157903142375282,
+      "screening_signal": false,
+      "interpretation": "screening only; preserved fresh-process variation"
+    },
+    "lowrate_sampler": {
+      "ratios": [
+        0.9955028776115518,
+        1.0054273110185847,
+        1.0032399958496938,
+        1.0021317441321658,
+        1.0272826268709059
+      ],
+      "median_ratio": 1.0032399958496938,
+      "screening_signal": false,
+      "interpretation": "screening only; preserved fresh-process variation"
+    },
+    "detailed_100ms": {
+      "ratios": [
+        0.9974630324712698,
+        0.9980298670179981,
+        1.0193314337158248,
+        1.005102561675366,
+        1.017085745032153
+      ],
+      "median_ratio": 1.005102561675366,
+      "screening_signal": false,
+      "interpretation": "screening only; preserved fresh-process variation"
+    }
+  },
+  "baseline_cv": 0.002325336318505512,
+  "median_empty_boundary_ms": 2.05e-05,
+  "recommended_minimum_boundary_ms_at_1percent": 0.00205,
+  "interpretation": "Use uncounted minimal main timing. Counted heap and detailed IO describe their instrumented variants; do not subtract observer cost."
+}

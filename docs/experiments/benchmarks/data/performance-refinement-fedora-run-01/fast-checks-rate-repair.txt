@@ -1,0 +1,36 @@
+fmt                      passed                        291 ms  cargo fmt --all --check
+check                    passed                       3870 ms  cargo check --workspace --locked --all-targets
+test                     passed                     133953 ms  cargo test --workspace --locked --all-features
+clippy                   failed                        831 ms  cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+    |     Checking fabric_o11y v0.1.0 (/home/kmosoti/Projects/moiric/FabricO11y)
+    |     Checking fabric-server v0.1.0 (/home/kmosoti/Projects/moiric/FabricO11y/crates/fabric-server)
+    |     Checking fabric-fuzz-targets v0.1.0 (/home/kmosoti/Projects/moiric/FabricO11y/crates/fabric-fuzz-targets)
+    |     Checking fabric-sim v0.1.0 (/home/kmosoti/Projects/moiric/FabricO11y/crates/fabric-sim)
+    | error: the borrowed expression implements the required traits
+    |     --> crates/fabric-server/tests/history.rs:1205:33
+    |      |
+    | 1205 |     let mut spool = Spool::open(&scratch.path("spool-a"), 64 << 20).unwrap();
+    |      |                                 ^^^^^^^^^^^^^^^^^^^^^^^^ help: change this to: `scratch.path("spool-a")`
+    |      |
+    |      = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_borrows_for_generic_args
+    |      = note: `-D clippy::needless-borrows-for-generic-args` implied by `-D warnings`
+    |      = help: to override `-D warnings` add `#[allow(clippy::needless_borrows_for_generic_args)]`
+    | 
+    | error: could not compile `fabric-server` (test "history") due to 1 previous error
+layers                   passed                        179 ms  cargo xtask check-layers
+core-purity              passed                        160 ms  cargo xtask check-core-purity
+qualification-runner     passed                       4014 ms  python3 -B tools/qualification/test_runner.py
+workload-rate-oracle     passed                        874 ms  python3 -B tools/qualification/test_workload.py
+soak-decision-rule       passed                         93 ms  python3 -B tools/qualification/test_soak_tier.py
+delivery-oracle          passed                        321 ms  python3 -B tools/qualification/test_delivery_oracle.py
+query-oracle             passed                        335 ms  python3 -B tools/qualification/test_query_oracle.py
+docs                     passed                        895 ms  bun tools/docs/check.mjs
+docs-checker-probes      passed                      13930 ms  bun tools/docs/check.test.mjs
+hooks                    passed                       1351 ms  python3 -B tools/docs/test_hooks.py
+telemetry-contract       passed                        135 ms  python3 -B tools/telemetry/test_contract.py
+telemetry-cli            passed                       2267 ms  python3 -B tools/telemetry/test_cli.py
+counterexamples          passed                         66 ms  cargo xtask check-counterexamples
+kernel-properties        passed                      20453 ms  cargo test --locked -p fabric-properties
+fuzz-corpus              passed                       2419 ms  cargo test --locked -p fabric-fuzz-targets --test corpus
+network-simulation       passed                       4868 ms  cargo test --locked -p fabric-sim
+checks: FAILED; receipts in /home/kmosoti/Projects/moiric/FabricO11y/target/verification/receipts

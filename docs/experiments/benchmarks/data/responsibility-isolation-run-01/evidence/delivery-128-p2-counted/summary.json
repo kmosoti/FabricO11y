@@ -1,0 +1,117 @@
+{
+  "label": "delivery-128-p2-counted",
+  "mode": "delivery",
+  "size": 128,
+  "pair": 2,
+  "variant": "counted",
+  "elapsed_process_s": 0.3029935059894342,
+  "exit": 0,
+  "source_sha256": "553791a478df1471bd645d0c8a4b785865c9bc73e0418918c5589d7af143cc85",
+  "records_sha256": "30172af8cedf247d7e03c6d9a25432224b5c2c6849a3bcba60539ad2ab18c87a",
+  "exact_fixture_bodies": true,
+  "oracle": [],
+  "controls": {
+    "exact_ack_custody": true
+  },
+  "stats": {
+    "sender_setup": {
+      "wall_ms": {
+        "samples": 1,
+        "p50": 0.04708,
+        "p99": 0.04708,
+        "max": 0.04708,
+        "sum": 0.04708
+      },
+      "units": 1,
+      "cpu_ticks": 0,
+      "proc_io": {
+        "cancelled_write_bytes": 0,
+        "rchar": 1109,
+        "read_bytes": 0,
+        "syscr": 20,
+        "syscw": 0,
+        "wchar": 0,
+        "write_bytes": 0
+      },
+      "max_baseline_live_bytes": 2677779,
+      "max_peak_live_bytes": 2680567,
+      "max_incremental_peak_bytes": 2788,
+      "cumulative_requested_bytes": 5444
+    },
+    "delivery_spool_read_decode": {
+      "wall_ms": {
+        "samples": 32,
+        "p50": 0.008182,
+        "p99": 0.023214,
+        "max": 0.023214,
+        "sum": 0.298103
+      },
+      "units": 4096,
+      "cpu_ticks": 0,
+      "proc_io": {
+        "cancelled_write_bytes": 0,
+        "rchar": 614037,
+        "read_bytes": 0,
+        "syscr": 416,
+        "syscw": 0,
+        "wchar": 0,
+        "write_bytes": 0
+      },
+      "max_baseline_live_bytes": 3831181,
+      "max_peak_live_bytes": 3887313,
+      "max_incremental_peak_bytes": 56132,
+      "cumulative_requested_bytes": 1796736
+    },
+    "native_tls_send_server_answer": {
+      "wall_ms": {
+        "samples": 32,
+        "p50": 3.608602,
+        "p99": 43.83023,
+        "max": 43.83023,
+        "sum": 155.982912
+      },
+      "units": 4096,
+      "cpu_ticks": 1,
+      "proc_io": {
+        "cancelled_write_bytes": 0,
+        "rchar": 13847,
+        "read_bytes": 0,
+        "syscr": 320,
+        "syscw": 0,
+        "wchar": 0,
+        "write_bytes": 0
+      },
+      "max_baseline_live_bytes": 3849905,
+      "max_peak_live_bytes": 3870192,
+      "max_incremental_peak_bytes": 570070,
+      "cumulative_requested_bytes": 1344385
+    },
+    "delivery_ack_persist": {
+      "wall_ms": {
+        "samples": 32,
+        "p50": 0.583405,
+        "p99": 1.022266,
+        "max": 1.022266,
+        "sum": 19.771232
+      },
+      "units": 4096,
+      "cpu_ticks": 0,
+      "proc_io": {
+        "cancelled_write_bytes": 0,
+        "rchar": 614040,
+        "read_bytes": 0,
+        "syscr": 416,
+        "syscw": 96,
+        "wchar": 640,
+        "write_bytes": 131072
+      },
+      "max_baseline_live_bytes": 3849905,
+      "max_peak_live_bytes": 3868629,
+      "max_incremental_peak_bytes": 18724,
+      "cumulative_requested_bytes": 614144
+    }
+  },
+  "sampled_peak_process_hwm_mib": 8.171875,
+  "sample_count": 3,
+  "cpu_tick_hz": 100
+}

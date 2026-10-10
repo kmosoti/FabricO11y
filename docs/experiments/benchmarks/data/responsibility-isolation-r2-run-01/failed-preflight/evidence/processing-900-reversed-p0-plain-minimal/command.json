@@ -1,0 +1,33 @@
+{
+  "argv": [
+    "prlimit",
+    "--as=2147483648",
+    "--",
+    "taskset",
+    "-c",
+    "0,1,2,3,4",
+    "/workspace/scratch/responsibility-v2-frozen/plain",
+    "/workspace/scratch/responsibility-v2-preflight-01/scratch/processing-900-reversed-p0-plain-minimal",
+    "processing",
+    "900"
+  ],
+  "bench_env": {
+    "BENCH_RECORDS": "4096",
+    "BENCH_ORDER": "reversed",
+    "BENCH_BODY_SIZE": "900",
+    "BENCH_QUERY_REPEATS": "3",
+    "BENCH_OBSERVER": "minimal",
+    "BENCH_PREFLIGHT": "1",
+    "BENCH_QUERY_ROTATION": "0"
+  },
+  "case": {
+    "id": "processing-900-reversed",
+    "mode": "processing",
+    "size": 900,
+    "records": 4096,
+    "order": "reversed"
+  },
+  "phase": "preflight",
+  "observer": "minimal",
+  "predicted_logical_bytes": 141721600
+}

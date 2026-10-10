@@ -1,0 +1,142 @@
+{
+  "campaign": "storage-catalog-rust",
+  "state": "complete",
+  "active_goal": "Finish admitted queued experiments, preserve nulls and failures, and explicitly disposition dependencies within the existing resource budget.",
+  "second_wave": {
+    "capacity": "CR1 completed without nomination; CR2 completed all six pairs: counted guards met, plain pair3 CPU/wall misses block nomination; CR3 completed all24 pairs without nomination:5.3percent primary saving and two p95 guard misses",
+    "query": "CQ1 completed with preservation guards met; CQ2 completed15 slices/33 trials/1826 exact chains, all rates H0-compatible without nomination",
+    "operations": "Walk and Scan discovery defects reproduced and corrected; cold/shared, paused cuts and metadata lifetime controls passed",
+    "coordinator": "All admitted experiments consolidated; F1 not admitted. Resource audit complete with confirmed capacity evidence overage; fast remains failed. No promotion or qualification."
+  },
+  "execution": "root admits one contained workload at a time",
+  "shared_frontier_budget_seconds": 14400,
+  "jobs": [
+    {
+      "id": "O1",
+      "lab": "operations",
+      "aim": "exact active/pending/published coverage",
+      "state": "reviewed",
+      "depends_on": [],
+      "result": "catalog-mixed-sources-02 passed simultaneous coverage and exact raw replay; fixture-order failure retained in run01"
+    },
+    {
+      "id": "O2",
+      "lab": "operations",
+      "aim": "publication coverage transfer",
+      "state": "reviewed",
+      "depends_on": [
+        "O1"
+      ],
+      "result": "Walk and Scan discovery-cut run01 failures preserved; unchanged run02 regressions pass via explicit Interrupted and exact fresh acquisition; cold/shared controls passed"
+    },
+    {
+      "id": "O3",
+      "lab": "operations",
+      "aim": "reclaim interleavings",
+      "state": "reviewed",
+      "depends_on": [
+        "O1",
+        "O2"
+      ],
+      "result": "Paused real publication and checkpoint/reclaim test passed with 345 independent oracle acceptances; selected schedules only"
+    },
+    {
+      "id": "O4",
+      "lab": "operations",
+      "aim": "retention and expired snapshot handles",
+      "state": "reviewed",
+      "depends_on": [],
+      "result": "Three retained-token Gone assertions passed; actual shared Sources do not pin files; last-view drop and task cancellation release metadata"
+    },
+    {
+      "id": "O5",
+      "lab": "operations",
+      "aim": "sound pruning and exact fallback",
+      "state": "reviewed",
+      "depends_on": [],
+      "result": "filter controls and catalog-numeric-bounds-01 passed; absent bounds exact, both numeric lies oracle-rejected; runtime semantic validation of false authenticated bounds not established"
+    },
+    {
+      "id": "CR1",
+      "lab": "capacity",
+      "aim": "bounded reusable spill buffers",
+      "state": "reviewed",
+      "depends_on": [],
+      "first_screen": "36 codec trials passed",
+      "result": "catalog-builder-spill-01 completed 48 builds and 14 controls with exact output; all shapes missed 10 percent allocation reduction; not nominated; default remains baseline"
+    },
+    {
+      "id": "CQ1",
+      "lab": "query",
+      "aim": "storage-owned read boundary",
+      "state": "reviewed",
+      "depends_on": [
+        "O1",
+        "O2",
+        "O3",
+        "O4",
+        "O5"
+      ],
+      "prerequisite": "Q3 harness adaptation and frozen comparison commands",
+      "result": "All18 trials/1152 exact complete chains and all3 plainCPU/wall/HWM guards met; narrow boundary plus discovery correction; shared one-Segment effect small/mixed"
+    },
+    {
+      "id": "CQ2",
+      "lab": "query",
+      "aim": "lazy versus proactive catalog maintenance",
+      "state": "recorded",
+      "depends_on": [
+        "CQ1"
+      ],
+      "result": "Seed publication failure preserved and corrected without relaxing replay; completed15 slices/33 trials/1826 actual complete chains and10 consolidation controls; rate0/1 eager CPU higher all3pairs, rate4 mixed; no rate met all3 CPU ratios below1, no nomination"
+    },
+    {
+      "id": "CR2",
+      "lab": "capacity",
+      "aim": "borrowed Parquet inspection before owned rows",
+      "state": "recorded",
+      "depends_on": [],
+      "prerequisite": "Q3 attribution supports materialization cost",
+      "result": "All six pairs/12 children/768 complete chains collected; selective allocation saving24.680559percent Scan/24.610810percent Walk and all counted guards met; plain pair3 selective Scan and broad Walk CPU/wall guards failed; no nomination"
+    },
+    {
+      "id": "CR3",
+      "lab": "capacity",
+      "aim": "immutable metadata snapshots and bounded reclamation",
+      "state": "recorded",
+      "depends_on": [
+        "CQ1"
+      ],
+      "prerequisite": "metadata clone/Arc precursor prepared by query lab",
+      "result": "All24 run02 pairs/48 children collected96 canonical complete chains and3072 exact first-page associations; all six64Segment absent allocation pairs missed10percent target (5.302093percent saving); two1Segment/4reader p95 guards failed; no nomination or promotion"
+    },
+    {
+      "id": "CR3-P",
+      "lab": "query",
+      "aim": "real Manifest clone versus Arc precursor and retention accounting",
+      "state": "recorded",
+      "depends_on": [],
+      "result": "24 trials and controls passed catalog-metadata-01",
+      "scope": "isolated mechanism; does not establish catalog or filesystem correctness"
+    },
+    {
+      "id": "F1",
+      "lab": "coordinator",
+      "aim": "independent composite service confirmation",
+      "state": "not_admitted",
+      "depends_on": [
+        "CQ1",
+        "CR1"
+      ],
+      "prerequisite": "only combine candidates supported by component evidence",
+      "result": "Not admitted: CR1 missed full-builder allocation target; CR2 missed plain CPU/wall preservation despite counted savings; CR3 missed allocation primary and two p95 guards; CQ2 demonstrated no registered total-CPU win. No component null is promoted to a composite candidate."
+    }
+  ],
+  "open_constraints": [
+    "Historical missing-table verifier-model failure remains failed; separate trust-boundary design required.",
+    "Existing C2 pruning-equivalence failure still blocks its dependent sustained acceptance.",
+    "New comparison protocols require separate registration commits before measurement.",
+    "Queued mechanisms are conditional on evidence and remaining shared budget.",
+    "Capacity mandatory evidence exceeded768MiB by10002432 allocated bytes; original allowance unchanged, aggregate2GiB met."
+  ]
+}

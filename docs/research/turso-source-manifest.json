@@ -1,0 +1,176 @@
+{
+  "status": "source inspection and verified pinned archive retrieval; no extracted checkout or Turso build",
+  "review_date": "2026-10-08",
+  "repository": "tursodatabase/turso",
+  "commit": "ff97ec42cdef94651a6985eb47e8f9d07e4608cd",
+  "commit_time_utc": "2026-10-08T20:02:42Z",
+  "retrieval": "GitHub connector fetch_file with explicit commit ref; source text retained only in tool session",
+  "inspection": "Selected mechanisms and line ranges, not a whole-repository audit",
+  "local_checkout": "not extracted; pinned archive downloaded and inspected in place after mount became writable, then cleaned",
+  "download_receipt": "../experiments/benchmarks/data/lab-completion-run-01/coordinator/catalog-cross-system-readiness-01/receipt.json",
+  "fabric_head": "d6669a2353b11e43039aaae34d5a2ce6fa00d9c6",
+  "fabric_worktree": "dirty; local source hashes identify inspected state",
+  "fabric_sha256": {
+    "crates/fabric-server/src/read_catalog.rs": "bc6fc6988bdf68948b4c4d2575420392b49a41e70584472b18299e54cb4b2bc2",
+    "crates/fabric-server/src/tail.rs": "19514b296d0fa56d8cbd88368492c44e419e939cb52c2be095f6649f902d10a6",
+    "crates/fabric-server/src/coupled_catalog.rs": "c058d6f90054496093b7e37963765be8c2b308a9e4964c4fcf9cdb71a53a3cd8",
+    "crates/fabric-server/src/segment.rs": "6ed097aefa3b04cb248384e074e1fc4240d8259125e3b91a494231c17c9bd064",
+    "crates/fabric-server/src/query.rs": "cd8aa11820801dcc84297401312eb872502b3722d0809832930ab65ebc3444fa",
+    "crates/fabric-server/src/http.rs": "b3e32cf556b04820d3c8eeadb8be54b91b86620664ccbb28ef9e3748df7678f5",
+    "crates/fabric-server/src/lifecycle_workers.rs": "b786303e7091cb03ad26291f481442b9d35085621ebba4495be05e4a3700a7ce",
+    "crates/fabric-frame/src/probe.rs": "5e7a6714d20b0dbbb861b2cdab458bcb49b3775fdbe1872cd72fe5a92e687f2f",
+    "docs/PRODUCT-CONTRACT.md": "b5ddd0058963ce30873c7748791110832981f262df693fdc6adac59e20af8155"
+  },
+  "files": [
+    {
+      "path": "core/translate/optimizer/cost_params.rs",
+      "git_blob_sha": "94c244ffc8a35d1d207e23ad9d49c094f1357d57",
+      "retrieval": "complete file",
+      "lines_returned": 406
+    },
+    {
+      "path": "core/storage/page_cache.rs",
+      "git_blob_sha": "a83bdef3a8c35f1c7c5f99349b0a6fcf53350ba9",
+      "retrieval": "complete file",
+      "lines_returned": 1965
+    },
+    {
+      "path": "core/storage/buffer_pool.rs",
+      "git_blob_sha": "a217015a212e1926e0e301802c00706bc6a216c2",
+      "retrieval": "complete file",
+      "lines_returned": 1770
+    },
+    {
+      "path": "core/translate/optimizer/OPTIMIZER.md",
+      "git_blob_sha": "c182d6b20fc184b2449b387c735403a81884cf08",
+      "retrieval": "complete file",
+      "lines_returned": 98
+    },
+    {
+      "path": "docs/agent-guides/async-io-model.md",
+      "git_blob_sha": "2724bcec6685cc11ebe5e18f6a992389f74a2fe6",
+      "retrieval": "complete file",
+      "lines_returned": 211
+    },
+    {
+      "path": "docs/agent-guides/transaction-correctness.md",
+      "git_blob_sha": "752d886a32dd89500b6b95a9a4e74fb56b94e515",
+      "retrieval": "complete file",
+      "lines_returned": 89
+    },
+    {
+      "path": "testing/simulator/README.md",
+      "git_blob_sha": "b3c93e00abf3ed3dda15b2a3286730b11790530c",
+      "retrieval": "complete file",
+      "lines_returned": 139
+    },
+    {
+      "path": "testing/concurrent-simulator/README.md",
+      "git_blob_sha": "5a8c81e23cc5a4ce8d498f1489f8096abfb92cf9",
+      "retrieval": "complete file",
+      "lines_returned": 140
+    },
+    {
+      "path": "core/storage/pager.rs",
+      "git_blob_sha": "383a905d94ea889d545773f54185a7858ee648c5",
+      "retrieval": "complete file",
+      "lines_returned": 7265
+    },
+    {
+      "path": "core/storage/wal.rs",
+      "git_blob_sha": "d56a7469e8797c189b6d3a2945452973891b1513",
+      "retrieval": "complete file",
+      "lines_returned": 11277
+    },
+    {
+      "path": "core/io/mod.rs",
+      "git_blob_sha": "71bbb1cabbd1785943472f2d5791bc6fca2cc6a0",
+      "retrieval": "complete file",
+      "lines_returned": 2055
+    },
+    {
+      "path": "core/types.rs",
+      "git_blob_sha": "f29eb74b964ca8cb8d576c7154c64e0112ae098b",
+      "retrieval": "complete file",
+      "lines_returned": 5241
+    },
+    {
+      "path": "core/state_machine.rs",
+      "git_blob_sha": "be5939713a5461717f7773267b45b1306abcbbb3",
+      "retrieval": "complete file",
+      "lines_returned": 101
+    },
+    {
+      "path": "core/translate/optimizer/cost.rs",
+      "git_blob_sha": "41c44a04081cd9214989945506311998c86e24aa",
+      "retrieval": "complete file",
+      "lines_returned": 603
+    },
+    {
+      "path": "core/benches/record_recycling.rs",
+      "git_blob_sha": "2389e7d69751a92209dec92f409cc640940d943a",
+      "retrieval": "complete file",
+      "lines_returned": 179
+    },
+    {
+      "path": "core/benches/scan_loop_benchmark.rs",
+      "git_blob_sha": "086724ca8331bd857f479273719619835736feef",
+      "retrieval": "complete file",
+      "lines_returned": 118
+    },
+    {
+      "path": "docs/eqp-json.md",
+      "git_blob_sha": "beaa0c5241e4cec6451d0512753b999d62e4f322",
+      "retrieval": "complete file",
+      "lines_returned": 98
+    },
+    {
+      "path": "testing/concurrent-simulator/io.rs",
+      "git_blob_sha": "449d647282d58c416946569f278c02ca3b58bc1f",
+      "retrieval": "complete file",
+      "lines_returned": 531
+    },
+    {
+      "path": "testing/concurrent-simulator/fts.rs",
+      "git_blob_sha": "9bfb5d18030c4ca7a533155d68a25df7405526da",
+      "retrieval": "complete file",
+      "lines_returned": 576
+    },
+    {
+      "path": "testing/concurrent-simulator/yield_injection.rs",
+      "git_blob_sha": "c5a4f8b612b650485be76b5cd6cb00bd34e106fa",
+      "retrieval": "complete file",
+      "lines_returned": 119
+    },
+    {
+      "path": "testing/concurrent-simulator/allocation_fault.rs",
+      "git_blob_sha": "43da195ae2c41674b1205169244b219e1feebe82",
+      "retrieval": "complete file",
+      "lines_returned": 589
+    },
+    {
+      "path": "core/io/completions.rs",
+      "git_blob_sha": "0ed6da91f99c51a61c17d833f0c80682b431119c",
+      "retrieval": "complete file",
+      "lines_returned": 1279
+    },
+    {
+      "path": "README.md",
+      "git_blob_sha": "a889bf09a342d951a4ec37a5e99c354c5e696766",
+      "retrieval": "lines 1-60",
+      "lines_returned": 60
+    },
+    {
+      "path": "core/stats.rs",
+      "git_blob_sha": "ea40af0db9292383c5ba6166507340426fd8ad03",
+      "retrieval": "complete file",
+      "lines_returned": 403
+    },
+    {
+      "path": "core/storage/btree.rs",
+      "git_blob_sha": "8b0ffcc356d6c78cf4d8fb2d8b2e320e083549dc",
+      "retrieval": "complete file",
+      "lines_returned": 15480
+    }
+  ]
+}

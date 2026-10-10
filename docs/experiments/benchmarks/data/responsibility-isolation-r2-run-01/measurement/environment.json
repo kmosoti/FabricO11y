@@ -1,0 +1,247 @@
+{
+  "revision": "a717c33eb641e1137633c924b65d0e80237dab1f",
+  "affinity": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "cgroup": {
+    "mono_ns": 69899303605804,
+    "cpu.max": "400000 100000",
+    "cpu.stat": "usage_usec 4766186749\nuser_usec 4375078767\nsystem_usec 391107981\nnice_usec 0\nnr_periods 119742\nnr_throttled 1002\nthrottled_usec 45196007\nnr_bursts 0\nburst_usec 0",
+    "cpu.pressure": null,
+    "memory.max": "17179869184",
+    "memory.current": "13097242624",
+    "memory.stat": "anon 52563968\nfile 12513878016\nkernel 530137088\nkernel_stack 524288\npagetables 1581056\nsec_pagetables 0\npercpu 13776\nsock 0\nvmalloc 0\nshmem 2895872\nfile_mapped 24576\nfile_dirty 2359296\nfile_writeback 0\nswapcached 0\nanon_thp 0\nfile_thp 505413632\nshmem_thp 0\ninactive_anon 52383744\nactive_anon 2924544\ninactive_file 4660260864\nactive_file 7850725376\nunevictable 0\nslab_reclaimable 526410936\nslab_unreclaimable 1553056\nslab 527963992\nworkingset_refault_anon 0\nworkingset_refault_file 90261\nworkingset_activate_anon 0\nworkingset_activate_file 49686\nworkingset_restore_anon 0\nworkingset_restore_file 0\nworkingset_nodereclaim 0\npgdemote_kswapd 0\npgdemote_direct 0\npgdemote_khugepaged 0\npgdemote_proactive 0\npgscan 1739043\npgsteal 1739041\npswpin 0\npswpout 0\npgscan_kswapd 1118795\npgscan_direct 620248\npgscan_khugepaged 0\npgscan_proactive 0\npgsteal_kswapd 1118795\npgsteal_direct 620246\npgsteal_khugepaged 0\npgsteal_proactive 0\npgfault 104937335\npgmajfault 1024\npgrefill 337\npgactivate 4808925\npgdeactivate 337\npglazyfree 2\npglazyfreed 0\nswpin_zero 0\nswpout_zero 0\nthp_fault_alloc 0\nthp_collapse_alloc 0\nthp_swpout 0\nthp_swpout_fallback 0",
+    "memory.events": "low 0\nhigh 0\nmax 11383\noom 0\noom_kill 0\noom_group_kill 0",
+    "memory.pressure": null,
+    "io.pressure": null
+  },
+  "binaries": {
+    "plain": "8dec130de26ed7c83c4059c666858b08642b56fb4dc95839d6378c73062e3fca",
+    "fabric-server": "2a743e003dfe76fb30960b98e3a16c114cd384cd08adf23a071625ef3e320f31",
+    "server_dump": "d2cb1a06ca337c8c1ab60ce50d4f2fd388922719136f428dc8634028230b00ed",
+    "counted": "f62635f3607249f9bd4995efda779c1fbc99b169c8a68d7f0865839294e015bb"
+  },
+  "harness_sha256": "45a697467cdf97a35f83ff1b305ddd5e56419347aa909e98f5796bec86235e47",
+  "uname": [
+    "Linux",
+    "b8dcc9b48b6c",
+    "6.18.44",
+    "#1 SMP Sat Sep 26 20:02:31 UTC 2026",
+    "x86_64"
+  ],
+  "phase": "measure",
+  "matrix": [
+    {
+      "id": "collection-128",
+      "mode": "collection",
+      "size": 128,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "collection-900",
+      "mode": "collection",
+      "size": 900,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "collection-3500",
+      "mode": "collection",
+      "size": 3500,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "delivery-128",
+      "mode": "delivery",
+      "size": 128,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "delivery-900",
+      "mode": "delivery",
+      "size": 900,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "delivery-3500",
+      "mode": "delivery",
+      "size": 3500,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "storage-128",
+      "mode": "storage",
+      "size": 128,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "storage-900",
+      "mode": "storage",
+      "size": 900,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "storage-3500",
+      "mode": "storage",
+      "size": 3500,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "processing-128",
+      "mode": "processing",
+      "size": 128,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "processing-900",
+      "mode": "processing",
+      "size": 900,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "processing-3500",
+      "mode": "processing",
+      "size": 3500,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "processing-900-reversed",
+      "mode": "processing",
+      "size": 900,
+      "records": 4096,
+      "order": "reversed"
+    },
+    {
+      "id": "processing-900-shuffled",
+      "mode": "processing",
+      "size": 900,
+      "records": 4096,
+      "order": "shuffled"
+    },
+    {
+      "id": "processing-1024-16384",
+      "mode": "processing",
+      "size": 1024,
+      "records": 16384,
+      "order": "shuffled"
+    },
+    {
+      "id": "processing-1024-65536",
+      "mode": "processing",
+      "size": 1024,
+      "records": 65536,
+      "order": "shuffled"
+    },
+    {
+      "id": "query-128",
+      "mode": "query",
+      "size": 128,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "query-900",
+      "mode": "query",
+      "size": 900,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "query-3500",
+      "mode": "query",
+      "size": 3500,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "control-1",
+      "mode": "control",
+      "size": 1,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "control-20",
+      "mode": "control",
+      "size": 20,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "control-200",
+      "mode": "control",
+      "size": 200,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "scheduling-1",
+      "mode": "scheduling",
+      "size": 1,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "scheduling-2",
+      "mode": "scheduling",
+      "size": 2,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "scheduling-4",
+      "mode": "scheduling",
+      "size": 4,
+      "records": 4096,
+      "order": "sorted"
+    },
+    {
+      "id": "scheduling-1-65536",
+      "mode": "scheduling",
+      "size": 1,
+      "records": 65536,
+      "body_size": 1024,
+      "order": "shuffled"
+    },
+    {
+      "id": "scheduling-2-65536",
+      "mode": "scheduling",
+      "size": 2,
+      "records": 65536,
+      "body_size": 1024,
+      "order": "shuffled"
+    },
+    {
+      "id": "scheduling-4-65536",
+      "mode": "scheduling",
+      "size": 4,
+      "records": 65536,
+      "body_size": 1024,
+      "order": "shuffled"
+    },
+    {
+      "id": "observation-900",
+      "mode": "observation",
+      "size": 900,
+      "records": 4096,
+      "order": "sorted"
+    }
+  ],
+  "readiness": "/workspace/scratch/responsibility-v2-preflight-02",
+  "calibration": "/workspace/scratch/responsibility-v2-calibration-01"
+}

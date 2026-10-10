@@ -3,15 +3,18 @@ flowchart LR
         Sealed[("Sealed journal file")]
         Reclaim["Commit thread: checkpoint, delete file"]
     end
-    subgraph Sealer["Sealer thread, one build at a time"]
+    subgraph Sealer["Sealer worker, one file per build"]
         Reader["Frame reader: one frame, at most 4 MiB"]
         Router["Router: one Group, rows extracted per entry"]
         LogRuns["Log run builder: sort at 32,768 rows or 16 MiB"]
         MetricRuns["Metric run builder: sort at 32,768 rows or 16 MiB"]
+        SpanRuns["Span run builder: sort at 32,768 rows or 16 MiB"]
         Runs[("Spill runs in .building-label, not synced")]
-        Merge["Merge: heap of one row per run"]
+        Merge["Merge: at most 16 heads, skip unnecessary rewrites"]
         Chunker["Raw Batches and gaps: journal order, 4 MiB chunks"]
-        Writers["Table writers: row group at 8,192 rows or 8 MiB, SHA-256 while writing"]
+        Inputs["Sorted input: logs 1,024 rows / 17 MiB; metrics and spans 8,192 / 8 MiB estimated"]
+        Writers["Sorted physical groups: 8,192 rows; raw chunks explicitly flush; SHA-256 while writing"]
+        Pages[("All-table PageStore: encoded blobs in private disk scratch")]
     end
     Building[(".building-label")]
     Segment[("Segment seg-label")]
@@ -19,13 +22,17 @@ flowchart LR
     Sealed --> Reader --> Router
     Router -->|log rows| LogRuns
     Router -->|metric points| MetricRuns
+    Router -->|spans| SpanRuns
     Router -->|entries and gaps| Chunker
     LogRuns -->|sorted run| Runs
     MetricRuns -->|sorted run| Runs
+    SpanRuns -->|sorted run| Runs
     Runs --> Merge
-    Merge -->|rows in contract order| Writers
+    Merge -->|rows in contract order| Inputs --> Writers
     Chunker --> Writers
-    Writers -->|four Parquet files and the text filter, manifest last| Building
+    Writers -->|completed blobs| Pages
+    Pages -->|single-use reads, remove before publication| Writers
+    Writers -->|four mandatory tables, optional spans, both filters, manifest last| Building
     Building -->|sync, then rename| Segment
     Segment -->|then| Reclaim
     Reclaim -->|deletes| Sealed

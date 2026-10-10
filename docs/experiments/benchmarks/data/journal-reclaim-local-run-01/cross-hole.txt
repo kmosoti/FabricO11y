@@ -1,0 +1,24 @@
+   Compiling fabric-server v0.1.0 (/workspace/FabricO11y-journal-reclaim/crates/fabric-server)
+    Finished `test` profile [unoptimized] target(s) in 1.03s
+     Running unittests src/lib.rs (/workspace/scratch/fabrico11y-target/debug/deps/fabric_server-bc08c8a35c12ef66)
+
+running 1 test
+test sealer::tests::failure_or_panic_never_reclaims_across_a_hole ... FAILED
+
+failures:
+
+---- sealer::tests::failure_or_panic_never_reclaims_across_a_hole stdout ----
+
+thread 'sealer::tests::failure_or_panic_never_reclaims_across_a_hole' (9181) panicked at crates/fabric-server/src/sealer.rs:319:13:
+assertion `left == right` failed
+  left: [1, 2, 3, 4]
+ right: [1]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+failures:
+    sealer::tests::failure_or_panic_never_reclaims_across_a_hole
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 12 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p fabric-server --lib`
