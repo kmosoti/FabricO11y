@@ -40,6 +40,24 @@ results. Full acceptance remains the original registered decision, including soa
 
 ## Execution and resources
 
+### RC-GROUP second candidate registration
+
+Screen02 retained exact logical rows, pruning and filter alignment but failed
+the large-row file-byte gate; its candidate heap was51,384,696bytes. The pinned
+Parquet writer restarts its1,024-row encoding mini-batches for each Arrow input.
+Byte-limited chunks split these boundaries, changing page encoding.
+
+Before the next screen, admit an opt-in logs-only variant with1,024-row chunks
+and a17MiB owned-payload cap. Registered16KiB bodies fit an encoding mini-batch
+within that cap. Other sorted tables retain their current chunk policy; the
+default writer remains unchanged. An oversized row can exceed the cap by one
+row, as in the existing builder; no general whole-process memory bound is
+claimed. Earlier byte-cap flushes for arbitrary larger rows must preserve exact
+logical data and sound filters, but are not assumed byte-identical. Reuse every
+original screen gate, including80MiB heap and exact applicable file bytes. The
+first candidate failure remains failed. A passing screen still requires the
+full registered repetitions and service checks.
+
 Use `python3 -B tools/resource_group.py -- COMMAND` for every build, workload and
 validator, serializing resource-heavy jobs. The data drive at
 `/run/media/kmosoti/data/FabricO11y` owns caches, tool installations and scratch.
