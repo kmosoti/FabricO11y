@@ -259,6 +259,7 @@ def trial():
                 out.write(json.dumps(source) + "\n")
         dump = subprocess.Popen([str(bins / "examples" / "server_dump"), str(server_conf)],
                                 stdout=subprocess.PIPE, stderr=err, text=True)
+        CHILDREN.append(dump)
         for line in dump.stdout:
             record = json.loads(line)
             record["bytes"] = base64.b64encode(hashlib.sha256(base64.b64decode(record["bytes"])).digest()).decode()
