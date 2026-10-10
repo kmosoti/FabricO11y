@@ -123,7 +123,12 @@ def perform(f, args, summary):
     stop = threading.Event()
 
     def manager():
+        tick = 0
         while not stop.is_set():
+            scheduled = began + .25 + tick * .5
+            if stop.wait(max(0, scheduled - time.monotonic())):
+                break
+            tick += 1
             started = time.monotonic()
             started_unix_ns = time.time_ns()
             try:
@@ -142,10 +147,12 @@ def perform(f, args, summary):
                     raise RuntimeError('incomplete concurrent query')
                 management.append({'elapsed_s': time.monotonic()-started,
                                    'started_unix_ns': started_unix_ns,
+                                   'scheduled_monotonic_s': scheduled,
+                                   'started_monotonic_s': started,
+                                   'scheduling_lag_s': max(0, started-scheduled),
                                    'query_s': elapsed, 'pages': len(pages)})
             except Exception as error:
                 failures.append('management: ' + repr(error))
-            stop.wait(max(0, .5-(time.monotonic()-started)))
 
     def attacker():
         try:
