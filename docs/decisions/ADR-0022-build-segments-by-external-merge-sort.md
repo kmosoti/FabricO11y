@@ -41,8 +41,8 @@ version, ordering, custody, publication or sync order. Physical bytes can differ
 from the former bounded writer when its byte cap closed a group early; recorded
 byte equality is to the retained whole-file reference on the measured inputs.
 
-The reason is an executable counterexample: bounded input alone retained
-136.45 MiB of encoded pages on high-entropy logs. Disk-backed page ownership
+The reason is an executable counterexample: bounded input alone used
+136.45 MiB of incremental heap on high-entropy logs. Disk-backed page ownership
 reduced that probe to 40.07 MiB with exact output. The repeated eight-cell,
 three-pair campaign passed the original 80 MiB ceiling and 10% scaling rule;
 the full R2 soak passed all ten original gates with exact simulator and companion
