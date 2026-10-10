@@ -1,6 +1,6 @@
 # Registered release package and lifecycle checks
 
-Status: revision 1 registered 2026-10-10 before execution. This extends the
+Status: revision 2 registered 2026-10-10 before candidate RPM adaptation. This extends the
 [baseline installation protocol](installation-acceptance-protocol.md) for the
 owner-selected Debian/Fedora release matrix. No result is recorded here.
 These checks are finite local guest measurements, not deployment qualification.
@@ -18,13 +18,27 @@ keeping the same registered glibc floor. Copy verified UI assets into owned
 storage; recheck their receipt/hashes in the frozen-source guest before packaging.
 A source or asset mismatch blocks construction.
 
+The candidate RPM may instead use `build-rpm.sh OUT CANDIDATE_DEB
+--candidate-deb BUILD_RECEIPT [--mutate=NAME]`. Require a completed successful
+Debian build/cleanup receipt, its exact package SHA-256, alpha2 Debian metadata,
+and its matching frozen-source manifest/bundle hashes. Preserve every regular
+Debian data member unchanged, including native binaries, UI assets and notices;
+record their hashes plus source and input package identity in RPM documentation.
+Use the frozen alpha2 account-check script for RPM installation. RPM metadata,
+scriptlets, dependencies and SELinux context restoration remain Fedora-specific.
+Reject historical/wrong-version/substituted payloads before staging. This is
+repackaging the same Debian12-sysroot binaries, not an independent Fedora compiler
+result. Actual Fedora enforcing-mode lifecycle cells still remain necessary.
+
 Run every host command through `python3 -B tools/resource_group.py -- COMMAND`.
 Use only the mounted data drive, a maximum 20 GiB/no-swap descendant cgroup and
 the default 30-minute deadline. The package-build container inherits that cgroup;
 QEMU is its descendant. One guest at a time, 2 virtual CPUs, 6144 MiB guest RAM,
 8 GiB virtual disk, disk-backed owned overlay/scratch, no KVM requirement. Preserve
 failures/receipts and stop/reap guest processes before cleanup. Enforce the
-existing 100 GB data-tree budget and record free disk before admission. Do not
+existing 100 GB data-tree budget, stop admission at 95 GB including the reserved
+8 GiB build or full guest disk plus image/log overhead, and record free disk
+before admission. Do not
 interpret these guest limits or a tiny fixture as the 100 GB retention-capacity
 release result.
 
