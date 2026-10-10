@@ -249,7 +249,7 @@ def main() -> int:
     overlay = shutil.which("fuse-overlayfs")
     if not podman or not overlay:
         raise RuntimeError("rootless podman and fuse-overlayfs are required")
-    cargo_home = Path(os.environ.get("CARGO_HOME", str(Path.home() / ".cargo"))).resolve()
+    cargo_home = Path(os.environ.get("CARGO_HOME", str(STORAGE / "toolchain-cache/cargo"))).resolve()
     registry = cargo_home / "registry"
     rustc = TOOLCHAIN / "bin/rustc"
     cargo = TOOLCHAIN / "bin/cargo"
