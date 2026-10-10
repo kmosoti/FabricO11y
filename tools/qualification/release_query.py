@@ -185,7 +185,7 @@ def perform(f, args, summary):
         # Console fixture calls stay below its admission limit; no 429 counts
         # as permission evidence or a successful enrollment.
         enrollments.append(f.enroll(f'query{node:04d}'))
-        time.sleep(.1)
+        time.sleep(.15)
     with source_file.open('w') as output:
         for node in range(nodes):
             for sequence in range(1,batches+1):
