@@ -1,26 +1,34 @@
 # Architecture views
 
-Product architecture (current behavior; status words follow the [evidence states](../QUALIFICATION.md#evidence-states)):
+Current product views use the [evidence states](../QUALIFICATION.md#evidence-states).
 
-- [System](system.md): runtime components, crate layers and the dependency rule.
-- [Spindle](spindle.md): host collection, Spool custody, gaps and bounds.
-- [Delivery](delivery.md): the ACK rule, the delivery kernel and its layer split.
-- [Central control](control-plane.md): enrollment, desired and applied configuration, pause, resume and revoke.
-- [Storage](storage.md): `FAB1` frame log, Spool and server journal, and the FOL2 log format.
-- [Retained history and query](retained-history.md): Segments, retention, exact queries, completeness, freshness and pages.
-- [Linux deployment](deployment.md): service identity and systemd boundary; installation not yet run.
-- [Sealer](sealer.md): how a sealed journal file becomes a Segment. **Accepted design, not yet implemented** ([ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md)); the page also says what the sealer does today.
-- [Observation record and FOB1 encoding](observation.md): one record for a line, a point or a span and its canonical block encoding, built as a tower of eight levels. **Proposed, wired to nothing** ([ADR-0023](../decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md)).
-- Machine-readable policy: [layers.json](layers.json) and [core-purity.json](core-purity.json), enforced by `cargo xtask`.
+| Area | View | Scope and status |
+| --- | --- | --- |
+| Runtime and boundaries | [System](system.md) | Runtime components, crate layers and dependency rule. |
+| Collection | [Spindle](spindle.md) | Host collection, Spool custody, gaps and bounds. |
+| Delivery | [Delivery](delivery.md) | ACK rule, delivery kernel and layer split. |
+| Control | [Central control](control-plane.md) | Enrollment, desired/applied configuration, pause, resume and revoke. |
+| Identity | [Identity and access](identity-access.md) | Intended local passkeys, scoped workloads/AI, sessions and durable policy; release-required, unimplemented. |
+| Console | [Operator PWA](../milestones/operator-console.md), [algorithm model](console-algorithms.md), [art direction](console-art-direction.md) | Leptos demonstration and bounded native models implemented; authenticated integration and release acceptance remain required. |
+| Storage | [Storage](storage.md) | `FAB1` frame log, Spool, server journal and FOL2 log format. |
+| History and query | [Retained history and query](retained-history.md) | Segments, retention, exact queries, completeness, freshness and pages. |
+| Sealing | [Sealer](sealer.md) | Bounded external merge writer adopted; finite builder/recovery and companion soak evidence is linked from [CURRENT](../CURRENT.md). No whole-server memory proof ([ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md)). |
+| Observation codec | [Observation record and FOB1 encoding](observation.md) | Accepted and implemented for in-memory blocks in the opt-in Walk tail ([ADR-0023](../decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md), [ADR-0024](../decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md)). Wire, journal and Segment adoption are separate decisions. |
+| Deployment | [Linux deployment](deployment.md) | Service identity and systemd boundary; fresh Debian VM installation acceptance passed its registered checks. Exact release packages and Fedora remain separate gates. |
+| Machine policy | [layers.json](layers.json), [core-purity.json](core-purity.json) | Enforced by `cargo xtask`. |
 
-Legacy demonstration:
+## Legacy demonstration
 
-- [FOL2 demonstration](fol2-demo.md) and [local input and batching](ingestion.md): the original single-process pipeline.
+| Views | Scope |
+| --- | --- |
+| [FOL2 demonstration](fol2-demo.md), [local input and batching](ingestion.md) | Original single-process pipeline. |
 
-Research, outside the product:
+## Research views
 
-- [Query research](query.md): coverage receipts and exact predicates.
-- [Local research prototype](research-prototype.md): offline adapter, immutable snapshot, external root and checkpoint resume.
-- [Agent telemetry](agent-telemetry.md): development-workflow observation.
+| View | Scope |
+| --- | --- |
+| [Query research](query.md) | Coverage receipts and exact predicates. |
+| [Local research prototype](research-prototype.md) | Offline adapter, immutable snapshot, external root and checkpoint resume. |
+| [Agent telemetry](agent-telemetry.md) | Development-workflow observation. |
 
-The [documentation landing page](../README.md) gives the reading order and the source-of-truth hierarchy.
+See the [documentation landing page](../README.md) for reading order and source-of-truth hierarchy.

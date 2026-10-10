@@ -1,0 +1,10 @@
+flowchart LR
+    Assets[Packaged public shell] --> Views[Leptos browser views]
+    Assets --> Cache[Allowlisted offline shell cache]
+    Fixture[Explicit synthetic fixture] --> Model[Bounded request, tail and chart models]
+    Model --> Views
+    Views --> Controls[Source, signal, trace and theme controls]
+    Controls --> Model
+    Views -. future authenticated integration .-> Policy[Server session and scope enforcement]
+    Policy -. scoped reads .-> History[Journal and Segment query]
+    Policy -. scoped writes .-> Control[Durable control and audit]

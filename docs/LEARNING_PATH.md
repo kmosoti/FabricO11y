@@ -1,5 +1,11 @@
 # Learning path
 
+## Rust mechanisms in the running system
+
+| Mechanism | Contract and trade-off | Source or evidence |
+| --- | --- | --- |
+| Checked UI epochs, normalized string capacity and integer bucket boundaries | Late results cannot enter a new account/query; retained allocation follows payload bounds; sorted timestamps allow O(P) boundary divisions rather than O(N), preserving extrema and gaps. Browser work remains separate from server custody. | [UI model](../crates/fabric-ui/src/model.rs), [counterexamples](../crates/fabric-ui/tests/model.rs), [derivation](architecture/console-algorithms.md) |
+
 This project is deliberately split into short stages. Finish one stage, run it, and be able to explain its contract before moving on. The longer-term architecture is in [`architecture.md`](architecture.md); this page is the route through it.
 
 Read [current project state](CURRENT.md) for what actually exists and [system architecture](architecture/system.md) for its boundaries. Stage 4 is a checked target model, Stage 5 has a local log and replay path, Stage 6 has its first measured baseline, and Stage 7 remains planned work.

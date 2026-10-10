@@ -17,6 +17,7 @@ not moved into the public wiki.
 
 | Area | Records | Scope or status |
 | --- | --- | --- |
+| Console algorithms and interface | [Protocol](benchmarks/console-model-protocol.md), [results](https://github.com/kmosoti/FabricO11y/wiki/Console-model-and-interface-run-01), [art direction](../architecture/console-art-direction.md) | Bounded native models, ordered chart-boundary ablation, synthetic Leptos/PWA browser checks and palette corrections; authenticated release and human usability acceptance remain separate. |
 | Readiness continuation | [Protocol](formal/readiness-continuation-protocol.md), [execution](formal/readiness-continuation-results.md), [companion soak](benchmarks/soak-protocol-r2.md) | Completed: merge/retention/recovery checks, bounded writer adoption, model/fuzz tooling, isolated installation acceptance and full companion soak. |
 | Bounded writer defaults | [Default run 01](formal/bounded-writer-default-run-01.md), [combined campaign](formal/encoded-page-memory-run-01.md), [native R2 soak](benchmarks/soak-run-02.md) | Normal writer enabled; unflagged bounded/recovery checks, loaded-binary equivalence, all 17 final fast checks and three documentation checks passed on the recorded snapshot. |
 | Invariant audit | [Consolidation](formal/invariant-consolidation.md) | Control publication, Spool exhaustion, trustworthy launcher completion and current evidence gaps. |

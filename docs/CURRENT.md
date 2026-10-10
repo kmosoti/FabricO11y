@@ -80,8 +80,9 @@ attempts and exact revision limits remain in the linked records.
 The owner selected the bounded application release gate (Option B) for development
 and small deployments. The [release plan](milestones/release-readiness.md) fixes
 the candidate/package workflow, proposed 10/100-identity matrix, blockers and
-execution order. Profile registration and reconciliation with the broader release
-rule precede measurement. No release candidate is frozen or published yet.
+execution order. The ledger now separates bounded release gates from the broader
+qualification profile; executable registration precedes measurement. No release
+candidate is frozen or published yet.
 
 The selected scope includes a central server and remote Spindles on Debian and
 Fedora, with four cross-family forwarding cells and exact `.deb`/`.rpm` acceptance.
@@ -90,6 +91,22 @@ of sealed telemetry, with separate bounded journal and working space. Configurab
 age retention remains 24 hours; either limit can expire data first. These are
 release requirements: the current code still defaults to 20 GiB and RPM packaging
 is not implemented. The plan names the implementation and verification steps.
+
+The release also requires a [Leptos/WASM PWA](milestones/operator-console.md) and
+[local passkeys with scoped human/workload/AI access](architecture/identity-access.md).
+OIDC/SSO is deferred. The current HTTP API still shares an admin credential across
+query and control; it does not implement these access guarantees. The
+[UI crate](../crates/fabric-ui/README.md) implements bounded native models and
+a Leptos demonstration with explicit synthetic fixtures; it does not qualify
+authenticated browser use. B11–B13 add security, recovery,
+privacy, browser lifecycle and UI-active resource acceptance.
+
+The console dependency review also ran `cargo deny --workspace --locked check`.
+It failed: Leptos introduces an unmaintained `paste` dependency and licenses
+outside the current allowlist; full workspace traversal additionally exposes
+existing server policy failures. The earlier root-package dependency receipt
+does not cover these crates. Keep these failures visible in release work; no
+license or advisory exception was introduced to pass the check.
 
 The [research wiki](https://github.com/kmosoti/FabricO11y/wiki) is the canonical
 home for research and result reports. Product/operator documentation, architecture,

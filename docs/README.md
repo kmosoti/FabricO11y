@@ -39,6 +39,12 @@ flowchart LR
 
 Each production server also owns a [dedicated diagnostic Spindle](architecture/system.md). Edge Spindles keep their configured destination.
 
+The expanded [release plan](milestones/release-readiness.md) requires a
+[Leptos operator PWA](milestones/operator-console.md) and
+[local passkeys/scoped access](architecture/identity-access.md). These are intended
+release capabilities; the current runtime diagram above does not imply their
+implementation or acceptance.
+
 ## Source of truth
 
 The repository owns product and operator documentation, architecture and executable

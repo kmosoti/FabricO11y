@@ -4,6 +4,14 @@ Terms mean one thing each across code, documents, diagrams and experiments. When
 
 ## Product
 
+The [operator console](milestones/operator-console.md) uses a **display envelope**:
+bounded per-time-bucket extrema with explicit gap markers, not an aggregate or
+exhaustive raw history. A **display eviction** removes an older row from bounded
+browser memory; it is not server retention or evidence of collection loss.
+A **principal** in the intended [access design](architecture/identity-access.md)
+is a persistent human, workload or Spindle identity; a credential authenticates
+that principal, and a grant limits its permitted actions/resources.
+
 | Term | Meaning here |
 | --- | --- |
 | Spindle | The host-resident collection and runtime role: observes one host, reads configured sources, builds Batches, keeps collection state, retains unacknowledged Batches in its Spool, applies validated configuration and delivers to Fabric Server. Run by the `fabric-node` executable; code in `src/spindle`. Not a synonym for any process, worker or remote machine. |

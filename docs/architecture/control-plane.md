@@ -4,6 +4,13 @@ Status: implemented and tested end to end; the [fleet protocol](../experiments/b
 
 ## Responsibilities
 
+The expanded release replaces shared administrator authority with
+[local passkeys and scoped principals](identity-access.md), as decided in
+[ADR-0027](../decisions/ADR-0027-ship-a-scoped-passkey-pwa-console.md).
+That access boundary is not implemented yet. The flows below describe the current
+admin/node-token implementation; they must not be used as evidence that the PWA
+or scoped identity gates have passed.
+
 The [Fabric Server](../../crates/fabric-server/src/control.rs) owns the node inventory: each node's name, the SHA-256 of its bearer token, its status (active, paused or revoked) and its desired configuration with a revision number. That state lives in `state_dir/control.json`, replaced by synced rename on every administrative change. The server keeps each node's last poll time, applied revision and configuration error in memory only.
 
 Each [Spindle](spindle.md) owns what it actually runs: its local file (spool, spool ceiling, server target) plus the last configuration it validated and applied, stored in `applied-config.json` in its spool.
