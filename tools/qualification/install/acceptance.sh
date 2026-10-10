@@ -1,16 +1,31 @@
 #!/bin/bash
 # Running-installation acceptance, executed as root INSIDE a disposable
-# Debian 13 systemd container (see run.sh). Never run it on a real host: it
+# Debian 13 systemd container or VM (see run.sh and run-qemu.py). Never run it
+# on a real host: it
 # creates and deletes the fabricolly account, installs and purges the package
 # and starts services. Protocol:
 # docs/experiments/formal/installation-acceptance-protocol.md.
 #
-# Usage: acceptance.sh <DEB>
+# Usage: acceptance.sh <DEB> [--self-spindle-ca <CA-PATH>]
 # Prints one line per check, "ACCEPT <ID> PASS|FAIL|NOT-RUN <detail>". Exits 1
 # if any check failed, 3 if none failed but one could not run in this
 # environment, and 0 only when every check ran and passed.
 set -u
-DEB=$1
+DEB=${1:?usage: acceptance.sh <DEB> [--self-spindle-ca <CA-PATH>]}
+SELF_SPINDLE_CA=
+if [ "${2:-}" = --self-spindle-ca ] && [ -n "${3:-}" ] && [ "$#" -eq 3 ]; then
+  SELF_SPINDLE_CA=$3
+  case "$SELF_SPINDLE_CA" in
+    /*) ;;
+    *) echo "self-spindle CA path must be absolute" >&2; exit 2 ;;
+  esac
+  case "$SELF_SPINDLE_CA" in
+    *[!A-Za-z0-9_./-]*) echo "self-spindle CA path contains unsupported characters" >&2; exit 2 ;;
+  esac
+elif [ "$#" -ne 1 ]; then
+  echo "usage: acceptance.sh <DEB> [--self-spindle-ca <CA-PATH>]" >&2
+  exit 2
+fi
 FAILS=0
 NOTRUN=0
 UNIFIED=0; [ "$(stat -fc %T /sys/fs/cgroup)" = cgroup2fs ] && UNIFIED=1
@@ -114,6 +129,9 @@ journal_bytes=21474836480
 retention_s=86400
 retention_bytes=21474836480
 EOF
+if [ -n "$SELF_SPINDLE_CA" ]; then
+  printf 'self_spindle_ca=%s\n' "$SELF_SPINDLE_CA" >> /etc/fabrico11y/server.conf
+fi
 chmod 0644 /etc/fabrico11y/server.conf
 printf 'server_url=https://127.0.0.1:7443\nserver_ca=/etc/fabrico11y/ca.pem\nadmin_token_file=%s/admin-token\n' "$W" > admin.conf
 mkdir -p $LOGDIR && chmod 0755 $LOGDIR
