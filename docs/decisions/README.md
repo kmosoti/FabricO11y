@@ -29,6 +29,7 @@
 | [ADR-0025: Carry traces as a third signal](ADR-0025-carry-traces-as-a-third-signal.md) | Accepted | Spindle loopback OTLP/HTTP trace intake committed to the Spool before `200`; envelope field 9; span rows, `spans.parquet` and a trace-ID filter; a `spans` query; higher collection limits, parallel sealing, Debian-family packaging |
 | [ADR-0026: Launch a dedicated Spindle with each server](ADR-0026-launch-a-dedicated-spindle-with-each-server.md) | Accepted | Production CLI child ownership, persistent local identity and Spool, verified HTTPS delivery, bounded pinned diagnostics, inherited service limits; library serving remains explicit |
 | [ADR-0027: Ship a scoped passkey PWA console](ADR-0027-ship-a-scoped-passkey-pwa-console.md) | Accepted intended design; unimplemented | Leptos CSR, same-origin shell-only PWA, local passkeys, scoped human/workload/AI authority and independent acceptance gates |
+| [ADR-0028: Preserve Btrfs log identity across reboots](ADR-0028-preserve-btrfs-log-identity-across-reboots.md) | Accepted; implementation and corrected-candidate verification pending | Additive full filesystem/subvolume cursor identity, conservative legacy migration, unchanged custody and prefix guards |
 
 This first record captures an existing, explicitly documented choice. It does not claim that storage engines, ID widths, or performance strategies have been compared. Record further decisions when they materially affect architecture; use the [ADR format](../documentation-policy.md#12-architecture-decision-records) and the next unused four-digit number.
 
