@@ -1,11 +1,6 @@
 name: Extended verification
 
-# The extended profile of xtask/checks.json: semantic mutants, cargo-mutants
-# on core and app, TLA+ models, delivery fault runs with TLC trace
-# validation, Kani proofs of the core, time-boxed fuzzing, the dependency
-# policy and a coverage report. Too slow for every pull request, so it runs
-# weekly (which also re-reads the RustSec advisories), on demand, and on pull
-# requests that touch the code or policy it verifies.
+# Keep every registered extended check. See tools/ci/README.md for scheduling.
 on:
   schedule:
     - cron: "17 4 * * 1"
@@ -15,6 +10,7 @@ on:
       - "xtask/**"
       - "crates/**"
       - "src/spindle/**"
+      - "src/bin/fabric-node.rs"
       - "formal/**"
       - "tools/qualification/**"
       - "tools/ci/**"
@@ -22,8 +18,14 @@ on:
       - "docs/formal/counterexamples.json"
       - "fuzz/**"
       - "deny.toml"
+      - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/verification.yml"
+
+# Superseded PR revisions are not useful merge evidence. Do not cancel other workflows.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -35,18 +37,35 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
-          # Full history: the counterexample registry names fix commits.
+          # Required: counterexample records refer to historical fix commits.
           fetch-depth: 0
       - name: Prepare disk storage and enforced cgroups
         run: bash tools/ci/prepare-resource-host.sh
+      - name: Check CI scheduling and receipt contracts
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/test_ci_contracts.py
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.99.0
           components: rustfmt, clippy
+      - name: Fail early on formatting before proof-tool installation
+        run: python3 -B tools/resource_group.py -- cargo fmt --all --check
       - name: Check contained toolchain and explicit self-update policy
         run: |
           python3 -B tools/resource_group.py -- python3 -B tools/ci/test_rust_preflight.py
           python3 -B tools/resource_group.py -- python3 -B tools/ci/rust_preflight.py
+      - name: Resolve mounted Cargo target for cache
+        id: cache-path
+        run: |
+          target=$(realpath -m --relative-to="$GITHUB_WORKSPACE" /run/media/kmosoti/data/FabricO11y/cargo)
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency and pinned-tool cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: hosted-extended-v1
+          workspaces: . -> ${{ steps.cache-path.outputs.target }}
+          cache-workspace-crates: 'false'
+          cache-on-failure: 'false'
+          save-if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
       - name: Install native crypto prerequisites
         run: |
           sudo apt-get update
@@ -67,8 +86,6 @@ jobs:
           rustup component add llvm-tools-preview
           python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-deny 0.20.2
           python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-llvm-cov 0.9.1
-      # cargo-fuzz needs nightly; the fuzz run is time-boxed, so the floating
-      # channel is acceptable. Kani brings its own pinned toolchain.
       - name: Install cargo-fuzz and nightly
         run: |
           rustup toolchain install nightly --profile minimal
@@ -78,11 +95,44 @@ jobs:
           python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py kani-verifier 0.68.0
           python3 -B tools/resource_group.py -- cargo kani setup
       - name: Verify Kani positive and semantic negative controls
+        id: tools
         run: python3 -B tools/resource_group.py -- python3 -B tools/ci/kani_canary.py
-      # Exit 3 (INCOMPLETE: an environment was unavailable) fails the job too.
-      - name: Run the extended check registry
-        run: python3 -B tools/resource_group.py -- cargo xtask checks --profile extended
-      - name: Keep the verification receipts
+      # Each check gets the existing bounded launcher; the overall 120-minute
+      # job cap stays unchanged. A failed check does not hide independent results.
+      - name: Semantic negative controls
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: python3 -B tools/resource_group.py -- cargo xtask checks --only semantic-mutants
+      - name: Delivery process faults and trace evidence
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: python3 -B tools/resource_group.py -- cargo xtask checks --only delivery-faults
+      - name: Delivery model checks
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: python3 -B tools/resource_group.py -- cargo xtask checks --only tla-delivery
+      - name: Transport model checks
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: python3 -B tools/resource_group.py -- cargo xtask checks --only tla-transport
+      - name: Trace checker regression tests
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: python3 -B tools/resource_group.py -- cargo xtask checks --only trace-model
+      - name: Mutation testing
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: python3 -B tools/resource_group.py -- cargo xtask checks --only cargo-mutants
+      - name: Core bounded proofs
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: python3 -B tools/resource_group.py -- cargo xtask checks --only kani-core
+      - name: Time-boxed fuzzing
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: python3 -B tools/resource_group.py -- cargo xtask checks --only fuzz-smoke
+      - name: Current dependency advisories and policy
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: python3 -B tools/resource_group.py -- cargo xtask checks --only dependency-policy
+      - name: Workspace coverage report
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: python3 -B tools/resource_group.py -- cargo xtask checks --only coverage-report
+      - name: Require every extended receipt from this revision
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/verify_receipts.py --profile extended
+      - name: Keep the verification receipts and full check output
         if: always()
         uses: actions/upload-artifact@v4
         with:

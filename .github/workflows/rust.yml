@@ -1,6 +1,17 @@
 name: Rust and console
 
-on: [push, pull_request]
+# PR merge candidates get one run, rather than both branch-push and PR runs.
+on:
+  push:
+    branches: [main]
+    tags: ['*']
+  pull_request:
+  workflow_dispatch:
+
+# Superseded PR revisions are not useful merge evidence. Do not cancel other workflows.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -15,15 +26,32 @@ jobs:
           fetch-depth: 0
       - name: Prepare disk storage and enforced cgroups
         run: bash tools/ci/prepare-resource-host.sh
+      - name: Check CI scheduling and receipt contracts
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/test_ci_contracts.py
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.99.0
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
+      - name: Fail early on formatting before expensive installation
+        run: python3 -B tools/resource_group.py -- cargo fmt --all --check
       - name: Check contained toolchain and explicit self-update policy
         run: |
           python3 -B tools/resource_group.py -- python3 -B tools/ci/test_rust_preflight.py
           python3 -B tools/resource_group.py -- python3 -B tools/ci/rust_preflight.py
+      - name: Resolve mounted Cargo target for cache
+        id: cache-path
+        run: |
+          target=$(realpath -m --relative-to="$GITHUB_WORKSPACE" /run/media/kmosoti/data/FabricO11y/cargo)
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency and pinned-tool cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: hosted-fast-v1
+          workspaces: . -> ${{ steps.cache-path.outputs.target }}
+          cache-workspace-crates: 'false'
+          cache-on-failure: 'false'
+          save-if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
       - uses: browser-actions/setup-firefox@v1
         id: firefox
         with:
@@ -43,12 +71,12 @@ jobs:
         run: python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-deny 0.20.2
       - name: Run fast registry
         run: python3 -B tools/resource_group.py -- cargo xtask checks --profile fast
+      - name: Verify complete current-revision fast evidence
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/verify_receipts.py --profile fast
       - name: Check whole workspace dependency policy including WASM
         run: python3 -B tools/resource_group.py -- cargo deny --locked --workspace check
-      - name: Check WASM compilation
-        run: python3 -B tools/resource_group.py -- cargo check --locked -p fabric-ui --target wasm32-unknown-unknown
-      - name: Check UI contrast
-        run: python3 -B tools/resource_group.py -- python3 -B tools/ui/contrast_check.py
+      # wasm-check, ui-palette and package-contracts are already in the fast registry.
+      # test_ci_contracts.py verifies their exact ownership; do not rerun them here.
       - name: Build complete console
         run: python3 -B tools/resource_group.py -- python3 -B tools/ui/build.py --out /run/media/kmosoti/data/FabricO11y/results/ci-console
       - name: Check compiled console in Firefox
@@ -70,12 +98,10 @@ jobs:
           defect_status=$?
           set -e
           python3 -B tools/resource_group.py -- python3 -B tools/ci/check-browser-defect.py "$defect_status" /run/media/kmosoti/data/FabricO11y/results/ci-live-browser-defect/browser.json
-      - name: Check packaging contracts and defect rejection
-        run: python3 -B tools/resource_group.py -- python3 -B tools/packaging/test_packaging.py
       - name: Remove exact hosted Chrome AppArmor attachment
         if: always()
         run: python3 -B tools/resource_group.py -- env GITHUB_ACTIONS=true python3 -B tools/ci/chrome-sandbox.py --cleanup
-      - name: Keep receipts and console identity
+      - name: Keep receipts, full check output and console identity
         if: always()
         uses: actions/upload-artifact@v4
         with:
