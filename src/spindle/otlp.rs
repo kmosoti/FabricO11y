@@ -59,7 +59,7 @@ struct ConnectionPermit(Arc<AtomicUsize>);
 
 impl ConnectionPermit {
     fn acquire(live: &Arc<AtomicUsize>) -> Option<Self> {
-        live.fetch_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
+        live.try_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
             count.checked_add(1).filter(|next| *next <= MAX_CONNECTIONS)
         })
         .ok()?;
