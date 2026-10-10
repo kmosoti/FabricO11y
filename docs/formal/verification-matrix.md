@@ -58,8 +58,6 @@ These preserve existing contract meanings; final execution outcomes are in that 
 | SPOOL-4 | A log-heavy node keeps rotating and reclaiming its Spool between metric intervals, and every retained file still starts with host counter state (ADR-0025) | PC custody, boundedness | `Spool::rotation_due`, `Spindle::collect` | `a_log_heavy_node_rotates_its_spool_between_metric_intervals` | — | the same test fails with the rotation-due sampling removed | — | spool-full exit seen in spindle run 01 before the fix | Tested | Rotation when host metrics cannot be sampled at all |
 | METER-1 | The Spindle reports exactly what it committed and delivered, and its output cap holds delivery to the configured rate without refusing a Batch (ADR-0025) | PC boundedness | `spindle::meter::Meter`, `Spindle::deliver` | unit tests for the bucket and counters; `the_spindle_reports_what_it_committed_in_its_next_metric_cycle`; `the_output_cap_holds_delivery_to_its_rate` (real server); spindle run 01 (4 MiB/s cap) | — | — | — | — | Tested | Counters across a restart are reset, not continued (by design) |
 
-## Control
-
 The [Btrfs identity regression](../experiments/formal/btrfs-cursor-protocol.md)
 supplements Spool/source-cursor verification: full filesystem/subvolume matching,
 raw-device legacy migration, replacement/truncation/prefix controls, failed probe,
@@ -67,6 +65,8 @@ quiet-file commit and full-Spool refusal/retry passed their focused native tests
 on `889dfac`. The failed Fedora 51-to-32 reboot is retained as
 `CX-BTRFS-REBOOT-LOG-REPLAY`; corrected exact-package lifecycle acceptance remains
 pending. This does not establish portable identity for other filesystems.
+
+## Control
 
 | ID | Contract | Spec | Production implementation | Verification | Independent oracle | Negative control | Formal model | Fault test | Status | Unchecked |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
