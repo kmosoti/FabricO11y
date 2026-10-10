@@ -2,6 +2,7 @@
 import json
 import os
 import stat
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -86,6 +87,9 @@ class ProductionAccess(CandidateFixture):
         return self
 
     def sample_bound(self):
+        bridge = getattr(self, 'bridge', None)
+        if bridge is not None and getattr(bridge, 'ui_polling', False):
+            bridge.poll_health()
         temporary = getattr(getattr(self, "bridge", None), "browser_temporary", None)
         temporary_bytes = directory_bytes(temporary) if temporary is not None else 0
         if directory_bytes(self.raw_root) + directory_bytes(self.work) + directory_bytes(self.out) + temporary_bytes > 5 * 1024**3:
@@ -100,6 +104,23 @@ class ProductionAccess(CandidateFixture):
         temporary = getattr(getattr(self, 'bridge', None), 'browser_temporary', None)
         observation = None
         observation_error = None
+        ui_error = None
+        bridge = getattr(self, 'bridge', None)
+        if bridge is not None and hasattr(bridge, 'poll_health'):
+            try:
+                health = bridge.poll_health(require_progress=False)
+                checked = health['phases'] > 0
+                passed = not checked or (health['attempts'] > 0 and health['completed'] > 0
+                    and health['statusFailures'] == 0 and health['transportFailures'] == 0
+                    and health['inflight'] == 0)
+                self.receipt['ui_polling_prerequisite'] = {'checked': checked, 'passed': passed}
+                if not passed:
+                    raise RuntimeError('actual UI polling prerequisite failed')
+            except (OSError, RuntimeError) as error:
+                ui_error = error
+                self.receipt['passed'] = False
+                self.receipt['ui_polling_prerequisite'] = {'checked': True, 'passed': False,
+                    'error_type': type(error).__name__}
         try:
             if temporary is not None:
                 socket_lengths = []
@@ -123,8 +144,25 @@ class ProductionAccess(CandidateFixture):
             if observation is not None:
                 observation['removed'] = not temporary.exists()
             self.receipt['browser_temporary_cleanup'] = observation
+            # spindle_sim mirrors its supplied credential list into temporary
+            # token files. They are not oracle ledgers or recovery evidence.
+            removed = []
+            raw_root = getattr(self, 'raw_root', None)
+            if raw_root is not None:
+                for path in sorted((raw_root / 'sim').glob('token-*')):
+                    info = path.lstat()
+                    if (not re.fullmatch(r'token-[0-9]{1,3}', path.name)
+                            or not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+                            or info.st_uid != os.getuid() or not 64 <= info.st_size <= 65):
+                        raise RuntimeError('unexpected simulator credential cleanup member')
+                    removed.append({'name': str(path.relative_to(raw_root)), 'bytes': info.st_size,
+                                    'sha256': digest(path)})
+                    path.unlink()
+            self.receipt['simulator_credential_cleanup'] = removed
             (self.out / 'runtime.json').write_text(json.dumps(self.receipt, indent=2) + '\n')
         if observation_error is not None:
             raise RuntimeError('browser temporary observation failed after confirmed cleanup') from observation_error
         if observation is not None and not observation['removed']:
             raise RuntimeError('owned browser temporary directory remained after cleanup')
+        if ui_error is not None:
+            raise RuntimeError('actual UI polling prerequisite failed after cleanup') from ui_error

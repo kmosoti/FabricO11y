@@ -76,6 +76,59 @@ class ProductionAccessTests(unittest.TestCase):
             sizes[adapter.bridge.browser_temporary] = 1
             adapter.sample_bound()
 
+    def test_temporary_observation_error_still_closes_owned_fixture(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as work:
+            root = Path(work)
+            temporary = root / 'browser-temp'
+            temporary.mkdir()
+            adapter = ProductionAccess.__new__(ProductionAccess)
+            adapter.closed, adapter.receipt, adapter.out = False, {}, root
+            class Bridge: browser_temporary = temporary
+            adapter.bridge = Bridge()
+            def close():
+                temporary.rmdir()
+                adapter.closed = True
+            with patch('production_access.directory_bytes', side_effect=OSError('synthetic counter failure')), \
+                    patch('release_runtime.CandidateFixture.close', side_effect=close) as finish:
+                with self.assertRaisesRegex(RuntimeError, 'after confirmed cleanup'): adapter.close()
+                finish.assert_called_once()
+            observation = adapter.receipt['browser_temporary_cleanup']
+            self.assertTrue(observation['removed'])
+            self.assertEqual(observation['observation_error'], 'OSError')
+
+    def test_failed_ui_prerequisite_cannot_publish_pass_and_still_closes(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as work:
+            adapter = ProductionAccess.__new__(ProductionAccess)
+            adapter.closed, adapter.receipt, adapter.out = False, {'passed': True}, Path(work)
+            class Bridge:
+                def poll_health(self, **kwargs):
+                    return dict(phases=1, attempts=3, completed=3, statusFailures=1,
+                                transportFailures=0, inflight=0)
+            adapter.bridge = Bridge()
+            def close(): adapter.closed = True
+            with patch('release_runtime.CandidateFixture.close', side_effect=close) as finish:
+                with self.assertRaisesRegex(RuntimeError, 'after cleanup'): adapter.close()
+                finish.assert_called_once()
+            self.assertTrue(adapter.closed)
+            self.assertFalse(adapter.receipt['passed'])
+            self.assertFalse(adapter.receipt['ui_polling_prerequisite']['passed'])
+
+    def test_generated_simulator_credentials_are_removed_but_ledgers_remain(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as work:
+            root = Path(work)
+            (root / 'sim').mkdir()
+            token = root / 'sim/token-0'
+            token.write_text('a' * 64 + '\n')
+            ledger = root / 'sim/events.jsonl'
+            ledger.write_text('synthetic independent oracle ledger\n')
+            adapter = ProductionAccess.__new__(ProductionAccess)
+            adapter.closed, adapter.receipt, adapter.out, adapter.raw_root = False, {}, root, root
+            def close(): adapter.closed = True
+            with patch('release_runtime.CandidateFixture.close', side_effect=close): adapter.close()
+            self.assertFalse(token.exists())
+            self.assertTrue(ledger.exists())
+            self.assertEqual(adapter.receipt['simulator_credential_cleanup'][0]['bytes'], 65)
+
     def test_control_adapter_uses_only_console_nodes_and_rejects_denial(self):
         adapter = ProductionAccess.__new__(ProductionAccess)
         class Bridge:

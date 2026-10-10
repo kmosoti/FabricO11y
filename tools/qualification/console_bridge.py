@@ -120,6 +120,10 @@ class ConsoleBridge:
         self.browser_temporary = None
         self.principal_id = None
         self.closed = False
+        self.ui_polling = False
+        self.ui_samples = []
+        self.ui_previous = None
+        self.ui_phase_baseline = None
         self.records = []
         self.receipt = {"state": "starting", "origin": origin, "browser": VERSION,
                         "authenticator": "virtual CTAP2 with user verification",
@@ -191,6 +195,32 @@ class ConsoleBridge:
                 if time.monotonic() >= deadline:
                     raise RuntimeError("production console passkey helper did not load")
                 time.sleep(.1)
+            # Observe only native UI Request objects, never bridge string-based
+            # requests, response contents, cookies or credentials. Unlike the
+            # default Resource Timing buffer these counters cannot fill up.
+            self._js('''window.fabricCampaignUiProbe={active:false,attempts:0,headers:0,completed:0,
+              statusFailures:0,transportFailures:0,inflight:0,lastAttemptMs:null,lastCompletedMs:null,
+              maxAttemptGapMs:0,refreshes:0,phases:0,phaseLastAttemptMs:null};
+              const original=window.fetch;window.fetch=function(...args){
+                const p=window.fabricCampaignUiProbe;
+                const native=p.active && args[0] instanceof Request &&
+                  new URL(args[0].url).pathname==='/v1/console/query';
+                if(!native)return original.apply(this,args);
+                const now=performance.now();if(p.phaseLastAttemptMs!==null)
+                  p.maxAttemptGapMs=Math.max(p.maxAttemptGapMs,now-p.phaseLastAttemptMs);
+                p.phaseLastAttemptMs=now;p.lastAttemptMs=now;p.attempts++;p.inflight++;
+                let finished=false;const finish=(failed)=>{if(finished)return;finished=true;
+                  p.inflight--;if(failed)p.transportFailures++;else{p.completed++;p.lastCompletedMs=performance.now();}};
+                return original.apply(this,args).then(response=>{
+                  p.headers++;if(response.status<200||response.status>=300)p.statusFailures++;
+                  if(!response.body){finish(false);return response;}
+                  const stream=response.body;const getReader=stream.getReader.bind(stream);
+                  stream.getReader=function(...options){const reader=getReader(...options);
+                    const read=reader.read.bind(reader);reader.read=function(...values){
+                      return read(...values).then(part=>{if(part.done)finish(false);return part;},
+                        error=>{finish(true);throw error;});};return reader;};
+                  return response;
+                },error=>{finish(true);throw error;});};''')
             if self.browser_group is not None:
                 actual = next(line[3:] for line in Path(f"/proc/{self.driver.pid}/cgroup").read_text().splitlines() if line.startswith("0::"))
                 if Path("/sys/fs/cgroup") / actual.lstrip("/") != self.browser_group:
@@ -304,7 +334,16 @@ class ConsoleBridge:
         with self.lock:
             if not self.principal_id:
                 raise RuntimeError("bootstrap the owner before login")
-            return self._ceremony("login", {"principal_id": self.principal_id})
+            polling = self.ui_polling
+            if polling:
+                self.poll_ui(False)
+            view = self._ceremony("login", {"principal_id": self.principal_id})
+            if polling:
+                # Authentication replaces both cookie session and CSRF. Reload
+                # the UI session before resuming its requested visible phase.
+                self.poll_ui(True)
+                self._js("window.fabricCampaignUiProbe.refreshes++")
+            return view
 
     def request(self, path, method="GET", body=None):
         with self.lock:
@@ -322,6 +361,9 @@ class ConsoleBridge:
     def poll_ui(self, enabled):
         """Explicitly activate/pause the actual bounded native UI polling view."""
         with self.lock:
+            if not enabled:
+                self._js("window.fabricCampaignUiProbe.active=false")
+                self.ui_polling = False
             if enabled:
                 self._js('''const connect=document.querySelector('[data-testid=connect-server]');if(connect)connect.click();else{const check=Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()==='Check session');if(check)check.click();}''')
                 deadline = time.monotonic() + 15
@@ -329,6 +371,7 @@ class ConsoleBridge:
                     if time.monotonic() >= deadline:
                         raise RuntimeError("UI session refresh did not finish")
                     time.sleep(.1)
+                self.poll_health(require_progress=False)
                 self._js("Array.from(document.querySelectorAll('.sidebar .nav-item')).find(e=>e.textContent.includes('Live Tail')).click()")
                 self._js("const label=Array.from(document.querySelectorAll('label')).find(e=>e.textContent.trim().startsWith('Signal'));const select=label.querySelector('select');select.value='logs';select.dispatchEvent(new Event('change',{bubbles:true}));")
             self._js('''const wanted=arguments[0]?'Resume 5-second polling':'Pause 5-second polling';const button=Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()===wanted);if(button)button.click();''', enabled)
@@ -338,12 +381,73 @@ class ConsoleBridge:
                     if time.monotonic() >= deadline:
                         raise RuntimeError("paused UI read has not completed")
                     time.sleep(.1)
+            else:
+                self._js("const p=window.fabricCampaignUiProbe;p.active=true;p.phaseLastAttemptMs=null;p.phases++")
+                self.ui_polling = True
+                self.ui_previous = None
+                self.ui_phase_baseline = self.poll_health(require_progress=False)
+                self.await_poll_ready()
+
+    def await_poll_ready(self):
+        """Observe one actual native UI body completion within twenty seconds."""
+        with self.lock:
+            if not self.ui_polling or self.ui_phase_baseline is None:
+                raise RuntimeError('visible UI polling must be requested before readiness')
+            baseline = self.ui_phase_baseline
+            began = time.monotonic()
+            while True:
+                sample = self.poll_health(require_progress=False, record=False)
+                elapsed = time.monotonic() - began
+                if (elapsed <= 20 and sample['attempts'] > baseline['attempts']
+                        and sample['completed'] > baseline['completed']):
+                    self.receipt.setdefault('ui_ready_phases', []).append({
+                        'phase': sample['phases'], 'elapsed_s': elapsed,
+                        'baseline_attempts': baseline['attempts'],
+                        'baseline_completed': baseline['completed'],
+                        'ready_attempts': sample['attempts'], 'ready_completed': sample['completed']})
+                    return self.poll_health(require_progress=False)
+                if elapsed >= 20:
+                    raise RuntimeError('actual native UI body readiness exceeded twenty seconds')
+                time.sleep(min(.25, 20 - elapsed))
+
+    def poll_health(self, *, require_progress=True, record=True):
+        """Bounded actual UI body-consumption/status evidence, not owner API success."""
+        with self.lock:
+            sample = self._js('''const p=window.fabricCampaignUiProbe;const text=document.body.textContent;
+              return {...p,visibility:document.visibilityState,connected:text.includes('Connected'),
+                pauseVisible:Array.from(document.querySelectorAll('button')).some(e=>
+                  e.textContent.trim()==='Pause 5-second polling'),nowMs:performance.now()};''')
+            sample['requested_polling'] = self.ui_polling
+            if record:
+                if len(self.ui_samples) >= 1280:
+                    raise RuntimeError('bounded UI polling receipt exceeds 1280 samples')
+                self.ui_samples.append(sample)
+                self.receipt['ui_polling'] = self.ui_samples
+            if self.ui_polling:
+                if (sample['visibility'] != 'visible' or not sample['connected'] or not sample['pauseVisible']
+                        or sample['statusFailures'] or sample['transportFailures'] or sample['inflight'] > 1):
+                    raise RuntimeError('actual visible UI polling failed or became locked')
+                previous = self.ui_previous
+                # A just-restored phase needs one five-second poll plus its
+                # existing fifteen-second transport deadline before progress
+                # is observable. Campaign samples are otherwise sixty seconds.
+                if (require_progress and previous is not None
+                        and sample['nowMs'] - previous['nowMs'] >= 20000):
+                    if (sample['attempts'] <= previous['attempts']
+                            or sample['completed'] <= previous['completed']):
+                        raise RuntimeError('actual requested UI polling made no observed progress')
+                self.ui_previous = sample
+            return sample
 
     def close(self):
         if self.closed:
             return
         self.closed = True
         if self.session:
+            try:
+                self.poll_health(require_progress=False)
+            except (OSError, RuntimeError):
+                self.receipt['ui_observation_failed_at_close'] = True
             try:
                 self._call("DELETE", "/session/" + self.session)
             except (OSError, RuntimeError):

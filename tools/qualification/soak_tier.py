@@ -75,13 +75,13 @@ def main():
     try:
         return trial()
     finally:
-        if PRODUCTION is not None:
-            (PRODUCTION.raw_root / "tokens").unlink(missing_ok=True)
-            PRODUCTION.close()
         for child in CHILDREN:
             if child.poll() is None:
                 child.kill()
                 child.wait(timeout=10)
+        if PRODUCTION is not None:
+            (PRODUCTION.raw_root / "tokens").unlink(missing_ok=True)
+            PRODUCTION.close()
         if COMPANION_GROUP is not None:
             group, root = COMPANION_GROUP
             populated = "populated 1" in (group / "cgroup.events").read_text()

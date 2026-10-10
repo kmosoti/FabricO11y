@@ -49,13 +49,13 @@ def main():
     try:
         return trial()
     finally:
-        if PRODUCTION is not None:
-            (PRODUCTION.raw_root / "token").unlink(missing_ok=True)
-            PRODUCTION.close()
         for child in CHILDREN:
             if child.poll() is None:
                 child.kill()
                 child.wait(timeout=10)
+        if PRODUCTION is not None:
+            (PRODUCTION.raw_root / "token").unlink(missing_ok=True)
+            PRODUCTION.close()
 
 
 def trial():

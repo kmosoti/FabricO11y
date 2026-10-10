@@ -25,7 +25,10 @@ def main():
     parser.add_argument("--build", type=Path, required=True)
     parser.add_argument("--bin-dir", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--poll-seconds", type=int, default=12)
     args = parser.parse_args()
+    if not 12 <= args.poll_seconds <= 600:
+        raise ValueError('finite polling smoke must be 12–600 seconds')
     group = require_limits()
     subprocess.run(["systemctl", "--user", "set-property", "--runtime", group.name,
                     "MemoryHigh=3500000000", "MemoryMax=4000000000", "MemorySwapMax=0",
@@ -129,11 +132,23 @@ def main():
             status, _ = bearer("/v1/console/query", "POST", {"kind": "logs", "node": "campaign-source", "from_ns": end - 30*10**9, "to_ns": end, "limit": 100})
             check(status == 200, "scoped production workload query")
             token = None
-            bridge._js("window.bridgeQueryCount=0;window.bridgeQueryFailures=0;const original=window.fetch;window.fetch=function(...a){const query=new URL(typeof a[0]==='string'?a[0]:a[0].url,location.href).pathname==='/v1/console/query';if(query)window.bridgeQueryCount++;return original(...a).then(r=>{if(query&&r.status!==200)window.bridgeQueryFailures++;return r;});}")
             bridge.poll_ui(True)
-            time.sleep(12)
+            deadline = time.monotonic() + args.poll_seconds
+            while time.monotonic() < deadline:
+                time.sleep(min(15, max(0, deadline - time.monotonic())))
+                if args.poll_seconds >= 330:
+                    status, _ = bridge.request('/v1/console/nodes/campaign-source/config', 'PUT',
+                        {'logs': [], 'metric_interval_s': 15})
+                    check(status == 200, 'finite smoke fresh owner management')
+                bridge.poll_health()
             bridge.poll_ui(False)
-            check(bridge._js("return window.bridgeQueryCount>=2 && window.bridgeQueryFailures===0"), "actual bounded visible UI poll phase")
+            health = bridge.poll_health(require_progress=False)
+            check(health['completed'] >= 2 and health['statusFailures'] == 0
+                  and health['transportFailures'] == 0 and health['inflight'] == 0,
+                  'actual bounded visible UI body-completion poll phase')
+            if args.poll_seconds >= 330:
+                check(health['refreshes'] >= 1, 'actual UV refresh restored native UI session and polling')
+            receipt['ui_polling_observation'] = health
             stop_server(server)
             launch_server()
             view = bridge.login()
