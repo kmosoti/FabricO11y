@@ -49,8 +49,9 @@ The harness creates an owned NSS SQL database and trusts its fixture CA only in
 that temporary profile, with `acceptInsecureCerts=false`. It does not install
 system trust or packages. Firefox's
 [virtual authenticator interface](https://firefox-source-docs.mozilla.org/python/marionette_driver.html#marionette-driver-webauthn-module)
-and Chrome's WebAuthn protocol emulate separate CTAP2 authenticators with
-resident credentials and user verification. Adding another passkey uses another
+and Chrome's WebAuthn protocol emulate separate authenticators with resident-key
+capability and user verification. Firefox uses CTAP 2.1; Chrome uses CTAP 2.
+Adding another passkey uses another
 authenticator because `excludeCredentials` should reject the original one.
 Geckodriver 0.37.1's [field naming defect](https://github.com/mozilla/geckodriver/issues/2239)
 prevents its ordinary virtual-authenticator endpoint from preserving the requested
@@ -59,11 +60,33 @@ invokes Gecko's own Marionette WebAuthn module with the correct options, then
 restores content context. The real application still calls `navigator.credentials`
 and receives the same server validation. Receipts label this workaround; they do
 not establish interoperability of the affected driver endpoint.
-Six bounded local attempts remained inconclusive: real registration reached
-`NotAllowedError` after its deadline while the virtual authenticator had no
-credential. Mozilla's [geckodriver release notes](https://github.com/mozilla/geckodriver/releases)
-describe unresolved virtual-authenticator reliability problems. Do not enable
-this live Firefox fixture as a passing gate based on the shell-only Firefox check.
+The Firefox fixture explicitly enables the software manager and disables the
+physical USB manager, recording actual preference readback. Pinned Firefox 157
+[dispatch](https://github.com/mozilla-firefox/firefox/blob/FIREFOX_157_0_RELEASE/dom/webauthn/authrs_bridge/src/lib.rs#L939)
+otherwise selects USB before the software manager containing the virtual device.
+Earlier deadline failures with zero credentials remain failed.
+
+The corrected transport selected real owner registration and enrollment in the
+bounded `console-live-firefox-usb-selection-04` diagnostic. Fresh login later
+failed with CTAP 2.0. The observation-only `console-live-firefox-allowlist-05`
+confirmed two allowed server keys and one matching active virtual credential,
+with the correct RP and required UV. The pinned
+[test token](https://github.com/mozilla-firefox/firefox/blob/FIREFOX_157_0_RELEASE/dom/webauthn/authrs_bridge/src/test_token.rs#L418)
+omits the credential ID after filtering to one key, whereas its
+[bridge](https://github.com/mozilla-firefox/firefox/blob/FIREFOX_157_0_RELEASE/dom/webauthn/authrs_bridge/src/lib.rs#L1139)
+restores it only for an originally single-key request. The otherwise unchanged
+CTAP 2.1 control `console-live-firefox-ctap21-selection-06` completed 127 finite
+assertions on the exact UI09 package: exit 0, 29.548 seconds, 808.7 MiB peak,
+no swap and owned-fixture cleanup. These concurrent causal diagnostics do not
+fill standalone Firefox acceptance or establish a physical-authenticator defect.
+
+The prospective Firefox fixture is registered separately in
+[console protocol revision 3](../../docs/experiments/formal/console-access-protocol.md).
+Actual resident-credential coverage remains unestablished: the observed
+production enrollment requested `residentKey=discouraged`, and the stored
+Firefox credential was nonresident despite the enabled capability. Keep required
+UV and the original acceptance assertions; the shell-only check cannot establish
+live Firefox passkey acceptance.
 
 The harness verifies a stricter combined 4,000,000,000-byte memory cap (rounded
 down to a kernel page), zero swap, two CPU equivalents and 512 tasks before
