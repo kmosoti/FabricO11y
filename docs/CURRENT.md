@@ -93,10 +93,11 @@ Btrfs device-number change no longer replays an already collected log. Earlier
 failed package runs remain preserved. Debian successor acceptance and the four
 cross-family forwarding cells are still queued in the
 [installation record](experiments/formal/installation-release-run-01.md).
-Successor Debian build 03 and RPM build 02 contain native source `e174fd3` and
-the same console build 08; all 637 common payload files match. A hosted browser
-trial then found a zoom/reflow defect in those UI sources. Corrected assets and
-packages are being prepared before full installed and service acceptance.
+Successor Debian build 04 and RPM build 03 contain console build 09; all 637
+common payload files match. Their three native binaries and three qualification
+helpers are byte-identical to Debian build 03, with all 409 native inputs
+unchanged. The UI fixes the hosted zoom/reflow failure in console build 08.
+Full installed and service acceptance is running on this corrected pair.
 Console build 09 passed 150 actual Chrome checks against the staged native
 candidate, including enlarged standalone pagination and an injected overflow
 that the reflow assertion rejected. This staged check does not replace testing
@@ -109,7 +110,10 @@ before a later positive query. That failure is preserved; the repaired 32 MiB
 fixture passed the short repeat, and the complete successor run is still queued.
 Automation uses a virtual
 CTAP2 authenticator, not a physical-device compatibility claim. Firefox's compiled
-shell checks passed; automated passkey enrollment remains inconclusive there.
+shell checks passed. Its virtual-authenticator harness initially selected the
+physical USB transport; selecting the virtual transport enabled actual owner
+and second-key enrollment. A later login failed, so Firefox's full passkey
+workflow remains unqualified.
 
 The first production million-row Segment cell, `release-query-segment-seed1-01`,
 returned 200/200 oracle-exact answers before and after restart. Exact recovery,
@@ -139,7 +143,9 @@ Fresh full soak `production-soak-full-02` was interrupted after 562.893 seconds
 for that UI candidate replacement. Actual polling continued through its first
 real UV refresh; no full soak result is claimed. Its frozen inputs and cleanup
 receipts are preserved. The [campaign record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-production-access-campaign-run-01)
-preserves the earlier interruption and finite repairs. Historical passing R2 results
+preserves the earlier interruption and finite repairs. Fresh full soak
+`production-soak-full-03` uses the corrected exact packages and is running.
+Historical passing R2 results
 above remain attributed to their original revision.
 
 Hosted CI run `38067490757` at `189127d` passed all 20 enabled fast checks,
