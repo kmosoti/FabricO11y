@@ -111,8 +111,8 @@ def perform(f, args, summary):
     reader = f.reader([e['enrollment_id'] for e in enrollments])
     tokens = f.work / 'tokens'
     tokens.write_text(''.join(e['token'] + '\n' for e in enrollments)); tokens.chmod(0o600)
-    f.bridge._js("window.releaseUi={queries:0,failed:0};const original=window.fetch;window.fetch=function(...args){const q=new URL(typeof args[0]==='string'?args[0]:args[0].url,location.href).pathname==='/v1/console/query';if(q)window.releaseUi.queries++;return original(...args).then(r=>{if(q&&r.status!==200)window.releaseUi.failed++;return r;},e=>{if(q&&e.name!=='AbortError')window.releaseUi.failed++;throw e;});}")
     f.bridge.poll_ui(True)
+    last_ui_health = time.monotonic()
     sim = f.spawn([f.helpers / 'spindle_sim', '--server-url', f.origin, '--ca', f.work / 'ca.pem',
                    '--tokens', tokens, '--seed', hex(args.seed), '--seconds', str(seconds),
                    '--workers', str(identities), '--out', f.work / 'sim',
@@ -196,6 +196,9 @@ def perform(f, args, summary):
     try:
         while True:
             samples.append(f.resource_sample())
+            if time.monotonic() - last_ui_health >= 25:
+                f.bridge.poll_health()
+                last_ui_health = time.monotonic()
             if sim.poll() is not None:
                 finished = json.loads((f.work / 'sim/sim-summary.json').read_text())
                 if time.time_ns() >= finished['began_unix_ns'] + seconds*NS:
@@ -209,7 +212,7 @@ def perform(f, args, summary):
             thread.join(timeout=30)
     if any(thread.is_alive() for thread in threads):
         raise RuntimeError('concurrent pressure worker did not terminate')
-    ui = f.bridge._js('return window.releaseUi')
+    ui = f.bridge.poll_health()
     f.bridge.poll_ui(False)
     samples.append(f.resource_sample())
     f.stop_server()
@@ -279,7 +282,8 @@ def perform(f, args, summary):
              'no_rejected_commit': not any(r['node_id'] in rejected_set for r in recovered),
              'backlog': backlog[1] <= backlog[0]+identities and len(made) == len(acked),
              'management': not failures and not missing_slots,
-             'ui': ui['queries'] >= (1 if args.smoke else 30) and ui['failed'] == 0,
+             'ui': ui['completed'] >= (1 if args.smoke else 30)
+                 and ui['statusFailures'] == ui['transportFailures'] == 0,
              'rss': max(s['server_hwm_kib'] for s in samples) <= 2*1024**2,
              'no_oom': all('oom_kill 0' in v['memory.events'] for s in samples for v in s['groups'].values())}
     summary.update(passed=all(gates.values()), gates=gates, identities=identities, seconds=seconds,
@@ -307,10 +311,13 @@ def main():
     parser.add_argument('--out', required=True)
     parser.add_argument('--seed', type=lambda v: int(v, 0), choices=SEEDS, required=True)
     parser.add_argument('--smoke', action='store_true')
+    parser.add_argument('--server-cpus', default='0-1')
+    parser.add_argument('--worker-cpus', default='2-3')
     args = parser.parse_args()
     summary = {'classification': 'disposable pressure smoke' if args.smoke else 'registered pressure cell',
                'seed': args.seed, 'passed': False}
-    with CandidateFixture(args.deb_receipt, args.rpm_receipt, args.out) as f:
+    with CandidateFixture(args.deb_receipt, args.rpm_receipt, args.out,
+                          server_cpus=args.server_cpus, supervisor_cpus=args.worker_cpus) as f:
         try:
             perform(f, args, summary)
             f.receipt['passed'] = summary['passed']

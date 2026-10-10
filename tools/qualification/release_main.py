@@ -68,7 +68,8 @@ def run(args):
     summary = {'classification': 'disposable smoke' if args.smoke else 'registered main cell',
                'seed': args.seed, 'tier': args.tier, 'seconds': seconds, 'passed': False,
                'backlog_rule': args.backlog_rule}
-    with CandidateFixture(args.deb_receipt, args.rpm_receipt, args.out) as fixture:
+    with CandidateFixture(args.deb_receipt, args.rpm_receipt, args.out,
+                          server_cpus=args.server_cpus, supervisor_cpus=args.worker_cpus) as fixture:
         summary_path = fixture.out / 'summary.json'
         try:
             perform(fixture, args, seconds, warmup, summary)
@@ -109,9 +110,10 @@ def perform(f, args, seconds, warmup, summary):
             if time.monotonic() > deadline or edge.poll() is not None:
                 raise RuntimeError('native edge OTLP listener unavailable')
             time.sleep(.1)
-    # Count actual visible PWA traffic separately from benchmark reads.
-    f.bridge._js("window.releaseUi={queries:0,failed:0};const original=window.fetch;window.fetch=function(...args){const q=new URL(typeof args[0]==='string'?args[0]:args[0].url,location.href).pathname==='/v1/console/query';if(q)window.releaseUi.queries++;return original(...args).then(r=>{if(q&&r.status!==200)window.releaseUi.failed++;return r;},e=>{if(q&&e.name!=='AbortError')window.releaseUi.failed++;throw e;});}")
+    # Complete an actual native UI read before starting the measured workload.
+    # The shared bridge retains body-completion and authority-failure witnesses.
     f.bridge.poll_ui(True)
+    last_ui_health = time.monotonic()
     offers = {'logs': [], 'traces': []}
     failures, queries, samples, clocks, puts = [], [], [], [], {}
     begin_mono, begin_wall = time.monotonic_ns(), time.time_ns()
@@ -209,9 +211,14 @@ def perform(f, args, seconds, warmup, summary):
             threads.append(control)
             control.start()
         if not args.smoke and not paused and elapsed >= warmup + 40:
+            f.bridge.poll_health()
             f.bridge.poll_ui(False); paused = True
         if not args.smoke and paused and not resumed and elapsed >= warmup + 50:
             f.bridge.poll_ui(True); resumed = True
+            last_ui_health = time.monotonic()
+        if f.bridge.ui_polling and time.monotonic() - last_ui_health >= 25:
+            f.bridge.poll_health()
+            last_ui_health = time.monotonic()
         if sim.poll() is not None and finished.is_set() and all(not t.is_alive() for t in threads):
             break
         if failures:
@@ -230,12 +237,15 @@ def perform(f, args, seconds, warmup, summary):
     drain_limit = time.monotonic() + 120
     while True:
         view = inspect(f.bins / 'fabricctl', edge_config)
+        if time.monotonic() - last_ui_health >= 25:
+            f.bridge.poll_health()
+            last_ui_health = time.monotonic()
         if int(view['acked_through']) == int(view['next_sequence']) - 1 and int(view['log_records']) >= len(offers['logs']):
             break
         if time.monotonic() > drain_limit:
             raise RuntimeError('native edge did not drain')
         time.sleep(.5)
-    ui = f.bridge._js('return window.releaseUi')
+    ui = f.bridge.poll_health()
     f.bridge.poll_ui(False)
     edge.send_signal(signal.SIGTERM)
     if edge.wait(timeout=20) != 0:
@@ -331,7 +341,8 @@ def perform(f, args, seconds, warmup, summary):
              'all_timing_backlog': all(r['passed'] for r in timing.values()),
              'visibility': all(v['passed'] for v in visibility.values()),
              'config_apply_le_30s': len(config_delays) == args.tier and max(config_delays) <= 30,
-             'ui_active': ui['queries'] >= (1 if args.smoke else 20) and ui['failed'] == 0,
+             'ui_active': ui['completed'] >= (1 if args.smoke else 20)
+                 and ui['statusFailures'] == ui['transportFailures'] == 0,
              'server_rss_le_2gib': final_resource['server_hwm_kib'] <= 2 * 1024**2,
              'edge_rss_le_64mib': max(s['edge_hwm_kib'] for s in samples) <= 64 * 1024,
              'no_oom': all('oom_kill 0' in v['memory.events'] for v in final_resource['groups'].values())}
@@ -418,6 +429,8 @@ def main():
     parser.add_argument('--tier', type=int, choices=(10, 100), required=True)
     parser.add_argument('--seed', type=lambda v: int(v, 0), choices=SEEDS, required=True)
     parser.add_argument('--smoke', action='store_true')
+    parser.add_argument('--server-cpus', default='0-1')
+    parser.add_argument('--worker-cpus', default='2-3')
     return run(parser.parse_args())
 
 
