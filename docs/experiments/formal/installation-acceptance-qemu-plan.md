@@ -8,18 +8,53 @@ existing A1–A13 checks and negative controls remain the assertions.
 
 ## Prepare and run
 
-Build the package from the private, source-hashed snapshot prepared for this
-run. The package build needs Rust 1.98.0, `dpkg-deb`, `dpkg-shlibdeps`, and
-`objdump`; the host lacks the two dpkg build tools, so perform the build in the
-Debian 13 build VM/container used for the frozen snapshot, then copy the
-resulting `.deb` to the mounted data drive. Do not build from a moving main
-worktree. Record the snapshot commit and the package SHA-256.
+First install the pinned toolchain into the data-drive cache, if it is absent:
+
+```sh
+DATA=/run/media/kmosoti/data/FabricO11y
+python3 tools/resource_group.py -- env RUSTUP_HOME="$DATA/toolchain-cache/rustup" \
+  /home/kmosoti/.cargo/bin/rustup toolchain install 1.98.0 \
+  --profile minimal --no-self-update
+```
+
+The helper reuses the local Cargo registry in offline mode. Build the package
+from a private Git snapshot of the known Rust/Cargo inputs from
+`tools/qualification/prepare_soak.py` plus `packaging/` and `.cargo/config.toml`:
+
+```sh
+python3 tools/resource_group.py -- python3 tools/qualification/install/build-isolated.py \
+  --run-id install-debian13-deb-01
+```
+
+The helper includes dirty tracked and untracked allowlisted files, records
+their SHA-256 hashes and source diff, and leaves the main worktree untouched.
+It creates a private Git commit and runs the existing `packaging/build-deb.sh`
+unchanged in a one-shot rootless Debian 13 container. The official image tag is
+resolved to a repository digest and the container runs by that digest. `git`,
+`build-essential`, `binutils`, `ca-certificates`, and `dpkg-dev` are installed
+inside the disposable container only. Rust 1.98 is mounted read-only. The
+offline Cargo registry is copied into the run-owned writable cache, hashed,
+and used without network access. Before apt or build starts, the container
+must report the same cgroup as the outer resource group, with memory capped at
+20 GiB and swap disabled. A mismatch stops the helper. Podman graph, run and
+temporary paths, target output and source snapshot all stay on the data drive.
+
+The artifact and receipt are written to
+`results/installation-package-build/<run-id>`; the receipt contains the frozen
+source commit and package SHA-256, and `provenance/frozen-source.bundle`
+preserves the exact private source commit. The helper reserves 8 GiB against the
+100 GB data-drive budget and checks its owned scratch size before cleanup.
+Successful runs remove the private source, target and Podman store while
+retaining the `.deb`, hashes and logs. Failures retain the owned scratch for
+inspection.
+
+Use the package and source commit from that receipt for the acceptance VM:
 
 Run the acceptance VM from the repository root:
 
 ```sh
 python3 tools/resource_group.py -- python3 tools/qualification/install/run-qemu.py \
-  --deb /run/media/kmosoti/data/FabricO11y/artifacts/fabrico11y_0.1.0~alpha.1_amd64.deb \
+  --deb /run/media/kmosoti/data/FabricO11y/results/installation-package-build/install-debian13-deb-01/fabrico11y_0.1.0~alpha.1_amd64.deb \
   --source-commit <40-or-64-character-snapshot-commit> \
   --run-id install-debian13-local-01
 ```
