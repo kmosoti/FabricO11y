@@ -18,6 +18,8 @@ testing. Debian and Fedora packages are being verified with the console and
 100 GB retained-telemetry default. No release has been tagged and no deployment
 profile is qualified. See [current evidence](docs/CURRENT.md) and the
 [release plan](docs/milestones/release-readiness.md).
+The [research wiki's progress page](https://github.com/kmosoti/FabricO11y/wiki/Release-readiness-progress)
+links measured results and the active acceptance queue.
 
 ## The main idea
 

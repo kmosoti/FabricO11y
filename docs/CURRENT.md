@@ -78,99 +78,67 @@ attempts and exact revision limits remain in the linked records.
 
 ## Release preparation
 
-The owner selected Option B for development and small deployments. The
-[release plan](milestones/release-readiness.md) tracks B1–B13: Debian/Fedora
+The [bounded release plan](milestones/release-readiness.md) tracks Debian/Fedora
 central and edge deployment, 100 GB retained telemetry with separate working
-space, local passkeys and scoped human/workload/AI access, and a Leptos/WASM PWA.
-Apache-2.0 licensing and dependency notices are included. OIDC remains deferred.
-No release tag has been published.
+space, local passkeys, scoped human/workload/AI access, and a Leptos/WASM PWA.
+Apache-2.0 licensing, dependency notices and a
+[private security-reporting route](../SECURITY.md) are included. No release tag
+has been published. The
+[release progress page](https://github.com/kmosoti/FabricO11y/wiki/Release-readiness-progress)
+links candidate results, failures and the remaining acceptance queue.
 
-The frozen `c06688c` candidate has exact Debian/RPM payload receipts and console
-build 08. Its fresh Fedora installation and upgrade/reboot/removal passed their
-finite checks, including SELinux and service limits. The reboot trial verifies
-[ADR-0028](decisions/ADR-0028-preserve-btrfs-log-identity-across-reboots.md): a
-Btrfs device-number change no longer replays an already collected log. Earlier
-failed package runs remain preserved. Debian successor acceptance and the four
-cross-family forwarding cells are still queued in the
-[installation record](experiments/formal/installation-release-run-01.md).
-Successor Debian build 04 and RPM build 03 contain console build 09; all 637
-common payload files match. Their three native binaries and three qualification
-helpers are byte-identical to Debian build 03, with all 409 native inputs
-unchanged. The UI fixes the hosted zoom/reflow failure in console build 08.
-Full installed and service acceptance is running on this corrected pair.
-Console build 09 passed 150 actual Chrome checks against the staged native
-candidate, including enlarged standalone pagination and an injected overflow
-that the reflow assertion rejected. This staged check does not replace testing
-the rebuilt packages.
+Debian build 04 and RPM build 03 contain console build 09, with all 637 common
+payload files matching. The console fixes a real 200% zoom pagination overflow;
+150 staged Chrome assertions passed, including rejection of an injected overflow.
+The latest native change requests resident credentials for all four enrollment
+paths. Its two focused regressions passed on `829babe`; independent browser
+inventory checks and a nonresident-enrollment negative control are implemented.
+New exact packages and their browser acceptance are pending. Earlier credentials
+remain usable through explicit principal sign-in. Virtual devices do not
+establish physical passkey or mobile compatibility.
 
-The native access adapter, scoped HTTPS APIs and PWA are implemented. Exact-package
-Chrome smoke `console-live-chrome-final-package-04` passed 147 checks. The longer
-run exercised real cursor expiry, then exhausted its 4 MiB producer fixture Spool
-before a later positive query. That failure is preserved; the repaired 32 MiB
-fixture passed the short repeat, and the complete successor run is still queued.
-Automation uses a virtual
-CTAP2 authenticator, not a physical-device compatibility claim. Firefox's compiled
-shell checks passed. Its virtual-authenticator harness initially selected the
-physical USB transport; selecting the virtual transport enabled actual owner
-and second-key enrollment. A later login failed, so Firefox's full passkey
-workflow remains unqualified.
+The first corrected full million-row Segment trial,
+`release-query-segment-seed1-successor-02`, passed all eight gates on Debian
+build 04/RPM build 03: 200/200 independent-oracle answers, exact recovery and
+companion custody, and query p99 at most 504.340 ms before restart and 447.509 ms
+afterward. This confirms the bounded scoped-evidence cache through production
+HTTPS on that package pair. The earlier 10.27-second five-page failure and
+library comparisons remain in the
+[cache report](https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-scoped-evidence-cache-run-01).
+These results are not automatically attributed to the resident-enrollment successor.
 
-The first production million-row Segment cell, `release-query-segment-seed1-01`,
-returned 200/200 oracle-exact answers before and after restart. Exact recovery,
-companion custody and resource gates passed. Its 2-second query gate failed:
-repeated raw-Batch scans for scoped freshness cost roughly 2 seconds per page,
-with a complete five-page query reaching 10.27 seconds. A
-[bounded storage-owned summary](experiments/benchmarks/scoped-evidence-protocol.md)
-reduced repeated raw work in three diagnostic pairs with identical answers. Its
-five cache controls, three History controls,
-eight row controls, seven console controls and snapshot regression passed;
-strict all-feature server Clippy exited 0. All fifteen diagnostic answers also
-passed the independent query oracle. Cold metadata cost remains about 1.46 seconds;
-warm five-page counters fell from roughly 6.6 to 0.28 seconds. A resource repeat
-reduced CPU from 38.67 to 6.15 seconds for the same query sets, with peak RSS
-about 51 MiB in both. The [canonical report](https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-scoped-evidence-cache-run-01)
-retains the comparison's failed controls and limits. These library measurements
-require confirmation on the successor package through HTTPS.
+Full soak `production-soak-full-03` is running on Debian build 04/RPM build 03.
+Its genuine browser polling has crossed user-verification refresh without the
+previous harness lockout. Earlier interrupted runs retain their original
+results and cleanup receipts in the
+[campaign record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-production-access-campaign-run-01).
+The resident-enrollment packages will receive a fresh full soak. The final
+query/main/pressure/outage matrix, Debian/Fedora installation and lifecycle,
+four cross-family forwarding cells, and full packaged browser/PWA acceptance
+remain queued. Historical Fedora installation/reboot/removal evidence belongs
+to its original `c06688c` candidate, including the
+[Btrfs identity repair](decisions/ADR-0028-preserve-btrfs-log-identity-across-reboots.md).
 
-The production soak `production-soak-full-01` was interrupted after 1,100 seconds:
-read-only browser inspection confirmed that the harness's automatic re-login
-left the UI locked rather than continuously polling. Its failure evidence and
-unchanged inputs are preserved; processes and browser scratch were cleaned.
-The repaired bridge passed a genuine 330-second refresh trial: 65 native UI body
-completions, one real UV refresh and no HTTP/transport failures. Its added
-readiness witness also passed a separate genuine smoke and 29 focused controls.
-Fresh full soak `production-soak-full-02` was interrupted after 562.893 seconds
-for that UI candidate replacement. Actual polling continued through its first
-real UV refresh; no full soak result is claimed. Its frozen inputs and cleanup
-receipts are preserved. The [campaign record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-production-access-campaign-run-01)
-preserves the earlier interruption and finite repairs. Fresh full soak
-`production-soak-full-03` uses the corrected exact packages and is running.
-Historical passing R2 results
-above remain attributed to their original revision.
+Firefox's actual virtual-passkey diagnostic completed 127 assertions after two
+fixture repairs: software transport selection and CTAP 2.1 credential-ID handling.
+Those causal diagnostics retain their exact scope; standalone resident-key
+acceptance is still pending. The repaired Chrome fixture also needs its full
+cursor-expiry, recovery and installed-PWA lifecycle run on the successor package.
 
-Hosted CI run `38067490757` at `189127d` passed all 20 enabled fast checks,
-whole-workspace dependency policy, WASM/build/contrast checks and 19 Firefox
-shell checks. Chrome then failed during session startup before authentication
-checks ran. A sandbox-preserving diagnostic is ready for the next hosted run;
-its original cause was not established. Successor hosted run `38071282547` at
-`3e609a4` passed all 20 enabled fast checks and the actual Chrome sandbox
-preflight, then found the standalone Next-page button extending to 409 px in a
-390 px viewport at 200% content zoom. The button now has a bounded width and
-wrapping; the actual-browser regression passed, including its negative control.
-Hosted run `38072930139` at `8597c42` completed successfully: all 20 enabled
-fast receipts exited 0, whole-workspace dependency policy and WASM/build checks
-passed, Firefox completed its shell checks, and actual Chrome passed 139 checks.
-The injected API-cache defect failed the named shell-only cache assertion and
-its negative-control grader passed. Packaging checks and exact Chrome sandbox
-cleanup also passed. This CI run does not replace the longer exact-package
-browser or service campaigns. Bun CI/hooks remain disabled.
+[Hosted CI 38072930139](https://github.com/kmosoti/FabricO11y/actions/runs/38072930139)
+at `8597c42` passed all 20 enabled fast checks, whole-workspace dependency policy,
+WASM/build/contrast checks, Firefox shell checks, 139 actual Chrome assertions,
+the API-cache negative control and packaging checks. A fresh CI run on the
+resident-enrollment change is in progress. CI does not replace the longer
+exact-package browser or service campaigns. Bun CI/hooks remain disabled;
+documentation checks run manually.
 
 The [research wiki](https://github.com/kmosoti/FabricO11y/wiki) owns research and
 result reports. Product/operator documentation, architecture, registered protocols
-and executable evidence inputs stay versioned here under the
+and executable evidence inputs remain versioned here under the
 [ownership policy](documentation-policy.md#canonical-ownership). The
-[migration manifest](wiki-migration.json) pins 151 migrated reports; direct
-candidate reports also live in the same canonical wiki and evidence index.
+[migration manifest](wiki-migration.json) pins 151 migrated reports; subsequent
+candidate reports use the same canonical wiki and evidence index.
 
 ## Assumptions and risks
 
