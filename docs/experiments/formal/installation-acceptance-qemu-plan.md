@@ -59,7 +59,7 @@ Run the acceptance VM from the repository root:
 python3 tools/resource_group.py -- python3 tools/qualification/install/run-qemu.py \
   --deb /run/media/kmosoti/data/FabricO11y/results/installation-package-build/install-debian12-deb-01/fabrico11y_0.1.0~alpha.1_amd64.deb \
   --source-commit <40-or-64-character-snapshot-commit> \
-  --run-id install-debian13-local-01
+  --run-id install-debian13-local-01 --memory-stressor parallel
 ```
 
 The runner verifies the outer cgroup v2 resource group (20 GiB memory maximum,
@@ -72,11 +72,15 @@ privileged command, KVM access or system service change is needed. Boot is
 bounded at 10 minutes, acceptance at 15 minutes, and the resource-group
 deadline is 30 minutes.
 
-The VM invokes the same `acceptance.sh` with the additive
-`--self-spindle-ca /etc/fabrico11y/ca.pem` argument. This configures the
+The VM invokes `acceptance.sh` with
+`--self-spindle-ca /etc/fabrico11y/ca.pem` and the explicitly selected
+`--memory-stressor parallel` from protocol revision 2. The CA argument configures the
 server's dedicated local Spindle companion to trust the acceptance CA; it does
-not change the A1–A13 expectations. The existing `run.sh` invocation remains
-compatible without the optional argument.
+not change the A1–A13 expectations. The parallel memory fixture replaces the
+single-allocator stimulus that stalled below the hard limit in the first VM
+trial. It retains the resource limits, requires actual kernel OOM events and
+checks that both daemons survive. The historical `tail` fixture remains the
+default when no selector is supplied.
 
 Logs and `receipt.json` are written to
 `results/installation-qemu/<run-id>` on the data drive. Temporary image

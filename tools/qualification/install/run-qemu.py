@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Run the existing install acceptance in a disposable Debian 13 QEMU guest.
 
-This is a local-measurement path. It leaves acceptance.sh and its A1-A13
-assertions unchanged. Invoke through tools/resource_group.py; the guest runs
-under QEMU TCG, so neither KVM nor host privileges are needed.
+This is a local-measurement path. It preserves the A1-A13 contract and permits
+an explicit A12 fixture selection; no acceptance criterion is relaxed. Invoke
+through tools/resource_group.py; the guest runs under QEMU TCG, so neither KVM
+nor host privileges are needed.
 """
 from __future__ import annotations
 
@@ -39,6 +40,21 @@ BOOT_TIMEOUT_S = 600
 ACCEPTANCE_TIMEOUT_S = 900
 TOTAL_TIMEOUT_S = 26 * 60
 MUTATIONS = {'root-user', 'no-collision-check', 'no-memory-max'}
+MUTATION_EXPECTED_FAILURES = {
+    'root-user': {'A6'},
+    'no-collision-check': {'A2a', 'A2b'},
+    'no-memory-max': {'A8'},
+}
+
+
+def mutation_rejected(mutation: str, code: int | None, output: str,
+                      error: str | None = None) -> bool:
+    failures = set(re.findall(r'^ACCEPT ([A-Za-z0-9]+) FAIL(?:\s|$)',
+                              output, flags=re.MULTILINE))
+    return (error is None and code == 1
+            and MUTATION_EXPECTED_FAILURES[mutation].issubset(failures)
+            and not re.search(r'^ACCEPT [A-Za-z0-9]+ NOT-RUN', output,
+                              flags=re.MULTILINE))
 
 
 def run(args: list[str], *, timeout: int | None = None,
@@ -119,13 +135,14 @@ packages:
   - dbus
   - openssl
   - procps
+  - python3
   - sudo
 runcmd:
   - [systemctl, enable, --now, ssh]
 '''
 
 
-def prepare_guest_package(ssh: list[str], mutation: str) -> None:
+def prepare_guest_package(ssh: list[str], mutation: str) -> str:
     script = r'''set -eu
 name=$1
 work=/root/accept-mutation
@@ -140,12 +157,18 @@ case "$name" in
 esac
 dpkg-deb --root-owner-group -Zxz --build "$work/pkg" /home/accept/fabrico11y-mutated.deb >/dev/null
 chown accept:accept /home/accept/fabrico11y-mutated.deb
-rm -rf "$work"
+    sha256sum /home/accept/fabrico11y-mutated.deb
+    rm -rf "$work"
 '''
     result = run([*ssh, 'sudo', 'bash', '-s', '--', mutation],
                  input_text=script, timeout=60, check=False)
     if result.returncode != 0:
         raise RuntimeError('guest mutation failed: ' + result.stderr[-2000:])
+    match = re.search(r'^([0-9a-f]{64})  /home/accept/fabrico11y-mutated\.deb$',
+                      result.stdout, flags=re.MULTILINE)
+    if match is None:
+        raise RuntimeError('guest mutation did not report the mutated package hash')
+    return match.group(1)
 
 
 def main() -> int:
@@ -158,6 +181,8 @@ def main() -> int:
                         help='unique result name using letters, digits, dot, dash or underscore')
     parser.add_argument('--mutate', choices=sorted(MUTATIONS),
                         help='run one registered negative-control package mutation')
+    parser.add_argument('--memory-stressor', choices=('tail', 'parallel'), default='tail',
+                        help='A12 fixture; parallel uses the registered concurrent-page stressor')
     args = parser.parse_args()
     if not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._-]{0,79}', args.run_id):
         parser.error('--run-id contains unsupported characters')
@@ -174,6 +199,7 @@ def main() -> int:
     if deb.suffix != '.deb':
         raise RuntimeError(f'package path must end in .deb: {deb}')
     acceptance = Path(__file__).with_name('acceptance.sh').resolve(strict=True)
+    parallel_helper = Path(__file__).with_name('a12-memory-pressure.py').resolve(strict=True)
     result_dir = DATA / 'results' / 'installation-qemu' / args.run_id
     work_dir = DATA / 'scratch' / ('installation-qemu-' + args.run_id)
     if result_dir.exists() or work_dir.exists():
@@ -187,6 +213,11 @@ def main() -> int:
     qemu_log = work_dir / 'serial.log'
     qemu_stderr = work_dir / 'qemu.stderr'
     rc: int | None = None
+    guest_acceptance_exit: int | None = None
+    mutation_package_sha256: str | None = None
+    mutation_expected_failures = sorted(MUTATION_EXPECTED_FAILURES.get(args.mutate, set()))
+    mutation_observed_failures: list[str] = []
+    mutation_rejection_confirmed: bool | None = None
     error: str | None = None
     cleanup_ok = False
     ssh_log = ''
@@ -194,9 +225,19 @@ def main() -> int:
     journal_log = ''
     guest_info = ''
     package_sha256 = digest(deb, 'sha256')
+    tested_package_sha256 = package_sha256
     acceptance_sha256 = digest(acceptance, 'sha256')
+    parallel_helper_sha256 = (digest(parallel_helper, 'sha256')
+                              if args.memory_stressor == 'parallel' else None)
+    fixture_selection_line: str | None = None
     process_cleanup_confirmed = False
     try:
+        frozen_sources = result_dir / 'sources'
+        frozen_sources.mkdir()
+        for source in (Path(__file__), acceptance, parallel_helper):
+            shutil.copy2(source, frozen_sources / source.name)
+            if digest(source, 'sha256') != digest(frozen_sources / source.name, 'sha256'):
+                raise RuntimeError('VM harness changed during source freeze')
         manifest = work_dir / 'SHA512SUMS'
         run([executable('curl'), '--fail', '--location', '--silent', '--show-error',
              '--proto', '=https', '--tlsv1.2', '--output', str(manifest), MANIFEST_URL],
@@ -297,14 +338,23 @@ nproc
                '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes',
                '-o', 'StrictHostKeyChecking=accept-new',
                '-o', 'UserKnownHostsFile=' + str(known_hosts)]
-        for source, target in ((deb, 'accept@127.0.0.1:/home/accept/fabrico11y.deb'),
-                               (acceptance, 'accept@127.0.0.1:/home/accept/acceptance.sh')):
+        transfers = [(deb, 'accept@127.0.0.1:/home/accept/fabrico11y.deb'),
+                     (acceptance, 'accept@127.0.0.1:/home/accept/acceptance.sh')]
+        if args.memory_stressor == 'parallel':
+            transfers.append((parallel_helper, 'accept@127.0.0.1:/home/accept/a12-memory-pressure.py'))
+        for source, target in transfers:
             run([*scp, str(source), target], timeout=120)
         setup_script = '''set -eu
 chown accept:accept /home/accept/fabrico11y.deb /home/accept/acceptance.sh
 chmod 0644 /home/accept/fabrico11y.deb
 chmod 0755 /home/accept/acceptance.sh
 sha256sum /home/accept/fabrico11y.deb /home/accept/acceptance.sh
+'''
+        if args.memory_stressor == 'parallel':
+            setup_script += '''
+chown accept:accept /home/accept/a12-memory-pressure.py
+chmod 0755 /home/accept/a12-memory-pressure.py
+sha256sum /home/accept/a12-memory-pressure.py
 '''
         setup = run([*ssh, 'sudo', 'bash', '-s'], input_text=setup_script,
                     timeout=30, check=False)
@@ -315,9 +365,13 @@ sha256sum /home/accept/fabrico11y.deb /home/accept/acceptance.sh
         if (received.get('fabrico11y.deb') != package_sha256
                 or received.get('acceptance.sh') != acceptance_sha256):
             raise RuntimeError('guest package or acceptance script hash changed during transfer')
+        if (args.memory_stressor == 'parallel'
+                and received.get('a12-memory-pressure.py') != parallel_helper_sha256):
+            raise RuntimeError('guest A12 parallel helper hash changed during transfer')
 
         if args.mutate:
-            prepare_guest_package(ssh, args.mutate)
+            mutation_package_sha256 = prepare_guest_package(ssh, args.mutate)
+            tested_package_sha256 = mutation_package_sha256
         package = '/home/accept/fabrico11y.deb'
         if args.mutate:
             package = '/home/accept/fabrico11y-mutated.deb'
@@ -325,13 +379,30 @@ sha256sum /home/accept/fabrico11y.deb /home/accept/acceptance.sh
             raise RuntimeError('bootstrap consumed the reserved acceptance time budget')
         try:
             accepted = run([*ssh, 'sudo', 'bash', '/home/accept/acceptance.sh', package,
-                            '--self-spindle-ca', '/etc/fabrico11y/ca.pem'],
+                            '--self-spindle-ca', '/etc/fabrico11y/ca.pem',
+                            '--memory-stressor', args.memory_stressor],
                            timeout=ACCEPTANCE_TIMEOUT_S, check=False)
         except subprocess.TimeoutExpired as exc:
             acceptance_log = output_text(exc.stdout) + output_text(exc.stderr)
             raise RuntimeError(f'acceptance timed out after {ACCEPTANCE_TIMEOUT_S}s') from exc
         rc = accepted.returncode
+        guest_acceptance_exit = accepted.returncode
         acceptance_log = accepted.stdout + accepted.stderr
+        mutation_observed_failures = sorted(set(re.findall(
+            r'^ACCEPT ([A-Za-z0-9]+) FAIL(?:\s|$)', acceptance_log, flags=re.MULTILINE)))
+        if args.mutate:
+            mutation_rejection_confirmed = mutation_rejected(
+                args.mutate, accepted.returncode, acceptance_log)
+        fixture_prefix = f'FIXTURE A12 memory-stressor={args.memory_stressor} '
+        fixture_selection_line = next((line for line in acceptance_log.splitlines()
+                                       if line.startswith(fixture_prefix)), None)
+        if fixture_selection_line is None:
+            raise RuntimeError('acceptance output did not attest the selected A12 stressor')
+        if args.memory_stressor == 'parallel' and (
+                f'helper_sha256={parallel_helper_sha256}' not in fixture_selection_line):
+            raise RuntimeError('acceptance output did not attest the transferred parallel helper hash')
+        if args.memory_stressor == 'tail' and f'acceptance_sha256={acceptance_sha256}' not in fixture_selection_line:
+            raise RuntimeError('acceptance output did not attest the transferred acceptance script hash')
         journal = run([*ssh, 'sudo', 'journalctl', '--no-pager', '-q',
                        '-u', 'fabrico11y-node', '-u', 'fabrico11y-server'],
                       timeout=60, check=False)
@@ -365,14 +436,25 @@ sha256sum /home/accept/fabrico11y.deb /home/accept/acceptance.sh
         if work_dir.exists() and cleanup_ok and rc == 0 and error is None:
             shutil.rmtree(work_dir)
 
+    if args.mutate:
+        mutation_rejection_confirmed = mutation_rejected(
+            args.mutate, rc, acceptance_log, error)
     receipt = {
         'run_id': args.run_id,
         'classification': 'local VM measurement; not deployment qualification',
         'source_snapshot_commit': args.source_commit,
         'mutation': args.mutate,
+        'mutation_expected_failures': mutation_expected_failures,
+        'mutation_observed_failures': mutation_observed_failures,
+        'mutation_package_sha256': mutation_package_sha256,
+        'mutation_rejection_confirmed': mutation_rejection_confirmed,
         'package': str(deb),
         'package_sha256': package_sha256,
+        'tested_package_sha256': tested_package_sha256,
         'acceptance_sha256': acceptance_sha256,
+        'memory_stressor': args.memory_stressor,
+        'parallel_helper_sha256': parallel_helper_sha256,
+        'fixture_selection_line': fixture_selection_line,
         'debian_image_url': IMAGE_URL,
         'debian_image_sha512': IMAGE_SHA512,
         'host_cgroup': containment,
@@ -380,6 +462,7 @@ sha256sum /home/accept/fabrico11y.deb /home/accept/acceptance.sh
                            'guest_disk_virtual_bytes': GUEST_DISK_BYTES, 'vcpus': 2},
         'guest': guest_info.strip(),
         'acceptance_exit': rc,
+        'guest_acceptance_exit': guest_acceptance_exit,
         'error': error,
         'started_utc': started,
         'elapsed_seconds': round(time.monotonic() - start_clock, 3),
@@ -392,6 +475,8 @@ sha256sum /home/accept/fabrico11y.deb /home/accept/acceptance.sh
     print(json.dumps(receipt, indent=2))
     if not cleanup_ok:
         return 2
+    if args.mutate:
+        return 0 if mutation_rejection_confirmed else 1
     return 0 if rc == 0 else 1 if rc == 1 else 3 if rc == 3 else 2
 
 

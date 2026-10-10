@@ -7,31 +7,46 @@
 # docs/experiments/formal/installation-acceptance-protocol.md.
 #
 # Usage: acceptance.sh <DEB> [--self-spindle-ca <CA-PATH>]
+#        [--memory-stressor tail|parallel]
 # Prints one line per check, "ACCEPT <ID> PASS|FAIL|NOT-RUN <detail>". Exits 1
 # if any check failed, 3 if none failed but one could not run in this
 # environment, and 0 only when every check ran and passed.
 set -u
-DEB=${1:?usage: acceptance.sh <DEB> [--self-spindle-ca <CA-PATH>]}
+DEB=${1:?usage: acceptance.sh <DEB> [--self-spindle-ca <CA-PATH>] [--memory-stressor tail|parallel]}
+shift
 SELF_SPINDLE_CA=
-if [ "${2:-}" = --self-spindle-ca ] && [ -n "${3:-}" ] && [ "$#" -eq 3 ]; then
-  SELF_SPINDLE_CA=$3
-  case "$SELF_SPINDLE_CA" in
-    /*) ;;
-    *) echo "self-spindle CA path must be absolute" >&2; exit 2 ;;
+A12_MEMORY_STRESSOR=tail
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --self-spindle-ca)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || { echo "missing self-spindle CA path" >&2; exit 2; }
+      SELF_SPINDLE_CA=$2; shift 2
+      case "$SELF_SPINDLE_CA" in
+        /*) ;;
+        *) echo "self-spindle CA path must be absolute" >&2; exit 2 ;;
+      esac
+      case "$SELF_SPINDLE_CA" in
+        *[!A-Za-z0-9_./-]*) echo "self-spindle CA path contains unsupported characters" >&2; exit 2 ;;
+      esac
+      ;;
+    --memory-stressor)
+      [ "$#" -ge 2 ] || { echo "missing A12 memory stressor" >&2; exit 2; }
+      A12_MEMORY_STRESSOR=$2; shift 2
+      case "$A12_MEMORY_STRESSOR" in
+        tail|parallel) ;;
+        *) echo "unsupported A12 memory stressor: $A12_MEMORY_STRESSOR" >&2; exit 2 ;;
+      esac
+      ;;
+    *) echo "usage: acceptance.sh <DEB> [--self-spindle-ca <CA-PATH>] [--memory-stressor tail|parallel]" >&2; exit 2 ;;
   esac
-  case "$SELF_SPINDLE_CA" in
-    *[!A-Za-z0-9_./-]*) echo "self-spindle CA path contains unsupported characters" >&2; exit 2 ;;
-  esac
-elif [ "$#" -ne 1 ]; then
-  echo "usage: acceptance.sh <DEB> [--self-spindle-ca <CA-PATH>]" >&2
-  exit 2
-fi
+done
 FAILS=0
 NOTRUN=0
 UNIFIED=0; [ "$(stat -fc %T /sys/fs/cgroup)" = cgroup2fs ] && UNIFIED=1
 W=/root/accept
 mkdir -p "$W"
 LOGDIR=/var/log/fabric-accept
+SCRIPT_DIR=$(cd -- "$(dirname -- "$0")" && pwd)
 
 pass() { echo "ACCEPT $1 PASS ${*:2}"; }
 fail() { echo "ACCEPT $1 FAIL ${*:2}"; FAILS=$((FAILS + 1)); }
@@ -280,31 +295,104 @@ else
 fi
 
 # A12 memory and task pressure are contained in the slice; the services survive.
+if [ "$A12_MEMORY_STRESSOR" = parallel ] && [ "$UNIFIED" -eq 0 ]; then
+  echo "FIXTURE A12 memory-stressor=parallel helper_sha256=unavailable reason=requires-cgroup-v2"
+  notrun A12 "parallel memory stressor requires unified cgroup v2; use the historical tail default on legacy hierarchies"
+else
 n_before=$(show fabrico11y-node.service NRestarts); s_before=$(show fabrico11y-server.service NRestarts)
-# hog <unit> <limit bytes> <systemd-run properties...>: runs `tail /dev/zero`
-# (unbounded memory) and samples MemoryCurrent until it ends. Contained means
+# hog <unit> <limit bytes> <worker bytes> <require kernel OOM> <properties...>:
+# runs the selected fixture and samples MemoryCurrent until it ends. Contained means
 # the peak stayed within the limit and the kernel killed it: Result=oom-kill
 # on the unified hierarchy; on the legacy one systemd cannot see OOM events,
 # so a SIGKILL (Result=signal, status 9) before RuntimeMaxSec is required.
 hog() {
-  local unit=$1 limit=$2; shift 2
-  systemd-run --quiet --unit="$unit" --slice=system-fabrico11y.slice -p RuntimeMaxSec=300 "$@" tail /dev/zero
+  local unit=$1 limit=$2 worker_bytes=$3 require_kernel_oom=$4 expected_high=$5 expected_tasks=$6
+  shift 6
+  local before_max=0 before_group=0 after_max=0 after_group=0
+  if [ "$require_kernel_oom" = 1 ] && [ "$UNIFIED" = 1 ]; then
+    local slice_events=/sys/fs/cgroup/system.slice/system-fabrico11y.slice/memory.events
+    while read -r event value; do
+      case "$event" in max) before_max=$value ;; oom_group_kill) before_group=$value ;; esac
+    done < "$slice_events"
+  fi
+  if [ "$A12_MEMORY_STRESSOR" = parallel ]; then
+    systemd-run --quiet --unit="$unit" --slice=system-fabrico11y.slice \
+      -p RuntimeMaxSec=300 -p OOMPolicy=kill -p MemorySwapMax=0 "$@" \
+      python3 "$SCRIPT_DIR/a12-memory-pressure.py" --parallel-bytes "$worker_bytes" \
+        --memory-high-bytes "$expected_high" --memory-max-bytes "$limit" --tasks-max "$expected_tasks"
+  else
+    systemd-run --quiet --unit="$unit" --slice=system-fabrico11y.slice -p RuntimeMaxSec=300 "$@" tail /dev/zero
+  fi
   local peak=0 cur
   while [ "$(systemctl is-active "$unit" 2>/dev/null)" = active ]; do
     cur=$(show "$unit" MemoryCurrent); case "$cur" in ''|'[not set]') ;; *) [ "$cur" -gt "$peak" ] && peak=$cur ;; esac
     sleep 0.2
   done
-  local result status
+  local result status max_events=0 oom_group_events=0 events_state=not-checked
   result=$(show "$unit" Result); status=$(show "$unit" ExecMainStatus)
+  if [ "$require_kernel_oom" = 1 ] && [ "$UNIFIED" = 1 ]; then
+    local slice_events=/sys/fs/cgroup/system.slice/system-fabrico11y.slice/memory.events event value
+    while read -r event value; do
+      case "$event" in max) after_max=$value ;; oom_group_kill) after_group=$value ;; esac
+    done < "$slice_events"
+    max_events=$((after_max - before_max))
+    oom_group_events=$((after_group - before_group))
+    events_state="slice-delta max=$max_events oom_group_kill=$oom_group_events"
+  fi
   systemctl reset-failed "$unit" 2>/dev/null
   local contained=0
-  if [ "$peak" -le "$limit" ] && { [ "$result" = oom-kill ] || { [ "$UNIFIED" = 0 ] && [ "$result" = signal ] && [ "$status" = 9 ]; }; }; then
+  local event_check=1
+  if [ "$require_kernel_oom" = 1 ] && [ "$UNIFIED" = 1 ] \
+     && { [ "$max_events" -le 0 ] || [ "$oom_group_events" -le 0 ]; }; then event_check=0; fi
+  if [ "$peak" -le "$limit" ] && [ "$event_check" = 1 ] \
+     && { [ "$result" = oom-kill ] || { [ "$UNIFIED" = 0 ] && [ "$result" = signal ] && [ "$status" = 9 ]; }; }; then
     contained=1
   fi
-  echo "$contained $result/$status peak=$peak limit=$limit"
+  echo "$contained $result/$status peak=$peak limit=$limit events=$events_state"
 }
-mem=$(hog fabric-accept-mem $((256 << 20)) -p MemoryHigh=128M -p MemoryMax=256M -p TasksMax=128)
-slice_hog=$(hog fabric-accept-slice $((3328 << 20)))
+positive_control='not-used'; positive_control_ok=1
+if [ "$A12_MEMORY_STRESSOR" = parallel ]; then
+  helper=$SCRIPT_DIR/a12-memory-pressure.py
+  helper_sha=$(sha256sum "$helper" | awk '{print $1}')
+  page_bytes=$(getconf PAGESIZE)
+  node_worker_bytes=$(((((2 * (256 << 20) + 95) / 96 + page_bytes - 1) / page_bytes) * page_bytes))
+  slice_worker_bytes=$(((((2 * (3328 << 20) + 95) / 96 + page_bytes - 1) / page_bytes) * page_bytes))
+  echo "FIXTURE A12 memory-stressor=parallel helper_sha256=$helper_sha workers=96 node_worker_bytes=$node_worker_bytes slice_worker_bytes=$slice_worker_bytes"
+  if command -v python3 >/dev/null 2>&1 && [ -f "$helper" ]; then
+    systemd-run --quiet --unit=fabric-accept-mem-control --slice=system-fabrico11y.slice \
+      -p RuntimeMaxSec=15 -p MemoryHigh=128M -p MemoryMax=256M -p MemorySwapMax=0 -p TasksMax=128 \
+      python3 "$helper" --control --memory-high-bytes $((128 << 20)) \
+        --memory-max-bytes $((256 << 20)) --tasks-max 128
+    control_peak=0; cur=0
+    while [ "$(systemctl is-active fabric-accept-mem-control 2>/dev/null)" = active ]; do
+      cur=$(show fabric-accept-mem-control MemoryCurrent)
+      case "$cur" in ''|'[not set]') ;; *) [ "$cur" -gt "$control_peak" ] && control_peak=$cur ;; esac
+      sleep 0.2
+    done
+    control_result=$(show fabric-accept-mem-control Result)
+    control_status=$(show fabric-accept-mem-control ExecMainStatus)
+    systemctl reset-failed fabric-accept-mem-control 2>/dev/null
+    positive_control_ok=0
+    if [ "$control_peak" -ge $((24 << 20)) ] && [ "$control_peak" -lt $((128 << 20)) ] \
+       && [ "$control_result" = success ] && [ "$control_status" = 0 ]; then positive_control_ok=1; fi
+    positive_control="$control_result/$control_status peak=$control_peak high=$((128 << 20))"
+  else
+    positive_control_ok=0; positive_control='python3-or-fixture-unavailable'
+  fi
+else
+  echo "FIXTURE A12 memory-stressor=tail acceptance_sha256=$(sha256sum "$0" | awk '{print $1}')"
+fi
+if [ "$A12_MEMORY_STRESSOR" = parallel ] && [ "$positive_control_ok" -ne 1 ]; then
+  echo "A12 parallel positive control failed: $positive_control" >&2
+fi
+if [ "$A12_MEMORY_STRESSOR" = parallel ]; then
+  mem=$(hog fabric-accept-mem $((256 << 20)) "$node_worker_bytes" 1 $((128 << 20)) 128 \
+    -p MemoryHigh=128M -p MemoryMax=256M -p TasksMax=128)
+  slice_hog=$(hog fabric-accept-slice $((3328 << 20)) "$slice_worker_bytes" 1 $((2816 << 20)) 640)
+else
+  mem=$(hog fabric-accept-mem $((256 << 20)) 0 0 0 0 -p MemoryHigh=128M -p MemoryMax=256M -p TasksMax=128)
+  slice_hog=$(hog fabric-accept-slice $((3328 << 20)) 0 0 0 0)
+fi
 # A process tree that tries to exceed the Spindle's task limit.
 systemd-run --quiet --unit=fabric-accept-tasks --slice=system-fabrico11y.slice -p TasksMax=128 \
   bash -c 'for i in $(seq 300); do sleep 120 & done; wait' >/dev/null 2>&1
@@ -320,12 +408,14 @@ n_after=$(show fabrico11y-node.service NRestarts); s_after=$(show fabrico11y-ser
 alive=$(systemctl is-active fabrico11y-node.service fabrico11y-server.service | tr '\n' ' ')
 echo "accept-line-after-pressure" >> $LOGDIR/allowed.log
 wait_for 60 has_line accept-line-after-pressure; after=$?
-if [ "${mem%% *}" = 1 ] && [ "${slice_hog%% *}" = 1 ] && [ "$tasks_now" -le 128 ] && [ "$tasks_now" -ge 100 ] \
+if [ "${mem%% *}" = 1 ] && [ "${slice_hog%% *}" = 1 ] && [ "$positive_control_ok" = 1 ] \
+   && [ "$tasks_now" -le 128 ] && [ "$tasks_now" -ge 100 ] \
    && [ "$fork_errors" -gt 0 ] && [ "$n_before" = "$n_after" ] && [ "$s_before" = "$s_after" ] \
    && [ "$alive" = "active active " ] && [ $after -eq 0 ]; then
-  pass A12 "service-limit hog: ${mem#* }; slice-limit hog: ${slice_hog#* }; task tree peaked at TasksCurrent=$tasks_now with $fork_errors fork-failure lines; services active, NRestarts unchanged, delivery continued"
+  pass A12 "memory-stressor=$A12_MEMORY_STRESSOR; positive control=$positive_control; service-limit hog: ${mem#* }; slice-limit hog: ${slice_hog#* }; task tree peaked at TasksCurrent=$tasks_now with $fork_errors fork-failure lines; services active, NRestarts unchanged, delivery continued"
 else
-  fail A12 "mem=[$mem] slice=[$slice_hog] tasks=$tasks_now forks=$fork_errors restarts node $n_before->$n_after server $s_before->$s_after alive='$alive' after=$after"
+  fail A12 "memory-stressor=$A12_MEMORY_STRESSOR positive-control=[$positive_control]; mem=[$mem] slice=[$slice_hog] tasks=$tasks_now forks=$fork_errors restarts node $n_before->$n_after server $s_before->$s_after alive='$alive' after=$after"
+fi
 fi
 
 # A13 remove keeps data, configuration and the account; purge removes data and
