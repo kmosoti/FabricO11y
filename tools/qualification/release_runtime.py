@@ -81,9 +81,45 @@ class WorkloadReader:
         raise RuntimeError('query exceeded finite page bound')
 
 
+def cpu_pair(value):
+    """Two explicitly named logical CPUs; avoid unbounded range expansion."""
+    match=re.fullmatch(r'(\d+)-(\d+)',value)
+    if match:
+        first,last=map(int,match.groups())
+        if last!=first+1:
+            raise ValueError('CPU range must name exactly two logical CPUs')
+        selected={first,last}
+    elif re.fullmatch(r'\d+,\d+',value):
+        selected={int(item) for item in value.split(',')}
+    else:
+        raise ValueError('name a two-CPU range or comma-separated pair')
+    if len(selected)!=2:
+        raise ValueError('CPU pair must contain two distinct logical CPUs')
+    return selected
+
+
+def process_affinities(group, expected):
+    """Verify actual members, allowing processes that exited during inspection."""
+    observed={}
+    for text in (group/'cgroup.procs').read_text().split():
+        pid=int(text)
+        try:actual=os.sched_getaffinity(pid)
+        except ProcessLookupError:continue
+        if not actual or not actual<=expected:
+            raise RuntimeError('fixture process escaped its selected CPU affinity')
+        observed[str(pid)]=sorted(actual)
+    return observed
+
+
 class CandidateFixture:
-    def __init__(self, deb_receipt, rpm_receipt, out, *, mode='segment'):
+    def __init__(self, deb_receipt, rpm_receipt, out, *, mode='segment',
+                 server_cpus='0-1',supervisor_cpus='2-3'):
         self.parent = require_limits()
+        self.server_cpus=server_cpus;self.supervisor_cpus=supervisor_cpus
+        server_affinity=cpu_pair(server_cpus);supervisor_affinity=cpu_pair(supervisor_cpus)
+        available=os.sched_getaffinity(0)
+        if server_affinity & supervisor_affinity or not (server_affinity|supervisor_affinity)<=available:
+            raise RuntimeError('disjoint selected server/supervisor CPUs unavailable')
         if mode not in ('segment', 'journal'):
             raise ValueError('unknown registered storage mode')
         subprocess.run(['systemctl', '--user', 'set-property', '--runtime', self.parent.name,
@@ -111,7 +147,13 @@ class CandidateFixture:
                         'storage_allocated_before': allocated, 'reserved_bytes': 5 * 1024**3,
                         'mode': mode, 'processes': [], 'checks': [],
                         'host': {'uname': list(os.uname()), 'cpus': os.cpu_count(),
-                                 'boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip()}}
+                                 'boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
+                                 'server_logical_cpus':sorted(server_affinity),
+                                 'supervisor_logical_cpus':sorted(supervisor_affinity),
+                                 'cpu_topology':{str(cpu):{
+                                     'core_id':Path(f'/sys/devices/system/cpu/cpu{cpu}/topology/core_id').read_text().strip(),
+                                     'siblings':Path(f'/sys/devices/system/cpu/cpu{cpu}/topology/thread_siblings_list').read_text().strip()}
+                                     for cpu in sorted(server_affinity|supervisor_affinity)}}}
         try:
             # Retain the Python actually loaded by this process, including its
             # entry point. Later edits invalidate the receipt rather than
@@ -137,9 +179,9 @@ class CandidateFixture:
             self.edge_group, _ = cgroups.subgroup(self.parent, 'edge', 128 * 1024**2, 96 * 1024**2, 128, 1)
             self.groups = [self.server_group, self.browser_group, self.edge_group]
             self.receipt['server_limits'] = limits
-            if not {0, 1, 2, 3}.issubset(os.sched_getaffinity(0)):
-                raise RuntimeError('registered four distinct logical CPUs unavailable')
-            os.sched_setaffinity(0, set(os.sched_getaffinity(0)) - {0, 1})
+            os.sched_setaffinity(0,supervisor_affinity)
+            if os.sched_getaffinity(0)!=supervisor_affinity:
+                raise RuntimeError('supervisor CPU affinity not enforced')
             payload = self.work / 'payload'
             staged = stage_candidate(self.artifacts['debian'], Path(deb_receipt), payload)
             self.receipt['staged'] = staged
@@ -184,7 +226,8 @@ class CandidateFixture:
         for name in ('ca.key', 'server.key'):
             (work / name).chmod(0o600)
 
-    def spawn(self, command, label, group=None, cpus='2-3'):
+    def spawn(self, command, label, group=None, cpus=None):
+        cpus=self.supervisor_cpus if cpus is None else cpus
         if group is not None:
             command = [sys.executable, '-B', str(ROOT / 'tools/bench/labs/completion/enter_group.py'), str(group), *map(str, command)]
         command = ['taskset', '-c', cpus, *map(str, command)]
@@ -199,12 +242,17 @@ class CandidateFixture:
 
     def start_server(self):
         self.server = self.spawn([self.bins / 'fabric-server', 'serve', self.config, '--timing-events'],
-                                 'server-' + str(len(self.processes)), self.server_group, '0-1')
+                                 'server-' + str(len(self.processes)), self.server_group, self.server_cpus)
+        expected=cpu_pair(self.server_cpus)
         deadline = time.monotonic() + 20
         while True:
             try:
                 with urllib.request.urlopen(self.origin + '/console/index.html', context=self.context, timeout=2) as response:
                     if response.status == 200:
+                        actual=os.sched_getaffinity(self.server.pid)
+                        if actual!=expected:
+                            raise RuntimeError('server CPU affinity not enforced')
+                        self.receipt.setdefault('server_cpu_affinity',[]).append(sorted(actual))
                         return
             except (OSError, urllib.error.URLError):
                 pass
@@ -269,7 +317,15 @@ class CandidateFixture:
                 'browser_profile_and_temporary_bytes':profile_bytes+temporary_bytes}
 
     def resource_sample(self):
-        return {'monotonic_ns': time.monotonic_ns(), **self.storage_sample(),
+        storage=self.storage_sample()
+        selected=cpu_pair(self.supervisor_cpus)
+        if os.sched_getaffinity(0)!=selected:
+            raise RuntimeError('supervisor CPU affinity changed')
+        affinity={'server':process_affinities(self.server_group,cpu_pair(self.server_cpus)),
+                  'browser':process_affinities(self.browser_group,selected),
+                  'supervisor':sorted(os.sched_getaffinity(0))}
+        return {'monotonic_ns': time.monotonic_ns(), **storage,
+                'process_cpu_affinity':affinity,
                 'server_rss_kib': process_kib(self.server.pid),
                 'server_hwm_kib': process_kib(self.server.pid, 'VmHWM'),
                 'groups': cgroups.snapshot(self.parent)}

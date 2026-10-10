@@ -7,7 +7,7 @@ import json
 import tempfile
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 
 import query_oracle as oracle
 from release_fixture import NS, SEEDS, identity, message, query_batch
@@ -57,6 +57,21 @@ class FixtureTests(unittest.TestCase):
                     with ResourceSampler(fixture,interval=60) as failed:
                         failed.errors.append('injected missing storage observation')
                 self.assertFalse(failed.thread.is_alive())
+
+    def test_sampler_observes_active_ui_even_without_query_completion(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            bridge=SimpleNamespace(ui_polling=True,poll_health=Mock(return_value={'completed':1}))
+            fixture=SimpleNamespace(server=SimpleNamespace(poll=lambda:None),bridge=bridge,
+                out=Path(directory),parent=Path(directory),
+                resource_sample=lambda:{'server_hwm_kib':1,'groups':{}})
+            meter=ResourceSampler(fixture)
+            with patch('release_runtime.process_kib',return_value=2),patch('release_query.time.monotonic',side_effect=[100,101,130,160]):
+                meter.observe();meter.observe();meter.observe()
+                self.assertEqual(bridge.poll_health.call_count,2)
+                bridge.poll_health.side_effect=RuntimeError('injected failed native UI status')
+                with self.assertRaisesRegex(RuntimeError,'failed native UI status'):
+                    meter.observe()
+            self.assertEqual(len(meter.samples),3)
 
     def test_fixed_plan_counts_bounds_and_reproducibility(self):
         for seed in SEEDS:

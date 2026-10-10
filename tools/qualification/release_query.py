@@ -185,7 +185,7 @@ class ResourceSampler:
     def __init__(self, fixture, interval=1):
         self.fixture=fixture;self.interval=interval
         self.samples=[];self.errors=[];self.lock=threading.Lock()
-        self.stop=threading.Event()
+        self.stop=threading.Event();self.last_ui_health=0
 
     def observe(self):
         from release_runtime import cgroups, process_kib
@@ -196,6 +196,11 @@ class ResourceSampler:
             else:
                 result={'monotonic_ns':time.monotonic_ns(),**f.storage_sample(),
                         'groups':cgroups.snapshot(f.parent)}
+            bridge=getattr(f,'bridge',None)
+            now=time.monotonic()
+            if bridge is not None and bridge.ui_polling and now-self.last_ui_health>=25:
+                result['ui_health']=bridge.poll_health()
+                self.last_ui_health=now
             result['grader_rss_kib']=process_kib(__import__('os').getpid())
             if len(self.samples)>=4000:
                 raise RuntimeError('resource observation allowance exceeded')
@@ -326,7 +331,10 @@ def perform(f, args, summary, meter):
             if phase=='after_restart':
                 with resource_lock:
                     f.restart()
+            # Shared bounded native-body readiness is outside query latency.
             f.bridge.poll_ui(True)
+            phase_start=time.monotonic()
+            phase_baseline=f.bridge.poll_health(require_progress=False)
             for item in plan:
                 meter.check()
                 elapsed,pages=reader.pages(item['query'])
@@ -334,6 +342,9 @@ def perform(f, args, summary, meter):
                 append_observation(query_file,answers[-1],max_bytes=128*1024**2)
                 # Test calls are paced; successful latency includes every page.
                 time.sleep(.1)
+            phase_end=f.bridge.poll_health(require_progress=time.monotonic()-phase_start>=20)
+            summary.setdefault('ui_phases',[]).append({'phase':phase,
+                'elapsed_s':time.monotonic()-phase_start,'baseline':phase_baseline,'end':phase_end})
             f.bridge.poll_ui(False)
         with resource_lock:
             f.stop_server()
@@ -459,13 +470,16 @@ def main():
     parser.add_argument('--seed',required=True,type=lambda value:int(value,0))
     parser.add_argument('--mode',choices=('segment','journal'),required=True)
     parser.add_argument('--smoke',action='store_true')
+    parser.add_argument('--server-cpus',default='0-1')
+    parser.add_argument('--worker-cpus',default='2-3')
     args=parser.parse_args()
     if args.seed not in SEEDS or (args.mode=='journal' and args.seed!=SEEDS[0]):
         parser.error('unregistered fixed-query cell')
     from release_runtime import CandidateFixture
     summary={'classification':'disposable query smoke' if args.smoke else 'registered fixed-query cell',
              'seed':args.seed,'mode':args.mode,'passed':False}
-    with CandidateFixture(args.deb_receipt,args.rpm_receipt,args.out,mode=args.mode) as f:
+    with CandidateFixture(args.deb_receipt,args.rpm_receipt,args.out,mode=args.mode,
+                          server_cpus=args.server_cpus,supervisor_cpus=args.worker_cpus) as f:
         try:
             with ResourceSampler(f) as meter:
                 perform(f,args,summary,meter)

@@ -17,6 +17,19 @@ class ArchiveBounds(unittest.TestCase):
         f.extra_archives, f.receipt = [], {}
         return f
 
+    def test_cpu_pairs_and_actual_affinity_reject_escape(self):
+        self.assertEqual(runtime.cpu_pair('4-5'),{4,5})
+        self.assertEqual(runtime.cpu_pair('2,8'),{2,8})
+        for invalid in ('1-8','2,2','1','-1,2'):
+            with self.assertRaises(ValueError):runtime.cpu_pair(invalid)
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            root=Path(directory);(root/'cgroup.procs').write_text('123 456')
+            with patch.object(runtime.os,'sched_getaffinity',side_effect=[{4,5},ProcessLookupError()]):
+                self.assertEqual(runtime.process_affinities(root,{4,5}),{'123':[4,5]})
+            with patch.object(runtime.os,'sched_getaffinity',return_value={4,6}):
+                with self.assertRaisesRegex(RuntimeError,'escaped'):
+                    runtime.process_affinities(root,{4,5})
+
     def test_archive_is_fresh_and_reused_only_by_its_owner(self):
         with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
             root = Path(directory)
