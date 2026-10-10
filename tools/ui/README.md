@@ -66,27 +66,20 @@ physical USB manager, recording actual preference readback. Pinned Firefox 157
 otherwise selects USB before the software manager containing the virtual device.
 Earlier deadline failures with zero credentials remain failed.
 
-The corrected transport selected real owner registration and enrollment in the
-bounded `console-live-firefox-usb-selection-04` diagnostic. Fresh login later
-failed with CTAP 2.0. The observation-only `console-live-firefox-allowlist-05`
-confirmed two allowed server keys and one matching active virtual credential,
-with the correct RP and required UV. The pinned
+The pinned Firefox
 [test token](https://github.com/mozilla-firefox/firefox/blob/FIREFOX_157_0_RELEASE/dom/webauthn/authrs_bridge/src/test_token.rs#L418)
 omits the credential ID after filtering to one key, whereas its
 [bridge](https://github.com/mozilla-firefox/firefox/blob/FIREFOX_157_0_RELEASE/dom/webauthn/authrs_bridge/src/lib.rs#L1139)
-restores it only for an originally single-key request. The otherwise unchanged
-CTAP 2.1 control `console-live-firefox-ctap21-selection-06` completed 127 finite
-assertions on the exact UI09 package: exit 0, 29.548 seconds, 808.7 MiB peak,
-no swap and owned-fixture cleanup. These concurrent causal diagnostics do not
-fill standalone Firefox acceptance or establish a physical-authenticator defect.
+restores it only for an originally single-key request. The CTAP 2.1 fixture
+retains the ID for the two-enrolled-keys/one-active-device case.
 
 The prospective Firefox fixture is registered separately in
-[console protocol revision 3](../../docs/experiments/formal/console-access-protocol.md).
-Actual resident-credential coverage remains unestablished: the observed
-production enrollment requested `residentKey=discouraged`, and the stored
-Firefox credential was nonresident despite the enabled capability. Keep required
-UV and the original acceptance assertions; the shell-only check cannot establish
-live Firefox passkey acceptance.
+[console protocol](../../docs/experiments/formal/console-access-protocol.md).
+Resident-key capability alone does not establish a resident credential. The live
+check independently inspects the virtual device after owner, additional-key,
+invitation and recovery enrollment, recording only resident flags and RP IDs.
+Unsigned client extension output is not used as a server security assertion.
+The shell-only check cannot establish live Firefox passkey acceptance.
 
 The harness verifies a stricter combined 4,000,000,000-byte memory cap (rounded
 down to a kernel page), zero swap, two CPU equivalents and 512 tasks before
@@ -105,6 +98,13 @@ Run the independent cache negative control with a fresh output path and
 staged asset hash. The required failure is `worker caches only public shell
 paths`; an earlier setup failure is inconclusive for that property. The canonical
 build and registered acceptance expectations stay unchanged.
+
+`--inject-nonresident-enrollment` reproduces the original enrollment-options
+defect by weakening the browser's resident-key request, with required UV retained.
+The unmodified server response and actual stored nonresident credential must
+be observed before the resident-inventory assertion fails. Grade that receipt
+with `tools/ci/check-browser-defect.py 1 PATH --kind nonresident-enrollment`.
+An enrollment timeout or setup failure does not satisfy this control.
 
 `--inject-rejection-defect error` replaces one witnessed permission rejection's
 error text; `status` replaces its status with 429. Both must fail `first visitor
