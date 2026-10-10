@@ -2,6 +2,20 @@
 
 Start with [CURRENT.md](CURRENT.md), the [product contract](PRODUCT-CONTRACT.md), the affected [architecture view](architecture/README.md) and the source. [AGENTS.md](../AGENTS.md) holds the same rules for coding agents; the [documentation policy](documentation-policy.md) applies to everyone.
 
+## Reporting bugs
+
+Use [GitHub Issues](https://github.com/kmosoti/FabricO11y/issues/new) for ordinary
+defects and usability feedback. Include the commit or package version and
+checksum, OS/browser versions, relevant resource limits, a minimal synthetic
+reproduction, expected behavior, observed behavior and whether restart changes
+the outcome. For performance reports, include workload size, CPU, RSS versus
+cgroup memory, and the measurement interval.
+
+Share only the configuration fields and redacted diagnostics needed to reproduce
+the issue. Server access state, Spool/journal files and browser profiles can
+contain credentials or telemetry. Security defects follow the
+[private reporting instructions](../SECURITY.md).
+
 ## Architecture
 
 Code lives in layers: `fabric-core` (pure `no_std` decisions), `fabric-ports` (effect contracts), `fabric-app` (use cases), `fabric-frame` (adapter support), and the composition roots `fabric-server` and the root package ([system view](architecture/system.md)). `cargo xtask check-layers` and `cargo xtask check-core-purity` enforce the dependency rule and the core's purity ([ADR-0015](decisions/ADR-0015-adopt-a-hexagonal-architecture.md), [ADR-0016](decisions/ADR-0016-keep-a-pure-semantic-core.md)). Wire and persisted bytes never change with a type move.

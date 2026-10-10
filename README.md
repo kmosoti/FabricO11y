@@ -47,6 +47,8 @@ The original [FOL2 demonstration](docs/architecture/fol2-demo.md) remains a lear
 - [Verification strategy](docs/formal/verification-strategy.md) and [verification matrix](docs/formal/verification-matrix.md).
 - [Experiments](docs/experiments/README.md): registered protocols, results and research tooling (research is not product behavior).
 - [Learning path](docs/LEARNING_PATH.md) and [contributing](docs/CONTRIBUTING.md).
+- [Report a bug](docs/CONTRIBUTING.md#reporting-bugs) or
+  [report a security vulnerability privately](SECURITY.md).
 
 Licensed under [Apache-2.0](LICENSE). Dependency terms are recorded separately in
 the [dependency policy](docs/dependency-policy.md) and packaged notices.

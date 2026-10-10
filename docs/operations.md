@@ -129,3 +129,10 @@ resolve the storage error and restart the server to reload `control.json`.
 The live instance refuses authentication and further changes because the renamed
 state may differ from its previous in-memory inventory. An oversized inventory
 update is rejected before publication and leaves the existing state usable.
+
+## Reporting problems
+
+Use the [bug-reporting guide](CONTRIBUTING.md#reporting-bugs) for operational
+defects and the [private security channel](../SECURITY.md) for suspected
+vulnerabilities. Include the exact package version and checksum with a minimal
+synthetic reproduction.
