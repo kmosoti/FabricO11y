@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""Two registered real-Spindle workload pilots, sequentially, with data clocks."""
-import argparse
+"""C5 adapter derived from frozen dev_small/native; gated sealing and child cgroups."""
 import base64
 import gzip
 import hashlib
@@ -18,7 +17,7 @@ import threading
 import time
 import urllib.request
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(REPO / 'tools/qualification'))
 from delivery_faults import free_port, make_certs
 import query_oracle
@@ -41,16 +40,31 @@ def compare(expected, seen):
             'changed': sum(expected[k][0] != seen[k] for k in expected.keys() & seen.keys())}
 
 
+def custody_mismatches(expected_hashes, recovered_hashes):
+    return sum(recovered_hashes.get(key) != sha for key,sha in expected_hashes.items())
+
+
+def controls():
+    expected = {'a': ('same', 0, 'history')}
+    cases = {'identical': {'a':'same'}, 'missing': {}, 'changed': {'a':'altered'}, 'unexpected': {'a':'same','x':'extra'}}
+    results = {name:compare(expected,seen) for name,seen in cases.items()}
+    if any(results['identical'].values()) or not all(any(results[k].values()) for k in ('missing','changed','unexpected')):
+        raise RuntimeError('source/seed comparator controls failed')
+    seed = {('oldhistory',1):'batch-sha'}
+    altered = {('oldhistory',1):'altered-batch-sha'}
+    if custody_mismatches(seed,seed) != 0 or custody_mismatches(seed,altered) != 1 or custody_mismatches(seed,{}) != 1:
+        raise RuntimeError('seed ACK control failed')
+    return {'source_seed_comparator':results,'altered_seed_batch_hash_rejected':True,'missing_seed_batch_rejected':True}
+
+
 def footprint(path):
-    total = 0
+    files={}
     for p in path.rglob('*'):
         try:
             if p.is_file():
-                total += p.stat().st_size
-        except FileNotFoundError:
-            # Concurrent journal/Spool rename and reclaim is normal.
-            continue
-    return total
+                st=p.stat();files[st.st_dev,st.st_ino]=(st.st_size,st.st_blocks*512)
+        except FileNotFoundError:pass
+    return max(sum(v[0] for v in files.values()),sum(v[1] for v in files.values()))
 
 
 def process_stats(pid):
@@ -60,16 +74,25 @@ def process_stats(pid):
             'rss_kib': int(status['VmRSS'].split()[0]), 'hwm_kib': int(status['VmHWM'].split()[0])}
 
 
-def trial(root, bins, name, server_cpus, node_cpus, observer=None, query_plan=None):
+def trial(root, bins, name, server_cpus, node_cpus, observer=None, query_plan=None, *,
+          nodes_count=None, rates=None, history="H0", near_rotation=False,
+          schedule=(60,60,60), settle_s=0, drain_s=20, workers=1, groups=None):
     root.mkdir()
-    (root / 'owned').write_text('dev-small protocol run 01\n')
-    nodes_count, per_tick = (1, 1) if name == 'development' else (20, 5)
+    (root / 'owned').write_text('dev-small initial-screen owned cell\n')
+    nodes_count = nodes_count if nodes_count is not None else (1 if name == 'development' else 20)
+    rates = tuple(rates or ((10,30,10) if nodes_count == 1 else (1000,3000,1000)))
+    if nodes_count < 1 or len(rates) != 3 or len(schedule) != 3 or any(r <= 0 for r in rates) or any(d <= 0 for d in schedule):
+        raise ValueError('positive nodes, three rates and three phase durations required')
+    if history not in ('H0','H256') or (near_rotation and history != 'H0'):
+        raise ValueError('history must be H0/H256; nearrotation is separate from H256')
+    phase_end_ticks = [round(sum(schedule[:i+1])*10) for i in range(3)]
+    accumulators = [0]*nodes_count
     make_certs(root)
     port = free_port()
     admin = os.urandom(32).hex()
     (root / 'admin-token').write_text(admin+'\n')
     conf = root / 'server.conf'
-    conf.write_text(f'listen=127.0.0.1:{port}\ntls_cert={root}/server.pem\ntls_key={root}/server.key\nstate_dir={root}/state\nadmin_token_file={root}/admin-token\njournal_bytes=536870912\njournal_file_bytes=67108864\nretention_s=86400\nretention_bytes=536870912\nseal_workers=1\n')
+    conf.write_text(f'listen=127.0.0.1:{port}\ntls_cert={root}/server.pem\ntls_key={root}/server.key\nstate_dir={root}/state\nadmin_token_file={root}/admin-token\njournal_bytes=1073741824\njournal_file_bytes=67108864\nretention_s=86400\nretention_bytes=1073741824\nseal_workers={workers}\n')
     if query_plan is not None:
         if query_plan not in ('scan', 'walk'):
             raise ValueError('query_plan must be scan or walk')
@@ -83,8 +106,18 @@ def trial(root, bins, name, server_cpus, node_cpus, observer=None, query_plan=No
     logs = []
 
     def spawn(binary, arguments, cpus, limit, label, piped=False):
-        p = subprocess.Popen(['prlimit', f'--as={limit}', '--', 'taskset', '-c', ','.join(map(str, cpus)), str(binary), *map(str, arguments)],
-                             stdout=subprocess.PIPE if piped else open(root/(label+'.out'), 'wb'), stderr=open(root/(label+'.err'), 'wb'), bufsize=0)
+        if not groups or label not in groups:
+            raise RuntimeError('verified service cgroup required')
+        executable = binary
+        arguments = list(arguments)
+        if label == 'server':
+            executable = bins/'examples/coupled_c5_server'
+            arguments = [conf, root/'release-sealing']
+        command = [sys.executable, str(REPO/'tools/bench/labs/completion/enter_group.py'),
+                   str(groups[label]), 'prlimit', f'--as={limit}', '--',
+                   'taskset', '-c', ','.join(map(str, cpus)), str(executable), *map(str, arguments)]
+        p = subprocess.Popen(command, stdout=subprocess.PIPE if piped else open(root/(label+'.out'), 'wb'),
+                             stderr=open(root/(label+'.err'), 'wb'), bufsize=0)
         kids.append(p)
         return p
 
@@ -107,6 +140,30 @@ def trial(root, bins, name, server_cpus, node_cpus, observer=None, query_plan=No
                     out.write(json.dumps(e)+'\n')
 
     try:
+        seed_start = time.monotonic()
+        condition = 'nearrotation' if near_rotation else history
+        with open(root/'seed-summary.json','wb') as output, open(root/'seed.err','wb') as error:
+            subprocess.run(['prlimit','--as=4294967296','--','taskset','-c',','.join(map(str,server_cpus)),
+                str(bins/'examples/coupled_pending_seed'), str(conf), condition, str(root/'seed-ledger.jsonl'), str(128*2**20)],
+                stdout=output, stderr=error, check=True, timeout=450)
+        seed_summary = json.loads((root/'seed-summary.json').read_text())
+        seed_hashes = {}
+        with (root/'seed-ledger.jsonl').open() as ledger:
+            for line in ledger:
+                batch = json.loads(line)
+                seed_hashes[(batch['label'], batch['sequence'])] = batch['sha256']
+                for tag, sha in batch['source']:
+                    if tag in expected: raise RuntimeError('duplicate seed source tag')
+                    expected[tag] = (sha, None, 'history')
+        if history == 'H256' and (root/'state/journal/batches.faj').stat().st_size != 0:
+            raise RuntimeError('H256 must start with empty active journal')
+        seed_summary['preparation_seconds'] = time.monotonic()-seed_start
+        seed_summary['active_journal_bytes'] = (root/'state/journal/batches.faj').stat().st_size
+        if near_rotation and not 64*2**20-256*2**10 <= seed_summary['active_journal_bytes'] < 64*2**20:
+            raise RuntimeError('nearrotation active framing outside frozen 256KiB margin')
+        dump(root/'seed-summary.json',seed_summary)
+        dump(root/'seed-verification.json', {'prefix_sha256':seed_summary['prefix_sha256'], 'seed_replay_exact':seed_summary['seed_replay_exact'], 'seed_batches':len(seed_hashes), 'seed_source_rows':seed_summary['rows'], 'source_body_fidelity':'graded_against_final_recovery', 'controls':controls()})
+        if observer and hasattr(observer,'seed_info'): observer.seed_info(root,seed_summary)
         server = spawn(bins/'fabric-server', ['serve', conf], server_cpus, 4*2**30, 'server')
         for _ in range(200):
             if server.poll() is not None:
@@ -135,8 +192,9 @@ def trial(root, bins, name, server_cpus, node_cpus, observer=None, query_plan=No
                         raise RuntimeError('900 s experiment limit')
                     if any(p.poll() is not None for p in kids):
                         raise RuntimeError('child exited before shutdown')
+                    if observer and hasattr(observer,'evidence_guard'):observer.evidence_guard()
                     size = footprint(root)
-                    if size > (4 if observer else 3)*2**30 or shutil.disk_usage(root).free < 4*2**30:
+                    if size > 4*2**30 or shutil.disk_usage(root).free < 4*2**30:
                         raise RuntimeError('disk bound reached')
                     journal = root/'state/journal'
                     wall = time.time_ns(); mono = time.monotonic_ns()
@@ -153,35 +211,42 @@ def trial(root, bins, name, server_cpus, node_cpus, observer=None, query_plan=No
                 stop.wait(1)
         sampler = threading.Thread(target=sample); sampler.start()
         # Startup wait remains bounded and interruptible.
-        stop.wait(5)
+        stop.wait(settle_s)
+        pending = sorted((root/'state/journal').glob('sealed-*.faj'))
+        if len(pending) < 2 or list((root/'state/segments').glob('seg-*')):
+            raise RuntimeError('pending seed consumed before measured release')
+        dump(root/'pending-at-release.json', {'files': {p.name:p.stat().st_size for p in pending}})
         offer_start = time.monotonic()
         if observer:
             observer.start(api, time.time_ns(), nodes_count)
+        (root/'release-sealing').write_text(str(time.monotonic_ns()))
         with gzip.open(root/'sources.jsonl.gz', 'wt') as src:
-            for tick in range(1800):
+            for tick in range(phase_end_ticks[-1]):
                 stop.wait(max(0, offer_start+tick*.1-time.monotonic()))
                 if stop.is_set():
                     raise RuntimeError('; '.join(errors))
-                phase = 'normal' if tick < 600 else 'burst' if tick < 1200 else 'recovery'
-                factor = 3 if phase == 'burst' else 1
+                phase_index = 0 if tick < phase_end_ticks[0] else 1 if tick < phase_end_ticks[1] else 2
+                phase = ('normal','burst','recovery')[phase_index]
                 late_ms = max(0, (time.monotonic()-(offer_start+tick*.1))*1000)
                 for i, f in enumerate(logs):
                     rows = []
-                    for j in range(per_tick*factor):
+                    accumulators[i] += rates[phase_index]
+                    count, accumulators[i] = divmod(accumulators[i], 10*nodes_count)
+                    for j in range(count):
                         tag = f'{i:02}:{tick:04}:{j:02}'
                         prefix = 'load-'+tag+' '
                         padding = ('R'*900 if (tick+j)%2 == 0 else base64.b85encode(hashlib.shake_256(f'2703163393:{tag}'.encode()).digest(720)).decode())
                         body = (prefix+padding)[:900]
                         rows.append((tag, body, hashlib.sha256(body.encode()).hexdigest()))
-                    f.write(('\n'.join(row[1] for row in rows)+'\n').encode())
+                    if rows: f.write(('\n'.join(row[1] for row in rows)+'\n').encode())
                     t = time.time_ns()
                     for tag, body, sha in rows:
                         expected[tag] = (sha, t, phase)
                         src.write(json.dumps([tag, sha, t, phase, late_ms])+'\n')
-                    if observer and tick % 50 == 0 and i == (tick//50) % nodes_count:
+                    if observer and rows and i == (tick//50) % nodes_count and (observer.select_visibility_target(t,tick) if hasattr(observer,'select_visibility_target') else tick % 50 == 0):
                         observer.target(rows[0][0], rows[0][2], t, phase)
         offer_elapsed = time.monotonic()-offer_start
-        stop.wait(20)
+        stop.wait(drain_s)
         if errors:
             raise RuntimeError('; '.join(errors))
         if observer:
@@ -223,20 +288,24 @@ def trial(root, bins, name, server_cpus, node_cpus, observer=None, query_plan=No
                 batch_keys.add(key); recovered_hashes[key] = sha; gaps.extend(b['gaps'])
                 hashout.write(json.dumps([*key, sha, len(raw), r['received_ns']])+'\n')
                 for log in query_oracle.decode_logs_request(b['logs_bytes']):
-                    body = log['body']; tag = body.split(' ',1)[0].removeprefix('load-')
+                    body = log['body']; tag = body.split(' ',1)[0]
+                    if tag.startswith('load-'): tag = tag.removeprefix('load-')
                     if tag in seen: duplicates += 1
                     seen[tag] = hashlib.sha256(body.encode()).hexdigest()
                     if tag not in expected: continue
                     _, source_ns, phase = expected[tag]
                     collected = log['observed_time_unix_nano']; received = r['received_ns']; a = ack.get(key)
                     observed_ack = int(a['t']) if a else None
-                    raw_clocks.write(json.dumps([tag, r['label'], b['sequence'], source_ns, collected, received, observed_ack])+'\n')
+                    raw_clocks.write(json.dumps([tag, r['label'], b['sequence'], source_ns, collected, received, observed_ack, seen[tag]])+'\n')
+                    if phase == 'history': continue
                     for group in [phase, 'all']:
                         latencies[group]['ingest'].append((received-collected)/1e6)
                         latencies[group]['source_to_ingest'].append((received-source_ns)/1e6)
                         if observed_ack is not None: latencies[group]['ack'].append((observed_ack-collected)/1e6)
         checks = compare(expected, seen)
         missing_acks = sum(key not in recovered_hashes or recovered_hashes[key] != e['sha256'] for key,e in ack.items())
+        seed_mismatch = custody_mismatches(seed_hashes,recovered_hashes)
+        if set(ack) & set(seed_hashes): raise RuntimeError('seed/live custody namespaces overlap')
         by_node = {}
         for label, seq in batch_keys: by_node.setdefault(label, []).append(seq)
         contiguous = all(sorted(v) == list(range(1, max(v)+1)) for v in by_node.values())
@@ -248,18 +317,19 @@ def trial(root, bins, name, server_cpus, node_cpus, observer=None, query_plan=No
         node_cpu = sum(n['cpu_s'] for n in samples[-1]['nodes'])-sum(n['cpu_s'] for n in samples[0]['nodes'])
         latency_stats = {phase: {kind: percentile(vals) for kind, vals in populations.items()} for phase,populations in latencies.items()}
         gates = {'exact_source_logs': not any(checks.values()) and duplicates==0 and len(seen)==len(expected),
-                 'no_collection_gaps': not gaps, 'ack_hash_recovery': missing_acks==0 and len(ack)==len(batch_keys),
-                 'contiguous_recovered_sequences': contiguous, 'clean_child_exits': all(p.returncode==0 for p in kids),
+                 'no_collection_gaps': not gaps, 'ack_hash_recovery': missing_acks==0 and seed_mismatch==0 and len(ack)+len(seed_hashes)==len(batch_keys),
+                 'contiguous_recovered_sequences': contiguous, 'no_unexpected_retries': retries == 0, 'clean_child_exits': all(p.returncode==0 for p in kids),
                  'collection_to_ingest_p99_le_1s': latency_stats['all']['ingest']['p99'] <= 1000 and latency_stats['all']['ingest']['negative']==0,
-                 'collection_to_ack_p99_le_1s': latency_stats['all']['ack']['p99'] <= 1000 and latency_stats['all']['ack']['samples']==len(expected) and latency_stats['all']['ack']['negative']==0,
+                 'collection_to_ack_p99_le_1s': latency_stats['all']['ack']['p99'] <= 1000 and latency_stats['all']['ack']['samples']==len(expected)-seed_summary['rows'] and latency_stats['all']['ack']['negative']==0,
                  'server_rss_le_2gib': server_peak <= 2048, 'node_rss_le_64mib': node_peak <= 64,
                  'clock_offset_range_le_5ms': max(offsets)-min(offsets) <= 5}
-        summary = {'deployment': name, 'nodes': nodes_count, 'expected_logs': len(expected), 'recovered_logs': len(seen),
+        seed_summary['seed_batch_hash_mismatches'] = seed_mismatch
+        summary = {'deployment': name, 'nodes': nodes_count, 'offered_rates':rates, 'schedule_seconds':schedule, 'history':seed_summary, 'expected_logs': len(expected), 'recovered_logs': len(seen),
                    'comparison': checks, 'duplicates': duplicates, 'collection_gaps': gaps,
                    'latency_ms': latency_stats, 'native_attempt_rtt_ms': percentile(native_rtt),
                    'acknowledged_batches': len(ack), 'recovered_batches': len(batch_keys), 'encoded_batch_bytes': total_bytes,
-                   'encoded_bytes_per_source_log_including_metrics': total_bytes/len(expected),
-                   'offer_window_seconds': offer_elapsed, 'mean_encoded_mib_s_offer_window': total_bytes/2**20/offer_elapsed,
+                   'encoded_bytes_per_source_log_including_metrics': (total_bytes-seed_summary['encoded_bytes'])/(len(expected)-seed_summary['rows']),
+                   'offer_window_seconds': offer_elapsed, 'mean_encoded_mib_s_offer_window': (total_bytes-seed_summary['encoded_bytes'])/2**20/offer_elapsed,
                    'server_peak_rss_mib': server_peak, 'node_peak_rss_mib': node_peak,
                    'aggregate_nodes_peak_rss_mib': max(sum(n['rss_kib'] for n in x['nodes']) for x in samples)/1024,
                    'measured_wall_seconds': measured_wall, 'server_cpu_seconds': server_cpu, 'nodes_cpu_seconds': node_cpu,
@@ -270,6 +340,7 @@ def trial(root, bins, name, server_cpus, node_cpus, observer=None, query_plan=No
                    'non_ack_attempts': retries, 'clock_offset_range_ms': max(offsets)-min(offsets),
                    'gates': gates, 'passed': all(gates.values()), 'child_exits': [p.returncode for p in kids]}
         dump(root/'summary.json', summary)
+        dump(root/'seed-verification.json', {'prefix_sha256':seed_summary['prefix_sha256'], 'seed_replay_exact':seed_summary['seed_replay_exact'], 'seed_batches':len(seed_hashes), 'seed_source_rows':seed_summary['rows'], 'seed_batch_hash_mismatches':seed_mismatch, 'seed_body_fidelity_in_exact_source_gate':gates['exact_source_logs'], 'controls':controls()})
         if observer:
             observer.finish(root, summary, samples, node_events)
         (root/'recovered.jsonl').unlink()  # owned decoded replay; preserve hashes/data clocks instead
@@ -289,35 +360,5 @@ def trial(root, bins, name, server_cpus, node_cpus, observer=None, query_plan=No
             if not f.closed: f.close()
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--out', type=Path, required=True)
-    ap.add_argument('--bin-dir', type=Path, required=True)
-    a = ap.parse_args()
-    root, bins = a.out.resolve(), a.bin_dir.resolve()
-    if root.exists() or root.is_symlink(): raise SystemExit('output path must be absent')
-    cpus = sorted(os.sched_getaffinity(0))
-    if len(cpus) < 4: raise SystemExit('four affinity CPUs needed for registered placement')
-    root.mkdir(parents=True)
-    # New exact-source comparator must reject missing data, before workload execution.
-    control_expected = {'a': ('same', 0, 'normal')}
-    if any(compare(control_expected, {'a':'same'}).values()) or compare(control_expected, {})['missing'] != 1:
-        raise SystemExit('comparator negative control failed')
-    dump(root/'negative-control.json', {'identical_accepted': True, 'missing_rejected': True})
-    dump(root/'environment.json', {'affinity': cpus, 'server_cpus': cpus[:2], 'node_cpus': cpus[2:4],
-        'cpu_max': Path('/sys/fs/cgroup/cpu.max').read_text().strip(), 'memory_max': Path('/sys/fs/cgroup/memory.max').read_text().strip(),
-        'uname': list(os.uname()), 'revision': subprocess.check_output(['git','rev-parse','HEAD'], cwd=REPO, text=True).strip(),
-        'harness_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
-        'binaries': {str(p.relative_to(bins)): hashlib.sha256(p.read_bytes()).hexdigest() for p in [bins/'fabric-node',bins/'fabric-server',bins/'examples/server_dump']}})
-    os.sched_setaffinity(0, cpus[2:4])
-    for name in ['development', 'small']:
-        try:
-            trial(root/name, bins, name, cpus[:2], cpus[2:4])
-        except Exception as e:
-            dump(root/(name+'-failure.json'), {'error': str(e)})
-            raise
-    dump(root/'complete.json', {'completed': ['development','small'], 'sequential': True})
-
-
 if __name__ == '__main__':
-    main()
+    raise SystemExit('Use the dev_small coordinator under tools/resource_group.py')

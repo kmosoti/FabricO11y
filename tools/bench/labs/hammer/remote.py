@@ -27,6 +27,14 @@ import delivery_oracle
 ROOT, HOST = native.REPO, 'digitalocean-02'
 
 
+def drained(latest,acks,count):
+    through = {}
+    for label,sequence in acks:
+        through[label] = max(through.get(label,0),sequence)
+    return len(latest)==count and all(int(v['log_backlog_bytes'])==0 and int(v['batch'])==through.get(label,0)
+                                     for label,v in latest.items())
+
+
 def grade(work, mode, observer):
     records = native.query_oracle.load_records_jsonl(str(work/'recovered.jsonl'))
     verdicts = [native.query_oracle.check(records, q['query'], q['pages']) for q in observer.finals]
@@ -82,7 +90,7 @@ def grade(work, mode, observer):
             no_duplicates=duplicates==0, no_gaps=not gaps,
             ack_hashes=len(acks)==len(batches) and all(k in batches and batches[k][0]==h for k,h in acks.items()),
             contiguous=len(by_node)==8 and all(sorted(v)==list(range(1,max(v)+1)) for v in by_node.values()),
-            drained=len(latest)==8 and all(int(v['log_backlog_bytes'])==0 and int(v['batch'])==int(v['acked_through']) for v in latest.values()))
+            drained=drained(latest,acks,8))
         details = dict(recovered_logs=len(seen), acknowledged_batches=len(acks), retries=retries,
                        request_rtt_ms=native.percentile(rtt), clock_boundary='remote request duration only')
     else:
@@ -113,6 +121,7 @@ def main():
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--bin-dir', type=Path, required=True)
     parser.add_argument('--id', required=True)
+    parser.add_argument('--workers',type=int,choices=(2,8),default=2)
     args = parser.parse_args()
     service.resource_group.require_limits()
     if not args.id.replace('-','').isalnum(): parser.error('simple fresh id required')
@@ -161,7 +170,7 @@ def main():
         return ssh(['sudo','-n','systemd-run','--quiet','--wait','--pipe','--collect','--unit='+name,
             '--property=User=dev','--property=MemoryMax=134217728','--property=MemoryHigh=100663296',
             '--property=MemorySwapMax=0','--property=CPUQuota=25%','--property=TasksMax=128',
-            '--property=RuntimeMaxSec=90','--property=KillMode=control-group',*argv])
+            '--property=RuntimeMaxSec=90','--property=KillMode=control-group','--property=IOAccounting=yes',*argv])
 
     def api(endpoint, body=None):
         req = urllib.request.Request(f'https://127.0.0.1:{port}'+endpoint,
@@ -196,7 +205,7 @@ def main():
 
     sampler = None
     try:
-        native.dump(out/'environment.json',dict(command=sys.argv,host=HOST,mode=args.mode,remote=remote,
+        native.dump(out/'environment.json',dict(command=sys.argv,host=HOST,mode=args.mode,remote=remote,sim_workers=args.workers,
             binary_sha256=hashes,source_sha256=sources,server_limits=limits,
             protocol_sha256=service.digest(ROOT/'docs/experiments/benchmarks/hammer-reference-protocol.md'),
             reused_helpers_sha256={p.name:service.digest(p) for p in map(Path,[service.__file__,native.__file__,service.observation.__file__,native.query_oracle.__file__,delivery_oracle.__file__,native.cgroups.__file__])},
@@ -263,8 +272,8 @@ def main():
         invocation = ['sudo','-n','systemd-run','--wait','--pipe','--collect','--unit='+unit,
             '--property=User=dev','--property=WorkingDirectory='+remote,'--property=MemoryMax=134217728',
             '--property=MemoryHigh=100663296','--property=MemorySwapMax=0','--property=CPUQuota=50%',
-            '--property=TasksMax=128','--property=RuntimeMaxSec=600','--property=KillMode=control-group',
-            'python3',remote+'/remote_worker.py','--mode',args.mode,'--work',remote,'--port',str(rp)]
+            '--property=TasksMax=128','--property=RuntimeMaxSec=600','--property=KillMode=control-group','--property=IOAccounting=yes',
+            'python3',remote+'/remote_worker.py','--mode',args.mode,'--work',remote,'--port',str(rp),'--workers',str(args.workers)]
         # Finite remote600s unit runs while local consumer and sampler remain active.
         argv = ['ssh','-o','BatchMode=yes','-o','ConnectTimeout=10',HOST,shlex.join(invocation)]
         try: result = subprocess.run(argv,stdout=open(out/'remote-service.out','wb'),stderr=open(out/'remote-service.err','wb'),timeout=remaining(650))

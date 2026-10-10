@@ -10,7 +10,9 @@ import shutil
 import statistics
 import subprocess
 import sys
+import threading
 import time
+import urllib.error
 
 ROOT = Path(__file__).resolve().parents[4]
 sys.path.insert(0, str(ROOT/'tools'))
@@ -27,9 +29,39 @@ BUILD = ROOT/'docs/experiments/benchmarks/data/native-frontier-01/memory/service
 
 
 class Observer(observation.Observer):
-    def __init__(self, deadline):
+    def __init__(self, deadline, capture_http_errors=False):
         super().__init__()
         self.deadline = deadline
+        self.capture_http_errors = capture_http_errors
+        self.http_errors = []
+        self.http_errors_omitted = 0
+        self.http_error_lock = threading.Lock()
+
+    def start(self, api, epoch, nodes):
+        def diagnostic_api(endpoint, body=None):
+            try:
+                return api(endpoint, body)
+            except urllib.error.HTTPError as exc:
+                with self.http_error_lock:
+                    item = None
+                    if len(self.http_errors) < 256:
+                        item = dict(status=exc.code, observed_ns=time.time_ns(), query=body)
+                        self.http_errors.append(item)
+                    else:
+                        self.http_errors_omitted += 1
+                if item is not None:
+                    try:
+                        raw = exc.read(65537)
+                        item.update(body=raw[:65536].decode(errors='replace'),truncated=len(raw)>65536)
+                    except Exception as read_error:
+                        item['body_read_error'] = repr(read_error)
+                raise
+        super().start(diagnostic_api if self.capture_http_errors else api, epoch, nodes)
+
+    def archive(self, root):
+        super().archive(root)
+        if self.capture_http_errors:
+            native.dump(root/'http-errors.json',dict(errors=self.http_errors,omitted=self.http_errors_omitted))
 
     def stop(self):
         self.done.set()
@@ -122,6 +154,7 @@ def compact(work, out):
 
 
 def main():
+    global BUILD
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--plan', choices=['scan','walk'])
     parser.add_argument('--out', type=Path)
@@ -129,7 +162,10 @@ def main():
     parser.add_argument('--id')
     parser.add_argument('--seed', type=int, default=2703163393)
     parser.add_argument('--controls', action='store_true')
+    parser.add_argument('--capture-http-errors', action='store_true')
+    parser.add_argument('--build-manifest',type=Path,default=BUILD)
     args = parser.parse_args()
+    BUILD = args.build_manifest.resolve(strict=True)
     resource_group.require_limits()
     if args.controls:
         expected = {'a':('same',0,'normal')}
@@ -185,7 +221,7 @@ def main():
         name = str(path.relative_to(ROOT)).replace('/','__')+'.gz'
         (out/name).write_bytes(gzip.compress(path.read_bytes(),mtime=0))
     native.dump(out/'controls.json',observation.controls())
-    observer = Observer(deadline)
+    observer = Observer(deadline,args.capture_http_errors)
     status = 'failed'
     try:
         os.sched_setaffinity(0,cpus[4:6])

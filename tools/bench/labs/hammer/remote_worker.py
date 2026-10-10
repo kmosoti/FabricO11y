@@ -12,6 +12,7 @@ import signal
 import subprocess
 import threading
 import time
+import traceback
 
 
 def dump(path, value):
@@ -36,6 +37,7 @@ def main():
     parser.add_argument('--mode', choices=['real', 'sim'], required=True)
     parser.add_argument('--work', type=Path, required=True)
     parser.add_argument('--port', type=int, required=True)
+    parser.add_argument('--workers',type=int,choices=(2,8),default=2)
     args = parser.parse_args()
     root = args.work.resolve(strict=True)
     if root.parent != Path('/var/tmp') or not root.name.startswith('fabric-hammer-') or root.stat().st_uid != os.getuid():
@@ -49,6 +51,8 @@ def main():
     runtime = subprocess.check_output(['systemctl', 'show', group.name, '-p', 'RuntimeMaxUSec', '--value'], text=True).strip()
     if runtime != '10min':
         raise RuntimeError('remote600s service deadline not enforced: '+runtime)
+    for name in ('memory.current','memory.peak','memory.events','memory.stat','memory.swap.current','cpu.stat','io.stat','pids.current'):
+        (group/name).read_text()
     dump(root/'limits.json', dict(cgroup=str(group), actual=actual, cpu=cpu, runtime=runtime,
         uname=list(os.uname()), memory=Path('/proc/meminfo').read_text(), free_bytes=shutil.disk_usage(root).free))
     start, deadline = time.monotonic(), time.monotonic()+540
@@ -86,7 +90,7 @@ def main():
                     disk_bytes=footprint(root), cgroup={k:(group/k).read_text().strip() for k in
                     ['memory.current','memory.peak','memory.events','memory.stat','memory.swap.current','cpu.stat','io.stat','pids.current']}))
             except Exception as e:
-                errors.append(repr(e)); stop.set(); return
+                errors.append(str(e)); dump(root/'sampler-failure.json',dict(error=str(e),traceback=traceback.format_exc())); stop.set(); return
             stop.wait(1)
     sampler = None
     status = 'failed'
@@ -97,7 +101,7 @@ def main():
                 spawn('fabric-node', ['run', root/f'node{i:02}.conf'], f'node{i:02}')
         else:
             spawn('spindle_sim', ['--server-url', f'https://127.0.0.1:{args.port}', '--ca', root/'ca.pem',
-                '--tokens', root/'tokens', '--seed', '0xA11FA001', '--seconds', '60', '--workers', '2',
+                '--tokens', root/'tokens', '--seed', '0xA11FA001', '--seconds', '60', '--workers', str(args.workers),
                 '--log-factor', '5', '--body-bytes', '900', '--out', root/'sim'], 'sim')
         sampler = threading.Thread(target=sample); sampler.start()
         if args.mode == 'real':

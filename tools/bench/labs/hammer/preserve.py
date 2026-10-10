@@ -18,9 +18,14 @@ import resource_group
 def main():
     resource_group.require_limits()
     out = Path(sys.argv[1])
-    out.mkdir(parents=True,exist_ok=False)
+    out.mkdir(parents=True,exist_ok=False,mode=0o700)
+    helper = out/'preserve.py'
+    helper.write_bytes(Path(__file__).read_bytes())
+    (out/'helper.json').write_text(json.dumps(dict(
+        source=str(Path(__file__).resolve()), path=str(helper),
+        sha256=evidence.sha(helper)),indent=2)+'\n')
     results = []
-    deadline = time.monotonic()+240
+    deadline = time.monotonic()+580
     for unit in sys.argv[2:]:
         receipt = ROOT/'target/resource-containment/runs'/(unit+'.json')
         meta = json.loads(receipt.read_text())
@@ -28,16 +33,16 @@ def main():
         if meta['exit']==0 or source.parent!=resource_group.STORAGE/'evidence' or source.name!=unit:
             raise RuntimeError('not an authenticated owned failed tree')
         dest = out/unit
-        dest.mkdir()
+        dest.mkdir(mode=0o700)
         members = evidence.inventory(source)
         encoded = (json.dumps(members,indent=2)+'\n').encode()
-        if sum(v.get('bytes',0) for v in members.values())>2*2**30:
-            raise RuntimeError('failed tree exceeds scoped 2GiB preservation bound')
+        if sum(v.get('bytes',0) for v in members.values())>8*2**30:
+            raise RuntimeError('failed tree exceeds scoped 8GiB preservation bound')
         archive = dest/'failure.tar.gz'
         class Writer:
             def __init__(self,stream): self.stream=stream
             def write(self,data):
-                if self.stream.tell()+len(data)+len(encoded)>768*2**20 or time.monotonic()>deadline-10:
+                if self.stream.tell()+len(data)+len(encoded)>3*2**30 or time.monotonic()>deadline-10:
                     raise RuntimeError('archive metadata/byte/deadline limit')
                 return self.stream.write(data)
             def __getattr__(self,name): return getattr(self.stream,name)
@@ -57,10 +62,23 @@ def main():
         evidence.verify(archive,typed,deadline-5)
         if evidence.inventory(source)!=members:
             raise RuntimeError('original failure changed while preserving')
+        selected = {}
+        inspectable = {'summary.json','grading.json','delivery-verdict.json',
+                       'http-errors.json','query-verdicts.json','worker-result.json',
+                       'origin.json','producer-before-query.json'}
+        for name,value in members.items():
+            if Path(name).name in inspectable and value.get('type')!='directory':
+                target = dest/'selected'/name
+                target.parent.mkdir(parents=True,exist_ok=True)
+                shutil.copyfile(source/name,target)
+                if evidence.sha(target)!=value['sha256']:
+                    raise RuntimeError('inspectable failure copy differs: '+name)
+                selected[name] = dict(path=str(target),sha256=value['sha256'])
         record = dict(unit=unit,source=str(source),archive=str(archive),
             archive_sha256=evidence.sha(archive),members=len(members),
             original_bytes=sum(v.get('bytes',0) for v in members.values()),
-            archive_bytes=archive.stat().st_size,launcher_receipt_sha256=evidence.sha(receipt))
+            archive_bytes=archive.stat().st_size,launcher_receipt_sha256=evidence.sha(receipt),
+            inspectable=selected)
         (dest/'before-removal.json').write_text(json.dumps(record,indent=2)+'\n')
         shutil.rmtree(source)
         record['removed']=not source.exists()
