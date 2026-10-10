@@ -121,13 +121,26 @@ impl Admission {
         })
     }
 
+    #[cfg(test)]
     fn acquire(
         self: &Arc<Self>,
         peer: Peer,
         lane: usize,
         now: Duration,
     ) -> Result<Permit, Rejected> {
+        self.acquire_with_clock(peer, lane, || now)
+    }
+
+    fn acquire_with_clock(
+        self: &Arc<Self>,
+        peer: Peer,
+        lane: usize,
+        clock: impl FnOnce() -> Duration,
+    ) -> Result<Permit, Rejected> {
         let mut book = self.book.lock().map_err(|_| Rejected::Unavailable)?;
+        // Sample after serialization: concurrent callers can reach this lock
+        // in a different order from timestamps sampled before acquiring it.
+        let now = clock();
         if !book.healthy || now < book.last || lane >= LIMITS.len() {
             return Err(Rejected::Unavailable);
         }
@@ -243,7 +256,8 @@ async fn admit(State(admission): State<Arc<Admission>>, request: Request, next: 
             "transport identity unavailable",
         );
     };
-    let permit = match admission.acquire(Peer::from(*address), lane, admission.epoch.elapsed()) {
+    let clock = || admission.epoch.elapsed();
+    let permit = match admission.acquire_with_clock(Peer::from(*address), lane, clock) {
         Ok(permit) => permit,
         Err(Rejected::Limited) => {
             return refusal(StatusCode::TOO_MANY_REQUESTS, "request admission is full");
@@ -277,6 +291,22 @@ mod tests {
     fn peer(n: u16) -> Peer {
         let [high, low] = n.to_be_bytes();
         Peer::V4([192, 0, high, low])
+    }
+
+    #[test]
+    fn security_clock_sampling_is_serialized_with_reservations() {
+        let gate = Admission::new();
+        let permit = gate
+            .acquire_with_clock(peer(1), 0, || {
+                assert!(matches!(
+                    gate.book.try_lock(),
+                    Err(std::sync::TryLockError::WouldBlock)
+                ));
+                Duration::ZERO
+            })
+            .unwrap();
+        drop(permit);
+        assert_eq!(gate.book.lock().unwrap().live, [0; 2]);
     }
 
     #[test]
