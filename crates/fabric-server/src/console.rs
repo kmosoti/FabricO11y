@@ -4,6 +4,7 @@ use crate::access::{Access, Authority, Role};
 use crate::control::{Control, DesiredConfig, Status};
 use crate::http::AppState;
 use crate::query::{Query, QueryError};
+use crate::unix_s as now;
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path, Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
@@ -18,7 +19,6 @@ use std::collections::{BTreeMap, HashSet};
 use std::io::{self, Read};
 use std::path::Path as FsPath;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 
@@ -148,11 +148,6 @@ fn random() -> io::Result<String> {
     let mut bytes = [0; 32];
     std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
     Ok(hex(&bytes))
-}
-fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |v| v.as_secs())
 }
 fn err(status: StatusCode, message: &'static str) -> Response {
     (status, Json(json!({"error":message}))).into_response()
@@ -316,14 +311,14 @@ async fn auth_admission(State(s): State<Console>, request: Request, next: Next) 
             "authentication admission is full",
         );
     };
-    if origin(request.headers()) != s.access.lock().unwrap().origin() {
+    if origin(request.headers()) != lock!(s.access).origin() {
         return denied();
     }
     if text(request.headers(), "x-fabric-client-version") != "1" {
         return err(StatusCode::UPGRADE_REQUIRED, "console update required");
     }
     {
-        let mut budget = s.auth_budget.lock().unwrap();
+        let mut budget = lock!(s.auth_budget);
         let time = now();
         if budget.0 != time {
             *budget = (time, 0);
@@ -346,10 +341,8 @@ async fn authorize(State(s): State<Console>, request: Request, next: Next) -> Re
     ) {
         // Do not persist attacker-controlled paths, bodies, credential values or
         // detailed policy failures. Access bounds and counts denial suppression.
-        let actor = actor.lock().unwrap();
-        if s.access
-            .lock()
-            .unwrap()
+        let actor = lock!(actor);
+        if lock!(s.access)
             .record_denial(actor.as_ref(), "console.request", None, now())
             .is_err()
         {
@@ -378,7 +371,7 @@ async fn authorize_request(
         return err(StatusCode::TOO_MANY_REQUESTS, "request admission is full");
     };
     {
-        let mut budget = s.private_auth_budget.lock().unwrap();
+        let mut budget = lock!(s.private_auth_budget);
         let time = now();
         if budget.0 != time {
             *budget = (time, 0);
@@ -400,7 +393,7 @@ async fn authorize_request(
     // The only role decision: after authentication and before any body is read.
     let required = required_role(request.method(), request.uri().path());
     let auth = {
-        let mut access = s.access.lock().unwrap();
+        let mut access = lock!(s.access);
         let found = if cookie {
             access.authenticate_session(token, now())
         } else {
@@ -409,7 +402,7 @@ async fn authorize_request(
         let Ok(auth) = found else {
             return err(StatusCode::UNAUTHORIZED, "sign in required");
         };
-        *actor.lock().unwrap() = Some(auth.clone());
+        *lock!(actor) = Some(auth.clone());
         if auth.role < required {
             return err(StatusCode::FORBIDDEN, ROLE_DENIED);
         }
@@ -451,7 +444,7 @@ async fn authorize_request(
         .await
         .unwrap_or_else(|_| err(StatusCode::REQUEST_TIMEOUT, "request deadline exceeded"));
     drop(query_permit);
-    if is_read && s.access.lock().unwrap().recheck_at(&auth, now()).is_err() {
+    if is_read && lock!(s.access).recheck_at(&auth, now()).is_err() {
         return denied();
     }
     answer
@@ -512,14 +505,10 @@ fn json_result<T: serde::Serialize>(r: io::Result<T>) -> Response {
     }
 }
 async fn register_start(State(s): State<Console>, Json(r): Json<RegisterStart>) -> Response {
-    json_result(s.access.lock().unwrap().start_registration(
-        &r.bootstrap_secret,
-        &r.display_name,
-        now(),
-    ))
+    json_result(lock!(s.access).start_registration(&r.bootstrap_secret, &r.display_name, now()))
 }
 async fn login_start(State(s): State<Console>, Json(r): Json<LoginStart>) -> Response {
-    json_result(s.access.lock().unwrap().start_login(&r.principal_id, now()))
+    json_result(lock!(s.access).start_login(&r.principal_id, now()))
 }
 fn session_issued(result: io::Result<crate::access::SessionIssued>) -> Response {
     match result {
@@ -542,7 +531,7 @@ async fn register_finish(
     h: HeaderMap,
     Json(r): Json<RegisterFinish>,
 ) -> Response {
-    let mut access = s.access.lock().unwrap();
+    let mut access = lock!(s.access);
     let result = access
         .finish_registration(&r.ceremony_id, &r.credential, now())
         .and_then(|issued| {
@@ -562,7 +551,7 @@ async fn login_finish(
     h: HeaderMap,
     Json(r): Json<LoginFinish>,
 ) -> Response {
-    let mut access = s.access.lock().unwrap();
+    let mut access = lock!(s.access);
     let result = access
         .finish_login(&r.ceremony_id, &r.credential, now())
         .and_then(|issued| {
@@ -578,18 +567,14 @@ async fn login_finish(
     session_issued(result)
 }
 async fn session(State(s): State<Console>, Extension(a): Extension<Authority>) -> Response {
-    json_result(s.access.lock().unwrap().session_view(&a))
+    json_result(lock!(s.access).session_view(&a))
 }
 async fn logout(
     State(s): State<Console>,
     Extension(a): Extension<Authority>,
     h: HeaderMap,
 ) -> Response {
-    let result = s
-        .access
-        .lock()
-        .unwrap()
-        .logout(&a, csrf(&h), origin(&h), now());
+    let result = lock!(s.access).logout(&a, csrf(&h), origin(&h), now());
     let mut r = json_result(result.map(|()| json!({"signed_out":true})));
     r.headers_mut().insert(
         header::SET_COOKIE,
@@ -603,7 +588,7 @@ async fn status(State(s): State<Console>) -> Response {
     Json(json!({"api_version":1,"query_rows_max":QUERY_ROWS_MAX,"query_response_bytes_max":RESPONSE_CAP,"sampling":"request-time; observations remain in telemetry","storage":s.policy,"committed_group":s.app.intake.committed_group()})).into_response()
 }
 async fn nodes(State(s): State<Console>) -> Response {
-    let nodes:Vec<_>=s.app.control.lock().unwrap().inventory().into_iter().map(|(r,o)|json!({"name":r.name,"enrollment_id":r.enrollment_id(),"status":r.status,"desired_revision":r.revision,"applied_revision":o.applied_revision,"config_error":o.config_error,"last_poll_unix_s":o.last_poll_unix_s,"logs":r.desired.logs,"metric_interval_s":r.desired.metric_interval_s})).collect();
+    let nodes:Vec<_>=lock!(s.app.control).inventory().into_iter().map(|(r,o)|json!({"name":r.name,"enrollment_id":r.enrollment_id(),"status":r.status,"desired_revision":r.revision,"applied_revision":o.applied_revision,"config_error":o.config_error,"last_poll_unix_s":o.last_poll_unix_s,"logs":r.desired.logs,"metric_interval_s":r.desired.metric_interval_s})).collect();
     Json(json!({"nodes":nodes})).into_response()
 }
 #[derive(Deserialize)]
@@ -628,14 +613,14 @@ fn control_change(
     resource: impl FnOnce(&Control) -> Option<String>,
     run: impl FnOnce(&mut Control) -> io::Result<Value>,
 ) -> Response {
-    let mut access = s.access.lock().unwrap();
+    let mut access = lock!(s.access);
     if access
         .validate_mutation(a, csrf(h), origin(h), now(), false)
         .is_err()
     {
         return denied();
     }
-    let mut control = s.app.control.lock().unwrap();
+    let mut control = lock!(s.app.control);
     let Some(resource) = resource(&control) else {
         return denied();
     };
@@ -784,11 +769,7 @@ async fn query(
         return err(StatusCode::BAD_REQUEST, "query exceeds authorized bounds");
     }
     // Owner and reader read all telemetry: the query layer sees every enrolled source.
-    let allowed: HashSet<String> = s
-        .app
-        .control
-        .lock()
-        .unwrap()
+    let allowed: HashSet<String> = lock!(s.app.control)
         .inventory()
         .into_iter()
         .map(|(r, _)| r.name)
@@ -796,7 +777,7 @@ async fn query(
     let page = page_mut(&mut q).and_then(Option::take);
     let shape = format!("{q:?}");
     let snapshot = if let Some(id) = page {
-        let mut cursors = s.cursors.lock().unwrap();
+        let mut cursors = lock!(s.cursors);
         cursors.retain(|_, c| c.expires > now());
         let Some(c) = cursors.get(&id) else {
             return err(StatusCode::GONE, "page expired; run the query again");
@@ -833,7 +814,7 @@ async fn query(
             );
         }
     };
-    let mut access = s.access.lock().unwrap();
+    let mut access = lock!(s.access);
     if access.recheck_at(&a, now()).is_err() {
         return denied();
     }
@@ -843,7 +824,7 @@ async fn query(
             Ok(id) => id,
             Err(e) => return failure(e),
         };
-        let mut cursors = s.cursors.lock().unwrap();
+        let mut cursors = lock!(s.cursors);
         cursors.retain(|_, c| c.expires > now());
         if cursors.len() >= CURSOR_CAP {
             return err(
@@ -879,7 +860,7 @@ async fn query(
     }
 }
 async fn audit(State(s): State<Console>, Extension(a): Extension<Authority>) -> Response {
-    let access = s.access.lock().unwrap();
+    let access = lock!(s.access);
     json_result(
         access
             .audit(&a)
@@ -887,25 +868,20 @@ async fn audit(State(s): State<Console>, Extension(a): Extension<Authority>) -> 
     )
 }
 async fn passkeys(State(s): State<Console>, Extension(a): Extension<Authority>) -> Response {
-    json_result(s.access.lock().unwrap().passkey_ids(&a))
+    json_result(lock!(s.access).passkey_ids(&a))
 }
 async fn sessions(State(s): State<Console>, Extension(a): Extension<Authority>) -> Response {
-    json_result(s.access.lock().unwrap().sessions(&a))
+    json_result(lock!(s.access).sessions(&a))
 }
 async fn readers(State(s): State<Console>, Extension(a): Extension<Authority>) -> Response {
-    json_result(s.access.lock().unwrap().readers(&a))
+    json_result(lock!(s.access).readers(&a))
 }
 async fn add_passkey(
     State(s): State<Console>,
     Extension(a): Extension<Authority>,
     h: HeaderMap,
 ) -> Response {
-    json_result(
-        s.access
-            .lock()
-            .unwrap()
-            .start_add_passkey(&a, csrf(&h), origin(&h), now()),
-    )
+    json_result(lock!(s.access).start_add_passkey(&a, csrf(&h), origin(&h), now()))
 }
 async fn revoke_passkey(
     State(s): State<Console>,
@@ -913,12 +889,7 @@ async fn revoke_passkey(
     h: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    json_result(
-        s.access
-            .lock()
-            .unwrap()
-            .revoke_passkey(&a, &id, csrf(&h), origin(&h), now()),
-    )
+    json_result(lock!(s.access).revoke_passkey(&a, &id, csrf(&h), origin(&h), now()))
 }
 async fn revoke_session(
     State(s): State<Console>,
@@ -926,12 +897,7 @@ async fn revoke_session(
     h: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    json_result(
-        s.access
-            .lock()
-            .unwrap()
-            .revoke_session(&a, &id, csrf(&h), origin(&h), now()),
-    )
+    json_result(lock!(s.access).revoke_session(&a, &id, csrf(&h), origin(&h), now()))
 }
 async fn revoke_reader(
     State(s): State<Console>,
@@ -939,12 +905,7 @@ async fn revoke_reader(
     h: HeaderMap,
     Path(id): Path<String>,
 ) -> Response {
-    json_result(
-        s.access
-            .lock()
-            .unwrap()
-            .revoke_reader(&a, &id, csrf(&h), origin(&h), now()),
-    )
+    json_result(lock!(s.access).revoke_reader(&a, &id, csrf(&h), origin(&h), now()))
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -962,14 +923,7 @@ async fn issue_reader(
     h: HeaderMap,
     Json(r): Json<IssueReader>,
 ) -> Response {
-    json_result(s.access.lock().unwrap().issue_reader(
-        &a,
-        &r.name,
-        r.ttl_s,
-        csrf(&h),
-        origin(&h),
-        now(),
-    ))
+    json_result(lock!(s.access).issue_reader(&a, &r.name, r.ttl_s, csrf(&h), origin(&h), now()))
 }
 
 #[cfg(test)]

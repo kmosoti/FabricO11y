@@ -17,6 +17,7 @@ use axum::{Extension, Router};
 use serde::Deserialize;
 use serde_json::json;
 use sha2::{Digest, Sha256};
+use std::ops::Deref;
 use std::sync::{Arc, Mutex};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, oneshot};
 
@@ -118,7 +119,7 @@ async fn authenticate_batch_header(
     request: Request,
     next: Next,
 ) -> Response {
-    if node_for(&state, request.headers()).is_none() {
+    if node_for(lock!(state.control), request.headers()).is_none() {
         return reply(StatusCode::UNAUTHORIZED, "unauthorized", None);
     }
     tokio::time::timeout(std::time::Duration::from_secs(15), next.run(request))
@@ -150,9 +151,8 @@ fn bearer(headers: &HeaderMap) -> Option<&str> {
         .strip_prefix("Bearer ")
 }
 
-fn node_for(state: &AppState, headers: &HeaderMap) -> Option<String> {
-    let token = bearer(headers)?;
-    state.control.lock().unwrap().authenticate(token)
+fn node_for(control: impl Deref<Target = Control>, headers: &HeaderMap) -> Option<String> {
+    control.authenticate(bearer(headers)?)
 }
 
 fn is_admin(state: &AppState, headers: &HeaderMap) -> bool {
@@ -163,7 +163,7 @@ fn is_admin(state: &AppState, headers: &HeaderMap) -> bool {
 }
 
 async fn batches(State(state): State<AppState>, headers: HeaderMap, body: Bytes) -> Response {
-    let Some(label) = node_for(&state, &headers) else {
+    let Some(label) = node_for(lock!(state.control), &headers) else {
         return reply(StatusCode::UNAUTHORIZED, "unauthorized", None);
     };
     if body.len() > MAX_BATCH_BYTES {
@@ -194,7 +194,7 @@ async fn batches(State(state): State<AppState>, headers: HeaderMap, body: Bytes)
 /// A node poll. `x-fabric-applied-revision` and `x-fabric-config-error`
 /// report what the node runs; `if-none-match` avoids resending an unchanged view.
 async fn node_config(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    let Some(name) = node_for(&state, &headers) else {
+    let Some(name) = node_for(lock!(state.control), &headers) else {
         return reply(StatusCode::UNAUTHORIZED, "unauthorized", None);
     };
     let text = |key: &str| headers.get(key).and_then(|v| v.to_str().ok());
@@ -202,12 +202,7 @@ async fn node_config(State(state): State<AppState>, headers: HeaderMap) -> Respo
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
     let config_error = text("x-fabric-config-error").map(|e| e.chars().take(240).collect());
-    let Some(view) = state
-        .control
-        .lock()
-        .unwrap()
-        .poll(&name, applied, config_error)
-    else {
+    let Some(view) = lock!(state.control).poll(&name, applied, config_error) else {
         return reply(StatusCode::UNAUTHORIZED, "unauthorized", None);
     };
     if text("if-none-match") == Some(format!("\"{}\"", view.revision).as_str()) {
@@ -242,7 +237,7 @@ async fn enroll(State(state): State<AppState>, headers: HeaderMap, body: Bytes) 
         logs: request.logs,
         metric_interval_s: request.metric_interval_s,
     };
-    match state.control.lock().unwrap().enroll(&request.name, desired) {
+    match lock!(state.control).enroll(&request.name, desired) {
         Ok((record, token)) => (
             StatusCode::CREATED,
             axum::Json(json!({"name": record.name, "revision": record.revision, "token": token})),
@@ -258,10 +253,7 @@ async fn list_nodes(State(state): State<AppState>, headers: HeaderMap) -> Respon
     if !is_admin(&state, &headers) {
         return error(StatusCode::UNAUTHORIZED, "admin token required");
     }
-    let nodes: Vec<_> = state
-        .control
-        .lock()
-        .unwrap()
+    let nodes: Vec<_> = lock!(state.control)
         .inventory()
         .into_iter()
         .map(|(record, observed)| {
@@ -293,7 +285,7 @@ async fn set_config(
         Ok(desired) => desired,
         Err(e) => return error(StatusCode::BAD_REQUEST, e),
     };
-    changed(state.control.lock().unwrap().set_config(&name, desired))
+    changed(lock!(state.control).set_config(&name, desired))
 }
 
 async fn set_status(
@@ -310,7 +302,7 @@ async fn set_status(
         "revoke" => Status::Revoked,
         _ => return error(StatusCode::NOT_FOUND, "unknown action"),
     };
-    changed(state.control.lock().unwrap().set_status(&name, status))
+    changed(lock!(state.control).set_status(&name, status))
 }
 
 /// Read-only query over retained history. Runs on a blocking thread so a
