@@ -111,7 +111,20 @@ pub fn cargo_mutants(root: &Path, equivalent: &Path) -> Result<Vec<Violation>, S
         .filter_map(|e| e.get("mutant").and_then(Value::as_str).map(str::to_owned))
         .collect();
     let out = root.join("target/cargo-mutants");
-    let status = Command::new("cargo")
+    let status = mutants_command(root, &out)
+        .status()
+        .map_err(|e| format!("cannot run cargo mutants: {e}"))?;
+    // cargo-mutants exits 2 when mutants were missed and 3 on timeouts;
+    // anything else non-zero means it could not run.
+    if !matches!(status.code(), Some(0 | 2 | 3)) {
+        return Err(format!("cargo mutants failed: {status}"));
+    }
+    evaluate_mutants(&out, &allowed)
+}
+
+fn mutants_command(root: &Path, out: &Path) -> Command {
+    let mut command = Command::new("cargo");
+    command
         .args([
             "mutants",
             "-p",
@@ -126,15 +139,22 @@ pub fn cargo_mutants(root: &Path, equivalent: &Path) -> Result<Vec<Violation>, S
             "2",
             "-o",
         ])
-        .arg(&out)
+        .arg(out)
         .current_dir(root)
-        .status()
-        .map_err(|e| format!("cannot run cargo mutants: {e}"))?;
-    // cargo-mutants exits 2 when mutants were missed and 3 on timeouts;
-    // anything else non-zero means it could not run.
-    if !matches!(status.code(), Some(0 | 2 | 3)) {
-        return Err(format!("cargo mutants failed: {status}"));
-    }
+        // An absolute inherited target merges two different mutated trees into
+        // one Cargo cache: a worker can then run the other worker's executable.
+        // Cargo resolves this relative path inside each isolated build tree.
+        .env("CARGO_TARGET_DIR", "target")
+        .env("CARGO_INCREMENTAL", "1")
+        // These pure crates enumerate exhaustive cases for every mutant.
+        // Optimize that computation, retaining checked arithmetic/assertions.
+        .env("CARGO_PROFILE_TEST_OPT_LEVEL", "1")
+        .env("CARGO_PROFILE_TEST_DEBUG_ASSERTIONS", "true")
+        .env("CARGO_PROFILE_TEST_OVERFLOW_CHECKS", "true");
+    command
+}
+
+fn evaluate_mutants(out: &Path, allowed: &BTreeSet<String>) -> Result<Vec<Violation>, String> {
     // A survivor is named with its position, so two mutants with the same
     // description on different lines stay distinct; an equivalence entry
     // whose code moved is reported as stale and must be re-argued.
@@ -163,7 +183,7 @@ pub fn cargo_mutants(root: &Path, equivalent: &Path) -> Result<Vec<Violation>, S
             ));
         }
     }
-    for entry in &allowed {
+    for entry in allowed {
         if !survivors.contains(entry) {
             violations.push(Violation::new(
                 STALE_EQUIVALENT,
@@ -173,4 +193,28 @@ pub fn cargo_mutants(root: &Path, equivalent: &Path) -> Result<Vec<Violation>, S
         }
     }
     Ok(violations)
+}
+
+#[cfg(test)]
+mod mutation_isolation_tests {
+    use super::*;
+    use std::ffi::OsStr;
+
+    #[test]
+    fn inherited_absolute_target_cannot_join_parallel_mutation_trees() {
+        let command = mutants_command(Path::new("/owned/source"), Path::new("/owned/evidence"));
+        let target = command
+            .get_envs()
+            .find(|(name, _)| *name == OsStr::new("CARGO_TARGET_DIR"));
+        assert_eq!(
+            target,
+            Some((OsStr::new("CARGO_TARGET_DIR"), Some(OsStr::new("target"))))
+        );
+        let relative = Path::new(target.unwrap().1.unwrap());
+        assert!(!relative.is_absolute());
+        assert_ne!(
+            Path::new("/owned/worker-a").join(relative),
+            Path::new("/owned/worker-b").join(relative)
+        );
+    }
 }

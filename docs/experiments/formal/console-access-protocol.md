@@ -1,6 +1,7 @@
 # Authenticated console acceptance protocol
 
-Revision 4, registered 2026-10-10 before resident-enrollment acceptance.
+Revision 5, registered 2026-10-11 before peer-admission acceptance.
+Revision 4 preceded resident-enrollment acceptance.
 Revision 3 preceded standalone Firefox CTAP 2.1 acceptance.
 Revision 2 preceded the grant/visibility regression rerun; its observations
 retain their original source and fixture identities.
@@ -97,6 +98,20 @@ checks/s and 16 live requests. Both have a 15-second request deadline and a
 64 KiB body limit. Query execution retains its two permits until blocking work
 finishes, including after request cancellation. Requests that cannot be admitted
 receive an explicit error; no silent queue growth or partial successful answer.
+
+The production transport wrapper adds per-peer budgets: public ceremonies
+2 requests/s, burst 4, two live requests; protected API 8 requests/s, burst 8,
+four live requests. Global live ceilings remain eight and sixteen. UI actions
+and test probes on localhost share this peer; the older fixture's 10 probes/s
+exceeds the protected budget before UI work is counted.
+
+For prospective benign browser acceptance, space explicit API probes and UI
+actions by at least 550 ms without retrying responses or replaying writes.
+The application and its normal polling remain unchanged. Record request paths,
+statuses and Retry-After headers without payloads or credentials. Separately
+send sixteen concurrent protected session reads without this fixture pacing;
+require an actual HTTP 429, Retry-After and no-store, followed by a successful
+read after refill. Preserve every C1–C8 assertion and historical failure.
 
 Scoped queries permit logs, metric points and spans, at most 24 hours and
 1,000 rows (or a smaller grant), 1 MiB conservatively estimated retained row

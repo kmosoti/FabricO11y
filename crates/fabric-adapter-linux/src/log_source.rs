@@ -2,10 +2,12 @@
 
 use fabric_core::collection::{CursorCheck, CursorFacts, FileFacts, InvalidCursor, check_cursor};
 use fabric_frame::envelope::{BtrfsIdentity, Cursor};
-use std::fs::OpenOptions;
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use std::os::unix::fs::MetadataExt;
 use std::path::Path;
+
+mod secure_open;
+pub use secure_open::open_regular_log;
 
 const MAX_LINE: usize = 4096;
 const MAX_SCAN: usize = 1024 * 1024;
@@ -90,17 +92,8 @@ fn cursor_still_valid(
 /// Bytes the reader would still have to read: after the cursor when it is
 /// still valid, otherwise the whole file (it would restart from zero).
 pub fn unread_bytes(path: &Path, prior: Option<&Cursor>) -> io::Result<u64> {
-    let mut file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NONBLOCK)
-        .open(path)?;
+    let mut file = open_regular_log(path)?;
     let metadata = file.metadata()?;
-    if !metadata.is_file() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "log source is not a regular file",
-        ));
-    }
     let identity = crate::btrfs_identity::read(&file)?;
     Ok(match prior {
         Some(old) if cursor_still_valid(&mut file, &metadata, old, identity.as_ref())? => {
@@ -146,17 +139,8 @@ fn read_lines_with_identity(
     let name = path
         .to_str()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "non-UTF8 log path"))?;
-    let mut file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NONBLOCK)
-        .open(path)?;
+    let mut file = open_regular_log(path)?;
     let metadata = file.metadata()?;
-    if !metadata.is_file() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "log source is not a regular file",
-        ));
-    }
     let device = metadata.dev();
     let inode = metadata.ino();
     let identity = identify(&file)?;
@@ -273,6 +257,7 @@ fn read_lines_with_identity(
 #[cfg(test)]
 mod btrfs_cursor_tests {
     use super::*;
+    use std::fs::OpenOptions;
     use std::io::Write;
     use std::path::PathBuf;
     use std::sync::atomic::{AtomicU64, Ordering};

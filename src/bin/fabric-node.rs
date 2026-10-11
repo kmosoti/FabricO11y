@@ -1,7 +1,6 @@
 use fabric_adapter_linux::operational_log::OperationalLog;
 use fabric_o11y::spindle::runtime::{Attempt, Config, Spindle};
 use fabric_o11y::spindle::sender::Delivery;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -164,17 +163,8 @@ fn main() -> ExitCode {
                     "invalid --server-log absolute path",
                 ));
             }
-            // A companion path must already name a regular readable source.
-            let file = std::fs::OpenOptions::new()
-                .read(true)
-                .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
-                .open(&path)?;
-            if !file.metadata()?.is_file() {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "--server-log must name a regular file",
-                ));
-            }
+            // Use the same all-component policy as collection and backlog reads.
+            drop(fabric_adapter_linux::log_source::open_regular_log(&path)?);
             local_logs.push(path);
         }
         let mut node = Spindle::open_with_local_logs(config, local_logs)?;

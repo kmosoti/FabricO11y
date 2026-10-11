@@ -3,6 +3,102 @@
   "description": "Counterexamples kept as deterministic regression fixtures. `cargo xtask check-counterexamples` requires each reproducer test to exist in its file and each fix commit to exist. Removing an entry is a trust-boundary change.",
   "counterexamples": [
     {
+      "id": "CX-QUERY-TEST-DRAIN-PROGRESS",
+      "origin": "Hosted mutation run 38156896105 timed out; isolated after_page=true diagnostic on 1777e66 grew to 1.9G cgroup peak in a five-second timeout",
+      "defect": "Pagination tests called the complete drain before checking progress, so a deliberately broken cursor predicate could allocate repeated pages instead of failing promptly",
+      "seed_or_trace": "replace after_page with true; original audit reports TIMEOUT; a repeated page with the same continuation is now rejected before drain allocation, while original positive drain assertions remain",
+      "contract": "HIST-4 and bounded executable verification; no production query or oracle semantics changed",
+      "reproducer": {
+        "file": "crates/fabric-core/src/query/spec.rs",
+        "test": "a_repeated_page_is_rejected_before_drain_allocation"
+      },
+      "fix_commit": "af31318"
+    },
+    {
+      "id": "CX-INTERRUPTED-CHECK-OUTPUT",
+      "origin": "Hosted mutation run 38156896105 exceeded its 30-minute deadline without retaining the active audit output",
+      "defect": "The registry buffered command output until exit, losing diagnostics when its whole cgroup was interrupted",
+      "seed_or_trace": "child prints separate stdout/stderr sentinels and then blocks; stop its owned process group before completion; initial regression exits 101, successor retains both streams and the running marker without a completion receipt",
+      "contract": "ARCH-1 executable evidence must retain observed failures and never invent completion",
+      "reproducer": {
+        "file": "xtask/tests/check_logs.rs",
+        "test": "running_check_retains_output_before_forced_stop"
+      },
+      "fix_commit": "63b32e5"
+    },
+    {
+      "id": "CX-RECEIPT-FINAL-INPUT-STATE",
+      "origin": "Review of final receipt validation after hosted fuzz drift failure 38151336752",
+      "defect": "The final validator checked pre-check dirty flags but never inspected the live worktree, so a last check could change inputs after its receipt context was captured",
+      "seed_or_trace": "freeze a real Git fixture, then change a tracked input or add an untracked input after the recorded identity; final validation must reject both",
+      "contract": "ARCH-1",
+      "reproducer": {
+        "file": "tools/ci/test_ci_contracts.py",
+        "test": "test_input_changes_after_receipts_are_rejected"
+      },
+      "fix_commit": "229f704"
+    },
+    {
+      "id": "CX-FUZZ-DEPENDENCY-DRIFT",
+      "origin": "Hosted extended run 38151336752 on proposed merge e35fdf9: all commands exited zero, but dependency-policy and coverage receipts were dirty after fuzzing",
+      "defect": "The separate fuzz lock lacked the current server dependency graph; cargo-fuzz silently rewrote it, so later checks did not run on unchanged candidate inputs",
+      "seed_or_trace": "cargo metadata --manifest-path fuzz/Cargo.toml --locked --offline at eb5b096 exits 101; stale-lock and mid-trial rewrite controls reproduce the required rejection",
+      "contract": "ARCH-1",
+      "reproducer": {
+        "file": "tools/ci/test_ci_contracts.py",
+        "test": "test_stale_lock_is_rejected_before_any_fuzz_target"
+      },
+      "fix_commit": "3b8771f"
+    },
+    {
+      "id": "CX-MUTATION-CURSOR-TIME-TIE-COVERAGE",
+      "origin": "October 11 isolated mutation audit after the relational query reference was added",
+      "defect": "Existing cases did not reject pruning a source whose maximum timestamp equals the cursor timestamp but whose full row keys are later",
+      "seed_or_trace": "two rows at time 20 with identities 1 and 2, after cursor at time 20 with identity 0; max < cursor.time changed to == or <= in both walks",
+      "contract": "HIST-4 continuation keys must never skip matching rows",
+      "reproducer": {
+        "file": "crates/fabric-core/tests/query_mutation_regressions.rs",
+        "test": "equal_time_upper_bound_can_hold_rows_after_the_full_cursor"
+      },
+      "fix_commit": "3305f0a"
+    },
+    {
+      "id": "CX-MUTATION-SHARED-TARGET",
+      "origin": "October 11 release integration review; retained contaminated audit and isolated rerun in the research wiki",
+      "defect": "Parallel mutated source copies reused one absolute Cargo target, allowing a worker to test an executable for another mutation",
+      "seed_or_trace": "cargo-mutants-opt1: tested counter deltas survived; per-worker logs named the same compiler output directory",
+      "contract": "ADR-0018 executable evidence must correspond to the proposed source",
+      "reproducer": {
+        "file": "xtask/src/evidence.rs",
+        "test": "inherited_absolute_target_cannot_join_parallel_mutation_trees"
+      },
+      "fix_commit": "705572f"
+    },
+    {
+      "id": "CX-MUTATION-MIXED-MIN-COVERAGE",
+      "origin": "isolated October 11 cargo-mutants audit",
+      "defect": "The existing tests did not reject lower-bound comparison mutations which turn an unchanged exact i64 minimum counter into a reset",
+      "seed_or_trace": "query.rs:146:15 < changed to == or <=; Int(i64::MIN) followed by its exact Double representation",
+      "contract": "HIST-6 unchanged uninterrupted counters produce zero rate",
+      "reproducer": {
+        "file": "crates/fabric-core/tests/mutation_regressions.rs",
+        "test": "exact_i64_min_mixed_counter_is_not_a_reset"
+      },
+      "fix_commit": "2d9a9e3"
+    },
+    {
+      "id": "CX-MUTATION-PROMOTED-BINDING-COVERAGE",
+      "origin": "isolated October 11 cargo-mutants audit",
+      "defect": "The existing tests did not reject a mutation dropping a newly added forward credential binding after index promotion",
+      "seed_or_trace": "delivery.rs:178:27 != changed to ==; 34 distinct credentials followed by rebinding and intrusion attempts",
+      "contract": "DEL-5 one credential binds to one Spindle in either direction",
+      "reproducer": {
+        "file": "crates/fabric-core/tests/mutation_regressions.rs",
+        "test": "bindings_added_after_index_promotion_still_forbid_rebinding"
+      },
+      "fix_commit": "2d9a9e3"
+    },
+    {
       "id": "CX-BTRFS-REBOOT-LOG-REPLAY",
       "origin": "Fedora 44 exact-package lifecycle continuation release-fedora44-lifecycle-continue-02, 2026-10-10",
       "defect": "Btrfs changed runtime st_dev from 51 to 32 across reboot; the old raw-device comparison reread three already committed lines at unchanged inode 2505 and source offsets",

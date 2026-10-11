@@ -152,6 +152,7 @@ Try it:
 1. Run `cargo test -p fabric-properties` and `bash formal/kani/check.sh`.
 2. Read [CX-RETENTION-SATURATED-TOTAL](formal/counterexamples.json). Explain why proptest, whose generated sizes stay below 50 bytes, could not find it, and why Kani did.
 3. Run `cargo xtask mutants --only M-SIM-DUPLICATE`. Explain which lost answer makes the simulation fail.
+4. Read the test-only `checked_drain` in [query/spec.rs](../crates/fabric-core/src/query/spec.rs) and the [verifier protocol](experiments/formal/verifier-boundedness-protocol.md). A strictly increasing cursor over distinct finite keys gives a finite page bound. Why should the fixture establish progress before its original complete-drain assertion? Run `cargo test -p xtask --test check_logs` and explain why a partial log after forced stop is evidence of activity but cannot establish completion.
 
 ## Stage 11 — Sort more data than fits in memory
 

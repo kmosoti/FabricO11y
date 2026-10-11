@@ -515,9 +515,9 @@
       "command": [
         "sh",
         "-c",
-        "cargo build --release --locked --workspace --bins --examples && for s in clean server-kill node-kill outage; do for seed in 1 2; do python3 -B tools/qualification/delivery_faults.py --scenario $s --seed $seed --seconds 20 --keep || exit 1; TLA_JAR=\"$PWD/target/tools/tla2tools.jar\" python3 -B formal/delivery/trace_check.py target/alpha-delivery-$s-$seed/transcript.jsonl || exit 1; rm -rf target/alpha-delivery-$s-$seed; done; done && ! python3 -B tools/qualification/delivery_faults.py --scenario clean --seed 3 --seconds 8 --mutate drop-recovered"
+        "cargo build --release --locked --workspace --bins --examples && for s in clean server-kill node-kill outage; do for seed in 1 2; do python3 -B tools/qualification/delivery_faults.py --scenario $s --seed $seed --seconds 20 --keep || exit 1; TLA_JAR=\"$PWD/target/tools/tla2tools.jar\" python3 -B formal/delivery/trace_check.py \"$FABRIC_SCRATCH_ROOT/alpha-delivery-$s-$seed/transcript.jsonl\" || exit 1; rm -rf \"$FABRIC_SCRATCH_ROOT/alpha-delivery-$s-$seed\"; done; done && python3 -B tools/qualification/check_delivery_fault_control.py"
       ],
-      "scope": "Real server and Spindle processes under SIGKILL and outage, graded by the delivery oracle, and each transcript validated by TLC against the DeliveryOwnership model; plus the drop-recovered negative control",
+      "scope": "Explicit legacy delivery adapter with three producers and the mandatory companion under SIGKILL and outage, graded by the unchanged delivery oracle and TLC; strict ACKED-DURABLE drop-recovered control. Production access is verified separately by native browser/security checks.",
       "requires": [
         "cargo",
         "python3",
@@ -534,7 +534,7 @@
       "oracles": [
         "tools/qualification/delivery_oracle.py"
       ],
-      "negative_controls": "--mutate drop-recovered must fail",
+      "negative_controls": "drop-recovered must reach only ACKED-DURABLE with observed ACKs and clean native process exits; startup and unrelated failures are rejected",
       "bounds": "three Spindles, 20 s per scenario, seeds 1 and 2",
       "requires_paths": [
         "target/tools/tla2tools.jar"

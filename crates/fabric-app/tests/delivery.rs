@@ -265,6 +265,33 @@ fn clone(sub: &Sub) -> Sub {
 
 #[test]
 fn extraction_agrees_with_the_base_decision_loop_on_every_small_group() {
+    // Mutation audit regression: a third, unbound credential must not claim
+    // the second Spindle already bound within this group. Two credentials
+    // alone cannot expose omission of this secondary reverse lookup.
+    let group = [
+        Sub {
+            label: "a",
+            stream: (NODES[0], 1),
+            sequence: 1,
+            hash: HASHES[0],
+        },
+        Sub {
+            label: "b",
+            stream: (NODES[1], 1),
+            sequence: 1,
+            hash: HASHES[0],
+        },
+        Sub {
+            label: "c",
+            stream: (NODES[1], 1),
+            sequence: 2,
+            hash: HASHES[0],
+        },
+    ];
+    assert_eq!(
+        new_answers(&State::default(), &group, Journal::Healthy),
+        vec![Answer::Ack(1), Answer::Ack(1), Answer::Forbidden]
+    );
     let streams = [(NODES[0], 1), (NODES[0], 2), (NODES[1], 1)];
     let singles = offers(&streams);
     let mut compared = 0_u64;

@@ -2,13 +2,11 @@
 //! ([ADR-0025](../../docs/decisions/ADR-0025-carry-traces-as-a-third-signal.md)).
 //!
 //! A local application exports spans with `POST /v1/traces` and an
-//! `application/x-protobuf` body, as every OpenTelemetry SDK can. The receiver checks
-//! that the body is an `ExportTraceServiceRequest` of at most 1 MiB and hands it to the
-//! Spindle's main loop, which commits it to the Spool; only then does the exporter get
-//! `200`. A full Spool answers `503` (the exporter retries), a malformed body `400`, an
-//! oversized one `413`. This is not a general OTLP receiver: one path, protobuf only,
-//! loopback only, a small subset of HTTP/1.1 (Content-Length bodies, keep-alive), on
-//! plain blocking threads.
+//! `application/x-protobuf` body. Only a confirmed durable Spool commit yields
+//! `200`. Overload or unavailable confirmation yields `503` or a closed socket;
+//! an enqueued export can still commit after its HTTP waiter times out.
+//! This is a bounded subset of HTTP/1.1, not a general OTLP receiver. Loopback
+//! does not identify a local user or prevent a hostile process reconnecting.
 
 use crate::spindle::runtime::Spindle;
 use fabric_frame::envelope::MAX_BATCH;
@@ -18,8 +16,11 @@ use std::io::{self, BufRead, BufReader, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
-use std::time::Duration;
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
+use std::time::{Duration, Instant};
+
+mod deadline_io;
+use deadline_io::{DeadlineStream, remaining};
 
 /// The largest export accepted: the Batch cap less room for the log cursors every
 /// Batch carries (16 cursors of at most a 4 KiB path each, with their fields).
@@ -33,12 +34,51 @@ const QUEUE: usize = 64;
 /// How long a connection waits for its request to be committed.
 const COMMIT_WAIT: Duration = Duration::from_secs(30);
 
+#[derive(Clone, Copy)]
+struct TransportPolicy {
+    header: Duration,
+    body: Duration,
+    commit: Duration,
+    response: Duration,
+    request: Duration,
+    connection: Duration,
+    requests: usize,
+}
+
+const TRANSPORT: TransportPolicy = TransportPolicy {
+    header: Duration::from_secs(5),
+    body: Duration::from_secs(10),
+    commit: COMMIT_WAIT,
+    response: Duration::from_secs(5),
+    request: Duration::from_secs(50),
+    connection: Duration::from_secs(120),
+    requests: 128,
+};
+
+struct ConnectionPermit(Arc<AtomicUsize>);
+
+impl ConnectionPermit {
+    fn acquire(live: &Arc<AtomicUsize>) -> Option<Self> {
+        live.try_update(Ordering::SeqCst, Ordering::SeqCst, |count| {
+            count.checked_add(1).filter(|next| *next <= MAX_CONNECTIONS)
+        })
+        .ok()?;
+        Some(Self(Arc::clone(live)))
+    }
+}
+
+impl Drop for ConnectionPermit {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
 /// What the main loop answers for one request.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Commit {
     /// Committed to the Spool at this Batch sequence.
     Committed(u64),
-    /// Not committed (the Spool is full or failed); the exporter should retry.
+    /// The main loop did not return durable-success confirmation.
     Unavailable(String),
 }
 
@@ -65,6 +105,12 @@ pub fn check_listen(addr: &str) -> io::Result<SocketAddr> {
 /// Bind the endpoint and serve it on background threads; exports arrive on the
 /// returned channel.
 pub fn start(addr: SocketAddr) -> io::Result<(SocketAddr, Receiver<Export>)> {
+    if !addr.ip().is_loopback() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "traces_listen must be a loopback address",
+        ));
+    }
     let listener = TcpListener::bind(addr)?;
     let bound = listener.local_addr()?;
     let (tx, rx) = sync_channel(QUEUE);
@@ -73,21 +119,19 @@ pub fn start(addr: SocketAddr) -> io::Result<(SocketAddr, Receiver<Export>)> {
         .name("fabric-otlp".into())
         .spawn(move || {
             for stream in listener.incoming().flatten() {
-                if live.load(Ordering::SeqCst) >= MAX_CONNECTIONS {
-                    continue; // dropped: closes the connection
-                }
-                live.fetch_add(1, Ordering::SeqCst);
-                let (tx, slot) = (tx.clone(), live.clone());
-                let spawned = std::thread::Builder::new()
+                let accepted = Instant::now();
+                let Some(permit) = ConnectionPermit::acquire(&live) else {
+                    continue;
+                };
+                let tx = tx.clone();
+                // On spawn failure the unstarted closure drops its permit.
+                // On success the worker owns it through every serve exit.
+                let _ = std::thread::Builder::new()
                     .name("fabric-otlp-conn".into())
                     .spawn(move || {
-                        let _ = serve(stream, &tx);
-                        slot.fetch_sub(1, Ordering::SeqCst);
+                        let _permit = permit;
+                        let _ = serve(stream, &tx, accepted, TRANSPORT);
                     });
-                if spawned.is_err() {
-                    // The closure never ran, so its slot is released here.
-                    live.fetch_sub(1, Ordering::SeqCst);
-                }
             }
         })?;
     Ok((bound, rx))
@@ -191,7 +235,21 @@ pub fn read_head(reader: &mut impl BufRead) -> io::Result<Option<Head>> {
     Ok(Some(head))
 }
 
-fn respond(stream: &mut TcpStream, status: &str, body: &[u8], close: bool) -> io::Result<()> {
+fn phase(budget: Duration, ceiling: Instant) -> Instant {
+    Instant::now()
+        .checked_add(budget)
+        .unwrap_or(ceiling)
+        .min(ceiling)
+}
+
+fn respond(
+    stream: &mut DeadlineStream,
+    status: &str,
+    body: &[u8],
+    close: bool,
+    deadline: Instant,
+) -> io::Result<()> {
+    stream.set_deadline(deadline);
     let head = format!(
         "HTTP/1.1 {status}\r\ncontent-type: application/x-protobuf\r\ncontent-length: {}\r\n{}\r\n",
         body.len(),
@@ -202,61 +260,142 @@ fn respond(stream: &mut TcpStream, status: &str, body: &[u8], close: bool) -> io
     stream.flush()
 }
 
-/// Serve one connection until it closes or a request is refused.
-fn serve(stream: TcpStream, tx: &SyncSender<Export>) -> io::Result<()> {
-    stream.set_read_timeout(Some(Duration::from_secs(30)))?;
-    let mut writer = stream.try_clone()?;
-    let mut reader = BufReader::new(stream);
-    loop {
+/// Every blocking stage shares absolute request and connection ceilings. A
+/// timed-out HTTP waiter does not cancel or invent the outcome of queued work.
+fn serve(
+    stream: TcpStream,
+    tx: &SyncSender<Export>,
+    accepted: Instant,
+    policy: TransportPolicy,
+) -> io::Result<()> {
+    let connection_end = accepted.checked_add(policy.connection).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "OTLP connection deadline overflow",
+        )
+    })?;
+    let mut writer = DeadlineStream::new(stream.try_clone()?, connection_end);
+    let mut reader = BufReader::new(DeadlineStream::new(stream, connection_end));
+    for request_number in 0..policy.requests {
+        let request_end = phase(policy.request, connection_end);
+        let header_end = phase(policy.header, request_end);
+        remaining(header_end)?;
+        reader.get_mut().set_deadline(header_end);
         let head = match read_head(&mut reader) {
             Ok(Some(head)) => head,
             Ok(None) => return Ok(()),
-            Err(_) => return respond(&mut writer, "400 Bad Request", b"", true),
+            Err(error) if error.kind() == io::ErrorKind::TimedOut => return Err(error),
+            Err(_) => {
+                return respond(
+                    &mut writer,
+                    "400 Bad Request",
+                    b"",
+                    true,
+                    phase(policy.response, request_end),
+                );
+            }
         };
+        // Buffered bytes can bypass the underlying socket Read implementation.
+        remaining(header_end)?;
+        let close = head.close || request_number + 1 == policy.requests;
         if head.method != "POST" || head.path.split('?').next() != Some("/v1/traces") {
-            return respond(&mut writer, "404 Not Found", b"", true);
+            return respond(
+                &mut writer,
+                "404 Not Found",
+                b"",
+                true,
+                phase(policy.response, request_end),
+            );
         }
         if head
             .content_type
             .as_deref()
             .is_none_or(|t| t.split(';').next().map(str::trim) != Some("application/x-protobuf"))
         {
-            return respond(&mut writer, "415 Unsupported Media Type", b"", true);
+            return respond(
+                &mut writer,
+                "415 Unsupported Media Type",
+                b"",
+                true,
+                phase(policy.response, request_end),
+            );
         }
         let Some(length) = head.content_length else {
-            return respond(&mut writer, "411 Length Required", b"", true);
+            return respond(
+                &mut writer,
+                "411 Length Required",
+                b"",
+                true,
+                phase(policy.response, request_end),
+            );
         };
         if length > MAX_EXPORT {
-            return respond(&mut writer, "413 Content Too Large", b"", true);
+            return respond(
+                &mut writer,
+                "413 Content Too Large",
+                b"",
+                true,
+                phase(policy.response, request_end),
+            );
         }
+        let body_end = phase(policy.body, request_end);
+        remaining(body_end)?;
+        reader.get_mut().set_deadline(body_end);
         let mut body = vec![0_u8; length];
         reader.read_exact(&mut body)?;
+        remaining(body_end)?;
         if length == 0 || ExportTraceServiceRequest::decode(body.as_slice()).is_err() {
-            respond(&mut writer, "400 Bad Request", b"", head.close)?;
-            if head.close {
-                return Ok(());
-            }
-            continue;
+            return respond(
+                &mut writer,
+                "400 Bad Request",
+                b"",
+                true,
+                phase(policy.response, request_end),
+            );
         }
+        remaining(body_end)?;
         let (reply, answer) = sync_channel(1);
-        let answer = if tx.send(Export { body, reply }).is_err() {
-            Commit::Unavailable("the Spindle is stopping".into())
-        } else {
-            answer
-                .recv_timeout(COMMIT_WAIT)
-                .unwrap_or(Commit::Unavailable("commit timed out".into()))
-        };
-        match answer {
-            // An empty ExportTraceServiceResponse: full success.
-            Commit::Committed(_) => respond(&mut writer, "200 OK", b"", head.close)?,
-            Commit::Unavailable(_) => {
-                respond(&mut writer, "503 Service Unavailable", b"", head.close)?
+        match tx.try_send(Export { body, reply }) {
+            Ok(()) => {}
+            Err(TrySendError::Full(_) | TrySendError::Disconnected(_)) => {
+                // This attempt never entered the consumer queue.
+                return respond(
+                    &mut writer,
+                    "503 Service Unavailable",
+                    b"",
+                    true,
+                    phase(policy.response, request_end),
+                );
             }
         }
-        if head.close {
+        let commit_end = phase(policy.commit, request_end);
+        match answer.recv_timeout(remaining(commit_end)?) {
+            Ok(Commit::Committed(_)) => {
+                respond(
+                    &mut writer,
+                    "200 OK",
+                    b"",
+                    close,
+                    phase(policy.response, request_end),
+                )?;
+            }
+            Ok(Commit::Unavailable(_)) | Err(_) => {
+                // A lost/expired reply leaves an admitted export's outcome
+                // unknown. It may still commit; never report a false ACK.
+                return respond(
+                    &mut writer,
+                    "503 Service Unavailable",
+                    b"",
+                    true,
+                    phase(policy.response, request_end),
+                );
+            }
+        }
+        if close {
             return Ok(());
         }
     }
+    Ok(())
 }
 
 /// Take waiting exports whose bodies fit one Batch together, oldest first. A body
@@ -314,6 +453,10 @@ pub fn drain(node: &mut Spindle, rx: &Receiver<Export>, carried: &mut Option<Exp
         }
     }
 }
+
+#[cfg(test)]
+#[path = "otlp/security_tests.rs"]
+mod security_tests;
 
 #[cfg(test)]
 mod tests {

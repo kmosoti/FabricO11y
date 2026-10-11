@@ -316,6 +316,55 @@ mod tests {
         }
     }
 
+    // A broken paging predicate must fail the test before an unbounded client
+    // can allocate repeated pages. Compare keys directly, independently of
+    // after_page, and retain the original complete-drain assertion afterward.
+    fn assert_page_progress(page: &Page<LogRow<'_>>, after: Option<RowKey>) {
+        if let Some(next) = page.next {
+            assert!(
+                after.is_none_or(|prior| next > prior),
+                "continuation must strictly advance"
+            );
+            assert_eq!(page.rows.last().map(|row| row.key), Some(next));
+        }
+        assert!(
+            page.rows
+                .iter()
+                .all(|row| after.is_none_or(|prior| row.key > prior)),
+            "every returned key must follow the cursor"
+        );
+    }
+
+    fn checked_drain<'a>(
+        rows: &[LogRow<'a>],
+        query: &LogsQuery<'_>,
+        snapshot: &Snapshot,
+    ) -> Vec<LogRow<'a>> {
+        let mut after = None;
+        // With distinct finite keys, each continuation consumes a new key.
+        // Even an empty answer finishes within rows.len() + 1 pages.
+        for _ in 0..=rows.len() {
+            let page = logs(rows, query, snapshot, after.as_ref());
+            assert_page_progress(&page, after);
+            match page.next {
+                Some(next) => after = Some(next),
+                None => return drain(rows, query, snapshot),
+            }
+        }
+        panic!("finite rows exhausted without completing pagination");
+    }
+
+    #[test]
+    #[should_panic(expected = "continuation must strictly advance")]
+    fn a_repeated_page_is_rejected_before_drain_allocation() {
+        let row = row(0, 1, "a", 0, "");
+        let page = Page {
+            rows: vec![row],
+            next: Some(row.key),
+        };
+        assert_page_progress(&page, Some(row.key));
+    }
+
     /// Regression (proptest `the_budget_drains_to_the_definition`, seed in
     /// `query_spec.proptest-regressions`): with budget 0 the first source's
     /// lower bound became a boundary at the page start, time 0, and the
@@ -335,7 +384,10 @@ mod tests {
             newest_group: 0,
         };
         let q = q(0, 1, 1);
-        assert_eq!(drain_budgeted(&srcs, &q, &snap, 0), drain(&rows, &q, &snap));
+        assert_eq!(
+            drain_budgeted(&srcs, &q, &snap, 0),
+            checked_drain(&rows, &q, &snap)
+        );
         assert_eq!(drain_budgeted(&srcs, &q, &snap, 0).len(), 1);
     }
 
@@ -364,7 +416,7 @@ mod tests {
             "group 4 is outside the snapshot"
         );
         assert_eq!(page2.next, None);
-        assert_eq!(drain(&rows, &q(0, 100, 2), &snap).len(), 3);
+        assert_eq!(checked_drain(&rows, &q(0, 100, 2), &snap).len(), 3);
         let filtered = logs(
             &rows,
             &LogsQuery {
@@ -413,7 +465,7 @@ mod tests {
             for budget in [0, 1, 2, 3, 10] {
                 assert_eq!(
                     drain_budgeted(&sources, &q(0, 100, limit), &snap, budget),
-                    drain(&all, &q(0, 100, limit), &snap),
+                    checked_drain(&all, &q(0, 100, limit), &snap),
                     "limit {limit} budget {budget}"
                 );
             }

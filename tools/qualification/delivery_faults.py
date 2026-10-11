@@ -20,7 +20,7 @@ real order, because a node sends only batches it has already committed.
 
 `--mutate drop-recovered` deletes one recovered record before grading; the
 oracle must then fail, which shows the pipeline can fail end to end.
-Disposable data lives under target/alpha-delivery-<scenario>-<seed>/ and is
+Disposable data lives under $FABRIC_SCRATCH_ROOT/alpha-delivery-<scenario>-<seed>/ and is
 removed after a pass unless --keep is given.
 """
 
@@ -85,8 +85,9 @@ class Server:
 
     def start(self) -> None:
         out = open(self.log, "ab")
-        self.proc = subprocess.Popen([str(self.binary), "serve", str(self.config)],
-                                     stdout=out, stderr=out)
+        self.proc = subprocess.Popen([str(self.binary), "serve-legacy", str(self.config), "--timing-events"],
+                                     stdout=out, stderr=out, start_new_session=True)
+        out.close()
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             if self.proc.poll() is not None:
@@ -99,7 +100,7 @@ class Server:
         raise RuntimeError("server did not listen")
 
     def kill(self) -> None:
-        self.proc.send_signal(signal.SIGKILL)
+        os.killpg(self.proc.pid, signal.SIGKILL)
         self.proc.wait(timeout=10)
 
     def stop(self) -> int:
@@ -158,17 +159,22 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--nodes", type=int, default=3)
     parser.add_argument("--seconds", type=float, default=20)
-    parser.add_argument("--bin-dir", default="target/release")
+    parser.add_argument("--bin-dir", default=str(Path(os.environ.get("CARGO_TARGET_DIR", "target")) / "release"))
     parser.add_argument("--mutate", choices=["drop-recovered"])
     parser.add_argument("--keep", action="store_true")
     args = parser.parse_args()
     bins = Path(args.bin_dir).resolve()
     node_bin, server_bin = bins / "fabric-node", bins / "fabric-server"
     spool_dump, server_dump = bins / "examples" / "spool_dump", bins / "examples" / "server_dump"
-    root = Path(f"target/alpha-delivery-{args.scenario}-{args.seed}").resolve()
+    for binary in (node_bin, server_bin, bins / "fabricctl", spool_dump, server_dump):
+        if not binary.is_file():
+            raise SystemExit(f"missing built delivery artifact: {binary}")
+    scratch = Path(os.environ["FABRIC_SCRATCH_ROOT"]).resolve()
+    root = scratch / f"alpha-delivery-{args.scenario}-{args.seed}"
     if root.is_symlink():
         raise SystemExit("refusing symlinked root")
-    shutil.rmtree(root, ignore_errors=True)
+    if root.exists():
+        raise SystemExit(f"preserve existing delivery evidence: {root}")
     root.mkdir(parents=True)
     rng = random.Random(args.seed)
     make_certs(root)
@@ -177,7 +183,8 @@ def main() -> int:
     server_conf = root / "server.conf"
     server_conf.write_text(
         f"listen=127.0.0.1:{port}\ntls_cert={root}/server.pem\ntls_key={root}/server.key\n"
-        f"state_dir={root}/server-state\nadmin_token_file={root}/admin-token\njournal_bytes=268435456\n")
+        f"state_dir={root}/server-state\nadmin_token_file={root}/admin-token\njournal_bytes=268435456\n"
+        f"self_spindle_ca={root}/ca.pem\n")
     server = Server(server_bin, server_conf, port, root / "server.log")
     server.start()
     admin_conf = root / "admin.conf"
@@ -272,13 +279,26 @@ def main() -> int:
     for node in nodes:
         close_segment(node, "final stop")
     server_exit = server.stop()
+    # Observe the mandatory companion independently from its stopped Spool and
+    # actual delivery lines. Never manufacture sources from server recovery.
+    companion = NodeProc(args.nodes, root, node_bin,
+                         root / "server-state/self-spindle/node.conf")
+    companion.out = root / "server.log"
+    close_segment(companion, "companion final stop")
     dump = subprocess.run([str(server_dump), str(server_conf)], capture_output=True, text=True, timeout=120)
     if dump.returncode != 0:
         print("server_dump failed:", dump.stderr)
         return 1
     recovered = [json.loads(line) for line in dump.stdout.splitlines() if line]
-    if args.mutate == "drop-recovered" and recovered:
-        acked = [r for r in recovered]
+    if args.mutate == "drop-recovered":
+        committed = {}
+        for response in transcript:
+            if response.get("kind") == "ack":
+                stream = (response["node_id"], response["generation"])
+                committed[stream] = max(committed.get(stream, 0), response["committed_through"])
+        acked = [r for r in recovered if r["sequence"] <= committed.get((r["node_id"], r["generation"]), 0)]
+        if not acked:
+            raise RuntimeError("drop-recovered requires an independently witnessed ACK")
         recovered.remove(acked[len(acked) // 2])
     transcript.extend(recovered)
     transcript.append({"type": "end"})
@@ -294,6 +314,7 @@ def main() -> int:
     }
     passed = verdict.passed and all(code == 0 for code in exits) and server_exit == 0
     summary = {"scenario": args.scenario, "seed": args.seed, "nodes": args.nodes,
+               "mutate": args.mutate, "companion_observed": True,
                "passed": passed, "oracle_passed": verdict.passed,
                "violations": [v.__dict__ if hasattr(v, "__dict__") else v for v in verdict.violations][:10],
                **counts}

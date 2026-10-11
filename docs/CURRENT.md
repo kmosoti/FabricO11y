@@ -15,7 +15,7 @@ and remaining limits.
 | Delivery | Verified TLS, per-Spindle credentials, ordered Batches, deduplication and ACK after grouped two-sync journal commit. A quiet sender closes its group after 2 ms. |
 | Storage | Bounded external-merge sealing to Zstd Parquet, manifest publication before checkpoint/reclaim, retention by age and bytes. The normal writer uses aligned sorted groups and disk-backed completed pages; estimated input targets admit a single oversized row. No whole-server memory bound is established. |
 | Query | Logs, metric points/rates and spans across journal and Segments, snapshot pagination, freshness and completeness. Legacy queries default to Scan. Scoped console queries use Walk with storage-owned source maps and authorization filtering before row selection. Unpaginated rates remain outside the console API. |
-| Console and access | Leptos/WASM PWA with local passkeys, scoped human/workload/delegated-agent access, live queries and Spindle controls. New enrollment requests resident credentials with required user verification; independent resident-key browser acceptance remains pending. Finite native and browser checks are recorded below; full release acceptance remains open. |
+| Console and access | Leptos/WASM PWA with local passkeys, scoped human/workload/delegated-agent access, live queries and Spindle controls. Enrollment requires resident credentials and user verification; finite Chrome checks include independent credential inventory. The exact-package and physical-device release matrix remains open. |
 | Self-observation | Every production server CLI launches and supervises a dedicated local Spindle. Both emit bounded diagnostics through ordinary Spool/TLS/ACK delivery. Edge Spindles retain their configured destination. |
 | Packaging | Debian and RPM artifacts include the console, Apache-2.0 license and dependency notices, with static systemd services and a shared slice. Historical Debian acceptance passed seventeen baseline checks and three mutation controls; current exact-candidate lifecycle trials are in progress. |
 | Architecture | Pure `no_std` semantic core, effect ports, application transitions and adapters; executable layer and purity gates. |
@@ -61,6 +61,12 @@ allocation, cancellation and startup ownership leaks, oversized-line progress,
 exact integer counter rates and reserved diagnostic credentials. Their minimized
 failures and checks are linked from the matrix and experiment index.
 
+Verification fixtures now check finite pagination progress before complete
+drain, and interrupted registry checks retain partial output without a completion
+receipt. The [verifier protocol](experiments/formal/verifier-boundedness-protocol.md)
+preserves all existing answers, mutations, equivalence reasons and deadlines;
+the integration review records diagnostics and matching candidate outcomes.
+
 ## Completed readiness continuation
 
 The [readiness continuation](experiments/formal/readiness-continuation-results.md)
@@ -86,6 +92,14 @@ Apache-2.0 licensing, dependency notices and a
 has been published. The
 [release progress page](https://github.com/kmosoti/FabricO11y/wiki/Release-readiness-progress)
 links candidate results, failures and the remaining acceptance queue.
+The [release acceptance issue](https://github.com/kmosoti/FabricO11y/issues/32)
+tracks the finite B1–B13 queue separately from the broader product roadmap.
+Console integration is merged through `18f6b36`; security specification `cfe23e8`
+is also merged. The runtime hardening in
+[PR 31](https://github.com/kmosoti/FabricO11y/pull/31) adds bounded private-console
+peer admission, absolute OTLP read deadlines and symlink-free Linux log opening.
+Candidate-specific integration status and receipts are recorded in the
+[integration review](https://github.com/kmosoti/FabricO11y/wiki/Release-integration-review).
 
 Debian build 04 and RPM build 03 contain console build 09, with all 637 common
 payload files matching. The console fixes a real 200% zoom pagination overflow;
@@ -127,13 +141,31 @@ Those causal diagnostics retain their exact scope; standalone resident-key
 acceptance is still pending. The repaired Chrome fixture also needs its full
 cursor-expiry, recovery and installed-PWA lifecycle run on the successor package.
 
-[Hosted CI 38072930139](https://github.com/kmosoti/FabricO11y/actions/runs/38072930139)
-at `8597c42` passed all 20 enabled fast checks, whole-workspace dependency policy,
-WASM/build/contrast checks, Firefox shell checks, 139 actual Chrome assertions,
-the API-cache negative control and packaging checks. A fresh CI run on the
-resident-enrollment change is in progress. CI does not replace the longer
-exact-package browser or service campaigns. Bun CI/hooks remain disabled;
-documentation checks run manually.
+The October 11 closeout repairs peer-cadence browser failures, mounted Cargo
+artifact lookup, tool setup, shared mutation-worker compiler outputs and stale
+negative controls. Benign console actions use a registered 550 ms schedule;
+a separate unpaced burst must be rejected and recover after refill. Literal
+regressions cover integer/double boundaries, promoted credential bindings,
+query ties, overlapping sources and budget cuts. All ordinary property checks,
+independent Python oracles and invariant expectations remain in force.
+
+The hosted `eb5b096` candidate passed fast and focused security workflows and
+all ten extended commands, but final receipt completeness failed after fuzzing
+rewrote its stale dependency lock. The lock now matches the current server graph;
+fuzz trials require locked resolution and unchanged lock bytes. Final receipt
+validation also checks the live worktree. Failed, interrupted and contaminated
+runs remain historical. The wiki records matching workflow outcomes and exact
+candidate identities. Repository CI does not replace packaged service or device
+acceptance. Bun CI/hooks remain disabled; documentation checks run manually.
+
+The local `851d50b` delivery gate exited 0: all eight registered trials passed
+the unchanged independent oracle and TLC with companion-inclusive observations;
+the strict loss control rejected an acknowledged missing record. It exercises
+the explicit legacy administration adapter, so production console access remains
+the separate native browser/security gate. The finite Chrome trial completed 144
+assertions on debug binaries; neither trial qualifies successor packages or
+physical devices. The integration review retains commands, candidate identities,
+failures and cleanup observations.
 
 The [research wiki](https://github.com/kmosoti/FabricO11y/wiki) owns research and
 result reports. Product/operator documentation, architecture, registered protocols
