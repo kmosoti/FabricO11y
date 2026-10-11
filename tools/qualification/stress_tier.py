@@ -106,6 +106,7 @@ def trial():
     port = free_port()
     admin_token = hashlib.sha256(f"admin:{args.seed}".encode()).hexdigest()
     (root / "admin-token").write_text(admin_token + "\n")
+    (root / "admin-token").chmod(0o600)
     server_conf = root / "server.conf"
     server_conf.write_text(
         f"listen=127.0.0.1:{port}\ntls_cert={root}/server.pem\ntls_key={root}/server.key\n"
@@ -125,6 +126,7 @@ def trial():
             time.sleep(0.1)
     tokens = [admin.call("POST", body={"name": f"sim{i:04d}"})["token"] for i in range(IDENTITIES)]
     (root / "tokens").write_text("\n".join(tokens) + "\n")
+    (root / "tokens").chmod(0o600)
     # Identities used only to probe rejection; half are revoked before use.
     probes = [admin.call("POST", body={"name": f"probe{i}"})["token"] for i in range(10)]
     for i in range(5):

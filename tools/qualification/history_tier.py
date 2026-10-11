@@ -70,6 +70,7 @@ def trial():
     port = free_port()
     admin_token = hashlib.sha256(f"admin:{args.seed}".encode()).hexdigest()
     (root / "admin-token").write_text(admin_token + "\n")
+    (root / "admin-token").chmod(0o600)
     file_bytes = 64 * 1024 * 1024 if args.mode == "segment" else 4 * 1024 * 1024 * 1024
     server_conf = root / "server.conf"
     server_conf.write_text(
@@ -91,6 +92,7 @@ def trial():
             time.sleep(0.1)
     tokens = [admin.call("POST", body={"name": f"sim{i:04d}"})["token"] for i in range(IDENTITIES)]
     (root / "tokens").write_text("\n".join(tokens) + "\n")
+    (root / "tokens").chmod(0o600)
     query_url = AdminClient(port, root / "ca.pem", admin_token)
     query_url.base = f"https://127.0.0.1:{port}/v1/admin/query"
 

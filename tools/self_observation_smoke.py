@@ -89,6 +89,7 @@ class Trial:
             sock.bind(('127.0.0.1', 0))
             self.port = sock.getsockname()[1]
         (self.work/'admin').write_text(self.admin)
+        (self.work/'admin').chmod(0o600)
         self.conf = self.work/'server.conf'
         self.conf.write_text(f'listen=127.0.0.1:{self.port}\ntls_cert={self.work}/server.pem\ntls_key={self.work}/server.key\nstate_dir={self.work}/state\nadmin_token_file={self.work}/admin\njournal_bytes=8388608\njournal_file_bytes=1048576\nretention_s=86400\nretention_bytes=8388608\nseal_workers=1\nself_spindle_ca={self.work}/ca.pem\n')
         self.ctx = ssl.create_default_context(cafile=str(self.work/'ca.pem'))

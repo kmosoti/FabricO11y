@@ -32,6 +32,7 @@ use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{BufWriter, Read, Write};
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -340,7 +341,13 @@ fn run(args: Args) -> std::io::Result<()> {
     let mut identities = Vec::new();
     for (index, line) in text.lines().filter(|l| !l.trim().is_empty()).enumerate() {
         let token_file = args.out.join(format!("token-{index}"));
-        std::fs::write(&token_file, format!("{}\n", line.trim()))?;
+        File::options()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&token_file)?
+            .write_all(format!("{}\n", line.trim()).as_bytes())?;
         let target = ServerTarget {
             url: args.url.clone(),
             ca: args.ca.clone(),
