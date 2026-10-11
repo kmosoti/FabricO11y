@@ -83,8 +83,8 @@
       "contract": "DEL-5 binding holds within one commit group",
       "incorrect_behavior": "ignore bindings staged earlier in the same group",
       "file": "crates/fabric-core/src/delivery.rs",
-      "find": "                    .any(|(c, s)| *c != credential && *s == spindle),",
-      "replace": "                    .any(|(c, s)| *c != credential && *s == spindle && false),",
+      "find": ".or_else(|| self.secondary.spindle(spindle));",
+      "replace": ".or_else(|| None);",
       "command": [
         "cargo",
         "test",
@@ -155,8 +155,8 @@
       "contract": "CTRL-1 an invalid desired configuration does not become active",
       "incorrect_behavior": "activate a remote configuration that fails local validation",
       "file": "src/spindle/runtime.rs",
-      "find": "    config.interval_s = view.metric_interval_s;\n    config.validate()?;",
-      "replace": "    config.interval_s = view.metric_interval_s;\n    let _ = config.validate();",
+      "find": "    with_local_logs(config, local_logs)\n",
+      "replace": "    config.logs.extend_from_slice(local_logs);\n    config.logs.sort();\n    config.logs.dedup();\n    Ok(config)\n",
       "command": [
         "cargo",
         "test",
@@ -324,8 +324,8 @@
       "contract": "DEL-5 bindings made earlier in a commit group bind later Batches of the same group",
       "incorrect_behavior": "ignore a Spindle bound to another credential earlier in the same group",
       "file": "crates/fabric-core/src/delivery.rs",
-      "find": ".any(|(c, s)| *c != credential && *s == spindle)",
-      "replace": ".any(|(c, s)| false && *c != credential && *s == spindle)",
+      "find": ".or_else(|| self.secondary.spindle(spindle));",
+      "replace": ".or_else(|| None);",
       "command": [
         "cargo",
         "test",
@@ -398,7 +398,9 @@
       "replace": "Some(last.wrapping_add(1))",
       "command": [
         "bash",
-        "formal/kani/check.sh"
+        "formal/kani/check.sh",
+        "--harness",
+        "proofs::next_sequence_is_one_more_or_none_at_the_end"
       ],
       "expect_failing": "proofs::next_sequence_is_one_more_or_none_at_the_end"
     },
@@ -411,7 +413,9 @@
       "replace": "Some(c) if true || c.digest == incoming.digest =>",
       "command": [
         "bash",
-        "formal/kani/check.sh"
+        "formal/kani/check.sh",
+        "--harness",
+        "proofs::delivery_decisions_follow_the_table"
       ],
       "expect_failing": "proofs::delivery_decisions_follow_the_table"
     },
@@ -424,7 +428,9 @@
       "replace": "let mut total: u128 = u128::from(segments.iter().fold(0_u64, |a, s| a.saturating_add(s.bytes)));",
       "command": [
         "bash",
-        "formal/kani/check.sh"
+        "formal/kani/check.sh",
+        "--harness",
+        "proofs::retention_deletes_the_shortest_sufficient_prefix"
       ],
       "expect_failing": "proofs::retention_deletes_the_shortest_sufficient_prefix"
     },

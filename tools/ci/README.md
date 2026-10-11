@@ -69,6 +69,14 @@ progress assertions. Running every property binary after deliberately breaking
 cursor progress can trap the specification's client-drain helper forever before
 the named result is collected. The ordinary property gate still runs all binaries.
 
+Group-binding controls remove the production secondary reverse lookup, rather
+than editing the frozen legacy reference. Both application and property checkers
+include the deterministic third-credential intrusion witness. The remote-config
+control bypasses validation at the current `effective` adapter boundary while
+preserving source merging. Kani negative controls run their unchanged named
+harnesses; the separate `kani-core` gate still verifies all eleven positive
+harnesses. This removes unrelated repeated proof work from the 30-minute audit.
+
 The delivery fault fixture uses the explicit legacy administration adapter,
 its configured test CA for the mandatory companion, and independent stopped
 Spool observations for every producer including that companion. A server crash
