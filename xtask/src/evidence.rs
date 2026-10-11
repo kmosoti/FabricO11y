@@ -139,7 +139,7 @@ fn mutants_command(root: &Path, out: &Path) -> Command {
             "2",
             "-o",
         ])
-        .arg(&out)
+        .arg(out)
         .current_dir(root)
         // An absolute inherited target merges two different mutated trees into
         // one Cargo cache: a worker can then run the other worker's executable.
