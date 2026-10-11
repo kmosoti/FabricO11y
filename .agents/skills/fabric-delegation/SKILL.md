@@ -51,7 +51,7 @@ Where things live:
     { f = $3
       if (f ~ /^(vendor|packaging\/licenses)\// || f ~ /\.lock$/) c = "vendored"
       else if (f ~ /^docs\/experiments\//) c = "evidence"
-      else if (f ~ /(_tests?\.rs$|\/tests\/|\/test_[^\/]*$)/) c = "tests"
+      else if (f ~ /(_tests?\.rs$|(^|\/)tests\/|(^|\/)test_[^\/]*$)/) c = "tests"
       else if (f ~ /\.md$/ || f ~ /^docs\//) c = "docs"
       else c = "production"
       a[c] += $1; d[c] += $2 }
