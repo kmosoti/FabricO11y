@@ -43,6 +43,12 @@ function privateReference(root, { sourceText, target, hash, count = 1 } = {}) {
   }));
 }
 
+function archivedLink(root, { list = 'tools/old/probe.rs\n', source = 'docs/experiments/benchmarks/report.md' } = {}) {
+  const href = path.posix.relative(path.posix.dirname(source), 'tools/old/probe.rs');
+  put(root, source, `# Report\n\n[Probe](${href})\n`);
+  put(root, 'docs/experiments/archived-link-targets.txt', list);
+}
+
 function snapshot(base) {
   const entries = [];
   function visit(dir) {
@@ -115,6 +121,22 @@ const cases = [
       fs.symlinkSync(outside, path.join(root, 'docs/experiments/benchmarks/data/private-run'), 'dir');
       put(root, 'docs/README.md', '# Evidence\n\n[Outside](experiments/benchmarks/data/private-run/receipt.json)\n');
     },
+  },
+  {
+    name: 'listed archived target is accepted from a historical record', valid: true,
+    change({ root }) { archivedLink(root); },
+  },
+  {
+    name: 'missing target absent from the archived list is rejected', valid: false,
+    change({ root }) { archivedLink(root, { list: 'tools/old/other.rs\n' }); },
+  },
+  {
+    name: 'listed archived target is rejected from a current document', valid: false,
+    change({ root }) { archivedLink(root, { source: 'docs/guide.md' }); },
+  },
+  {
+    name: 'wildcard archived list entry is rejected', valid: false,
+    change({ root }) { archivedLink(root, { list: 'tools/old/*\n' }); },
   },
   {
     name: 'absolute file URI is rejected', valid: false,

@@ -90,6 +90,19 @@ function loadPrivateEvidence() {
   }
 }
 
+// Historical records keep their links into trees moved to the research archive.
+// Only an exact target listed in the committed file may be absent, and only from them.
+const archivedTargets = new Set();
+function loadArchivedTargets() {
+  const list = path.join(root, "docs", "experiments", "archived-link-targets.txt");
+  if (!fs.existsSync(list)) return;
+  for (const line of (readText(list) ?? "").split("\n")) {
+    if (line === "") continue;
+    if (canonicalRelative(line)) archivedTargets.add(line);
+    else report(list, `invalid archived link target ${JSON.stringify(line)}`);
+  }
+}
+
 function collectFiles(dir, files = []) {
   let entries;
   try {
@@ -308,6 +321,7 @@ async function checkMarkdown(file, source, filesByRealPath) {
     try {
       realTarget = fs.realpathSync(target);
     } catch {
+      if (displayPath(file).startsWith("docs/experiments/") && archivedTargets.has(displayPath(target))) continue;
       report(file, `local link target does not exist: ${JSON.stringify(link.href)}`);
       continue;
     }
@@ -434,6 +448,7 @@ function readText(file, diagnosticFile = file, description = "file") {
 
 async function main() {
   loadPrivateEvidence();
+  loadArchivedTargets();
   const files = collectFiles(root).sort((a, b) => a.localeCompare(b));
   const filesByRealPath = new Set();
   for (const file of files) {
