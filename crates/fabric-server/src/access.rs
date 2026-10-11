@@ -23,6 +23,8 @@ const PASSKEY_CAP: usize = 8;
 const SESSION_CAP: usize = 4096;
 const CEREMONY_CAP: usize = 1024;
 const AUDIT_CAP: usize = 4096;
+const DENIAL_CAP: usize = 256;
+const DENIED: &str = "denied";
 const CHALLENGE_TTL: u64 = 300;
 const FRESH_TTL: u64 = 300;
 const IDLE_TTL: u64 = 1800;
@@ -317,7 +319,7 @@ impl Access {
                     || !equal(&s.installation_epoch, &epoch)
                     || s.fake_credential_key.len() != 64
                     || s.readers.len() > READER_CAP
-                    || s.audit.len() > AUDIT_CAP
+                    || s.audit.len() > AUDIT_CAP + DENIAL_CAP
                     || (s.pending_control.is_some() && !offline_reconcile)
                     || s.last_time > now
                 {
@@ -460,9 +462,16 @@ impl Access {
             .checked_add(1)
             .ok_or_else(|| invalid("audit event sequence exhausted"))?;
         next.audit_next_id = event_id;
+        // Denials are capped apart from every other event, so a flood of them can never evict
+        // a login, credential or control record.
+        let denial = outcome == DENIED;
+        let same = |e: &AuditEvent| (e.outcome == DENIED) == denial;
+        let cap = if denial { DENIAL_CAP } else { AUDIT_CAP };
         next.audit.retain(|e| now.saturating_sub(e.time) <= 2592000);
-        if next.audit.len() >= AUDIT_CAP {
-            next.audit.remove(0);
+        if next.audit.iter().filter(|e| same(e)).count() >= cap
+            && let Some(oldest) = next.audit.iter().position(same)
+        {
+            next.audit.remove(oldest);
             next.audit_dropped = next.audit_dropped.saturating_add(1);
         }
         next.audit.push(AuditEvent {
@@ -1284,7 +1293,7 @@ impl Access {
             auth.map(|a| a.principal_id.as_str()),
             action,
             resource,
-            "denied",
+            DENIED,
         )?;
         self.publish(next)
     }
@@ -1636,6 +1645,28 @@ mod tests {
         assert_eq!(a.audit_dropped(), 2);
     }
     #[test]
+    fn denial_floods_never_evict_security_or_mutation_events() {
+        // Origin: anonymous 401/403 responses stored one denial per second in the shared
+        // ring, so about 68 minutes of junk evicted every real login. The stored flood is
+        // primed in memory to avoid 4,096 fsynced publications; the entry point adds more.
+        let dir = Scratch::new();
+        let mut a = Access::open(&dir.0, config(), 100).unwrap();
+        owner(&mut a, 100);
+        let mut next = a.state.clone();
+        Access::event(&mut next, 100, Some("owner"), "login", None, "success").unwrap();
+        for now in 101..=100 + AUDIT_CAP as u64 {
+            Access::event(&mut next, now, None, "console.request", None, DENIED).unwrap();
+        }
+        a.publish(next).unwrap();
+        for now in 5000..5003 {
+            a.record_denial(None, "console.request", None, now).unwrap();
+        }
+        let kept = a.state.audit.iter().filter(|e| e.outcome == DENIED).count();
+        assert!(a.state.audit.iter().any(|e| e.action == "login"));
+        assert_eq!(kept, DENIAL_CAP);
+        assert_eq!(a.audit_dropped(), (AUDIT_CAP + 3 - DENIAL_CAP) as u64);
+    }
+    #[test]
     fn owner_recovery_rolls_forward_at_every_durable_boundary() {
         // Origin: adversarial review found a permanently mismatched epoch after access.json
         // publication. Contract: interrupted owner recovery must never resurrect old authority.
@@ -1790,6 +1821,74 @@ mod tests {
         assert!(a.authenticate_session(&fresh.session_token, 400).is_err());
     }
     #[test]
+    fn sessions_expire_at_the_idle_and_absolute_limits() {
+        let dir = Scratch::new();
+        let mut a = Access::open(&dir.0, config(), 100).unwrap();
+        let just_before = owner(&mut a, 100);
+        let [at_idle, active] = [(); 2].map(|()| a.issue_session(100).unwrap());
+        let live = |a: &mut Access, s: &SessionIssued, now| {
+            a.authenticate_session(&s.session_token, now).is_ok()
+        };
+        assert!(live(&mut a, &active, 1000));
+        assert!(live(&mut a, &just_before, 100 + IDLE_TTL - 1));
+        assert!(!live(&mut a, &at_idle, 100 + IDLE_TTL));
+        // Activity inside every idle window cannot outlive the absolute limit.
+        for now in (2000..=28000).step_by(1000) {
+            assert!(live(&mut a, &active, now));
+        }
+        assert!(live(&mut a, &active, 100 + SESSION_TTL - 1));
+        assert!(!live(&mut a, &active, 100 + SESSION_TTL));
+    }
+    #[test]
+    fn signed_assertions_with_wrong_origin_rp_id_or_missing_uv_are_rejected() {
+        use rustls::pki_types::PrivatePkcs8KeyDer;
+        use serde_json::json;
+        // Fixed test-only P-256 key (PKCS#8, base64url); it protects nothing.
+        let der: Base64UrlSafeData = serde_json::from_value(json!("MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg1KKH3sLEPxi5G9ctypVguLk0134hkPDI5uVC-pRnShKhRANCAASHiddDl9g6QX4YLG0PPGPx05dQexuxnapZlB40qQaOMdtAfj5KS-kMUH5lIh9o1pHGJGK4K7xWpTGcqkmlLnsh")).unwrap();
+        let signer = rustls::crypto::ring::sign::any_ecdsa_type(
+            &PrivatePkcs8KeyDer::from(der.to_vec()).into(),
+        )
+        .unwrap()
+        .choose_scheme(&[rustls::SignatureScheme::ECDSA_NISTP256_SHA256])
+        .unwrap();
+        let (x, y) = der[der.len() - 64..].split_at(32);
+        let id = Base64UrlSafeData::from([7u8; 16]);
+        let key: Passkey = serde_json::from_value(json!({"cred":{
+            "cred_id":id,"cred":{"type_":"ES256","key":{"EC_EC2":{"curve":"SECP256R1","x":Base64UrlSafeData::from(x),"y":Base64UrlSafeData::from(y)}}},
+            "counter":1,"transports":null,"user_verified":true,"backup_eligible":false,"backup_state":false,
+            "registration_policy":"required","extensions":{},"attestation":{"data":"None","metadata":"None"},"attestation_format":"none"
+        }})).unwrap();
+        let dir = Scratch::new();
+        let mut a = Access::open(&dir.0, config(), 100).unwrap();
+        let session = owner(&mut a, 100);
+        a.state.owner.as_mut().unwrap().passkeys = vec![key];
+        // Each signed case differs from the accepted one (last) in exactly one field.
+        for (origin, rp_id, flags, accepted) in [
+            ("https://evil.example", "fabric.example", 0x05, false),
+            (ORIGIN, "evil.example", 0x05, false),
+            (ORIGIN, "fabric.example", 0x01, false),
+            (ORIGIN, "fabric.example", 0x05, true),
+        ] {
+            let start = a.start_login(&session.principal_id, 100).unwrap();
+            let client = json!({"type":"webauthn.get","origin":origin,
+                "challenge":start.public_key["publicKey"]["challenge"]});
+            let client = serde_json::to_vec(&client).unwrap();
+            let mut data = Sha256::digest(rp_id).to_vec();
+            data.extend_from_slice(&[flags, 0, 0, 0, 2]);
+            let signed = [data.as_slice(), &Sha256::digest(&client)].concat();
+            let response: PublicKeyCredential = serde_json::from_value(json!({
+                "id":id,"rawId":id,"type":"public-key","response":{
+                    "authenticatorData":Base64UrlSafeData::from(data),
+                    "clientDataJSON":Base64UrlSafeData::from(client),
+                    "signature":Base64UrlSafeData::from(signer.sign(&signed).unwrap()),
+                    "userHandle":null}}))
+            .unwrap();
+            let outcome = a.finish_login(&start.ceremony_id, &response, 100);
+            assert_eq!(outcome.is_ok(), accepted, "{origin} {rp_id} {flags:#x}");
+        }
+        assert_eq!(a.sessions.len(), 2);
+    }
+    #[test]
     fn concurrent_counter_snapshot_cannot_authorize_after_durable_counter_advance() {
         // Origin: maintained library authentication state captures counters at
         // start; trace start(A,N=1), start(B,N=1), finish(B,N=3), finish(A,N=2).
@@ -1879,7 +1978,7 @@ mod tests {
         let dir = Scratch::new();
         let mut a = Access::open(&dir.0, config(), 100).unwrap();
         for _ in 0..(AUDIT_CAP + 2) {
-            Access::event(&mut a.state, 100, None, "test", None, "denied").unwrap();
+            Access::event(&mut a.state, 100, None, "test", None, "success").unwrap();
         }
         assert_eq!(a.state.audit.len(), AUDIT_CAP);
         assert_eq!(a.audit_dropped(), 2);
