@@ -86,6 +86,11 @@ Apache-2.0 licensing, dependency notices and a
 has been published. The
 [release progress page](https://github.com/kmosoti/FabricO11y/wiki/Release-readiness-progress)
 links candidate results, failures and the remaining acceptance queue.
+The [release acceptance issue](https://github.com/kmosoti/FabricO11y/issues/32)
+tracks the finite B1–B13 queue separately from the broader product roadmap.
+Console integration is merged through `18f6b36`; security specification `cfe23e8`
+is also merged. The runtime security work remains in
+[PR 31](https://github.com/kmosoti/FabricO11y/pull/31) pending full verification.
 
 Debian build 04 and RPM build 03 contain console build 09, with all 637 common
 payload files matching. The console fixes a real 200% zoom pagination overflow;
@@ -130,8 +135,16 @@ cursor-expiry, recovery and installed-PWA lifecycle run on the successor package
 [Hosted CI 38072930139](https://github.com/kmosoti/FabricO11y/actions/runs/38072930139)
 at `8597c42` passed all 20 enabled fast checks, whole-workspace dependency policy,
 WASM/build/contrast checks, Firefox shell checks, 139 actual Chrome assertions,
-the API-cache negative control and packaging checks. A fresh CI run on the
-resident-enrollment change is in progress. CI does not replace the longer
+the API-cache negative control and packaging checks. The resident-enrollment
+successor's fast CI passed, while its extended run failed during Kani tool setup.
+PR 31 repairs that setup; on `2c1ceb2`, focused security and the fast registry
+passed, but the native browser workflow failed with HTTP 429. Extended mutation
+commands were interrupted at 30 minutes and the delivery harness looked for
+binaries outside the mounted Cargo target. These failures remain recorded;
+full green verification is not established. Prospective browser fixtures now
+separate 550 ms benign action/probe pacing from an unpaced burst that must be
+rejected and recover after refill. No server limit or authorization assertion
+is relaxed. CI does not replace the longer
 exact-package browser or service campaigns. Bun CI/hooks remain disabled;
 documentation checks run manually.
 

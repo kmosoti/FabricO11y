@@ -46,6 +46,12 @@ Fast/focused and extended jobs use separate cache families; compiler, manifest,
 lockfile and relevant environment inputs remain part of the action's key.
 A miss is a normal cold build, not a reason to skip tests or use stale evidence.
 
+Mutation subprocesses enable incremental compilation in their owned source
+copies, where repeated one-file edits otherwise discard compiler work. The
+canonical commands, all baseline/negative controls and equivalence expectations
+remain unchanged. This is a candidate timeout repair, not a measured speedup or
+evidence that a previously interrupted audit passed.
+
 The first successful run populates the applicable cache. Savings must be
 measured on subsequent matching warm runs; no speedup is claimed in advance.
 
