@@ -169,7 +169,7 @@ fn fixture_storage(sealed: bool) -> Fixture {
         tls_cert: root.join("cert"),
         tls_key: root.join("key"),
         state_dir: root.clone(),
-        admin_token_file: root.join("admin"),
+        admin_token_file: None,
         journal_bytes: 16 * 1024 * 1024,
         journal_file_bytes: 65536,
         retention_s: 86400,

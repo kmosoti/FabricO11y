@@ -1,6 +1,6 @@
 //! Production process composition. No wire or durable Batch path lives here.
 use fabric_server::{
-    config::{Config, SpindleSettings},
+    config::{Config, SpindleSettings, read_secret},
     control::{Control, DesiredConfig, SELF_SPINDLE_NAME},
 };
 use std::fs::{self, DirBuilder, File, OpenOptions};
@@ -17,11 +17,11 @@ fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
 }
 
-fn private_file(path: &Path, create: bool) -> io::Result<File> {
+fn private_file(path: &Path) -> io::Result<File> {
     let file = OpenOptions::new()
         .read(true)
         .write(true)
-        .create(create)
+        .create(true)
         .mode(0o600)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)?;
@@ -41,7 +41,7 @@ fn private_file(path: &Path, create: bool) -> io::Result<File> {
 
 fn atomic_private(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let staged = path.with_extension("new");
-    let mut file = private_file(&staged, true)?;
+    let mut file = private_file(&staged)?;
     file.set_len(0)?;
     file.write_all(bytes)?;
     file.sync_all()?;
@@ -67,7 +67,7 @@ impl LocalSpindle {
         server_log: PathBuf,
     ) -> io::Result<Self> {
         fs::create_dir_all(&config.state_dir)?;
-        let lease = private_file(&config.state_dir.join("server-process.lock"), true)?;
+        let lease = private_file(&config.state_dir.join("server-process.lock"))?;
         lease.try_lock().map_err(|e| {
             io::Error::other(format!(
                 "server state already owned or cannot be locked: {e}"
@@ -100,12 +100,8 @@ impl LocalSpindle {
         }
         let mut control = Control::open(&config.state_dir)?;
         let token_path = directory.join("token");
-        let token = match private_file(&token_path, false) {
-            Ok(file) => {
-                let mut value = String::new();
-                file.take(257).read_to_string(&mut value)?;
-                value
-            }
+        let token = match read_secret(&token_path) {
+            Ok(value) => value,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 if control
                     .inventory()

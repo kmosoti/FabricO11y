@@ -2,6 +2,8 @@
 //! independent Python oracle, crash recovery of sealing, retention, stream
 //! checkpoints and incomplete answers.
 
+mod common;
+
 use fabric_o11y::spindle::sender::{Delivery, Sender, ServerTarget, agent};
 use fabric_o11y::spindle::spool::{Batch, Spool};
 use fabric_server::config::Config;
@@ -132,7 +134,7 @@ fn config(root: &Path, file_bytes: u64, retention_bytes: u64) -> Config {
         tls_cert: root.join("server.pem"),
         tls_key: root.join("server.key"),
         state_dir: root.join("server-state"),
-        admin_token_file: root.join("admin-token"),
+        admin_token_file: Some(root.join("admin-token")),
         console_dir: None,
         access_origin: None,
         access_rp_id: None,
@@ -190,7 +192,7 @@ fn admin_token() -> String {
 
 /// Enroll `names` before the server starts; returns token file paths.
 fn enroll(scratch: &Scratch, names: &[&str]) -> Vec<PathBuf> {
-    fs::write(scratch.path("admin-token"), format!("{}\n", admin_token())).unwrap();
+    common::write_secret(scratch.path("admin-token"), format!("{}\n", admin_token()));
     let mut control = Control::open(&scratch.path("server-state")).unwrap();
     names
         .iter()
@@ -205,7 +207,7 @@ fn enroll(scratch: &Scratch, names: &[&str]) -> Vec<PathBuf> {
                 )
                 .unwrap();
             let path = scratch.path(&format!("token-{name}"));
-            fs::write(&path, format!("{token}\n")).unwrap();
+            common::write_secret(&path, format!("{token}\n"));
             path
         })
         .collect()

@@ -1,10 +1,11 @@
 mod companion;
 
 use fabric_adapter_linux::operational_log::OperationalLog;
+use fabric_ports::Clock;
 use fabric_server::{
     config::{Config, SpindleSettings},
     serve,
-    store::CommitMode,
+    store::{CommitMode, SystemClock},
 };
 use std::io;
 use std::process::ExitCode;
@@ -201,6 +202,10 @@ fn serving_args(args: &[String]) -> Option<(&str, &str, bool)> {
     ))
 }
 
+fn now_s() -> u64 {
+    SystemClock.now_unix_nano() / 1_000_000_000
+}
+
 /// Recovery is a local owner operation, serialized against the same lease held
 /// by every production server and with a bounded private pre-change backup.
 fn recover_access(path: &str, principal: &str) -> io::Result<()> {
@@ -230,13 +235,10 @@ fn recover_access(path: &str, principal: &str) -> io::Result<()> {
         audience: config.access_origin.clone().unwrap(),
     };
     if principal.is_empty() {
-        let time = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_secs());
         fabric_server::access::Access::renew_bootstrap_offline(
             &config.state_dir.join("access"),
             access_config,
-            time,
+            now_s(),
         )?;
         eprintln!(
             "fabric-server: first-owner bootstrap renewed; read protected access/access-bootstrap.secret locally and enroll within ten minutes"
@@ -291,15 +293,12 @@ fn recover_access(path: &str, principal: &str) -> io::Result<()> {
     File::open(target.join("access"))?.sync_all()?;
     File::open(&target)?.sync_all()?;
     File::open(&config.state_dir)?.sync_all()?;
-    let time = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs());
     fabric_server::access::Access::recover_offline_reconciled(
         &config.state_dir.join("access"),
         access_config,
         principal,
         &control_hash,
-        time,
+        now_s(),
     )?;
     eprintln!(
         "fabric-server: owner recovery prepared; read the protected access/access-bootstrap.secret file locally and enroll within ten minutes; prior workload credentials are invalidated"
@@ -381,11 +380,13 @@ mod shutdown_tests {
             "{}",
             String::from_utf8_lossy(&certificate.stderr)
         );
+        let token = fixture.0.join("admin-token");
         fs::write(
-            fixture.0.join("admin-token"),
+            &token,
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
         )
         .unwrap();
+        fs::set_permissions(&token, fs::Permissions::from_mode(0o600)).unwrap();
         let executable = fixture.0.join("controlled-spindle");
         // One native process, with handlers installed before publishing readiness.
         // Its only effect is exercising supervisor ownership and shutdown status.
@@ -398,7 +399,7 @@ mod shutdown_tests {
             tls_cert: fixture.0.join("server.pem"),
             tls_key: fixture.0.join("server.key"),
             state_dir: fixture.0.join("state"),
-            admin_token_file: fixture.0.join("admin-token"),
+            admin_token_file: Some(token),
             console_dir: None,
             access_origin: None,
             access_rp_id: None,

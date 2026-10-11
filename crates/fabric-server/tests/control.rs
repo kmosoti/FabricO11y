@@ -1,6 +1,8 @@
 //! Central control end to end: admin API, node polling, pause, revoke,
 //! validation before activation and last-valid configuration offline.
 
+mod common;
+
 use fabric_o11y::spindle::host::Paths;
 use fabric_o11y::spindle::runtime::{Config as NodeConfig, Spindle};
 use fabric_o11y::spindle::sender::{ServerTarget, agent};
@@ -131,7 +133,7 @@ fn start(root: &Path) -> Running {
         tls_cert: root.join("server.pem"),
         tls_key: root.join("server.key"),
         state_dir: root.join("server-state"),
-        admin_token_file: root.join("admin-token"),
+        admin_token_file: Some(root.join("admin-token")),
         console_dir: None,
         access_origin: None,
         access_rp_id: None,
@@ -261,7 +263,7 @@ fn admin_api_configures_pauses_and_revokes_a_polling_node() {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect();
-    fs::write(scratch.path("admin-token"), format!("{admin_token}\n")).unwrap();
+    common::write_secret(scratch.path("admin-token"), format!("{admin_token}\n"));
     fs::write(scratch.path("app.log"), "one\n").unwrap();
     let server = start(&scratch.0);
     let admin = Admin::new(&scratch.0, server.addr, &admin_token);
@@ -298,7 +300,7 @@ fn admin_api_configures_pauses_and_revokes_a_polling_node() {
             .0,
         401
     );
-    fs::write(scratch.path("token"), format!("{token}\n")).unwrap();
+    common::write_secret(scratch.path("token"), format!("{token}\n"));
 
     let base = NodeConfig {
         spool: scratch.path("spool"),

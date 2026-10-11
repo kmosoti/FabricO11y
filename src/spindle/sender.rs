@@ -6,6 +6,7 @@
 //! ([ADR-0013](../../docs/decisions/ADR-0013-deliver-batches-in-order-with-bounded-dedup.md)).
 
 use std::io::{self, Read};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -75,24 +76,44 @@ pub struct RemoteView {
     pub metric_interval_s: u64,
 }
 
-fn read_bounded(path: &Path, cap: u64) -> io::Result<Vec<u8>> {
+fn read_bounded(source: impl Read, name: &Path, cap: u64) -> io::Result<Vec<u8>> {
     let mut bytes = Vec::new();
-    std::fs::File::open(path)?
-        .take(cap + 1)
-        .read_to_end(&mut bytes)?;
+    source.take(cap + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > cap {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            format!("{} exceeds its size cap", path.display()),
+            format!("{} exceeds its size cap", name.display()),
         ));
     }
     Ok(bytes)
 }
 
+/// Open a credential file that is a regular file, is not reached through a
+/// symlink and is readable only by its owner, or also by its group when root
+/// owns it (the packaged `0640 root:fabricolly`).
+fn open_secret(path: &Path) -> io::Result<std::fs::File> {
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    let meta = file.metadata()?;
+    let root_group = meta.uid() == 0 && meta.mode() & 0o037 == 0;
+    if !meta.is_file() || (meta.mode() & 0o077 != 0 && !root_group) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!(
+                "{} must be a regular file readable only by its owner (0600) or, if root-owned, its group (0640)",
+                path.display()
+            ),
+        ));
+    }
+    Ok(file)
+}
+
 /// An HTTPS client that trusts only the CA certificates in `ca`, with the
 /// ring provider and a bounded request time. Statuses are returned, not errors.
 pub fn agent(ca: &Path) -> io::Result<ureq::Agent> {
-    let pem = read_bounded(ca, MAX_CA_BYTES)?;
+    let pem = read_bounded(std::fs::File::open(ca)?, ca, MAX_CA_BYTES)?;
     let ca = Certificate::from_pem(&pem)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e.to_string()))?;
     let tls = TlsConfig::builder()
@@ -107,9 +128,9 @@ pub fn agent(ca: &Path) -> io::Result<ureq::Agent> {
         .new_agent())
 }
 
-/// Read a bearer token file: trimmed printable ASCII.
+/// Read a bearer token file: trimmed printable ASCII, as `open_secret` allows.
 pub fn read_token(path: &Path) -> io::Result<String> {
-    let token = String::from_utf8(read_bounded(path, MAX_TOKEN_BYTES)?)
+    let token = String::from_utf8(read_bounded(open_secret(path)?, path, MAX_TOKEN_BYTES)?)
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "token is not UTF-8"))?;
     let token = token.trim().to_owned();
     if token.is_empty() || !token.bytes().all(|b| b.is_ascii_graphic()) {

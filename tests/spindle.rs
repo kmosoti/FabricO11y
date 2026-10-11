@@ -1,5 +1,6 @@
 use fabric_o11y::spindle::host::Paths;
 use fabric_o11y::spindle::runtime::{Config, Spindle, inspect};
+use fabric_o11y::spindle::sender::read_token;
 use fabric_o11y::spindle::spool::{Batch, Spool};
 use opentelemetry_proto::tonic::collector::logs::v1::ExportLogsServiceRequest;
 use opentelemetry_proto::tonic::collector::metrics::v1::ExportMetricsServiceRequest;
@@ -8,7 +9,7 @@ use opentelemetry_proto::tonic::metrics::v1::{AggregationTemporality, metric, nu
 use prost::Message;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -1175,4 +1176,32 @@ fn optional_timing_follows_durable_commit_and_is_bounded() {
     assert_eq!(events.len(), 256);
     assert_eq!(dropped, 44);
     assert!(node.take_timing_events().0.is_empty());
+}
+
+/// Origin: only the server companion and `fabricctl access` refused a group- or
+/// world-readable or symlinked token; the Spindle's reader checked nothing.
+/// Root ownership alone may add group read (the packaged 0640 root:group).
+#[test]
+fn token_files_must_be_private_regular_and_not_symlinks() {
+    let scratch = Scratch::new();
+    let path = scratch.path("token");
+    fs::write(&path, "secret-token\n").unwrap();
+    let mode = |mode| fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+    for refused in [0o644, 0o604, 0o660, 0o666] {
+        mode(refused);
+        assert!(read_token(&path).is_err(), "{refused:o}");
+    }
+    for accepted in [0o600, 0o400] {
+        mode(accepted);
+        assert_eq!(read_token(&path).unwrap(), "secret-token", "{accepted:o}");
+    }
+    mode(0o640);
+    let root_owned = fs::metadata(&path).unwrap().uid() == 0;
+    assert_eq!(read_token(&path).is_ok(), root_owned);
+    mode(0o600);
+    let link = scratch.path("link");
+    std::os::unix::fs::symlink(&path, &link).unwrap();
+    assert!(read_token(&link).is_err());
+    fs::write(&path, "x".repeat(300)).unwrap();
+    assert!(read_token(&path).is_err());
 }

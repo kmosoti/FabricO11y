@@ -35,7 +35,9 @@ pub async fn serve(
     install_crypto_provider();
     std::fs::create_dir_all(&config.state_dir)?;
     let admin = if config.access_origin.is_none() {
-        Some(config::load_admin_token(&config.admin_token_file)?)
+        Some(config::load_admin_token(
+            config.admin_token_file.as_deref(),
+        )?)
     } else {
         None
     };
