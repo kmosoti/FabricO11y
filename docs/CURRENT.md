@@ -61,6 +61,12 @@ allocation, cancellation and startup ownership leaks, oversized-line progress,
 exact integer counter rates and reserved diagnostic credentials. Their minimized
 failures and checks are linked from the matrix and experiment index.
 
+Verification fixtures now check finite pagination progress before complete
+drain, and interrupted registry checks retain partial output without a completion
+receipt. The [verifier protocol](experiments/formal/verifier-boundedness-protocol.md)
+preserves all existing answers, mutations, equivalence reasons and deadlines;
+the integration review records diagnostics and matching candidate outcomes.
+
 ## Completed readiness continuation
 
 The [readiness continuation](experiments/formal/readiness-continuation-results.md)

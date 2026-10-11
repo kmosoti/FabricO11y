@@ -6,6 +6,12 @@ those reports to the registered protocols and executable evidence kept here.
 Follow the [ownership policy](../documentation-policy.md#canonical-ownership);
 historical measurements retain their original revision and limitations.
 
+The [bounded verifier protocol](formal/verifier-boundedness-protocol.md) registers
+finite pagination witnesses and retained output under interruption. Its results
+are recorded in the [integration review](https://github.com/kmosoti/FabricO11y/wiki/Release-integration-review);
+the [agent execution review](https://github.com/kmosoti/FabricO11y/wiki/Agent-execution-review)
+separates observed churn from proposed Codex CLI improvements.
+
 The [wiki index](https://github.com/kmosoti/FabricO11y/wiki/Index) now contains
 151 migrated historical reports. The [migration manifest](../wiki-migration.json) records
 their source hashes and verified wiki commit: 145 repository bodies became

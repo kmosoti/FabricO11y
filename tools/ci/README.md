@@ -99,11 +99,22 @@ because fuzzing rewrote the stale lock. That run remains failed.
 ## Diagnostics and completeness
 
 `cargo xtask checks` prints and flushes the starting check ID and command,
-records `current-check.json`, and retains complete combined stdout/stderr as
+records `current-check.json`, and writes separate partial stdout/stderr files
+while the check runs. Old streams are truncated before publishing a new running
+identity. It retains complete combined stdout/stderr as
 `<check>.log` once that check finishes. The receipt names that log and hashes its
 exact bytes. A killed check leaves the running marker and has no new successful
-completion receipt. Output is still captured by `Command::output`; this change
-does not claim byte-by-byte live streaming or bounded capture memory.
+completion receipt. The completed log preserves stdout-then-stderr ordering;
+partial streams remain diagnostic evidence and never establish completion.
+The hosted artifact also keeps raw compiler-mutation outcomes and logs. Final
+aggregation still reads complete output into memory; no whole-verifier memory
+bound is claimed.
+
+Query-definition tests check strict cursor progress over finite keys before
+calling the original complete drain. A broken predicate is rejected before
+repeated pages can accumulate. Original positive assertions and the complete
+mutation/equivalence set remain. The scoped procedure is registered in the
+[verifier protocol](../../docs/experiments/formal/verifier-boundedness-protocol.md).
 
 `verify_receipts.py` requires every selected registry check, the checked-out
 commit, unchanged worktree, exact command/profile, exit zero, passed status and
