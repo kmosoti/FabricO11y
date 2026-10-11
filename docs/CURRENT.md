@@ -15,7 +15,7 @@ and remaining limits.
 | Delivery | Verified TLS, per-Spindle credentials, ordered Batches, deduplication and ACK after grouped two-sync journal commit. A quiet sender closes its group after 2 ms. |
 | Storage | Bounded external-merge sealing to Zstd Parquet, manifest publication before checkpoint/reclaim, retention by age and bytes. The normal writer uses aligned sorted groups and disk-backed completed pages; estimated input targets admit a single oversized row. No whole-server memory bound is established. |
 | Query | Logs, metric points/rates and spans across journal and Segments, snapshot pagination, freshness and completeness. Legacy queries default to Scan. Scoped console queries use Walk with storage-owned source maps and authorization filtering before row selection. Unpaginated rates remain outside the console API. |
-| Console and access | Leptos/WASM PWA with local passkeys, scoped human/workload/delegated-agent access, live queries and Spindle controls. New enrollment requests resident credentials with required user verification; independent resident-key browser acceptance remains pending. Finite native and browser checks are recorded below; full release acceptance remains open. |
+| Console and access | Leptos/WASM PWA with local passkeys, scoped human/workload/delegated-agent access, live queries and Spindle controls. Enrollment requires resident credentials and user verification; finite Chrome checks include independent credential inventory. The exact-package and physical-device release matrix remains open. |
 | Self-observation | Every production server CLI launches and supervises a dedicated local Spindle. Both emit bounded diagnostics through ordinary Spool/TLS/ACK delivery. Edge Spindles retain their configured destination. |
 | Packaging | Debian and RPM artifacts include the console, Apache-2.0 license and dependency notices, with static systemd services and a shared slice. Historical Debian acceptance passed seventeen baseline checks and three mutation controls; current exact-candidate lifecycle trials are in progress. |
 | Architecture | Pure `no_std` semantic core, effect ports, application transitions and adapters; executable layer and purity gates. |
@@ -140,13 +140,33 @@ successor's fast CI passed, while its extended run failed during Kani tool setup
 PR 31 repairs that setup; on `2c1ceb2`, focused security and the fast registry
 passed, but the native browser workflow failed with HTTP 429. Extended mutation
 commands were interrupted at 30 minutes and the delivery harness looked for
-binaries outside the mounted Cargo target. These failures remain recorded;
-full green verification is not established. Prospective browser fixtures now
+binaries outside the mounted Cargo target. These failures remain recorded.
+The successor `f56de16` passed its full fast workflow and focused security checks;
+its superseded extended run was canceled before known fixture failures recurred.
+Full green verification is not established. Prospective browser fixtures now
 separate 550 ms benign action/probe pacing from an unpaced burst that must be
 rejected and recover after refill. No server limit or authorization assertion
 is relaxed. CI does not replace the longer
 exact-package browser or service campaigns. Bun CI/hooks remain disabled;
 documentation checks run manually.
+
+The October 11 closeout found verification defects as well as fixture drift:
+parallel cargo-mutants copies inherited one absolute compiler-output directory,
+contaminating their results, and the pagination negative control stalled an
+unrelated client-drain property. The corrected worker isolation and targeted
+pagination checker retain all ordinary property checks and named expectations.
+Independent literal regressions cover integer/double boundaries, bindings added
+after index promotion, and query ties, overlaps and budget boundaries. Equivalent
+survivors remain separately reasoned in the verification policy.
+
+The local `851d50b` delivery gate exited 0: all eight registered trials passed
+the unchanged independent oracle and TLC with companion-inclusive observations;
+the strict loss control rejected an acknowledged missing record. It exercises
+the explicit legacy administration adapter, so production console access remains
+the separate native browser/security gate. The finite Chrome trial completed 144
+assertions on debug binaries; neither trial qualifies successor packages or
+physical devices. The [integration review](https://github.com/kmosoti/FabricO11y/wiki/Release-integration-review)
+retains commands, candidate identities, failures and cleanup observations.
 
 The [research wiki](https://github.com/kmosoti/FabricO11y/wiki) owns research and
 result reports. Product/operator documentation, architecture, registered protocols

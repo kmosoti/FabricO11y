@@ -20,7 +20,7 @@ real order, because a node sends only batches it has already committed.
 
 `--mutate drop-recovered` deletes one recovered record before grading; the
 oracle must then fail, which shows the pipeline can fail end to end.
-Disposable data lives under target/alpha-delivery-<scenario>-<seed>/ and is
+Disposable data lives under $FABRIC_SCRATCH_ROOT/alpha-delivery-<scenario>-<seed>/ and is
 removed after a pass unless --keep is given.
 """
 
