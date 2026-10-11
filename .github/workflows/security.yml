@@ -28,14 +28,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           fetch-depth: 0
       - name: Prepare disk storage and enforced cgroups
         run: bash tools/ci/prepare-resource-host.sh
       - name: Check CI scheduling and receipt contracts
         run: python3 -B tools/resource_group.py -- python3 -B tools/ci/test_ci_contracts.py
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           toolchain: 1.99.0
           components: rustfmt
@@ -62,7 +62,7 @@ jobs:
         run: python3 -B tools/resource_group.py -- python3 -B tools/ci/security_checks.py
       - name: Retain revision-bound results and formatter-only suggestions
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: security-regressions
           path: |

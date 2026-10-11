@@ -33,6 +33,19 @@ the final completeness check fail. The per-profile test verifies that every
 extended check is scheduled exactly once, so a new registry entry cannot be
 silently omitted.
 
+## Pinned actions and toolchains
+
+Every `uses:` reference names a full commit SHA with its tag in a trailing
+comment, so a moved or re-tagged upstream ref cannot change a job silently.
+Resolve a replacement with `git ls-remote https://github.com/OWNER/REPO
+refs/tags/TAG` and use the peeled `^{}` commit for an annotated tag. The
+`dtolnay/rust-toolchain` pin is the commit of its `stable` branch; the
+`toolchain: 1.99.0` input stays explicit because a SHA ref carries no channel.
+Extended verification installs the dated `nightly-2026-10-11` (rustc
+1.101.0-nightly, 2026-10-10) and links the name `nightly` to it, because
+`fuzz/smoke.sh` runs `cargo +nightly`. Advance the date deliberately and rerun
+the fuzz check.
+
 ## Dependency caching
 
 The Rust cache action is pinned to the reviewed v2.9.2 commit. Its workspace
