@@ -823,7 +823,10 @@ self.addEventListener("fetch",event=>{
         code,reader_status=bearer_api(credential,'/v1/console/status')
         check(code==200 and 'committed_group' in reader_status and reader_status['storage']['retention_bytes']>0,'reader status reports the committed group and effective storage policy')
         check(reader_page['freshness'].get('browser-edge')!=receipt['second_canary_freshness_ns'],'independently collected canary fixtures have distinct freshness observations')
-        all_logs_query=dict(read,contains='')
+        # Freshness is the source's newest retained log, not its newest row, and a Spindle
+        # also collects its own diagnostics every 15 s. The window must therefore cover
+        # every log retained when the query runs, not end where `read` was created.
+        all_logs_query=dict(read,contains='',to_ns=time.time_ns()+60_000_000_000)
         all_logs_code,all_logs=bearer_api(credential,'/v1/console/query','POST',all_logs_query)
         all_log_rows=list(all_logs['rows'])
         if all_logs['next_page']:
@@ -831,8 +834,9 @@ self.addEventListener("fetch",event=>{
             check(next_code==200 and next_logs['next_page'] is None,'bounded complete canary log witness spans at most two pages')
             all_log_rows.extend(next_logs['rows'])
         check(all_logs_code==200 and all_logs['freshness'].get('browser-edge')==max(row['observed_ns'] for row in all_log_rows),'log query freshness reflects log observations without later metric timestamp')
-        canary_code,canary_page=bearer_api(credential,'/v1/console/query','POST',dict(canary_query))
-        check(canary_code==200 and [row['body'] for row in canary_page['rows']]==[canary_b] and canary_page['freshness']['browser-canary-b']==receipt['second_canary_freshness_ns'],'reader reads the second independently produced source with its own freshness')
+        canary_code,canary_page=bearer_api(credential,'/v1/console/query','POST',dict(canary_query,contains='',to_ns=time.time_ns()+60_000_000_000))
+        canary_rows={row['body']:row for row in canary_page['rows']}
+        check(canary_code==200 and canary_page['next_page'] is None and canary_rows.get(canary_b,{}).get('observed_ns')==receipt['second_canary_observed_ns'] and canary_page['freshness']['browser-canary-b']==max(row['observed_ns'] for row in canary_page['rows']),'reader reads the second independently produced source with its own log freshness')
         metric_query={'kind':'metrics','node':'browser-edge','from_ns':read['from_ns'],'to_ns':read['to_ns'],'name':'system.cpu.time','limit':200,'page':None}
         metric_code,metric_page=bearer_api(credential,'/v1/console/query','POST',metric_query)
         check(metric_code==200 and len(metric_page['rows'])>0,'reader reads metric observations as well as logs')
