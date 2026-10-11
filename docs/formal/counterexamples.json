@@ -3,6 +3,42 @@
   "description": "Counterexamples kept as deterministic regression fixtures. `cargo xtask check-counterexamples` requires each reproducer test to exist in its file and each fix commit to exist. Removing an entry is a trust-boundary change.",
   "counterexamples": [
     {
+      "id": "CX-MUTATION-SHARED-TARGET",
+      "origin": "October 11 release integration review; retained contaminated audit and isolated rerun in the research wiki",
+      "defect": "Parallel mutated source copies reused one absolute Cargo target, allowing a worker to test an executable for another mutation",
+      "seed_or_trace": "cargo-mutants-opt1: tested counter deltas survived; per-worker logs named the same compiler output directory",
+      "contract": "ADR-0018 executable evidence must correspond to the proposed source",
+      "reproducer": {
+        "file": "xtask/src/evidence.rs",
+        "test": "inherited_absolute_target_cannot_join_parallel_mutation_trees"
+      },
+      "fix_commit": "705572f"
+    },
+    {
+      "id": "CX-MUTATION-MIXED-MIN-COVERAGE",
+      "origin": "isolated October 11 cargo-mutants audit",
+      "defect": "The existing tests did not reject lower-bound comparison mutations which turn an unchanged exact i64 minimum counter into a reset",
+      "seed_or_trace": "query.rs:146:15 < changed to == or <=; Int(i64::MIN) followed by its exact Double representation",
+      "contract": "HIST-6 unchanged uninterrupted counters produce zero rate",
+      "reproducer": {
+        "file": "crates/fabric-core/tests/mutation_regressions.rs",
+        "test": "exact_i64_min_mixed_counter_is_not_a_reset"
+      },
+      "fix_commit": "2d9a9e3"
+    },
+    {
+      "id": "CX-MUTATION-PROMOTED-BINDING-COVERAGE",
+      "origin": "isolated October 11 cargo-mutants audit",
+      "defect": "The existing tests did not reject a mutation dropping a newly added forward credential binding after index promotion",
+      "seed_or_trace": "delivery.rs:178:27 != changed to ==; 34 distinct credentials followed by rebinding and intrusion attempts",
+      "contract": "DEL-5 one credential binds to one Spindle in either direction",
+      "reproducer": {
+        "file": "crates/fabric-core/tests/mutation_regressions.rs",
+        "test": "bindings_added_after_index_promotion_still_forbid_rebinding"
+      },
+      "fix_commit": "2d9a9e3"
+    },
+    {
       "id": "CX-BTRFS-REBOOT-LOG-REPLAY",
       "origin": "Fedora 44 exact-package lifecycle continuation release-fedora44-lifecycle-continue-02, 2026-10-10",
       "defect": "Btrfs changed runtime st_dev from 51 to 32 across reboot; the old raw-device comparison reread three already committed lines at unchanged inode 2505 and source offsets",
