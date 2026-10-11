@@ -220,6 +220,56 @@ fn patched_forbidden_dependency_fails() {
 }
 
 #[test]
+fn external_crate_in_an_allowlist_restricted_layer_fails_for_normal_and_build() {
+    // `fake-tokio` is a local package named `tokio`, so resolution stays offline.
+    let tokio = r#"tokio = { path = "../fake-tokio" }"#;
+    for table in ["dependencies", "build-dependencies"] {
+        let fixture = Fixture::valid().dep("ports", table, tokio);
+        for options in [DECLARED, RESOLVED] {
+            let v = only(&fixture.layers(options), layers::EXTERNAL_DEPENDENCY);
+            assert_eq!(v.subject, "fx-ports (ports) -> tokio");
+        }
+    }
+    // Development dependencies and layers without an allowlist are not covered.
+    let dev = Fixture::valid().dep("ports", "dev-dependencies", tokio);
+    assert_eq!(dev.layers(DECLARED), vec![]);
+    let app = Fixture::valid().dep("app", "dependencies", tokio);
+    assert_eq!(app.layers(DECLARED), vec![]);
+}
+
+#[test]
+fn an_allowlisted_external_crate_passes_and_a_malformed_allowlist_cannot_run() {
+    let policy = std::fs::read_to_string(Fixture::valid().0.join("layers.json")).unwrap();
+    let tokio = r#"tokio = { path = "../fake-tokio" }"#;
+    let allowed = Fixture::valid()
+        .write(
+            "layers.json",
+            &policy.replace(
+                r#"external_allowlist": []"#,
+                r#"external_allowlist": ["tokio"]"#,
+            ),
+        )
+        .dep("ports", "dependencies", tokio);
+    assert_eq!(allowed.layers(DECLARED), vec![]);
+    // A key that cannot be read must not silently disable the guard.
+    let malformed = Fixture::valid().write(
+        "layers.json",
+        &policy.replace(
+            r#"external_allowlist": []"#,
+            r#"external_allowlist": "none""#,
+        ),
+    );
+    assert!(
+        check_layers(
+            &malformed.0.join("Cargo.toml"),
+            &malformed.0.join("layers.json"),
+            DECLARED
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn forbidden_edge_through_a_non_member_is_caught_only_with_resolution() {
     let fixture = Fixture::valid().dep(
         "app",
