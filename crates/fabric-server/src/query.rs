@@ -296,12 +296,6 @@ pub struct History {
 }
 
 impl History {
-    /// Compile-time experimental scanner selector, acknowledged by native probes.
-    #[doc(hidden)]
-    pub fn borrowed_logs_enabled() -> bool {
-        option_env!("FABRIC_BORROWED_LOG_EXPERIMENT").is_some_and(|v| v == "1")
-    }
-
     /// Opt-in query admission ordering; readers and validation stay unchanged.
     #[doc(hidden)]
     pub fn key_first_enabled() -> bool {
@@ -954,46 +948,22 @@ impl History {
                             }
                             Source::Group(si, rg) => {
                                 let (dir, manifest) = &sources.segments[si];
-                                let scanned = if Self::borrowed_logs_enabled() {
-                                    segment::scan_logs_groups_borrowed(
-                                        dir,
-                                        manifest,
-                                        vec![rg],
-                                        from,
-                                        to,
-                                        |r| {
-                                            let k = (r.observed_ns, r.node_id, r.sequence, r.index);
-                                            if (!key_first || can_enter(&k, best.threshold()))
-                                                && node_ok(r.node)
-                                                && window.contains(r.observed_ns)
-                                                && snapshot.contains(r.group)
-                                                && contains
-                                                    .as_deref()
-                                                    .is_none_or(|c| r.body.contains(c))
-                                                && (key_first || can_enter(&k, best.threshold()))
-                                            {
-                                                best.offer(k, r.into_owned());
-                                            }
-                                        },
-                                    )
-                                } else {
-                                    segment::scan_logs_groups(
-                                        dir,
-                                        manifest,
-                                        vec![rg],
-                                        from,
-                                        to,
-                                        |r| {
-                                            if (!key_first || can_enter(&key(&r), best.threshold()))
-                                                && keep(&r)
-                                                && (key_first
-                                                    || kernel::after_page(&key(&r), after.as_ref()))
-                                            {
-                                                best.offer(key(&r), r);
-                                            }
-                                        },
-                                    )
-                                };
+                                let scanned = segment::scan_logs_groups(
+                                    dir,
+                                    manifest,
+                                    vec![rg],
+                                    from,
+                                    to,
+                                    |r| {
+                                        if (!key_first || can_enter(&key(&r), best.threshold()))
+                                            && keep(&r)
+                                            && (key_first
+                                                || kernel::after_page(&key(&r), after.as_ref()))
+                                        {
+                                            best.offer(key(&r), r);
+                                        }
+                                    },
+                                );
                                 if let Err(e) = scanned {
                                     if !dir.exists() {
                                         return Err(io::Error::new(
@@ -1011,29 +981,14 @@ impl History {
                     }
                 } else {
                     for (dir, manifest) in &sources.segments {
-                        let scanned = if Self::borrowed_logs_enabled() {
-                            segment::scan_logs_borrowed(dir, manifest, from, to, |r| {
-                                let k = (r.observed_ns, r.node_id, r.sequence, r.index);
-                                if (!key_first || can_enter(&k, best.threshold()))
-                                    && node_ok(r.node)
-                                    && window.contains(r.observed_ns)
-                                    && snapshot.contains(r.group)
-                                    && contains.as_deref().is_none_or(|c| r.body.contains(c))
-                                    && (key_first || can_enter(&k, best.threshold()))
-                                {
-                                    best.offer(k, r.into_owned());
-                                }
-                            })
-                        } else {
-                            segment::scan_logs(dir, manifest, from, to, |r| {
-                                if (!key_first || can_enter(&key(&r), best.threshold()))
-                                    && keep(&r)
-                                    && (key_first || kernel::after_page(&key(&r), after.as_ref()))
-                                {
-                                    best.offer(key(&r), r);
-                                }
-                            })
-                        };
+                        let scanned = segment::scan_logs(dir, manifest, from, to, |r| {
+                            if (!key_first || can_enter(&key(&r), best.threshold()))
+                                && keep(&r)
+                                && (key_first || kernel::after_page(&key(&r), after.as_ref()))
+                            {
+                                best.offer(key(&r), r);
+                            }
+                        });
                         if let Err(e) = scanned {
                             if !dir.exists() {
                                 return Err(io::Error::new(

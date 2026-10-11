@@ -6,7 +6,7 @@ use std::collections::BinaryHeap;
 use std::io::BufReader;
 mod page_store;
 mod spill;
-use spill::{REUSE_WORKSPACE, Spill, Workspace, read_row, write_row};
+use spill::{Spill, read_row, write_row};
 
 #[cfg(test)]
 mod merge_properties;
@@ -14,48 +14,13 @@ mod merge_properties;
 #[cfg(test)]
 mod chunk_groups_tests;
 
-// Experiment-only compile selector; the normal build retains the 16 MiB limit.
-// Keeping this in option_env! makes Cargo track rebuilds when it changes.
-const fn experimental_run_bytes(setting: Option<&str>) -> usize {
-    match setting {
-        None => 16 * 1024 * 1024,
-        Some(value) => match value.as_bytes() {
-            b"8" => 8 * 1024 * 1024,
-            b"16" => 16 * 1024 * 1024,
-            b"32" => 32 * 1024 * 1024,
-            _ => panic!("FABRIC_RUN_MIB_EXPERIMENT must be 8, 16 or 32"),
-        },
-    }
-}
-const RUN_BYTES: usize = experimental_run_bytes(option_env!("FABRIC_RUN_MIB_EXPERIMENT"));
+const RUN_BYTES: usize = 16 * 1024 * 1024;
 const RUN_ROWS: usize = 32_768;
 const CHUNK_BYTES: usize = 8 * 1024 * 1024;
 // A 1024-row Parquet mini-batch of registered 16 KiB bodies occupies 16 MiB
 // plus row metadata. Keep an explicit owned-byte ceiling for larger rows.
 const ALIGNED_CHUNK_BYTES: usize = 17 * 1024 * 1024;
 const FAN_IN: usize = 16;
-const fn early_row_release(setting: Option<&str>) -> bool {
-    match setting {
-        None => false,
-        Some(value) => match value.as_bytes() {
-            b"1" => true,
-            _ => panic!("FABRIC_EARLY_ROW_RELEASE_EXPERIMENT must be unset or 1"),
-        },
-    }
-}
-const EARLY_ROW_RELEASE: bool =
-    early_row_release(option_env!("FABRIC_EARLY_ROW_RELEASE_EXPERIMENT"));
-const fn row_group_chunks(setting: Option<&str>) -> bool {
-    match setting {
-        None => true,
-        Some(value) => match value.as_bytes() {
-            b"1" => true,
-            _ => panic!("FABRIC_ROW_GROUP_CHUNKS_EXPERIMENT must be unset or 1"),
-        },
-    }
-}
-const ROW_GROUP_CHUNKS: bool = row_group_chunks(option_env!("FABRIC_ROW_GROUP_CHUNKS_EXPERIMENT"));
-const PAGE_STORE: bool = page_store::enabled(option_env!("FABRIC_PAGE_STORE_EXPERIMENT"));
 type Key = (u64, [u8; 16], u64, u32);
 
 trait Row: Spill {
@@ -117,18 +82,9 @@ fn merge<R: Row>(paths: &[PathBuf], mut emit: impl FnMut(R) -> io::Result<()>) -
         .map(|p| File::open(p).map(|f| BufReader::with_capacity(64 * 1024, f)))
         .collect::<io::Result<Vec<_>>>()?;
     let mut heads = Vec::with_capacity(readers.len());
-    let mut workspaces: Vec<Workspace> = if REUSE_WORKSPACE {
-        (0..readers.len()).map(|_| Workspace::default()).collect()
-    } else {
-        Vec::new()
-    };
     let mut heap = BinaryHeap::new();
     for (i, reader) in readers.iter_mut().enumerate() {
-        let row = if REUSE_WORKSPACE {
-            workspaces[i].read::<R>(reader)?
-        } else {
-            read_row::<R>(reader)?
-        };
+        let row = read_row::<R>(reader)?;
         if let Some(r) = &row {
             heap.push(Reverse((r.key(), i)));
         }
@@ -136,11 +92,7 @@ fn merge<R: Row>(paths: &[PathBuf], mut emit: impl FnMut(R) -> io::Result<()>) -
     }
     while let Some(Reverse((_, i))) = heap.pop() {
         emit(heads[i].take().expect("heap has a live head"))?;
-        let next = if REUSE_WORKSPACE {
-            workspaces[i].read::<R>(&mut readers[i])?
-        } else {
-            read_row::<R>(&mut readers[i])?
-        };
+        let next = read_row::<R>(&mut readers[i])?;
         if let Some(r) = &next {
             heap.push(Reverse((r.key(), i)));
         }
@@ -202,13 +154,8 @@ impl<R: Row> Runs<R> {
         rows.sort_by_key(Row::key);
         let mut output =
             BufWriter::with_capacity(256 * 1024, File::create(self.path(0, self.count))?);
-        let mut workspace = Workspace::default();
         for row in rows {
-            if REUSE_WORKSPACE {
-                workspace.write(&mut output, &row)?;
-            } else {
-                write_row(&mut output, &row)?;
-            }
+            write_row(&mut output, &row)?;
         }
         output.flush()?;
         self.bytes = 0;
@@ -229,14 +176,7 @@ impl<R: Row> Runs<R> {
                     256 * 1024,
                     File::create(self.path(level + 1, index))?,
                 );
-                let mut workspace = Workspace::default();
-                merge::<R>(&paths, |row| {
-                    if REUSE_WORKSPACE {
-                        workspace.write(&mut output, &row)
-                    } else {
-                        write_row(&mut output, &row)
-                    }
-                })?;
+                merge::<R>(&paths, |row| write_row(&mut output, &row))?;
                 output.flush()?;
                 drop(output);
                 for path in paths {
@@ -274,23 +214,18 @@ struct Table<R> {
     group_rows: usize,
     group_filter: Option<crate::text_filter::GroupAccumulator>,
     input_rows: usize,
-    page_store: Option<Arc<page_store::Factory>>,
+    page_store: Arc<page_store::Factory>,
 }
 type FinishedTable = (FileEntry, Option<Vec<crate::text_filter::GroupFilter>>);
 
-// Conversion owns its output. The experimental policy releases source payloads
-// before encoding; both policies drop the converted batch before writer.flush.
+// Conversion owns its output; the converted batch is dropped before writer.flush.
 fn write_converted<R, B>(
-    rows: &mut Vec<R>,
-    early: bool,
+    rows: &[R],
     convert: impl FnOnce(&[R]) -> io::Result<B>,
     write: impl FnOnce(&B) -> io::Result<()>,
 ) -> io::Result<usize> {
     let count = rows.len();
     let batch = convert(rows)?;
-    if early {
-        rows.clear();
-    }
     write(&batch)?;
     drop(batch);
     Ok(count)
@@ -313,16 +248,10 @@ impl<R> Table<R> {
             hash: Sha256::new(),
             bytes: 0,
         };
-        let page_store = if PAGE_STORE {
-            Some(Arc::new(page_store::Factory::new(path)?))
-        } else {
-            None
-        };
-        let mut options =
-            parquet::arrow::arrow_writer::ArrowWriterOptions::new().with_properties(properties);
-        if let Some(factory) = &page_store {
-            options = options.with_page_store_factory(factory.clone());
-        }
+        let page_store = Arc::new(page_store::Factory::new(path)?);
+        let options = parquet::arrow::arrow_writer::ArrowWriterOptions::new()
+            .with_properties(properties)
+            .with_page_store_factory(page_store.clone());
         Ok(Self {
             writer: ArrowWriter::try_new_with_options(output, schema, options).map_err(err)?,
             rows: Vec::new(),
@@ -348,8 +277,8 @@ impl<R> Table<R> {
         align_input_batches: bool,
     ) -> io::Result<Self> {
         let mut table = Self::new(path, schema, convert, chunk_limit, text)?;
-        table.group_chunks = ROW_GROUP_CHUNKS;
-        if table.group_chunks && align_input_batches {
+        table.group_chunks = true;
+        if align_input_batches {
             // Logs align input to the column-writer batch size; a shorter
             // write restarts the producer's page sub-batching. Estimated
             // bytes can close a chunk early; one oversized row is preserved.
@@ -396,10 +325,9 @@ impl<R> Table<R> {
         // tables keep reference row groups, spilling completed encoded pages;
         // heap limits require measurements rather than input-size inference.
         let count = {
-            let count =
-                write_converted(&mut self.rows, EARLY_ROW_RELEASE, self.convert, |batch| {
-                    self.writer.write(batch).map_err(err)
-                })?;
+            let count = write_converted(&self.rows, self.convert, |batch| {
+                self.writer.write(batch).map_err(err)
+            })?;
             if !self.group_chunks {
                 self.writer.flush().map_err(err)?;
             }
@@ -427,9 +355,7 @@ impl<R> Table<R> {
         self.flush()?;
         self.finish_group_filter();
         self.writer.finish().map_err(err)?;
-        if let Some(factory) = &self.page_store {
-            factory.finish()?;
-        }
+        self.page_store.finish()?;
         let output = self.writer.inner_mut();
         output.flush()?;
         output.inner.get_ref().sync_all()?;
@@ -660,62 +586,52 @@ mod tests {
     use std::rc::Rc;
 
     #[test]
-    fn early_release_selector_and_owned_lifetimes_are_explicit() {
-        assert!(!early_row_release(None));
-        assert!(early_row_release(Some("1")));
-        for invalid in ["", "0", "true", " 1", "01"] {
-            assert!(std::panic::catch_unwind(|| early_row_release(Some(invalid))).is_err());
-        }
+    fn converted_batch_is_dropped_before_the_writer_flushes() {
         struct Tracked(Rc<Cell<bool>>);
         impl Drop for Tracked {
             fn drop(&mut self) {
                 self.0.set(true);
             }
         }
-        for early in [false, true] {
-            for fail_write in [false, true] {
-                let source_dropped = Rc::new(Cell::new(false));
-                let batch_dropped = Rc::new(Cell::new(false));
-                let mut rows = vec![Tracked(source_dropped.clone())];
-                let result = write_converted(
-                    &mut rows,
-                    early,
-                    |source| {
-                        assert_eq!(source.len(), 1);
-                        assert!(!source_dropped.get());
-                        Ok(Tracked(batch_dropped.clone()))
-                    },
-                    |_| {
-                        assert_eq!(source_dropped.get(), early);
-                        assert!(!batch_dropped.get());
-                        if fail_write {
-                            Err(invalid("injected write failure"))
-                        } else {
-                            Ok(())
-                        }
-                    },
-                );
-                assert_eq!(result.is_err(), fail_write);
-                if !fail_write {
-                    assert_eq!(result.unwrap(), 1);
-                }
-                // This return boundary is before Table calls writer.flush.
-                assert!(batch_dropped.get());
-                assert_eq!(source_dropped.get(), early);
-                assert_eq!(rows.len(), usize::from(!early));
-            }
+        for fail_write in [false, true] {
             let source_dropped = Rc::new(Cell::new(false));
-            let mut rows = vec![Tracked(source_dropped.clone())];
-            let result = write_converted::<_, ()>(
-                &mut rows,
-                early,
-                |_| Err(invalid("injected conversion failure")),
-                |_| panic!("writer called after failed conversion"),
+            let batch_dropped = Rc::new(Cell::new(false));
+            let rows = vec![Tracked(source_dropped.clone())];
+            let result = write_converted(
+                &rows,
+                |source| {
+                    assert_eq!(source.len(), 1);
+                    assert!(!source_dropped.get());
+                    Ok(Tracked(batch_dropped.clone()))
+                },
+                |_| {
+                    assert!(!source_dropped.get());
+                    assert!(!batch_dropped.get());
+                    if fail_write {
+                        Err(invalid("injected write failure"))
+                    } else {
+                        Ok(())
+                    }
+                },
             );
-            assert!(result.is_err());
+            assert_eq!(result.is_err(), fail_write);
+            if !fail_write {
+                assert_eq!(result.unwrap(), 1);
+            }
+            // This return boundary is before Table calls writer.flush.
+            assert!(batch_dropped.get());
             assert!(!source_dropped.get());
-            assert_eq!(rows.len(), 1);
         }
+        let source_dropped = Rc::new(Cell::new(false));
+        let rows = vec![Tracked(source_dropped.clone())];
+        let result = write_converted::<_, ()>(
+            &rows,
+            |_| Err(invalid("injected conversion failure")),
+            |_| panic!("writer called after failed conversion"),
+        );
+        assert!(result.is_err());
+        assert!(!source_dropped.get());
+        assert_eq!(rows.len(), 1);
     }
     use std::sync::atomic::{AtomicU64, Ordering};
     static NEXT: AtomicU64 = AtomicU64::new(0);
@@ -750,33 +666,23 @@ mod tests {
     }
 
     #[test]
-    fn experimental_run_limit_is_strict_and_selected_path_enforces_bytes() {
-        assert_eq!(experimental_run_bytes(None), 16 * 1024 * 1024);
-        for invalid in ["", "0", "08", "64", " 8"] {
-            assert!(std::panic::catch_unwind(|| experimental_run_bytes(Some(invalid))).is_err());
+    fn run_limit_is_enforced_by_bytes() {
+        assert_eq!(RUN_BYTES, 16 * 1024 * 1024);
+        let scratch = Scratch::new();
+        let mut runs = Runs::new(&scratch.0, "limit", RUN_BYTES);
+        let mut large = row(0);
+        large.body = "x".repeat(1024 * 1024);
+        let bytes = large.resident_bytes();
+        let fit = RUN_BYTES / bytes;
+        for i in 0..=fit {
+            let mut next = large.clone();
+            next.sequence = i as u64;
+            runs.push(next).unwrap();
         }
-        for setting in ["8", "16", "32"] {
-            let limit = experimental_run_bytes(Some(setting));
-            let scratch = Scratch::new();
-            let mut runs = Runs::new(&scratch.0, "selector", limit);
-            let mut large = row(0);
-            large.body = "x".repeat(1024 * 1024);
-            let bytes = large.resident_bytes();
-            let fit = limit / bytes;
-            for i in 0..=fit {
-                let mut next = large.clone();
-                next.sequence = i as u64;
-                runs.push(next).unwrap();
-            }
-            assert_eq!(runs.count, 1);
-            assert_eq!(runs.rows.len(), 1);
-            assert!(runs.bytes <= limit);
-        }
-        assert_eq!(
-            RUN_BYTES,
-            experimental_run_bytes(option_env!("FABRIC_RUN_MIB_EXPERIMENT"))
-        );
-        // A single row larger than the selected cap is legal, not a heap bound.
+        assert_eq!(runs.count, 1);
+        assert_eq!(runs.rows.len(), 1);
+        assert!(runs.bytes <= RUN_BYTES);
+        // A single row larger than the cap is legal, not a heap bound.
         let scratch = Scratch::new();
         let mut runs = Runs::new(&scratch.0, "oversized", 1);
         runs.push(row(0)).unwrap();
