@@ -51,6 +51,16 @@ def sha256_file(path: Path) -> str:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def current_identity(root: Path) -> str:
+    commit = subprocess.check_output(
+        ['git', 'rev-parse', 'HEAD'], cwd=root, text=True, timeout=10).strip()
+    dirty = subprocess.check_output(
+        ['git', 'status', '--porcelain'], cwd=root, text=True, timeout=10).strip()
+    if dirty:
+        raise ValueError('candidate worktree changed before final receipt validation: ' + dirty)
+    return commit
+
+
 def verify(registry: dict, profile: str, commit: str, directory: Path) -> dict:
     if not re.fullmatch(r'[0-9a-f]{40}', commit):
         raise ValueError('a complete checked-out commit identity is required')
@@ -105,8 +115,7 @@ def main() -> int:
     parser.add_argument('--receipts', type=Path, default=ROOT / 'target/verification/receipts')
     args = parser.parse_args()
     try:
-        commit = subprocess.check_output(
-            ['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True, timeout=10).strip()
+        commit = current_identity(ROOT)
         registry = json.loads((ROOT / 'xtask/checks.json').read_text())
         result = verify(registry, args.profile, commit, args.receipts)
     except (OSError, ValueError, subprocess.SubprocessError) as error:

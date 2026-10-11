@@ -13,7 +13,7 @@ import tempfile
 import unittest
 import sys
 
-from verify_receipts import ROOT, require_limits, selected_checks, verify
+from verify_receipts import ROOT, current_identity, require_limits, selected_checks, verify
 
 COMMIT = '1' * 40
 sys.path.insert(0, str(ROOT / 'tools/ui'))
@@ -112,6 +112,39 @@ if 'fuzz' in args:
                          ['batch_identify', 'query_request', 'frame_recovery', 'observation_block'])
         self.assertTrue(all('-max_total_time=60' in call and '-rss_limit_mb=2048' in call
                             for call in fuzz))
+
+
+class LiveCandidateTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory(prefix='ci-live-input-',
+                                                    dir=os.environ['FABRIC_SCRATCH_ROOT'])
+        self.addCleanup(self.temporary.cleanup)
+        self.root = Path(self.temporary.name)
+        self.git('init', '--quiet')
+        self.git('config', 'core.hooksPath', '/dev/null')
+        (self.root / 'input').write_text('frozen\n')
+        self.git('add', 'input')
+        self.git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid',
+                 '-c', 'commit.gpgsign=false', 'commit', '--quiet', '-m', 'freeze')
+
+    def git(self, *args):
+        return subprocess.check_output(['git', *args], cwd=self.root,
+                                       text=True, stderr=subprocess.STDOUT, timeout=10).strip()
+
+    def test_clean_live_candidate_identity_is_accepted(self):
+        self.assertEqual(current_identity(self.root), self.git('rev-parse', 'HEAD'))
+
+    def test_input_changes_after_receipts_are_rejected(self):
+        for tracked in (True, False):
+            with self.subTest(tracked=tracked):
+                source = self.root / ('input' if tracked else 'new-input')
+                source.write_text('changed after checks\n')
+                with self.assertRaisesRegex(ValueError, 'worktree changed'):
+                    current_identity(self.root)
+                if tracked:
+                    source.write_text('frozen\n')
+                else:
+                    source.unlink()
 
 
 class ReceiptTests(unittest.TestCase):
