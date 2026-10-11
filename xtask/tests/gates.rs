@@ -457,3 +457,14 @@ fn a_dev_only_exception_does_not_excuse_a_normal_edge() {
         .dep("app", "dependencies", ADAPTER);
     only(&normal.layers(DECLARED), layers::FORBIDDEN_EDGE);
 }
+
+#[test]
+fn repository_layer_policy_keeps_ports_and_app_free_of_external_crates() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let text = std::fs::read_to_string(root.join("docs/architecture/layers.json")).unwrap();
+    let policy = layers::Policy::parse(&serde_json::from_str(&text).unwrap()).unwrap();
+    for layer in ["ports", "app"] {
+        let allowed = policy.external.get(layer);
+        assert!(allowed.is_some_and(|crates| crates.is_empty()), "{layer}");
+    }
+}

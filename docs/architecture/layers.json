@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "description": "Hexagonal dependency rule checked by `cargo xtask check-layers`. See ../decisions/ADR-0015-adopt-a-hexagonal-architecture.md.",
+  "description": "Hexagonal dependency rule checked by `cargo xtask check-layers`. See ../decisions/ADR-0015-adopt-a-hexagonal-architecture.md. A layer with `external_allowlist` may link only the listed crates from outside the workspace through normal and build dependencies.",
   "layers": {
     "core": {
       "may_depend_on": [
@@ -10,13 +10,15 @@
     "ports": {
       "may_depend_on": [
         "core"
-      ]
+      ],
+      "external_allowlist": []
     },
     "app": {
       "may_depend_on": [
         "core",
         "ports"
-      ]
+      ],
+      "external_allowlist": []
     },
     "adapter-support": {
       "may_depend_on": [
