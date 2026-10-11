@@ -22,7 +22,6 @@ def storage_root(environ=os.environ):
 
 
 STORAGE = storage_root()
-DATA_DRIVE = STORAGE.parent  # Legacy name for importers outside the launcher's scope.
 RECEIPTS = Path(__file__).resolve().parents[1] / 'target/resource-containment/runs'
 DEFAULT_RUNTIME_SECONDS = 1800
 MAX_RUNTIME_SECONDS = 16000
