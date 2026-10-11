@@ -3,6 +3,30 @@
   "description": "Counterexamples kept as deterministic regression fixtures. `cargo xtask check-counterexamples` requires each reproducer test to exist in its file and each fix commit to exist. Removing an entry is a trust-boundary change.",
   "counterexamples": [
     {
+      "id": "CX-QUERY-TEST-DRAIN-PROGRESS",
+      "origin": "Hosted mutation run 38156896105 timed out; isolated after_page=true diagnostic on 1777e66 grew to 1.9G cgroup peak in a five-second timeout",
+      "defect": "Pagination tests called the complete drain before checking progress, so a deliberately broken cursor predicate could allocate repeated pages instead of failing promptly",
+      "seed_or_trace": "replace after_page with true; original audit reports TIMEOUT; a repeated page with the same continuation is now rejected before drain allocation, while original positive drain assertions remain",
+      "contract": "HIST-4 and bounded executable verification; no production query or oracle semantics changed",
+      "reproducer": {
+        "file": "crates/fabric-core/src/query/spec.rs",
+        "test": "a_repeated_page_is_rejected_before_drain_allocation"
+      },
+      "fix_commit": "af31318"
+    },
+    {
+      "id": "CX-INTERRUPTED-CHECK-OUTPUT",
+      "origin": "Hosted mutation run 38156896105 exceeded its 30-minute deadline without retaining the active audit output",
+      "defect": "The registry buffered command output until exit, losing diagnostics when its whole cgroup was interrupted",
+      "seed_or_trace": "child prints separate stdout/stderr sentinels and then blocks; stop its owned process group before completion; initial regression exits 101, successor retains both streams and the running marker without a completion receipt",
+      "contract": "ARCH-1 executable evidence must retain observed failures and never invent completion",
+      "reproducer": {
+        "file": "xtask/tests/check_logs.rs",
+        "test": "running_check_retains_output_before_forced_stop"
+      },
+      "fix_commit": "63b32e5"
+    },
+    {
       "id": "CX-RECEIPT-FINAL-INPUT-STATE",
       "origin": "Review of final receipt validation after hosted fuzz drift failure 38151336752",
       "defect": "The final validator checked pre-check dirty flags but never inspected the live worktree, so a last check could change inputs after its receipt context was captured",
