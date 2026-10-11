@@ -1,4 +1,5 @@
 """Accept only a real missing-ACKed-record negative control, never a startup error."""
+import argparse
 import json
 import os
 from pathlib import Path
@@ -20,9 +21,14 @@ if __name__ == '__main__':
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
     from resource_group import require_limits
     require_limits()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--bin-dir')
+    args = parser.parse_args()
     command = [sys.executable, '-B', str(Path(__file__).with_name('delivery_faults.py')),
                '--scenario', 'clean', '--seed', '3', '--seconds', '8',
                '--mutate', 'drop-recovered']
+    if args.bin_dir:
+        command += ['--bin-dir', args.bin_dir]
     status = subprocess.run(command).returncode
     summary_path = Path(os.environ['FABRIC_SCRATCH_ROOT']) / 'alpha-delivery-clean-3/summary.json'
     summary = json.loads(summary_path.read_text())
