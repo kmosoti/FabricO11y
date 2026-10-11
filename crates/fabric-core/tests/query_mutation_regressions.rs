@@ -200,3 +200,26 @@ fn a_spent_budget_crosses_equal_lower_bounds_before_cutting() {
     );
     assert_eq!(page.next, Some((19, [0xff; 16], u64::MAX, u32::MAX)));
 }
+
+#[test]
+fn equal_time_upper_bound_can_hold_rows_after_the_full_cursor() {
+    let rows = vec![row(1, 20, 1, "a", "x"), row(1, 20, 2, "a", "x")];
+    let sources = vec![source(rows.clone())];
+    let q = LogsQuery {
+        window: Window::new(0, 100).unwrap(),
+        node: None,
+        contains: None,
+        limit: 10,
+    };
+    let snap = Snapshot {
+        oldest_group: 1,
+        newest_group: 1,
+    };
+    let after = (20, [0; 16], 0, 0);
+    let expected = Page { rows, next: None };
+    assert_eq!(threshold_walk(&sources, &q, &snap, Some(&after)), expected);
+    assert_eq!(
+        budgeted_walk(&sources, &q, &snap, Some(&after), usize::MAX),
+        (expected, None)
+    );
+}
