@@ -16,6 +16,21 @@ from verify_receipts import ROOT, require_limits, selected_checks, verify
 COMMIT = '1' * 40
 sys.path.insert(0, str(ROOT / 'tools/ui'))
 from fixture_cadence import FixtureCadence
+sys.path.insert(0, str(ROOT / 'tools/qualification'))
+from check_delivery_fault_control import detected
+
+
+class DeliveryControlTests(unittest.TestCase):
+    def test_unrelated_failures_cannot_satisfy_the_ack_loss_control(self):
+        good = dict(mutate='drop-recovered', passed=False, oracle_passed=False,
+                    companion_observed=True, server_exit=0, node_exits=[0,0,0],
+                    acks=5, recovered=4, violations=[{'rule':'ACKED-DURABLE'}])
+        self.assertTrue(detected(1, good))
+        for status, change in [(0, {}), (2, {}), (1, {'acks':0}),
+                               (1, {'node_exits':[0,1,0]}),
+                               (1, {'violations':[{'rule':'NO-FABRICATION'}]}),
+                               (1, {'violations':[]}), (1, {'server_exit':1})]:
+            self.assertFalse(detected(status, {**good, **change}))
 
 
 class CadenceTests(unittest.TestCase):
