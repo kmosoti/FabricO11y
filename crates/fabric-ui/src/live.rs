@@ -10,19 +10,10 @@ pub struct Session {
     pub api_version: u32,
     pub principal_id: String,
     pub display_name: String,
-    pub kind: String,
-    pub scope: Value,
-    pub actions: Vec<String>,
+    pub role: String,
     pub csrf: String,
     pub expires_unix_s: u64,
     pub fresh_until_unix_s: u64,
-}
-impl Session {
-    pub fn allows(&self, action: &str) -> bool {
-        self.actions
-            .iter()
-            .any(|candidate| candidate == action || candidate.replace('_', ".") == action)
-    }
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]
@@ -133,135 +124,6 @@ pub fn with_span_name(mut query: ReadQuery, name: &str) -> Result<ReadQuery, Str
     Ok(query)
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct GrantScope {
-    pub actions: Vec<String>,
-    pub installation_wide: bool,
-    pub enrollments: Vec<String>,
-    pub signals: Vec<String>,
-    pub max_query_window_s: u64,
-    pub max_query_rows: usize,
-    pub allowed_log_paths: Vec<String>,
-    pub min_interval_s: u64,
-    pub max_interval_s: u64,
-    pub enrollment_namespace: Option<String>,
-    pub max_enrollments: usize,
-}
-
-pub fn scoped_grant(text: &str, parent: &Value) -> Result<Value, String> {
-    if text.len() > 131072 {
-        return Err("Scope exceeds its 128 KiB editing budget.".into());
-    }
-    let scope: GrantScope = serde_json::from_str(text)
-        .map_err(|_| "Scope must use the displayed fields and exact types.")?;
-    let parent: GrantScope = serde_json::from_value(parent.clone())
-        .map_err(|_| "Current session scope is unsupported.")?;
-    let known = [
-        "telemetry_read",
-        "inventory_read",
-        "node_configure",
-        "node_pause",
-        "node_resume",
-        "node_enroll",
-        "node_revoke",
-        "identity_manage",
-        "grant_manage",
-        "audit_read",
-    ];
-    if scope
-        .actions
-        .iter()
-        .any(|a| !known.contains(&a.as_str()) || !parent.actions.contains(a))
-        || scope.signals.iter().any(|s| {
-            !["logs", "metrics", "traces"].contains(&s.as_str()) || !parent.signals.contains(s)
-        })
-        || scope.installation_wide && !parent.installation_wide
-        || !parent.installation_wide
-            && scope
-                .enrollments
-                .iter()
-                .any(|id| !parent.enrollments.contains(id))
-        || scope.max_query_rows == 0
-        || scope.max_query_rows > 1000
-        || scope.max_query_rows > parent.max_query_rows
-        || scope.max_query_window_s == 0
-        || scope.max_query_window_s > 86400
-        || scope.max_query_window_s > parent.max_query_window_s
-        || scope.min_interval_s < parent.min_interval_s
-        || scope.max_interval_s > parent.max_interval_s
-        || scope.min_interval_s > scope.max_interval_s
-        || scope.max_enrollments > parent.max_enrollments
-        || scope.enrollments.len() > 4096
-        || scope.allowed_log_paths.len() > 16
-        || scope
-            .enrollments
-            .iter()
-            .any(|id| id.is_empty() || id.len() > 128)
-        || scope.allowed_log_paths.iter().any(|p| {
-            !p.starts_with('/')
-                || p.len() > 4096
-                || !parent.installation_wide && !parent.allowed_log_paths.contains(p)
-        })
-        || scope
-            .enrollment_namespace
-            .as_ref()
-            .is_some_and(|p| p.len() > 64)
-        || !parent.installation_wide && scope.enrollment_namespace != parent.enrollment_namespace
-    {
-        return Err("Scope must fit your current grants and the displayed release bounds. The server verifies current policy again.".into());
-    }
-    serde_json::to_value(scope).map_err(|_| "Cannot serialize scope.".into())
-}
-
-/// Apply current grants without changing an explicitly requested time window.
-pub fn authorized_query(mut query: ReadQuery, scope: &Value) -> Result<ReadQuery, String> {
-    let scope: GrantScope = serde_json::from_value(scope.clone())
-        .map_err(|_| "Current query grants are unsupported.")?;
-    let (signal, from, to, limit) = match &mut query {
-        ReadQuery::Logs {
-            from_ns,
-            to_ns,
-            limit,
-            ..
-        } => ("logs", *from_ns, *to_ns, limit),
-        ReadQuery::Metrics {
-            from_ns,
-            to_ns,
-            limit,
-            ..
-        } => ("metrics", *from_ns, *to_ns, limit),
-        ReadQuery::Spans {
-            from_ns,
-            to_ns,
-            limit,
-            ..
-        } => ("traces", *from_ns, *to_ns, limit),
-    };
-    if !scope.actions.iter().any(|a| a == "telemetry_read")
-        || !scope.signals.iter().any(|s| s == signal)
-        || !scope.installation_wide && scope.enrollments.is_empty()
-        || scope.max_query_rows == 0
-        || scope.max_query_window_s == 0
-    {
-        return Err("Your current grants do not permit this telemetry query.".into());
-    }
-    if to <= from
-        || to - from
-            > scope
-                .max_query_window_s
-                .min(86400)
-                .saturating_mul(1_000_000_000)
-    {
-        return Err(format!(
-            "Requested window exceeds your {}-second grant; choose a permitted window.",
-            scope.max_query_window_s.min(86400)
-        ));
-    }
-    *limit = (*limit).min(scope.max_query_rows.min(1000) as u32);
-    Ok(query)
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProcessSample {
     pub component: String,
@@ -339,30 +201,8 @@ pub fn process_samples(answer: &Value) -> Vec<ProcessSample> {
 }
 
 #[cfg(test)]
-mod grant_query_tests {
+mod tests {
     use super::*;
-    fn scope() -> Value {
-        json!({"actions":["telemetry_read"],"installation_wide":false,"enrollments":["immutable-source"],"signals":["logs"],"max_query_window_s":60,"max_query_rows":100,"allowed_log_paths":[],"min_interval_s":1,"max_interval_s":3600,"enrollment_namespace":null,"max_enrollments":0})
-    }
-    #[test]
-    fn narrower_grants_cap_rows_and_reject_explicit_wide_windows() {
-        let input = read_query("logs", "", "", "0", "60000000000", None).unwrap();
-        assert!(matches!(
-            authorized_query(input, &scope()).unwrap(),
-            ReadQuery::Logs {
-                limit: 100,
-                from_ns: 0,
-                to_ns: 60_000_000_000,
-                ..
-            }
-        ));
-        let input = read_query("logs", "", "", "0", "900000000000", None).unwrap();
-        assert!(
-            authorized_query(input, &scope())
-                .unwrap_err()
-                .contains("60-second")
-        );
-    }
     #[test]
     fn exact_span_name_survives_clone_and_snapshot_paging() {
         let input = read_query("spans", "source", "", "0", "1", None).unwrap();
@@ -381,29 +221,6 @@ mod grant_query_tests {
         assert!(serde_json::to_value(empty).unwrap().get("name").is_none());
     }
 
-    #[test]
-    fn zero_authority_never_becomes_a_query() {
-        for field in ["actions", "enrollments", "signals"] {
-            let mut grants = scope();
-            grants[field] = json!([]);
-            assert!(
-                authorized_query(
-                    read_query("logs", "", "", "0", "1000000000", None).unwrap(),
-                    &grants
-                )
-                .is_err()
-            );
-        }
-        let mut grants = scope();
-        grants["max_query_rows"] = json!(0);
-        assert!(
-            authorized_query(
-                read_query("logs", "", "", "0", "1000000000", None).unwrap(),
-                &grants
-            )
-            .is_err()
-        );
-    }
     #[test]
     fn process_samples_keep_exact_units_clocks_and_pid_resets() {
         // Schema origin: fabric-adapter-linux/src/operational_log.rs::sample/prefix.
@@ -1032,7 +849,7 @@ mod browser {
         });
     }
 
-    fn register_existing(state: RwSignal<LiveState>, invitation: Option<String>) {
+    fn add_passkey(state: RwSignal<LiveState>) {
         if state.with_untracked(|s| s.busy || s.queued_logout.is_some()) {
             return;
         }
@@ -1044,17 +861,7 @@ mod browser {
         });
         leptos::task::spawn_local(async move {
             let result = async {
-                let start = if let Some(invitation) = invitation {
-                    fetch(
-                        "/v1/console/auth/invite/start",
-                        "POST",
-                        Some(json!({"invitation":invitation})),
-                        None,
-                    )
-                    .await?
-                } else {
-                    fetch("/v1/console/passkeys/start", "POST", None, csrf).await?
-                };
+                let start = fetch("/v1/console/passkeys/start", "POST", None, csrf).await?;
                 let id = start
                     .get("ceremony_id")
                     .and_then(Value::as_str)
@@ -1104,17 +911,6 @@ mod browser {
     }
 
     fn query(state: RwSignal<LiveState>, input: ReadQuery) {
-        let scope = state.with_untracked(|s| s.session.as_ref().map(|s| s.scope.clone()));
-        let Some(scope) = scope else {
-            return;
-        };
-        let input = match authorized_query(input, &scope) {
-            Ok(input) => input,
-            Err(error) => {
-                state.update(|s| s.error = error);
-                return;
-            }
-        };
         let body = serde_json::to_value(&input).expect("query serializes");
         request(
             state,
@@ -1179,49 +975,10 @@ mod browser {
         let principal = RwSignal::new(String::new());
         let display = RwSignal::new(String::new());
         let bootstrap = RwSignal::new(String::new());
-        let invitation = RwSignal::new(String::new());
         let enroll_name = RwSignal::new(String::new());
         let paths = RwSignal::new(String::new());
         let interval = RwSignal::new("15".to_owned());
         let target = RwSignal::new(String::new());
-        let initialized = RwSignal::new(String::new());
-        Effect::new(move |_| {
-            let current = state.with(|s| s.session.clone());
-            let Some(current) = current else {
-                initialized.set(String::new());
-                return;
-            };
-            if initialized.get_untracked() != current.principal_id {
-                initialized.set(current.principal_id);
-                let first = current
-                    .scope
-                    .get("signals")
-                    .and_then(Value::as_array)
-                    .and_then(|signals| {
-                        signals.iter().find_map(|signal| match signal.as_str() {
-                            Some("logs") => Some("logs"),
-                            Some("metrics") => Some("metrics"),
-                            Some("traces") => Some("spans"),
-                            _ => None,
-                        })
-                    })
-                    .unwrap_or("logs");
-                kind.set(first.into());
-                filter.set(String::new());
-                let seconds = current
-                    .scope
-                    .get("max_query_window_s")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(0)
-                    .min(900);
-                let end = (js_sys::Date::now().max(0.) as u64).saturating_mul(1_000_000);
-                from.set(
-                    end.saturating_sub(seconds.saturating_mul(1_000_000_000))
-                        .to_string(),
-                );
-                to.set(end.to_string());
-            }
-        });
         Effect::new(move |_| {
             if state.with(|s| !s.busy && s.queued_logout.is_some()) {
                 drain_logout(state);
@@ -1285,7 +1042,7 @@ mod browser {
                 <div class="card-heading"><h1 class="connection-title">{move || state.with(|s| if s.session.is_some() { "Connected" } else { "Connect to FabricO11y" })}</h1><div class="button-group"><button class="secondary" disabled=move || state.with(|s| s.busy) on:click=move |_| session(state)>"Check session"</button><button class="secondary" disabled=move || state.with(|s| s.session.is_none()) on:click=move |_| {
                     logout(state);
                 }>"Sign out"</button></div></div>
-                <p role="status" aria-live="polite">{move || state.with(|s| if s.busy { "Working…".into() } else if let Some(session) = &s.session { format!("{} · {}", session.display_name, session.kind) } else { "Sign in to view your telemetry.".into() })}</p>
+                <p role="status" aria-live="polite">{move || state.with(|s| if s.busy { "Working…".into() } else if let Some(session) = &s.session { format!("{} · {}", session.display_name, session.role) } else { "Sign in to view your telemetry.".into() })}</p>
                 <Show when=move || state.with(|s| !s.error.is_empty())><p class="query-help" role="alert">{move || state.with(|s| s.error.clone())}</p></Show>
             </section>
             <details class="card" data-testid="live-access-help"><summary>"Recovery and installation help"</summary>
@@ -1293,27 +1050,26 @@ mod browser {
                 <p>"Save your Principal ID and add a second independent passkey in Settings while an existing key is available. These recovery commands must be run locally by the server filesystem owner after stopping the service, never in this browser."</p>
                 <p>"For expired first setup only, before any owner passkey exists:"</p><pre class="live-json">"fabric-server renew-bootstrap /etc/fabrico11y/server.conf"</pre>
                 <p>"For an established owner, use the saved immutable ID:"</p><pre class="live-json">"fabric-server recover-access /etc/fabrico11y/server.conf OWNER_PRINCIPAL_ID"</pre>
-                <p>"Recovery validates stopped-service state and requires a free protected backup slot (two slots; no automatic overwrite). It invalidates all sessions and workload/delegated credentials and removes that owner's old passkeys. Other humans' stored passkeys remain. Read state_dir/access/access-bootstrap.secret locally, enroll within ten minutes through First owner setup, then add a second key. Substitute your actual configuration path. Keep backups and setup secrets protected."</p>
+                <p>"Recovery validates stopped-service state and requires a free protected backup slot (two slots; no automatic overwrite). It invalidates all sessions and reader tokens and removes the owner's old passkeys. Read state_dir/access/access-bootstrap.secret locally, enroll within ten minutes through First owner setup, then add a second key. Substitute your actual configuration path. Keep backups and setup secrets protected."</p>
             </details>
             <Show when=move || state.with(|s| s.session.is_some()) fallback=move || view! {
                 <section class="card"><h2>"Sign in with a passkey"</h2><form class="query-form" on:submit=move |ev| { ev.prevent_default(); authenticate(state,false,principal.get_untracked(),String::new(),String::new()); }><label>"Principal ID"<input maxlength="128" autocomplete="username" prop:value=move || principal.get() on:input=move |ev| principal.set(event_target_value(&ev))/></label><button class="primary" type="submit" disabled=move || state.with(|s| s.busy)>"Use passkey"</button></form>
-                    <form class="query-form" on:submit=move |ev|{ev.prevent_default();let value=invitation.get_untracked();invitation.set(String::new());register_existing(state,Some(value));}><label>"One-time invitation"<input type="password" maxlength="256" autocomplete="off" prop:value=move||invitation.get() on:input=move|ev|invitation.set(event_target_value(&ev))/></label><button class="secondary" type="submit" disabled=move||state.with(|s|s.busy)>"Enroll invited passkey"</button></form>
                     <details><summary>"First owner setup"</summary><p>"Use the one-time protected setup secret from your server. Registration never selects privileges in the browser."</p><form class="query-form" on:submit=move |ev| { ev.prevent_default(); let secret=bootstrap.get_untracked(); bootstrap.set(String::new()); authenticate(state,true,String::new(),display.get_untracked(),secret); }><label>"Display name"<input maxlength="128" prop:value=move || display.get() on:input=move |ev| display.set(event_target_value(&ev))/></label><label>"One-time setup secret"<input type="password" maxlength="256" autocomplete="off" prop:value=move || bootstrap.get() on:input=move |ev| bootstrap.set(event_target_value(&ev))/></label><button class="primary" type="submit" disabled=move || state.with(|s| s.busy)>"Create owner passkey"</button></form></details>
                 </section>
             }>
                 {move || match navigate.get() {
                     Page::Explore | Page::Traces | Page::Tail => view! {
                         <section class="card query-card"><h2>{move || navigate.get().title()}</h2>
-                            <p class="query-help">{move || state.with(|s| s.session.as_ref().map(|session|format!("Search authorized sources. Up to {} observations per page; maximum window {} seconds. Presets adapt to your grants.",session.scope.get("max_query_rows").and_then(Value::as_u64).unwrap_or(0).min(200),session.scope.get("max_query_window_s").and_then(Value::as_u64).unwrap_or(0).min(86400))).unwrap_or_default())}</p>
-                            <div class="button-group time-presets" aria-label="Time range">{[(900u64,"Last 15 minutes"),(3600,"Last 1 hour"),(86400,"Last 24 hours")].into_iter().map(move |(seconds,label)| view! { <button class="secondary" on:click=move |_| { let end=(js_sys::Date::now().max(0.) as u64).saturating_mul(1_000_000); let maximum=state.with_untracked(|s|s.session.as_ref().and_then(|s|s.scope.get("max_query_window_s")).and_then(Value::as_u64).unwrap_or(0)); from.set(end.saturating_sub(seconds.min(maximum)*1_000_000_000).to_string()); to.set(end.to_string()); change(state); }>{move || {let maximum=state.with(|s|s.session.as_ref().and_then(|s|s.scope.get("max_query_window_s")).and_then(Value::as_u64).unwrap_or(0));if seconds>maximum{format!("Last {} seconds (grant cap)",maximum)}else{label.to_owned()}}}</button> }).collect_view()}</div>
+                            <p class="query-help">"Search retained observations. Up to 200 observations per page; maximum window 24 hours."</p>
+                            <div class="button-group time-presets" aria-label="Time range">{[(900u64,"Last 15 minutes"),(3600,"Last 1 hour"),(86400,"Last 24 hours")].into_iter().map(move |(seconds,label)| view! { <button class="secondary" on:click=move |_| { let end=(js_sys::Date::now().max(0.) as u64).saturating_mul(1_000_000); from.set(end.saturating_sub(seconds*1_000_000_000).to_string()); to.set(end.to_string()); change(state); }>{label}</button> }).collect_view()}</div>
                             <form class="query-form" on:submit=move |ev| { ev.prevent_default(); if filter_budget_error.get_untracked(){return;} match read_query(&kind.get_untracked(),&node.get_untracked(),&filter.get_untracked(),&from.get_untracked(),&to.get_untracked(),None).and_then(|input|with_span_name(input,&span_name.get_untracked())) { Ok(input) => query(state,input), Err(error) => state.update(|s|s.error=error) } }>
                                 <label>"Signal"<select prop:value=move || kind.get() on:change=move |ev| { kind.set(event_target_value(&ev)); span_name.set(String::new()); change(state); }><option value="logs" selected=move||kind.get()=="logs">"Logs"</option><option value="metrics" selected=move||kind.get()=="metrics">"Metrics"</option><option value="spans" selected=move||kind.get()=="spans">"Spans"</option></select></label>
-                                <label>"Source name (blank = authorized scope)"<input list="authorized-source-names" maxlength="64" prop:value=move || node.get() on:input=move |ev| { node.set(event_target_value(&ev)); change(state); }/></label>
-                                <datalist id="authorized-source-names">{move||state.with(|s|s.nodes.as_ref().and_then(|v|v.get("nodes")).and_then(Value::as_array).map(|nodes|nodes.iter().filter_map(|n|n.get("name").and_then(Value::as_str)).map(|name|view!{<option value=name.to_owned()/>}).collect_view()).unwrap_or_default())}</datalist>
-                                <button class="secondary" type="button" disabled=move||state.with(|s|s.busy||!s.session.as_ref().is_some_and(|s|s.allows("inventory.read"))) on:click=move |_|request(state,"/v1/console/nodes".into(),"GET",None,|s,v|{s.nodes=Some(v);Ok(())})>"Refresh source choices"</button>
+                                <label>"Source name (blank = all sources)"<input list="source-names" maxlength="64" prop:value=move || node.get() on:input=move |ev| { node.set(event_target_value(&ev)); change(state); }/></label>
+                                <datalist id="source-names">{move||state.with(|s|s.nodes.as_ref().and_then(|v|v.get("nodes")).and_then(Value::as_array).map(|nodes|nodes.iter().filter_map(|n|n.get("name").and_then(Value::as_str)).map(|name|view!{<option value=name.to_owned()/>}).collect_view()).unwrap_or_default())}</datalist>
+                                <button class="secondary" type="button" disabled=move||state.with(|s|s.busy) on:click=move |_|request(state,"/v1/console/nodes".into(),"GET",None,|s,v|{s.nodes=Some(v);Ok(())})>"Refresh source choices"</button>
                                 <label>{move || match kind.get().as_str() { "metrics"=>"Exact metric name", "spans"=>"Exact trace ID (optional)",_=>"Body substring (case-sensitive)" }}<input maxlength="4096" prop:value=move || filter.get() on:input=move |ev| { let value=event_target_value(&ev); if value.len()<=4096 { filter.set(value); filter_budget_error.set(false); change(state); } else { filter_budget_error.set(true); state.update(|s|s.error="Filter exceeds 4096 UTF-8 bytes. Edit it before querying.".into()); } }/></label>
                                 <Show when=move||kind.get()=="spans"><label>"Exact span name (optional)"<input data-testid="live-span-name" maxlength="4096" prop:value=move||span_name.get() on:input=move|ev|{span_name.set(event_target_value(&ev));change(state);}/></label></Show>
-                                <button class="primary" type="submit" disabled=move || filter_budget_error.get() || state.with(|s|s.busy || !s.session.as_ref().is_some_and(|s|s.allows("telemetry.read")))>"Run query"</button>
+                                <button class="primary" type="submit" disabled=move || filter_budget_error.get() || state.with(|s|s.busy)>"Run query"</button>
                             </form>
                             <details class="exact-range"><summary>"Exact time range"</summary><p class="query-help">"Unix nanoseconds, including the start and excluding the end. Maximum range: 24 hours."</p><div class="query-form"><label>"Start (Unix ns)"<input inputmode="numeric" maxlength="20" prop:value=move || from.get() on:input=move |ev| { from.set(event_target_value(&ev)); change(state); }/></label><label>"End, exclusive (Unix ns)"<input inputmode="numeric" maxlength="20" prop:value=move || to.get() on:input=move |ev| { to.set(event_target_value(&ev)); change(state); }/></label></div></details>
                             <Show when=move || navigate.get()==Page::Tail><p class="query-help">"Near-live polling controls and bounded retained tail are below. Query results describe their selected window, not a lossless stream."</p><TailPolling state=state kind=kind node=node filter=filter from=from to=to/></Show>
@@ -1327,25 +1083,25 @@ mod browser {
                         <QueryResults state=state/>
                     }.into_any(),
                     Page::Settings => view! {
-                        <section class="card"><h2>"Identity and permissions"</h2><p>{move||state.with(|s|s.session.as_ref().map(|session|format!("{} · {}",session.display_name,session.kind)).unwrap_or_default())}</p><label>"Principal ID — save this ID for passkey sign-in"<input readonly prop:value=move||state.with(|s|s.session.as_ref().map(|s|s.principal_id.clone()).unwrap_or_default())/></label><p>{move||state.with(|s|s.session.as_ref().map(|session|format!("Query grants: {} rows, {} seconds; installation-wide access {}.",session.scope.get("max_query_rows").unwrap_or(&Value::Null),session.scope.get("max_query_window_s").unwrap_or(&Value::Null),session.scope.get("installation_wide").unwrap_or(&Value::Null))).unwrap_or_default())}</p><details><summary>"Exact identity and grant fields"</summary><pre class="live-json">{move || state.with(|s|s.session.as_ref().map(|session| fields(&json!({"principal_id":session.principal_id,"scope":session.scope,"actions":session.actions}))).unwrap_or_default())}</pre></details><p>"Add and revoke passkeys below. Offline owner recovery requires the protected server procedure; browser controls do not grant authority. This app never saves your principal ID in browser storage."</p></section>
-                        <section class="card"><div class="card-heading"><h2>"Spindle inventory"</h2><button class="secondary" disabled=move || state.with(|s|s.busy || !s.session.as_ref().is_some_and(|s|s.allows("inventory.read"))) on:click=move |_| request(state,"/v1/console/nodes".into(),"GET",None,|s,v| {s.nodes=Some(v);Ok(())})>"Refresh inventory"</button></div><InventoryView state=state/><details><summary>"Exact inventory fields"</summary><pre class="live-json">{move || state.with(|s|s.nodes.as_ref().map(fields).unwrap_or_else(|| "Inventory has not been requested.".into()))}</pre></details></section>
-                        <section class="card"><h2>"Scoped Spindle control"</h2><label>"Existing Spindle name"<input maxlength="64" prop:value=move || target.get() on:input=move |ev| target.set(event_target_value(&ev))/></label><div class="button-group">{["pause","resume","revoke"].into_iter().map(move |action| view! { <button class="secondary" disabled=move || state.with(|s|s.busy || !s.session.as_ref().is_some_and(|s|s.allows(&format!("node.{action}")))) on:click=move |_| {
+                        <section class="card"><h2>"Identity"</h2><p>{move||state.with(|s|s.session.as_ref().map(|session|format!("{} · {}",session.display_name,session.role)).unwrap_or_default())}</p><label>"Principal ID — save this ID for passkey sign-in"<input readonly prop:value=move||state.with(|s|s.session.as_ref().map(|s|s.principal_id.clone()).unwrap_or_default())/></label><p>"Add and revoke passkeys and reader tokens below. Offline owner recovery requires the protected server procedure; browser controls do not grant authority. This app never saves your principal ID in browser storage."</p></section>
+                        <section class="card"><div class="card-heading"><h2>"Spindle inventory"</h2><button class="secondary" disabled=move || state.with(|s|s.busy) on:click=move |_| request(state,"/v1/console/nodes".into(),"GET",None,|s,v| {s.nodes=Some(v);Ok(())})>"Refresh inventory"</button></div><InventoryView state=state/><details><summary>"Exact inventory fields"</summary><pre class="live-json">{move || state.with(|s|s.nodes.as_ref().map(fields).unwrap_or_else(|| "Inventory has not been requested.".into()))}</pre></details></section>
+                        <section class="card"><h2>"Spindle control"</h2><label>"Existing Spindle name"<input maxlength="64" prop:value=move || target.get() on:input=move |ev| target.set(event_target_value(&ev))/></label><div class="button-group">{["pause","resume","revoke"].into_iter().map(move |action| view! { <button class="secondary" disabled=move || state.with(|s|s.busy) on:click=move |_| {
                             let name=target.get_untracked(); if !valid_name(&name) { state.update(|s|s.error="Use a valid existing Spindle name.".into()); return; }
                             if action=="revoke" && !web_sys::window().is_some_and(|w|w.confirm_with_message("Revoke this Spindle permanently? Unacknowledged source data remains retained; this action is terminal.").unwrap_or(false)) {return;}
                             request(state,format!("/v1/console/nodes/{name}/{action}"),"POST",None,|s,v| {s.nodes=Some(v);Ok(())});
                         }>{action}</button> }).collect_view()}</div>
-                        <form class="query-form" on:submit=move |ev| { ev.prevent_default(); let name=target.get_untracked(); if !valid_name(&name) {state.update(|s|s.error="Use a valid Spindle name.".into());return;} match desired(&paths.get_untracked(),&interval.get_untracked()) {Ok(body)=>request(state,format!("/v1/console/nodes/{name}/config"),"PUT",Some(body),|s,v| {s.nodes=Some(v);Ok(())}),Err(e)=>state.update(|s|s.error=e)} }><label>"Absolute log paths, one per line"<textarea maxlength="65536" prop:value=move || paths.get() on:input=move |ev| paths.set(event_target_value(&ev))></textarea></label><label>"Metric interval (1–3600 s)"<input inputmode="numeric" maxlength="4" prop:value=move || interval.get() on:input=move |ev| interval.set(event_target_value(&ev))/></label><button class="primary" type="submit" disabled=move || state.with(|s|s.busy || !s.session.as_ref().is_some_and(|s|s.allows("node.configure")))>"Publish desired configuration"</button></form>
-                        <details><summary>"Enroll a new Spindle"</summary><form class="query-form" on:submit=move |ev| {ev.prevent_default();let name=enroll_name.get_untracked();if !valid_name(&name) {state.update(|s|s.error="Use a valid new Spindle name.".into());return;}match desired(&paths.get_untracked(),&interval.get_untracked()) {Ok(mut body)=>{body["name"]=json!(name);request(state,"/v1/console/nodes".into(),"POST",Some(body),|s,v| {s.secret=v.get("token").and_then(Value::as_str).unwrap_or("").into();s.nodes=Some(json!({"enrollment":"created; configure the protected Spindle token file"}));Ok(())});},Err(e)=>state.update(|s|s.error=e)}}><label>"New Spindle name"<input maxlength="64" prop:value=move || enroll_name.get() on:input=move |ev| enroll_name.set(event_target_value(&ev))/></label><button class="primary" type="submit" disabled=move || state.with(|s|s.busy || !s.session.as_ref().is_some_and(|s|s.allows("node.enroll")))>"Enroll with configuration above"</button></form></details>
-                        <Show when=move || state.with(|s|!s.secret.is_empty())><p>"One-time credential or invitation: transfer it to its intended protected destination now. This value is held only in page memory."</p><code>{move || state.with(|s|s.secret.clone())}</code><button class="secondary" on:click=move |_| state.update(|s|s.secret.clear())>"Clear displayed credential"</button></Show></section>
+                        <form class="query-form" on:submit=move |ev| { ev.prevent_default(); let name=target.get_untracked(); if !valid_name(&name) {state.update(|s|s.error="Use a valid Spindle name.".into());return;} match desired(&paths.get_untracked(),&interval.get_untracked()) {Ok(body)=>request(state,format!("/v1/console/nodes/{name}/config"),"PUT",Some(body),|s,v| {s.nodes=Some(v);Ok(())}),Err(e)=>state.update(|s|s.error=e)} }><label>"Absolute log paths, one per line"<textarea maxlength="65536" prop:value=move || paths.get() on:input=move |ev| paths.set(event_target_value(&ev))></textarea></label><label>"Metric interval (1–3600 s)"<input inputmode="numeric" maxlength="4" prop:value=move || interval.get() on:input=move |ev| interval.set(event_target_value(&ev))/></label><button class="primary" type="submit" disabled=move || state.with(|s|s.busy)>"Publish desired configuration"</button></form>
+                        <details><summary>"Enroll a new Spindle"</summary><form class="query-form" on:submit=move |ev| {ev.prevent_default();let name=enroll_name.get_untracked();if !valid_name(&name) {state.update(|s|s.error="Use a valid new Spindle name.".into());return;}match desired(&paths.get_untracked(),&interval.get_untracked()) {Ok(mut body)=>{body["name"]=json!(name);request(state,"/v1/console/nodes".into(),"POST",Some(body),|s,v| {s.secret=v.get("token").and_then(Value::as_str).unwrap_or("").into();s.nodes=Some(json!({"enrollment":"created; configure the protected Spindle token file"}));Ok(())});},Err(e)=>state.update(|s|s.error=e)}}><label>"New Spindle name"<input maxlength="64" prop:value=move || enroll_name.get() on:input=move |ev| enroll_name.set(event_target_value(&ev))/></label><button class="primary" type="submit" disabled=move || state.with(|s|s.busy)>"Enroll with configuration above"</button></form></details>
+                        <Show when=move || state.with(|s|!s.secret.is_empty())><p>"One-time credential: transfer it to its intended protected destination now. This value is held only in page memory."</p><code>{move || state.with(|s|s.secret.clone())}</code><button class="secondary" on:click=move |_| state.update(|s|s.secret.clear())>"Clear displayed credential"</button></Show></section>
                         <AccessSettings state=state/>
                         <StatusView state=state/>
                     }.into_any(),
                     Page::Overview => view! {
-                        <section class="card"><div class="card-heading"><h2>"Authorized sources"</h2><button class="secondary" data-testid="refresh-overview-inventory" disabled=move||state.with(|s|s.busy||!s.session.as_ref().is_some_and(|s|s.allows("inventory.read"))) on:click=move |_|request(state,"/v1/console/nodes".into(),"GET",None,|s,v|{s.nodes=Some(v);Ok(())})>"Refresh sources"</button></div><InventoryView state=state/></section>
-                        <section class="card"><h2>"Server and companion observations"</h2><p>"Fetch the dedicated fabric-server-self diagnostic source in your authorized time window. Samples are historical observations, not live process health."</p><button class="primary" data-testid="overview-process-samples" disabled=move||state.with(|s|s.busy||!s.session.as_ref().is_some_and(|session|session.allows("telemetry.read")&&session.scope.get("signals").and_then(Value::as_array).is_some_and(|signals|signals.iter().any(|signal|signal.as_str()==Some("logs"))))||!s.nodes.as_ref().and_then(|v|v.get("nodes")).and_then(Value::as_array).is_some_and(|nodes|nodes.iter().any(|n|n.get("name").and_then(Value::as_str)==Some("fabric-server-self")))) on:click=move |_|{
+                        <section class="card"><div class="card-heading"><h2>"Enrolled Spindles"</h2><button class="secondary" data-testid="refresh-overview-inventory" disabled=move||state.with(|s|s.busy) on:click=move |_|request(state,"/v1/console/nodes".into(),"GET",None,|s,v|{s.nodes=Some(v);Ok(())})>"Refresh sources"</button></div><InventoryView state=state/></section>
+                        <section class="card"><h2>"Server and companion observations"</h2><p>"Fetch the dedicated fabric-server-self diagnostic source in the selected time window. Samples are historical observations, not live process health."</p><button class="primary" data-testid="overview-process-samples" disabled=move||state.with(|s|s.busy||!s.nodes.as_ref().and_then(|v|v.get("nodes")).and_then(Value::as_array).is_some_and(|nodes|nodes.iter().any(|n|n.get("name").and_then(Value::as_str)==Some("fabric-server-self")))) on:click=move |_|{
                             kind.set("logs".into());node.set("fabric-server-self".into());filter.set("event=process_sample".into());change(state);
                             match read_query("logs","fabric-server-self","event=process_sample",&from.get_untracked(),&to.get_untracked(),None){Ok(input)=>query(state,input),Err(error)=>state.update(|s|s.error=error)}
-                        }>"Load process observations"</button><p class="query-help">"Refresh sources first. An absent diagnostic source can mean it is outside your grants; it does not prove no server observations exist."</p><ProcessObservations state=state/></section>
+                        }>"Load process observations"</button><p class="query-help">"Refresh sources first. An absent diagnostic source means it is not enrolled in the fetched inventory; it does not prove no server observations exist."</p><ProcessObservations state=state/></section>
                         <StatusView state=state/>
                         <button class="secondary" on:click=move |_|navigate.set(Page::Explore)>"Explore retained observations"</button>
                     }.into_any(),
@@ -1381,33 +1137,22 @@ mod browser {
     fn AccessSettings(state: RwSignal<LiveState>) -> impl IntoView {
         let response = RwSignal::new(String::new());
         let record = RwSignal::new(String::new());
-        let operation = RwSignal::new("workload".to_owned());
-        let scope_budget_error = RwSignal::new(false);
         let name = RwSignal::new(String::new());
         let ttl = RwSignal::new("86400".to_owned());
-        let scope = RwSignal::new(fields(
-            &json!({"actions":["telemetry_read","inventory_read"],"installation_wide":false,"enrollments":[],"signals":["logs"],"max_query_window_s":3600,"max_query_rows":200,"allowed_log_paths":[],"min_interval_s":1,"max_interval_s":3600,"enrollment_namespace":null,"max_enrollments":0}),
-        ));
         view! {
-            <section class="card"><h2>"Passkeys and sessions"</h2><p>"Credential, identity and grant changes need passkey verification within five minutes. Reverify first; the server enforces freshness and your current scope."</p><div class="button-group"><button class="primary" disabled=move||state.with(|s|s.busy) on:click=move |_|{let id=state.with_untracked(|s|s.session.as_ref().map(|s|s.principal_id.clone()).unwrap_or_default());authenticate(state,false,id,String::new(),String::new());}>"Reverify with passkey"</button><button class="secondary" disabled=move||state.with(|s|s.busy) on:click=move |_|register_existing(state,None)>"Add another passkey"</button>
-                {["passkeys","sessions","principals","audit"].into_iter().map(move |kind|view!{<button class="secondary" disabled=move||state.with(|s|s.busy || match kind {"principals"=>!s.session.as_ref().is_some_and(|s|s.allows("identity.manage")),"audit"=>!s.session.as_ref().is_some_and(|s|s.allows("audit.read")),_=>false}) on:click=move |_|request(state,format!("/v1/console/{kind}"),"GET",None,move|_,v|{let _=response.try_set(fields(&v));Ok(())})>{format!("List {kind}")}</button>}).collect_view()}
-            </div><pre class="live-json">{move||response.get()}</pre><label>"Exact passkey, session, principal or credential ID"<input maxlength="1024" prop:value=move||record.get() on:input=move|ev|record.set(event_target_value(&ev))/></label><div class="button-group">{[("passkeys","revoke"),("sessions","revoke"),("principals","disable"),("credentials","revoke")].into_iter().map(move|(kind,action)|view!{<button class="secondary" disabled=move||state.with(|s|s.busy || (kind=="principals"||kind=="credentials") && !s.session.as_ref().is_some_and(|s|s.allows("identity.manage"))) on:click=move |_|{
-                let id=record.get_untracked();if id.is_empty()||id.len()>1024||!id.bytes().all(|b|b.is_ascii_alphanumeric()||b"-_".contains(&b)){state.update(|s|s.error="Use the exact ID from the authorized listing.".into());return;}
-                if !web_sys::window().is_some_and(|w|w.confirm_with_message(&format!("{action} this {kind} record? Associated sessions or credentials may lose access.")).unwrap_or(false)){return;}
-                request(state,format!("/v1/console/{kind}/{id}/{action}"),"POST",None,move|s,v|{let _=response.try_set(fields(&v));if kind=="passkeys"{s.lock("Passkey revoked. Sign in again with a remaining passkey.");broadcast_logout();}Ok(())});
-            }>{format!("{action} {kind} record")}</button>}).collect_view()}</div></section>
-            <section class="card"><h2>"Explicit human, workload and delegated access"</h2><p>"Grants use immutable enrollment IDs from inventory, signal classes and bounded windows. Workloads cannot administer identities or grants. Delegated AI grants must fit both the human and workload grants and last at most 900 seconds. Ordinary workload credentials last at most 30 days. No authority comes from names or retrieved telemetry."</p><form on:submit=move|ev|{
-                ev.prevent_default();if scope_budget_error.get_untracked(){return;}let parent=state.with_untracked(|s|s.session.as_ref().map(|s|s.scope.clone()));let Some(parent)=parent else{return;};let mode=operation.get_untracked();let grant=if mode=="rotate"{Value::Null}else{match scoped_grant(&scope.get_untracked(),&parent){Ok(v)=>v,Err(e)=>{state.update(|s|s.error=e);return;}}};
-                let id=name.get_untracked();let lifetime=ttl.get_untracked().parse::<u64>().ok();
-                let (path,method,body)=match mode.as_str(){
-                    "rotate"=>{let Some(lifetime)=lifetime.filter(|v|*v>0&&*v<=2592000)else{state.update(|s|s.error="Lifetime must be 1–2592000 seconds.".into());return;};if id.is_empty()||id.len()>128||!id.bytes().all(|b|b.is_ascii_alphanumeric()||b"-_".contains(&b)){state.update(|s|s.error="Supply the immutable workload ID.".into());return;}(format!("/v1/console/workloads/{id}/rotate"),"POST",json!({"ttl_s":lifetime}))},
-                    "workload"|"delegation"=>{let maximum=if mode=="delegation"{900}else{2592000};let Some(lifetime)=lifetime.filter(|v|*v>0&&*v<=maximum)else{state.update(|s|s.error=format!("Lifetime must be 1–{maximum} seconds."));return;};if id.is_empty()||id.len()>128{state.update(|s|s.error="Supply a bounded workload name or immutable workload ID.".into());return;}
-                    if mode=="workload"{("/v1/console/workloads".into(),"POST",json!({"name":id,"scope":grant,"ttl_s":lifetime}))}else{("/v1/console/delegations".into(),"POST",json!({"workload_id":id,"scope":grant,"ttl_s":lifetime}))}},
-                    "invite"=>{if id.is_empty()||id.len()>128{state.update(|s|s.error="Supply a human display name.".into());return;}("/v1/console/principals".into(),"POST",json!({"name":id,"scope":grant}))},
-                    _=>{if id.is_empty()||id.len()>128||!id.bytes().all(|b|b.is_ascii_alphanumeric()||b"-_".contains(&b)){state.update(|s|s.error="Supply the immutable principal ID.".into());return;}(format!("/v1/console/principals/{id}/scope"),"PUT",grant)},
-                };
-                request(state,path,method,Some(body),move|s,mut value|{s.secret=value.get("token").or_else(||value.get("invitation")).and_then(Value::as_str).unwrap_or("").into();if let Some(object)=value.as_object_mut(){object.remove("token");object.remove("invitation");}let _=response.try_set(fields(&value));if mode=="scope"{s.lock("Scope changed. Sign in again to validate current policy.");broadcast_logout();}else{leptos::task::spawn_local(async move{session(state);});}Ok(())});
-            }><div class="query-form"><label>"Operation"<select prop:value=move||operation.get() on:change=move|ev|{operation.set(event_target_value(&ev));ttl.set(if operation.get_untracked()=="delegation"{"900"}else{"86400"}.into());}><option value="workload">"Issue workload credential"</option><option value="rotate">"Rotate workload credential"</option><option value="delegation">"Issue delegated AI credential"</option><option value="invite">"Invite a local human"</option><option value="scope">"Replace principal scope"</option></select></label><label>"Display name or immutable target ID"<input maxlength="128" prop:value=move||name.get() on:input=move|ev|name.set(event_target_value(&ev))/></label><label>"Credential lifetime (seconds)"<input inputmode="numeric" maxlength="7" prop:value=move||ttl.get() on:input=move|ev|ttl.set(event_target_value(&ev))/></label></div><label>"Explicit scope (review every field before issuance)"<textarea class="scope-editor" maxlength="131072" rows="14" prop:value=move||scope.get() on:input=move|ev|{let value=event_target_value(&ev);if value.len()<=131072{scope.set(value);scope_budget_error.set(false);}else{scope_budget_error.set(true);state.update(|s|s.error="Scope exceeds 128 KiB editing budget. Edit it before submitting.".into());}}></textarea></label><button class="primary" type="submit" disabled=move||scope_budget_error.get() || state.with(|s|s.busy || !s.session.as_ref().is_some_and(|s|s.allows("grant.manage")))>"Submit reviewed scoped change"</button></form><p class="query-help">"An empty enrollment list grants no telemetry to a scoped principal. The installation-wide switch is explicit and only succeeds within current owner authority. Scope changes revoke stale policy authority; refresh the session afterward. Rotation retains the workload scope with at most ten minutes of old-credential overlap. Explicit credential revocation is immediate."</p></section>
+            <section class="card"><h2>"Passkeys and sessions"</h2><p>"Passkey, session and reader-token changes need passkey verification within five minutes. Reverify first; the server enforces freshness."</p><div class="button-group"><button class="primary" disabled=move||state.with(|s|s.busy) on:click=move |_|{let id=state.with_untracked(|s|s.session.as_ref().map(|s|s.principal_id.clone()).unwrap_or_default());authenticate(state,false,id,String::new(),String::new());}>"Reverify with passkey"</button><button class="secondary" disabled=move||state.with(|s|s.busy) on:click=move |_|add_passkey(state)>"Add another passkey"</button>
+                {["passkeys","sessions","readers","audit"].into_iter().map(move |kind|view!{<button class="secondary" disabled=move||state.with(|s|s.busy) on:click=move |_|request(state,format!("/v1/console/{kind}"),"GET",None,move|_,v|{let _=response.try_set(fields(&v));Ok(())})>{format!("List {kind}")}</button>}).collect_view()}
+            </div><pre class="live-json">{move||response.get()}</pre><label>"Exact passkey, session or reader ID"<input maxlength="1024" prop:value=move||record.get() on:input=move|ev|record.set(event_target_value(&ev))/></label><div class="button-group">{["passkeys","sessions","readers"].into_iter().map(move|kind|view!{<button class="secondary" disabled=move||state.with(|s|s.busy) on:click=move |_|{
+                let id=record.get_untracked();if id.is_empty()||id.len()>1024||!id.bytes().all(|b|b.is_ascii_alphanumeric()||b"-_".contains(&b)){state.update(|s|s.error="Use the exact ID from the listing.".into());return;}
+                if !web_sys::window().is_some_and(|w|w.confirm_with_message(&format!("Revoke this {kind} record? Associated sessions or tokens lose access.")).unwrap_or(false)){return;}
+                request(state,format!("/v1/console/{kind}/{id}/revoke"),"POST",None,move|s,v|{let _=response.try_set(fields(&v));if kind=="passkeys"{s.lock("Passkey revoked. Sign in again with a remaining passkey.");broadcast_logout();}Ok(())});
+            }>{format!("revoke {kind} record")}</button>}).collect_view()}</div></section>
+            <section class="card"><h2>"Reader tokens for scripts and AI agents"</h2><p>"A reader token can query telemetry and read status and Spindle inventory, nothing else. It expires (at most 30 days) and is revoked individually. The token is shown once and held only in page memory; no authority comes from names or retrieved telemetry."</p><form on:submit=move|ev|{
+                ev.prevent_default();let reader=name.get_untracked();
+                let Some(lifetime)=ttl.get_untracked().parse::<u64>().ok().filter(|v|*v>0&&*v<=2592000)else{state.update(|s|s.error="Lifetime must be 1–2592000 seconds.".into());return;};
+                if reader.is_empty()||reader.len()>128{state.update(|s|s.error="Supply a reader name.".into());return;}
+                request(state,"/v1/console/readers".into(),"POST",Some(json!({"name":reader,"ttl_s":lifetime})),move|s,mut value|{s.secret=value.get("token").and_then(Value::as_str).unwrap_or("").into();if let Some(object)=value.as_object_mut(){object.remove("token");}let _=response.try_set(fields(&value));Ok(())});
+            }><div class="query-form"><label>"Reader name"<input maxlength="128" prop:value=move||name.get() on:input=move|ev|name.set(event_target_value(&ev))/></label><label>"Credential lifetime (seconds)"<input inputmode="numeric" maxlength="7" prop:value=move||ttl.get() on:input=move|ev|ttl.set(event_target_value(&ev))/></label></div><button class="primary" type="submit" disabled=move||state.with(|s|s.busy)>"Issue reader token"</button></form></section>
         }
     }
 
@@ -1440,7 +1185,7 @@ mod browser {
 
     #[component]
     fn InventoryView(state: RwSignal<LiveState>) -> impl IntoView {
-        view! {<div><p class="query-help">"Only authorized enrollments are shown. Last poll is the server's control-poll time, not telemetry freshness or proof that a source is currently online."</p>{move||state.with(|s|match s.nodes.as_ref().and_then(|v|v.get("nodes")).and_then(Value::as_array){
+        view! {<div><p class="query-help">"All enrolled Spindles are shown. Last poll is the server's control-poll time, not telemetry freshness or proof that a source is currently online."</p>{move||state.with(|s|match s.nodes.as_ref().and_then(|v|v.get("nodes")).and_then(Value::as_array){
             Some(nodes) if !nodes.is_empty()=>nodes.iter().map(|node|{
                 let name=node.get("name").and_then(Value::as_str).unwrap_or("Unknown source").to_owned();
                 let status=node.get("status").map(Value::to_string).unwrap_or_else(||"Not reported".into());
@@ -1450,8 +1195,8 @@ mod browser {
                 let error=node.get("config_error").and_then(Value::as_str).unwrap_or("").to_owned();
                 view!{<article class="source-row"><div><b>{name}</b><p>{format!("{status} · desired revision {desired} · applied {applied}")}</p><small>{format!("Last control poll: {poll}")}</small><p role="status">{error}</p></div></article>}
             }).collect_view().into_any(),
-            Some(_)=>view!{<p>"No enrollments are present in this fetched authorized inventory."</p>}.into_any(),
-            None=>view!{<p>"Inventory has not been fetched. Refresh to inspect authorized sources."</p>}.into_any(),
+            Some(_)=>view!{<p>"No enrollments are present in this fetched inventory."</p>}.into_any(),
+            None=>view!{<p>"Inventory has not been fetched. Refresh to inspect enrolled Spindles."</p>}.into_any(),
         })}</div>}
     }
 
@@ -1494,16 +1239,16 @@ mod browser {
 
     #[component]
     fn StatusView(state: RwSignal<LiveState>) -> impl IntoView {
-        view! {<section class="card"><div class="card-heading"><h2>"Effective server policy and scoped status"</h2><button class="secondary" disabled=move || state.with(|s|s.busy || !s.session.as_ref().is_some_and(|s|s.allows("inventory.read"))) on:click=move |_| request(state,"/v1/console/status".into(),"GET",None,|s,v| {s.status=Some(v);Ok(())})>"Refresh status"</button></div>{move||state.with(|s|match s.status.as_ref(){
+        view! {<section class="card"><div class="card-heading"><h2>"Effective server policy and status"</h2><button class="secondary" disabled=move || state.with(|s|s.busy) on:click=move |_| request(state,"/v1/console/status".into(),"GET",None,|s,v| {s.status=Some(v);Ok(())})>"Refresh status"</button></div>{move||state.with(|s|match s.status.as_ref(){
             Some(status)=>{
-                let field=|object:&Value,key|object.get(key).map(Value::to_string).unwrap_or_else(||"Not reported in this scope".into());
+                let field=|object:&Value,key|object.get(key).map(Value::to_string).unwrap_or_else(||"Not reported".into());
                 let storage=status.get("storage");
                 view!{<p>{format!("Committed-group cursor: {}. Durable sequence boundary, not record count or rate.",field(status,"committed_group"))}</p><p>{format!("Server query limits: {} rows · {} response bytes.",field(status,"query_rows_max"),field(status,"query_response_bytes_max"))}</p>
                     {match storage{Some(storage)=>view!{<div class="policy-grid"><div><small>"Sealed-Segment byte retention"</small><strong>{field(storage,"retention_bytes")}</strong><p>"bytes · whole Segments expire oldest first"</p></div><div><small>"Sealed-Segment age retention"</small><strong>{field(storage,"retention_s")}</strong><p>"seconds · age or byte expiry can apply first"</p></div><div><small>"Separate journal ceiling"</small><strong>{field(storage,"journal_bytes")}</strong><p>{format!("bytes · file budget {} bytes · {} seal workers",field(storage,"journal_file_bytes"),field(storage,"seal_workers"))}</p></div></div>}.into_any(),None=>view!{<p>"Installation-wide storage policy is not reported to this scope."</p>}.into_any()}}
                     <details><summary>"Exact status fields"</summary><pre class="live-json">{fields(status)}</pre></details>
                 }.into_any()
             },None=>view!{<p>"No status measurement requested."</p>}.into_any(),
-        })}<p class="query-help">"Status is sampled at request time, not continuously. Effective retention policy is read-only; edit the protected server configuration and restart. Irreversible expiry deletes whole Segments. Reserve separate headroom for journals, sealer workspace and source Spools. Scope-limited views do not imply server-wide totals."</p></section>}
+        })}<p class="query-help">"Status is sampled at request time, not continuously. Effective retention policy is read-only; edit the protected server configuration and restart. Irreversible expiry deletes whole Segments. Reserve separate headroom for journals, sealer workspace and source Spools."</p></section>}
     }
 
     // Presentation only: integer request bounds and row identities never use Date.
@@ -1540,7 +1285,7 @@ mod browser {
 
     #[component]
     fn QueryResults(state: RwSignal<LiveState>) -> impl IntoView {
-        view! {<section class="card results"><h2>"Retained observations"</h2><Show when=move || state.with(|s|s.answer.is_some()) fallback=||view! {<p>"Run a scoped query. No observations have been fetched."</p>}>
+        view! {<section class="card results"><h2>"Retained observations"</h2><Show when=move || state.with(|s|s.answer.is_some()) fallback=||view! {<p>"Run a query. No observations have been fetched."</p>}>
             <p class="query-evidence" role="status">{move || state.with(|s|s.answer.as_ref().map(|a| { let count=a.get("rows").and_then(Value::as_array).map_or(0,Vec::len); let coverage=if a.get("complete").and_then(Value::as_bool)==Some(true){"Complete within this query's coverage"}else{"Incomplete coverage — review the evidence"};format!("{count} observations · {coverage}") }).unwrap_or_default())}</p>
             <details><summary>"Evidence and exact applied request"</summary><pre class="live-json">{move || state.with(|s|s.answer.as_ref().map(|a|fields(&evidence(a))).unwrap_or_default())}</pre><pre class="live-json">{move || state.with(|s|s.applied.as_ref().map(|q|serde_json::to_string_pretty(q).unwrap_or_default()).unwrap_or_default())}</pre></details>
             <MetricPlots state=state/>
@@ -1573,19 +1318,7 @@ mod browser {
                 return;
             }
             let end = (js_sys::Date::now().max(0.) as u64).saturating_mul(1_000_000);
-            let seconds = state
-                .with_untracked(|s| {
-                    s.session
-                        .as_ref()
-                        .and_then(|s| s.scope.get("max_query_window_s"))
-                        .and_then(Value::as_u64)
-                        .unwrap_or(0)
-                })
-                .min(30);
-            from.set(
-                end.saturating_sub(seconds.saturating_mul(1_000_000_000))
-                    .to_string(),
-            );
+            from.set(end.saturating_sub(30_000_000_000).to_string());
             to.set(end.to_string());
             kind.set("logs".into());
             match read_query(
@@ -1622,7 +1355,7 @@ mod browser {
                 state.update(|s| s.tail = None);
             }
         });
-        view! {<div class="button-group"><button class="secondary" on:click=move |_| {if state.with_untracked(|s|!s.error.is_empty()){running.set(true);}else{running.update(|v|*v = !*v);}state.update(|s|s.error.clear());}>{move ||if running.get() && state.with(|s|s.error.is_empty()){"Pause 5-second polling"}else{"Resume 5-second polling"}}</button><p role="status">{move ||last.get()}</p></div><p class="query-help">"Every five seconds while this tab is visible, this view replaces its snapshot with up to your authorized row cap from the latest 30 seconds (or smaller grant window). Hidden tabs send no polls and resume when visible. It can miss records between polls or when full. Errors pause polling until you resume."</p><div class="evidence"><span>{move ||state.with(|s|s.last_success.clone())}</span><span>{move ||state.with(|s|s.tail.as_ref().map(|b|format!("{} retained bytes · {} display rows dropped{}",b.utf8_bytes,b.dropped,"")).unwrap_or_default())}</span></div><div class="tail-terminal" role="log" aria-label="Server log tail">{move ||state.with(|s|s.tail.as_ref().map(|buffer|buffer.rows.iter().map(|row|view!{<div class="tail-line">{row.clone()}</div>}).collect_view()).unwrap_or_default())}</div>}
+        view! {<div class="button-group"><button class="secondary" on:click=move |_| {if state.with_untracked(|s|!s.error.is_empty()){running.set(true);}else{running.update(|v|*v = !*v);}state.update(|s|s.error.clear());}>{move ||if running.get() && state.with(|s|s.error.is_empty()){"Pause 5-second polling"}else{"Resume 5-second polling"}}</button><p role="status">{move ||last.get()}</p></div><p class="query-help">"Every five seconds while this tab is visible, this view replaces its snapshot with up to 200 rows from the latest 30 seconds. Hidden tabs send no polls and resume when visible. It can miss records between polls or when full. Errors pause polling until you resume."</p><div class="evidence"><span>{move ||state.with(|s|s.last_success.clone())}</span><span>{move ||state.with(|s|s.tail.as_ref().map(|b|format!("{} retained bytes · {} display rows dropped{}",b.utf8_bytes,b.dropped,"")).unwrap_or_default())}</span></div><div class="tail-terminal" role="log" aria-label="Server log tail">{move ||state.with(|s|s.tail.as_ref().map(|buffer|buffer.rows.iter().map(|row|view!{<div class="tail-line">{row.clone()}</div>}).collect_view()).unwrap_or_default())}</div>}
     }
 }
 #[cfg(target_arch = "wasm32")]

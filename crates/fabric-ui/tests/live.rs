@@ -79,36 +79,6 @@ fn tail_snapshots_preserve_identical_rows_without_inventing_event_deduplication(
 }
 
 #[test]
-fn scoped_grant_cannot_expand_parent_resources_actions_or_bounds() {
-    use fabric_ui::live::scoped_grant;
-    let parent = json!({"actions":["telemetry_read","inventory_read"],"installation_wide":false,
-        "enrollments":["allowed"],"signals":["logs"],"max_query_window_s":3600,"max_query_rows":200,
-        "allowed_log_paths":["/var/log/app.log"],"min_interval_s":5,"max_interval_s":60,
-        "enrollment_namespace":"edge-","max_enrollments":10});
-    assert!(scoped_grant(&parent.to_string(), &parent).is_ok());
-    for (key, value) in [
-        ("installation_wide", json!(true)),
-        ("enrollments", json!(["other"])),
-        ("actions", json!(["identity_manage"])),
-        ("signals", json!(["metrics"])),
-        ("max_query_window_s", json!(3601)),
-        ("max_query_rows", json!(201)),
-        ("allowed_log_paths", json!(["/etc/shadow"])),
-        ("min_interval_s", json!(1)),
-        ("max_interval_s", json!(61)),
-        ("max_enrollments", json!(11)),
-        ("enrollment_namespace", json!("other-")),
-    ] {
-        let mut expanded = parent.clone();
-        expanded[key] = value;
-        assert!(
-            scoped_grant(&expanded.to_string(), &parent).is_err(),
-            "{key}"
-        );
-    }
-}
-
-#[test]
 fn metric_display_keeps_attribute_series_separate_and_raw_integer_values_exact() {
     use fabric_ui::live::metric_plots;
     let origin = 1_700_000_000_000_000_000u64;

@@ -1,7 +1,7 @@
 //! Same-origin operator API. Access is decided before body extraction; read
 //! authority is checked again before releasing results. No master-token fallback.
-use crate::access::{Access, Action, Authority, Scope, Signal};
-use crate::control::{DesiredConfig, Status};
+use crate::access::{Access, Authority, Role};
+use crate::control::{Control, DesiredConfig, Status};
 use crate::http::AppState;
 use crate::query::{Query, QueryError};
 use axum::body::Bytes;
@@ -25,6 +25,8 @@ use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 const COOKIE: &str = "__Host-fabric-session";
 const RESPONSE_CAP: usize = 8 * 1024 * 1024;
 const CURSOR_CAP: usize = 1024;
+const QUERY_ROWS_MAX: usize = 1000;
+const QUERY_WINDOW_NS: u64 = 86_400_000_000_000;
 
 #[derive(Clone)]
 pub struct Console {
@@ -41,7 +43,6 @@ pub struct Console {
 }
 struct Cursor {
     principal: String,
-    policy: u64,
     shape: String,
     raw: String,
     snapshot: String,
@@ -232,16 +233,8 @@ impl Console {
             .route("/v1/console/nodes", get(nodes).post(enroll))
             .route("/v1/console/nodes/{name}/config", put(configure))
             .route("/v1/console/nodes/{name}/{action}", post(node_action))
-            .route("/v1/console/principals", get(principals).post(invite))
-            .route("/v1/console/workloads", post(workload))
-            .route("/v1/console/workloads/{id}/rotate", post(rotate_workload))
-            .route("/v1/console/delegations", post(delegate))
-            .route("/v1/console/principals/{id}/scope", put(set_scope))
-            .route("/v1/console/principals/{id}/disable", post(disable))
-            .route(
-                "/v1/console/credentials/{id}/revoke",
-                post(revoke_credential),
-            )
+            .route("/v1/console/readers", get(readers).post(issue_reader))
+            .route("/v1/console/readers/{id}/revoke", post(revoke_reader))
             .route("/v1/console/audit", get(audit))
             .route("/v1/console/passkeys", get(passkeys))
             .route("/v1/console/passkeys/start", post(add_passkey))
@@ -254,7 +247,6 @@ impl Console {
             .route("/v1/console/auth/register/finish", post(register_finish))
             .route("/v1/console/auth/login/start", post(login_start))
             .route("/v1/console/auth/login/finish", post(login_finish))
-            .route("/v1/console/auth/invite/start", post(invite_start))
             .layer(middleware::from_fn_with_state(self.clone(), auth_admission));
         let legacy = crate::http::router(self.app.clone()).layer(middleware::from_fn(block_master));
         private
@@ -366,6 +358,15 @@ async fn authorize(State(s): State<Console>, request: Request, next: Next) -> Re
     }
     response
 }
+const ROLE_DENIED: &str = "role not permitted";
+/// Minimum role for a console route. Every route not listed here is owner-only.
+fn required_role(method: &Method, path: &str) -> Role {
+    match (method, path) {
+        (&Method::POST, "/v1/console/query")
+        | (&Method::GET, "/v1/console/status" | "/v1/console/nodes") => Role::Reader,
+        _ => Role::Owner,
+    }
+}
 async fn authorize_request(
     s: Console,
     mut request: Request,
@@ -396,17 +397,22 @@ async fn authorize_request(
     let Some((token, cookie)) = credentials(request.headers()) else {
         return err(StatusCode::UNAUTHORIZED, "sign in required");
     };
+    // The only role decision: after authentication and before any body is read.
+    let required = required_role(request.method(), request.uri().path());
     let auth = {
         let mut access = s.access.lock().unwrap();
         let found = if cookie {
             access.authenticate_session(token, now())
         } else {
-            access.authenticate_workload(token, now())
+            access.authenticate_reader(token, now())
         };
         let Ok(auth) = found else {
             return err(StatusCode::UNAUTHORIZED, "sign in required");
         };
         *actor.lock().unwrap() = Some(auth.clone());
+        if auth.role < required {
+            return err(StatusCode::FORBIDDEN, ROLE_DENIED);
+        }
         if request.method() != Method::GET
             && access
                 .validate_mutation(
@@ -422,62 +428,8 @@ async fn authorize_request(
         }
         auth
     };
-    // Permission checks before Bytes/JSON extraction. Body resource constraints
-    // are rechecked in each handler against the same immutable authority.
-    let path = request.uri().path();
-    let required = if path.ends_with("/query") {
-        Some(Action::TelemetryRead)
-    } else if path == "/v1/console/nodes" && request.method() == Method::GET
-        || path.ends_with("/status")
-    {
-        Some(Action::InventoryRead)
-    } else if path.ends_with("/config") {
-        Some(Action::NodeConfigure)
-    } else if path.ends_with("/pause") {
-        Some(Action::NodePause)
-    } else if path.ends_with("/resume") {
-        Some(Action::NodeResume)
-    } else if path == "/v1/console/nodes" {
-        Some(Action::NodeEnroll)
-    } else if path.starts_with("/v1/console/nodes/") {
-        Some(Action::NodeRevoke)
-    } else if path == "/v1/console/audit" {
-        Some(Action::AuditRead)
-    } else if path.starts_with("/v1/console/workloads")
-        || path.starts_with("/v1/console/credentials/")
-        || path.ends_with("/scope")
-    {
-        Some(Action::GrantManage)
-    } else if path.starts_with("/v1/console/principals") {
-        Some(Action::IdentityManage)
-    } else {
-        None
-    };
-    if required.is_some_and(|a| !auth.scope.actions.contains(&a)) {
-        return denied();
-    }
-    if request.method() != Method::GET
-        && (path.starts_with("/v1/console/principals")
-            || path.starts_with("/v1/console/workloads")
-            || path.starts_with("/v1/console/credentials")
-            || path.starts_with("/v1/console/delegations")
-            || path.starts_with("/v1/console/passkeys")
-            || path.starts_with("/v1/console/sessions"))
-        && s.access
-            .lock()
-            .unwrap()
-            .validate_mutation(
-                &auth,
-                csrf(request.headers()),
-                origin(request.headers()),
-                now(),
-                true,
-            )
-            .is_err()
-    {
-        return denied();
-    }
-    let query_permit = if path.ends_with("/query") {
+    let is_query = request.uri().path() == "/v1/console/query";
+    let query_permit = if is_query {
         match Arc::clone(&s.queries).try_acquire_owned() {
             Ok(p) => Some(Arc::new(p)),
             Err(_) => {
@@ -569,19 +521,6 @@ async fn register_start(State(s): State<Console>, Json(r): Json<RegisterStart>) 
 async fn login_start(State(s): State<Console>, Json(r): Json<LoginStart>) -> Response {
     json_result(s.access.lock().unwrap().start_login(&r.principal_id, now()))
 }
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct InviteStart {
-    invitation: String,
-}
-async fn invite_start(State(s): State<Console>, Json(r): Json<InviteStart>) -> Response {
-    json_result(
-        s.access
-            .lock()
-            .unwrap()
-            .start_invited_registration(&r.invitation, now()),
-    )
-}
 fn session_issued(result: io::Result<crate::access::SessionIssued>) -> Response {
     match result {
         Ok(session) => {
@@ -660,24 +599,11 @@ async fn logout(
     );
     r
 }
-async fn status(State(s): State<Console>, Extension(a): Extension<Authority>) -> Response {
-    let access = s.access.lock().unwrap();
-    if !access.authorize(&a, Action::InventoryRead, None, None) {
-        return denied();
-    }
-    let mut value = json!({"api_version":1,"scope":"authorized enrollments","query_rows_max":1000,"query_response_bytes_max":RESPONSE_CAP,"sampling":"request-time; observations remain in telemetry"});
-    if a.scope.installation_wide {
-        value["storage"] = s.policy.clone();
-        value["committed_group"] = json!(s.app.intake.committed_group());
-    }
-    Json(value).into_response()
+async fn status(State(s): State<Console>) -> Response {
+    Json(json!({"api_version":1,"query_rows_max":QUERY_ROWS_MAX,"query_response_bytes_max":RESPONSE_CAP,"sampling":"request-time; observations remain in telemetry","storage":s.policy,"committed_group":s.app.intake.committed_group()})).into_response()
 }
-async fn nodes(State(s): State<Console>, Extension(a): Extension<Authority>) -> Response {
-    let access = s.access.lock().unwrap();
-    if !access.authorize(&a, Action::InventoryRead, None, None) {
-        return denied();
-    }
-    let nodes:Vec<_>=s.app.control.lock().unwrap().inventory().into_iter().filter(|(r,_)|a.scope.allows(Action::InventoryRead,Some(&r.enrollment_id()),None)).map(|(r,o)|json!({"name":r.name,"enrollment_id":r.enrollment_id(),"status":r.status,"desired_revision":r.revision,"applied_revision":o.applied_revision,"config_error":o.config_error,"last_poll_unix_s":o.last_poll_unix_s,"logs":r.desired.logs,"metric_interval_s":r.desired.metric_interval_s})).collect();
+async fn nodes(State(s): State<Console>) -> Response {
+    let nodes:Vec<_>=s.app.control.lock().unwrap().inventory().into_iter().map(|(r,o)|json!({"name":r.name,"enrollment_id":r.enrollment_id(),"status":r.status,"desired_revision":r.revision,"applied_revision":o.applied_revision,"config_error":o.config_error,"last_poll_unix_s":o.last_poll_unix_s,"logs":r.desired.logs,"metric_interval_s":r.desired.metric_interval_s})).collect();
     Json(json!({"nodes":nodes})).into_response()
 }
 #[derive(Deserialize)]
@@ -692,11 +618,63 @@ struct Enroll {
 fn interval() -> u64 {
     15
 }
-fn desired_allowed(a: &Authority, d: &DesiredConfig) -> bool {
-    d.metric_interval_s >= a.scope.min_interval_s
-        && d.metric_interval_s <= a.scope.max_interval_s
-        && (a.scope.installation_wide
-            || d.logs.iter().all(|p| a.scope.allowed_log_paths.contains(p)))
+/// Authorize, record durable intent, change control state, then record the outcome,
+/// all under the access and control locks. An unexpected control failure quarantines access.
+fn control_change(
+    s: &Console,
+    a: &Authority,
+    h: &HeaderMap,
+    action: &str,
+    resource: impl FnOnce(&Control) -> Option<String>,
+    run: impl FnOnce(&mut Control) -> io::Result<Value>,
+) -> Response {
+    let mut access = s.access.lock().unwrap();
+    if access
+        .validate_mutation(a, csrf(h), origin(h), now(), false)
+        .is_err()
+    {
+        return denied();
+    }
+    let mut control = s.app.control.lock().unwrap();
+    let Some(resource) = resource(&control) else {
+        return denied();
+    };
+    let intent = match access.begin_control(a, action, &resource, now()) {
+        Ok(i) => i,
+        Err(e) => return failure(e),
+    };
+    let result = run(&mut control);
+    if result.as_ref().is_err_and(|e| {
+        !matches!(
+            e.kind(),
+            io::ErrorKind::InvalidInput | io::ErrorKind::AlreadyExists | io::ErrorKind::NotFound
+        )
+    }) {
+        access.quarantine();
+        return err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "control publication requires offline reconciliation",
+        );
+    }
+    if access
+        .finish_control(&intent, a, &resource, result.is_ok(), now())
+        .is_err()
+    {
+        access.quarantine();
+        return failure(io::Error::other("control audit unavailable"));
+    }
+    json_result(result)
+}
+fn node_id(name: &str) -> impl FnOnce(&Control) -> Option<String> {
+    move |c| {
+        c.inventory()
+            .into_iter()
+            .find(|(r, _)| r.name == name)
+            .map(|(r, _)| r.enrollment_id())
+    }
+}
+fn node_json(r: crate::control::NodeRecord) -> Value {
+    json!({"name":r.name,"enrollment_id":r.enrollment_id(),"status":r.status,"revision":r.revision})
 }
 async fn enroll(
     State(s): State<Console>,
@@ -708,64 +686,16 @@ async fn enroll(
         logs: r.logs,
         metric_interval_s: r.metric_interval_s,
     };
-    let mut access = s.access.lock().unwrap();
-    if !desired_allowed(&a, &d)
-        || access
-            .validate_mutation(&a, csrf(&h), origin(&h), now(), false)
-            .is_err()
-        || !access.authorize(&a, Action::NodeEnroll, None, None)
-    {
-        return denied();
-    }
-    let mut control = s.app.control.lock().unwrap();
-    if !a.scope.installation_wide
-        && !a
-            .scope
-            .enrollment_namespace
-            .as_ref()
-            .is_some_and(|prefix| r.name.starts_with(prefix))
-    {
-        return denied();
-    }
-    let population = control
-        .inventory()
-        .into_iter()
-        .filter(|(r, _)| {
-            a.scope.installation_wide
-                || a.scope
-                    .enrollment_namespace
-                    .as_ref()
-                    .is_some_and(|p| r.name.starts_with(p))
-        })
-        .count();
-    if population >= a.scope.max_enrollments {
-        return denied();
-    }
-    let intent = match access.begin_control(&a, Action::NodeEnroll, None, &r.name, now()) {
-        Ok(i) => i,
-        Err(e) => return failure(e),
-    };
-    let result = control.enroll(&r.name, d);
-    if result.as_ref().is_err_and(|e| {
-        !matches!(
-            e.kind(),
-            io::ErrorKind::InvalidInput | io::ErrorKind::AlreadyExists | io::ErrorKind::NotFound
-        )
-    }) {
-        access.quarantine();
-        return err(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "control publication requires offline reconciliation",
-        );
-    }
-    if access
-        .finish_control(&intent, &a, &r.name, result.is_ok(), now())
-        .is_err()
-    {
-        access.quarantine();
-        return failure(io::Error::other("control audit unavailable"));
-    }
-    json_result(result.map(|(r,token)|json!({"name":r.name,"enrollment_id":r.enrollment_id(),"revision":r.revision,"token":token})))
+    control_change(
+        &s,
+        &a,
+        &h,
+        "node.enroll",
+        |_| Some(r.name.clone()),
+        |c| {
+            c.enroll(&r.name, d).map(|(r, token)| json!({"name":r.name,"enrollment_id":r.enrollment_id(),"revision":r.revision,"token":token}))
+        },
+    )
 }
 async fn configure(
     State(s): State<Console>,
@@ -774,10 +704,9 @@ async fn configure(
     Path(name): Path<String>,
     Json(d): Json<DesiredConfig>,
 ) -> Response {
-    if !desired_allowed(&a, &d) {
-        return denied();
-    }
-    mutate_node(&s, &a, &h, &name, Action::NodeConfigure, Some(d))
+    control_change(&s, &a, &h, "node.configure", node_id(&name), |c| {
+        c.set_config(&name, d).map(node_json)
+    })
 }
 async fn node_action(
     State(s): State<Console>,
@@ -785,76 +714,15 @@ async fn node_action(
     h: HeaderMap,
     Path((name, action)): Path<(String, String)>,
 ) -> Response {
-    let action = match action.as_str() {
-        "pause" => Action::NodePause,
-        "resume" => Action::NodeResume,
-        "revoke" => Action::NodeRevoke,
+    let (label, status) = match action.as_str() {
+        "pause" => ("node.pause", Status::Paused),
+        "resume" => ("node.resume", Status::Active),
+        "revoke" => ("node.revoke", Status::Revoked),
         _ => return StatusCode::NOT_FOUND.into_response(),
     };
-    mutate_node(&s, &a, &h, &name, action, None)
-}
-fn mutate_node(
-    s: &Console,
-    a: &Authority,
-    h: &HeaderMap,
-    name: &str,
-    action: Action,
-    d: Option<DesiredConfig>,
-) -> Response {
-    let mut access = s.access.lock().unwrap();
-    if access
-        .validate_mutation(a, csrf(h), origin(h), now(), false)
-        .is_err()
-    {
-        return denied();
-    }
-    let mut control = s.app.control.lock().unwrap();
-    let Some((record, _)) = control
-        .inventory()
-        .into_iter()
-        .find(|(r, _)| r.name == name)
-    else {
-        return denied();
-    };
-    let id = record.enrollment_id();
-    if !access.authorize(a, action, Some(&id), None) {
-        return denied();
-    }
-    let intent = match access.begin_control(a, action, Some(&id), &id, now()) {
-        Ok(i) => i,
-        Err(e) => return failure(e),
-    };
-    let result = match d {
-        Some(d) => control.set_config(name, d),
-        None => control.set_status(
-            name,
-            match action {
-                Action::NodePause => Status::Paused,
-                Action::NodeResume => Status::Active,
-                _ => Status::Revoked,
-            },
-        ),
-    };
-    if result.as_ref().is_err_and(|e| {
-        !matches!(
-            e.kind(),
-            io::ErrorKind::InvalidInput | io::ErrorKind::AlreadyExists | io::ErrorKind::NotFound
-        )
-    }) {
-        access.quarantine();
-        return err(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "control publication requires offline reconciliation",
-        );
-    }
-    if access
-        .finish_control(&intent, a, &id, result.is_ok(), now())
-        .is_err()
-    {
-        access.quarantine();
-        return failure(io::Error::other("control audit unavailable"));
-    }
-    json_result(result.map(|r|json!({"name":r.name,"enrollment_id":r.enrollment_id(),"status":r.status,"revision":r.revision})))
+    control_change(&s, &a, &h, label, node_id(&name), |c| {
+        c.set_status(&name, status).map(node_json)
+    })
 }
 fn page_mut(q: &mut Query) -> Option<&mut Option<String>> {
     match q {
@@ -886,28 +754,25 @@ async fn query(
     if !filters_fit {
         return err(StatusCode::BAD_REQUEST, "query filter exceeds budget");
     }
-    let (node, from, to, limit, signal) = match &q {
+    let (from, to, limit) = match &q {
         Query::Logs {
-            node,
             from_ns,
             to_ns,
             limit,
             ..
-        } => (node, *from_ns, *to_ns, *limit, Signal::Logs),
-        Query::Metrics {
-            node,
+        }
+        | Query::Metrics {
             from_ns,
             to_ns,
             limit,
             ..
-        } => (node, *from_ns, *to_ns, *limit, Signal::Metrics),
-        Query::Spans {
-            node,
+        }
+        | Query::Spans {
             from_ns,
             to_ns,
             limit,
             ..
-        } => (node, *from_ns, *to_ns, *limit, Signal::Traces),
+        } => (*from_ns, *to_ns, *limit),
         Query::Rate { .. } => {
             return err(
                 StatusCode::BAD_REQUEST,
@@ -915,46 +780,28 @@ async fn query(
             );
         }
     };
-    if limit == 0
-        || limit as usize > a.scope.max_query_rows.min(1000)
-        || to <= from
-        || to - from > a.scope.max_query_window_s.saturating_mul(1_000_000_000)
-    {
+    if limit == 0 || limit as usize > QUERY_ROWS_MAX || to <= from || to - from > QUERY_WINDOW_NS {
         return err(StatusCode::BAD_REQUEST, "query exceeds authorized bounds");
     }
-    let allowed: HashSet<String> = {
-        let access = s.access.lock().unwrap();
-        if !access.authorize(&a, Action::TelemetryRead, None, Some(signal)) {
-            return denied();
-        }
-        s.app
-            .control
-            .lock()
-            .unwrap()
-            .inventory()
-            .into_iter()
-            .filter(|(r, _)| {
-                a.scope.allows(
-                    Action::TelemetryRead,
-                    Some(&r.enrollment_id()),
-                    Some(signal),
-                )
-            })
-            .map(|(r, _)| r.name)
-            .collect()
-    };
-    if node.as_ref().is_some_and(|n| !allowed.contains(n)) {
-        return denied();
-    }
+    // Owner and reader read all telemetry: the query layer sees every enrolled source.
+    let allowed: HashSet<String> = s
+        .app
+        .control
+        .lock()
+        .unwrap()
+        .inventory()
+        .into_iter()
+        .map(|(r, _)| r.name)
+        .collect();
     let page = page_mut(&mut q).and_then(Option::take);
-    let shape = format!("{q:?}:{:?}:{:?}", a.scope, a.on_behalf_of);
+    let shape = format!("{q:?}");
     let snapshot = if let Some(id) = page {
         let mut cursors = s.cursors.lock().unwrap();
         cursors.retain(|_, c| c.expires > now());
         let Some(c) = cursors.get(&id) else {
             return err(StatusCode::GONE, "page expired; run the query again");
         };
-        if c.principal != a.principal_id || c.policy != a.policy_version || c.shape != shape {
+        if c.principal != a.principal_id || c.shape != shape {
             return denied();
         }
         *page_mut(&mut q).unwrap() = Some(c.raw.clone());
@@ -1008,7 +855,6 @@ async fn query(
             id.clone(),
             Cursor {
                 principal: a.principal_id.clone(),
-                policy: a.policy_version,
                 shape,
                 raw: raw.to_owned(),
                 snapshot,
@@ -1032,9 +878,6 @@ async fn query(
         ),
     }
 }
-async fn principals(State(s): State<Console>, Extension(a): Extension<Authority>) -> Response {
-    json_result(s.access.lock().unwrap().principals(&a))
-}
 async fn audit(State(s): State<Console>, Extension(a): Extension<Authority>) -> Response {
     let access = s.access.lock().unwrap();
     json_result(
@@ -1048,6 +891,9 @@ async fn passkeys(State(s): State<Console>, Extension(a): Extension<Authority>) 
 }
 async fn sessions(State(s): State<Console>, Extension(a): Extension<Authority>) -> Response {
     json_result(s.access.lock().unwrap().sessions(&a))
+}
+async fn readers(State(s): State<Console>, Extension(a): Extension<Authority>) -> Response {
+    json_result(s.access.lock().unwrap().readers(&a))
 }
 async fn add_passkey(
     State(s): State<Console>,
@@ -1087,7 +933,7 @@ async fn revoke_session(
             .revoke_session(&a, &id, csrf(&h), origin(&h), now()),
     )
 }
-async fn revoke_credential(
+async fn revoke_reader(
     State(s): State<Console>,
     Extension(a): Extension<Authority>,
     h: HeaderMap,
@@ -1097,123 +943,28 @@ async fn revoke_credential(
         s.access
             .lock()
             .unwrap()
-            .revoke_credential(&a, &id, csrf(&h), origin(&h), now()),
-    )
-}
-async fn disable(
-    State(s): State<Console>,
-    Extension(a): Extension<Authority>,
-    h: HeaderMap,
-    Path(id): Path<String>,
-) -> Response {
-    json_result(
-        s.access
-            .lock()
-            .unwrap()
-            .disable(&a, &id, csrf(&h), origin(&h), now()),
-    )
-}
-async fn set_scope(
-    State(s): State<Console>,
-    Extension(a): Extension<Authority>,
-    h: HeaderMap,
-    Path(id): Path<String>,
-    Json(scope): Json<Scope>,
-) -> Response {
-    json_result(
-        s.access
-            .lock()
-            .unwrap()
-            .set_scope(&a, &id, scope, csrf(&h), origin(&h), now()),
+            .revoke_reader(&a, &id, csrf(&h), origin(&h), now()),
     )
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Workload {
+struct IssueReader {
     name: String,
-    scope: Scope,
-    #[serde(default = "credential_ttl")]
+    #[serde(default = "reader_ttl")]
     ttl_s: u64,
 }
-fn credential_ttl() -> u64 {
+fn reader_ttl() -> u64 {
     86400
 }
-async fn workload(
+async fn issue_reader(
     State(s): State<Console>,
     Extension(a): Extension<Authority>,
     h: HeaderMap,
-    Json(r): Json<Workload>,
+    Json(r): Json<IssueReader>,
 ) -> Response {
-    json_result(s.access.lock().unwrap().issue_workload(
+    json_result(s.access.lock().unwrap().issue_reader(
         &a,
         &r.name,
-        r.scope,
-        r.ttl_s,
-        csrf(&h),
-        origin(&h),
-        now(),
-    ))
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Rotation {
-    #[serde(default = "credential_ttl")]
-    ttl_s: u64,
-}
-async fn rotate_workload(
-    State(s): State<Console>,
-    Extension(a): Extension<Authority>,
-    h: HeaderMap,
-    Path(id): Path<String>,
-    Json(r): Json<Rotation>,
-) -> Response {
-    json_result(s.access.lock().unwrap().rotate_workload(
-        &a,
-        &id,
-        r.ttl_s,
-        csrf(&h),
-        origin(&h),
-        now(),
-    ))
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Invite {
-    name: String,
-    scope: Scope,
-}
-async fn invite(
-    State(s): State<Console>,
-    Extension(a): Extension<Authority>,
-    h: HeaderMap,
-    Json(r): Json<Invite>,
-) -> Response {
-    json_result(s.access.lock().unwrap().invite_human(
-        &a,
-        &r.name,
-        r.scope,
-        csrf(&h),
-        origin(&h),
-        now(),
-    ))
-}
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Delegation {
-    workload_id: String,
-    scope: Scope,
-    ttl_s: u64,
-}
-async fn delegate(
-    State(s): State<Console>,
-    Extension(a): Extension<Authority>,
-    h: HeaderMap,
-    Json(r): Json<Delegation>,
-) -> Response {
-    json_result(s.access.lock().unwrap().delegate(
-        &a,
-        &r.workload_id,
-        r.scope,
         r.ttl_s,
         csrf(&h),
         origin(&h),
