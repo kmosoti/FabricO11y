@@ -1,5 +1,0 @@
-{
-  "status": "all measured source hashes match integration before rustfmt-only import reorder",
-  "checked_paths": 29,
-  "mismatches": {}
-}
