@@ -69,11 +69,10 @@ query telemetry (`POST /v1/console/query`) and read status and Spindle inventory
 telemetry. List tokens with `GET /v1/console/readers` and revoke one with
 `POST /v1/console/readers/ID/revoke`. To rotate, issue a new token, replace the
 client's file, then revoke the old one. Revocation and expiry are immediate for
-subsequent checks. Store a token in an owner-only regular file with mode 0600,
-outside the client config. Do not use a symlink. Copy the
-[access client example](../packaging/etc/access.conf.example) and set its exact
-HTTPS origin, absolute CA path and absolute `workload_token_file`; the key keeps its
-earlier name.
+subsequent checks. Store a token in a regular file of mode 0600 that you own and nothing else links to,
+outside the client config; a symlink, a hard-linked file or one readable by others is
+refused. Copy the [access client example](../packaging/etc/access.conf.example) and set
+its exact HTTPS origin, absolute CA path and absolute `reader_token_file`.
 
 ```sh
 fabricctl access /home/operator/.config/fabrico11y/access.conf node list
@@ -119,11 +118,12 @@ access so old installation credentials are replaced.
 
 ## Explicit legacy migration
 
-Normal `serve` rejects `/v1/admin/*` shared-master routes. Historical fixture or
-migration operation requires the explicit `fabric-server serve-legacy CONFIG`
-and `fabricctl admin ADMIN_CONFIG ...` modes. The admin config uses
-`admin_token_file`; `fabricctl access` rejects that key and never falls back to
-it. Legacy mode is a separate operational mode and does not satisfy authenticated
+Normal `serve` rejects `/v1/admin/*` shared-master routes and needs no administrator
+token. Historical fixture or migration operation requires the explicit
+`fabric-server serve-legacy CONFIG` and `fabricctl admin ADMIN_CONFIG ...` modes;
+`serve-legacy` alone requires `admin_token_file` in the server configuration, and the
+admin client config uses the same key. `fabricctl access` rejects that key and never
+falls back to it. Legacy mode is a separate operational mode and does not satisfy authenticated
 console release acceptance. To migrate, stop `serve-legacy`, switch to normal
 `serve`, bootstrap the owner as above and issue reader tokens before using
 production clients.

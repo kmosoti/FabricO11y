@@ -10,7 +10,7 @@ human login method, with OIDC integration deferred.
 
 The [UI crate](../../crates/fabric-ui/README.md) provides native-testable
 request/tail/chart/polling models and live Leptos passkey, query and control flows.
-The server serves hash-verified assets and enforces scoped authorization. The
+The server serves hash-verified assets and enforces the three-role route guard. The
 [algorithm model](../architecture/console-algorithms.md) owns mathematical bounds;
 the [art-direction flow](../architecture/console-art-direction.md) connects
 operator tasks, evidence, visual encoding and evaluation. A demonstration does
@@ -26,7 +26,7 @@ SSR adds no required capability for this authenticated console; do not introduce
 a second server, CDN runtime, or separate origin solely to render it.
 
 The [console HTTP adapter](../../crates/fabric-server/src/console.rs) exposes
-`/v1/console` behind scoped credentials and serves `/console/`. Production `serve`
+`/v1/console` behind owner sessions and reader tokens and serves `/console/`. Production `serve`
 requires passkey configuration and denies legacy `/v1/admin` routes. The
 [query contract](../architecture/retained-history.md) and
 [query implementation](../../crates/fabric-server/src/query.rs) establish actual
@@ -56,7 +56,7 @@ implying an implemented alert evaluator. Settings remains reachable on mobile.
 | Trace detail | Search by exact trace ID; waterfall from actual span timestamps; span details, source identity and missing-parent indication. Link to related logs only where available evidence supports correlation. |
 | Live Tail | Bounded near-live polling of logs, explicit poll interval, pause/resume, visible row cap and last successful refresh. Display poll gaps and retention expiry; do not claim lossless streaming. |
 | Pipeline | Actual Spindle Spool → authenticated delivery → committed journal → bounded sealer → published Parquet Segments → journal/Segment query path. Explain custody and expose measured, defined counters. |
-| Settings | Current identity/permissions, passkey enrollment/recovery and session revocation; existing Spindle enrollment, configuration, pause/resume and revoke workflows under scoped authorization; appearance, installation/help and read-only effective retention/storage policy with file-backed operator instructions. |
+| Settings | Current identity/permissions, passkey enrollment/recovery and session revocation; existing Spindle enrollment, configuration, pause/resume and revoke workflows, which are owner-only; appearance, installation/help and read-only effective retention/storage policy with file-backed operator instructions. |
 
 Log search supports source, time and exact case-sensitive body substring.
 Metric history supports source, exact metric name and time. Span search supports

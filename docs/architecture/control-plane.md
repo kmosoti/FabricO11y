@@ -4,12 +4,13 @@ Status: implemented and tested end to end; the [fleet protocol](../experiments/b
 
 ## Responsibilities
 
-The expanded release replaces shared administrator authority with
-[local passkeys and scoped principals](identity-access.md), as decided in
-[ADR-0027](../decisions/ADR-0027-ship-a-scoped-passkey-pwa-console.md).
-Normal serving implements this boundary through `/v1/console`; explicit legacy
-serving retains the older admin routes for migration. Browser and scoped-access
-acceptance remain separate from historical control tests.
+The release replaces shared administrator authority with an
+[owner passkey and three fixed roles](identity-access.md)
+([ADR-0029](../decisions/ADR-0029-use-three-fixed-roles-for-the-first-release.md)).
+Normal serving implements this boundary through `/v1/console`, where every node
+mutation is owner-only and a reader may only list nodes; explicit legacy serving
+retains the older admin routes for migration. Browser and role acceptance remain
+separate from historical control tests.
 
 The [Fabric Server](../../crates/fabric-server/src/control.rs) owns the node inventory: each node's name, the SHA-256 of its bearer token, its status (active, paused or revoked) and its desired configuration with a revision number. That state lives in `state_dir/control.json`, replaced by synced rename on every administrative change. The server keeps each node's last poll time, applied revision and configuration error in memory only.
 
@@ -17,16 +18,16 @@ Each [Spindle](spindle.md) owns what it actually runs: its local file (spool, sp
 
 ## Flows
 
-- **Enroll:** `fabricctl access <ACCESS_CONFIG> node add <NAME> [--log PATH]... [--interval S]` calls `POST /v1/console/nodes` with a scoped workload token. The answer contains the node token once; the server stores only its hash.
-- **Configure:** `node config` calls `PUT /v1/console/nodes/<name>/config`, which checks scope and shape and bumps the revision.
+- **Enroll:** the owner's console session calls `POST /v1/console/nodes` (`fabricctl access` has only `node list` and `query`; `fabricctl admin ... node add` is the legacy equivalent). The answer contains the node token once; the server stores only its hash.
+- **Configure:** the owner calls `PUT /v1/console/nodes/<name>/config`, which checks the role and shape and bumps the revision.
 - **Poll:** every 5 s, `fabric-node run` calls `GET /v1/config` with its node token, its applied revision and any validation error. An unchanged revision gets 304. A new view is validated with the same rules as a local file, stored, then activated; after activating, the node polls again at once so the server sees the new applied revision. An invalid view is reported and not activated.
 - **Pause and resume:** a paused node stops collecting but keeps delivering what it already committed. Pausing writes the coverage-unknown marker, so the first batch after resume carries one gap for the paused interval.
 - **Revoke:** the token hash is removed from the active authentication map; the revoked enrollment remains persisted. Batch intake and polling answer 401; the node keeps its spool and its last configuration.
-- **Inventory:** `node list` shows status, desired and applied revisions, last poll time and any configuration error.
+- **Inventory:** `node list` (owner or reader) shows status, desired and applied revisions, last poll time and any configuration error.
 
 ## Boundaries and invariants
 
-- Node tokens never authorize console routes; human/workload credentials never authorize batch intake. Production serving rejects legacy master-admin routes.
+- Node tokens never authorize console routes; owner and reader credentials never authorize batch intake. Production serving rejects legacy master-admin routes.
 - Remote configuration can change only log paths and the metric interval. The spool ceiling and the server target stay local.
 - A configuration is active on a node only after it passed local validation and was stored durably.
 - While the server is unreachable, a node, including one that restarts, runs its last applied configuration.
@@ -35,7 +36,9 @@ The complete serialized inventory must fit the same 16 MiB limit enforced on
 reopen, including JSON escaping. Oversized updates are rejected before publication.
 If rename succeeds but the directory sync fails, the live control instance refuses
 authentication, configuration polls and mutations until reopened; restoring an
-in-memory record cannot safely restore authority after uncertain publication.
+in-memory record cannot safely restore authority after uncertain publication. A poisoned
+control lock answers 503, which a node retries later instead of treating its batch as
+rejected ([security hardening](security-hardening.md#poisoned-locks)).
 
 ## Limits
 

@@ -1,8 +1,8 @@
 # fabricctl access /absolute/path/access.conf node list
-# This client uses an explicitly scoped reader credential, issued by a human
-# with grant.manage. Normal serve does not accept a shared admin token.
+# This client uses a read-only reader token, issued by the owner in console
+# Settings. Normal serve does not accept a shared admin token.
 server_url=https://telemetry.example.com:7443
 server_ca=/etc/fabrico11y/ca.pem
-# Absolute path, regular file, owner-only permissions (0600); no symlinks.
+# Absolute path, regular file you own, mode 0600; no symlinks or extra hard links.
 # Store the once-returned 64-character reader token here, never in this config.
 reader_token_file=/home/operator/.config/fabrico11y/reader-token

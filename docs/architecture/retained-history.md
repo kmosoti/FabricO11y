@@ -24,9 +24,9 @@ Sealed history is a set of immutable **segments**. Each segment is a directory h
 All times are Unix nanoseconds; ranges are half-open `[from_ns, to_ns)`.
 
 The history semantics below also serve internal and legacy callers. The
-[scoped console adapter](identity-access.md) applies tighter admission: at most
-1,000 rows, a 24-hour window, scope filtering before selection, opaque authorized
-page handles and no unpaginated rate queries. These bounds do not change the
+[console adapter](identity-access.md) applies tighter admission to owner and reader
+alike: at most 1,000 rows, a 24-hour window, opaque page handles bound to the
+credential and no unpaginated rate queries. These bounds do not change the
 independent history oracle.
 
 1. **Log search** `{"kind":"logs","node":N?,"from_ns":A,"to_ns":B,"contains":S?,"limit":L,"page":P?}`: log rows with `observed_ns` in range, from node `N` if given, whose `body` contains the substring `S` (exact, case-sensitive, UTF-8) if given. Order: `observed_ns`, then `node_id`, `sequence`, `index`.
@@ -111,7 +111,9 @@ Scoped Segment freshness uses a separate bounded derived cache owned by
 `read_catalog::evidence`. One validated raw scan collects per-label receive
 bounds and separate log, metric and span maxima. A hit applies the current node
 and signal scope; it never caches authority or substitutes a full-Segment
-aggregate for a partial page snapshot. Partial snapshots retain exact raw scans.
+aggregate for a partial page snapshot. Partial snapshots retain exact raw scans. The console now
+passes the full inventory ([ADR-0029](../decisions/ADR-0029-use-three-fixed-roles-for-the-first-release.md)),
+so the scope covers every source; the scoped code remains until a later change removes it.
 The cache admits at most 8 MiB of conservatively charged resident metadata and
 4,096 descriptors, with one at-most-1-MiB construction under its mutex. These are
 allocation estimates, not RSS bounds; the service cgroup remains authoritative.

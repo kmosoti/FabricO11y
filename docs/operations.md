@@ -21,7 +21,7 @@ The package installs `fabric-node`, `fabric-server` and `fabricctl` in `/usr/bin
 
 ## Server
 
-1. Create `/etc/fabrico11y/server.conf` from the example. Provide a TLS certificate and key trusted by both browsers and Spindles. Configure the exact `access_origin`, hostname-only `access_rp_id`, and packaged `console_dir`. The current configuration also requires a legacy admin-token file of at least 32 printable characters; normal serving does not accept that token on its disabled master routes. Make the key and token `0640 root:fabricolly`.
+1. Create `/etc/fabrico11y/server.conf` from the example. Provide a TLS certificate and key trusted by both browsers and Spindles. Configure the exact `access_origin`, hostname-only `access_rp_id`, and packaged `console_dir`. Normal serving needs no administrator token: `admin_token_file` is read only by the migration mode `serve-legacy`. Make the TLS key `0640 root:fabricolly`. Every token and secret file must be a single-link regular file, not a symlink, owned by the service user or root, with mode `0600` or, if root owns it, `0640`; anything else is refused at start ([security hardening](architecture/security-hardening.md#credential-files)).
 2. `sudo systemctl enable --now fabrico11y-server.service`.
 3. Follow [first-owner setup](access-operations.md#configure-and-enroll-the-first-owner) to read the protected local bootstrap secret and enroll a passkey at `https://YOUR_HOST:PORT/console/`. Add a second passkey and save the immutable owner ID for recovery.
 
@@ -103,7 +103,7 @@ role boundary.
 
 ## Node
 
-1. Create `/etc/fabrico11y/node.conf` from the example with `server_url`, `server_ca` and `token_file` (the token shown once at enrollment, stored `0640 root:fabricolly`).
+1. Create `/etc/fabrico11y/node.conf` from the example with `server_url`, `server_ca` and `token_file` (the token shown once at enrollment, stored `0640 root:fabricolly` as packaged; the same file rules apply).
 2. Give the service read access to each selected log with a narrow ACL, for example `setfacl -m u:fabricolly:r /var/log/app.log`. An unreadable log produces a visible collection gap; the node never escalates.
 3. Optionally set `traces_listen=127.0.0.1:4318` so local applications can export traces to the node, with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces` and `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf` in their environment. The node answers an export only after it is in the spool; spans are queried with `{"kind":"spans", ...}` ([retained history](architecture/retained-history.md)).
 4. `sudo systemctl enable --now fabrico11y-node.service`.
@@ -117,6 +117,7 @@ The node samples host metrics on its interval, reads logs every second, keeps ev
 | `interrupted_append=true` in `fabricctl inspect` | A process died during an append or rotation. | Nothing. The next start keeps every committed batch and truncates the incomplete tail. |
 | `recovery_required=true`, or `recovery required` at start | A write or sync call on the spool or server journal reported an error. Readable bytes cannot prove the data is durable. | Do not delete the marker. Check the storage device, then move the directory aside. **Node:** starting with an empty spool creates a new node identity and re-reads each selected log from its start, so lines already delivered under the old identity appear again; batches the old spool had not delivered are lost unless it can be read elsewhere. **Server:** acknowledged batches exist only on the server, so restore its state directory from a backup; nodes still hold, and will resend, every batch they have not had acknowledged. |
 | `coverage unknown since …` gap in a batch | A cycle could not commit (for example a full spool), or collection was paused. | Informational. The interval named has no data. For a full spool, check server reachability; acknowledged sealed files are deleted automatically. |
+| A start error naming a credential file that "must be a single-link regular file" | A token or secret file is a symlink, has another hard link, belongs to another user or can be read by others. | Replace it with a fresh regular file of mode `0600` (or root-owned `0640`) and restart. |
 | `delivery: … conflict` on the node | The server holds different bytes for the same batch identity. | Stop the node. This means two spools share an identity or a spool was altered; investigate before continuing. |
 | `delivery: … gap` on the node | The server has fewer batches for this stream than the node has acknowledged. | The server lost acknowledged data. Restore the server state before continuing. |
 | Query answer `complete: false` with `unavailable` entries | A segment could not be read. | Other data is still answered. Check the segment's files against its manifest; restore the segment from a backup if you keep one. |

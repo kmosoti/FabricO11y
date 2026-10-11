@@ -3,12 +3,13 @@
 The [access adapter](../../crates/fabric-server/src/access.rs) and
 [console HTTP boundary](../../crates/fabric-server/src/console.rs) implement the
 local passkey and three-role design of [ADR-0029](../decisions/ADR-0029-use-three-fixed-roles-for-the-first-release.md).
-Candidate acceptance is registered in the
+Acceptance checks are registered in the
 [console protocol](../experiments/formal/console-access-protocol.md); implementation
 alone does not establish release qualification. Optional OIDC federation is later work.
 The [operations guide](../access-operations.md) owns setup, credentials and recovery
 commands; the [security map](../formal/console-security-map.md) records the selected
-ASVS controls and their verification limits.
+ASVS controls and their verification limits, and [security hardening](security-hardening.md)
+the admission, lock, credential-file and sandbox controls.
 
 ## Boundary and present evidence
 
@@ -17,13 +18,13 @@ read-only script and AI clients, and remote Spindles. This establishes role
 separation within that installation; it makes no multitenant isolation, cloud IAM,
 per-source confinement, universal attack resistance or compromised-host claim.
 The OS administrator, TLS termination and serving origin remain trusted boundaries.
-The [access flow](../diagrams/identity-access.mmd) predates the three-role decision
-and still shows scoped credentials; this page and the ADR govern.
+The [access flow](../diagrams/identity-access.mmd) shows the three roles.
 
-Normal `fabric-server serve` requires a configured HTTPS origin and RP ID, serves the
-packaged PWA and console API, and rejects the shared-master admin routes. Explicit
-`serve-legacy` is a migration entrypoint that cannot satisfy authenticated release
-acceptance. Minimal health remains public. [Control](../../crates/fabric-server/src/control.rs)
+Normal `fabric-server serve` requires a configured HTTPS origin and RP ID (it exits
+without them: `serve_refuses_to_start_without_access_origin`), needs no administrator
+token, serves the packaged PWA and console API, and rejects the shared-master admin
+routes. Explicit `serve-legacy` is a migration entrypoint, the only mode that reads
+`admin_token_file`, and cannot satisfy authenticated release acceptance. Minimal health remains public. [Control](../../crates/fabric-server/src/control.rs)
 stores per-node token hashes and refuses authority after uncertain publication; its
 [view](control-plane.md) permits previously admitted batches to commit after revocation.
 Access and control publication share a durable intent: uncertain completion quarantines
@@ -53,15 +54,16 @@ recovery and control are.
 
 ## Owner authentication and recovery
 
-Use pinned `webauthn-rs 0.5.5` for protocol and signature verification. The
+Protocol and signature verification use pinned `webauthn-rs 0.5.5`. The
 [upstream origin-validation advisory](https://github.com/kanidm/webauthn-rs/security/advisories/GHSA-22w3-693w-x895)
 affected earlier versions and is fixed in this release. Upstream describes a security
 review, but no independently examined report for this exact version is available; no
-audit claim is made. Record tested browser/authenticator combinations. Require user
-verification, a fresh server-generated one-use challenge tied to the ceremony and
-account (5-minute expiry), the configured exact HTTPS origin and RP ID, and library
-validation of signatures and credential ownership. Reject unexpected ceremony types,
-expired or replayed challenges, wrong origins/RP hashes and missing verification.
+audit claim is made. Ceremonies require user verification, a fresh server-generated
+one-use challenge tied to the ceremony and account (5-minute expiry), the configured
+exact HTTPS origin and RP ID, and library validation of signatures and credential
+ownership. Unexpected ceremony types, expired or replayed challenges, wrong origins
+or RP hashes and missing verification are rejected
+(`signed_assertions_with_wrong_origin_rp_id_or_missing_uv_are_rejected`).
 [W3C WebAuthn verification](https://www.w3.org/TR/webauthn-2/#sctn-verifying-authentication-assertion)
 is the protocol reference. Registration needs the bootstrap secret or an owner session;
 assertion success never selects a role.
@@ -85,7 +87,7 @@ permanent bearer-master bypass exists.
 
 Sessions are opaque random server-side values in a `__Host-` cookie (`Secure`,
 `HttpOnly`, `SameSite=Strict`, `Path=/`, no Domain), rotated at login. Limits: 30-minute
-idle, 8-hour absolute; a passkey check within 5 minutes before passkey, session and
+idle, 8-hour absolute (`sessions_expire_at_the_idle_and_absolute_limits`); a passkey check within 5 minutes before passkey, session and
 reader-token changes. Logout, passkey change and recovery invalidate server state.
 Cookie mutations need the exact Origin and a session-bound CSRF token; GET never changes
 state. Bound challenge and session counts; unknown principals receive the same
@@ -144,13 +146,15 @@ error rather than migrated.
 Mutation authorization is serialized with its durable control publication. A batch
 admitted before committed revocation may finish its custody transition; admission after
 it fails. Access state and audit live outside telemetry retention. Limits: 16 MiB state;
-one owner with 8 passkeys; 256 reader tokens; 4,096 sessions; 1,024 ceremonies; 4,096
-audit events kept 30 days; 128 MiB reserved for state publication and backups and 256 MiB
-for rotating audit. Over-cap transitions are rejected before writing.
+one owner with 8 passkeys; 256 reader tokens; 4,096 sessions; 1,024 ceremonies; audit
+events kept 30 days, at most 4,096 outside denials plus 256 denials, which are capped
+apart and never evict another event; 128 MiB reserved for state publication and backups
+and 256 MiB for rotating audit. Over-cap transitions are rejected before writing.
 
 Audit records login results, credential lifecycle, recovery, control and denials: time,
-request ID, actor, action, stable resource and outcome, at most 4 KiB each, with
-throttled repeated denials and a dropped count. No bearer, cookie, challenge, private
+request ID, actor, action, stable resource and outcome, at most 4 KiB each. At most one
+denial is stored per second; the rest, and any event evicted by a cap, add to the
+`suppressed_or_expired_events` count (age expiry is not counted despite its name). No bearer, cookie, challenge, private
 key, telemetry body or unsanitized path is logged ([OWASP logging](https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html)).
 Control and security mutations need durable audit and state publication as one
 recoverable transition, or they fail closed. Back up access state and audit separately

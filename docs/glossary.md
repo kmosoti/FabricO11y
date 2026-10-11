@@ -8,16 +8,17 @@ The [operator console](milestones/operator-console.md) uses a **display envelope
 bounded per-time-bucket extrema with explicit gap markers, not an aggregate or
 exhaustive raw history. A **display eviction** removes an older row from bounded
 browser memory; it is not server retention or evidence of collection loss.
-A **principal** in the intended [access design](architecture/identity-access.md)
-is a persistent human, workload or Spindle identity; a credential authenticates
-that principal, and a grant limits its permitted actions/resources.
+The [access design](architecture/identity-access.md) has three fixed **roles**,
+owner, reader and Spindle ([ADR-0029](decisions/ADR-0029-use-three-fixed-roles-for-the-first-release.md)).
+A credential's type alone decides its role; there are no per-resource grants. The owner's
+**principal ID** identifies the account for sign-in and recovery.
 
 | Term | Meaning here |
 | --- | --- |
 | Spindle | The host-resident collection and runtime role: observes one host, reads configured sources, builds Batches, keeps collection state, retains unacknowledged Batches in its Spool, applies validated configuration and delivers to Fabric Server. Run by the `fabric-node` executable; code in `src/spindle`. Not a synonym for any process, worker or remote machine. |
 | Dedicated server Spindle | The one `fabric-node` child owned by a production server CLI, with its own credential and persistent Spool. It collects both processes' bounded diagnostics and forwards to that server. Edge Spindles keep their configured destination; there is no recursive collector chain ([ADR-0026](decisions/ADR-0026-launch-a-dedicated-spindle-with-each-server.md)). |
 | Spindle ID | `SpindleId`: the Spindle's stable 16-byte identity. On the wire and on disk it is the envelope's `node_id` field. |
-| Node (persisted name) | The spelling used by existing routes (`/v1/admin/nodes`), JSON keys, configuration files, the `fabric-node` binary and systemd unit. It names a Spindle or its enrollment; it is kept for compatibility, not as a separate concept. |
+| Node (persisted name) | The spelling used by existing routes (`/v1/console/nodes`, and the legacy `/v1/admin/nodes`), JSON keys, configuration files, the `fabric-node` binary and systemd unit. It names a Spindle or its enrollment; it is kept for compatibility, not as a separate concept. |
 | Generation | A non-zero counter in the Spindle identity file. A new generation starts a new Strand at sequence 1. |
 | Strand | One ordered telemetry lineage of one Spindle generation: `StrandId = (SpindleId, generation)`. The scope of sequence ordering, duplicate-retry identity, gap detection, deduplication and acknowledged progress. Not a connection, session, thread, file, Segment or query result. Called a "stream" in older code and records. |
 | Sequence | A Batch's position on its Strand: 1, 2, 3, ... Sequence 0 does not exist; no sequence follows `u64::MAX`. |
