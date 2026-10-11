@@ -3,6 +3,18 @@
   "description": "Counterexamples kept as deterministic regression fixtures. `cargo xtask check-counterexamples` requires each reproducer test to exist in its file and each fix commit to exist. Removing an entry is a trust-boundary change.",
   "counterexamples": [
     {
+      "id": "CX-MUTATION-CURSOR-TIME-TIE-COVERAGE",
+      "origin": "October 11 isolated mutation audit after the relational query reference was added",
+      "defect": "Existing cases did not reject pruning a source whose maximum timestamp equals the cursor timestamp but whose full row keys are later",
+      "seed_or_trace": "two rows at time 20 with identities 1 and 2, after cursor at time 20 with identity 0; max < cursor.time changed to == or <= in both walks",
+      "contract": "HIST-4 continuation keys must never skip matching rows",
+      "reproducer": {
+        "file": "crates/fabric-core/tests/query_mutation_regressions.rs",
+        "test": "equal_time_upper_bound_can_hold_rows_after_the_full_cursor"
+      },
+      "fix_commit": "3305f0a"
+    },
+    {
       "id": "CX-MUTATION-SHARED-TARGET",
       "origin": "October 11 release integration review; retained contaminated audit and isolated rerun in the research wiki",
       "defect": "Parallel mutated source copies reused one absolute Cargo target, allowing a worker to test an executable for another mutation",
