@@ -8,7 +8,9 @@
 //! the frame log and the stream table. It answers only after the frame holding
 //! the batch, or the earlier batch it acknowledges, has completed data sync and
 //! marker sync. A failed append quarantines the log; every later submission is
-//! answered `Unavailable` and restart refuses until the state is rebuilt.
+//! answered `Unavailable` and restart refuses until the state is rebuilt. A
+//! durable frame the stream table cannot absorb quarantines it the same way,
+//! and restart rebuilds the table by replay.
 
 pub use fabric_app::delivery::Answer;
 use fabric_app::delivery::{Offer, commit_group};
@@ -285,6 +287,8 @@ pub struct Store {
     mode: CommitMode,
     active_first_group: u64,
     committed_group: Arc<AtomicU64>,
+    /// The stream table disagreed with a durable frame; nothing more commits.
+    quarantined: bool,
 }
 
 enum Command {
@@ -376,6 +380,7 @@ impl Store {
             mode,
             active_first_group,
             committed_group,
+            quarantined: false,
         };
         // A segment committed before a crash may still have its journal file:
         // reclaim it now so no record is served from both.
@@ -540,6 +545,9 @@ impl Store {
 
     /// Append `entries` as the next group frame and absorb it once durable.
     fn append_group(&mut self, entries: Vec<Entry>) -> io::Result<()> {
+        if self.quarantined {
+            return Err(io::Error::other("stream table disagrees with the journal"));
+        }
         let group_record = Group {
             group_sequence: self.state.next_group,
             entries,
@@ -552,16 +560,17 @@ impl Store {
         if pos.offset == 0 {
             self.active_first_group = group_record.group_sequence;
         }
-        // Replay-equivalent update: the frame is durable now.
-        self.state
-            .absorb(&group_record)
-            .expect("group built from validated submissions");
-        Ok(())
+        // Replay-equivalent update: the frame is durable now. If it fails, the
+        // table no longer matches the journal, so nothing is answered or
+        // committed again until a restart rebuilds the table by replay.
+        self.state.absorb(&group_record).inspect_err(|_| {
+            self.quarantined = true;
+        })
     }
 }
 
 /// Wall clock for the receipt time recorded with each committed group.
-pub(crate) struct SystemClock;
+pub struct SystemClock;
 
 impl Clock for SystemClock {
     fn now_unix_nano(&self) -> u64 {
@@ -602,7 +611,7 @@ impl DurableJournal for GroupJournal<'_> {
     }
 
     fn is_quarantined(&self) -> bool {
-        self.store.log.is_poisoned()
+        self.store.log.is_poisoned() || self.store.quarantined
     }
 
     fn commit(&mut self, accepted: &[usize], received_unix_nano: u64) -> Result<(), CommitFailed> {
@@ -695,5 +704,41 @@ mod tests {
         };
         let elapsed = lone_submission_latency(mode);
         assert!(elapsed >= CommitMode::GROUPED.window, "{elapsed:?}");
+    }
+
+    /// Origin: `append_group` unwrapped the replay-equivalent update after the
+    /// frame was durable, so a disagreement panicked the commit thread and
+    /// dropped every reply. Deterministic trigger: a Submission whose declared
+    /// sequence differs from the one inside its bytes.
+    #[test]
+    fn a_disagreement_after_a_durable_frame_quarantines_instead_of_panicking() {
+        let dir = scratch("disagree");
+        let intake = Store::open(&dir, 64 * 1024 * 1024, CommitMode::INDIVIDUAL)
+            .unwrap()
+            .spawn()
+            .unwrap();
+        let submit = |declared: u64, stored: u64| {
+            let batch = Batch {
+                version: 1,
+                node_id: vec![7; 16],
+                generation: 1,
+                sequence: stored,
+                collection_gaps: vec!["one gap makes the Batch non-empty".into()],
+                ..Default::default()
+            };
+            let (reply, answer) = oneshot::channel();
+            intake.submit(Submission {
+                label: "credential".into(),
+                strand: StrandId::new(SpindleId::new([7; 16]), 1).unwrap(),
+                sequence: NonZeroU64::new(declared).unwrap(),
+                bytes: batch.encode_to_vec(),
+                reply,
+            });
+            answer.blocking_recv().ok()
+        };
+        assert_eq!(submit(1, 2), Some(Answer::Unavailable));
+        assert_eq!(submit(1, 1), Some(Answer::Unavailable), "stays quarantined");
+        drop(intake);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
