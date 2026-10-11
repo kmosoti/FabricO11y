@@ -57,6 +57,12 @@ retaining debug assertions and overflow checks. It runs the same complete tests
 and mutants: exhaustive pure transitions are computed faster, rather than
 sampled less often. Semantic memory-bound mutants retain their original profile.
 
+Each cargo-mutants worker overrides an inherited absolute `CARGO_TARGET_DIR`
+with the relative `target` path inside its owned source copy. Different mutated
+trees must never share compiled crate outputs. The local October 11 audit with
+an absolute shared directory reported known tested defects as survivors; its
+results are contaminated and cannot establish coverage or equivalence.
+
 The delivery fault fixture uses the explicit legacy administration adapter,
 its configured test CA for the mandatory companion, and independent stopped
 Spool observations for every producer including that companion. A server crash
