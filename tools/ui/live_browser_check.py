@@ -937,7 +937,7 @@ self.addEventListener("fetch",event=>{
         current_cookie=None
         code,sessions=api('/v1/console/sessions')
         check(code==200 and any(item['id']==current_session_id for item in sessions),'current session has immutable revocation target')
-        field('Exact passkey, session, principal or credential ID',current_session_id)
+        field('Exact passkey, session or reader ID',current_session_id)
         click('revoke sessions record');wd('/alert/accept',{})
         wait(lambda:api('/v1/console/session')[0]==401,'self session revocation retires current cookie')
         expect(api('/v1/console/session'),401,'sign in required','revoked session cannot authorize')
