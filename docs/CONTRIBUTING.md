@@ -48,7 +48,6 @@ validators and documentation checks, through the repository launcher:
 ```sh
 python3 tools/resource_group.py -- cargo xtask checks --profile fast
 python3 tools/resource_group.py -- cargo xtask mutants
-python3 tools/resource_group.py -- python3 tools/bench/run_performance_refinement.py --help
 ```
 
 The whole command tree shares a systemd user service with `MemoryMax` at the
@@ -78,7 +77,7 @@ The qualification runner accepts direct `target/alpha-*` outputs only beneath
 `FABRIC_SCRATCH_ROOT`, including a frozen mini-tree's nested `target` directory;
 repository `target` outside that root is rejected before creation or launch.
 Use the tested data-backed freeze commands in the
-[qualification runbook](qualification-runbook.md), not legacy `freeze.sh`.
+[qualification runbook](qualification-runbook.md).
 
 Success requires a matching completion receipt from the command inside the
 cgroup and a matching `systemd-run` exit. A disconnected service bus or missing

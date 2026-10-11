@@ -43,9 +43,6 @@ admission; no system-disk or RAM-backed fallback is allowed.
 ## Build and freeze the companion workflow
 
 The tested R2 workflow uses `prepare_soak.py` and `verify_soak_freeze.py`.
-Legacy `freeze.sh` and its flat standalone-server harness layout are not the
-current companion workflow; they assume repository `target/release` rather than
-the launcher's data-backed `CARGO_TARGET_DIR`. Do not use them for a new R2 run.
 Historical protocol commands retain their original text and outcomes.
 
 The normal writer needs no experiment flags. Build all five native artifacts
