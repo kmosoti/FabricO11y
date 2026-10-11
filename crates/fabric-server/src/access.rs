@@ -1821,6 +1821,74 @@ mod tests {
         assert!(a.authenticate_session(&fresh.session_token, 400).is_err());
     }
     #[test]
+    fn sessions_expire_at_the_idle_and_absolute_limits() {
+        let dir = Scratch::new();
+        let mut a = Access::open(&dir.0, config(), 100).unwrap();
+        let just_before = owner(&mut a, 100);
+        let [at_idle, active] = [(); 2].map(|()| a.issue_session(100).unwrap());
+        let live = |a: &mut Access, s: &SessionIssued, now| {
+            a.authenticate_session(&s.session_token, now).is_ok()
+        };
+        assert!(live(&mut a, &active, 1000));
+        assert!(live(&mut a, &just_before, 100 + IDLE_TTL - 1));
+        assert!(!live(&mut a, &at_idle, 100 + IDLE_TTL));
+        // Activity inside every idle window cannot outlive the absolute limit.
+        for now in (2000..=28000).step_by(1000) {
+            assert!(live(&mut a, &active, now));
+        }
+        assert!(live(&mut a, &active, 100 + SESSION_TTL - 1));
+        assert!(!live(&mut a, &active, 100 + SESSION_TTL));
+    }
+    #[test]
+    fn signed_assertions_with_wrong_origin_rp_id_or_missing_uv_are_rejected() {
+        use rustls::pki_types::PrivatePkcs8KeyDer;
+        use serde_json::json;
+        // Fixed test-only P-256 key (PKCS#8, base64url); it protects nothing.
+        let der: Base64UrlSafeData = serde_json::from_value(json!("MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg1KKH3sLEPxi5G9ctypVguLk0134hkPDI5uVC-pRnShKhRANCAASHiddDl9g6QX4YLG0PPGPx05dQexuxnapZlB40qQaOMdtAfj5KS-kMUH5lIh9o1pHGJGK4K7xWpTGcqkmlLnsh")).unwrap();
+        let signer = rustls::crypto::ring::sign::any_ecdsa_type(
+            &PrivatePkcs8KeyDer::from(der.to_vec()).into(),
+        )
+        .unwrap()
+        .choose_scheme(&[rustls::SignatureScheme::ECDSA_NISTP256_SHA256])
+        .unwrap();
+        let (x, y) = der[der.len() - 64..].split_at(32);
+        let id = Base64UrlSafeData::from([7u8; 16]);
+        let key: Passkey = serde_json::from_value(json!({"cred":{
+            "cred_id":id,"cred":{"type_":"ES256","key":{"EC_EC2":{"curve":"SECP256R1","x":Base64UrlSafeData::from(x),"y":Base64UrlSafeData::from(y)}}},
+            "counter":1,"transports":null,"user_verified":true,"backup_eligible":false,"backup_state":false,
+            "registration_policy":"required","extensions":{},"attestation":{"data":"None","metadata":"None"},"attestation_format":"none"
+        }})).unwrap();
+        let dir = Scratch::new();
+        let mut a = Access::open(&dir.0, config(), 100).unwrap();
+        let session = owner(&mut a, 100);
+        a.state.owner.as_mut().unwrap().passkeys = vec![key];
+        // Each signed case differs from the accepted one (last) in exactly one field.
+        for (origin, rp_id, flags, accepted) in [
+            ("https://evil.example", "fabric.example", 0x05, false),
+            (ORIGIN, "evil.example", 0x05, false),
+            (ORIGIN, "fabric.example", 0x01, false),
+            (ORIGIN, "fabric.example", 0x05, true),
+        ] {
+            let start = a.start_login(&session.principal_id, 100).unwrap();
+            let client = json!({"type":"webauthn.get","origin":origin,
+                "challenge":start.public_key["publicKey"]["challenge"]});
+            let client = serde_json::to_vec(&client).unwrap();
+            let mut data = Sha256::digest(rp_id).to_vec();
+            data.extend_from_slice(&[flags, 0, 0, 0, 2]);
+            let signed = [data.as_slice(), &Sha256::digest(&client)].concat();
+            let response: PublicKeyCredential = serde_json::from_value(json!({
+                "id":id,"rawId":id,"type":"public-key","response":{
+                    "authenticatorData":Base64UrlSafeData::from(data),
+                    "clientDataJSON":Base64UrlSafeData::from(client),
+                    "signature":Base64UrlSafeData::from(signer.sign(&signed).unwrap()),
+                    "userHandle":null}}))
+            .unwrap();
+            let outcome = a.finish_login(&start.ceremony_id, &response, 100);
+            assert_eq!(outcome.is_ok(), accepted, "{origin} {rp_id} {flags:#x}");
+        }
+        assert_eq!(a.sessions.len(), 2);
+    }
+    #[test]
     fn concurrent_counter_snapshot_cannot_authorize_after_durable_counter_advance() {
         // Origin: maintained library authentication state captures counters at
         // start; trace start(A,N=1), start(B,N=1), finish(B,N=3), finish(A,N=2).
