@@ -131,6 +131,16 @@ proptest! {
     fn a_commit_group_decides_like_one_batch_at_a_time(
         offers in proptest::collection::vec(offer(), 0..24),
     ) {
+        // Deterministic audit witness supplements every generated history.
+        let mut witness = GroupPlan::new();
+        for (credential, spindle, sequence, expected) in [
+            (CREDENTIALS[0],0,1,DeliveryDecision::Commit { sequence:1 }),
+            (CREDENTIALS[1],1,1,DeliveryDecision::Commit { sequence:1 }),
+            (CREDENTIALS[2],1,2,DeliveryDecision::Forbidden),
+        ] {
+            let batch = incoming(&Offer { credential, spindle, generation:1, sequence, digest:0 });
+            prop_assert_eq!(witness.decide(credential,&batch,None,BindingState::default()),expected);
+        }
         let mut sequential = Durable::default();
         let mut expected = Vec::new();
         for o in &offers {
