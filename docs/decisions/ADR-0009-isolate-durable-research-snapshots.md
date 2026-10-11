@@ -45,7 +45,7 @@ distributed publication and production format migration require further decision
 
 The [S2 result](../experiments/ablation/durable-snapshot-s2-run-01.md) records exact
 round trips, real restarts, concurrent publication, missing/corrupt blocks and
-read-error counterexamples. The [API](../../tools/storage-probe/DISK_API.md) states
+read-error counterexamples. The [API](https://github.com/kmosoti/FabricO11y-research/blob/main/tools/storage-probe/DISK_API.md) states
 filesystem assumptions and the cold-copy rebuild limitation. JSON is inspectable
 and easy to fault-inject, but duplicates metadata and is not a selected compression
 or query-performance winner. External trusted files and retained source remain

@@ -1,6 +1,6 @@
 # Event log
 
-The event log is the local receiver's append-only sequence of framed `Event` records. [EventLog](../../src/log.rs) owns an open file and an advisory writer lock. It accepts a borrowed event, encodes and writes one frame, syncs those bytes, writes a commit marker, then syncs again. Only then does it return success. That success is the local commit boundary; it does not consume the caller's Rust value or send a network ACK.
+The event log is the local receiver's append-only sequence of framed `Event` records. [EventLog](https://github.com/kmosoti/FabricO11y-research/blob/main/src/log.rs) owns an open file and an advisory writer lock. It accepts a borrowed event, encodes and writes one frame, syncs those bytes, writes a commit marker, then syncs again. Only then does it return success. That success is the local commit boundary; it does not consume the caller's Rust value or send a network ACK.
 
 On reopen, the log validates frame-marker pairs and removes an unmarked final event with a plausible partial header or marker, even if its frame is complete. It streams recovered committed events in file order. Detected damage in checked header and marker fields or a complete payload is an error. Partial payload bytes are not decoded before truncation. The [storage architecture](../architecture/storage.md) specifies framing, recovery, and filesystem assumptions; the [delivery concept](delivery-ownership.md) explains the sender-side responsibility.
 

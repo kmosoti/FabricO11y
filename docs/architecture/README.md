@@ -21,7 +21,7 @@ Current product views use the [evidence states](../QUALIFICATION.md#evidence-sta
 
 | Views | Scope |
 | --- | --- |
-| [FOL2 demonstration](fol2-demo.md), [local input and batching](ingestion.md) | Original single-process pipeline. |
+| [Local input and batching](ingestion.md) | Original single-process pipeline; its code is in the [research archive](https://github.com/kmosoti/FabricO11y-research). |
 
 ## Research views
 

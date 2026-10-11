@@ -80,7 +80,7 @@ that principal, and a grant limits its permitted actions/resources.
 
 ## FOL2 demonstration and research
 
-These terms describe the original [event model](../src/lib.rs), [local log](architecture/storage.md), the [delivery design](architecture/delivery.md) and research tooling. Terms that still require a protocol are marked as proposed.
+These terms describe the original [event model](https://github.com/kmosoti/FabricO11y-research/blob/main/src/lib.rs), [local log](architecture/storage.md), the [delivery design](architecture/delivery.md) and research tooling. Terms that still require a protocol are marked as proposed.
 
 | Term | Meaning here |
 | --- | --- |

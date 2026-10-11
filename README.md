@@ -39,7 +39,7 @@ python3 -B tools/resource_group.py -- cargo build --release --locked --workspace
 [Operating FabricO11y](docs/operations.md) covers server/edge setup;
 [access operations](docs/access-operations.md) covers passkeys and recovery.
 [Package construction](packaging/README.md) includes the required console build.
-The original [FOL2 demonstration](docs/architecture/fol2-demo.md) remains a learning example.
+The original [FOL2 demonstration](https://github.com/kmosoti/FabricO11y-research/blob/main/docs/architecture/fol2-demo.md) is preserved in the [research archive](https://github.com/kmosoti/FabricO11y-research).
 
 ## Explore
 

@@ -24,7 +24,7 @@ Let capacity be `C > 0` and occupancy be `n`. Initially `n = 0`. A successful pu
 
 These claims concern the buffer API and the demo's retry path. A caller can still discard an `Err(event)`, the process can fail, and printed events are not durable. The logical event count is bounded; allocation size also depends on event contents and `VecDeque`'s allocation strategy.
 
-The [buffer tests](../../tests/buffer.rs) check rejection ownership, FIFO batches, bounded occupancy, and one retry stream. They are executable checks of representative traces, not a proof of every Rust execution. No throughput comparison selected `VecDeque`; it is the initial standard-library FIFO baseline.
+The [buffer tests](https://github.com/kmosoti/FabricO11y-research/blob/main/tests/buffer.rs) check rejection ownership, FIFO batches, bounded occupancy, and one retry stream. They are executable checks of representative traces, not a proof of every Rust execution. No throughput comparison selected `VecDeque`; it is the initial standard-library FIFO baseline.
 
 ## Consequences
 

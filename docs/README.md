@@ -64,7 +64,7 @@ When documents disagree, the higher entry wins and the lower one is corrected:
 | 3 | Current [architecture views](architecture/README.md) |
 | 4 | Registered protocols and [qualification](QUALIFICATION.md) in the repository; revision-specific results linked by the [evidence index](experiments/README.md) and pinned wiki commit |
 | 5 | [Current state](CURRENT.md) |
-| 6 | Research: [design consolidation](research/design-consolidation.md), [source synthesis](research/cross-system-source-synthesis.md), [ledger](research/ledger.md), [blueprint](architecture.md) and [research harnesses](../tools/research/README.md) |
+| 6 | Research: [design consolidation](research/design-consolidation.md), [source synthesis](research/cross-system-source-synthesis.md), [ledger](research/ledger.md), [blueprint](architecture.md) and [research harnesses](https://github.com/kmosoti/FabricO11y-research/blob/main/tools/research/README.md) |
 
 Implementation is evidence of what exists; none of these documents overrides it silently. A disagreement between code and a document is reconciled explicitly ([documentation policy](documentation-policy.md#19-relationship-between-code-and-documentation)).
 

@@ -10,7 +10,7 @@ The buffer can accept an `Event`, but acceptance only transfers in-process owner
 
 ## Decision
 
-The receiver may issue an acknowledgement for an event only after a durable commit of that event has completed. The sender may forget its copy only after it receives the acknowledgement. A rejected or merely buffered event remains the sender's responsibility. The local [EventLog](../../src/log.rs) defines commit as a synced event frame followed by a synced commit marker; the CLI prints a commit line afterward. This does not define ACK transport or stable identity for arbitrary senders.
+The receiver may issue an acknowledgement for an event only after a durable commit of that event has completed. The sender may forget its copy only after it receives the acknowledgement. A rejected or merely buffered event remains the sender's responsibility. The local [EventLog](https://github.com/kmosoti/FabricO11y-research/blob/main/src/log.rs) defines commit as a synced event frame followed by a synced commit marker; the CLI prints a commit line afterward. This does not define ACK transport or stable identity for arbitrary senders.
 
 ## Alternatives considered and argument
 

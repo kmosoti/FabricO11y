@@ -18,8 +18,8 @@ The blueprint names protocol, storage, and universal JSON representations as pos
 
 ## Evidence
 
-- [src/lib.rs](../../src/lib.rs) defines event types independently of the [generator](../../src/generator.rs) and [buffer](../../src/buffer.rs) modules.
-- The event type definitions in [src/lib.rs](../../src/lib.rs) do not use the `fake` dependency declared in [Cargo.toml](../../Cargo.toml); [src/generator.rs](../../src/generator.rs) uses it to construct test input, and [src/main.rs](../../src/main.rs) orchestrates the local example.
+- [src/lib.rs](https://github.com/kmosoti/FabricO11y-research/blob/main/src/lib.rs) defines event types independently of the [generator](https://github.com/kmosoti/FabricO11y-research/blob/main/src/generator.rs) and [buffer](https://github.com/kmosoti/FabricO11y-research/blob/main/src/buffer.rs) modules.
+- The event type definitions in [src/lib.rs](https://github.com/kmosoti/FabricO11y-research/blob/main/src/lib.rs) do not use the `fake` dependency declared in [Cargo.toml](../../Cargo.toml); [src/generator.rs](https://github.com/kmosoti/FabricO11y-research/blob/main/src/generator.rs) uses it to construct test input, and [src/main.rs](https://github.com/kmosoti/FabricO11y-research/blob/main/src/main.rs) orchestrates the local example.
 - The [original blueprint](../architecture.md), section 1.1, states the intended separation of semantics and mechanisms.
 
 ## Consequences
