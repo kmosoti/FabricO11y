@@ -301,7 +301,7 @@ fn recover_access(path: &str, principal: &str) -> io::Result<()> {
         now_s(),
     )?;
     eprintln!(
-        "fabric-server: owner recovery prepared; read the protected access/access-bootstrap.secret file locally and enroll within ten minutes; prior workload credentials are invalidated"
+        "fabric-server: owner recovery prepared; read the protected access/access-bootstrap.secret file locally and enroll within ten minutes; prior reader credentials are invalidated"
     );
     Ok(())
 }

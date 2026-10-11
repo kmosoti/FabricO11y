@@ -218,6 +218,15 @@ fn admin_token_file_must_be_private_regular_and_not_a_symlink() {
     mode(0o600);
     symlink(&path, scratch.0.join("link")).unwrap();
     assert!(load_admin_token(Some(&scratch.0.join("link"))).is_err());
+    let alias = scratch.0.join("alias");
+    fs::hard_link(&path, &alias).unwrap();
+    assert!(load_admin_token(Some(&path)).is_err(), "hard-linked");
+    fs::remove_file(&alias).unwrap();
+    let foreign = scratch.0.join("foreign");
+    fs::copy(&path, &foreign).unwrap();
+    if std::os::unix::fs::chown(&foreign, Some(65534), None).is_ok() {
+        assert!(load_admin_token(Some(&foreign)).is_err(), "another owner");
+    }
     assert!(load_admin_token(None).is_err());
 }
 

@@ -1202,6 +1202,16 @@ fn token_files_must_be_private_regular_and_not_symlinks() {
     let link = scratch.path("link");
     std::os::unix::fs::symlink(&path, &link).unwrap();
     assert!(read_token(&link).is_err());
+    let alias = scratch.path("alias");
+    fs::hard_link(&path, &alias).unwrap();
+    assert!(read_token(&path).is_err(), "hard-linked");
+    fs::remove_file(&alias).unwrap();
+    let foreign = scratch.path("foreign");
+    fs::write(&foreign, "secret-token\n").unwrap();
+    fs::set_permissions(&foreign, fs::Permissions::from_mode(0o600)).unwrap();
+    if std::os::unix::fs::chown(&foreign, Some(65534), None).is_ok() {
+        assert!(read_token(&foreign).is_err(), "another owner");
+    }
     fs::write(&path, "x".repeat(300)).unwrap();
     assert!(read_token(&path).is_err());
 }

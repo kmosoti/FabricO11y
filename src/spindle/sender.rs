@@ -88,20 +88,24 @@ fn read_bounded(source: impl Read, name: &Path, cap: u64) -> io::Result<Vec<u8>>
     Ok(bytes)
 }
 
-/// Open a credential file. It must be regular, not a symlink and readable only
-/// by its owner, or also by its group when root owns it (`0640 root:fabricolly`).
+/// Open a credential file: a single-link regular file, not a symlink, owned by the
+/// caller or root, readable only by its owner or, if root owns it, also its group
+/// (`0640 root:fabricolly`).
 fn open_secret(path: &Path) -> io::Result<std::fs::File> {
     let file = std::fs::OpenOptions::new()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)?;
     let meta = file.metadata()?;
-    let root_group = meta.uid() == 0 && meta.mode() & 0o037 == 0;
-    if !meta.is_file() || (meta.mode() & 0o077 != 0 && !root_group) {
+    let (uid, mode) = (meta.uid(), meta.mode());
+    // SAFETY: geteuid has no pointer preconditions.
+    let owner_ok = uid == 0 || uid == unsafe { libc::geteuid() };
+    let group_ok = uid == 0 && mode & 0o037 == 0;
+    if !meta.is_file() || meta.nlink() != 1 || !owner_ok || (mode & 0o077 != 0 && !group_ok) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!(
-                "{} must be a regular file readable only by its owner (0600) or, if root-owned, its group (0640)",
+                "{} must be a single-link regular file owned by this user or root, readable only by its owner (0600) or, if root-owned, its group (0640)",
                 path.display()
             ),
         ));

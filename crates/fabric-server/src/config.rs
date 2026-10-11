@@ -59,18 +59,22 @@ fn read_bounded(file: File) -> io::Result<String> {
     String::from_utf8(bytes).map_err(|_| invalid("file is not UTF-8"))
 }
 
-/// A credential file's trimmed text. It must be regular, not a symlink and readable
-/// only by its owner, or also by its group when root owns it (`0640 root:fabricolly`).
+/// A credential file's trimmed text. The file is a single-link regular file, not a
+/// symlink, owned by the caller or root, readable only by its owner or, if root
+/// owns it, also its group (`0640 root:fabricolly`).
 pub fn read_secret(path: &Path) -> io::Result<String> {
     let file = File::options()
         .read(true)
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)?;
     let meta = file.metadata()?;
-    let root_group = meta.uid() == 0 && meta.mode() & 0o037 == 0;
-    if !meta.is_file() || (meta.mode() & 0o077 != 0 && !root_group) {
+    let (uid, mode) = (meta.uid(), meta.mode());
+    // SAFETY: geteuid has no pointer preconditions.
+    let owner_ok = uid == 0 || uid == unsafe { libc::geteuid() };
+    let group_ok = uid == 0 && mode & 0o037 == 0;
+    if !meta.is_file() || meta.nlink() != 1 || !owner_ok || (mode & 0o077 != 0 && !group_ok) {
         return Err(invalid(
-            "credential files must be regular, not symlinks, and readable only by their owner (0600) or, if root-owned, their group (0640)",
+            "credential files must be single-link regular files owned by this user or root, readable only by their owner (0600) or, if root-owned, their group (0640)",
         ));
     }
     Ok(read_bounded(file)?.trim().to_owned())
