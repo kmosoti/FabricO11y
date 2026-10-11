@@ -349,7 +349,9 @@
         "--no-fail-fast",
         "--locked",
         "-p",
-        "fabric-properties"
+        "fabric-properties",
+        "--test",
+        "kernels"
       ],
       "expect_failing": "pages_cover_every_row_once_in_order"
     },

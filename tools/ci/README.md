@@ -63,6 +63,12 @@ trees must never share compiled crate outputs. The local October 11 audit with
 an absolute shared directory reported known tested defects as survivors; its
 results are contaminated and cannot establish coverage or equivalence.
 
+The `M-PROP-PAGE` negative control targets the `kernels` property-test binary,
+including its unchanged `pages_cover_every_row_once_in_order` generator and
+progress assertions. Running every property binary after deliberately breaking
+cursor progress can trap the specification's client-drain helper forever before
+the named result is collected. The ordinary property gate still runs all binaries.
+
 The delivery fault fixture uses the explicit legacy administration adapter,
 its configured test CA for the mandatory companion, and independent stopped
 Spool observations for every producer including that companion. A server crash
