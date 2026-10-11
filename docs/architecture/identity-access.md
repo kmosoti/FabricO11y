@@ -157,18 +157,12 @@ recoverable transition, or they fail closed. Back up access state and audit sepa
 from telemetry. Online restore is refused; offline restore needs a fresh installation
 epoch, which discards sessions and reader tokens, so an old backup never resurrects authority.
 
-## Required adversarial evidence
+## Evidence
 
 The [console protocol](../experiments/formal/console-access-protocol.md) registers the
-checks and their negative controls: passkey replay, wrong origin or RP ID, absent user
-verification and parallel bootstrap; fixation, CSRF, timeout and stale-cache rejection;
-the role matrix over every console and Spindle route, where widening any role or
-accepting an anonymous or Spindle caller on a console route must fail; reader expiry,
-revocation and cross-credential cursor reuse; revocation races against in-flight reads;
-and restart, corruption, older-format, fault, restore, cap and audit-full cases, where
-a permissive fallback or restored authority must fail. Use real HTTPS, browser and
-passkey flows with packaged assets as well as deterministic native tests, preserve
-minimized failures with origin and contract references, and record revision, command,
-exit status and cleanup receipts. Generated implementation tests are not an independent
-oracle. Evidence supports a bounded claim on a named revision, never universal absence
-of vulnerabilities.
+checks and negative controls: passkey, session and CSRF rejections, the role matrix over
+every console and Spindle route (widening any role must fail), reader expiry, revocation
+and cross-credential cursor reuse, revocation races, and restart, corruption,
+older-format, fault, restore, cap and audit-full cases. Generated implementation tests
+are not an independent oracle. Evidence supports a bounded claim on a named revision,
+never universal absence of vulnerabilities.

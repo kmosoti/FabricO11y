@@ -89,27 +89,14 @@ listening port alone does not establish certificate trust or durable custody.
 
 The owner enrolls, configures, pauses, resumes and revokes Spindles in the console;
 these are owner-only. For scripts and AI agents, issue a read-only reader token in
-console Settings. Store its once-returned token in a regular, owner-only file with
-mode 0600 and configure the client:
-
-```text
-server_url=https://fabric-server.example:7443
-server_ca=/etc/fabrico11y/ca.pem
-workload_token_file=/home/operator/.config/fabrico11y/workload-token
-```
-
-```sh
-fabricctl access access.conf node list
-fabricctl access access.conf query '<QUERY_JSON>'
-```
-
-A reader can query telemetry and read status and inventory, nothing else. Queries
-cover logs, metric points and spans with a window of at most 24 hours and at most
-1,000 rows. [Query answers](architecture/retained-history.md) include completeness,
-freshness and gaps; follow the opaque `next_page` handle. See
-[access operations](access-operations.md) for token rotation and recovery.
-Legacy `fabricctl admin` works only with the explicit `serve-legacy` migration
-mode. It does not provide the role boundary.
+console Settings and use it with `fabricctl access access.conf node list` and
+`query '<QUERY_JSON>'`, as [access operations](access-operations.md#reader-tokens-and-read-only-clients)
+describes with token storage, rotation and recovery. A reader can query telemetry (logs,
+metric points and spans, at most 24 hours and 1,000 rows) and read status and inventory,
+nothing else. [Query answers](architecture/retained-history.md) include completeness,
+freshness and gaps; follow the opaque `next_page` handle. Legacy `fabricctl admin`
+works only with the explicit `serve-legacy` migration mode and does not provide the
+role boundary.
 
 ## Node
 
