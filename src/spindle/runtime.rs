@@ -773,7 +773,25 @@ impl Spindle {
             outcome: outcome.clone(),
             elapsed_us,
         });
-        match outcome {
+        self.settle(outcome, sequence, prior_last, length, &mut report.delivery)?;
+        report.delivery.caught_up = self.journal.next_unacked()?.is_none();
+        Ok(report)
+    }
+
+    /// Interpret the answer to batch `sequence`, sent when the spool's last
+    /// durable sequence was `prior_last`. An ACK advances the cursor and
+    /// returns true. Any other answer sets `report.error` and returns false.
+    /// An ACK beyond `prior_last` is an error: the server cannot hold what
+    /// this spool never committed.
+    fn settle(
+        &mut self,
+        answer: Delivery,
+        sequence: u64,
+        prior_last: u64,
+        length: usize,
+        report: &mut DeliveryReport,
+    ) -> io::Result<bool> {
+        let error = match answer {
             Delivery::Ack(through) if through > prior_last => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
@@ -783,28 +801,23 @@ impl Spindle {
             Delivery::Ack(through) if through >= sequence => {
                 self.journal.record_ack(through)?;
                 self.meter.record_delivery(length);
-                report.delivery.acked_through = through;
+                report.acked_through = through;
+                return Ok(true);
             }
             Delivery::Ack(through) => {
-                report.delivery.error = Some(format!(
-                    "server acknowledged {through}, below sent sequence {sequence}"
-                ))
+                format!("server acknowledged {through}, below sent sequence {sequence}")
             }
-            Delivery::Conflict(through) => {
-                report.delivery.error = Some(format!(
-                    "server holds different bytes for sequence {sequence} (committed through {through}); delivery stopped"
-                ))
-            }
-            Delivery::Gap(through) => {
-                report.delivery.error = Some(format!(
-                    "server committed only through {through}, below this node's acknowledged {}; delivery stopped",
-                    self.journal.acked_through()
-                ))
-            }
-            Delivery::Rejected(why) | Delivery::Retry(why) => report.delivery.error = Some(why),
-        }
-        report.delivery.caught_up = self.journal.next_unacked()?.is_none();
-        Ok(report)
+            Delivery::Conflict(through) => format!(
+                "server holds different bytes for sequence {sequence} (committed through {through}); delivery stopped"
+            ),
+            Delivery::Gap(through) => format!(
+                "server committed only through {through}, below this node's acknowledged {}; delivery stopped",
+                self.journal.acked_through()
+            ),
+            Delivery::Rejected(why) | Delivery::Retry(why) => why,
+        };
+        report.error = Some(error);
+        Ok(false)
     }
 
     pub fn open(config: Config) -> io::Result<Self> {
@@ -1005,6 +1018,7 @@ impl Spindle {
                 }
                 std::thread::sleep(wait);
             }
+            let prior_last = self.journal.next_sequence() - 1;
             let send_stamp = self.timing_sample();
             let outcome = self
                 .sender
@@ -1024,37 +1038,8 @@ impl Spindle {
             });
             self.timing(sequence, "send_started", send_stamp);
             self.timing(sequence, "answer_received", answer_stamp);
-            match outcome {
-                Delivery::Ack(through) if through >= sequence => {
-                    // Beyond our last committed sequence is an error from
-                    // record_ack; the spool is left unchanged.
-                    self.journal.record_ack(through)?;
-                    self.meter.record_delivery(bytes.len());
-                    report.acked_through = through;
-                }
-                Delivery::Ack(through) => {
-                    report.error = Some(format!(
-                        "server acknowledged {through}, below sent sequence {sequence}"
-                    ));
-                    break;
-                }
-                Delivery::Conflict(through) => {
-                    report.error = Some(format!(
-                        "server holds different bytes for sequence {sequence} (committed through {through}); delivery stopped"
-                    ));
-                    break;
-                }
-                Delivery::Gap(through) => {
-                    report.error = Some(format!(
-                        "server committed only through {through}, below this node's acknowledged {}; delivery stopped",
-                        self.journal.acked_through()
-                    ));
-                    break;
-                }
-                Delivery::Rejected(why) | Delivery::Retry(why) => {
-                    report.error = Some(why);
-                    break;
-                }
+            if !self.settle(outcome, sequence, prior_last, bytes.len(), &mut report)? {
+                break;
             }
         }
         Ok(report)

@@ -282,3 +282,48 @@ fn overlap_rate_wait_past_deadline_sends_and_prepares_nothing() {
     assert_eq!(spindle.journal.next_sequence(), 2);
     assert_eq!(spindle.meter.delivered_bytes(), 0);
 }
+
+#[test]
+fn one_rule_interprets_every_server_answer_for_both_delivery_paths() {
+    let s = Scratch::new();
+    let mut spindle = s.spindle(1024 * 1024);
+    spindle.collect_logs().unwrap();
+    let mut settle = |answer| {
+        let mut report = DeliveryReport {
+            sent: 1,
+            acked_through: 0,
+            caught_up: false,
+            error: None,
+        };
+        let acked = spindle.settle(answer, 1, 1, 10, &mut report);
+        (acked.map_err(|e| e.to_string()), report.error)
+    };
+    let beyond = "server acknowledged beyond the pre-attempt durable sequence";
+    assert_eq!(settle(Delivery::Ack(2)), (Err(beyond.into()), None));
+    let below = "server acknowledged 0, below sent sequence 1";
+    assert_eq!(settle(Delivery::Ack(0)), (Ok(false), Some(below.into())));
+    let (acked, error) = settle(Delivery::Conflict(1));
+    assert!(!acked.unwrap());
+    assert!(
+        error
+            .unwrap()
+            .starts_with("server holds different bytes for sequence 1 (committed")
+    );
+    let (acked, error) = settle(Delivery::Gap(0));
+    assert!(!acked.unwrap());
+    assert!(
+        error
+            .unwrap()
+            .contains("below this node's acknowledged 0; delivery stopped")
+    );
+    assert_eq!(
+        settle(Delivery::Rejected("no".into())),
+        (Ok(false), Some("no".into()))
+    );
+    assert_eq!(
+        settle(Delivery::Retry("later".into())),
+        (Ok(false), Some("later".into()))
+    );
+    assert_eq!(settle(Delivery::Ack(1)), (Ok(true), None));
+    assert_eq!(spindle.journal.acked_through(), 1);
+}
