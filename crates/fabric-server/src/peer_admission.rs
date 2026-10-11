@@ -19,6 +19,8 @@ use std::time::{Duration, Instant};
 const SCALE: u128 = 1_000_000_000;
 const PEERS: usize = 1024;
 const IDLE: Duration = Duration::from_secs(120);
+/// Distinct /64s one /48 may track before the rest share that /48's single entry.
+const PER_NET: usize = PEERS / 16;
 
 #[derive(Clone, Copy)]
 struct Limits {
@@ -47,6 +49,7 @@ const LIMITS: [Limits; 2] = [
 enum Peer {
     V4([u8; 4]),
     V6Prefix([u8; 8]),
+    V6Net([u8; 6]),
 }
 
 impl From<SocketAddr> for Peer {
@@ -102,6 +105,27 @@ struct Book {
     healthy: bool,
 }
 
+impl Book {
+    /// A new /64 beyond its /48's share of the table is tracked as that /48, so
+    /// one routed network cannot fill every entry and lock out other peers.
+    fn key(&self, peer: Peer) -> Peer {
+        let Peer::V6Prefix(prefix @ [a, b, c, d, e, f, ..]) = peer else {
+            return peer;
+        };
+        let net = Peer::V6Net([a, b, c, d, e, f]);
+        let tracked = |key: &&Peer| matches!(key, Peer::V6Prefix(p) if p[..6] == prefix[..6]);
+        if self.peers.contains_key(&peer) {
+            return peer;
+        }
+        let room = self.peers.keys().filter(tracked).count() < PER_NET;
+        if room && !self.peers.contains_key(&net) {
+            peer
+        } else {
+            net
+        }
+    }
+}
+
 struct Admission {
     epoch: Instant,
     book: Mutex<Book>,
@@ -145,6 +169,7 @@ impl Admission {
             return Err(Rejected::Unavailable);
         }
         book.last = now;
+        let peer = book.key(peer);
         if !book.peers.contains_key(&peer) && book.peers.len() >= PEERS {
             // Never evict a live or indebted entry to hand out a fresh burst.
             // The walk is bounded by PEERS and only needed on table pressure.
@@ -377,6 +402,22 @@ mod tests {
         assert!(gate.book.lock().unwrap().peers.contains_key(&peer(0)));
         drop(held);
         assert_eq!(gate.book.lock().unwrap().live, [0; 2]);
+    }
+
+    #[test]
+    fn security_one_ipv6_network_cannot_fill_the_peer_table() {
+        // Counterexample origin: a routed /54 is 1,024 /64s, so one network's fresh
+        // entries filled the table and every other peer, even login, got 429.
+        let gate = Admission::new();
+        let subnet = |net: u16, n: u16| {
+            Peer::from(SocketAddr::from(([0x2001, 0xdb8, net, n, 0, 0, 0, 1], 443)))
+        };
+        let admitted = (0..2 * PEERS as u16)
+            .filter(|&n| gate.acquire(subnet(1, n), 0, Duration::ZERO).is_ok())
+            .count();
+        // Past its share the /48 as a whole gets one peer's burst, not one per /64.
+        assert_eq!(admitted, PER_NET + LIMITS[0].burst as usize);
+        drop(gate.acquire(subnet(2, 0), 0, Duration::ZERO).unwrap());
     }
 
     #[test]
