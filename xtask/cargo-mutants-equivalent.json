@@ -7,8 +7,28 @@
       "reason": "The comparison is reached only after the branch for sequence == last, so sequence < last and sequence <= last agree on every reachable input."
     },
     {
-      "mutant": "crates/fabric-core/src/query.rs:104:25: replace > with >= in counter_step",
+      "mutant": "crates/fabric-core/src/query.rs:106:25: replace > with >= in counter_step",
       "reason": "With equal times the interval is 0 s, so the rate is x/0: infinite, or NaN when the values are equal. The finiteness check added for CX-RATE-NON-FINITE turns every such pair into a reset, exactly as the strict comparison does."
+    },
+    {
+      "mutant": "crates/fabric-core/src/query.rs:166:35: replace match guard a.is_finite() && b.is_finite() with true in counter_step_numbers",
+      "reason": "Every pair containing a nonfinite Double still returns Reset: NaN yields no comparison or a NaN delta; infinities yield a decrease or a nonfinite delta, rejected by counter_step. Finite pairs are unchanged. The literal any_nonfinite_counter_pair_is_a_reset regression supplements the legacy differential test. This survivor was observed in the isolated October 11 audit."
+    },
+    {
+      "mutant": "crates/fabric-core/src/query.rs:166:49: replace && with || in counter_step_numbers",
+      "reason": "This only newly admits a Double pair with exactly one nonfinite operand. A decreasing pair returns Reset through the normalized decrease; any other such pair has a nonfinite delta which counter_step rejects. Two finite operands are unchanged and two nonfinite operands still fail the guard. Observed in the isolated October 11 audit; the literal nonfinite-pair regression covers the boundary values."
+    },
+    {
+      "mutant": "crates/fabric-core/src/query.rs:188:9: delete match arm None in counter_step_numbers",
+      "reason": "A missing comparison arises only from a nonfinite Double operand. Falling through computes a NaN or infinite delta, which counter_step rejects as Reset, the same result as the removed arm. Integer deltas fit i128 and every finite comparison returns Some. Observed in the isolated October 11 audit."
+    },
+    {
+      "mutant": "crates/fabric-core/src/query/spec.rs:282:24: replace match guard after.is_none_or(|a| k > a) with true in drain_budgeted",
+      "reason": "With the other functions unchanged, every Some continuation from budgeted_walk already advances: a row continuation passes the strict after predicate; a boundary m is strictly greater than after.time.saturating_add(1), so its m-1 sentinel is also greater. The first page has no previous cursor. Thus the guard is true on every reachable Some continuation. Observed in the isolated October 11 audit; this does not remove the defensive original guard."
+    },
+    {
+      "mutant": "crates/fabric-core/src/query/spec.rs:282:47: replace > with >= in drain_budgeted",
+      "reason": "With the other functions unchanged, equality is unreachable for a Some continuation: row keys pass the strict after predicate, and a boundary m exceeds after.time.saturating_add(1), making the m-1 sentinel strictly greater. Both comparisons therefore accept the same reachable continuations. Observed in the isolated October 11 audit."
     }
   ]
 }
