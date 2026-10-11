@@ -10,14 +10,15 @@ information.
 - **Spindle** (`fabric-node`): collects CPU, memory, filesystem, disk, network and selected log files on one Linux host as OpenTelemetry protobuf inside versioned Batches, and keeps them in a durable local **Spool** until the server acknowledges them. Unreadable sources and full disks become visible gaps.
 - **Delivery**: authenticated TLS; one Batch in flight per **Strand** (one Spindle generation's ordered lineage); the server acknowledges only after a durable commit, deduplicates retries and rejects conflicting bytes.
 - **Fabric Server**: a durable journal, immutable Zstd Parquet **Segments**, retention by age and size, and log, metric and counter-rate **queries** whose answers report completeness, freshness, collection gaps and the retained window, with snapshot-bound pages.
-- **Console and access**: a Leptos/WASM PWA with local passkeys for humans and scoped credentials for systems and delegated agents. Explore telemetry and manage Spindles through the console or `fabricctl access`.
+- **Console and access**: a Leptos/WASM PWA with a local owner passkey and read-only reader tokens for scripts and AI clients. Explore telemetry and manage Spindles in the console; `fabricctl access` lists nodes and queries with a reader token.
 - **Self-observation**: each server supervises its own dedicated Spindle. Edge Spindles send their diagnostics to their configured server.
 
 The bounded release for development and small deployments is in acceptance
 testing. Debian and Fedora packages are being verified with the console and
 100 GB retained-telemetry default. No release has been tagged and no deployment
-profile is qualified. See [current evidence](docs/CURRENT.md) and the
-[release plan](docs/milestones/release-readiness.md).
+profile is qualified. See [current evidence](docs/CURRENT.md), the
+[release plan](docs/milestones/release-readiness.md) and the
+[release epic](https://github.com/kmosoti/FabricO11y/issues/33).
 The [research wiki's progress page](https://github.com/kmosoti/FabricO11y/wiki/Release-readiness-progress)
 links measured results and the active acceptance queue.
 
@@ -28,7 +29,7 @@ A pure, `no_std` semantic core decides what a transition means (for example, whe
 ## Build and run
 
 The tested toolchain is Rust 1.99.0, including its WASM target. Follow the
-[contributor setup](docs/CONTRIBUTING.md#resource-containment) for mounted storage
+[contributor setup](docs/CONTRIBUTING.md#resource-containment) for the storage root
 and enforced cgroups:
 
 ```sh

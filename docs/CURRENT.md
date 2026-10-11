@@ -12,16 +12,39 @@ and remaining limits.
 | Component | Current behavior |
 | --- | --- |
 | Spindle (`fabric-node`) | Host metrics, selected log files and loopback OTLP/HTTP trace intake; durable FAB1 Spool, exact retry, visible collection gaps, output-rate cap and last-valid remote configuration. |
-| Delivery | Verified TLS, per-Spindle credentials, ordered Batches, deduplication and ACK after grouped two-sync journal commit. A quiet sender closes its group after 2 ms. |
-| Storage | Bounded external-merge sealing to Zstd Parquet, manifest publication before checkpoint/reclaim, retention by age and bytes. The normal writer uses aligned sorted groups and disk-backed completed pages; estimated input targets admit a single oversized row. No whole-server memory bound is established. |
-| Query | Logs, metric points/rates and spans across journal and Segments, snapshot pagination, freshness and completeness. Legacy queries default to Scan. Scoped console queries use Walk with storage-owned source maps and authorization filtering before row selection. Unpaginated rates remain outside the console API. |
-| Console and access | Leptos/WASM PWA with local passkeys, scoped human/workload/delegated-agent access, live queries and Spindle controls. Enrollment requires resident credentials and user verification; finite Chrome checks include independent credential inventory. The exact-package and physical-device release matrix remains open. |
+| Delivery | Verified TLS (the configured CA and the dialed name only), per-Spindle credentials, ordered Batches, deduplication and ACK after grouped two-sync journal commit. A quiet sender closes its group after 2 ms. One rule interprets every server answer; an ACK beyond the Spool's durable sequence is refused. |
+| Storage | Bounded external-merge sealing to Zstd Parquet, manifest publication before checkpoint/reclaim, retention by age and bytes. The normal writer uses aligned sorted groups and disk-backed completed pages; estimated input targets admit a single oversized row. No whole-server memory bound is established. A journal group the stream table cannot absorb quarantines the commit thread (in memory; a restart replays). |
+| Query | Logs, metric points/rates and spans across journal and Segments, snapshot pagination, freshness and completeness. Legacy queries default to Scan. Console queries (owner and reader, all telemetry, at most 1,000 rows and 24 hours) use Walk with storage-owned source maps; the now-redundant scoped-filtering code remains. Unpaginated rates stay outside the console API. |
+| Console and access | Leptos/WASM PWA with a local owner passkey, expiring read-only reader tokens for scripts and AI clients, and Spindle tokens: three fixed roles ([ADR-0029](decisions/ADR-0029-use-three-fixed-roles-for-the-first-release.md)) at one route guard. Normal `serve` requires an HTTPS origin and RP ID, needs no administrator token and refuses `/v1/admin/*`; `serve-legacy` is migration only. Enrollment requires resident credentials and user verification; finite Chrome checks include independent credential inventory. The exact-package and physical-device release matrix remains open. |
+| Hardening | Console peer admission (including an IPv6 /48 cap), 503 on a poisoned lock, absolute OTLP deadlines, `openat2` log opening, one credential-file policy, audit denials capped apart from other events and eight added unit sandbox directives; see [security hardening](architecture/security-hardening.md). |
 | Self-observation | Every production server CLI launches and supervises a dedicated local Spindle. Both emit bounded diagnostics through ordinary Spool/TLS/ACK delivery. Edge Spindles retain their configured destination. |
-| Packaging | Debian and RPM artifacts include the console, Apache-2.0 license and dependency notices, with static systemd services and a shared slice. Historical Debian acceptance passed seventeen baseline checks and three mutation controls; current exact-candidate lifecycle trials are in progress. |
-| Architecture | Pure `no_std` semantic core, effect ports, application transitions and adapters; executable layer and purity gates. |
+| Packaging | Debian and RPM artifacts include the console, Apache-2.0 license and dependency notices, with static systemd services and a shared slice. Historical Debian acceptance passed seventeen baseline checks and three mutation controls; current exact-candidate lifecycle trials are in progress. The added unit directives have had a syntax check only. |
+| Architecture | Pure `no_std` semantic core, effect ports, application transitions and adapters; executable layer and purity gates. `ports` and `app` may link no external crate, and a requirement satisfied by `[patch]` counts as the member edge. |
+| Repository | Historical tooling, experiment data and the FOL2 demonstration live in the [research archive](https://github.com/kmosoti/FabricO11y-research); dead Rust and experiment selectors are removed. The launcher's storage root is `FABRIC_STORAGE_ROOT` with host-scaled memory caps. Workflow actions are pinned by SHA, the fuzz nightly by date, and `tools/ci/check-vendor.py` compares vendored crates with crates.io. |
 
 See the [system view](architecture/system.md), [operations guide](operations.md)
 and [architecture index](architecture/README.md) for behavior and configuration.
+
+## Release scope and open work
+
+The release epic ([#33](https://github.com/kmosoti/FabricO11y/issues/33)) tracks the
+remaining work. Owner decisions ([#34](https://github.com/kmosoti/FabricO11y/issues/34)):
+tag `v0.1.0-alpha.1`; Debian 13 and the current stable Fedora (45 if it ships by the
+freeze, otherwise 44); physical-device and mobile passkey checks are deferred as a known
+issue; reader queries are not individually audited. The
+[release plan](milestones/release-readiness.md) covers Debian/Fedora central and edge
+deployment, 100 GB retained telemetry with separate working space, local passkeys,
+owner and reader access, and the PWA; Apache-2.0 licensing, dependency notices and a
+[private security-reporting route](../SECURITY.md) are included. No new
+qualification is claimed here: repository CI receipts are integration evidence, not
+package, device or deployment acceptance.
+
+Known limits and open checks:
+
+- An attacker spread over many IPv6 /48s or IPv4 addresses can still fill the 1,024-entry peer table; a denial at a new second costs up to two access-state syncs (clock watermark and denial record), though at most one denial is stored per second ([#47](https://github.com/kmosoti/FabricO11y/issues/47)).
+- The installed-system effect of the eight added unit directives (notably `ProtectClock` and `MemoryDenyWriteExecute`) is unchecked ([#41](https://github.com/kmosoti/FabricO11y/issues/41)).
+- The browser checks added for the role matrix (`live_browser_check`, bridge smoke, packaged console) are CI-only and have no recorded result.
+- In cloud containers the `xtask` tests `check_logs` (needs the launcher) and `evidence` (needs full git history) fail, and `tests/control.rs` fails under umask 022; these are environmental.
 
 ## Results that shape the design
 
@@ -58,121 +81,29 @@ retains minimized launcher, control-publication and Spool-exhaustion defects.
 Recent repairs cover journal identity during rotation, publication/reclaim
 coverage races, snapshot metadata after publication, HTTP admission before body
 allocation, cancellation and startup ownership leaks, oversized-line progress,
-exact integer counter rates and reserved diagnostic credentials. Their minimized
-failures and checks are linked from the matrix and experiment index.
+exact integer counter rates, reserved diagnostic credentials, audit eviction by
+denial floods, poisoned locks and one IPv6 network filling the peer table. Their
+minimized failures and checks are linked from the matrix and experiment index.
+Verification fixtures check finite pagination progress before complete drain, and
+interrupted registry checks retain partial output without a completion receipt
+([verifier protocol](experiments/formal/verifier-boundedness-protocol.md)).
 
-Verification fixtures now check finite pagination progress before complete
-drain, and interrupted registry checks retain partial output without a completion
-receipt. The [verifier protocol](experiments/formal/verifier-boundedness-protocol.md)
-preserves all existing answers, mutations, equivalence reasons and deadlines;
-the integration review records diagnostics and matching candidate outcomes.
+## Candidate evidence to date
 
-## Completed readiness continuation
+These results belong to the candidates they name; none qualifies the release.
 
-The [readiness continuation](experiments/formal/readiness-continuation-results.md)
-has completed the combined builder campaign, recovery/shutdown checks, dependency
-policy and finite [installation acceptance](experiments/formal/installation-acceptance-run-02.md).
-The [full companion-compatible R2 soak](experiments/benchmarks/soak-run-02.md)
-passed all ten gates and its frozen evidence is archived. The
-[normal writer](experiments/formal/bounded-writer-default-run-01.md) now enables
-aligned groups and disk-backed completed pages: unflagged 27 bounded tests,
-13 kill cuts plus no-hit, and loaded-binary equivalence passed. The data-only
-runner guard also passed 66 focused tests. Both owned freezes were archived and
-removed. All 17 final fast checks and all three manual documentation checks
-passed. This completes the registered continuation queue; evidence, failed
-attempts and exact revision limits remain in the linked records.
-
-## Release preparation
-
-The [bounded release plan](milestones/release-readiness.md) tracks Debian/Fedora
-central and edge deployment, 100 GB retained telemetry with separate working
-space, local passkeys, scoped human/workload/AI access, and a Leptos/WASM PWA.
-Apache-2.0 licensing, dependency notices and a
-[private security-reporting route](../SECURITY.md) are included. No release tag
-has been published. The
-[release progress page](https://github.com/kmosoti/FabricO11y/wiki/Release-readiness-progress)
-links candidate results, failures and the remaining acceptance queue.
-The [release acceptance issue](https://github.com/kmosoti/FabricO11y/issues/32)
-tracks the finite B1–B13 queue separately from the broader product roadmap.
-Console integration is merged through `18f6b36`; security specification `cfe23e8`
-is also merged. The runtime hardening in
-[PR 31](https://github.com/kmosoti/FabricO11y/pull/31) adds bounded private-console
-peer admission, absolute OTLP read deadlines and symlink-free Linux log opening.
-Candidate-specific integration status and receipts are recorded in the
-[integration review](https://github.com/kmosoti/FabricO11y/wiki/Release-integration-review).
-
-Debian build 04 and RPM build 03 contain console build 09, with all 637 common
-payload files matching. The console fixes a real 200% zoom pagination overflow;
-150 staged Chrome assertions passed, including rejection of an injected overflow.
-The latest native change requests resident credentials for all four enrollment
-paths. Its two focused regressions passed on `829babe`; independent browser
-inventory checks and a nonresident-enrollment negative control are implemented.
-New exact packages and their browser acceptance are pending. Earlier credentials
-remain usable through explicit principal sign-in. Virtual devices do not
-establish physical passkey or mobile compatibility.
-
-The first corrected full million-row Segment trial,
-`release-query-segment-seed1-successor-02`, passed all eight gates on Debian
-build 04/RPM build 03: 200/200 independent-oracle answers, exact recovery and
-companion custody, and query p99 at most 504.340 ms before restart and 447.509 ms
-afterward. This confirms the bounded scoped-evidence cache through production
-HTTPS on that package pair. The earlier 10.27-second five-page failure and
-library comparisons remain in the
-[cache report](https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-scoped-evidence-cache-run-01).
-These results are not automatically attributed to the resident-enrollment successor.
-
-Full soak `production-soak-full-03` failed after 1,587.618 seconds: its aggregate
-storage census could not traverse temporary directories owned by a concurrent
-rootless package build. The harness stopped rather than ignoring uncounted disk
-usage. No Fabric crash was observed. Container/package builds now complete and
-clean up before measured service fixtures start. This failed run and earlier
-interrupted runs retain their original results and cleanup receipts in the
-[campaign record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-production-access-campaign-run-01).
-The resident-enrollment packages will receive a fresh full soak. The final
-query/main/pressure/outage matrix, Debian/Fedora installation and lifecycle,
-four cross-family forwarding cells, and full packaged browser/PWA acceptance
-remain queued. Historical Fedora installation/reboot/removal evidence belongs
-to its original `c06688c` candidate, including the
-[Btrfs identity repair](decisions/ADR-0028-preserve-btrfs-log-identity-across-reboots.md).
-
-Firefox's actual virtual-passkey diagnostic completed 127 assertions after two
-fixture repairs: software transport selection and CTAP 2.1 credential-ID handling.
-Those causal diagnostics retain their exact scope; standalone resident-key
-acceptance is still pending. The repaired Chrome fixture also needs its full
-cursor-expiry, recovery and installed-PWA lifecycle run on the successor package.
-
-The October 11 closeout repairs peer-cadence browser failures, mounted Cargo
-artifact lookup, tool setup, shared mutation-worker compiler outputs and stale
-negative controls. Benign console actions use a registered 550 ms schedule;
-a separate unpaced burst must be rejected and recover after refill. Literal
-regressions cover integer/double boundaries, promoted credential bindings,
-query ties, overlapping sources and budget cuts. All ordinary property checks,
-independent Python oracles and invariant expectations remain in force.
-
-The hosted `eb5b096` candidate passed fast and focused security workflows and
-all ten extended commands, but final receipt completeness failed after fuzzing
-rewrote its stale dependency lock. The lock now matches the current server graph;
-fuzz trials require locked resolution and unchanged lock bytes. Final receipt
-validation also checks the live worktree. Failed, interrupted and contaminated
-runs remain historical. The wiki records matching workflow outcomes and exact
-candidate identities. Repository CI does not replace packaged service or device
-acceptance. Bun CI/hooks remain disabled; documentation checks run manually.
-
-The local `851d50b` delivery gate exited 0: all eight registered trials passed
-the unchanged independent oracle and TLC with companion-inclusive observations;
-the strict loss control rejected an acknowledged missing record. It exercises
-the explicit legacy administration adapter, so production console access remains
-the separate native browser/security gate. The finite Chrome trial completed 144
-assertions on debug binaries; neither trial qualifies successor packages or
-physical devices. The integration review retains commands, candidate identities,
-failures and cleanup observations.
+- **Readiness continuation.** The [continuation](experiments/formal/readiness-continuation-results.md) completed the combined builder campaign, recovery/shutdown checks, dependency policy and finite [installation acceptance](experiments/formal/installation-acceptance-run-02.md). The [full companion-compatible R2 soak](experiments/benchmarks/soak-run-02.md) passed all ten gates. The [normal writer](experiments/formal/bounded-writer-default-run-01.md) passed 27 unflagged bounded tests, 13 kill cuts plus no-hit, and loaded-binary equivalence; all 17 final fast checks and three manual documentation checks passed on that revision.
+- **Packages and console.** Debian build 04 and RPM build 03 contain console build 09, with all 637 common payload files matching. The console fixed a real 200% zoom pagination overflow; 150 staged Chrome assertions passed, including rejection of an injected overflow. A later change requests resident credentials for all four enrollment paths (two focused regressions passed on `829babe`; independent inventory checks and a nonresident-enrollment control are implemented). New exact packages and their browser acceptance are pending. Virtual devices do not establish physical passkey or mobile compatibility; Firefox's virtual-passkey diagnostic completed 127 assertions after two fixture repairs, and standalone resident-key acceptance is pending.
+- **Query at scale.** `release-query-segment-seed1-successor-02` passed all eight gates on Debian build 04/RPM build 03: 200/200 independent-oracle answers, exact recovery and companion custody, query p99 at most 504.340 ms before restart and 447.509 ms after. It is not attributed to the resident-enrollment successor; the earlier 10.27-second five-page failure remains in the [cache report](https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-scoped-evidence-cache-run-01).
+- **Failed and open.** Full soak `production-soak-full-03` failed after 1,587.618 seconds: its storage census could not traverse directories owned by a concurrent package build, and the harness stopped rather than ignore uncounted disk use. No Fabric crash was observed. The failed and interrupted runs keep their results in the [campaign record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-benchmarks-production-access-campaign-run-01). A fresh full soak on the resident-enrollment packages, the final query/main/pressure/outage matrix, Debian/Fedora installation and lifecycle, four cross-family forwarding cells and packaged browser/PWA acceptance remain queued. Historical Fedora evidence belongs to its original `c06688c` candidate, including the [Btrfs identity repair](decisions/ADR-0028-preserve-btrfs-log-identity-across-reboots.md).
+- **Hosted and local gates.** The hosted `eb5b096` candidate passed fast and focused security workflows and all ten extended commands, but final receipt completeness failed after fuzzing rewrote its stale dependency lock; the lock now matches and fuzz trials require unchanged lock bytes. The local `851d50b` delivery gate exited 0 (eight trials, unchanged oracle, strict loss control rejected) through the explicit legacy adapter, and a finite Chrome trial completed 144 assertions on debug binaries; neither qualifies packages or devices. The [integration review](https://github.com/kmosoti/FabricO11y/wiki/Release-integration-review) holds commands, candidate identities and cleanup observations. Bun CI/hooks remain disabled; documentation checks run manually.
 
 The [research wiki](https://github.com/kmosoti/FabricO11y/wiki) owns research and
-result reports. Product/operator documentation, architecture, registered protocols
-and executable evidence inputs remain versioned here under the
-[ownership policy](documentation-policy.md#canonical-ownership). The
-[migration manifest](wiki-migration.json) pins 151 migrated reports; subsequent
-candidate reports use the same canonical wiki and evidence index.
+result reports; its [release progress page](https://github.com/kmosoti/FabricO11y/wiki/Release-readiness-progress)
+links the acceptance queue. Product/operator documentation, architecture, registered
+protocols and executable evidence inputs stay here under the
+[ownership policy](documentation-policy.md#canonical-ownership); the
+[migration manifest](wiki-migration.json) pins 151 migrated reports.
 
 ## Assumptions and risks
 
@@ -196,15 +127,13 @@ candidate reports use the same canonical wiki and evidence index.
 
 Broader qualification work follows the [capability ledger](QUALIFICATION.md#capability-ledger):
 default-scale retention and exporter pressure, published-storage RCA and real
-applications, and reconciliation of target-profile delivery evidence. These
-remain separate from the completed readiness continuation. Application adapters
-remain [proposed use cases](research/application-use-cases.md).
+applications, and reconciliation of target-profile delivery evidence. Application
+adapters remain [proposed use cases](research/application-use-cases.md).
 
 ## Resource envelope
 
 All builds, tests and experiments use the [resource launcher](CONTRIBUTING.md#resource-containment)
-and the mounted data drive at `/run/media/kmosoti/data/FabricO11y`. The laboratory
-ceiling is 20 GiB with no swap; the server experiment cap is 4 GB and total storage
-ceiling 100 GB. Remote hosts use their own smaller verified budgets. Preserve
-failure evidence and remove owned scratch. Bun CI/hooks remain disabled;
-documentation checks run manually.
+and its storage root `FABRIC_STORAGE_ROOT`. The laboratory ceiling is the smaller of
+20 GiB and 75% of RAM with no swap; the server experiment cap is 4 GB and the total
+storage ceiling 100 GB. Remote hosts use their own smaller verified budgets. Preserve
+failure evidence and remove owned scratch.

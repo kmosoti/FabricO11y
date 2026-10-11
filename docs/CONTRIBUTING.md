@@ -146,7 +146,7 @@ Rules for these tools:
 - **Use stable Kani features only.** Write plain `#[kani::proof]` harnesses with `kani::any()`; do not use function contracts, autoharness or other `-Z` features until they stabilize. State each harness's bound when it has one.
 - **Keep what the tools find.** A fuzz crash goes into `fuzz/regressions/<target>/` with its fix, so the stable replay keeps it fixed. A Kani or property counterexample becomes a named regression test and an entry in [counterexamples.json](formal/counterexamples.json). Never widen a generator, lower a bound or loosen a property to make a failure go away.
 - **Coverage is a report.** `cargo llvm-cov --workspace --summary-only` shows what ran; do not add tests only to raise it.
-- **Tool setup.** `cargo install --locked cargo-deny cargo-llvm-cov cargo-fuzz kani-verifier && cargo kani setup`; fuzzing also needs `rustup toolchain install nightly`. The extended profile reports a missing tool as INCOMPLETE (exit 3), never as a pass.
+- **Tool setup.** `cargo install --locked cargo-deny cargo-llvm-cov cargo-fuzz kani-verifier && cargo kani setup`; fuzzing also needs `rustup toolchain install nightly` (CI installs the dated `nightly-2026-10-11` and links it as `nightly`). The extended profile reports a missing tool as INCOMPLETE (exit 3), never as a pass.
 
 ## Skills and hooks
 
