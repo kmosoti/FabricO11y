@@ -51,18 +51,29 @@ python3 tools/resource_group.py -- cargo xtask mutants
 python3 tools/resource_group.py -- python3 tools/bench/run_performance_refinement.py --help
 ```
 
-The whole command tree shares a systemd user service with `MemoryHigh=16G`,
-`MemoryMax=20G`, `MemorySwapMax=0`, group OOM termination and a 30-minute deadline.
-These are workstation protection limits, not product capacity promises. The
+The whole command tree shares a systemd user service with `MemoryMax` at the
+smaller of 20 GiB and 75% of the host's RAM, `MemoryHigh` at 5/6 of that up to
+16 GiB, `MemorySwapMax=0`, group OOM termination and a 30-minute deadline: 16 GiB
+high and 20 GiB max on a host with about 27 GiB of RAM or more, 10 GiB and 12 GiB
+on a 16 GiB host. These are protection limits, not product capacity promises. The
 launcher checks its actual cgroup v2 limits before executing the command; missing
-systemd user access or unenforced limits mean NOT RUN, with no uncapped fallback.
-Launch workloads sequentially: multiple capped services still add their budgets.
-Use the mounted data drive at `/run/media/kmosoti/data/FabricO11y`: the launcher
-sets `CARGO_TARGET_DIR` to its `cargo` directory, `FABRIC_SCRATCH_ROOT` to `scratch`,
-and `TMPDIR`, `TMP` and `TEMP` to a unique owned directory per invocation.
-It refuses to run if the data drive is unmounted. Harnesses with explicit scratch
-paths must use `FABRIC_SCRATCH_ROOT`; an environment variable cannot redirect a
-hardcoded path. `/tmp` on the Fedora workstation is tmpfs.
+systemd user access (a login session, or `loginctl enable-linger`), cgroup v2
+memory control for your user or unenforced limits mean NOT RUN with exit 2, with
+no uncapped fallback. Launch workloads sequentially: multiple capped services still
+add their budgets.
+
+The launcher keeps its files under the storage root `FABRIC_STORAGE_ROOT`, which
+defaults to `${XDG_CACHE_HOME:-$HOME/.cache}/fabrico11y`. It creates the directory
+if needed and refuses to run unless it is owned by you and not on tmpfs or ramfs
+(`stat -f -c %T DIR` names the filesystem); where that default is RAM-backed, set
+the variable to a disk-backed directory. For the command it sets
+`FABRIC_STORAGE_ROOT`, `CARGO_TARGET_DIR` to the root's `cargo` directory,
+`FABRIC_SCRATCH_ROOT` to `scratch`, and `TMPDIR`, `TMP` and `TEMP` to a unique owned
+directory per invocation. The owner's workstation keeps its mounted data drive by
+exporting `FABRIC_STORAGE_ROOT` as that drive's `FabricO11y` directory; there the
+limits are unchanged. Harnesses with explicit scratch paths must use
+`FABRIC_SCRATCH_ROOT`; an environment variable cannot redirect a hardcoded path.
+`/tmp` on Fedora is tmpfs.
 The qualification runner accepts direct `target/alpha-*` outputs only beneath
 `FABRIC_SCRATCH_ROOT`, including a frozen mini-tree's nested `target` directory;
 repository `target` outside that root is rejected before creation or launch.
@@ -73,7 +84,7 @@ Success requires a matching completion receipt from the command inside the
 cgroup and a matching `systemd-run` exit. A disconnected service bus or missing
 completion is incomplete even if the outer transport returns zero. After verified
 success and service termination, the launcher removes its owned temporary directory. On failure or interruption it moves that directory to the
-drive's `evidence` directory after stopping the service; if stopping cannot be
+storage root's `evidence` directory after stopping the service; if stopping cannot be
 confirmed, it retains the directory in place. It never deletes shared build
 caches or unrelated files. Each invocation records command, exit, elapsed time,
 storage, containment limits, command-return cgroup resource samples and
@@ -102,9 +113,10 @@ infrastructure unchanged.
 On each host, inspect CPU quotas, available RAM/swap, disk space, ancestor cgroup
 limits and active services. Choose and verify host-appropriate cgroup v2 memory,
 swap, CPU, task and deadline limits for the complete project process tree before
-launch. Refuse an uncapped fallback. The workstation's 20 GiB allowance applies
-only locally; its launcher has a workstation-specific data-drive path. Use an
-owned disk-backed directory on the remote host, not an assumed copy of that path.
+launch. Refuse an uncapped fallback. The launcher's host-scaled cap (75% of RAM
+up to 20 GiB) does not account for the host's other services, so a remote host
+needs an explicit smaller budget. Point `FABRIC_STORAGE_ROOT` at an owned
+disk-backed directory on the remote host.
 Do not run loads on `digitalocean-01` while its webserver is serving.
 
 Remote machines can supply edge-source traffic to a receiver in a scoped

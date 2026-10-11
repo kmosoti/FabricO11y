@@ -8,7 +8,10 @@ the [release plan](milestones/release-readiness.md) defines the supported matrix
 
 Build the native binaries and console together using the
 [package instructions](../packaging/README.md), Rust 1.99.0 and the resource
-launcher. Install the selected, checksum-verified artifact with
+launcher. The launcher needs a systemd user session with cgroup v2, keeps its
+caches under `FABRIC_STORAGE_ROOT` (default `${XDG_CACHE_HOME:-$HOME/.cache}/fabrico11y`,
+never tmpfs) and sizes its memory cap to the build host; see
+[resource containment](CONTRIBUTING.md#resource-containment). Install the selected, checksum-verified artifact with
 `sudo apt install ./PACKAGE.deb` on Debian or `sudo dnf install ./PACKAGE.rpm`
 on Fedora. Services remain disabled until configured. The finite acceptance
 matrix targets Debian 13 and Fedora 44 x86_64, systemd and unified cgroup v2;

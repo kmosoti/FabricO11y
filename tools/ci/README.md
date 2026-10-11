@@ -3,7 +3,10 @@
 CI executes the registered checks; a cache hit is not a verification result.
 The command definitions and expectations in `xtask/checks.json` stay unchanged.
 All project workloads continue through `tools/resource_group.py` with the same
-mounted storage, memory/swap limits and bounded process-tree cleanup.
+disk-backed storage root, memory/swap limits and bounded process-tree cleanup.
+`prepare-resource-host.sh` sets `FABRIC_STORAGE_ROOT` (default `/mnt/fabrico11y`
+on the hosted runner's disk) for later steps and sizes the parent cgroup with
+the launcher's own `memory_limits`, so CI no longer bind-mounts an owner path.
 
 ## Scheduling
 
@@ -34,8 +37,8 @@ silently omitted.
 
 The Rust cache action is pinned to the reviewed v2.9.2 commit. Its workspace
 mapping receives a computed relative path because the action joins the target
-to the workspace root. The actual target is the existing mounted
-`/run/media/kmosoti/data/FabricO11y/cargo`, not repository `target/`.
+to the workspace root. The actual target is `$FABRIC_STORAGE_ROOT/cargo` on the
+runner's disk, not repository `target/`.
 
 Cache only dependency build artifacts, Cargo registry material and installed
 Cargo tools selected by the action. Do not cache verification receipts, browser

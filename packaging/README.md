@@ -1,17 +1,31 @@
 # Release package builders
 
 Both packages require the pinned Rust 1.99.0 toolchain and a successful console
-build receipt. Run builds through `tools/resource_group.py`; its mounted data
-storage, bounded cgroup and scratch paths are mandatory. These builders construct
-artifacts. They do not attest installation or release acceptance.
+build receipt. Run builds through `tools/resource_group.py`; its storage root
+(`FABRIC_STORAGE_ROOT`, default `${XDG_CACHE_HOME:-$HOME/.cache}/fabrico11y`), bounded
+cgroup and scratch paths are mandatory. The launcher needs a systemd user session
+with cgroup v2 and refuses a root on tmpfs or ramfs; see
+[resource containment](../docs/CONTRIBUTING.md#resource-containment). These
+builders construct artifacts. They do not attest installation or release acceptance.
 
 ```sh
-python3 -B tools/resource_group.py -- python3 -B tools/ui/build.py --out /run/media/kmosoti/data/FabricO11y/results/console-candidate
-python3 -B tools/resource_group.py -- packaging/build-deb.sh /run/media/kmosoti/data/FabricO11y/results/packages /run/media/kmosoti/data/FabricO11y/results/console-candidate
-python3 -B tools/resource_group.py -- packaging/build-rpm.sh /run/media/kmosoti/data/FabricO11y/results/packages /run/media/kmosoti/data/FabricO11y/results/console-candidate
+export FABRIC_STORAGE_ROOT="${FABRIC_STORAGE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/fabrico11y}"
+mkdir -p "$FABRIC_STORAGE_ROOT/results/packages"
+python3 -B tools/resource_group.py -- python3 -B tools/ui/build.py --out "$FABRIC_STORAGE_ROOT/results/console-candidate"
+python3 -B tools/resource_group.py -- packaging/build-deb.sh "$FABRIC_STORAGE_ROOT/results/packages" "$FABRIC_STORAGE_ROOT/results/console-candidate"
+python3 -B tools/resource_group.py -- packaging/build-rpm.sh "$FABRIC_STORAGE_ROOT/results/packages" "$FABRIC_STORAGE_ROOT/results/console-candidate"
 ```
 
-Create the package output directory first. Debian construction needs `dpkg-deb`,
+The console build runs `$FABRIC_STORAGE_ROOT/tools/ui/trunk` (fetch it with
+`python3 -B tools/resource_group.py -- python3 -B tools/ci/install-ui-tools.py`) and
+Rust 1.99.0 with the `wasm32-unknown-unknown` target installed under
+`$FABRIC_STORAGE_ROOT/toolchain-cache/{cargo,rustup}`. The package builds need
+`rustc` 1.99.0 on `PATH` and use `cargo build --offline --locked`, so run
+`cargo fetch --locked` once first. The `build-deb.sh` and `build-rpm.sh` scripts
+fall back to `${TMPDIR:-/tmp}` for scratch when `TMPDIR` is unset, but `/tmp` is
+RAM-backed on Fedora; the launcher's per-run `TMPDIR` is the supported path.
+
+Debian construction needs `dpkg-deb`,
 `dpkg-shlibdeps` and `objdump`; Fedora construction needs `rpmbuild` and `objdump`.
 Both builders use the same binaries, static systemd units, configuration examples,
 license/notice and complete hash-verified console in
