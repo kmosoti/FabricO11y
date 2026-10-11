@@ -3,6 +3,18 @@
   "description": "Counterexamples kept as deterministic regression fixtures. `cargo xtask check-counterexamples` requires each reproducer test to exist in its file and each fix commit to exist. Removing an entry is a trust-boundary change.",
   "counterexamples": [
     {
+      "id": "CX-FUZZ-DEPENDENCY-DRIFT",
+      "origin": "Hosted extended run 38151336752 on proposed merge e35fdf9: all commands exited zero, but dependency-policy and coverage receipts were dirty after fuzzing",
+      "defect": "The separate fuzz lock lacked the current server dependency graph; cargo-fuzz silently rewrote it, so later checks did not run on unchanged candidate inputs",
+      "seed_or_trace": "cargo metadata --manifest-path fuzz/Cargo.toml --locked --offline at eb5b096 exits 101; stale-lock and mid-trial rewrite controls reproduce the required rejection",
+      "contract": "ARCH-1",
+      "reproducer": {
+        "file": "tools/ci/test_ci_contracts.py",
+        "test": "test_stale_lock_is_rejected_before_any_fuzz_target"
+      },
+      "fix_commit": "3b8771f"
+    },
+    {
       "id": "CX-MUTATION-CURSOR-TIME-TIE-COVERAGE",
       "origin": "October 11 isolated mutation audit after the relational query reference was added",
       "defect": "Existing cases did not reject pruning a source whose maximum timestamp equals the cursor timestamp but whose full row keys are later",
