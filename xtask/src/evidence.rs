@@ -129,6 +129,11 @@ pub fn cargo_mutants(root: &Path, equivalent: &Path) -> Result<Vec<Violation>, S
         .arg(&out)
         .current_dir(root)
         .env("CARGO_INCREMENTAL", "1")
+        // These pure crates enumerate exhaustive cases for every mutant.
+        // Optimize that computation, retaining checked arithmetic/assertions.
+        .env("CARGO_PROFILE_TEST_OPT_LEVEL", "1")
+        .env("CARGO_PROFILE_TEST_DEBUG_ASSERTIONS", "true")
+        .env("CARGO_PROFILE_TEST_OVERFLOW_CHECKS", "true")
         .status()
         .map_err(|e| format!("cannot run cargo mutants: {e}"))?;
     // cargo-mutants exits 2 when mutants were missed and 3 on timeouts;
