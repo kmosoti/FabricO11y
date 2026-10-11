@@ -203,6 +203,23 @@ fn dev_forbidden_dependency_fails() {
 }
 
 #[test]
+fn patched_forbidden_dependency_fails() {
+    // A registry requirement that `[patch.crates-io]` satisfies with a member
+    // resolves to the same edge as a path dependency; it must fail the same way.
+    let fixture = Fixture::valid()
+        .dep("app", "dependencies", r#"fx-adapter = "0.1.0""#)
+        .dep(
+            "",
+            "patch.crates-io",
+            r#"fx-adapter = { path = "adapter" }"#,
+        );
+    for options in [DECLARED, RESOLVED] {
+        let v = only(&fixture.layers(options), layers::FORBIDDEN_EDGE);
+        assert_eq!(v.subject, "fx-app (app) -> fx-adapter (adapter)");
+    }
+}
+
+#[test]
 fn forbidden_edge_through_a_non_member_is_caught_only_with_resolution() {
     let fixture = Fixture::valid().dep(
         "app",

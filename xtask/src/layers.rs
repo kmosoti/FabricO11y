@@ -148,7 +148,9 @@ pub fn check(metadata: &Metadata, policy: &Policy) -> Vec<Violation> {
     }
     for package in metadata.member_packages() {
         for dep in &package.dependencies {
-            if dep.path.is_none() || !members.contains(&dep.name) {
+            // No path filter: `[patch]` can satisfy a registry requirement
+            // with a member, and Cargo resolves that as the same edge.
+            if !members.contains(&dep.name) {
                 continue;
             }
             if !policy.allows(&package.name, &dep.name, dep.kind) {
