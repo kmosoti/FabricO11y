@@ -128,6 +128,7 @@ pub fn cargo_mutants(root: &Path, equivalent: &Path) -> Result<Vec<Violation>, S
         ])
         .arg(&out)
         .current_dir(root)
+        .env("CARGO_INCREMENTAL", "1")
         .status()
         .map_err(|e| format!("cannot run cargo mutants: {e}"))?;
     // cargo-mutants exits 2 when mutants were missed and 3 on timeouts;

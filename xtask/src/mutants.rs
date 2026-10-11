@@ -110,6 +110,9 @@ fn run(tree: &Path, cargo_target: &Path, command: &[String]) -> Run {
         .args(&command[1..])
         .current_dir(tree)
         .env("CARGO_TARGET_DIR", cargo_target)
+        // These owned copies repeatedly change one source file. Reuse compiler
+        // work without changing test commands, assertions or mutant outcomes.
+        .env("CARGO_INCREMENTAL", "1")
         .output()
     {
         Ok(output) => Run {
@@ -159,6 +162,7 @@ pub fn run_all(root: &Path, registry: &Path, only: Option<&str>) -> Result<bool,
     );
     for mutant in &mutants {
         let baseline = *baselines.entry(mutant.command.clone()).or_insert_with(|| {
+            println!("{}: running pristine baseline", mutant.id);
             let outcome = run(&tree, &cargo_target, &mutant.command);
             let _ = std::fs::write(
                 logs.join(format!("{}.baseline.txt", mutant.id)),
@@ -176,6 +180,7 @@ pub fn run_all(root: &Path, registry: &Path, only: Option<&str>) -> Result<bool,
         } else {
             std::fs::write(&path, original.replacen(&mutant.find, &mutant.replace, 1))
                 .map_err(|e| format!("{}: {e}", mutant.file))?;
+            println!("{}: running registered negative control", mutant.id);
             let outcome = run(&tree, &cargo_target, &mutant.command);
             let _ = std::fs::write(logs.join(format!("{}.txt", mutant.id)), &outcome.output);
             std::fs::write(&path, &original).map_err(|e| format!("{}: {e}", mutant.file))?;
