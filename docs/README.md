@@ -82,3 +82,11 @@ Implementation is evidence of what exists; none of these documents overrides it 
 [Operating FabricO11y](operations.md) covers installation, configuration, the scoped CLI and recovery states. The [learning path](LEARNING_PATH.md) follows the Rust ideas and system contracts step by step. The [blueprint](architecture.md) is a proposal and research agenda; its pipelines, guarantees and example numbers do not describe completed work.
 
 Use the [contributor guide](CONTRIBUTING.md) for workflows and checks. [AGENTS.md](../AGENTS.md) is the operational contract for coding agents; the full [documentation policy](documentation-policy.md) applies to everyone.
+
+## Proposed security hardening
+
+The [security change specification and implementation handoff](experiments/security-hardening/PUBLICATION.md)
+records line-anchored changes, acceptance cases, candidate rejection criteria,
+and evidence requirements for console admission, local OTLP transport, selected
+log paths, and extended-verification setup. It is a proposed specification, not
+implemented repairs or a completed application security audit.

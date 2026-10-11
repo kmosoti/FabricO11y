@@ -1,0 +1,1065 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "FabricO11y security candidate evidence receipt",
+  "description": "Final candidate evidence envelope. Schema checks shape/coverage, not truth, successful negative-control mechanisms, or application correctness.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "spec_id",
+    "base_commit",
+    "candidate_commit",
+    "candidate_id",
+    "scope",
+    "status",
+    "protocol_sha256",
+    "checker_sha256",
+    "results",
+    "cleanup",
+    "residual_risks"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "spec_id": {
+      "const": "FABRIC-SECURITY-HARDENING-2026-10-10"
+    },
+    "base_commit": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "candidate_commit": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "candidate_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "scope": {
+      "enum": [
+        "application",
+        "standalone_design_probe",
+        "bundle_tool_selftest"
+      ]
+    },
+    "status": {
+      "enum": [
+        "not_run",
+        "failed",
+        "inconclusive",
+        "blocked",
+        "verified"
+      ]
+    },
+    "protocol_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "checker_sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "results": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "test_id",
+          "command",
+          "exit",
+          "status",
+          "observations",
+          "negative_control"
+        ],
+        "properties": {
+          "test_id": {
+            "enum": [
+              "A01",
+              "A02",
+              "A03",
+              "A04",
+              "A05",
+              "A06",
+              "A07",
+              "A08",
+              "A09",
+              "A10",
+              "A11",
+              "A12",
+              "A13",
+              "A14",
+              "O01",
+              "O02",
+              "O03",
+              "O04",
+              "O05",
+              "O06",
+              "O07",
+              "O08",
+              "O09",
+              "O10",
+              "O11",
+              "O12",
+              "O13",
+              "O14",
+              "F01",
+              "F02",
+              "F03",
+              "F04",
+              "F05",
+              "F06",
+              "F07",
+              "F08",
+              "F09",
+              "F10",
+              "C01",
+              "C02",
+              "C03",
+              "C04",
+              "C05",
+              "C06",
+              "C07",
+              "C08",
+              "C09",
+              "C10",
+              "G01",
+              "G02",
+              "G03",
+              "G04",
+              "G05"
+            ]
+          },
+          "command": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1
+          },
+          "exit": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 0,
+            "maximum": 255
+          },
+          "status": {
+            "enum": [
+              "not_run",
+              "passed",
+              "failed",
+              "inconclusive",
+              "blocked"
+            ]
+          },
+          "observations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "negative_control": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": false,
+            "required": [
+              "mutant_id",
+              "semantic_defect_observed",
+              "harness_healthy",
+              "evidence_path"
+            ],
+            "properties": {
+              "mutant_id": {
+                "type": "string"
+              },
+              "semantic_defect_observed": {
+                "type": "boolean"
+              },
+              "harness_healthy": {
+                "type": "boolean"
+              },
+              "evidence_path": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "status": {
+                  "const": "passed"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "exit": {
+                  "const": 0
+                },
+                "command": {
+                  "type": "array",
+                  "minItems": 1
+                },
+                "observations": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "cleanup": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "owned_resources_stopped",
+        "owned_scratch_cleaned",
+        "retained_failure_evidence"
+      ],
+      "properties": {
+        "owned_resources_stopped": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "owned_scratch_cleaned": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "retained_failure_evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "residual_risks": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "verified"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "scope": {
+            "const": "application"
+          },
+          "candidate_commit": {
+            "type": "string"
+          },
+          "protocol_sha256": {
+            "type": "string"
+          },
+          "checker_sha256": {
+            "type": "string"
+          },
+          "results": {
+            "minItems": 53,
+            "items": {
+              "properties": {
+                "status": {
+                  "const": "passed"
+                }
+              }
+            },
+            "maxItems": 53,
+            "allOf": [
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "A01"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "A02"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "A03"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "A04"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "A05"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "A06"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "A07"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "A08"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "A09"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "A10"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "A11"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "A12"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "A13"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "A14"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "O01"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "O02"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "O03"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "O04"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "O05"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "O06"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "O07"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "O08"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "O09"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "O10"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "O11"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "O12"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "O13"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "O14"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "F01"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "F02"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "F03"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "F04"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "F05"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "F06"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "F07"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "F08"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "F09"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "F10"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "C01"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "C02"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "C03"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "C04"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "C05"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "C06"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "C07"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "C08"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "C09"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "C10"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "G01"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "G02"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "G03"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "G04"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              },
+              {
+                "contains": {
+                  "properties": {
+                    "test_id": {
+                      "const": "G05"
+                    }
+                  },
+                  "required": [
+                    "test_id"
+                  ]
+                },
+                "minContains": 1,
+                "maxContains": 1
+              }
+            ]
+          },
+          "cleanup": {
+            "properties": {
+              "owned_resources_stopped": {
+                "const": true
+              },
+              "owned_scratch_cleaned": {
+                "const": true
+              }
+            }
+          },
+          "residual_risks": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ]
+}

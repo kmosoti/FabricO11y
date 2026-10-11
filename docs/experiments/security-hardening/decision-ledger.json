@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "status": "design_screening_only",
+  "independent_agent_review_performed": false,
+  "application_candidates_implemented": false,
+  "decisions": [
+    {
+      "id": "ADM-global",
+      "status": "rejected",
+      "mechanism": "Global-only fixed window or token bucket",
+      "reason": "Single peer spends shared capacity; standalone trace admits0/24 honest offers.",
+      "evidence": "design-probe-results.json"
+    },
+    {
+      "id": "ADM-sequential-debit",
+      "status": "rejected",
+      "mechanism": "Debit global credits before peer eligibility",
+      "reason": "Rejected peer requests still drain global budget; model admits0/24 honest offers.",
+      "evidence": "design-probe-results.json"
+    },
+    {
+      "id": "ADM-atomic",
+      "status": "selected_for_implementation",
+      "mechanism": "Atomic nested peer/global eligibility and concurrency ownership",
+      "reason": "Retained after one scheduled trace; model admits24/24 honest offers. Production and broader tests remain unrun.",
+      "evidence": "SECURITY-CHANGE-SPEC.md section5"
+    },
+    {
+      "id": "OTLP-inactivity-only",
+      "status": "rejected",
+      "mechanism": "Lower a one-time socket timeout",
+      "reason": "Progress can continually refresh per-operation wait; queue submission and writes remain uncovered.",
+      "evidence": "design-probe-results.json"
+    },
+    {
+      "id": "OTLP-bounded-stages",
+      "status": "selected_for_implementation",
+      "mechanism": "RAII and absolute phase deadlines with try_send",
+      "reason": "Addresses finite occupancy/ownership without replacing transport. Does not establish local-user isolation.",
+      "evidence": "SECURITY-CHANGE-SPEC.md section6"
+    },
+    {
+      "id": "OTLP-full-runtime-rewrite",
+      "status": "not_selected",
+      "mechanism": "Replace blocking transport wholesale",
+      "reason": "No measured need yet; larger migration and compatibility surface. Reopen only on a concrete failed gate.",
+      "evidence": "SECURITY-CHANGE-SPEC.md section6"
+    },
+    {
+      "id": "OTLP-uid-profile",
+      "status": "separate_requirement",
+      "mechanism": "OS-identity-enforcing Unix-domain profile",
+      "reason": "Credible stronger isolation family; SDK compatibility and explicit scope not validated here. Do not claim TCP concern fully resolved.",
+      "evidence": "SECURITY-CHANGE-SPEC.md section6.1"
+    },
+    {
+      "id": "FS-leaf-only",
+      "status": "rejected",
+      "mechanism": "O_NOFOLLOW final-component protection",
+      "reason": "Actual synthetic syscall probe opened through a parent symlink.",
+      "evidence": "design-probe-results.json"
+    },
+    {
+      "id": "FS-check-then-open",
+      "status": "rejected",
+      "mechanism": "canonicalize/stat then reopen pathname",
+      "reason": "Resolution and use can refer to different objects; selected design must use one returned FD.",
+      "evidence": "SECURITY-CHANGE-SPEC.md section7"
+    },
+    {
+      "id": "FS-all-components",
+      "status": "selected_for_implementation",
+      "mechanism": "openat2 all-component no-symlink policy",
+      "reason": "Synthetic regular/leaf/parent cases behaved as required; Rust wrapper, races and application behavior are still untested.",
+      "evidence": "design-probe-results.json"
+    },
+    {
+      "id": "CI-skip-failure",
+      "status": "rejected",
+      "mechanism": "Disable Kani or continue on setup error",
+      "reason": "Removes assurance rather than restoring it.",
+      "evidence": "AGENTS.md operating contract"
+    },
+    {
+      "id": "CI-minimal-policy",
+      "status": "selected_conditionally",
+      "mechanism": "Contained preflight and explicit self-update policy",
+      "reason": "Plausible minimal repair; must reproduce exact failure and execute actual canaries/extended registry before accepting.",
+      "evidence": "SECURITY-CHANGE-SPEC.md section8"
+    },
+    {
+      "id": "CI-complete-layout",
+      "status": "fallback_candidate",
+      "mechanism": "Consistent verified relocated manager/proxy installation",
+      "reason": "Only reopen if measured diagnosis disproves the minimal repair; no arbitrary installer versions/checksums.",
+      "evidence": "SECURITY-CHANGE-SPEC.md section8.3"
+    },
+    {
+      "id": "CI-system-disk",
+      "status": "rejected",
+      "mechanism": "Return caches to original system-disk location",
+      "reason": "Violates repository storage/containment contract.",
+      "evidence": "AGENTS.md operating contract"
+    }
+  ]
+}

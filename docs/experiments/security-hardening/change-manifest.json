@@ -1,0 +1,555 @@
+{
+  "schema_version": 1,
+  "spec_id": "FABRIC-SECURITY-HARDENING-2026-10-10",
+  "repository": "kmosoti/FabricO11y",
+  "base_commit": "18f6b367d0f34886847ea25b9168e50eb0425300",
+  "status": "proposed_not_applied",
+  "line_number_semantics": "1-based original commit ranges; never final line numbers or a patch",
+  "locked_sources": [
+    {
+      "path": "AGENTS.md",
+      "blob_sha": "26f216804485c8a2a3263faec117e0602d2c3480",
+      "url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/AGENTS.md"
+    },
+    {
+      "path": "src/bin/fabric-node.rs",
+      "blob_sha": "f71b14c58d7afbb7932d3aaf61648980f1efed23",
+      "url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/src/bin/fabric-node.rs"
+    },
+    {
+      "path": "crates/fabric-server/src/console.rs",
+      "blob_sha": "08dc1b3028bcfc33ba264065212a285de1f9f7cf",
+      "url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/crates/fabric-server/src/console.rs"
+    },
+    {
+      "path": "crates/fabric-server/src/lib.rs",
+      "blob_sha": "cb4e43f9d14b994beb0e9879e0d400e4e1b205db",
+      "url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/crates/fabric-server/src/lib.rs"
+    },
+    {
+      "path": "src/spindle/otlp.rs",
+      "blob_sha": "fc1369a86820f4ef43b2a09cbdcf9b2add84ce21",
+      "url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/src/spindle/otlp.rs"
+    },
+    {
+      "path": "crates/fabric-adapter-linux/src/log_source.rs",
+      "blob_sha": "c725c9a38bad3a613edf886bec2d8b5f76fdadd9",
+      "url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/crates/fabric-adapter-linux/src/log_source.rs"
+    },
+    {
+      "path": "tools/ci/prepare-resource-host.sh",
+      "blob_sha": "adec2633322f0f431865fd9e5e00dbc4cc2c4d0e",
+      "url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/tools/ci/prepare-resource-host.sh"
+    },
+    {
+      "path": "tools/ci/install-cargo-tool.py",
+      "blob_sha": "6308af4f0ae5d4f1747903f58556853344435ca6",
+      "url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/tools/ci/install-cargo-tool.py"
+    },
+    {
+      "path": "tools/resource_group.py",
+      "blob_sha": "dbdb1b6a0d6a1300d75b818c9829088e61b1c043",
+      "url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/tools/resource_group.py"
+    },
+    {
+      "path": ".github/workflows/verification.yml",
+      "blob_sha": "31646eeda3b9ac7105696156dcf9c42e87392f9b",
+      "url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/.github/workflows/verification.yml"
+    },
+    {
+      "path": ".github/workflows/rust.yml",
+      "blob_sha": "66dbd9977d2491e94ed4c721e11d89ef6abd2dcf",
+      "url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/.github/workflows/rust.yml"
+    },
+    {
+      "path": "xtask/checks.json",
+      "blob_sha": "c8b7237b29c1e3bdfd9dca0348cc3897a7dce297",
+      "url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/xtask/checks.json"
+    }
+  ],
+  "edits": [
+    {
+      "id": "ADM-00",
+      "path": "crates/fabric-server/src/console.rs",
+      "original_start_line": 3,
+      "original_end_line": 24,
+      "symbol_or_text_anchor": "use crate::access",
+      "operation": "Declare private admission module; add only required connection/time imports; preserve query permit types.",
+      "tests": [
+        "A01",
+        "A11",
+        "A14"
+      ],
+      "base_blob_sha": "08dc1b3028bcfc33ba264065212a285de1f9f7cf",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/crates/fabric-server/src/console.rs#L3-L24",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "ADM-01",
+      "path": "crates/fabric-server/src/console.rs",
+      "original_start_line": 30,
+      "original_end_line": 41,
+      "symbol_or_text_anchor": "pub struct Console",
+      "operation": "Replace requests, ceremonies, auth_budget and private_auth_budget with one shared bounded admission controller; retain queries. Add immutable configured_origin.",
+      "tests": [
+        "A01",
+        "A02",
+        "A03",
+        "A07",
+        "A11"
+      ],
+      "base_blob_sha": "08dc1b3028bcfc33ba264065212a285de1f9f7cf",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/crates/fabric-server/src/console.rs#L30-L41",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "ADM-02",
+      "path": "crates/fabric-server/src/console.rs",
+      "original_start_line": 207,
+      "original_end_line": 224,
+      "symbol_or_text_anchor": "pub fn new(",
+      "operation": "Capture exact validated access.origin before moving access; construct production admission policy once.",
+      "tests": [
+        "A01",
+        "A03",
+        "A13"
+      ],
+      "base_blob_sha": "08dc1b3028bcfc33ba264065212a285de1f9f7cf",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/crates/fabric-server/src/console.rs#L207-L224",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "ADM-03",
+      "path": "crates/fabric-server/src/console.rs",
+      "original_start_line": 320,
+      "original_end_line": 346,
+      "symbol_or_text_anchor": "async fn auth_admission",
+      "operation": "Use transport peer key and public lane before stateful work/body extraction; remove fixed-second global budget. Retain origin/version checks and deadline.",
+      "tests": [
+        "A02",
+        "A04",
+        "A05",
+        "A06",
+        "A08",
+        "A12",
+        "A13"
+      ],
+      "base_blob_sha": "08dc1b3028bcfc33ba264065212a285de1f9f7cf",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/crates/fabric-server/src/console.rs#L320-L346",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "ADM-04",
+      "path": "crates/fabric-server/src/console.rs",
+      "original_start_line": 348,
+      "original_end_line": 367,
+      "symbol_or_text_anchor": "async fn authorize(",
+      "operation": "Acquire private-lane guard in outer wrapper; hold it through denial audit. Limiter rejection uses bounded counters, not durable per-request audit.",
+      "tests": [
+        "A03",
+        "A08",
+        "A09",
+        "A10"
+      ],
+      "base_blob_sha": "08dc1b3028bcfc33ba264065212a285de1f9f7cf",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/crates/fabric-server/src/console.rs#L348-L367",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "ADM-05",
+      "path": "crates/fabric-server/src/console.rs",
+      "original_start_line": 369,
+      "original_end_line": 399,
+      "symbol_or_text_anchor": "async fn authorize_request",
+      "operation": "Remove old request semaphore and private fixed-second budget only; preserve credential parsing, action checks, freshness/CSRF and result revalidation.",
+      "tests": [
+        "A02",
+        "A09",
+        "A12",
+        "A14"
+      ],
+      "base_blob_sha": "08dc1b3028bcfc33ba264065212a285de1f9f7cf",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/crates/fabric-server/src/console.rs#L369-L399",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "ADM-06",
+      "path": "crates/fabric-server/src/lib.rs",
+      "original_start_line": 120,
+      "original_end_line": 123,
+      "symbol_or_text_anchor": ".serve(app.into_make_service())",
+      "operation": "Use app.into_make_service_with_connect_info::<std::net::SocketAddr>() at native TLS composition root.",
+      "tests": [
+        "A01",
+        "A04",
+        "A13"
+      ],
+      "base_blob_sha": "cb4e43f9d14b994beb0e9879e0d400e4e1b205db",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/crates/fabric-server/src/lib.rs#L120-L123",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "OTLP-00",
+      "path": "src/spindle/otlp.rs",
+      "original_start_line": 13,
+      "original_end_line": 22,
+      "symbol_or_text_anchor": "use crate::spindle::runtime::Spindle;",
+      "operation": "Declare deadline_io module and add Instant/TrySendError imports as needed; keep existing public parser API.",
+      "tests": [
+        "O05",
+        "O06",
+        "O08",
+        "O09"
+      ],
+      "base_blob_sha": "fc1369a86820f4ef43b2a09cbdcf9b2add84ce21",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/src/spindle/otlp.rs#L13-L22",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "OTLP-01",
+      "path": "src/spindle/otlp.rs",
+      "original_start_line": 24,
+      "original_end_line": 34,
+      "symbol_or_text_anchor": "const MAX_CONNECTIONS: usize = 32;",
+      "operation": "Retain body/header/queue/connection caps. Add bounded transport phase, connection-age and request-count policy.",
+      "tests": [
+        "O01",
+        "O02",
+        "O07",
+        "O12"
+      ],
+      "base_blob_sha": "fc1369a86820f4ef43b2a09cbdcf9b2add84ce21",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/src/spindle/otlp.rs#L24-L34",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "OTLP-02",
+      "path": "src/spindle/otlp.rs",
+      "original_start_line": 67,
+      "original_end_line": 98,
+      "symbol_or_text_anchor": "pub fn start(",
+      "operation": "Reject non-loopback in start too; replace manual live counter ownership with RAII permit acquired before spawning.",
+      "tests": [
+        "O01",
+        "O02",
+        "O03",
+        "O04",
+        "O13"
+      ],
+      "base_blob_sha": "fc1369a86820f4ef43b2a09cbdcf9b2add84ce21",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/src/spindle/otlp.rs#L67-L98",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "OTLP-03",
+      "path": "src/spindle/otlp.rs",
+      "original_start_line": 194,
+      "original_end_line": 203,
+      "symbol_or_text_anchor": "fn respond(",
+      "operation": "Write through absolute-deadline-aware helper; close on expiry/error without recursive response attempts.",
+      "tests": [
+        "O07",
+        "O08",
+        "O11"
+      ],
+      "base_blob_sha": "fc1369a86820f4ef43b2a09cbdcf9b2add84ce21",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/src/spindle/otlp.rs#L194-L203",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "OTLP-04",
+      "path": "src/spindle/otlp.rs",
+      "original_start_line": 206,
+      "original_end_line": 259,
+      "symbol_or_text_anchor": "fn serve(",
+      "operation": "Apply absolute header/body/commit/response deadlines, keep-alive idle cap, total age and request-count cap. Preserve confirmed durable-commit-before-200.",
+      "tests": [
+        "O05",
+        "O06",
+        "O07",
+        "O08",
+        "O09",
+        "O10",
+        "O11",
+        "O12",
+        "O14"
+      ],
+      "base_blob_sha": "fc1369a86820f4ef43b2a09cbdcf9b2add84ce21",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/src/spindle/otlp.rs#L206-L259",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "OTLP-05",
+      "path": "src/spindle/otlp.rs",
+      "original_start_line": 241,
+      "original_end_line": 248,
+      "symbol_or_text_anchor": "tx.send(Export { body, reply })",
+      "operation": "Use try_send; distinguish never-enqueued failure from enqueued timeout/unknown completion. Do not discard accepted work on waiter timeout.",
+      "tests": [
+        "O09",
+        "O10",
+        "O11"
+      ],
+      "base_blob_sha": "fc1369a86820f4ef43b2a09cbdcf9b2add84ce21",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/src/spindle/otlp.rs#L241-L248",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "FS-00",
+      "path": "crates/fabric-adapter-linux/src/log_source.rs",
+      "original_start_line": 5,
+      "original_end_line": 8,
+      "symbol_or_text_anchor": "use std::fs::OpenOptions;",
+      "operation": "Declare private secure_open helper module and public checked-file entrypoint; preserve imports still needed by nested tests.",
+      "tests": [
+        "F01",
+        "F02",
+        "F03"
+      ],
+      "base_blob_sha": "c725c9a38bad3a613edf886bec2d8b5f76fdadd9",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/crates/fabric-adapter-linux/src/log_source.rs#L5-L8",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "FS-01",
+      "path": "crates/fabric-adapter-linux/src/log_source.rs",
+      "original_start_line": 92,
+      "original_end_line": 105,
+      "symbol_or_text_anchor": "pub fn unread_bytes",
+      "operation": "Replace open plus metadata check with shared all-component secure regular-log opener returning the checked descriptor.",
+      "tests": [
+        "F01",
+        "F02",
+        "F03",
+        "F04",
+        "F05",
+        "F09"
+      ],
+      "base_blob_sha": "c725c9a38bad3a613edf886bec2d8b5f76fdadd9",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/crates/fabric-adapter-linux/src/log_source.rs#L92-L105",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "FS-02",
+      "path": "crates/fabric-adapter-linux/src/log_source.rs",
+      "original_start_line": 139,
+      "original_end_line": 162,
+      "symbol_or_text_anchor": "fn read_lines_with_identity",
+      "operation": "Use the same secure opener; keep metadata, Btrfs identity, cursor-prefix checks and reads on that descriptor.",
+      "tests": [
+        "F01",
+        "F02",
+        "F03",
+        "F06",
+        "F07",
+        "F08",
+        "F09",
+        "F10"
+      ],
+      "base_blob_sha": "c725c9a38bad3a613edf886bec2d8b5f76fdadd9",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/crates/fabric-adapter-linux/src/log_source.rs#L139-L162",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "FS-03",
+      "path": "src/bin/fabric-node.rs",
+      "original_start_line": 167,
+      "original_end_line": 177,
+      "symbol_or_text_anchor": "libc::O_NONBLOCK | libc::O_NOFOLLOW",
+      "operation": "Replace companion log preflight with the same all-component secure regular-log opener; preserve startup diagnostics and source-count semantics.",
+      "tests": [
+        "F01",
+        "F02",
+        "F03",
+        "F05",
+        "F08",
+        "F09"
+      ],
+      "base_blob_sha": "f71b14c58d7afbb7932d3aaf61648980f1efed23",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/src/bin/fabric-node.rs#L167-L177",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "CI-01",
+      "path": ".github/workflows/verification.yml",
+      "original_start_line": 10,
+      "original_end_line": 23,
+      "symbol_or_text_anchor": "pull_request:",
+      "operation": "Extend trigger paths to tools/ci/** and tools/resource_group.py; preserve existing coverage; review required-check filtering before enabling a merge gate.",
+      "tests": [
+        "C01",
+        "C08",
+        "C09"
+      ],
+      "base_blob_sha": "31646eeda3b9ac7105696156dcf9c42e87392f9b",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/.github/workflows/verification.yml#L10-L23",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "CI-02",
+      "path": ".github/workflows/verification.yml",
+      "original_start_line": 39,
+      "original_end_line": 42,
+      "symbol_or_text_anchor": "toolchain: 1.99.0",
+      "operation": "Insert contained toolchain preflight after toolchain setup; explicitly disable rustup auto-self-update in shared RUSTUP_HOME.",
+      "tests": [
+        "C01",
+        "C02",
+        "C03",
+        "C04"
+      ],
+      "base_blob_sha": "31646eeda3b9ac7105696156dcf9c42e87392f9b",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/.github/workflows/verification.yml#L39-L42",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "CI-03",
+      "path": ".github/workflows/verification.yml",
+      "original_start_line": 68,
+      "original_end_line": 77,
+      "symbol_or_text_anchor": "cargo kani setup",
+      "operation": "Keep pinned Kani; capture setup and canary evidence; full extended registry must really execute and fail on nonzero/incomplete results.",
+      "tests": [
+        "C04",
+        "C05",
+        "C06",
+        "C07"
+      ],
+      "base_blob_sha": "31646eeda3b9ac7105696156dcf9c42e87392f9b",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/.github/workflows/verification.yml#L68-L77",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "CI-04",
+      "path": ".github/workflows/rust.yml",
+      "original_start_line": 18,
+      "original_end_line": 22,
+      "symbol_or_text_anchor": "targets: wasm32-unknown-unknown",
+      "operation": "Insert same contained preflight before first tool install. No blanket environment forwarding.",
+      "tests": [
+        "C01",
+        "C02",
+        "C03",
+        "C10"
+      ],
+      "base_blob_sha": "66dbd9977d2491e94ed4c721e11d89ef6abd2dcf",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/.github/workflows/rust.yml#L18-L22",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "CI-05",
+      "path": "tools/ci/prepare-resource-host.sh",
+      "original_start_line": 51,
+      "original_end_line": 62,
+      "symbol_or_text_anchor": "CARGO_HOME=",
+      "operation": "Inspect-only under minimal candidate: verify relocated homes; do not move to system disk. Change only if diagnosis disproves the minimal repair.",
+      "tests": [
+        "C01",
+        "C02",
+        "C03"
+      ],
+      "base_blob_sha": "adec2633322f0f431865fd9e5e00dbc4cc2c4d0e",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/tools/ci/prepare-resource-host.sh#L51-L62",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "CI-06",
+      "path": "tools/resource_group.py",
+      "original_start_line": 155,
+      "original_end_line": 169,
+      "symbol_or_text_anchor": "for key in",
+      "operation": "Inspect-only under minimal candidate: preserve allowlist and containment; diagnose CI-marker loss without importing the full outer environment.",
+      "tests": [
+        "C02",
+        "C03",
+        "C10"
+      ],
+      "base_blob_sha": "dbdb1b6a0d6a1300d75b818c9829088e61b1c043",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/tools/resource_group.py#L155-L169",
+      "execution_status": "proposed_not_applied"
+    },
+    {
+      "id": "GATE-01",
+      "path": "xtask/checks.json",
+      "original_start_line": 4,
+      "original_end_line": 21,
+      "symbol_or_text_anchor": "\"checks\": [",
+      "operation": "Add separate policy-commit entries for independent security checker tests, security negative controls and CI preflight tests. Preserve existing gates.",
+      "tests": [
+        "G01",
+        "G02",
+        "G03",
+        "G04",
+        "G05"
+      ],
+      "base_blob_sha": "c8b7237b29c1e3bdfd9dca0348cc3897a7dce297",
+      "source_url": "https://github.com/kmosoti/FabricO11y/blob/18f6b367d0f34886847ea25b9168e50eb0425300/xtask/checks.json#L4-L21",
+      "execution_status": "proposed_not_applied"
+    }
+  ],
+  "new_files": [
+    {
+      "path": "crates/fabric-server/src/console/admission.rs",
+      "status": "proposed; verify absence before creating"
+    },
+    {
+      "path": "crates/fabric-server/src/console/admission_tests.rs",
+      "status": "proposed; verify absence before creating"
+    },
+    {
+      "path": "src/spindle/otlp/deadline_io.rs",
+      "status": "proposed; verify absence before creating"
+    },
+    {
+      "path": "src/spindle/otlp/admission_tests.rs",
+      "status": "proposed; verify absence before creating"
+    },
+    {
+      "path": "crates/fabric-adapter-linux/src/log_source/secure_open.rs",
+      "status": "proposed; verify absence before creating"
+    },
+    {
+      "path": "crates/fabric-adapter-linux/src/log_source/secure_open_tests.rs",
+      "status": "proposed; verify absence before creating"
+    },
+    {
+      "path": "tools/ci/security_preflight.py",
+      "status": "proposed; verify absence before creating"
+    },
+    {
+      "path": "tools/ci/test_security_preflight.py",
+      "status": "proposed; verify absence before creating"
+    },
+    {
+      "path": "tools/security/check_admission.py",
+      "status": "proposed; verify absence before creating"
+    },
+    {
+      "path": "tools/security/test_check_admission.py",
+      "status": "proposed; verify absence before creating"
+    },
+    {
+      "path": "tools/security/check_transport.py",
+      "status": "proposed; verify absence before creating"
+    },
+    {
+      "path": "tools/security/test_check_transport.py",
+      "status": "proposed; verify absence before creating"
+    },
+    {
+      "path": "docs/experiments/security-hardening-protocol.md",
+      "status": "proposed; verify absence before creating"
+    }
+  ],
+  "test_catalogue": "acceptance-tests.json",
+  "stage_order": [
+    "R0-freeze",
+    "R1-ci",
+    "R2-admission",
+    "R3-otlp",
+    "R4-filesystem",
+    "R5-integration"
+  ],
+  "github_mutations_performed": false,
+  "application_tests_run": false
+}

@@ -1,0 +1,8 @@
+{
+  "status": "failed",
+  "exit": 1,
+  "failure": "AssertionError: global-only model honest_admitted was not zero",
+  "reason": "Probe placed honest arrivals 100/200 ms after a burst; refill allowed an arrival. The assertion overstated that trace.",
+  "correction": "Keep bucket rules unchanged; define the intended adversarial trace explicitly with honest arrivals 1/2 ms after the global burst. Add an exact fixed-window baseline.",
+  "product_conclusion": "none; probe defect, not an application result"
+}
