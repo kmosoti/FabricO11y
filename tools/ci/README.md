@@ -88,6 +88,14 @@ with clean process exits; an arbitrary Python failure cannot satisfy the gate.
 The first successful run populates the applicable cache. Savings must be
 measured on subsequent matching warm runs; no speedup is claimed in advance.
 
+The separate fuzz dependency lock includes the current server graph.
+`cargo-fuzz` 0.13.2 has no `--locked` switch: `fuzz/smoke.sh` first resolves
+the same manifest using `cargo +nightly metadata --locked`, then rejects any
+lock-byte change during the trial. All four targets, committed seeds, 60-second
+search windows and 2,048 MiB per-target RSS limits remain unchanged. The initial
+October 11 extended run completed its commands but failed receipt completeness
+because fuzzing rewrote the stale lock. That run remains failed.
+
 ## Diagnostics and completeness
 
 `cargo xtask checks` prints and flushes the starting check ID and command,
@@ -100,7 +108,9 @@ does not claim byte-by-byte live streaming or bounded capture memory.
 `verify_receipts.py` requires every selected registry check, the checked-out
 commit, unchanged worktree, exact command/profile, exit zero, passed status and
 matching log digest. It rejects missing, stale, interrupted, failed or altered
-evidence. The checker validates receipt integrity and coverage, not the semantic
+evidence. Final validation also requires the live worktree to be clean, so a
+last check cannot modify inputs after recording its pre-check dirty flag.
+The checker validates receipt integrity and coverage, not the semantic
 adequacy or independent trust of an unsigned receipt. Raw logs may contain test
 fixture diagnostics and must be treated as code-originated output.
 

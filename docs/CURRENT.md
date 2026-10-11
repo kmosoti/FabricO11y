@@ -89,8 +89,11 @@ links candidate results, failures and the remaining acceptance queue.
 The [release acceptance issue](https://github.com/kmosoti/FabricO11y/issues/32)
 tracks the finite B1–B13 queue separately from the broader product roadmap.
 Console integration is merged through `18f6b36`; security specification `cfe23e8`
-is also merged. The runtime security work remains in
-[PR 31](https://github.com/kmosoti/FabricO11y/pull/31) pending full verification.
+is also merged. The runtime hardening in
+[PR 31](https://github.com/kmosoti/FabricO11y/pull/31) adds bounded private-console
+peer admission, absolute OTLP read deadlines and symlink-free Linux log opening.
+Candidate-specific integration status and receipts are recorded in the
+[integration review](https://github.com/kmosoti/FabricO11y/wiki/Release-integration-review).
 
 Debian build 04 and RPM build 03 contain console build 09, with all 637 common
 payload files matching. The console fixes a real 200% zoom pagination overflow;
@@ -132,32 +135,22 @@ Those causal diagnostics retain their exact scope; standalone resident-key
 acceptance is still pending. The repaired Chrome fixture also needs its full
 cursor-expiry, recovery and installed-PWA lifecycle run on the successor package.
 
-[Hosted CI 38072930139](https://github.com/kmosoti/FabricO11y/actions/runs/38072930139)
-at `8597c42` passed all 20 enabled fast checks, whole-workspace dependency policy,
-WASM/build/contrast checks, Firefox shell checks, 139 actual Chrome assertions,
-the API-cache negative control and packaging checks. The resident-enrollment
-successor's fast CI passed, while its extended run failed during Kani tool setup.
-PR 31 repairs that setup; on `2c1ceb2`, focused security and the fast registry
-passed, but the native browser workflow failed with HTTP 429. Extended mutation
-commands were interrupted at 30 minutes and the delivery harness looked for
-binaries outside the mounted Cargo target. These failures remain recorded.
-The successor `f56de16` passed its full fast workflow and focused security checks;
-its superseded extended run was canceled before known fixture failures recurred.
-Full green verification is not established. Prospective browser fixtures now
-separate 550 ms benign action/probe pacing from an unpaced burst that must be
-rejected and recover after refill. No server limit or authorization assertion
-is relaxed. CI does not replace the longer
-exact-package browser or service campaigns. Bun CI/hooks remain disabled;
-documentation checks run manually.
+The October 11 closeout repairs peer-cadence browser failures, mounted Cargo
+artifact lookup, tool setup, shared mutation-worker compiler outputs and stale
+negative controls. Benign console actions use a registered 550 ms schedule;
+a separate unpaced burst must be rejected and recover after refill. Literal
+regressions cover integer/double boundaries, promoted credential bindings,
+query ties, overlapping sources and budget cuts. All ordinary property checks,
+independent Python oracles and invariant expectations remain in force.
 
-The October 11 closeout found verification defects as well as fixture drift:
-parallel cargo-mutants copies inherited one absolute compiler-output directory,
-contaminating their results, and the pagination negative control stalled an
-unrelated client-drain property. The corrected worker isolation and targeted
-pagination checker retain all ordinary property checks and named expectations.
-Independent literal regressions cover integer/double boundaries, bindings added
-after index promotion, and query ties, overlaps and budget boundaries. Equivalent
-survivors remain separately reasoned in the verification policy.
+The hosted `eb5b096` candidate passed fast and focused security workflows and
+all ten extended commands, but final receipt completeness failed after fuzzing
+rewrote its stale dependency lock. The lock now matches the current server graph;
+fuzz trials require locked resolution and unchanged lock bytes. Final receipt
+validation also checks the live worktree. Failed, interrupted and contaminated
+runs remain historical. The wiki records matching workflow outcomes and exact
+candidate identities. Repository CI does not replace packaged service or device
+acceptance. Bun CI/hooks remain disabled; documentation checks run manually.
 
 The local `851d50b` delivery gate exited 0: all eight registered trials passed
 the unchanged independent oracle and TLC with companion-inclusive observations;
@@ -165,8 +158,8 @@ the strict loss control rejected an acknowledged missing record. It exercises
 the explicit legacy administration adapter, so production console access remains
 the separate native browser/security gate. The finite Chrome trial completed 144
 assertions on debug binaries; neither trial qualifies successor packages or
-physical devices. The [integration review](https://github.com/kmosoti/FabricO11y/wiki/Release-integration-review)
-retains commands, candidate identities, failures and cleanup observations.
+physical devices. The integration review retains commands, candidate identities,
+failures and cleanup observations.
 
 The [research wiki](https://github.com/kmosoti/FabricO11y/wiki) owns research and
 result reports. Product/operator documentation, architecture, registered protocols
