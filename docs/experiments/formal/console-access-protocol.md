@@ -1,6 +1,10 @@
 # Authenticated console acceptance protocol
 
-Revision 5, registered 2026-10-11 before peer-admission acceptance.
+Revision 6, registered 2026-10-11 before role-model acceptance. It replaces
+scoped principals with the three fixed roles of
+[ADR-0029](../../decisions/ADR-0029-use-three-fixed-roles-for-the-first-release.md);
+earlier observations are not role-model results.
+Revision 5 preceded peer-admission acceptance.
 Revision 4 preceded resident-enrollment acceptance.
 Revision 3 preceded standalone Firefox CTAP 2.1 acceptance.
 Revision 2 preceded the grant/visibility regression rerun; its observations
@@ -89,9 +93,9 @@ username-less login or claim that the server can attest credential residency.
 ## Admission and algorithm budgets
 
 Version 1 client requests carry `X-Fabric-Client-Version: 1`. The API accepts
-same-origin opaque human sessions or scoped workload credentials; never both.
+same-origin opaque owner sessions or reader bearer tokens; never both.
 Cookie mutations require the exact configured Origin and session CSRF token.
-Fresh human verification is required for identity and grant changes.
+Fresh owner verification is required for passkey, session and reader-token changes.
 
 Public ceremonies: 8 requests/s and 8 live requests. Protected API: 32 credential
 checks/s and 16 live requests. Both have a 15-second request deadline and a
@@ -113,27 +117,21 @@ send sixteen concurrent protected session reads without this fixture pacing;
 require an actual HTTP 429, Retry-After and no-store, followed by a successful
 read after refill. Preserve every C1–C8 assertion and historical failure.
 
-Scoped queries permit logs, metric points and spans, at most 24 hours and
-1,000 rows (or a smaller grant), 1 MiB conservatively estimated retained row
-payload, 4,096/1 MiB gap evidence and an 8 MiB serialized response. The scoped
-source map filters enrollments before selection and derives evidence only from
-authorized sources/signals. Shared unreadable storage produces redacted scoped
-uncertainty. Unpaginated rate queries are unavailable through this adapter.
-An opaque page handle is bound to principal, effective scope, delegation context,
-policy, query and snapshot; 1,024 handles expire after 15 minutes.
+Console queries permit logs, metric points and spans for owner and reader alike:
+at most 24 hours and 1,000 rows, 1 MiB conservatively estimated retained row
+payload, 4,096/1 MiB gap evidence and an 8 MiB serialized response. Unpaginated
+rate queries are unavailable through this adapter. An opaque page handle is bound
+to its credential's principal ID, the query and the snapshot; 1,024 handles
+expire after 15 minutes.
 
-The client requests at most 200 rows within the current grant, admits one active request, aborts after 15 seconds,
+The client requests at most 200 rows, admits one active request, aborts after 15 seconds,
 caps response bytes while streaming, and rejects stale session/query generations.
 Tail polling displays bounded snapshots, not cross-poll delivery/deduplication:
 the current projection lacks generation identity. Its display cap is 200 rows
 and 256 KiB; truncation and poll gaps remain visible. Charts preserve exact
 integer timestamps/values in text and bound plotted extrema independently.
 
-Grant-limited defaults and presets must expose their effective duration. An
-explicit exact window beyond the grant is rejected without silently narrowing
-it. A 100-row/60-second grant is the regression fixture: it must permit a valid
-60-second query, reject an explicitly requested 15-minute query, and never
-convert zero authority into a usable default. Hidden tabs issue no tail polls;
+An explicit window beyond 24 hours is rejected without silently narrowing it. Hidden tabs issue no tail polls;
 visibility resumes the existing bounded cadence without overlapping requests.
 
 ## Registered checks and counterexamples
@@ -141,16 +139,17 @@ visibility resumes the existing bounded cadence without overlapping requests.
 | Cell | Required observation |
 | --- | --- |
 | C1 | Protected local bootstrap creates exactly one owner through real browser WebAuthn; concurrent/replayed bootstrap and first-visitor ownership fail. Session cookie is Secure, HttpOnly, SameSite=Strict, host-only and path `/`. |
-| C2 | Logout, fresh login, a second passkey, session revocation, human invitation, workload issuance/rotation, narrowed delegation, parent logout/revocation and offline owner recovery behave as documented. Expired or wrong-origin/RP/UV/challenge credentials never authorize. |
-| C3 | Two fixed enrollment fixtures have distinct canary rows and freshness values. A log-only grant for A cannot return B's rows, inventory, paths, gaps, retention bounds, global snapshot position, or A's metric timestamp. Querying a denied signal/source fails. A copied, modified, expired or differently scoped cursor fails before history execution. |
-| C4 | Real UI sign-in, each signal query, next page, span detail/missing parent, related-log search, tail pause/resume, pipeline, retention policy, identity and Spindle controls, and logout use the production API. Independent producer constants grade returned values, not screenshot appearance. |
+| C2 | Logout, fresh login, a second passkey, session revocation, reader-token issuance, expiry and revocation, and offline owner recovery behave as documented; recovery invalidates reader tokens. Expired or wrong-origin/RP/UV/challenge credentials never authorize. Access state of an older format is refused with the re-bootstrap error. |
+| C3 | Every console route and both Spindle intake routes are called anonymously, with a Spindle token, with a reader token and with an owner session; exactly the ADR-0029 matrix is admitted (a reader reaches only query, status and nodes). Two fixed enrollment fixtures with distinct canary rows and freshness values are both returned, with their own freshness, to reader and owner. A page handle copied between owner and reader, modified or expired fails before history execution. A revoked or expired reader token is refused at once, including for an in-flight read. |
+| C4 | Real UI sign-in, each signal query, next page, span detail/missing parent, related-log search, tail pause/resume, pipeline, retention policy, passkey, reader-token and Spindle controls, and logout use the production API. Independent producer constants grade returned values, not screenshot appearance. |
 | C5 | API/auth responses are no-store and never enter worker caches or persistent browser storage. Disconnect, logout, account change, delayed responses, multiple tabs and reopened offline shell clear sensitive display state. Injecting API caching must fail this check. |
 | C6 | Shell assets, MIME, CSP, worker scope and manifest match the build. Update/rollback, open tabs, interrupted update and unsupported client version either retain one coherent shell or require an update; no incompatible write. Desktop installed-PWA checks are distinct from an ordinary browser tab. |
 | C7 | Both themes, keyboard/focus, status announcements, readable tables, zoom/reflow and selected text contrast are exercised. Automated checks do not establish untested assistive-technology or physical-device conformance. |
 | C8 | Record cold/warm asset/start timing, CPU/memory and bounded sustained polling alongside server/Spindle accounting. A data read timeout leaves no extra scan admission slot. Payload/gap pressure produces explicit rejection and preserves existing custody/query invariants. |
 
-Negative controls include a cache-all API worker, a scoped-metadata leak,
-authentication after body extraction, cross-scope page reuse and recovery cuts
+Negative controls include a cache-all API worker, a reader admitted to an owner
+route, a Spindle token admitted by the console, authentication after body
+extraction, cross-credential page reuse and recovery cuts
 at each durable publication boundary. Each must fail its named property, rather
 than an unrelated startup error. Existing independent delivery/query/rate oracles
 and historical protocols remain unchanged.
