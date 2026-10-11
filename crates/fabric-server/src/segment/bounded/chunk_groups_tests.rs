@@ -162,16 +162,7 @@ fn aligned_batches_keep_byte_fallback_and_preserve_oversized_rows() {
 }
 
 #[test]
-fn chunk_group_selector_defaults_on_and_raw_tables_keep_explicit_flush() {
-    assert!(row_group_chunks(None));
-    assert!(row_group_chunks(Some("1")));
-    for invalid in ["", "0", "01", "2", " 1"] {
-        assert!(std::panic::catch_unwind(|| row_group_chunks(Some(invalid))).is_err());
-    }
-    assert_eq!(
-        ROW_GROUP_CHUNKS,
-        row_group_chunks(option_env!("FABRIC_ROW_GROUP_CHUNKS_EXPERIMENT"))
-    );
+fn raw_tables_keep_explicit_flush() {
     let scratch = Scratch::new();
     let raw = Table::new(
         &scratch.0.join("raw.parquet"),

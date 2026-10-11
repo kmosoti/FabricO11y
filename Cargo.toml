@@ -2,7 +2,6 @@
 name = "fabric_o11y"
 version = "0.1.0"
 edition = "2024"
-default-run = "fabric_o11y"
 # Shipped as a Debian package (packaging/), never to crates.io.
 publish = false
 license = "Apache-2.0"
@@ -24,11 +23,6 @@ members = [
 ]
 # Research packages keep their own manifests, lockfiles and commands.
 exclude = ["tools", "target", "xtask/fixtures", "fuzz"]
-
-[features]
-phase-probe = ["fabric-frame/phase-probe"]
-append-attribution = []
-stage6-alloc-probe = []
 
 [dependencies]
 crc32fast = "=1.5.2"

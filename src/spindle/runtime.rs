@@ -243,9 +243,6 @@ fn metric_request(
     history: &History,
     extra: Vec<Metric>,
 ) -> io::Result<(Vec<u8>, History, usize)> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("native_otlp_metrics_assembly");
-
     // A complete host sample replaces prior series. Retaining old device or
     // boot identities would make RAM grow across a bounded spool's lifetime.
     let mut next = History::new();
@@ -332,9 +329,6 @@ fn owned_log_record(line: log_source::Line, now: u64) -> LogRecord {
 }
 
 fn encoded_logs(lines: Vec<log_source::Line>, hostname: &str, boot_id: &str, now: u64) -> Vec<u8> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("native_otlp_logs_assembly");
-
     let records = lines
         .into_iter()
         .map(|line| owned_log_record(line, now))
@@ -1111,9 +1105,6 @@ impl Spindle {
     /// One full cycle: host metrics and every configured log. Always commits
     /// a batch (metrics, lines or at least a gap).
     pub fn collect_once(&mut self) -> io::Result<Cycle> {
-        #[cfg(feature = "phase-probe")]
-        let _phase = fabric_frame::probe::span("native_collection_inclusive");
-
         if self.paused() {
             return Err(io::Error::other("collection is paused by the server"));
         }
@@ -1130,11 +1121,7 @@ impl Spindle {
     }
 
     fn sample_collection_host(&self, gaps: &mut Vec<String>) -> Option<host::Snapshot> {
-        let observation = {
-            #[cfg(feature = "phase-probe")]
-            let _phase = fabric_frame::probe::span("native_host_observation");
-            host::sample(&self.host_paths)
-        };
+        let observation = host::sample(&self.host_paths);
         match observation {
             Ok(snapshot) => Some(snapshot),
             Err(error) => {
@@ -1224,11 +1211,7 @@ impl Spindle {
             let path = &self.config.logs[(first + index) % count];
             let name = path.to_string_lossy().to_string();
             let per_line = name.len() + LOG_LINE_OVERHEAD;
-            let read = {
-                #[cfg(feature = "phase-probe")]
-                let _phase = fabric_frame::probe::span("native_file_collection");
-                read_log(path, self.cursors.get(&name), remaining, per_line)
-            };
+            let read = read_log(path, self.cursors.get(&name), remaining, per_line);
             match read {
                 Ok(read) => {
                     log_backlog_bytes = log_backlog_bytes.saturating_add(read.backlog_bytes);

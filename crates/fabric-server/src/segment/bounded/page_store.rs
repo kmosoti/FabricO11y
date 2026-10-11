@@ -8,16 +8,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 
-pub(super) const fn enabled(setting: Option<&str>) -> bool {
-    match setting {
-        None => true,
-        Some(value) => match value.as_bytes() {
-            b"1" => true,
-            _ => panic!("FABRIC_PAGE_STORE_EXPERIMENT must be unset or 1"),
-        },
-    }
-}
-
 #[derive(Debug, Default)]
 struct Observations {
     bytes: AtomicU64,
@@ -216,15 +206,6 @@ mod tests {
     impl Drop for Scratch {
         fn drop(&mut self) {
             fs::remove_dir_all(&self.0).unwrap();
-        }
-    }
-
-    #[test]
-    fn page_store_selector_defaults_on_and_rejects_invalid_values() {
-        assert!(enabled(None));
-        assert!(enabled(Some("1")));
-        for setting in ["", "0", "true", "01", " 1"] {
-            assert!(std::panic::catch_unwind(|| enabled(Some(setting))).is_err());
         }
     }
 

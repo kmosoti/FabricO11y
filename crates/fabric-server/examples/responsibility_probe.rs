@@ -127,15 +127,6 @@ mod process_clock {
     pub fn now() -> u64 {
         read(false)
     }
-    #[cfg(feature = "phase-probe")]
-    pub fn thread_now() -> u64 {
-        let mut ts = Timespec {
-            seconds: 0,
-            nanoseconds: 0,
-        };
-        assert_eq!(unsafe { clock_gettime(3, &mut ts) }, 0);
-        ts.seconds as u64 * 1_000_000_000 + ts.nanoseconds as u64
-    }
     pub fn resolution() -> u64 {
         read(true)
     }
@@ -590,21 +581,6 @@ fn main() {
     let mode = &a[2];
     let size: usize = a[3].parse().unwrap();
     fs::create_dir_all(&root).unwrap();
-    #[cfg(feature = "phase-probe")]
-    if std::env::var("BENCH_PHASES").is_ok_and(|v| v == "1") {
-        fabric_frame::probe::install(|| {
-            #[cfg(feature = "responsibility-alloc-probe")]
-            let (live, peak, total) = allocation::facts();
-            #[cfg(not(feature = "responsibility-alloc-probe"))]
-            let (live, peak, total) = (0, 0, 0);
-            [
-                process_clock::thread_now(),
-                live as u64,
-                peak as u64,
-                total as u64,
-            ]
-        });
-    }
     let count = env_count("BENCH_RECORDS", 4096);
     assert!(
         (128..=262_144).contains(&count) && count.is_multiple_of(128),
@@ -1217,14 +1193,6 @@ fn main() {
             }
         }
         _ => panic!("unknown mode"),
-    }
-    #[cfg(feature = "phase-probe")]
-    {
-        let mut output = BufWriter::new(fs::File::create(root.join("phases.jsonl")).unwrap());
-        for p in fabric_frame::probe::take() {
-            writeln!(output, "{}", json!({"phase":p.name,"thread":format!("{:?}",p.thread),"depth":p.depth,"start_ns":p.start_ns,"wall_ns":p.wall_ns,"thread_cpu_ns":p.after[0].saturating_sub(p.before[0]),"before":p.before,"after":p.after})).unwrap();
-        }
-        output.flush().unwrap();
     }
     let measurements = flush_ledger();
     println!(

@@ -72,7 +72,7 @@ invariant, a registered gate, resource containment or a permission boundary.
 
 ## Commands
 
-- Run the demonstration: `cargo run --offline`.
+- Build the shipped binaries (`fabric-node`, `fabricctl`, `fabric-server`): `python3 tools/resource_group.py -- cargo build --offline --locked --release --workspace --bins`.
 - Fast checks with receipts: `cargo xtask checks --profile fast`.
 - Individual gates: `cargo xtask check-layers`, `cargo xtask check-core-purity`, `cargo xtask mutants`.
 - Verification tools ([contributor guide](docs/CONTRIBUTING.md#verification-tools)): `cargo test -p fabric-properties`, `bash formal/kani/check.sh`, `bash fuzz/smoke.sh 60`, `cargo test -p fabric-sim`, `cargo deny --locked check`; the extended profile runs them all: `cargo xtask checks --profile extended`.

@@ -7,7 +7,6 @@ license = "Apache-2.0"
 description = "Fabric O11y central server: authenticated batch intake with durable ACK"
 
 [features]
-phase-probe = ["fabric-frame/phase-probe", "fabric_o11y/phase-probe"]
 responsibility-alloc-probe = []
 
 [dependencies]
