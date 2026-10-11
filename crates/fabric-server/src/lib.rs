@@ -17,9 +17,15 @@ mod tail;
 pub mod text_filter;
 
 use axum_server::tls_rustls::RustlsConfig;
+use fabric_ports::Clock;
 use sha2::{Digest, Sha256};
 use std::io;
 use std::sync::{Arc, Mutex};
+
+/// Wall-clock seconds, read through the `Clock` port's system adapter.
+fn unix_s() -> u64 {
+    store::SystemClock.now_unix_nano() / 1_000_000_000
+}
 
 /// Install the ring provider once; rustls is built without a default.
 pub fn install_crypto_provider() {
@@ -53,9 +59,7 @@ pub async fn serve(
                 rp_id: rp_id.clone(),
                 audience: origin.clone(),
             },
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |d| d.as_secs()),
+            unix_s(),
         )?),
         (None, None) => None,
         _ => {

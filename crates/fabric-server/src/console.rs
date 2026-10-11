@@ -4,6 +4,7 @@ use crate::access::{Access, Authority, Role};
 use crate::control::{Control, DesiredConfig, Status};
 use crate::http::AppState;
 use crate::query::{Query, QueryError};
+use crate::unix_s as now;
 use axum::body::Bytes;
 use axum::extract::{DefaultBodyLimit, Path, Request, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
@@ -18,7 +19,6 @@ use std::collections::{BTreeMap, HashSet};
 use std::io::{self, Read};
 use std::path::Path as FsPath;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use webauthn_rs::prelude::{PublicKeyCredential, RegisterPublicKeyCredential};
 
@@ -148,11 +148,6 @@ fn random() -> io::Result<String> {
     let mut bytes = [0; 32];
     std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
     Ok(hex(&bytes))
-}
-fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |v| v.as_secs())
 }
 fn err(status: StatusCode, message: &'static str) -> Response {
     (status, Json(json!({"error":message}))).into_response()
