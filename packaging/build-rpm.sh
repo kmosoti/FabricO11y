@@ -7,7 +7,7 @@ out=$(realpath "$1")
 [ -d "$out" ] || { echo 'create the package output directory before building' >&2; exit 1; }
 root=$(cd "$(dirname "$0")/.." && pwd)
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$root" log -1 --format=%ct)}"
-work=$(mktemp -d "${TMPDIR:?resource launcher scratch required}/rpm-build-XXXXXX")
+work=$(mktemp -d "${TMPDIR:-/tmp}/rpm-build-XXXXXX")
 cleanup() {
   status=$?
   if [ "$status" -ne 0 ]; then

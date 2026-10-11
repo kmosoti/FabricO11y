@@ -19,11 +19,10 @@ import sys
 import tempfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from resource_group import require_limits
+from resource_group import STORAGE, require_limits
 
-DATA = Path('/run/media/kmosoti/data/FabricO11y')
-CHROME = DATA / 'tools/ui/chrome-for-testing-155.0.8059.39/chrome-linux64/chrome'
-OUT = DATA / 'results/ci-chrome-sandbox'
+CHROME = STORAGE / 'tools/ui/chrome-for-testing-155.0.8059.39/chrome-linux64/chrome'
+OUT = STORAGE / 'results/ci-chrome-sandbox'
 PROFILE = OUT / 'apparmor.profile'
 
 

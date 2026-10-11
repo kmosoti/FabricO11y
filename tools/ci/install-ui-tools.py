@@ -1,4 +1,4 @@
-"""Fetch hash-pinned UI builders/drivers into the mounted data drive."""
+"""Fetch hash-pinned UI builders/drivers into the storage root."""
 import hashlib
 import io
 import json
@@ -7,7 +7,7 @@ import sys
 import tarfile
 import urllib.request
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from resource_group import require_limits
+from resource_group import STORAGE, require_limits
 
 TOOLS = {
     'trunk': ('https://github.com/trunk-rs/trunk/releases/download/v0.21.14/trunk-x86_64-unknown-linux-gnu.tar.gz', 'f2b4680cd239693a646a2795e4633c625328d7b2a044fbe749fa3a2fe9e7036b', 'd0e3c0238c8cbecff9109e47e193e0acca2bf66f5243783dc2769ded9feddee1'),
@@ -16,7 +16,7 @@ TOOLS = {
 
 if __name__ == '__main__':
     require_limits()
-    destination = Path('/run/media/kmosoti/data/FabricO11y/tools/ui')
+    destination = STORAGE / 'tools/ui'
     destination.mkdir(parents=True, exist_ok=True)
     for name, (url, archive_hash, binary_hash) in TOOLS.items():
         with urllib.request.urlopen(url, timeout=60) as response:

@@ -56,7 +56,7 @@ jobs:
       - name: Resolve mounted Cargo target for cache
         id: cache-path
         run: |
-          target=$(realpath -m --relative-to="$GITHUB_WORKSPACE" /run/media/kmosoti/data/FabricO11y/cargo)
+          target=$(realpath -m --relative-to="$GITHUB_WORKSPACE" "$FABRIC_STORAGE_ROOT/cargo")
           echo "target=$target" >> "$GITHUB_OUTPUT"
       - name: Restore dependency and pinned-tool cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -141,5 +141,5 @@ jobs:
             target/verification/receipts/
             target/cargo-mutants/
             target/resource-containment/runs/
-            /run/media/kmosoti/data/FabricO11y/results/ci-tool-install/
+            ${{ env.FABRIC_STORAGE_ROOT }}/results/ci-tool-install/
           if-no-files-found: warn

@@ -16,9 +16,8 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA = Path('/run/media/kmosoti/data/FabricO11y')
 sys.path.insert(0, str(ROOT / 'tools'))
-from resource_group import require_limits
+from resource_group import STORAGE, require_limits
 
 
 def main():
@@ -30,8 +29,8 @@ def main():
     require_limits()
     build = args.build.resolve()
     out = args.out.resolve()
-    if not build.is_relative_to(DATA / 'results') or not out.is_relative_to(DATA / 'results') or out.exists():
-        raise SystemExit('build/output must be owned data-drive results; output fresh')
+    if not build.is_relative_to(STORAGE / 'results') or not out.is_relative_to(STORAGE / 'results') or out.exists():
+        raise SystemExit('build/output must be owned storage-root results; output fresh')
     out.mkdir()
     build_receipt = json.loads((build / 'build.json').read_text())
     dist = build / 'dist'
@@ -86,7 +85,7 @@ self.addEventListener("fetch", event => {
     endpoint = f'http://127.0.0.1:{port}'
     profile = Path(tempfile.mkdtemp(prefix='ui-browser-', dir=os.environ['FABRIC_SCRATCH_ROOT']))
     log = (out / 'webdriver.log').open('w')
-    driver = subprocess.Popen([str(DATA / 'tools/ui/geckodriver'), '--host', '127.0.0.1', '--port', str(port)],
+    driver = subprocess.Popen([str(STORAGE / 'tools/ui/geckodriver'), '--host', '127.0.0.1', '--port', str(port)],
                               stdout=log, stderr=subprocess.STDOUT)
     session = None
     checks = []

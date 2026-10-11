@@ -1,4 +1,4 @@
-"""Build the bounded console into owned data-drive storage; no deployment."""
+"""Build the bounded console into the owned storage root; no deployment."""
 import argparse
 import base64
 import gzip
@@ -11,9 +11,8 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA = Path('/run/media/kmosoti/data/FabricO11y')
 sys.path.insert(0, str(ROOT / 'tools'))
-from resource_group import require_limits
+from resource_group import STORAGE, require_limits, require_storage
 
 
 def main():
@@ -21,27 +20,28 @@ def main():
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
     require_limits()
-    if not DATA.parent.is_mount() or not args.out.is_absolute():
-        raise SystemExit('mounted data drive and absolute output required')
+    require_storage()
+    if not args.out.is_absolute():
+        raise SystemExit('absolute output required')
     out = args.out.resolve()
-    if not out.is_relative_to(DATA / 'results') or out.exists():
-        raise SystemExit('output must be a fresh directory below data-drive results')
+    if not out.is_relative_to(STORAGE / 'results') or out.exists():
+        raise SystemExit('output must be a fresh directory below storage-root results')
     out.mkdir(parents=True)
-    env = dict(os.environ, CARGO_HOME=str(DATA / 'toolchain-cache/cargo'),
-               RUSTUP_HOME=str(DATA / 'toolchain-cache/rustup'),
+    env = dict(os.environ, CARGO_HOME=str(STORAGE / 'toolchain-cache/cargo'),
+               RUSTUP_HOME=str(STORAGE / 'toolchain-cache/rustup'),
                RUSTUP_TOOLCHAIN='1.99.0', CARGO_BUILD_JOBS='2',
-               XDG_CACHE_HOME=str(DATA / 'cache/ui'),
+               XDG_CACHE_HOME=str(STORAGE / 'cache/ui'),
                CARGO_PROFILE_RELEASE_OPT_LEVEL='s',
                CARGO_PROFILE_RELEASE_LTO='thin',
                CARGO_PROFILE_RELEASE_CODEGEN_UNITS='1')
-    command = [str(DATA / 'tools/ui/trunk'), 'build', '--release', '--locked',
+    command = [str(STORAGE / 'tools/ui/trunk'), 'build', '--release', '--locked',
                '--dist', str(out / 'dist'), '--public-url', '/console/']
     receipt = {'command': command, 'source': str(ROOT / 'crates/fabric-ui'),
                'out': str(out), 'exit': None, 'artifact_role': 'console build candidate; acceptance recorded separately'}
     inputs = sorted(p for p in (ROOT / 'crates/fabric-ui').rglob('*') if p.is_file())
     inputs += [ROOT / 'Cargo.lock', Path(__file__).resolve()]
     receipt['source_sha256'] = {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs}
-    receipt['tools'] = {name: json.loads((DATA / ('tools/ui/' + name + '.json')).read_text()) for name in ['trunk']}
+    receipt['tools'] = {name: json.loads((STORAGE / ('tools/ui/' + name + '.json')).read_text()) for name in ['trunk']}
     try:
         with (out / 'build.log').open('w') as log:
             result = subprocess.run(command, cwd=ROOT / 'crates/fabric-ui', env=env,

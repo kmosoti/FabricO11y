@@ -2,7 +2,7 @@
 """Prepare a bounded, offline, review-pending wiki text export.
 
 This tool never publishes, follows links, copies assets, or removes source data.
-It stages only explicitly selected Markdown under the mounted project data drive.
+It stages only explicitly selected Markdown under the project storage root.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from urllib.parse import quote, unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
-from resource_group import DATA_DRIVE, STORAGE, require_limits  # noqa: E402
+from resource_group import STORAGE, require_limits, require_storage  # noqa: E402
 
 
 MAX_FILES = 250
@@ -293,8 +293,7 @@ def review_flags(text: str) -> dict[str, int]:
 def self_check() -> None:
     """Exercise the export boundary without creating a wiki stage."""
     require_limits()
-    if not DATA_DRIVE.is_mount():
-        raise RuntimeError(f"data drive is not mounted: {DATA_DRIVE}")
+    require_storage()
     if not has_data_part(PurePosixPath("docs/experiments/DATA/sample.md")):
         raise AssertionError("data-directory deny rule failed")
 
@@ -360,12 +359,11 @@ def output_header(relative_path: str, source_hash: str) -> str:
 
 def prepare(out_arg: str) -> Path:
     require_limits()
-    if not DATA_DRIVE.is_mount():
-        raise RuntimeError(f"data drive is not mounted: {DATA_DRIVE}")
+    require_storage()
     storage = STORAGE.resolve(strict=True)
     supplied = Path(out_arg).expanduser()
     if not supplied.is_absolute():
-        raise RuntimeError("--out must be an absolute path under the mounted project data drive")
+        raise RuntimeError("--out must be an absolute path under the project storage root")
     out = Path(os.path.abspath(supplied))
     if out.exists():
         raise FileExistsError("--out already exists; choose a fresh output directory")
@@ -533,7 +531,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--out",
-        help="fresh absolute output directory under /run/media/kmosoti/data/FabricO11y",
+        help="fresh absolute output directory under FABRIC_STORAGE_ROOT",
     )
     parser.add_argument(
         "--self-check",

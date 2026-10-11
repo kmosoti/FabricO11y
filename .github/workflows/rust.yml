@@ -42,7 +42,7 @@ jobs:
       - name: Resolve mounted Cargo target for cache
         id: cache-path
         run: |
-          target=$(realpath -m --relative-to="$GITHUB_WORKSPACE" /run/media/kmosoti/data/FabricO11y/cargo)
+          target=$(realpath -m --relative-to="$GITHUB_WORKSPACE" "$FABRIC_STORAGE_ROOT/cargo")
           echo "target=$target" >> "$GITHUB_OUTPUT"
       - name: Restore dependency and pinned-tool cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -78,9 +78,9 @@ jobs:
       # wasm-check, ui-palette and package-contracts are already in the fast registry.
       # test_ci_contracts.py verifies their exact ownership; do not rerun them here.
       - name: Build complete console
-        run: python3 -B tools/resource_group.py -- python3 -B tools/ui/build.py --out /run/media/kmosoti/data/FabricO11y/results/ci-console
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ui/build.py --out $FABRIC_STORAGE_ROOT/results/ci-console
       - name: Check compiled console in Firefox
-        run: python3 -B tools/resource_group.py -- python3 -B tools/ui/browser_check.py --build /run/media/kmosoti/data/FabricO11y/results/ci-console --out /run/media/kmosoti/data/FabricO11y/results/ci-browser
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ui/browser_check.py --build $FABRIC_STORAGE_ROOT/results/ci-console --out $FABRIC_STORAGE_ROOT/results/ci-browser
       - name: Install pinned Chrome and matching driver
         run: python3 -B tools/resource_group.py -- python3 -B tools/ui/install_browser.py
       - name: Verify Chrome namespace and seccomp sandbox with startup diagnostics
@@ -90,14 +90,14 @@ jobs:
       - name: Build native authenticated browser fixture
         run: python3 -B tools/resource_group.py -- cargo build --locked --workspace --bins
       - name: Check actual passkeys and scoped native HTTPS console in Chrome
-        run: python3 -B tools/resource_group.py -- python3 -B tools/ui/live_browser_check.py --browser chrome --build /run/media/kmosoti/data/FabricO11y/results/ci-console --server /run/media/kmosoti/data/FabricO11y/cargo/debug/fabric-server --spindle /run/media/kmosoti/data/FabricO11y/cargo/debug/fabric-node --out /run/media/kmosoti/data/FabricO11y/results/ci-live-browser
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ui/live_browser_check.py --browser chrome --build $FABRIC_STORAGE_ROOT/results/ci-console --server $FABRIC_STORAGE_ROOT/cargo/debug/fabric-server --spindle $FABRIC_STORAGE_ROOT/cargo/debug/fabric-node --out $FABRIC_STORAGE_ROOT/results/ci-live-browser
       - name: Require the exact API-cache negative-control failure
         run: |
           set +e
-          python3 -B tools/resource_group.py -- python3 -B tools/ui/live_browser_check.py --browser chrome --build /run/media/kmosoti/data/FabricO11y/results/ci-console --server /run/media/kmosoti/data/FabricO11y/cargo/debug/fabric-server --spindle /run/media/kmosoti/data/FabricO11y/cargo/debug/fabric-node --out /run/media/kmosoti/data/FabricO11y/results/ci-live-browser-defect --inject-api-cache-defect
+          python3 -B tools/resource_group.py -- python3 -B tools/ui/live_browser_check.py --browser chrome --build $FABRIC_STORAGE_ROOT/results/ci-console --server $FABRIC_STORAGE_ROOT/cargo/debug/fabric-server --spindle $FABRIC_STORAGE_ROOT/cargo/debug/fabric-node --out $FABRIC_STORAGE_ROOT/results/ci-live-browser-defect --inject-api-cache-defect
           defect_status=$?
           set -e
-          python3 -B tools/resource_group.py -- python3 -B tools/ci/check-browser-defect.py "$defect_status" /run/media/kmosoti/data/FabricO11y/results/ci-live-browser-defect/browser.json
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/check-browser-defect.py "$defect_status" $FABRIC_STORAGE_ROOT/results/ci-live-browser-defect/browser.json
       - name: Remove exact hosted Chrome AppArmor attachment
         if: always()
         run: python3 -B tools/resource_group.py -- env GITHUB_ACTIONS=true python3 -B tools/ci/chrome-sandbox.py --cleanup
@@ -109,10 +109,10 @@ jobs:
           path: |
             target/verification/receipts/
             target/resource-containment/runs/
-            /run/media/kmosoti/data/FabricO11y/results/ci-console/build.json
-            /run/media/kmosoti/data/FabricO11y/results/ci-browser/
-            /run/media/kmosoti/data/FabricO11y/results/ci-live-browser/
-            /run/media/kmosoti/data/FabricO11y/results/ci-live-browser-defect/
-            /run/media/kmosoti/data/FabricO11y/results/ci-tool-install/
-            /run/media/kmosoti/data/FabricO11y/results/ci-chrome-sandbox/
+            ${{ env.FABRIC_STORAGE_ROOT }}/results/ci-console/build.json
+            ${{ env.FABRIC_STORAGE_ROOT }}/results/ci-browser/
+            ${{ env.FABRIC_STORAGE_ROOT }}/results/ci-live-browser/
+            ${{ env.FABRIC_STORAGE_ROOT }}/results/ci-live-browser-defect/
+            ${{ env.FABRIC_STORAGE_ROOT }}/results/ci-tool-install/
+            ${{ env.FABRIC_STORAGE_ROOT }}/results/ci-chrome-sandbox/
           if-no-files-found: warn

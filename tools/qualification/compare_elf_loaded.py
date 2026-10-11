@@ -218,7 +218,7 @@ def loaded_equivalent(old_path, new_path):
 
 def negative_control(old_path, new_path, parsed_new):
     scratch = Path(os.environ["FABRIC_SCRATCH_ROOT"]).resolve(strict=True)
-    data_root = Path("/run/media/kmosoti/data/FabricO11y").resolve(strict=True)
+    data_root = Path(os.environ["FABRIC_STORAGE_ROOT"]).resolve(strict=True)
     scratch.relative_to((data_root / "scratch").resolve(strict=True))
     text = next((s for s in parsed_new["sections"]
                  if s["name"] == ".text" and s["type"] == SHT_PROGBITS
@@ -250,7 +250,7 @@ def main():
     args = parser.parse_args()
     old_path, new_path = args.old.resolve(strict=True), args.new.resolve(strict=True)
     output = args.output.resolve(strict=False)
-    data_root = Path("/run/media/kmosoti/data/FabricO11y").resolve(strict=True)
+    data_root = Path(os.environ["FABRIC_STORAGE_ROOT"]).resolve(strict=True)
     output.relative_to(data_root)
     if output in (old_path, new_path) or output.exists() or output.is_symlink():
         raise ComparisonError("fresh output separate from binary inputs required")

@@ -1,5 +1,6 @@
 """Fail-closed exact candidate and matching uninstalled-helper admission."""
 import json
+import os
 from pathlib import Path
 import sys
 
@@ -7,12 +8,12 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parents[1] / 'packaging'))
 from stage_candidate import digest
 from payload import assert_equivalent, inventory
-DATA = Path('/run/media/kmosoti/data/FabricO11y')
 
 
 def validate_inputs(deb_receipt, rpm_receipt):
+    data = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
     for path in (deb_receipt, rpm_receipt):
-        path.resolve().relative_to(DATA)
+        path.resolve().relative_to(data)
         if path.is_symlink():
             raise ValueError('build receipt cannot be a symlink')
     deb = json.loads(deb_receipt.read_text())
@@ -27,7 +28,7 @@ def validate_inputs(deb_receipt, rpm_receipt):
     packages = {'debian': Path(deb['package']), 'fedora': Path(rpm['package'])}
     for family, receipt in [('debian', deb), ('fedora', rpm)]:
         path = packages[family]
-        path.resolve().relative_to(DATA)
+        path.resolve().relative_to(data)
         if path.is_symlink() or digest(path) != receipt['package_sha256']:
             raise ValueError('exact package bytes changed')
     provenance = deb_receipt.parent / 'provenance'
