@@ -641,3 +641,42 @@ async fn reader_get_cannot_publish_after_expiry() {
     assert!(!body.contains("private inventory"));
     drop(console);
 }
+
+#[tokio::test]
+async fn a_poisoned_lock_answers_503_instead_of_panicking_every_later_request() {
+    // Counterexample origin: one panic under a held guard poisoned a lock, and every
+    // later request unwrapped the PoisonError and panicked until restart.
+    fn poison<T: Send + 'static>(lock: &Arc<Mutex<T>>) {
+        let lock = Arc::clone(lock);
+        let panicked = std::thread::spawn(move || {
+            let _held = lock.lock().unwrap();
+            panic!("injected panic under a held guard");
+        });
+        panicked.join().unwrap_err();
+    }
+    let f = fixture();
+    let console = f.console.as_ref().unwrap();
+    let owner = Who::Owner(&f.session.session_token, &f.session.csrf_token);
+    poison(&console.app.control);
+    let (nodes, body) = call_as(&f, owner, "GET", "/v1/console/nodes", None).await;
+    assert_eq!(
+        (nodes, body.is_object()),
+        (StatusCode::SERVICE_UNAVAILABLE, true)
+    );
+    let (legacy, _) = call_as(&f, Who::Bearer(&f.spindle), "GET", "/v1/config", None).await;
+    assert_eq!(legacy, StatusCode::SERVICE_UNAVAILABLE);
+    // State that no panic touched keeps serving.
+    let (status, _) = call_as(&f, owner, "GET", "/v1/console/status", None).await;
+    assert_eq!(status, StatusCode::OK);
+    poison(&console.access);
+    for (who, method, path) in [
+        (owner, "GET", "/v1/console/session"),
+        (Who::Anonymous, "POST", "/v1/console/auth/login/start"),
+    ] {
+        let (status, body) = call_as(&f, who, method, path, None).await;
+        assert_eq!(
+            (status, body.is_object()),
+            (StatusCode::SERVICE_UNAVAILABLE, true)
+        );
+    }
+}

@@ -1,4 +1,20 @@
 //! Fabric Server: authenticated, durable batch intake for Fabric Nodes.
+
+/// Lock a mutex, or `return` the refusal (503 by default) from the calling function.
+/// Poison means a panic interrupted an update: refuse the state rather than trust it
+/// or panic again on every later request.
+macro_rules! lock {
+    ($mutex:expr) => {
+        lock!($mutex, crate::unavailable())
+    };
+    ($mutex:expr, $refusal:expr) => {
+        match $mutex.lock() {
+            Ok(guard) => guard,
+            Err(_) => return $refusal,
+        }
+    };
+}
+
 pub mod access;
 pub mod config;
 pub mod console;
@@ -16,11 +32,18 @@ pub mod store;
 mod tail;
 pub mod text_filter;
 
+use axum::response::{IntoResponse, Response};
+use axum::{Json, http::StatusCode};
 use axum_server::tls_rustls::RustlsConfig;
 use fabric_ports::Clock;
 use sha2::{Digest, Sha256};
 use std::io;
 use std::sync::{Arc, Mutex};
+
+fn unavailable() -> Response {
+    let body = Json(serde_json::json!({"error": "state unavailable"}));
+    (StatusCode::SERVICE_UNAVAILABLE, body).into_response()
+}
 
 /// Wall-clock seconds, read through the `Clock` port's system adapter.
 fn unix_s() -> u64 {

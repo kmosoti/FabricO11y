@@ -161,7 +161,7 @@ impl Admission {
         lane: usize,
         clock: impl FnOnce() -> Duration,
     ) -> Result<Permit, Rejected> {
-        let mut book = self.book.lock().map_err(|_| Rejected::Unavailable)?;
+        let mut book = lock!(self.book, Err(Rejected::Unavailable));
         // Sample after serialization: concurrent callers can reach this lock
         // in a different order from timestamps sampled before acquiring it.
         let now = clock();
