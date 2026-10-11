@@ -45,14 +45,11 @@ admission; no system-disk or RAM-backed fallback is allowed.
 The tested R2 workflow uses `prepare_soak.py` and `verify_soak_freeze.py`.
 Historical protocol commands retain their original text and outcomes.
 
-The normal writer needs no experiment flags. Build all five native artifacts
-without allocation instrumentation, explicitly clearing historical selectors:
+The normal writer has no experiment selectors. Build all five native artifacts
+without allocation instrumentation:
 
 ```sh
-python3 tools/resource_group.py -- env \
-  -u FABRIC_ROW_GROUP_CHUNKS_EXPERIMENT -u FABRIC_PAGE_STORE_EXPERIMENT \
-  -u FABRIC_RUN_MIB_EXPERIMENT -u FABRIC_EARLY_ROW_RELEASE_EXPERIMENT \
-  -u FABRIC_SPILL_WORKSPACE_EXPERIMENT \
+python3 tools/resource_group.py -- \
   cargo build --release --offline --locked \
   -p fabric-server --bin fabric-server --example server_dump \
   -p fabric_o11y --bin fabric-node --example spindle_sim --example spool_dump

@@ -140,8 +140,7 @@ used 42,011,899 bytes and preserved exact files. Read
 [page_store.rs](../crates/fabric-server/src/segment/bounded/page_store.rs): a key
 can be taken once, and failed deletion prevents publication. This trades resident
 payload for scratch I/O; the finite result does not bound arbitrary blobs or
-metadata. Legacy `FABRIC_ROW_GROUP_CHUNKS_EXPERIMENT=1` and
-`FABRIC_PAGE_STORE_EXPERIMENT=1` remain accepted but are no longer required.
+metadata.
 Unflagged bounded/recovery checks passed, and loaded-ELF comparison connects
 the normal server path to the accepted frozen trial; full-file hashes are not
 identical. The continuation records the exact receipts and remaining final checks.
@@ -278,7 +277,7 @@ requires a nonempty matching producer population; empty-window semantics are not
 claimed by that fixture.
 
 Next, trace `Runs::push` in [bounded.rs](../crates/fabric-server/src/segment/bounded.rs):
-its strict compile selector permits 8/16/32 MiB, default 16, and counts estimated
+its fixed 16 MiB run target counts estimated
 owned bytes separately for each signal. Explain why an oversized single row is
 an explicit exception. The [native pruning protocol](experiments/benchmarks/coupled-pruning-native-protocol.md)
 checks real group bounds and exact query chains; 42 finite chains and matching
