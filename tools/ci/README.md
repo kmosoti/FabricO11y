@@ -52,6 +52,19 @@ canonical commands, all baseline/negative controls and equivalence expectations
 remain unchanged. This is a candidate timeout repair, not a measured speedup or
 evidence that a previously interrupted audit passed.
 
+The core/app cargo-mutants audit uses test optimization level 1 while explicitly
+retaining debug assertions and overflow checks. It runs the same complete tests
+and mutants: exhaustive pure transitions are computed faster, rather than
+sampled less often. Semantic memory-bound mutants retain their original profile.
+
+The delivery fault fixture uses the explicit legacy administration adapter,
+its configured test CA for the mandatory companion, and independent stopped
+Spool observations for every producer including that companion. A server crash
+kills the owned server/companion process group. This does not establish production
+console access: the native browser and scoped security checks own that boundary.
+Its negative-control grader requires the actual missing-ACKed-record invariant
+with clean process exits; an arbitrary Python failure cannot satisfy the gate.
+
 The first successful run populates the applicable cache. Savings must be
 measured on subsequent matching warm runs; no speedup is claimed in advance.
 
