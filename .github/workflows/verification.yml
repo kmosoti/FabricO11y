@@ -139,6 +139,7 @@ jobs:
           name: extended-verification-receipts
           path: |
             target/verification/receipts/
+            target/cargo-mutants/
             target/resource-containment/runs/
             /run/media/kmosoti/data/FabricO11y/results/ci-tool-install/
           if-no-files-found: warn

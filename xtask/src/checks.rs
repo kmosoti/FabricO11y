@@ -123,7 +123,7 @@ pub struct Outcome {
     pub output: Vec<u8>,
 }
 
-pub fn run_one(root: &Path, check: &Check) -> Outcome {
+fn unavailable(root: &Path, check: &Check) -> Option<Outcome> {
     let missing: Vec<_> = check
         .requires
         .iter()
@@ -137,11 +137,18 @@ pub fn run_one(root: &Path, check: &Check) -> Outcome {
         .cloned()
         .collect();
     if !missing.is_empty() {
-        return Outcome {
+        return Some(Outcome {
             status: Status::EnvironmentUnavailable,
             exit_code: None,
             output: format!("missing: {}", missing.join(", ")).into_bytes(),
-        };
+        });
+    }
+    None
+}
+
+pub fn run_one(root: &Path, check: &Check) -> Outcome {
+    if let Some(outcome) = unavailable(root, check) {
+        return outcome;
     }
     match Command::new(&check.command[0])
         .args(&check.command[1..])
@@ -165,6 +172,49 @@ pub fn run_one(root: &Path, check: &Check) -> Outcome {
             status: Status::EnvironmentUnavailable,
             exit_code: None,
             output: format!("cannot start {}: {error}", check.command[0]).into_bytes(),
+        },
+    }
+}
+
+/// Persist each stream before waiting for a check. If the launcher interrupts
+/// the registry, these files survive without manufacturing a completion receipt.
+fn run_one_recorded(
+    root: &Path,
+    check: &Check,
+    out: std::fs::File,
+    err: std::fs::File,
+    stdout: &Path,
+    stderr: &Path,
+) -> Outcome {
+    if let Some(outcome) = unavailable(root, check) {
+        return outcome;
+    }
+    let execute = || -> Result<(std::process::ExitStatus, Vec<u8>), std::io::Error> {
+        let status = Command::new(&check.command[0])
+            .args(&check.command[1..])
+            .current_dir(root)
+            .stdout(out)
+            .stderr(err)
+            .status()?;
+        // Preserve the existing stdout-then-stderr order and receipt digest.
+        let mut bytes = std::fs::read(stdout)?;
+        bytes.extend_from_slice(&std::fs::read(stderr)?);
+        Ok((status, bytes))
+    };
+    match execute() {
+        Ok((status, output)) => Outcome {
+            status: if status.success() {
+                Status::Passed
+            } else {
+                Status::Failed
+            },
+            exit_code: status.code(),
+            output,
+        },
+        Err(error) => Outcome {
+            status: Status::EnvironmentUnavailable,
+            exit_code: None,
+            output: format!("cannot execute or retain {}: {error}", check.command[0]).into_bytes(),
         },
     }
 }
@@ -264,6 +314,13 @@ pub fn run(
     let marker = receipts.join("current-check.json");
     let mut overall = Status::Passed;
     for check in selected {
+        let stdout_name = format!("{}.stdout.partial.log", check.id);
+        let stderr_name = format!("{}.stderr.partial.log", check.id);
+        let stdout_path = receipts.join(&stdout_name);
+        let stderr_path = receipts.join(&stderr_name);
+        // Truncate old streams before publishing a new running identity.
+        let stdout = std::fs::File::create(&stdout_path).map_err(|e| e.to_string())?;
+        let stderr = std::fs::File::create(&stderr_path).map_err(|e| e.to_string())?;
         // A stopped command leaves this marker, never a fabricated success.
         // Completed logs/receipts remain available when a later check fails.
         write_record(
@@ -271,12 +328,13 @@ pub fn run(
             &json!({
                 "state": "running", "check_id": check.id,
                 "candidate_commit": context.commit, "command": check.command,
+                "stdout_log": stdout_name, "stderr_log": stderr_name,
             }),
         )?;
         println!("{:<24} running  {}", check.id, check.command.join(" "));
         std::io::stdout().flush().map_err(|e| e.to_string())?;
         let started = Instant::now();
-        let outcome = run_one(root, check);
+        let outcome = run_one_recorded(root, check, stdout, stderr, &stdout_path, &stderr_path);
         let elapsed = started.elapsed().as_millis();
         println!(
             "{:<24} {:<24} {:>8} ms  {}",
