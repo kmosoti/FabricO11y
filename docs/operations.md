@@ -85,11 +85,12 @@ enrollment, then confirm that the companion appears and its diagnostic records
 are queryable. Check remote delivery separately after enrolling an edge; a
 listening port alone does not establish certificate trust or durable custody.
 
-## Scoped client and Spindle controls
+## Reader tokens and Spindle controls
 
-In console Settings, issue a workload credential with only the required query
-and Spindle-control grants. Store its once-returned token in a regular,
-owner-only file with mode 0600. Configure the client:
+The owner enrolls, configures, pauses, resumes and revokes Spindles in the console;
+these are owner-only. For scripts and AI agents, issue a read-only reader token in
+console Settings. Store its once-returned token in a regular, owner-only file with
+mode 0600 and configure the client:
 
 ```text
 server_url=https://fabric-server.example:7443
@@ -98,33 +99,26 @@ workload_token_file=/home/operator/.config/fabrico11y/workload-token
 ```
 
 ```sh
-fabricctl access access.conf node add web01 --log /var/log/app.log --interval 15
 fabricctl access access.conf node list
-fabricctl access access.conf node config web01 --log /var/log/app.log --interval 30
-fabricctl access access.conf node pause web01
-fabricctl access access.conf node resume web01
+fabricctl access access.conf query '<QUERY_JSON>'
 ```
 
-`node add` returns the Spindle token once. Enrollment grants require an explicit
-namespace and quota; configuration grants constrain log paths and sample intervals.
-The UI exposes the same operations. See [access operations](access-operations.md)
-for scope examples, token rotation, delegated agents and recovery.
-
-`fabricctl access access.conf query '<QUERY_JSON>'` supports logs, metric points
-and spans with a window of at most 24 hours and at most 1,000 rows, further
-restricted by the grant. [Query answers](architecture/retained-history.md) include
-completeness, scoped freshness and gaps; follow the opaque `next_page` handle.
+A reader can query telemetry and read status and inventory, nothing else. Queries
+cover logs, metric points and spans with a window of at most 24 hours and at most
+1,000 rows. [Query answers](architecture/retained-history.md) include completeness,
+freshness and gaps; follow the opaque `next_page` handle. See
+[access operations](access-operations.md) for token rotation and recovery.
 Legacy `fabricctl admin` works only with the explicit `serve-legacy` migration
-mode. It does not provide the scoped console boundary.
+mode. It does not provide the role boundary.
 
 ## Node
 
-1. Create `/etc/fabrico11y/node.conf` from the example with `server_url`, `server_ca` and `token_file` (the token printed by `node add`, stored `0640 root:fabricolly`).
+1. Create `/etc/fabrico11y/node.conf` from the example with `server_url`, `server_ca` and `token_file` (the token shown once at enrollment, stored `0640 root:fabricolly`).
 2. Give the service read access to each selected log with a narrow ACL, for example `setfacl -m u:fabricolly:r /var/log/app.log`. An unreadable log produces a visible collection gap; the node never escalates.
 3. Optionally set `traces_listen=127.0.0.1:4318` so local applications can export traces to the node, with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces` and `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf` in their environment. The node answers an export only after it is in the spool; spans are queried with `{"kind":"spans", ...}` ([retained history](architecture/retained-history.md)).
 4. `sudo systemctl enable --now fabrico11y-node.service`.
 
-The node samples host metrics on its interval, reads logs every second, keeps every batch in its spool until the server acknowledges it, and polls for configuration every 5 s. Log paths and interval set through scoped `node config` replace the local file's values once the node has validated and stored them; the spool, its ceiling and the server target stay local. The CLI always adds its own bounded diagnostic source; server-owned nodes also retain the server source. These pins share the sixteen-source ceiling and survive remote replacement. Edge diagnostics go to the existing configured server. `fabricctl inspect /etc/fabrico11y/node.conf` reports the spool: batches, acknowledged sequence, backlog, and any recovery state.
+The node samples host metrics on its interval, reads logs every second, keeps every batch in its spool until the server acknowledges it, and polls for configuration every 5 s. Log paths and interval set through the console's node configuration replace the local file's values once the node has validated and stored them; the spool, its ceiling and the server target stay local. The CLI always adds its own bounded diagnostic source; server-owned nodes also retain the server source. These pins share the sixteen-source ceiling and survive remote replacement. Edge diagnostics go to the existing configured server. `fabricctl inspect /etc/fabrico11y/node.conf` reports the spool: batches, acknowledged sequence, backlog, and any recovery state.
 
 ## Recovery states
 
@@ -172,7 +166,7 @@ operator's service restart. Explicitly start the roles configured on that host.
 For a central-only host, start `fabrico11y-server.service`; it starts its own
 dedicated Spindle. An edge starts `fabrico11y-node.service`. Confirm service status,
 fresh login, exact retained queries and drained pending Spools. Server restart
-invalidates browser sessions and delegated credentials. The PWA may request a
+invalidates browser sessions; reader tokens persist until they expire or are revoked. The PWA may request a
 reload to activate its new coherent shell.
 
 To remove executables while retaining state, use `sudo apt remove fabrico11y`
