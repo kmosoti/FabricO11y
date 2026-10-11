@@ -72,11 +72,12 @@ The builder refuses existing output directories, records asset/source hashes and
 CSP, and retains the 8 MiB public-shell build limit.
 
 ```sh
-export CARGO_HOME=/run/media/kmosoti/data/FabricO11y/toolchain-cache/cargo
-export RUSTUP_HOME=/run/media/kmosoti/data/FabricO11y/toolchain-cache/rustup
+export FABRIC_STORAGE_ROOT="${FABRIC_STORAGE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/fabrico11y}"
+export CARGO_HOME="$FABRIC_STORAGE_ROOT"/toolchain-cache/cargo
+export RUSTUP_HOME="$FABRIC_STORAGE_ROOT"/toolchain-cache/rustup
 python3 -B tools/resource_group.py -- cargo +1.99.0 test --locked -p fabric-ui
 python3 -B tools/resource_group.py -- cargo +1.99.0 check --locked -p fabric-ui --target wasm32-unknown-unknown
-python3 -B tools/resource_group.py -- python3 -B tools/ui/build.py --out /run/media/kmosoti/data/FabricO11y/results/my-console-build
+python3 -B tools/resource_group.py -- python3 -B tools/ui/build.py --out "$FABRIC_STORAGE_ROOT"/results/my-console-build
 ```
 
 [Console staging](../../tools/packaging/stage_console.py) verifies the frozen build

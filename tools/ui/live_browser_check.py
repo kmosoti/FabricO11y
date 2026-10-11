@@ -21,9 +21,8 @@ from browser_producer import TRACE_ID, traces
 from fixture_cadence import FixtureCadence
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA = Path('/run/media/kmosoti/data/FabricO11y')
 sys.path.insert(0, str(ROOT / 'tools'))
-from resource_group import require_limits
+from resource_group import STORAGE as DATA, require_limits
 sys.path.insert(0, str(ROOT / 'tools/packaging'))
 from stage_console import stage
 

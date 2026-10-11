@@ -6,14 +6,15 @@ drive. Run one browser fixture at a time; coordinate Cargo commands with other
 workspace checks.
 
 ```sh
+export FABRIC_STORAGE_ROOT="${FABRIC_STORAGE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/fabrico11y}"
 python3 tools/resource_group.py -- python3 -B tools/ui/install_browser.py
 python3 tools/resource_group.py -- python3 -B tools/ui/build.py \
-  --out /run/media/kmosoti/data/FabricO11y/results/console-build
+  --out "$FABRIC_STORAGE_ROOT"/results/console-build
 python3 tools/resource_group.py -- python3 -B tools/ui/live_browser_check.py \
-  --build /run/media/kmosoti/data/FabricO11y/results/console-build \
-  --server /run/media/kmosoti/data/FabricO11y/cargo/debug/fabric-server \
-  --spindle /run/media/kmosoti/data/FabricO11y/cargo/debug/fabric-node \
-  --out /run/media/kmosoti/data/FabricO11y/results/console-browser
+  --build "$FABRIC_STORAGE_ROOT"/results/console-build \
+  --server "$FABRIC_STORAGE_ROOT"/cargo/debug/fabric-server \
+  --spindle "$FABRIC_STORAGE_ROOT"/cargo/debug/fabric-node \
+  --out "$FABRIC_STORAGE_ROOT"/results/console-browser
 ```
 
 Output directories must be fresh. Configure `CARGO_HOME` and `RUSTUP_HOME` to
