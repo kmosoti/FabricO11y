@@ -28,6 +28,10 @@ jobs:
         run: bash tools/ci/prepare-resource-host.sh
       - name: Check CI scheduling and receipt contracts
         run: python3 -B tools/resource_group.py -- python3 -B tools/ci/test_ci_contracts.py
+      - name: Verify vendored crates against their pinned archives
+        run: |
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/test_check_vendor.py
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/check-vendor.py
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           toolchain: 1.99.0

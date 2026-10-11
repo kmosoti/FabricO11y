@@ -46,6 +46,17 @@ Extended verification installs the dated `nightly-2026-10-11` (rustc
 `fuzz/smoke.sh` runs `cargo +nightly`. Advance the date deliberately and rerun
 the fuzz check.
 
+## Vendored crates
+
+Cargo does not checksum `[patch.crates-io]` path crates and `cargo deny` does
+not inspect them. `check-vendor.py` downloads each archive named in
+`vendor/provenance.json`, requires its SHA-256, and compares every file with
+`vendor/<crate>/`. Only the provenance-declared files may differ: the added
+`FABRIC-PATCH.md`, and a `Cargo.toml` equal to the upstream one with just the
+declared dependency alias rewritten. Extra, missing, altered or symlinked files,
+and a `[patch.crates-io]` table that differs from the provenance paths, fail
+the fast workflow. `test_check_vendor.py` seeds each of these defects.
+
 ## Dependency caching
 
 The Rust cache action is pinned to the reviewed v2.9.2 commit. Its workspace
