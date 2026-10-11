@@ -265,7 +265,7 @@ impl Console {
 }
 async fn block_master(request: Request, next: Next) -> Response {
     if request.uri().path().starts_with("/v1/admin/") {
-        err(StatusCode::UNAUTHORIZED, "use a scoped console credential")
+        err(StatusCode::UNAUTHORIZED, "use a console credential")
     } else {
         next.run(request).await
     }
