@@ -11,8 +11,18 @@ import time
 import uuid
 
 MAX_BYTES = 20 * 1024**3
-DATA_DRIVE = Path('/run/media/kmosoti/data')
-STORAGE = DATA_DRIVE / 'FabricO11y'
+HIGH_BYTES = 16 * 1024**3
+
+
+def storage_root(environ=os.environ):
+    """FABRIC_STORAGE_ROOT, else the per-user cache directory (XDG_CACHE_HOME or ~/.cache)."""
+    cache = environ.get('XDG_CACHE_HOME') or os.path.join(
+        environ.get('HOME') or os.path.expanduser('~'), '.cache')
+    return Path(environ.get('FABRIC_STORAGE_ROOT') or os.path.join(cache, 'fabrico11y')).resolve()
+
+
+STORAGE = storage_root()
+DATA_DRIVE = STORAGE.parent  # Legacy name for importers outside the launcher's scope.
 RECEIPTS = Path(__file__).resolve().parents[1] / 'target/resource-containment/runs'
 DEFAULT_RUNTIME_SECONDS = 1800
 MAX_RUNTIME_SECONDS = 16000
@@ -38,6 +48,32 @@ def command_options(arguments):
     if not arguments:
         raise ValueError('missing command')
     return runtime, delegated, arguments
+
+
+def memory_limits(mem_total=None, ceiling=MAX_BYTES, page=None):
+    """(MemoryHigh, MemoryMax): 75% of RAM up to the ceiling, high at 5/6 up to 16 GiB, page aligned."""
+    page = page or os.sysconf('SC_PAGE_SIZE')
+    cap = min(ceiling, (mem_total or page * os.sysconf('SC_PHYS_PAGES')) * 3 // 4) // page * page
+    if cap < 1024**3:
+        raise RuntimeError('insufficient host RAM for a bounded group')
+    return min(HIGH_BYTES, cap * 5 // 6) // page * page, cap
+
+
+def filesystem_type(path):
+    return subprocess.run(['stat', '-f', '-c', '%T', path], capture_output=True, text=True).stdout.strip()
+
+
+def require_storage(root=None):
+    """Fail closed unless the storage root is a directory we own on a disk, not in RAM."""
+    root = Path(root or STORAGE)
+    # Judge the filesystem before creating anything, so an unmounted drive's mount point is not made.
+    kind = filesystem_type(next(path for path in (root, *root.parents) if path.exists()))
+    if kind in ('', 'tmpfs', 'ramfs'):
+        raise RuntimeError(f'storage root must not be RAM-backed: {root} ({kind or "unknown filesystem"})')
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if not root.is_dir() or root.stat().st_uid != os.getuid():
+        raise RuntimeError(f'storage root must be a directory owned by the invoking user: {root}')
+    return root
 
 
 def require_limits():
@@ -136,8 +172,8 @@ def main():
     if arguments and arguments[0] == '--inside':
         return run_inside(arguments[1:])
     runtime, delegated, arguments = command_options(arguments)
-    if not DATA_DRIVE.is_mount():
-        raise RuntimeError(f'data drive is not mounted: {DATA_DRIVE}')
+    require_storage()
+    high, cap = memory_limits()
     scratch = STORAGE / 'scratch'
     scratch.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix='work-', dir=scratch))
@@ -146,8 +182,8 @@ def main():
     command = [
         'systemd-run', '--user', '--wait', '--pipe', '--collect',
         '--unit=' + unit,
-        '--property=MemoryAccounting=yes', '--property=MemoryHigh=16G',
-        '--property=MemoryMax=20G', '--property=MemorySwapMax=0',
+        '--property=MemoryAccounting=yes', '--property=MemoryHigh=' + str(high),
+        '--property=MemoryMax=' + str(cap), '--property=MemorySwapMax=0',
         '--property=OOMPolicy=kill', '--property=KillMode=control-group',
         '--property=RuntimeMaxSec=' + str(runtime) + 's', '--property=TimeoutStopSec=10s',
         '--working-directory=' + os.getcwd(),
@@ -162,6 +198,7 @@ def main():
         '--setenv=TMPDIR=' + str(temporary),
         '--setenv=TMP=' + str(temporary),
         '--setenv=TEMP=' + str(temporary),
+        '--setenv=FABRIC_STORAGE_ROOT=' + str(STORAGE),
         '--setenv=FABRIC_SCRATCH_ROOT=' + str(scratch),
         '--setenv=CARGO_TARGET_DIR=' + str(STORAGE / 'cargo'),
         '--setenv=FABRIC_RESOURCE_RUNTIME_SECONDS=' + str(runtime),
@@ -206,10 +243,10 @@ def main():
             'stop_confirmed': safe,
             'stop_error': stop_error,
             'started_unix': started, 'elapsed_s': time.time() - started,
-            'data_drive': str(DATA_DRIVE), 'temporary': str(temporary),
+            'storage_root': str(STORAGE), 'temporary': str(temporary),
             'temporary_removed': not temporary.exists(),
             'retained_failure_evidence': None if retained is None else str(retained),
-            'memory_max_bytes': MAX_BYTES, 'swap_max_bytes': 0,
+            'memory_high_bytes': high, 'memory_max_bytes': cap, 'swap_max_bytes': 0,
             'runtime_max_seconds': runtime,
             'delegated': delegated,
         }, indent=2) + '\n')

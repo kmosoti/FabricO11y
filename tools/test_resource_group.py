@@ -8,6 +8,8 @@ from unittest.mock import patch
 
 import resource_group
 
+GIB = 1024**3
+
 
 class Containment(unittest.TestCase):
     def disconnected_wrapper(self, stop_status):
@@ -18,10 +20,13 @@ class Containment(unittest.TestCase):
                     else {'return_value': subprocess.CompletedProcess([], stop_status)})
             with patch.object(resource_group, 'STORAGE', root), \
                  patch.object(resource_group, 'RECEIPTS', root / 'receipts'), \
+                 patch.object(resource_group, 'filesystem_type', return_value='ext2/ext3'), \
+                 patch.object(resource_group, 'memory_limits', return_value=(5 * GIB, 6 * GIB)), \
                  patch.object(sys, 'argv', ['resource_group.py', '--', 'true']), \
-                 patch.object(resource_group.subprocess, 'call', return_value=0), \
+                 patch.object(resource_group.subprocess, 'call', return_value=0) as launch, \
                  patch.object(resource_group.subprocess, 'run', **stop):
                 status = resource_group.main()
+            self.launched, self.storage = launch.call_args[0][0], root
             receipts = list((root / 'receipts').iterdir())
             self.assertEqual(len(receipts), 1)
             recorded = resource_group.json.loads(receipts[0].read_text())
@@ -111,8 +116,65 @@ class Containment(unittest.TestCase):
             text=True)
         self.assertEqual(child, resource_group.Path('/proc/self/cgroup').read_text())
 
-    def test_temporary_files_and_builds_use_data_drive(self):
-        self.assertTrue(resource_group.DATA_DRIVE.is_mount())
+    def test_launch_exports_storage_root_and_host_scaled_limits(self):
+        self.disconnected_wrapper(0)
+        for flag in ('--property=MemoryHigh=' + str(5 * GIB), '--property=MemoryMax=' + str(6 * GIB),
+                     '--property=MemorySwapMax=0', '--setenv=FABRIC_STORAGE_ROOT=' + str(self.storage)):
+            self.assertIn(flag, self.launched)
+
+    def test_unset_storage_root_resolves_to_the_xdg_cache_default(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = resource_group.Path(directory).resolve()
+            self.assertEqual(resource_group.storage_root({'HOME': str(home)}),
+                             home / '.cache/fabrico11y')
+            self.assertEqual(resource_group.storage_root(
+                {'HOME': '/unused', 'XDG_CACHE_HOME': str(home / 'xdg'), 'FABRIC_STORAGE_ROOT': ''}),
+                home / 'xdg/fabrico11y')
+            self.assertEqual(resource_group.storage_root(
+                {'HOME': str(home), 'FABRIC_STORAGE_ROOT': str(home / 'chosen')}), home / 'chosen')
+
+    def test_memory_cap_scales_to_the_host_up_to_the_workstation_ceiling(self):
+        for host, high, cap in [(8, 5, 6), (16, 10, 12), (64, 16, 20)]:
+            self.assertEqual(resource_group.memory_limits(host * GIB, page=4096),
+                             (high * GIB, cap * GIB))
+        self.assertEqual(resource_group.memory_limits(64 * GIB, 12 * GIB, 4096), (10 * GIB, 12 * GIB))
+        self.assertEqual([value % 65536 for value in resource_group.memory_limits(10 * GIB + 12345, page=65536)], [0, 0])
+        with self.assertRaisesRegex(RuntimeError, 'insufficient host RAM'):
+            resource_group.memory_limits(GIB, page=4096)
+
+    def test_ram_backed_storage_root_is_refused_before_anything_is_created(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = resource_group.Path(directory) / 'new/root'
+            for kind in ('tmpfs', 'ramfs', ''):
+                with patch.object(resource_group, 'filesystem_type', return_value=kind):
+                    with self.assertRaisesRegex(RuntimeError, 'RAM-backed'):
+                        resource_group.require_storage(root)
+            self.assertFalse(root.parent.exists())
+
+    @unittest.skipUnless(os.path.isdir('/dev/shm') and resource_group.filesystem_type('/dev/shm') == 'tmpfs',
+                         'needs a tmpfs /dev/shm')
+    def test_real_tmpfs_is_refused(self):
+        with self.assertRaisesRegex(RuntimeError, 'RAM-backed'):
+            resource_group.require_storage('/dev/shm/fabric-storage-root-test')
+
+    def test_disk_backed_owner_storage_root_is_accepted(self):
+        owner = resource_group.Path('/run/media/user/data/FabricO11y')
+        self.assertEqual(resource_group.storage_root({'FABRIC_STORAGE_ROOT': str(owner)}), owner)
+        with tempfile.TemporaryDirectory() as directory, \
+             patch.object(resource_group, 'filesystem_type', return_value='ext2/ext3'):
+            root = resource_group.Path(directory) / 'owned'
+            self.assertEqual(resource_group.require_storage(root), root)
+            self.assertEqual(resource_group.require_storage(root), root)
+            with patch.object(resource_group.os, 'getuid', return_value=os.getuid() + 1):
+                with self.assertRaisesRegex(RuntimeError, 'owned by the invoking user'):
+                    resource_group.require_storage(root)
+            (root / 'file').write_text('not a directory')
+            with self.assertRaises(OSError):
+                resource_group.require_storage(root / 'file')
+
+    def test_temporary_files_and_builds_use_storage_root(self):
+        self.assertEqual(resource_group.Path(os.environ['FABRIC_STORAGE_ROOT']), resource_group.STORAGE)
+        self.assertEqual(resource_group.require_storage(), resource_group.STORAGE)
         root = resource_group.STORAGE.resolve()
         self.assertTrue(resource_group.Path(os.environ['CARGO_TARGET_DIR']).is_relative_to(root))
         with tempfile.TemporaryDirectory() as directory:
