@@ -42,9 +42,8 @@ and body streaming. Content-Length and every streamed chunk are checked against
 allocation and retained parsed/DOM representations remain additional memory;
 these wire bounds are not a browser RSS guarantee. Server query pages are capped
 independently. The UI asks for at most 200 rows and half-open windows no longer
-than 24 hours. It lowers the row count to the current grant, labels time presets
-with their actual granted duration, and rejects explicit ranges exceeding that
-grant before fetch. The server independently enforces the same authority.
+than 24 hours, and rejects explicit ranges exceeding 24 hours before fetch. The
+server independently enforces the same bounds.
 
 Session validation precedes data display. Offline notification, logout,
 cross-tab logout and known absolute expiry clear protected transient views and
@@ -56,7 +55,7 @@ retry an unsuccessful revocation. API
 401/403 locks the current view. A cross-tab channel transports only the literal
 logout notice, never cookies, credentials or telemetry. WebAuthn JSON conversion
 is limited to ceremony options and credential fields; telemetry never uses JS
-JSON.parse. Fresh passkey verification and every grant are enforced by the
+JSON.parse. Fresh passkey verification and the role guard are enforced by the
 server, independently of disabled UI controls.
 
 Live tail deliberately differs from the pure identity-deduplicating model below:
@@ -83,19 +82,16 @@ its UTF-8 editing budget is checked before transport.
 
 The trace related-log action copies the exact applied source and half-open
 window, then searches literal trace-ID text in log bodies. Missing matching text
-is not evidence that the trace has no related logs. Overview refreshes authorized
+is not evidence that the trace has no related logs. Overview refreshes the Spindle
 inventory and explicitly loads the dedicated companion's recorded process
 observations. Pipeline names custody boundaries and shows returned status values;
 neither view invents health, throughput or unreported backlog. Human-readable UTC
 timestamps retain exact fractional digits and unsigned values in row titles and
 expandable fields. Exact query inputs, evidence and row JSON start collapsed.
 
-Explicit workload/human/delegated scopes are parsed with byte, field and numeric
-bounds, and checked against the current session grant for useful client errors.
-The server rechecks policy, resource scope and fresh verification. A grant editor
-cannot make an empty enrollment scope installation-wide by inference. One-time
-secrets are transient page state with a clear control; they are removed from
-status/result summaries.
+The reader-token form checks name and lifetime bounds for useful client errors; the
+server rechecks the role and fresh verification. One-time secrets are transient page
+state with a clear control; they are removed from status/result summaries.
 
 ## Request ownership
 

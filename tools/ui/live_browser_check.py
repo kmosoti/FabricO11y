@@ -51,6 +51,8 @@ def main():
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--inject-rejection-defect',choices=('error','status'))
     parser.add_argument('--inject-api-cache-defect', action='store_true')
+    parser.add_argument('--inject-role-defect', action='store_true',
+                        help='negative control: report a reader token as admitted on an owner route')
     parser.add_argument('--inject-nonresident-enrollment', action='store_true',
                         help='negative control: weaken only browser enrollment options')
     parser.add_argument('--browser', choices=('chrome','firefox'), default='chrome')
@@ -86,6 +88,7 @@ def main():
                'scope': 'finite virtual CTAP2 desktop/narrow browser integration; not hardware/mobile/installed-app qualification',
                'tls_scope': 'exact fixture leaf SPKI trusted by this isolated browser only; Spindle trusts fixture CA',
                'injected_api_cache_defect': args.inject_api_cache_defect,
+               'injected_role_defect': args.inject_role_defect,
                'injected_nonresident_enrollment': args.inject_nonresident_enrollment,
                'injected_rejection_defect':args.inject_rejection_defect,
                'source_sha256': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
@@ -206,13 +209,17 @@ def main():
     def bearer_api(token,path,method='GET',body=None):
         pace_api()
         request=urllib.request.Request(origin+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={
-            'Authorization':'Bearer '+token,'x-fabric-client-version':'1','Content-Type':'application/json'})
+            **({'Authorization':'Bearer '+token} if token else {}),'x-fabric-client-version':'1','Content-Type':'application/json'})
         try:
             with urllib.request.urlopen(request,context=context,timeout=15) as response:
-                return response.status,json.load(response)
+                result=response.status,json.load(response)
         except urllib.error.HTTPError as error:
             text=error.read().decode()
-            return error.code,json.loads(text) if text else None
+            result=error.code,json.loads(text) if text else None
+        if args.inject_role_defect and token and path=='/v1/console/audit' and result[0]==403:
+            receipt['role_injection_actual_witness']={'status':result[0],'error':result[1].get('error')}
+            return 200,{'events':[]}
+        return result
 
     def cdp(command, params):
         return wd('/goog/cdp/execute', {'cmd': command, 'params': params})
@@ -456,7 +463,7 @@ self.addEventListener("fetch",event=>{
         bootstrap_replay=bootstrap
         bootstrap = None
         click('Create owner passkey')
-        wait(lambda: js('return document.body.textContent.includes("Browser fixture owner · human")'), 'actual WebAuthn owner registration',seconds=65 if args.browser=='firefox' else 25)
+        wait(lambda: js('return document.body.textContent.includes("Browser fixture owner · owner")'), 'actual WebAuthn owner registration',seconds=65 if args.browser=='firefox' else 25)
         check(not bootstrap_file.exists(), 'first owner consumed protected one-time bootstrap')
         selection=js('return window.fixtureCeremonyDiagnostic.authenticatorSelection')
         receipt['registration_selection']=selection
@@ -511,7 +518,7 @@ self.addEventListener("fetch",event=>{
         expect((unsupported['status'],json.loads(unsupported['text'])),426,'console update required','unsupported client cannot submit incompatible query')
         nav('Settings')
         click('Refresh inventory')
-        wait(lambda: js('return document.body.textContent.includes("fabric-server-self")'), 'actual companion scoped inventory')
+        wait(lambda: js('return document.body.textContent.includes("fabric-server-self")'), 'actual companion inventory')
         check(js('return document.body.textContent.includes("enrollment_id")'), 'inventory exposes immutable enrollment IDs')
         click('Refresh status')
         wait(lambda: js('return document.body.textContent.includes("retention_bytes")'), 'effective measured storage policy')
@@ -543,7 +550,7 @@ self.addEventListener("fetch",event=>{
         js('Array.from(document.querySelectorAll("details")).find(e=>e.textContent.includes("Enroll a new Spindle")).open=true')
         field('New Spindle name','browser-edge')
         click('Enroll with configuration above')
-        wait(lambda:js('return document.body.textContent.includes("One-time credential or invitation")'),'scoped Spindle enrollment')
+        wait(lambda:js('return document.body.textContent.includes("One-time credential")'),'Spindle enrollment')
         node_token=js('return Array.from(document.querySelectorAll("code")).map(e=>e.textContent.trim()).find(value=>/^[a-f0-9]{64}$/.test(value))')
         token_file=work/'edge-token';token_file.write_text(node_token+'\n');token_file.chmod(0o600);node_token=None
         click('Clear displayed credential')
@@ -565,7 +572,7 @@ self.addEventListener("fetch",event=>{
         field('Metric interval (1–3600 s)','7')
         field('New Spindle name','browser-canary-b')
         click('Enroll with configuration above')
-        wait(lambda:js('return document.body.textContent.includes("One-time credential or invitation")'),'second canary immutable enrollment')
+        wait(lambda:js('return document.body.textContent.includes("One-time credential")'),'second canary immutable enrollment')
         b_token=js('return Array.from(document.querySelectorAll("code")).map(e=>e.textContent.trim()).find(value=>/^[a-f0-9]{64}$/.test(value))')
         b_token_file=work/'canary-b-token';b_token_file.write_text(b_token+'\n');b_token_file.chmod(0o600);b_token=None
         click('Clear displayed credential')
@@ -581,19 +588,19 @@ self.addEventListener("fetch",event=>{
         receipt['second_canary_freshness_ns']=b_answer['freshness']['browser-canary-b']
         field('Existing Spindle name','browser-edge')
         click('pause')
-        wait(lambda:not js('return document.body.textContent.includes("Working…")'),'scoped pause')
+        wait(lambda:not js('return document.body.textContent.includes("Working…")'),'Spindle pause')
         code,current=api('/v1/console/nodes')
-        check(next(n for n in current['nodes'] if n['name']=='browser-edge')['status']=='paused','actual scoped Spindle pause applied to control')
+        check(next(n for n in current['nodes'] if n['name']=='browser-edge')['status']=='paused','actual Spindle pause applied to control')
         click('resume')
-        wait(lambda:not js('return document.body.textContent.includes("Working…")'),'scoped resume')
+        wait(lambda:not js('return document.body.textContent.includes("Working…")'),'Spindle resume')
         code,current=api('/v1/console/nodes')
-        check(next(n for n in current['nodes'] if n['name']=='browser-edge')['status']=='active','actual scoped Spindle resume applied to control')
+        check(next(n for n in current['nodes'] if n['name']=='browser-edge')['status']=='active','actual Spindle resume applied to control')
         nav('Explore')
         signal_view=js('const select=Array.from(document.querySelectorAll("label")).find(e=>e.textContent.trim().startsWith("Signal")).querySelector("select");return {selected:select.value,label:Array.from(document.querySelectorAll("label")).map(e=>e.textContent.trim()).find(text=>text.startsWith("Body substring")||text.startsWith("Exact metric name")||text.startsWith("Exact trace ID"))}')
         receipt['initial_signal_view']=signal_view
         check(signal_view['label'].startswith({'logs':'Body substring','metrics':'Exact metric name','spans':'Exact trace ID'}.get(signal_view['selected'],'invalid selection')),'initial granted signal selection agrees with actual query filter label')
         field('Signal','logs')
-        field('Source name (blank = authorized scope)','browser-edge')
+        field('Source name (blank = all sources)','browser-edge')
         field('Body substring (case-sensitive)','browser-xss-fixture')
         click('Run query')
         wait(lambda:js('return document.querySelector(".results")?.textContent.includes("browser-xss-fixture")'),'actual untrusted source query')
@@ -646,7 +653,7 @@ self.addEventListener("fetch",event=>{
         check(js('return document.querySelectorAll(".pipeline-stages li").length===5 && document.body.textContent.includes("Server ACK follows durable commit")'),'pipeline states actual custody boundary through readable stages')
         nav('Live Tail')
         field('Signal','logs')
-        field('Source name (blank = authorized scope)','browser-edge')
+        field('Source name (blank = all sources)','browser-edge')
         field('Body substring (case-sensitive)','browser-xss-fixture')
         click('Resume 5-second polling')
         wait(lambda:js('return document.querySelectorAll(".tail-line").length>0'),'bounded actual tail snapshot',seconds=12)
@@ -691,7 +698,7 @@ self.addEventListener("fetch",event=>{
             check(all(item['rows']<=200 and item['bytes']<=262144 for item in polling),'two-minute tail retains explicit row/UTF-8 display bounds')
             click('Pause 5-second polling')
         nav('Explore')
-        field('Source name (blank = authorized scope)', 'fabric-server-self')
+        field('Source name (blank = all sources)', 'fabric-server-self')
         field('Body substring (case-sensitive)', '')
         click('Run query')
         wait(lambda: js('return document.body.textContent.includes("Evidence and exact applied request") && !document.body.textContent.includes("Working…")'), 'actual retained-history response')
@@ -747,7 +754,7 @@ self.addEventListener("fetch",event=>{
         js('document.documentElement.style.zoom=""')
         wd('/window/rect', {'width':1440,'height':1100})
         code, _ = api('/v1/console/query', 'POST', {'kind':'rate','name':'test','from_ns':1,'to_ns':2})
-        expect((code,_),400,'unbounded rate queries are unavailable in the console','rate endpoint is unavailable in scoped console')
+        expect((code,_),400,'unbounded rate queries are unavailable in the console','rate endpoint is unavailable in the console')
         cache_keys = async_js('const done=arguments[arguments.length-1];caches.keys().then(async keys=>done((await Promise.all(keys.map(async key=>(await(await caches.open(key)).keys()).map(r=>new URL(r.url).pathname)))).flat()))')
         check(all(path.startswith('/console/') for path in cache_keys), 'worker caches only public shell paths')
         check(js('return localStorage.length===0 && sessionStorage.length===0'), 'no credentials or telemetry in Web Storage')
@@ -770,51 +777,53 @@ self.addEventListener("fetch",event=>{
         click('Run query')
         wait(lambda:js('return window.fixtureDelayedReady'),'real authenticated response is held before disconnect')
         js('window.dispatchEvent(new Event("offline"))')
-        check(js('return !document.querySelector(".results") && document.body.textContent.includes("Sign in with a passkey") && !document.body.textContent.includes("Browser fixture owner · human")'), 'offline clears protected in-memory views')
+        check(js('return !document.querySelector(".results") && document.body.textContent.includes("Sign in with a passkey") && !document.body.textContent.includes("Browser fixture owner · owner")'), 'offline clears protected in-memory views')
         wait(lambda:js('return window.fixtureDelayedDelivered && !document.body.textContent.includes("Working…")'),'delayed authenticated response completed after lock')
         check(js('return !document.querySelector(".results") && document.body.textContent.includes("Sign in to view your telemetry.")'),'delayed response cannot restore protected view after disconnect')
         js('window.fetch=window.fixtureOriginalFetch;delete window.fixtureOriginalFetch')
         click('Check session')
-        wait(lambda: js('return document.body.textContent.includes("Browser fixture owner · human")'), 'online session explicitly revalidated')
+        wait(lambda: js('return document.body.textContent.includes("Browser fixture owner · owner")'), 'online session explicitly revalidated')
         nav('Settings')
         code,inventory=api('/v1/console/nodes')
-        enrollment=next(node['enrollment_id'] for node in inventory['nodes'] if node['name']=='browser-edge')
-        grant={'actions':['telemetry_read','inventory_read'],'installation_wide':False,'enrollments':[enrollment],
-               'signals':['logs'],'max_query_window_s':3600,'max_query_rows':200,'allowed_log_paths':[],
-               'min_interval_s':1,'max_interval_s':3600,'enrollment_namespace':None,'max_enrollments':0}
-        field('Operation','workload')
-        field('Display name or immutable target ID','Browser fixture reader')
+        names={node['name'] for node in inventory['nodes']}
+        check(code==200 and {'browser-edge','browser-canary-b','fabric-server-self'}<=names,'owner inventory lists every enrolled source')
+        spindle_token=token_file.read_text().strip()
+        field('Reader name','Browser fixture reader')
         field('Credential lifetime (seconds)','1800' if args.expired_cursor_probe else '600')
-        field('Explicit scope (review every field before issuance)',json.dumps(grant))
-        click('Submit reviewed scoped change')
-        wait(lambda:js('return document.body.textContent.includes("credential_id") && document.querySelector("code")!==null'), 'real scoped workload credential issuance')
+        click('Issue reader token')
+        wait(lambda:js('return document.body.textContent.includes("credential_id") && document.querySelector("code")!==null'), 'real reader token issuance')
         credential=js('return Array.from(document.querySelectorAll("code")).map(e=>e.textContent.trim()).find(value=>/^[a-f0-9]{64}$/.test(value))')
         issuance=next(v for v in (json.loads(text) for text in js('return Array.from(document.querySelectorAll(".live-json")).map(e=>e.textContent)') if text.strip().startswith('{')) if isinstance(v,dict) and 'credential_id' in v)
-        check(bool(credential),'issued workload secret displayed once')
+        check(bool(credential),'issued reader secret displayed once')
         click('Clear displayed credential')
         check(js('return !Array.from(document.querySelectorAll("code")).some(e=>/^[a-f0-9]{64}$/.test(e.textContent.trim()))'),'one-time credential clear control removes displayed secret')
-        # Exercise the issued workload over trusted native TLS without browser cookies.
-        headers={'Authorization':'Bearer '+credential,'x-fabric-client-version':'1'}
-        request=urllib.request.Request(origin+'/v1/console/nodes',headers=headers)
-        with urllib.request.urlopen(request,context=context,timeout=10) as response:scoped_nodes=json.load(response)
-        check(len(scoped_nodes['nodes'])==1 and all(node['enrollment_id']==enrollment for node in scoped_nodes['nodes']),'issued credential sees only its scoped immutable enrollment')
-        request=urllib.request.Request(origin+'/v1/console/principals',headers=headers)
-        try:
-            urllib.request.urlopen(request,context=context,timeout=10)
-            raise AssertionError('workload unexpectedly gained identity authority')
-        except urllib.error.HTTPError as error:
-            expect((error.code,json.load(error)),403,'access denied','workload identity administration denied')
+        # Role matrix over trusted native TLS without browser cookies (ADR-0029): a
+        # reader reads everything and reaches nothing else; neither anonymous callers
+        # nor a Spindle token are console credentials.
+        code,reader_nodes=bearer_api(credential,'/v1/console/nodes')
+        check(code==200 and {n['name'] for n in reader_nodes['nodes']}==names,'reader inventory lists every enrolled source')
+        owner_routes=(('GET','/v1/console/session',None),('GET','/v1/console/audit',None),('GET','/v1/console/passkeys',None),
+                      ('GET','/v1/console/sessions',None),('GET','/v1/console/readers',None),('POST','/v1/console/readers',{'name':'escalation','ttl_s':60}),
+                      ('POST','/v1/console/nodes',{'name':'escalation'}),('POST','/v1/console/nodes/browser-edge/pause',None),
+                      ('PUT','/v1/console/nodes/browser-edge/config',{'logs':[],'metric_interval_s':15}),('POST','/v1/console/passkeys/start',None),
+                      ('POST','/v1/console/logout',None))
+        query_probe={'kind':'logs','from_ns':1,'to_ns':2,'limit':1}
+        for method,path,body in owner_routes:
+            expect(bearer_api(credential,path,method,body),403,'role not permitted',f'reader token refused on owner route {method} {path}')
+        for token,who in ((None,'anonymous caller'),(spindle_token,'Spindle token')):
+            for method,path,body in (owner_routes[0],owner_routes[5],('GET','/v1/console/nodes',None),('POST','/v1/console/query',query_probe)):
+                expect(bearer_api(token,path,method,body),401,'sign in required',f'{who} refused on console route {method} {path}')
+        check(bearer_api(credential,'/v1/config')[0]==401 and bearer_api(credential,'/v1/batches','POST',{})[0]==401 and api('/v1/config')[0]==401,'reader token and owner session are not Spindle credentials')
         read={'kind':'logs','node':'browser-edge','from_ns':trace_origin-60_000_000_000,'to_ns':time.time_ns()+1_000_000_000,'contains':'browser-page-fixture','limit':200,'page':None}
-        code,scoped_page=bearer_api(credential,'/v1/console/query','POST',read)
-        check(code==200 and len(scoped_page['rows'])==200 and all(row['node']=='browser-edge' for row in scoped_page['rows']),'log-only bearer query returns only independently produced authorized-source rows')
-        check(all(f'ordinal={i:03d}' in row['body'] for i,row in enumerate(scoped_page['rows'])),'scoped query matches producer ordinal constants')
+        code,reader_page=bearer_api(credential,'/v1/console/query','POST',read)
+        check(code==200 and len(reader_page['rows'])==200 and all(row['node']=='browser-edge' for row in reader_page['rows']),'reader bearer query returns the independently produced source rows')
+        check(all(f'ordinal={i:03d}' in row['body'] for i,row in enumerate(reader_page['rows'])),'reader query matches producer ordinal constants')
         expect(bearer_api(credential,'/v1/console/query','POST',dict(read,contains='x'*4097)),400,'query filter exceeds budget','oversize query filter receives explicit bounded-input rejection')
         positive_code,positive_after_pressure=bearer_api(credential,'/v1/console/query','POST',read)
-        check(positive_code==200 and positive_after_pressure['rows']==scoped_page['rows'],'query payload pressure preserves previously committed producer observations')
-        code,scoped_status=bearer_api(credential,'/v1/console/status')
-        check('browser-canary-b' not in json.dumps(scoped_status) and str(b_log) not in json.dumps(scoped_status),'scoped status excludes second source inventory paths and freshness')
-        check(code==200 and 'committed_group' not in scoped_status,'scoped status hides global committed group')
-        check(scoped_page['freshness'].get('browser-edge')!=receipt['second_canary_freshness_ns'],'independently collected canary fixtures have distinct freshness observations')
+        check(positive_code==200 and positive_after_pressure['rows']==reader_page['rows'],'query payload pressure preserves previously committed producer observations')
+        code,reader_status=bearer_api(credential,'/v1/console/status')
+        check(code==200 and 'committed_group' in reader_status and reader_status['storage']['retention_bytes']>0,'reader status reports the committed group and effective storage policy')
+        check(reader_page['freshness'].get('browser-edge')!=receipt['second_canary_freshness_ns'],'independently collected canary fixtures have distinct freshness observations')
         all_logs_query=dict(read,contains='')
         all_logs_code,all_logs=bearer_api(credential,'/v1/console/query','POST',all_logs_query)
         all_log_rows=list(all_logs['rows'])
@@ -822,18 +831,18 @@ self.addEventListener("fetch",event=>{
             next_code,next_logs=bearer_api(credential,'/v1/console/query','POST',dict(all_logs_query,page=all_logs['next_page']))
             check(next_code==200 and next_logs['next_page'] is None,'bounded complete canary log witness spans at most two pages')
             all_log_rows.extend(next_logs['rows'])
-        check(all_logs_code==200 and all_logs['freshness'].get('browser-edge')==max(row['observed_ns'] for row in all_log_rows),'log-only freshness reflects authorized log observations without later metric timestamp')
-        check('browser-canary-b' not in json.dumps(scoped_page) and canary_b not in json.dumps(scoped_page),'scoped rows and evidence exclude independently witnessed second canary source')
-        expect(bearer_api(credential,'/v1/console/query','POST',dict(canary_query)),403,'access denied','log grant cannot query second immutable canary source')
-        denied_source=dict(read,node='fabric-server-self')
-        expect(bearer_api(credential,'/v1/console/query','POST',denied_source), 403, 'access denied', 'log grant cannot query another immutable source')
-        denied_signal={'kind':'metrics','node':'browser-edge','from_ns':read['from_ns'],'to_ns':read['to_ns'],'name':'system.cpu.time','limit':200,'page':None}
-        expect(bearer_api(credential,'/v1/console/query','POST',denied_signal), 403, 'access denied', 'log-only grant cannot query metric observations')
-        page=scoped_page['next_page']
-        check(bool(page),'scoped continuation handle issued')
+        check(all_logs_code==200 and all_logs['freshness'].get('browser-edge')==max(row['observed_ns'] for row in all_log_rows),'log query freshness reflects log observations without later metric timestamp')
+        canary_code,canary_page=bearer_api(credential,'/v1/console/query','POST',dict(canary_query))
+        check(canary_code==200 and [row['body'] for row in canary_page['rows']]==[canary_b] and canary_page['freshness']['browser-canary-b']==receipt['second_canary_freshness_ns'],'reader reads the second independently produced source with its own freshness')
+        metric_query={'kind':'metrics','node':'browser-edge','from_ns':read['from_ns'],'to_ns':read['to_ns'],'name':'system.cpu.time','limit':200,'page':None}
+        metric_code,metric_page=bearer_api(credential,'/v1/console/query','POST',metric_query)
+        check(metric_code==200 and len(metric_page['rows'])>0,'reader reads metric observations as well as logs')
+        check(bearer_api(credential,'/v1/console/query','POST',dict(read,node='fabric-server-self',contains=''))[0]==200,'reader reads the companion source')
+        page=reader_page['next_page']
+        check(bool(page),'reader continuation handle issued')
         expect(bearer_api(credential,'/v1/console/query','POST',dict(read,page=page+'x')), 410, 'page expired; run the query again', 'modified opaque page handle rejected')
         expect(bearer_api(credential,'/v1/console/query','POST',dict(read,page=page,contains='changed')), 403, 'access denied', 'page handle bound to original query')
-        expect(api('/v1/console/query','POST',dict(read,page=page)), 403, 'access denied', 'scoped page handle cannot be reused by different principal')
+        expect(api('/v1/console/query','POST',dict(read,page=page)), 403, 'access denied', 'reader page handle cannot be reused by the owner session')
         if args.expired_cursor_probe:
             cursor_wait_start=time.monotonic()
             while time.monotonic()-cursor_wait_start<902:
@@ -844,52 +853,32 @@ self.addEventListener("fetch",event=>{
             receipt['cursor_expiry_wait_s']=time.monotonic()-cursor_wait_start
             click('Reverify with passkey')
             wait(lambda:not js('return document.body.textContent.includes("Working…")'),'fresh passkey step-up after expiry wait')
-        field('Operation','rotate')
+        # Rotation is issue-then-revoke: a second reader coexists until the first is revoked.
+        field('Reader name','Browser fixture second reader')
         field('Credential lifetime (seconds)','1800' if args.expired_cursor_probe else '600')
-        field('Display name or immutable target ID',issuance['principal_id'])
-        click('Submit reviewed scoped change')
-        wait(lambda:js('return Array.from(document.querySelectorAll("code")).some(e=>/^[a-f0-9]{64}$/.test(e.textContent.trim()))'),'actual workload rotation one-time credential')
-        rotated=js('return Array.from(document.querySelectorAll("code")).map(e=>e.textContent.trim()).find(value=>/^[a-f0-9]{64}$/.test(value))')
+        click('Issue reader token')
+        wait(lambda:js('return Array.from(document.querySelectorAll("code")).some(e=>/^[a-f0-9]{64}$/.test(e.textContent.trim()))'),'second reader token issuance')
+        reader_token=js('return Array.from(document.querySelectorAll("code")).map(e=>e.textContent.trim()).find(value=>/^[a-f0-9]{64}$/.test(value))')
         click('Clear displayed credential')
-        old_status,old_answer=bearer_api(credential,'/v1/console/nodes')
-        receipt['rotation_previous_credential_status']=old_status
-        check(old_status==200,'previous workload bearer remains during documented bounded rotation overlap')
-        check(bearer_api(rotated,'/v1/console/nodes')[0]==200,'rotated workload bearer authorizes existing scope')
-        field('Exact passkey, session, principal or credential ID',issuance['credential_id'])
-        click('revoke credentials record')
+        check(bearer_api(credential,'/v1/console/nodes')[0]==200 and bearer_api(reader_token,'/v1/console/nodes')[0]==200,'independent reader tokens coexist')
+        field('Exact passkey, session or reader ID',issuance['credential_id'])
+        click('revoke readers record')
         wd('/alert/accept',{})
-        wait(lambda:bearer_api(credential,'/v1/console/nodes')[0]==401,'explicit revocation immediately retires old bearer')
-        expect(bearer_api(credential,'/v1/console/nodes'), 401, 'sign in required', 'explicit revoked credential no longer authorizes')
-        click('Check session')
-        wait(lambda:js('return document.body.textContent.includes("Sign in to view your telemetry.")'),'policy invalidation after revocation locks browser')
-        field('Principal ID',principal_id)
-        click('Use passkey')
-        wait(lambda:js('return document.body.textContent.includes("Browser fixture owner · human")'),'fresh owner login after credential revocation')
-        nav('Settings')
-        credential=rotated
-        field('Operation','delegation')
-        field('Display name or immutable target ID',issuance['principal_id'])
-        field('Credential lifetime (seconds)','60')
-        narrower=dict(grant,max_query_window_s=1800,max_query_rows=100)
-        field('Explicit scope (review every field before issuance)',json.dumps(narrower))
-        click('Submit reviewed scoped change')
-        wait(lambda:js('return Array.from(document.querySelectorAll("code")).some(e=>/^[a-f0-9]{64}$/.test(e.textContent.trim()))'),'actual narrowed AI delegation issuance')
-        delegated_credential=js('return Array.from(document.querySelectorAll("code")).map(e=>e.textContent.trim()).find(value=>/^[a-f0-9]{64}$/.test(value))')
-        click('Clear displayed credential')
-        check(bearer_api(delegated_credential,'/v1/console/query','POST',dict(read,limit=100))[0]==200,'delegated bearer authorizes narrowed producer query')
-        expect(bearer_api(delegated_credential,'/v1/console/query','POST',read),400,'query exceeds authorized bounds','delegated bearer cannot exceed narrower row bound')
+        wait(lambda:bearer_api(credential,'/v1/console/nodes')[0]==401,'explicit revocation immediately retires one reader token')
+        expect(bearer_api(credential,'/v1/console/nodes'), 401, 'sign in required', 'explicit revoked reader token no longer authorizes')
+        check(bearer_api(reader_token,'/v1/console/nodes')[0]==200,'revoking one reader token leaves the other valid')
         credential=None
-        check(api('/v1/console/session')[0] == 200, 'successful issuance preserves unchanged issuer session')
+        check(api('/v1/console/session')[0] == 200, 'reader issuance and revocation preserve the owner session')
         first_handle=wd('/window',method='GET')
         second_handle=wd('/window/new',{'type':'tab'})['handle']
         wd('/window',{'handle':second_handle})
         wd('/url',{'url':origin+'/console/'})
         wait(lambda:js('return !!document.querySelector("[data-testid=connect-server]")'),'second tab shell')
         click('Connect to server')
-        wait(lambda:js('return document.body.textContent.includes("Browser fixture owner · human")'),'second tab validated same session')
+        wait(lambda:js('return document.body.textContent.includes("Browser fixture owner · owner")'),'second tab validated same session')
         nav('Explore')
         field('Signal','logs')
-        field('Source name (blank = authorized scope)','browser-edge')
+        field('Source name (blank = all sources)','browser-edge')
         field('Body substring (case-sensitive)','browser-page-fixture')
         # The deliberate 902-second expiry wait ages these original rows beyond
         # a fresh tab's default 15-minute preset. Preserve the independently
@@ -902,14 +891,14 @@ self.addEventListener("fetch",event=>{
         click('Run query')
         wait(lambda:js('return window.fixtureLogoutResponseReady'),'real authenticated response is held before cross-tab logout')
         wd('/window',{'handle':first_handle})
-        nav('Explore');field('Signal','logs');field('Source name (blank = authorized scope)','browser-edge');field('Body substring (case-sensitive)','browser-page-fixture')
+        nav('Explore');field('Signal','logs');field('Source name (blank = all sources)','browser-edge');field('Body substring (case-sensitive)','browser-page-fixture')
         js('document.querySelector("details.exact-range").open=true')
         field('Start (Unix ns)',str(read['from_ns']));field('End, exclusive (Unix ns)',str(read['to_ns']))
         js('window.fixtureBusyLogoutFetch=window.fetch;window.fixtureBusyLogoutReady=false;window.fixtureBusyLogoutAbort=false;window.fixtureBusyLogoutDelivered=false;window.fixtureBusyLogoutComplete=false;window.fixtureBusyLogoutOrder=[];window.fetch=async(...args)=>{const url=typeof args[0]==="string"?args[0]:args[0].url;const path=new URL(url,location.href).pathname;window.fixtureBusyLogoutOrder.push(path+":start");if(path==="/v1/console/query"){const signal=args[0]?.signal||args[1]?.signal;if(signal)signal.addEventListener("abort",()=>window.fixtureBusyLogoutAbort=true,{once:true});}const response=await window.fixtureBusyLogoutFetch(...args);if(path==="/v1/console/query"){window.fixtureBusyLogoutReady=true;await new Promise(resolve=>setTimeout(resolve,1200));window.fixtureBusyLogoutDelivered=true;}window.fixtureBusyLogoutOrder.push(path+":delivered");if(path==="/v1/console/logout")window.fixtureBusyLogoutComplete=true;return response}')
         click('Run query');wait(lambda:js('return window.fixtureBusyLogoutReady'),'first tab holds actual reply before busy signout')
         logout_cookie=next(item for item in wd('/cookie',method='GET') if item['name'].startswith('__Host-'))
         click('Sign out')
-        check(js('return !document.querySelector(".results") && document.body.textContent.includes("Sign in with a passkey") && !document.body.textContent.includes("Browser fixture owner · human")'),'signout clears protected display immediately during pending read')
+        check(js('return !document.querySelector(".results") && document.body.textContent.includes("Sign in with a passkey") && !document.body.textContent.includes("Browser fixture owner · owner")'),'signout clears protected display immediately during pending read')
         wait(lambda:js('return window.fixtureBusyLogoutAbort'),'signout aborts pending real read transport')
         wait(lambda:js('return window.fixtureBusyLogoutDelivered && window.fixtureBusyLogoutComplete && !document.body.textContent.includes("Working…")'),'queued server logout completes after pending read transport')
         logout_order=js('return window.fixtureBusyLogoutOrder')
@@ -921,15 +910,13 @@ self.addEventListener("fetch",event=>{
         wait(lambda:js('return document.body.textContent.includes("Sign in to view your telemetry.")'),'cross-tab logout cleared protected views')
         check(js('return document.body.textContent.includes("another tab logged out")'),'broadcast carries logout to same-origin tab')
         wait(lambda:js('return window.fixtureLogoutDelivered && !document.body.textContent.includes("Working…")'),'held real reply completes after actual cross-tab logout')
-        check(js('return window.fixtureLogoutLockedAt!==null && window.fixtureLogoutLockedAt<window.fixtureLogoutDeliveredAt && !document.querySelector(".results") && !document.body.textContent.includes("Browser fixture owner · human")'),'late authenticated reply cannot restore protected display after actual logout')
+        check(js('return window.fixtureLogoutLockedAt!==null && window.fixtureLogoutLockedAt<window.fixtureLogoutDeliveredAt && !document.querySelector(".results") && !document.body.textContent.includes("Browser fixture owner · owner")'),'late authenticated reply cannot restore protected display after actual logout')
         wd('/window',method='DELETE')
         wd('/window',{'handle':first_handle})
         expect(api('/v1/console/session'), 401, 'sign in required', 'logged-out cookie no longer grants session')
-        expect(bearer_api(delegated_credential,'/v1/console/nodes'), 401, 'sign in required', 'parent human logout immediately retires delegation')
-        delegated_credential=None
-        check(bearer_api(rotated,'/v1/console/nodes')[0]==200,'ordinary scoped workload remains independent of human logout')
-        recovery_credential=rotated
-        rotated=None
+        check(bearer_api(reader_token,'/v1/console/nodes')[0]==200,'reader token remains independent of owner logout')
+        recovery_credential=reader_token
+        reader_token=None
         request=urllib.request.Request(origin+'/v1/console/session',headers={
             'Cookie':logout_cookie['name']+'='+logout_cookie['value'],'x-fabric-client-version':'1'})
         try:
@@ -940,7 +927,7 @@ self.addEventListener("fetch",event=>{
         logout_cookie=None
         field('Principal ID', principal_id)
         click('Use passkey')
-        wait(lambda: js('return document.body.textContent.includes("Browser fixture owner · human")'), 'actual WebAuthn assertion login')
+        wait(lambda: js('return document.body.textContent.includes("Browser fixture owner · owner")'), 'actual WebAuthn assertion login')
         nav('Settings')
         current_cookie=next(item for item in wd('/cookie',method='GET') if item['name'].startswith('__Host-'))
         current_session_id=hashlib.sha256(current_cookie['value'].encode()).hexdigest()
@@ -954,58 +941,14 @@ self.addEventListener("fetch",event=>{
         click('Check session')
         wait(lambda:js('return document.body.textContent.includes("Sign in to view your telemetry.")'),'revoked session locks UI')
         field('Principal ID',principal_id);click('Use passkey')
-        wait(lambda:js('return document.body.textContent.includes("Browser fixture owner · human")'),'fresh login after self-session revocation')
-        nav('Settings')
-        field('Operation','invite')
-        field('Display name or immutable target ID','Browser fixture human')
-        invite_grant=dict(grant,max_query_window_s=60,max_query_rows=100)
-        field('Explicit scope (review every field before issuance)',json.dumps(invite_grant))
-        click('Submit reviewed scoped change')
-        wait(lambda:js('return Array.from(document.querySelectorAll("code")).some(e=>/^[a-f0-9]{64}$/.test(e.textContent.trim()))'),'actual local human invitation issuance')
-        invitation=js('return Array.from(document.querySelectorAll("code")).map(e=>e.textContent.trim()).find(value=>/^[a-f0-9]{64}$/.test(value))')
-        click('Clear displayed credential')
+        wait(lambda:js('return document.body.textContent.includes("Browser fixture owner · owner")'),'fresh login after self-session revocation')
         click('Sign out')
-        wait(lambda:js('return document.body.textContent.includes("Sign in to view your telemetry.")'),'owner sign out before account change')
-        remove_authenticator(authenticator)
-        authenticator=add_authenticator()
-        field('One-time invitation',invitation)
-        invitation=None
-        click('Enroll invited passkey')
-        wait(lambda:js('return document.body.textContent.includes("Browser fixture human · human")'),'actual invited human WebAuthn registration')
-        resident_credentials(authenticator, 'invited human enrollment')
-        check(js('return !document.querySelector(".results")'),'account change contains no previous telemetry display')
-        code,invited_inventory=api('/v1/console/nodes')
-        check(code==200 and len(invited_inventory['nodes'])==1 and all(n['enrollment_id']==enrollment for n in invited_inventory['nodes']),'invited human inventory obeys explicit immutable scope')
-        expect(api('/v1/console/principals'), 403, 'access denied', 'invited reader cannot administer identities')
+        wait(lambda:js('return document.body.textContent.includes("Sign in to view your telemetry.")'),'owner sign out leaves the locked shell')
+        check(js('return !document.querySelector(".results")'),'sign out leaves no previous telemetry display')
+        field('Principal ID',principal_id);click('Use passkey')
+        wait(lambda:js('return document.body.textContent.includes("Browser fixture owner · owner")'),'owner login after sign out')
+        check(js('return !document.querySelector(".results")'),'relogin contains no previous telemetry display')
         check(edge.poll() is None,'native producer remains running after bounded expiry and polling')
-        producer_offset=(out/'edge.log').stat().st_size
-        with fixture_log.open('a') as source:source.write(''.join(f'browser-invited-scope-fixture ordinal={i:03d}\n' for i in range(200)))
-        def invited_producer_acked():
-            if edge.poll() is not None:
-                raise AssertionError('native scoped-query producer stopped before fresh delivery')
-            with (out/'edge.log').open() as source:
-                source.seek(producer_offset);events=source.read()
-            batches=re.findall(r'batch=(\d+) metrics=\d+ logs=(\d+)',events)
-            committed=[int(value) for value in re.findall(r'status=ack committed_through=(\d+)',events)]
-            return bool(committed) and sum(int(logs) for sequence,logs in batches if int(sequence)<=max(committed))>=200
-        wait(invited_producer_acked,'independent producer commits all200 new scoped-query observations')
-        nav('Explore');field('Signal','logs');field('Source name (blank = authorized scope)','browser-edge');field('Body substring (case-sensitive)','browser-invited-scope-fixture')
-        def invited_query_ready():
-            if js('return document.querySelectorAll(".results tbody tr").length===100'):return True
-            if not js('return document.body.textContent.includes("Working…")'):
-                pace_api();click('Last 60 seconds (grant cap)');click('Run query')
-            return False
-        wait(invited_query_ready,'actual scoped browser query has 100 producer rows within 60-second grant')
-        invited_rows=[json.loads(value) for value in js('return Array.from(document.querySelectorAll(".results tbody .live-json")).map(e=>e.textContent)')]
-        check(len(invited_rows)==100 and all(f'ordinal={i:03d}' in row['body'] for i,row in enumerate(invited_rows)),'scoped UI row cap matches independent new producer ordinals')
-        applied_query=next(value for value in (json.loads(text) for text in js('return Array.from(document.querySelectorAll(".results > details .live-json")).map(e=>e.textContent)')) if isinstance(value,dict) and value.get('kind')=='logs')
-        check(applied_query['limit']==100 and applied_query['to_ns']-applied_query['from_ns']<=60_000_000_000,'scope-limited UI sends exact 100-row and 60-second authorized query')
-        js('window.fixtureScopeFetch=window.fetch;window.fixtureScopeFetchCount=0;window.fetch=(...args)=>{window.fixtureScopeFetchCount++;return window.fixtureScopeFetch(...args)};document.querySelector("details.exact-range").open=true')
-        field('Start (Unix ns)',str(applied_query['to_ns']-900_000_000_000));field('End, exclusive (Unix ns)',str(applied_query['to_ns']))
-        click('Run query')
-        wait(lambda:js('return document.querySelector("[role=alert]").textContent.includes("60-second")'),'explicit over-grant query reports client validation error')
-        check(js('return window.fixtureScopeFetchCount===0'),'invalid 900-second range rejected before fetch within 60-second grant')
-        js('window.fetch=window.fixtureScopeFetch;delete window.fixtureScopeFetch')
         receipt['actual_api_headers']=js('return window.fixtureApiHeaders')
         check(bool(receipt['actual_api_headers']) and not js('return window.fixtureApiHeadersTruncated') and all(item['cache_control']=='no-store' and item['csp'] and item['coop']=='same-origin' and item['corp']=='same-origin' for item in receipt['actual_api_headers']),'actual authentication and API responses carry no-store CSP COOP and CORP')
         if args.browser=='chrome':
@@ -1025,7 +968,7 @@ self.addEventListener("fetch",event=>{
             check(recovery.returncode==0,'actual offline owner recovery command succeeds after server stop')
             server=launch('server-recovered',[str(args.server.resolve()),'serve',str(config)])
             wait(healthy,'production server reopened after owner recovery')
-            expect(bearer_api(recovery_credential,'/v1/console/nodes'),401,'sign in required','offline recovery invalidates previously issued workload credential')
+            expect(bearer_api(recovery_credential,'/v1/console/nodes'),401,'sign in required','offline recovery invalidates previously issued reader token')
             recovery_credential=None
             wd('/url',{'url':'about:blank'});wd('/url',{'url':origin+'/console/'})
             wait(lambda:js('return !!document.querySelector("[data-testid=connect-server]")'),'recovery public shell')
@@ -1037,7 +980,7 @@ self.addEventListener("fetch",event=>{
             field('Display name','Browser fixture owner')
             field('One-time setup secret',replacement_secret);replacement_secret=None
             click('Create owner passkey')
-            wait(lambda:js('return document.body.textContent.includes("Browser fixture owner · human")'),'real WebAuthn owner enrollment after offline recovery')
+            wait(lambda:js('return document.body.textContent.includes("Browser fixture owner · owner")'),'real WebAuthn owner enrollment after offline recovery')
             resident_credentials(authenticator, 'recovered owner enrollment')
             code,recovered_session=api('/v1/console/session')
             check(code==200 and recovered_session['principal_id']==principal_id,'offline owner recovery preserves immutable owner principal')

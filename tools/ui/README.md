@@ -76,8 +76,8 @@ retains the ID for the two-enrolled-keys/one-active-device case.
 The prospective Firefox fixture is registered separately in
 [console protocol](../../docs/experiments/formal/console-access-protocol.md).
 Resident-key capability alone does not establish a resident credential. The live
-check independently inspects the virtual device after owner, additional-key,
-invitation and recovery enrollment, recording only resident flags and RP IDs.
+check independently inspects the virtual device after owner, additional-key
+and recovery enrollment, recording only resident flags and RP IDs.
 Unsigned client extension output is not used as a server security assertion.
 The shell-only check cannot establish live Firefox passkey acceptance.
 
@@ -85,7 +85,7 @@ The harness verifies a stricter combined 4,000,000,000-byte memory cap (rounded
 down to a kernel page), zero swap, two CPU equivalents and 512 tasks before
 launching fixtures. Its fixture storage ceiling is 512 MiB. The primary native
 producer has a 32 MiB Spool allowance so the finite cursor-expiry wait does not
-exhaust its telemetry buffer; the scoped-query witness first checks that this
+exhaust its telemetry buffer; the reader-query witness first checks that this
 producer remains alive and ACKs the new independent observations. The launcher retains
 the finite outer deadline; browser waits also have a bounded overall budget.
 Receipts include the effective cgroup limits, process and cgroup samples, source
@@ -121,11 +121,16 @@ independent log events for two minutes and records visible rows, UTF-8 bytes and
 resource samples. These are bounded observations, not a general capacity benchmark.
 
 The ordinary run also compares recorded trace geometry and integer timestamps
-with an independent OTLP producer, uses two distinct native sources to check
-scope isolation, and opens a real background tab to verify hidden-tail polling
+with an independent OTLP producer, reads two distinct native sources as a reader
+and as the owner, and opens a real background tab to verify hidden-tail polling
 stops and resumes. Held real query responses exercise transport cancellation,
-immediate local logout and serialized server logout. A narrowly invited human
-checks the granted row/window caps and local rejection before a network request.
+immediate local logout and serialized server logout. The ADR-0029 role matrix is
+exercised over native TLS: a reader token reads every source and signal but is
+refused on every sampled owner route; anonymous callers and a Spindle token are
+refused on console routes; a reader token and an owner session are refused on
+Spindle routes; and revoking one reader token retires only that token.
+`--inject-role-defect` rewrites one witnessed reader refusal on an owner route as
+success; it must fail `reader token refused on owner route GET /v1/console/audit`.
 
 `--expired-cursor-probe` retains a real continuation for at least 902 seconds,
 then requires the exact expiry rejection and an adjacent authorized positive
@@ -135,7 +140,7 @@ binary and console asset identities; an idle wait does not establish throughput
 or capacity.
 
 `--recovery` stops the owned server, runs its actual offline owner recovery
-command, verifies prior workload rejection, and enrolls the same owner through
+command, verifies prior reader-token rejection, and enrolls the same owner through
 real WebAuthn. `--shell-lifecycle` exercises failed worker installation, a waiting
 candidate with an open tab, activation after actually closing the controlled tab,
 and rollback. Navigating away and immediately back is not used as proof that

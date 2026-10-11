@@ -1,6 +1,6 @@
 # Product contract
 
-This is the highest-priority source of truth for what FabricO11y promises (see the [source-of-truth hierarchy](README.md#source-of-truth)). It states intended behavior. Whether a promise is implemented, tested, measured or qualified is recorded in the [qualification ledger](QUALIFICATION.md#capability-ledger) and the [verification matrix](formal/verification-matrix.md); nothing here is a release claim. The original contract migrated from base `9b3a2b4` (`docs/ALPHA.md`). The owner expanded the release scope on 2026-10-10 to Debian/Fedora deployment, 100 GB retained telemetry, a PWA and scoped human/workload access. These requirements do not retroactively change historical protocols or establish implementation evidence.
+This is the highest-priority source of truth for what FabricO11y promises (see the [source-of-truth hierarchy](README.md#source-of-truth)). It states intended behavior. Whether a promise is implemented, tested, measured or qualified is recorded in the [qualification ledger](QUALIFICATION.md#capability-ledger) and the [verification matrix](formal/verification-matrix.md); nothing here is a release claim. The original contract migrated from base `9b3a2b4` (`docs/ALPHA.md`). The owner expanded the release scope on 2026-10-10 to Debian/Fedora deployment, 100 GB retained telemetry, a PWA and three fixed access roles ([ADR-0029](decisions/ADR-0029-use-three-fixed-roles-for-the-first-release.md)). These requirements do not retroactively change historical protocols or establish implementation evidence.
 
 ## Thesis
 
@@ -33,7 +33,7 @@ memory, filesystem, disk, network and configured newline-delimited logs, and
 receive local applications' loopback OTLP/HTTP protobuf trace exports
 ([ADR-0025](decisions/ADR-0025-carry-traces-as-a-third-signal.md)). The server owns
 authenticated delivery, durable storage, query, control and a Rust Leptos/WASM
-operator console delivered as a PWA. `fabricctl` and the HTTP API support scoped
+operator console delivered as a PWA. `fabricctl` and the HTTP API support read-only
 machine clients. Spindles retain last-valid configuration during disconnection.
 There is no external Collector requirement, general OTLP receiver, arbitrary
 remote compute or capacity claim beyond the named acceptance profile. Release
@@ -57,7 +57,7 @@ A full Spool retains unacknowledged records, refuses new durable collection and 
 
 ## Freshness contract
 
-Every query answer reports, within the caller's authorized scope, per Spindle with any retained record, the newest observation, point or span start time retained, so a caller can tell a quiet Spindle from a stale one. The registered freshness target (observation to queryable, p99) is in the [decision rule](QUALIFICATION.md#registered-workload-and-decision-rule).
+Every query answer reports, per Spindle with any retained record, the newest observation, point or span start time retained, so a caller can tell a quiet Spindle from a stale one. The registered freshness target (observation to queryable, p99) is in the [decision rule](QUALIFICATION.md#registered-workload-and-decision-rule).
 
 ## Boundedness contract
 
@@ -77,37 +77,44 @@ Collection limits are listed in the [Spindle view](architecture/spindle.md).
 
 TLS protects Spindle and admin traffic. Spindle credentials are revocable and distinct from admin credentials. A configuration has desired and applied revisions, validates before activation, obeys local permissions and resource ceilings, and can be paused ([ADR-0014](decisions/ADR-0014-manage-nodes-through-server-control-state.md)).
 
-The release requires local WebAuthn passkeys for human sign-in, bounded server-side
-sessions, protected first-owner enrollment and tested owner recovery. OIDC/SSO is
-optional later work. Humans, workload clients (including AI) and Spindles have
-distinct persistent principals and credentials. The server denies requests unless
-their action and resource scope are authorized. Machine credentials are individually
-revocable; workload credentials expire. Human delegation to AI cannot exceed the
-current intersection of actor, delegator and delegation grants. Prompts and client
-claims cannot expand authority. No shared administrator secret is embedded in the UI.
+The release has three fixed roles ([ADR-0029](decisions/ADR-0029-use-three-fixed-roles-for-the-first-release.md)):
 
-Read scopes cover Spindle enrollments and signal classes. Rows, inventory,
-pagination, aggregates, completeness, freshness and errors enforce the same scope.
-Unknown coverage inside that scope stays visible; excluded identities do not leak
-through metadata. Policy changes invalidate affected sessions/grants/cursors as
-specified in the [identity view](architecture/identity-access.md). Authorization
-and mutation publication are synchronized; uncertain access-state writes fail
-closed. A Batch admitted before committed revocation may finish its existing
-custody transition; revocation cannot undo ACKs or bytes already disclosed.
-Security changes are durably audited within separately bounded storage.
+| Role | Credential | May |
+| --- | --- | --- |
+| Owner | The single human operator: one principal with one or more local WebAuthn passkeys (user verification required) and a bounded server-side session in a `__Host-` cookie; mutations need the session CSRF token and the exact Origin | Everything the console offers: queries, status, Spindle enrollment, configuration and control, reader tokens, passkeys, sessions and audit |
+| Reader | Scripts and AI agents: an expiring, individually revocable 256-bit bearer token; only its hash is stored | Query telemetry and read status and Spindle inventory; nothing else |
+| Spindle | A per-node, revocable token over verified TLS ([ADR-0014](decisions/ADR-0014-manage-nodes-through-server-control-state.md)) | Submit Batches and poll its own configuration; nothing else |
+
+The server denies every request whose route is not listed for its credential's
+role; client claims, names and prompts never select a role. The release requires
+protected first-owner enrollment, a recommended second passkey, tested offline
+owner recovery and a fresh passkey check (five minutes) before credential
+changes. OIDC/SSO is optional later work. There are no additional humans,
+invitations, delegation or per-principal scopes: owner and reader read all
+telemetry, and a reader token discloses all of it until it expires or is revoked.
+No shared administrator secret is embedded in the UI.
+
+Query answers, inventory, pagination, aggregates, completeness, freshness and
+errors describe all telemetry; unknown coverage stays visible. A page handle is
+bound to the credential that created it. Authorization and mutation publication
+are synchronized; uncertain access-state writes fail closed. A Batch admitted
+before committed revocation may finish its existing custody transition;
+revocation cannot undo ACKs or bytes already disclosed. Security changes are
+durably audited within separately bounded storage.
 
 The threat boundary trusts the host administrator and serving HTTPS origin.
-Scoped access is not general multitenant isolation or a guarantee against all
-vulnerabilities. Explicit legacy administration does not satisfy these release
-requirements; normal `serve` requires the scoped passkey boundary.
-[ADR-0027](decisions/ADR-0027-ship-a-scoped-passkey-pwa-console.md)
-records that boundary and its verification obligations.
+Roles are not multitenant isolation or a guarantee against all vulnerabilities.
+Explicit legacy administration does not satisfy these release requirements;
+normal `serve` requires the passkey boundary.
+[ADR-0027](decisions/ADR-0027-ship-a-scoped-passkey-pwa-console.md) and
+[ADR-0029](decisions/ADR-0029-use-three-fixed-roles-for-the-first-release.md)
+record that boundary and its verification obligations.
 
 ## Operator console contract
 
 The same-origin PWA provides light/dark desktop and mobile layouts for overview,
 bounded log/metric/span exploration, trace detail, near-live log polling, pipeline
-state and scoped settings. It displays actual evidence and its freshness, gaps,
+state and settings. It displays actual evidence and its freshness, gaps,
 retention and completeness. No inferred causal link or illustrative mockup number
 is presented as measured. It uses the server's authorization for every action;
 hiding a button is not an access control.

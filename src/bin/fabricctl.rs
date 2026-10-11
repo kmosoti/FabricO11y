@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 const USAGE: &str = "usage:
   fabricctl inspect <NODE_CONFIG>
-  fabricctl access <ACCESS_CONFIG> node list|add|config|pause|resume|revoke ...
+  fabricctl access <ACCESS_CONFIG> node list
   fabricctl access <ACCESS_CONFIG> query '<QUERY_JSON>'
   fabricctl admin <ADMIN_CONFIG> node list
   fabricctl admin <ADMIN_CONFIG> node add <NAME> [--log PATH]... [--interval SECONDS]

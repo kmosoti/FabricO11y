@@ -104,33 +104,33 @@ def main():
         server = launch_server()
         with ConsoleBridge(origin, work / "server.pem", work / "browser", out / "bridge") as bridge:
             view = bridge.bootstrap_owner(work / "state/access/access-bootstrap.secret")
-            check(view["kind"] == "human" and not (work / "state/access/access-bootstrap.secret").exists(), "real passkey owner consumed bootstrap")
+            check(view["role"] == "owner" and not (work / "state/access/access-bootstrap.secret").exists(), "real passkey owner consumed bootstrap")
             status, enrolled = bridge.request("/v1/console/nodes", "POST", {"name": "campaign-source", "metric_interval_s": 15})
-            check(status == 200 and "enrollment_id" in enrolled, "fresh human enrolled scoped source")
-            scope = dict(view["scope"])
-            scope.update(actions=["telemetry_read", "inventory_read"], installation_wide=False,
-                         enrollments=[enrolled["enrollment_id"]], signals=["logs"],
-                         max_query_rows=100, max_query_window_s=60, allowed_log_paths=[],
-                         enrollment_namespace=None, max_enrollments=0)
-            status, issued = bridge.issue_workload("campaign-reader", scope, 300)
-            check(status == 200 and bool(issued.get("token")), "real human issued scoped workload credential")
+            check(status == 200 and "enrollment_id" in enrolled, "fresh owner enrolled source")
+            status, issued = bridge.issue_reader("campaign-reader", 300)
+            check(status == 200 and bool(issued.get("token")), "real owner issued reader token")
             token = issued.pop("token")
-            def bearer(path, method="GET", body=None):
+            def bearer(path, method="GET", body=None, credential=token):
                 req = urllib.request.Request(origin + path, method=method,
                      data=None if body is None else json.dumps(body).encode(), headers={
-                         "authorization": "Bearer " + token, "x-fabric-client-version": "1", "content-type": "application/json"})
+                         **({"authorization": "Bearer " + credential} if credential else {}),
+                         "x-fabric-client-version": "1", "content-type": "application/json"})
                 try:
                     with urllib.request.urlopen(req, context=tls, timeout=15) as response:
                         return response.status, json.load(response)
                 except urllib.error.HTTPError as error:
                     return error.code, json.loads(error.read())
-            status, _ = bearer("/v1/console/nodes")
-            check(status == 200, "scoped workload inventory")
-            status, _ = bearer("/v1/console/nodes", "POST", {"name": "forbidden"})
-            check(status == 403, "workload cannot enroll sources")
+            status, inventory = bearer("/v1/console/nodes")
+            check(status == 200 and "campaign-source" in {n["name"] for n in inventory["nodes"]}, "reader inventory")
+            status, refusal = bearer("/v1/console/nodes", "POST", {"name": "forbidden"})
+            check(status == 403 and refusal["error"] == "role not permitted", "reader cannot enroll sources")
+            status, refusal = bearer("/v1/console/audit")
+            check(status == 403 and refusal["error"] == "role not permitted", "reader cannot read audit")
+            status, _ = bearer("/v1/console/nodes", credential=None)
+            check(status == 401, "anonymous caller refused on console routes")
             end = time.time_ns()
             status, _ = bearer("/v1/console/query", "POST", {"kind": "logs", "node": "campaign-source", "from_ns": end - 30*10**9, "to_ns": end, "limit": 100})
-            check(status == 200, "scoped production workload query")
+            check(status == 200, "production reader query")
             token = None
             bridge.poll_ui(True)
             deadline = time.monotonic() + args.poll_seconds

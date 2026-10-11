@@ -355,8 +355,8 @@ class ConsoleBridge:
                 view = self.login()
             return self._request(path, method, body, view["csrf"])
 
-    def issue_workload(self, name, scope, ttl_s):
-        return self.request("/v1/console/workloads", "POST", {"name": name, "scope": scope, "ttl_s": ttl_s})
+    def issue_reader(self, name, ttl_s):
+        return self.request("/v1/console/readers", "POST", {"name": name, "ttl_s": ttl_s})
 
     def poll_ui(self, enabled):
         """Explicitly activate/pause the actual bounded native UI polling view."""
