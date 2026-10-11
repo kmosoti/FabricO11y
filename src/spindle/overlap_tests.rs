@@ -299,30 +299,24 @@ fn one_rule_interprets_every_server_answer_for_both_delivery_paths() {
         (acked.map_err(|e| e.to_string()), report.error)
     };
     let beyond = "server acknowledged beyond the pre-attempt durable sequence";
-    assert_eq!(settle(Delivery::Ack(2)), (Err(beyond.into()), None));
     let below = "server acknowledged 0, below sent sequence 1";
+    let conflict =
+        "server holds different bytes for sequence 1 (committed through 1); delivery stopped";
+    let gap = "server committed only through 0, below this node's acknowledged 0; delivery stopped";
+    assert_eq!(settle(Delivery::Ack(2)), (Err(beyond.into()), None));
     assert_eq!(settle(Delivery::Ack(0)), (Ok(false), Some(below.into())));
-    let (acked, error) = settle(Delivery::Conflict(1));
-    assert!(!acked.unwrap());
-    assert!(
-        error
-            .unwrap()
-            .starts_with("server holds different bytes for sequence 1 (committed")
+    assert_eq!(
+        settle(Delivery::Conflict(1)),
+        (Ok(false), Some(conflict.into()))
     );
-    let (acked, error) = settle(Delivery::Gap(0));
-    assert!(!acked.unwrap());
-    assert!(
-        error
-            .unwrap()
-            .contains("below this node's acknowledged 0; delivery stopped")
+    assert_eq!(settle(Delivery::Gap(0)), (Ok(false), Some(gap.into())));
+    assert_eq!(
+        settle(Delivery::Retry("a".into())),
+        (Ok(false), Some("a".into()))
     );
     assert_eq!(
-        settle(Delivery::Rejected("no".into())),
-        (Ok(false), Some("no".into()))
-    );
-    assert_eq!(
-        settle(Delivery::Retry("later".into())),
-        (Ok(false), Some("later".into()))
+        settle(Delivery::Rejected("b".into())),
+        (Ok(false), Some("b".into()))
     );
     assert_eq!(settle(Delivery::Ack(1)), (Ok(true), None));
     assert_eq!(spindle.journal.acked_through(), 1);

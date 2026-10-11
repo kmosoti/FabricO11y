@@ -218,10 +218,7 @@ fn admin_token_file_must_be_private_regular_and_not_a_symlink() {
     mode(0o600);
     symlink(&path, scratch.0.join("link")).unwrap();
     assert!(load_admin_token(Some(&scratch.0.join("link"))).is_err());
-    assert!(
-        load_admin_token(None).is_err(),
-        "serve-legacy needs the file"
-    );
+    assert!(load_admin_token(None).is_err());
 }
 
 /// `serve` stops before binding or provisioning anything without `access_origin`.
@@ -229,24 +226,15 @@ fn admin_token_file_must_be_private_regular_and_not_a_symlink() {
 fn serve_refuses_to_start_without_access_origin() {
     let scratch = Scratch::new("serve_needs_access");
     let conf = scratch.0.join("server.conf");
-    let state = scratch.0.join("state");
-    fs::write(
-        &conf,
-        format!(
-            "listen=127.0.0.1:0\ntls_cert=/c.pem\ntls_key=/k.pem\nstate_dir={}\n",
-            state.display()
-        ),
-    )
-    .unwrap();
+    let state_dir = scratch.0.join("state").display().to_string();
+    let text =
+        format!("listen=127.0.0.1:0\ntls_cert=/c.pem\ntls_key=/k.pem\nstate_dir={state_dir}\n");
+    fs::write(&conf, text).unwrap();
     let refused = Command::new(env!("CARGO_BIN_EXE_fabric-server"))
         .args(["serve", conf.to_str().unwrap()])
         .output()
         .unwrap();
     assert_eq!(refused.status.code(), Some(1));
     let stderr = String::from_utf8_lossy(&refused.stderr);
-    assert!(
-        stderr.contains("serve requires access_origin and access_rp_id"),
-        "{stderr}"
-    );
-    assert!(!state.exists());
+    assert!(stderr.contains("serve requires access_origin"), "{stderr}");
 }

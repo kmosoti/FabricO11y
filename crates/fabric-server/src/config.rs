@@ -59,9 +59,8 @@ fn read_bounded(file: File) -> io::Result<String> {
     String::from_utf8(bytes).map_err(|_| invalid("file is not UTF-8"))
 }
 
-/// A credential file's trimmed text. The file must be regular, reached without
-/// a symlink and readable only by its owner, or also by its group when root
-/// owns it (the packaged `0640 root:fabricolly`).
+/// A credential file's trimmed text. It must be regular, not a symlink and readable
+/// only by its owner, or also by its group when root owns it (`0640 root:fabricolly`).
 pub fn read_secret(path: &Path) -> io::Result<String> {
     let file = File::options()
         .read(true)

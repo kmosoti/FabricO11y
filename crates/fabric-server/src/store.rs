@@ -561,8 +561,7 @@ impl Store {
             self.active_first_group = group_record.group_sequence;
         }
         // Replay-equivalent update: the frame is durable now. If it fails, the
-        // table no longer matches the journal, so nothing is answered or
-        // committed again until a restart rebuilds the table by replay.
+        // table no longer matches the journal; commit nothing more until restart.
         self.state.absorb(&group_record).inspect_err(|_| {
             self.quarantined = true;
         })
@@ -653,6 +652,28 @@ mod tests {
         dir
     }
 
+    /// Submit a Batch holding sequence `stored`, declared as `declared`; wait
+    /// for the answer, `None` if the commit thread died without one.
+    fn submit_one(intake: &Intake, declared: u64, stored: u64) -> Option<Answer> {
+        let batch = Batch {
+            version: 1,
+            node_id: vec![7; 16],
+            generation: 1,
+            sequence: stored,
+            collection_gaps: vec!["one gap makes the Batch non-empty".into()],
+            ..Default::default()
+        };
+        let (reply, answer) = oneshot::channel();
+        intake.submit(Submission {
+            label: "fresh-credential".into(),
+            strand: StrandId::new(SpindleId::new([7; 16]), 1).unwrap(),
+            sequence: NonZeroU64::new(declared).unwrap(),
+            bytes: batch.encode_to_vec(),
+            reply,
+        });
+        answer.blocking_recv().ok()
+    }
+
     /// One submission, answered; returns how long the commit thread held it.
     fn lone_submission_latency(mode: CommitMode) -> Duration {
         let dir = scratch("quiet");
@@ -660,24 +681,8 @@ mod tests {
             .unwrap()
             .spawn()
             .unwrap();
-        let batch = Batch {
-            version: 1,
-            node_id: vec![7; 16],
-            generation: 1,
-            sequence: 1,
-            collection_gaps: vec!["one gap makes the Batch non-empty".into()],
-            ..Default::default()
-        };
-        let (reply, answer) = oneshot::channel();
         let started = Instant::now();
-        intake.submit(Submission {
-            label: "fresh-credential".into(),
-            strand: StrandId::new(SpindleId::new([7; 16]), 1).unwrap(),
-            sequence: NonZeroU64::MIN,
-            bytes: batch.encode_to_vec(),
-            reply,
-        });
-        answer.blocking_recv().unwrap();
+        submit_one(&intake, 1, 1).unwrap();
         let elapsed = started.elapsed();
         drop(intake);
         let _ = std::fs::remove_dir_all(&dir);
@@ -717,27 +722,9 @@ mod tests {
             .unwrap()
             .spawn()
             .unwrap();
-        let submit = |declared: u64, stored: u64| {
-            let batch = Batch {
-                version: 1,
-                node_id: vec![7; 16],
-                generation: 1,
-                sequence: stored,
-                collection_gaps: vec!["one gap makes the Batch non-empty".into()],
-                ..Default::default()
-            };
-            let (reply, answer) = oneshot::channel();
-            intake.submit(Submission {
-                label: "credential".into(),
-                strand: StrandId::new(SpindleId::new([7; 16]), 1).unwrap(),
-                sequence: NonZeroU64::new(declared).unwrap(),
-                bytes: batch.encode_to_vec(),
-                reply,
-            });
-            answer.blocking_recv().ok()
-        };
-        assert_eq!(submit(1, 2), Some(Answer::Unavailable));
-        assert_eq!(submit(1, 1), Some(Answer::Unavailable), "stays quarantined");
+        assert_eq!(submit_one(&intake, 1, 2), Some(Answer::Unavailable));
+        let consistent = submit_one(&intake, 1, 1);
+        assert_eq!(consistent, Some(Answer::Unavailable), "stays quarantined");
         drop(intake);
         let _ = std::fs::remove_dir_all(&dir);
     }

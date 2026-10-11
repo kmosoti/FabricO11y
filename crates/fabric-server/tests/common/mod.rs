@@ -1,9 +1,8 @@
-//! Fixture helpers shared by the server integration tests.
-use std::{fs, io::Write, os::unix::fs::OpenOptionsExt, path::Path};
+//! Credential files for server integration tests, owner-only as readers require.
+use std::{fs::OpenOptions, io::Write, os::unix::fs::OpenOptionsExt, path::Path};
 
-/// Write a credential file the way the token readers require: owner-only.
 pub fn write_secret(path: impl AsRef<Path>, contents: impl AsRef<[u8]>) {
-    let mut file = fs::OpenOptions::new()
+    let mut file = OpenOptions::new()
         .write(true)
         .create(true)
         .truncate(true)

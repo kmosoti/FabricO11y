@@ -199,6 +199,18 @@ fn target(root: &Path, addr: SocketAddr, token_name: &str) -> ServerTarget {
     }
 }
 
+fn node_config(root: &Path, addr: SocketAddr) -> NodeConfig {
+    NodeConfig {
+        spool: root.join("spool"),
+        logs: vec![root.join("app.log")],
+        interval_s: 15,
+        spool_bytes: 16 * 1024 * 1024,
+        server: Some(target(root, addr, "token-a")),
+        traces_listen: None,
+        max_output_bytes_per_s: None,
+    }
+}
+
 fn write_host(root: &Path) {
     fs::write(root.join("stat"), "cpu 10 0 5 20 0 0 0 0 0 0\nbtime 1000\n").unwrap();
     fs::write(
@@ -281,17 +293,9 @@ fn node_delivers_exact_bytes_and_both_sides_survive_restart() {
     let scratch = setup();
     fs::write(scratch.path("app.log"), "one\ntwo\n").unwrap();
     let server = start(server_config(&scratch.0));
-    let node_config = |addr| NodeConfig {
-        spool: scratch.path("spool"),
-        logs: vec![scratch.path("app.log")],
-        interval_s: 15,
-        spool_bytes: 16 * 1024 * 1024,
-        server: Some(target(&scratch.0, addr, "token-a")),
-        traces_listen: None,
-        max_output_bytes_per_s: None,
-    };
     let mut node =
-        Spindle::open_with_paths(node_config(server.addr), host_paths(&scratch.0)).unwrap();
+        Spindle::open_with_paths(node_config(&scratch.0, server.addr), host_paths(&scratch.0))
+            .unwrap();
     for _ in 0..3 {
         node.collect_once().unwrap();
     }
@@ -308,7 +312,8 @@ fn node_delivers_exact_bytes_and_both_sides_survive_restart() {
     let server = start(server_config(&scratch.0));
     fs::write(scratch.path("app.log"), "one\ntwo\nthree\n").unwrap();
     let mut node =
-        Spindle::open_with_paths(node_config(server.addr), host_paths(&scratch.0)).unwrap();
+        Spindle::open_with_paths(node_config(&scratch.0, server.addr), host_paths(&scratch.0))
+            .unwrap();
     assert_eq!(node.acked_through(), 3);
     node.collect_once().unwrap();
     let report = node
@@ -385,10 +390,6 @@ fn retry_conflict_gap_binding_and_rejections_follow_the_delivery_rule() {
     );
 }
 
-/// ADR-0025 end to end: an application exports spans to the Spindle's loopback
-/// endpoint, each export is answered only after its Spool commit, the trace Batches
-/// reach the server byte for byte, and the spans query returns every span, the same
-/// from the scan and the walk plan, and finds one trace by its ID.
 /// The sender trusts only its configured CA and the name it dialed. Each
 /// refused server is fully up: a sender that trusts its CA gets an HTTP answer.
 #[test]
@@ -454,28 +455,12 @@ fn an_ack_beyond_the_spool_is_refused_and_leaves_the_cursor() {
         .unwrap()
         .block_on(handle.listening())
         .expect("fake server did not start listening");
-    let mut node = Spindle::open_with_paths(
-        NodeConfig {
-            spool: scratch.path("spool"),
-            logs: vec![scratch.path("app.log")],
-            interval_s: 15,
-            spool_bytes: 16 * 1024 * 1024,
-            server: Some(target(&scratch.0, addr, "token-a")),
-            traces_listen: None,
-            max_output_bytes_per_s: None,
-        },
-        host_paths(&scratch.0),
-    )
-    .unwrap();
+    let mut node =
+        Spindle::open_with_paths(node_config(&scratch.0, addr), host_paths(&scratch.0)).unwrap();
     node.collect_once().unwrap();
-    let error = node
-        .deliver(Instant::now() + Duration::from_secs(20), |_| {})
-        .unwrap_err();
-    assert!(
-        error
-            .to_string()
-            .contains("beyond the pre-attempt durable sequence")
-    );
+    let until = Instant::now() + Duration::from_secs(20);
+    let error = node.deliver(until, |_| {}).unwrap_err();
+    assert!(error.to_string().contains("beyond the pre-attempt durable"));
     assert_eq!(node.acked_through(), 0);
     handle.graceful_shutdown(Some(Duration::from_secs(5)));
     thread.join().unwrap().unwrap();
@@ -501,6 +486,10 @@ fn serve_without_an_admin_token_file_starts_and_refuses_the_master_routes() {
     server.stop();
 }
 
+/// ADR-0025 end to end: an application exports spans to the Spindle's loopback
+/// endpoint, each export is answered only after its Spool commit, the trace Batches
+/// reach the server byte for byte, and the spans query returns every span, the same
+/// from the scan and the walk plan, and finds one trace by its ID.
 #[test]
 fn exported_spans_reach_the_server_and_answer_the_spans_query() {
     use fabric_o11y::spindle::otlp;

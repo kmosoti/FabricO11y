@@ -88,9 +88,8 @@ fn read_bounded(source: impl Read, name: &Path, cap: u64) -> io::Result<Vec<u8>>
     Ok(bytes)
 }
 
-/// Open a credential file that is a regular file, is not reached through a
-/// symlink and is readable only by its owner, or also by its group when root
-/// owns it (the packaged `0640 root:fabricolly`).
+/// Open a credential file. It must be regular, not a symlink and readable only
+/// by its owner, or also by its group when root owns it (`0640 root:fabricolly`).
 fn open_secret(path: &Path) -> io::Result<std::fs::File> {
     let file = std::fs::OpenOptions::new()
         .read(true)
