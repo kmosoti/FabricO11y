@@ -7,6 +7,8 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
+import subprocess
 import tempfile
 import unittest
 import sys
@@ -52,6 +54,64 @@ class CadenceTests(unittest.TestCase):
         now[0] += 10
         cadence.pace()
         self.assertEqual(len(sleeps), 19)
+
+
+class FuzzFreezeTests(unittest.TestCase):
+    """A stale or rewritten fuzz lock must not become clean-trial evidence."""
+    def trial(self, control):
+        with tempfile.TemporaryDirectory(prefix='fuzz-freeze-',
+                                          dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            root = Path(directory)
+            (root / 'fuzz').mkdir()
+            (root / 'bin').mkdir()
+            shutil.copyfile(ROOT / 'fuzz/smoke.sh', root / 'fuzz/smoke.sh')
+            (root / 'fuzz/Cargo.lock').write_text('frozen-input\n')
+            cargo = root / 'bin/cargo'
+            cargo.write_text('''#!/usr/bin/env python3
+import os, pathlib, sys
+args = sys.argv[1:]
+with open('calls', 'a') as stream:
+    stream.write(' '.join(args) + '\\n')
+control = os.environ['FABRIC_FUZZ_CHECK_CONTROL']
+if 'metadata' in args:
+    assert '--locked' in args
+    sys.exit(101 if control == 'stale' else 0)
+if 'fuzz' in args:
+    if control == 'rewrite':
+        pathlib.Path('fuzz/Cargo.lock').write_text('rewritten-input\\n')
+    print('Done 1 runs')
+''')
+            cargo.chmod(0o700)
+            marker = root / 'bin/cargo-fuzz'
+            marker.write_text('#!/bin/sh\nexit 0\n')
+            marker.chmod(0o700)
+            result = subprocess.run(['bash', str(root / 'fuzz/smoke.sh'), '60'],
+                cwd=root, env=dict(os.environ,
+                    PATH=str(root / 'bin') + ':' + os.environ['PATH'],
+                    FABRIC_FUZZ_CHECK_CONTROL=control),
+                text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=30)
+            return result, (root / 'calls').read_text().splitlines()
+
+    def test_stale_lock_is_rejected_before_any_fuzz_target(self):
+        result, calls = self.trial('stale')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('dependency lock does not resolve unchanged', result.stdout)
+        self.assertFalse(any(' fuzz ' in call for call in calls))
+
+    def test_mid_trial_lock_rewrite_is_rejected(self):
+        result, calls = self.trial('rewrite')
+        self.assertEqual(result.returncode, 1)
+        self.assertIn('dependency lock changed during trial', result.stdout)
+        self.assertEqual(sum(' fuzz ' in call for call in calls), 4)
+
+    def test_frozen_trial_retains_all_targets_and_original_bounds(self):
+        result, calls = self.trial('clean')
+        self.assertEqual(result.returncode, 0, result.stdout)
+        fuzz = [call for call in calls if ' fuzz ' in call]
+        self.assertEqual([call.split()[3] for call in fuzz],
+                         ['batch_identify', 'query_request', 'frame_recovery', 'observation_block'])
+        self.assertTrue(all('-max_total_time=60' in call and '-rss_limit_mb=2048' in call
+                            for call in fuzz))
 
 
 class ReceiptTests(unittest.TestCase):
