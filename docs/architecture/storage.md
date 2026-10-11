@@ -2,6 +2,8 @@
 
 ## Purpose and boundary
 
+The shipped formats are the `FAB1` frame log (Spool and server journal) and Zstd Parquet Segments. The FOL2 `EventLog` described in the later sections is archived with the demonstration in the [research archive](https://github.com/kmosoti/FabricO11y-research); it is no longer built here.
+
 The separate [S1 storage/query experiment](../experiments/ablation/storage-query-s1-run-01.md) uses this unchanged log for a verified replay-to-memory baseline. Its optional summaries are private in-memory structures. A later [research prototype](research-prototype.md) replays FOL2 into immutable JSON blocks with an external publication anchor and persistent checkpoints. The [layout probe](https://github.com/kmosoti/FabricO11y-research/blob/main/tools/layout-probe/README.md) implements a separate hybrid Parquet comparison; neither changes this log or selects a format winner.
 
 Stage 5 adds a single-file [event log](https://github.com/kmosoti/FabricO11y-research/blob/main/src/log.rs) inside the Rust library. The optional `write` command drains the existing [buffer](https://github.com/kmosoti/FabricO11y-research/blob/main/src/buffer.rs) into this log; `replay` opens the file again and streams decoded events. The default command still prints batches without storing them. There is no network receiver or external ACK protocol.
@@ -67,6 +69,7 @@ The payload limit is 16 MiB. The encoder covers every current `Scalar` and `Payl
 
 - A short final event frame with checked header fields consistent, a valid event frame without a marker, or a short marker whose present bytes match is treated as an interrupted append and truncated back to the last committed pair. The caller must retry the unacknowledged event. A partial payload is **not decoded**: even a present byte that would be an invalid event tag is truncated with the tail. Short headers or markers inconsistent with checked fields, and damaged fully present payloads or markers, stop recovery. Foreign bytes that match a plausible prefix cannot be distinguished from an interrupted append. A full-length but uncommitted payload or marker can be torn and fail its checksum; recovery fails closed because it cannot distinguish that from corruption of an acknowledged record.
 - A write or sync error poisons that `EventLog` handle. If the event sync fails, no marker is written. If the marker write or sync fails, event data had synced, but a valid marker might remain visible without being durable. A later successful open or replay cannot prove that marker survived the failed sync. The CLI cannot recognize an earlier process's sync failure from the file alone; **do not automatically resume this path after a storage I/O error**. Repair the storage problem and rebuild the log from a separate trusted source. The generic caller must retain unacknowledged events and plan for duplicate delivery.
+- The server journal does not panic on a disagreement it cannot absorb. If a group is already durable but the stream table rejects it (for example a declared sequence that differs from the one in the Batch bytes), the commit thread records the disagreement in memory, answers `Unavailable` to every later submission and acknowledges nothing from the inconsistent table (`a_disagreement_after_a_durable_frame_quarantines_instead_of_panicking`). The flag is not persisted: a restart replays the journal to rebuild the table. Failed appends and syncs use the persistent known-failure marker of [ADR-0011](../decisions/ADR-0011-separate-interrupted-append-from-known-failure.md).
 - The lock coordinates `EventLog` users that honor it. External modification, multiple writers ignoring the lock, filesystem corruption after a successful sync, and storage hardware that does not honor sync are outside this guarantee.
 - The resolved target file's parent directory is synced on open so a newly created log filename is included before the first local commit, including when opened through a symlink. All ancestor directories and any symlink entries must themselves already have durable names; syncing the target's parent does not establish the durability of a newly created ancestor or symlink entry. The path must not be concurrently renamed or retargeted. The commit claim depends on the operating system and filesystem honoring successful `sync_all` calls, with no unresolved storage sync error. The tests simulate torn tails and restart; they do not simulate sudden power loss.
 - Each append performs two file syncs. The [Stage 6 baseline](../experiments/benchmarks/local-log-stage6.md) measures one fixed local workload, but no comparative result selects this format as a throughput choice. A storage writeback error may cast doubt on earlier data too; the model assumes successful syncs establish durable copies and does not model failing hardware. No byte limit is imposed on the in-memory buffer, and replay output is still Debug text rather than a query API.
@@ -75,12 +78,7 @@ The [Stage 4 ownership model](../../formal/delivery/README.md) calls the success
 
 ## Current cost investigation
 
-The optional `append-attribution` feature adds wall-clock samples around encoding,
-data writes, each sync and marker write. It clears the sample before every attempt
-and exposes one only after success; default builds contain no phase timers. It does
-not change the FOL2 bytes, sync order or error/ownership contract. The
-[S0 result](../experiments/benchmarks/append-attribution-s0.md) records exact replay,
-paired controls and the material perturbation limit.
+The `append-attribution` timers of the FOL2 log were archived with it; the [S0 result](../experiments/benchmarks/append-attribution-s0.md) records exact replay, paired controls and the material perturbation limit.
 
 The [E2R group-seal model](../experiments/ablation/seal-e2-run-01.md) is separate
 Python research tooling. It tests sector subsets, corruption and an external

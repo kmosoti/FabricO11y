@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted on 2026-09-28. The owner authorized this direction in the architecture-foundation milestone instruction. The migration of existing code into the layers is incremental; [the milestone record](../milestones/architecture-foundation.md) lists what moved and what did not.
+Accepted on 2026-09-28. The owner authorized this direction in the architecture-foundation milestone instruction. The migration of existing code into the layers is incremental; [the milestone record](../milestones/architecture-foundation.md) lists what moved and what did not. Amended on 2026-10-11 to record the verification layer, the external-crate allowlist and the handling of patched edges that `layers.json` and the checker now carry.
 
 ## Context
 
@@ -20,9 +20,12 @@ Domain semantics point inward; effects point outward. The workspace has these la
 | adapter-support | infrastructure shared by several adapters, such as the `FAB1` frame log and the batch envelope codec | core |
 | adapter | Linux, filesystem, HTTP/TLS, Parquet and clock implementations of ports | core, ports, adapter-support |
 | composition-root | binaries and the libraries that wire adapters into use cases | everything above, not another composition root |
+| verification | property, simulation and fuzz checks (`fabric-properties`, `fabric-sim`, `fabric-fuzz-targets`) | every product layer and verification; no product crate depends on it |
 | tooling | repository checks (`xtask`) | none |
 
-[`docs/architecture/layers.json`](../architecture/layers.json) assigns every workspace member to a layer and lists documented exceptions. `cargo xtask check-layers` reads declared metadata (`cargo metadata --no-deps`: every normal, build and development dependency, optional or not, for any target, under any rename) and resolved metadata (edges that leave the workspace and come back). Any forbidden edge fails with a stable category.
+[`docs/architecture/layers.json`](../architecture/layers.json) assigns every workspace member to a layer and lists documented exceptions. `cargo xtask check-layers` reads declared metadata (`cargo metadata --no-deps`: every normal, build and development dependency, optional or not, for any target, under any rename) and resolved metadata (edges that leave the workspace and come back). Any forbidden edge fails with a stable category. A requirement that `[patch]` satisfies with a workspace member counts as that member edge, so a registry-style declaration cannot hide a forbidden dependency.
+
+A layer may also declare an `external_allowlist`: it then links only the listed crates from outside the workspace through normal and build dependencies (development dependencies are exempt), and any other crate fails with `LAYER_EXTERNAL_DEPENDENCY`. The `ports` and `app` layers declare an empty list, so they link no external crate; a layer without the key is unrestricted, and a malformed list is an error, never a pass. `fabric-ui` is a composition root that depends on no workspace crate.
 
 Crates follow real dependency boundaries, not nouns. Ports exist only where an effect crosses a semantically meaningful boundary; there are no generic repository traits, service locators, plugin systems or dependency-injection frameworks. A crate that still mixes adapters with wiring is classified as a composition root and its split is listed as remaining work rather than hidden.
 
@@ -34,7 +37,7 @@ Crates follow real dependency boundaries, not nouns. Ports exist only where an e
 
 ## Evidence
 
-The gate ships with fixture workspaces in [`xtask/fixtures`](../../xtask/fixtures/workspace/Cargo.toml) and tests in [`xtask/tests/gates.rs`](../../xtask/tests/gates.rs): the valid workspace passes; core to adapter, core to app, ports to adapter, app to adapter, renamed, optional feature-activated, target-specific, build, development and transitive forbidden edges each fail with `LAYER_FORBIDDEN_EDGE` or `LAYER_FORBIDDEN_TRANSITIVE_EDGE`; an unassigned member and a stale policy entry fail; a manifest that cannot be read is an error, never a pass. Command results are in the milestone record.
+The gate ships with fixture workspaces in [`xtask/fixtures`](../../xtask/fixtures/workspace/Cargo.toml) and tests in [`xtask/tests/gates.rs`](../../xtask/tests/gates.rs): the valid workspace passes; core to adapter, core to app, ports to adapter, app to adapter, renamed, optional feature-activated, target-specific, build, development and transitive forbidden edges each fail with `LAYER_FORBIDDEN_EDGE` or `LAYER_FORBIDDEN_TRANSITIVE_EDGE`; an unassigned member and a stale policy entry fail; a manifest that cannot be read is an error, never a pass. Further fixtures cover the allowlist and patch rules: `patched_forbidden_dependency_fails` (a registry requirement satisfied by `[patch]` fails as `LAYER_FORBIDDEN_EDGE`), `external_crate_in_an_allowlist_restricted_layer_fails_for_normal_and_build`, `an_allowlisted_external_crate_passes_and_a_malformed_allowlist_cannot_run`, and `repository_layer_policy_keeps_ports_and_app_free_of_external_crates`, which pins the empty lists in the repository policy. Command results are in the milestone record.
 
 ## Consequences
 

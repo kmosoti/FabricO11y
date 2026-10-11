@@ -4,6 +4,8 @@
 
 Accepted for the current local learning workload. This is a generator choice, not a claim that its output resembles production telemetry or is the fastest available option.
 
+Status note, 2026-10-11: `fake` is no longer a dependency. The seeded generator was part of the FOL2 demonstration, which is archived in the [research archive](https://github.com/kmosoti/FabricO11y-research); this record stays as the history of that choice.
+
 ## Context
 
 The Stage 2 generator had a hand-written linear congruential recurrence. The project needs reproducible input for tests and experiments, while the event model's IDs, timestamps, ownership, and payload shape must remain explicit. A crates.io lookup on 2026-09-26 found no Rust crate named `synthdatagen`; the similarly named Python package is not a Rust dependency.

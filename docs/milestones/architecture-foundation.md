@@ -203,7 +203,7 @@ History query latency, freshness and journal-versus-Segment comparison (not run)
 
 ### Known architectural limitations
 
-- Both composition roots still contain adapters and domain policy: control transitions, query and rate semantics, retention eligibility and collection cursor rules are not in the core, so the layer gate cannot protect them.
+- Both composition roots still contain adapters and domain policy: control transitions, query and rate semantics, retention eligibility and collection cursor rules are not in the core, so the layer gate cannot protect them. The [semantic-kernels milestone](semantic-kernels.md) superseded this: those rules are now kernels in `fabric-core`, and the roots keep only their adapters.
 - One documented exception: `fabric-server` end-to-end tests depend on the root package (dev only).
 - The purity gate's source guard is syntactic.
 - Receipts are unsigned and written locally or by CI; they prove structure, not execution.
