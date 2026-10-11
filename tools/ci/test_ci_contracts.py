@@ -9,10 +9,34 @@ from pathlib import Path
 import re
 import tempfile
 import unittest
+import sys
 
 from verify_receipts import ROOT, require_limits, selected_checks, verify
 
 COMMIT = '1' * 40
+sys.path.insert(0, str(ROOT / 'tools/ui'))
+from fixture_cadence import FixtureCadence
+
+
+class CadenceTests(unittest.TestCase):
+    def test_actions_and_probes_share_one_schedule_without_replays(self):
+        now = [0.0]
+        sleeps = []
+        def sleep(seconds):
+            sleeps.append(seconds)
+            now[0] += seconds
+        cadence = FixtureCadence(lambda: now[0], sleep)
+        starts = []
+        for _ in range(20):
+            cadence.pace()
+            starts.append(now[0])
+            now[0] += .01
+        self.assertEqual(len(starts), 20)
+        self.assertTrue(all(b-a >= .550-1e-12 for a,b in zip(starts,starts[1:])))
+        self.assertEqual(len(sleeps), 19)
+        now[0] += 10
+        cadence.pace()
+        self.assertEqual(len(sleeps), 19)
 
 
 class ReceiptTests(unittest.TestCase):

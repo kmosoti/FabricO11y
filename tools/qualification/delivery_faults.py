@@ -158,14 +158,18 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--nodes", type=int, default=3)
     parser.add_argument("--seconds", type=float, default=20)
-    parser.add_argument("--bin-dir", default="target/release")
+    parser.add_argument("--bin-dir", default=str(Path(os.environ.get("CARGO_TARGET_DIR", "target")) / "release"))
     parser.add_argument("--mutate", choices=["drop-recovered"])
     parser.add_argument("--keep", action="store_true")
     args = parser.parse_args()
     bins = Path(args.bin_dir).resolve()
     node_bin, server_bin = bins / "fabric-node", bins / "fabric-server"
     spool_dump, server_dump = bins / "examples" / "spool_dump", bins / "examples" / "server_dump"
-    root = Path(f"target/alpha-delivery-{args.scenario}-{args.seed}").resolve()
+    for binary in (node_bin, server_bin, bins / "fabricctl", spool_dump, server_dump):
+        if not binary.is_file():
+            raise SystemExit(f"missing built delivery artifact: {binary}")
+    scratch = Path(os.environ["FABRIC_SCRATCH_ROOT"]).resolve()
+    root = scratch / f"alpha-delivery-{args.scenario}-{args.seed}"
     if root.is_symlink():
         raise SystemExit("refusing symlinked root")
     shutil.rmtree(root, ignore_errors=True)

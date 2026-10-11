@@ -18,6 +18,7 @@ import time
 import urllib.error
 import urllib.request
 from browser_producer import TRACE_ID, traces
+from fixture_cadence import FixtureCadence
 
 ROOT = Path(__file__).resolve().parents[2]
 DATA = Path('/run/media/kmosoti/data/FabricO11y')
@@ -88,7 +89,7 @@ def main():
                'injected_nonresident_enrollment': args.inject_nonresident_enrollment,
                'injected_rejection_defect':args.inject_rejection_defect,
                'source_sha256': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-                                 for p in (Path(__file__), ROOT / 'tools/ui/browser_producer.py', ROOT / 'tools/packaging/stage_console.py')},
+                                 for p in (Path(__file__), ROOT / 'tools/ui/fixture_cadence.py', ROOT / 'tools/ui/browser_producer.py', ROOT / 'tools/packaging/stage_console.py')},
                'binaries': {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in (args.server, args.spindle)},
                'browser_download': json.loads((TOOLS / 'download.json').read_text()) if args.browser=='chrome' else json.loads((DATA/'tools/ui/geckodriver.json').read_text())}
     processes = []
@@ -161,6 +162,7 @@ def main():
         return wd('/execute/async', {'script': script, 'args': values})
 
     def click(text):
+        pace_api()
         button=js('const button=Array.from(document.querySelectorAll("button")).find(e=>e.textContent.trim()===arguments[0]); if(!button)throw Error("button absent:"+arguments[0]);return button', text)
         wd('/element/'+button['element-6066-11e4-a52e-4f735466cecf']+'/click',{})
 
@@ -170,12 +172,9 @@ def main():
     def nav(text):
         js('Array.from(document.querySelectorAll(".sidebar .nav-item")).find(e=>e.textContent.includes(arguments[0])).click()', text)
 
-    last_api_call = 0.0
-    def pace_api():
-        nonlocal last_api_call
-        delay = .1 - (time.monotonic() - last_api_call)
-        if delay > 0: time.sleep(delay)
-        last_api_call = time.monotonic()
+    cadence = FixtureCadence()
+    pace_api = cadence.pace
+    receipt['benign_explicit_action_interval_ms'] = 550
 
     def expect(answer, status, message, label):
         code, body = answer
@@ -442,7 +441,7 @@ self.addEventListener("fetch",event=>{
         wait(lambda: js('return !!document.querySelector("[data-testid=connect-server]") && !!navigator.serviceWorker.controller'), 'public worker controls reloaded shell')
         check(async_js('const done=arguments[arguments.length-1];navigator.serviceWorker.getRegistration().then(r=>done(new URL(r.scope).pathname==="/console/" && new URL(r.active.scriptURL).pathname==="/console/service-worker.js"))'),'actual worker registration and script remain inside console scope')
         receipt['warm_shell_timing']=js('return {navigation:performance.getEntriesByType("navigation")[0]?.toJSON(),assets:performance.getEntriesByType("resource").map(e=>({path:new URL(e.name).pathname,duration_ms:e.duration,transfer_bytes:e.transferSize,encoded_bytes:e.encodedBodySize}))}')
-        js('window.fixtureApiHeaders=[];window.fixtureApiHeadersTruncated=false;const original=window.fetch;window.fetch=async(...args)=>{const response=await original(...args);const url=typeof args[0]==="string"?args[0]:args[0].url;const path=new URL(url,location.href).pathname;if(path.startsWith("/v1/")){if(window.fixtureApiHeaders.length>=512)window.fixtureApiHeadersTruncated=true;else window.fixtureApiHeaders.push({path,cache_control:response.headers.get("cache-control"),csp:response.headers.get("content-security-policy"),coop:response.headers.get("cross-origin-opener-policy"),corp:response.headers.get("cross-origin-resource-policy")});}return response}')
+        js('window.fixtureApiHeaders=[];window.fixtureApiHeadersTruncated=false;const original=window.fetch;window.fetch=async(...args)=>{const started_ms=performance.now();const response=await original(...args);const url=typeof args[0]==="string"?args[0]:args[0].url;const path=new URL(url,location.href).pathname;if(path.startsWith("/v1/")){if(window.fixtureApiHeaders.length>=512)window.fixtureApiHeadersTruncated=true;else window.fixtureApiHeaders.push({path,status:response.status,started_ms,retry_after:response.headers.get("retry-after"),cache_control:response.headers.get("cache-control"),csp:response.headers.get("content-security-policy"),coop:response.headers.get("cross-origin-opener-policy"),corp:response.headers.get("cross-origin-resource-policy")});}return response}')
         click('Connect to server')
         wait(lambda: js('return document.body.textContent.includes("Sign in with a passkey") && !document.body.textContent.includes("Working…")'), 'live sign-in locked view')
         js('''const weakenResident=arguments[0];const original=window.fabricPasskey;window.fabricPasskey=async function(register,text){
@@ -516,6 +515,14 @@ self.addEventListener("fetch",event=>{
         check(js('return document.body.textContent.includes("enrollment_id")'), 'inventory exposes immutable enrollment IDs')
         click('Refresh status')
         wait(lambda: js('return document.body.textContent.includes("retention_bytes")'), 'effective measured storage policy')
+        overload=async_js('''const done=arguments[arguments.length-1];Promise.all(Array.from({length:16},()=>fetch('/v1/console/session',{headers:{'x-fabric-client-version':'1'},cache:'no-store',credentials:'same-origin'}).then(async r=>({status:r.status,retry_after:r.headers.get('retry-after'),cache_control:r.headers.get('cache-control'),body:await r.text()})))).then(done);''')
+        # Retain only public rejection metadata, never the successful sessions.
+        receipt['peer_overload']=[{k:r[k] for k in ('status','retry_after','cache_control')} for r in overload]
+        refused=[r for r in overload if r['status']==429]
+        check(bool(refused) and all(r['retry_after']=='1' and r['cache_control']=='no-store'
+              and json.loads(r['body'])=={'error':'request admission is full'} for r in refused),
+              'unpaced protected peer burst is explicitly limited without cacheable responses')
+        wait(lambda:api('/v1/console/session')[0]==200,'protected peer admission recovers after refill')
         click('List passkeys')
         wait(lambda: js('return document.querySelectorAll(".live-json").length > 0 && !document.body.textContent.includes("Working…")'), 'passkey listing')
         # excludeCredentials intentionally rejects enrolling the same authenticator
@@ -1111,6 +1118,7 @@ self.addEventListener("fetch",event=>{
         receipt['error'] = str(error)
         if session:
             try:
+                receipt['actual_api_headers']=js('return window.fixtureApiHeaders||[]')
                 receipt['failure_browser_windows']=wd('/window/handles',method='GET')
                 receipt['failure_worker_state']=async_js('const done=arguments[arguments.length-1];if(!navigator.serviceWorker){done(null);return;}navigator.serviceWorker.getRegistration().then(async r=>done({active:r?.active?.state,waiting:r?.waiting?.state,caches:await caches.keys()})).catch(error=>done({error:String(error)}))')
                 receipt['ceremony_diagnostic']=js('return window.fixtureCeremonyDiagnostic||null')
