@@ -3,6 +3,18 @@
   "description": "Counterexamples kept as deterministic regression fixtures. `cargo xtask check-counterexamples` requires each reproducer test to exist in its file and each fix commit to exist. Removing an entry is a trust-boundary change.",
   "counterexamples": [
     {
+      "id": "CX-RECEIPT-FINAL-INPUT-STATE",
+      "origin": "Review of final receipt validation after hosted fuzz drift failure 38151336752",
+      "defect": "The final validator checked pre-check dirty flags but never inspected the live worktree, so a last check could change inputs after its receipt context was captured",
+      "seed_or_trace": "freeze a real Git fixture, then change a tracked input or add an untracked input after the recorded identity; final validation must reject both",
+      "contract": "ARCH-1",
+      "reproducer": {
+        "file": "tools/ci/test_ci_contracts.py",
+        "test": "test_input_changes_after_receipts_are_rejected"
+      },
+      "fix_commit": "229f704"
+    },
+    {
       "id": "CX-FUZZ-DEPENDENCY-DRIFT",
       "origin": "Hosted extended run 38151336752 on proposed merge e35fdf9: all commands exited zero, but dependency-policy and coverage receipts were dirty after fuzzing",
       "defect": "The separate fuzz lock lacked the current server dependency graph; cargo-fuzz silently rewrote it, so later checks did not run on unchanged candidate inputs",
