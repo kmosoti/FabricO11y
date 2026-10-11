@@ -335,6 +335,35 @@ async fn pending_journal_uses_the_same_evidence_as_sealed_storage() {
 }
 
 #[tokio::test]
+async fn freshness_covers_retained_logs_beyond_the_query_window() {
+    // Origin: hosted browser run 38172604195. An edge Spindle also collects its own
+    // diagnostics, so a newer log can arrive after a query window was fixed. Freshness
+    // is the source's newest retained observation of the signal, not its newest row.
+    for sealed in [true, false] {
+        let f = fixture_storage(sealed);
+        let body =
+            |to_ns| json!({"kind":"logs","node":"secret","from_ns":0,"to_ns":to_ns,"limit":10});
+        let newest = |answer: &Value| {
+            let rows = answer["rows"].as_array().unwrap();
+            rows.iter()
+                .map(|r| r["observed_ns"].as_u64().unwrap())
+                .max()
+        };
+        let (status, narrow) = call(&f, "/v1/console/query", Some(body(801)), true).await;
+        assert_eq!(
+            (status, newest(&narrow)),
+            (StatusCode::OK, Some(800)),
+            "{narrow}"
+        );
+        assert_eq!(narrow["freshness"], json!({"secret":802}));
+        // A window that covers every retained log agrees with its own rows.
+        let (_, wide) = call(&f, "/v1/console/query", Some(body(10000)), true).await;
+        assert_eq!(newest(&wide), Some(802));
+        assert_eq!(wide["freshness"], json!({"secret":802}));
+    }
+}
+
+#[tokio::test]
 async fn opaque_cursor_rejects_other_credentials_and_expiration() {
     let f = fixture();
     let mut query = json!({"kind":"logs","from_ns":0,"to_ns":10000,"limit":1});
