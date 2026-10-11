@@ -24,9 +24,6 @@ members = [
 # Research packages keep their own manifests, lockfiles and commands.
 exclude = ["tools", "target", "xtask/fixtures", "fuzz"]
 
-[features]
-phase-probe = ["fabric-frame/phase-probe"]
-
 [dependencies]
 crc32fast = "=1.5.2"
 fabric-adapter-linux = { path = "crates/fabric-adapter-linux" }

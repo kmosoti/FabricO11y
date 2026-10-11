@@ -5,6 +5,3 @@
 
 pub mod envelope;
 pub mod frame;
-
-#[cfg(feature = "phase-probe")]
-pub mod probe;

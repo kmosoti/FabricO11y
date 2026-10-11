@@ -198,14 +198,8 @@ impl<R: Row> Runs<R> {
         if self.rows.is_empty() {
             return Ok(());
         }
-        #[cfg(feature = "phase-probe")]
-        let _phase = fabric_frame::probe::span("spill_sort_write");
         let mut rows = std::mem::take(&mut self.rows);
-        {
-            #[cfg(feature = "phase-probe")]
-            let _phase = fabric_frame::probe::span("spill_sort");
-            rows.sort_by_key(Row::key);
-        }
+        rows.sort_by_key(Row::key);
         let mut output =
             BufWriter::with_capacity(256 * 1024, File::create(self.path(0, self.count))?);
         let mut workspace = Workspace::default();
@@ -222,14 +216,10 @@ impl<R: Row> Runs<R> {
         Ok(())
     }
     fn finish(mut self, mut emit: impl FnMut(R) -> io::Result<()>) -> io::Result<()> {
-        #[cfg(feature = "phase-probe")]
-        let _phase = fabric_frame::probe::span("merge_to_table");
         self.spill()?;
         let mut level = 0;
         let mut count = self.count;
         while count > FAN_IN {
-            #[cfg(feature = "phase-probe")]
-            let _phase = fabric_frame::probe::span("intermediate_merge");
             let (merged_groups, merged_inputs) = merge_plan(count);
             for index in 0..merged_groups {
                 let paths: Vec<_> = (index * FAN_IN..((index + 1) * FAN_IN).min(merged_inputs))
@@ -385,11 +375,7 @@ impl<R> Table<R> {
         if self.rows.is_empty() {
             return Ok(());
         }
-        #[cfg(feature = "phase-probe")]
-        let _phase = fabric_frame::probe::span("bounded_table_flush");
         if let Some(text) = self.text {
-            #[cfg(feature = "phase-probe")]
-            let _phase = fabric_frame::probe::span("bounded_filter");
             if self.group_chunks {
                 let filter = self
                     .group_filter
@@ -410,8 +396,6 @@ impl<R> Table<R> {
         // tables keep reference row groups, spilling completed encoded pages;
         // heap limits require measurements rather than input-size inference.
         let count = {
-            #[cfg(feature = "phase-probe")]
-            let _phase = fabric_frame::probe::span("bounded_parquet_encode_write");
             let count =
                 write_converted(&mut self.rows, EARLY_ROW_RELEASE, self.convert, |batch| {
                     self.writer.write(batch).map_err(err)
@@ -440,8 +424,6 @@ impl<R> Table<R> {
         }
     }
     fn finish(mut self) -> io::Result<FinishedTable> {
-        #[cfg(feature = "phase-probe")]
-        let _phase = fabric_frame::probe::span("bounded_table_finalize_sync");
         self.flush()?;
         self.finish_group_filter();
         self.writer.finish().map_err(err)?;
@@ -502,8 +484,6 @@ fn build_with_limit(
     path: &Path,
     run_limit: usize,
 ) -> io::Result<Manifest> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("bounded_segment_build");
     let dir = segments_dir(state_dir)?;
     let building = dir.join(format!(".building-{label:020}"));
     match fs::remove_dir_all(&building) {
@@ -541,8 +521,6 @@ fn build_with_limit(
     let mut freshness = BTreeMap::<String, u64>::new();
     while at < len {
         let (group, next) = {
-            #[cfg(feature = "phase-probe")]
-            let _phase = fabric_frame::probe::span("bounded_frame_read_decode");
             let (payload, next) = read_frame(&file, at, len, MAX_GROUP_PAYLOAD)?
                 .ok_or_else(|| invalid("incomplete frame in sealed journal file"))?;
             (Group::decode(payload.as_slice()).map_err(err)?, next)

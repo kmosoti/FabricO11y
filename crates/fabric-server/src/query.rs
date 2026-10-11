@@ -380,8 +380,6 @@ impl History {
         node: &Option<String>,
         authorized_nodes: Option<&HashSet<String>>,
     ) -> io::Result<Sources> {
-        #[cfg(feature = "phase-probe")]
-        let _phase = fabric_frame::probe::span("query_walk_source_loading");
         let table = match query {
             Query::Logs { .. } => Table::Logs,
             Query::Metrics { .. } | Query::Rate { .. } => Table::Metrics,
@@ -488,9 +486,6 @@ impl History {
         newest: u64,
         after_segments: impl FnOnce(),
     ) -> io::Result<Sources> {
-        #[cfg(feature = "phase-probe")]
-        let _phase = fabric_frame::probe::span("query_scan_source_loading");
-
         let segments_dir = segment::segments_dir(&self.state_dir)?;
         let listed = segment::list(&self.state_dir)?;
         let before: HashSet<_> = listed.iter().map(|(label, _)| *label).collect();
@@ -609,9 +604,6 @@ impl History {
         committed_group: u64,
         authorized_nodes: Option<&HashSet<String>>,
     ) -> Result<Value, QueryError> {
-        #[cfg(feature = "phase-probe")]
-        let _phase = fabric_frame::probe::span("query_run_inclusive");
-
         let (node, from, to, limit, page) = match query {
             Query::Logs {
                 node,
@@ -871,8 +863,6 @@ impl History {
         });
         gaps.sort_by_key(|g| (g.received_ns, g.node_id, g.sequence));
 
-        #[cfg(feature = "phase-probe")]
-        let _execution = fabric_frame::probe::span("query_execute_inclusive_loading");
         let mut next_page = Value::Null;
         let rows_json = match query {
             Query::Logs {
@@ -1072,8 +1062,6 @@ impl History {
                         "after": [k.0, hex(&k.1), k.2, k.3],
                     })));
                 }
-                #[cfg(feature = "phase-probe")]
-                let _construct = fabric_frame::probe::span("query_log_json_construct");
                 sorted.iter().map(|(_, r)| log_json(r)).collect()
             }
             Query::Metrics { name, limit, .. } => {
@@ -1437,10 +1425,6 @@ impl History {
                 rates(points)
             }
         };
-        #[cfg(feature = "phase-probe")]
-        drop(_execution);
-        #[cfg(feature = "phase-probe")]
-        let _output = fabric_frame::probe::span("query_envelope_construct");
         // Shared damaged sources cannot be attributed to one enrollment. Reveal
         // neither their path nor global count; preserve explicit uncertainty.
         if authorized_nodes.is_some() && !unavailable.is_empty() {
@@ -1526,9 +1510,6 @@ impl serde::Serialize for QueryShape<'_> {
 /// Per series of a monotonic cumulative sum: a rate per consecutive pair
 /// sharing `start_ns` with no decrease, otherwise a reset marker.
 fn rates(mut points: Vec<MetricRow>) -> Vec<Value> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("query_rates");
-
     let series = |r: &MetricRow| {
         (
             r.node.clone(),

@@ -81,9 +81,6 @@ fn hex(bytes: &[u8]) -> String {
 }
 
 fn sync_dir(dir: &Path) -> io::Result<()> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("directory_sync");
-
     File::open(dir)?.sync_all()
 }
 
@@ -137,9 +134,6 @@ pub fn spans_schema() -> SchemaRef {
 }
 
 fn spans_batch(rows: &[SpanRow]) -> io::Result<RecordBatch> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("arrow_spans");
-
     let strings =
         |f: fn(&SpanRow) -> &str| Arc::new(StringArray::from_iter_values(rows.iter().map(f)));
     RecordBatch::try_new(
@@ -213,9 +207,6 @@ pub fn batches_schema() -> SchemaRef {
 }
 
 fn logs_batch(rows: &[LogRow]) -> io::Result<RecordBatch> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("arrow_logs");
-
     RecordBatch::try_new(
         logs_schema(),
         vec![
@@ -243,9 +234,6 @@ fn logs_batch(rows: &[LogRow]) -> io::Result<RecordBatch> {
 }
 
 fn metrics_batch(rows: &[MetricRow]) -> io::Result<RecordBatch> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("arrow_metrics");
-
     RecordBatch::try_new(
         metrics_schema(),
         vec![
@@ -293,9 +281,6 @@ fn metrics_batch(rows: &[MetricRow]) -> io::Result<RecordBatch> {
 }
 
 fn gaps_batch(rows: &[GapRow]) -> io::Result<RecordBatch> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("arrow_gaps");
-
     RecordBatch::try_new(
         gaps_schema(),
         vec![
@@ -319,9 +304,6 @@ fn gaps_batch(rows: &[GapRow]) -> io::Result<RecordBatch> {
 }
 
 fn batches_batch(records: &[(u64, Entry)]) -> io::Result<RecordBatch> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("arrow_batches");
-
     let mut sha = FixedSizeBinaryBuilder::new(32);
     for (_, entry) in records {
         sha.append_value(Sha256::digest(&entry.batch))
@@ -370,9 +352,6 @@ impl<W: Write> Write for HashingWriter<W> {
 }
 
 fn write_table(path: &Path, batch: &RecordBatch) -> io::Result<FileEntry> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("parquet_encode_compress_write_sync");
-
     let properties = WriterProperties::builder()
         .set_max_row_group_row_count(Some(ROW_GROUP))
         .set_compression(Compression::ZSTD(ZstdLevel::try_new(3).map_err(err)?))
@@ -385,27 +364,11 @@ fn write_table(path: &Path, batch: &RecordBatch) -> io::Result<FileEntry> {
     {
         let mut writer =
             ArrowWriter::try_new(&mut output, batch.schema(), Some(properties)).map_err(err)?;
-        {
-            #[cfg(feature = "phase-probe")]
-            let _phase = fabric_frame::probe::span("parquet_writer_write_inclusive");
-            writer.write(batch).map_err(err)?;
-        }
-        {
-            #[cfg(feature = "phase-probe")]
-            let _phase = fabric_frame::probe::span("parquet_writer_finish_inclusive");
-            writer.close().map_err(err)?;
-        }
+        writer.write(batch).map_err(err)?;
+        writer.close().map_err(err)?;
     }
-    {
-        #[cfg(feature = "phase-probe")]
-        let _phase = fabric_frame::probe::span("parquet_buffer_flush");
-        output.flush()?;
-    }
-    {
-        #[cfg(feature = "phase-probe")]
-        let _phase = fabric_frame::probe::span("parquet_file_sync");
-        output.inner.get_ref().sync_all()?;
-    }
+    output.flush()?;
+    output.inner.get_ref().sync_all()?;
     Ok(FileEntry {
         sha256: hex(&output.hash.finalize()),
         bytes: output.bytes,
@@ -434,9 +397,6 @@ fn write_filter<R>(
     rows: &[R],
     text: impl Fn(&R) -> &str,
 ) -> io::Result<FileEntry> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("filter_build_write_sync");
-
     let builder =
         ParquetRecordBatchReaderBuilder::try_new(File::open(building.join(table))?).map_err(err)?;
     let mut groups = Vec::new();
@@ -480,9 +440,6 @@ pub fn read_spans_filter(
     dir: &Path,
     manifest: &Manifest,
 ) -> Option<Vec<crate::text_filter::GroupFilter>> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("parquet_load_project_spans");
-
     read_filter(dir, manifest, SPANS_FILTER)
 }
 
@@ -517,9 +474,6 @@ pub fn read_sealed(path: &Path) -> io::Result<Vec<Group>> {
 
 /// Build and commit the segment for sealed journal file `label`.
 pub fn build(state_dir: &Path, label: u64, groups: &[Group]) -> io::Result<Manifest> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("segment_build");
-
     let dir = segments_dir(state_dir)?;
     let building = dir.join(format!(".building-{label:020}"));
     let _ = fs::remove_dir_all(&building);
@@ -865,8 +819,6 @@ fn read_logs_borrowed(
     to: u64,
     visit: &mut impl for<'a> FnMut(LogView<'a>),
 ) -> io::Result<()> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("parquet_load_project_logs");
     for batch in builder.with_row_groups(groups).build().map_err(err)? {
         let batch = batch.map_err(err)?;
         // Keep original type checks and their order, including rejected rows.
@@ -992,9 +944,6 @@ fn read_logs(
     to: u64,
     visit: &mut impl FnMut(LogRow),
 ) -> io::Result<()> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("parquet_load_project_logs");
-
     for batch in builder.with_row_groups(groups).build().map_err(err)? {
         let batch = batch.map_err(err)?;
         let (g, n, id, s, i, t, b, a) = (
@@ -1059,9 +1008,6 @@ fn read_metrics(
     to: u64,
     visit: &mut impl FnMut(MetricRow),
 ) -> io::Result<()> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("parquet_load_project_metrics");
-
     for batch in builder.with_row_groups(groups).build().map_err(err)? {
         let batch = batch.map_err(err)?;
         let vi = col::<Int64Array>(&batch, 11)?;

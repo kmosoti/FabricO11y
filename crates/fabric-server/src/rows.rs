@@ -295,14 +295,7 @@ pub(crate) fn latest_signal_observation_bytes(bytes: &[u8]) -> io::Result<[Optio
 
 /// Decode one record into its rows, appending to `out`.
 pub fn extract(group: u64, entry: &Entry, out: &mut Rows) -> io::Result<()> {
-    #[cfg(feature = "phase-probe")]
-    let _phase = fabric_frame::probe::span("otlp_decode_project");
-
-    let batch = {
-        #[cfg(feature = "phase-probe")]
-        let _phase = fabric_frame::probe::span("batch_envelope_decode");
-        Batch::decode(entry.batch.as_slice()).map_err(|e| invalid(e.to_string()))?
-    };
+    let batch = Batch::decode(entry.batch.as_slice()).map_err(|e| invalid(e.to_string()))?;
     let node_id: [u8; 16] = batch
         .node_id
         .as_slice()
@@ -310,25 +303,13 @@ pub fn extract(group: u64, entry: &Entry, out: &mut Rows) -> io::Result<()> {
         .map_err(|_| invalid("batch node_id is not 16 bytes"))?;
     let node = entry.label.clone();
     if !batch.logs.is_empty() {
-        let request = {
-            #[cfg(feature = "phase-probe")]
-            let _phase = fabric_frame::probe::span("otlp_logs_decode");
-            ExportLogsServiceRequest::decode(batch.logs.as_slice())
-                .map_err(|e| invalid(e.to_string()))?
-        };
-        #[cfg(feature = "phase-probe")]
-        let _projection = fabric_frame::probe::span("otlp_logs_projection");
+        let request = ExportLogsServiceRequest::decode(batch.logs.as_slice())
+            .map_err(|e| invalid(e.to_string()))?;
         project_logs(group, &node, node_id, batch.sequence, request, out);
     }
     if !batch.metrics.is_empty() {
-        let request = {
-            #[cfg(feature = "phase-probe")]
-            let _phase = fabric_frame::probe::span("otlp_metrics_decode");
-            ExportMetricsServiceRequest::decode(batch.metrics.as_slice())
-                .map_err(|e| invalid(e.to_string()))?
-        };
-        #[cfg(feature = "phase-probe")]
-        let _projection = fabric_frame::probe::span("otlp_metrics_projection");
+        let request = ExportMetricsServiceRequest::decode(batch.metrics.as_slice())
+            .map_err(|e| invalid(e.to_string()))?;
         let mut index = 0_u32;
         for resource in &request.resource_metrics {
             for scope in &resource.scope_metrics {
@@ -367,14 +348,8 @@ pub fn extract(group: u64, entry: &Entry, out: &mut Rows) -> io::Result<()> {
         }
     }
     if !batch.traces.is_empty() {
-        let request = {
-            #[cfg(feature = "phase-probe")]
-            let _phase = fabric_frame::probe::span("otlp_traces_decode");
-            ExportTraceServiceRequest::decode(batch.traces.as_slice())
-                .map_err(|e| invalid(e.to_string()))?
-        };
-        #[cfg(feature = "phase-probe")]
-        let _projection = fabric_frame::probe::span("otlp_traces_projection");
+        let request = ExportTraceServiceRequest::decode(batch.traces.as_slice())
+            .map_err(|e| invalid(e.to_string()))?;
         let mut index = 0_u32;
         for resource in &request.resource_spans {
             for scope in &resource.scope_spans {
