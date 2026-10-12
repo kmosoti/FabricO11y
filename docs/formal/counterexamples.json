@@ -3,6 +3,18 @@
   "description": "Counterexamples kept as deterministic regression fixtures. `cargo xtask check-counterexamples` requires each reproducer test to exist in its file and each fix commit to exist. Removing an entry is a trust-boundary change.",
   "counterexamples": [
     {
+      "id": "CX-CONSOLE-ICON-TIMESTAMP",
+      "origin": "Cross-check of the a5dbda7 rebuild on #40: icon-192.png, icon-512.png, asset-manifest.json and service-worker.js differed from the ca84d98 build although no console input changed (#55)",
+      "defect": "ImageMagick wrote date:modify and date:timestamp tEXt chunks into the generated icons, so separate console builds of one commit produced different icons, asset manifests, service-worker cache versions and package hashes",
+      "seed_or_trace": "Convert the same input twice with different input mtimes and conversion times: only the date text chunks differ, and -strip makes the outputs byte-identical. test_console_icons_carry_no_build_timestamp injects tIME, tEXt, zTXt and iTXt chunks into an otherwise receipt-matching icon; staging without the check accepted all four",
+      "contract": "B1 artifact identity: separate builds of the same frozen source produce identical console assets and packages",
+      "reproducer": {
+        "file": "tools/packaging/test_packaging.py",
+        "test": "test_console_icons_carry_no_build_timestamp"
+      },
+      "fix_commit": "3c32ffdb3f718e1ee666935101ef749058b36f64"
+    },
+    {
       "id": "CX-RUNNER-OUTSIDE-FIXTURE-LAYOUT",
       "origin": "Fast checks on 5a933e6 in a worktree beneath FABRIC_SCRATCH_ROOT; qualification-runner exited 1 with one error among 21 tests",
       "defect": "The supposedly outside-scratch fixture was derived from the checkout's target directory, which was inside scratch in this layout; the correctly admitted path reached mocked Popen instead of exercising refusal",
