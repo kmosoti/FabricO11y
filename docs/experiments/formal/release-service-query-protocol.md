@@ -6,6 +6,12 @@ the six local main trials and four fixed-query cells. Existing historical
 protocols, independent delivery/query/rate oracles and thresholds are unchanged.
 Cross-family networking and prolonged outages are separate cells.
 
+For three-role fixed-query successors, the separately registered
+[reader-corpus amendment](query-reader-corpus-protocol.md) replaces the older
+fixture-only grant assumption below. [Page admission](query-page-admission-protocol.md)
+paces caller attempts while retaining the original complete-query latency gate.
+Historical results keep their original source revisions and interpretations.
+
 ## Inputs and containment
 
 Use the exact extracted Debian package binaries and console assets, with the

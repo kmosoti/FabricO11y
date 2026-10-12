@@ -97,6 +97,12 @@ pending. This does not establish portable identity for other filesystems.
 
 ## History and query
 
+The [fixed-query caller prerequisites](../experiments/formal/query-caller-run-01.md)
+preserve two harness counterexamples and a fresh disposable native smoke. The
+independent input adapter now includes the installation-wide reader's companion
+sources, bounded by native snapshot timing; all metadata checks and the query
+oracle remain unchanged. Full exact-candidate fixed-query acceptance is pending.
+
 | ID | Contract | Spec | Production implementation | Verification | Independent oracle | Negative control | Formal model | Fault test | Status | Unchecked |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | HIST-1 | Journal and Segment representations answer equivalently | PC completeness; RH | `History::run` over segments and journal tail | `journal_and_segment_representations_answer_identically` (journal only versus Segment only); oracle-graded mixed answers; [streaming output byte-equivalence pilot](../experiments/benchmarks/streaming-output-local-run-01.md) | query oracle | M-HIST-SEGMENT | — | — | Tested | Histograms and summaries (no rows by contract); non-string attributes |

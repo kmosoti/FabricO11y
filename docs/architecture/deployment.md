@@ -25,3 +25,9 @@ Unexpected child exit makes the production supervisor stop serving. During norma
 The vendor sysusers declaration owns identity creation, with administrator overrides in `/etc`; installation must reject an existing identity that fails the expected service-account checks. systemd owns runtime/state directories and cgroups. Root owns installed binaries, units and base configuration; the services get only required state and credential access. Narrow local ACLs authorize selected log files. The node reads host `/proc`, `/sys`, and `/sys/fs/cgroup` for the required host metrics, while neither daemon writes cgroup files or gains privileges on source failure. [sysusers.d](https://manpages.debian.org/trixie/systemd/sysusers.d.5.en.html) and [systemd.exec](https://manpages.debian.org/trixie/systemd/systemd.exec.5.en.html) define these mechanisms.
 
 At install acceptance, check real effective resource controls and source visibility under the service sandbox, plus account collisions, directory modes, TLS, restart and retained data. A static unit check is only an early syntax gate. [ADR-0010](../decisions/ADR-0010-use-static-systemd-services-for-alpha.md) records why this is the deployment boundary of the first profile.
+
+The [fixed-query caller checkpoint](../experiments/formal/query-caller-run-01.md)
+uses the unchanged packaged companion and installation-wide reader role. Its
+disposable smoke verifies independent companion corpus handling; full service
+and deployment gates remain separate. Component ownership and deployment
+boundaries are unchanged.
