@@ -36,6 +36,11 @@ by this feature. The final stopping marker may await a later restart. See the
 [correctness protocol](../experiments/formal/server-self-observation-protocol.md)
 for finite delivery and lifecycle checks.
 
+The companion's server-log preflight, collection and backlog reads share the
+[secure opener](security-hardening.md#selected-log-paths). It walks checked
+directory descriptors without following links, preserving the installed
+`RestrictSUIDSGID` sandbox even where that directive denies `openat2`.
+
 The Rust ownership rule is simple: a source read builds an owned candidate `Batch`; the node does not advance its in-memory cursor or forget source responsibility until `Spool::append_owned` returns its committed batch after data and marker sync. On restart it reconstructs cursors and counter start information by streaming committed batches. The tradeoff is a linear replay of at most the configured spool cap and a stopped collector when its byte cap is exhausted. The spool keeps an ACK cursor and deletes whole sealed files at or below it ([storage view](storage.md)); without a server the cursor stays at zero and every batch is kept.
 
 Supported telemetry profile: bounded OTLP protobuf export requests inside `FAB1`. Host resource attributes identify hostname and Linux boot ID. `/proc/stat` supplies aggregate CPU user/system/idle cumulative time in seconds (kernel clock ticks converted with `sysconf`); `/proc/meminfo` supplies total and available byte gauges; `statvfs("/")` supplies root filesystem capacity/available byte gauges; `/proc/diskstats` supplies cumulative read/write bytes per named device (512-byte sectors); `/proc/net/dev` supplies cumulative received/transmitted bytes per named interface. Counter points use cumulative monotonic Sum, observation time, and a start time that changes on detected decrease or boot ID change. Gauges carry observation time and units. Disk and interface cardinality are capped with explicit source failure; no implicit device filtering is claimed. No rate is fabricated from a Gauge.
