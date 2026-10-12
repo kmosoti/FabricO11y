@@ -11,7 +11,10 @@ registered=ac71995b3c8b88cbb6f7dd05d9854e347b7a783caadc1b602f6590d6460f4a2f
 version=0.1.0~alpha.0
 out=$(realpath "$2")
 work=$(mktemp -d "${TMPDIR:-/tmp}/predecessor-XXXXXX")
-trap 'rm -rf "$work"' EXIT HUP INT TERM
+trap 'rm -rf "$work"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 dpkg-deb -R "$1" "$work/root"
 control="$work/root/DEBIAN/control"
 stamp=$(stat -c %Y "$control")

@@ -17,7 +17,10 @@ arch=$(dpkg --print-architecture)
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$root" log -1 --format=%ct)}"
 stage=$(mktemp -d "${TMPDIR:-/tmp}/deb-stage-XXXXXX")
 rmdir "$stage"
-trap 'rm -rf "$stage"' EXIT HUP INT TERM
+trap 'rm -rf "$stage"' EXIT
+trap 'exit 129' HUP
+trap 'exit 130' INT
+trap 'exit 143' TERM
 "$root/packaging/build-stage.sh" "$stage" "$2"
 mkdir -p "$stage/DEBIAN"
 # Library dependencies from the binaries themselves (for example
