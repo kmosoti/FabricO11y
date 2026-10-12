@@ -17,6 +17,7 @@ from verify_receipts import ROOT, current_identity, require_limits, selected_che
 
 COMMIT = '1' * 40
 sys.path.insert(0, str(ROOT / 'tools/ui'))
+import fixture_cadence
 from fixture_cadence import FixtureCadence
 sys.path.insert(0, str(ROOT / 'tools/qualification'))
 from check_delivery_fault_control import detected
@@ -36,6 +37,29 @@ class DeliveryControlTests(unittest.TestCase):
 
 
 class CadenceTests(unittest.TestCase):
+    def assert_native_peer_limits(self, source):
+        declaration = re.search(r'const LIMITS\s*:\s*\[Limits;\s*2\]\s*=\s*\[(.*?)\];', source, re.S)
+        self.assertIsNotNone(declaration, 'native peer admission declaration missing')
+        fields = ('rate', 'burst', 'peer_live', 'global_live')
+        limits = []
+        for entry in re.findall(r'Limits\s*\{([^}]+)\}', declaration[1]):
+            values = re.findall(r'\b(rate|burst|peer_live|global_live)\s*:\s*(\d+)\s*,', entry)
+            self.assertEqual(len(values), len(fields), 'native peer admission fields missing or duplicated')
+            values = dict(values)
+            self.assertEqual(set(values), set(fields), 'native peer admission fields missing or duplicated')
+            limits.append(tuple(int(values[field]) for field in fields))
+        self.assertEqual(limits, [fixture_cadence.PEER_ADMISSION[lane]['limits']
+                                 for lane in ('public', 'private')], 'native peer admission limits drifted')
+
+    def test_native_peer_limits_match_the_caller_mirror_and_reject_drift(self):
+        source = (ROOT / 'crates/fabric-server/src/peer_admission.rs').read_text()
+        self.assert_native_peer_limits(source)
+        for original, replacement in (('rate: 8,', 'rate: 7,'), ('peer_live: 4,', 'peer_live: 3,')):
+            changed = source.replace(original, replacement)
+            self.assertNotEqual(changed, source, 'representative drift was not injected')
+            with self.subTest(field=original), self.assertRaisesRegex(AssertionError, 'limits drifted'):
+                self.assert_native_peer_limits(changed)
+
     def test_actions_and_probes_share_one_schedule_without_replays(self):
         now = [0.0]
         sleeps = []
