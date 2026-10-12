@@ -4,6 +4,9 @@ import copy
 import json
 from pathlib import Path
 import re
+import socket
+import threading
+import time
 from types import SimpleNamespace
 import unittest
 
@@ -158,6 +161,54 @@ class RoleMatrixTests(unittest.TestCase):
                             invoke()
                         if case == 'progressing':self.assertEqual(reads, ['chunk'], 'wall bound must stop a progressively readable body')
                         else:self.assertEqual(opened, [], 'expired/storage-limited dispatch reached network')
+
+    def test_actual_slow_headers_and_chunk_metadata_cannot_outlive_inner_io_bounds(self):
+        # Origin: CPython read1 still reads chunk metadata/header lines internally.
+        source = ast.parse(Path(browser.__file__).read_text())
+        main = next(n for n in source.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+        functions = [n for n in source.body if isinstance(n, ast.FunctionDef) and n.name != 'main']
+        functions += [n for n in main.body if isinstance(n, ast.FunctionDef) and n.name == 'call']
+        for case in ('headers', 'chunk_metadata', 'storage'):
+            with self.subTest(case=case):
+                storage, stop, errors = threading.Event(), threading.Event(), []
+                with socket.socket() as listener:
+                    listener.bind(('127.0.0.1', 0));listener.listen(1);listener.settimeout(2)
+                    def peer():
+                        try:
+                            connection, _ = listener.accept()
+                            with connection:
+                                connection.settimeout(1);request=b''
+                                while b'\r\n\r\n' not in request:request+=connection.recv(4096)
+                                body=b'{"value":{"ready":true}}'
+                                prefix=(b'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n'+f'{len(body):x};note='.encode()
+                                        if case == 'chunk_metadata' else b'HTTP/1.1 200 OK\r\nX-Progress: ')
+                                connection.sendall(prefix);began=time.monotonic()
+                                while time.monotonic()-began<.6 and not stop.is_set():
+                                    if case == 'storage' and time.monotonic()-began>=.12:storage.set()
+                                    connection.sendall(b'x');stop.wait(.01)
+                                suffix=(b'\r\n'+body+b'\r\n0\r\n\r\n' if case == 'chunk_metadata'
+                                        else b'\r\nContent-Length: '+str(len(body)).encode()+b'\r\n\r\n'+body)
+                                if not stop.is_set():connection.sendall(suffix)
+                        except (BrokenPipeError, ConnectionResetError):pass
+                        except Exception as error:errors.append(error)
+                    worker=threading.Thread(target=peer, daemon=True);worker.start()
+                    namespace=dict(vars(browser));began=time.monotonic()
+                    namespace.update(endpoint=f'http://127.0.0.1:{listener.getsockname()[1]}',
+                                     deadline=began+(2 if case == 'storage' else .12),storage_violation=storage)
+                    exec(compile(ast.Module(body=functions, type_ignores=[]), '<actual-io-boundary>', 'exec'), namespace)
+                    previous_handler=browser.signal.getsignal(browser.signal.SIGALRM)
+                    previous_timer=browser.signal.getitimer(browser.signal.ITIMER_REAL)
+                    try:
+                        with self.assertRaisesRegex(RuntimeError, 'storage|512 MiB' if case == 'storage' else 'deadline'):
+                            namespace['call']('GET', '/status')
+                        elapsed=time.monotonic()-began
+                    finally:
+                        stop.set();worker.join(1)
+                    self.assertFalse(worker.is_alive(), 'synthetic peer did not stop')
+                    self.assertEqual(errors, [], 'synthetic peer failed before exercising the bound')
+                    self.assertEqual(browser.signal.getsignal(browser.signal.SIGALRM), previous_handler)
+                    self.assertEqual(browser.signal.getitimer(browser.signal.ITIMER_REAL), previous_timer)
+                    self.assertLessEqual(elapsed, .35, 'continuous metadata progress evaded the absolute I/O bound')
 
 
 if __name__ == '__main__':

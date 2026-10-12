@@ -113,3 +113,28 @@ storage-limited, paced-expiry, remaining-time and progressive-body fixtures;
 mock only transports/time, retain actual source dispatch functions, and require
 refusal before network or before the next body chunk. Root records named red
 then repeats unchanged controls after the separate implementation fix.
+
+## Absolute blocking-I/O control
+
+CPython reads HTTP header and chunk-extension lines inside urllib/HTTPResponse;
+even `read1` can perform multiple internal receives for that metadata. An idle
+socket timeout plus checks between returned body chunks therefore does not alone
+enforce the absolute inner deadline. Register a separate control before adding
+the remaining guard: the actual extracted WebDriver dispatch contacts only an
+owned loopback synthetic peer, which sends a byte every10ms within a header or
+chunk-extension line for0.6s. The two deadline cases use a literal0.12s remaining
+deadline and require the named deadline refusal within0.35s. A third case sets the
+existing storage Event after0.12s inside a progressing header, uses a2s deadline
+to distinguish the cause, and requires the named storage refusal within0.35s.
+Restore the previous SIGALRM handler/timer and stop/join the peer after every case.
+
+The prospective enforcement is a shared main-thread per-I/O SIGALRM guard, armed
+from the unchanged remaining deadline and polling the existing storage Event at
+most every100ms. A raising handler must interrupt internal blocking reads rather
+than allowing continuous progress to restart an idle timeout. Preserve genuine
+transport exceptions, restore/cancel signal state on every exit and before
+fixture cleanup, and reject incompatible signal ownership rather than overwriting
+another timer. No host clock,240s/1200s inner deadline,1800s outer deadline,quota
+or admission threshold changes. Root runs the same contained unittest command
+above for named red then unchanged green; all three actual-I/O cases are **not
+run** at registration and establish harness bounds, not package acceptance.
