@@ -18,6 +18,7 @@ import query_oracle as oracle
 from release_fixture import NS, SEEDS, integer, message, query_batch, traces, varint
 from workload import entropy_body
 from query_reader import PacedQueryReader
+from query_corpus import SnapshotCorpus, join_companion
 
 
 def file_digest(path):
@@ -236,7 +237,7 @@ def perform(f, args, summary, meter):
                   Path(__file__).with_name('release_runtime.py'),Path(__file__).with_name('console_bridge.py'),
                   Path(__file__).with_name('soak_companion.py'),Path(__file__).with_name('release_timing.py'),
                   Path(__file__).with_name('workload.py'),Path(__file__).with_name('delivery_oracle.py'),
-                  Path(__file__).with_name('query_reader.py')]
+                  Path(__file__).with_name('query_reader.py'),Path(__file__).with_name('query_corpus.py')]
     source_hashes={str(path):file_digest(path) for path in dependencies}
     summary['harness_inputs']=source_hashes
     nodes, batches = (2, 1) if args.smoke else (100, 100)
@@ -340,8 +341,12 @@ def perform(f, args, summary, meter):
             phase_baseline=f.bridge.poll_health(require_progress=False)
             for item in plan:
                 meter.check()
+                first_page=len(reader.page_schedule)
                 elapsed,pages=reader.pages(item['query'])
-                answers.append(dict(item,phase=phase,elapsed_s=elapsed,pages=pages))
+                boundary=reader.page_schedule[first_page]
+                answers.append(dict(item,phase=phase,elapsed_s=elapsed,pages=pages,
+                    snapshot_attempt_ns=boundary['attempted_monotonic_ns'],
+                    snapshot_completed_ns=boundary['completed_monotonic_ns']))
                 append_observation(query_file,answers[-1],max_bytes=128*1024**2)
                 # Test calls are paced; successful latency includes every page.
                 time.sleep(.1)
@@ -374,6 +379,18 @@ def perform(f, args, summary, meter):
     summary['companion_custody']=soak_companion.validate_recovery(companion,projected_recovery)
     if len(projected_recovery)!=summary['companion_custody']['recovered_sources']:
         raise RuntimeError('recovery contains an unexplained non-fixture source')
+    with (f.work/'companion-custody/spool.jsonl').open() as incoming:
+        companion_sources=[json.loads(line) for line in incoming][:-1]
+    companion_join=join_companion(companion_sources,additional)
+    native_log=f.work/'companion-timing.log'
+    with native_log.open('wb') as output:
+        for process in f.receipt['processes']:
+            if process['label'].startswith('server-'):
+                with (f.out/(process['label']+'.out')).open('rb') as incoming:
+                    shutil.copyfileobj(incoming,output)
+    from release_timing import native
+    companion_timing=native(native_log,companion_sources)
+    summary['companion_timing']=companion_timing
     import delivery_oracle
     ledger=list(companion['projected_sources'])
     acknowledgments={(event['label'],event['sequence']):event for event in acked}
@@ -405,14 +422,14 @@ def perform(f, args, summary, meter):
     custody=delivery_oracle.check(json.dumps(record) for record in ledger)
     summary['delivery_oracle']={'passed':custody.passed,'violations':custody.violations}
     archive=f.archive_dir()
-    for source in [source_file,recovery,f.work/'companion-custody/spool.jsonl',attempt_file,query_file]:
+    for source in [source_file,recovery,f.work/'companion-custody/spool.jsonl',attempt_file,query_file,native_log]:
         with source.open('rb') as incoming,gzip.open(archive/(source.name+'.gz'),'wb') as output:
             shutil.copyfileobj(incoming,output)
     (f.out/'delivery-acks.json').write_text(json.dumps(acked)+'\n')
     with gzip.open(archive/'answers.json.gz','wt') as output:
         json.dump(answers,output)
     with gzip.open(archive/'independent-receive-join.jsonl.gz','wt') as output:
-        for record in joined:
+        for record in joined+companion_join:
             output.write(json.dumps(record)+'\n')
     with gzip.open(archive/'custody-ledger.jsonl.gz','wt') as output:
         for record in ledger:
@@ -424,8 +441,8 @@ def perform(f, args, summary, meter):
     groups={}
     all_passed=True
     preparation_start=time.monotonic()
-    prepared=prepare_projections(joined,labels)
-    del joined
+    corpus=SnapshotCorpus(joined,companion_join,companion_timing,labels,prepare_projections)
+    del joined,companion_join,companion_sources
     summary['projection_preparation_s']=time.monotonic()-preparation_start
     from release_runtime import cgroups, directory_bytes, process_kib
     def grader_sample():
@@ -437,7 +454,8 @@ def perform(f, args, summary, meter):
     for index,answer in enumerate(answers):
         meter.check()
         started=time.monotonic()
-        verdict=grade([],answer['query'],answer['pages'],labels,prepared=prepared)
+        verdict=corpus.grade(answer['query'],answer['pages'],answer['snapshot_attempt_ns'],
+                            answer['snapshot_completed_ns'],grade)
         grader_samples.append(grader_sample())
         answer['verdict']=verdict
         answer['grading_s']=time.monotonic()-started
