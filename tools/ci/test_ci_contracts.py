@@ -61,23 +61,28 @@ class CadenceTests(unittest.TestCase):
                 self.assert_native_peer_limits(changed)
 
     def test_actions_and_probes_share_one_schedule_without_replays(self):
-        now = [0.0]
-        sleeps = []
-        def sleep(seconds):
-            sleeps.append(seconds)
-            now[0] += seconds
-        cadence = FixtureCadence(lambda: now[0], sleep)
-        starts = []
-        for _ in range(20):
-            cadence.pace()
-            starts.append(now[0])
-            now[0] += .01
-        self.assertEqual(len(starts), 20)
-        self.assertTrue(all(b-a >= .550-1e-12 for a,b in zip(starts,starts[1:])))
-        self.assertEqual(len(sleeps), 19)
-        now[0] += 10
-        cadence.pace()
-        self.assertEqual(len(sleeps), 19)
+        for interval, minimum, initial, duration in ((None, .550, 0.0, .01),
+                                                     (.500, .500, 0.0, .01),
+                                                     (.250, .250, 0.0, .01),
+                                                     (250_000_000, 250_000_000, 10**18 + 1, 10_000_000)):
+            with self.subTest(interval=interval):
+                now, sleeps = [initial], []
+                def sleep(delay):
+                    sleeps.append(delay)
+                    now[0] += delay
+                cadence = FixtureCadence(lambda: now[0], sleep,
+                                         **({} if interval is None else {'interval': interval}))
+                starts = []
+                for _ in range(20):
+                    cadence.pace()
+                    starts.append(now[0])
+                    now[0] += duration
+                self.assertEqual(len(starts), 20)
+                self.assertTrue(all(b-a >= minimum-1e-12 for a,b in zip(starts,starts[1:])))
+                self.assertEqual(len(sleeps), 19)
+                now[0] += 1000 * duration
+                cadence.pace()
+                self.assertEqual(len(sleeps), 19)
 
 
 class FuzzFreezeTests(unittest.TestCase):

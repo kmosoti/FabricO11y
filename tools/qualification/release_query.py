@@ -18,6 +18,7 @@ import query_oracle as oracle
 from release_fixture import NS, SEEDS, integer, message, query_batch, traces, varint
 from workload import entropy_body
 from query_reader import PacedQueryReader
+import fixture_cadence
 from query_corpus import SnapshotCorpus, join_companion
 
 
@@ -237,7 +238,8 @@ def perform(f, args, summary, meter):
                   Path(__file__).with_name('release_runtime.py'),Path(__file__).with_name('console_bridge.py'),
                   Path(__file__).with_name('soak_companion.py'),Path(__file__).with_name('release_timing.py'),
                   Path(__file__).with_name('workload.py'),Path(__file__).with_name('delivery_oracle.py'),
-                  Path(__file__).with_name('query_reader.py'),Path(__file__).with_name('query_corpus.py')]
+                  Path(__file__).with_name('query_reader.py'),Path(__file__).with_name('query_corpus.py'),
+                  Path(fixture_cadence.__file__)]
     source_hashes={str(path):file_digest(path) for path in dependencies}
     summary['harness_inputs']=source_hashes
     nodes, batches = (2, 1) if args.smoke else (100, 100)

@@ -78,6 +78,25 @@ class BridgeBoundaryTests(unittest.TestCase):
             ceremony.assert_called_once()
         self.assertFalse(bridge.ui_polling)
 
+    def test_failed_session_check_retains_the_next_command_interval_without_retry(self):
+        bridge = ConsoleBridge.__new__(ConsoleBridge)
+        bridge.lock = threading.RLock()
+        clock, sleeps = [0.0], []
+        def sleep(delay):
+            sleeps.append(delay)
+            clock[0] += delay
+        with patch('console_bridge.time.monotonic', side_effect=lambda: clock[0]), \
+                patch('console_bridge.time.sleep', side_effect=sleep), \
+                patch.object(bridge, 'session_view', side_effect=[RuntimeError('synthetic session refusal'),
+                           {'csrf': 'synthetic-csrf'}]) as session, \
+                patch.object(bridge, '_request', return_value=(429, {'error': 'synthetic refusal'})) as request:
+            with self.assertRaisesRegex(RuntimeError, 'synthetic session refusal'):
+                bridge.request('/v1/console/nodes')
+            self.assertEqual(bridge.request('/v1/console/nodes')[0], 429)
+        self.assertEqual(sleeps, [.500])
+        self.assertEqual(session.call_count, 2)
+        request.assert_called_once_with('/v1/console/nodes', 'GET', None, 'synthetic-csrf')
+
     def test_owner_success_cannot_substitute_for_actual_ui_progress_or_status(self):
         bridge = ConsoleBridge.__new__(ConsoleBridge)
         bridge.lock, bridge.ui_polling, bridge.ui_samples, bridge.receipt = threading.RLock(), True, [], {}

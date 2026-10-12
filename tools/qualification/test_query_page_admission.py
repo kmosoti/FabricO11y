@@ -95,6 +95,23 @@ class PageAdmissionTests(unittest.TestCase):
         self.assertEqual(reader.page_schedule[0]['outcome'], 'http_error')
         error.close()
 
+    def test_large_integer_timestamps_keep_exact_page_start_spacing(self):
+        clock = [10**18 + 1]
+        reader = PacedQueryReader(WorkloadReader('https://localhost:1', None, 'synthetic-reader-fixture'))
+        def response(*_, **__):
+            clock[0] += 1
+            return Response({'rows': [], 'next_page': None})
+        with patch('query_reader.time.monotonic_ns', side_effect=lambda: clock[0]), \
+                patch('query_reader.time.sleep', side_effect=lambda seconds: clock.__setitem__(0, clock[0] + round(seconds * 1_000_000_000))), \
+                patch('release_runtime.urllib.request.urlopen', side_effect=response):
+            for _ in range(3):
+                reader.query({'kind': 'metrics'})
+        starts = [event['attempted_monotonic_ns'] for event in reader.page_schedule]
+        self.assertEqual(starts, [10**18 + 1 + i * 250_000_000 for i in range(3)])
+        self.assertTrue(all(isinstance(start, int) for start in starts))
+        self.assertEqual([event['admission_wait_ns'] for event in reader.page_schedule],
+                         [0, 249_999_999, 249_999_999])
+
 
 if __name__ == '__main__':
     unittest.main()

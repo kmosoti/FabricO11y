@@ -33,6 +33,8 @@ import urllib.request
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 from resource_group import require_limits, STORAGE
+sys.path.insert(0, str(ROOT / 'tools/ui'))
+from fixture_cadence import FixtureCadence, PEER_ADMISSION
 
 VERSION = "155.0.8059.39"
 TOOLS = STORAGE / "tools/ui" / ("chrome-for-testing-" + VERSION)
@@ -354,10 +356,11 @@ class ConsoleBridge:
             # peer admits eight requests/s; two commands/s leave room for the
             # registered three visibility probes/s and five-second UI poll.
             # Serialize the pacing with the command, and keep every refusal.
-            previous = getattr(self, "_last_private_command", None)
-            if previous is not None:
-                time.sleep(max(0, .5 - (time.monotonic() - previous)))
-            self._last_private_command = time.monotonic()
+            if not hasattr(self, '_private_cadence'):
+                self._private_cadence = FixtureCadence(
+                    lambda: time.monotonic(), lambda delay: time.sleep(delay),
+                    interval=PEER_ADMISSION['private']['command_interval_s'])
+            self._private_cadence.pace()
             view = self.session_view()
             if method != "GET" and path != "/v1/console/query" and view["fresh_until_unix_s"] <= int(time.time()) + 60:
                 view = self.login()

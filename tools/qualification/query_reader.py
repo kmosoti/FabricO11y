@@ -1,8 +1,11 @@
 """Fixed-query caller pacing; inherited pagination includes every admission wait."""
 import time
+import sys
 import urllib.error
 
-from release_runtime import WorkloadReader
+from release_runtime import WorkloadReader, ROOT
+sys.path.insert(0, str(ROOT / 'tools/ui'))
+from fixture_cadence import FixtureCadence, PEER_ADMISSION
 
 
 class PacedQueryReader(WorkloadReader):
@@ -10,17 +13,16 @@ class PacedQueryReader(WorkloadReader):
         super().__init__(reader.origin, reader.context, reader.token)
         self.observations = reader.observations
         self.page_schedule = []
-        self._previous_page_attempt = None
+        self._page_cadence = FixtureCadence(
+            lambda: time.monotonic_ns(), lambda delay: time.sleep(delay / 1_000_000_000),
+            interval=round(PEER_ADMISSION['private']['page_interval_s'] * 1_000_000_000))
 
     def query(self, body):
         if len(self.page_schedule) >= 10000:
             raise RuntimeError('fixed-query page schedule exceeds 10000 requests')
         requested = time.monotonic_ns()
-        previous = self._previous_page_attempt
-        if previous is not None:
-            time.sleep(max(0, (previous + 250_000_000 - requested) / 1_000_000_000))
-        attempted = time.monotonic_ns()
-        self._previous_page_attempt = attempted
+        self._page_cadence.pace()
+        attempted = self._page_cadence.last
         event = {'requested_monotonic_ns': requested,
                  'attempted_monotonic_ns': attempted,
                  'admission_wait_ns': attempted - requested}
