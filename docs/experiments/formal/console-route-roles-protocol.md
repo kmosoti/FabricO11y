@@ -95,3 +95,9 @@ Before the matrix, perform real passkey reverification; verify the browser's new
 session identity, and use its matching real CSRF. Revoke the dedicated matrix
 node and log out only at the final rows. Record actual browser setup/auth counts
 and timestamps separately from the literal144 matrix cells/16 auth dispatches.
+The pinned setup offers seven browser auth dispatches: rejected initial start1,
+owner registration2, rejected consumed-bootstrap start1, additional-key finish1
+and pre-matrix login2. Require that literal count and at least550ms between those
+recorded starts, including each automatic finish. These seven precede the matrix's
+sixteen public auth dispatches; the already registered private peer burst remains
+an explicitly separate sixteen-request unpaced diagnostic.
