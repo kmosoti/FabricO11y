@@ -53,3 +53,15 @@ archive its loaded source before execution. Run the checker controls and a new
 disposable smoke through the resource launcher before the full six main and four
 query cells. A smoke is never a qualification result, and historical results
 cannot be regraded into successor passes.
+
+## Commit-separation correction
+
+The initial `ab19a5f` commit combined this registered protocol with its harness
+implementation. That did not satisfy the repository's separate-commit rule.
+Preserve that published history and every run's actual revision: withdraw only
+the new harness behavior, reaffirm this unchanged schedule in a protocol-only
+commit, then restore the byte-identical implementation in a separate reasoned
+commit. No workload runs at the intermediate withdrawn revision. This correction
+changes no workload, gate, counterexample expectation or measurement procedure.
+The earlier `ab19a5f` smoke and `8484493` measured cells remain evidence for those
+revisions; they are not described as runs on the corrected successor commit.
