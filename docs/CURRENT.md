@@ -29,8 +29,8 @@ and [architecture index](architecture/README.md) for behavior and configuration.
 
 The release epic ([#33](https://github.com/kmosoti/FabricO11y/issues/33)) tracks the
 remaining work. Owner decisions ([#34](https://github.com/kmosoti/FabricO11y/issues/34)):
-tag `v0.1.0-alpha.1`; Debian 13 and the current stable Fedora (45 if it ships by the
-freeze, otherwise 44); physical-device and mobile passkey checks are deferred as a known
+tag `v0.1.0-alpha.1`; Debian 13 and Fedora 44 (pinned at the freeze on 2026-10-12, before Fedora 45
+shipped); physical-device and mobile passkey checks are deferred as a known
 issue; reader queries are not individually audited. The
 [release plan](milestones/release-readiness.md) covers Debian/Fedora central and edge
 deployment, 100 GB retained telemetry with separate working space, local passkeys,
