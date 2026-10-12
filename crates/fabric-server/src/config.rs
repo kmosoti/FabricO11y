@@ -4,6 +4,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, Read};
 use std::net::SocketAddr;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::{Path, PathBuf};
 
 const MAX_CONFIG_BYTES: u64 = 64 * 1024;
@@ -22,8 +23,8 @@ pub struct Config {
     pub tls_cert: PathBuf,
     pub tls_key: PathBuf,
     pub state_dir: PathBuf,
-    /// Root-owned file holding the administrator's bearer token.
-    pub admin_token_file: PathBuf,
+    /// The legacy administrator's bearer token; only `serve-legacy` reads it.
+    pub admin_token_file: Option<PathBuf>,
     pub console_dir: Option<PathBuf>,
     pub access_origin: Option<String>,
     pub access_rp_id: Option<String>,
@@ -49,15 +50,34 @@ pub struct SpindleSettings {
     pub executable: Option<PathBuf>,
 }
 
-fn read_bounded(path: &Path) -> io::Result<String> {
+fn read_bounded(file: File) -> io::Result<String> {
     let mut bytes = Vec::new();
-    File::open(path)?
-        .take(MAX_CONFIG_BYTES + 1)
-        .read_to_end(&mut bytes)?;
+    file.take(MAX_CONFIG_BYTES + 1).read_to_end(&mut bytes)?;
     if bytes.len() as u64 > MAX_CONFIG_BYTES {
         return Err(invalid("file exceeds 64 KiB"));
     }
     String::from_utf8(bytes).map_err(|_| invalid("file is not UTF-8"))
+}
+
+/// A credential file's trimmed text. The file is a single-link regular file, not a
+/// symlink, owned by the caller or root, readable only by its owner or, if root
+/// owns it, also its group (`0640 root:fabricolly`).
+pub fn read_secret(path: &Path) -> io::Result<String> {
+    let file = File::options()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)?;
+    let meta = file.metadata()?;
+    let (uid, mode) = (meta.uid(), meta.mode());
+    // SAFETY: geteuid has no pointer preconditions.
+    let owner_ok = uid == 0 || uid == unsafe { libc::geteuid() };
+    let group_ok = uid == 0 && mode & 0o037 == 0;
+    if !meta.is_file() || meta.nlink() != 1 || !owner_ok || (mode & 0o077 != 0 && !group_ok) {
+        return Err(invalid(
+            "credential files must be single-link regular files owned by this user or root, readable only by their owner (0600) or, if root-owned, their group (0640)",
+        ));
+    }
+    Ok(read_bounded(file)?.trim().to_owned())
 }
 
 impl Config {
@@ -66,7 +86,7 @@ impl Config {
     }
 
     pub fn load_with_spindle(path: impl AsRef<Path>) -> io::Result<(Self, SpindleSettings)> {
-        let text = read_bounded(path.as_ref())?;
+        let text = read_bounded(File::open(path.as_ref())?)?;
         let mut values: HashMap<&str, &str> = HashMap::new();
         for line in text.lines() {
             let line = line.trim();
@@ -131,7 +151,10 @@ impl Config {
             tls_cert: path("tls_cert")?,
             tls_key: path("tls_key")?,
             state_dir: path("state_dir")?,
-            admin_token_file: path("admin_token_file")?,
+            admin_token_file: values
+                .get("admin_token_file")
+                .map(|_| path("admin_token_file"))
+                .transpose()?,
             console_dir: values
                 .get("console_dir")
                 .map(|_| path("console_dir"))
@@ -190,9 +213,10 @@ impl Config {
     }
 }
 
-/// The administrator token: printable ASCII, at least 32 bytes.
-pub fn load_admin_token(path: &Path) -> io::Result<String> {
-    let token = read_bounded(path)?.trim().to_owned();
+/// The legacy administrator token: printable ASCII, at least 32 bytes.
+pub fn load_admin_token(path: Option<&Path>) -> io::Result<String> {
+    let path = path.ok_or_else(|| invalid("serve-legacy requires admin_token_file"))?;
+    let token = read_secret(path)?;
     if token.len() < 32 || token.len() > 256 || !token.bytes().all(|b| b.is_ascii_graphic()) {
         return Err(invalid("admin token must be 32-256 printable ASCII bytes"));
     }
@@ -208,10 +232,13 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("fabric-server-config-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("server.conf");
-        let good = "listen=127.0.0.1:7443\ntls_cert=/c.pem\ntls_key=/k.pem\nstate_dir=/s\nadmin_token_file=/a\n";
+        let good = "listen=127.0.0.1:7443\ntls_cert=/c.pem\ntls_key=/k.pem\nstate_dir=/s\n";
         std::fs::write(&path, good).unwrap();
         let config = Config::load(&path).unwrap();
-        assert_eq!(config.admin_token_file, PathBuf::from("/a"));
+        assert_eq!(config.admin_token_file, None);
+        std::fs::write(&path, format!("{good}admin_token_file=/a\n")).unwrap();
+        let legacy = Config::load(&path).unwrap();
+        assert_eq!(legacy.admin_token_file, Some(PathBuf::from("/a")));
         assert_eq!(config.journal_bytes, DEFAULT_JOURNAL_BYTES);
         assert_eq!(config.retention_bytes, 100_000_000_000);
         assert_eq!(config.query_plan, crate::query::Plan::Scan);
@@ -223,7 +250,7 @@ mod tests {
         for bad in [
             format!("{good}node_credentials=/x\n"),
             format!("{good}listen=127.0.0.1:1\n"),
-            good.replace("admin_token_file=/a\n", ""),
+            format!("{good}admin_token_file=relative\n"),
             good.replace("state_dir=/s", "state_dir=relative"),
             format!("{good}query_plan=index\n"),
             format!("{good}seal_workers=0\n"),

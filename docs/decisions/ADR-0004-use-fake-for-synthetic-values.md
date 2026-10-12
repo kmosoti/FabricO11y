@@ -4,13 +4,15 @@
 
 Accepted for the current local learning workload. This is a generator choice, not a claim that its output resembles production telemetry or is the fastest available option.
 
+Status note, 2026-10-11: `fake` is no longer a dependency. The seeded generator was part of the FOL2 demonstration, which is archived in the [research archive](https://github.com/kmosoti/FabricO11y-research); this record stays as the history of that choice.
+
 ## Context
 
 The Stage 2 generator had a hand-written linear congruential recurrence. The project needs reproducible input for tests and experiments, while the event model's IDs, timestamps, ownership, and payload shape must remain explicit. A crates.io lookup on 2026-09-26 found no Rust crate named `synthdatagen`; the similarly named Python package is not a Rust dependency.
 
 ## Decision
 
-Use [`fake` 5.1.0](https://docs.rs/fake/5.1.0/fake/) with its default features disabled. Its `Fake::fake_with_rng` range samplers provide tenant and duration values. Use the named `ChaCha8Rng` exposed through `fake`'s `rand` re-export, with the public `u64` seed placed in the first eight bytes of a 32-byte little-endian seed. Keep a small [Fabric adapter](../../src/generator.rs) to assign sequential IDs, fixed synthetic times, the source and resource IDs, attribute key, and Gauge payload. Pin the crate version in [Cargo.toml](../../Cargo.toml) and dependency resolution in [Cargo.lock](../../Cargo.lock).
+Use [`fake` 5.1.0](https://docs.rs/fake/5.1.0/fake/) with its default features disabled. Its `Fake::fake_with_rng` range samplers provide tenant and duration values. Use the named `ChaCha8Rng` exposed through `fake`'s `rand` re-export, with the public `u64` seed placed in the first eight bytes of a 32-byte little-endian seed. Keep a small [Fabric adapter](https://github.com/kmosoti/FabricO11y-research/blob/main/src/generator.rs) to assign sequential IDs, fixed synthetic times, the source and resource IDs, attribute key, and Gauge payload. Pin the crate version in [Cargo.toml](../../Cargo.toml) and dependency resolution in [Cargo.lock](../../Cargo.lock).
 
 ## Alternatives considered
 
@@ -21,7 +23,7 @@ Use [`fake` 5.1.0](https://docs.rs/fake/5.1.0/fake/) with its default features d
 ## Evidence
 
 - [`fake`'s API](https://docs.rs/fake/5.1.0/fake/) documents seeded `fake_with_rng` generation and re-exports its `rand` dependency. The [Rand reproducibility guide](https://rust-random.github.io/book/crate-reprod.html) recommends a named ChaCha RNG for reproducible streams rather than `StdRng`.
-- [Generator tests](../../tests/generator.rs) check replay, a pinned seed-42 sequence, prefix stability, count bounds, and seed variation. [CLI tests](../../tests/cli.rs) and [buffer tests](../../tests/buffer.rs) check the downstream path after the sequence change.
+- [Generator tests](https://github.com/kmosoti/FabricO11y-research/blob/main/tests/generator.rs) check replay, a pinned seed-42 sequence, prefix stability, count bounds, and seed variation. [CLI tests](https://github.com/kmosoti/FabricO11y-research/blob/main/tests/cli.rs) and [buffer tests](https://github.com/kmosoti/FabricO11y-research/blob/main/tests/buffer.rs) check the downstream path after the sequence change.
 - The original [Stage 3 batch-size probe](../experiments/benchmarks/batch-size-stage3.md) used the old generator and is retained as historical evidence. The [generator library ablation](../experiments/benchmarks/generator-library-stage3.md) compares both variants on the same pipeline; its measured medians are 4.6–11.8% higher with `fake`, with overlapping trial ranges.
 
 ## Consequences

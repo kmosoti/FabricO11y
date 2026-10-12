@@ -1,6 +1,6 @@
 # Product contract
 
-This is the highest-priority source of truth for what FabricO11y promises (see the [source-of-truth hierarchy](README.md#source-of-truth)). It states intended behavior. Whether a promise is implemented, tested, measured or qualified is recorded in the [qualification ledger](QUALIFICATION.md#capability-ledger) and the [verification matrix](formal/verification-matrix.md); nothing here is a release claim. The original contract migrated from base `9b3a2b4` (`docs/ALPHA.md`). The owner expanded the release scope on 2026-10-10 to Debian/Fedora deployment, 100 GB retained telemetry, a PWA and scoped human/workload access. These requirements do not retroactively change historical protocols or establish implementation evidence.
+This is the highest-priority source of truth for what FabricO11y promises (see the [source-of-truth hierarchy](README.md#source-of-truth)). It states intended behavior. Whether a promise is implemented, tested, measured or qualified is recorded in the [qualification ledger](QUALIFICATION.md#capability-ledger) and the [verification matrix](formal/verification-matrix.md); nothing here is a release claim. The original contract migrated from base `9b3a2b4` (`docs/ALPHA.md`). The owner expanded the release scope on 2026-10-10 to Debian/Fedora deployment, 100 GB retained telemetry, a PWA and three fixed access roles ([ADR-0029](decisions/ADR-0029-use-three-fixed-roles-for-the-first-release.md)). These requirements do not retroactively change historical protocols or establish implementation evidence.
 
 ## Thesis
 
@@ -33,7 +33,7 @@ memory, filesystem, disk, network and configured newline-delimited logs, and
 receive local applications' loopback OTLP/HTTP protobuf trace exports
 ([ADR-0025](decisions/ADR-0025-carry-traces-as-a-third-signal.md)). The server owns
 authenticated delivery, durable storage, query, control and a Rust Leptos/WASM
-operator console delivered as a PWA. `fabricctl` and the HTTP API support scoped
+operator console delivered as a PWA. `fabricctl` and the HTTP API support read-only
 machine clients. Spindles retain last-valid configuration during disconnection.
 There is no external Collector requirement, general OTLP receiver, arbitrary
 remote compute or capacity claim beyond the named acceptance profile. Release
@@ -43,11 +43,11 @@ maturity remains a tag ([ADR-0019](decisions/ADR-0019-keep-release-maturity-in-t
 
 The Fabric delivery envelope is versioned and identifies `(Spindle identity, generation, batch sequence)` — the Strand and a position on it ([ADR-0017](decisions/ADR-0017-name-the-spindle-and-the-strand.md)) — plus exact encoded OpenTelemetry metrics, logs and traces payload bytes. Preserve units, resource attributes, event and observation times when known, cumulative counter start/reset semantics, span identities (trace, span and parent span IDs), span start and end times, kind and status, and source cursor. A trace export is acknowledged to the exporting application only after its bytes are committed to the Spool, under the same custody rules as a collected Batch. The local `FAB1` Spool pins `opentelemetry-proto = 0.33.0` and `prost = 0.14.4` in [Cargo.toml](../Cargo.toml); the envelope lives in [crates/fabric-frame/src/envelope.rs](../crates/fabric-frame/src/envelope.rs). This does not qualify a general OTLP receiver. The [OTLP specification](https://opentelemetry.io/docs/specs/otlp/), [metric data model](https://opentelemetry.io/docs/specs/otel/metrics/data-model/), [log data model](https://opentelemetry.io/docs/specs/otel/logs/data-model/) and [trace API](https://opentelemetry.io/docs/specs/otel/trace/api/) define telemetry semantics. A homegrown JSON document is not OTLP.
 
-Compatibility guardrails: `FOL2` and `FAB1` framing, magic values, protobuf field numbers, Batch byte encoding, Strand identity, sequence, ACK, deduplication and retry semantics, journal sync ordering, checkpoint format, query ordering, rate, pagination and retention semantics do not change without an explicit contract change, an ADR if architectural, a migration plan and new verification. A type move is not permission to change bytes.
+Compatibility guardrails: `FAB1` framing, magic values, protobuf field numbers, Batch byte encoding, Strand identity, sequence, ACK, deduplication and retry semantics, journal sync ordering, checkpoint format, query ordering, rate, pagination and retention semantics do not change without an explicit contract change, an ADR if architectural, a migration plan and new verification. A type move is not permission to change bytes. The `FOL2` local event log, its synthetic generator, buffer and command-line demonstration are not part of the product: they moved with their tests to the [research archive](https://github.com/kmosoti/FabricO11y-research) at their original paths (source commit `6a3b9c9`), and this contract makes no promise about them.
 
 ## Custody and safety contract
 
-An unacknowledged Batch remains in the Spindle's Spool. Identity and encoded bytes must be durable before first send; retries reuse both. The server syncs Batch data and deduplication state before ACK. On one Strand, equal sequence and equal bytes is one logical commit; equal sequence and different bytes is an error; equal content at another sequence is a distinct Batch ([ADR-0013](decisions/ADR-0013-deliver-batches-in-order-with-bounded-dedup.md)). Journal Batch commit uses data sync followed by marker sync, with FOL2 readable unchanged. A write or sync error quarantines that writer and records recovery-required; readable bytes alone cannot clear a reported error. Recovery from a known failed journal requires an independent retained source. A process that dies during an append without a reported error leaves an interrupted-append marker; reopen keeps only frames with a valid commit marker ([ADR-0011](decisions/ADR-0011-separate-interrupted-append-from-known-failure.md)). An ACK is conditional on successful sync calls and documented filesystem assumptions; physical power loss is untested.
+An unacknowledged Batch remains in the Spindle's Spool. Identity and encoded bytes must be durable before first send; retries reuse both. The server syncs Batch data and deduplication state before ACK. On one Strand, equal sequence and equal bytes is one logical commit; equal sequence and different bytes is an error; equal content at another sequence is a distinct Batch ([ADR-0013](decisions/ADR-0013-deliver-batches-in-order-with-bounded-dedup.md)). Journal Batch commit uses data sync followed by marker sync. A write or sync error quarantines that writer and records recovery-required; readable bytes alone cannot clear a reported error. Recovery from a known failed journal requires an independent retained source. A process that dies during an append without a reported error leaves an interrupted-append marker; reopen keeps only frames with a valid commit marker ([ADR-0011](decisions/ADR-0011-separate-interrupted-append-from-known-failure.md)). An ACK is conditional on successful sync calls and documented filesystem assumptions; physical power loss is untested.
 
 Log cursor movement and collected lines commit together. Rename, truncation, incomplete final line, oversized line, source failure, Spool full and process restart have explicit outcomes and tests.
 
@@ -57,7 +57,7 @@ A full Spool retains unacknowledged records, refuses new durable collection and 
 
 ## Freshness contract
 
-Every query answer reports, within the caller's authorized scope, per Spindle with any retained record, the newest observation, point or span start time retained, so a caller can tell a quiet Spindle from a stale one. The registered freshness target (observation to queryable, p99) is in the [decision rule](QUALIFICATION.md#registered-workload-and-decision-rule).
+Every query answer reports, per Spindle with any retained record, the newest observation, point or span start time retained, so a caller can tell a quiet Spindle from a stale one. The registered freshness target (observation to queryable, p99) is in the [decision rule](QUALIFICATION.md#registered-workload-and-decision-rule).
 
 ## Boundedness contract
 
@@ -77,37 +77,44 @@ Collection limits are listed in the [Spindle view](architecture/spindle.md).
 
 TLS protects Spindle and admin traffic. Spindle credentials are revocable and distinct from admin credentials. A configuration has desired and applied revisions, validates before activation, obeys local permissions and resource ceilings, and can be paused ([ADR-0014](decisions/ADR-0014-manage-nodes-through-server-control-state.md)).
 
-The release requires local WebAuthn passkeys for human sign-in, bounded server-side
-sessions, protected first-owner enrollment and tested owner recovery. OIDC/SSO is
-optional later work. Humans, workload clients (including AI) and Spindles have
-distinct persistent principals and credentials. The server denies requests unless
-their action and resource scope are authorized. Machine credentials are individually
-revocable; workload credentials expire. Human delegation to AI cannot exceed the
-current intersection of actor, delegator and delegation grants. Prompts and client
-claims cannot expand authority. No shared administrator secret is embedded in the UI.
+The release has three fixed roles ([ADR-0029](decisions/ADR-0029-use-three-fixed-roles-for-the-first-release.md)):
 
-Read scopes cover Spindle enrollments and signal classes. Rows, inventory,
-pagination, aggregates, completeness, freshness and errors enforce the same scope.
-Unknown coverage inside that scope stays visible; excluded identities do not leak
-through metadata. Policy changes invalidate affected sessions/grants/cursors as
-specified in the [identity view](architecture/identity-access.md). Authorization
-and mutation publication are synchronized; uncertain access-state writes fail
-closed. A Batch admitted before committed revocation may finish its existing
-custody transition; revocation cannot undo ACKs or bytes already disclosed.
-Security changes are durably audited within separately bounded storage.
+| Role | Credential | May |
+| --- | --- | --- |
+| Owner | The single human operator: one principal with one or more local WebAuthn passkeys (user verification required) and a bounded server-side session in a `__Host-` cookie; mutations need the session CSRF token and the exact Origin | Everything the console offers: queries, status, Spindle enrollment, configuration and control, reader tokens, passkeys, sessions and audit |
+| Reader | Scripts and AI agents: an expiring, individually revocable 256-bit bearer token; only its hash is stored | Query telemetry and read status and Spindle inventory; nothing else |
+| Spindle | A per-node, revocable token over verified TLS ([ADR-0014](decisions/ADR-0014-manage-nodes-through-server-control-state.md)) | Submit Batches and poll its own configuration; nothing else |
+
+The server denies every request whose route is not listed for its credential's
+role; client claims, names and prompts never select a role. The release requires
+protected first-owner enrollment, a recommended second passkey, tested offline
+owner recovery and a fresh passkey check (five minutes) before credential
+changes. OIDC/SSO is optional later work. There are no additional humans,
+invitations, delegation or per-principal scopes: owner and reader read all
+telemetry, and a reader token discloses all of it until it expires or is revoked.
+No shared administrator secret is embedded in the UI.
+
+Query answers, inventory, pagination, aggregates, completeness, freshness and
+errors describe all telemetry; unknown coverage stays visible. A page handle is
+bound to the credential that created it. Authorization and mutation publication
+are synchronized; uncertain access-state writes fail closed. A Batch admitted
+before committed revocation may finish its existing custody transition;
+revocation cannot undo ACKs or bytes already disclosed. Security changes are
+durably audited within separately bounded storage.
 
 The threat boundary trusts the host administrator and serving HTTPS origin.
-Scoped access is not general multitenant isolation or a guarantee against all
-vulnerabilities. Explicit legacy administration does not satisfy these release
-requirements; normal `serve` requires the scoped passkey boundary.
-[ADR-0027](decisions/ADR-0027-ship-a-scoped-passkey-pwa-console.md)
-records that boundary and its verification obligations.
+Roles are not multitenant isolation or a guarantee against all vulnerabilities.
+Explicit legacy administration does not satisfy these release requirements;
+normal `serve` requires the passkey boundary.
+[ADR-0027](decisions/ADR-0027-ship-a-scoped-passkey-pwa-console.md) and
+[ADR-0029](decisions/ADR-0029-use-three-fixed-roles-for-the-first-release.md)
+record that boundary and its verification obligations.
 
 ## Operator console contract
 
 The same-origin PWA provides light/dark desktop and mobile layouts for overview,
 bounded log/metric/span exploration, trace detail, near-live log polling, pipeline
-state and scoped settings. It displays actual evidence and its freshness, gaps,
+state and settings. It displays actual evidence and its freshness, gaps,
 retention and completeness. No inferred causal link or illustrative mockup number
 is presented as measured. It uses the server's authorization for every action;
 hiding a button is not an access control.
@@ -155,7 +162,7 @@ Ship only `fabrico11y-node.service`, `fabrico11y-server.service`, `fabricctl`, a
 
 The units use `Type=exec` until the code actually sends `sd_notify(READY=1)`. The Spindle unit sets `StateDirectory=fabrico11y/node`, `RuntimeDirectory=fabrico11y/node`; the server uses `fabrico11y/server` for both. Each sets `StateDirectoryMode=0700`, `RuntimeDirectoryMode=0700`, `UMask=0077`. Install binaries, unit files and base configuration as root owned; provide protected credential files only as needed. Separate paths organize Spindle/server state, but the shared Unix principal does not isolate them from one another. Local log access is granted by explicit narrow ACLs; unreadable logs produce visible collection gaps, never root fallback or blanket `adm`/`systemd-journal` membership. OS service and limit changes remain operator systemd/package actions; Fabric remote configuration stays behind the admin HTTP credential. [systemd.exec](https://manpages.debian.org/trixie/systemd/systemd.exec.5.en.html) defines identity, managed directories and execution sandboxing; [systemd.service](https://manpages.debian.org/trixie/systemd/systemd.service.5.en.html) defines readiness semantics.
 
-The services run without capabilities (`CapabilityBoundingSet=` and `AmbientCapabilities=` empty), with `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, `ProtectKernelModules=yes`, `ProtectKernelTunables=yes`, `ProtectControlGroups=yes`, `Delegate=no`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. Keep read visibility of host `/proc`, `/sys` and `/sys/fs/cgroup` required for host metrics. Do not hide those sources with `ProcSubset=pid`, `ProtectProc=invisible`, or `PrivateNetwork=yes`. systemd owns the unified cgroup hierarchy; daemons do not write cgroup files. No privileged helper, polkit broker, D-Bus broker, extra service, dynamic identity, cgroup manager or mandatory self-cgroup collector is part of this profile. [systemd.exec](https://manpages.debian.org/trixie/systemd/systemd.exec.5.en.html) documents these controls.
+The services run without capabilities (`CapabilityBoundingSet=` and `AmbientCapabilities=` empty), with `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, `ProtectKernelModules=yes`, `ProtectKernelTunables=yes`, `ProtectControlGroups=yes`, `ProtectClock=yes`, `ProtectKernelLogs=yes`, `LockPersonality=yes`, `MemoryDenyWriteExecute=yes`, `RestrictNamespaces=yes`, `RestrictRealtime=yes`, `RestrictSUIDSGID=yes`, `SystemCallArchitectures=native`, `Delegate=no`, and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6`. Keep read visibility of host `/proc`, `/sys` and `/sys/fs/cgroup` required for host metrics. Do not hide those sources with `ProcSubset=pid`, `ProtectProc=invisible`, or `PrivateNetwork=yes`. systemd owns the unified cgroup hierarchy; daemons do not write cgroup files. No privileged helper, polkit broker, D-Bus broker, extra service, dynamic identity, cgroup manager or mandatory self-cgroup collector is part of this profile. [systemd.exec](https://manpages.debian.org/trixie/systemd/systemd.exec.5.en.html) documents these controls.
 
 Frozen installed defaults: Spindle `MemoryHigh=128M`, `MemoryMax=256M`, `TasksMax=128`; server `MemoryHigh=2560M`, `MemoryMax=3072M`, `TasksMax=512`; aggregate slice `MemoryHigh=2816M`, `MemoryMax=3328M`, `TasksMax=640`. Each sets `CPUWeight=100`, `IOWeight=100`, `MemoryAccounting=yes`, `TasksAccounting=yes`, `IOAccounting=yes`; CPU accounting is supplied by the unified hierarchy. These weights are relative shares, not a CPU quota. The 64 MiB native-Spindle and 2 GiB central **RSS** qualification gates remain separate from cgroup memory, which includes page cache and kernel charges. Report actual controller availability, cgroup placement, `EffectiveMemoryHigh`/`EffectiveMemoryMax`, tasks and accounting; an unavailable or ineffective I/O controller on WSL is reported, never treated as measured enforcement. [systemd resource control](https://manpages.debian.org/trixie/systemd/systemd.resource-control.5.en.html) defines hierarchical effective limits, relative weights and the high/max distinction. If these numeric defaults fail the registered workload, changing them requires a recorded contract revision and a fresh qualification run.
 

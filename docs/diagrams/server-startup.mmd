@@ -1,6 +1,6 @@
 flowchart LR
-    Admin[Read admin token] --> TLS[Load TLS certificate and key]
-    TLS -->|valid| Store[Open control and Store]
+    Admin[Read admin token: serve-legacy only] --> TLS[Load TLS certificate and key]
+    TLS -->|valid| Store[Open access, control and Store]
     TLS -->|missing or invalid| Error[Return error before workers own journal]
     Store --> Owner[Commit worker and cleanup owner]
     Owner --> Workers[Register sealer worker]

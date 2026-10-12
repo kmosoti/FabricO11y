@@ -3,7 +3,10 @@
 CI executes the registered checks; a cache hit is not a verification result.
 The command definitions and expectations in `xtask/checks.json` stay unchanged.
 All project workloads continue through `tools/resource_group.py` with the same
-mounted storage, memory/swap limits and bounded process-tree cleanup.
+disk-backed storage root, memory/swap limits and bounded process-tree cleanup.
+`prepare-resource-host.sh` sets `FABRIC_STORAGE_ROOT` (default `/mnt/fabrico11y`
+on the hosted runner's disk) for later steps and sizes the parent cgroup with
+the launcher's own `memory_limits`, so CI no longer bind-mounts an owner path.
 
 ## Scheduling
 
@@ -30,12 +33,36 @@ the final completeness check fail. The per-profile test verifies that every
 extended check is scheduled exactly once, so a new registry entry cannot be
 silently omitted.
 
+## Pinned actions and toolchains
+
+Every `uses:` reference names a full commit SHA with its tag in a trailing
+comment, so a moved or re-tagged upstream ref cannot change a job silently.
+Resolve a replacement with `git ls-remote https://github.com/OWNER/REPO
+refs/tags/TAG` and use the peeled `^{}` commit for an annotated tag. The
+`dtolnay/rust-toolchain` pin is the commit of its `stable` branch; the
+`toolchain: 1.99.0` input stays explicit because a SHA ref carries no channel.
+Extended verification installs the dated `nightly-2026-10-11` (rustc
+1.101.0-nightly, 2026-10-10) and links the name `nightly` to it, because
+`fuzz/smoke.sh` runs `cargo +nightly`. Advance the date deliberately and rerun
+the fuzz check.
+
+## Vendored crates
+
+Cargo does not checksum `[patch.crates-io]` path crates and `cargo deny` does
+not inspect them. `check-vendor.py` downloads each archive named in
+`vendor/provenance.json`, requires its SHA-256, and compares every file with
+`vendor/<crate>/`. Only the provenance-declared files may differ: the added
+`FABRIC-PATCH.md`, and a `Cargo.toml` equal to the upstream one with just the
+declared dependency alias rewritten. Extra, missing, altered or symlinked files,
+and a `[patch.crates-io]` table that differs from the provenance paths, fail
+the fast workflow. `test_check_vendor.py` seeds each of these defects.
+
 ## Dependency caching
 
 The Rust cache action is pinned to the reviewed v2.9.2 commit. Its workspace
 mapping receives a computed relative path because the action joins the target
-to the workspace root. The actual target is the existing mounted
-`/run/media/kmosoti/data/FabricO11y/cargo`, not repository `target/`.
+to the workspace root. The actual target is `$FABRIC_STORAGE_ROOT/cargo` on the
+runner's disk, not repository `target/`.
 
 Cache only dependency build artifacts, Cargo registry material and installed
 Cargo tools selected by the action. Do not cache verification receipts, browser

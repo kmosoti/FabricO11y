@@ -5,73 +5,6 @@ use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
 
 const MAX_ROW_BYTES: usize = 16 * 1024 * 1024;
-// Experimental build opt-in only. Unset retains the original codec calls.
-pub(super) const REUSE_WORKSPACE: bool = option_env!("FABRIC_SPILL_WORKSPACE_EXPERIMENT").is_some();
-const RETAIN_BYTES: usize = 256 * 1024;
-
-#[derive(Default)]
-pub(super) struct Workspace {
-    bytes: Vec<u8>,
-}
-
-impl Workspace {
-    fn buffer(&mut self, length: usize) -> &mut Vec<u8> {
-        self.bytes.clear();
-        if self.bytes.capacity() < length {
-            self.bytes = Vec::with_capacity(length);
-        }
-        &mut self.bytes
-    }
-
-    pub(super) fn write<R: Spill>(&mut self, output: &mut impl Write, row: &R) -> io::Result<()> {
-        let length = row.size();
-        if length > MAX_ROW_BYTES {
-            return Err(invalid("oversized private spill row"));
-        }
-        if length > RETAIN_BYTES {
-            return write_row(output, row);
-        }
-        let bytes = self.buffer(length);
-        if bytes.capacity() > RETAIN_BYTES {
-            return Err(invalid("private spill workspace exceeds retention bound"));
-        }
-        row.encode(bytes);
-        output.write_all(&(length as u32).to_le_bytes())?;
-        output.write_all(bytes)
-    }
-
-    pub(super) fn read<R: Spill>(&mut self, input: &mut impl Read) -> io::Result<Option<R>> {
-        let mut header = [0; 4];
-        if input.read(&mut header[..1])? == 0 {
-            return Ok(None);
-        }
-        input.read_exact(&mut header[1..])?;
-        let length = u32::from_le_bytes(header) as usize;
-        if length > MAX_ROW_BYTES {
-            return Err(invalid("oversized private spill row"));
-        }
-        let mut large;
-        let bytes = if length > RETAIN_BYTES {
-            large = vec![0; length];
-            &mut large
-        } else {
-            let bytes = self.buffer(length);
-            if bytes.capacity() > RETAIN_BYTES {
-                return Err(invalid("private spill workspace exceeds retention bound"));
-            }
-            bytes.resize(length, 0);
-            bytes
-        };
-        input.read_exact(bytes)?;
-        let mut rest = bytes.as_slice();
-        let row = R::decode(&mut rest)?;
-        if !rest.is_empty() {
-            return Err(invalid("trailing private spill bytes"));
-        }
-        Ok(Some(row))
-    }
-}
-
 pub(super) trait Spill: Sized {
     fn size(&self) -> usize;
     fn encode(&self, out: &mut Vec<u8>);
@@ -248,53 +181,6 @@ pub(super) fn read_row<R: Spill>(input: &mut impl Read) -> io::Result<Option<R>>
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn workspace_preserves_bytes_errors_and_releases_maximum_row_capacity() {
-        let mut encoder = Workspace::default();
-        let mut decoder = Workspace::default();
-        for text in ["x".repeat(MAX_ROW_BYTES - 4), "λ\0\n".into(), String::new()] {
-            let mut reference = Vec::new();
-            write_row(&mut reference, &text).unwrap();
-            let mut candidate = Vec::new();
-            encoder.write(&mut candidate, &text).unwrap();
-            assert_eq!(candidate, reference);
-            assert_eq!(
-                decoder.read::<String>(&mut candidate.as_slice()).unwrap(),
-                Some(text)
-            );
-            assert!(encoder.bytes.capacity() <= RETAIN_BYTES);
-            assert!(decoder.bytes.capacity() <= RETAIN_BYTES);
-        }
-        for bytes in [
-            vec![1],
-            vec![255; 4],
-            vec![0; 4],
-            vec![4, 0, 0, 0, 255, 255, 255, 255],
-        ] {
-            let original = read_row::<String>(&mut bytes.as_slice()).unwrap_err();
-            let reused = decoder.read::<String>(&mut bytes.as_slice()).unwrap_err();
-            assert_eq!(original.kind(), reused.kind());
-        }
-        let mut framed = Vec::new();
-        write_row(&mut framed, &"λ-valid".to_owned()).unwrap();
-        for n in 1..framed.len() {
-            assert!(decoder.read::<String>(&mut &framed[..n]).is_err());
-        }
-        let mut changed = framed.clone();
-        *changed.last_mut().unwrap() ^= 1;
-        let wrong = decoder
-            .read::<String>(&mut changed.as_slice())
-            .unwrap()
-            .unwrap();
-        let mut reencoded = Vec::new();
-        encoder.write(&mut reencoded, &wrong).unwrap();
-        assert_ne!(
-            reencoded, framed,
-            "changed-field negative control escaped byte comparison"
-        );
-        assert!(decoder.read::<String>(&mut &[][..]).unwrap().is_none());
-    }
 
     #[test]
     fn fixed_scalar_fixture_preserves_signedness_endianness_and_float_bits() {

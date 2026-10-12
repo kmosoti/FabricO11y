@@ -32,21 +32,21 @@ flowchart LR
     Spool -->|oldest unacknowledged Batch over TLS| Intake
     Commit -->|ACK after durable commit| Spindle
     Control -->|desired configuration poll| Spindle
-    UI[Leptos PWA] -->|passkey session| Access[Scoped console API]
-    CLI[fabricctl] -->|workload credential| Access
-    Access -->|authorized mutation| Control
-    Access -->|authorized sources and signals| Query
+    UI[Leptos PWA: fabric-ui] -->|owner passkey session| Access[Console API: owner and reader roles]
+    CLI[fabricctl] -->|reader token| Access
+    Access -->|owner-only mutation| Control
+    Access -->|role-checked query| Query
     CLI -->|local inspect| Spool
 ```
 
 Each production server also owns a [dedicated diagnostic Spindle](architecture/system.md). Edge Spindles keep their configured destination.
 
-The expanded [release plan](milestones/release-readiness.md) requires a
+The [release plan](milestones/release-readiness.md) includes a
 [Leptos operator PWA](milestones/operator-console.md) and
-[local passkeys/scoped access](architecture/identity-access.md). The integrated
-implementation is in candidate verification; the diagram does not establish
+[local passkeys with three fixed roles](architecture/identity-access.md). The
+implementation is integrated and in verification; the diagram does not establish
 release acceptance. [Access operations](access-operations.md) covers local owner
-setup, scoped CLI credentials, passkeys and recovery.
+setup, reader tokens, passkeys and recovery.
 
 ## Source of truth
 
@@ -64,7 +64,7 @@ When documents disagree, the higher entry wins and the lower one is corrected:
 | 3 | Current [architecture views](architecture/README.md) |
 | 4 | Registered protocols and [qualification](QUALIFICATION.md) in the repository; revision-specific results linked by the [evidence index](experiments/README.md) and pinned wiki commit |
 | 5 | [Current state](CURRENT.md) |
-| 6 | Research: [design consolidation](research/design-consolidation.md), [source synthesis](research/cross-system-source-synthesis.md), [ledger](research/ledger.md), [blueprint](architecture.md) and [research harnesses](../tools/research/README.md) |
+| 6 | Research: [design consolidation](research/design-consolidation.md), [source synthesis](research/cross-system-source-synthesis.md), [ledger](research/ledger.md), [blueprint](architecture.md) and [research harnesses](https://github.com/kmosoti/FabricO11y-research/blob/main/tools/research/README.md) |
 
 Implementation is evidence of what exists; none of these documents overrides it silently. A disagreement between code and a document is reconciled explicitly ([documentation policy](documentation-policy.md#19-relationship-between-code-and-documentation)).
 
@@ -79,14 +79,10 @@ Implementation is evidence of what exists; none of these documents overrides it 
 7. [Experiments](experiments/README.md): registered protocols and links to wiki results; [research wiki](https://github.com/kmosoti/FabricO11y/wiki): investigations and observations.
 8. [Roadmap](ROADMAP.md) and the [milestone records](milestones/architecture-foundation.md).
 
-[Operating FabricO11y](operations.md) covers installation, configuration, the scoped CLI and recovery states. The [learning path](LEARNING_PATH.md) follows the Rust ideas and system contracts step by step. The [blueprint](architecture.md) is a proposal and research agenda; its pipelines, guarantees and example numbers do not describe completed work.
+[Operating FabricO11y](operations.md) covers installation, configuration, the read-only CLI and recovery states. The [learning path](LEARNING_PATH.md) follows the Rust ideas and system contracts step by step. The [blueprint](architecture.md) is a proposal and research agenda; its pipelines, guarantees and example numbers do not describe completed work.
 
 Use the [contributor guide](CONTRIBUTING.md) for workflows and checks. [AGENTS.md](../AGENTS.md) is the operational contract for coding agents; the full [documentation policy](documentation-policy.md) applies to everyone.
 
-## Proposed security hardening
+## Security hardening
 
-The [security change specification and implementation handoff](experiments/security-hardening/PUBLICATION.md)
-records line-anchored changes, acceptance cases, candidate rejection criteria,
-and evidence requirements for console admission, local OTLP transport, selected
-log paths, and extended-verification setup. It is a proposed specification, not
-implemented repairs or a completed application security audit.
+[Security hardening](architecture/security-hardening.md) records the enforced controls for console admission, local OTLP transport, selected log paths, credential files and the service sandbox; the [original specification](experiments/security-hardening/PUBLICATION.md) is a historical record. Neither is a completed security audit.

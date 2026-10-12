@@ -207,9 +207,8 @@ Every table uses Parquet's private disk `PageStore` in `.building-L`, including
 raw tables. Encoding remains upstream; completed blobs become offset/length
 locators, then are read through single-use keys. The last take deletes the file;
 all page directories must be removed before manifest publication. Read, write or
-cleanup errors prevent publication and leave journal custody intact. Legacy
-`FABRIC_ROW_GROUP_CHUNKS_EXPERIMENT=1` and `FABRIC_PAGE_STORE_EXPERIMENT=1`
-remain accepted build selectors but are unnecessary: unset now selects both paths.
+cleanup errors prevent publication and leave journal custody intact. These are
+the only paths: their former build selectors have been removed.
 
 The [encoded-page record](../experiments/formal/encoded-page-memory-run-01.md)
 preserves the aligned-only entropy failure and disk-store correction. The
@@ -241,14 +240,12 @@ layers and core purity; the separate dependency-policy check also passed.
 Their command and receipt evidence is in the continuation. The original Clippy
 failure remains recorded alongside its lint-only correction and successful rerun.
 
-An experimental compile-time selector, `FABRIC_RUN_MIB_EXPERIMENT`, accepts
-exactly `8`, `16` or `32`; unset retains the default 16 MiB run target. Invalid
-values fail constant evaluation. Each signal has its own run buffer and estimated
-owned-byte accounting, alongside the unchanged 32,768-row ceiling. A row larger
+The sort run target is a fixed 16 MiB (`RUN_BYTES`); the former selector for 8 or
+32 MiB has been removed. Each signal has its own run buffer and estimated
+owned-byte accounting, alongside the 32,768-row ceiling (`RUN_ROWS`). A row larger
 than the target is admitted alone and spilled before another row is added; the
 target is therefore not an absolute allocation bound. Merge fan-in, output chunks,
-ordering and custody/publication rules are unchanged. The diagram and algorithm
-above describe the default setting.
+ordering and custody/publication rules are unchanged.
 
 The [native pruning protocol](../experiments/benchmarks/coupled-pruning-native-protocol.md)
 and [false-positive follow-up](../experiments/benchmarks/coupled-pruning-false-positive-protocol.md)
@@ -287,12 +284,10 @@ can compete with ingest; its service-level performance remains unmeasured.
 ## Related
 
 The [native ownership experiment](../experiments/benchmarks/native-ownership-findings.md)
-adds a compile-time opt-in that releases source rows after successful conversion
-and before Parquet encoding, dropping the RecordBatch before flush. Filtering and
-publication order remain unchanged. Conversion/write error controls retain journal
-custody. It reduced requested heap but failed a whole-worker RSS guard; the normal
-source-row lifetime and 16 MiB run cap remain the defaults. This experiment changes
-an internal lifetime, not the component/state diagram.
+measured a compile-time opt-in, since removed, that released source rows after
+successful conversion and before Parquet encoding. It reduced requested heap but
+failed a whole-worker RSS guard; the normal source-row lifetime and 16 MiB run cap
+remain the defaults. It changed an internal lifetime, not the component/state diagram.
 
 - [Retained history and query](retained-history.md) (the contract this design must not change)
 - [Storage](storage.md) (the frame log and the journal)

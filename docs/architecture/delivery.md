@@ -2,7 +2,7 @@
 
 ## Purpose and provenance
 
-This page connects the original local delivery model to the network implementation described below. The default [Rust demo](../../src/main.rs) still prints volatile batches. The optional `write` path uses [EventLog](../../src/log.rs) to establish a local durable commit before printing `committed event N`. The separate Spindle/server path implements network delivery and ACKs.
+This page connects the original local delivery model to the network implementation described below. The default [Rust demo](https://github.com/kmosoti/FabricO11y-research/blob/main/src/main.rs) still prints volatile batches. The optional `write` path uses [EventLog](https://github.com/kmosoti/FabricO11y-research/blob/main/src/log.rs) to establish a local durable commit before printing `committed event N`. The separate Spindle/server path implements network delivery and ACKs.
 
 The question is when a sender may discard its retryable copy. [ADR-0005](../decisions/ADR-0005-ack-after-durable-commit.md) chooses the rule: the sender may forget an event only after it receives an acknowledgement that follows a durable receiver commit. Here, successful `append(&Event)` is the receiver-side commit, and the CLI's commit line is a local observation after success.
 

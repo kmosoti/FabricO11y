@@ -25,7 +25,13 @@ its archive SHA-256 observed during review was
 `2ee67f1008b1ba2321834326597b8e186293b049a023cdef258527550b9935b4`.
 Its declared license is MIT OR Apache-2.0 and it has no normal dependencies.
 
+Cargo records no checksum for a path source, so [`tools/ci/check-vendor.py`](../tools/ci/check-vendor.py)
+is the integrity gate: the fast workflow downloads each archive named in
+provenance.json, requires its SHA-256 and compares every file with `vendor/<crate>/`.
+Only the added FABRIC-PATCH.md and the declared Cargo.toml rewrite may differ; extra,
+missing, altered or symlinked files fail ([CI notes](../tools/ci/README.md#vendored-crates)).
+It needs network access to static.crates.io.
+
 Remove a local patch when a selected upstream release makes this migration.
 For a replacement upstream version, review its delta, refresh provenance and
-rerun dependency policy plus application checks. Do not silently change vendored
-files while retaining the recorded upstream identity.
+rerun dependency policy plus application checks.

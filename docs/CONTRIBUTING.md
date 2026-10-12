@@ -18,7 +18,7 @@ contain credentials or telemetry. Security defects follow the
 
 ## Architecture
 
-Code lives in layers: `fabric-core` (pure `no_std` decisions), `fabric-ports` (effect contracts), `fabric-app` (use cases), `fabric-frame` (adapter support), and the composition roots `fabric-server` and the root package ([system view](architecture/system.md)). `cargo xtask check-layers` and `cargo xtask check-core-purity` enforce the dependency rule and the core's purity ([ADR-0015](decisions/ADR-0015-adopt-a-hexagonal-architecture.md), [ADR-0016](decisions/ADR-0016-keep-a-pure-semantic-core.md)). Wire and persisted bytes never change with a type move.
+Code lives in layers: `fabric-core` (pure `no_std` decisions), `fabric-ports` (effect contracts), `fabric-app` (use cases), `fabric-frame` (adapter support), and the composition roots `fabric-server`, `fabric-ui` and the root package ([system view](architecture/system.md)). `cargo xtask check-layers` and `cargo xtask check-core-purity` enforce the dependency rule and the core's purity ([ADR-0015](decisions/ADR-0015-adopt-a-hexagonal-architecture.md), [ADR-0016](decisions/ADR-0016-keep-a-pure-semantic-core.md)). Wire and persisted bytes never change with a type move.
 
 ## Milestones, branches and releases
 
@@ -36,7 +36,7 @@ Acceptance rests on executable evidence, not on anyone's approval ([ADR-0018](de
 
 ## Checks
 
-`cargo xtask checks --profile fast` runs every required fast check listed in the [registry](../xtask/checks.json) and writes receipts under `target/verification/receipts`; a missing tool yields INCOMPLETE (exit 3), never a pass. The `extended` profile adds the semantic mutants, the cargo-mutants audit, delivery fault runs, TLA+ models, Kani proofs, a fuzz smoke run, the dependency policy and a coverage report; [extended CI](../.github/workflows/verification.yml) runs it. Registered qualification protocols ([qualification](QUALIFICATION.md)) never run in CI; they need explicit scope. [Rust CI](../.github/workflows/rust.yml) runs the fast set. During experimentation, Bun documentation checks and hook probes are optional through `cargo xtask checks --profile documentation`; the dedicated documentation workflow and Bun setup in Rust CI are removed by owner direction.
+`cargo xtask checks --profile fast` runs every required fast check listed in the [registry](../xtask/checks.json) and writes receipts under `target/verification/receipts`; a missing tool yields INCOMPLETE (exit 3), never a pass. The `extended` profile adds the semantic mutants, the cargo-mutants audit, delivery fault runs, TLA+ models, Kani proofs, a fuzz smoke run, the dependency policy and a coverage report; [extended CI](../.github/workflows/verification.yml) runs it. Registered qualification protocols ([qualification](QUALIFICATION.md)) never run in CI; they need explicit scope. [Rust CI](../.github/workflows/rust.yml) runs the fast set and `tools/ci/check-vendor.py` (vendored crates against their crates.io archives). Workflow actions are pinned by commit SHA and the fuzz nightly by date ([CI notes](../tools/ci/README.md)). During experimentation, Bun documentation checks and hook probes are optional through `cargo xtask checks --profile documentation`; the dedicated documentation workflow and Bun setup in Rust CI are removed by owner direction.
 
 Documentation tooling needs Bun 1.4.0 and Python 3: `bun install --cwd tools/docs --frozen-lockfile`, then `bun tools/docs/check.mjs`. The [checker](../tools/docs/check.mjs) verifies relative links and heading fragments, Mermaid syntax, marked diagram copies, JSON syntax and duplicate ADR numbers; it performs no network access or writes and does not decide whether prose is true. Canonical diagrams live in `docs/diagrams/*.mmd`; a page may repeat one after a `<!-- diagram: relative/path.mmd -->` comment, and the checker requires the copy to match. When changing the checker or hooks, also run `bun tools/docs/check.test.mjs` and `python3 -B tools/docs/test_hooks.py`.
 
@@ -48,32 +48,42 @@ validators and documentation checks, through the repository launcher:
 ```sh
 python3 tools/resource_group.py -- cargo xtask checks --profile fast
 python3 tools/resource_group.py -- cargo xtask mutants
-python3 tools/resource_group.py -- python3 tools/bench/run_performance_refinement.py --help
 ```
 
-The whole command tree shares a systemd user service with `MemoryHigh=16G`,
-`MemoryMax=20G`, `MemorySwapMax=0`, group OOM termination and a 30-minute deadline.
-These are workstation protection limits, not product capacity promises. The
+The whole command tree shares a systemd user service with `MemoryMax` at the
+smaller of 20 GiB and 75% of the host's RAM, `MemoryHigh` at 5/6 of that up to
+16 GiB, `MemorySwapMax=0`, group OOM termination and a 30-minute deadline: 16 GiB
+high and 20 GiB max on a host with about 27 GiB of RAM or more, 10 GiB and 12 GiB
+on a 16 GiB host. These are protection limits, not product capacity promises. The
 launcher checks its actual cgroup v2 limits before executing the command; missing
-systemd user access or unenforced limits mean NOT RUN, with no uncapped fallback.
-Launch workloads sequentially: multiple capped services still add their budgets.
-Use the mounted data drive at `/run/media/kmosoti/data/FabricO11y`: the launcher
-sets `CARGO_TARGET_DIR` to its `cargo` directory, `FABRIC_SCRATCH_ROOT` to `scratch`,
-and `TMPDIR`, `TMP` and `TEMP` to a unique owned directory per invocation.
-It refuses to run if the data drive is unmounted. Harnesses with explicit scratch
-paths must use `FABRIC_SCRATCH_ROOT`; an environment variable cannot redirect a
-hardcoded path. `/tmp` on the Fedora workstation is tmpfs.
+systemd user access (a login session, or `loginctl enable-linger`), cgroup v2
+memory control for your user or unenforced limits mean NOT RUN with exit 2, with
+no uncapped fallback. Launch workloads sequentially: multiple capped services still
+add their budgets.
+
+The launcher keeps its files under the storage root `FABRIC_STORAGE_ROOT`, which
+defaults to `${XDG_CACHE_HOME:-$HOME/.cache}/fabrico11y`. It creates the directory
+if needed and refuses to run unless it is owned by you and not on tmpfs or ramfs
+(`stat -f -c %T DIR` names the filesystem); where that default is RAM-backed, set
+the variable to a disk-backed directory. For the command it sets
+`FABRIC_STORAGE_ROOT`, `CARGO_TARGET_DIR` to the root's `cargo` directory,
+`FABRIC_SCRATCH_ROOT` to `scratch`, and `TMPDIR`, `TMP` and `TEMP` to a unique owned
+directory per invocation. The owner's workstation keeps its mounted data drive by
+exporting `FABRIC_STORAGE_ROOT` as that drive's `FabricO11y` directory; there the
+limits are unchanged. Harnesses with explicit scratch paths must use
+`FABRIC_SCRATCH_ROOT`; an environment variable cannot redirect a hardcoded path.
+`/tmp` on Fedora is tmpfs.
 The qualification runner accepts direct `target/alpha-*` outputs only beneath
 `FABRIC_SCRATCH_ROOT`, including a frozen mini-tree's nested `target` directory;
 repository `target` outside that root is rejected before creation or launch.
 Use the tested data-backed freeze commands in the
-[qualification runbook](qualification-runbook.md), not legacy `freeze.sh`.
+[qualification runbook](qualification-runbook.md).
 
 Success requires a matching completion receipt from the command inside the
 cgroup and a matching `systemd-run` exit. A disconnected service bus or missing
 completion is incomplete even if the outer transport returns zero. After verified
 success and service termination, the launcher removes its owned temporary directory. On failure or interruption it moves that directory to the
-drive's `evidence` directory after stopping the service; if stopping cannot be
+storage root's `evidence` directory after stopping the service; if stopping cannot be
 confirmed, it retains the directory in place. It never deletes shared build
 caches or unrelated files. Each invocation records command, exit, elapsed time,
 storage, containment limits, command-return cgroup resource samples and
@@ -102,9 +112,10 @@ infrastructure unchanged.
 On each host, inspect CPU quotas, available RAM/swap, disk space, ancestor cgroup
 limits and active services. Choose and verify host-appropriate cgroup v2 memory,
 swap, CPU, task and deadline limits for the complete project process tree before
-launch. Refuse an uncapped fallback. The workstation's 20 GiB allowance applies
-only locally; its launcher has a workstation-specific data-drive path. Use an
-owned disk-backed directory on the remote host, not an assumed copy of that path.
+launch. Refuse an uncapped fallback. The launcher's host-scaled cap (75% of RAM
+up to 20 GiB) does not account for the host's other services, so a remote host
+needs an explicit smaller budget. Point `FABRIC_STORAGE_ROOT` at an owned
+disk-backed directory on the remote host.
 Do not run loads on `digitalocean-01` while its webserver is serving.
 
 Remote machines can supply edge-source traffic to a receiver in a scoped
@@ -135,7 +146,7 @@ Rules for these tools:
 - **Use stable Kani features only.** Write plain `#[kani::proof]` harnesses with `kani::any()`; do not use function contracts, autoharness or other `-Z` features until they stabilize. State each harness's bound when it has one.
 - **Keep what the tools find.** A fuzz crash goes into `fuzz/regressions/<target>/` with its fix, so the stable replay keeps it fixed. A Kani or property counterexample becomes a named regression test and an entry in [counterexamples.json](formal/counterexamples.json). Never widen a generator, lower a bound or loosen a property to make a failure go away.
 - **Coverage is a report.** `cargo llvm-cov --workspace --summary-only` shows what ran; do not add tests only to raise it.
-- **Tool setup.** `cargo install --locked cargo-deny cargo-llvm-cov cargo-fuzz kani-verifier && cargo kani setup`; fuzzing also needs `rustup toolchain install nightly`. The extended profile reports a missing tool as INCOMPLETE (exit 3), never as a pass.
+- **Tool setup.** `cargo install --locked cargo-deny cargo-llvm-cov cargo-fuzz kani-verifier && cargo kani setup`; fuzzing also needs `rustup toolchain install nightly` (CI installs the dated `nightly-2026-10-11` and links it as `nightly`). The extended profile reports a missing tool as INCOMPLETE (exit 3), never as a pass.
 
 ## Skills and hooks
 

@@ -1,6 +1,6 @@
 # Delivery ownership model
 
-This is the Stage 4 target protocol for a durable receiver and sender handoff. The default [Rust demo](../../src/main.rs) still prints volatile batches; the optional [local log](../../src/log.rs) added in Stage 5 implements a receiver-side commit. No network acknowledgement or independent sender implements the full model. The [Stage 5 implementation record](../../docs/experiments/formal/delivery-rust-stage5.md) maps the current code to its actions.
+This is the Stage 4 target protocol for a durable receiver and sender handoff. The default [Rust demo](https://github.com/kmosoti/FabricO11y-research/blob/main/src/main.rs) still prints volatile batches; the optional [local log](https://github.com/kmosoti/FabricO11y-research/blob/main/src/log.rs) added in Stage 5 implements a receiver-side commit. No network acknowledgement or independent sender implements the full model. The [Stage 5 implementation record](../../docs/experiments/formal/delivery-rust-stage5.md) maps the current code to its actions.
 
 ## One event, four facts
 

@@ -4,6 +4,8 @@
 
 Accepted on 2026-09-28 for alpha phase 3, after the end-to-end control test and the [fleet trials](../experiments/benchmarks/alpha-phase3-fleet-run-01.md) passed.
 
+Status note, 2026-10-11: the administrator token below is now legacy. `admin_token_file` is optional in the server configuration and is read only by `serve-legacy`; normal `serve` needs no administrator token and rejects `/v1/admin/*`, and the node control transitions and polling are unchanged. Owner and reader access replaced it in [ADR-0027](ADR-0027-ship-a-scoped-passkey-pwa-console.md) and [ADR-0029](ADR-0029-use-three-fixed-roles-for-the-first-release.md).
+
 ## Context
 
 Phase 3 requires enrollment, inventory, per-node source configuration and intervals, pause, resume and revoke, desired and applied revision tracking, validation before activation, nodes that keep their last valid configuration while the server is unreachable, and a healthy apply within 30 s at 10, 100 and 1,000 identities. Nodes connect outbound only. Admin credentials must be distinct from node credentials. The phase-2 static credentials file has no revoke or enrollment.

@@ -1,7 +1,7 @@
 """Exact-package production fixture shared by the registered local R3 cells.
 
-The owner enrolls with a real browser WebAuthn ceremony. A separate scoped
-workload principal performs benchmark reads; the visible UI remains active.
+The owner enrolls with a real browser WebAuthn ceremony. A separate read-only
+reader token (ADR-0029) performs benchmark reads; the visible UI remains active.
 """
 from __future__ import annotations
 import json
@@ -285,15 +285,12 @@ class CandidateFixture:
             raise RuntimeError('production source enrollment failed')
         return value
 
-    def reader(self, enrollments, *, ttl_s=1800):
-        scope = dict(self.owner['scope'])
-        scope.update(actions=['telemetry_read', 'inventory_read'], installation_wide=False,
-                     enrollments=list(enrollments), signals=['logs', 'metrics', 'traces'],
-                     max_query_rows=1000, max_query_window_s=86400, allowed_log_paths=[],
-                     enrollment_namespace=None, max_enrollments=0)
-        status, value = self.bridge.issue_workload('release-benchmark-reader', scope, ttl_s)
+    def reader(self, _enrollments=(), *, ttl_s=1800):
+        # Readers are installation-wide. Callers outside this module still pass
+        # enrollment IDs; they no longer narrow anything and are ignored.
+        status, value = self.bridge.issue_reader('release-benchmark-reader', ttl_s)
         if status != 200:
-            raise RuntimeError('scoped workload enrollment failed')
+            raise RuntimeError('reader token issuance failed')
         return WorkloadReader(self.origin, self.context, value['token'])
 
     def storage_sample(self):

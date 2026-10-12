@@ -1,6 +1,8 @@
 //! Startup errors must release journal ownership for a same-process retry.
 //! Origin: TLS loading followed worker spawn; its early return skipped sealer
 //! stop/join, and the sealer's Intake kept the commit writer alive.
+mod common;
+
 use fabric_server::{
     config::Config,
     query::Plan,
@@ -89,17 +91,16 @@ fn tls_failure_releases_writer(case: &str) {
         .unwrap(),
         _ => unreachable!(),
     }
-    fs::write(
+    common::write_secret(
         scratch.0.join("admin-token"),
         b"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n",
-    )
-    .unwrap();
+    );
     let config = Config {
         listen: "127.0.0.1:0".parse().unwrap(),
         tls_cert: scratch.0.join("server.pem"),
         tls_key: scratch.0.join("server.key"),
         state_dir: scratch.0.join("state"),
-        admin_token_file: scratch.0.join("admin-token"),
+        admin_token_file: Some(scratch.0.join("admin-token")),
         console_dir: None,
         access_origin: None,
         access_rp_id: None,
@@ -110,7 +111,7 @@ fn tls_failure_releases_writer(case: &str) {
         query_plan: Plan::Scan,
         seal_workers: 1,
     };
-    fabric_server::config::load_admin_token(&config.admin_token_file).unwrap();
+    fabric_server::config::load_admin_token(config.admin_token_file.as_deref()).unwrap();
     // Prove this fixture is reopenable before startup acquires any worker owner.
     drop(
         Store::open_with(
@@ -193,4 +194,56 @@ fn missing_certificate_startup_error_releases_writer_for_same_process_retry() {
 #[test]
 fn malformed_key_startup_error_releases_writer_for_same_process_retry() {
     tls_failure_releases_writer("malformed_key");
+}
+
+/// Origin: the Spindle and server readers followed symlinks and accepted
+/// group- or world-readable credentials; only the companion refused them.
+#[test]
+fn admin_token_file_must_be_private_regular_and_not_a_symlink() {
+    use fabric_server::config::load_admin_token;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
+    let scratch = Scratch::new("token_policy");
+    let path = scratch.0.join("admin-token");
+    fs::write(&path, "0123456789abcdef0123456789abcdef0123456789abcdef\n").unwrap();
+    let mode = |mode| fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+    for refused in [0o644, 0o604, 0o660] {
+        mode(refused);
+        assert!(load_admin_token(Some(&path)).is_err(), "{refused:o}");
+    }
+    mode(0o600);
+    assert!(load_admin_token(Some(&path)).is_ok());
+    mode(0o640);
+    let root_owned = fs::metadata(&path).unwrap().uid() == 0;
+    assert_eq!(load_admin_token(Some(&path)).is_ok(), root_owned);
+    mode(0o600);
+    symlink(&path, scratch.0.join("link")).unwrap();
+    assert!(load_admin_token(Some(&scratch.0.join("link"))).is_err());
+    let alias = scratch.0.join("alias");
+    fs::hard_link(&path, &alias).unwrap();
+    assert!(load_admin_token(Some(&path)).is_err(), "hard-linked");
+    fs::remove_file(&alias).unwrap();
+    let foreign = scratch.0.join("foreign");
+    fs::copy(&path, &foreign).unwrap();
+    if std::os::unix::fs::chown(&foreign, Some(65534), None).is_ok() {
+        assert!(load_admin_token(Some(&foreign)).is_err(), "another owner");
+    }
+    assert!(load_admin_token(None).is_err());
+}
+
+/// `serve` stops before binding or provisioning anything without `access_origin`.
+#[test]
+fn serve_refuses_to_start_without_access_origin() {
+    let scratch = Scratch::new("serve_needs_access");
+    let conf = scratch.0.join("server.conf");
+    let state_dir = scratch.0.join("state").display().to_string();
+    let text =
+        format!("listen=127.0.0.1:0\ntls_cert=/c.pem\ntls_key=/k.pem\nstate_dir={state_dir}\n");
+    fs::write(&conf, text).unwrap();
+    let refused = Command::new(env!("CARGO_BIN_EXE_fabric-server"))
+        .args(["serve", conf.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert_eq!(refused.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&refused.stderr);
+    assert!(stderr.contains("serve requires access_origin"), "{stderr}");
 }

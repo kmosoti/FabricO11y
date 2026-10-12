@@ -2,7 +2,7 @@
 
 An event records a claim: a source observed something about a resource at a time, with context. Source and resource have distinct meanings even when they refer to the same real-world entity.
 
-The [library](../../src/lib.rs) expresses that claim with an `EventId`, a tenant, source and resource IDs, event and observed times, a vector of attributes, and a payload. The payload selects a Log body or a Gauge with a name, value, and unit. Attributes use the smaller `Scalar` value algebra.
+The [library](https://github.com/kmosoti/FabricO11y-research/blob/main/src/lib.rs) expresses that claim with an `EventId`, a tenant, source and resource IDs, event and observed times, a vector of attributes, and a payload. The payload selects a Log body or a Gauge with a name, value, and unit. Attributes use the smaller `Scalar` value algebra.
 
 ## Identity, time, and ownership
 

@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           # Required: counterexample records refer to historical fix commits.
           fetch-depth: 0
@@ -43,7 +43,7 @@ jobs:
         run: bash tools/ci/prepare-resource-host.sh
       - name: Check CI scheduling and receipt contracts
         run: python3 -B tools/resource_group.py -- python3 -B tools/ci/test_ci_contracts.py
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           toolchain: 1.99.0
           components: rustfmt, clippy
@@ -56,7 +56,7 @@ jobs:
       - name: Resolve mounted Cargo target for cache
         id: cache-path
         run: |
-          target=$(realpath -m --relative-to="$GITHUB_WORKSPACE" /run/media/kmosoti/data/FabricO11y/cargo)
+          target=$(realpath -m --relative-to="$GITHUB_WORKSPACE" "$FABRIC_STORAGE_ROOT/cargo")
           echo "target=$target" >> "$GITHUB_OUTPUT"
       - name: Restore dependency and pinned-tool cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
@@ -70,7 +70,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y pkg-config libssl-dev
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
         with:
           distribution: temurin
           java-version: "21"
@@ -86,9 +86,11 @@ jobs:
           rustup component add llvm-tools-preview
           python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-deny 0.20.2
           python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-llvm-cov 0.9.1
-      - name: Install cargo-fuzz and nightly
+      - name: Install cargo-fuzz and the pinned nightly
         run: |
-          rustup toolchain install nightly --profile minimal
+          # fuzz/smoke.sh runs `cargo +nightly`; make that name the dated toolchain.
+          rustup toolchain install nightly-2026-10-11 --profile minimal
+          ln -sfn nightly-2026-10-11-x86_64-unknown-linux-gnu "$RUSTUP_HOME/toolchains/nightly-x86_64-unknown-linux-gnu"
           python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-fuzz 0.13.2
       - name: Install Kani
         run: |
@@ -134,12 +136,12 @@ jobs:
         run: python3 -B tools/resource_group.py -- python3 -B tools/ci/verify_receipts.py --profile extended
       - name: Keep the verification receipts and full check output
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: extended-verification-receipts
           path: |
             target/verification/receipts/
             target/cargo-mutants/
             target/resource-containment/runs/
-            /run/media/kmosoti/data/FabricO11y/results/ci-tool-install/
+            ${{ env.FABRIC_STORAGE_ROOT }}/results/ci-tool-install/
           if-no-files-found: warn

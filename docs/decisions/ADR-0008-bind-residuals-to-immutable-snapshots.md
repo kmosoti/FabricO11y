@@ -14,7 +14,7 @@ broken executor or a changed snapshot.
 
 ## Decision
 
-Use the [registered residual API](../../tools/storage-probe/RESUME_API.md) in the
+Use the [registered residual API](https://github.com/kmosoti/FabricO11y-research/blob/main/tools/storage-probe/RESUME_API.md) in the
 separate research package. Bind each page and request to the independently retained
 anchor, exact query, tokenizer version and ordering version. An accumulator keeps
 the full authenticated layout and one optional resolved result per block. It derives

@@ -59,7 +59,7 @@ binding or summary validation is removed.
 
 - [Current system](../architecture/system.md)
 - [Framed local-log decision](ADR-0006-use-framed-local-log.md)
-- [Prototype API contract](../../tools/storage-probe/COVERAGE_API.md)
+- [Prototype API contract](https://github.com/kmosoti/FabricO11y-research/blob/main/tools/storage-probe/COVERAGE_API.md)
 
 The [first E1R run](../experiments/ablation/coverage-e1-run-01.md) passed the finite corpus and
 independent reviews, with failing root-binding and builder-validation mutations. This supports

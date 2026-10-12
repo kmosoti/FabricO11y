@@ -15,7 +15,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 version=0.1.0~alpha.2
 arch=$(dpkg --print-architecture)
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$root" log -1 --format=%ct)}"
-stage=$(mktemp -d "${TMPDIR:?resource launcher scratch required}/deb-stage-XXXXXX")
+stage=$(mktemp -d "${TMPDIR:-/tmp}/deb-stage-XXXXXX")
 rmdir "$stage"
 trap 'rm -rf "$stage"' EXIT HUP INT TERM
 "$root/packaging/build-stage.sh" "$stage" "$2"

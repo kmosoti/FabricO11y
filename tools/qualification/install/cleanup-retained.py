@@ -12,9 +12,8 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / 'tools'))
-from resource_group import require_limits
+from resource_group import STORAGE, require_limits
 
-DATA = Path('/run/media/kmosoti/data/FabricO11y')
 QEMU_ID = 'readiness-debian13-01'
 PODMAN_ID = 'readiness-01'
 BASE_SHA512 = (
@@ -40,10 +39,10 @@ def read_json(path: Path) -> dict[str, object]:
 
 
 def archived_evidence() -> dict[str, object]:
-    qemu = DATA / 'results/installation-qemu' / QEMU_ID
-    package = DATA / 'results/installation-package-build' / PODMAN_ID
+    qemu = STORAGE / 'results/installation-qemu' / QEMU_ID
+    package = STORAGE / 'results/installation-package-build' / PODMAN_ID
     qreceipt = read_json(qemu / 'receipt.json')
-    prechange = DATA / 'results/installation-qemu/a12-memory-probe-02/acceptance.sh.before-protocol-change'
+    prechange = STORAGE / 'results/installation-qemu/a12-memory-probe-02/acceptance.sh.before-protocol-change'
     if qreceipt.get('acceptance_exit') != 1 or not qreceipt.get('cleanup_confirmed'):
         raise RuntimeError('QEMU receipt does not record the archived failed, stopped run')
     if not all((qemu / name).is_file() for name in (
@@ -55,7 +54,7 @@ def archived_evidence() -> dict[str, object]:
         raise RuntimeError('archived QEMU log lacks the A12 timeout counterexample')
     if not prechange.is_file() or sha(prechange, 'sha256') != qreceipt.get('acceptance_sha256'):
         raise RuntimeError('pre-change acceptance archive does not match the failed-run receipt')
-    image = DATA / 'cache/installation-qemu/debian-13-genericcloud-amd64.qcow2'
+    image = STORAGE / 'cache/installation-qemu/debian-13-genericcloud-amd64.qcow2'
     if not image.is_file() or sha(image, 'sha512') != BASE_SHA512:
         raise RuntimeError('pinned Debian base image is missing or has a different hash')
 
@@ -78,10 +77,10 @@ def archived_evidence() -> dict[str, object]:
     podman_id = preceipt.get('run_id')
     if podman_id != PODMAN_ID:
         raise RuntimeError('Podman receipt run ID differs from the exact cleanup target')
-    podman_scratch = DATA / 'scratch' / ('install-package-build-' + PODMAN_ID)
+    podman_scratch = STORAGE / 'scratch' / ('install-package-build-' + PODMAN_ID)
     if preceipt.get('scratch_retained') != str(podman_scratch):
         raise RuntimeError('Podman receipt does not identify the exact retained scratch path')
-    qemu_scratch = DATA / 'scratch' / ('installation-qemu-' + QEMU_ID)
+    qemu_scratch = STORAGE / 'scratch' / ('installation-qemu-' + QEMU_ID)
     if qreceipt.get('scratch_retained') != str(qemu_scratch):
         raise RuntimeError('QEMU receipt does not identify the exact retained scratch path')
     return {'qemu': qemu, 'qemu_scratch': qemu_scratch,

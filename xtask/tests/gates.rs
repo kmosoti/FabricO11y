@@ -203,6 +203,73 @@ fn dev_forbidden_dependency_fails() {
 }
 
 #[test]
+fn patched_forbidden_dependency_fails() {
+    // A registry requirement that `[patch.crates-io]` satisfies with a member
+    // resolves to the same edge as a path dependency; it must fail the same way.
+    let fixture = Fixture::valid()
+        .dep("app", "dependencies", r#"fx-adapter = "0.1.0""#)
+        .dep(
+            "",
+            "patch.crates-io",
+            r#"fx-adapter = { path = "adapter" }"#,
+        );
+    for options in [DECLARED, RESOLVED] {
+        let v = only(&fixture.layers(options), layers::FORBIDDEN_EDGE);
+        assert_eq!(v.subject, "fx-app (app) -> fx-adapter (adapter)");
+    }
+}
+
+#[test]
+fn external_crate_in_an_allowlist_restricted_layer_fails_for_normal_and_build() {
+    // `fake-tokio` is a local package named `tokio`, so resolution stays offline.
+    let tokio = r#"tokio = { path = "../fake-tokio" }"#;
+    for table in ["dependencies", "build-dependencies"] {
+        let fixture = Fixture::valid().dep("ports", table, tokio);
+        for options in [DECLARED, RESOLVED] {
+            let v = only(&fixture.layers(options), layers::EXTERNAL_DEPENDENCY);
+            assert_eq!(v.subject, "fx-ports (ports) -> tokio");
+        }
+    }
+    // Development dependencies and layers without an allowlist are not covered.
+    let dev = Fixture::valid().dep("ports", "dev-dependencies", tokio);
+    assert_eq!(dev.layers(DECLARED), vec![]);
+    let app = Fixture::valid().dep("app", "dependencies", tokio);
+    assert_eq!(app.layers(DECLARED), vec![]);
+}
+
+#[test]
+fn an_allowlisted_external_crate_passes_and_a_malformed_allowlist_cannot_run() {
+    let policy = std::fs::read_to_string(Fixture::valid().0.join("layers.json")).unwrap();
+    let tokio = r#"tokio = { path = "../fake-tokio" }"#;
+    let allowed = Fixture::valid()
+        .write(
+            "layers.json",
+            &policy.replace(
+                r#"external_allowlist": []"#,
+                r#"external_allowlist": ["tokio"]"#,
+            ),
+        )
+        .dep("ports", "dependencies", tokio);
+    assert_eq!(allowed.layers(DECLARED), vec![]);
+    // A key that cannot be read must not silently disable the guard.
+    let malformed = Fixture::valid().write(
+        "layers.json",
+        &policy.replace(
+            r#"external_allowlist": []"#,
+            r#"external_allowlist": "none""#,
+        ),
+    );
+    assert!(
+        check_layers(
+            &malformed.0.join("Cargo.toml"),
+            &malformed.0.join("layers.json"),
+            DECLARED
+        )
+        .is_err()
+    );
+}
+
+#[test]
 fn forbidden_edge_through_a_non_member_is_caught_only_with_resolution() {
     let fixture = Fixture::valid().dep(
         "app",
@@ -389,4 +456,15 @@ fn a_dev_only_exception_does_not_excuse_a_normal_edge() {
         .write("layers.json", &policy)
         .dep("app", "dependencies", ADAPTER);
     only(&normal.layers(DECLARED), layers::FORBIDDEN_EDGE);
+}
+
+#[test]
+fn repository_layer_policy_keeps_ports_and_app_free_of_external_crates() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    let text = std::fs::read_to_string(root.join("docs/architecture/layers.json")).unwrap();
+    let policy = layers::Policy::parse(&serde_json::from_str(&text).unwrap()).unwrap();
+    for layer in ["ports", "app"] {
+        let allowed = policy.external.get(layer);
+        assert!(allowed.is_some_and(|crates| crates.is_empty()), "{layer}");
+    }
 }

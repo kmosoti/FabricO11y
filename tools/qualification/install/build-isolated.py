@@ -19,13 +19,12 @@ import time
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "tools"))
-from resource_group import STORAGE, require_limits
+from resource_group import STORAGE, require_limits, require_storage
 sys.path.insert(0, str(ROOT / "tools/packaging"))
 from stage_console import stage as stage_console
 sys.path.insert(0, str(ROOT / "tools/qualification"))
 from prepare_soak import MAX_COPY_BYTES, source_paths
 
-DATA_MOUNT = Path("/run/media/kmosoti/data")
 TOOLCHAIN_HOME = STORAGE / "toolchain-cache/rustup"
 TOOLCHAIN = TOOLCHAIN_HOME / "toolchains/1.99.0-x86_64-unknown-linux-gnu"
 IMAGE_TAG = "docker.io/library/debian:12-slim"
@@ -47,7 +46,7 @@ def command(args: list[str], *, timeout: int = 60,
 
 
 def require_data_budget(*, reserve: bool = True) -> None:
-    disk = shutil.disk_usage(DATA_MOUNT)
+    disk = shutil.disk_usage(STORAGE)
     project_bytes = file_tree_bytes(STORAGE)
     reserved = RUN_BUDGET_BYTES if reserve else 0
     if project_bytes + reserved > MAX_DATA_BYTES:
@@ -242,8 +241,7 @@ def main() -> int:
     if (limited.returncode or (cgroup / 'memory.max').read_text().strip() != str(8 * 1024**3)
             or (cgroup / 'memory.high').read_text().strip() != str(7 * 1024**3)):
         raise RuntimeError('isolated builder8GiB maximum/7GiB high not enforced')
-    if not DATA_MOUNT.is_mount() or not STORAGE.is_dir():
-        raise RuntimeError(f"mounted data drive unavailable: {DATA_MOUNT}")
+    require_storage()
     require_data_budget()
     podman = shutil.which("podman")
     overlay = shutil.which("fuse-overlayfs")
@@ -298,7 +296,7 @@ def main() -> int:
         "run_id": args.run_id,
         "classification": "isolated package build; not acceptance or deployment qualification",
         "started_unix": time.time(),
-        "data_drive": str(DATA_MOUNT),
+        "storage_root": str(STORAGE),
         "scratch": str(owned),
         "storage_budget_bytes": RUN_BUDGET_BYTES,
         "host_cgroup": str(cgroup),

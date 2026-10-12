@@ -18,7 +18,7 @@ import tarfile
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
-from resource_group import DATA_DRIVE, require_limits, STORAGE  # noqa: E402
+from resource_group import require_limits, require_storage, STORAGE  # noqa: E402
 
 FREEZE = STORAGE / "scratch/soak-r2-02"
 MARKER = ".fabric-soak-freeze-owned"
@@ -48,8 +48,7 @@ def private_new(path):
 
 
 def ensure_private_external(path):
-    if not DATA_DRIVE.is_mount():
-        raise ValueError("required data drive is not mounted")
+    require_storage()
     RESULTS.mkdir(parents=True, exist_ok=True)
     if (RESULTS.is_symlink() or not RESULTS.is_dir()
             or RESULTS.stat().st_uid != os.getuid()):
@@ -366,6 +365,6 @@ def main():
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except (OSError, ValueError, KeyError, TypeError, tarfile.TarError) as error:
+    except (OSError, RuntimeError, ValueError, KeyError, TypeError, tarfile.TarError) as error:
         print(f"soak preservation: NOT COMPLETE: {error}", file=sys.stderr)
         raise SystemExit(2)

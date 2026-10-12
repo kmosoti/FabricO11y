@@ -1,4 +1,6 @@
 //! Finite actual collector/TLS/restart/publication regression, not capacity.
+mod common;
+
 use fabric_frame::frame::FrameLog;
 use fabric_o11y::spindle::host::Paths;
 use fabric_o11y::spindle::runtime::{Config as NodeConfig, Spindle};
@@ -324,7 +326,7 @@ fn config(root: &Path, plan: Plan) -> Config {
         tls_cert: root.join("server.pem"),
         tls_key: root.join("server.key"),
         state_dir: root.join("server-state"),
-        admin_token_file: root.join("admin-token"),
+        admin_token_file: Some(root.join("admin-token")),
         console_dir: None,
         access_origin: None,
         access_rp_id: None,
@@ -653,7 +655,7 @@ fn actual_collection_tls_restart_publication_preserve_exact_history() {
     let s = &scratch;
     make_certs(&s.root);
     write_host(&s.root);
-    fs::write(s.root.join("admin-token"), ADMIN).unwrap();
+    common::write_secret(s.root.join("admin-token"), ADMIN);
     let mut source = vec![b'x'; (3 * MIB) as usize];
     source.extend_from_slice("\nnormal-λ🦀\n".as_bytes());
     fs::write(s.root.join("input.log"), &source).unwrap();
@@ -668,7 +670,7 @@ fn actual_collection_tls_restart_publication_preserve_exact_history() {
             },
         )
         .unwrap();
-    fs::write(s.root.join("node-token"), token).unwrap();
+    common::write_secret(s.root.join("node-token"), token);
     drop(control);
     s.bound();
     let mut server = start(config(&s.root, Plan::Scan));

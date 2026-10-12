@@ -180,6 +180,7 @@ def main() -> int:
     make_certs(root)
     port = free_port()
     (root / "admin-token").write_text(f"{rng.getrandbits(256):064x}\n")
+    (root / "admin-token").chmod(0o600)
     server_conf = root / "server.conf"
     server_conf.write_text(
         f"listen=127.0.0.1:{port}\ntls_cert={root}/server.pem\ntls_key={root}/server.key\n"
@@ -198,6 +199,7 @@ def main() -> int:
         if out.returncode != 0:
             raise RuntimeError(f"enroll node{i}: {out.stdout} {out.stderr}")
         (root / f"token{i}").write_text(json.loads(out.stdout)["token"] + "\n")
+        (root / f"token{i}").chmod(0o600)
     nodes, stops, threads, transcript = [], [], [], []
     for i in range(args.nodes):
         conf = root / f"node{i}.conf"

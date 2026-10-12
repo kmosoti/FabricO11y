@@ -187,7 +187,7 @@ printf 'subjectAltName=IP:127.0.0.1\nbasicConstraints=critical,CA:FALSE\nkeyUsag
 openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial -out server.pem -days 2 -extfile san.ext 2>/dev/null
 install -m 0644 -o root -g root ca.pem server.pem /etc/fabrico11y/
 install -m 0640 -o root -g fabricolly server.key /etc/fabrico11y/
-head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > admin-token
+(umask 077; head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > admin-token)
 install -m 0640 -o root -g fabricolly admin-token /etc/fabrico11y/admin-token
 cat > /etc/fabrico11y/server.conf <<EOF
 listen=127.0.0.1:7443
@@ -222,7 +222,7 @@ wait_for 30 curl -fsS --cacert /etc/fabrico11y/ca.pem -H "authorization: Bearer 
   https://127.0.0.1:7443/v1/admin/nodes || fail SETUP "server did not answer"
 enroll=$(admin node add spindle-1 --log $LOGDIR/allowed.log --log $LOGDIR/denied.log --interval 15)
 token=$(echo "$enroll" | grep -o '"token":"[^"]*"' | cut -d'"' -f4)
-printf '%s\n' "$token" > node-token
+(umask 077; printf '%s\n' "$token" > node-token)
 install -m 0640 -o root -g fabricolly node-token /etc/fabrico11y/node-token
 cat > /etc/fabrico11y/node.conf <<EOF
 spool_dir=/var/lib/fabrico11y/node/spool

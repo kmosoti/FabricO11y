@@ -1,8 +1,10 @@
 //! End-to-end delivery over TLS between a real node spool and a real server.
 
+mod common;
+
 use fabric_o11y::spindle::host::Paths;
 use fabric_o11y::spindle::runtime::{Config as NodeConfig, Spindle};
-use fabric_o11y::spindle::sender::{Delivery, Sender, ServerTarget};
+use fabric_o11y::spindle::sender::{Delivery, Sender, ServerTarget, agent};
 use fabric_o11y::spindle::spool::{Batch, Spool};
 use fabric_server::config::Config;
 use fabric_server::control::{Control, DesiredConfig};
@@ -75,6 +77,17 @@ fn make_certs(dir: &Path) {
         ],
         dir,
     );
+    issue(dir, "server", "IP:127.0.0.1");
+}
+
+/// `<name>.pem` and `<name>.key`: a server certificate for `san` from the CA in `dir`.
+fn issue(dir: &Path, name: &str, san: &str) {
+    let (key, csr, pem, ext) = (
+        format!("{name}.key"),
+        format!("{name}.csr"),
+        format!("{name}.pem"),
+        format!("{name}.ext"),
+    );
     openssl(
         &[
             "req",
@@ -84,32 +97,32 @@ fn make_certs(dir: &Path) {
             "ec_paramgen_curve:P-256",
             "-nodes",
             "-keyout",
-            "server.key",
+            &key,
             "-out",
-            "server.csr",
+            &csr,
             "-subj",
             "/CN=127.0.0.1",
         ],
         dir,
     );
-    fs::write(dir.join("san.ext"), "subjectAltName=IP:127.0.0.1\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\n").unwrap();
+    fs::write(dir.join(&ext), format!("subjectAltName={san}\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\n")).unwrap();
     openssl(
         &[
             "x509",
             "-req",
             "-in",
-            "server.csr",
+            &csr,
             "-CA",
             "ca.pem",
             "-CAkey",
             "ca.key",
             "-CAcreateserial",
             "-out",
-            "server.pem",
+            &pem,
             "-days",
             "2",
             "-extfile",
-            "san.ext",
+            &ext,
         ],
         dir,
     );
@@ -141,7 +154,7 @@ fn server_config(root: &Path) -> Config {
         tls_cert: root.join("server.pem"),
         tls_key: root.join("server.key"),
         state_dir: root.join("server-state"),
-        admin_token_file: root.join("admin-token"),
+        admin_token_file: Some(root.join("admin-token")),
         console_dir: None,
         access_origin: None,
         access_rp_id: None,
@@ -186,6 +199,18 @@ fn target(root: &Path, addr: SocketAddr, token_name: &str) -> ServerTarget {
     }
 }
 
+fn node_config(root: &Path, addr: SocketAddr) -> NodeConfig {
+    NodeConfig {
+        spool: root.join("spool"),
+        logs: vec![root.join("app.log")],
+        interval_s: 15,
+        spool_bytes: 16 * 1024 * 1024,
+        server: Some(target(root, addr, "token-a")),
+        traces_listen: None,
+        max_output_bytes_per_s: None,
+    }
+}
+
 fn write_host(root: &Path) {
     fs::write(root.join("stat"), "cpu 10 0 5 20 0 0 0 0 0 0\nbtime 1000\n").unwrap();
     fs::write(
@@ -218,12 +243,11 @@ fn host_paths(root: &Path) -> Paths {
 fn setup() -> Scratch {
     let scratch = Scratch::new();
     make_certs(&scratch.0);
-    fs::write(
+    common::write_secret(
         scratch.path("admin-token"),
         format!("{}\n", sha_hex("admin")),
-    )
-    .unwrap();
-    fs::write(scratch.path("token-bad"), "not-enrolled\n").unwrap();
+    );
+    common::write_secret(scratch.path("token-bad"), "not-enrolled\n");
     // Enroll before the server starts; the server reads the same state.
     let mut control = Control::open(&server_config(&scratch.0).state_dir).unwrap();
     for name in ["node-a", "node-b"] {
@@ -237,7 +261,7 @@ fn setup() -> Scratch {
         } else {
             "token-b"
         };
-        fs::write(scratch.path(file), format!("{token}\n")).unwrap();
+        common::write_secret(scratch.path(file), format!("{token}\n"));
     }
     write_host(&scratch.0);
     scratch
@@ -269,17 +293,9 @@ fn node_delivers_exact_bytes_and_both_sides_survive_restart() {
     let scratch = setup();
     fs::write(scratch.path("app.log"), "one\ntwo\n").unwrap();
     let server = start(server_config(&scratch.0));
-    let node_config = |addr| NodeConfig {
-        spool: scratch.path("spool"),
-        logs: vec![scratch.path("app.log")],
-        interval_s: 15,
-        spool_bytes: 16 * 1024 * 1024,
-        server: Some(target(&scratch.0, addr, "token-a")),
-        traces_listen: None,
-        max_output_bytes_per_s: None,
-    };
     let mut node =
-        Spindle::open_with_paths(node_config(server.addr), host_paths(&scratch.0)).unwrap();
+        Spindle::open_with_paths(node_config(&scratch.0, server.addr), host_paths(&scratch.0))
+            .unwrap();
     for _ in 0..3 {
         node.collect_once().unwrap();
     }
@@ -296,7 +312,8 @@ fn node_delivers_exact_bytes_and_both_sides_survive_restart() {
     let server = start(server_config(&scratch.0));
     fs::write(scratch.path("app.log"), "one\ntwo\nthree\n").unwrap();
     let mut node =
-        Spindle::open_with_paths(node_config(server.addr), host_paths(&scratch.0)).unwrap();
+        Spindle::open_with_paths(node_config(&scratch.0, server.addr), host_paths(&scratch.0))
+            .unwrap();
     assert_eq!(node.acked_through(), 3);
     node.collect_once().unwrap();
     let report = node
@@ -371,6 +388,102 @@ fn retry_conflict_gap_binding_and_rejections_follow_the_delivery_rule() {
             stream_b[0].clone()
         ]
     );
+}
+
+/// The sender trusts only its configured CA and the name it dialed. Each
+/// refused server is fully up: a sender that trusts its CA gets an HTTP answer.
+#[test]
+fn a_certificate_from_another_ca_or_for_another_name_is_refused() {
+    let scratch = setup();
+    let other = Scratch::new();
+    make_certs(&other.0);
+    issue(&scratch.0, "wrong-name", "DNS:telemetry.example");
+    for (case, dir, name) in [
+        ("another CA", &other.0, "server"),
+        ("another name", &scratch.0, "wrong-name"),
+    ] {
+        let mut config = server_config(&scratch.0);
+        config.tls_cert = dir.join(format!("{name}.pem"));
+        config.tls_key = dir.join(format!("{name}.key"));
+        let server = start(config);
+        let target = target(&scratch.0, server.addr, "token-a");
+        match Sender::new(&target).unwrap().send(b"unused") {
+            Delivery::Retry(why) => {
+                assert!(why.contains("invalid peer certificate"), "{case}: {why}")
+            }
+            answer => panic!("{case}: {answer:?}"),
+        }
+        if case == "another CA" {
+            let trusting = ServerTarget {
+                ca: dir.join("ca.pem"),
+                ..target
+            };
+            let answer = Sender::new(&trusting).unwrap().send(b"unused");
+            assert!(matches!(answer, Delivery::Rejected(_)), "{answer:?}");
+        }
+        server.stop();
+    }
+}
+
+/// Origin: `deliver` left an ACK beyond the spool to `record_ack`, whose error
+/// differed from the overlap path's pre-attempt guard; one rule now decides both.
+#[test]
+fn an_ack_beyond_the_spool_is_refused_and_leaves_the_cursor() {
+    let scratch = setup();
+    fs::write(scratch.path("app.log"), "one\n").unwrap();
+    fabric_server::install_crypto_provider();
+    let app = axum::Router::new().route(
+        "/v1/batches",
+        axum::routing::post(|| async {
+            axum::Json(serde_json::json!({"status": "ack", "committed_through": 99}))
+        }),
+    );
+    let handle = axum_server::Handle::new();
+    let serving = handle.clone();
+    let (cert, key) = (scratch.path("server.pem"), scratch.path("server.key"));
+    let thread = std::thread::spawn(move || {
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let tls = axum_server::tls_rustls::RustlsConfig::from_pem_file(cert, key)
+                .await
+                .unwrap();
+            let listen = "127.0.0.1:0".parse().unwrap();
+            let served = axum_server::bind_rustls(listen, tls).handle(serving);
+            served.serve(app.into_make_service()).await
+        })
+    });
+    let addr = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(handle.listening())
+        .expect("fake server did not start listening");
+    let mut node =
+        Spindle::open_with_paths(node_config(&scratch.0, addr), host_paths(&scratch.0)).unwrap();
+    node.collect_once().unwrap();
+    let until = Instant::now() + Duration::from_secs(20);
+    let error = node.deliver(until, |_| {}).unwrap_err();
+    assert!(error.to_string().contains("beyond the pre-attempt durable"));
+    assert_eq!(node.acked_through(), 0);
+    handle.graceful_shutdown(Some(Duration::from_secs(5)));
+    thread.join().unwrap().unwrap();
+}
+
+/// Normal serve needs no legacy admin token file, and its master routes stay closed.
+#[test]
+fn serve_without_an_admin_token_file_starts_and_refuses_the_master_routes() {
+    let scratch = Scratch::new();
+    make_certs(&scratch.0);
+    let mut config = server_config(&scratch.0);
+    config.admin_token_file = None;
+    config.access_origin = Some("https://localhost".into());
+    config.access_rp_id = Some("localhost".into());
+    let server = start(config);
+    let answer = agent(&scratch.path("ca.pem"))
+        .unwrap()
+        .get(&format!("https://{}/v1/admin/nodes", server.addr))
+        .header("authorization", "Bearer anything")
+        .call()
+        .unwrap();
+    assert_eq!(answer.status().as_u16(), 401);
+    server.stop();
 }
 
 /// ADR-0025 end to end: an application exports spans to the Spindle's loopback

@@ -1,96 +1,40 @@
-# Bounded input security hardening
+# Security hardening
 
-This change adds runtime controls for three reviewed input boundaries and repairs
-contained verification setup. It is not a completed security audit or deployment
-qualification. The original review base is
-`18f6b367d0f34886847ea25b9168e50eb0425300`.
+The controls the code enforces at its input boundaries. The role and credential boundary is in [identity and access](identity-access.md); the checks behind each control are finite and named in the [verification matrix](../formal/verification-matrix.md). This page is neither a security audit nor deployment qualification. The original review specification is a [historical record](../experiments/security-hardening/PUBLICATION.md).
 
 ## Console peer admission
 
-The native TLS composition installs [peer admission](../../crates/fabric-server/src/peer_admission.rs)
-outside the existing console router. It obtains `ConnectInfo<SocketAddr>` from
-Axum's accepted connection, ignores forwarding headers and source ports,
-normalizes IPv4-mapped IPv6, and groups native IPv6 peers by /64. Missing transport
-identity fails closed. A proxy or NAT is one peer; no forwarded-address trust is
-implicitly enabled.
+[peer_admission.rs](../../crates/fabric-server/src/peer_admission.rs) wraps the native TLS console router. The peer is Axum's `ConnectInfo<SocketAddr>`: forwarding headers and ports are ignored, IPv4-mapped IPv6 folds to IPv4 and native IPv6 groups by /64. A missing transport identity answers 503, and a proxy or NAT is one peer.
 
-The public authentication lane has a per-peer token bucket of 2 requests/second,
-burst 4, and two live requests per peer. The private console lane has 8/second,
-burst 8, and four live requests per peer. Outer global live limits are eight and
-sixteen respectively. Peer entries are bounded at 1,024; an entry cannot be
-reclaimed while live or indebted. Fully refilled inactive entries become eligible
-after 120 seconds. Rejections do not log arbitrary peer/credential/path data.
+| Lane | Routes | Rate per peer | Burst | Live per peer | Live overall |
+| --- | --- | --- | --- | --- | --- |
+| Public authentication | `/v1/console/auth/*` | 2/s | 4 | 2 | 8 |
+| Private console | other `/v1/console/*` | 8/s | 8 | 4 | 16 |
 
-This deliberately uses a smaller composition than replacing console authorization:
-the existing global fixed-second rate limits, credential checks, CSRF, freshness,
-body limits and query-worker permits remain unchanged. Peer rejection happens
-before those global rate budgets are spent. The outer request guard remains held
-through authorization-denial auditing. Token credit uses monotonic time and
-saturating integer arithmetic; poisoned bookkeeping fails closed.
+The table holds 1,024 peers. A live or indebted entry is never evicted; refilled idle ones are reclaimed after 120 seconds. A /48 tracks at most 64 (`PEERS / 16`) /64 entries; further /64s from that network share one /48 entry and its single budget, so one routed network cannot fill the table. A peer rejection (429) comes before the console's global rate budgets are spent, poisoned bookkeeping answers 503, and the permit is held through the denial audit. This bounds one peer's starvation of others, not a distributed attacker (many /48s or IPv4 addresses can still fill the table), peers behind one address, TLS overload before routing or local users.
 
-These limits mitigate a single distinct peer's starvation behavior, not distributed
-attacks, traffic from shared peer identities, pre-routing TLS overload, or hostile
-local users. Synchronous access persistence is not made preemptible by an async
-request timer. Tests of the private router without the production wrapper do not
-establish that transport peer integration works; native TLS/browser checks remain
-required.
+## Poisoned locks
+
+Handlers take access, control, cursor, budget and peer-book mutexes through the `lock!` macro in [lib.rs](../../crates/fabric-server/src/lib.rs). A mutex poisoned by a panic under its guard answers 503 JSON instead of panicking on every later request. It is never recovered, because the state it guards is authority. Nodes retry a 503. The read catalog, which holds only derived cache state, still recovers a poisoned guard.
 
 ## Local OTLP transport
 
-The [OTLP receiver](../../src/spindle/otlp.rs) retains 32 simultaneous connections,
-a 64-export queue, its existing body/header size ceilings, and durable Spool
-confirmation before HTTP 200. A connection owns its slot through an RAII guard,
-including spawn failure and unwinding. Direct `start` rejects non-loopback bind
-addresses as well as the configuration parser.
-
-The socket adapter sits beneath `BufReader` and reapplies the remaining absolute
-deadline before every read/write. Header reads have five seconds, body reads ten,
-commit waits thirty, and response writes five; each is clipped by a fifty-second
-request and a 120-second accepted-connection lifetime. A connection serves at
-most 128 requests. Already-buffered requests still check these bounds.
-
-Queue submission uses `try_send`. A full queue rejects without blocking before
-the commit timer. An enqueued export may still commit after its HTTP waiter times
-out; no timeout is interpreted as proof of either a commit or a rollback. Only
-observed durable-success confirmation yields 200. These bounds do not guarantee
-liveness against an endlessly reconnecting local attacker or a stalled OS.
+The [OTLP receiver](../../src/spindle/otlp.rs) accepts loopback addresses only, in the configuration parser and in `start`. It serves 32 connections (a slot is released on spawn failure and unwinding) and queues 64 exports with `try_send`, so a full queue rejects without blocking. The socket adapter reapplies the remaining absolute deadline before every read and write: header 5 s, body 10 s, commit wait 30 s, response write 5 s, request 50 s, connection 120 s, at most 128 requests per connection. HTTP 200 follows only a durable Spool commit; an export may still commit after its waiter timed out. A reconnecting local attacker or a stalled OS can still defeat liveness.
 
 ## Selected log paths
 
-[Secure opening](../../crates/fabric-adapter-linux/src/log_source/secure_open.rs)
-uses Linux `openat2` with all-component `RESOLVE_NO_SYMLINKS` and
-`RESOLVE_NO_MAGICLINKS`, read-only, close-on-exec, no-follow and nonblocking flags.
-The returned descriptor is checked as a regular file and used for metadata,
-Btrfs identity, prefix verification and data reads. Backlog inspection and
-companion startup use the same helper. Relative paths, parent traversal and NULs
-are rejected; an unavailable syscall or blocked policy never falls back to
-ordinary pathname opening.
+[Secure opening](../../crates/fabric-adapter-linux/src/log_source/secure_open.rs) uses `openat2` with `RESOLVE_NO_SYMLINKS` and `RESOLVE_NO_MAGICLINKS`, read-only, close-on-exec, no-follow and nonblocking, and checks the descriptor as a regular file before any read. Relative paths, parent traversal and NULs are rejected, and an unavailable syscall never falls back to ordinary opening. An operator who relied on a symlink selects the physical path. This does not authenticate file provenance or stop hard links, rotation, mount manipulation or a compromised OS owner.
 
-Operators must explicitly select and grant a physical absolute path when an old
-source passed through a symlink. This can include distribution directory aliases.
-Unreadable sources remain visible failures and must not advance unseen cursors.
-No-symlink resolution does not authenticate file provenance or stop hardlinks,
-ordinary rotation, mount manipulation or a compromised OS owner.
+## Credential files
 
-## Verification status and remaining work
+One policy covers every token and secret file the Spindle (`sender::open_secret`, also used by `fabricctl`) and the server and its companion (`config::read_secret`) read: a single-link regular file, not a symlink, owned by the caller or root, readable only by its owner (`0600`) or, when root owns it, also by its group (the packaged `0640 root:fabricolly`). Anything else is refused. Only `serve-legacy` reads `admin_token_file`; normal `serve` needs no administrator token.
 
-The CI commit adds explicit rustup self-update policy under the actual relocated
-home, validates selected compiler locations/version, tests home validation, and
-requires both a successful Kani canary and a named reachable-assertion negative
-canary. It does not skip or weaken the extended registry. On the first CI-only
-commit, hosted Actions passed toolchain preflight, Kani setup and both canaries;
-that result is not runtime verification of the subsequent code changes.
+## Service sandbox
 
-New unit and synthetic-loopback tests cover peer normalization/accounting,
-symlink/refusal/descriptor behavior, queue-full rejection, deadlines, late replies,
-request caps and connection-slot ownership. They require execution on the matching
-implementation revision. The drafting environment has no Rust compiler or the
-repository's required mounted/systemd test environment, so no local application
-execution is claimed. Full fast/extended/browser gates, repeated performance
-measurements, and the complete specification's independent negative-control
-matrix remain required before declaring the work fully verified.
+Both units drop all capabilities and set `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, kernel module, tunable, cgroup, clock and log protection, `LockPersonality`, `MemoryDenyWriteExecute`, `RestrictNamespaces`, `RestrictRealtime`, `RestrictSUIDSGID`, `SystemCallArchitectures=native` and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6` ([server unit](../../packaging/systemd/fabrico11y-server.service), [contract](../PRODUCT-CONTRACT.md#linux-installation-contract)). Host `/proc`, `/sys` and cgroup reads stay visible for metrics. The eight newer directives have had a syntax check only; [installed-system acceptance](https://github.com/kmosoti/FabricO11y/issues/41) is pending.
 
-Use the existing resource launcher for project workloads. Preserve actual failed
-runs and their revision identities. See [identity and access](identity-access.md),
-[Spindle architecture](spindle.md), and [deployment](deployment.md) for the wider
-contracts.
+## Fail-closed state and supply chain
+
+- Audit denials have their own 256-event cap, so a flood cannot evict a login or control record ([identity and access](identity-access.md#revocation-persistence-and-bounds)).
+- A durable server group that disagrees with replay quarantines the commit thread, which answers `Unavailable` until restart; the flag is in memory and replay rebuilds the stream table ([storage](storage.md#failure-behavior-and-assumptions)).
+- Workflow actions are pinned by commit SHA, the fuzz nightly by date, and `tools/ci/check-vendor.py` checks the [vendored crates](../../vendor/README.md) against their crates.io archives ([CI notes](../../tools/ci/README.md)).

@@ -1,7 +1,7 @@
 {
   "layers": {
     "core": { "may_depend_on": ["core"] },
-    "ports": { "may_depend_on": ["core"] },
+    "ports": { "may_depend_on": ["core"], "external_allowlist": [] },
     "app": { "may_depend_on": ["core", "ports"] },
     "adapter": { "may_depend_on": ["core", "ports"] },
     "composition-root": { "may_depend_on": ["core", "ports", "app", "adapter"] }

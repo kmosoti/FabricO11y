@@ -1,5 +1,7 @@
 //! Cancellation must release journal ownership; ordinary bind failure is control.
 //! Origin: serve's HTTP await precedes its explicit worker stop/join path.
+mod common;
+
 use fabric_server::{
     config::Config,
     query::Plan,
@@ -36,7 +38,7 @@ impl Scratch {
             tls_cert: self.0.join("server.pem"),
             tls_key: self.0.join("server.key"),
             state_dir: self.0.join("state"),
-            admin_token_file: self.0.join("admin-token"),
+            admin_token_file: Some(self.0.join("admin-token")),
             console_dir: None,
             access_origin: None,
             access_rp_id: None,
@@ -49,11 +51,10 @@ impl Scratch {
         }
     }
     fn prepare(&self) {
-        fs::write(
+        common::write_secret(
             self.0.join("admin-token"),
             "cancellation-admin-0123456789abcdef0123456789abcdef\n",
-        )
-        .unwrap();
+        );
         let mut child = Command::new("openssl")
             .args([
                 "req",

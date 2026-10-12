@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 const USAGE: &str = "usage:
   fabricctl inspect <NODE_CONFIG>
-  fabricctl access <ACCESS_CONFIG> node list|add|config|pause|resume|revoke ...
+  fabricctl access <ACCESS_CONFIG> node list
   fabricctl access <ACCESS_CONFIG> query '<QUERY_JSON>'
   fabricctl admin <ADMIN_CONFIG> node list
   fabricctl admin <ADMIN_CONFIG> node add <NAME> [--log PATH]... [--interval SECONDS]
@@ -31,7 +31,7 @@ struct Admin {
 
 fn parse_client(text: &str, scoped: bool) -> io::Result<Admin> {
     let token_key = if scoped {
-        "workload_token_file"
+        "reader_token_file"
     } else {
         "admin_token_file"
     };
@@ -103,30 +103,6 @@ fn load_client(path: &str, scoped: bool) -> io::Result<Admin> {
     parse_client(&text, scoped)
 }
 
-fn workload_token(path: &std::path::Path) -> io::Result<String> {
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-    let mut file = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)?;
-    let meta = file.metadata()?;
-    if !meta.is_file() || meta.permissions().mode() & 0o077 != 0 {
-        return Err(invalid(
-            "workload token must be a regular file with owner-only permissions (0600)",
-        ));
-    }
-    let mut token = String::new();
-    (&mut file).take(4097).read_to_string(&mut token)?;
-    if token.len() > 4096 {
-        return Err(invalid("workload token file exceeds 4 KiB"));
-    }
-    let token = token.trim();
-    if token.len() != 64 || !token.bytes().all(|c| c.is_ascii_hexdigit()) {
-        return Err(invalid("invalid workload token file"));
-    }
-    Ok(token.to_owned())
-}
-
 fn node_name(name: &str) -> io::Result<()> {
     if name.is_empty()
         || name.len() > 64
@@ -160,11 +136,10 @@ fn desired(args: &[String]) -> io::Result<serde_json::Value> {
 
 fn remote(config_path: &str, words: &[String], scoped: bool) -> io::Result<bool> {
     let admin = load_client(config_path, scoped)?;
-    let token = if scoped {
-        workload_token(&admin.token_file)?
-    } else {
-        read_token(&admin.token_file)?
-    };
+    let token = read_token(&admin.token_file)?;
+    if scoped && (token.len() != 64 || !token.bytes().all(|c| c.is_ascii_hexdigit())) {
+        return Err(invalid("invalid reader token file"));
+    }
     let client = agent(&admin.ca)?;
     let auth = format!("Bearer {token}");
     let namespace = if scoped { "console" } else { "admin" };
@@ -302,15 +277,14 @@ fn main() -> ExitCode {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::os::unix::fs::{OpenOptionsExt, PermissionsExt, symlink};
 
     #[test]
     fn scoped_config_never_accepts_master_key_or_ambiguous_origin() {
-        let valid = "server_url=https://telemetry.example.com:7443\nserver_ca=/etc/fabrico11y/ca.pem\nworkload_token_file=/home/operator/workload-token\n";
+        let valid = "server_url=https://telemetry.example.com:7443\nserver_ca=/etc/fabrico11y/ca.pem\nreader_token_file=/home/operator/reader-token\n";
         assert!(parse_client(valid, true).is_ok());
         assert!(
             parse_client(
-                &valid.replace("workload_token_file", "admin_token_file"),
+                &valid.replace("reader_token_file", "admin_token_file"),
                 true
             )
             .is_err()
@@ -345,39 +319,5 @@ mod tests {
         for name in ["", ".", "..", "a/b", "a?x", "a#x", "a%2fb", "a\\b"] {
             assert!(node_name(name).is_err(), "{name}");
         }
-    }
-
-    #[test]
-    fn workload_file_rejects_symlink_permissions_and_truncated_oversize() {
-        let root = PathBuf::from(
-            std::env::var_os("FABRIC_SCRATCH_ROOT").expect("resource launcher scratch"),
-        );
-        let dir = root.join(format!("fabricctl-token-{}", std::process::id()));
-        std::fs::create_dir(&dir).unwrap();
-        struct Cleanup(PathBuf);
-        impl Drop for Cleanup {
-            fn drop(&mut self) {
-                std::fs::remove_dir_all(&self.0).unwrap();
-            }
-        }
-        let _cleanup = Cleanup(dir.clone());
-        let path = dir.join("token");
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&path)
-            .unwrap();
-        use std::io::Write;
-        file.write_all("ab".repeat(32).as_bytes()).unwrap();
-        assert!(workload_token(&path).is_ok());
-        let link = dir.join("link");
-        symlink(&path, &link).unwrap();
-        assert!(workload_token(&link).is_err());
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
-        assert!(workload_token(&path).is_err());
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
-        file.write_all(&vec![b' '; 5000]).unwrap();
-        assert!(workload_token(&path).is_err());
     }
 }

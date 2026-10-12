@@ -22,7 +22,8 @@ import subprocess
 import sys
 import time
 
-DATA = Path('/run/media/kmosoti/data/FabricO11y')
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from resource_group import STORAGE as DATA, require_storage
 IMAGE_NAME = 'debian-13-genericcloud-amd64.qcow2'
 IMAGE_URL = (
     'https://cloud.debian.org/images/cloud/trixie/latest/' + IMAGE_NAME
@@ -239,8 +240,7 @@ def main() -> int:
         parser.error('--source-commit must be a 40- or 64-character hex object ID')
 
     containment = require_containment()
-    if not DATA.is_dir() or not Path('/run/media/kmosoti/data').is_mount():
-        raise RuntimeError(f'mounted data drive unavailable: {DATA}')
+    require_storage()
     for tool in ('curl', 'qemu-system-x86_64', 'qemu-img', 'genisoimage',
                  'ssh-keygen', 'ssh', 'scp', 'sha512sum'):
         executable(tool)

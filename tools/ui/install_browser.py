@@ -1,4 +1,4 @@
-"""Fetch a fixed Chrome for Testing and matching driver into the mounted data drive."""
+"""Fetch a fixed Chrome for Testing and matching driver into the storage root."""
 import hashlib
 import json
 import os
@@ -9,9 +9,8 @@ import urllib.request
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
-DATA = Path('/run/media/kmosoti/data/FabricO11y')
 sys.path.insert(0, str(ROOT / 'tools'))
-from resource_group import require_limits
+from resource_group import STORAGE, require_limits
 
 VERSION = '155.0.8059.39'
 BASE = f'https://storage.googleapis.com/chrome-for-testing-public/{VERSION}/linux64/'
@@ -23,7 +22,7 @@ PINNED = {
 
 def main():
     require_limits()
-    target = DATA / 'tools/ui' / f'chrome-for-testing-{VERSION}'
+    target = STORAGE / 'tools/ui' / f'chrome-for-testing-{VERSION}'
     if target.exists():
         raise SystemExit('refuse existing installation; use recorded binaries')
     scratch = Path(os.environ['FABRIC_SCRATCH_ROOT']) / 'chrome-download'

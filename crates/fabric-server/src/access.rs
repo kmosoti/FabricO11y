@@ -1,10 +1,12 @@
-//! Local passkey authentication and explicit scoped authority (ADR-0027).
+//! Local passkey authentication and the three fixed roles (ADR-0029).
 //!
-//! Callers hold their access mutex through authorization and control publication.
-//! Sessions and one-use ceremony state never leave this server except opaque IDs.
+//! The owner (passkey session) and reader (bearer token) roles live here; Spindle
+//! tokens stay in `control`. Callers hold their access mutex through authorization
+//! and control publication. Sessions and one-use ceremony state never leave this
+//! server except opaque IDs.
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
@@ -13,11 +15,16 @@ use subtle::ConstantTimeEq;
 use webauthn_rs::fake::{FakePasskeyDistribution, WebauthnFakeCredentialGenerator};
 use webauthn_rs::prelude::*;
 
+const FORMAT: u32 = 2;
 const STATE_CAP: usize = 16 * 1024 * 1024;
-const PRINCIPAL_CAP: usize = 1024;
+const READER_CAP: usize = 256;
+const READER_TTL_MAX: u64 = 2592000;
+const PASSKEY_CAP: usize = 8;
 const SESSION_CAP: usize = 4096;
 const CEREMONY_CAP: usize = 1024;
 const AUDIT_CAP: usize = 4096;
+const DENIAL_CAP: usize = 256;
+const DENIED: &str = "denied";
 const CHALLENGE_TTL: u64 = 300;
 const FRESH_TTL: u64 = 300;
 const IDLE_TTL: u64 = 1800;
@@ -30,168 +37,31 @@ pub struct AccessConfig {
     pub rp_id: String,
     pub audience: String,
 }
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-#[serde(rename_all = "snake_case")]
-pub enum Action {
-    TelemetryRead,
-    InventoryRead,
-    NodeConfigure,
-    NodePause,
-    NodeResume,
-    NodeEnroll,
-    NodeRevoke,
-    IdentityManage,
-    GrantManage,
-    AuditRead,
-}
-impl Action {
-    fn label(self) -> &'static str {
-        match self {
-            Self::TelemetryRead => "telemetry.read",
-            Self::InventoryRead => "inventory.read",
-            Self::NodeConfigure => "node.configure",
-            Self::NodePause => "node.pause",
-            Self::NodeResume => "node.resume",
-            Self::NodeEnroll => "node.enroll",
-            Self::NodeRevoke => "node.revoke",
-            Self::IdentityManage => "identity.manage",
-            Self::GrantManage => "grant.manage",
-            Self::AuditRead => "audit.read",
-        }
-    }
-}
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+/// Console roles, ordered by authority. A Spindle token is not a console credential.
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
-pub enum Signal {
-    Metrics,
-    Logs,
-    Traces,
+pub enum Role {
+    Reader,
+    Owner,
 }
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct Scope {
-    pub actions: BTreeSet<Action>,
-    /// Explicit installation-wide grants are reserved for the owner.
-    pub installation_wide: bool,
-    pub enrollments: BTreeSet<String>,
-    pub signals: BTreeSet<Signal>,
-    pub max_query_window_s: u64,
-    pub max_query_rows: usize,
-    pub allowed_log_paths: BTreeSet<String>,
-    pub min_interval_s: u64,
-    pub max_interval_s: u64,
-    pub enrollment_namespace: Option<String>,
-    pub max_enrollments: usize,
-}
-impl Scope {
-    pub fn owner() -> Self {
-        Self {
-            actions: [
-                Action::TelemetryRead,
-                Action::InventoryRead,
-                Action::NodeConfigure,
-                Action::NodePause,
-                Action::NodeResume,
-                Action::NodeEnroll,
-                Action::NodeRevoke,
-                Action::IdentityManage,
-                Action::GrantManage,
-                Action::AuditRead,
-            ]
-            .into(),
-            installation_wide: true,
-            enrollments: BTreeSet::new(),
-            signals: [Signal::Metrics, Signal::Logs, Signal::Traces].into(),
-            max_query_window_s: 86400,
-            max_query_rows: 10000,
-            allowed_log_paths: BTreeSet::new(),
-            min_interval_s: 1,
-            max_interval_s: 3600,
-            enrollment_namespace: None,
-            max_enrollments: 4096,
-        }
-    }
-    pub fn allows(&self, action: Action, enrollment: Option<&str>, signal: Option<Signal>) -> bool {
-        self.actions.contains(&action)
-            && enrollment.is_none_or(|id| self.installation_wide || self.enrollments.contains(id))
-            && signal.is_none_or(|s| self.signals.contains(&s))
-    }
-    pub fn contains(&self, other: &Self) -> bool {
-        other.actions.is_subset(&self.actions)
-            && (!other.installation_wide || self.installation_wide)
-            && (self.installation_wide || other.enrollments.is_subset(&self.enrollments))
-            && other.signals.is_subset(&self.signals)
-            && other.max_query_window_s <= self.max_query_window_s
-            && other.max_query_rows <= self.max_query_rows
-            && (self.installation_wide
-                || other.allowed_log_paths.is_subset(&self.allowed_log_paths))
-            && other.min_interval_s >= self.min_interval_s
-            && other.max_interval_s <= self.max_interval_s
-            && other.max_enrollments <= self.max_enrollments
-            && (self.installation_wide || other.enrollment_namespace == self.enrollment_namespace)
-    }
-    fn validate(&self) -> io::Result<()> {
-        if self.enrollments.len() > 4096
-            || self.allowed_log_paths.len() > 16
-            || self
-                .enrollments
-                .iter()
-                .any(|s| s.is_empty() || s.len() > 128)
-            || self
-                .allowed_log_paths
-                .iter()
-                .any(|s| !s.starts_with('/') || s.len() > 4096)
-            || self.max_query_rows == 0
-            || self.max_query_rows > 10000
-            || self.max_query_window_s == 0
-            || self.max_query_window_s > 86400
-            || self.min_interval_s == 0
-            || self.max_interval_s > 3600
-            || self.min_interval_s > self.max_interval_s
-            || self.max_enrollments > 4096
-            || self
-                .enrollment_namespace
-                .as_ref()
-                .is_some_and(|s| s.len() > 64)
-        {
-            return Err(denied());
-        }
-        Ok(())
-    }
-}
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum PrincipalKind {
-    Human,
-    Workload,
-}
+/// The single human operator. An owner without passkeys is awaiting recovery.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Principal {
+struct Owner {
     id: String,
     name: String,
-    kind: PrincipalKind,
-    disabled: bool,
     epoch: u64,
-    scope: Scope,
     passkeys: Vec<Passkey>,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct WorkloadCredential {
+struct Reader {
     id: String,
-    principal: String,
+    name: String,
     hash: String,
     audience: String,
     issued: u64,
     expires: u64,
-    epoch: u64,
-    scope: Scope,
-    on_behalf_of: Option<String>,
-    parent_epoch: Option<u64>,
-    parent_session: Option<String>,
-    parent_credential: Option<String>,
-    policy: u64,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -199,19 +69,9 @@ pub struct AuditEvent {
     pub time: u64,
     pub request_id: String,
     pub actor: Option<String>,
-    pub on_behalf_of: Option<String>,
     pub action: String,
     pub resource: Option<String>,
-    pub policy_version: u64,
     pub outcome: String,
-}
-#[derive(Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Invitation {
-    principal: String,
-    hash: String,
-    expires: u64,
-    epoch: u64,
 }
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -220,14 +80,11 @@ struct Stored {
     config: AccessConfig,
     installation_epoch: String,
     fake_credential_key: String,
-    policy: u64,
     last_time: u64,
     bootstrap_hash: Option<String>,
     bootstrap_expires: u64,
-    recovery_principal: Option<String>,
-    principals: BTreeMap<String, Principal>,
-    invitations: BTreeMap<String, Invitation>,
-    credentials: BTreeMap<String, WorkloadCredential>,
+    owner: Option<Owner>,
+    readers: BTreeMap<String, Reader>,
     audit: Vec<AuditEvent>,
     audit_dropped: u64,
     audit_next_id: u64,
@@ -237,10 +94,9 @@ struct Stored {
 #[serde(deny_unknown_fields)]
 struct ControlIntent {
     id: String,
-    action: Action,
+    action: String,
     resource: String,
     actor: String,
-    on_behalf_of: Option<String>,
 }
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -253,9 +109,7 @@ struct RecoveryIntent {
 }
 
 struct Session {
-    principal: String,
     epoch: u64,
-    policy: u64,
     csrf_hash: String,
     csrf_token: String,
     issued: u64,
@@ -293,35 +147,34 @@ pub struct SessionIssued {
     pub principal_id: String,
     pub expires_unix_s: u64,
 }
-#[derive(Clone, Debug, Serialize)]
+/// A verified credential. `handle` is the session hash (owner) or credential ID
+/// (reader); `principal_id` identifies cursors and audit actors.
+#[derive(Clone, Debug)]
 pub struct Authority {
     pub principal_id: String,
-    pub kind: PrincipalKind,
-    pub scope: Scope,
-    pub policy_version: u64,
-    pub on_behalf_of: Option<String>,
-    #[serde(skip)]
-    session_hash: Option<String>,
-    #[serde(skip)]
-    credential_id: Option<String>,
-    #[serde(skip)]
+    pub role: Role,
+    handle: String,
     epoch: u64,
 }
 #[derive(Serialize)]
-pub struct CredentialIssued {
-    pub principal_id: String,
+pub struct ReaderIssued {
     pub credential_id: String,
     pub token: String,
     pub expires_unix_s: u64,
 }
 #[derive(Serialize)]
-pub struct PrincipalView {
+pub struct ReaderView {
     pub id: String,
     pub name: String,
-    pub kind: PrincipalKind,
-    pub disabled: bool,
-    pub scope: Scope,
-    pub passkey_count: usize,
+    pub issued_unix_s: u64,
+    pub expires_unix_s: u64,
+}
+#[derive(Serialize)]
+pub struct SessionView {
+    pub id: String,
+    pub issued_unix_s: u64,
+    pub last_seen_unix_s: u64,
+    pub expires_unix_s: u64,
 }
 pub struct Access {
     dir: PathBuf,
@@ -448,17 +301,25 @@ impl Access {
                 if bytes.len() > STATE_CAP {
                     return Err(invalid("access state size cap"));
                 }
+                #[derive(Deserialize)]
+                struct Format {
+                    version: u32,
+                }
+                let format: Format = serde_json::from_slice(&bytes)
+                    .map_err(|_| invalid("malformed access state"))?;
+                if format.version != FORMAT {
+                    return Err(invalid(
+                        "access state predates the three-role format; stop the service, remove state_dir/access and re-bootstrap the owner",
+                    ));
+                }
                 let s: Stored = serde_json::from_slice(&bytes)
                     .map_err(|_| invalid("malformed access state"))?;
                 let epoch = fs::read_to_string(dir.join("access.epoch"))?;
-                if s.version != 1
-                    || s.config != config
+                if s.config != config
                     || !equal(&s.installation_epoch, &epoch)
                     || s.fake_credential_key.len() != 64
-                    || s.principals.len() > PRINCIPAL_CAP
-                    || s.invitations.len() > PRINCIPAL_CAP
-                    || s.credentials.len() > PRINCIPAL_CAP * 16
-                    || s.audit.len() > AUDIT_CAP
+                    || s.readers.len() > READER_CAP
+                    || s.audit.len() > AUDIT_CAP + DENIAL_CAP
                     || (s.pending_control.is_some() && !offline_reconcile)
                     || s.last_time > now
                 {
@@ -466,28 +327,23 @@ impl Access {
                         "access state configuration/epoch/bounds/time mismatch",
                     ));
                 }
-                for (id, p) in &s.principals {
-                    if id != &p.id
-                        || Uuid::parse_str(id).is_err()
-                        || p.name.len() > 128
-                        || p.passkeys.len() > 8
-                        || (p.kind == PrincipalKind::Workload && !p.passkeys.is_empty())
-                    {
-                        return Err(invalid("invalid principal"));
-                    }
-                    p.scope.validate()?;
+                if s.owner.as_ref().is_some_and(|o| {
+                    Uuid::parse_str(&o.id).is_err()
+                        || o.name.len() > 128
+                        || o.passkeys.len() > PASSKEY_CAP
+                }) {
+                    return Err(invalid("invalid owner"));
                 }
-                for (id, c) in &s.credentials {
+                for (id, c) in &s.readers {
                     if id != &c.id
-                        || !s.principals.contains_key(&c.principal)
+                        || c.name.len() > 128
                         || c.hash.len() != 64
                         || c.audience != format!("{}#{}", config.audience, s.installation_epoch)
                         || c.expires <= c.issued
-                        || c.expires - c.issued > 2592000
+                        || c.expires - c.issued > READER_TTL_MAX
                     {
-                        return Err(invalid("invalid credential"));
+                        return Err(invalid("invalid reader token"));
                     }
-                    c.scope.validate()?;
                 }
                 s
             }
@@ -502,18 +358,15 @@ impl Access {
                 let secret = random()?;
                 write_new(&dir.join("access-bootstrap.secret"), secret.as_bytes())?;
                 Stored {
-                    version: 1,
+                    version: FORMAT,
                     config,
                     installation_epoch: epoch,
                     fake_credential_key: random()?,
-                    policy: 1,
                     last_time: now,
                     bootstrap_hash: Some(hash(&secret)),
                     bootstrap_expires: now.saturating_add(600),
-                    recovery_principal: None,
-                    principals: BTreeMap::new(),
-                    invitations: BTreeMap::new(),
-                    credentials: BTreeMap::new(),
+                    owner: None,
+                    readers: BTreeMap::new(),
                     audit: Vec::new(),
                     audit_dropped: 0,
                     audit_next_id: 0,
@@ -538,14 +391,8 @@ impl Access {
         }
         Ok(access)
     }
-    pub fn bootstrap_pending(&self) -> bool {
-        self.state.bootstrap_hash.is_some()
-    }
     pub fn origin(&self) -> &str {
         &self.state.config.origin
-    }
-    pub fn policy_version(&self) -> u64 {
-        self.state.policy
     }
     fn clock(&mut self, now: u64) -> io::Result<()> {
         if self.poisoned {
@@ -606,7 +453,6 @@ impl Access {
         next: &mut Stored,
         now: u64,
         actor: Option<&str>,
-        delegator: Option<&str>,
         action: &str,
         resource: Option<&str>,
         outcome: &str,
@@ -616,22 +462,36 @@ impl Access {
             .checked_add(1)
             .ok_or_else(|| invalid("audit event sequence exhausted"))?;
         next.audit_next_id = event_id;
+        // Denials are capped apart from every other event, so a flood of them can never evict
+        // a login, credential or control record.
+        let denial = outcome == DENIED;
+        let same = |e: &AuditEvent| (e.outcome == DENIED) == denial;
+        let cap = if denial { DENIAL_CAP } else { AUDIT_CAP };
         next.audit.retain(|e| now.saturating_sub(e.time) <= 2592000);
-        if next.audit.len() >= AUDIT_CAP {
-            next.audit.remove(0);
+        if next.audit.iter().filter(|e| same(e)).count() >= cap
+            && let Some(oldest) = next.audit.iter().position(same)
+        {
+            next.audit.remove(oldest);
             next.audit_dropped = next.audit_dropped.saturating_add(1);
         }
         next.audit.push(AuditEvent {
             time: now,
             request_id: format!("{}-{event_id}", next.installation_epoch),
             actor: actor.map(str::to_owned),
-            on_behalf_of: delegator.map(str::to_owned),
             action: action.to_owned(),
             resource: resource.map(str::to_owned),
-            policy_version: next.policy,
             outcome: outcome.to_owned(),
         });
         Ok(())
+    }
+    /// The owner record for a live owner authority; every owner-only operation starts here.
+    fn owner(&self, auth: &Authority) -> io::Result<&Owner> {
+        self.recheck(auth)?;
+        self.state
+            .owner
+            .as_ref()
+            .filter(|o| auth.role == Role::Owner && o.id == auth.principal_id)
+            .ok_or_else(denied)
     }
     pub fn start_registration(
         &mut self,
@@ -644,7 +504,11 @@ impl Access {
             || name.len() > 128
             || self.ceremonies.len() >= CEREMONY_CAP
             || now >= self.state.bootstrap_expires
-            || (!self.state.principals.is_empty() && self.state.recovery_principal.is_none())
+            || self
+                .state
+                .owner
+                .as_ref()
+                .is_some_and(|o| !o.passkeys.is_empty())
             || !self
                 .state
                 .bootstrap_hash
@@ -655,9 +519,9 @@ impl Access {
         }
         let id = self
             .state
-            .recovery_principal
-            .clone()
-            .map_or_else(identifier, Ok)?;
+            .owner
+            .as_ref()
+            .map_or_else(identifier, |o| Ok(o.id.clone()))?;
         self.registration(id, name, true, 0, None, now)
     }
     fn registration(
@@ -719,67 +583,55 @@ impl Access {
                 return Err(denied());
             }
         };
-        if self.state.principals.values().any(|p| {
-            p.passkeys
-                .iter()
-                .any(|key| key.cred_id() == passkey.cred_id())
-        }) {
+        let mut next = self.state.clone();
+        if next
+            .owner
+            .iter()
+            .flat_map(|o| &o.passkeys)
+            .any(|key| key.cred_id() == passkey.cred_id())
+        {
             return Err(denied());
         }
-        let mut next = self.state.clone();
         if bootstrap {
             if next.bootstrap_hash.is_none() || now >= next.bootstrap_expires {
                 return Err(denied());
             }
-            if let Some(target) = next.recovery_principal.take() {
-                if target != principal {
-                    return Err(denied());
-                }
-                let p = next.principals.get_mut(&target).ok_or_else(denied)?;
-                p.passkeys = vec![passkey];
-                p.disabled = false;
-            } else {
-                if !next.principals.is_empty() {
-                    return Err(denied());
-                }
-                next.principals.insert(
-                    principal.clone(),
-                    Principal {
+            match &mut next.owner {
+                Some(o) if o.id == principal && o.passkeys.is_empty() => o.passkeys = vec![passkey],
+                None => {
+                    next.owner = Some(Owner {
                         id: principal.clone(),
                         name,
-                        kind: PrincipalKind::Human,
-                        disabled: false,
                         epoch: 1,
-                        scope: Scope::owner(),
                         passkeys: vec![passkey],
-                    },
-                );
+                    })
+                }
+                Some(_) => return Err(denied()),
             }
             next.bootstrap_hash = None;
         } else {
-            let p = next.principals.get_mut(&principal).ok_or_else(denied)?;
-            if p.disabled || p.epoch != epoch || p.passkeys.len() >= 8 {
-                return Err(denied());
-            }
-            p.passkeys.push(passkey);
-            p.epoch = p.epoch.checked_add(1).ok_or_else(denied)?;
+            let o = next
+                .owner
+                .as_mut()
+                .filter(|o| o.id == principal && o.epoch == epoch && o.passkeys.len() < PASSKEY_CAP)
+                .ok_or_else(denied)?;
+            o.passkeys.push(passkey);
+            o.epoch = o.epoch.checked_add(1).ok_or_else(denied)?;
         }
-        next.policy = next.policy.checked_add(1).ok_or_else(denied)?;
         Self::event(
             &mut next,
             now,
             Some(&principal),
-            None,
             "passkey.register",
             Some(&principal),
             "success",
         )?;
         self.publish(next)?;
-        self.sessions.retain(|_, s| s.principal != principal);
+        self.sessions.clear();
         if bootstrap {
             let _ = fs::remove_file(self.dir.join("access-bootstrap.secret"));
         }
-        self.issue_session(&principal, now)
+        self.issue_session(now)
     }
     pub fn start_add_passkey(
         &mut self,
@@ -789,23 +641,16 @@ impl Access {
         now: u64,
     ) -> io::Result<CeremonyStart> {
         self.validate_mutation(auth, csrf, origin, now, true)?;
-        let p = self
-            .state
-            .principals
-            .get(&auth.principal_id)
-            .ok_or_else(denied)?;
-        if p.kind != PrincipalKind::Human
-            || p.passkeys.len() >= 8
-            || self.ceremonies.len() >= CEREMONY_CAP
-        {
+        let o = self.owner(auth)?;
+        if o.passkeys.len() >= PASSKEY_CAP || self.ceremonies.len() >= CEREMONY_CAP {
             return Err(denied());
         }
         self.registration(
-            p.id.clone(),
-            &p.name.clone(),
+            o.id.clone(),
+            &o.name.clone(),
             false,
-            p.epoch,
-            Some(p.passkeys.iter().map(|k| k.cred_id().clone()).collect()),
+            o.epoch,
+            Some(o.passkeys.iter().map(|k| k.cred_id().clone()).collect()),
             now,
         )
     }
@@ -814,15 +659,12 @@ impl Access {
         if self.ceremonies.len() >= CEREMONY_CAP || principal.len() > 128 {
             return Err(denied());
         }
-        // Generate the same library challenge shape for missing/disabled accounts. Its empty
-        // server-side credential list cannot verify a signature or grant authority.
-        let known = self
-            .state
-            .principals
-            .get(principal)
-            .filter(|p| !p.disabled && p.kind == PrincipalKind::Human);
-        let keys = known.map_or_else(Vec::new, |p| p.passkeys.clone());
-        let epoch = known.map_or(0, |p| p.epoch);
+        // Generate the same library challenge shape for missing accounts and a
+        // recovering owner. Its empty server-side credential list cannot verify
+        // a signature or grant authority.
+        let known = self.state.owner.as_ref().filter(|o| o.id == principal);
+        let keys = known.map_or_else(Vec::new, |o| o.passkeys.clone());
+        let epoch = known.map_or(0, |o| o.epoch);
         let generator: WebauthnFakeCredentialGenerator<FakePasskeyDistribution> =
             WebauthnFakeCredentialGenerator::new(self.state.fake_credential_key.as_bytes())
                 .map_err(|_| denied())?;
@@ -898,46 +740,37 @@ impl Access {
             }
         };
         let mut next = self.state.clone();
-        let p = next
-            .principals
-            .get_mut(&principal)
-            .filter(|p| !p.disabled && p.epoch == epoch)
+        let o = next
+            .owner
+            .as_mut()
+            .filter(|o| o.id == principal && o.epoch == epoch)
             .ok_or_else(denied)?;
         // The library verifies counters against its start-time credential
         // snapshot. A concurrent successful assertion must not let this older
         // snapshot authorize a counter below the latest durable credential.
-        require_passkey_revision(&p.passkeys, &credential_state)?;
-        let key = p
+        require_passkey_revision(&o.passkeys, &credential_state)?;
+        let key = o
             .passkeys
             .iter_mut()
             .find(|k| k.cred_id() == result.cred_id())
             .ok_or_else(denied)?;
         key.update_credential(&result);
-        Self::event(
-            &mut next,
-            now,
-            Some(&principal),
-            None,
-            "login",
-            None,
-            "success",
-        )?;
+        Self::event(&mut next, now, Some(&principal), "login", None, "success")?;
         self.publish(next)?;
-        self.issue_session(&principal, now)
+        self.issue_session(now)
     }
-    fn issue_session(&mut self, principal: &str, now: u64) -> io::Result<SessionIssued> {
+    fn issue_session(&mut self, now: u64) -> io::Result<SessionIssued> {
         if self.sessions.len() >= SESSION_CAP {
             return Err(denied());
         }
         let token = random()?;
         let csrf = random()?;
-        let p = self.state.principals.get(principal).ok_or_else(denied)?;
+        let o = self.state.owner.as_ref().ok_or_else(denied)?;
+        let principal_id = o.id.clone();
         self.sessions.insert(
             hash(&token),
             Session {
-                principal: principal.to_owned(),
-                epoch: p.epoch,
-                policy: self.state.policy,
+                epoch: o.epoch,
                 csrf_hash: hash(&csrf),
                 csrf_token: csrf.clone(),
                 issued: now,
@@ -948,7 +781,7 @@ impl Access {
         Ok(SessionIssued {
             session_token: token,
             csrf_token: csrf,
-            principal_id: principal.to_owned(),
+            principal_id,
             expires_unix_s: now.saturating_add(SESSION_TTL),
         })
     }
@@ -959,25 +792,21 @@ impl Access {
         }
         let digest = hash(token);
         let s = self.sessions.get_mut(&digest).ok_or_else(denied)?;
-        let p = self
+        let o = self
             .state
-            .principals
-            .get(&s.principal)
-            .filter(|p| !p.disabled && p.epoch == s.epoch && s.policy == self.state.policy)
+            .owner
+            .as_ref()
+            .filter(|o| o.epoch == s.epoch)
             .ok_or_else(denied)?;
         s.seen = now;
         Ok(Authority {
-            principal_id: p.id.clone(),
-            kind: p.kind,
-            scope: p.scope.clone(),
-            policy_version: self.state.policy,
-            on_behalf_of: None,
-            session_hash: Some(digest),
-            credential_id: None,
-            epoch: p.epoch,
+            principal_id: o.id.clone(),
+            role: Role::Owner,
+            handle: digest,
+            epoch: o.epoch,
         })
     }
-    pub fn authenticate_workload(&mut self, token: &str, now: u64) -> io::Result<Authority> {
+    pub fn authenticate_reader(&mut self, token: &str, now: u64) -> io::Result<Authority> {
         self.clock(now)?;
         if token.len() != 64 {
             return Err(denied());
@@ -985,84 +814,47 @@ impl Access {
         let digest = hash(token);
         let c = self
             .state
-            .credentials
+            .readers
             .values()
             .find(|c| equal(&c.hash, &digest))
             .ok_or_else(denied)?;
-        let p = self
-            .state
-            .principals
-            .get(&c.principal)
-            .filter(|p| !p.disabled && p.kind == PrincipalKind::Workload && p.epoch == c.epoch)
-            .ok_or_else(denied)?;
-        if now < c.issued
-            || now >= c.expires
-            || c.audience != self.audience()
-            || !p.scope.contains(&c.scope)
-        {
+        if now < c.issued || now >= c.expires || c.audience != self.audience() {
             return Err(denied());
         }
-        if let Some(parent) = &c.on_behalf_of {
-            self.delegation_parents(c, now)?;
-            let parent = self
-                .state
-                .principals
-                .get(parent)
-                .filter(|h| !h.disabled && Some(h.epoch) == c.parent_epoch)
-                .ok_or_else(denied)?;
-            if c.policy != self.state.policy || !parent.scope.contains(&c.scope) {
-                return Err(denied());
-            }
-        }
         Ok(Authority {
-            principal_id: p.id.clone(),
-            kind: p.kind,
-            scope: c.scope.clone(),
-            policy_version: self.state.policy,
-            on_behalf_of: c.on_behalf_of.clone(),
-            session_hash: None,
-            credential_id: Some(c.id.clone()),
-            epoch: p.epoch,
+            principal_id: c.id.clone(),
+            role: Role::Reader,
+            handle: c.id.clone(),
+            epoch: 0,
         })
     }
     pub fn recheck(&self, auth: &Authority) -> io::Result<()> {
-        if self.poisoned || auth.policy_version != self.state.policy {
-            return Err(denied());
-        }
-        let p = self
-            .state
-            .principals
-            .get(&auth.principal_id)
-            .filter(|p| !p.disabled && p.epoch == auth.epoch)
-            .ok_or_else(denied)?;
-        if !p.scope.contains(&auth.scope) {
-            return Err(denied());
-        }
-        if auth
-            .credential_id
-            .as_ref()
-            .is_some_and(|id| !self.state.credentials.contains_key(id))
-        {
-            return Err(denied());
-        }
-        if auth
-            .session_hash
-            .as_ref()
-            .is_some_and(|id| !self.sessions.contains_key(id))
-        {
-            return Err(denied());
-        }
-        Ok(())
+        let live = !self.poisoned
+            && match auth.role {
+                Role::Owner => {
+                    self.state
+                        .owner
+                        .as_ref()
+                        .is_some_and(|o| o.id == auth.principal_id && o.epoch == auth.epoch)
+                        && self.sessions.contains_key(&auth.handle)
+                }
+                Role::Reader => self.state.readers.contains_key(&auth.handle),
+            };
+        if live { Ok(()) } else { Err(denied()) }
     }
-    pub fn authorize(
-        &self,
-        auth: &Authority,
-        action: Action,
-        node: Option<&str>,
-        signal: Option<Signal>,
-    ) -> bool {
-        self.recheck(auth).is_ok() && auth.scope.allows(action, node, signal)
+    /// Revalidate lifetime as well as epoch immediately before releasing a long-running read.
+    pub fn recheck_at(&mut self, auth: &Authority, now: u64) -> io::Result<()> {
+        self.clock(now)?;
+        self.recheck(auth)?;
+        match self.state.readers.get(&auth.handle) {
+            Some(c) if auth.role == Role::Reader && (now < c.issued || now >= c.expires) => {
+                Err(denied())
+            }
+            _ => Ok(()),
+        }
     }
+    /// Cookie mutations need the exact Origin and session CSRF token. `fresh`
+    /// adds the five-minute passkey recheck and so admits only an owner session.
     pub fn validate_mutation(
         &mut self,
         auth: &Authority,
@@ -1072,8 +864,8 @@ impl Access {
         fresh: bool,
     ) -> io::Result<()> {
         self.recheck_at(auth, now)?;
-        if let Some(id) = &auth.session_hash {
-            let s = self.sessions.get(id).ok_or_else(denied)?;
+        if auth.role == Role::Owner {
+            let s = self.sessions.get(&auth.handle).ok_or_else(denied)?;
             if origin != self.origin()
                 || !equal(&hash(csrf), &s.csrf_hash)
                 || (fresh && now >= s.verified.saturating_add(FRESH_TTL))
@@ -1093,19 +885,18 @@ impl Access {
         now: u64,
     ) -> io::Result<()> {
         self.validate_mutation(auth, csrf, origin, now, false)?;
-        if let Some(id) = &auth.session_hash {
+        if auth.role == Role::Owner {
             let mut next = self.state.clone();
             Self::event(
                 &mut next,
                 now,
                 Some(&auth.principal_id),
-                None,
                 "session.logout",
                 Some(&auth.principal_id),
                 "success",
             )?;
             self.publish(next)?;
-            self.sessions.remove(id);
+            self.sessions.remove(&auth.handle);
         }
         Ok(())
     }
@@ -1119,360 +910,92 @@ impl Access {
         now: u64,
     ) -> io::Result<()> {
         let replacement = self.authenticate_session(&issued.session_token, now)?;
-        if replacement.principal_id != issued.principal_id {
-            return Err(denied());
-        }
         let Some(previous) = previous_token.filter(|t| t.len() == 64) else {
             return Ok(());
         };
         let previous_id = hash(previous);
-        if previous_id == hash(&issued.session_token) {
+        if previous_id == replacement.handle || !self.sessions.contains_key(&previous_id) {
             return Ok(());
         }
-        let Some(old) = self.sessions.get(&previous_id) else {
-            return Ok(());
-        };
-        let principal = old.principal.clone();
         let mut next = self.state.clone();
         Self::event(
             &mut next,
             now,
-            Some(&principal),
-            None,
+            Some(&replacement.principal_id),
             "session.replace",
-            Some(&principal),
+            Some(&replacement.principal_id),
             "success",
         )?;
         self.publish(next)?;
         self.sessions.remove(&previous_id);
         Ok(())
     }
-    /// Additions/rotation do not alter the issuer's grants. Advance only that
-    /// live cookie to the published policy; captured Authority and cursors keep
-    /// their old version and must fail revalidation.
-    fn preserve_issuer_session(&mut self, auth: &Authority) {
-        let Some(id) = &auth.session_hash else {
-            return;
-        };
-        let Some(p) = self.state.principals.get(&auth.principal_id) else {
-            return;
-        };
-        if p.disabled || p.epoch != auth.epoch || p.scope != auth.scope {
-            return;
-        }
-        if let Some(s) = self
-            .sessions
-            .get_mut(id)
-            .filter(|s| s.principal == auth.principal_id && s.epoch == p.epoch)
-        {
-            s.policy = self.state.policy;
-        }
-    }
-    pub fn principals(&self, auth: &Authority) -> io::Result<Vec<PrincipalView>> {
-        if !self.authorize(auth, Action::IdentityManage, None, None)
-            || !auth.scope.installation_wide
-        {
-            return Err(denied());
-        }
-        Ok(self
-            .state
-            .principals
-            .values()
-            .map(|p| PrincipalView {
-                id: p.id.clone(),
-                name: p.name.clone(),
-                kind: p.kind,
-                disabled: p.disabled,
-                scope: p.scope.clone(),
-                passkey_count: p.passkeys.len(),
-            })
-            .collect())
-    }
     pub fn audit(&self, auth: &Authority) -> io::Result<&[AuditEvent]> {
-        if !self.authorize(auth, Action::AuditRead, None, None) || !auth.scope.installation_wide {
-            return Err(denied());
-        }
+        self.owner(auth)?;
         Ok(&self.state.audit)
     }
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "Authority, issuance fields and mutation proof are explicit security inputs."
-    )]
-    pub fn issue_workload(
+    pub fn issue_reader(
         &mut self,
         auth: &Authority,
         name: &str,
-        scope: Scope,
         ttl: u64,
         csrf: &str,
         origin: &str,
         now: u64,
-    ) -> io::Result<CredentialIssued> {
+    ) -> io::Result<ReaderIssued> {
         self.validate_mutation(auth, csrf, origin, now, true)?;
-        if !self.authorize(auth, Action::GrantManage, None, None)
-            || !self.authorize(auth, Action::IdentityManage, None, None)
-            || !auth.scope.contains(&scope)
-            || name.is_empty()
-            || name.len() > 128
-            || ttl == 0
-            || ttl > 2592000
-            || self.state.principals.len() >= PRINCIPAL_CAP
-            || scope.actions.contains(&Action::IdentityManage)
-            || scope.actions.contains(&Action::GrantManage)
-        {
+        if name.is_empty() || name.len() > 128 || ttl == 0 || ttl > READER_TTL_MAX {
             return Err(denied());
         }
-        scope.validate()?;
-        let principal = identifier()?;
+        let mut next = self.state.clone();
+        next.readers.retain(|_, c| c.expires > now);
+        if next.readers.len() >= READER_CAP {
+            return Err(denied());
+        }
         let id = identifier()?;
         let token = random()?;
         let expires = now.saturating_add(ttl);
-        let mut next = self.state.clone();
-        next.policy = next.policy.checked_add(1).ok_or_else(denied)?;
-        next.principals.insert(
-            principal.clone(),
-            Principal {
-                id: principal.clone(),
+        next.readers.insert(
+            id.clone(),
+            Reader {
+                id: id.clone(),
                 name: name.to_owned(),
-                kind: PrincipalKind::Workload,
-                disabled: false,
-                epoch: 1,
-                scope: scope.clone(),
-                passkeys: vec![],
-            },
-        );
-        next.credentials.insert(
-            id.clone(),
-            WorkloadCredential {
-                id: id.clone(),
-                principal: principal.clone(),
                 hash: hash(&token),
                 audience: format!("{}#{}", next.config.audience, next.installation_epoch),
                 issued: now,
                 expires,
-                epoch: 1,
-                scope,
-                on_behalf_of: None,
-                parent_epoch: None,
-                parent_session: None,
-                parent_credential: None,
-                policy: next.policy,
             },
         );
         Self::event(
             &mut next,
             now,
             Some(&auth.principal_id),
-            None,
-            "workload.issue",
-            Some(&principal),
+            "reader.issue",
+            Some(&id),
             "success",
         )?;
         self.publish(next)?;
-        self.preserve_issuer_session(auth);
-        Ok(CredentialIssued {
-            principal_id: principal,
+        Ok(ReaderIssued {
             credential_id: id,
             token,
             expires_unix_s: expires,
         })
     }
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "Authority, issuance fields and mutation proof are explicit security inputs."
-    )]
-    pub fn delegate(
-        &mut self,
-        human: &Authority,
-        workload: &str,
-        scope: Scope,
-        ttl: u64,
-        csrf: &str,
-        origin: &str,
-        now: u64,
-    ) -> io::Result<CredentialIssued> {
-        self.validate_mutation(human, csrf, origin, now, true)?;
-        scope.validate()?;
-        let p = self
+    pub fn readers(&self, auth: &Authority) -> io::Result<Vec<ReaderView>> {
+        self.owner(auth)?;
+        Ok(self
             .state
-            .principals
-            .get(workload)
-            .filter(|p| !p.disabled && p.kind == PrincipalKind::Workload)
-            .ok_or_else(denied)?;
-        if !human.scope.contains(&scope)
-            || !p.scope.contains(&scope)
-            || ttl == 0
-            || ttl > 900
-            || scope.actions.iter().any(|a| {
-                matches!(
-                    a,
-                    Action::IdentityManage
-                        | Action::GrantManage
-                        | Action::NodeEnroll
-                        | Action::NodeRevoke
-                )
-            })
-            || self
-                .state
-                .credentials
-                .values()
-                .filter(|c| c.principal == workload)
-                .count()
-                >= 16
-        {
-            return Err(denied());
-        }
-        let parent_credential = self
-            .state
-            .credentials
+            .readers
             .values()
-            .filter(|c| {
-                c.principal == workload
-                    && c.on_behalf_of.is_none()
-                    && c.epoch == p.epoch
-                    && c.expires > now
-                    && c.scope.contains(&scope)
+            .map(|c| ReaderView {
+                id: c.id.clone(),
+                name: c.name.clone(),
+                issued_unix_s: c.issued,
+                expires_unix_s: c.expires,
             })
-            .max_by_key(|c| c.expires)
-            .ok_or_else(denied)?;
-        let parent_id = parent_credential.id.clone();
-        let session_id = human.session_hash.clone().ok_or_else(denied)?;
-        let session = self.sessions.get(&session_id).ok_or_else(denied)?;
-        let expires = now
-            .saturating_add(ttl)
-            .min(parent_credential.expires)
-            .min(session.issued.saturating_add(SESSION_TTL))
-            .min(session.seen.saturating_add(IDLE_TTL));
-        if expires <= now {
-            return Err(denied());
-        }
-        let id = identifier()?;
-        let token = random()?;
-        let mut next = self.state.clone();
-        next.credentials.insert(
-            id.clone(),
-            WorkloadCredential {
-                id: id.clone(),
-                principal: workload.to_owned(),
-                hash: hash(&token),
-                audience: format!("{}#{}", next.config.audience, next.installation_epoch),
-                issued: now,
-                expires,
-                epoch: p.epoch,
-                scope,
-                on_behalf_of: Some(human.principal_id.clone()),
-                parent_epoch: Some(human.epoch),
-                parent_session: Some(session_id),
-                parent_credential: Some(parent_id),
-                policy: next.policy,
-            },
-        );
-        Self::event(
-            &mut next,
-            now,
-            Some(workload),
-            Some(&human.principal_id),
-            "delegation.issue",
-            Some(workload),
-            "success",
-        )?;
-        self.publish(next)?;
-        Ok(CredentialIssued {
-            principal_id: workload.to_owned(),
-            credential_id: id,
-            token,
-            expires_unix_s: expires,
-        })
+            .collect())
     }
-    pub fn set_scope(
-        &mut self,
-        auth: &Authority,
-        principal: &str,
-        scope: Scope,
-        csrf: &str,
-        origin: &str,
-        now: u64,
-    ) -> io::Result<()> {
-        self.validate_mutation(auth, csrf, origin, now, true)?;
-        scope.validate()?;
-        if !self.authorize(auth, Action::GrantManage, None, None) || !auth.scope.contains(&scope) {
-            return Err(denied());
-        }
-        let mut next = self.state.clone();
-        let p = next.principals.get_mut(principal).ok_or_else(denied)?;
-        if !auth.scope.contains(&p.scope) {
-            return Err(denied());
-        }
-        if p.kind == PrincipalKind::Workload
-            && (scope.actions.contains(&Action::GrantManage)
-                || scope.actions.contains(&Action::IdentityManage))
-        {
-            return Err(denied());
-        }
-        p.scope = scope;
-        p.epoch = p.epoch.checked_add(1).ok_or_else(denied)?;
-        if !next.principals.values().any(|p| {
-            !p.disabled
-                && p.kind == PrincipalKind::Human
-                && !p.passkeys.is_empty()
-                && p.scope.actions.contains(&Action::IdentityManage)
-                && p.scope.actions.contains(&Action::GrantManage)
-        }) {
-            return Err(denied());
-        }
-        next.policy = next.policy.checked_add(1).ok_or_else(denied)?;
-        Self::event(
-            &mut next,
-            now,
-            Some(&auth.principal_id),
-            None,
-            "grant.change",
-            Some(principal),
-            "success",
-        )?;
-        self.publish(next)
-    }
-    pub fn disable(
-        &mut self,
-        auth: &Authority,
-        principal: &str,
-        csrf: &str,
-        origin: &str,
-        now: u64,
-    ) -> io::Result<()> {
-        self.validate_mutation(auth, csrf, origin, now, true)?;
-        if !self.authorize(auth, Action::IdentityManage, None, None) {
-            return Err(denied());
-        }
-        let mut next = self.state.clone();
-        let p = next.principals.get_mut(principal).ok_or_else(denied)?;
-        if !auth.scope.contains(&p.scope) {
-            return Err(denied());
-        }
-        p.disabled = true;
-        p.epoch = p.epoch.checked_add(1).ok_or_else(denied)?;
-        if !next.principals.values().any(|p| {
-            !p.disabled
-                && p.kind == PrincipalKind::Human
-                && !p.passkeys.is_empty()
-                && p.scope.actions.contains(&Action::IdentityManage)
-                && p.scope.actions.contains(&Action::GrantManage)
-        }) {
-            return Err(denied());
-        }
-        next.policy = next.policy.checked_add(1).ok_or_else(denied)?;
-        Self::event(
-            &mut next,
-            now,
-            Some(&auth.principal_id),
-            None,
-            "identity.disable",
-            Some(principal),
-            "success",
-        )?;
-        self.publish(next)
-    }
-    pub fn revoke_credential(
+    pub fn revoke_reader(
         &mut self,
         auth: &Authority,
         id: &str,
@@ -1481,22 +1004,13 @@ impl Access {
         now: u64,
     ) -> io::Result<()> {
         self.validate_mutation(auth, csrf, origin, now, true)?;
-        if !self.authorize(auth, Action::GrantManage, None, None) {
-            return Err(denied());
-        }
-        let c = self.state.credentials.get(id).ok_or_else(denied)?;
-        if !auth.scope.contains(&c.scope) {
-            return Err(denied());
-        }
         let mut next = self.state.clone();
-        next.credentials.remove(id);
-        next.policy = next.policy.checked_add(1).ok_or_else(denied)?;
+        next.readers.remove(id).ok_or_else(denied)?;
         Self::event(
             &mut next,
             now,
             Some(&auth.principal_id),
-            None,
-            "credential.revoke",
+            "reader.revoke",
             Some(id),
             "success",
         )?;
@@ -1507,33 +1021,28 @@ impl Access {
     pub fn begin_control(
         &mut self,
         auth: &Authority,
-        action: Action,
-        enrollment: Option<&str>,
+        action: &str,
         resource: &str,
         now: u64,
     ) -> io::Result<String> {
         self.recheck_at(auth, now)?;
-        if resource.len() > 128
-            || !self.authorize(auth, action, enrollment, None)
-            || self.state.pending_control.is_some()
-        {
+        self.owner(auth)?;
+        if resource.len() > 128 || self.state.pending_control.is_some() {
             return Err(denied());
         }
         let id = random()?;
         let mut next = self.state.clone();
         next.pending_control = Some(ControlIntent {
             id: id.clone(),
-            action,
+            action: action.to_owned(),
             resource: resource.to_owned(),
             actor: auth.principal_id.clone(),
-            on_behalf_of: auth.on_behalf_of.clone(),
         });
         Self::event(
             &mut next,
             now,
             Some(&auth.principal_id),
-            auth.on_behalf_of.as_deref(),
-            action.label(),
+            action,
             Some(resource),
             "pending",
         )?;
@@ -1555,7 +1064,6 @@ impl Access {
             || intent.id != id
             || intent.actor != auth.principal_id
             || intent.resource != resource
-            || intent.on_behalf_of != auth.on_behalf_of
         {
             return Err(denied());
         }
@@ -1565,8 +1073,7 @@ impl Access {
             &mut next,
             now,
             Some(&auth.principal_id),
-            auth.on_behalf_of.as_deref(),
-            intent.action.label(),
+            &intent.action,
             Some(resource),
             if success { "success" } else { "failed" },
         )?;
@@ -1581,7 +1088,7 @@ impl Access {
     }
 
     /// Only call while the composition root holds the stopped service's exclusive state lock.
-    /// Rotates the installation epoch, invalidates machine secrets, and permits one verified
+    /// Rotates the installation epoch, invalidates reader tokens, and permits one verified
     /// passkey replacement for the existing owner ID. It cannot repair malformed state.
     pub fn recover_offline(
         dir: &Path,
@@ -1590,56 +1097,43 @@ impl Access {
         now: u64,
     ) -> io::Result<String> {
         let access = Self::open(dir, config, now)?;
-        let p = access
-            .state
-            .principals
-            .get(principal)
-            .filter(|p| {
-                p.kind == PrincipalKind::Human
-                    && p.scope.installation_wide
-                    && p.scope.actions.contains(&Action::IdentityManage)
-                    && p.scope.actions.contains(&Action::GrantManage)
-            })
-            .ok_or_else(denied)?;
-        let target = p.id.clone();
-        let token = random()?;
-        let epoch = random()?;
         let mut next = access.state.clone();
-        for p in next.principals.values_mut() {
-            p.epoch = p.epoch.checked_add(1).ok_or_else(denied)?;
-        }
-        next.credentials.clear();
-        next.invitations.clear();
+        let o = next
+            .owner
+            .as_mut()
+            .filter(|o| o.id == principal)
+            .ok_or_else(denied)?;
+        o.epoch = o.epoch.checked_add(1).ok_or_else(denied)?;
+        o.passkeys.clear();
+        let token = random()?;
+        next.readers.clear();
         next.last_time = now;
-        next.principals
-            .get_mut(&target)
-            .ok_or_else(denied)?
-            .passkeys
-            .clear();
-        next.principals
-            .get_mut(&target)
-            .ok_or_else(denied)?
-            .disabled = true;
         next.bootstrap_hash = Some(hash(&token));
         next.bootstrap_expires = now.saturating_add(600);
-        next.recovery_principal = Some(target.clone());
-        next.installation_epoch = epoch.clone();
-        next.policy = next.policy.checked_add(1).ok_or_else(denied)?;
+        next.installation_epoch = random()?;
         Self::event(
             &mut next,
             now,
-            Some(&target),
-            None,
+            Some(principal),
             "owner.recovery",
-            Some(&target),
+            Some(principal),
             "one_use_enrollment",
         )?;
+        Self::write_recovery(dir, &access, next, token)
+    }
+    /// Stage the next state beside the old one, then roll the three files forward.
+    fn write_recovery(
+        dir: &Path,
+        access: &Self,
+        next: Stored,
+        secret: String,
+    ) -> io::Result<String> {
         let intent = RecoveryIntent {
-            version: 1,
+            version: FORMAT,
             old_epoch: access.state.installation_epoch.clone(),
             old_state_hash: hex_bytes(&Sha256::digest(fs::read(dir.join("access.json"))?)),
             next,
-            secret: token.clone(),
+            secret: secret.clone(),
         };
         let bytes = serde_json::to_vec(&intent).map_err(|_| invalid("recovery serialization"))?;
         if bytes.len() > STATE_CAP + 4096 {
@@ -1648,47 +1142,14 @@ impl Access {
         write_new(&dir.join("access-recovery.intent"), &bytes)?;
         File::open(dir)?.sync_all()?;
         Self::apply_recovery(dir, &intent, |_| Ok(()))?;
-        Ok(token)
-    }
-    pub fn revoke_sessions(
-        &mut self,
-        auth: &Authority,
-        principal: &str,
-        csrf: &str,
-        origin: &str,
-        now: u64,
-    ) -> io::Result<()> {
-        self.validate_mutation(auth, csrf, origin, now, true)?;
-        if principal != auth.principal_id
-            && !self.authorize(auth, Action::IdentityManage, None, None)
-        {
-            return Err(denied());
-        }
-        let p = self.state.principals.get(principal).ok_or_else(denied)?;
-        if principal != auth.principal_id && !auth.scope.contains(&p.scope) {
-            return Err(denied());
-        }
-        let mut next = self.state.clone();
-        Self::event(
-            &mut next,
-            now,
-            Some(&auth.principal_id),
-            None,
-            "sessions.revoke",
-            Some(principal),
-            "success",
-        )?;
-        self.publish(next)?;
-        self.sessions.retain(|_, s| s.principal != principal);
-        Ok(())
+        Ok(secret)
     }
     /// Returned session IDs are random revocation handles, never reusable authentication tokens.
     pub fn sessions(&self, auth: &Authority) -> io::Result<Vec<SessionView>> {
-        self.recheck(auth)?;
+        self.owner(auth)?;
         Ok(self
             .sessions
             .iter()
-            .filter(|(_, s)| s.principal == auth.principal_id)
             .map(|(id, s)| SessionView {
                 id: id.clone(),
                 issued_unix_s: s.issued,
@@ -1706,20 +1167,16 @@ impl Access {
         now: u64,
     ) -> io::Result<()> {
         self.validate_mutation(auth, csrf, origin, now, true)?;
-        let s = self
-            .sessions
-            .get(id)
-            .filter(|s| s.principal == auth.principal_id)
-            .ok_or_else(denied)?;
-        let principal = s.principal.clone();
+        if !self.sessions.contains_key(id) {
+            return Err(denied());
+        }
         let mut next = self.state.clone();
         Self::event(
             &mut next,
             now,
             Some(&auth.principal_id),
-            None,
             "session.revoke",
-            Some(&principal),
+            Some(&auth.principal_id),
             "success",
         )?;
         self.publish(next)?;
@@ -1736,46 +1193,36 @@ impl Access {
     ) -> io::Result<()> {
         self.validate_mutation(auth, csrf, origin, now, true)?;
         let mut next = self.state.clone();
-        let p = next
-            .principals
-            .get_mut(&auth.principal_id)
-            .ok_or_else(denied)?;
-        if p.passkeys.len() <= 1 {
+        let o = next.owner.as_mut().ok_or_else(denied)?;
+        if o.passkeys.len() <= 1 {
             return Err(denied());
         }
-        let before = p.passkeys.len();
-        p.passkeys.retain(|k| {
+        let before = o.passkeys.len();
+        o.passkeys.retain(|k| {
             serde_json::to_value(k.cred_id())
                 .ok()
                 .and_then(|v| v.as_str().map(str::to_owned))
                 .as_deref()
                 != Some(credential_id)
         });
-        if before == p.passkeys.len() {
+        if before == o.passkeys.len() {
             return Err(denied());
         }
-        p.epoch = p.epoch.checked_add(1).ok_or_else(denied)?;
-        next.policy = next.policy.checked_add(1).ok_or_else(denied)?;
+        o.epoch = o.epoch.checked_add(1).ok_or_else(denied)?;
         Self::event(
             &mut next,
             now,
             Some(&auth.principal_id),
-            None,
             "passkey.revoke",
             Some(&auth.principal_id),
             "success",
         )?;
         self.publish(next)?;
-        self.sessions
-            .retain(|_, s| s.principal != auth.principal_id);
+        self.sessions.clear();
         Ok(())
     }
     pub fn passkey_ids(&self, auth: &Authority) -> io::Result<Vec<serde_json::Value>> {
-        self.recheck(auth)?;
-        self.state
-            .principals
-            .get(&auth.principal_id)
-            .ok_or_else(denied)?
+        self.owner(auth)?
             .passkeys
             .iter()
             .map(|k| {
@@ -1785,46 +1232,12 @@ impl Access {
     }
 
     pub fn session_view(&self, auth: &Authority) -> io::Result<serde_json::Value> {
-        self.recheck(auth)?;
-        let s = self
-            .sessions
-            .get(auth.session_hash.as_ref().ok_or_else(denied)?)
-            .ok_or_else(denied)?;
-        let p = self
-            .state
-            .principals
-            .get(&auth.principal_id)
-            .ok_or_else(denied)?;
-        Ok(
-            serde_json::json!({"api_version":1,"principal_id":p.id,"display_name":p.name,"kind":p.kind,"actions":auth.scope.actions,"csrf":s.csrf_token,
-            "scope":auth.scope,"policy_version":auth.policy_version,"csrf_token":s.csrf_token,
-            "expires_unix_s":s.issued.saturating_add(SESSION_TTL),"fresh_until_unix_s":s.verified.saturating_add(FRESH_TTL)}),
-        )
-    }
-
-    /// Revalidate lifetime as well as epoch immediately before releasing a long-running read.
-    pub fn recheck_at(&mut self, auth: &Authority, now: u64) -> io::Result<()> {
-        self.clock(now)?;
-        self.recheck(auth)?;
-        if let Some(id) = &auth.credential_id {
-            let c = self.state.credentials.get(id).ok_or_else(denied)?;
-            if now < c.issued || now >= c.expires {
-                return Err(denied());
-            }
-            if let Some(parent) = &c.on_behalf_of {
-                self.delegation_parents(c, now)?;
-                let p = self
-                    .state
-                    .principals
-                    .get(parent)
-                    .filter(|p| !p.disabled && Some(p.epoch) == c.parent_epoch)
-                    .ok_or_else(denied)?;
-                if !p.scope.contains(&c.scope) || c.policy != self.state.policy {
-                    return Err(denied());
-                }
-            }
-        }
-        Ok(())
+        let o = self.owner(auth)?;
+        let s = self.sessions.get(&auth.handle).ok_or_else(denied)?;
+        Ok(serde_json::json!({
+            "api_version": 1, "principal_id": o.id, "display_name": o.name, "role": auth.role,
+            "csrf": s.csrf_token, "expires_unix_s": s.issued.saturating_add(SESSION_TTL),
+            "fresh_until_unix_s": s.verified.saturating_add(FRESH_TTL)}))
     }
     /// Root must first reopen/validate the durable control state under the stopped-service lock.
     /// The digest records the exact control file inspected; no control transition is replayed.
@@ -1845,7 +1258,6 @@ impl Access {
             &mut next,
             now,
             Some(principal),
-            None,
             "control.offline_reconcile",
             Some(control_sha256),
             "operator_inspected",
@@ -1856,7 +1268,7 @@ impl Access {
     pub fn audit_dropped(&self) -> u64 {
         self.state.audit_dropped.saturating_add(self.denied_dropped)
     }
-    /// Call from the request boundary using fixed actions and immutable scoped resource IDs.
+    /// Call from the request boundary using fixed actions and immutable resource IDs.
     /// Never pass a bearer, client error, URL, log path, telemetry or challenge as resource.
     pub fn record_denial(
         &mut self,
@@ -1879,120 +1291,11 @@ impl Access {
             &mut next,
             now,
             auth.map(|a| a.principal_id.as_str()),
-            auth.and_then(|a| a.on_behalf_of.as_deref()),
             action,
             resource,
-            "denied",
+            DENIED,
         )?;
         self.publish(next)
-    }
-
-    pub fn invite_human(
-        &mut self,
-        auth: &Authority,
-        name: &str,
-        scope: Scope,
-        csrf: &str,
-        origin: &str,
-        now: u64,
-    ) -> io::Result<InvitationIssued> {
-        self.validate_mutation(auth, csrf, origin, now, true)?;
-        scope.validate()?;
-        if !self.authorize(auth, Action::IdentityManage, None, None)
-            || !self.authorize(auth, Action::GrantManage, None, None)
-            || !auth.scope.contains(&scope)
-            || name.is_empty()
-            || name.len() > 128
-            || self.state.principals.len() >= PRINCIPAL_CAP
-        {
-            return Err(denied());
-        }
-        let id = identifier()?;
-        let invitation = random()?;
-        let mut next = self.state.clone();
-        next.invitations.retain(|_, v| v.expires > now);
-        next.principals.insert(
-            id.clone(),
-            Principal {
-                id: id.clone(),
-                name: name.to_owned(),
-                kind: PrincipalKind::Human,
-                disabled: true,
-                epoch: 1,
-                scope,
-                passkeys: vec![],
-            },
-        );
-        next.invitations.insert(
-            id.clone(),
-            Invitation {
-                principal: id.clone(),
-                hash: hash(&invitation),
-                expires: now.saturating_add(600),
-                epoch: 1,
-            },
-        );
-        Self::event(
-            &mut next,
-            now,
-            Some(&auth.principal_id),
-            None,
-            "human.invite",
-            Some(&id),
-            "success",
-        )?;
-        self.publish(next)?;
-        self.preserve_issuer_session(auth);
-        Ok(InvitationIssued {
-            principal_id: id,
-            invitation,
-            expires_unix_s: now.saturating_add(600),
-        })
-    }
-    pub fn start_invited_registration(
-        &mut self,
-        secret: &str,
-        now: u64,
-    ) -> io::Result<CeremonyStart> {
-        self.clock(now)?;
-        if secret.len() != 64 || self.ceremonies.len() >= CEREMONY_CAP {
-            return Err(denied());
-        }
-        let digest = hash(secret);
-        let invitation = self
-            .state
-            .invitations
-            .values()
-            .find(|v| equal(&v.hash, &digest) && v.expires > now)
-            .cloned()
-            .ok_or_else(denied)?;
-        let mut next = self.state.clone();
-        next.invitations.remove(&invitation.principal);
-        let p = next
-            .principals
-            .get_mut(&invitation.principal)
-            .filter(|p| p.epoch == invitation.epoch && p.passkeys.is_empty())
-            .ok_or_else(denied)?;
-        p.disabled = false;
-        let name = p.name.clone();
-        Self::event(
-            &mut next,
-            now,
-            Some(&invitation.principal),
-            None,
-            "human.invitation_consume",
-            Some(&invitation.principal),
-            "success",
-        )?;
-        self.publish(next)?;
-        self.registration(
-            invitation.principal,
-            &name,
-            false,
-            invitation.epoch,
-            None,
-            now,
-        )
     }
 
     fn replay_recovery(dir: &Path, config: &AccessConfig, now: u64) -> io::Result<()> {
@@ -2012,23 +1315,21 @@ impl Access {
             .read_to_end(&mut current)?;
         let next = serde_json::to_vec(&intent.next)
             .map_err(|_| invalid("recovery state serialization"))?;
-        if intent.version != 1
-            || intent.next.version != 1
+        if intent.version != FORMAT
+            || intent.next.version != FORMAT
             || intent.next.config != *config
             || intent.old_epoch.len() != 64
             || intent.next.installation_epoch.len() != 64
             || intent.next.installation_epoch == intent.old_epoch
             || intent.secret.len() != 64
             || intent.next.last_time > now
-            || !intent.next.credentials.is_empty()
-            || !intent.next.invitations.is_empty()
+            || !intent.next.readers.is_empty()
             || intent.next.bootstrap_hash.as_deref() != Some(hash(&intent.secret).as_str())
-            || match intent.next.recovery_principal.as_ref() {
-                Some(p) => !intent.next.principals.get(p).is_some_and(|p| {
-                    p.kind == PrincipalKind::Human && p.disabled && p.passkeys.is_empty()
-                }),
-                None => !intent.next.principals.is_empty(),
-            }
+            || intent
+                .next
+                .owner
+                .as_ref()
+                .is_some_and(|o| !o.passkeys.is_empty())
             || (epoch != intent.old_epoch && epoch != intent.next.installation_epoch)
             || (hex_bytes(&Sha256::digest(&current)) != intent.old_state_hash && current != next)
             || next.len() > STATE_CAP
@@ -2070,103 +1371,17 @@ impl Access {
         boundary(4)
     }
 
-    /// Rotate a workload credential without changing the persistent actor ID. Old live
-    /// credentials overlap for at most ten minutes; delegated credentials lose policy authority.
-    pub fn rotate_workload(
-        &mut self,
-        auth: &Authority,
-        principal: &str,
-        ttl: u64,
-        csrf: &str,
-        origin: &str,
-        now: u64,
-    ) -> io::Result<CredentialIssued> {
-        self.validate_mutation(auth, csrf, origin, now, true)?;
-        if !self.authorize(auth, Action::GrantManage, None, None) || ttl == 0 || ttl > 2592000 {
-            return Err(denied());
-        }
-        let p = self
-            .state
-            .principals
-            .get(principal)
-            .filter(|p| !p.disabled && p.kind == PrincipalKind::Workload)
-            .ok_or_else(denied)?;
-        if !auth.scope.contains(&p.scope) {
-            return Err(denied());
-        }
-        let epoch = p.epoch;
-        let scope = p.scope.clone();
-        let mut next = self.state.clone();
-        next.credentials
-            .retain(|_, c| c.expires > now && (c.principal != principal || c.epoch == epoch));
-        if next
-            .credentials
-            .values()
-            .filter(|c| c.principal == principal)
-            .count()
-            >= 16
-        {
-            return Err(denied());
-        }
-        for c in next
-            .credentials
-            .values_mut()
-            .filter(|c| c.principal == principal)
-        {
-            c.expires = c.expires.min(now.saturating_add(600));
-        }
-        let id = identifier()?;
-        let token = random()?;
-        let expires = now.saturating_add(ttl);
-        next.policy = next.policy.checked_add(1).ok_or_else(denied)?;
-        next.credentials.insert(
-            id.clone(),
-            WorkloadCredential {
-                id: id.clone(),
-                principal: principal.to_owned(),
-                hash: hash(&token),
-                audience: format!("{}#{}", next.config.audience, next.installation_epoch),
-                issued: now,
-                expires,
-                epoch,
-                scope,
-                on_behalf_of: None,
-                parent_epoch: None,
-                parent_session: None,
-                parent_credential: None,
-                policy: next.policy,
-            },
-        );
-        Self::event(
-            &mut next,
-            now,
-            Some(&auth.principal_id),
-            None,
-            "workload.rotate",
-            Some(principal),
-            "success",
-        )?;
-        self.publish(next)?;
-        self.preserve_issuer_session(auth);
-        Ok(CredentialIssued {
-            principal_id: principal.to_owned(),
-            credential_id: id,
-            token,
-            expires_unix_s: expires,
-        })
-    }
     /// Renew only an unfinished first-owner setup while the stopped-service lock is held.
-    /// Existing humans (including disabled accounts) make this operation unavailable.
+    /// An existing owner makes this operation unavailable.
     pub fn renew_bootstrap_offline(
         dir: &Path,
         config: AccessConfig,
         now: u64,
     ) -> io::Result<String> {
         let access = Self::open(dir, config, now)?;
-        if !access.state.principals.is_empty()
-            || !access.state.credentials.is_empty()
+        if access.state.owner.is_some()
+            || !access.state.readers.is_empty()
             || access.state.bootstrap_hash.is_none()
-            || access.state.recovery_principal.is_some()
         {
             return Err(denied());
         }
@@ -2175,102 +1390,41 @@ impl Access {
         next.installation_epoch = random()?;
         next.bootstrap_hash = Some(hash(&token));
         next.bootstrap_expires = now.saturating_add(600);
-        next.policy = next.policy.checked_add(1).ok_or_else(denied)?;
         next.last_time = now;
         Self::event(
             &mut next,
             now,
             None,
-            None,
             "bootstrap.offline_renew",
             None,
             "success",
         )?;
-        let intent = RecoveryIntent {
-            version: 1,
-            old_epoch: access.state.installation_epoch.clone(),
-            old_state_hash: hex_bytes(&Sha256::digest(fs::read(dir.join("access.json"))?)),
-            next,
-            secret: token.clone(),
-        };
-        let bytes = serde_json::to_vec(&intent).map_err(|_| invalid("recovery serialization"))?;
-        if bytes.len() > STATE_CAP + 4096 {
-            return Err(invalid("recovery intent cap"));
-        }
-        write_new(&dir.join("access-recovery.intent"), &bytes)?;
-        File::open(dir)?.sync_all()?;
-        Self::apply_recovery(dir, &intent, |_| Ok(()))?;
-        Ok(token)
+        Self::write_recovery(dir, &access, next, token)
     }
-    fn delegation_parents(&self, c: &WorkloadCredential, now: u64) -> io::Result<()> {
-        let session = self
-            .sessions
-            .get(c.parent_session.as_ref().ok_or_else(denied)?)
-            .ok_or_else(denied)?;
-        let credential = self
-            .state
-            .credentials
-            .get(c.parent_credential.as_ref().ok_or_else(denied)?)
-            .ok_or_else(denied)?;
-        if Some(&session.principal) != c.on_behalf_of.as_ref()
-            || Some(session.epoch) != c.parent_epoch
-            || session.policy != self.state.policy
-            || now >= session.issued.saturating_add(SESSION_TTL)
-            || now >= session.seen.saturating_add(IDLE_TTL)
-            || credential.principal != c.principal
-            || credential.epoch != c.epoch
-            || credential.on_behalf_of.is_some()
-            || now < credential.issued
-            || now >= credential.expires
-            || !credential.scope.contains(&c.scope)
-        {
-            return Err(denied());
-        }
-        Ok(())
-    }
-    /// HTTP policy test fixture only. It establishes a synthetic authenticated human;
+    /// HTTP policy test fixture only. It establishes a synthetic owner session;
     /// it provides no evidence about signatures, user verification or browser ceremonies.
     #[cfg(test)]
-    pub(crate) fn fixture_session(&mut self, scope: Scope, now: u64) -> io::Result<SessionIssued> {
+    pub(crate) fn fixture_session(&mut self, now: u64) -> io::Result<SessionIssued> {
         self.clock(now)?;
-        scope.validate()?;
-        let id = identifier()?;
         let mut next = self.state.clone();
         next.bootstrap_hash = None;
-        next.principals.insert(
-            id.clone(),
-            Principal {
-                id: id.clone(),
+        if next.owner.is_none() {
+            next.owner = Some(Owner {
+                id: identifier()?,
                 name: "policy-fixture".into(),
-                kind: PrincipalKind::Human,
-                disabled: false,
                 epoch: 1,
-                scope,
                 passkeys: vec![],
-            },
-        );
+            });
+        }
         self.publish(next)?;
-        self.issue_session(&id, now)
+        self.issue_session(now)
     }
-}
-
-#[derive(Serialize)]
-pub struct InvitationIssued {
-    pub principal_id: String,
-    pub invitation: String,
-    pub expires_unix_s: u64,
-}
-#[derive(Serialize)]
-pub struct SessionView {
-    pub id: String,
-    pub issued_unix_s: u64,
-    pub last_seen_unix_s: u64,
-    pub expires_unix_s: u64,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    const ORIGIN: &str = "https://fabric.example";
     struct Scratch(PathBuf);
     impl Scratch {
         fn new() -> Self {
@@ -2288,24 +1442,21 @@ mod tests {
     }
     fn config() -> AccessConfig {
         AccessConfig {
-            origin: "https://fabric.example".into(),
+            origin: ORIGIN.into(),
             rp_id: "fabric.example".into(),
             audience: "installation-1".into(),
         }
     }
     fn owner(access: &mut Access, now: u64) -> SessionIssued {
-        access.fixture_session(Scope::owner(), now).unwrap()
+        access.fixture_session(now).unwrap()
     }
-    fn read_scope() -> Scope {
-        let mut s = Scope::owner();
-        s.installation_wide = false;
-        s.actions = [Action::TelemetryRead].into();
-        s.enrollments = ["enrollment-a".to_owned()].into();
-        s.signals = [Signal::Logs].into();
-        s
+    fn reader(a: &mut Access, session: &SessionIssued, ttl: u64, now: u64) -> ReaderIssued {
+        let auth = a.authenticate_session(&session.session_token, now).unwrap();
+        a.issue_reader(&auth, "reader", ttl, &session.csrf_token, ORIGIN, now)
+            .unwrap()
     }
     #[test]
-    fn resident_registration_options_cover_bootstrap_add_invitation_and_recovery() {
+    fn resident_registration_options_cover_bootstrap_add_and_recovery() {
         // Origin: Firefox diagnostic05 stored a nonresident key despite the
         // console protocol's resident-credential requirement. All enrollment
         // entrypoints must request resident credentials without weakening UV.
@@ -2326,21 +1477,7 @@ mod tests {
         let session = owner(&mut a, 100);
         let human = a.authenticate_session(&session.session_token, 100).unwrap();
         assert_options(
-            &a.start_add_passkey(&human, &session.csrf_token, "https://fabric.example", 100)
-                .unwrap(),
-        );
-        let invite = a
-            .invite_human(
-                &human,
-                "reader",
-                read_scope(),
-                &session.csrf_token,
-                "https://fabric.example",
-                100,
-            )
-            .unwrap();
-        assert_options(
-            &a.start_invited_registration(&invite.invitation, 100)
+            &a.start_add_passkey(&human, &session.csrf_token, ORIGIN, 100)
                 .unwrap(),
         );
         drop(a);
@@ -2389,16 +1526,14 @@ mod tests {
         let mut a = Access::open(&dir.0, config(), 100).unwrap();
         let owner = owner(&mut a, 100);
         let auth = a.authenticate_session(&owner.session_token, 100).unwrap();
-        let other = a.fixture_session(Scope::owner(), 100).unwrap();
-        let other_auth = a.authenticate_session(&other.session_token, 100).unwrap();
+        let other = reader(&mut a, &owner, 100, 100);
+        let other_auth = a.authenticate_reader(&other.token, 100).unwrap();
+        assert!(
+            a.begin_control(&other_auth, "node.pause", "enrollment-a", 100)
+                .is_err()
+        );
         let id = a
-            .begin_control(
-                &auth,
-                Action::NodePause,
-                Some("enrollment-a"),
-                "enrollment-a",
-                100,
-            )
+            .begin_control(&auth, "node.pause", "enrollment-a", 100)
             .unwrap();
         let pending = a.state.audit.last().unwrap();
         assert_eq!(pending.action, "node.pause");
@@ -2424,91 +1559,60 @@ mod tests {
         assert!(a.state.pending_control.is_none());
     }
     #[test]
-    fn delegated_authority_cannot_outlive_either_parent_session_or_credential() {
+    fn reader_tokens_are_hashed_expire_revoke_and_never_reach_owner_operations() {
         let dir = Scratch::new();
         let mut a = Access::open(&dir.0, config(), 100).unwrap();
-        let owner = owner(&mut a, 100);
-        let human = a.authenticate_session(&owner.session_token, 100).unwrap();
-        let credential = a
-            .issue_workload(
-                &human,
-                "ai",
-                read_scope(),
-                100,
-                &owner.csrf_token,
-                "https://fabric.example",
-                100,
-            )
-            .unwrap();
-        let owner = a.issue_session(&owner.principal_id, 100).unwrap();
-        let human = a.authenticate_session(&owner.session_token, 100).unwrap();
-        let delegated = a
-            .delegate(
-                &human,
-                &credential.principal_id,
-                read_scope(),
-                900,
-                &owner.csrf_token,
-                "https://fabric.example",
-                100,
-            )
-            .unwrap();
-        assert_eq!(delegated.expires_unix_s, 200);
-        assert!(a.authenticate_workload(&delegated.token, 100).is_ok());
-        a.logout(&human, &owner.csrf_token, "https://fabric.example", 100)
-            .unwrap();
-        assert!(a.authenticate_workload(&delegated.token, 100).is_err());
-        assert!(a.authenticate_workload(&credential.token, 100).is_ok());
-        drop(a);
-        let mut a = Access::open(&dir.0, config(), 100).unwrap();
-        assert!(a.authenticate_workload(&delegated.token, 100).is_err());
-    }
-    #[test]
-    fn workload_rotation_preserves_actor_and_bounds_overlap() {
-        let dir = Scratch::new();
-        let mut a = Access::open(&dir.0, config(), 100).unwrap();
-        let owner = owner(&mut a, 100);
-        let human = a.authenticate_session(&owner.session_token, 100).unwrap();
-        let old = a
-            .issue_workload(
-                &human,
-                "reader",
-                read_scope(),
-                86400,
-                &owner.csrf_token,
-                "https://fabric.example",
-                100,
-            )
-            .unwrap();
-        let owner = a.issue_session(&owner.principal_id, 200).unwrap();
-        let human = a.authenticate_session(&owner.session_token, 200).unwrap();
-        let new = a
-            .rotate_workload(
-                &human,
-                &old.principal_id,
-                86400,
-                &owner.csrf_token,
-                "https://fabric.example",
-                200,
-            )
-            .unwrap();
-        assert_eq!(new.principal_id, old.principal_id);
-        assert_ne!(new.credential_id, old.credential_id);
-        assert!(a.authenticate_workload(&old.token, 799).is_ok());
-        assert!(a.authenticate_workload(&old.token, 800).is_err());
-        assert_eq!(
-            a.authenticate_workload(&new.token, 800)
+        let session = owner(&mut a, 100);
+        let human = a.authenticate_session(&session.session_token, 100).unwrap();
+        let short = reader(&mut a, &session, 100, 100);
+        let long = reader(&mut a, &session, 1000, 100);
+        // Issuing readers changes nothing about the owner's live authority.
+        assert!(a.recheck(&human).is_ok());
+        assert!(
+            !serde_json::to_string(&a.state)
                 .unwrap()
-                .principal_id,
-            old.principal_id
+                .contains(&short.token)
         );
-        assert_eq!(
-            a.state.credentials[&new.credential_id].audience,
-            format!("installation-1#{}", a.state.installation_epoch)
-        );
-        let encoded = serde_json::to_string(&a.state).unwrap();
-        assert!(!encoded.contains(&old.token));
-        assert!(!encoded.contains(&new.token));
+        let auth = a.authenticate_reader(&short.token, 100).unwrap();
+        assert_eq!(auth.role, Role::Reader);
+        assert_eq!(a.readers(&human).unwrap().len(), 2);
+        for refusal in [
+            a.readers(&auth).err(),
+            a.audit(&auth).err(),
+            a.passkey_ids(&auth).err(),
+            a.sessions(&auth).err(),
+            a.session_view(&auth).err(),
+            a.issue_reader(&auth, "x", 60, "", "", 100).err(),
+            a.revoke_reader(&auth, &long.credential_id, "", "", 100)
+                .err(),
+            a.start_add_passkey(&auth, "", "", 100).err(),
+            a.begin_control(&auth, "node.pause", "enrollment-a", 100)
+                .err(),
+        ] {
+            assert!(refusal.is_some());
+        }
+        drop(a);
+        let mut a = Access::open(&dir.0, config(), 150).unwrap();
+        let long_auth = a.authenticate_reader(&long.token, 150).unwrap();
+        assert!(a.authenticate_reader(&short.token, 150).is_ok());
+        let session = a.fixture_session(150).unwrap();
+        let human = a.authenticate_session(&session.session_token, 150).unwrap();
+        let revoke = |a: &mut Access| {
+            a.revoke_reader(
+                &human,
+                &long.credential_id,
+                &session.csrf_token,
+                ORIGIN,
+                150,
+            )
+        };
+        revoke(&mut a).unwrap();
+        assert!(a.authenticate_reader(&long.token, 150).is_err());
+        assert!(a.recheck(&long_auth).is_err());
+        assert!(revoke(&mut a).is_err());
+        // Expiry is rechecked after a body wait, before any mutation or release.
+        assert!(a.authenticate_reader(&short.token, 200).is_err());
+        assert!(a.recheck_at(&auth, 200).is_err());
     }
     #[test]
     fn expired_first_bootstrap_can_only_be_renewed_by_offline_owner_operation() {
@@ -2541,6 +1645,28 @@ mod tests {
         assert_eq!(a.audit_dropped(), 2);
     }
     #[test]
+    fn denial_floods_never_evict_security_or_mutation_events() {
+        // Origin: anonymous 401/403 responses stored one denial per second in the shared
+        // ring, so about 68 minutes of junk evicted every real login. The stored flood is
+        // primed in memory to avoid 4,096 fsynced publications; the entry point adds more.
+        let dir = Scratch::new();
+        let mut a = Access::open(&dir.0, config(), 100).unwrap();
+        owner(&mut a, 100);
+        let mut next = a.state.clone();
+        Access::event(&mut next, 100, Some("owner"), "login", None, "success").unwrap();
+        for now in 101..=100 + AUDIT_CAP as u64 {
+            Access::event(&mut next, now, None, "console.request", None, DENIED).unwrap();
+        }
+        a.publish(next).unwrap();
+        for now in 5000..5003 {
+            a.record_denial(None, "console.request", None, now).unwrap();
+        }
+        let kept = a.state.audit.iter().filter(|e| e.outcome == DENIED).count();
+        assert!(a.state.audit.iter().any(|e| e.action == "login"));
+        assert_eq!(kept, DENIAL_CAP);
+        assert_eq!(a.audit_dropped(), (AUDIT_CAP + 3 - DENIAL_CAP) as u64);
+    }
+    #[test]
     fn owner_recovery_rolls_forward_at_every_durable_boundary() {
         // Origin: adversarial review found a permanently mismatched epoch after access.json
         // publication. Contract: interrupted owner recovery must never resurrect old authority.
@@ -2551,22 +1677,14 @@ mod tests {
             let secret = random().unwrap();
             let mut next = a.state.clone();
             next.installation_epoch = random().unwrap();
-            next.policy += 1;
-            next.credentials.clear();
-            next.invitations.clear();
-            next.principals
-                .get_mut(&session.principal_id)
-                .unwrap()
-                .disabled = true;
-            next.principals
-                .get_mut(&session.principal_id)
-                .unwrap()
-                .epoch += 1;
+            next.readers.clear();
+            let o = next.owner.as_mut().unwrap();
+            o.epoch += 1;
+            o.passkeys.clear();
             next.bootstrap_hash = Some(hash(&secret));
             next.bootstrap_expires = 700;
-            next.recovery_principal = Some(session.principal_id.clone());
             let intent = RecoveryIntent {
-                version: 1,
+                version: FORMAT,
                 old_epoch: a.state.installation_epoch.clone(),
                 old_state_hash: hex_bytes(&Sha256::digest(
                     fs::read(dir.0.join("access.json")).unwrap(),
@@ -2611,39 +1729,7 @@ mod tests {
         }
     }
     #[test]
-    fn workload_expiry_is_rechecked_after_body_wait_before_mutation() {
-        let dir = Scratch::new();
-        let mut a = Access::open(&dir.0, config(), 100).unwrap();
-        let session = owner(&mut a, 100);
-        let human = a.authenticate_session(&session.session_token, 100).unwrap();
-        let mut scope = read_scope();
-        scope.actions.insert(Action::NodePause);
-        let credential = a
-            .issue_workload(
-                &human,
-                "short-lived",
-                scope,
-                1,
-                &session.csrf_token,
-                "https://fabric.example",
-                100,
-            )
-            .unwrap();
-        let auth = a.authenticate_workload(&credential.token, 100).unwrap();
-        assert!(a.validate_mutation(&auth, "", "", 101, false).is_err());
-        assert!(
-            a.begin_control(
-                &auth,
-                Action::NodePause,
-                Some("enrollment-a"),
-                "enrollment-a",
-                101
-            )
-            .is_err()
-        );
-    }
-    #[test]
-    fn missing_and_disabled_accounts_get_bounded_non_authorizing_ceremonies() {
+    fn missing_accounts_get_bounded_non_authorizing_ceremonies() {
         let dir = Scratch::new();
         let mut a = Access::open(&dir.0, config(), 100).unwrap();
         let start = a.start_login("missing-principal", 100).unwrap();
@@ -2660,60 +1746,6 @@ mod tests {
         let response:PublicKeyCredential=serde_json::from_value(serde_json::json!({"id":"AA","rawId":"AA","type":"public-key","response":{"authenticatorData":"AA","clientDataJSON":"AA","signature":"AA","userHandle":null}})).unwrap();
         assert!(a.finish_login(&start.ceremony_id, &response, 100).is_err());
         assert!(!a.ceremonies.contains_key(&start.ceremony_id));
-    }
-    #[test]
-    fn invitations_are_one_use_bound_to_server_created_identity_and_scope() {
-        let dir = Scratch::new();
-        let mut a = Access::open(&dir.0, config(), 100).unwrap();
-        let session = owner(&mut a, 100);
-        let auth = a.authenticate_session(&session.session_token, 100).unwrap();
-        let invite = a
-            .invite_human(
-                &auth,
-                "reader",
-                read_scope(),
-                &session.csrf_token,
-                "https://fabric.example",
-                100,
-            )
-            .unwrap();
-        assert_eq!(a.state.principals[&invite.principal_id].scope, read_scope());
-        assert!(a.state.principals[&invite.principal_id].disabled);
-        let start = a
-            .start_invited_registration(&invite.invitation, 100)
-            .unwrap();
-        assert_eq!(start.principal_id, invite.principal_id);
-        assert!(
-            a.start_invited_registration(&invite.invitation, 100)
-                .is_err()
-        );
-        assert!(a.state.principals[&invite.principal_id].passkeys.is_empty());
-    }
-    #[test]
-    fn scope_contains_actions_nodes_signals_and_query_bounds() {
-        let s = read_scope();
-        assert!(s.allows(
-            Action::TelemetryRead,
-            Some("enrollment-a"),
-            Some(Signal::Logs)
-        ));
-        assert!(!s.allows(
-            Action::TelemetryRead,
-            Some("enrollment-b"),
-            Some(Signal::Logs)
-        ));
-        assert!(!s.allows(
-            Action::TelemetryRead,
-            Some("enrollment-a"),
-            Some(Signal::Metrics)
-        ));
-        assert!(!s.allows(Action::NodeConfigure, Some("enrollment-a"), None));
-        let mut wider = s.clone();
-        wider.installation_wide = true;
-        assert!(!s.contains(&wider));
-        wider = s.clone();
-        wider.max_query_rows += 1;
-        assert!(!s.contains(&wider));
     }
     #[test]
     fn bootstrap_secret_is_protected_one_use_challenges_are_server_side() {
@@ -2762,7 +1794,7 @@ mod tests {
         );
         let auth = a.authenticate_session(&issued.session_token, 100).unwrap();
         assert!(
-            a.validate_mutation(&auth, "wrong", "https://fabric.example", 100, true)
+            a.validate_mutation(&auth, "wrong", ORIGIN, 100, true)
                 .is_err()
         );
         assert!(
@@ -2770,87 +1802,91 @@ mod tests {
                 .is_err()
         );
         assert!(
-            a.validate_mutation(
-                &auth,
-                &issued.csrf_token,
-                "https://fabric.example",
-                100,
-                true
-            )
-            .is_ok()
+            a.validate_mutation(&auth, &issued.csrf_token, ORIGIN, 100, true)
+                .is_ok()
         );
-        assert_eq!(
-            a.session_view(&auth).unwrap()["csrf_token"],
-            issued.csrf_token
-        );
+        let view = a.session_view(&auth).unwrap();
+        assert_eq!(view["csrf"], issued.csrf_token);
+        assert_eq!(view["role"], "owner");
         assert!(
-            a.validate_mutation(
-                &auth,
-                &issued.csrf_token,
-                "https://fabric.example",
-                400,
-                true
-            )
-            .is_err()
+            a.validate_mutation(&auth, &issued.csrf_token, ORIGIN, 400, true)
+                .is_err()
         );
-        a.logout(&auth, &issued.csrf_token, "https://fabric.example", 400)
-            .unwrap();
+        a.logout(&auth, &issued.csrf_token, ORIGIN, 400).unwrap();
         assert!(a.recheck(&auth).is_err());
         assert!(a.authenticate_session(&issued.session_token, 400).is_err());
-        let fresh = a.issue_session(&issued.principal_id, 400).unwrap();
+        let fresh = a.issue_session(400).unwrap();
         drop(a);
         let mut a = Access::open(&dir.0, config(), 400).unwrap();
         assert!(a.authenticate_session(&fresh.session_token, 400).is_err());
     }
     #[test]
-    fn credential_additions_preserve_issuer_cookie_but_not_captured_authority() {
+    fn sessions_expire_at_the_idle_and_absolute_limits() {
         let dir = Scratch::new();
         let mut a = Access::open(&dir.0, config(), 100).unwrap();
-        let issuer = owner(&mut a, 100);
-        let other_device = a.issue_session(&issuer.principal_id, 100).unwrap();
-        let old = a.authenticate_session(&issuer.session_token, 100).unwrap();
-        let workload = a
-            .issue_workload(
-                &old,
-                "reader",
-                read_scope(),
-                3600,
-                &issuer.csrf_token,
-                "https://fabric.example",
-                100,
-            )
+        let just_before = owner(&mut a, 100);
+        let [at_idle, active] = [(); 2].map(|()| a.issue_session(100).unwrap());
+        let live = |a: &mut Access, s: &SessionIssued, now| {
+            a.authenticate_session(&s.session_token, now).is_ok()
+        };
+        assert!(live(&mut a, &active, 1000));
+        assert!(live(&mut a, &just_before, 100 + IDLE_TTL - 1));
+        assert!(!live(&mut a, &at_idle, 100 + IDLE_TTL));
+        // Activity inside every idle window cannot outlive the absolute limit.
+        for now in (2000..=28000).step_by(1000) {
+            assert!(live(&mut a, &active, now));
+        }
+        assert!(live(&mut a, &active, 100 + SESSION_TTL - 1));
+        assert!(!live(&mut a, &active, 100 + SESSION_TTL));
+    }
+    #[test]
+    fn signed_assertions_with_wrong_origin_rp_id_or_missing_uv_are_rejected() {
+        use rustls::pki_types::PrivatePkcs8KeyDer;
+        use serde_json::json;
+        // Fixed test-only P-256 key (PKCS#8, base64url); it protects nothing.
+        let der: Base64UrlSafeData = serde_json::from_value(json!("MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQg1KKH3sLEPxi5G9ctypVguLk0134hkPDI5uVC-pRnShKhRANCAASHiddDl9g6QX4YLG0PPGPx05dQexuxnapZlB40qQaOMdtAfj5KS-kMUH5lIh9o1pHGJGK4K7xWpTGcqkmlLnsh")).unwrap();
+        let signer = rustls::crypto::ring::sign::any_ecdsa_type(
+            &PrivatePkcs8KeyDer::from(der.to_vec()).into(),
+        )
+        .unwrap()
+        .choose_scheme(&[rustls::SignatureScheme::ECDSA_NISTP256_SHA256])
+        .unwrap();
+        let (x, y) = der[der.len() - 64..].split_at(32);
+        let id = Base64UrlSafeData::from([7u8; 16]);
+        let key: Passkey = serde_json::from_value(json!({"cred":{
+            "cred_id":id,"cred":{"type_":"ES256","key":{"EC_EC2":{"curve":"SECP256R1","x":Base64UrlSafeData::from(x),"y":Base64UrlSafeData::from(y)}}},
+            "counter":1,"transports":null,"user_verified":true,"backup_eligible":false,"backup_state":false,
+            "registration_policy":"required","extensions":{},"attestation":{"data":"None","metadata":"None"},"attestation_format":"none"
+        }})).unwrap();
+        let dir = Scratch::new();
+        let mut a = Access::open(&dir.0, config(), 100).unwrap();
+        let session = owner(&mut a, 100);
+        a.state.owner.as_mut().unwrap().passkeys = vec![key];
+        // Each signed case differs from the accepted one (last) in exactly one field.
+        for (origin, rp_id, flags, accepted) in [
+            ("https://evil.example", "fabric.example", 0x05, false),
+            (ORIGIN, "evil.example", 0x05, false),
+            (ORIGIN, "fabric.example", 0x01, false),
+            (ORIGIN, "fabric.example", 0x05, true),
+        ] {
+            let start = a.start_login(&session.principal_id, 100).unwrap();
+            let client = json!({"type":"webauthn.get","origin":origin,
+                "challenge":start.public_key["publicKey"]["challenge"]});
+            let client = serde_json::to_vec(&client).unwrap();
+            let mut data = Sha256::digest(rp_id).to_vec();
+            data.extend_from_slice(&[flags, 0, 0, 0, 2]);
+            let signed = [data.as_slice(), &Sha256::digest(&client)].concat();
+            let response: PublicKeyCredential = serde_json::from_value(json!({
+                "id":id,"rawId":id,"type":"public-key","response":{
+                    "authenticatorData":Base64UrlSafeData::from(data),
+                    "clientDataJSON":Base64UrlSafeData::from(client),
+                    "signature":Base64UrlSafeData::from(signer.sign(&signed).unwrap()),
+                    "userHandle":null}}))
             .unwrap();
-        assert!(a.recheck(&old).is_err());
-        assert!(
-            a.authenticate_session(&other_device.session_token, 100)
-                .is_err()
-        );
-        let current = a.authenticate_session(&issuer.session_token, 100).unwrap();
-        assert!(a.authenticate_workload(&workload.token, 100).is_ok());
-        a.rotate_workload(
-            &current,
-            &workload.principal_id,
-            3600,
-            &issuer.csrf_token,
-            "https://fabric.example",
-            100,
-        )
-        .unwrap();
-        assert!(a.recheck(&current).is_err());
-        let current = a.authenticate_session(&issuer.session_token, 100).unwrap();
-        a.invite_human(
-            &current,
-            "invited",
-            read_scope(),
-            &issuer.csrf_token,
-            "https://fabric.example",
-            100,
-        )
-        .unwrap();
-        // A disabled, keyless invitation grants no live authority and does
-        // not advance policy until enrollment changes the credential set.
-        assert!(a.recheck(&current).is_ok());
-        assert!(a.authenticate_session(&issuer.session_token, 100).is_ok());
+            let outcome = a.finish_login(&start.ceremony_id, &response, 100);
+            assert_eq!(outcome.is_ok(), accepted, "{origin} {rp_id} {flags:#x}");
+        }
+        assert_eq!(a.sessions.len(), 2);
     }
     #[test]
     fn concurrent_counter_snapshot_cannot_authorize_after_durable_counter_advance() {
@@ -2877,41 +1913,15 @@ mod tests {
         assert!(require_passkey_revision(&synced, &synced_snapshot).is_ok());
     }
     #[test]
-    fn reauthentication_retires_only_previous_cookie_and_its_delegations() {
+    fn reauthentication_retires_only_previous_cookie() {
         let dir = Scratch::new();
         let mut a = Access::open(&dir.0, config(), 100).unwrap();
         let old = owner(&mut a, 100);
-        let human = a.authenticate_session(&old.session_token, 100).unwrap();
-        let workload = a
-            .issue_workload(
-                &human,
-                "reader",
-                read_scope(),
-                3600,
-                &old.csrf_token,
-                "https://fabric.example",
-                100,
-            )
-            .unwrap();
-        let old = a.issue_session(&old.principal_id, 100).unwrap();
-        let human = a.authenticate_session(&old.session_token, 100).unwrap();
-        let delegated = a
-            .delegate(
-                &human,
-                &workload.principal_id,
-                read_scope(),
-                300,
-                &old.csrf_token,
-                "https://fabric.example",
-                100,
-            )
-            .unwrap();
-        let other_device = a.issue_session(&old.principal_id, 100).unwrap();
-        let replacement = a.issue_session(&old.principal_id, 100).unwrap();
+        let other_device = a.issue_session(100).unwrap();
+        let replacement = a.issue_session(100).unwrap();
         a.retire_previous_session(Some(&old.session_token), &replacement, 100)
             .unwrap();
         assert!(a.authenticate_session(&old.session_token, 100).is_err());
-        assert!(a.authenticate_workload(&delegated.token, 100).is_err());
         assert!(
             a.authenticate_session(&replacement.session_token, 100)
                 .is_ok()
@@ -2926,113 +1936,23 @@ mod tests {
         let auth = a
             .authenticate_session(&replacement.session_token, 100)
             .unwrap();
-        a.logout(
-            &auth,
-            &replacement.csrf_token,
-            "https://fabric.example",
-            100,
-        )
-        .unwrap();
+        a.logout(&auth, &replacement.csrf_token, ORIGIN, 100)
+            .unwrap();
         assert!(a.state.audit.iter().any(|e| e.action == "session.logout"));
         let reopened = Access::open(&dir.0, config(), 100).unwrap();
-        assert!(
-            reopened
-                .state
-                .audit
-                .iter()
-                .any(|e| e.action == "session.replace")
-        );
-        assert!(
-            reopened
-                .state
-                .audit
-                .iter()
-                .any(|e| e.action == "session.logout")
-        );
-    }
-    #[test]
-    fn workload_scope_expiry_revocation_parent_policy_and_restart() {
-        let dir = Scratch::new();
-        let mut a = Access::open(&dir.0, config(), 100).unwrap();
-        let session = owner(&mut a, 100);
-        let auth = a.authenticate_session(&session.session_token, 100).unwrap();
-        let cred = a
-            .issue_workload(
-                &auth,
-                "reader",
-                read_scope(),
-                86400,
-                &session.csrf_token,
-                "https://fabric.example",
-                100,
-            )
-            .unwrap();
-        let auth = a.authenticate_workload(&cred.token, 100).unwrap();
-        assert!(a.authorize(
-            &auth,
-            Action::TelemetryRead,
-            Some("enrollment-a"),
-            Some(Signal::Logs)
-        ));
-        assert!(!a.authorize(
-            &auth,
-            Action::TelemetryRead,
-            Some("enrollment-b"),
-            Some(Signal::Logs)
-        ));
-        drop(a);
-        let mut a = Access::open(&dir.0, config(), 100).unwrap();
-        assert!(a.authenticate_workload(&cred.token, 100).is_ok());
-        let session = a.issue_session(&session.principal_id, 100).unwrap();
-        let human = a.authenticate_session(&session.session_token, 100).unwrap();
-        let delegated = a
-            .delegate(
-                &human,
-                &cred.principal_id,
-                read_scope(),
-                900,
-                &session.csrf_token,
-                "https://fabric.example",
-                100,
-            )
-            .unwrap();
-        let delegated_auth = a.authenticate_workload(&delegated.token, 100).unwrap();
-        assert_eq!(
-            delegated_auth.on_behalf_of.as_deref(),
-            Some(human.principal_id.as_str())
-        );
-        assert!(a.recheck_at(&delegated_auth, 1000).is_err());
-        let human = a
-            .authenticate_session(&session.session_token, 1000)
-            .unwrap();
-        // A fresh reauthentication is explicitly required for the revocation below.
-        let fresh = a.issue_session(&human.principal_id, 1000).unwrap();
-        let human = a.authenticate_session(&fresh.session_token, 1000).unwrap();
-        a.revoke_credential(
-            &human,
-            &cred.credential_id,
-            &fresh.csrf_token,
-            "https://fabric.example",
-            1000,
-        )
-        .unwrap();
-        assert!(a.authenticate_workload(&cred.token, 1000).is_err());
-        assert!(a.recheck(&auth).is_err());
+        for action in ["session.replace", "session.logout"] {
+            assert!(reopened.state.audit.iter().any(|e| e.action == action));
+        }
     }
     #[test]
     fn rollback_and_interrupted_control_require_explicit_offline_reconciliation() {
         let dir = Scratch::new();
         let mut a = Access::open(&dir.0, config(), 100).unwrap();
         let session = owner(&mut a, 100);
+        let issued = reader(&mut a, &session, 3600, 100);
         let auth = a.authenticate_session(&session.session_token, 110).unwrap();
         let _intent = a
-            .begin_control(
-                &auth,
-                Action::NodePause,
-                Some("enrollment-a"),
-                "enrollment-a",
-                110,
-            )
+            .begin_control(&auth, "node.pause", "enrollment-a", 110)
             .unwrap();
         drop(a);
         assert!(Access::open(&dir.0, config(), 110).is_err());
@@ -3046,17 +1966,19 @@ mod tests {
         )
         .unwrap();
         let mut a = Access::open(&dir.0, config(), 110).unwrap();
+        // Recovery rotates the installation epoch: reader tokens do not survive it.
+        assert!(a.authenticate_reader(&issued.token, 110).is_err());
         assert!(a.start_registration(&token, "owner", 110).is_ok());
         assert!(a.start_registration(&token, "owner", 109).is_err());
         drop(a);
         assert!(Access::open(&dir.0, config(), 109).is_err());
     }
     #[test]
-    fn state_corruption_missing_state_epoch_mismatch_and_audit_bound_fail_closed() {
+    fn state_corruption_older_format_missing_state_epoch_mismatch_and_audit_bound_fail_closed() {
         let dir = Scratch::new();
         let mut a = Access::open(&dir.0, config(), 100).unwrap();
         for _ in 0..(AUDIT_CAP + 2) {
-            Access::event(&mut a.state, 100, None, None, "test", None, "denied").unwrap();
+            Access::event(&mut a.state, 100, None, "test", None, "success").unwrap();
         }
         assert_eq!(a.state.audit.len(), AUDIT_CAP);
         assert_eq!(a.audit_dropped(), 2);
@@ -3065,6 +1987,17 @@ mod tests {
         let original = fs::read(dir.0.join("access.json")).unwrap();
         fs::write(dir.0.join("access.json"), b"{}").unwrap();
         assert!(Access::open(&dir.0, config(), 100).is_err());
+        // Origin: format 1 (scoped principals) was written only by development trials.
+        fs::write(
+            dir.0.join("access.json"),
+            br#"{"version":1,"principals":{}}"#,
+        )
+        .unwrap();
+        let message = Access::open(&dir.0, config(), 100)
+            .err()
+            .unwrap()
+            .to_string();
+        assert!(message.contains("re-bootstrap"), "{message}");
         fs::write(dir.0.join("access.json"), original).unwrap();
         fs::write(dir.0.join("access.epoch"), "different").unwrap();
         assert!(Access::open(&dir.0, config(), 100).is_err());

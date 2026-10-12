@@ -2,6 +2,7 @@ flowchart TB
     subgraph Roots[Composition roots]
         Node[fabric-node, fabricctl: root package]
         Server[fabric-server]
+        Ui[fabric-ui: Leptos PWA, builds for the browser]
     end
     App[fabric-app: use cases]
     Ports[fabric-ports: DurableJournal, Clock, SegmentStore]

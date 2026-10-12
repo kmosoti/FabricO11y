@@ -115,6 +115,7 @@ def trial() -> int:
     for i in range(NODES):
         token = hashlib.sha256(f"token:{args.seed}:{i}".encode()).hexdigest()
         (root / f"token{i}").write_text(token + "\n")
+        (root / f"token{i}").chmod(0o600)
         creds.append(f"{hashlib.sha256(token.encode()).hexdigest()} node{i}")
     (root / "credentials").write_text("\n".join(creds) + "\n")
     server_conf = root / "server.conf"

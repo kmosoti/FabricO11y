@@ -36,10 +36,10 @@ flowchart LR
     Spool -->|oldest unacknowledged Batch over TLS| Intake
     Commit -->|ACK after durable commit| Spindle
     Control -->|desired configuration poll| Spindle
-    UI[Leptos PWA] -->|passkey session| Access[Scoped console API]
-    CLI[fabricctl] -->|workload credential| Access
-    Access -->|authorized mutation| Control
-    Access -->|authorized sources and signals| Query
+    UI[Leptos PWA: fabric-ui] -->|owner passkey session| Access[Console API: owner and reader roles]
+    CLI[fabricctl] -->|reader token| Access
+    Access -->|owner-only mutation| Control
+    Access -->|role-checked query| Query
     CLI -->|local inspect| Spool
 ```
 
@@ -54,7 +54,8 @@ The canonical source is [system.mmd](../diagrams/system.mmd).
 | Retained history | Zstd Parquet Segments, external-sort sealing off the commit path, retention by age and bytes | [segment](../../crates/fabric-server/src/segment.rs), [bounded builder](../../crates/fabric-server/src/segment/bounded.rs), [sealer](../../crates/fabric-server/src/sealer.rs) | [retained history](retained-history.md), [sealer candidate](sealer.md) |
 | Query | Log, metric and rate queries with completeness, freshness, gaps and snapshot-bound pages | [query](../../crates/fabric-server/src/query.rs) | [retained history](retained-history.md) |
 | Control | Enrollment, desired and applied configuration, pause, resume, revoke | [control](../../crates/fabric-server/src/control.rs) | [control](control-plane.md) |
-| `fabricctl` | Local Spool inspection and the admin HTTPS client | [src/bin/fabricctl.rs](../../src/bin/fabricctl.rs) | [operations](../operations.md) |
+| Access and console | Owner passkeys, reader tokens, the three-role route guard, audit, peer admission and the packaged PWA assets | [access](../../crates/fabric-server/src/access.rs), [console](../../crates/fabric-server/src/console.rs), [peer admission](../../crates/fabric-server/src/peer_admission.rs) | [identity and access](identity-access.md), [security hardening](security-hardening.md) |
+| `fabricctl` | Local Spool inspection, the read-only `access` client (node list, query) and the legacy `admin` client | [src/bin/fabricctl.rs](../../src/bin/fabricctl.rs) | [operations](../operations.md) |
 
 ## Server startup
 
@@ -89,7 +90,7 @@ records or independently observe a failed host. Edge Spindles retain their
 configured destination. Library embedding through `fabric_server::serve` leaves
 process composition to the caller.
 
-The library serving primitive validates the admin token and TLS certificate/key before opening
+The library serving primitive validates the TLS certificate/key and access configuration (and, for `serve-legacy` only, the admin token) before opening
 the Store and starting commit/sealer workers. This order prevents a TLS error
 from returning while a background owner keeps the journal locked. The
 [startup counterexample and native lifecycle](../experiments/benchmarks/catalog-native-lifecycle-findings.md)
@@ -106,8 +107,8 @@ can still delay termination.
 <!-- diagram: ../diagrams/server-startup.mmd -->
 ```mermaid
 flowchart LR
-    Admin[Read admin token] --> TLS[Load TLS certificate and key]
-    TLS -->|valid| Store[Open control and Store]
+    Admin[Read admin token: serve-legacy only] --> TLS[Load TLS certificate and key]
+    TLS -->|valid| Store[Open access, control and Store]
     TLS -->|missing or invalid| Error[Return error before workers own journal]
     Store --> Owner[Commit worker and cleanup owner]
     Owner --> Workers[Register sealer worker]
@@ -137,6 +138,7 @@ flowchart TB
     subgraph Roots[Composition roots]
         Node[fabric-node, fabricctl: root package]
         Server[fabric-server]
+        Ui[fabric-ui: Leptos PWA, builds for the browser]
     end
     App[fabric-app: use cases]
     Ports[fabric-ports: DurableJournal, Clock, SegmentStore]
@@ -168,13 +170,14 @@ The canonical source is [layers.mmd](../diagrams/layers.mmd).
 | [fabric-app](../../crates/fabric-app/src/lib.rs) | app | `commit_group` (delivery) and `apply_retention` (retention) |
 | [fabric-frame](../../crates/fabric-frame/src/lib.rs) | adapter support | the `FAB1` rotating frame log and the version-one `Batch` envelope |
 | [fabric-observation](../../crates/fabric-observation/src/lib.rs) | adapter support | the version-one `Observation` record (line, point or span) and its canonical `FOB1` block codec, built from the bits up as a [tower of levels](observation.md) with no dependencies; accepted in [ADR-0023](../decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md) for the opt-in Walk plan’s in-memory journal-tail blocks |
-| [fabric-server](../../crates/fabric-server/src/lib.rs) | composition root | HTTP/TLS, the journal adapter, control, segments, sealer, query, and `main` |
+| [fabric-server](../../crates/fabric-server/src/lib.rs) | composition root | HTTP/TLS, the journal adapter, control, segments, sealer, query; access, the console API and peer admission; the dedicated companion Spindle; and `main` |
+| [fabric-ui](../../crates/fabric-ui/README.md) | composition root | the Leptos/WASM console PWA: native-testable models plus the browser client; it depends on no workspace crate and the server serves its built assets ([console algorithms](console-algorithms.md)) |
 | [fabric-adapter-linux](../../crates/fabric-adapter-linux/src/lib.rs) | adapter | bounded `/proc` and `statvfs` sampling and newline log reading for the Spindle |
-| root package `fabric_o11y` | composition root | the Spindle runtime, its Spool and HTTP client; `fabric-node`, `fabricctl`; the FOL2 demonstration |
+| root package `fabric_o11y` | composition root | the Spindle runtime, its Spool and HTTP client; `fabric-node`, `fabricctl` |
 | [xtask](../../xtask/src/main.rs) | tooling | layer, purity, check-registry and mutant runners |
 | [fabric-properties](../../crates/fabric-properties/src/lib.rs), [fabric-fuzz-targets](../../crates/fabric-fuzz-targets/src/lib.rs), [fabric-sim](../../crates/fabric-sim/src/lib.rs) | verification | property tests of the kernels, fuzz target bodies and corpus replay, and the turmoil network simulation; they may depend on any product crate and none depends on them ([ADR-0021](../decisions/ADR-0021-add-property-model-fuzz-and-simulation-checks.md)) |
 
-The domain decisions the composition roots used to make inline (control transitions, query and rate semantics, retention eligibility, counter and cursor rules) are kernels in `fabric-core` since the [semantic-kernels milestone](../milestones/semantic-kernels.md), each guarded by a differential test against the code it replaced. The roots still contain their adapters: `fabric-server` holds the journal, Segment, control-persistence and query-read code, and the root package holds the Spindle runtime and Spool. The layer gate sees crates, not modules. One documented exception remains: `fabric-server`'s end-to-end tests depend on the root package (development dependency only) to run a real Spindle.
+The domain decisions the composition roots used to make inline (control transitions, query and rate semantics, retention eligibility, counter and cursor rules) are kernels in `fabric-core` since the [semantic-kernels milestone](../milestones/semantic-kernels.md), each guarded by a differential test against the code it replaced. The roots still contain their adapters: `fabric-server` holds the journal, Segment, control-persistence and query-read code, and the root package holds the Spindle runtime and Spool. The `ports` and `app` layers also carry an empty `external_allowlist`, so they may link no crate from outside the workspace ([ADR-0015](../decisions/ADR-0015-adopt-a-hexagonal-architecture.md)). The layer gate sees crates, not modules. One documented exception remains: `fabric-server`'s end-to-end tests depend on the root package (development dependency only) to run a real Spindle.
 
 ## Invariants
 
@@ -182,11 +185,11 @@ The domain decisions the composition roots used to make inline (control transiti
 - An ACK follows a durable commit of the Batch or of the earlier Batch it acknowledges.
 - The Spindle never forgets an unacknowledged Batch; it moves a source cursor only in the same commit as the collected lines.
 - Query execution never mutates stored telemetry.
-- Wire and persisted bytes (`FOL2`, `FAB1`, envelope field numbers, checkpoint format) do not change with a type move.
+- Wire and persisted bytes (`FAB1`, envelope field numbers, checkpoint format) do not change with a type move.
 
 ## Boundaries not in this system
 
-No general OTLP receiver, traces, UI, plugin boundary, or async runtime in the Spindle. Research packages under `tools/` (storage, layout, transport and seal probes) and the agent-telemetry tooling are outside the product; see [architecture views](README.md).
+No general OTLP receiver (the Spindle accepts traces only on its loopback OTLP/HTTP endpoint), plugin boundary, or async runtime in the Spindle, and no operator UI beyond the console PWA the server serves. Research probes live in the [research archive](https://github.com/kmosoti/FabricO11y-research); the agent-telemetry tooling is outside the product; see [architecture views](README.md).
 
 ## Related decisions
 

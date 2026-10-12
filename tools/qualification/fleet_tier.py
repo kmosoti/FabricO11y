@@ -101,6 +101,7 @@ def trial():
     port = free_port()
     admin_token = hashlib.sha256(f"admin:{args.seed}".encode()).hexdigest()
     (root / "admin-token").write_text(admin_token + "\n")
+    (root / "admin-token").chmod(0o600)
     server_conf = root / "server.conf"
     server_conf.write_text(
         f"listen=127.0.0.1:{port}\ntls_cert={root}/server.pem\ntls_key={root}/server.key\n"
@@ -124,6 +125,7 @@ def trial():
         tokens.append(admin.call("POST", body={"name": f"sim{i:04d}", "metric_interval_s": 15})["token"])
     enroll_s = time.monotonic() - enroll_started
     (root / "tokens").write_text("\n".join(tokens) + "\n")
+    (root / "tokens").chmod(0o600)
     sim_out = root / "sim"
     workers = min(128, args.tier)
     sim = subprocess.Popen(["taskset", "-c", f"4-{cpus - 1}", str(bins / "examples" / "spindle_sim"),

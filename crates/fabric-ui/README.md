@@ -5,12 +5,12 @@ same-origin authenticated client. The initial screen requires an explicit choice
 between a server connection and a deterministic synthetic demonstration. The
 client never requests the legacy administrator bearer token.
 
-The live client supports local passkey setup, invitation enrollment, login and
-fresh verification; scoped logs/metrics/spans with exact integer timestamps;
+The live client supports local passkey setup, login and
+fresh verification; logs/metrics/spans with exact integer timestamps;
 opaque snapshot pagination; exact trace-ID and span-name filters; bounded metric
 envelopes and actual span waterfalls;
 polled log snapshots; effective status/inventory and Spindle controls; and explicit
-passkey/session/workload/delegation/grant management. Server authorization remains
+passkey, session and reader-token management. Server authorization remains
 a separate effect boundary: showing a control never grants permission.
 
 The [algorithm model](../../docs/architecture/console-algorithms.md) distinguishes
@@ -23,19 +23,18 @@ not establish that those gates have run.
 
 The wire client uses version 1, one local request at a time, a 15-second network
 deadline and an 8 MiB streaming body cap before Rust JSON decoding. Query pages
-request at most 200 rows and 24 hours. The client lowers its row count to the
-current grant, labels presets with their actual granted window, and refuses
-explicit ranges wider than that grant before fetching.
+request at most 200 rows and 24 hours. The client refuses explicit ranges wider
+than 24 hours before fetching.
 Unsupported rate queries stay unavailable. Rust retains unsigned timestamps and
 integer counters directly, without JavaScript JSON number conversion. Charts use
 approximate display coordinates and preserve exact values in the row table.
 UTC row labels retain all nine fractional digits; their titles and expandable
 fields preserve the exact unsigned nanosecond value. Exact query ranges, row
 JSON and evidence JSON start collapsed so observations remain the primary view.
-Evidence includes authorized retained bounds, snapshot, gaps, freshness,
+Evidence includes retained bounds, snapshot, gaps, freshness,
 unavailable data and completeness exactly as returned by the server.
 
-Overview explicitly refreshes authorized sources and loads the dedicated
+Overview explicitly refreshes the Spindle inventory and loads the dedicated
 companion's recorded process observations. It does not infer current health.
 Pipeline distinguishes source custody, delivery, journal commitment, sealing and
 retained queries, showing only status values actually returned by the server.
@@ -53,7 +52,7 @@ when the document becomes visible. An error requires explicit resume.
 Logout, offline notification, cross-tab logout and known absolute session expiry
 clear protected page-memory views. Cookies remain HttpOnly server-owned state;
 no credential, telemetry, API response or offline action is persisted by the
-client. One-time enrollment/workload/invitation secrets have an explicit clear
+client. One-time enrollment and reader-token secrets have an explicit clear
 control and disappear when protected views lock. The service worker handles only
 the explicit public shell asset list.
 
@@ -73,11 +72,12 @@ The builder refuses existing output directories, records asset/source hashes and
 CSP, and retains the 8 MiB public-shell build limit.
 
 ```sh
-export CARGO_HOME=/run/media/kmosoti/data/FabricO11y/toolchain-cache/cargo
-export RUSTUP_HOME=/run/media/kmosoti/data/FabricO11y/toolchain-cache/rustup
+export FABRIC_STORAGE_ROOT="${FABRIC_STORAGE_ROOT:-${XDG_CACHE_HOME:-$HOME/.cache}/fabrico11y}"
+export CARGO_HOME="$FABRIC_STORAGE_ROOT"/toolchain-cache/cargo
+export RUSTUP_HOME="$FABRIC_STORAGE_ROOT"/toolchain-cache/rustup
 python3 -B tools/resource_group.py -- cargo +1.99.0 test --locked -p fabric-ui
 python3 -B tools/resource_group.py -- cargo +1.99.0 check --locked -p fabric-ui --target wasm32-unknown-unknown
-python3 -B tools/resource_group.py -- python3 -B tools/ui/build.py --out /run/media/kmosoti/data/FabricO11y/results/my-console-build
+python3 -B tools/resource_group.py -- python3 -B tools/ui/build.py --out "$FABRIC_STORAGE_ROOT"/results/my-console-build
 ```
 
 [Console staging](../../tools/packaging/stage_console.py) verifies the frozen build

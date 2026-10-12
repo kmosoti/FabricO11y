@@ -7,6 +7,8 @@ local-passkey decision. Implementation is in candidate verification; registered
 browser and release acceptance are separate evidence. This amends
 the shared administrative credential boundary of ADR-0014 for the new release;
 its existing control transitions and Spindle custody contract remain intact.
+Partially superseded on 2026-10-11 by [ADR-0029](ADR-0029-use-three-fixed-roles-for-the-first-release.md):
+the scoped human, workload and delegated access decision is replaced by three fixed roles.
 
 ## Context
 

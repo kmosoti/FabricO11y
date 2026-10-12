@@ -569,7 +569,6 @@ fn run(state: &Path, input: &Path, builder: &str) -> Result<Value, Box<dyn std::
         "incremental_peak_heap_bytes":cfg!(feature="responsibility-alloc-probe").then_some(heap_peak.saturating_sub(heap_start)),
         "heap_after_bytes":cfg!(feature="responsibility-alloc-probe").then_some(heap_after),
         "allocator_counted":cfg!(feature="responsibility-alloc-probe"),
-        "spill_workspace_experiment":option_env!("FABRIC_SPILL_WORKSPACE_EXPERIMENT").is_some(),
         "cumulative_requested_bytes":cfg!(feature="responsibility-alloc-probe").then_some(allocated),
         "successful_alloc_realloc_calls":cfg!(feature="responsibility-alloc-probe").then_some(allocation_calls),
         "io_delta":io_delta,"stat_before":stat_before,"stat_after":stat_after,

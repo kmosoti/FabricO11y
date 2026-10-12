@@ -5,7 +5,9 @@
 //! target's layer for the source's layer. Every declared dependency counts:
 //! normal, build and development; optional or not; for any target platform;
 //! under any rename. With resolved metadata the check also follows paths that
-//! leave the workspace and come back, such as `core -> helper -> adapter`.
+//! leave the workspace and come back, such as `core -> helper -> adapter`. A
+//! layer with an `external_allowlist` may link only the listed crates from
+//! outside the workspace through normal and build dependencies.
 
 use crate::Violation;
 use crate::metadata::{DepKind, Metadata};
@@ -16,6 +18,7 @@ pub const UNASSIGNED_CRATE: &str = "LAYER_UNASSIGNED_CRATE";
 pub const STALE_POLICY_ENTRY: &str = "LAYER_STALE_POLICY_ENTRY";
 pub const FORBIDDEN_EDGE: &str = "LAYER_FORBIDDEN_EDGE";
 pub const FORBIDDEN_TRANSITIVE_EDGE: &str = "LAYER_FORBIDDEN_TRANSITIVE_EDGE";
+pub const EXTERNAL_DEPENDENCY: &str = "LAYER_EXTERNAL_DEPENDENCY";
 
 #[derive(Debug, Clone)]
 pub struct Policy {
@@ -26,6 +29,8 @@ pub struct Policy {
     /// `(from crate, to crate, dependency kind)` edges allowed despite the
     /// layer rule. An exception names its kinds; omitting them means all.
     pub exceptions: BTreeSet<(String, String, DepKind)>,
+    /// layer -> crates outside the workspace it may link; absent means any.
+    pub external: BTreeMap<String, BTreeSet<String>>,
 }
 
 impl Policy {
@@ -36,19 +41,25 @@ impl Policy {
                 .ok_or_else(|| format!("layer policy: missing object `{key}`"))
         };
         let mut layers = BTreeMap::new();
-        for (layer, allowed) in object("layers")? {
-            let allowed = allowed
+        let mut external = BTreeMap::new();
+        for (layer, rule) in object("layers")? {
+            let strings = |list: &Vec<Value>| {
+                list.iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_owned)
+                    .collect()
+            };
+            if let Some(list) = rule.get("external_allowlist") {
+                let list = list.as_array().ok_or_else(|| {
+                    format!("layer policy: `{layer}` external_allowlist is not an array")
+                })?;
+                external.insert(layer.clone(), strings(list));
+            }
+            let allowed = rule
                 .get("may_depend_on")
                 .and_then(Value::as_array)
                 .ok_or_else(|| format!("layer policy: `{layer}` lacks may_depend_on"))?;
-            layers.insert(
-                layer.clone(),
-                allowed
-                    .iter()
-                    .filter_map(Value::as_str)
-                    .map(str::to_owned)
-                    .collect(),
-            );
+            layers.insert(layer.clone(), strings(allowed));
         }
         let mut crates = BTreeMap::new();
         for (name, layer) in object("crates")? {
@@ -98,6 +109,7 @@ impl Policy {
             layers,
             crates,
             exceptions,
+            external,
         })
     }
 
@@ -147,8 +159,28 @@ pub fn check(metadata: &Metadata, policy: &Policy) -> Vec<Violation> {
         }
     }
     for package in metadata.member_packages() {
+        let external = policy
+            .crates
+            .get(&package.name)
+            .and_then(|layer| policy.external.get(layer));
         for dep in &package.dependencies {
-            if dep.path.is_none() || !members.contains(&dep.name) {
+            if !members.contains(&dep.name)
+                && let Some(allowed) = external
+                && dep.kind != DepKind::Dev
+                && !allowed.contains(&dep.name)
+            {
+                violations.push(Violation::new(
+                    EXTERNAL_DEPENDENCY,
+                    format!("{} -> {}", policy.describe(&package.name), dep.name),
+                    format!(
+                        "{}; not in the layer's external_allowlist",
+                        dep.qualifiers()
+                    ),
+                ));
+            }
+            // No path filter: `[patch]` can satisfy a registry requirement
+            // with a member, and Cargo resolves that as the same edge.
+            if !members.contains(&dep.name) {
                 continue;
             }
             if !policy.allows(&package.name, &dep.name, dep.kind) {

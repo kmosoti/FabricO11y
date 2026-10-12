@@ -6,6 +6,7 @@
 //! request means (revocation is terminal, revisions advance, name and shape
 //! limits) is decided by `fabric_core::control`; this module persists it.
 
+use crate::unix_s;
 use fabric_core::control::{self as kernel, ControlRejection};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -13,7 +14,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 const STATE: &str = "control.json";
 const MAX_STATE_BYTES: u64 = 16 * 1024 * 1024;
@@ -131,12 +131,6 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
-}
-
-fn unix_s() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |d| d.as_secs())
 }
 
 fn parse_hex32(hex: &str) -> Option<[u8; 32]> {

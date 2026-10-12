@@ -26,6 +26,12 @@ local `data/` symlinks are unavailable in a fresh checkout. Historical reference
 to those archives identify private evidence, not public downloads. Tracked
 fixtures and machine-consumed documentation remain versioned here.
 
+## Archive
+
+The eleven bulk run directories listed in [archived-runs.tsv](archived-runs.tsv) (8,661 files, 521.6 MB), the research probes and harnesses under `tools/`, the probe examples and the legacy FOL2 demonstration moved to the public [research archive](https://github.com/kmosoti/FabricO11y-research). Its files are copies of the blobs at source commit `6a3b9c90fe904cc7b377477bee4257190360187e`, each at its original path: product path `P` is `https://github.com/kmosoti/FabricO11y-research/blob/main/P` (directories use `/tree/main/`). Their history remains in this repository at that commit and earlier.
+
+Each line of `archived-runs.tsv` gives a run's path, file count, bytes and the SHA-256 of its sorted `sha256<TAB>bytes<TAB>path` manifest lines; the archive holds the per-file manifest. Historical records keep their original links and command text, and the documentation checker accepts a missing link target in a record under `docs/experiments` only when its exact path is listed in [archived-link-targets.txt](archived-link-targets.txt). The archived oracles, negative controls and tests are preserved there but not run by this repository's checks or CI.
+
 ## Recent investigations
 
 Finite release checkpoints: [package installation](formal/installation-release-run-01.md), [scoped evidence cache](benchmarks/scoped-evidence-cache-run-01.md), and [production-access campaign prerequisites](benchmarks/production-access-campaign-run-01.md). These retain their exact revisions, failures and limits; successor campaign acceptance is separate.

@@ -83,6 +83,7 @@ def main():
         Q.run(['openssl', 'x509', '-req', '-in', str(root / 'server.csr'), '-CA', str(root / 'ca.pem'), '-CAkey', str(root / 'ca.key'), '-CAcreateserial', '-days', '2', '-extfile', str(root / 'san.ext'), '-out', str(root / 'server.pem')], timeout=30)
         admin = hashlib.sha256(os.urandom(32)).hexdigest()
         (root / 'admin-token').write_text(admin + '\n')
+        (root / 'admin-token').chmod(0o600)
         for filename in ('ca.pem', 'server.pem', 'server.key', 'admin-token'):
             server.copy(root / filename, '/home/accept/' + filename)
         server.script('''set -eu
@@ -128,6 +129,8 @@ systemctl enable --now fabrico11y-server
             guest.copy(root / 'ca.pem', '/home/accept/ca.pem')
         (root / 'edge-token').write_text(edge_token + '\n')
         (root / 'controlled-token').write_text(metric_token + '\n')
+        for filename in ('edge-token', 'controlled-token'):
+            (root / filename).chmod(0o600)
         for filename in ('edge-token', 'controlled-token'):
             edge.copy(root / filename, '/home/accept/' + filename)
         config = {'root': '/root/cross', 'log': '/var/log/fabric-cross/source.log',

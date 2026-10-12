@@ -110,15 +110,7 @@ impl ReadCatalog {
     /// Explicit synchronous preparation; never called from commit/ACK paths.
     /// Work is proportional to discovered files and newly appended complete frames.
     pub fn refresh(&self, newest: u64) -> io::Result<()> {
-        #[cfg(feature = "phase-probe")]
-        let _phase = fabric_frame::probe::span("catalog_refresh_inclusive");
-        #[cfg(feature = "phase-probe")]
-        let _wait = fabric_frame::probe::span("catalog_lock_wait");
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        #[cfg(feature = "phase-probe")]
-        drop(_wait);
-        #[cfg(feature = "phase-probe")]
-        let _hold = fabric_frame::probe::span("catalog_lock_hold");
         let listed = state.segments(&self.state_dir, self.shared_metadata)?;
         let before: HashSet<_> = listed.iter().map(|(label, _)| *label).collect();
         let mut covered: Vec<_> = listed
@@ -185,13 +177,7 @@ impl ReadCatalog {
             authorized_nodes,
             filter,
         } = request;
-        #[cfg(feature = "phase-probe")]
-        let _wait = fabric_frame::probe::span("catalog_lock_wait");
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        #[cfg(feature = "phase-probe")]
-        drop(_wait);
-        #[cfg(feature = "phase-probe")]
-        let _hold = fabric_frame::probe::span("catalog_lock_hold");
         let mut cache = self
             .reuse
             .as_ref()
@@ -368,8 +354,6 @@ impl ReadCatalog {
             Vec::new()
         };
         drop(state);
-        #[cfg(feature = "phase-probe")]
-        drop(_hold);
         let mut reader = TailReader::new(&tail_paths);
         let mut journal: Vec<Group> = Vec::new();
         let mut eager_bytes = 0usize;

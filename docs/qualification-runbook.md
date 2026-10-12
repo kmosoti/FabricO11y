@@ -30,29 +30,26 @@ use the registered placement and workload, or register a new revision first.
 
 Every build, test, validator and trial uses the
 [resource launcher](CONTRIBUTING.md#resource-containment), sequentially.
-Local limits are 16/20 GiB memory high/max, zero swap and a 30-minute deadline;
+Local limits are the launcher's: memory max the smaller of 20 GiB and 75% of RAM
+and high 5/6 of it up to 16 GiB (16/20 GiB on the owner's workstation), zero swap
+and a 30-minute deadline;
 remote hosts need explicit smaller budgets suited to their existing services.
 A longer deadline needs explicit owner scope. The R2 continuation authorized
 7,500 seconds for that finite full trial; this is not blanket authorization for
-new qualification runs. Verify mount, aggregate storage and enforcement before
+new qualification runs. Export `FABRIC_STORAGE_ROOT` as the owner's data drive
+before any run, and verify that root, aggregate storage and enforcement before
 admission; no system-disk or RAM-backed fallback is allowed.
 
 ## Build and freeze the companion workflow
 
 The tested R2 workflow uses `prepare_soak.py` and `verify_soak_freeze.py`.
-Legacy `freeze.sh` and its flat standalone-server harness layout are not the
-current companion workflow; they assume repository `target/release` rather than
-the launcher's data-backed `CARGO_TARGET_DIR`. Do not use them for a new R2 run.
 Historical protocol commands retain their original text and outcomes.
 
-The normal writer needs no experiment flags. Build all five native artifacts
-without allocation instrumentation, explicitly clearing historical selectors:
+The normal writer has no experiment selectors. Build all five native artifacts
+without allocation instrumentation:
 
 ```sh
-python3 tools/resource_group.py -- env \
-  -u FABRIC_ROW_GROUP_CHUNKS_EXPERIMENT -u FABRIC_PAGE_STORE_EXPERIMENT \
-  -u FABRIC_RUN_MIB_EXPERIMENT -u FABRIC_EARLY_ROW_RELEASE_EXPERIMENT \
-  -u FABRIC_SPILL_WORKSPACE_EXPERIMENT \
+python3 tools/resource_group.py -- \
   cargo build --release --offline --locked \
   -p fabric-server --bin fabric-server --example server_dump \
   -p fabric_o11y --bin fabric-node --example spindle_sim --example spool_dump
@@ -63,7 +60,7 @@ and binary hashes alongside the run. The freeze helper refuses an existing
 owned path and checks source stability; it does not infer build flags from a hash.
 
 ```sh
-FABRIC_DATA=/run/media/kmosoti/data/FabricO11y
+FABRIC_DATA=${FABRIC_STORAGE_ROOT:?export the owner data drive as FABRIC_STORAGE_ROOT}
 SOAK_ID=local-r2-next
 SOAK_FROZEN="$FABRIC_DATA/scratch/soak-r2-$SOAK_ID/frozen"
 SOAK_RESULTS="$FABRIC_DATA/results/soak-r2-$SOAK_ID"

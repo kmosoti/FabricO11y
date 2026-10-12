@@ -93,6 +93,7 @@ def trial():
         port = free_port()
         admin_token = hashlib.sha256(f"admin:{args.seed}".encode()).hexdigest()
         (root / "admin-token").write_text(admin_token + "\n")
+        (root / "admin-token").chmod(0o600)
         server_conf = root / "server.conf"
         server_conf.write_text(
             f"listen=127.0.0.1:{port}\ntls_cert={root}/server.pem\ntls_key={root}/server.key\n"

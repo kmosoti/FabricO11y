@@ -19,8 +19,9 @@ The initial release architecture is x86_64, with systemd and unified cgroup v2;
 other CPU architectures require their own artifacts and acceptance and are not
 implied by a distribution-family label. One production server, its mandatory
 dedicated Spindle, remote edge Spindles, the HTTP API, `fabricctl` and a same-origin
-Leptos/WASM PWA are in scope. Local passkeys are required for human sign-in;
-AI and system clients receive distinct scoped workload credentials. The
+Leptos/WASM PWA are in scope. Local passkeys are required for the single human owner;
+scripts and AI clients receive read-only reader tokens
+([ADR-0029](../decisions/ADR-0029-use-three-fixed-roles-for-the-first-release.md)). The
 [identity design](../architecture/identity-access.md) and
 [console plan](operator-console.md) define mandatory release dependencies.
 Supported workflows are selected
@@ -70,7 +71,7 @@ process-crash assumptions. No fidelity, custody or completeness rule is relaxed.
 ## Candidate and evidence
 
 The console follows the owner's light/dark desktop/mobile references, with
-Overview, Explore, trace detail, bounded Live Tail, Pipeline and scoped Settings.
+Overview, Explore, trace detail, bounded Live Tail, Pipeline and Settings.
 The diagrams' alert engine, sample throughput/latency and SQL-like query text do
 not become implemented capabilities. The pipeline uses actual journal/sealer
 states; every chart and answer retains its evidence limits. See
@@ -146,7 +147,7 @@ Run at least one active authenticated console in each main trial; pin its pollin
 page/point/byte bounds and interaction schedule before registration. Account for
 console requests separately from benchmark queries and keep generators/browser
 processes outside the server cgroup. Add one deterministic overlapping-session
-cell with disjoint scopes, late responses and logout/account switching. Keep B3–B5
+cell with an owner session and a reader token, late responses and logout/relogin. Keep B3–B5
 unchanged with this traffic. Do not retroactively call older UI-free runs passes.
 
 ## Release gates
@@ -166,8 +167,8 @@ pool unlike query latencies, or exclude rejected requests from load accounting.
 | B8 — Installation | All 17 [installation checks](../experiments/formal/installation-acceptance-protocol.md) and the three existing mutation controls, including effective memory/task enforcement, pass on the exact `.deb` in the disposable Debian guest. The registered Fedora adapter preserves the same security/custody outcomes on the exact `.rpm`, adds SELinux enforcing checks, and tests both server/companion and standalone edge roles. Lifecycle additions below pass for both families. |
 | B9 — Repository and security | Required fast checks, manual documentation checks, dependency policy and affected invariant/fault/model regressions pass. Triage security findings; no known exploitable authentication bypass, credential exposure or blocker remains in the supported configuration. |
 | B10 — Operator workflow | Fresh central-and-remote-edge setup from the shipped guide reaches log, metric and trace queries without source edits on both families. Verify certificate trust/SANs, enrollment/revocation, firewall guidance, narrow log access, configurable storage, stop/restart, recovery, uninstall/data preservation and documented reset/compatibility policy. Ship known issues and bug/security reporting instructions. |
-| B11 — Human identity | Real HTTPS/passkey bootstrap, login, second-key enrollment, key loss/offline owner recovery, session expiry/logout/revocation and credential migration pass. Reject ceremony replay, wrong RP/origin, absent user verification, fixation, CSRF and stored XSS; each checker rejects a representative injected defect. No first-visitor admin, shared browser master token or undocumented legacy bypass. |
-| B12 — Authorization and access durability | Independently specified cross-principal fixtures check every route, all signals, inventory, evidence metadata and cursors. Scoped workload expiry/rotation/revocation and AI delegation cannot widen grants. Barrier-controlled revocation races, crash/uncertain publication, audit/full-state limits and offline restore preserve deny-default behavior and custody. Pin applicable ASVS 5.0.0 requirements and give evidence or a reasoned non-applicability decision for each; no general certification claim. |
+| B11 — Owner identity | Real HTTPS/passkey bootstrap, login, second-key enrollment, key loss/offline owner recovery, session expiry/logout/revocation and legacy master-token migration to a bootstrapped owner pass. Access state of an older format is refused with a re-bootstrap error. Reject ceremony replay, wrong RP/origin, absent user verification, fixation, CSRF and stored XSS; each checker rejects a representative injected defect. No first-visitor admin, shared browser master token or undocumented legacy bypass. |
+| B12 — Roles and access durability | A role × route matrix, specified independently of the implementation, calls every route as anonymous, Spindle token, reader token and owner session and requires exactly the allowed outcomes: owner and reader read all signals, inventory and evidence; a reader reaches no owner route; a Spindle token or console credential is refused by the other surface; page handles do not cross credentials. Reader tokens expire and revoke before an in-flight read is released. Barrier-controlled revocation races, crash/uncertain publication, audit/full-state limits and offline restore preserve deny-default behavior and custody. Pin applicable ASVS 5.0.0 requirements and give evidence or a reasoned non-applicability decision for each; no general certification claim. |
 | B13 — Operator PWA | All [U1–U6](operator-console.md#boundedness-and-acceptance) pass using exact packaged assets: supported workflows, truthful evidence, stale-response rejection, shell-only caching, offline/logout isolation, browser/install/update/rollback behavior, accessibility and measured bounded UI overhead. A rendered mockup or passing unit tests alone do not satisfy browser/installed acceptance. |
 
 For B3, capture observation, source acceptance, Spool commit, send attempts, durable
@@ -233,10 +234,10 @@ retain an incomplete result rather than truncating the required workload.
 
 | Step | Work | Exit condition |
 | --- | --- | --- |
-| R0 | Register the bounded executable profile, pinned Debian/Fedora images, four remote cells, 100 GB retention and separate working-space bounds. Freeze identity/session defaults, independent permission fixtures, ASVS mapping, browser/passkey matrix, UI algorithm budgets and API compatibility. Specify Fedora/lifecycle, pressure/outage adapters, timing/backlog/query definitions and negative controls. Contract/ledger scope was amended separately; existing protocols remain unchanged. | No ambiguous gate or undocumented exception; exact candidate protocol precedes its runs. |
+| R0 | Register the bounded executable profile, pinned Debian/Fedora images, four remote cells, 100 GB retention and separate working-space bounds. Freeze identity/session defaults, the independent role matrix, ASVS mapping, browser/passkey matrix, UI algorithm budgets and API compatibility. Specify Fedora/lifecycle, pressure/outage adapters, timing/backlog/query definitions and negative controls. Contract/ledger scope was amended separately; existing protocols remain unchanged. | No ambiguous gate or undocumented exception; exact candidate protocol precedes its runs. |
 | R1 | Consolidate source, canonical documentation and build provenance; preserve the checked wiki migration and versioned protocol inputs. Model bounded UI state, rendering and query work before adding the composition-root UI crate. | Reviewable source and pinned inputs; new policy/layer assignments committed separately from implementation. |
-| R2a | Implement passkey/bootstrap/recovery, sessions, workload principals/grants/delegation, durable audit and query/control scope enforcement. Replace the shared-master path through explicit local migration and scoped CLI credentials. Keep Spindle bytes/custody unchanged. | B11–B12 fixtures and negative controls pass; no bypass left on existing routes. |
-| R2b | Implement and verify UI algorithms, Leptos screens, scoped status/control adapters, app-shell PWA and lifecycle. Demo fixtures must be explicitly labeled; they never fill integrated release gates. | Model properties and client failure controls pass; U1–U6 test harnesses ready and bounded. |
+| R2a | Implement passkey/bootstrap/recovery, sessions, reader tokens, durable audit and the single role guard. Replace the shared-master path through explicit local migration and read-only CLI tokens. Keep Spindle bytes/custody unchanged. | B11–B12 fixtures and negative controls pass; no bypass left on existing routes. |
+| R2b | Implement and verify UI algorithms, Leptos screens, status/control adapters, app-shell PWA and lifecycle. Demo fixtures must be explicitly labeled; they never fill integrated release gates. | Model properties and client failure controls pass; U1–U6 test harnesses ready and bounded. |
 | R2c | Implement 100 GB default and retention regressions; implement RPM/lifecycle support; package server, companion and UI; run fast/dependency checks and one smoke. | Exact packages and assets identified; packaging/storage/identity/UI failures resolved before expensive trials. |
 | R3 | Run six main profile trials and the fixed query matrix, the four remote cells, then recovery/rollover/pressure and the three outage trials. | Every B2–B6 cell passes with complete per-host resource/timing/custody evidence. |
 | R4 | Run full R2 soak and both families' installed-package/lifecycle acceptance with mutation controls and Fedora SELinux enforcing. | B7–B8 pass on the candidate; all child processes stopped and temporary fixtures cleaned. |
@@ -259,8 +260,8 @@ to its exact artifacts. The parser and shipped examples now retain 100 GB of
 sealed telemetry with a separate 20 GiB journal ceiling. An aggregate disk cap
 is outside the confirmed product promise.
 
-Normal serving now uses local passkeys, scoped workload/delegated credentials
-and a packaged PWA. The legacy master adapter is an explicit migration mode.
+Normal serving now uses local passkeys, read-only reader tokens and a packaged
+PWA. The legacy master adapter is an explicit migration mode.
 Implementation and finite checks are recorded in the
 [verification matrix](../formal/verification-matrix.md#identity-and-operator-console);
 they do not replace the required browser, recovery, resource and lifecycle cells.
