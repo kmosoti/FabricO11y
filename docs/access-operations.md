@@ -19,10 +19,11 @@ not derive either from request headers. Install a certificate trusted by the
 browser and configure `console_dir` with the packaged console assets. Changing
 these identity settings after enrollment requires a planned migration.
 
-Start normal serving with `fabric-server serve /etc/fabrico11y/server.conf`.
+Start the service: `sudo systemctl enable --now fabrico11y-server.service`.
 On the first successful access-store initialization, the server creates
 `state_dir/access/access-bootstrap.secret` with mode 0600. Read it locally as
-the service owner or OS administrator; use the browser's **First owner setup**
+the service owner or OS administrator (default `state_dir`:
+`sudo cat /var/lib/fabrico11y/server/access/access-bootstrap.secret`); use the browser's **First owner setup**
 at `https://YOUR_HOST:PORT/console/`. The secret expires after ten minutes and
 is consumed when registration succeeds. The server creates the owner ID; the
 browser supplies a display name and a passkey with user verification.
@@ -36,7 +37,9 @@ If first setup expires or is interrupted before a passkey is enrolled, stop the
 service and run as its filesystem owner:
 
 ```sh
-fabric-server renew-bootstrap /etc/fabrico11y/server.conf
+sudo systemctl stop fabrico11y-server.service
+sudo -u fabricolly fabric-server renew-bootstrap /etc/fabrico11y/server.conf
+sudo systemctl start fabrico11y-server.service
 ```
 
 This command obtains the stopped-service lock and renews only an unfinished,
@@ -75,11 +78,15 @@ refused. Copy the [access client example](../packaging/etc/access.conf.example) 
 its exact HTTPS origin, absolute CA path and absolute `reader_token_file`.
 
 ```sh
-fabricctl access /home/operator/.config/fabrico11y/access.conf node list
-fabricctl access /home/operator/.config/fabrico11y/access.conf query '<QUERY_JSON>'
+A=/home/operator/.config/fabrico11y/access.conf
+FROM=$(date -d '-15 min' +%s)000000000; TO=$(date +%s)000000000
+fabricctl access $A node list
+fabricctl access $A query '{"kind":"logs","from_ns":'$FROM',"to_ns":'$TO',"limit":100}'
+fabricctl access $A query '{"kind":"metrics","name":"system.cpu.time","from_ns":'$FROM',"to_ns":'$TO',"limit":100}'
+fabricctl access $A query '{"kind":"spans","from_ns":'$FROM',"to_ns":'$TO',"limit":100}'
 ```
 
-Query JSON follows the [query contract](architecture/query.md). The API caps requests at
+Add `"node":"NAME"` (from `node list`) or, for logs, `"contains":"text"` to narrow. Query JSON follows the [query contract](architecture/query.md). The API caps requests at
 1,000 rows and a 24-hour window. The client sends `x-fabric-client-version: 1`, refuses
 redirects and reports HTTP denial without switching credentials or endpoints. Spindle
 enrollment, configuration and control are owner-only: use the console. A reader
@@ -91,7 +98,9 @@ Stop the server and identify the owner's immutable principal ID. As the service
 filesystem owner, run:
 
 ```sh
-fabric-server recover-access /etc/fabrico11y/server.conf OWNER_PRINCIPAL_ID
+sudo systemctl stop fabrico11y-server.service
+sudo -u fabricolly fabric-server recover-access /etc/fabrico11y/server.conf OWNER_PRINCIPAL_ID
+sudo systemctl start fabrico11y-server.service
 ```
 
 The command refuses an active service lock, validates durable Control state,
