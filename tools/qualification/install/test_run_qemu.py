@@ -144,10 +144,11 @@ systemctl() {
     def test_lifecycle_remove_rejects_active_services_and_fabric_avc(self):
         program = Path(__file__).with_name('lifecycle.sh').read_text()
         for unit in ('fabrico11y-server.service', 'fabrico11y-node.service'):
-            with self.subTest(unit=unit):
-                result = self.shell(program, unit=unit, state='active')
-                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                self.assertNotIn('ACCEPT A13a PASS', result.stdout)
+            for state in ('active', 'activating', 'deactivating', 'reloading'):
+                with self.subTest(unit=unit, state=state):
+                    result = self.shell(program, unit=unit, state=state)
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertNotIn('ACCEPT A13a PASS', result.stdout)
         for comm in ('fabric-server', 'fabric-node', 'fabricctl'):
             with self.subTest(comm=comm):
                 result = self.shell(program, avc=f'type=AVC msg=audit(1.0:1): avc: denied {{ read }} comm="{comm}"')
