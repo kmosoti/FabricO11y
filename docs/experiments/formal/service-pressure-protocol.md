@@ -5,6 +5,11 @@ and recovery portion of B6 in the [release plan](../../milestones/release-readin
 The separately registered long outages, four cross-family cells and sustained
 soak retain their own gates. This does not supersede historical stress trials.
 
+For prospective successors, the separately registered
+[one-second management amendment](service-pressure-management-protocol-r2.md)
+replaces only the half-second management cadence and coverage below. It awaits
+independent pre-flight review; historical runs keep their original outcome.
+
 ## Candidate burst cells
 
 Use the exact linked Debian/RPM candidate and matching qualification helpers,
