@@ -47,20 +47,26 @@ class WorkloadReader:
         self.observations = []
 
     def call(self, path, body=None, method=None):
+        if len(self.observations) >= 10000:
+            raise RuntimeError('bounded reader receipt exceeded 10000 requests')
         began = time.monotonic_ns()
         request = urllib.request.Request(self.origin + path,
                 data=None if body is None else json.dumps(body).encode(), method=method,
                 headers={'authorization': 'Bearer ' + self.token,
                          'x-fabric-client-version': '1', 'content-type': 'application/json'})
-        with urllib.request.urlopen(request, context=self.context, timeout=15) as response:
-            raw = response.read(8 * 1024**2 + 1)
-            if len(raw) > 8 * 1024**2:
-                raise RuntimeError('bounded console response exceeded 8 MiB')
-            value = json.loads(raw)
+        try:
+            with urllib.request.urlopen(request, context=self.context, timeout=15) as response:
+                raw = response.read(8 * 1024**2 + 1)
+                if len(raw) > 8 * 1024**2:
+                    raise RuntimeError('bounded console response exceeded 8 MiB')
+                value = json.loads(raw)
+        except Exception as error:
+            self.observations.append({'path': path, 'started_ns': began,
+                'finished_ns': time.monotonic_ns(), 'status': getattr(error, 'code', None),
+                'error': repr(error)})
+            raise
         self.observations.append({'path': path, 'started_ns': began,
                                   'finished_ns': time.monotonic_ns(), 'bytes': len(raw)})
-        if len(self.observations) > 10000:
-            raise RuntimeError('bounded reader receipt exceeded 10000 requests')
         return value
 
     def query(self, body):
@@ -69,16 +75,20 @@ class WorkloadReader:
     def pages(self, body):
         began = time.monotonic()
         query, pages, size = dict(body), [], 0
-        for _ in range(1000):
-            page = self.query(query)
-            size += len(json.dumps(page))
-            if size > 16 * 1024**2:
-                raise RuntimeError('query pagination exceeds registered fixture reply allowance')
-            pages.append(page)
-            if not page.get('next_page'):
-                return time.monotonic() - began, pages
-            query['page'] = page['next_page']
-        raise RuntimeError('query exceeded finite page bound')
+        try:
+            for _ in range(1000):
+                page = self.query(query)
+                size += len(json.dumps(page))
+                if size > 16 * 1024**2:
+                    raise RuntimeError('query pagination exceeds registered fixture reply allowance')
+                pages.append(page)
+                if not page.get('next_page'):
+                    return time.monotonic() - began, pages
+                query['page'] = page['next_page']
+            raise RuntimeError('query exceeded finite page bound')
+        except Exception as error:
+            error.pages = pages
+            raise
 
 
 def cpu_pair(value):

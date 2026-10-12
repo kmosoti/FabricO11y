@@ -166,6 +166,8 @@ def perform(f, args, summary):
                     raise RuntimeError('incomplete concurrent query')
                 row['complete'] = True
             except Exception as error:
+                row['query_pages'] = getattr(error, 'pages', row.get('query_pages', []))
+                row['pages'] = len(row['query_pages'])
                 row['exception'] = repr(error)
                 failures.append('management: ' + repr(error))
             finally:
