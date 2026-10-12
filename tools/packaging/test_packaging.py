@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import zlib
 from unittest.mock import patch
 
 import dependency_notices
@@ -15,6 +16,19 @@ from stage_predecessor import stage_predecessor
 from stage_candidate import stage_candidate, validate_control
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def png(extra=None):
+    """A minimal valid 1x1 PNG, optionally with one metadata chunk before IEND."""
+    def chunk(kind, data):
+        return len(data).to_bytes(4, 'big') + kind + data + zlib.crc32(kind + data).to_bytes(4, 'big')
+    body = b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', bytes([0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 0, 0, 0]))
+    body += chunk(b'IDAT', zlib.compress(b'\x00\x00'))
+    if extra == b'tIME':
+        body += chunk(extra, bytes([7, 234, 10, 12, 17, 0, 6]))
+    elif extra:
+        body += chunk(extra, b'date:modify\x002026-10-12T10:00:00+00:00')
+    return body + chunk(b'IEND', b'')
 
 
 class PackageTests(unittest.TestCase):
@@ -62,7 +76,7 @@ class PackageTests(unittest.TestCase):
         dist.mkdir(parents=True)
         assets = {}
         for name in ('index.html', 'service-worker.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png', 'client-a.wasm'):
-            body = name.encode()
+            body = png() if name.endswith('.png') else name.encode()
             (dist / name).write_bytes(body)
             assets[name] = {'bytes': len(body), 'sha256': hashlib.sha256(body).hexdigest()}
         (build / 'build.json').write_text(json.dumps({'exit': 0, 'assets': assets, 'source_sha256': {'crates/fabric-ui/index.html': hashlib.sha256((ROOT / 'crates/fabric-ui/index.html').read_bytes()).hexdigest()}, 'headers': {'Content-Security-Policy': "default-src 'self'"}}))
@@ -103,6 +117,23 @@ class PackageTests(unittest.TestCase):
                     receipt['exit'] = 1
                     (build / 'build.json').write_text(json.dumps(receipt))
                 with self.assertRaises(ValueError):
+                    stage(build, directory / 'package')
+                self.assertFalse((directory / 'package').exists())
+
+    def test_console_icons_carry_no_build_timestamp(self):
+        # Origin: #55. ImageMagick wrote date:modify/date:timestamp text chunks,
+        # so two console builds of one commit shipped different icons and
+        # packages. Contract: separate builds of the same source are identical.
+        for chunk in (b'tIME', b'tEXt', b'zTXt', b'iTXt'):
+            with self.subTest(chunk=chunk), tempfile.TemporaryDirectory() as scratch:
+                directory = Path(scratch)
+                build = self.fixture(directory)
+                body = png(chunk)
+                (build / 'dist/icon-192.png').write_bytes(body)
+                receipt = json.loads((build / 'build.json').read_text())
+                receipt['assets']['icon-192.png'] = {'bytes': len(body), 'sha256': hashlib.sha256(body).hexdigest()}
+                (build / 'build.json').write_text(json.dumps(receipt))
+                with self.assertRaisesRegex(ValueError, 'time or text metadata'):
                     stage(build, directory / 'package')
                 self.assertFalse((directory / 'package').exists())
 
