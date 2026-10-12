@@ -237,6 +237,14 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(Counter(scheduled), Counter(expected))
         self.assertIn('verify_receipts.py --profile extended', workflow)
 
+    def test_extended_workflow_runs_when_ready_not_for_drafts(self):
+        workflow = (ROOT / '.github/workflows/verification.yml').read_text()
+        self.assertRegex(workflow, r'(?m)^  pull_request:\n    types: \[[^\]]*\bready_for_review\b')
+        self.assertRegex(workflow, r'(?m)^  merge_group:')
+        self.assertRegex(
+            workflow,
+            r"(?m)^  extended:\n    if: github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.draft == false$")
+
     def test_fast_duplicate_removals_still_have_registry_owners(self):
         registry = json.loads((ROOT / 'xtask/checks.json').read_text())
         checks = {check['id']: check for check in selected_checks(registry, 'fast')}
