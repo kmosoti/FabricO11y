@@ -1,26 +1,16 @@
-//! One descriptor, one kernel-enforced all-component path-resolution policy.
+//! No-follow component lookup through owned, checked directory descriptors.
 
 use std::ffi::{CStr, CString};
 use std::fs::File;
 use std::io;
-use std::os::fd::FromRawFd;
+use std::os::fd::{AsRawFd, FromRawFd, RawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::path::{Component, Path};
 
-// Linux UAPI open_how version zero: three consecutive, zero-initialized u64s.
-// Use libc's architecture-specific SYS_openat2, never a numeric syscall ID.
-#[repr(C)]
-struct OpenHow {
-    flags: u64,
-    mode: u64,
-    resolve: u64,
-}
-
-const NO_MAGICLINKS: u64 = 0x02;
-const NO_SYMLINKS: u64 = 0x04;
-
 /// Open a selected regular log without following any symlink or magic link.
-/// Unsupported kernel/security policy is an error, never an insecure fallback.
+/// Every lookup is relative to a checked directory FD and refuses symlinks.
+/// A denied operation is an error, never an insecure fallback. Unlike openat2,
+/// this mechanism also works under systemd's RestrictSUIDSGID syscall filter.
 /// This does not authenticate file provenance or prevent hardlink/mount changes.
 pub fn open_regular_log(path: &Path) -> io::Result<File> {
     open_checked(path, kernel_open)
@@ -28,53 +18,80 @@ pub fn open_regular_log(path: &Path) -> io::Result<File> {
 
 fn open_checked(
     path: &Path,
-    open: impl FnOnce(&CStr, &OpenHow) -> io::Result<File>,
+    mut open: impl FnMut(RawFd, &CStr, libc::c_int) -> io::Result<File>,
 ) -> io::Result<File> {
+    let bytes = path.as_os_str().as_bytes();
     if !path.is_absolute()
-        || path.as_os_str().len() > 4096
+        || bytes.len() > 4096
+        || bytes.contains(&0)
+        || bytes.ends_with(b"/")
+        || bytes.ends_with(b"/.")
         || path.components().any(|part| part == Component::ParentDir)
     {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "log path must be absolute, bounded and contain no parent traversal",
+            "log path must be absolute, bounded, NUL-free and contain no parent or trailing directory syntax",
         ));
     }
-    let name = CString::new(path.as_os_str().as_bytes())
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "log path contains a NUL byte"))?;
-    let how = OpenHow {
-        flags: (libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NONBLOCK | libc::O_NOFOLLOW) as u64,
-        mode: 0,
-        resolve: NO_SYMLINKS | NO_MAGICLINKS,
-    };
-    let file = open(&name, &how)?;
-    if !file.metadata()?.is_file() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "log source is not a regular file",
-        ));
+    let directory_flags = libc::O_PATH | libc::O_CLOEXEC | libc::O_NOFOLLOW;
+    let mut directory = open(libc::AT_FDCWD, c"/", directory_flags | libc::O_DIRECTORY)?;
+    let mut parts = path
+        .components()
+        .filter_map(|part| match part {
+            Component::Normal(name) => Some(name),
+            _ => None, // Absolute root and harmless interior `.` components only.
+        })
+        .peekable();
+    while let Some(part) = parts.next() {
+        let name = CString::new(part.as_bytes()).map_err(|_| {
+            io::Error::new(io::ErrorKind::InvalidInput, "log path contains a NUL byte")
+        })?;
+        if parts.peek().is_none() {
+            let file = open(
+                directory.as_raw_fd(),
+                &name,
+                libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NONBLOCK | libc::O_NOFOLLOW,
+            )?;
+            if !file.metadata()?.is_file() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "log source is not a regular file",
+                ));
+            }
+            return Ok(file);
+        }
+        // O_PATH | O_NOFOLLOW opens a symlink itself, without following it.
+        // Inspect that FD, not its pathname. Do not use O_DIRECTORY here:
+        // it would report ENOTDIR for symlinks instead of our ELOOP policy.
+        let next = open(directory.as_raw_fd(), &name, directory_flags)?;
+        let metadata = next.metadata()?;
+        if metadata.file_type().is_symlink() {
+            return Err(io::Error::from_raw_os_error(libc::ELOOP));
+        }
+        if !metadata.is_dir() {
+            return Err(io::Error::from_raw_os_error(libc::ENOTDIR));
+        }
+        // Assignment closes the previous directory; only current/next FDs
+        // coexist. Renaming the directory cannot redirect the next lookup.
+        directory = next;
     }
-    Ok(file)
+    Err(io::Error::new(
+        io::ErrorKind::InvalidInput,
+        "log source is not a regular file",
+    ))
 }
 
-fn kernel_open(name: &CStr, how: &OpenHow) -> io::Result<File> {
-    // SAFETY: name is NUL terminated and both pointers remain valid for this
-    // synchronous syscall. OpenHow has the Linux UAPI layout and all fields are
-    // initialized. No O_CREAT/TMPFILE or writable access is requested.
-    let fd = unsafe {
-        libc::syscall(
-            libc::SYS_openat2,
-            libc::AT_FDCWD as libc::c_long,
-            name.as_ptr(),
-            how as *const OpenHow,
-            std::mem::size_of::<OpenHow>(),
-        )
-    };
+fn kernel_open(directory: RawFd, name: &CStr, flags: libc::c_int) -> io::Result<File> {
+    // SAFETY: name is NUL terminated and live during this synchronous call;
+    // directory is AT_FDCWD or a live owned directory FD. Flags never request
+    // creation or writable access, so openat requires no variadic mode argument.
+    let fd = unsafe { libc::openat(directory, name.as_ptr(), flags) };
     if fd < 0 {
         return Err(io::Error::last_os_error());
     }
-    // SAFETY: successful openat2 returns a newly owned nonnegative int FD. It
+    // SAFETY: successful openat returns a newly owned nonnegative int FD. It
     // has exactly one File owner, including metadata/refusal error paths.
-    Ok(unsafe { File::from_raw_fd(fd as std::os::fd::RawFd) })
+    Ok(unsafe { File::from_raw_fd(fd) })
 }
 
 #[cfg(test)]
@@ -287,10 +304,10 @@ mod tests {
         let scratch = Scratch::new();
         let path = scratch.0.join("direct/log");
         for code in [libc::ENOSYS, libc::EPERM, libc::EINVAL, libc::ELOOP] {
-            let result = open_checked(&path, |_, how| {
-                assert_eq!(how.resolve, NO_SYMLINKS | NO_MAGICLINKS);
-                assert_ne!(how.flags & libc::O_NONBLOCK as u64, 0);
-                assert_ne!(how.flags & libc::O_CLOEXEC as u64, 0);
+            let result = open_checked(&path, |_, _, flags| {
+                assert_ne!(flags & libc::O_PATH, 0);
+                assert_ne!(flags & libc::O_NOFOLLOW, 0);
+                assert_ne!(flags & libc::O_CLOEXEC, 0);
                 Err(io::Error::from_raw_os_error(code))
             });
             assert_eq!(result.unwrap_err().raw_os_error(), Some(code));
@@ -300,7 +317,7 @@ mod tests {
     #[test]
     fn security_relative_and_parent_paths_fail_before_syscall() {
         for path in [Path::new("relative"), Path::new("/var/log/../private")] {
-            let result = open_checked(path, |_, _| panic!("invalid path reached open"));
+            let result = open_checked(path, |_, _, _| panic!("invalid path reached open"));
             assert_eq!(result.unwrap_err().kind(), io::ErrorKind::InvalidInput);
         }
     }
