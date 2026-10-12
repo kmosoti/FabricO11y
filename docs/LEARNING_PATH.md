@@ -336,3 +336,5 @@ failed startup trace before the corrected retry. In
 compare producer frames with recovered bytes before asking the Python oracle to
 grade queries. Explain why agreement between a query and incomplete recovered
 input alone would not establish end-to-end custody.
+
+The [console-command admission prerequisite](experiments/formal/console-command-admission-protocol.md) illustrates another boundary: one caller operation can issue several admitted HTTP requests. Count the actual messages, keep refusals visible, and use the real native counterexample alongside a finite independent schedule model. Its smoke result does not replace measured service gates.
