@@ -3,6 +3,18 @@
   "description": "Counterexamples kept as deterministic regression fixtures. `cargo xtask check-counterexamples` requires each reproducer test to exist in its file and each fix commit to exist. Removing an entry is a trust-boundary change.",
   "counterexamples": [
     {
+      "id": "CX-RUNNER-OUTSIDE-FIXTURE-LAYOUT",
+      "origin": "Fast checks on 5a933e6 in a worktree beneath FABRIC_SCRATCH_ROOT; qualification-runner exited 1 with one error among 21 tests",
+      "defect": "The supposedly outside-scratch fixture was derived from the checkout's target directory, which was inside scratch in this layout; the correctly admitted path reached mocked Popen instead of exercising refusal",
+      "seed_or_trace": "Put the checkout under the configured scratch root and run test_outside_scratch_is_rejected_before_creation_or_launch; the old fixture created an ownership marker and failed serializing a MagicMock exit_code. Derive a sibling of the actual scratch root and assert it is outside before testing the unchanged refusal/no-launch/no-creation outcomes",
+      "contract": "ARCH-1 and bounded verification: an outside-scratch rejection control must actually be outside the configured boundary",
+      "reproducer": {
+        "file": "tools/qualification/test_runner.py",
+        "test": "test_outside_scratch_is_rejected_before_creation_or_launch"
+      },
+      "fix_commit": "98e3107"
+    },
+    {
       "id": "CX-SERVICE-LOG-OPENAT2-DENIAL",
       "origin": "Debian candidate upgrade rel-deb-life-01, frozen ca84d9823b5e3f8f39f40647cedffef0acff3aac; minimized guest controls in the installation-release-run-02 wiki record",
       "defect": "Required RestrictSUIDSGID=yes denies openat2 with ENOSYS; mandatory companion log preflight fails and its server exits",

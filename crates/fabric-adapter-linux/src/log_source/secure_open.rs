@@ -217,9 +217,12 @@ mod tests {
             assert!(unread_bytes(&denied, None).is_err());
         }
         let file = open_regular_log(&path).unwrap();
-        assert!(
-            open_regular_log(Path::new(&format!("/proc/self/fd/{}", file.as_raw_fd()))).is_err()
-        );
+        for alias in [
+            format!("/proc/self/fd/{}", file.as_raw_fd()),
+            format!("/proc/{}/fd/{}", std::process::id(), file.as_raw_fd()),
+        ] {
+            assert!(open_regular_log(Path::new(&alias)).is_err());
+        }
     }
 
     struct Scratch(PathBuf);
@@ -280,9 +283,20 @@ mod tests {
     fn security_proc_magic_link_is_not_a_regular_log_alias() {
         let scratch = Scratch::new();
         let file = open_regular_log(&scratch.0.join("direct/log")).unwrap();
-        let alias = PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd()));
-        assert!(open_regular_log(&alias).is_err());
-        assert!(unread_bytes(&alias, None).is_err());
+        // Numeric PID removes the ordinary /proc/self parent symlink, so this
+        // also exercises refusal of a magic link at the leaf itself.
+        for alias in [
+            PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd())),
+            PathBuf::from(format!(
+                "/proc/{}/fd/{}",
+                std::process::id(),
+                file.as_raw_fd()
+            )),
+        ] {
+            assert!(open_regular_log(&alias).is_err());
+            assert!(unread_bytes(&alias, None).is_err());
+            assert!(read_lines(&alias, None, 4096).is_err());
+        }
     }
 
     #[test]
