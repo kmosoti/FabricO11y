@@ -51,7 +51,8 @@ def main():
                "scope": "finite bridge smoke only; no long campaign or physical-device claim",
                "binaries": {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in binaries},
                "source_sha256": {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
-                                 for p in (Path(__file__), Path(__file__).with_name("console_bridge.py"))}}
+                                 for p in (Path(__file__), Path(__file__).with_name("console_bridge.py"),
+                                           ROOT / 'tools/ui/fixture_cadence.py')}}
     snapshot = work / "bin"
     snapshot.mkdir(mode=0o700)
     for original in original_binaries:
