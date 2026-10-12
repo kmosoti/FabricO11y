@@ -1,6 +1,9 @@
 # Registered release package and lifecycle checks
 
-Status: revision 3 registered 2026-10-10 before stopped-overlay continuation. This extends the
+Status: revision 4 registered 2026-10-12 for the frozen candidate: its exact
+candidate and L1 predecessor versions and the dated Debian image. Revision 3,
+registered 2026-10-10 before stopped-overlay continuation, named the earlier
+candidate; a result belongs to the revision it ran under. This extends the
 [baseline installation protocol](installation-acceptance-protocol.md) for the
 owner-selected Debian/Fedora release matrix. No result is recorded here.
 These checks are finite local guest measurements, not deployment qualification.
