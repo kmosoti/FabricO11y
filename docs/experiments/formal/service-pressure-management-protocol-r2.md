@@ -20,6 +20,12 @@ Select **one round per second**, preserving both bridge session reads. Do not
 share session snapshots, change CSRF/Origin/user-verification checks, manufacture
 another peer, alter quotas or oracles, retry refusals or omit failed requests.
 
+After setup and immediately before launching the simulator, perform one explicit
+recorded owner login. Record its start, completion and returned freshness bound.
+Any in-cell refresh still counts, and a missed slot still fails. This keeps setup
+time outside the owner's 300-second freshness window for the measured cell;
+it does not extend that window or suppress an automatic refresh.
+
 ## Schedule and coverage
 
 Use absolute monotonic deadlines `anchor + 0.25 + k`, for nonnegative integer
@@ -53,8 +59,9 @@ the management loop. For a three-second private-bucket model, start with eight
 credits, refill eight/s, consume one/request and cap at eight. Include one UI
 request at 0.10 s. Each one-second round has two requests at `k + 0.25` and the
 other owner pair plus reader request at `k + 0.75`. All 16 requests must be
-admitted. A legacy five-request round every half second must be rejected; its
-first refusal is at 2.25 s. The production quota code is not the model's oracle.
+admitted. In the legacy fixture all five requests of round `j` start at
+`0.25 + 0.5j` seconds. That half-second schedule must be rejected; its first
+refusal is at 2.25 s. The production quota code is not the model's oracle.
 
 For an independent two-second coverage fixture, these literal actual starts
 are relative to the simulator's reported begin:
