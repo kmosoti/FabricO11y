@@ -23,7 +23,8 @@ Use the existing reader's pagination loop and start its query timer before any
 page admission wait. The original p99 <= 2 seconds applies to the complete query,
 including admission waits and every page. Record each page's requested, sent and
 completed monotonic times and any error status without credentials or response
-bodies. Keep the million-row fixture, separately graded 1,000 traces, all seeds,
+bodies. The paced attempt timestamp is the caller's dispatch boundary, not a
+packet timestamp. Keep the million-row fixture, separately graded 1,000 traces, all seeds,
 20 repetitions per kind and phase, restart, independent oracles, resource caps,
 CPU placement and cleanup gates unchanged. The six main trials retain their
 original three-per-second reader schedule and actual `8484493` evidence.
