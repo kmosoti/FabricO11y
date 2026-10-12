@@ -113,12 +113,12 @@ def perform(f, args, summary):
     reader = f.reader([e['enrollment_id'] for e in enrollments])
     tokens = f.work / 'tokens'
     tokens.write_text(''.join(e['token'] + '\n' for e in enrollments)); tokens.chmod(0o600)
-    f.bridge.poll_ui(True)
     summary['owner_login'] = login = {'started_unix_ns': time.time_ns()}
     try:
         login['fresh_until_unix_s'] = f.bridge.login()['fresh_until_unix_s']
     finally:
         login['finished_unix_ns'] = time.time_ns()
+    f.bridge.poll_ui(True)
     last_ui_health = time.monotonic()
     sim = f.spawn([f.helpers / 'spindle_sim', '--server-url', f.origin, '--ca', f.work / 'ca.pem',
                    '--tokens', tokens, '--seed', hex(args.seed), '--seconds', str(seconds),
