@@ -24,11 +24,11 @@ trap cleanup EXIT
 trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
-release=0.alpha.2
+release=0.alpha.1
 preinst="$root/packaging/debian/preinst"
 mutation="${3:-}"
 if [ "${3:-}" = --historical-deb ]; then
-  release=0.alpha.1
+  release=0.alpha.0
   python3 -B "$root/tools/packaging/stage_predecessor.py" "$2" "$work/stage"
   preinst="$work/stage/historical-preinst"
   "$root/packaging/check-glibc.sh" "$work/stage"/usr/bin/*

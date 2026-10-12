@@ -43,7 +43,7 @@ class PackageTests(unittest.TestCase):
                     dependency_notices.bundle_mpl_source(package, directory / 'future')
 
     def test_candidate_rejects_wrong_version_and_substituted_package(self):
-        for version in ('0.1.0~alpha.1', '0.1.0~alpha.3', '0.1.0'):
+        for version in ('0.1.0~alpha.0', '0.1.0~alpha.2', '0.1.0'):
             with self.assertRaises(ValueError):
                 validate_control('Package: fabrico11y\nVersion: ' + version + '\nArchitecture: amd64\n')
         with tempfile.TemporaryDirectory() as scratch:

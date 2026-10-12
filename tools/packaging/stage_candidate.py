@@ -1,4 +1,4 @@
-"""Stage the exact alpha2 Debian payload for native RPM metadata construction."""
+"""Stage the exact candidate Debian payload for native RPM metadata construction."""
 import argparse
 import hashlib
 import io
@@ -19,8 +19,8 @@ def digest(path):
 
 def validate_control(control):
     fields = dict(line.split(': ', 1) for line in control.splitlines() if ': ' in line and not line.startswith(' '))
-    if fields.get('Package') != 'fabrico11y' or fields.get('Version') != '0.1.0~alpha.2' or fields.get('Architecture') != 'amd64':
-        raise ValueError('candidate Debian metadata must be exact alpha2 amd64')
+    if fields.get('Package') != 'fabrico11y' or fields.get('Version') != '0.1.0~alpha.1' or fields.get('Architecture') != 'amd64':
+        raise ValueError('candidate Debian metadata must be exact 0.1.0~alpha.1 amd64')
 
 
 def stage_candidate(package, receipt_path, destination):

@@ -12,7 +12,7 @@ set -eu
 [ "$#" -eq 2 ] || { echo "usage: build-deb.sh OUT_DIR CONSOLE_BUILD_DIR" >&2; exit 1; }
 out=$(realpath "$1")
 root=$(cd "$(dirname "$0")/.." && pwd)
-version=0.1.0~alpha.2
+version=0.1.0~alpha.1
 arch=$(dpkg --print-architecture)
 export SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-$(git -C "$root" log -1 --format=%ct)}"
 stage=$(mktemp -d "${TMPDIR:-/tmp}/deb-stage-XXXXXX")

@@ -61,8 +61,17 @@ SPDX declarations, standard terms or repository sibling license provenance and
 includes the exact source with all actual notices. No copyright notice is invented.
 Reviewing these recorded provenance limits remains part of release review.
 
+Lifecycle check L1 upgrades from a strictly older package. The Debian predecessor is the
+registered historical package re-versioned to `0.1.0~alpha.0` with its payload and
+maintainer scripts unchanged; the RPM predecessor is built with `--historical-deb`:
+
+```sh
+python3 -B tools/resource_group.py -- packaging/reversion-predecessor-deb.sh HISTORICAL_DEB OUT
+python3 -B tools/resource_group.py -- packaging/build-rpm.sh OUT HISTORICAL_DEB --historical-deb
+```
+
 To construct both formats with identical native/UI payloads, an exact successful
-isolated alpha2 Debian build can supply the RPM data:
+isolated candidate Debian build can supply the RPM data:
 
 ```sh
 python3 -B tools/resource_group.py -- packaging/build-rpm.sh OUT CANDIDATE_DEB --candidate-deb BUILD_RECEIPT
