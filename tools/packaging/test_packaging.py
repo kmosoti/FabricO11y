@@ -13,11 +13,42 @@ import dependency_notices
 from stage_console import stage
 from stage_predecessor import stage_predecessor
 from stage_candidate import stage_candidate, validate_control
+from build_candidate_rpm import validate_fixture_transform, validate_fixture_source
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
 class PackageTests(unittest.TestCase):
+    def test_same_code_fixture_source_and_literal_transform_controls(self):
+        # Origin: owner walkthrough requires a real native version increase
+        # without rewriting exact candidate payload, scripts or provenance.
+        controls = json.loads((ROOT / 'docs/experiments/formal/fixtures/owner-walkthrough.json').read_text())
+        source = {'original_head': controls['original_head'], 'source_date_epoch': controls['source_date_epoch']}
+        validate_fixture_source(source, controls['original_head'], controls['source_date_epoch'])
+        for field, bad in (('original_head', '0' * 40), ('source_date_epoch', 1), ('source_date_epoch', True)):
+            with self.subTest(field=field, bad=bad), self.assertRaisesRegex(ValueError, 'fixture source pins differ'):
+                validate_fixture_source({**source, field: bad}, controls['original_head'], controls['source_date_epoch'])
+        for family, versions in controls['fixture_versions'].items():
+            for case in controls['transform_controls']:
+                with self.subTest(family=family, defect=case['defect']):
+                    before = {'usr/bin/fabric-server': {'sha256': 'a' * 64, 'bytes': 3},
+                              'usr/share/fabrico11y/console/index.html': {'sha256': 'b' * 64, 'bytes': 4},
+                              'usr/share/doc/fabrico11y/CANDIDATE-PROVENANCE.json': {'sha256': 'c' * 64, 'bytes': 5}}
+                    after = {name: dict(value) for name, value in before.items()}
+                    scripts, changed = b'exact maintainer scripts', b'exact maintainer scripts'
+                    version = versions[1]
+                    if case['defect'] == 'payload':
+                        after['usr/share/doc/fabrico11y/CANDIDATE-PROVENANCE.json']['sha256'] = 'd' * 64
+                    elif case['defect'] == 'script':
+                        changed = b'exit 0'
+                    elif case['defect'] == 'equal-version':
+                        version = versions[0]
+                    if case['expected'] == 'accepted':
+                        validate_fixture_transform(family, versions[0], version, before, after, scripts, changed)
+                    else:
+                        with self.assertRaisesRegex(ValueError, case['expected']):
+                            validate_fixture_transform(family, versions[0], version, before, after, scripts, changed)
+
     def test_mpl_source_archive_identity_and_tamper_refusal(self):
         # Origin: release source obligation. A declared version alone cannot
         # establish the identity of the source shipped beside binary code.

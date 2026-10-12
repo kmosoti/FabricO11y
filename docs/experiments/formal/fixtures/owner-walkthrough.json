@@ -1,0 +1,28 @@
+{
+  "schema": "fabric-owner-walkthrough-controls-v1",
+  "classification": "prospective literal controls; not execution evidence",
+  "original_head": "8fb6f413179b094288316e25845c137440ba23fa",
+  "source_date_epoch": 1791841113,
+  "fixture_versions": {
+    "debian": ["0.1.0~alpha.1", "0.1.0~alpha.0"],
+    "fedora": ["0.1.0-0.alpha.1", "0.1.0-0.alpha.0"]
+  },
+  "transform_controls": [
+    {"defect": "none", "expected": "accepted"},
+    {"defect": "payload", "expected": "fixture payload differs"},
+    {"defect": "script", "expected": "fixture scripts differ"},
+    {"defect": "equal-version", "expected": "fixture native metadata differs"}
+  ],
+  "record_controls": [
+    {"defect": "wrong-original-head", "expected": "reject before output/guest creation"},
+    {"defect": "wrong-epoch", "expected": "reject before output/guest creation"},
+    {"defect": "missing-restore", "expected": "reject completed verdict"},
+    {"defect": "missing-actual-candidate-fresh-enrollment", "expected": "reject completed verdict"},
+    {"defect": "foreign-package-digest", "expected": "reject completed verdict"},
+    {"defect": "HTTP429-instead-of-revoked-401", "expected": "reject named refusal detection"}
+  ],
+  "browser_controls": [
+    {"defect": "wrong-SAN", "expected": "specific hostname certificate rejection before enrollment"},
+    {"defect": "untrusted-CA", "expected": "specific CA certificate rejection before enrollment"}
+  ]
+}
