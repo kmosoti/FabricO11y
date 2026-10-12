@@ -4,6 +4,7 @@ import copy
 import json
 from pathlib import Path
 import re
+from types import SimpleNamespace
 import unittest
 
 import live_browser_check as browser
@@ -108,6 +109,55 @@ class RoleMatrixTests(unittest.TestCase):
                             ['POST', '/v1/admin/nodes/{name}/{action}', '/v1/admin/nodes/matrix/resume']))
         self.assertEqual(len({(r[0], r[1]) for r in missing}), len({(r[0], r[1]) for r in self.fixture['rows']}))
         self.assertNotEqual({(r[0], r[2]) for r in missing}, {(r[0], r[2]) for r in self.fixture['rows']})
+
+    def test_transports_refuse_expired_or_storage_limited_dispatch_and_progressing_body(self):
+        # Origin: Miso's independent review of0de4b46; no main/network/process.
+        source = ast.parse(Path(browser.__file__).read_text())
+        main = next(n for n in source.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+        functions = [n for n in source.body if isinstance(n, ast.FunctionDef) and n.name != 'main']
+        functions += [n for n in main.body if isinstance(n, ast.FunctionDef) and n.name in ('call', 'bearer_api')]
+        for transport in ('call', 'bearer_api'):
+            for case in ('expired', 'storage', 'paced_expiry', 'timeout', 'progressing'):
+                if transport == 'call' and case == 'paced_expiry':continue
+                with self.subTest(transport=transport, case=case):
+                    now, opened, reads = [2.0 if case == 'expired' else 0.0], [], []
+                    class Response:
+                        status = 200
+                        fp = SimpleNamespace(raw=SimpleNamespace(_sock=SimpleNamespace(settimeout=lambda _: None)))
+                        def __enter__(self):return self
+                        def __exit__(self, *_):pass
+                        def read(self, size=None):
+                            reads.append('whole')
+                            if case == 'progressing':now[0] = 2.0
+                            return b'{"value":{"ready":true}}'
+                        def read1(self, size):
+                            reads.append('chunk')
+                            if case == 'progressing':now[0] = 2.0
+                            return b'{"value":{"ready":true}}' if len(reads) == 1 else b''
+                    def open_response(request, **kwargs):
+                        opened.append(kwargs['timeout'])
+                        return Response()
+                    namespace = dict(vars(browser))
+                    namespace.update(time=SimpleNamespace(monotonic=lambda:now[0], monotonic_ns=lambda:int(now[0]*1e9)),
+                                     deadline=1.0, storage_violation=SimpleNamespace(is_set=lambda:case == 'storage'),
+                                     endpoint='http://localhost:1', origin='https://localhost:1', receipt={},
+                                     args=SimpleNamespace(inject_role_defect=False), tls_opener=SimpleNamespace(open=open_response),
+                                     pace_api=lambda:now.__setitem__(0, 2.0 if case == 'paced_expiry' else now[0]),
+                                     cadence=SimpleNamespace(clock=lambda:now[0], last=None),
+                                     urllib=SimpleNamespace(request=SimpleNamespace(Request=browser.urllib.request.Request, urlopen=open_response),
+                                                            error=browser.urllib.error))
+                    exec(compile(ast.Module(body=functions, type_ignores=[]), '<transport-boundary>', 'exec'), namespace)
+                    invoke = (lambda:namespace['call']('GET', '/status')) if transport == 'call' else (lambda:namespace['bearer_api'](None, '/v1/console/nodes'))
+                    if case == 'timeout':
+                        invoke()
+                        self.assertEqual(len(opened), 1)
+                        self.assertGreater(opened[0], 0)
+                        self.assertLessEqual(opened[0], 1.0, 'socket timeout exceeds remaining inner deadline')
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, 'deadline|storage|512 MiB'):
+                            invoke()
+                        if case == 'progressing':self.assertEqual(reads, ['chunk'], 'wall bound must stop a progressively readable body')
+                        else:self.assertEqual(opened, [], 'expired/storage-limited dispatch reached network')
 
 
 if __name__ == '__main__':

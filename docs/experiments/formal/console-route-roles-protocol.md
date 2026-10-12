@@ -101,3 +101,15 @@ and pre-matrix login2. Require that literal count and at least550ms between thos
 recorded starts, including each automatic finish. These seven precede the matrix's
 sixteen public auth dispatches; the already registered private peer burst remains
 an explicitly separate sixteen-request unpaced diagnostic.
+
+The inner deadline and512MiB storage event are dispatch gates, not only the
+final UI wait. Check before and after pacing, before opening either native TLS
+or WebDriver transport and after each bounded body chunk/response. Socket waits
+must be positive and at most the remaining inner deadline (also at most their
+existing15s/35s ceilings); refresh the receive timeout as that budget shrinks.
+A continuously progressing body must not evade the wall bound through an idle
+socket timeout. The independent review of0de4b46 supplies literal expired,
+storage-limited, paced-expiry, remaining-time and progressive-body fixtures;
+mock only transports/time, retain actual source dispatch functions, and require
+refusal before network or before the next body chunk. Root records named red
+then repeats unchanged controls after the separate implementation fix.
