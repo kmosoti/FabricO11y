@@ -259,7 +259,9 @@ def perform(f, args, summary, meter):
                         'metrics':nodes*batches*50,'traces':nodes*min(10,batches),
                         'spans':nodes*min(10,batches)*3,'start_ns':start_ns,
                         'source_sha256':file_digest(source_file)}
-    reader=f.reader([e['enrollment_id'] for e in enrollments])
+    from query_reader import PacedQueryReader
+    reader=PacedQueryReader(f.reader([e['enrollment_id'] for e in enrollments]))
+    summary['query_page_schedule']=reader.page_schedule
     samples=meter.samples;resource_lock=meter.lock
     acked=[]; ack_lock=threading.Lock()
     attempt_file=f.work/'actual-attempt-events.jsonl'
