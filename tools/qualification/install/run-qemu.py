@@ -25,11 +25,11 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from resource_group import STORAGE as DATA, require_storage
 IMAGE_NAME = 'debian-13-genericcloud-amd64.qcow2'
-IMAGE_URL = (
-    'https://cloud.debian.org/images/cloud/trixie/latest/' + IMAGE_NAME
-)
-MANIFEST_URL = 'https://cloud.debian.org/images/cloud/trixie/latest/SHA512SUMS'
-# SHA-512 in Debian's official SHA512SUMS, observed 2026-10-09.
+# Debian's dated build 20261001-2618, not the moving `latest` directory.
+DEBIAN_BUILD = 'https://cloud.debian.org/images/cloud/trixie/20261001-2618/'
+IMAGE_URL = DEBIAN_BUILD + 'debian-13-genericcloud-amd64-20261001-2618.qcow2'
+MANIFEST_URL = DEBIAN_BUILD + 'SHA512SUMS'
+# SHA-512 in that build's official SHA512SUMS, observed 2026-10-09 via `latest`.
 IMAGE_SHA512 = (
     'f46f0671a6e5bdec5291ab8972bae2f10e5408c2f64a74078f11efc2f06a436a'
     '9d0313ed50e0472542eeabf780e9f7c792ac0a314c6c20507fcd9fd81b468c3d'
@@ -304,7 +304,7 @@ def main() -> int:
                 raise RuntimeError('official Fedora checksum differs from the pinned image hash')
         else:
             rows = [line.split() for line in manifest.read_text().splitlines()
-                    if line.split() and line.split()[-1] == IMAGE_NAME]
+                    if line.split() and line.split()[-1] == IMAGE_URL.rsplit('/', 1)[1]]
             if len(rows) != 1 or rows[0][0] != IMAGE_SHA512:
                 raise RuntimeError('official Debian manifest no longer matches the reviewed pinned image hash')
         image_cache = DATA / 'cache' / 'installation-qemu'

@@ -62,8 +62,9 @@ before admission. Do not
 interpret these guest limits or a tiny fixture as the 100 GB retention-capacity
 release result.
 
-Debian: pinned Debian 13 cloud image/systemd 257 from the existing harness and
-SHA-512. Fedora: Cloud Base Generic 44-1.7 x86_64, from the
+Debian: Debian 13 genericcloud amd64 build 20261001-2618/systemd 257, from that
+build's [dated directory](https://cloud.debian.org/images/cloud/trixie/20261001-2618/),
+SHA-512 `f46f0671…b468c3d` as pinned in the harness. Fedora: Cloud Base Generic 44-1.7 x86_64, from the
 [official Fedora image directory](https://dl.fedoraproject.org/pub/fedora/linux/releases/44/Cloud/x86_64/images/),
 583729152 bytes, SHA-256
 `28680fe5b371a5a82ebf43a31926e086a168e59949d03969c5093e7071f90b7f`.
