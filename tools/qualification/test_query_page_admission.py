@@ -93,6 +93,7 @@ class PageAdmissionTests(unittest.TestCase):
         self.assertEqual(request.call_count, 1)
         self.assertEqual(reader.page_schedule[0]['status'], 429)
         self.assertEqual(reader.page_schedule[0]['outcome'], 'http_error')
+        error.close()
 
 
 if __name__ == '__main__':

@@ -17,6 +17,7 @@ import urllib.request
 import query_oracle as oracle
 from release_fixture import NS, SEEDS, integer, message, query_batch, traces, varint
 from workload import entropy_body
+from query_reader import PacedQueryReader
 
 
 def file_digest(path):
@@ -234,7 +235,8 @@ def perform(f, args, summary, meter):
     dependencies=[Path(__file__),Path(oracle.__file__),Path(__file__).with_name('release_fixture.py'),
                   Path(__file__).with_name('release_runtime.py'),Path(__file__).with_name('console_bridge.py'),
                   Path(__file__).with_name('soak_companion.py'),Path(__file__).with_name('release_timing.py'),
-                  Path(__file__).with_name('workload.py'),Path(__file__).with_name('delivery_oracle.py')]
+                  Path(__file__).with_name('workload.py'),Path(__file__).with_name('delivery_oracle.py'),
+                  Path(__file__).with_name('query_reader.py')]
     source_hashes={str(path):file_digest(path) for path in dependencies}
     summary['harness_inputs']=source_hashes
     nodes, batches = (2, 1) if args.smoke else (100, 100)
@@ -259,7 +261,6 @@ def perform(f, args, summary, meter):
                         'metrics':nodes*batches*50,'traces':nodes*min(10,batches),
                         'spans':nodes*min(10,batches)*3,'start_ns':start_ns,
                         'source_sha256':file_digest(source_file)}
-    from query_reader import PacedQueryReader
     reader=PacedQueryReader(f.reader([e['enrollment_id'] for e in enrollments]))
     summary['query_page_schedule']=reader.page_schedule
     samples=meter.samples;resource_lock=meter.lock
