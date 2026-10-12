@@ -131,6 +131,24 @@ migration from a historical implementation it did not contain.
 
 ## Negative controls and evidence
 
+### Prospective removal-checker counterexample controls
+
+Coordination C-035 / C-aud-7 minimized an unenforced-check defect at harness
+`de77de7399710c5afd50ae0de981fda6e0b75f30`: negated commands and the first
+member of `&&` lists bypass Bash errexit; baseline A13a accepted one live unit.
+`InstallationShellControls` in `tools/qualification/install/test_run_qemu.py`
+invokes the actual lifecycle remove phase with isolated paths and package/service
+stubs. Each active unit, literal Fabric AVC, missing retained state and incomplete
+purge must exit1 without the affected PASS; clean fixtures must exit0. Baseline
+A13a rejects either active, activating, deactivating or reloading unit. The actual
+QEMU cleanup AST additionally requires an independently detected RPM mutation
+and confirmed process stop; unrelated/provenance failures retain scratch.
+These prospective controls precede repair and claim no guest outcome. Preserve
+the contained red first; after repair, register its actual fix commit in
+`docs/formal/counterexamples.json` in a separate trust-boundary commit. RPM
+construction plans explicitly create each fresh mutant output directory before
+`build-rpm.sh`; an existing directory is refused. Limits and gate rules remain.
+
 Keep the existing named Debian package defects: root-user must fail A6,
 no-collision-check must fail A2a/A2b, and no-memory-max must fail A8. The existing
 mutation grader must reject unrelated failures and bad provenance/environment.
