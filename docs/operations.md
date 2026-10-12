@@ -95,9 +95,11 @@ openssl x509 -in /etc/fabrico11y/server.pem -noout -ext subjectAltName
 
 Bind the central listener to an intended private/LAN/VPN address when possible.
 In the host firewall and any cloud firewall, allow its configured TCP port
-(7443 in the example) only from the edge and operator networks. Fedora runs firewalld:
-`sudo firewall-cmd --permanent --add-port=7443/tcp && sudo firewall-cmd --reload`. Debian has
-no firewall by default; with ufw, `sudo ufw allow 7443/tcp`. Include IPv6
+(7443 in the example) only from the edge and operator networks. For example, with edges and operators on
+192.0.2.0/24, Fedora's firewalld:
+`sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="192.0.2.0/24" port port="7443" protocol="tcp" accept' && sudo firewall-cmd --reload`.
+Debian has no firewall by default; with ufw,
+`sudo ufw allow proto tcp from 192.0.2.0/24 to any port 7443`. Include IPv6
 rules if using an IPv6 listener. Edges initiate outbound HTTPS; they do not need
 an inbound Fabric port. The optional OTLP receiver stays on loopback port 4318
 and is for applications on that edge. Preserve SSH/VPN administration when
@@ -193,19 +195,26 @@ sudo tar -C / -cpf fabrico11y-backup.tar etc/fabrico11y var/lib/fabrico11y
 
 Include any configured state/Spool directories and key files outside those defaults.
 Keep the archive in controlled storage; it holds credentials. To restore, stop the
-services, move the current trees aside so no newer file survives, extract, then
-start the roles configured on that host:
+services, move the current trees aside so no newer file survives, and extract:
 
 ```sh
 sudo systemctl stop fabrico11y-node.service fabrico11y-server.service
 sudo mv /etc/fabrico11y /etc/fabrico11y.pre-restore
 sudo mv /var/lib/fabrico11y /var/lib/fabrico11y.pre-restore
 sudo tar -C / -xpf fabrico11y-backup.tar
-sudo systemctl start fabrico11y-server.service   # on an edge: fabrico11y-node.service
 ```
 
-If the console refuses existing passkeys after restoring an older snapshot, run
-[offline owner recovery](access-operations.md#offline-owner-recovery) before reopening remote access.
+A restored snapshot can bring back revoked passkeys and reader tokens, and the server
+cannot detect the rollback. On the central server, always run
+[offline owner recovery](access-operations.md#offline-owner-recovery) before the first
+start, then start the service and enroll the owner again; on an edge, start
+`fabrico11y-node.service`:
+
+```sh
+sudo -u fabricolly fabric-server recover-access /etc/fabrico11y/server.conf OWNER_PRINCIPAL_ID
+sudo systemctl start fabrico11y-server.service
+```
+
 Do not run a copied Spool alongside the original: both would share an identity.
 A copied configuration alone cannot recover acknowledged telemetry.
 
