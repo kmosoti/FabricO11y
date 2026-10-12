@@ -338,3 +338,11 @@ grade queries. Explain why agreement between a query and incomplete recovered
 input alone would not establish end-to-end custody.
 
 The [console-command admission prerequisite](experiments/formal/console-command-admission-protocol.md) illustrates another boundary: one caller operation can issue several admitted HTTP requests. Count the actual messages, keep refusals visible, and use the real native counterexample alongside a finite independent schedule model. Its smoke result does not replace measured service gates.
+
+The [fixed-query caller prerequisites](experiments/formal/query-caller-run-01.md)
+extend that exercise: every continuation wait belongs inside the complete-query
+timer. ADR-0029's reader includes all telemetry, so its independent oracle corpus
+must also include the companion. Use native ACK/source times to bound a concurrent
+snapshot, preserve original source bytes and check freshness/retention alongside
+rows. Why would excluding a source from the expected corpus create a false failure,
+and why would ignoring metadata hide a real omission?
