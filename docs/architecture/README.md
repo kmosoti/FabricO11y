@@ -15,7 +15,7 @@ Current product views use the [evidence states](../QUALIFICATION.md#evidence-sta
 | History and query | [Retained history and query](retained-history.md) | Segments, retention, exact queries, completeness, freshness and pages. |
 | Sealing | [Sealer](sealer.md) | Bounded external merge writer adopted; finite builder/recovery and companion soak evidence is linked from [CURRENT](../CURRENT.md). No whole-server memory proof ([ADR-0022](../decisions/ADR-0022-build-segments-by-external-merge-sort.md)). |
 | Observation codec | [Observation record and FOB1 encoding](observation.md) | Accepted and implemented for in-memory blocks in the opt-in Walk tail ([ADR-0023](../decisions/ADR-0023-define-an-observation-record-with-a-canonical-encoding.md), [ADR-0024](../decisions/ADR-0024-answer-history-queries-by-a-walk-over-source-bounds.md)). Wire, journal and Segment adoption are separate decisions. |
-| Deployment | [Linux deployment](deployment.md) | Service identity and systemd boundary; fresh Debian VM installation acceptance passed its registered checks. Exact release packages and Fedora remain separate gates. |
+| Deployment | [Linux deployment](deployment.md) | Service identity and systemd boundary; exact frozen `a5dbda7a` Debian/Fedora installation and lifecycle cells completed ([run 03](../experiments/formal/installation-release-run-03.md)). Authenticated UI and deployment qualification remain separate gates. |
 | Machine policy | [layers.json](layers.json), [core-purity.json](core-purity.json) | Enforced by `cargo xtask`. |
 
 ## Legacy demonstration

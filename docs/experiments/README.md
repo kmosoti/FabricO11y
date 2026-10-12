@@ -34,7 +34,9 @@ Each line of `archived-runs.tsv` gives a run's path, file count, bytes and the S
 
 ## Recent investigations
 
-Finite release checkpoints: [package installation](formal/installation-release-run-01.md), [scoped evidence cache](benchmarks/scoped-evidence-cache-run-01.md), and [production-access campaign prerequisites](benchmarks/production-access-campaign-run-01.md). These retain their exact revisions, failures and limits; successor campaign acceptance is separate.
+Latest exact-candidate checkpoints: [replacement installation](formal/installation-release-run-03.md) and [console-command admission prerequisite](formal/console-command-admission-run-01.md). The first #42 smoke remains failed; a repaired smoke is not a measured cell.
+
+Historical finite release checkpoints: [package installation](formal/installation-release-run-01.md), [scoped evidence cache](benchmarks/scoped-evidence-cache-run-01.md), and [production-access campaign prerequisites](benchmarks/production-access-campaign-run-01.md). These retain their exact revisions, failures and limits; successor campaign acceptance is separate.
 
 | Area | Records | Scope or status |
 | --- | --- | --- |
