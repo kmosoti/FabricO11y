@@ -1,0 +1,20 @@
+{
+  "id": "CX-CONSOLE-COMMAND-PAIR-RATE",
+  "origin": "service-opening-r3-main-t10-s1-smoke-01 failed at the eighth enrollment with HTTP 429 before measurement",
+  "candidate": "a5dbda7a4fd6465c94f6505b3214cbcbc2130c82",
+  "seed": "0xA11FA001",
+  "contract": "Qualification commands remain subject to production peer admission; every refusal remains visible and fails its caller",
+  "native_evidence": "results/service-opening-r3-main-t10-s1-smoke-01/browser/receipt.json",
+  "independent_schedule": {
+    "peer_requests_per_second": 8,
+    "peer_burst": 8,
+    "session_requests_per_command": 1,
+    "operation_requests_per_command": 1,
+    "legacy_command_interval_seconds": 0.15,
+    "visibility_queries_per_second": 3,
+    "ui_poll_interval_seconds": 5,
+    "commands": 100
+  },
+  "expected_legacy_schedule": "refused",
+  "correction": "Serialize protected browser commands at no more than two per second; keep every session check, CSRF check and refusal. Benchmark reader and actual UI polling schedules are unchanged."
+}
