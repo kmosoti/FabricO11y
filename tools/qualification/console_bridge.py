@@ -350,6 +350,14 @@ class ConsoleBridge:
             validate_route(path, method)
             if path.startswith("/v1/console/auth/"):
                 raise ValueError("use the explicit passkey lifecycle methods")
+            # A command sends a session GET and the requested operation. The
+            # peer admits eight requests/s; two commands/s leave room for the
+            # registered three visibility probes/s and five-second UI poll.
+            # Serialize the pacing with the command, and keep every refusal.
+            previous = getattr(self, "_last_private_command", None)
+            if previous is not None:
+                time.sleep(max(0, .5 - (time.monotonic() - previous)))
+            self._last_private_command = time.monotonic()
             view = self.session_view()
             if method != "GET" and path != "/v1/console/query" and view["fresh_until_unix_s"] <= int(time.time()) + 60:
                 view = self.login()
