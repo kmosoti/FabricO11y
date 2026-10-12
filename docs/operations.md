@@ -33,7 +33,7 @@ The package installs `fabric-node`, `fabric-server` and `fabricctl` in `/usr/bin
 
 1. Create `/etc/fabrico11y/server.conf` from the example. Provide a TLS certificate and key trusted by both browsers and Spindles: create them now with the [certificate recipe](#network-and-certificate-setup) and open the firewall as described there, then return here. Configure the exact `access_origin`, hostname-only `access_rp_id`, and packaged `console_dir`. Normal serving needs no administrator token: `admin_token_file` is read only by the migration mode `serve-legacy`. Make the TLS key `0640 root:fabricolly`. Every token and secret file must be a single-link regular file, not a symlink, owned by the service user or root, with mode `0600` or, if root owns it, `0640`; anything else is refused at start ([security hardening](architecture/security-hardening.md#credential-files)).
 2. `sudo systemctl enable --now fabrico11y-server.service`.
-3. Follow [first-owner setup](access-operations.md#configure-and-enroll-the-first-owner) to read the protected local bootstrap secret and enroll a passkey at `https://YOUR_HOST:PORT/console/`. Add a second passkey and save the immutable owner ID for recovery.
+3. Now follow [first-owner setup](access-operations.md#configure-and-enroll-the-first-owner) to read the protected local bootstrap secret and enroll a passkey at `https://YOUR_HOST:PORT/console/`, then return here. Add a second passkey and save the immutable owner ID for recovery.
 
 Storage settings include `journal_bytes` (20 GiB), `journal_file_bytes` (64 MiB),
 `retention_s` (86,400 seconds), `retention_bytes` (100,000,000,000 bytes) and
@@ -162,7 +162,7 @@ PY
 OTEL_SERVICE_NAME=walkthrough OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces otel/bin/python span.py
 ```
 
-The node answers an export only after it is in the spool; query spans as in [access operations](access-operations.md#reader-tokens-and-read-only-clients).
+The node answers an export only after it is in the spool. Now query the edge's logs, metrics and spans as in [access operations](access-operations.md#reader-tokens-and-read-only-clients), then return here.
 
 The node samples host metrics on its interval, reads logs every second, keeps every batch in its spool until the server acknowledges it, and polls for configuration every 5 s. Log paths and interval set through the console's node configuration replace the local file's values once the node has validated and stored them; the spool, its ceiling and the server target stay local. The CLI always adds its own bounded diagnostic source; server-owned nodes also retain the server source. These pins share the sixteen-source ceiling and survive remote replacement. Edge diagnostics go to the existing configured server. `fabricctl inspect /etc/fabrico11y/node.conf` reports the spool: batches, acknowledged sequence, backlog, and any recovery state.
 
@@ -218,10 +218,10 @@ sudo tar -C / -xpf fabrico11y-backup.tar
 ```
 
 A restored snapshot can bring back revoked passkeys and reader tokens, and the server
-cannot detect the rollback. On the central server, always run
-[offline owner recovery](access-operations.md#offline-owner-recovery) before the first
-start, then start the service and enroll the owner again; on an edge, start
-`fabrico11y-node.service`:
+cannot detect the rollback. On the central server, always recover owner access with
+the commands below before the first start (see
+[offline owner recovery](access-operations.md#offline-owner-recovery) for what it
+changes), then enroll the owner again; on an edge, start `fabrico11y-node.service`:
 
 ```sh
 sudo -u fabricolly fabric-server recover-access /etc/fabrico11y/server.conf OWNER_PRINCIPAL_ID

@@ -22,9 +22,13 @@ these identity settings after enrollment requires a planned migration.
 Start the service: `sudo systemctl enable --now fabrico11y-server.service`.
 On the first successful access-store initialization, the server creates
 `state_dir/access/access-bootstrap.secret` with mode 0600. Read it locally as
-the service owner or OS administrator (default `state_dir`:
-`sudo cat /var/lib/fabrico11y/server/access/access-bootstrap.secret`); use the browser's **First owner setup**
-at `https://YOUR_HOST:PORT/console/`. The secret expires after ten minutes and
+the service owner or OS administrator (default `state_dir` shown):
+
+```sh
+sudo cat /var/lib/fabrico11y/server/access/access-bootstrap.secret
+```
+
+Then use the browser's **First owner setup** at `https://YOUR_HOST:PORT/console/`. The secret expires after ten minutes and
 is consumed when registration succeeds. The server creates the owner ID; the
 browser supplies a display name and a passkey with user verification.
 Enrollment needs an authenticator that can store a resident credential and perform
