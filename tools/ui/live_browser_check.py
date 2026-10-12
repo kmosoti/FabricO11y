@@ -28,6 +28,29 @@ from stage_console import stage
 
 VERSION = '155.0.8059.39'
 TOOLS = DATA / 'tools/ui' / f'chrome-for-testing-{VERSION}'
+ROLE_FIXTURE = ROOT / 'docs/experiments/formal/fixtures/console-route-roles.json'
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, response, code, message, headers, url):
+        return None
+
+
+def run_role_matrix(request, check, observations=None):
+    fixture = json.loads(ROLE_FIXTURE.read_text())
+    observations = [] if observations is None else observations
+    for method, template, path, body, outcomes in fixture['rows']:
+        for role, (expected_status, expected_refusal) in zip(fixture['roles'], outcomes):
+            status, response = request(role, method, path, body)
+            field = fixture['refusal_fields'].get(path, 'error')
+            refusal = response.get(field) if status>=400 and isinstance(response, dict) else None
+            observations.append({'role':role,'method':method,'template':template,'path':path,
+                                 'status':status,'refusal':refusal})
+            check(status == expected_status and (expected_refusal is None or refusal == expected_refusal),
+                  f'{role} {method} {path}: expected {expected_status} {expected_refusal}')
+    cells = {(item['role'], item['method'], item['path']) for item in observations}
+    check(len(observations) == len(cells) == 144, 'all 144 route-role cells dispatched exactly once')
+    return observations
 
 
 def semantic_rejection(answer, status, message):
@@ -61,7 +84,10 @@ def main():
     parser.add_argument('--shell-lifecycle',action='store_true')
     parser.add_argument('--pressure',action='store_true',help='finite authenticated body/admission timeout probe')
     parser.add_argument('--poll-seconds',type=int,choices=(0,120),default=0)
+    parser.add_argument('--role-matrix',action='store_true',help='complete 144-cell role matrix; finish after existing setup')
     args = parser.parse_args()
+    if args.role_matrix and (args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery):
+        parser.error('role matrix is a separate finite cell; polling/pressure/cursor/shell/recovery retain their own cells')
     limits = require_limits()
     # The combined browser/server fixture uses a stricter cap than build jobs.
     subprocess.run(['systemctl','--user','set-property','--runtime',limits.name,
@@ -91,7 +117,7 @@ def main():
                'injected_nonresident_enrollment': args.inject_nonresident_enrollment,
                'injected_rejection_defect':args.inject_rejection_defect,
                'source_sha256': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-                                 for p in (Path(__file__), ROOT / 'tools/ui/fixture_cadence.py', ROOT / 'tools/ui/browser_producer.py', ROOT / 'tools/packaging/stage_console.py')},
+                                 for p in (Path(__file__), ROLE_FIXTURE, ROOT / 'tools/ui/fixture_cadence.py', ROOT / 'tools/ui/browser_producer.py', ROOT / 'tools/packaging/stage_console.py')},
                'binaries': {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in (args.server, args.spindle)},
                'browser_download': json.loads((TOOLS / 'download.json').read_text()) if args.browser=='chrome' else json.loads((DATA/'tools/ui/geckodriver.json').read_text())}
     processes = []
@@ -164,7 +190,7 @@ def main():
         return wd('/execute/async', {'script': script, 'args': values})
 
     def click(text):
-        pace_api()
+        cadence.pace()
         button=js('const button=Array.from(document.querySelectorAll("button")).find(e=>e.textContent.trim()===arguments[0]); if(!button)throw Error("button absent:"+arguments[0]);return button', text)
         wd('/element/'+button['element-6066-11e4-a52e-4f735466cecf']+'/click',{})
 
@@ -175,20 +201,34 @@ def main():
         js('Array.from(document.querySelectorAll(".sidebar .nav-item")).find(e=>e.textContent.includes(arguments[0])).click()', text)
 
     cadence = FixtureCadence()
-    pace_api = cadence.pace
     receipt['benign_explicit_action_interval_ms'] = 550
+
+    def pace_api():
+        if session and js('return !!window.fixturePace'):
+            async_js('const done=arguments[arguments.length-1];window.fixturePace().then(()=>done(true))')
+        cadence.pace()
+
+    def capture_api_metadata():
+        receipt['actual_api_headers']=js('return window.fixtureApiHeaders')
+        check(bool(receipt['actual_api_headers']) and not js('return window.fixtureApiHeadersTruncated') and all(item['cache_control']=='no-store' and item['csp'] and item['coop']=='same-origin' and item['corp']=='same-origin' for item in receipt['actual_api_headers']),'actual authentication and API responses carry no-store CSP COOP and CORP')
+
+    def verify_binary_identity():
+        receipt['native_input_hashes_after']={name:hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in receipt['binaries']}
+        receipt['native_snapshot_hashes_after']={role:hashlib.sha256(getattr(args,role).read_bytes()).hexdigest() for role in ('server','spindle')}
+        check(receipt['native_input_hashes_after']==receipt['binaries'],'native input artifact identities remain unchanged throughout run')
+        check(all(receipt['native_snapshot_hashes_after'][role]==identity['sha256'] for role,identity in receipt['immutable_binary_snapshots'].items()),'all fixture launches retain immutable candidate binary bytes')
 
     def expect(answer, status, message, label):
         code, body = answer
         receipt.setdefault('semantic_rejections', []).append({'label':label,'status':code,'error':body.get('error') if isinstance(body,dict) else None})
         check(semantic_rejection(answer,status,message), label)
 
-    def api(path, method='GET', body=None, version=True):
+    def api(path, method='GET', body=None, version=True, csrf=True):
         query_csrf=None
-        if path=='/v1/console/query':
+        if csrf and method!='GET' and path.startswith('/v1/console/') and '/auth/' not in path:
             session_status,session_view=api('/v1/console/session')
             if session_status==200:query_csrf=session_view.get('csrf')
-        pace_api()
+        if not js('return !!window.fixturePace'):cadence.pace()
         # Decode returned text in Python, never JS JSON.parse on telemetry.
         answer = async_js('''const [path,method,body,version,csrf]=arguments;const done=arguments[arguments.length-1];
           const headers={};if(csrf)headers['x-fabric-csrf']=csrf;if(version)headers['x-fabric-client-version']='1';if(body!==null)headers['content-type']='application/json';
@@ -205,16 +245,31 @@ def main():
             else:answer['status']=429
         return answer['status'],body
 
-    def bearer_api(token,path,method='GET',body=None):
+    def bearer_api(token,path,method='GET',body=None,*,cookie=None,csrf=None,role=None):
         pace_api()
         request=urllib.request.Request(origin+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={
-            **({'Authorization':'Bearer '+token} if token else {}),'x-fabric-client-version':'1','Content-Type':'application/json'})
+            **({'Authorization':'Bearer '+token} if token else {}),**({'Cookie':cookie} if cookie else {}),
+            **({'x-fabric-csrf':csrf} if csrf else {}),'Origin':origin,'x-fabric-client-version':'1','Content-Type':'application/json'})
+        entry={'role':role,'method':method,'path':path,'started_ns':time.monotonic_ns(),'status':None}
+        calls=receipt.setdefault('explicit_tls_requests',[])
+        if len(calls)>=1024:raise RuntimeError('explicit request ledger exceeds its bound')
+        calls.append(entry)
         try:
-            with urllib.request.urlopen(request,context=context,timeout=15) as response:
-                result=response.status,json.load(response)
-        except urllib.error.HTTPError as error:
-            text=error.read().decode()
-            result=error.code,json.loads(text) if text else None
+            try:
+                with tls_opener.open(request,timeout=15) as response:
+                    code,text=response.status,response.read(8*1024*1024+1)
+            except urllib.error.HTTPError as error:
+                code,text=error.code,error.read(8*1024*1024+1)
+            if len(text)>8*1024*1024:raise RuntimeError('TLS response exceeds existing query response bound')
+            entry['status']=code
+            try:response=json.loads(text) if text else None
+            except json.JSONDecodeError:response=None
+            field='status' if path in ('/v1/batches','/v1/config') else 'error'
+            entry['refusal']=response.get(field) if code>=400 and isinstance(response,dict) else None
+            result=code,response
+        finally:
+            entry['finished_ns']=time.monotonic_ns()
+            cadence.last=cadence.clock()
         if args.inject_role_defect and token and path=='/v1/console/audit' and result[0]==403:
             receipt['role_injection_actual_witness']={'status':result[0],'error':result[1].get('error')}
             return 200,{'events':[]}
@@ -353,6 +408,7 @@ self.addEventListener("fetch",event=>{
         config.write_text(f'listen=127.0.0.1:{server_port}\ntls_cert={work}/server.pem\ntls_key={work}/server.key\nstate_dir={work}/state\nadmin_token_file={admin}\nconsole_dir={work}/console\naccess_origin={origin}\naccess_rp_id=localhost\njournal_bytes=8388608\njournal_file_bytes=1048576\nretention_s=86400\nretention_bytes=33554432\nseal_workers=1\nself_spindle_url={origin}\nself_spindle_ca={work}/ca.pem\nself_spindle_executable={args.spindle.resolve()}\n')
         server = launch('server', [str(args.server.resolve()), 'serve', str(config)])
         context = ssl.create_default_context(cafile=str(work / 'ca.pem'))
+        tls_opener=urllib.request.build_opener(urllib.request.HTTPSHandler(context=context),NoRedirect())
         def healthy():
             if server.poll() is not None:
                 raise RuntimeError('server exited; inspect server.log')
@@ -447,7 +503,15 @@ self.addEventListener("fetch",event=>{
         wait(lambda: js('return !!document.querySelector("[data-testid=connect-server]") && !!navigator.serviceWorker.controller'), 'public worker controls reloaded shell')
         check(async_js('const done=arguments[arguments.length-1];navigator.serviceWorker.getRegistration().then(r=>done(new URL(r.scope).pathname==="/console/" && new URL(r.active.scriptURL).pathname==="/console/service-worker.js"))'),'actual worker registration and script remain inside console scope')
         receipt['warm_shell_timing']=js('return {navigation:performance.getEntriesByType("navigation")[0]?.toJSON(),assets:performance.getEntriesByType("resource").map(e=>({path:new URL(e.name).pathname,duration_ms:e.duration,transfer_bytes:e.transferSize,encoded_bytes:e.encodedBodySize}))}')
-        js('window.fixtureApiHeaders=[];window.fixtureApiHeadersTruncated=false;const original=window.fetch;window.fetch=async(...args)=>{const started_ms=performance.now();const response=await original(...args);const url=typeof args[0]==="string"?args[0]:args[0].url;const path=new URL(url,location.href).pathname;if(path.startsWith("/v1/")){if(window.fixtureApiHeaders.length>=512)window.fixtureApiHeadersTruncated=true;else window.fixtureApiHeaders.push({path,status:response.status,started_ms,retry_after:response.headers.get("retry-after"),cache_control:response.headers.get("cache-control"),csp:response.headers.get("content-security-policy"),coop:response.headers.get("cross-origin-opener-policy"),corp:response.headers.get("cross-origin-resource-policy")});}return response}')
+        js('''window.fixtureApiHeaders=[];window.fixtureApiHeadersTruncated=false;window.fixturePaceQueue=Promise.resolve();window.fixtureLastDispatch=-Infinity;
+          const interval=arguments[0],original=window.fetch;
+          window.fixturePace=()=>{const slot=window.fixturePaceQueue.then(async()=>{let delay;while((delay=interval-(performance.now()-window.fixtureLastDispatch))>0)await new Promise(resolve=>setTimeout(resolve,delay));window.fixtureLastDispatch=performance.now()});window.fixturePaceQueue=slot;return slot};
+          window.fetch=async(...args)=>{const url=typeof args[0]==="string"?args[0]:args[0].url;const path=new URL(url,location.href).pathname;
+            if(!path.startsWith('/v1/'))return original(...args);const paced=!window.fixtureUnpacedBurst;if(paced)await window.fixturePace();
+            const entry={path,method:args[1]?.method||args[0]?.method||'GET',started_ms:performance.now(),paced,status:null};
+            if(window.fixtureApiHeaders.length>=512)window.fixtureApiHeadersTruncated=true;else window.fixtureApiHeaders.push(entry);
+            try{const response=await original(...args);Object.assign(entry,{status:response.status,retry_after:response.headers.get('retry-after'),cache_control:response.headers.get('cache-control'),csp:response.headers.get('content-security-policy'),coop:response.headers.get('cross-origin-opener-policy'),corp:response.headers.get('cross-origin-resource-policy')});return response}
+            finally{entry.finished_ms=performance.now()}}''',cadence.interval*1000)
         click('Connect to server')
         wait(lambda: js('return document.body.textContent.includes("Sign in with a passkey") && !document.body.textContent.includes("Working…")'), 'live sign-in locked view')
         js('''const weakenResident=arguments[0];const original=window.fabricPasskey;window.fabricPasskey=async function(register,text){
@@ -478,7 +542,7 @@ self.addEventListener("fetch",event=>{
         code, view = api('/v1/console/session')
         check(code == 200 and view['api_version'] == 1, 'real server session compatibility')
         principal_id = view['principal_id']
-        expect(api('/v1/console/logout','POST'), 403, 'access denied', 'cookie mutation without CSRF rejected')
+        expect(api('/v1/console/logout','POST',csrf=False), 403, 'access denied', 'cookie mutation without CSRF rejected')
         check(api('/v1/console/session')[0] == 200, 'rejected CSRF mutation preserves session')
         request=urllib.request.Request(origin+'/v1/console/logout',data=b'',method='POST',headers={
             'Cookie':cookie['name']+'='+cookie['value'],'x-fabric-client-version':'1',
@@ -521,7 +585,7 @@ self.addEventListener("fetch",event=>{
         check(js('return document.body.textContent.includes("enrollment_id")'), 'inventory exposes immutable enrollment IDs')
         click('Refresh status')
         wait(lambda: js('return document.body.textContent.includes("retention_bytes")'), 'effective measured storage policy')
-        overload=async_js('''const done=arguments[arguments.length-1];Promise.all(Array.from({length:16},()=>fetch('/v1/console/session',{headers:{'x-fabric-client-version':'1'},cache:'no-store',credentials:'same-origin'}).then(async r=>({status:r.status,retry_after:r.headers.get('retry-after'),cache_control:r.headers.get('cache-control'),body:await r.text()})))).then(done);''')
+        overload=async_js('''const done=arguments[arguments.length-1];window.fixtureUnpacedBurst=true;Promise.all(Array.from({length:16},()=>fetch('/v1/console/session',{headers:{'x-fabric-client-version':'1'},cache:'no-store',credentials:'same-origin'}).then(async r=>({status:r.status,retry_after:r.headers.get('retry-after'),cache_control:r.headers.get('cache-control'),body:await r.text()})))).finally(()=>{window.fixtureUnpacedBurst=false}).then(done);''')
         # Retain only public rejection metadata, never the successful sessions.
         receipt['peer_overload']=[{k:r[k] for k in ('status','retry_after','cache_control')} for r in overload]
         refused=[r for r in overload if r['status']==429]
@@ -801,6 +865,33 @@ self.addEventListener("fetch",event=>{
         # nor a Spindle token are console credentials.
         code,reader_nodes=bearer_api(credential,'/v1/console/nodes')
         check(code==200 and {n['name'] for n in reader_nodes['nodes']}==names,'reader inventory lists every enrolled source')
+        if args.role_matrix:
+            previous_cookie=next(item for item in wd('/cookie',method='GET') if item['name'].startswith('__Host-'))
+            previous_session=hashlib.sha256(previous_cookie['value'].encode()).hexdigest();previous_cookie=None
+            click('Reverify with passkey')
+            wait(lambda:not js('return document.body.textContent.includes("Working…")'),'real owner freshness before complete route matrix')
+            owner_cookie=next(item for item in wd('/cookie',method='GET') if item['name'].startswith('__Host-'))
+            current_session=hashlib.sha256(owner_cookie['value'].encode()).hexdigest()
+            check(current_session!=previous_session,'real passkey reverification replaces owner cookie before matrix')
+            code,owner_view=api('/v1/console/session');check(code==200,'fresh owner session for matrix')
+            matrix=receipt['route_matrix']={'fixture_sha256':hashlib.sha256(ROLE_FIXTURE.read_bytes()).hexdigest(),'owner_session':current_session,'observations':[]}
+            def matrix_request(role,method,path,body):
+                return bearer_api({'anonymous':None,'spindle':spindle_token,'reader':credential,'owner':None}[role],path,method,body,
+                                  cookie=owner_cookie['name']+'='+owner_cookie['value'] if role=='owner' else None,
+                                  csrf=owner_view['csrf'] if role=='owner' and method!='GET' else None,role=role)
+            run_role_matrix(matrix_request,check,matrix['observations'])
+            matrix['dispatches']=[item for item in receipt['explicit_tls_requests'] if item['role'] is not None]
+            fields=('role','method','path','status','refusal')
+            check([tuple(r[k] for k in fields) for r in matrix['dispatches']]==[tuple(r[k] for k in fields) for r in matrix['observations']], 'actual TLS dispatch ledger agrees with all matrix cells')
+            check(all(b['started_ns']-a['started_ns']>=550_000_000 for a,b in zip(matrix['dispatches'],matrix['dispatches'][1:])),'every matrix dispatch retains shared 550ms cadence')
+            matrix['auth_dispatch_count']=sum('/auth/' in item['path'] for item in matrix['dispatches'])
+            matrix['browser_setup_auth_dispatches']=js('return window.fixtureApiHeaders.filter(item=>item.path.includes("/auth/"))')
+            check(matrix['auth_dispatch_count']==16 and len(matrix['browser_setup_auth_dispatches'])==7,'literal matrix16 and real browser setup7 auth dispatches recorded')
+            check(all(b['started_ms']-a['started_ms']>=550 for a,b in zip(matrix['browser_setup_auth_dispatches'],matrix['browser_setup_auth_dispatches'][1:])),'automatic WebAuthn dispatches retain shared cadence')
+            owner_cookie=None;owner_view=None
+            click('Check session');wait(lambda:js('return document.body.textContent.includes("Sign in to view your telemetry.")'),'matrix owner logout locks actual browser')
+            capture_api_metadata();verify_binary_identity();receipt['exit']=0
+            return
         owner_routes=(('GET','/v1/console/session',None),('GET','/v1/console/audit',None),('GET','/v1/console/passkeys',None),
                       ('GET','/v1/console/sessions',None),('GET','/v1/console/readers',None),('POST','/v1/console/readers',{'name':'escalation','ttl_s':60}),
                       ('POST','/v1/console/nodes',{'name':'escalation'}),('POST','/v1/console/nodes/browser-edge/pause',None),
@@ -952,8 +1043,7 @@ self.addEventListener("fetch",event=>{
         wait(lambda:js('return document.body.textContent.includes("Browser fixture owner · owner")'),'owner login after sign out')
         check(js('return !document.querySelector(".results")'),'relogin contains no previous telemetry display')
         check(edge.poll() is None,'native producer remains running after bounded expiry and polling')
-        receipt['actual_api_headers']=js('return window.fixtureApiHeaders')
-        check(bool(receipt['actual_api_headers']) and not js('return window.fixtureApiHeadersTruncated') and all(item['cache_control']=='no-store' and item['csp'] and item['coop']=='same-origin' and item['corp']=='same-origin' for item in receipt['actual_api_headers']),'actual authentication and API responses carry no-store CSP COOP and CORP')
+        capture_api_metadata()
         if args.browser=='chrome':
             cdp('Network.enable',{})
             cdp('Network.emulateNetworkConditions',{'offline':True,'latency':0,'downloadThroughput':0,'uploadThroughput':0})
@@ -1055,10 +1145,7 @@ self.addEventListener("fetch",event=>{
                 try:cdp('PWA.uninstall',{'manifestId':manifest_id})
                 except RuntimeError:pass
                 raise
-        receipt['native_input_hashes_after']={name:hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in receipt['binaries']}
-        receipt['native_snapshot_hashes_after']={role:hashlib.sha256(getattr(args,role).read_bytes()).hexdigest() for role in ('server','spindle')}
-        check(receipt['native_input_hashes_after']==receipt['binaries'],'native input artifact identities remain unchanged throughout run')
-        check(all(receipt['native_snapshot_hashes_after'][role]==identity['sha256'] for role,identity in receipt['immutable_binary_snapshots'].items()),'all fixture launches retain immutable candidate binary bytes')
+        verify_binary_identity()
         receipt['exit'] = 0
     except BaseException as error:
         receipt['error'] = str(error)
