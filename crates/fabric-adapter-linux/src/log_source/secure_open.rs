@@ -303,15 +303,102 @@ mod tests {
     fn security_unsupported_or_denied_secure_open_never_falls_back() {
         let scratch = Scratch::new();
         let path = scratch.0.join("direct/log");
-        for code in [libc::ENOSYS, libc::EPERM, libc::EINVAL, libc::ELOOP] {
-            let result = open_checked(&path, |_, _, flags| {
-                assert_ne!(flags & libc::O_PATH, 0);
-                assert_ne!(flags & libc::O_NOFOLLOW, 0);
-                assert_ne!(flags & libc::O_CLOEXEC, 0);
-                Err(io::Error::from_raw_os_error(code))
-            });
-            assert_eq!(result.unwrap_err().raw_os_error(), Some(code));
+        let stages = 1 + path
+            .components()
+            .filter(|part| matches!(part, Component::Normal(_)))
+            .count();
+        for failed_stage in 1..=stages {
+            for code in [libc::ENOSYS, libc::EPERM, libc::EINVAL, libc::ELOOP] {
+                let mut calls = 0;
+                let result = open_checked(&path, |directory, name, flags| {
+                    calls += 1;
+                    assert_ne!(flags & libc::O_NOFOLLOW, 0);
+                    assert_ne!(flags & libc::O_CLOEXEC, 0);
+                    assert_eq!(flags & libc::O_ACCMODE, libc::O_RDONLY);
+                    if calls == stages {
+                        assert_eq!(flags & libc::O_PATH, 0);
+                        assert_ne!(flags & libc::O_NONBLOCK, 0);
+                    } else {
+                        assert_ne!(flags & libc::O_PATH, 0);
+                    }
+                    if calls == failed_stage {
+                        Err(io::Error::from_raw_os_error(code))
+                    } else {
+                        kernel_open(directory, name, flags)
+                    }
+                });
+                assert_eq!(result.unwrap_err().raw_os_error(), Some(code));
+                assert_eq!(calls, failed_stage, "a failed lookup must not be retried");
+            }
         }
+    }
+
+    #[test]
+    fn security_parent_replacement_during_walk_cannot_redirect_the_leaf() {
+        let scratch = Scratch::new();
+        let path = scratch.0.join("direct/log");
+        fs::create_dir(scratch.0.join("sentinel")).unwrap();
+        fs::write(scratch.0.join("sentinel/log"), b"not-approved\n").unwrap();
+        let mut replaced = false;
+        let mut file = open_checked(&path, |directory, name, flags| {
+            let file = kernel_open(directory, name, flags)?;
+            if name == c"direct" {
+                assert!(!replaced);
+                fs::rename(scratch.0.join("direct"), scratch.0.join("retired")).unwrap();
+                symlink("sentinel", scratch.0.join("direct")).unwrap();
+                replaced = true;
+            }
+            Ok(file)
+        })
+        .unwrap();
+        assert!(replaced, "replacement must occur before the leaf lookup");
+        let mut text = String::new();
+        file.read_to_string(&mut text).unwrap();
+        assert_eq!(text, "approved\n");
+        assert_eq!(
+            open_regular_log(&path).unwrap_err().raw_os_error(),
+            Some(libc::ELOOP)
+        );
+        assert!(read_lines(&path, None, 4096).is_err());
+        assert!(unread_bytes(&path, None).is_err());
+    }
+
+    #[test]
+    fn security_directory_syntax_and_invalid_names_fail_before_lookup() {
+        let paths = [
+            PathBuf::from("/"),
+            PathBuf::from("/var/log/file/"),
+            PathBuf::from("/var/log/file/."),
+            PathBuf::from(std::ffi::OsStr::from_bytes(b"/var/log/file\0private")),
+            PathBuf::from(format!("/{}", "x".repeat(4096))),
+        ];
+        for path in paths {
+            assert_eq!(
+                open_checked(&path, |_, _, _| panic!("invalid path reached open"))
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::InvalidInput
+            );
+        }
+        let scratch = Scratch::new();
+        assert_eq!(
+            open_regular_log(&scratch.0.join("direct/log/child"))
+                .unwrap_err()
+                .raw_os_error(),
+            Some(libc::ENOTDIR)
+        );
+        let path = scratch
+            .0
+            .join(std::ffi::OsStr::from_bytes(b"direct/log-\xff"));
+        fs::write(&path, b"approved\n").unwrap();
+        assert_eq!(unread_bytes(&path, None).unwrap(), 9);
+        assert_eq!(
+            read_lines(&scratch.0.join("direct/./log"), None, 4096)
+                .unwrap()
+                .lines[0]
+                .body,
+            "approved"
+        );
     }
 
     #[test]
@@ -338,5 +425,32 @@ mod tests {
             io::ErrorKind::InvalidInput
         );
         assert!(unread_bytes(&fifo, None).is_err());
+        let socket = scratch.0.join("socket");
+        let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        for path in [&socket, Path::new("/dev/null")] {
+            assert!(open_regular_log(path).is_err());
+            assert!(read_lines(path, None, 4096).is_err());
+            assert!(unread_bytes(path, None).is_err());
+        }
+    }
+
+    #[test]
+    fn security_regular_replacement_and_hardlinks_remain_outside_origin_authentication() {
+        let scratch = Scratch::new();
+        let path = scratch.0.join("direct/log");
+        fs::hard_link(&path, scratch.0.join("hardlink")).unwrap();
+        assert_eq!(
+            read_lines(&scratch.0.join("hardlink"), None, 4096)
+                .unwrap()
+                .lines[0]
+                .body,
+            "approved"
+        );
+        fs::rename(&path, scratch.0.join("retired")).unwrap();
+        fs::write(&path, b"rotated\n").unwrap();
+        assert_eq!(
+            read_lines(&path, None, 4096).unwrap().lines[0].body,
+            "rotated"
+        );
     }
 }

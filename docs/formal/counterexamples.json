@@ -3,6 +3,18 @@
   "description": "Counterexamples kept as deterministic regression fixtures. `cargo xtask check-counterexamples` requires each reproducer test to exist in its file and each fix commit to exist. Removing an entry is a trust-boundary change.",
   "counterexamples": [
     {
+      "id": "CX-SERVICE-LOG-OPENAT2-DENIAL",
+      "origin": "Debian candidate upgrade rel-deb-life-01, frozen ca84d9823b5e3f8f39f40647cedffef0acff3aac; minimized guest controls in the installation-release-run-02 wiki record",
+      "defect": "Required RestrictSUIDSGID=yes denies openat2 with ENOSYS; mandatory companion log preflight fails and its server exits",
+      "seed_or_trace": "Separate child test denies openat2 with ENOSYS and confirms the old syscall is rejected; the production backlog/read path failed with errno 38 on 73f7d90 (exit 101) and succeeds with the descriptor walk while leaf and parent symlinks remain refused",
+      "contract": "Linux installation sandbox, ADR-0026 companion ownership and HARD-9; all-component no-symlink refusal stays required",
+      "reproducer": {
+        "file": "crates/fabric-adapter-linux/src/log_source/secure_open.rs",
+        "test": "security_service_filter_keeps_regular_logs_readable_without_following_links"
+      },
+      "fix_commit": "ca3107ed5c8fa7e3570e44685b5787ec0648cf56"
+    },
+    {
       "id": "CX-QUERY-TEST-DRAIN-PROGRESS",
       "origin": "Hosted mutation run 38156896105 timed out; isolated after_page=true diagnostic on 1777e66 grew to 1.9G cgroup peak in a five-second timeout",
       "defect": "Pagination tests called the complete drain before checking progress, so a deliberately broken cursor predicate could allocate repeated pages instead of failing promptly",
