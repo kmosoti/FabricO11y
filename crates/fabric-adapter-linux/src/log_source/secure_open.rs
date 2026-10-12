@@ -90,6 +90,121 @@ mod tests {
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
 
+    #[test]
+    fn security_service_filter_keeps_regular_logs_readable_without_following_links() {
+        const CHILD: &str = "FABRIC_SECURE_OPEN_FILTER_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "log_source::secure_open::tests::security_service_filter_keeps_regular_logs_readable_without_following_links",
+                    "--test-threads=1",
+                    "--nocapture",
+                ])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "child: {output:?}");
+            assert!(
+                String::from_utf8(output.stdout)
+                    .unwrap()
+                    .contains("1 passed")
+            );
+            return;
+        }
+
+        // Fault injection only: deny openat2 in this isolated child test thread.
+        // Every other syscall is allowed. The numeric syscall comes from libc
+        // for the compiled target; no filter escapes into the parent process.
+        let filter = [
+            libc::sock_filter {
+                code: (libc::BPF_LD | libc::BPF_W | libc::BPF_ABS) as u16,
+                jt: 0,
+                jf: 0,
+                k: 0,
+            },
+            libc::sock_filter {
+                code: (libc::BPF_JMP | libc::BPF_JEQ | libc::BPF_K) as u16,
+                jt: 0,
+                jf: 1,
+                k: libc::SYS_openat2 as u32,
+            },
+            libc::sock_filter {
+                code: (libc::BPF_RET | libc::BPF_K) as u16,
+                jt: 0,
+                jf: 0,
+                k: libc::SECCOMP_RET_ERRNO | libc::ENOSYS as u32,
+            },
+            libc::sock_filter {
+                code: (libc::BPF_RET | libc::BPF_K) as u16,
+                jt: 0,
+                jf: 0,
+                k: libc::SECCOMP_RET_ALLOW,
+            },
+        ];
+        let program = libc::sock_fprog {
+            len: filter.len() as u16,
+            filter: filter.as_ptr().cast_mut(),
+        };
+        // SAFETY: prctl reads the initialized BPF array synchronously. The
+        // process is disposable; no_new_privs is set before installing it.
+        unsafe {
+            assert_eq!(libc::prctl(libc::PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0), 0);
+            assert_eq!(
+                libc::prctl(libc::PR_SET_SECCOMP, libc::SECCOMP_MODE_FILTER, &program),
+                0
+            );
+        }
+        let scratch = Scratch::new();
+        let path = scratch.0.join("direct/log");
+        // Retain the exact defective mechanism as the representative control.
+        #[repr(C)]
+        struct OldOpenHow {
+            flags: u64,
+            mode: u64,
+            resolve: u64,
+        }
+        let name = CString::new(path.as_os_str().as_bytes()).unwrap();
+        let how = OldOpenHow {
+            flags: (libc::O_RDONLY | libc::O_CLOEXEC | libc::O_NONBLOCK | libc::O_NOFOLLOW) as u64,
+            mode: 0,
+            resolve: 0x02 | 0x04,
+        };
+        // SAFETY: both pointers remain live; the struct has the UAPI layout.
+        let fd = unsafe {
+            libc::syscall(
+                libc::SYS_openat2,
+                libc::AT_FDCWD,
+                name.as_ptr(),
+                &how,
+                std::mem::size_of::<OldOpenHow>(),
+            )
+        };
+        assert_eq!(fd, -1);
+        assert_eq!(
+            io::Error::last_os_error().raw_os_error(),
+            Some(libc::ENOSYS)
+        );
+        assert_eq!(unread_bytes(&path, None).unwrap(), 9);
+        let result = read_lines(&path, None, 4096).unwrap();
+        assert_eq!(result.lines[0].body, "approved");
+        assert_eq!(unread_bytes(&path, Some(&result.cursor)).unwrap(), 0);
+        symlink("direct/log", scratch.0.join("leaf")).unwrap();
+        symlink("direct", scratch.0.join("parent")).unwrap();
+        for denied in [scratch.0.join("leaf"), scratch.0.join("parent/log")] {
+            assert_eq!(
+                open_regular_log(&denied).unwrap_err().raw_os_error(),
+                Some(libc::ELOOP)
+            );
+            assert!(read_lines(&denied, None, 4096).is_err());
+            assert!(unread_bytes(&denied, None).is_err());
+        }
+        let file = open_regular_log(&path).unwrap();
+        assert!(
+            open_regular_log(Path::new(&format!("/proc/self/fd/{}", file.as_raw_fd()))).is_err()
+        );
+    }
+
     struct Scratch(PathBuf);
 
     impl Scratch {
