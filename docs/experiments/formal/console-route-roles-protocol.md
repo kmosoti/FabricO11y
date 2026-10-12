@@ -66,3 +66,32 @@ the existing stricter 4 GB browser fixture, storage admission, stopped descendan
 and secret/scratch cleanup. Publish exact candidate-bound argv, exit status,
 fixture hash, full public observations and cleanup before crediting C3. All
 new checks and package matrix cells are **not run** at registration.
+
+## Separate finite matrix cell
+
+Run each pinned desktop engine with the existing required build/server/Spindle,
+packaged-console and fresh output arguments plus `--role-matrix`. This prospective
+mode reuses the real TLS/resident-key/reader/native-producer setup and existing
+cleanup. It ends after all 144 cells, the actual owner-logout UI lock, response
+headers, artifact identities and dispatch evidence; it does not claim the later
+baseline workflows completed. Default runs retain their selected-role probes and
+all original workflows, but those probes do not alone satisfy complete C3.
+
+Reject matrix mode combined with nonzero polling, pressure, expired-cursor,
+recovery or shell-lifecycle options. Those remain separate acceptance cells. The
+144 dispatches take at least about79 seconds at the registered cadence; combining
+them with two-minute polling could exceed the unchanged240-second inner deadline.
+Keep the default1800-second outer deadline,4GB cap,no swap,CPU200%,tasks512 and
+512MiB fixture ceiling. No expiry or performance limit changes.
+
+The shared cadence's interval also drives a serialized browser fetch scheduler,
+so automatic WebAuthn start and finish are separately paced. The already
+registered sixteen-request overload diagnostic is explicitly unpaced, recorded
+as such and still must observe its exact429. Owner CSRF support retains the
+deliberate missing-CSRF logout as an explicit opt-out negative probe. All matrix
+requests use the existing trusted TLS helper, disable redirect following, keep
+bearer/public contexts free of owner cookies and record bounded response metadata.
+Before the matrix, perform real passkey reverification; verify the browser's new
+session identity, and use its matching real CSRF. Revoke the dedicated matrix
+node and log out only at the final rows. Record actual browser setup/auth counts
+and timestamps separately from the literal144 matrix cells/16 auth dispatches.
