@@ -131,11 +131,18 @@ role boundary.
 sudo install -m 0640 -o root -g fabricolly /dev/stdin /etc/fabrico11y/node-token
 ```
 2. Give the service read access to each selected log with a narrow ACL, for example `setfacl -m u:fabricolly:r /var/log/app.log` (`sudo apt install acl` on minimal Debian if `setfacl` is missing). An unreadable log produces a visible collection gap; the node never escalates.
-3. Optionally set `traces_listen=127.0.0.1:4318` so local applications can export traces to the node, with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces` and `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf` in their environment. The receiver accepts only `application/x-protobuf`, so `curl` with JSON fails; use an OTLP/HTTP-protobuf application. One way to emit a test span (Debian needs `sudo apt install python3-venv` first):
+3. Optionally set `traces_listen=127.0.0.1:4318` so local applications can export traces to the node, with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces` and `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf` in their environment. The receiver accepts only `application/x-protobuf`, so `curl` with JSON fails; use an OTLP/HTTP-protobuf application.
+4. `sudo systemctl enable --now fabrico11y-node.service`.
+5. If you set `traces_listen`, emit a test span once the receiver is listening (Debian needs `sudo apt install python3-venv` first):
 
 ```sh
 python3 -m venv otel && otel/bin/pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http
 cat > span.py <<'PY'
+import socket, time
+for _ in range(30):  # wait up to 30 s for the node's receiver
+    try: socket.create_connection(('127.0.0.1', 4318), 1).close(); break
+    except OSError: time.sleep(1)
+else: raise SystemExit('fabric-node is not listening on 127.0.0.1:4318')
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
@@ -149,7 +156,6 @@ OTEL_SERVICE_NAME=walkthrough OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.
 ```
 
 The node answers an export only after it is in the spool; query spans as in [access operations](access-operations.md#reader-tokens-and-read-only-clients).
-4. `sudo systemctl enable --now fabrico11y-node.service`.
 
 The node samples host metrics on its interval, reads logs every second, keeps every batch in its spool until the server acknowledges it, and polls for configuration every 5 s. Log paths and interval set through the console's node configuration replace the local file's values once the node has validated and stored them; the spool, its ceiling and the server target stay local. The CLI always adds its own bounded diagnostic source; server-owned nodes also retain the server source. These pins share the sixteen-source ceiling and survive remote replacement. Edge diagnostics go to the existing configured server. `fabricctl inspect /etc/fabrico11y/node.conf` reports the spool: batches, acknowledged sequence, backlog, and any recovery state.
 
