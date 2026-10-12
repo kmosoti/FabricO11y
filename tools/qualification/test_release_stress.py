@@ -6,9 +6,11 @@ import os
 from pathlib import Path
 import tempfile
 import threading
+from types import SimpleNamespace
 import unittest
+from unittest.mock import ANY, Mock, call, patch
 
-from release_stress import first_creation, missing_management_slots, verify_offers
+from release_stress import first_creation, missing_management_slots, perform, verify_offers
 from release_main_source import simulator_batch
 from release_timing import NS
 from test_console_admission import refused_requests
@@ -73,6 +75,26 @@ class StressControls(unittest.TestCase):
         first_refusal = next(stamp for count, stamp in enumerate(legacy, 1)
                              if refused_requests(legacy[:count], 8, 8))
         self.assertEqual(first_refusal, 2.25)
+
+    def test_owner_login_precedes_visible_polling_and_simulator_launch(self):
+        order = Mock()
+        order.login.return_value = {'fresh_until_unix_s': 400}
+        order.spawn.side_effect = RuntimeError('stop before simulator launch')
+        summary = {}
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as root:
+            fixture = SimpleNamespace(
+                work=Path(root), helpers=Path(root), origin='https://fixture.invalid',
+                enroll=lambda name: {'enrollment_id': name, 'token': 'synthetic-fixture-only'},
+                reader=Mock(return_value=object()), spawn=order.spawn,
+                bridge=SimpleNamespace(request=Mock(return_value=(200, {})),
+                                       login=order.login, poll_ui=order.poll_ui))
+            with patch('release_stress.time.sleep'), \
+                    patch('release_stress.time.time_ns', side_effect=[100*NS, 101*NS]):
+                with self.assertRaisesRegex(RuntimeError, 'stop before simulator launch'):
+                    perform(fixture, SimpleNamespace(smoke=True, seed=SEEDS[0]), summary)
+        self.assertEqual(summary['owner_login'], {
+            'started_unix_ns': 100*NS, 'finished_unix_ns': 101*NS, 'fresh_until_unix_s': 400})
+        self.assertEqual(order.mock_calls, [call.login(), call.poll_ui(True), call.spawn(ANY, 'sim')])
 
     def test_start_uses_original_creation_not_later_generated_clock(self):
         with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as root:
