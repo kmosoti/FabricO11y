@@ -29,8 +29,11 @@ class RunnerControls(unittest.TestCase):
         clear_owned(self.path)
 
     def test_outside_scratch_is_rejected_before_creation_or_launch(self):
-        outside = (Path(__file__).resolve().parents[2] / "target"
+        # A checkout may itself live beneath scratch (for example a worktree).
+        # Choose a sibling of the actual scratch root, not the checkout's target.
+        outside = (scratch_root().parent
                    / ("runner-outside-" + Path(self.directory.name).name) / "target" / "alpha-rejected")
+        self.assertFalse(outside.is_relative_to(scratch_root()))
         self.assertFalse(outside.exists())
         self.assertFalse(outside.parent.exists())
         with mock.patch("runner.subprocess.Popen") as child:

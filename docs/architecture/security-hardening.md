@@ -23,7 +23,11 @@ The [OTLP receiver](../../src/spindle/otlp.rs) accepts loopback addresses only, 
 
 ## Selected log paths
 
-[Secure opening](../../crates/fabric-adapter-linux/src/log_source/secure_open.rs) uses `openat2` with `RESOLVE_NO_SYMLINKS` and `RESOLVE_NO_MAGICLINKS`, read-only, close-on-exec, no-follow and nonblocking, and checks the descriptor as a regular file before any read. Relative paths, parent traversal and NULs are rejected, and an unavailable syscall never falls back to ordinary opening. An operator who relied on a symlink selects the physical path. This does not authenticate file provenance or stop hard links, rotation, mount manipulation or a compromised OS owner.
+[Secure opening](../../crates/fabric-adapter-linux/src/log_source/secure_open.rs) walks from an owned root directory descriptor with one `openat` lookup per component. Intermediate descriptors use `O_PATH`, close-on-exec and no-follow; descriptor metadata refuses symlinks (including magic links) and nondirectories. Each lookup uses the checked parent descriptor, so renaming its path cannot redirect the next lookup. The leaf opens read-only, close-on-exec, no-follow and nonblocking, and must be regular before any read. Rust `File` ownership closes previous directories and all error paths; at most two descriptors coexist.
+
+Relative paths, parent traversal, NULs, paths longer than 4096 bytes and trailing directory syntax are rejected. No syscall error triggers ordinary opening or path canonicalization. An operator who relied on a symlink selects the physical path. This does not authenticate file provenance or stop hard links, regular rotation, mount manipulation or a compromised OS owner.
+
+The [registered amendment](../experiments/formal/service-log-opening-protocol.md) replaces mandatory `openat2`, which failed under required `RestrictSUIDSGID=yes` in the [frozen-candidate installation trial](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-release-run-02). A native child-process regression reproduces that denial, then checks exact reads and continued link refusal. It does not qualify rebuilt packages.
 
 ## Credential files
 
@@ -31,7 +35,7 @@ One policy covers every token and secret file the Spindle (`sender::open_secret`
 
 ## Service sandbox
 
-Both units drop all capabilities and set `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, kernel module, tunable, cgroup, clock and log protection, `LockPersonality`, `MemoryDenyWriteExecute`, `RestrictNamespaces`, `RestrictRealtime`, `RestrictSUIDSGID`, `SystemCallArchitectures=native` and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6` ([server unit](../../packaging/systemd/fabrico11y-server.service), [contract](../PRODUCT-CONTRACT.md#linux-installation-contract)). Host `/proc`, `/sys` and cgroup reads stay visible for metrics. The eight newer directives have had a syntax check only; [installed-system acceptance](https://github.com/kmosoti/FabricO11y/issues/41) is pending.
+Both units drop all capabilities and set `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, kernel module, tunable, cgroup, clock and log protection, `LockPersonality`, `MemoryDenyWriteExecute`, `RestrictNamespaces`, `RestrictRealtime`, `RestrictSUIDSGID`, `SystemCallArchitectures=native` and `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6` ([server unit](../../packaging/systemd/fabrico11y-server.service), [contract](../PRODUCT-CONTRACT.md#linux-installation-contract)). Host `/proc`, `/sys` and cgroup reads stay visible for metrics. The frozen-candidate Debian upgrade failed at companion startup; the opening repair preserves these directives. Fresh [installed-system acceptance](https://github.com/kmosoti/FabricO11y/issues/41) on rebuilt exact packages is pending.
 
 ## Fail-closed state and supply chain
 
