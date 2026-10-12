@@ -13,6 +13,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'tools'))
 from resource_group import STORAGE, require_limits, require_storage
+sys.path.insert(0, str(ROOT / 'tools/packaging'))
+from stage_console import require_timeless_png
 
 
 def main():
@@ -53,9 +55,12 @@ def main():
             raise SystemExit(result.returncode)
         dist = out / 'dist'
         for size in (192, 512):
+            # -strip drops the date text and tIME chunks ImageMagick would
+            # otherwise stamp in, so separate builds give identical icons.
             subprocess.run(['magick', '-limit', 'memory', '64MiB', '-limit', 'map', '64MiB',
-                            str(dist / 'icon.svg'), '-resize', f'{size}x{size}',
+                            str(dist / 'icon.svg'), '-resize', f'{size}x{size}', '-strip',
                             str(dist / f'icon-{size}.png')], check=True)
+            require_timeless_png(f'icon-{size}.png', (dist / f'icon-{size}.png').read_bytes())
         files = sorted(p for p in dist.iterdir() if p.is_file())
         manifest = {p.name: {'sha256': hashlib.sha256(p.read_bytes()).hexdigest(),
                              'bytes': p.stat().st_size,
