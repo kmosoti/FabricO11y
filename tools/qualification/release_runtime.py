@@ -54,15 +54,17 @@ class WorkloadReader:
                 data=None if body is None else json.dumps(body).encode(), method=method,
                 headers={'authorization': 'Bearer ' + self.token,
                          'x-fabric-client-version': '1', 'content-type': 'application/json'})
+        status = None
         try:
             with urllib.request.urlopen(request, context=self.context, timeout=15) as response:
+                status = response.status
                 raw = response.read(8 * 1024**2 + 1)
                 if len(raw) > 8 * 1024**2:
                     raise RuntimeError('bounded console response exceeded 8 MiB')
                 value = json.loads(raw)
         except Exception as error:
             self.observations.append({'path': path, 'started_ns': began,
-                'finished_ns': time.monotonic_ns(), 'status': getattr(error, 'code', None),
+                'finished_ns': time.monotonic_ns(), 'status': getattr(error, 'code', status),
                 'error': repr(error)})
             raise
         self.observations.append({'path': path, 'started_ns': began,
