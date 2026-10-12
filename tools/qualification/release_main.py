@@ -175,18 +175,12 @@ def perform(f, args, seconds, warmup, summary):
         finally:
             finished.set()
 
-    control_commands = []
-    summary['control_commands'] = control_commands
-
     def controller():
         try:
             for i in range(args.tier):
                 puts[i] = time.time_ns()
-                command = {'node': f'sim{i:04d}', 'requested_unix_ns': puts[i]}
-                control_commands.append(command)
                 status, _ = f.bridge.request(f'/v1/console/nodes/sim{i:04d}/config', 'PUT',
                                              {'logs': [], 'metric_interval_s': 30})
-                command.update(response_unix_ns=time.time_ns(), status=status)
                 if status != 200:
                     raise RuntimeError('production configuration update failed')
                 # One operator credential remains subject to normal admission.
