@@ -51,7 +51,7 @@ def safe(name):
     return str(path)
 
 
-def cpio(raw):
+def cpio(raw, contents=False):
     if len(raw) > CAP:
         raise ValueError('RPM payload exceeds bounded inventory cap')
     result = {}
@@ -78,7 +78,7 @@ def cpio(raw):
         name = safe(name)
         if not stat.S_ISREG(mode) or name in result:
             raise ValueError('nonregular or duplicate RPM payload')
-        result[name] = identity(body)
+        result[name] = (body, stat.S_IMODE(mode)) if contents else identity(body)
     raise ValueError('RPM cpio trailer missing')
 
 
