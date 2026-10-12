@@ -58,6 +58,30 @@ def semantic_rejection(answer, status, message):
     return code == status and isinstance(body, dict) and body.get('error') == message
 
 
+def dispatch_timeout(deadline, storage, ceiling):
+    if storage.is_set():raise RuntimeError('owned fixture exceeds 512 MiB storage ceiling')
+    remaining=deadline-time.monotonic()
+    if remaining<=0:raise RuntimeError('browser fixture inner deadline expired')
+    return min(ceiling,remaining)
+
+
+def read_response(response, maximum, deadline, storage, ceiling):
+    reader=response.fp if isinstance(response,urllib.error.HTTPError) else response
+    chunks=bytearray()
+    while reader.fp is not None:
+        timeout=dispatch_timeout(deadline,storage,ceiling)
+        sock=getattr(getattr(reader.fp,'raw',None),'_sock',None)
+        if sock is None:raise RuntimeError('cannot enforce fixture receive timeout')
+        sock.settimeout(timeout)
+        part=reader.read1(65536 if maximum is None else min(65536,maximum+1-len(chunks)))
+        dispatch_timeout(deadline,storage,ceiling)
+        if not part:break
+        chunks.extend(part)
+        if maximum is not None and len(chunks)>maximum:raise RuntimeError('TLS response exceeds existing query response bound')
+    dispatch_timeout(deadline,storage,ceiling)
+    return bytes(chunks)
+
+
 def free_port():
     with socket.socket() as sock:
         sock.bind(('127.0.0.1', 0))
@@ -170,15 +194,17 @@ def main():
         checks.append(label)
 
     def call(method, path, body=None):
-        if storage_violation.is_set():raise RuntimeError("owned fixture exceeds 512 MiB storage ceiling")
+        dispatch_timeout(deadline,storage_violation,35)
         data = None if body is None else json.dumps(body).encode()
         request = urllib.request.Request(endpoint + path, data=data, method=method,
                                          headers={'Content-Type': 'application/json'})
         try:
-            with urllib.request.urlopen(request, timeout=35) as response:
-                return json.load(response).get('value')
+            with urllib.request.urlopen(request, timeout=dispatch_timeout(deadline,storage_violation,35)) as response:
+                value=json.loads(read_response(response,None,deadline,storage_violation,35)).get('value')
+                dispatch_timeout(deadline,storage_violation,35)
+                return value
         except urllib.error.HTTPError as error:
-            raise RuntimeError(error.read().decode()) from error
+            raise RuntimeError(read_response(error,None,deadline,storage_violation,35).decode()) from error
 
     def wd(path, body=None, method='POST'):
         return call(method, f'/session/{session}' + path, body)
@@ -204,9 +230,11 @@ def main():
     receipt['benign_explicit_action_interval_ms'] = 550
 
     def pace_api():
+        dispatch_timeout(deadline,storage_violation,35)
         if session and js('return !!window.fixturePace'):
             async_js('const done=arguments[arguments.length-1];window.fixturePace().then(()=>done(true))')
         cadence.pace()
+        dispatch_timeout(deadline,storage_violation,35)
 
     def capture_api_metadata():
         receipt['actual_api_headers']=js('return window.fixtureApiHeaders')
@@ -246,7 +274,9 @@ def main():
         return answer['status'],body
 
     def bearer_api(token,path,method='GET',body=None,*,cookie=None,csrf=None,role=None):
+        dispatch_timeout(deadline,storage_violation,15)
         pace_api()
+        dispatch_timeout(deadline,storage_violation,15)
         request=urllib.request.Request(origin+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={
             **({'Authorization':'Bearer '+token} if token else {}),**({'Cookie':cookie} if cookie else {}),
             **({'x-fabric-csrf':csrf} if csrf else {}),'Origin':origin,'x-fabric-client-version':'1','Content-Type':'application/json'})
@@ -256,17 +286,17 @@ def main():
         calls.append(entry)
         try:
             try:
-                with tls_opener.open(request,timeout=15) as response:
-                    code,text=response.status,response.read(8*1024*1024+1)
+                with tls_opener.open(request,timeout=dispatch_timeout(deadline,storage_violation,15)) as response:
+                    code,text=response.status,read_response(response,8*1024*1024,deadline,storage_violation,15)
             except urllib.error.HTTPError as error:
-                code,text=error.code,error.read(8*1024*1024+1)
-            if len(text)>8*1024*1024:raise RuntimeError('TLS response exceeds existing query response bound')
+                code,text=error.code,read_response(error,8*1024*1024,deadline,storage_violation,15)
             entry['status']=code
             try:response=json.loads(text) if text else None
             except json.JSONDecodeError:response=None
             field='status' if path in ('/v1/batches','/v1/config') else 'error'
             entry['refusal']=response.get(field) if code>=400 and isinstance(response,dict) else None
             result=code,response
+            dispatch_timeout(deadline,storage_violation,15)
         finally:
             entry['finished_ns']=time.monotonic_ns()
             cadence.last=cadence.clock()
