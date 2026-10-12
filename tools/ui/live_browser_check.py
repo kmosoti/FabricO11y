@@ -1,6 +1,7 @@
 """Finite virtual-passkey checks against the production TLS server and Spindle."""
 import argparse
 import base64
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -63,6 +64,30 @@ def dispatch_timeout(deadline, storage, ceiling):
     remaining=deadline-time.monotonic()
     if remaining<=0:raise RuntimeError('browser fixture inner deadline expired')
     return min(ceiling,remaining)
+
+
+@contextmanager
+def io_deadline(deadline, storage):
+    if threading.current_thread() is not threading.main_thread():raise RuntimeError('fixture I/O guard requires the main thread')
+    previous_mask=signal.pthread_sigmask(signal.SIG_BLOCK,{signal.SIGALRM})
+    previous_handler=signal.getsignal(signal.SIGALRM)
+    try:
+        if signal.SIGALRM in previous_mask or any(signal.getitimer(signal.ITIMER_REAL)) or signal.SIGALRM in signal.sigpending():
+            raise RuntimeError('fixture I/O guard conflicts with existing signal ownership')
+        def tick(*_):
+            signal.setitimer(signal.ITIMER_REAL,dispatch_timeout(deadline,storage,.1))
+        signal.signal(signal.SIGALRM,tick)
+        try:
+            tick()
+            signal.pthread_sigmask(signal.SIG_SETMASK,previous_mask)
+            yield
+        finally:
+            signal.pthread_sigmask(signal.SIG_BLOCK,{signal.SIGALRM})
+            signal.setitimer(signal.ITIMER_REAL,0)
+            if signal.SIGALRM in signal.sigpending():signal.sigwait({signal.SIGALRM})
+            signal.signal(signal.SIGALRM,previous_handler)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK,previous_mask)
 
 
 def read_response(response, maximum, deadline, storage, ceiling):
@@ -198,13 +223,14 @@ def main():
         data = None if body is None else json.dumps(body).encode()
         request = urllib.request.Request(endpoint + path, data=data, method=method,
                                          headers={'Content-Type': 'application/json'})
-        try:
-            with urllib.request.urlopen(request, timeout=dispatch_timeout(deadline,storage_violation,35)) as response:
-                value=json.loads(read_response(response,None,deadline,storage_violation,35)).get('value')
-                dispatch_timeout(deadline,storage_violation,35)
-                return value
-        except urllib.error.HTTPError as error:
-            raise RuntimeError(read_response(error,None,deadline,storage_violation,35).decode()) from error
+        with io_deadline(deadline,storage_violation):
+            try:
+                with urllib.request.urlopen(request, timeout=dispatch_timeout(deadline,storage_violation,35)) as response:
+                    value=json.loads(read_response(response,None,deadline,storage_violation,35)).get('value')
+                    dispatch_timeout(deadline,storage_violation,35)
+                    return value
+            except urllib.error.HTTPError as error:
+                raise RuntimeError(read_response(error,None,deadline,storage_violation,35).decode()) from error
 
     def wd(path, body=None, method='POST'):
         return call(method, f'/session/{session}' + path, body)
@@ -285,11 +311,12 @@ def main():
         if len(calls)>=1024:raise RuntimeError('explicit request ledger exceeds its bound')
         calls.append(entry)
         try:
-            try:
-                with tls_opener.open(request,timeout=dispatch_timeout(deadline,storage_violation,15)) as response:
-                    code,text=response.status,read_response(response,8*1024*1024,deadline,storage_violation,15)
-            except urllib.error.HTTPError as error:
-                code,text=error.code,read_response(error,8*1024*1024,deadline,storage_violation,15)
+            with io_deadline(deadline,storage_violation):
+                try:
+                    with tls_opener.open(request,timeout=dispatch_timeout(deadline,storage_violation,15)) as response:
+                        code,text=response.status,read_response(response,8*1024*1024,deadline,storage_violation,15)
+                except urllib.error.HTTPError as error:
+                    code,text=error.code,read_response(error,8*1024*1024,deadline,storage_violation,15)
             entry['status']=code
             try:response=json.loads(text) if text else None
             except json.JSONDecodeError:response=None
