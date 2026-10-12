@@ -8,12 +8,19 @@ the [release plan](milestones/release-readiness.md) defines the supported matrix
 
 Download the `.deb` or `.rpm` and `SHA256SUMS` from the
 [v0.1.0-alpha.1 release](https://github.com/kmosoti/FabricO11y/releases/tag/v0.1.0-alpha.1)
-(to build from source, see the [package instructions](../packaging/README.md)), then verify and install:
+(to build from source, see the [package instructions](../packaging/README.md)), then verify and install.
+On Debian 13:
 
 ```sh
 sha256sum -c --ignore-missing SHA256SUMS
-sudo apt install ./fabrico11y_*.deb   # Debian 13
-sudo dnf install ./fabrico11y-*.rpm   # Fedora 44
+sudo apt install ./fabrico11y_*.deb
+```
+
+On Fedora 44:
+
+```sh
+sha256sum -c --ignore-missing SHA256SUMS
+sudo dnf install ./fabrico11y-*.rpm
 ```
 
 Services remain disabled until configured. The finite acceptance
@@ -24,7 +31,7 @@ The package installs `fabric-node`, `fabric-server` and `fabricctl` in `/usr/bin
 
 ## Server
 
-1. Create `/etc/fabrico11y/server.conf` from the example. Provide a TLS certificate and key trusted by both browsers and Spindles. Configure the exact `access_origin`, hostname-only `access_rp_id`, and packaged `console_dir`. Normal serving needs no administrator token: `admin_token_file` is read only by the migration mode `serve-legacy`. Make the TLS key `0640 root:fabricolly`. Every token and secret file must be a single-link regular file, not a symlink, owned by the service user or root, with mode `0600` or, if root owns it, `0640`; anything else is refused at start ([security hardening](architecture/security-hardening.md#credential-files)).
+1. Create `/etc/fabrico11y/server.conf` from the example. Provide a TLS certificate and key trusted by both browsers and Spindles: create them now with the [certificate recipe](#network-and-certificate-setup) and open the firewall as described there, then return here. Configure the exact `access_origin`, hostname-only `access_rp_id`, and packaged `console_dir`. Normal serving needs no administrator token: `admin_token_file` is read only by the migration mode `serve-legacy`. Make the TLS key `0640 root:fabricolly`. Every token and secret file must be a single-link regular file, not a symlink, owned by the service user or root, with mode `0600` or, if root owns it, `0640`; anything else is refused at start ([security hardening](architecture/security-hardening.md#credential-files)).
 2. `sudo systemctl enable --now fabrico11y-server.service`.
 3. Follow [first-owner setup](access-operations.md#configure-and-enroll-the-first-owner) to read the protected local bootstrap secret and enroll a passkey at `https://YOUR_HOST:PORT/console/`. Add a second passkey and save the immutable owner ID for recovery.
 
