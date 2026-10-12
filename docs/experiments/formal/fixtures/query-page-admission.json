@@ -1,0 +1,28 @@
+{
+  "origin": {
+    "run_id": "service-opening-r3-query-segment-s1-01",
+    "artifact_frozen": "a5dbda7a4fd6465c94f6505b3214cbcbc2130c82",
+    "harness_revision": "8484493696a3e3e743889a83f14a60df54305aa9",
+    "seed": "0xA11FA001",
+    "observed_http_status": 429,
+    "completed_logical_queries": 42,
+    "completed_http_pages": 66,
+    "failed_query_index_zero_based": 42,
+    "failed_kind": "source_counter",
+    "failed_repetition": 12,
+    "failed_source": "query0036",
+    "response_body": "not captured by the original HTTP error path",
+    "independent_source_sha256": "6b5327176f9f7d16fc37f9a04242bf9b3196d25f072fb3c141ca8943ece942f5"
+  },
+  "independent_schedule": {
+    "peer_requests_per_second": 8,
+    "peer_burst": 8,
+    "page_counts": [1, 5, 1, 1, 1],
+    "repeats": 20,
+    "synthetic_page_duration_ns": 1000000,
+    "logical_query_pause_ns": 100000000,
+    "ui_poll_interval_seconds": 5,
+    "page_start_interval_ns": 250000000,
+    "limitation": "constructed finite representative schedule; does not reconstruct unavailable native per-page timestamps"
+  }
+}
