@@ -43,7 +43,7 @@ class PackageTests(unittest.TestCase):
                     dependency_notices.bundle_mpl_source(package, directory / 'future')
 
     def test_candidate_rejects_wrong_version_and_substituted_package(self):
-        for version in ('0.1.0~alpha.1', '0.1.0~alpha.3', '0.1.0'):
+        for version in ('0.1.0~alpha.0', '0.1.0~alpha.2', '0.1.0'):
             with self.assertRaises(ValueError):
                 validate_control('Package: fabrico11y\nVersion: ' + version + '\nArchitecture: amd64\n')
         with tempfile.TemporaryDirectory() as scratch:
@@ -134,10 +134,36 @@ class PackageTests(unittest.TestCase):
                 stage_predecessor(package, directory / 'stage')
             self.assertFalse((directory / 'stage').exists())
 
+    def test_interrupted_predecessor_reversion_exits_nonzero(self):
+        # Origin: review of the predecessor script. Its cleanup trap also caught
+        # TERM and then resumed, so a run signalled while packaging hashed the
+        # output and exited 0. Stubs stand in for the registered package.
+        with tempfile.TemporaryDirectory() as scratch:
+            directory = Path(scratch)
+            (directory / 'out').mkdir()
+            for name, body in (
+                ('sha256sum', 'echo "ac71995b3c8b88cbb6f7dd05d9854e347b7a783caadc1b602f6590d6460f4a2f  $1"'),
+                ('dpkg-deb', 'if [ "$1" = -R ]; then mkdir -p "$3/DEBIAN"; '
+                             'printf "Version: 0\\nArchitecture: amd64\\n" > "$3/DEBIAN/control"; '
+                             'else kill -TERM "$PPID"; : > "$5"; fi'),
+            ):
+                (directory / name).write_text('#!/bin/sh\n' + body + '\n')
+                (directory / name).chmod(0o755)
+            result = subprocess.run(['sh', str(ROOT / 'packaging/reversion-predecessor-deb.sh'),
+                                     str(directory / 'sha256sum'), str(directory / 'out')],
+                                    env=dict(os.environ, TMPDIR=scratch,
+                                             PATH=scratch + ':' + os.environ['PATH']),
+                                    capture_output=True, text=True)
+            self.assertEqual(result.returncode, 143, result.stdout + result.stderr)
+            self.assertEqual(list((directory / 'out').glob('*.sha256')), [])
+            self.assertEqual(list(directory.glob('predecessor-*')), [])
+
     def test_packagers_have_valid_shell_syntax(self):
         for script in (ROOT / 'packaging').rglob('*'):
             if script.is_file() and script.read_bytes().startswith(b'#!/bin/sh'):
                 subprocess.run(['sh', '-n', str(script)], check=True)
+                # A cleanup trap that also catches a signal resumes the script.
+                self.assertNotRegex(script.read_text(), r'trap .*EXIT.*(HUP|INT|TERM)', script)
         subprocess.run(['bash', '-n', str(ROOT / 'tools/ci/prepare-resource-host.sh')], check=True)
 
     def test_server_and_companion_bound_is_below_four_decimal_gb(self):
