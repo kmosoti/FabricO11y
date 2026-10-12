@@ -9,11 +9,11 @@ import unittest
 from unittest.mock import patch
 
 import dependency_notices
+import build_candidate_rpm
 
 from stage_console import stage
 from stage_predecessor import stage_predecessor
 from stage_candidate import stage_candidate, validate_control
-from build_candidate_rpm import validate_fixture_transform, validate_fixture_source
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -22,6 +22,12 @@ class PackageTests(unittest.TestCase):
     def test_same_code_fixture_source_and_literal_transform_controls(self):
         # Origin: owner walkthrough requires a real native version increase
         # without rewriting exact candidate payload, scripts or provenance.
+        self.assertTrue(callable(getattr(build_candidate_rpm, 'validate_fixture_source', None)),
+                        'missing fixture source validator')
+        self.assertTrue(callable(getattr(build_candidate_rpm, 'validate_fixture_transform', None)),
+                        'missing fixture transform validator')
+        validate_fixture_source = build_candidate_rpm.validate_fixture_source
+        validate_fixture_transform = build_candidate_rpm.validate_fixture_transform
         controls = json.loads((ROOT / 'docs/experiments/formal/fixtures/owner-walkthrough.json').read_text())
         source = {'original_head': controls['original_head'], 'source_date_epoch': controls['source_date_epoch']}
         validate_fixture_source(source, controls['original_head'], controls['source_date_epoch'])
