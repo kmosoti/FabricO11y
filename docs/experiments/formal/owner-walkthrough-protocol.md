@@ -24,19 +24,24 @@ pin. Record the documented source-build route to fresh #40 artifacts/checksums;
 final release publication is not a circular prerequisite.
 
 Declare OS and role before selecting the guide's OS-specific install block.
-Execute blocks in document order. Follow a linked “now … then return here”
-recipe, or an access-operations section, at its prose checkpoint; preserve that
-recipe's block order and record the return point. Conditional first-owner renewal
-runs only in its documented eligible state. Record browser, revoke, configuration
-and other prose actions explicitly. The runner may substitute only HOST/IP,
+Execute fenced `sh` blocks in document order. A link is a callpoint only when its
+sentence says “now … then return here”; execute that linked section's fences in
+order, apply the conditional rule below and record the return point. Every other
+link is a reference. A fence introduced by a sentence starting “If …” runs only
+when that condition is observed; record the condition and whether it ran. Inline
+code in prose is not executed. Perform and record prose-only browser enrollment,
+console revoke, `access.conf` creation and other configuration actions explicitly.
+The runner may substitute only HOST/IP,
 the declared lab network `192.0.2.0/24`, OWNER_PRINCIPAL_ID, the pasted node
 credential and package filenames. It cannot silently add, omit, reorder or repair
 commands. An action that cannot be placed consistently is a guide defect.
 
-Before admission resolve duplicate restore/recovery recipes in the final guide:
-following the access recovery link and then executing a second inline recover/start
-is not an inferred permission to rotate access twice. Any guide correction needs
-merged new pins and a fresh walkthrough. Product-code fixes require new frozen
+These rules replace the broader linked-section rule, following #59 C-034.
+PR #63 head `c5c5096` prospectively makes restore's offline-recovery link a
+reference and keeps its inline recover/start fence as the single executable
+recipe. Verify that ordering against the actual merged guide before admission;
+the prospective fix is not a final guide pin. Any guide correction needs merged
+new pins and a fresh walkthrough. Product-code fixes require new frozen
 artifacts and affected qualification, rather than relabeling old results.
 
 ## Same-code native upgrade fixture
