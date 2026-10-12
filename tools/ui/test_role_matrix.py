@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import re
 import socket
+import subprocess
 import threading
 import time
 from types import SimpleNamespace
@@ -209,6 +210,41 @@ class RoleMatrixTests(unittest.TestCase):
                     self.assertEqual(browser.signal.getsignal(browser.signal.SIGALRM), previous_handler)
                     self.assertEqual(browser.signal.getitimer(browser.signal.ITIMER_REAL), previous_timer)
                     self.assertLessEqual(elapsed, .35, 'continuous metadata progress evaded the absolute I/O bound')
+
+    def test_actual_browser_dispatch_gap_survives_delayed_pace_continuation(self):
+        # Origin: Miso's 5ms continuation counterexample; execute actual injected JS.
+        source=ast.parse(Path(browser.__file__).read_text())
+        scripts=[n.args[0].value for n in ast.walk(source) if isinstance(n, ast.Call)
+                 and isinstance(n.func, ast.Name) and n.func.id == 'js' and n.args
+                 and isinstance(n.args[0], ast.Constant) and isinstance(n.args[0].value, str)
+                 and 'window.fixturePaceQueue=Promise.resolve()' in n.args[0].value]
+        self.assertEqual(len(scripts), 1, 'one actual fetch scheduler must supply the control')
+        runner=browser.DATA/'tools/bun-1.4.0/bun'
+        if not runner.is_file():runner=Path(browser.shutil.which('bun') or str(runner))
+        self.assertTrue(runner.is_file(), 'Bun is required for the actual JavaScript control')
+        script='const setup='+json.dumps(scripts[0])+r''';
+          let now=0,delayed=false;const actual=[];
+          const window={fetch:async(url)=>{actual.push({path:url,started_ms:now});return {status:200,headers:{get:()=>null}}}};
+          new Function('window','performance','setTimeout','location','return function(){'+setup+'}')(
+            window,{now:()=>now},(resolve,delay)=>{now+=delay;resolve()},{href:'https://fixture.invalid/console/'})(550);
+          const pace=window.fixturePace;
+          window.fixturePace=async(...args)=>{const value=await pace(...args);if(!delayed){delayed=true;now+=5}return value};
+          await window.fetch('/v1/console/auth/login/start');await window.fetch('/v1/console/auth/login/finish');
+          window.fixtureUnpacedBurst=true;
+          await Promise.all(Array.from({length:16},()=>window.fetch('/v1/console/auth/login/start')));
+          console.log(JSON.stringify({actual,recorded:window.fixtureApiHeaders,truncated:window.fixtureApiHeadersTruncated}));
+        '''
+        result=subprocess.run([str(runner),'--eval',script],capture_output=True,text=True,timeout=5)
+        self.assertEqual(result.returncode,0,result.stderr)
+        witness=json.loads(result.stdout);actual=witness['actual'];recorded=witness['recorded']
+        self.assertEqual(len(actual),18,'two paced requests and the unchanged16-request unpaced control')
+        self.assertEqual([r['started_ms'] for r in actual],[r['started_ms'] for r in recorded], 'receipt stamps actual fetch dispatch')
+        self.assertEqual([r['status'] for r in recorded],[200]*18)
+        self.assertEqual([r['paced'] for r in recorded],[True,True]+[False]*16)
+        self.assertEqual(len({r['started_ms'] for r in actual[2:]}),1,'registered burst remains unpaced')
+        self.assertFalse(witness['truncated'])
+        self.assertGreaterEqual(actual[1]['started_ms']-actual[0]['started_ms'],550,
+                                '5ms pace-continuation delay shrank actual dispatch gap: '+repr(actual[:2]))
 
 
 if __name__ == '__main__':

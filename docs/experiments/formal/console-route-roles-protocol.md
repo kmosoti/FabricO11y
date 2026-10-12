@@ -138,3 +138,29 @@ another timer. No host clock,240s/1200s inner deadline,1800s outer deadline,quot
 or admission threshold changes. Root runs the same contained unittest command
 above for named red then unchanged green; all three actual-I/O cases are **not
 run** at registration and establish harness bounds, not package acceptance.
+
+## Actual browser dispatch timing control
+
+Miso's independent counterexample distinguishes a resolved pacing reservation
+from the later actual fetch continuation: if the first continuation takes5ms and
+the second does not, reservations550ms apart can yield starts only545ms apart.
+Keep the shared550ms threshold. Before changing the scheduler, run its exact
+injected JavaScript through the existing Bun runtime with synthetic fetch,
+monotonic clock and timers; no browser, network or product process is invoked.
+Delay only the first continuation after pacing resolution by a literal5ms.
+Record actual fake fetch calls independently of the scheduler's receipt, require
+their timestamps to agree, and require the two paced starts at least550ms apart.
+The existing scheduler is predicted to offer starts5ms/550ms; root must record
+the actual named red rather than treat this deduction as executed evidence.
+
+The control also offers the already registered sixteen-request unpaced burst,
+requiring sixteen same-clock starts marked unpaced, with no lost dispatches,
+retries or altered response statuses. Fake200 responses test scheduler behavior,
+not server admission. The prospective fix must record and advance the shared
+clock at actual dispatch within the serialized pacing slot, preserving automatic
+ceremony cadence, explicit reservation users, exception visibility and the
+separate overload diagnostic. Root runs the same contained unittest command
+above, then repeats the unchanged literal control after a separate implementation
+commit. The Bun child has a5s synthetic-control limit inside default containment;
+all browser240s/1200s limits and quotas remain unchanged. This control is **not
+run** at registration and does not credit packaged browser acceptance.
