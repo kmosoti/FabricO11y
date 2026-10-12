@@ -7,11 +7,13 @@ from pathlib import Path
 import tempfile
 import threading
 from types import SimpleNamespace
+import urllib.error
 import unittest
-from unittest.mock import ANY, Mock, call, patch
+from unittest.mock import ANY, MagicMock, Mock, call, patch
 
 from release_stress import first_creation, missing_management_slots, perform, verify_offers
 from release_main_source import simulator_batch
+from release_runtime import WorkloadReader
 from release_timing import NS
 from test_console_admission import refused_requests
 from workload import SEEDS
@@ -103,6 +105,56 @@ class StressControls(unittest.TestCase):
                       for i, stamp in [(0, 11*NS), (1, 10*NS)]]
             path.write_text(''.join(json.dumps(e)+'\n' for e in events)+'{"partial":')
             self.assertEqual(first_creation(path, threading.Event())['t'], 10*NS)
+
+    def test_page_two_refusal_retains_first_body_and_failed_request_evidence(self):
+        """Origin: #62 P2 / C-023; r2 requires every page, including aborted rounds."""
+        first = {'complete': True, 'next_page': 'fixture-page-two',
+                 'rows': [{'message': 'retained first-page body'}]}
+        raw = json.dumps(first).encode()
+        response = MagicMock(status=200)
+        response.__enter__.return_value = response
+        response.read.return_value = raw
+        refusal = urllib.error.HTTPError('https://fixture.invalid/v1/console/query',
+                                         429, 'synthetic page-two refusal', {}, None)
+        reader = WorkloadReader('https://fixture.invalid', None, 'synthetic-reader-secret')
+        stop = Mock()
+        stop.is_set.side_effect = [False, True]
+        stop.wait.return_value = False
+        def thread(target, daemon):
+            result = Mock()
+            if target.__name__ == 'manager':
+                result.start.side_effect = target
+            result.is_alive.return_value = False
+            return result
+        summary = {}
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as root:
+            fixture = SimpleNamespace(work=Path(root), helpers=Path(root), origin=reader.origin,
+                enroll=lambda name: {'enrollment_id': name, 'token': 'synthetic-fixture-only'},
+                reader=lambda _: reader, spawn=Mock(return_value=Mock()),
+                bridge=SimpleNamespace(request=Mock(return_value=(200, {})),
+                    login=Mock(return_value={'fresh_until_unix_s': 400}), poll_ui=Mock()),
+                resource_sample=Mock(side_effect=RuntimeError('stop before recovery inspection')))
+            with patch('release_stress.time.sleep'), \
+                    patch('release_stress.threading.Event', return_value=stop), \
+                    patch('release_stress.threading.Thread', side_effect=thread), \
+                    patch('release_runtime.urllib.request.urlopen', side_effect=[response, refusal]) as opened:
+                with self.assertRaisesRegex(RuntimeError, 'stop before recovery inspection'):
+                    perform(fixture, SimpleNamespace(smoke=True, seed=SEEDS[0]), summary)
+        self.assertEqual(opened.call_count, 2)
+        self.assertEqual(json.loads(opened.call_args_list[1].args[0].data)['page'], 'fixture-page-two')
+        self.assertEqual(len(summary['management']), 1)
+        row = summary['management'][0]
+        observations = row['query_observations']
+        self.assertEqual((row.get('query_pages'), len(observations), observations[-1].get('status')),
+                         ([first], 2, 429))
+        self.assertFalse(row['complete'])
+        self.assertIn('HTTPError', row['exception'])
+        self.assertTrue(any('management:' in failure and '429' in failure for failure in summary['failures']))
+        self.assertEqual(observations[0]['bytes'], len(raw))
+        self.assertEqual(observations[-1]['path'], '/v1/console/query')
+        self.assertIn('HTTPError', observations[-1]['error'])
+        self.assertLessEqual(observations[-1]['started_ns'], observations[-1]['finished_ns'])
+        self.assertNotIn(reader.token, json.dumps(summary))
 
 
 if __name__ == '__main__':
