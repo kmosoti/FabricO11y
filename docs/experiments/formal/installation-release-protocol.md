@@ -27,8 +27,11 @@ requires fresh full installation/lifecycle trials.
 Freeze source (including Rust crates, UI inputs, vendored dependencies, package
 scripts, helpers, license/notice), Rust 1.99.0, Cargo.lock, a successful exact
 console build, package SHA-256, and the candidate/predecessor versions before
-execution. Candidate package version is `0.1.0~alpha.2` on Debian and
-`0.1.0-0.alpha.2` on RPM. This metadata does not authorize a release tag.
+execution. Candidate package version is `0.1.0~alpha.1` on Debian and
+`0.1.0-0.alpha.1` on RPM. L1 predecessors are the registered historical Debian
+package re-versioned to `0.1.0~alpha.0` (payload and maintainer scripts unchanged,
+`packaging/reversion-predecessor-deb.sh`) and the constructed RPM fixture
+`0.1.0-0.alpha.0`. This metadata does not authorize a release tag.
 `build-isolated.py --console-build BUILD --family debian|fedora` builds in the
 bounded rootless Debian 12 sysroot; RPM construction uses `rpmbuild` there too,
 keeping the same registered glibc floor. Copy verified UI assets into owned
@@ -37,11 +40,11 @@ A source or asset mismatch blocks construction.
 
 The candidate RPM may instead use `build-rpm.sh OUT CANDIDATE_DEB
 --candidate-deb BUILD_RECEIPT [--mutate=NAME]`. Require a completed successful
-Debian build/cleanup receipt, its exact package SHA-256, alpha2 Debian metadata,
+Debian build/cleanup receipt, its exact package SHA-256, exact candidate Debian metadata,
 and its matching frozen-source manifest/bundle hashes. Preserve every regular
 Debian data member unchanged, including native binaries, UI assets and notices;
 record their hashes plus source and input package identity in RPM documentation.
-Use the frozen alpha2 account-check script for RPM installation. RPM metadata,
+Use the frozen candidate account-check script for RPM installation. RPM metadata,
 scriptlets, dependencies and SELinux context restoration remain Fedora-specific.
 Reject historical/wrong-version/substituted payloads before staging. This is
 repackaging the same Debian12-sysroot binaries, not an independent Fedora compiler
@@ -145,7 +148,7 @@ collision preinstall script. The fixture's `MIGRATION-FIXTURE.json` records
 those payload hashes; native RPM lifecycle scripts adapt package operations.
 It contains no historical console and is a **constructed predecessor fixture**,
 not evidence that an alpha1 Fedora package shipped or was accepted. L1 upgrades
-its historical implementation/state into the exact current alpha2 RPM.
+its historical implementation/state into the exact current candidate RPM.
 
 Every receipt records the exact package/helper/image/source identities, command,
 exit, chosen A12 fixture, measured resources, real lifecycle stages and cleanup.
