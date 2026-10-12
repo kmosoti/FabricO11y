@@ -1,0 +1,21 @@
+{
+  "origin": {
+    "run_id": "service-opening-r3-query-segment-s1-smoke-02",
+    "artifact_frozen": "a5dbda7a4fd6465c94f6505b3214cbcbc2130c82",
+    "harness_revision": "2ba989216076b57e9987e21eb14144024b45ca62",
+    "seed": "0xA11FA001",
+    "failed_kinds_each_phase": ["fleet_counter", "rare_text"],
+    "failed_rules": ["RETAINED-WINDOW", "FRESHNESS"],
+    "independent_companion_sequences": [1, 2],
+    "independent_companion_gaps": [0, 0],
+    "interpretation": "reader sees all telemetry; old fixture-only corpus omitted reserved companion"
+  },
+  "snapshot_control": {
+    "first_page_attempt_ns": 100,
+    "first_page_completed_ns": 200,
+    "source_accepted_ns": [10, 150, 300],
+    "source_ack_ns": [50, 190, 400],
+    "admitted_prefixes": [1, 2],
+    "reserved_label": "fabric-server-self"
+  }
+}
