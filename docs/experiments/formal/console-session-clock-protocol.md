@@ -209,8 +209,9 @@ The [actual registration result](https://github.com/kmosoti/FabricO11y/wiki/Expe
 at `b1e7e83` records four missing-checker assertions and five actual-finalizer
 counterexamples; independent cleanup completed. The AB/C oracle is now
 implemented separately using the unchanged session-semantic validator and
-observed rows. Corrected checker controls are **not run**. Finalizer ownership
-needs a separate amendment; native timing and browser acceptance remain pending.
+observed rows. Its [source checks](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-session-source-results-01)
+are recorded separately. Finalizer ownership needs the prospective amendment
+below; native timing and browser acceptance remain pending.
 
 The new independent interface is
 `check_session_fixtures(rows, sessions, fixtures) -> None`; rejection raises a
@@ -334,3 +335,135 @@ This source-check command does not authorize real browser acceptance. Actual
 package/helper/process/maps, state/timing and owned-group receipt bindings need
 their own frozen native preflight; passing fabricated metadata never supplies
 that evidence.
+
+## Delegated browser launch ownership amendment
+
+Prospective scope is [C-084](https://github.com/kmosoti/FabricO11y/issues/59#issuecomment-6138580814),
+acknowledged in [X-140](https://github.com/kmosoti/FabricO11y/issues/59#issuecomment-6138607824).
+This supersedes the proposed PIDFD process-group signaling mechanism. It changes
+cleanup authority to exclusively created delegated cgroup subtrees, retaining
+the five original failed-stop outcomes, empty positive, exact child reaping and
+all prior session/clock/status controls. Registration is **not run**. Production
+finalizer, native clock helper and packaged adapter remain unchanged here.
+
+Reuse `tools/bench/labs/completion/cgroups.py` and `enter_group.py`, with the
+outer launcher's `--delegate`. Before delegation, hold the fresh owned service
+directory descriptor and verify its aggregate 4GB/3.5GB high, CPU200%, tasks512
+and no-swap limits. `delegate()` moves the controller into `supervisor`; that
+directory is not the owned service ancestor and its direct limits do not
+replace the retained parent aggregate cap. Hold the parent identity throughout
+every launch and cleanup. Exclusively create each subgroup beneath that parent,
+set/read its explicit limits no larger than the parent, and hold its directory
+descriptor before launch. `enter_group.py` verifies placement before executing
+the target; descendants inherit it across `setsid`. Refuse missing delegation,
+subgroup, kill capability or actual placement. No numeric PID/PGID signal
+fallback is admitted.
+
+Two narrow functions constitute the prospective source interface:
+
+| Interface | Owned inputs and required behavior |
+| --- | --- |
+| `bind_browser_group(parent, group, proc)` | Validate held parent/subgroup identities, exclusive creation provenance, exact `Popen` object, original PID/start ticks, held matching pidfd and actual placement; return defensive value copies as `{'parent': parent_record, 'group': group_record}` without signaling |
+| `stop_browser_groups(parent, bindings)` | Revalidate the retained registry and directory identities before signaling; attempt every owned group despite another failure; retain separate kernel-empty and child-reaped observations; aggregate failure as `RuntimeError('browser-group-stop')` |
+
+The parent record is `{path, fd, dev, ino, deadline_monotonic_ns}`. The group
+record is `{path, fd, dev, ino, exclusive, process, pid, start_ticks, pidfd}`.
+Paths are canonical owned directories; `fd` is the held no-follow directory
+descriptor and `dev/ino` are its original identity. The group records the exact
+launch `process`, positive original `pid/start_ticks`, and separately held
+matching `pidfd`. The launcher owns these descriptors through stop/archive;
+the independent test guardian holds different pidfds. The returned records
+must not alias mutable input dictionaries. The returned group additionally
+retains `members`, independently witnessed `{pid, start_ticks, pidfd}` records
+from the live admitted subtree; the source fixture requires its actual child
+to be bound before it becomes a zombie. The `exclusive=True` observation
+records an actual successful no-reuse `mkdir` in the owned launch path. Metadata
+alone does not prove creation provenance or pre-exec placement: native source
+ordering and actual kernel observations remain prerequisites. These functions
+do not accept arbitrary user-selected cgroups as cleanup authority.
+
+Binding refusals are exact `RuntimeError` diagnostics: `browser-group-delegation`,
+`-identity`, `-capability`, `-placement`, `-ownership`, `-parent` and `-deadline`,
+each with the full `browser-group-` prefix. A refusal occurs before any signal
+or kill-file write. Replaced parent/subgroup paths, mismatching held descriptors,
+forged `Popen`/PID/start/pidfd and stale registry records cannot authorize stop.
+An unbound group stays untouched while the other registered groups still receive
+their independent stop attempts.
+
+Use only PIDFD-bound TERM for currently witnessed members of the owned subtree,
+with the unchanged 15-second grace. Then the retained subgroup's `cgroup.kill`
+receives `1` if live members remain, followed by at most five seconds to observe
+`cgroup.events populated 0`. The [kernel contract](https://docs.kernel.org/admin-guide/cgroup-v2.html)
+includes descendant subgroups and handles concurrent forks/migrations. It also
+excludes zombies from `cgroup.procs`; `populated 0` alone is not child reaping.
+Keep the owned test/runtime subreaper setting through all launches and restore
+its previous value after cleanup. Reap exact adopted identities (for example,
+[PIDFD-bound `waitid`](https://man7.org/linux/man-pages/man2/waitpid.2.html)),
+and separately confirm their `/proc` identities are absent. Record both facts
+before removing any private scratch. Stop the sampler with the unchanged
+two-second join; unconfirmed sampler/group/reaping retains scratch and cannot
+publish a successful cleanup claim. Archive bounded diagnostics before a close
+failure. All stop attempts continue after another group's refusal.
+
+A binder-time snapshot does not establish ownership of later runtime forks or
+guarantee their zombie reaping. The source fixture has one independently known
+child already live at binding; it cannot establish native completeness. Before
+production/native admission, register a truthful retained descendant collection
+and exact reaping strategy that covers later forks and `setsid`, without
+arbitrary foreign PIDs or broad `waitpid(-1)`. A modeled zero population never
+substitutes for that missing ownership evidence.
+
+The single `deadline_monotonic_ns` is run start plus 240,000,000,000ns. Both
+serial states, delegation/setup, dispatch and stop share it; no reset at C.
+Local 15/5/2 bounds never extend that deadline. Any overrun is a preserved
+failure; bounded identity-safe failure cleanup still occurs under outer1800.
+Original 550ms global pacing and every frame/offset/ledger bound remain fixed.
+
+The existing `BrowserFixtureCleanupTests` retain all six methods/outcomes.
+Their failed-stop injection now covers the old `killpg`, owned PIDFD signals
+and the modeled subgroup kill write, with the same requirement that one real
+group remains living while all other groups are attempted. The old timeout
+continues to shorten only real `Popen.wait` to 0.2s and require the requested
+production15s path. `DelegatedBrowserOwnershipTests` adds seven methods:
+
+- one explicitly named binder/stopper availability assertion;
+- seven literal delegation/group/kill/placement/creation/parent/deadline defects;
+- seven original process/descriptor/directory identity defects;
+- an actual `setsid` TERM-resistant child after its leader exits;
+- an actual adopted zombie when modeled population is zero;
+- bounded stuck population with scratch retention and exact child reaping;
+- four stale-registry defects, including replaced parent and subgroup paths.
+
+Until both functions and existing cgroup plumbing exist, the two defect tables,
+stuck-population and stale-registry methods are explicit dependent skips. They
+do not report rejected input when their implementation is absent. The two new
+real-process methods still execute the actual old finally. Prospective unchanged
+production counts are 13 methods: one empty positive, five old and two new
+cleanup failures, one named availability failure, and four dependent skips.
+These are predictions, not recorded outcomes. After a separate admitted repair,
+all13 must execute with no skips/failures.
+
+The source fixture exclusively creates ordinary scratch directories and held
+directory FDs, models cgroup controller/cap/event/procs/placement reads, and
+intercepts only exact owned kill-file writes (path or FD) into signals through
+its own retained pidfds. Its process/zombie/reaping observations are real;
+its cgroup placement/population/subtree-kill observations are source mocks.
+This cannot demonstrate kernel delegation, real pre-exec placement, concurrent
+subtree kill or actual aggregate enforcement. A later admitted delegated
+kernel cell must independently establish those facts with the exact source,
+parent limits, owned subgroup identities and raw stop/reap observations.
+Original retained failure directories are not edited or removed. New failures
+retain generated scripts/atomic markers/logs and the bounded independent cleanup
+evidence after all owned processes are stopped/reaped; successful fixtures alone
+remove confirmed-clean scratch.
+
+Root's prospective source-only command (fresh census/full1GiB reservation,
+default16/20GiB/no-swap/outer1800, exact frozen driver/source preflight):
+
+```sh
+python3 -B tools/resource_group.py -- env PYTHONPATH=tools/ui python3 -B -m unittest -v test_role_matrix.BrowserFixtureCleanupTests test_role_matrix.DelegatedBrowserOwnershipTests
+```
+
+This cell does not use `--delegate`: all its cgroup interfaces are source mocks,
+while its real synthetic descendants remain under the enforced outer service.
+The future actual kernel/browser cell requires `--delegate` and separate scope.

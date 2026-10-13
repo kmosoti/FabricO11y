@@ -1,7 +1,7 @@
 """ADR-derived route coverage; origin: issue45/C-027 and the missing legacy rows."""
 import ast
 import copy
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 import ctypes
 import hashlib
 import json
@@ -266,7 +266,7 @@ def owned_browser_identity(pid):
 
 
 @contextmanager
-def browser_cleanup_fixture(modes, blocked_sampler=False):
+def browser_cleanup_fixture(modes, blocked_sampler=False, cgroup_fault=None):
     # Every process is real but synthetic, with a finite 45-second lifespan.
     sys.path.insert(0, str(ROOT / 'tools'))
     from resource_group import require_limits
@@ -274,9 +274,10 @@ def browser_cleanup_fixture(modes, blocked_sampler=False):
     libc, previous = ctypes.CDLL(None, use_errno=True), ctypes.c_int()
     if libc.prctl(37, ctypes.byref(previous), 0, 0, 0) or libc.prctl(36, 1, 0, 0, 0):
         raise RuntimeError('browser process controls require Linux subreaper')
-    directory = None
-    groups, identities, process_logs = [], [], []
+    directory = parent_path = None
+    groups, identities, process_logs, group_descriptors, registry_pidfds = [], [], [], [], []
     sampler = None
+    mocks = None
     body_failure = None
     restore_attempted = False
     stop_samples, release_sampler = threading.Event(), threading.Event()
@@ -285,6 +286,24 @@ def browser_cleanup_fixture(modes, blocked_sampler=False):
         work, out = directory / 'work', directory / 'out'
         work.mkdir()
         out.mkdir()
+        parent_path = directory / 'fabric-work-browser-control.service'
+        parent_path.mkdir()
+        (parent_path / 'supervisor').mkdir()
+        for name, value in {'cgroup.controllers': 'memory cpu pids io',
+                            'cgroup.subtree_control': 'memory cpu pids io',
+                            'memory.max': '4000000000', 'memory.high': '3500000000',
+                            'memory.swap.max': '0', 'cpu.max': '200000 100000',
+                            'pids.max': '512'}.items():
+            (parent_path / name).write_text(value)
+
+        def held_directory(path):
+            descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            observed = os.fstat(descriptor)
+            group_descriptors.append((descriptor, observed.st_dev, observed.st_ino))
+            return {'path': path, 'fd': descriptor, 'dev': observed.st_dev, 'ino': observed.st_ino}
+
+        parent = held_directory(parent_path)
+        parent['deadline_monotonic_ns'] = time.monotonic_ns() + 240_000_000_000
         script = directory / 'owned-process.py'
         script.write_text('''import os, select, signal, sys, time
 from pathlib import Path
@@ -303,6 +322,7 @@ if child == 0:
     if not select.select([gate_read], [], [], 5)[0] or os.read(gate_read, 1) != b'1': os._exit(1)
     os.close(gate_read)
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    if mode == 'setsid': os.setsid()
     held = (work / ('held-' + directory.name)).open('xb')
     held.write(b'literal browser private fixture'); held.flush()
     atomic('ready', 'ready')
@@ -322,19 +342,105 @@ deadline = time.monotonic() + 5
 while not (directory / 'ready').exists():
     if time.monotonic() >= deadline: raise RuntimeError('child readiness deadline')
     time.sleep(.01)
-if mode != 'exited': time.sleep(max(0, expires - time.monotonic()))
+while not (directory / 'admitted').exists():
+    if time.monotonic() >= deadline: raise RuntimeError('controller admission deadline')
+    time.sleep(.01)
+if mode not in ('exited', 'setsid'): time.sleep(max(0, expires - time.monotonic()))
 ''')
+        original_read, original_write, original_fd_write = Path.read_text, Path.write_text, os.write
+        kill_attempts = []
+        fault = {'value': cgroup_fault}
+
+        def members(item):
+            living = []
+            for pid, start in ((item['process'].pid, item['start']),
+                               (item.get('child'), item.get('child_start'))):
+                if pid is None:
+                    continue
+                try:
+                    fields = original_read(Path('/proc') / str(pid) / 'stat').rsplit(')', 1)[1].split()
+                except FileNotFoundError:
+                    continue
+                if int(fields[19]) != start:
+                    raise AssertionError('mock cgroup member identity changed')
+                if fields[0] not in ('Z', 'X'):
+                    living.append(pid)
+            return living
+
+        def cgroup_read(path, *args, **kwargs):
+            for item in groups:
+                group_path = item['group']['path']
+                if path == group_path / 'cgroup.procs':
+                    return ''.join(str(pid) + '\n' for pid in members(item))
+                if path == group_path / 'cgroup.events':
+                    populated = bool(members(item)) or fault['value'] == 'stuck-population'
+                    return 'populated ' + str(int(populated)) + '\nfrozen 0\n'
+                if any(path == Path('/proc') / str(pid) / 'cgroup'
+                       for pid in (item['process'].pid, item.get('child')) if pid is not None):
+                    placement = parent_path / 'supervisor' if fault['value'] == 'outside-placement' else group_path
+                    return '0::/' + str(placement.relative_to(directory)) + '\n'
+            return original_read(path, *args, **kwargs)
+
+        def cgroup_kill(item, value):
+            if value not in ('1', b'1'):
+                raise AssertionError('mock kill accepts only the registered kill value')
+            kill_attempts.append(item['process'].pid)
+            if fault['value'] == 'first-stop-refused' and item is groups[-1]:
+                raise PermissionError('literal owned group stop failure')
+            living = members(item)
+            for pid, start, descriptor in identities:
+                if pid in living:
+                    try:
+                        signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+            return 1
+
+        def cgroup_write(path, value, *args, **kwargs):
+            for item in groups:
+                if path == item['group']['path'] / 'cgroup.kill':
+                    return cgroup_kill(item, value)
+            return original_write(path, value, *args, **kwargs)
+
+        def cgroup_fd_write(descriptor, value):
+            observed = os.fstat(descriptor)
+            for item in groups:
+                if (observed.st_dev, observed.st_ino) == item['kill_identity']:
+                    return cgroup_kill(item, value)
+            return original_fd_write(descriptor, value)
+
+        mocks = ExitStack()
+        mocks.enter_context(patch.object(Path, 'read_text', cgroup_read))
+        mocks.enter_context(patch.object(Path, 'write_text', cgroup_write))
+        mocks.enter_context(patch.object(os, 'write', cgroup_fd_write))
+        if hasattr(browser, 'cgroups'):
+            mocks.enter_context(patch.object(browser.cgroups, 'ROOT', directory))
+            mocks.enter_context(patch.object(browser.cgroups, 'current', return_value=parent_path / 'supervisor'))
         for index, mode in enumerate(modes):
             group_dir = directory / ('group-' + str(index))
             group_dir.mkdir()
+            group_path = parent_path / ('group-' + str(index))
+            group_path.mkdir()
+            for name in ('cgroup.procs', 'cgroup.events', 'cgroup.kill'):
+                (group_path / name).write_text('')
+            for name in ('memory.max', 'memory.high', 'memory.swap.max', 'cpu.max', 'pids.max'):
+                (group_path / name).write_text((parent_path / name).read_text())
+            kill_identity = (group_path / 'cgroup.kill').stat()
+            group = held_directory(group_path)
+            group['exclusive'] = True
             log = (group_dir / 'process.log').open('xb')
             process_logs.append(log)
             process = subprocess.Popen([sys.executable, '-B', str(script), str(group_dir), str(work), mode],
                                        start_new_session=True, stdout=log, stderr=log)
-            groups.append({'process': process, 'directory': group_dir})
+            groups.append({'process': process, 'directory': group_dir, 'group': group,
+                           'kill_identity': (kill_identity.st_dev, kill_identity.st_ino)})
             start, pgid = owned_browser_identity(process.pid)
             descriptor = os.pidfd_open(process.pid)
             identities.append((process.pid, start, descriptor))
+            groups[-1]['start'] = start
+            registry_pidfd = os.dup(descriptor)
+            registry_pidfds.append((registry_pidfd, process.pid))
+            group.update(process=process, pid=process.pid, start_ticks=start, pidfd=registry_pidfd)
             if owned_browser_identity(process.pid) != (start, process.pid) or pgid != process.pid:
                 raise AssertionError('owned leader identity changed')
             deadline = time.monotonic() + 5
@@ -347,27 +453,43 @@ if mode != 'exited': time.sleep(max(0, expires - time.monotonic()))
             if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1 or info.st_size > 128:
                 raise AssertionError('invalid child identity marker')
             child, child_start = map(int, marker.read_text().split())
-            if child <= 1 or child_start <= 0 or owned_browser_identity(child) != (child_start, process.pid):
+            expected_pgid = child if mode == 'setsid' else process.pid
+            if child <= 1 or child_start <= 0 or owned_browser_identity(child) != (child_start, expected_pgid):
                 raise AssertionError('unbound owned child identity')
             child_descriptor = os.pidfd_open(child)
             identities.append((child, child_start, child_descriptor))
-            if owned_browser_identity(child) != (child_start, process.pid):
+            if owned_browser_identity(child) != (child_start, expected_pgid):
                 raise AssertionError('child identity changed during pidfd binding')
-            groups[-1].update(child=child, child_start=child_start)
-            if mode == 'exited':
+            groups[-1].update(child=child, child_start=child_start, child_pidfd=child_descriptor)
+            binding = {'parent': parent, 'group': group}
+            if callable(getattr(browser, 'bind_browser_group', None)):
+                binding = browser.bind_browser_group(parent, group, process)
+                for member in binding['group'].get('members', []):
+                    descriptor = member['pidfd']
+                    if descriptor in {identity[2] for identity in identities}:
+                        raise AssertionError('registry cannot consume independent guardian pidfd')
+                    if descriptor not in {entry[0] for entry in registry_pidfds}:
+                        registry_pidfds.append((descriptor, member['pid']))
+            groups[-1]['binding'] = binding
+            (group_dir / 'admitted').write_text('owned by controller')
+            if mode in ('exited', 'setsid'):
                 process.wait(timeout=5)
         sampler = threading.Thread(target=lambda: release_sampler.wait(4) if blocked_sampler else stop_samples.wait(4))
         sampler.start()
         namespace = dict(vars(browser))
         namespace.update(session=None, processes=[('group-' + str(i), item['process']) for i, item in enumerate(groups)],
                          receipt={'exit': 0}, stop_samples=stop_samples, sampler=sampler,
-                         out=out, samples=[], logs=[], work=work)
+                         out=out, samples=[], logs=[], work=work,
+                         group_parent=parent, owned_groups=[item['binding'] for item in groups],
+                         cgroup_kill_attempts=kill_attempts, cgroup_fault=fault)
         yield namespace, groups
     except BaseException as error:
         body_failure = {'type': type(error).__name__, 'message': str(error)[:1024]}
         raise
     finally:
         try:
+            if mocks is not None:
+                mocks.close()
             errors = []
             stop_evidence, group_evidence, file_evidence = [], [], []
             cleanup_began_monotonic_ns = time.monotonic_ns()
@@ -451,15 +573,41 @@ if mode != 'exited': time.sleep(max(0, expires - time.monotonic()))
                     log.close()
                 except OSError as error:
                     errors.append(str(error))
+            for descriptor, device, inode in group_descriptors:
+                try:
+                    observed = os.fstat(descriptor)
+                    if (observed.st_dev, observed.st_ino) != (device, inode):
+                        raise AssertionError('refuse closing reused control directory descriptor')
+                    os.close(descriptor)
+                except OSError as error:
+                    if error.errno != 9:
+                        errors.append(str(error))
+                except AssertionError as error:
+                    errors.append(str(error))
+            for descriptor, pid in registry_pidfds:
+                try:
+                    fields = (Path('/proc/self/fdinfo') / str(descriptor)).read_text().splitlines()
+                    bound_pid = int(next(line.split(':', 1)[1] for line in fields if line.startswith('Pid:')))
+                    if bound_pid not in (pid, -1):
+                        raise AssertionError('refuse closing reused registry pidfd')
+                    os.close(descriptor)
+                except FileNotFoundError:
+                    pass
+                except (OSError, ValueError, StopIteration, AssertionError) as error:
+                    errors.append(str(error))
             restore_attempted = True
             subreaper_restored = libc.prctl(36, previous.value, 0, 0, 0) == 0
             if not subreaper_restored:
                 errors.append('restore previous test subreaper setting')
             if directory is not None:
                 witnesses = [(directory / 'owned-process.py', 8192)]
+                if parent_path is not None:
+                    witnesses.extend((parent_path / name, 128) for name in
+                                     ('cgroup.controllers', 'cgroup.subtree_control', 'memory.max',
+                                      'memory.high', 'memory.swap.max', 'cpu.max', 'pids.max'))
                 for item in groups:
                     witnesses.extend((item['directory'] / name, cap)
-                                     for name, cap in (('child.pid', 128), ('ready', 128), ('process.log', 8192)))
+                                     for name, cap in (('child.pid', 128), ('ready', 128), ('admitted', 128), ('process.log', 8192)))
                 for path, cap in witnesses:
                     record = {'path': str(path.relative_to(directory))}
                     file_evidence.append(record)
@@ -496,6 +644,9 @@ if mode != 'exited': time.sleep(max(0, expires - time.monotonic()))
                             'sampler_stopped': sampler is None or not sampler.is_alive(),
                             'subreaper_restored': subreaper_restored,
                             'work_exists_after_control': (directory / 'work').exists(),
+                            'cgroup_observations_are_mocked': True,
+                            'mock_cgroup_kill_attempts': kill_attempts if mocks is not None else [],
+                            'mock_cgroup_fault': fault['value'] if mocks is not None else None,
                             'cleanup_errors': errors, 'recorded_monotonic_ns': time.monotonic_ns()}
                 try:
                     raw = json.dumps(evidence, indent=2) + '\n'
@@ -571,8 +722,9 @@ class BrowserFixtureCleanupTests(unittest.TestCase):
             self.assert_zero_population(groups)
 
     def test_actual_finally_attempts_all_groups_and_retains_scratch_after_failed_stop(self):
-        with browser_cleanup_fixture(['normal', 'normal']) as (namespace, groups):
+        with browser_cleanup_fixture(['normal', 'normal'], cgroup_fault='first-stop-refused') as (namespace, groups):
             attempted, real_killpg = [], os.killpg
+            real_pidfd_signal = signal.pidfd_send_signal
             failed = groups[-1]['process'].pid
 
             def fail_one_group(pgid, sig):
@@ -582,12 +734,25 @@ class BrowserFixtureCleanupTests(unittest.TestCase):
                     raise PermissionError('literal owned group stop failure')
                 return real_killpg(pgid, sig)
 
-            with patch.object(browser.os, 'killpg', side_effect=fail_one_group):
+            def fail_one_pidfd(descriptor, sig, *args, **kwargs):
+                fields = (Path('/proc/self/fdinfo') / str(descriptor)).read_text().splitlines()
+                pid = int(next(line.split(':', 1)[1] for line in fields if line.startswith('Pid:')))
+                item = next((item for item in groups if pid in (item['process'].pid, item['child'])), None)
+                if item is None:
+                    raise AssertionError('cleanup tried signaling an unbound control pidfd')
+                if sig:
+                    attempted.append(item['process'].pid)
+                if item['process'].pid == failed and sig:
+                    raise PermissionError('literal owned group stop failure')
+                return real_pidfd_signal(descriptor, sig, *args, **kwargs)
+
+            with patch.object(browser.os, 'killpg', side_effect=fail_one_group), \
+                    patch.object(signal, 'pidfd_send_signal', side_effect=fail_one_pidfd):
                 try:
                     actual_browser_finally(namespace)
                 except (OSError, RuntimeError):
                     pass
-            self.assertEqual(set(attempted), {item['process'].pid for item in groups},
+            self.assertEqual(set(attempted + namespace['cgroup_kill_attempts']), {item['process'].pid for item in groups},
                              'a first stop error must not suppress other owned group attempts')
             self.assertTrue(namespace['work'].is_dir(), 'unconfirmed stop must retain private fixture scratch')
             self.assertTrue((Path('/proc') / str(groups[-1]['child'])).exists(), 'injected refusal must reach a real living group')
@@ -605,6 +770,178 @@ class BrowserFixtureCleanupTests(unittest.TestCase):
             self.assertTrue(namespace['sampler'].is_alive(), 'literal sampler must still be alive at refusal')
             self.assertTrue(namespace['work'].is_dir(), 'scratch must not be removed while sampler lives')
             self.assertNotIn('process groups stopped', namespace['receipt'].get('cleanup', ''), 'unconfirmed sampler stop is not cleanup')
+
+
+class DelegatedBrowserOwnershipTests(unittest.TestCase):
+    # C-084 source mocks are not evidence of kernel delegation or subtree kill.
+    assert_zero_population = BrowserFixtureCleanupTests.assert_zero_population
+
+    def assert_authority_retained(self, namespace, groups):
+        for record in (namespace['group_parent'], groups[0]['group']):
+            observed = os.fstat(record['fd'])
+            self.assertEqual((observed.st_dev, observed.st_ino), (record['dev'], record['ino']))
+        group = groups[0]['group']
+        info = (Path('/proc/self/fdinfo') / str(group['pidfd'])).read_text().splitlines()
+        self.assertEqual(int(next(line.split(':', 1)[1] for line in info if line.startswith('Pid:'))), group['pid'])
+
+    def require_mechanism(self):
+        if not all(callable(getattr(browser, name, None)) for name in
+                   ('bind_browser_group', 'stop_browser_groups')) or not hasattr(browser, 'cgroups'):
+            self.skipTest('dependent cgroup control: owned binder/stopper mechanism is unavailable')
+
+    def test_owned_group_binding_and_stop_mechanisms_are_available(self):
+        for name in ('bind_browser_group', 'stop_browser_groups'):
+            self.assertTrue(callable(getattr(browser, name, None)), 'missing owned browser cgroup mechanism: ' + name)
+        self.assertTrue(hasattr(browser, 'cgroups'), 'missing existing delegated cgroup plumbing')
+        with browser_cleanup_fixture(['normal']) as (namespace, groups):
+            item = groups[0]
+            binding = item['binding']
+            self.assertIsNot(binding['parent'], namespace['group_parent'], 'retain a defensive parent record')
+            self.assertIsNot(binding['group'], item['group'], 'retain a defensive launch record')
+            self.assertIs(binding['group']['process'], item['process'])
+            for field in ('pid', 'start_ticks', 'pidfd', 'path', 'fd', 'dev', 'ino', 'exclusive'):
+                self.assertEqual(binding['group'][field], item['group'][field])
+            member = next((row for row in binding['group'].get('members', []) if row['pid'] == item['child']), None)
+            self.assertIsNotNone(member, 'retain the actual source-fixture child identity before it becomes a zombie')
+            self.assertEqual(member['start_ticks'], item['child_start'])
+            info = (Path('/proc/self/fdinfo') / str(member['pidfd'])).read_text().splitlines()
+            self.assertEqual(int(next(line.split(':', 1)[1] for line in info if line.startswith('Pid:'))), item['child'])
+
+    def test_binding_refuses_literal_capability_and_placement_defects(self):
+        self.require_mechanism()
+        cases = (('missing-delegation', 'delegation'), ('missing-group', 'identity'),
+                 ('missing-kill', 'capability'), ('outside-placement', 'placement'),
+                 ('nonexclusive-group', 'ownership'), ('supervisor-as-parent', 'parent'),
+                 ('expired-global-deadline', 'deadline'))
+        for defect, diagnostic in cases:
+            with self.subTest(defect=defect), browser_cleanup_fixture(['normal']) as (namespace, groups):
+                parent, group = dict(namespace['group_parent']), dict(groups[0]['group'])
+                moved, extra_fd = None, None
+                try:
+                    if defect == 'missing-delegation':
+                        (parent['path'] / 'cgroup.subtree_control').write_text('')
+                    elif defect == 'missing-group':
+                        moved = group['path'].with_name('moved-group')
+                        group['path'].rename(moved)
+                    elif defect == 'missing-kill':
+                        (group['path'] / 'cgroup.kill').unlink()
+                    elif defect == 'outside-placement':
+                        namespace['cgroup_fault']['value'] = defect
+                    elif defect == 'nonexclusive-group':
+                        group['exclusive'] = False
+                    elif defect == 'expired-global-deadline':
+                        parent['deadline_monotonic_ns'] = time.monotonic_ns() - 1
+                    else:
+                        path = parent['path'] / 'supervisor'
+                        extra_fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+                        observed = os.fstat(extra_fd)
+                        parent.update(path=path, fd=extra_fd, dev=observed.st_dev, ino=observed.st_ino)
+                    with patch.object(signal, 'pidfd_send_signal', side_effect=AssertionError('binding must never signal')):
+                        with self.assertRaisesRegex(RuntimeError, '^browser-group-' + diagnostic + '$'):
+                            browser.bind_browser_group(parent, group, groups[0]['process'])
+                    self.assertFalse(namespace['cgroup_kill_attempts'], 'refuse before kill-file writes')
+                    self.assertTrue((Path('/proc') / str(groups[0]['child'])).exists())
+                    self.assert_authority_retained(namespace, groups)
+                finally:
+                    if moved is not None:
+                        moved.rename(group['path'])
+                    if extra_fd is not None:
+                        os.close(extra_fd)
+
+    def test_binding_refuses_literal_process_descriptor_and_directory_identity_defects(self):
+        self.require_mechanism()
+        for defect in ('wrong-process', 'wrong-pid', 'wrong-start', 'wrong-pidfd',
+                       'wrong-parent-inode', 'wrong-group-inode', 'unbound-group-fd'):
+            with self.subTest(defect=defect), browser_cleanup_fixture(['normal']) as (namespace, groups):
+                parent, group = dict(namespace['group_parent']), dict(groups[0]['group'])
+                process = groups[0]['process']
+                if defect == 'wrong-process':
+                    process = SimpleNamespace(pid=process.pid)
+                elif defect == 'wrong-pid':
+                    group['pid'] = groups[0]['child']
+                elif defect == 'wrong-start':
+                    group['start_ticks'] += 1
+                elif defect == 'wrong-pidfd':
+                    group['pidfd'] = groups[0]['child_pidfd']
+                elif defect == 'wrong-parent-inode':
+                    parent['ino'] += 1
+                elif defect == 'wrong-group-inode':
+                    group['ino'] += 1
+                else:
+                    group['fd'] = parent['fd']
+                with patch.object(signal, 'pidfd_send_signal', side_effect=AssertionError('binding must never signal')):
+                    with self.assertRaisesRegex(RuntimeError, '^browser-group-identity$'):
+                        browser.bind_browser_group(parent, group, process)
+                self.assertFalse(namespace['cgroup_kill_attempts'])
+                self.assertTrue((Path('/proc') / str(groups[0]['child'])).exists())
+                self.assert_authority_retained(namespace, groups)
+
+    def test_actual_finally_stops_setsid_child_after_its_leader_exited(self):
+        with browser_cleanup_fixture(['setsid']) as (namespace, groups):
+            item = groups[0]
+            self.assertEqual(item['process'].returncode, 0)
+            self.assertEqual(owned_browser_identity(item['child'])[1], item['child'])
+            actual_browser_finally(namespace)
+            self.assert_zero_population(groups)
+            with self.assertRaises(ProcessLookupError):
+                os.killpg(item['child'], 0)
+
+    def test_actual_finally_reaps_adopted_zombie_even_when_mock_kernel_population_is_zero(self):
+        with browser_cleanup_fixture(['exited']) as (namespace, groups):
+            item = groups[0]
+            signal.pidfd_send_signal(item['child_pidfd'], signal.SIGKILL)
+            deadline = time.monotonic() + 2
+            while True:
+                fields = (Path('/proc') / str(item['child']) / 'stat').read_text().rsplit(')', 1)[1].split()
+                self.assertEqual(int(fields[19]), item['child_start'])
+                if fields[0] == 'Z':
+                    break
+                self.assertLess(time.monotonic(), deadline, 'literal adopted child must become a zombie')
+                time.sleep(.01)
+            self.assertEqual((item['group']['path'] / 'cgroup.events').read_text(), 'populated 0\nfrozen 0\n')
+            self.assertEqual((item['group']['path'] / 'cgroup.procs').read_text(), '')
+            actual_browser_finally(namespace)
+            self.assert_zero_population(groups)
+
+    def test_actual_finally_stuck_population_is_bounded_and_retains_scratch(self):
+        self.require_mechanism()
+        with browser_cleanup_fixture(['exited']) as (namespace, groups):
+            namespace['cgroup_fault']['value'] = 'stuck-population'
+            started = time.monotonic()
+            with self.assertRaisesRegex(RuntimeError, '^browser-group-stop$'):
+                actual_browser_finally(namespace)
+            self.assertLess(time.monotonic() - started, 23, 'unchanged 15/5/2-second stop bounds')
+            self.assertTrue(namespace['work'].is_dir())
+            self.assertNotIn('process groups stopped', namespace['receipt'].get('cleanup', ''))
+            self.assert_zero_population(groups)
+
+    def test_stop_refuses_replaced_registry_identity_before_any_signal(self):
+        self.require_mechanism()
+        for defect in ('replaced-directory', 'replaced-parent', 'wrong-process', 'wrong-pidfd'):
+            with self.subTest(defect=defect), browser_cleanup_fixture(['normal']) as (namespace, groups):
+                binding = groups[0]['binding']
+                copied = {'parent': dict(binding['parent']), 'group': dict(binding['group'])}
+                group, moved, replaced = copied['group'], None, None
+                try:
+                    if defect in ('replaced-directory', 'replaced-parent'):
+                        replaced = group['path'] if defect == 'replaced-directory' else copied['parent']['path']
+                        moved = replaced.with_name('old-owned-' + replaced.name)
+                        replaced.rename(moved)
+                        replaced.mkdir()
+                    elif defect == 'wrong-process':
+                        group['process'] = SimpleNamespace(pid=group['pid'])
+                    else:
+                        group['pidfd'] = groups[0]['child_pidfd']
+                    with patch.object(signal, 'pidfd_send_signal', side_effect=AssertionError('unbound stop must never signal')):
+                        with self.assertRaisesRegex(RuntimeError, '^browser-group-stop$'):
+                            browser.stop_browser_groups(namespace['group_parent'], [copied])
+                    self.assertFalse(namespace['cgroup_kill_attempts'])
+                    self.assertTrue((Path('/proc') / str(groups[0]['child'])).exists())
+                    self.assert_authority_retained(namespace, groups)
+                finally:
+                    if moved is not None:
+                        replaced.rmdir()
+                        moved.rename(replaced)
 
 
 if __name__ == '__main__':
