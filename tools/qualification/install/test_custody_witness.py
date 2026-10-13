@@ -48,7 +48,7 @@ def cursor(offset, *, prefix_crc=None, skipping=0, identity=b''):
 
 
 def batch(sequence=4, *, version=1, node=NODE, generation=1, body=PENDING,
-          offset=None, cursor_bytes=None):
+          offset=None, cursor_bytes=None, logs_bytes=None):
     offset = len(PENDING) if offset is None else offset
     attrs = {'log.file.path': SOURCE, 'log.file.device': '7', 'log.file.inode': '9',
              'log.file.offset.start': str(offset - len(body)),
@@ -56,7 +56,7 @@ def batch(sequence=4, *, version=1, node=NODE, generation=1, body=PENDING,
     record = b'\x59' + struct.pack('<Q', 123) + ld(5, ld(1, body[:-1]))
     for key, value in attrs.items():
         record += ld(6, ld(1, key.encode()) + ld(2, ld(1, value.encode())))
-    logs = ld(1, ld(2, ld(2, record)))
+    logs = ld(1, ld(2, ld(2, record))) if logs_bytes is None else logs_bytes
     return (vi(1, version) + ld(2, node) + vi(3, generation) + vi(4, sequence)
             + ld(6, logs) + ld(7, cursor(offset) if cursor_bytes is None else cursor_bytes))
 
@@ -179,6 +179,22 @@ class CustodyWitnessControls(unittest.TestCase):
         for index, change in enumerate(changes):
             with self.subTest(frame=index), self.assertRaises(ValueError):
                 self.snapshot(f'frame-{index}', change=change)
+
+    def test_nested_otlp_structural_refusals(self):
+        # Prost permits a sparse record with a valid unknown field, not malformed wire keys.
+        positive = self.snapshot('otlp-unknown-valid',
+            [batch(logs_bytes=ld(1, ld(2, ld(2, vi(99, 0)))))])
+        self.assertEqual(positive['sources'][0]['rows'][0]['body'], '')
+        variants = (
+            ('field-zero', b'\x00\x00', 'protobuf (field|tag)'),
+            ('field-too-large', ld(1, ld(2, ld(2, varint((1 << 29) << 3) + b'\x00'))),
+             'protobuf (field|tag)'),
+            ('varint-too-long', ld(1, ld(2, ld(2, varint(99 << 3) + b'\x80' * 10 + b'\x00'))),
+             'varint'),
+        )
+        for name, logs, reason in variants:
+            with self.subTest(defect=name), self.assertRaisesRegex(ValueError, reason):
+                self.snapshot('otlp-' + name, [batch(logs_bytes=logs)])
 
     def test_full_cursor_prefix_identity_and_sequence_order(self):
         older = (vi(1, 1) + ld(2, NODE) + vi(3, 1) + vi(4, 4)

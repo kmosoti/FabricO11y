@@ -199,6 +199,22 @@ source custody, exporting only hashes of credentials. Frozen packages, wire
 semantics, query/delivery/rate oracles and all existing gate limits stay fixed.
 This prospective registration claims no checker or guest acceptance.
 
+#### Nested OTLP structural amendment, 2026-10-13
+
+Preregister `CustodyWitnessControls.test_nested_otlp_structural_refusals` with
+hand-encoded inner OTLP logs inside CRC-valid FAB1/FAC1 frames. A sparse LogRecord
+containing valid unknown field99 is a positive, even though its projected body is
+empty. ExportLogsServiceRequest field0 (`00 00`), a nested LogRecord field number
+greater than `(1<<29)-1`, and an eleven-byte nested varint must raise `ValueError`
+for the malformed protobuf field/tag or varint; accepting an empty projection or
+rejecting only missing sentinels is insufficient. The locked prost0.14.4
+`encoding::decode_key` bounds the key to u32 and tags to1 through `(1<<29)-1`, and
+its varint decoder rejects values requiring more than ten bytes. The existing
+Rust `Batch::validate` decodes each OTLP signal before admitting its bytes.
+These source constraints add no new wire semantics or oracle changes. Run the
+named control only through the registered default1800s/full1GiB serial driver;
+retain the actual red before a separately reviewed structural-validator repair.
+
 Keep the existing named Debian package defects: root-user must fail A6,
 no-collision-check must fail A2a/A2b, and no-memory-max must fail A8. The existing
 mutation grader must reject unrelated failures and bad provenance/environment.
