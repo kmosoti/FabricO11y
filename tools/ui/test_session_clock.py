@@ -1,7 +1,19 @@
-"""Prospective independent controls; no shim/controller transition is imported."""
+"""Independent literal oracle controls and separate fixture lifecycle regressions."""
 import copy
+from contextlib import contextmanager
+import ctypes
+import hashlib
+import inspect
+import os
 from pathlib import Path
+import signal
+import subprocess
+import sys
+import tempfile
+import threading
+from time import monotonic as real_monotonic, sleep
 import unittest
+from unittest.mock import Mock, patch
 
 import session_clock_oracle as oracle
 
@@ -124,6 +136,111 @@ class SessionClockTests(unittest.TestCase):
             changed=copy.deepcopy(rows);changed[index][field]=value
             with self.subTest(field=field),self.assertRaisesRegex(ValueError,error):oracle.check_sessions(changed,metadata,700)
         with self.assertRaisesRegex(ValueError,'session-completeness'):oracle.check_sessions(rows[:2]+rows[3:],metadata,700)
+
+
+@contextmanager
+def lifecycle_fixture():
+    libc=ctypes.CDLL(None,use_errno=True);previous=ctypes.c_int()
+    if libc.prctl(37,ctypes.byref(previous),0,0,0) or libc.prctl(36,1,0,0,0):raise RuntimeError('fixture subreaper unavailable')
+    try:
+        with tempfile.TemporaryDirectory(prefix='clock-lifecycle-',dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:yield Path(directory)
+    finally:
+        if libc.prctl(36,previous.value,0,0,0):raise RuntimeError('fixture subreaper restoration failed')
+
+
+def marker_pid(marker):
+    deadline=real_monotonic()+2
+    while real_monotonic()<deadline:
+        try:
+            text=marker.read_text()
+            if text.isdigit():return int(text)
+        except FileNotFoundError:pass
+        sleep(.005)
+    raise RuntimeError('bounded fixture PID witness unavailable')
+
+
+def reap_fixture(pid):
+    deadline=real_monotonic()+5
+    while real_monotonic()<deadline:
+        try:
+            if os.waitpid(pid,os.WNOHANG)[0]:return
+        except ChildProcessError:
+            if not Path(f'/proc/{pid}').exists():return
+        sleep(.005)
+
+
+def stop_fixture(pid):
+    try:
+        if os.waitpid(pid,os.WNOHANG)[0]:return
+        os.kill(pid,signal.SIGKILL);os.waitpid(pid,0)
+    except (ProcessLookupError,ChildProcessError):pass
+
+
+class SessionClockLifecycleTests(unittest.TestCase):
+    def test_exited_leader_does_not_leave_term_resistant_group_member(self):
+        import session_clock as sut
+        with lifecycle_fixture() as root:
+            marker=root/'child.pid'
+            program='import os,signal,sys,time;from pathlib import Path\nchild=os.fork()\nif not child:\n signal.signal(signal.SIGTERM,signal.SIG_IGN);Path(sys.argv[1]).write_text(str(os.getpid()))\n while True:signal.pause()\nwhile not Path(sys.argv[1]).exists():time.sleep(.005)\nos._exit(0)\n'
+            process=subprocess.Popen([sys.executable,'-c',program,str(marker)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,start_new_session=True)
+            pid=marker_pid(marker);process.wait(timeout=2);receiver=threading.Thread(target=reap_fixture,args=(pid,),daemon=True);receiver.start()
+            fixture=sut.SessionClock.__new__(sut.SessionClock);fixture.process=process;fixture.receiver=receiver;fixture.parent=Mock();fixture.stderr=Mock()
+            try:
+                error=None
+                try:fixture.close()
+                except ValueError as failure:error=str(failure)
+                observed=(error,receiver.is_alive())
+            finally:
+                stop_fixture(pid);receiver.join(timeout=2);process.stdin.close();process.stdout.close()
+            self.assertEqual(observed,(None,False),'whole owned group must stop even after its leader has exited')
+
+    def test_compiler_timeout_stops_descendant_and_preserves_output_and_partial_build(self):
+        import session_clock as sut
+        with lifecycle_fixture() as root:
+            marker=root/'compiler-child.pid';compiler=root/'fixture-compiler';output=root/'receipt'
+            compiler.write_text('#!'+sys.executable+'\nimport os,signal,sys,time\nfrom pathlib import Path\n'
+                'if "-vV" in sys.argv:print("release: 1.99.0\\ncommit-hash: b940084d7");sys.exit(0)\n'
+                'if "--version" in sys.argv:print("literal fixture compiler");sys.exit(0)\n'
+                'Path(sys.argv[sys.argv.index("-o")+1]).write_bytes(b"partial-object-public-evidence")\n'
+                'print("compiler-timeout-public-output",file=sys.stderr,flush=True)\nchild=os.fork()\n'
+                'if not child:\n signal.signal(signal.SIGTERM,signal.SIG_IGN);Path(os.environ["FCLK_TEST_MARKER"]).write_text(str(os.getpid()))\n'
+                'while True:signal.pause()\n');compiler.chmod(0o700)
+            def watcher():
+                reap_fixture(marker_pid(marker))
+            receiver=threading.Thread(target=watcher,daemon=True);receiver.start();calls=0
+            def clock():
+                nonlocal calls
+                calls+=1;return real_monotonic()+(0 if calls==1 else 239.25)
+            try:
+                with patch.dict(os.environ,FCLK_TEST_MARKER=str(marker)),patch.object(sut.time,'monotonic',clock),patch.object(sys,'argv',['session-clock','--output',str(output),'--rustc',str(compiler),'--cc',str(compiler)]):
+                    with self.assertRaises(subprocess.TimeoutExpired):sut.main()
+                receiver.join(timeout=1);pid=marker_pid(marker)
+                blob=b''.join(path.read_bytes() for path in output.rglob('*') if path.is_file() and path.stat().st_size<=2*1024**2)
+                observed=(Path(f'/proc/{pid}').exists(),b'compiler-timeout-public-output' in blob,b'partial-object-public-evidence' in blob)
+            finally:
+                if marker.exists():stop_fixture(marker_pid(marker))
+                receiver.join(timeout=2)
+            self.assertEqual(observed,(False,True,True),'timeout must stop descendants and archive captured output plus partial build evidence')
+
+    def test_replaced_images_are_rejected_against_the_original_frozen_witness(self):
+        import session_clock as sut
+        with lifecycle_fixture() as root:
+            executable=root/'probe';helper=root/'shim.so';libc=root/'libc.so.6';proc=root/'proc';proc.mkdir();libc.write_bytes(b'literal libc witness')
+            (proc/'exe').symlink_to(executable);(proc/'stat').write_text('700 (fixture) S '+'0 '*18+'123\n');(proc/'cgroup').write_text('0::/literal-contained-fixture\n')
+            for field,message in [('executable','isolation-target-frozen'),('helper','isolation-helper-frozen')]:
+                with self.subTest(field=field):
+                    executable.write_bytes(b'literal frozen executable');helper.write_bytes(b'literal frozen helper')
+                    expected={'executable_sha256':hashlib.sha256(b'literal frozen executable').hexdigest(),'helper_sha256':hashlib.sha256(b'literal frozen helper').hexdigest(),
+                              'executable_identity':{'device':executable.stat().st_dev,'inode':executable.stat().st_ino},'helper_identity':{'device':helper.stat().st_dev,'inode':helper.stat().st_ino}}
+                    stat=helper.stat();(proc/'maps').write_text(f'1000-2000 r-xp 00000000 {os.major(stat.st_dev):02x}:{os.minor(stat.st_dev):02x} {stat.st_ino} {helper}\n2000-3000 r-xp 00000000 00:00 1 {libc}\n')
+                    (executable if field=='executable' else helper).write_bytes(b'literal replacement after freeze')
+                    # Legacy checker lacks the witness parameter and admits the real changed files.
+                    options={'expected':expected} if 'expected' in inspect.signature(sut.process_binding).parameters else {}
+                    refusal=None
+                    with patch.object(sut,'Path',side_effect=lambda value:proc if str(value)=='/proc/700' else Path(value)):
+                        try:sut.process_binding(700,executable,helper,**options)
+                        except ValueError as failure:refusal=str(failure)
+                    self.assertEqual(refusal,message,'current path agreement cannot replace the pre-launch frozen hashes and identities')
 
 
 if __name__=='__main__':unittest.main()

@@ -159,3 +159,29 @@ native unpreloaded rejection, remain mandatory before browser admission. All
 these native and packaged controls are **not run** at registration. Freeze their
 actual paths/hashes/argv in a subsequent preflight; missing tooling remains an
 actionable prerequisite within scope rather than an invented passing result.
+
+## Lifecycle and frozen-image regressions
+
+Static review of mechanism `c8fbf41` found three defects before native admission.
+The separate prospective controls retain the clock oracle and every existing
+expected outcome. They run only inside the default resource group, using small
+owned disk fixtures and restoring the test process's previous subreaper setting.
+
+1. A leader exits after a same-PGID child installs SIGTERM ignore. Closing the
+   fixture must force-stop and reap that owned group, even when leader wait has
+   already completed. Test cleanup independently kills/reaps the child on red.
+2. A literal fake compiler writes public stderr and a partial object, then forks
+   a TERM-resistant child. A private clock trace leaves 0.75s of the unchanged
+   240s deadline. TimeoutExpired must remain visible; descendants must stop and
+   both captured output and partial build evidence must be archived before
+   removing the owned build directory. No real compiler is run by this control.
+3. Real owned executable/helper files change after their original literal hashes
+   and device/inode witnesses are frozen. Mocked /proc metadata agrees with the
+   changed paths; the checker must still refuse against `expected` frozen fields:
+   executable_sha256/executable_identity and helper_sha256/helper_identity.
+   The exact refusals are `isolation-target-frozen` and `isolation-helper-frozen`.
+   Where the legacy checker lacks that witness parameter, the test invokes its
+   unchanged path and records actual acceptance as the named assertion failure.
+
+These fixtures are harness-defect controls, not packaged expiry or compiler
+qualification. Root records their actual red before a separate production fix.
