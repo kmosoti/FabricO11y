@@ -290,7 +290,16 @@ private process groups and finite 45-second lifespans; a test-only Linux
 subreaper and pidfds permit independent cleanup without signaling reused PIDs.
 The prior subreaper setting is restored. Scratch is removed only after all
 owned process identities/groups and the sampler are confirmed stopped; missing
-identity or unconfirmed cleanup retains the control directory.
+identity or unconfirmed cleanup retains the control directory. A setup or test
+body exception also retains it after independent pidfd stop/reap, even when that
+cleanup succeeds. Before any successful-directory removal, the control writes
+an exclusive bounded 32KiB `cleanup-evidence.json`: actual identity/stop/reap
+outcomes, bracketed group-zero observations, sampler/subreaper outcomes, bounded marker/script/log
+identities and SHA-256 hashes, and the original exception type/message. Failed
+directories retain those raw files and the generated literal child script;
+stderr identifies the directory for root archival. The finalizer under test may
+already have erased its own `work` subtree; record that fact without inventing
+replacement evidence. Successful controls alone remove confirmed-clean scratch.
 
 The literal controls require cleanup after leader exit, force-stop of a
 TERM-resistant child after leader termination, timeout escalation, and attempts

@@ -3,6 +3,7 @@ import ast
 import copy
 from contextlib import contextmanager
 import ctypes
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -276,6 +277,8 @@ def browser_cleanup_fixture(modes, blocked_sampler=False):
     directory = None
     groups, identities, process_logs = [], [], []
     sampler = None
+    body_failure = None
+    restore_attempted = False
     stop_samples, release_sampler = threading.Event(), threading.Event()
     try:
         directory = Path(tempfile.mkdtemp(dir=os.environ['FABRIC_SCRATCH_ROOT'], prefix='browser-cleanup-control-'))
@@ -360,9 +363,15 @@ if mode != 'exited': time.sleep(max(0, expires - time.monotonic()))
                          receipt={'exit': 0}, stop_samples=stop_samples, sampler=sampler,
                          out=out, samples=[], logs=[], work=work)
         yield namespace, groups
+    except BaseException as error:
+        body_failure = {'type': type(error).__name__, 'message': str(error)[:1024]}
+        raise
     finally:
         try:
             errors = []
+            stop_evidence, group_evidence, file_evidence = [], [], []
+            cleanup_began_monotonic_ns = time.monotonic_ns()
+            sampler_alive_before_cleanup = sampler is not None and sampler.is_alive()
             stop_samples.set()
             release_sampler.set()
             if sampler is not None:
@@ -373,59 +382,140 @@ if mode != 'exited': time.sleep(max(0, expires - time.monotonic()))
                 except RuntimeError as error:
                     errors.append(str(error))
             for pid, start, descriptor in identities:
+                observed = {'pid': pid, 'expected_start_ticks': start,
+                            'began_monotonic_ns': time.monotonic_ns(),
+                            'pidfd_kill_attempted': False, 'stop_confirmed': False}
+                stop_evidence.append(observed)
                 try:
                     try:
-                        current, _ = owned_browser_identity(pid)
+                        current, pgid = owned_browser_identity(pid)
                     except FileNotFoundError:
+                        observed.update(stop_confirmed=True, outcome='already absent')
                         continue
+                    observed.update(observed_start_ticks=current, pgid=pgid)
                     if current != start:
                         raise AssertionError('refuse cleanup of reused PID')
+                    fields = (Path('/proc') / str(pid) / 'stat').read_text().rsplit(')', 1)[1].split()
+                    if int(fields[19]) != start:
+                        raise AssertionError('process identity changed before state observation')
+                    observed['state_before_signal'] = fields[0]
                     try:
+                        observed['pidfd_kill_attempted'] = True
                         signal.pidfd_send_signal(descriptor, signal.SIGKILL)
                     except ProcessLookupError:
                         pass
                     deadline = time.monotonic() + 5
                     while True:
                         try:
-                            reaped, _ = os.waitpid(pid, os.WNOHANG)
+                            reaped, status = os.waitpid(pid, os.WNOHANG)
                         except ChildProcessError:
                             reaped = 0
                         if reaped == pid:
+                            observed.update(stop_confirmed=True, outcome='reaped by control', wait_status=status)
                             break
                         try:
                             current, _ = owned_browser_identity(pid)
                         except FileNotFoundError:
+                            observed.update(stop_confirmed=True, outcome='confirmed absent')
                             break
                         if current != start or time.monotonic() >= deadline:
                             raise AssertionError('owned process identity/cleanup not confirmed')
                         time.sleep(.01)
                 except (OSError, ValueError, IndexError, AssertionError) as error:
                     errors.append(str(error))
+                    observed['error'] = str(error)[:512]
                 finally:
+                    observed['ended_monotonic_ns'] = time.monotonic_ns()
                     try:
                         os.close(descriptor)
                     except OSError as error:
                         errors.append(str(error))
             for item in groups:
+                observed = {'pgid': item['process'].pid, 'confirmed_zero_population': False,
+                            'before_monotonic_ns': time.monotonic_ns()}
+                group_evidence.append(observed)
                 try:
                     os.killpg(item['process'].pid, 0)
                 except ProcessLookupError:
+                    observed['confirmed_zero_population'] = True
                     continue
                 except OSError as error:
                     errors.append(str(error))
+                    observed['error'] = str(error)[:512]
                 else:
                     errors.append('owned group is still populated')
+                finally:
+                    observed['after_monotonic_ns'] = time.monotonic_ns()
             for log in process_logs:
                 try:
                     log.close()
                 except OSError as error:
                     errors.append(str(error))
+            restore_attempted = True
+            subreaper_restored = libc.prctl(36, previous.value, 0, 0, 0) == 0
+            if not subreaper_restored:
+                errors.append('restore previous test subreaper setting')
+            if directory is not None:
+                witnesses = [(directory / 'owned-process.py', 8192)]
+                for item in groups:
+                    witnesses.extend((item['directory'] / name, cap)
+                                     for name, cap in (('child.pid', 128), ('ready', 128), ('process.log', 8192)))
+                for path, cap in witnesses:
+                    record = {'path': str(path.relative_to(directory))}
+                    file_evidence.append(record)
+                    try:
+                        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+                        try:
+                            before = os.fstat(descriptor)
+                            if not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid() or before.st_nlink != 1 or before.st_size > cap:
+                                raise AssertionError('invalid bounded evidence file')
+                            raw = os.read(descriptor, cap + 1)
+                            after = os.fstat(descriptor)
+                            identity = lambda value: {key: getattr(value, 'st_' + key) for key in
+                                                       ('dev', 'ino', 'mode', 'uid', 'nlink', 'size', 'mtime_ns', 'ctime_ns')}
+                            if len(raw) != before.st_size or identity(before) != identity(after):
+                                raise AssertionError('evidence file changed during observation')
+                            record.update(identity=identity(before), sha256=hashlib.sha256(raw).hexdigest())
+                            if path.name == 'child.pid':
+                                child, child_start = map(int, raw.split())
+                                record.update(pid=child, start_ticks=child_start)
+                                record['pidfd_bound'] = any((pid, start) == (child, child_start)
+                                                           for pid, start, _ in identities)
+                                if not record['pidfd_bound']:
+                                    raise AssertionError('marker lacks independently bound pidfd identity')
+                        finally:
+                            os.close(descriptor)
+                    except (OSError, ValueError, AssertionError) as error:
+                        record['error'] = str(error)[:512]
+                        errors.append('evidence ' + record['path'] + ': ' + str(error)[:512])
+                retained = body_failure is not None or bool(errors)
+                evidence = {'body_failure': body_failure, 'scratch_retained': retained,
+                            'cleanup_began_monotonic_ns': cleanup_began_monotonic_ns,
+                            'processes': stop_evidence, 'groups': group_evidence, 'files': file_evidence,
+                            'sampler_alive_before_cleanup': sampler_alive_before_cleanup,
+                            'sampler_stopped': sampler is None or not sampler.is_alive(),
+                            'subreaper_restored': subreaper_restored,
+                            'work_exists_after_control': (directory / 'work').exists(),
+                            'cleanup_errors': errors, 'recorded_monotonic_ns': time.monotonic_ns()}
+                try:
+                    raw = json.dumps(evidence, indent=2) + '\n'
+                    if len(raw.encode()) > 32768:
+                        raise AssertionError('control cleanup evidence exceeds 32KiB')
+                    with (directory / 'cleanup-evidence.json').open('x') as stream:
+                        stream.write(raw)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                except (OSError, ValueError, AssertionError) as error:
+                    errors.append('cleanup evidence: ' + str(error)[:512])
+                    retained = True
+                if retained:
+                    print('browser control evidence retained: ' + str(directory), file=sys.stderr)
             if errors:
                 raise AssertionError('control scratch retained at ' + str(directory) + ': ' + '; '.join(errors))
-            if directory is not None:
+            if directory is not None and body_failure is None:
                 shutil.rmtree(directory)
         finally:
-            if libc.prctl(36, previous.value, 0, 0, 0):
+            if not restore_attempted and libc.prctl(36, previous.value, 0, 0, 0):
                 raise RuntimeError('restore previous test subreaper setting')
 
 
