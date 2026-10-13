@@ -149,6 +149,21 @@ These newly registered controls are not run at registration. Capture actual
 head-bound red and stopped descendants before the separate ownership correction;
 rerun the unchanged controls and broad packaging/payload suite afterward.
 
+#### Closeout interruption amendment, 2026-10-13
+
+Preregister `PackageTests.test_constructor_closeout_term_preserves_receipt_and_stage`
+for the completed-build boundary. It executes the actual `fixture_main` final
+closeout statements under the real CLI SIGTERM handler in a finite subprocess,
+with tiny completed staging and captured diagnostics; native admission is
+synthetic. A readable positive releases the removal gate and must exit0 with a
+built receipt and removed staging. A real TERM at that gate must exit2 with an
+interrupted receipt, exact retained staging, unchanged raw stdout/stderr and no
+claim of completed cleanup. The five-second readiness gate and pidfd-confirmed
+parent reap preserve uncertain scratch. Root runs the named selector inside the
+same admitted default1800s/full1GiB resource command. This amendment changes no
+native package inputs, command limits, earlier control expectations or gate.
+Record the actual named red before its separate closeout correction.
+
 Require native strictly-older comparison, exact phase package/source identities,
 unchanged account/configuration/retained telemetry, new login and installed
 binary/console hashes after upgrade. This establishes only native metadata

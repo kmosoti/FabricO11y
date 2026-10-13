@@ -1,10 +1,12 @@
 """Packaging regressions: exact assets, tamper rejection and bounded unit policy."""
+import ast
 import hashlib
 import io
 import json
 import lzma
 import os
 from pathlib import Path
+import shutil
 import signal
 import subprocess
 import sys
@@ -167,6 +169,82 @@ with patch.dict('sys.modules', {'inputs': SimpleNamespace(validate_inputs=lambda
                 os.close(descriptor)
                 process.stdout.close()
                 process.stderr.close()
+
+    def test_constructor_closeout_term_preserves_receipt_and_stage(self):
+        # Real main/TERM and extracted actual closeout; native admission is not exercised.
+        program = '''import ast, json, shutil, sys, time
+from pathlib import Path
+from unittest.mock import patch
+import build_candidate_rpm as builder
+directory = Path(sys.argv[1])
+out, work = directory / 'out', directory / 'stage'
+out.mkdir(); work.mkdir()
+(work / 'held-stage.bin').write_bytes(b'literal completed staging')
+for stream in ('stdout', 'stderr'):
+    (out / ('build.' + stream)).write_bytes(('literal closeout ' + stream + '\\n').encode())
+function = next(node for node in ast.parse(Path(builder.__file__).read_text()).body
+                if isinstance(node, ast.FunctionDef) and node.name == 'fixture_main')
+final = next(node.finalbody for node in function.body if isinstance(node, ast.Try) and node.finalbody)
+assert final and any('fixture-receipt.json' in ast.unparse(node) for node in final)
+code = compile(ast.Module(body=final, type_ignores=[]), '<actual-constructor-closeout>', 'exec')
+real_remove = shutil.rmtree
+def remove(path, *args, **kwargs):
+    assert Path(path) == work
+    pending = directory / 'ready.pending'
+    pending.write_text('actual completed-stage removal boundary')
+    pending.replace(directory / 'ready')
+    deadline = time.monotonic() + 5
+    while not (directory / 'release').exists():
+        if time.monotonic() >= deadline: raise RuntimeError('closeout gate timed out')
+        time.sleep(.01)
+    return real_remove(path, *args, **kwargs)
+def closeout(args):
+    namespace = dict(builder.__dict__, out=out, work=work, record={'state': 'built', 'exit': 0})
+    exec(code, namespace)
+    return namespace['record']['exit']
+sys.argv = ['closeout.py', '--same-code-fixture', '--deb-receipt', str(directory / 'synthetic-input'), '--out', str(out)]
+with patch.object(builder, 'fixture_main', closeout), patch.object(builder.shutil, 'rmtree', remove):
+    raise SystemExit(builder.main())
+'''
+        for interrupted in (False, True):
+            with self.subTest(interrupted=interrupted):
+                directory = Path(tempfile.mkdtemp(dir=os.environ['FABRIC_SCRATCH_ROOT'], prefix='constructor-closeout-'))
+                script = directory / 'closeout.py'; script.write_text(program)
+                env = {**os.environ, 'PYTHONPATH': str(ROOT / 'tools/packaging')}
+                process = subprocess.Popen([sys.executable, '-B', str(script), str(directory)], env=env,
+                                           stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+                descriptor = os.pidfd_open(process.pid)
+                stopped = False
+                try:
+                    deadline = time.monotonic() + 5
+                    while not (directory / 'ready').exists() and process.poll() is None and time.monotonic() < deadline:
+                        time.sleep(.01)
+                    self.assertTrue((directory / 'ready').is_file(), 'actual closeout boundary was not reached')
+                    if interrupted: signal.pidfd_send_signal(descriptor, signal.SIGTERM)
+                    else: (directory / 'release').touch()
+                    stdout, stderr = process.communicate(timeout=8)
+                    self.assertEqual(process.returncode, 2 if interrupted else 0, stdout + stderr)
+                    receipt = directory / 'out/fixture-receipt.json'
+                    self.assertTrue(receipt.is_file(), 'closeout TERM lost the actual receipt after staging')
+                    report = json.loads(receipt.read_text())
+                    self.assertEqual((report['state'], report['exit']), ('interrupted', 2) if interrupted else ('built', 0))
+                    if interrupted:
+                        retained = Path(report['failure_evidence'])
+                        self.assertTrue(retained.is_relative_to(directory))
+                        self.assertEqual((retained / 'held-stage.bin').read_bytes(), b'literal completed staging')
+                        self.assertIsNot(report.get('cleanup_confirmed'), True)
+                    else: self.assertFalse((directory / 'stage').exists())
+                    for stream in ('stdout', 'stderr'):
+                        self.assertEqual((directory / ('out/build.' + stream)).read_bytes(),
+                                         ('literal closeout ' + stream + '\n').encode())
+                finally:
+                    try:
+                        if process.poll() is None: signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+                        process.wait(timeout=3); stopped = True
+                    finally:
+                        os.close(descriptor); process.stdout.close(); process.stderr.close()
+                        if stopped: shutil.rmtree(directory)
+                        else: raise AssertionError('unconfirmed closeout process; fixture retained at ' + str(directory))
 
     def test_same_code_fixture_archive_errors_preserve_failed_receipt(self):
         # Origin: #59 C-041 SF2, a corrupt archive escaped after staging began.
