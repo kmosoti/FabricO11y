@@ -156,6 +156,28 @@ class StressControls(unittest.TestCase):
         self.assertLessEqual(observations[-1]['started_ns'], observations[-1]['finished_ns'])
         self.assertNotIn(reader.token, json.dumps(summary))
 
+    def test_page_two_invalid_200_retains_status_and_first_body(self):
+        """Origin: #62 P2 / C-032; r2 records status even when body integrity fails."""
+        first = {'complete': True, 'next_page': 'fixture-page-two', 'rows': []}
+        for raw, exception in ((b'{', json.JSONDecodeError),
+                               (b'x' * (8 * 1024**2 + 1), RuntimeError)):
+            with self.subTest(exception=exception.__name__):
+                response = MagicMock(status=200)
+                response.__enter__.return_value = response
+                response.read.side_effect = [json.dumps(first).encode(), raw]
+                reader = WorkloadReader('https://fixture.invalid', None, 'synthetic-reader-secret')
+                with patch('release_runtime.urllib.request.urlopen', return_value=response), \
+                        self.assertRaises(exception) as caught:
+                    reader.pages({'kind': 'logs'})
+                self.assertEqual(caught.exception.pages, [first])
+                self.assertEqual(len(reader.observations), 2)
+                failed = reader.observations[-1]
+                self.assertEqual(failed.get('status'), 200)
+                self.assertEqual(failed['path'], '/v1/console/query')
+                self.assertIn(exception.__name__, failed['error'])
+                self.assertLessEqual(failed['started_ns'], failed['finished_ns'])
+                self.assertNotIn(reader.token, json.dumps(reader.observations))
+
 
 if __name__ == '__main__':
     unittest.main()
