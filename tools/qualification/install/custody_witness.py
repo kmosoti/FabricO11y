@@ -106,16 +106,18 @@ def fields(raw, types, depth=0):
 
 
 def validate(raw, schema, depth=0):
-    types = SCHEMAS[schema]
-    for number, values in fields(raw, types, depth).items():
-        spec = types.get(number)
+    parsed = fields(raw, SCHEMAS[schema], depth)
+    records = [parsed] if schema == 'record' else []
+    for number, values in parsed.items():
+        spec = SCHEMAS[schema].get(number)
         if isinstance(spec, str):
             for _, value in values:
                 if spec == 'utf8':
                     value.decode('utf-8')
                 else:
                     require(depth < 100, 'protobuf message recursion depth exhausted')
-                    validate(value, spec, depth + 1)
+                    records.extend(validate(value, spec, depth + 1))
+    return records
 
 
 def one(values, number, default=0):
@@ -136,21 +138,16 @@ def string_projection(values):
     return length_field(1, one(f, 1, b'')) if active == 1 else b''
 
 
-def log_rows(raw, batch):
-    index = 0
-    for _, resource in fields(raw, SCHEMAS['logs']).get(1, []):
-        for _, scope in fields(resource, SCHEMAS['resource_logs']).get(2, []):
-            for _, record in fields(scope, SCHEMAS['scope_logs']).get(2, []):
-                f = fields(record, SCHEMAS['record'])
-                projection = [b'\x59' + one(f, 11, b'\0' * 8), length_field(5, string_projection(f.get(5, [])))]
-                for _, attribute in f.get(6, []):
-                    kv = fields(attribute, SCHEMAS['kv'])
-                    projection.append(length_field(6, length_field(1, one(kv, 1, b''))
-                        + length_field(2, string_projection(kv.get(2, [])))))
-                row = oracle.decode_log_record(b''.join(projection))
-                yield dict(node='spindle-1', node_id=batch['node_id'].hex(), sequence=batch['sequence'],
-                    index=index, observed_ns=row['observed_time_unix_nano'], body=row['body'], attributes=row['attributes'])
-                index += 1
+def log_rows(records, batch):
+    for index, f in enumerate(records):
+        projection = [b'\x59' + one(f, 11, b'\0' * 8), length_field(5, string_projection(f.get(5, [])))]
+        for _, attribute in f.get(6, []):
+            kv = fields(attribute, SCHEMAS['kv'])
+            projection.append(length_field(6, length_field(1, one(kv, 1, b''))
+                + length_field(2, string_projection(kv.get(2, [])))))
+        row = oracle.decode_log_record(b''.join(projection))
+        yield dict(node='spindle-1', node_id=batch['node_id'].hex(), sequence=batch['sequence'],
+            index=index, observed_ns=row['observed_time_unix_nano'], body=row['body'], attributes=row['attributes'])
 
 
 def cursor(raw):
@@ -185,9 +182,8 @@ def envelope(raw):
             gap.decode('utf-8')
         cursors = [cursor(value) for _, value in f.get(7, [])]
         batch = dict(version=one(f, 1), node_id=one(f, 2, b''), generation=one(f, 3), sequence=one(f, 4))
-        for signal, schema in zip(signals, ('metrics', 'logs', 'traces')):
-            validate(signal, schema)
-        rows = list(log_rows(signals[1], batch))
+        decoded = [validate(signal, schema) for signal, schema in zip(signals, ('metrics', 'logs', 'traces'))]
+        rows = list(log_rows(decoded[1], batch))
         return batch, cursors, rows
     except (oracle.MalformedInput, UnicodeError, TypeError, struct.error) as error:
         raise ValueError(str(error)) from error
@@ -379,6 +375,18 @@ def conserve(before, after_install, after_drain, queries, candidate_ack_events):
         and not any(row['body'] in (queries['pending_body'], queries['unread_body']) for row in old), 'invalid old-row baseline')
     expected = old + [pending_row, unread_row]
     require(all(row in old + [pending_row] for source in pending for row in source['rows']), 'unexpected pending log row')
+    for path, current in after_drain['cursors'].items():
+        log, offset = after_drain['logs'][path], 0
+        for row in sorted((row for row in expected if row['attributes'].get('log.file.path') == path),
+                          key=lambda row: int(row['attributes']['log.file.offset.start'])):
+            attrs = row['attributes']
+            start, end = (int(attrs[key]) for key in ('log.file.offset.start', 'log.file.offset.end'))
+            require(start == offset and start < end <= current['offset']
+                and log['bytes'][start:end] == (row['body'] + '\n').encode()
+                and attrs['log.file.device'] == str(log['device']) and attrs['log.file.inode'] == str(log['inode']),
+                    'source prefix conservation')
+            offset = end
+        require(offset == current['offset'], 'source prefix conservation')
     keys = lambda rows: sorted((row['node_id'], row['sequence'], row['index']) for row in rows)
     encoded = lambda rows: sorted(json.dumps(row, sort_keys=True, allow_nan=False) for row in rows)
     require(len(set(keys(expected))) == len(expected), 'duplicate expected identity')
