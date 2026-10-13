@@ -263,6 +263,27 @@ Refusals name the violated wire/string/group/depth property. Legitimate-form
 rejections or wrong projections on the old reader are harness defects, not
 product qualification failures. No execution result is recorded by this amendment.
 
+#### Nested envelope recursion amendment, 2026-10-13
+
+Static review of the bounded repair found that Cursor and BtrfsIdentity readers
+restart their recursion budget. Register two literal controls before correction:
+`test_cursor_inherits_batch_recursion_budget` and
+`test_btrfs_inherits_cursor_recursion_budget`. Locked prost 0.14.4
+`Message::merge` starts at budget 100; `encoding::message::merge` decrements it
+for each nested message. Batch field 7 is Cursor at depth 1, and Cursor field 8 is
+BtrfsIdentity at depth 2 (`fabric-frame::envelope`). Unknown group and scalar
+skipping use that inherited context, including its exhausted-budget refusal.
+
+Inside CRC-valid Batch frames, Cursor admits 99 matched empty field 99 groups and
+refuses 100; BtrfsIdentity admits 98 and refuses 99. An unknown field 98 scalar inside
+the accepted number of groups must also be refused at exhausted depth. Positives
+retain the literal cursor identity/offset and exact original payload. Existing
+root-reader 100-group positives and all earlier expectations remain unchanged.
+This is an envelope/strict-reader correction within the existing 420/+120 scope;
+it adds no metric/trace leaf semantics or general prost-parity claim. Root must
+retain the contained named red before a separate production repair. These new
+controls and native acceptance are NOT RUN in this registration.
+
 Keep the existing named Debian package defects: root-user must fail A6,
 no-collision-check must fail A2a/A2b, and no-memory-max must fail A8. The existing
 mutation grader must reject unrelated failures and bad provenance/environment.

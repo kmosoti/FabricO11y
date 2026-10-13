@@ -231,6 +231,42 @@ class CustodyWitnessControls(unittest.TestCase):
             with self.subTest(defect=name), self.assertRaisesRegex(ValueError, reason):
                 self.module.fields(raw, {})
 
+    def test_cursor_inherits_batch_recursion_budget(self):
+        # Review counterexample: Batch.cursors enters prost message depth 1, not a new root.
+        start, end = varint(99 << 3 | 3), varint(99 << 3 | 4)
+        for name, groups, leaf, accepted in (
+                ('boundary', 99, b'', True), ('too-deep', 100, b'', False),
+                ('scalar-at-limit', 99, vi(98, 0), False)):
+            raw = cursor(len(PENDING)) + start * groups + leaf + end * groups
+            original = batch(cursor_bytes=raw)
+            with self.subTest(cursor=name):
+                if accepted:
+                    got = self.snapshot('cursor-depth-' + name, [original])
+                    self.assertEqual(got['cursors'][SOURCE]['offset'], len(PENDING))
+                    self.assertEqual(got['sources'][0]['payload'], original)
+                else:
+                    with self.assertRaisesRegex(ValueError, 'depth|recursion'):
+                        self.snapshot('cursor-depth-' + name, [original])
+
+    def test_btrfs_inherits_cursor_recursion_budget(self):
+        # Batch.cursors.btrfs_identity enters depth 2; scalar skipping also spends budget.
+        self.logs[SOURCE]['btrfs_identity'] = dict(uuid=NODE.hex(), subvolume_id=7)
+        start, end = varint(99 << 3 | 3), varint(99 << 3 | 4)
+        for name, groups, leaf, accepted in (
+                ('boundary', 98, b'', True), ('too-deep', 99, b'', False),
+                ('scalar-at-limit', 98, vi(98, 0), False)):
+            identity = ld(1, NODE) + vi(2, 7) + start * groups + leaf + end * groups
+            original = batch(cursor_bytes=cursor(len(PENDING), identity=identity))
+            with self.subTest(btrfs=name):
+                if accepted:
+                    got = self.snapshot('btrfs-depth-' + name, [original])
+                    self.assertEqual(got['cursors'][SOURCE]['btrfs_identity'],
+                                     self.logs[SOURCE]['btrfs_identity'])
+                    self.assertEqual(got['sources'][0]['payload'], original)
+                else:
+                    with self.assertRaisesRegex(ValueError, 'depth|recursion'):
+                        self.snapshot('btrfs-depth-' + name, [original])
+
     def test_packed_numeric_reader_forms_and_refusals(self):
         # The reader spec names element wire-kind, not an opaque bytes-as-message guess.
         for wire, width in ((1, 8), (5, 4)):
