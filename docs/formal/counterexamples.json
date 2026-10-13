@@ -3,6 +3,18 @@
   "description": "Counterexamples kept as deterministic regression fixtures. `cargo xtask check-counterexamples` requires each reproducer test to exist in its file and each fix commit to exist. Removing an entry is a trust-boundary change.",
   "counterexamples": [
     {
+      "id": "CX-INSTALLATION-PREREQUISITE-OBSERVATION",
+      "origin": "Follow-up review of installation removal checks; contained red at 8b5d3329cb03d6c470f24b5dba46fba03121804e",
+      "defect": "Removal accepted empty, incomplete or failed service-state observations, and the post-reboot AVC check accepted grep exit 2 as absence of a Fabric denial",
+      "seed_or_trace": "Literal shell stubs return empty output, one inactive line or exit 1 with two inactive lines on both lifecycle and baseline removal, plus grep exit 2 on the lifecycle audit read. Actual red: five methods, seven failures, exit 1/stopped; log SHA256 accc6c250b667e9a8b86664e4e8d6c354118a730430c7b36fed85ababb93c397. The baseline counterpart is test_acceptance_remove_rejects_either_live_unit. Clean inactive and prior live/mutation controls remain unchanged. At the fix commit, the complete nine-test file exits 0/stopped; log SHA256 a77f13b9a487d5a928e54cb437e007c20e7a2ec8255b3fdb3bfd1ff37598d6d9",
+      "contract": "QUAL-INSTALL and registered A13a/F4: both stopped states must be observed as inactive or failed with systemctl exit 3; unreadable required audit evidence cannot support PASS",
+      "reproducer": {
+        "file": "tools/qualification/install/test_run_qemu.py",
+        "test": "test_lifecycle_remove_rejects_unobserved_services_and_unreadable_audit"
+      },
+      "fix_commit": "ce387f75610bc4bac82955fbb722c9d61e4fcbc1"
+    },
+    {
       "id": "CX-INSTALLATION-REMOVAL-CHECKS",
       "origin": "Coordination C-035 / C-aud-7 review of harness de77de7399710c5afd50ae0de981fda6e0b75f30; corrected contained red at d5e52368854fd87ddce8d941e0c2164c27cf2e9e",
       "defect": "Bash errexit ignores negated service/AVC commands and the first member of retention/purge AND lists; baseline removal accepted one live service, allowing false A13/F4 PASS output",
