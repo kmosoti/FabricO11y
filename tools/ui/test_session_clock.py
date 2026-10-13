@@ -107,6 +107,8 @@ class SessionClockTests(unittest.TestCase):
         for field,value,error in [('returned_ns',101_000_000_000,'isolation-fork-consumption'),
                                   ('control_sequence_after',2,'isolation-fork-consumption'),
                                   ('exec_helper_maps',['b'*64],'isolation-exec-escape'),
+                                  ('exec_control_env_names',['LD_PRELOAD'],'isolation-exec-escape'),
+                                  ('exec_control_env_names',['FABRIC_CLOCK_FD'],'isolation-exec-escape'),
                                   ('exec_control_fd_present',True,'isolation-exec-escape')]:
             changed=isolation();changed['fork'][field]=value
             with self.subTest(field=field),self.assertRaisesRegex(ValueError,error):check(changed)

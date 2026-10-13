@@ -32,11 +32,19 @@ selects CLOCK_REALTIME, and its
 [Unix timespec path](https://raw.githubusercontent.com/rust-lang/rust/b940084d7/library/std/src/sys/pal/unix/time.rs)
 calls libc clock_gettime. That source supports a hypothesis, not proof of the
 new packaged ELF's import or running call path. Root must inspect that exact
-ELF's interpreter/dynamic symbols before choosing the runtime loader. Prefer its
-`--preload` option, which [ld.so documents](https://man7.org/linux/man-pages/man8/ld.so.8.html)
-as applying to one executable rather than child execs. Target-only LD_PRELOAD
-is a separately reviewed fallback; never preload the launcher, compiler,
-controller, grader, browser, driver, companion or normal acceptance workloads.
+ELF's interpreter/dynamic symbols before choosing interception. The
+[loader's `--preload` option](https://man7.org/linux/man-pages/man8/ld.so.8.html)
+applies to one executable rather than child execs, but direct
+loader invocation keeps the loader as `/proc/PID/exe`, violating this protocol's
+exact target-executable identity. The owner therefore selected the scoped
+target-only LD_PRELOAD fallback before implementation. Set it only in the one
+target exec's environment; the constructor clears LD_PRELOAD and the control
+configuration before main, restores CLOEXEC and records actual fork/exec
+isolation. Preserve the exact target ELF identity requirement. Never preload the
+launcher, compiler, controller, grader, browser, driver, companion or normal
+acceptance workloads. This selection is registered separately because it changes
+the fixture's inheritance boundary; it is not runtime evidence that isolation
+works.
 
 Use a private anonymous AF_UNIX/SOCK_SEQPACKET socketpair, NONBLOCK+CLOEXEC,
 with exactly one controller. Pass only the target endpoint to the server exec.
