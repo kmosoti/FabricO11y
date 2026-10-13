@@ -242,5 +242,31 @@ class SessionClockLifecycleTests(unittest.TestCase):
                         except ValueError as failure:refusal=str(failure)
                     self.assertEqual(refusal,message,'current path agreement cannot replace the pre-launch frozen hashes and identities')
 
+    def test_same_bytes_replacement_and_forged_mapping_reject_frozen_identity(self):
+        import session_clock as sut
+        with lifecycle_fixture() as root:
+            executable=root/'probe';helper=root/'shim.so';libc=root/'libc.so.6';proc=root/'proc';proc.mkdir();libc.write_bytes(b'literal libc witness')
+            (proc/'exe').symlink_to(executable);(proc/'stat').write_text('700 (fixture) S '+'0 '*18+'123\n');(proc/'cgroup').write_text('0::/literal-contained-fixture\n')
+            for case in ('executable-replaced','helper-replaced','mapping-device','mapping-inode'):
+                with self.subTest(case=case):
+                    executable.write_bytes(b'literal frozen executable');helper.write_bytes(b'literal frozen helper')
+                    expected={'executable_sha256':hashlib.sha256(b'literal frozen executable').hexdigest(),'helper_sha256':hashlib.sha256(b'literal frozen helper').hexdigest(),
+                              'executable_identity':{'device':executable.stat().st_dev,'inode':executable.stat().st_ino},'helper_identity':{'device':helper.stat().st_dev,'inode':helper.stat().st_ino}}
+                    if case.endswith('-replaced'):
+                        selected=executable if case=='executable-replaced' else helper;frozen=selected.stat();replacement=root/'same-bytes-new-inode'
+                        replacement.write_bytes(selected.read_bytes());self.assertNotEqual(replacement.stat().st_ino,frozen.st_ino)
+                        replacement.replace(selected)
+                        self.assertEqual(hashlib.sha256(selected.read_bytes()).hexdigest(),expected['executable_sha256' if selected==executable else 'helper_sha256'])
+                        self.assertNotEqual(selected.stat().st_ino,frozen.st_ino)
+                    stat=helper.stat();major=os.major(stat.st_dev)+(1 if case=='mapping-device' else 0);inode=stat.st_ino+(1 if case=='mapping-inode' else 0)
+                    (proc/'maps').write_text(f'1000-2000 r-xp 00000000 {major:02x}:{os.minor(stat.st_dev):02x} {inode} {helper}\n2000-3000 r-xp 00000000 00:00 1 {libc}\n')
+                    options={'expected':expected} if 'expected' in inspect.signature(sut.process_binding).parameters else {}
+                    refusal=None
+                    with patch.object(sut,'Path',side_effect=lambda value:proc if str(value)=='/proc/700' else Path(value)):
+                        try:sut.process_binding(700,executable,helper,**options)
+                        except ValueError as failure:refusal=str(failure)
+                    self.assertEqual(refusal,'isolation-target-frozen' if case=='executable-replaced' else 'isolation-helper-frozen',
+                                     'unchanged bytes cannot replace frozen file or loaded mapping device/inode witnesses')
+
 
 if __name__=='__main__':unittest.main()

@@ -185,3 +185,12 @@ owned disk fixtures and restoring the test process's previous subreaper setting.
 
 These fixtures are harness-defect controls, not packaged expiry or compiler
 qualification. Root records their actual red before a separate production fix.
+
+An additional identity control replaces each frozen executable/helper path with
+an identical-byte file on a new inode. It separately forges the loaded helper
+mapping's device and inode while retaining the original file. Original hashes
+alone cannot admit either replacement: executable replacement must refuse with
+`isolation-target-frozen`; helper replacement or mismatched mapped device/inode
+must refuse with `isolation-helper-frozen`. Existing literal controls and the
+clock oracle stay fixed. The fake compiler and accelerated test-only monotonic
+trace above are neither a real 240-second run nor real compiler-binding acceptance.
