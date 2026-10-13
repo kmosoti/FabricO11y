@@ -147,7 +147,7 @@ with patch.dict('sys.modules', {'inputs': SimpleNamespace(validate_inputs=lambda
                 self.assertTrue((directory / 'diagnostics-ready').is_file(), 'constructor did not reach real owned staging')
                 signal.pidfd_send_signal(descriptor, signal.SIGTERM)
                 stdout, stderr = process.communicate(timeout=8)
-                self.assertNotEqual(process.returncode, 0, stdout + stderr)
+                self.assertEqual(process.returncode, 2, stdout + stderr)
                 path = directory / 'results/out/fixture-receipt.json'
                 self.assertTrue(path.is_file(), 'parent TERM lost interrupted receipt; exit=' + str(process.returncode))
                 report = json.loads(path.read_text())
