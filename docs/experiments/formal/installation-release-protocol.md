@@ -215,6 +215,59 @@ These source constraints add no new wire semantics or oracle changes. Run the
 named control only through the registered default1800s/full1GiB serial driver;
 retain the actual red before a separately reviewed structural-validator repair.
 
+#### Bounded reader and original-byte projection amendment, 2026-10-13
+
+Coordination C-061/X-106 admits a 420-line production ceiling, at most +120 after
+the 297-line adapter, with no oracle or limit change. Register seven additional
+`CustodyWitnessControls` methods before repair; the three malformed cases and
+sparse positive in `test_nested_otlp_structural_refusals` stay unchanged.
+
+`test_generic_reader_positive_forms` admits opaque unknown bytes, nonminimal
+valid varints, the largest legal tag/u64 and matched unknown groups, including
+100 empty nested groups. `test_generic_reader_structural_refusals` rejects
+invalid keys/wires, truncation, overlong/overflowing value and length varints,
+lone/mismatched/unterminated groups, 101 nested groups and an unknown field at
+exhausted depth. Controls call the existing `fields(raw, types)` reader directly.
+`test_packed_numeric_reader_forms_and_refusals` registers its explicit
+`('packed', element_wire_kind)` spec for kinds 0/1/5: both unpacked and packed
+forms are admitted; malformed packed varints and nondivisible fixed-8/fixed-4
+payloads are refused. Arbitrary opaque bytes are never guessed to be messages.
+
+`test_logs_common_schema_and_utf8_refusals` requires declared wires and UTF-8
+through ExportLogsServiceRequest/ResourceLogs/ScopeLogs/LogRecord and all
+consumed common schemas: Resource, InstrumentationScope, EntityRef, KeyValue,
+AnyValue, ArrayValue and KeyValueList. `test_logs_common_and_message_depth_boundaries`
+admits literal common fields, opaque bytes and nonzero bools. From the export
+root, 48 AnyValue.array/ArrayValue.values pairs place a known string at depth 100
+and remain valid; 49 pairs or an unknown scalar at exhausted depth fail.
+Each signal export has its own recursion budget, matching pinned prost 0.14.4.
+
+`test_metrics_traces_container_scope` requires strict Export→Resource→Scope→
+Metric/Span wire containers; malformed keys/varints/lengths and container wires
+fail. Hand-encoded `system.memory.total` Gauge and `system.cpu.time` cumulative
+Sum use the actual host shapes in `src/spindle/runtime.rs:266-299` and
+`crates/fabric-adapter-linux/src/host.rs:190-217`; a literal Span is also positive.
+Metric/Span nested leaves remain opaque, explicitly witnessed by a malformed
+nested Gauge/Event fixture that this reader admits without asserting semantic
+validity. Product ingest decoding is the leaf-semantics authority; frame CRC
+establishes byte integrity, not semantic validity. No general prost parity or
+native product acceptance is claimed by these finite controls.
+
+`test_original_payload_log_projection_binding` registers exact literal log rows
+for valid unknown groups, last oneof arm and merged optional body/value messages.
+The stored original Batch payload and SHA-256 must remain exact. A separately
+filtered log projection may feed the byte-identical query oracle; it cannot
+replace raw custody or exact-byte candidate ACK evidence. The caller projects
+log rows only and must not reinterpret opaque metric/trace leaves through the
+oracle merely to obtain those rows. Query/delivery/rate oracles remain unchanged;
+native caller authentication against immutable candidate receipts stays separate.
+
+Run these source-only fixtures through the same serial default 1800s/full 1GiB
+driver; preserve actual red before production repair and rerun unchanged controls.
+Refusals name the violated wire/string/group/depth property. Legitimate-form
+rejections or wrong projections on the old reader are harness defects, not
+product qualification failures. No execution result is recorded by this amendment.
+
 Keep the existing named Debian package defects: root-user must fail A6,
 no-collision-check must fail A2a/A2b, and no-memory-max must fail A8. The existing
 mutation grader must reject unrelated failures and bad provenance/environment.

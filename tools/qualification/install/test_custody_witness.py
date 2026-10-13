@@ -39,6 +39,11 @@ def ld(tag, value):
     return varint(tag << 3 | 2) + varint(len(value)) + value
 
 
+def export_record(record, *, resource=b'', scope=b''):
+    return ld(1, (ld(1, resource) if resource else b'')
+              + ld(2, (ld(1, scope) if scope else b'') + ld(2, record)))
+
+
 def cursor(offset, *, prefix_crc=None, skipping=0, identity=b''):
     prefix = (PENDING + UNREAD)[:min(offset, 64)]
     return (ld(1, SOURCE.encode()) + vi(2, 7) + vi(3, 9) + vi(4, offset)
@@ -195,6 +200,145 @@ class CustodyWitnessControls(unittest.TestCase):
         for name, logs, reason in variants:
             with self.subTest(defect=name), self.assertRaisesRegex(ValueError, reason):
                 self.snapshot('otlp-' + name, [batch(logs_bytes=logs)])
+
+    def test_generic_reader_positive_forms(self):
+        start, end = varint(99 << 3 | 3), varint(99 << 3 | 4)
+        variants = (vi(1, 7) + ld(99, b'\x00\xff'),
+                    b'\x08\x87\x00', vi(1, 7) + vi((1 << 29) - 1, 2**64 - 1),
+                    vi(1, 7) + start + ld(98, b'\x00\xff') + end,
+                    vi(1, 7) + start * 100 + end * 100)
+        for index, raw in enumerate(variants):
+            with self.subTest(form=index):
+                self.assertEqual(self.module.one(self.module.fields(raw, {1: 0}), 1), 7)
+
+    def test_generic_reader_structural_refusals(self):
+        start, end = varint(99 << 3 | 3), varint(99 << 3 | 4)
+        variants = (
+            ('zero', b'\x00\x00', 'protobuf (field|tag)'),
+            ('large-key', varint((1 << 29) << 3) + b'\x00', 'protobuf (field|tag)'),
+            ('wire', varint(99 << 3 | 6), 'wire'),
+            ('long-value', varint(99 << 3) + b'\x80' * 10 + b'\x00', 'varint'),
+            ('overflow', varint(99 << 3) + b'\xff' * 9 + b'\x02', 'varint|overflow'),
+            ('long-length', varint(99 << 3 | 2) + b'\x80' * 10 + b'\x00', 'varint'),
+            ('length', varint(99 << 3 | 2) + varint(3) + b'ab', 'length|truncat'),
+            ('fixed', varint(99 << 3 | 1) + b'\x00' * 7, 'fixed|truncat'),
+            ('lone-end', end, 'group'), ('unterminated', start + vi(98, 0), 'group'),
+            ('mismatch', start + varint(98 << 3 | 4), 'group'),
+            ('depth', start * 101 + end * 101, 'depth|recursion'),
+            ('unknown-at-limit', start * 100 + vi(98, 0) + end * 100, 'depth|recursion'),
+        )
+        for name, raw, reason in variants:
+            with self.subTest(defect=name), self.assertRaisesRegex(ValueError, reason):
+                self.module.fields(raw, {})
+
+    def test_packed_numeric_reader_forms_and_refusals(self):
+        # The reader spec names element wire-kind, not an opaque bytes-as-message guess.
+        for wire, width in ((1, 8), (5, 4)):
+            for raw in (varint(1 << 3 | wire) + b'\x00' * width,
+                        ld(1, b'\x00' * (2 * width)), ld(1, b'')):
+                with self.subTest(wire=wire, bytes=len(raw)):
+                    self.assertEqual(self.module.one(self.module.fields(
+                        raw + vi(2, 7), {1: ('packed', wire), 2: 0}), 2), 7)
+            with self.subTest(width=width), self.assertRaisesRegex(ValueError, 'packed|width'):
+                self.module.fields(ld(1, b'\x00' * (width - 1)), {1: ('packed', wire)})
+        for raw in (ld(1, varint(2**64 - 1) + b'\x80\x00'), vi(1, 2**64 - 1)):
+            with self.subTest(varint=raw):
+                self.module.fields(raw, {1: ('packed', 0)})
+        with self.assertRaisesRegex(ValueError, 'varint'):
+            self.module.fields(ld(1, b'\x80' * 10 + b'\x00'), {1: ('packed', 0)})
+
+    def test_logs_common_schema_and_utf8_refusals(self):
+        variants = (
+            ('record-wire', export_record(vi(3, 0)), 'wire'),
+            ('body-string', export_record(ld(5, ld(1, b'\xff'))), 'UTF|utf'),
+            ('event-name', export_record(ld(12, b'\xff')), 'UTF|utf'),
+            ('resource-key', export_record(b'', resource=ld(1, ld(1, b'\xff'))), 'UTF|utf'),
+            ('scope-name', export_record(b'', scope=ld(1, b'\xff')), 'UTF|utf'),
+            ('entity-type', export_record(b'', resource=ld(3, ld(2, b'\xff'))), 'UTF|utf'),
+            ('array-body', export_record(ld(5, ld(5, ld(1, ld(1, b'\xff'))))), 'UTF|utf'),
+            ('kv-list', export_record(ld(5, ld(6, ld(1, ld(1, b'\xff'))))), 'UTF|utf'),
+            ('scope-url', ld(1, ld(2, ld(2, b'') + ld(3, b'\xff'))), 'UTF|utf'),
+            ('resource-url', ld(1, ld(2, ld(2, b'')) + ld(3, b'\xff')), 'UTF|utf'),
+        )
+        for name, logs, reason in variants:
+            with self.subTest(defect=name), self.assertRaisesRegex(ValueError, reason):
+                self.snapshot('schema-' + name, [batch(logs_bytes=logs)])
+
+    def test_logs_common_and_message_depth_boundaries(self):
+        kv = ld(1, b'key') + ld(2, ld(1, b'value')) + vi(3, 2**64 - 1)
+        resource = ld(1, kv) + vi(2, 0) + ld(3, ld(1, b'url') + ld(2, b'type')
+                    + ld(3, b'id') + ld(4, b'description'))
+        scope = ld(1, b'scope') + ld(2, b'version') + ld(3, kv) + vi(4, 0)
+        for index, value in enumerate((vi(2, 2), ld(7, b'\x00\xff'), vi(8, 2**64 - 1),
+                                       ld(5, ld(1, ld(1, b'array'))), ld(6, ld(1, kv)))):
+            with self.subTest(value=index):
+                got = self.snapshot(f'common-{index}', [batch(logs_bytes=export_record(
+                    ld(5, value), resource=resource, scope=scope))])
+                self.assertEqual(got['sources'][0]['rows'][0]['body'], '')
+        # Export→ResourceLogs→ScopeLogs→LogRecord→AnyValue starts depth4.
+        for layers, leaf, accepted in ((48, ld(1, b'deep'), True),
+                                      (49, ld(1, b'deep'), False), (48, vi(99, 0), False)):
+            value = leaf
+            for _ in range(layers):
+                value = ld(5, ld(1, value))  # AnyValue.array→ArrayValue.values→AnyValue.
+            payload = batch(logs_bytes=export_record(ld(5, value)))
+            with self.subTest(layers=layers, unknown=leaf[:1]):
+                if accepted:
+                    self.assertEqual(self.snapshot('depth-message-positive', [payload])
+                                     ['sources'][0]['rows'][0]['body'], '')
+                else:
+                    with self.assertRaisesRegex(ValueError, 'depth|recursion'):
+                        self.snapshot(f'depth-message-{layers}-{leaf[0]}', [payload])
+
+    def test_metrics_traces_container_scope(self):
+        # Literal host fields: CPU cumulative Sum and memory Gauge; no Rust codec used.
+        times = b'\x11' + struct.pack('<Q', 120) + b'\x19' + struct.pack('<Q', 123)
+        gauge = ld(1, b'system.memory.total') + ld(3, b'By') + ld(5, ld(1,
+                    times + b'\x31' + struct.pack('<q', 4096)))
+        total = ld(1, b'system.cpu.time') + ld(3, b's') + ld(7, ld(1,
+                    times + b'\x21' + struct.pack('<d', 1.25)) + vi(2, 2) + vi(3, 1))
+        metrics = ld(1, ld(2, ld(2, gauge) + ld(2, total)))
+        span = ld(1, b'\x01' * 16) + ld(2, b'\x02' * 8) + ld(5, b'literal-span')
+        payload = batch() + ld(5, metrics) + ld(9, export_record(span))
+        got = self.snapshot('host-gauge-sum-trace', [payload])
+        self.assertEqual(got['sources'][0]['payload'], payload)
+        self.assertEqual(got['sources'][0]['rows'][0]['body'], PENDING[:-1].decode())
+        variants = (
+            ('metric-export-length', 5, b'\x0a\x03ab', 'length|truncat'),
+            ('trace-export-varint', 9, varint(99 << 3) + b'\x80' * 10 + b'\x00', 'varint'),
+            ('metric-resource-field', 5, ld(1, b'\x00\x00'), 'protobuf (field|tag)'),
+            ('trace-scope-tag', 9, ld(1, ld(2, varint((1 << 29) << 3) + b'\x00')), 'protobuf (field|tag)'),
+            ('metric-record-field', 5, export_record(b'\x00\x00'), 'protobuf (field|tag)'),
+            ('trace-record-field', 9, export_record(b'\x00\x00'), 'protobuf (field|tag)'),
+            ('metric-container-wire', 5, vi(1, 0), 'wire'),
+        )
+        for name, signal, raw, reason in variants:
+            with self.subTest(defect=name), self.assertRaisesRegex(ValueError, reason):
+                self.snapshot(name, [batch() + ld(signal, raw)])
+        # These malformed nested leaves must remain opaque to this limited witness.
+        # Product ingest must independently reject them; this is not semantic admission.
+        opaque = batch() + ld(5, export_record(ld(5, b'\xff'))) + ld(9, export_record(ld(11, b'\xff')))
+        self.assertEqual(self.snapshot('opaque-product-leaves', [opaque])['sources'][0]['payload'], opaque)
+
+    def test_original_payload_log_projection_binding(self):
+        stamp = b'\x59' + struct.pack('<Q', 123)
+        unknown = varint(99 << 3 | 3) + ld(98, b'\x00\xff') + varint(99 << 3 | 4)
+        variants = (
+            ('unknown-group', stamp + ld(5, ld(1, b'kept')) + unknown, 'kept', {}),
+            ('last-bool', stamp + ld(5, ld(1, b'discarded') + vi(2, 1)), '', {}),
+            ('last-string', stamp + ld(5, vi(2, 1) + ld(1, b'kept')), 'kept', {}),
+            ('merged-body', stamp + ld(5, ld(1, b'kept')) + ld(5, vi(99, 0)), 'kept', {}),
+            ('merged-value', stamp + ld(5, ld(1, b'kept')) + ld(6, ld(1, b'key')
+                + ld(2, ld(1, b'value')) + ld(2, b'')), 'kept', {'key': 'value'}),
+        )
+        for name, record, body, attrs in variants:
+            original = batch(logs_bytes=export_record(record)) + ld(99, b'\x00\xff')
+            with self.subTest(projection=name):
+                source = self.snapshot('projection-' + name, [original])['sources'][0]
+                self.assertEqual((source['payload'], source['sha256']),
+                                 (original, hashlib.sha256(original).hexdigest()))
+                self.assertEqual(source['rows'], [dict(node='spindle-1', node_id=NODE.hex(),
+                    sequence=4, index=0, observed_ns=123, body=body, attributes=attrs)])
 
     def test_full_cursor_prefix_identity_and_sequence_order(self):
         older = (vi(1, 1) + ld(2, NODE) + vi(3, 1) + vi(4, 4)
