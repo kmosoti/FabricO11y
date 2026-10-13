@@ -57,7 +57,7 @@ class WorkloadReader:
         status = None
         try:
             with urllib.request.urlopen(request, context=self.context, timeout=15) as response:
-                status = response.status
+                status = getattr(response, 'status', None)
                 raw = response.read(8 * 1024**2 + 1)
                 if len(raw) > 8 * 1024**2:
                     raise RuntimeError('bounded console response exceeded 8 MiB')
