@@ -13,31 +13,42 @@ CAP = 128 * 1024**2
 
 
 def bounded_command(command):
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     deadline = time.monotonic() + 30
-    result = bytearray()
+    result, errors = bytearray(), bytearray()
+    streams = {process.stdout: result, process.stderr: errors}
     try:
-        while True:
+        while streams:
             remaining = deadline - time.monotonic()
             if remaining <= 0:
-                raise ValueError('payload extraction deadline exceeded')
-            ready, _, _ = select.select([process.stdout], [], [], min(1, remaining))
-            if not ready:
-                continue
-            chunk = os.read(process.stdout.fileno(), 65536)
-            if not chunk:
-                break
-            if len(result) + len(chunk) > CAP:
-                raise ValueError('payload extraction exceeds bounded inventory cap')
-            result.extend(chunk)
-        if process.wait(timeout=max(0.01, deadline - time.monotonic())):
-            raise ValueError('payload extraction failed')
+                raise subprocess.TimeoutExpired(command, 30)
+            ready, _, _ = select.select(list(streams), [], [], min(1, remaining))
+            for stream in ready:
+                chunk = os.read(stream.fileno(), 65536)
+                if not chunk:
+                    del streams[stream]
+                elif len(streams[stream]) + len(chunk) > CAP:
+                    raise ValueError('payload extraction exceeds bounded inventory cap')
+                else:
+                    streams[stream].extend(chunk)
+        status = process.wait(timeout=max(0.01, deadline - time.monotonic()))
+        if status < 0:
+            raise subprocess.CalledProcessError(status, command, output=bytes(result), stderr=bytes(errors))
+        if status:
+            raise ValueError('payload extraction failed (exit ' + str(status) + ')')
         return bytes(result)
+    except ValueError as error:
+        raise ValueError(str(error) + '; command=' + repr(command)
+                         + '; stderr=' + errors.decode(errors='replace')) from error
+    except subprocess.TimeoutExpired as error:
+        error.output, error.stderr = bytes(result), bytes(errors)
+        raise
     finally:
         if process.poll() is None:
             process.kill()
             process.wait(timeout=10)
         process.stdout.close()
+        process.stderr.close()
 
 
 def identity(body):

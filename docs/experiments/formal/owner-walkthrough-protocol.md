@@ -7,6 +7,9 @@ This protocol supplements [console acceptance](console-access-protocol.md) and
 [installation acceptance](installation-release-protocol.md), without regrading
 their historical results. Results and the redacted transcript belong in the
 [research wiki](https://github.com/kmosoti/FabricO11y/wiki).
+The [constructor plan](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-owner-fixture-constructor-plan)
+holds prospective commands and revision-bound preparation evidence; its recorded
+unit controls do not establish native construction or walkthrough acceptance.
 
 ## Input and guide boundary
 

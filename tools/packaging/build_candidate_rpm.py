@@ -45,21 +45,29 @@ def validate_fixture_transform(family, candidate, fixture, before, after, script
 def run_build(command, env, out, label='build'):
     process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True, start_new_session=True)
-    expired = False
+    interruption = None
     try:
         stdout, stderr = process.communicate(timeout=300)
-    except subprocess.TimeoutExpired:
-        expired = True
-        os.killpg(process.pid, signal.SIGTERM)
+    except (subprocess.TimeoutExpired, KeyboardInterrupt) as error:
+        interruption = error
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
         try:
             stdout, stderr = process.communicate(timeout=10)
         except subprocess.TimeoutExpired:
-            os.killpg(process.pid, signal.SIGKILL)
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
             stdout, stderr = process.communicate(timeout=10)
     (out / (label + '.stdout')).write_text(stdout)
     (out / (label + '.stderr')).write_text(stderr)
-    if expired:
-        raise ValueError('package build deadline exceeded; owned process group stopped')
+    if interruption is not None:
+        if isinstance(interruption, subprocess.TimeoutExpired):
+            interruption.output, interruption.stderr = stdout, stderr
+        raise interruption
     return process.returncode
 
 
@@ -85,20 +93,51 @@ def deb_controls(package):
     return result
 
 
+def deb_headers(package):
+    fields = ('name', 'mode', 'uid', 'gid', 'uname', 'gname', 'mtime', 'size', 'linkname')
+    result = {}
+    for name in ('control.tar.xz', 'data.tar.xz'):
+        raw = bounded_command(['ar', 'p', str(package), name])
+        with tarfile.open(fileobj=io.BytesIO(raw)) as archive:
+            result[name] = [{**{field: getattr(member, field) for field in fields},
+                             'type': member.type.decode('ascii')} for member in archive]
+    return result
+
+
 def rpm_records(package):
     raw = bounded_command(['rpm', '-qp', '--xml', str(package)])
-    ET.fromstring(raw)
+    header = ET.fromstring(raw)
     prefixes = ('PREIN', 'POSTIN', 'PREUN', 'POSTUN', 'PRETRANS', 'POSTTRANS',
                 'VERIFYSCRIPT', 'TRIGGER', 'FILETRIGGER', 'TRANSFILETRIGGER')
-    tags = {match[1].decode().upper(): identity(match[0])
-            for match in re.finditer(rb'<rpmTag\b[^>]*\bname="([^"]+)"[^>]*>.*?</rpmTag>', raw, re.S)}
+    blocks = {match[1].decode().upper(): match[0]
+              for match in re.finditer(rb'<rpmTag\b[^>]*\bname="([^"]+)"[^>]*>.*?</rpmTag>', raw, re.S)}
     stable = {'NAME', 'VERSION', 'ARCH', 'OS', 'LICENSE', 'SUMMARY', 'DESCRIPTION',
               'FILEMODES', 'FILEFLAGS', 'FILEVERIFYFLAGS', 'FILEUSERNAME', 'FILEGROUPNAME',
               'FILELINKTOS', 'FILECAPS', 'FILEMTIMES', 'BASENAMES', 'DIRNAMES', 'DIRINDEXES',
               'REQUIRENAME', 'REQUIREFLAGS', 'REQUIREVERSION', 'CONFLICTNAME', 'CONFLICTFLAGS',
-              'CONFLICTVERSION', 'OBSOLETENAME', 'OBSOLETEFLAGS', 'OBSOLETEVERSION'}
-    if not {'NAME', 'VERSION', 'ARCH', 'FILEMODES', 'FILEUSERNAME', 'FILEGROUPNAME'} <= tags.keys():
+              'CONFLICTVERSION', 'OBSOLETENAME', 'OBSOLETEFLAGS', 'OBSOLETEVERSION',
+              'PROVIDENAME', 'PROVIDEFLAGS', 'PROVIDEVERSION'}
+    stable.update(stem + field for stem in ('RECOMMEND', 'SUGGEST', 'SUPPLEMENT', 'ENHANCE')
+                  for field in ('NAME', 'FLAGS', 'VERSION'))
+    if not {'NAME', 'VERSION', 'ARCH', 'FILEMODES', 'FILEUSERNAME', 'FILEGROUPNAME',
+            'PROVIDENAME', 'PROVIDEFLAGS', 'PROVIDEVERSION'} <= blocks.keys():
         raise ValueError('fixture RPM native metadata unavailable')
+    nodes = {node.attrib['name'].upper(): node for node in header.findall('rpmTag')}
+    names = [node.text for node in nodes['PROVIDENAME'].iter('string')]
+    flags = [node.text for node in nodes['PROVIDEFLAGS'].iter('integer')]
+    versions = [node.text for node in nodes['PROVIDEVERSION'].iter('string')]
+    if not len(names) == len(flags) == len(versions):
+        raise ValueError('fixture RPM provide arrays differ')
+    provides = iter(zip(names, flags, versions))
+    def normalize_self(match):
+        name, flag, version = next(provides)
+        if (name in ('fabrico11y', 'fabrico11y(x86-64)') and flag == '8'
+                and version == '0.1.0-0.alpha.1' and match[1] == b'0.1.0-0.alpha.1'):
+            return match[0].replace(b'0.1.0-0.alpha.1', b'0.1.0-0.alpha.0')
+        return match[0]
+    blocks['PROVIDEVERSION'] = re.sub(rb'<string>(.*?)</string>', normalize_self,
+                                     blocks['PROVIDEVERSION'], flags=re.S)
+    tags = {name: identity(block) for name, block in blocks.items()}
     return {'scripts': {name: value for name, value in tags.items() if name.startswith(prefixes)},
             'metadata': {name: value for name, value in tags.items() if name in stable}}
 
@@ -163,14 +202,20 @@ def fixture_main(args):
             status = run_build(command, env, out, label)
             step['exit'] = status
             if status:
+                if status < 0:
+                    record['state'] = 'interrupted'
                 raise ValueError('fixture build failed: ' + label)
         execute(['dpkg-deb', '-R', str(packages['debian']), str(work / 'deb')], 'deb-unpack')
+        record['debian_tar_headers_before'] = deb_headers(packages['debian'])
         control = work / 'deb/DEBIAN/control'
         body = control.read_bytes()
         if body.count(b'Version: 0.1.0~alpha.1\n') != 1:
             raise ValueError('fixture native metadata differs')
         control.write_bytes(body.replace(b'Version: 0.1.0~alpha.1\n', b'Version: 0.1.0~alpha.0\n'))
         execute(['dpkg-deb', '--root-owner-group', '-Zxz', '--build', str(work / 'deb'), str(deb)], 'deb-build')
+        deb_after_headers = deb_headers(deb)
+        if record['debian_tar_headers_before'] != deb_after_headers:
+            raise ValueError('fixture Debian tar headers differ')
         stage = work / 'rpm-stage'
         stage.mkdir()
         for name, (body, mode) in cpio(bounded_command(['rpm2cpio', str(packages['fedora'])]), contents=True).items():
@@ -194,19 +239,25 @@ def fixture_main(args):
             record['packages'][family] = {'package': str(package), 'sha256': digest(package), 'version': version,
                                           'payload_identity': actual, 'script_identity': changed_scripts[family]}
         record['packages']['fedora']['native_metadata_identity'] = rpm_after['metadata']
+        record['packages']['debian']['tar_header_identity'] = deb_after_headers
         if any(digest(Path(path)) != expected for path, expected in inputs.items()):
             raise ValueError('fixture canonical inputs changed during construction')
         validate_inputs(args.deb_receipt, args.rpm_receipt)
         validate_harness(args.harness_commit)
         record.update(state='built', exit=0, native_older={'debian': True, 'fedora': True})
-    except (ValueError, OSError, subprocess.SubprocessError, ET.ParseError) as error:
-        record['error'] = str(error)
+    except (Exception, KeyboardInterrupt) as error:
+        record['error'] = str(error) or type(error).__name__
+        if (isinstance(error, (KeyboardInterrupt, subprocess.TimeoutExpired))
+                or isinstance(error, subprocess.CalledProcessError) and error.returncode < 0):
+            record['state'] = 'interrupted'
+        if getattr(error, 'stderr', None) is not None:
+            record['stderr'] = error.stderr.decode(errors='replace') if isinstance(error.stderr, bytes) else error.stderr
         if work is not None:
             record['failure_evidence'] = str(work)
             try:
                 shutil.move(str(work), str(out / 'failed-fixture-work'))
                 record['failure_evidence'] = str(out / 'failed-fixture-work')
-            except OSError as archive_error:
+            except Exception as archive_error:
                 record['archive_error'] = str(archive_error)
     finally:
         if record['state'] == 'built' and work is not None and work.exists():
