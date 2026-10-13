@@ -108,7 +108,12 @@ lifetime. Tests require actual containment and disk-backed `FABRIC_SCRATCH_ROOT`
 The test temporarily enables Linux child-subreaper ownership, restores its exact
 old setting and unconditionally stops/reaps the recorded fixture processes.
 Cleanup uses pidfds plus PID/start-tick identity, never a process-name match or
-an unbound reused PID. No native installation, project service or guest runs.
+an unbound reused PID. The leader atomically records and validates its forked
+child's UID, parent, group and start ticks before a bounded pipe handshake
+permits child setup. Readiness markers are atomic too. Fixture scratch is removed
+only after both recorded identities are confirmed stopped/reaped; missing,
+malformed or uncertain cleanup evidence retains the directory and fails the
+control. No native installation, project service or guest runs.
 
 | Literal control | Required observation |
 | --- | --- |

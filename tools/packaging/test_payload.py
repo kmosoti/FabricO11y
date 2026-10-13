@@ -3,6 +3,7 @@ import ctypes
 import os
 from pathlib import Path
 import signal
+import shutil
 import stat
 import subprocess
 import tempfile
@@ -34,78 +35,111 @@ def owned_process_fixture():
     if libc.prctl(37, ctypes.byref(previous), 0, 0, 0) or libc.prctl(36, 1, 0, 0, 0):
         raise RuntimeError('owned process control requires Linux subreaper')
     try:
-        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT'], prefix='package-process-control-') as scratch:
-            directory = Path(scratch)
-            script = directory / 'child.py'
-            script.write_text('''import os, signal, sys, time
+        directory = Path(tempfile.mkdtemp(dir=os.environ['FABRIC_SCRATCH_ROOT'], prefix='package-process-control-'))
+        script = directory / 'child.py'
+        script.write_text('''import os, select, signal, sys, time
 from pathlib import Path
 directory, mode = Path(sys.argv[1]), sys.argv[2]
 stage = Path(sys.argv[3]) if len(sys.argv) > 3 else directory / 'owned-stage'
-stage.mkdir(exist_ok=True)
+expires = time.monotonic() + 45
 if os.getpgrp() != os.getpid(): os.setsid()
-def identity(name):
-    fields = Path('/proc/self/stat').read_text().rsplit(')', 1)[1].split()
-    (directory / name).write_text(f'{os.getpid()} {fields[19]}')
-identity('leader.pid')
+def atomic(name, body):
+    temporary = directory / (name + '.pending')
+    with temporary.open('x') as stream:
+        stream.write(body); stream.flush(); os.fsync(stream.fileno())
+    temporary.replace(directory / name)
+def identity(name, pid):
+    process = Path(f'/proc/{pid}')
+    fields = (process / 'stat').read_text().rsplit(')', 1)[1].split()
+    if process.stat().st_uid != os.getuid() or int(fields[19]) <= 0:
+        raise RuntimeError('unowned fixture identity')
+    if pid != os.getpid() and (int(fields[1]) != os.getpid() or int(fields[2]) != os.getpid()):
+        raise RuntimeError('fork child is outside owned leader')
+    atomic(name, f'{pid} {fields[19]}')
+identity('leader.pid', os.getpid())
 if mode == 'drain': signal.signal(signal.SIGTERM, signal.SIG_IGN)
-if os.fork() == 0:
+gate_read, gate_write = os.pipe()
+child = os.fork()
+if child == 0:
+    os.close(gate_write)
+    if not select.select([gate_read], [], [], 5)[0] or os.read(gate_read, 1) != b'1': os._exit(1)
+    os.close(gate_read)
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     with open(os.devnull, 'wb') as null:
         os.dup2(null.fileno(), 1); os.dup2(null.fileno(), 2)
+    stage.mkdir(exist_ok=True)
     held = (stage / 'held-stage.bin').open('wb')
     held.write(b'literal owned staging'); held.flush()
-    identity('child.pid')
-    (directory / 'ready').write_text('ready')
-    time.sleep(45)
+    atomic('ready', 'ready')
+    time.sleep(max(0, expires - time.monotonic()))
     os._exit(0)
+os.close(gate_read)
+try:
+    identity('child.pid', child)
+    os.write(gate_write, b'1')
+finally:
+    os.close(gate_write)
 deadline = time.monotonic() + 5
 while not (directory / 'ready').exists():
     if time.monotonic() >= deadline: raise RuntimeError('child readiness deadline')
     time.sleep(.01)
 print('literal process stdout', flush=True)
 print('literal process stderr', file=sys.stderr, flush=True)
-(directory / 'diagnostics-ready').write_text('ready')
-if mode != 'success': time.sleep(45)
+atomic('diagnostics-ready', 'ready')
+if mode != 'success': time.sleep(max(0, expires - time.monotonic()))
 ''')
-            try:
-                yield directory, [sys.executable, '-B', str(script), str(directory)]
-            finally:
-                cleanup_errors = []
-                for name in ('leader.pid', 'child.pid'):
+        try:
+            yield directory, [sys.executable, '-B', str(script), str(directory)]
+        finally:
+            cleanup_errors = []
+            for name in ('leader.pid', 'child.pid'):
+                try:
+                    marker = directory / name
+                    info = marker.lstat()
+                    if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1 or info.st_size > 128:
+                        raise AssertionError('invalid owned fixture identity marker')
+                    pid, start = map(int, marker.read_text().split())
+                    if pid <= 1 or start <= 0:
+                        raise AssertionError('invalid owned fixture PID/start identity')
                     try:
-                        marker = directory / name
-                        if not marker.exists():
-                            continue
-                        pid, start = map(int, marker.read_text().split())
-                        try:
-                            descriptor = os.pidfd_open(pid)
-                        except ProcessLookupError:
-                            continue
+                        descriptor = os.pidfd_open(pid)
+                    except ProcessLookupError:
+                        continue
+                    try:
                         try:
                             fields = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
-                            if int(fields[19]) != start:
-                                raise AssertionError('refuse cleanup of reused fixture PID')
-                            try:
-                                signal.pidfd_send_signal(descriptor, signal.SIGKILL)
-                            except ProcessLookupError:
-                                pass
-                        finally:
-                            os.close(descriptor)
+                        except FileNotFoundError:
+                            continue
+                        if int(fields[19]) != start:
+                            raise AssertionError('refuse cleanup of reused fixture PID')
+                        try:
+                            signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+                        except ProcessLookupError:
+                            pass
                         deadline = time.monotonic() + 5
                         while True:
                             try:
                                 reaped, _ = os.waitpid(pid, os.WNOHANG)
                             except ChildProcessError:
-                                break
+                                reaped = 0
                             if reaped == pid:
                                 break
+                            try:
+                                fields = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
+                            except FileNotFoundError:
+                                break
+                            if int(fields[19]) != start:
+                                raise AssertionError('fixture PID changed before confirmed reap')
                             if time.monotonic() >= deadline:
                                 raise AssertionError('owned fixture cleanup deadline')
                             time.sleep(.01)
-                    except (OSError, ValueError, AssertionError) as error:
-                        cleanup_errors.append(name + ': ' + str(error))
-                if cleanup_errors:
-                    raise AssertionError('; '.join(cleanup_errors))
+                    finally:
+                        os.close(descriptor)
+                except (OSError, ValueError, IndexError, AssertionError) as error:
+                    cleanup_errors.append(name + ': ' + str(error))
+            if cleanup_errors:
+                raise AssertionError('fixture scratch retained at ' + str(directory) + ': ' + '; '.join(cleanup_errors))
+            shutil.rmtree(directory)
     finally:
         if libc.prctl(36, previous.value, 0, 0, 0):
             raise RuntimeError('restore test subreaper setting')
