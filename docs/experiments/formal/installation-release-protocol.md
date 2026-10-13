@@ -176,16 +176,54 @@ establish recoverable delivery; shared-Rust `spool_dump` is a diagnostic.
 `test_custody_witness.py` independently hand-encodes small FAB1/FAC1/protobuf
 fixtures for prospective `custody_witness.stopped_snapshot` and `conserve`.
 The initial named `MechanismAvailability` failure records absence of the
-adapter; it is not a product defect or corrupt-frame counterexample. Actual
-specific refusals remain NOT RUN until that adapter exists. Its unchanged
+adapter; it is not a product defect or corrupt-frame counterexample. The
+[`custody_witness.py`](../../../tools/qualification/install/custody_witness.py)
+adapter now exists; source-control results belong to the linked checker-results
+wiki, while native stopped-custody integration and guest acceptance remain
+pending. Its unchanged
 `CustodyWitnessControls` require complete CRC-checked frames, envelope/wire/u64
 bounds, nonterminal sequence/ACK, full Cursor/Btrfs identity and consumed-prefix
 CRC, last cursor in sequence order rather than maximum offset, complete stopped
 service observations, no-follow owned paths, and exact two-line custody joins.
 Reset source identity, missing/changed pending bytes, premature ACK, duplicated
-or changed query rows and unchanged reboot identity must be refused. ACK events
+or changed projected query rows and unchanged reboot identity must be refused. ACK events
 must match the independently observed candidate node PID/unit/boot/run window
 and exact raw Batch hash; their message alone omits Strand identity.
+
+Query equality compares the projected node label, node ID, sequence, index,
+observed timestamp, string body and string attributes, not every raw LogRecord
+field or nonstring AnyValue arm. Retained source hashes and candidate exact-byte
+ACKs bind the original node-side Batch bytes. This witness does not independently
+reread raw server storage; its raw-byte commitment evidence is the observed
+node's ACK. Host-copy device/inode/mode/uid/gid are drift witnesses, not guest
+ownership-policy admission. Native callers must bind and verify their guest
+observations separately. The raw reader refuses an incomplete active tail,
+including a legitimate torn tail after a crash; it does not repair or tolerate
+that tail as complete custody.
+
+#### Complete archived-prefix conservation amendment, 2026-10-13
+
+Coordination [C-aud-11](https://github.com/kmosoti/FabricO11y/issues/59#issuecomment-6138325736)
+identified a consumed leading line absent from every Batch and query row while
+the two sentinels and candidate ACKs remained valid. Preregister
+`CustodyWitnessControls.test_archived_leading_lost_line_cannot_escape_source_conservation`
+before repair. Its archive is exactly `accept-line-lost-by-reader\n` followed by
+the literal pending and unread lines. Hand-encoded source offsets, Cursor prefix
+length/CRC, FAB1/FAC1 CRCs and exact-byte candidate ACK hashes are rebuilt for that
+archive; the lost line is absent from all raw and projected rows. Snapshot
+admission must succeed, then `conserve` must raise `ValueError` naming
+`source prefix conservation`, rather than rejecting a stale CRC or missing ACK.
+
+For each archived path with a final cursor, the expected old, pending and unread
+projected rows for that path must tile `[0, final_cursor_offset)` exactly in
+source order, with no gap, overlap or duplicate interval. Every interval must
+match the archived newline-terminated body bytes and source device/inode. The
+existing three-row lifecycle baseline and sentinel checks remain required;
+matching them alone cannot establish full archived-prefix conservation.
+Keep every prior control, oracle and gate unchanged. Run the named fixture only
+through the registered serial default1800/full1GiB control cell and preserve its
+actual red before production correction. This amendment changes no product wire
+semantics and records no execution or native acceptance.
 
 Run only through the admitted serial resource launcher: default1800 outer and
 1GiB reservation for synthetic controls. Native cells keep1800 outer,180-second

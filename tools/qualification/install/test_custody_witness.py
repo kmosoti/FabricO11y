@@ -166,6 +166,53 @@ class CustodyWitnessControls(unittest.TestCase):
         self.assertEqual(chain[0]['cursors'][SOURCE]['offset'], len(PENDING))
         self.module.conserve(*chain)
 
+    def test_archived_leading_lost_line_cannot_escape_source_conservation(self):
+        # C-aud-11: valid sentinels/ACKs cannot hide an unrepresented consumed line.
+        lost = b'accept-line-lost-by-reader\n'
+        raw = lost + PENDING + UNREAD
+        (self.root / 'allowed.log').write_bytes(raw)
+        def source_cursor(offset):
+            prefix = raw[:min(offset, 64)]
+            return (ld(1, SOURCE.encode()) + vi(2, 7) + vi(3, 9) + vi(4, offset)
+                    + vi(6, len(prefix)) + vi(7, zlib.crc32(prefix)))
+        pending_end = len(lost + PENDING)
+        pending = batch(offset=pending_end, cursor_bytes=source_cursor(pending_end))
+        unread = batch(5, body=UNREAD, offset=len(raw), cursor_bytes=source_cursor(len(raw)))
+        before = self.snapshot('before', [pending])
+        installed = self.snapshot('installed', [pending])
+        drained = self.snapshot('drain', [pending, unread], ack=5)
+        old = [dict(node='spindle-1', node_id=NODE.hex(), sequence=sequence, index=0,
+                    observed_ns=120, body=body, attributes={}) for sequence, body in enumerate(
+                    ('accept-line-before-start', 'accept-line-during-outage',
+                     'accept-line-after-pressure'), 1)]
+        rows = copy.deepcopy(old)
+        for sequence, body, start in ((4, PENDING, len(lost)), (5, UNREAD, pending_end)):
+            rows.append(dict(node='spindle-1', node_id=NODE.hex(), sequence=sequence,
+                index=0, observed_ns=123, body=body[:-1].decode(), attributes={
+                    'log.file.path': SOURCE, 'log.file.device': '7', 'log.file.inode': '9',
+                    'log.file.offset.start': str(start), 'log.file.offset.end': str(start + len(body))}))
+        queries = dict(before=old, after_drain=copy.deepcopy(rows),
+            after_reboot=copy.deepcopy(rows), boot_before='literal-boot-a',
+            boot_after='literal-boot-b', pending_body=PENDING[:-1].decode(),
+            unread_body=UNREAD[:-1].decode())
+        events = [dict(unit=PROCESS['unit'], pid=55, boot_id=PROCESS['boot_id'], at_ns=150,
+            message=f'delivery sequence={sequence} sha256={hashlib.sha256(payload).hexdigest()} '
+                    f'status=ack committed_through={sequence} elapsed_us=1')
+            for sequence, payload in ((4, pending), (5, unread))]
+        self.assertEqual(before['logs'][SOURCE]['bytes'][:len(lost)], lost)
+        self.assertEqual(before['cursors'][SOURCE]['offset'], pending_end)
+        self.assertEqual(drained['cursors'][SOURCE]['offset'], len(raw))
+        for snapshot in (before, installed, drained):
+            self.assertEqual(snapshot['cursors'][SOURCE]['prefix_crc'],
+                zlib.crc32(raw[:snapshot['cursors'][SOURCE]['prefix_len']]))
+            self.assertFalse(any(row['body'] == lost[:-1].decode()
+                for source in snapshot['sources'] for row in source['rows']))
+        self.assertFalse(any(row['body'] == lost[:-1].decode()
+            for observed in (queries['before'], queries['after_drain'], queries['after_reboot'])
+            for row in observed))
+        with self.assertRaisesRegex(ValueError, 'source prefix conservation'):
+            self.module.conserve(before, installed, drained, queries, events)
+
     def test_complete_frame_and_envelope_refusals(self):
         wrong_wire = ld(1, b'\x01') + batch()[2:]
         variants = [batch(version=2), wrong_wire, batch(node=NODE[:-1]),
