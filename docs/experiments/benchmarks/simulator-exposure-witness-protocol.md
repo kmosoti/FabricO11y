@@ -118,6 +118,13 @@ native-source census. They exercise two prospective pure Python interfaces:
 and authenticate no owner. The test-only reference encodes the registration;
 it is not a fallback implementation or an oracle derived from Rust.
 
+These are **qualification-only controls**, explicitly selected following
+[C-089](https://github.com/kmosoti/FabricO11y/issues/59#issuecomment-6138944614).
+They are not registered in `xtask/checks.json`; hosted CI is not represented as
+running them. Root's separately admitted source cell must run all 16 methods
+with zero failures and zero skips after the mechanism is implemented. Native
+and complete-source-census prerequisites below remain separate.
+
 `source/build/canonical` consume caller-read manifests and actual build file
 hashes; `expected` is separately pinned. `begin` wraps caller-read witness bytes
 as `{'sha256': actual_hash, 'value': parsed}`. `summary` is the original parsed
