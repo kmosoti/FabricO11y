@@ -285,13 +285,27 @@ def fixture_main(args):
                 except Exception as archive_error:
                     record['archive_error'] = str(archive_error)
     finally:
-        if record['state'] == 'built' and work is not None and work.exists():
-            try:
-                shutil.rmtree(work)
-            except OSError as cleanup_error:
-                record.update(state='failed', exit=2, error=str(cleanup_error), failure_evidence=str(work))
-        (out / 'fixture-receipt.json').write_text(json.dumps(record, indent=2) + '\n')
-    print(json.dumps(record, indent=2))
+        try:
+            interruption = sys.exc_info()[1]
+            if isinstance(interruption, KeyboardInterrupt):
+                raise interruption
+            if record['state'] == 'built' and work is not None and work.exists():
+                try:
+                    shutil.rmtree(work)
+                except OSError as cleanup_error:
+                    record.update(state='failed', exit=2, error=str(cleanup_error), failure_evidence=str(work))
+            (out / 'fixture-receipt.json').write_text(json.dumps(record, indent=2) + '\n')
+            print(json.dumps(record, indent=2))
+        except KeyboardInterrupt as error:
+            retained = [path for path in (out / 'failed-fixture-work', work)
+                        if path is not None and path.exists()]
+            record.update(state='interrupted', exit=2, error=str(error) or type(error).__name__,
+                          failure_evidence=str(retained[0]) if retained else None,
+                          retained_staging=[str(path) for path in retained],
+                          cleanup_confirmed=False, cleanup_outcome='retained staging may be partial' if retained
+                          else 'staging path absent at interrupted closeout')
+            (out / 'fixture-receipt.json').write_text(json.dumps(record, indent=2) + '\n')
+            print(json.dumps(record, indent=2))
     return record['exit']
 
 
@@ -314,7 +328,7 @@ def main():
         try:
             return fixture_main(args)
         except KeyboardInterrupt as error:
-            print(str(error) or 'constructor interrupted before staging', file=sys.stderr)
+            print(str(error) or 'constructor interrupted', file=sys.stderr)
             return 2
         finally:
             signal.signal(signal.SIGTERM, previous)
