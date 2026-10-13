@@ -21,7 +21,7 @@ OLD = (b'accept-line-before-start\n', b'accept-line-during-outage\n',
        b'accept-line-after-pressure\n')
 PENDING = b'accept-upgrade-pending-literal\n'
 UNREAD = b'accept-upgrade-unread-literal\n'
-DIAG_OLD, DIAG_NEW = b'event starting\n', b'event sample\n'
+DIAG_OLD, DIAG_PENDING, DIAG_NEW = b'event starting\n', b'event pending\n', b'event sample\n'
 STOP = b'event stopping\n'
 CAP = 262144
 
@@ -52,10 +52,11 @@ def source_cursor(path, device, inode, raw, offset):
             + vi(6, len(prefix)) + vi(7, zlib.crc32(prefix)))
 
 
-def payload(sequence, rows, cursors):
+def payload(sequence, rows, cursors, gaps=()):
     logs = ld(1, ld(2, b''.join(ld(2, record(row)) for row in rows)))
     return (vi(1, 1) + ld(2, NODE) + vi(3, 1) + vi(4, sequence) + ld(6, logs)
-            + b''.join(ld(7, current) for current in cursors))
+            + b''.join(ld(7, current) for current in cursors)
+            + b''.join(ld(8, gap.encode()) for gap in gaps))
 
 
 def signal_batch(signal, export):
@@ -75,7 +76,8 @@ class NativeFixture:
         (self.spool / 'identity').write_bytes(b'FAI1' + NODE + struct.pack('<Q', 1))
         (self.spool / 'writer.lock').touch()
 
-    def snapshot(self, phase, payloads, ack, allowed, *, fixture_paths=(SOURCE,), receipt_change=None):
+    def snapshot(self, phase, payloads, ack, allowed, *, fixture_paths=(SOURCE,),
+                 receipt_change=None, change=None, archive_change=None):
         raw = b''
         for item in payloads: raw += frame(item, len(raw))
         (self.spool / 'batches.faj').write_bytes(raw)
@@ -83,10 +85,12 @@ class NativeFixture:
         logs = {}
         for index, (path, content, device, inode) in enumerate((
                 (SOURCE, allowed, 7, 9),
+                (DIAG, DIAG_OLD, 0, 0) if not self.active.exists() else
                 (DIAG, self.active.read_bytes(), self.active.stat().st_dev, self.active.stat().st_ino))):
             archive = self.root / f'{phase}-{index}.log'; archive.write_bytes(content)
             logs[path] = dict(archive_path=str(archive), device=device, inode=inode,
                               btrfs_identity=None)
+        if archive_change: archive_change(logs)
         receipt = dict(binding=dict(BINDING), spool_root=str(self.spool),
             spool_bytes=268435456, stop_confirmed=True, boot_id='literal-boot-a',
             extra_project_units=[], units={unit: dict(active_state='inactive', query_exit=3,
@@ -95,6 +99,7 @@ class NativeFixture:
             service_identity=dict(uid=os.geteuid(), gid=os.getegid()),
             candidate_process=copy.deepcopy(PROCESS) if phase == 'drain' else None)
         if receipt_change: receipt_change(receipt)
+        if change: change(self.spool)
         def inventory():
             return {str(path.relative_to(self.root)): (path.lstat().st_mode,
                 str(path.readlink()) if path.is_symlink() else
@@ -113,35 +118,43 @@ class NativeFixture:
         finally:
             self.assertEqual(inventory(), original, 'reader mutated the full raw input')
 
-    def chain(self, *, rotate=False, rotation_full=True, rotated_old=None,
-              rewritten=False, lost_prefix=False, diag_line=DIAG_NEW, diag_only_pending=False):
+    def chain(self, *, rotate=False, rotation_full=True, rotation_size=None, rotated_old=None,
+              rotated_replace=False, prior_old=False, old_rewrite=False, rewritten=False,
+              lost_prefix=False, diag_pending=DIAG_PENDING, diag_line=DIAG_NEW,
+              diag_only_pending=False, extra_pending=False, pending_gap=(), unread_gap=()):
         lost = b'accept-line-lost-by-reader\n' if lost_prefix else b''
         allowed = lost + b''.join(OLD) + PENDING + UNREAD
         prefix = b''.join(OLD)
-        initial = DIAG_OLD + (b'event prior-sample\n' if diag_only_pending else b'')
+        initial = DIAG_OLD + diag_pending + (b'event prior-sample\n' if diag_only_pending else b'')
         if rotate:
             if rotation_full:
-                padding = CAP - len(initial)
+                padding = (CAP if rotation_size is None else rotation_size) - len(initial)
                 initial = b'x\n' * (padding // 2) + (b'\n' if padding % 2 else b'') + initial
+        if rotate or prior_old:
             previous = self.diagnostics / 'spindle.log.1'
             previous.write_bytes(b'event previous-generation\n'); previous.chmod(0o600)
         self.active.write_bytes(initial)
         device, inode = self.active.stat().st_dev, self.active.stat().st_ino
         cursor_a = lambda offset: source_cursor(SOURCE, 7, 9, allowed, offset)
         cursor_d = lambda offset: source_cursor(DIAG, device, inode, initial, offset)
-        payloads, old_rows, offset = [], [], len(lost)
-        for sequence, line in enumerate(OLD, 1):
-            row = literal_row(sequence, 0, SOURCE, 7, 9, offset, line)
-            old_rows.append(row); offset += len(line)
-            payloads.append(payload(sequence, [row], [cursor_a(offset)]))
-        pending_end = len(lost + prefix + PENDING)
-        diag_start = len(initial) - len(DIAG_OLD) - (
+        diag_start = len(initial) - len(DIAG_OLD + diag_pending) - (
             len(b'event prior-sample\n') if diag_only_pending else 0)
+        starting = literal_row(1, 0, DIAG, device, inode, diag_start, DIAG_OLD)
+        payloads, old_rows, offset = [], [starting], len(lost)
+        for sequence, line in enumerate(OLD, 1):
+            row = literal_row(sequence, 1 if sequence == 1 else 0, SOURCE, 7, 9, offset, line)
+            old_rows.append(row); offset += len(line)
+            payloads.append(payload(sequence, [starting, row] if sequence == 1 else [row],
+                [cursor_a(offset), cursor_d(diag_start + len(DIAG_OLD))]))
+        pending_end = len(lost + prefix + PENDING)
         pending_rows = [literal_row(4, 0, SOURCE, 7, 9, len(lost + prefix), PENDING),
-                       literal_row(4, 1, DIAG, device, inode, diag_start, DIAG_OLD)]
-        payloads.append(payload(4, pending_rows, [cursor_a(pending_end), cursor_d(diag_start + len(DIAG_OLD))]))
+                       literal_row(4, 1, DIAG, device, inode, diag_start + len(DIAG_OLD), diag_pending)]
+        if extra_pending:
+            pending_rows.append(literal_row(4, 2, SOURCE, 7, 9, len(lost + prefix), b'extra-fixture-row\n'))
+        payloads.append(payload(4, pending_rows, [cursor_a(pending_end),
+            cursor_d(diag_start + len(DIAG_OLD + diag_pending))], pending_gap))
         if diag_only_pending:
-            row = literal_row(5, 0, DIAG, device, inode, diag_start + len(DIAG_OLD), b'event prior-sample\n')
+            row = literal_row(5, 0, DIAG, device, inode, diag_start + len(DIAG_OLD + diag_pending), b'event prior-sample\n')
             pending_rows.append(row)
             payloads.append(payload(5, [row], [cursor_a(pending_end), cursor_d(len(initial))]))
         before = self.snapshot('before', payloads, 3, allowed)
@@ -151,15 +164,21 @@ class NativeFixture:
             self.active.write_bytes(diag_line + STOP); self.active.chmod(0o600)
             if rotated_old is not None:
                 (self.diagnostics / 'spindle.log.1').write_bytes(rotated_old)
+            if rotated_replace:
+                replacement = self.root / 'replacement.log'; replacement.write_bytes(initial)
+                replacement.chmod(0o600); replacement.replace(self.diagnostics / 'spindle.log.1')
         else:
             self.active.write_bytes((b'event rewritten\n' if rewritten else initial) + diag_line + STOP)
+        if old_rewrite:
+            (self.diagnostics / 'spindle.log.1').write_bytes(b'event modified-old\n')
         after_diag = self.active.read_bytes()
         sequence = len(payloads) + 1
         unread_rows = [literal_row(sequence, 0, SOURCE, 7, 9, pending_end, UNREAD),
             literal_row(sequence, 1, DIAG, self.active.stat().st_dev, self.active.stat().st_ino,
                         len(after_diag) - len(diag_line + STOP), diag_line)]
         payloads.append(payload(sequence, unread_rows, [cursor_a(len(allowed)), source_cursor(
-            DIAG, self.active.stat().st_dev, self.active.stat().st_ino, after_diag, len(after_diag) - len(STOP))]))
+            DIAG, self.active.stat().st_dev, self.active.stat().st_ino, after_diag,
+            len(after_diag) - len(STOP))], unread_gap))
         drained = self.snapshot('drain', payloads, sequence, allowed)
         rows = old_rows + pending_rows + unread_rows
         self.assertEqual([row for source in drained['sources'] for row in source['rows']], rows)
@@ -176,11 +195,8 @@ class NativeFixture:
 class NativeShapeAvailability(NativeFixture, unittest.TestCase):
     def test_unfiltered_native_root_and_explicit_fixture_projection_are_supported(self):
         self.module = adapter()
-        row = literal_row(4, 0, SOURCE, 7, 9, len(b''.join(OLD)), PENDING)
-        raw = b''.join(OLD) + PENDING + UNREAD
-        item = payload(4, [row], [source_cursor(SOURCE, 7, 9, raw, len(raw) - len(UNREAD))])
         try:
-            observed = self.snapshot('availability', [item], 3, raw)
+            observed = self.chain()[0]
         except ValueError as error:
             self.fail(f'native reader shape unavailable (qualification harness, not product): {error}')
         self.assertEqual(observed.get('fixture_paths'), (SOURCE,), 'explicit fixture projection is absent')
@@ -193,8 +209,16 @@ class LiteralNativeRecords(unittest.TestCase):
         diagnostic = literal_row(4, 1, DIAG, 7, 19, 0, DIAG_OLD)
         original = payload(4, [fixture, diagnostic], [])
         self.assertEqual(adapter().envelope(original)[2], [fixture, diagnostic])
-        self.assertEqual([row['index'] for row in (fixture, diagnostic)], [0, 1])
-        self.assertIn(record(diagnostic), original)
+
+    def test_query_oracle_stays_byte_identical(self):
+        oracle = Path(__file__).resolve().parents[1] / 'query_oracle.py'
+        self.assertEqual(hashlib.sha256(oracle.read_bytes()).hexdigest(),
+            'fc696ee1173093c258ff4451c4a796dd8e5832761f9e0ff49f89a922b411d23a')
+
+    def test_collection_gap_remains_visible_in_decoded_batch(self):
+        gap = 'log rotated; old tail unknown: ' + DIAG
+        original = payload(4, [literal_row(4, 0, SOURCE, 7, 9, 0, PENDING)], [], [gap])
+        self.assertEqual(adapter().envelope(original)[0].get('collection_gaps'), [gap])
 
     def test_malformed_diagnostic_row_cannot_hide_behind_fixture_selection(self):
         fixture = literal_row(4, 0, SOURCE, 7, 9, 0, PENDING)
@@ -238,6 +262,42 @@ class LiteralNativeRecords(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'UTF|utf'):
                         adapter().envelope(signal_batch(signal, export(b'\xff')))
 
+    def test_common_resource_keys_and_scope_names_are_utf8(self):
+        for signal in (5, 9):
+            for placement in ('resource-key', 'scope-name'):
+                def export(text):
+                    return ld(1, ld(1, ld(1, ld(1, text) + ld(2, ld(1, b'host'))))
+                        if placement == 'resource-key' else ld(2, ld(1, ld(1, text))))
+                with self.subTest(signal=signal, placement=placement):
+                    self.assertEqual(adapter().envelope(signal_batch(signal, export(b'literal')))[2],
+                                     [literal_row(4, 0, SOURCE, 7, 9, 0, PENDING)])
+                    with self.assertRaisesRegex(ValueError, 'UTF|utf'):
+                        adapter().envelope(signal_batch(signal, export(b'\xff')))
+
+    def test_legacy_mode_still_refuses_a_diagnostics_directory(self):
+        fixture = legacy.CustodyWitnessControls('test_clean_raw_snapshot_and_two_line_conservation')
+        fixture.module = adapter(); self.addCleanup(fixture.doCleanups); fixture.setUp()
+        with self.assertRaisesRegex(ValueError, 'unexpected or failed Spool input'):
+            fixture.snapshot('legacy-diagnostics', change=lambda root: (root / 'diagnostics').mkdir())
+
+    def test_extra_allowed_path_row_in_pending_batch_is_refused(self):
+        fixture = legacy.CustodyWitnessControls('test_clean_raw_snapshot_and_two_line_conservation')
+        fixture.module = adapter(); self.addCleanup(fixture.doCleanups); fixture.setUp()
+        baseline = fixture.chain(); fixture.module.conserve(*baseline)
+        rows = [literal_row(4, 0, SOURCE, 7, 9, 0, PENDING),
+                literal_row(4, 1, SOURCE, 7, 9, 0, b'extra-fixture-row\n')]
+        pending = payload(4, rows, [legacy.cursor(len(PENDING))])
+        unread = legacy.batch(5, body=UNREAD, offset=len(PENDING + UNREAD))
+        before = fixture.snapshot('extra-before', [pending])
+        installed = fixture.snapshot('extra-installed', [pending])
+        drained = fixture.snapshot('extra-drain', [pending, unread], ack=5,
+            receipt_change=lambda receipt: receipt.update(candidate_process=copy.deepcopy(PROCESS)))
+        events = copy.deepcopy(baseline[-1])
+        events[0]['message'] = ('delivery sequence=4 sha256=' + hashlib.sha256(pending).hexdigest()
+                               + ' status=ack committed_through=4 elapsed_us=1')
+        with self.assertRaisesRegex(ValueError, 'unexpected pending log row'):
+            fixture.module.conserve(before, installed, drained, baseline[3], events)
+
     def test_predecessor_query_rows_cannot_substitute_label_or_strand(self):
         # Source deduction: queries.before currently becomes its own expected baseline.
         fixture = legacy.CustodyWitnessControls('test_clean_raw_snapshot_and_two_line_conservation')
@@ -277,11 +337,19 @@ class NativeShapeControls(NativeFixture, unittest.TestCase):
         before, installed, drained, queries, _ = chain
         self.assertEqual(before['fixture_paths'], (SOURCE,))
         self.assertEqual(before['files'], installed['files'])
-        self.assertEqual(before['diagnostics']['spindle.log']['bytes'], DIAG_OLD)
-        self.assertEqual(drained['diagnostics']['spindle.log']['bytes'], DIAG_OLD + DIAG_NEW + STOP)
-        self.assertEqual(drained['logs'][DIAG]['bytes'], DIAG_OLD + DIAG_NEW + STOP)
-        self.assertEqual(drained['cursors'][DIAG]['offset'], len(DIAG_OLD + DIAG_NEW))
-        self.assertEqual(len(queries['after_drain']), 7)
+        self.assertEqual(before['diagnostics']['spindle.log']['bytes'], DIAG_OLD + DIAG_PENDING)
+        self.assertEqual(drained['diagnostics']['spindle.log']['bytes'], DIAG_OLD + DIAG_PENDING + DIAG_NEW + STOP)
+        self.assertEqual(drained['logs'][DIAG]['bytes'], DIAG_OLD + DIAG_PENDING + DIAG_NEW + STOP)
+        self.assertEqual(drained['cursors'][DIAG]['offset'], len(DIAG_OLD + DIAG_PENDING + DIAG_NEW))
+        self.assertEqual(len(queries['before']), 4)
+        self.assertEqual(before['sources'][0]['rows'][0]['attributes']['log.file.path'], DIAG)
+        for source in before['sources'][:3]:
+            self.assertEqual({current['path'] for current in self.module.envelope(source['payload'])[1]},
+                             {SOURCE, DIAG})
+        self.assertIn(ld(7, source_cursor(DIAG, before['logs'][DIAG]['device'],
+            before['logs'][DIAG]['inode'], DIAG_OLD + DIAG_PENDING, len(DIAG_OLD))),
+            before['sources'][0]['payload'])
+        self.assertEqual(len(queries['after_drain']), 8)
         self.assertEqual(sum(row['attributes']['log.file.path'] == SOURCE
                              for row in queries['after_drain']), 5)
         self.assertEqual(len(drained['sources'][-1]['rows']), 2)
@@ -290,10 +358,14 @@ class NativeShapeControls(NativeFixture, unittest.TestCase):
         self.module.conserve(*chain)
 
     def test_source_path_not_body_selects_the_five_fixture_rows(self):
-        chain = self.chain(diag_line=PENDING)
-        self.assertEqual(sum(row['body'] == PENDING[:-1].decode()
-                             for row in chain[3]['after_drain']), 2)
-        self.module.conserve(*chain)
+        for body in (PENDING, UNREAD):
+            with self.subTest(body=body):
+                chain = self.chain(diag_pending=body, diag_line=body)
+                self.assertEqual(sum(row['body'] == body[:-1].decode()
+                                     for row in chain[3]['after_drain']), 3)
+                self.assertEqual(chain[0]['sources'][3]['rows'][1]['body'], body[:-1].decode())
+                self.module.conserve(*chain)
+            self.temp.cleanup(); self.setUp()
 
     def test_one_observed_rotation_preserves_prior_archived_inventory(self):
         chain = self.chain(rotate=True)
@@ -314,11 +386,89 @@ class NativeShapeControls(NativeFixture, unittest.TestCase):
 
     def test_unjustified_or_unobserved_rotation_cannot_replace_prior_prefix(self):
         for options in (dict(rotate=True, rotation_full=False),
-                        dict(rotate=True, rotated_old=b'event different-generation\n')):
+                        dict(rotate=True, rotated_old=b'event different-generation\n'),
+                        dict(rotate=True, rotated_replace=True),
+                        dict(rotate=True, rotation_size=CAP - len(DIAG_NEW)),
+                        dict(rotate=True, diag_line=b'x' * 4096 + b'\n'),
+                        dict(prior_old=True, old_rewrite=True)):
             with self.subTest(options=options), self.assertRaisesRegex(
                     ValueError, 'diagnostic.*(prefix|rotation|preserv)'):
                 self.module.conserve(*self.chain(**options))
             self.temp.cleanup(); self.setUp()
+
+    def test_unchanged_old_diagnostic_file_is_preserved_without_rotation(self):
+        chain = self.chain(prior_old=True)
+        self.assertEqual(chain[0]['diagnostics']['spindle.log.1'],
+                         chain[2]['diagnostics']['spindle.log.1'])
+        self.module.conserve(*chain)
+
+    def test_every_pending_raw_log_row_is_in_both_complete_query_answers(self):
+        baseline = self.chain(); self.module.conserve(*baseline)
+        for phase in ('after_drain', 'after_reboot', 'both'):
+            for mutation in ('drop', 'duplicate', 'rewrite'):
+                args = copy.deepcopy(baseline)
+                for selected in (('after_drain', 'after_reboot') if phase == 'both' else (phase,)):
+                    rows = args[3][selected]
+                    index = next(index for index, row in enumerate(rows)
+                                 if (row['sequence'], row['index']) == (4, 1))
+                    if mutation == 'drop': rows.pop(index)
+                    elif mutation == 'duplicate': rows.append(copy.deepcopy(rows[index]))
+                    else: rows[index]['body'] = 'rewritten-diagnostic'
+                with self.subTest(phase=phase, mutation=mutation), self.assertRaisesRegex(
+                        ValueError, 'exact row conservation'):
+                    self.module.conserve(*args)
+
+    def test_extra_allowed_path_row_in_native_pending_batch_is_refused(self):
+        with self.assertRaisesRegex(ValueError, 'unexpected pending log row'):
+            self.module.conserve(*self.chain(extra_pending=True))
+
+    def test_fixture_source_gap_in_pending_or_unread_batch_is_refused(self):
+        allowed = self.chain(pending_gap=('log source unavailable ' + DIAG + ': unavailable',))
+        self.assertEqual(allowed[0]['sources'][3].get('collection_gaps'),
+                         ['log source unavailable ' + DIAG + ': unavailable'])
+        self.module.conserve(*allowed)
+        for phase in ('pending_gap', 'unread_gap'):
+            self.temp.cleanup(); self.setUp()
+            with self.subTest(phase=phase), self.assertRaisesRegex(ValueError, 'fixture.*gap'):
+                self.module.conserve(*self.chain(**{phase: ('log truncated; previous tail unknown: ' + SOURCE,)}))
+
+    def test_legacy_frame_and_failure_markers_are_also_refused_in_native_mode(self):
+        item = legacy.batch()
+        changes = (
+            lambda root: (root / 'batches.faj').write_bytes(frame(item)[:-1]),
+            lambda root: (root / 'batches.faj').write_bytes(frame(item) + b'F'),
+            lambda root: (root / 'batches.faj').write_bytes(frame(item)[:16] + b'X' + frame(item)[17:]),
+            lambda root: (root / 'recovery-required').write_bytes(b'failure'),
+            lambda root: (root / 'append-in-progress').write_bytes(b'interrupted'),
+            lambda root: (root / 'acked').write_bytes(b'FAK1' + struct.pack('<QQ', 1, 2**64 - 1)),
+            lambda root: (root / 'acked').write_bytes(b'FAK1' + struct.pack('<QQ', 2, 0)))
+        for index, change in enumerate(changes):
+            with self.subTest(change=index), self.assertRaises(ValueError):
+                self.snapshot('native-marker', [item], 3, PENDING + UNREAD, change=change)
+            self.temp.cleanup(); self.setUp()
+
+    def test_native_root_requires_private_diagnostic_directory_and_active_file(self):
+        item = legacy.batch()
+        for variant in ('missing-directory', 'missing-active', 'mode', 'symlink'):
+            if variant.startswith('missing'):
+                self.active.unlink()
+                if variant == 'missing-directory': self.diagnostics.rmdir()
+            elif variant == 'mode': self.diagnostics.chmod(0o755)
+            else:
+                outside = self.root / 'outside-diagnostics'; self.diagnostics.replace(outside)
+                self.diagnostics.symlink_to(outside, target_is_directory=True)
+            with self.subTest(directory=variant), self.assertRaisesRegex(ValueError, 'diagnostic'):
+                self.snapshot('required-directory', [item], 3, PENDING + UNREAD)
+            self.temp.cleanup(); self.setUp()
+
+    def test_diagnostic_archive_must_match_actual_in_root_bytes_and_identity(self):
+        item = legacy.batch()
+        for variant in ('bytes', 'device', 'inode'):
+            def change(logs):
+                if variant == 'bytes': Path(logs[DIAG]['archive_path']).write_bytes(b'forged-diagnostic\n')
+                else: logs[DIAG][variant] += 1
+            with self.subTest(archive=variant), self.assertRaisesRegex(ValueError, 'diagnostic.*(archive|source)'):
+                self.snapshot('mismatched-archive', [item], 3, PENDING + UNREAD, archive_change=change)
 
     def test_diagnostic_only_pending_batch_still_needs_original_byte_ack(self):
         chain = self.chain(diag_only_pending=True)
