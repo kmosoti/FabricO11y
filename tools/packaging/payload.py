@@ -2,7 +2,8 @@
 import hashlib
 import io
 import os
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
+import signal
 import stat
 import select
 import subprocess
@@ -12,8 +13,40 @@ import time
 CAP = 128 * 1024**2
 
 
+def stop_group(process):
+    """Stop the private group, including children whose leader already exited."""
+    deadline = time.monotonic() + 10
+    try:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        process.wait(timeout=10)
+        while True:
+            live = False
+            for path in Path('/proc').iterdir():
+                if not path.name.isdecimal():
+                    continue
+                try:
+                    fields = (path / 'stat').read_text(errors='replace').rsplit(')', 1)[1].split()
+                except (FileNotFoundError, ProcessLookupError):
+                    continue
+                if int(fields[2]) == process.pid and fields[0] != 'Z':
+                    live = True
+                    break
+            if not live:
+                return
+            if time.monotonic() >= deadline:
+                raise subprocess.TimeoutExpired(process.args, 10)
+            time.sleep(.01)
+    except BaseException as error:
+        error.cleanup_failed = True
+        raise
+
+
 def bounded_command(command):
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               start_new_session=True)
     deadline = time.monotonic() + 30
     result, errors = bytearray(), bytearray()
     streams = {process.stdout: result, process.stderr: errors}
@@ -44,11 +77,14 @@ def bounded_command(command):
         error.output, error.stderr = bytes(result), bytes(errors)
         raise
     finally:
-        if process.poll() is None:
-            process.kill()
-            process.wait(timeout=10)
-        process.stdout.close()
-        process.stderr.close()
+        try:
+            stop_group(process)
+        except BaseException as error:
+            error.output, error.stderr = bytes(result), bytes(errors)
+            raise
+        finally:
+            process.stdout.close()
+            process.stderr.close()
 
 
 def identity(body):

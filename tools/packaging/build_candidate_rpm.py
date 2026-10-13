@@ -19,7 +19,7 @@ ROOT = HERE.parents[1]
 sys.path.insert(0, str(HERE.parent))
 from resource_group import require_limits, STORAGE
 from stage_candidate import digest, stage_candidate
-from payload import assert_equivalent, bounded_command, cpio, identity, inventory
+from payload import assert_equivalent, bounded_command, cpio, identity, inventory, stop_group
 
 FIXTURE_VERSIONS = {'debian': ('0.1.0~alpha.1', '0.1.0~alpha.0'),
                     'fedora': ('0.1.0-0.alpha.1', '0.1.0-0.alpha.0')}
@@ -44,26 +44,48 @@ def validate_fixture_transform(family, candidate, fixture, before, after, script
 
 def run_build(command, env, out, label='build'):
     process = subprocess.Popen(command, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                               text=True, start_new_session=True)
+                               start_new_session=True)
     interruption = None
+    stdout = stderr = b''
     try:
-        stdout, stderr = process.communicate(timeout=300)
-    except (subprocess.TimeoutExpired, KeyboardInterrupt) as error:
-        interruption = error
         try:
-            os.killpg(process.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        try:
-            stdout, stderr = process.communicate(timeout=10)
-        except subprocess.TimeoutExpired:
+            stdout, stderr = process.communicate(timeout=300)
+        except (subprocess.TimeoutExpired, KeyboardInterrupt) as error:
+            interruption = error
+            stdout = getattr(error, 'output', None) or stdout
+            stderr = getattr(error, 'stderr', None) or stderr
             try:
-                os.killpg(process.pid, signal.SIGKILL)
+                os.killpg(process.pid, signal.SIGTERM)
             except ProcessLookupError:
                 pass
-            stdout, stderr = process.communicate(timeout=10)
-    (out / (label + '.stdout')).write_text(stdout)
-    (out / (label + '.stderr')).write_text(stderr)
+            try:
+                stdout, stderr = process.communicate(timeout=10)
+            except subprocess.TimeoutExpired as error:
+                stdout = error.output or stdout
+                stderr = error.stderr or stderr
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                stdout, stderr = process.communicate(timeout=10)
+    except BaseException as error:
+        interruption = error
+        stdout = getattr(error, 'output', None) or stdout
+        stderr = getattr(error, 'stderr', None) or stderr
+    finally:
+        try:
+            stop_group(process)
+        except BaseException as error:
+            interruption = error
+        try:
+            for stream, body in (('stdout', stdout), ('stderr', stderr)):
+                (out / (label + '.' + stream)).write_bytes(body.encode() if isinstance(body, str) else body)
+        except BaseException as error:
+            error.cleanup_failed = getattr(interruption, 'cleanup_failed', False)
+            raise
+        finally:
+            process.stdout.close()
+            process.stderr.close()
     if interruption is not None:
         if isinstance(interruption, subprocess.TimeoutExpired):
             interruption.output, interruption.stderr = stdout, stderr
@@ -254,11 +276,14 @@ def fixture_main(args):
             record['stderr'] = error.stderr.decode(errors='replace') if isinstance(error.stderr, bytes) else error.stderr
         if work is not None:
             record['failure_evidence'] = str(work)
-            try:
-                shutil.move(str(work), str(out / 'failed-fixture-work'))
-                record['failure_evidence'] = str(out / 'failed-fixture-work')
-            except Exception as archive_error:
-                record['archive_error'] = str(archive_error)
+            if getattr(error, 'cleanup_failed', False):
+                record['archive_error'] = 'process cleanup unconfirmed; staging retained in place'
+            else:
+                try:
+                    shutil.move(str(work), str(out / 'failed-fixture-work'))
+                    record['failure_evidence'] = str(out / 'failed-fixture-work')
+                except Exception as archive_error:
+                    record['archive_error'] = str(archive_error)
     finally:
         if record['state'] == 'built' and work is not None and work.exists():
             try:
@@ -282,7 +307,17 @@ def main():
     args = parser.parse_args()
     require_limits()
     if args.same_code_fixture:
-        return fixture_main(args)
+        def interrupt(signum, frame):
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            raise KeyboardInterrupt('constructor received SIGTERM')
+        previous = signal.signal(signal.SIGTERM, interrupt)
+        try:
+            return fixture_main(args)
+        except KeyboardInterrupt as error:
+            print(str(error) or 'constructor interrupted before staging', file=sys.stderr)
+            return 2
+        finally:
+            signal.signal(signal.SIGTERM, previous)
     if any(value is not None for value in (args.rpm_receipt, args.frozen, args.source_date_epoch, args.harness_commit)):
         parser.error('fixture pins require --same-code-fixture')
     out = args.out.resolve()
