@@ -220,6 +220,14 @@ source order, with no gap, overlap or duplicate interval. Every interval must
 match the archived newline-terminated body bytes and source device/inode. The
 existing three-row lifecycle baseline and sentinel checks remain required;
 matching them alone cannot establish full archived-prefix conservation.
+This tiling witness is limited to the registered finite fixture of complete
+UTF-8 newline-terminated source lines. The actual
+[`log_source.rs`](../../../crates/fabric-adapter-linux/src/log_source.rs)
+collector skips oversized lines (more than 4,096 body bytes) and invalid UTF-8,
+reports collection gaps, and can commit cursor-only progress through a skipped
+oversized line. Such consumed bytes have no `body + '\n'` row interval, so this
+witness refuses that archive. It does not establish general source conservation
+for intentional skips, incomplete tails or arbitrary log-input histories.
 Keep every prior control, oracle and gate unchanged. Run the named fixture only
 through the registered serial default1800/full1GiB control cell and preserve its
 actual red before production correction. This amendment changes no product wire
