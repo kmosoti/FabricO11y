@@ -91,7 +91,7 @@ export privileged saved
 class InstallationShellControls(unittest.TestCase):
     """Origin: C-035 / C-aud-7; real shell decisions, isolated paths and command stubs."""
     def shell(self, program, family='fedora', *, unit='', state='inactive', avc='',
-              retained=True, purge_keeps_state=False):
+              retained=True, purge_keeps_state=False, systemctl_mode='normal', grep_error=False):
         with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
             root = Path(directory)
             paths = {old: root / name for old, name in (
@@ -123,7 +123,18 @@ getent() { printf '%s' "$ACCOUNT"; }
 getenforce() { echo Enforcing; }
 auditctl() { echo 'enabled 1'; }
 ausearch() { printf '%s\\n' "$AVC"; }
+grep() {
+  if [ "$GREP_ERROR" = yes ] && [ "$1" = -E ]; then
+    echo 'synthetic audit read error' >&2; return 2
+  fi
+  command grep "$@"
+}
 systemctl() {
+  case "$SYSTEMCTL_MODE" in
+    empty) return 3 ;;
+    incomplete) echo inactive; return 3 ;;
+    error) printf 'inactive\\ninactive\\n'; echo 'synthetic systemctl query error' >&2; return 1 ;;
+  esac
   local rc=3 value unit
   for unit; do
     case "$unit" in fabrico11y-*.service)
@@ -137,7 +148,8 @@ systemctl() {
 '''
             env = dict(os.environ, ACCOUNT=account, DATA=str(data), CONFIG=str(config),
                        BAD_UNIT=unit, BAD_STATE=state, AVC=avc,
-                       PURGE_KEEP_STATE='yes' if purge_keeps_state else 'no')
+                       PURGE_KEEP_STATE='yes' if purge_keeps_state else 'no',
+                       SYSTEMCTL_MODE=systemctl_mode, GREP_ERROR='yes' if grep_error else 'no')
             return subprocess.run(['bash', '-s', '--', 'remove', family, 'synthetic-package'],
                 input=stubs + program, env=env, text=True, capture_output=True, timeout=10)
 
@@ -170,6 +182,18 @@ systemctl() {
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertNotIn(forbidden, result.stdout)
 
+    def test_lifecycle_remove_rejects_unobserved_services_and_unreadable_audit(self):
+        program = Path(__file__).with_name('lifecycle.sh').read_text()
+        for mode in ('empty', 'incomplete', 'error'):
+            with self.subTest(systemctl_mode=mode):
+                result = self.shell(program, systemctl_mode=mode)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertNotIn('ACCEPT A13a PASS', result.stdout)
+        result = self.shell(program, grep_error=True)
+        self.assertIn('synthetic audit read error', result.stderr)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertNotIn('ACCEPT F4 PASS', result.stdout)
+
     def test_acceptance_remove_rejects_either_live_unit(self):
         source = Path(__file__).with_name('acceptance.sh').read_text()
         functions = '\n'.join(line for line in source.splitlines() if line.startswith(('pass()', 'fail()')))
@@ -185,6 +209,11 @@ systemctl() {
                     self.assertEqual(result.returncode, 0 if state == 'inactive' else 1,
                                      result.stdout + result.stderr)
                     self.assertIn('ACCEPT A13a ' + ('PASS' if state == 'inactive' else 'FAIL'), result.stdout)
+        for mode in ('empty', 'incomplete', 'error'):
+            with self.subTest(systemctl_mode=mode):
+                result = self.shell(program, systemctl_mode=mode)
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertNotIn('ACCEPT A13a PASS', result.stdout)
 
 
 if __name__ == '__main__':

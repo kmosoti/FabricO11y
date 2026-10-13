@@ -140,8 +140,12 @@ member of `&&` lists bypass Bash errexit; baseline A13a accepted one live unit.
 invokes the actual lifecycle remove phase with isolated paths and package/service
 stubs. Either active, activating, deactivating or reloading unit, literal Fabric
 AVC, missing retained state and incomplete purge must exit1 without the affected
-PASS; clean fixtures must exit0. Baseline A13a rejects the same live states. The actual
-QEMU cleanup AST additionally requires an independently detected RPM mutation
+PASS; clean fixtures must exit0. Baseline A13a rejects the same live states.
+Service-query controls additionally require both observed states: empty or one-line
+output and exit1 despite two inactive lines fail A13a. A literal grep exit2 at the
+post-reboot AVC check fails F4; clean inactive queries and readable empty audits
+remain positive controls. These are verifier prerequisites, not guest outcomes.
+The actual QEMU cleanup AST additionally requires an independently detected RPM mutation
 and confirmed process stop; unrelated/provenance failures retain scratch.
 These prospective controls precede repair and claim no guest outcome. Preserve
 the contained red first; after repair, register its actual fix commit in
