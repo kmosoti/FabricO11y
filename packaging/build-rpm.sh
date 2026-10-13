@@ -32,6 +32,12 @@ if [ "${3:-}" = --historical-deb ]; then
   python3 -B "$root/tools/packaging/stage_predecessor.py" "$2" "$work/stage"
   preinst="$work/stage/historical-preinst"
   "$root/packaging/check-glibc.sh" "$work/stage"/usr/bin/*
+elif [ "${3:-}" = --same-code-fixture-stage ]; then
+  [ "$#" -eq 3 ] || { echo 'one exact fixture stage required' >&2; exit 1; }
+  release=0.alpha.0
+  cp -a "$2/." "$work/stage/"
+  preinst="$work/stage/candidate-preinst"
+  mutation=''
 elif [ "${3:-}" = --candidate-deb ]; then
   [ "$#" -ge 4 ] || { echo 'candidate build receipt required' >&2; exit 1; }
   python3 -B "$root/tools/packaging/stage_candidate.py" "$2" "$4" "$work/stage" > "$work/candidate-provenance.json"
