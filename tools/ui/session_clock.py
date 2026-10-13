@@ -18,7 +18,7 @@ import time
 import session_clock_oracle as oracle
 
 HERE=Path(__file__).resolve().parent
-sys.path.insert(0,str(HERE.parents[1]))
+sys.path.insert(0,str(HERE.parent))
 from resource_group import STORAGE, require_limits
 
 
@@ -31,15 +31,49 @@ def kernel_time():
     value=KernelTime();oracle.require(ctypes.CDLL(None,use_errno=True).syscall(228,0,ctypes.byref(value))==0,'fixture-raw-clock');return value.sec*1000000000+value.nsec
 
 
-def process_binding(pid, executable, helper, intercepted=True):
+def freeze_images(executable,helper):
+    frozen={}
+    for name,path in (('executable',executable),('helper',helper)):
+        before=path.stat();frozen[name+'_sha256']=digest(path);after=path.stat()
+        oracle.require((before.st_dev,before.st_ino,before.st_size,before.st_mtime_ns,before.st_ctime_ns)==(after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns),'isolation-'+('target' if name=='executable' else 'helper')+'-frozen')
+        frozen[name+'_identity']={'device':before.st_dev,'inode':before.st_ino}
+    return frozen
+
+
+def process_binding(pid, executable, helper, intercepted=True, *, expected=None):
     proc=Path(f'/proc/{pid}');actual=proc/'exe'
+    if expected is not None:
+        for name,paths,message in (('executable',(actual,executable),'isolation-target-frozen'),('helper',(helper,),'isolation-helper-frozen')):
+            for path in paths:
+                stat=path.stat()
+                oracle.require({'device':stat.st_dev,'inode':stat.st_ino}==expected[name+'_identity'] and digest(path)==expected[name+'_sha256'],message)
     oracle.require(actual.resolve()==executable.resolve() and digest(actual)==digest(executable),'isolation-target')
     rows=[line.split(maxsplit=5) for line in (proc/'maps').read_text().splitlines()]
     mappings={(row[3],row[4],row[5]) for row in rows if len(row)==6 and row[5]==str(helper)};stat=helper.stat()
+    if expected is not None and mappings:
+        frozen=expected['helper_identity']
+        oracle.require(mappings=={(f'{os.major(frozen["device"]):02x}:{os.minor(frozen["device"]):02x}',str(frozen['inode']),str(helper))},'isolation-helper-frozen')
     oracle.require(mappings==({(f'{os.major(stat.st_dev):02x}:{os.minor(stat.st_dev):02x}',str(stat.st_ino),str(helper))} if intercepted else set()),'isolation-interception')
     libc=next(Path(row[5]) for row in rows if len(row)==6 and row[5].endswith('/libc.so.6'))
     return {'pid':pid,'executable_sha256':digest(actual),'helper_sha256':digest(helper) if mappings else None,'libc':str(libc),'libc_sha256':digest(libc),
             'start_ticks':int((proc/'stat').read_text().rsplit(')',1)[1].split()[19]),'cgroup':(proc/'cgroup').read_text(),'helper_maps':sorted(mappings)}
+
+
+def stop_group(process):
+    try:os.killpg(process.pid,signal.SIGTERM)
+    except ProcessLookupError:process.wait(timeout=3);return
+    try:process.wait(timeout=3)
+    except subprocess.TimeoutExpired:pass
+    try:os.killpg(process.pid,signal.SIGKILL)
+    except ProcessLookupError:pass
+    process.wait(timeout=3);deadline=time.monotonic()+3
+    while True:
+        try:
+            while os.waitpid(-process.pid,os.WNOHANG)[0]:pass
+        except ChildProcessError:pass
+        try:os.killpg(process.pid,0)
+        except ProcessLookupError:return
+        oracle.require(time.monotonic()<deadline,'fixture-process-group-stop');time.sleep(.01)
 
 
 class SessionClock:
@@ -80,11 +114,9 @@ class SessionClock:
         raw,self.buffer=self.buffer.split(b'\n',1);return json.loads(raw)
     def command(self,name):self.process.stdin.write((name+'\n').encode());self.process.stdin.flush()
     def close(self):
-        try:os.killpg(self.process.pid,signal.SIGTERM)
-        except ProcessLookupError:pass
-        try:self.process.wait(timeout=3)
-        except subprocess.TimeoutExpired:os.killpg(self.process.pid,signal.SIGKILL);self.process.wait(timeout=3)
-        self.receiver.join(timeout=1);self.parent.close();self.process.stdin.close();self.process.stdout.close();self.stderr.close()
+        try:stop_group(self.process)
+        finally:
+            self.receiver.join(timeout=1);self.parent.close();self.process.stdin.close();self.process.stdout.close();self.stderr.close()
         oracle.require(not self.receiver.is_alive(),'fixture-receiver-stop')
         try:os.killpg(self.process.pid,0)
         except ProcessLookupError:return
@@ -96,7 +128,7 @@ def native_admission(executable,helper,output,deadline,report):
     try:
         ready=target.line();report['ready']=ready
         oracle.require(ready=={'kind':'ready','pid':target.process.pid,'env_clear':True,'cloexec':True,'socket_type':5} and os.readlink(f'/proc/{target.process.pid}/fd/{target.fd}')==target.socket_identity and int(Path(f'/proc/{target.process.pid}/fdinfo/{target.fd}').read_text().split('flags:',1)[1].split()[0],8)&os.O_CLOEXEC,'isolation-control')
-        report['target']=process_binding(target.process.pid,executable,helper);report['controller']=process_binding(os.getpid(),Path(sys.executable),helper,False);report['host_clocks']=[]
+        report['target']=process_binding(target.process.pid,executable,helper,expected=report['frozen_images']);report['controller']=process_binding(os.getpid(),Path(sys.executable),helper,False);report['host_clocks']=[]
         report['control_fd']={'identity':target.socket_identity,'fdinfo':Path(f'/proc/{target.process.pid}/fdinfo/{target.fd}').read_text()};report['probe_argv']=target.argv
         for sequence,offset in enumerate((0,1,1799,1800,28799,28800)):
             if sequence:target.advance(offset)
@@ -135,7 +167,7 @@ def native_admission(executable,helper,output,deadline,report):
         try:
             if name=='unpreloaded':
                 oracle.require(current.line()=={'kind':'absent','pid':current.process.pid},'fixture-unpreloaded')
-                try:process_binding(current.process.pid,executable,helper)
+                try:process_binding(current.process.pid,executable,helper,expected=report['frozen_images'])
                 except ValueError as error:oracle.require(str(error)==expected,'fixture-wrong-refusal')
                 else:raise ValueError('fixture-unpreloaded-admitted')
             else:
@@ -161,8 +193,24 @@ def main():
     scratch=Path(os.environ['FABRIC_SCRATCH_ROOT']);oracle.require(scratch.is_dir() and scratch.is_relative_to(STORAGE),'fixture-scratch')
     directory=Path(tempfile.mkdtemp(prefix='session-clock-',dir=scratch));deadline=time.monotonic()+240;report={'scope':'native binding only; actual packaged browser session checks pending','state':'failed','exit':1,'commands':[]}
     def run(command):
-        report['commands'].append(command);value=subprocess.run(command,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=max(.001,deadline-time.monotonic()))
-        oracle.require(len(value.stdout)<=1048576,'fixture-tool-output');report.setdefault('tool_outputs',[]).append({'command':command,'exit':value.returncode,'output':value.stdout.decode(errors='replace')});oracle.require(value.returncode==0,'fixture-tool-exit');return value.stdout.decode()
+        report['commands'].append(command);path=output/('tool-'+str(len(report['commands']))+'.log');timeout=max(.001,deadline-time.monotonic());failure=None
+        with path.open('xb') as stream:
+            process=subprocess.Popen(command,stdout=stream,stderr=subprocess.STDOUT,start_new_session=True)
+            try:
+                while process.poll() is None:
+                    if time.monotonic()>=deadline:raise subprocess.TimeoutExpired(command,timeout)
+                    oracle.require(path.stat().st_size<=1048576,'fixture-tool-output');time.sleep(.01)
+            except BaseException as error:failure=error;raise
+            finally:
+                try:stop_group(process)
+                except BaseException as error:
+                    report['tool_cleanup_error']=type(error).__name__+': '+str(error)
+                    if failure is None:raise
+                finally:
+                    with path.open('rb') as captured:raw=captured.read(1048576)
+                    report.setdefault('tool_outputs',[]).append({'command':command,'exit':process.returncode,'raw_log':str(path),'output':raw.decode(errors='replace')})
+                    if isinstance(failure,subprocess.TimeoutExpired):failure.output=raw
+        oracle.require(path.stat().st_size<=1048576,'fixture-tool-output');oracle.require(process.returncode==0,'fixture-tool-exit');return raw.decode()
     try:
         compiler=Path(shutil.which(args.cc)).resolve();rustc=Path(shutil.which(args.rustc)).resolve();version=run([str(rustc),'-vV'])
         oracle.require('release: 1.99.0' in version and 'commit-hash: b940084d7' in version,'fixture-toolchain')
@@ -171,13 +219,25 @@ def main():
         run([str(rustc),'--edition=2021','-C','opt-level=1','-o',str(executable),str(HERE/'session_clock_probe.rs')])
         dynamic=run(['readelf','--dyn-syms','--wide',str(executable)]);oracle.require('clock_gettime@' in dynamic,'fixture-dynamic-clock-import')
         interpreter=run(['readelf','-lW',str(executable)]).split('Requesting program interpreter: ',1)[1].split(']',1)[0]
+        report['frozen_images']=freeze_images(executable,helper)
         report['hashes']={str(path):digest(path) for path in (compiler,rustc,helper,executable,Path(interpreter),HERE/'session_clock.py',HERE/'session_clock.c',HERE/'session_clock_probe.rs')}
+        oracle.require(all(report['hashes'][str(path)]==report['frozen_images'][name+'_sha256'] for name,path in (('executable',executable),('helper',helper))),'fixture-image-hash')
         oracle.require(sum(path.stat().st_size for path in directory.rglob('*') if path.is_file())<=512*1024**2,'fixture-storage-bound')
         native_admission(executable,helper,output,deadline,report)
         report['build_id_notes']={str(path):run(['readelf','-nW',str(path)]) for path in (helper,executable,Path(interpreter),Path(report['target']['libc']))};report.update(state='completed',exit=0)
     except BaseException as error:report['error']=type(error).__name__+': '+str(error);raise
     finally:
-        shutil.rmtree(directory);report['cleanup']={'owned_fixture':str(directory),'absent':not directory.exists()};(output/'receipt.json').write_text(json.dumps(report,indent=2)+'\n');print(str(output/'receipt.json'))
+        try:
+            if report['state']=='completed':shutil.rmtree(directory)
+            elif 'tool_cleanup_error' in report:report['failure_evidence']=str(directory)
+            else:
+                retained=output/'failed-fixture';shutil.move(str(directory),str(retained));report['failure_evidence']=str(retained)
+        except BaseException as error:
+            report['cleanup_error']=type(error).__name__+': '+str(error);report['failure_evidence']=str(directory)
+            if 'error' not in report:report.update(state='failed',exit=1);raise
+        finally:
+            report['cleanup']={'owned_fixture':str(directory),'absent':not directory.exists(),'failure_evidence':report.get('failure_evidence')}
+            (output/'receipt.json').write_text(json.dumps(report,indent=2)+'\n');print(str(output/'receipt.json'))
     return report['exit']
 
 
