@@ -53,6 +53,8 @@ class PackageTests(unittest.TestCase):
                                        frozen=controls['original_head'], source_date_epoch=controls['source_date_epoch'],
                                        harness_commit='1' * 40)
                 def command_output(command):
+                    if command == ['dpkg', '--compare-versions', '0.1.0~alpha.0', 'lt', '0.1.0~alpha.1']:
+                        return b''
                     if command[0] == 'dpkg-deb':
                         return b'0.1.0~alpha.1'
                     if '--eval' in command:
