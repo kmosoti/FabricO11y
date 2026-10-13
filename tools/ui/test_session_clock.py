@@ -269,4 +269,183 @@ class SessionClockLifecycleTests(unittest.TestCase):
                                      'unchanged bytes cannot replace frozen file or loaded mapping device/inode witnesses')
 
 
+def session_fixtures():
+    # Independent literal receipts, not native process/state admission evidence.
+    rows, metadata = sessions()
+    fixtures = {}
+    for key, pid, inode, start, stop in (
+            ('AB', 700, 101, 2_000_000_000, 10_000_000_000),
+            ('C', 701, 102, 11_000_000_000, 31_000_000_000)):
+        state = {'path': '/owned/browser/state-' + key, 'device': 17, 'inode': inode}
+        fixtures[key] = {
+            'candidate_commit': '8fb6f413179b094288316e25845c137440ba23fa',
+            'package_sha256': 'd' * 64, 'executable_sha256': 'e' * 64,
+            'helper_sha256': 'f' * 64,
+            'process_binding': {
+                'pid': pid, 'start_ticks': pid + 100, 'cgroup': '0::/owned/browser-' + key + '\n',
+                'executable_sha256': 'e' * 64, 'helper_sha256': 'f' * 64,
+                'libc': '/owned/libc.so.6', 'libc_sha256': '1' * 64,
+                'helper_maps': [['08:01', '99', '/owned/session_clock.so']]},
+            'state_before': dict(state, created_monotonic_ns=start - 100_000_000,
+                                 observed_monotonic_ns=start - 50_000_000,
+                                 initial_entries=[], copy_source=None, descriptor_held=True),
+            'state_after': dict(state, observed_monotonic_ns=stop - 1_000_000),
+            'run_started_monotonic_ns': 1_000_000_000,
+            'deadline_monotonic_ns': 241_000_000_000,
+            'started_monotonic_ns': start, 'stopped_monotonic_ns': stop,
+            'owned_groups': [{'pgid': pid, 'start_ticks': pid + 100}],
+            'stop_observations': [{'pgid': pid, 'start_ticks': pid + 100,
+                                   'observed_monotonic_ns': stop,
+                                   'population': 0, 'confirmed': True}]}
+    for index, row in enumerate(rows):
+        row['pid'] = 700 if index < 2 else 701
+        before = 3_000_000_000 + index * 600_000_000 if index < 2 else 12_000_000_000 + (index - 2) * 600_000_000
+        row.update(request_before_monotonic_ns=before,
+                   server_call_monotonic_ns=before + 1_000_000,
+                   request_after_monotonic_ns=before + 2_000_000)
+    return rows, metadata, fixtures
+
+
+class SessionFixtureBindingTests(unittest.TestCase):
+    def checker(self):
+        checker = getattr(oracle, 'check_session_fixtures', None)
+        self.assertTrue(callable(checker), 'missing explicit two-state session fixture checker')
+        return checker
+
+    def test_explicit_two_state_checker_accepts_literal_binding_without_rewriting_rows(self):
+        checker = self.checker()
+        inputs = session_fixtures()
+        original = copy.deepcopy(inputs)
+        self.assertIsNone(checker(*inputs))
+        self.assertEqual(inputs, original, 'checker must not rewrite observed rows or receipts')
+
+    def test_fixture_keys_images_and_process_receipts_are_independently_bound(self):
+        checker = self.checker()
+        self.assertIsNone(checker(*session_fixtures()))
+        for keys in ({'AB'}, {'AB', 'C', 'extra'}, {'A', 'B', 'C'}):
+            rows, metadata, fixtures = session_fixtures()
+            fixtures = {key: fixtures.get(key, fixtures['AB']) for key in keys}
+            with self.subTest(keys=keys), self.assertRaisesRegex(ValueError, '^session-fixture-keys$'):
+                checker(rows, metadata, fixtures)
+        cases = [
+            (('C', 'candidate_commit'), '0' * 40, 'images'),
+            (('C', 'package_sha256'), '0' * 64, 'images'),
+            (('C', 'executable_sha256'), '0' * 64, 'images'),
+            (('C', 'helper_sha256'), '0' * 64, 'images'),
+            (('C', 'process_binding', 'pid'), 700, 'pid'),
+            (('C', 'process_binding', 'pid'), 0, 'pid'),
+            (('C', 'process_binding', 'pid'), True, 'pid'),
+            (('C', 'process_binding', 'pid'), 701.0, 'pid'),
+            (('C', 'process_binding', 'start_ticks'), 0, 'process'),
+            (('C', 'process_binding', 'cgroup'), '', 'process'),
+            (('C', 'process_binding', 'executable_sha256'), '0' * 64, 'process'),
+            (('C', 'process_binding', 'helper_sha256'), '0' * 64, 'process'),
+            (('C', 'process_binding', 'helper_maps'), [], 'process')]
+        for path, value, error in cases:
+            rows, metadata, fixtures = session_fixtures()
+            target = fixtures
+            for part in path[:-1]:
+                target = target[part]
+            target[path[-1]] = value
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, '^session-fixture-' + error + '$'):
+                checker(rows, metadata, fixtures)
+        rows, metadata, fixtures = session_fixtures()
+        del fixtures['C']['process_binding']
+        with self.assertRaisesRegex(ValueError, '^session-fixture-process$'):
+            checker(rows, metadata, fixtures)
+
+    def test_fresh_distinct_state_and_serial_zero_population_stop_are_required(self):
+        checker = self.checker()
+        self.assertIsNone(checker(*session_fixtures()))
+        cases = [
+            (('C', 'state_before', 'path'), '/owned/browser/state-AB', 'state'),
+            (('C', 'state_before', 'inode'), 101, 'state'),
+            (('C', 'state_before', 'initial_entries'), ['access.state'], 'fresh'),
+            (('C', 'state_before', 'copy_source'), '/owned/browser/state-AB', 'fresh'),
+            (('C', 'state_before', 'descriptor_held'), False, 'fresh'),
+            (('C', 'state_before', 'created_monotonic_ns'), 11_000_000_000, 'fresh'),
+            (('C', 'state_before', 'observed_monotonic_ns'), 10_000_000_000, 'fresh'),
+            (('C', 'state_after', 'inode'), 103, 'state'),
+            (('C', 'state_after', 'observed_monotonic_ns'), 10_000_000_000, 'state'),
+            (('C', 'started_monotonic_ns'), 10_000_000_000, 'order'),
+            (('AB', 'stop_observations', 0, 'confirmed'), False, 'stop'),
+            (('AB', 'stop_observations', 0, 'confirmed'), 1, 'stop'),
+            (('AB', 'stop_observations', 0, 'population'), 1, 'stop'),
+            (('AB', 'stop_observations', 0, 'population'), False, 'stop'),
+            (('AB', 'stop_observations', 0, 'pgid'), 999, 'stop'),
+            (('AB', 'stop_observations', 0, 'start_ticks'), 801, 'stop'),
+            (('AB', 'stop_observations', 0, 'observed_monotonic_ns'), 11_000_000_000, 'stop'),
+            (('AB', 'stop_observations'), [], 'stop'),
+            (('AB', 'owned_groups'), [], 'stop'),
+            (('C', 'run_started_monotonic_ns'), 2_000_000_000, 'deadline'),
+            (('C', 'deadline_monotonic_ns'), 481_000_000_000, 'deadline'),
+            (('C', 'deadline_monotonic_ns'), True, 'deadline'),
+            (('C', 'stopped_monotonic_ns'), 241_000_000_001, 'deadline')]
+        for path, value, error in cases:
+            rows, metadata, fixtures = session_fixtures()
+            target = fixtures
+            for part in path[:-1]:
+                target = target[part]
+            target[path[-1]] = value
+            if path in (('C', 'state_before', 'path'), ('C', 'state_before', 'inode')):
+                fixtures['C']['state_after'][path[-1]] = value
+            if path == ('C', 'started_monotonic_ns'):
+                fixtures['C']['state_before']['created_monotonic_ns'] = value - 100_000_000
+                fixtures['C']['state_before']['observed_monotonic_ns'] = value - 50_000_000
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, '^session-fixture-' + error + '$'):
+                checker(rows, metadata, fixtures)
+        rows, metadata, fixtures = session_fixtures()
+        fixtures['AB']['owned_groups'].append({'pgid': 702, 'start_ticks': 802})
+        with self.assertRaisesRegex(ValueError, '^session-fixture-stop$'):
+            checker(rows, metadata, fixtures)
+        for field in ('owned_groups', 'stop_observations'):
+            rows, metadata, fixtures = session_fixtures()
+            fixtures['AB'][field].append(copy.deepcopy(fixtures['AB'][field][0]))
+            with self.subTest(field=field), self.assertRaisesRegex(ValueError, '^session-fixture-stop$'):
+                checker(rows, metadata, fixtures)
+
+    def test_exact_session_rows_keep_original_boundaries_and_actual_request_windows(self):
+        checker = self.checker()
+        self.assertIsNone(checker(*session_fixtures()))
+        cases = [
+            (0, 'pid', 701, 'session-fixture-row'),
+            (2, 'pid', 700, 'session-fixture-row'),
+            (2, 'pid', 999, 'session-fixture-row'),
+            (2, 'pid', True, 'session-fixture-row'),
+            (2, 'server_call_monotonic_ns', 11_999_999_999, 'session-fixture-window'),
+            (2, 'request_before_monotonic_ns', 10_999_999_999, 'session-fixture-window'),
+            (31, 'request_after_monotonic_ns', 31_000_000_001, 'session-fixture-window'),
+            (3, 'request_before_monotonic_ns', 12_549_999_999, 'session-fixture-pacing'),
+            (0, 'request_s', 2800, 'session-boundary'),
+            (1, 'status', 429, 'session-refusal'),
+            (1, 'error', 'rate limited', 'session-refusal'),
+            (31, 'status', 200, 'session-refusal'),
+            (31, 'last_seen_s', 38000, 'session-baseline'),
+            (31, 'session_hash', 'b' * 64, 'session-binding')]
+        for index, field, value, error in cases:
+            rows, metadata, fixtures = session_fixtures()
+            rows[index][field] = value
+            with self.subTest(index=index, field=field), self.assertRaisesRegex(ValueError, '^' + error + '$'):
+                checker(rows, metadata, fixtures)
+        rows, metadata, fixtures = session_fixtures()
+        with self.assertRaisesRegex(ValueError, '^session-completeness$'):
+            checker(rows[:5] + rows[6:], metadata, fixtures)
+        rows, metadata, fixtures = session_fixtures()
+        del rows[2]['server_call_monotonic_ns']
+        with self.assertRaisesRegex(ValueError, '^session-fixture-window$'):
+            checker(rows, metadata, fixtures)
+        rows, metadata, fixtures = session_fixtures()
+        fixtures['AB']['stopped_monotonic_ns'] = 4_000_000_000
+        fixtures['AB']['stop_observations'][0]['observed_monotonic_ns'] = 4_000_000_000
+        fixtures['C']['started_monotonic_ns'] = 4_100_000_000
+        fixtures['C']['state_before']['created_monotonic_ns'] = 4_050_000_000
+        fixtures['C']['state_before']['observed_monotonic_ns'] = 4_075_000_000
+        for index, row in enumerate(rows[2:]):
+            before = 4_149_999_999 + index * 600_000_000
+            row.update(request_before_monotonic_ns=before, server_call_monotonic_ns=before + 1_000_000,
+                       request_after_monotonic_ns=before + 2_000_000)
+        with self.assertRaisesRegex(ValueError, '^session-fixture-pacing$'):
+            checker(rows, metadata, fixtures)
+
+
 if __name__=='__main__':unittest.main()
