@@ -3,6 +3,30 @@
   "description": "Counterexamples kept as deterministic regression fixtures. `cargo xtask check-counterexamples` requires each reproducer test to exist in its file and each fix commit to exist. Removing an entry is a trust-boundary change.",
   "counterexamples": [
     {
+      "id": "CX-INSTALLATION-REMOVAL-CHECKS",
+      "origin": "Coordination C-035 / C-aud-7 review of harness de77de7399710c5afd50ae0de981fda6e0b75f30; corrected contained red at d5e52368854fd87ddce8d941e0c2164c27cf2e9e",
+      "defect": "Bash errexit ignores negated service/AVC commands and the first member of retention/purge AND lists; baseline removal accepted one live service, allowing false A13/F4 PASS output",
+      "seed_or_trace": "Actual remove shell with isolated paths and stubs: either unit in active/activating/deactivating/reloading, each of three Fabric comm AVCs, missing retained server directory and state surviving purge; 21 shell failures before repair, clean inactive Debian/Fedora fixtures succeed. Root red exit 1/stopped, log SHA256 334c573b5de73e3a91f7952ff66eb3387e3106fccfe7757088d685b3fb43c711. Earlier empty-slice control failures at 903d68f5 remain control defects, not guest evidence",
+      "contract": "QUAL-INSTALL and registered installation A13a/A13b/F4; failed required phases cannot produce passing installation evidence",
+      "reproducer": {
+        "file": "tools/qualification/install/test_run_qemu.py",
+        "test": "test_lifecycle_remove_rejects_active_services_and_fabric_avc"
+      },
+      "fix_commit": "fe6e2b1e83bafd6b6cae57f601bbbd48e73ec948"
+    },
+    {
+      "id": "CX-INSTALLATION-EXPECTED-MUTATION-SCRATCH",
+      "origin": "C-aud-7 note 6 / C-035; corrected contained red at d5e52368854fd87ddce8d941e0c2164c27cf2e9e",
+      "defect": "QEMU cleanup required a Debian repacking mutation and its archive, so a confirmed separately built expected RPM mutation retained its stopped owned scratch",
+      "seed_or_trace": "Execute the actual cleanup AST with expected root-user RPM, acceptance exit 1/A6 FAIL, no provenance error and confirmed process stop: before repair no cleanup call. Unrelated A12 failure, unconfirmed stop and helper mismatch retain scratch. Root red exit 1/stopped, shared log SHA256 334c573b5de73e3a91f7952ff66eb3387e3106fccfe7757088d685b3fb43c711; no actual guest run is claimed",
+      "contract": "Registered installation named-mutation grading and owned stopped-scratch cleanup; packages, sources, logs and unexpected failures remain preserved",
+      "reproducer": {
+        "file": "tools/qualification/install/test_run_qemu.py",
+        "test": "test_expected_rpm_mutation_cleans_only_confirmed_stopped_scratch"
+      },
+      "fix_commit": "fe6e2b1e83bafd6b6cae57f601bbbd48e73ec948"
+    },
+    {
       "id": "CX-CONSOLE-ICON-TIMESTAMP",
       "origin": "Cross-check of the a5dbda7 rebuild on #40: icon-192.png, icon-512.png, asset-manifest.json and service-worker.js differed from the ca84d98 build although no console input changed (#55)",
       "defect": "ImageMagick wrote date:modify and date:timestamp tEXt chunks into the generated icons, so separate console builds of one commit produced different icons, asset manifests, service-worker cache versions and package hashes",
