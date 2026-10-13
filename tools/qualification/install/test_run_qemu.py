@@ -215,6 +215,25 @@ systemctl() {
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
                 self.assertNotIn('ACCEPT A13a PASS', result.stdout)
 
+    def test_acceptance_fedora_rejects_unreadable_audit(self):
+        source = Path(__file__).with_name('acceptance.sh').read_text()
+        functions = '\n'.join(line for line in source.splitlines() if line.startswith(('pass()', 'fail()')))
+        start = source.index('  audit_status=$(auditctl -s 2>&1)')
+        block = source[start:source.index('\nfi\necho "RESULT', start)]
+        for decision in ('ausearch -m AVC,USER_AVC ', 'selinux-avc.log', 'pass F3 ', 'fail F3 '):
+            self.assertIn(decision, block, 'actual nonempty F3 audit decision required')
+        program = 'set -u\nFAILS=0\nW=/root/accept\n' + functions + '\n' + block + '\nexit "$FAILS"\n'
+        for grep_error in (False, True):
+            with self.subTest(grep_error=grep_error):
+                result = self.shell(program, grep_error=grep_error)
+                if grep_error:
+                    self.assertIn('synthetic audit read error', result.stderr)
+                    self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                    self.assertNotIn('ACCEPT F3 PASS', result.stdout)
+                else:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertIn('ACCEPT F3 PASS', result.stdout)
+
 
 if __name__ == '__main__':
     unittest.main()

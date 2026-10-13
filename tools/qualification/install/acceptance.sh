@@ -521,9 +521,12 @@ if [ "$PACKAGE_FAMILY" = fedora ]; then
   fi
   ausearch -m AVC,USER_AVC -ts boot > "$W/selinux-avc.log" 2>&1; audit_search_rc=$?
   [ "$audit_search_rc" -le 1 ] || fail F3 "audit search failed: $audit_search_rc"
-  if grep -E 'comm="(fabric-server|fabric-node|fabricctl)"' "$W/selinux-avc.log"; then
-    fail F3 "Fabric process SELinux denial; retain AVC evidence"
-  else pass F3 "no Fabric process AVC in guest audit"; fi
+  grep -E 'comm="(fabric-server|fabric-node|fabricctl)"' "$W/selinux-avc.log"; avc_rc=$?
+  case "$avc_rc" in
+    0) fail F3 "Fabric process SELinux denial; retain AVC evidence" ;;
+    1) pass F3 "no Fabric process AVC in guest audit" ;;
+    *) fail F3 "audit read error rc=$avc_rc; retain audit evidence" ;;
+  esac
 fi
 echo "RESULT fails=$FAILS not_run=$NOTRUN"
 [ $FAILS -gt 0 ] && exit 1

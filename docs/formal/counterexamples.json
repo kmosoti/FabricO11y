@@ -3,6 +3,18 @@
   "description": "Counterexamples kept as deterministic regression fixtures. `cargo xtask check-counterexamples` requires each reproducer test to exist in its file and each fix commit to exist. Removing an entry is a trust-boundary change.",
   "counterexamples": [
     {
+      "id": "CX-INSTALLATION-BASELINE-AUDIT-READ",
+      "origin": "PR review C-aud-10 S1; prospective control commit 42e45f5d7ce75fbb5494e898467c75a721c4cd09",
+      "defect": "Baseline Fedora F3 treated grep exit 2 on unreadable required audit evidence as a clean audit and printed PASS",
+      "seed_or_trace": "Actual Fedora F3 shell block with readable-empty positive and literal grep exit 2. Only grep_error=True failed: actual exit 0 and ACCEPT F3 PASS with retained synthetic audit read error. Named red exit 1 with confirmed stop; log SHA256 ab5e80c3cace15c704088cebd2bc1f9ea89d733ca350029f35fbe00611f4e591; resource receipt SHA256 14ec587fa0a5f1719e7f0120e8c7729f537a258441fbbe90da96bbea086b6351",
+      "contract": "QUAL-INSTALL and registered Fedora F3: unreadable required audit evidence cannot support PASS",
+      "reproducer": {
+        "file": "tools/qualification/install/test_run_qemu.py",
+        "test": "test_acceptance_fedora_rejects_unreadable_audit"
+      },
+      "fix_commit": "f437f0e12682d1f32bf22909679c5d98431665ef"
+    },
+    {
       "id": "CX-INSTALLATION-PREREQUISITE-OBSERVATION",
       "origin": "Follow-up review of installation removal checks; contained red at 8b5d3329cb03d6c470f24b5dba46fba03121804e",
       "defect": "Removal accepted empty, incomplete or failed service-state observations, and the post-reboot AVC check accepted grep exit 2 as absence of a Fabric denial",
