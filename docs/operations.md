@@ -4,16 +4,26 @@ This guide covers one central server and remote Linux Spindles. The
 [current state](CURRENT.md) records tested artifacts and acceptance limits;
 the [release plan](milestones/release-readiness.md) defines the supported matrix.
 
-## Build and install
+## Install
 
-Build the native binaries and console together using the
-[package instructions](../packaging/README.md), Rust 1.99.0 and the resource
-launcher. The launcher needs a systemd user session with cgroup v2, keeps its
-caches under `FABRIC_STORAGE_ROOT` (default `${XDG_CACHE_HOME:-$HOME/.cache}/fabrico11y`,
-never tmpfs) and sizes its memory cap to the build host; see
-[resource containment](CONTRIBUTING.md#resource-containment). Install the selected, checksum-verified artifact with
-`sudo apt install ./PACKAGE.deb` on Debian or `sudo dnf install ./PACKAGE.rpm`
-on Fedora. Services remain disabled until configured. The finite acceptance
+Download the `.deb` or `.rpm` and `SHA256SUMS` from the
+[v0.1.0-alpha.1 release](https://github.com/kmosoti/FabricO11y/releases/tag/v0.1.0-alpha.1)
+(to build from source, see the [package instructions](../packaging/README.md)), then verify and install.
+On Debian 13:
+
+```sh
+sha256sum -c --ignore-missing SHA256SUMS
+sudo apt install ./fabrico11y_*.deb
+```
+
+On Fedora 44:
+
+```sh
+sha256sum -c --ignore-missing SHA256SUMS
+sudo dnf install ./fabrico11y-*.rpm
+```
+
+Services remain disabled until configured. The finite acceptance
 matrix targets Debian 13 and Fedora 44 x86_64, systemd and unified cgroup v2;
 a compatible dependency list alone does not establish another OS's acceptance.
 
@@ -21,9 +31,9 @@ The package installs `fabric-node`, `fabric-server` and `fabricctl` in `/usr/bin
 
 ## Server
 
-1. Create `/etc/fabrico11y/server.conf` from the example. Provide a TLS certificate and key trusted by both browsers and Spindles. Configure the exact `access_origin`, hostname-only `access_rp_id`, and packaged `console_dir`. Normal serving needs no administrator token: `admin_token_file` is read only by the migration mode `serve-legacy`. Make the TLS key `0640 root:fabricolly`. Every token and secret file must be a single-link regular file, not a symlink, owned by the service user or root, with mode `0600` or, if root owns it, `0640`; anything else is refused at start ([security hardening](architecture/security-hardening.md#credential-files)).
+1. Create `/etc/fabrico11y/server.conf` from the example. Provide a TLS certificate and key trusted by both browsers and Spindles: create them now with the [certificate recipe](#network-and-certificate-setup) and open the firewall as described there, then return here. Configure the exact `access_origin`, hostname-only `access_rp_id`, and packaged `console_dir`. Normal serving needs no administrator token: `admin_token_file` is read only by the migration mode `serve-legacy`. Make the TLS key `0640 root:fabricolly`. Every token and secret file must be a single-link regular file, not a symlink, owned by the service user or root, with mode `0600` or, if root owns it, `0640`; anything else is refused at start ([security hardening](architecture/security-hardening.md#credential-files)).
 2. `sudo systemctl enable --now fabrico11y-server.service`.
-3. Follow [first-owner setup](access-operations.md#configure-and-enroll-the-first-owner) to read the protected local bootstrap secret and enroll a passkey at `https://YOUR_HOST:PORT/console/`. Add a second passkey and save the immutable owner ID for recovery.
+3. Now follow [first-owner setup](access-operations.md#configure-and-enroll-the-first-owner) to read the protected local bootstrap secret and enroll a passkey at `https://YOUR_HOST:PORT/console/`, then return here. Add a second passkey and save the immutable owner ID for recovery.
 
 Storage settings include `journal_bytes` (20 GiB), `journal_file_bytes` (64 MiB),
 `retention_s` (86,400 seconds), `retention_bytes` (100,000,000,000 bytes) and
@@ -59,14 +69,29 @@ confirms process startup; query the received observations to check delivery.
 
 ## Network and certificate setup
 
-Choose a stable server hostname before enrolling passkeys. Its certificate SAN
-must match the hostname used by browsers and remote Spindles; the dedicated local
-Spindle also needs the loopback or local-listener SAN described above. A private
-CA can issue a certificate containing both names. Install that CA in each
-browser's trusted certificate store, and configure `server_ca` on edges and
-`self_spindle_ca` on the server. A browser certificate exception or a disabled
-TLS check is not a substitute for this setup. Never copy the CA's private key
-to an edge.
+Choose a stable server hostname before enrolling passkeys. `access_rp_id` must be a
+hostname, not an IP address. Unless DNS resolves it, map it on every VM and browser
+host (`echo '192.0.2.10 telemetry.example.com' | sudo tee -a /etc/hosts`). The certificate
+SAN must match that name and also cover `localhost` and `127.0.0.1` for the dedicated
+local Spindle. To use a private CA, create it and the server certificate on the server:
+
+```sh
+HOST=telemetry.example.com
+mkdir -m 0700 ~/fabric-pki && cd ~/fabric-pki
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout ca.key -out ca.pem \
+  -days 825 -subj "/CN=Fabric CA" -addext basicConstraints=critical,CA:TRUE \
+  -addext keyUsage=critical,keyCertSign,cRLSign
+openssl req -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -keyout server.key -out server.csr -subj "/CN=$HOST"
+printf 'subjectAltName=DNS:%s,DNS:localhost,IP:127.0.0.1\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\n' "$HOST" > server.ext
+openssl x509 -req -in server.csr -CA ca.pem -CAkey ca.key -CAcreateserial -out server.pem -days 825 -extfile server.ext
+sudo install -m 0644 ca.pem server.pem /etc/fabrico11y/
+sudo install -m 0640 -o root -g fabricolly server.key /etc/fabrico11y/server.key
+```
+
+Set `self_spindle_ca=/etc/fabrico11y/ca.pem` in `server.conf`. Copy `ca.pem` to each
+edge as `/etc/fabrico11y/ca.pem` (`server_ca`) and import it into each browser's
+trusted certificate store. Keep `ca.key` on the server or offline; never copy it to an
+edge. A browser certificate exception or a disabled TLS check is not a substitute.
 
 Check the configured names and trust before enabling collection:
 
@@ -77,7 +102,11 @@ openssl x509 -in /etc/fabrico11y/server.pem -noout -ext subjectAltName
 
 Bind the central listener to an intended private/LAN/VPN address when possible.
 In the host firewall and any cloud firewall, allow its configured TCP port
-(7443 in the example) only from the edge and operator networks. Include IPv6
+(7443 in the example) only from the edge and operator networks. For example, with edges and operators on
+192.0.2.0/24, Fedora's firewalld:
+`sudo firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="192.0.2.0/24" port port="7443" protocol="tcp" accept' && sudo firewall-cmd --reload`.
+Debian has no firewall by default; with ufw,
+`sudo ufw allow proto tcp from 192.0.2.0/24 to any port 7443`. Include IPv6
 rules if using an IPv6 listener. Edges initiate outbound HTTPS; they do not need
 an inbound Fabric port. The optional OTLP receiver stays on loopback port 4318
 and is for applications on that edge. Preserve SSH/VPN administration when
@@ -91,9 +120,9 @@ listening port alone does not establish certificate trust or durable custody.
 ## Reader tokens and Spindle controls
 
 The owner enrolls, configures, pauses, resumes and revokes Spindles in the console;
-these are owner-only. For scripts and AI agents, issue a read-only reader token in
+these are owner-only. After revoking an edge, stop its `fabrico11y-node.service` and delete its token file; the server rejects its deliveries, and the node keeps unsent batches in its Spool until you remove it. For scripts and AI agents, issue a read-only reader token in
 console Settings and use it with `fabricctl access access.conf node list` and
-`query '<QUERY_JSON>'`, as [access operations](access-operations.md#reader-tokens-and-read-only-clients)
+`query` (logs, metrics and spans examples), as [access operations](access-operations.md#reader-tokens-and-read-only-clients)
 describes with token storage, rotation and recovery. A reader can query telemetry (logs,
 metric points and spans, at most 24 hours and 1,000 rows) and read status and inventory,
 nothing else. [Query answers](architecture/retained-history.md) include completeness,
@@ -103,10 +132,37 @@ role boundary.
 
 ## Node
 
-1. Create `/etc/fabrico11y/node.conf` from the example with `server_url`, `server_ca` and `token_file` (the token shown once at enrollment, stored `0640 root:fabricolly` as packaged; the same file rules apply).
-2. Give the service read access to each selected log with a narrow ACL, for example `setfacl -m u:fabricolly:r /var/log/app.log`. An unreadable log produces a visible collection gap; the node never escalates.
-3. Optionally set `traces_listen=127.0.0.1:4318` so local applications can export traces to the node, with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces` and `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf` in their environment. The node answers an export only after it is in the spool; spans are queried with `{"kind":"spans", ...}` ([retained history](architecture/retained-history.md)).
+1. Create `/etc/fabrico11y/node.conf` from the example with `server_url`, `server_ca` and `token_file` (the token shown once at enrollment; the same file rules apply). Install `ca.pem` as `server_ca`. Create the token file (`token_file=/etc/fabrico11y/node-token`), paste the token, press Enter, then Ctrl-D:
+
+```sh
+sudo install -m 0640 -o root -g fabricolly /dev/stdin /etc/fabrico11y/node-token
+```
+2. Give the service read access to each selected log with a narrow ACL, for example `setfacl -m u:fabricolly:r /var/log/app.log` (`sudo apt install acl` on minimal Debian if `setfacl` is missing). An unreadable log produces a visible collection gap; the node never escalates.
+3. Optionally set `traces_listen=127.0.0.1:4318` so local applications can export traces to the node, with `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces` and `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL=http/protobuf` in their environment. The receiver accepts only `application/x-protobuf`, so `curl` with JSON fails; use an OTLP/HTTP-protobuf application.
 4. `sudo systemctl enable --now fabrico11y-node.service`.
+5. If you set `traces_listen`, emit a test span once the receiver is listening (Debian needs `sudo apt install python3-venv` first):
+
+```sh
+python3 -m venv otel && otel/bin/pip install opentelemetry-sdk opentelemetry-exporter-otlp-proto-http
+cat > span.py <<'PY'
+import socket, time
+for _ in range(30):  # wait up to 30 s for the node's receiver
+    try: socket.create_connection(('127.0.0.1', 4318), 1).close(); break
+    except OSError: time.sleep(1)
+else: raise SystemExit('fabric-node is not listening on 127.0.0.1:4318')
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+provider = TracerProvider()
+provider.add_span_processor(SimpleSpanProcessor(OTLPSpanExporter()))
+with provider.get_tracer("walkthrough").start_as_current_span("walkthrough-span"):
+    pass
+provider.shutdown()
+PY
+OTEL_SERVICE_NAME=walkthrough OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://127.0.0.1:4318/v1/traces otel/bin/python span.py
+```
+
+The node answers an export only after it is in the spool. Now query the edge's logs, metrics and spans as in [access operations](access-operations.md#reader-tokens-and-read-only-clients), then return here.
 
 The node samples host metrics on its interval, reads logs every second, keeps every batch in its spool until the server acknowledges it, and polls for configuration every 5 s. Log paths and interval set through the console's node configuration replace the local file's values once the node has validated and stored them; the spool, its ceiling and the server target stay local. The CLI always adds its own bounded diagnostic source; server-owned nodes also retain the server source. These pins share the sixteen-source ceiling and survive remote replacement. Edge diagnostics go to the existing configured server. `fabricctl inspect /etc/fabrico11y/node.conf` reports the spool: batches, acknowledged sequence, backlog, and any recovery state.
 
@@ -144,14 +200,38 @@ sudo systemctl stop fabrico11y-node.service fabrico11y-server.service
 ```
 
 Back up `/etc/fabrico11y` and the complete `/var/lib/fabrico11y` tree, including
-access state, journals, Segments, manifests and every Spool. Include any configured
-state/Spool directories and key files outside those defaults. Keep ownership,
-permissions and protected credential material intact in controlled backup storage.
+access state, journals, Segments, manifests and every Spool:
+
+```sh
+sudo tar -C / -cpf fabrico11y-backup.tar etc/fabrico11y var/lib/fabrico11y
+```
+
+Include any configured state/Spool directories and key files outside those defaults.
+Keep the archive in controlled storage; it holds credentials. To restore, stop the
+services, move the current trees aside so no newer file survives, and extract:
+
+```sh
+sudo systemctl stop fabrico11y-node.service fabrico11y-server.service
+sudo mv /etc/fabrico11y /etc/fabrico11y.pre-restore
+sudo mv /var/lib/fabrico11y /var/lib/fabrico11y.pre-restore
+sudo tar -C / -xpf fabrico11y-backup.tar
+```
+
+A restored snapshot can bring back revoked passkeys and reader tokens, and the server
+cannot detect the rollback. On the central server, always recover owner access with
+the commands below before the first start (see
+[offline owner recovery](access-operations.md#offline-owner-recovery) for what it
+changes), then enroll the owner again; on an edge, start `fabrico11y-node.service`:
+
+```sh
+sudo -u fabricolly fabric-server recover-access /etc/fabrico11y/server.conf OWNER_PRINCIPAL_ID
+sudo systemctl start fabrico11y-server.service
+```
+
 Do not run a copied Spool alongside the original: both would share an identity.
 A copied configuration alone cannot recover acknowledged telemetry.
 
-Install the checksum-verified `.deb` with `sudo apt install ./PACKAGE.deb`, or
-the `.rpm` with `sudo dnf install ./PACKAGE.rpm`. The package reloads unit
+Install the checksum-verified candidate as in [Install](#install). The package reloads unit
 definitions and preserves operator configuration; it does not perform the
 operator's service restart. Explicitly start the roles configured on that host.
 For a central-only host, start `fabrico11y-server.service`; it starts its own
@@ -167,9 +247,9 @@ telemetry and the service account. Verify that both services are inactive.
 A deliberate reset destroys retained telemetry, credentials and pending Spool
 data. After stopping/removing the services and deciding what backup to retain,
 Debian's `sudo apt purge fabrico11y` deletes the default `/etc/fabrico11y` and
-`/var/lib/fabrico11y` trees. RPM removal has no purge operation; an operator who
-intends that same reset can explicitly remove those two directories after
-`dnf remove`. Custom paths are outside that default cleanup. Reinstallation with
+`/var/lib/fabrico11y` trees. RPM removal has no purge operation; for the same reset run
+`sudo dnf remove fabrico11y && sudo rm -rf /etc/fabrico11y /var/lib/fabrico11y`.
+The `fabricolly` account remains. Custom paths are outside that default cleanup. Reinstallation with
 empty state requires fresh owner and edge enrollment. Restoring an older access
 snapshot requires the [offline owner recovery](access-operations.md#offline-owner-recovery)
 procedure before reopening remote access; package rollback alone does not rotate

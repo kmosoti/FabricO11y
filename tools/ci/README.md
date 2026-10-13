@@ -17,6 +17,12 @@ workflow names are part of the concurrency key, so independent workflows cannot
 cancel each other. Already-started runs from older workflow definitions are not
 retroactively guaranteed to use these groups.
 
+The extended verification workflow runs on non-draft pull requests when they are
+opened, pushed to or marked ready for review, on merge-queue groups, weekly and on
+manual dispatch. Draft pull requests skip it. Keep a pull request in draft while
+iterating and mark it ready once validated, so the suite runs once on the final
+head. Evidence still binds to the tested head and tree.
+
 Formatting runs before browser and proof-tool installation. The fast registry
 still runs its full canonical check set. Its WASM compilation, contrast and
 packaging checks are not repeated as separate later steps. Default-feature and
