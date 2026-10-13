@@ -205,6 +205,13 @@ the original literal order followed by C's absolute boundary exceeds the
 offset ceiling in one process. Use two freshly created serial states while
 retaining all 32 observations, statuses, error strings and wall-second bounds.
 
+The [actual registration result](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-session-fixture-registration-red-results-01)
+at `b1e7e83` records four missing-checker assertions and five actual-finalizer
+counterexamples; independent cleanup completed. The AB/C oracle is now
+implemented separately using the unchanged session-semantic validator and
+observed rows. Corrected checker controls are **not run**. Finalizer ownership
+needs a separate amendment; native timing and browser acceptance remain pending.
+
 The new independent interface is
 `check_session_fixtures(rows, sessions, fixtures) -> None`; rejection raises a
 named `ValueError`. It must not mutate any input or rewrite observed PIDs to
