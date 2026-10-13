@@ -161,22 +161,9 @@ the contained red first; after repair, register its actual fix commit in
 construction plans explicitly create each fresh mutant output directory before
 `build-rpm.sh`; an existing directory is refused. Limits and gate rules remain.
 
-The prerequisite controls ran at `8b5d3329cb03d6c470f24b5dba46fba03121804e`:
-five methods exposed exactly seven intended failures, exit1 with confirmed stop
-(`installation-prerequisite-checker-red-03.json`, log SHA-256
-`accc6c250b667e9a8b86664e4e8d6c354118a730430c7b36fed85ababb93c397`).
-Repair `ce387f75610bc4bac82955fbb722c9d61e4fcbc1` keeps those expectations.
-On that clean revision, `python3 -B tools/qualification/install/test_run_qemu.py`
-ran all nine tests, exit0 with confirmed stop
-(`installation-prerequisite-checker-green-03.json`, log SHA-256
-`a77f13b9a487d5a928e54cb437e007c20e7a2ec8255b3fdb3bfd1ff37598d6d9`,
-stopped resource receipt SHA-256
-`5a29865387ea8ff2778e38900b5c27f8db3411b3873306227e1ddbe3d629fc40`).
-`bash -n tools/qualification/install/acceptance.sh tools/qualification/install/lifecycle.sh`
-and pinned Bun1.4.0 `tools/docs/check.mjs` also exited0 with confirmed stop on
-that revision. The earlier bare-Bun attempt exited2 because Bun was unavailable;
-its failure evidence remains preserved. These finite checker results establish
-no new guest or package outcome.
+Revision-bound source-only checker execution evidence is recorded in the
+[installation checker results wiki](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-checker-prerequisite-results-01).
+These controls establish no guest or package acceptance.
 
 Keep the existing named Debian package defects: root-user must fail A6,
 no-collision-check must fail A2a/A2b, and no-memory-max must fail A8. The existing
