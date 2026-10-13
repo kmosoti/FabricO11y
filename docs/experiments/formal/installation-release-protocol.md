@@ -1,12 +1,20 @@
 # Registered release package and lifecycle checks
 
-Status: revision 4 registered 2026-10-12 for the frozen candidate: its exact
-candidate and L1 predecessor versions and the dated Debian image. Revision 3,
+Status: revision 5 amended 2026-10-13 for the existing unreadable-audit gate.
+Revision 4 registered 2026-10-12 the frozen candidate's exact candidate and L1
+predecessor versions and the dated Debian image. Revision 3,
 registered 2026-10-10 before stopped-overlay continuation, named the earlier
 candidate; a result belongs to the revision it ran under. This extends the
 [baseline installation protocol](installation-acceptance-protocol.md) for the
 owner-selected Debian/Fedora release matrix. No result is recorded here.
 These checks are finite local guest measurements, not deployment qualification.
+
+Revision 5 preregisters the literal baseline Fedora F3 control
+`InstallationShellControls.test_acceptance_fedora_rejects_unreadable_audit`:
+execute the actual audit decision with readable-empty audit evidence (PASS) and
+an audit-file `grep` exit 2 (FAIL, with no F3 PASS). An unavailable or unreadable
+audit already cannot support a pass; this adds its baseline control without
+changing guest limits, gate outcomes or the frozen package inputs.
 
 ## Stopped-overlay continuation
 
