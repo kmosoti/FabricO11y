@@ -562,13 +562,14 @@ self.addEventListener("fetch",event=>{
         receipt['warm_shell_timing']=js('return {navigation:performance.getEntriesByType("navigation")[0]?.toJSON(),assets:performance.getEntriesByType("resource").map(e=>({path:new URL(e.name).pathname,duration_ms:e.duration,transfer_bytes:e.transferSize,encoded_bytes:e.encodedBodySize}))}')
         js('''window.fixtureApiHeaders=[];window.fixtureApiHeadersTruncated=false;window.fixturePaceQueue=Promise.resolve();window.fixtureLastDispatch=-Infinity;
           const interval=arguments[0],original=window.fetch;
-          window.fixturePace=()=>{const slot=window.fixturePaceQueue.then(async()=>{let delay;while((delay=interval-(performance.now()-window.fixtureLastDispatch))>0)await new Promise(resolve=>setTimeout(resolve,delay));window.fixtureLastDispatch=performance.now()});window.fixturePaceQueue=slot;return slot};
+          window.fixturePace=(dispatch)=>{const slot=window.fixturePaceQueue.then(async()=>{let delay;while((delay=interval-(performance.now()-window.fixtureLastDispatch))>0)await new Promise(resolve=>setTimeout(resolve,delay));const started=performance.now();window.fixtureLastDispatch=started;return {response:dispatch?.(started)}});window.fixturePaceQueue=slot.then(()=>{},()=>{});return slot};
           window.fetch=async(...args)=>{const url=typeof args[0]==="string"?args[0]:args[0].url;const path=new URL(url,location.href).pathname;
-            if(!path.startsWith('/v1/'))return original(...args);const paced=!window.fixtureUnpacedBurst;if(paced)await window.fixturePace();
-            const entry={path,method:args[1]?.method||args[0]?.method||'GET',started_ms:performance.now(),paced,status:null};
+            if(!path.startsWith('/v1/'))return original(...args);const paced=!window.fixtureUnpacedBurst;
+            const dispatch=async(started_ms)=>{const entry={path,method:args[1]?.method||args[0]?.method||'GET',started_ms,paced,status:null};
             if(window.fixtureApiHeaders.length>=512)window.fixtureApiHeadersTruncated=true;else window.fixtureApiHeaders.push(entry);
             try{const response=await original(...args);Object.assign(entry,{status:response.status,retry_after:response.headers.get('retry-after'),cache_control:response.headers.get('cache-control'),csp:response.headers.get('content-security-policy'),coop:response.headers.get('cross-origin-opener-policy'),corp:response.headers.get('cross-origin-resource-policy')});return response}
-            finally{entry.finished_ms=performance.now()}}''',cadence.interval*1000)
+            finally{entry.finished_ms=performance.now()}};
+            return paced?(await window.fixturePace(dispatch)).response:dispatch(performance.now())}''',cadence.interval*1000)
         click('Connect to server')
         wait(lambda: js('return document.body.textContent.includes("Sign in with a passkey") && !document.body.textContent.includes("Working…")'), 'live sign-in locked view')
         js('''const weakenResident=arguments[0];const original=window.fabricPasskey;window.fabricPasskey=async function(register,text){
