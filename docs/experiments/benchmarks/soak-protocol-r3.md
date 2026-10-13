@@ -89,8 +89,8 @@ remaining deadline. No phase borrows another phase's allowance.
 
 | Phase | Ceiling |
 | --- | ---: |
-| `setup` — enrollment, browser readiness and fixture admission | 180 s |
-| `exposure` — actual offered workload, warmup included | 7,200 s |
+| `setup` — enrollment, browser readiness and fixture admission | 170 s |
+| `exposure` — 7,200 s offers plus measured boundary observation/transition | 7,210 s |
 | `drain_seal` — shared simulator drain and sealing | 60 s |
 | `shutdown` — orderly production shutdown | 20 s |
 | `checkpoint` — stopped raw tree and resource checkpoint | 20 s |
@@ -104,6 +104,14 @@ The simulator's watchdog sets a stop flag before joining workers; it is not
 an absolute drain deadline. Forced shutdown, exhausted budget, phase overlap,
 unexpected exit or unconfirmed cleanup fails and preserves evidence.
 
+The prospective [C-081 amendment](https://github.com/kmosoti/FabricO11y/issues/59#issuecomment-6138310799)
+keeps the actual offered interval and cohort edges exactly 7,200 seconds. The
+ten-second allowance covers only native boundary anchoring, observation and
+transition; it never excuses early simulator exit, shorter offered coverage,
+rounding, delayed probes or borrowing drain time. The previous 180/7,200
+allocation and its source-control results remain tied to their original
+revisions. This separately registered change does not reinterpret them.
+
 **C-062 S1 must be satisfied before any full run.** Measure each of the five
 non-exposure phases on real R2 evidence or a short smoke at the full registered
 data rate. Post each observed maximum, source receipt/hash and ceiling. Require
@@ -115,6 +123,20 @@ hardlinking is an alternative only with complete link/inventory accounting.
 Do not copy the raw dataset into the 20-second checkpoint phase. If any measured
 phase plus margin does not fit, request a concrete larger deadline from the
 owner with the actual numbers; do not infer approval or shave exposure.
+
+Also require a separate real `exposure_transition` sample with the same source
+receipt/hash and confirmed-stop requirements, maximum at most eight seconds
+before the 25% margin. Setup maximum is at most 136 seconds. The transition is
+part of exposure, not a seventh phase or additional outer allowance. Missing
+transition evidence blocks FULL even when all five other samples fit.
+
+Register the literal `PhaseTransitionControls` before correction: the prior
+allocation must differ from the current table, and five fitting samples without
+transition evidence must be refused. The independent literal controls retain
+each phase/global boundary and check the six maxima at the exact 25% boundary
+and one nanosecond beyond it. No runtime schedule or helper authority changes
+in this registration. Native helper authority is registered separately; no
+simulator build, smoke or FULL is admitted here.
 
 ## Stopped checkpoint and separate grading
 

@@ -18,8 +18,10 @@ HERE = Path(__file__).resolve().parent
 MECHANISM = HERE / 'soak_exposure.py'
 NS = 1_000_000_000
 EDGES = (60, 853, 1646, 2440, 3233, 4026, 4820, 5613, 6406, 7200)
-CEILINGS = {'setup': 180, 'exposure': 7200, 'drain_seal': 60,
+CEILINGS = {'setup': 170, 'exposure': 7210, 'drain_seal': 60,
             'shutdown': 20, 'checkpoint': 20, 'closeout': 20}
+HEADROOM = {name: seconds for name, seconds in CEILINGS.items() if name != 'exposure'}
+HEADROOM['exposure_transition'] = 10
 
 
 def reference_cohort(timestamp, began):
@@ -51,12 +53,12 @@ def reference_remaining(phase, launcher_begin, phase_begin, now):
 
 
 def reference_headroom(measured):
-    if set(measured) != set(CEILINGS) - {'exposure'}:
+    if set(measured) != set(HEADROOM):
         raise ValueError('phase headroom')
     for name, record in measured.items():
         maximum = record.get('maximum_ns')
         if (type(maximum) is not int or maximum <= 0
-                or (5 * maximum + 3) // 4 > CEILINGS[name] * NS
+                or (5 * maximum + 3) // 4 > HEADROOM[name] * NS
                 or record.get('kind') not in ('native-r2', 'full-rate-smoke')
                 or record.get('stop_confirmed') is not True
                 or len(record.get('source_sha256', '')) != 64
@@ -185,7 +187,8 @@ class LiteralExposureControls(unittest.TestCase):
                 self.subject.remaining_ns(*args)
 
     def test_each_real_phase_requires_25_percent_headroom(self):
-        maxima = {'setup': 144, 'drain_seal': 48, 'shutdown': 16, 'checkpoint': 16, 'closeout': 16}
+        maxima = {'setup': 136, 'exposure_transition': 8, 'drain_seal': 48,
+                  'shutdown': 16, 'checkpoint': 16, 'closeout': 16}
         measured = {name: {'maximum_ns': seconds * NS, 'kind': 'full-rate-smoke',
                            'source_sha256': 'a' * 64, 'stop_confirmed': True}
                     for name, seconds in maxima.items()}
@@ -258,6 +261,30 @@ class LiteralExposureControls(unittest.TestCase):
 class ExposureMechanismAvailability(unittest.TestCase):
     def test_registered_mechanism_is_available(self):
         self.assertTrue(MECHANISM.is_file(), 'R3 soak_exposure.py mechanism unavailable; not a product failure')
+
+
+class PhaseTransitionControls(unittest.TestCase):
+    """C-081: literal phase allocation and a previously unwitnessed transition."""
+    @classmethod
+    def setUpClass(cls):
+        spec = importlib.util.spec_from_file_location('soak_transition_controls', MECHANISM)
+        cls.subject = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(cls.subject)
+
+    def test_registered_phase_transition_allocation_is_available(self):
+        self.assertEqual(self.subject.CEILINGS, CEILINGS)
+        self.assertEqual(sum(CEILINGS.values()), 7500)
+        self.assertEqual(CEILINGS['exposure'] - 7200, 10)
+
+    def test_missing_real_transition_sample_is_refused(self):
+        # All five old phase samples fit. They cannot evidence the new transition.
+        maxima = {'setup': 136, 'drain_seal': 48, 'shutdown': 16,
+                  'checkpoint': 16, 'closeout': 16}
+        measured = {name: {'maximum_ns': seconds * NS, 'kind': 'full-rate-smoke',
+                           'source_sha256': 'a' * 64, 'stop_confirmed': True}
+                    for name, seconds in maxima.items()}
+        with self.assertRaisesRegex(ValueError, 'phase headroom'):
+            self.subject.validate_phase_headroom(measured)
 
 
 @unittest.skipUnless(MECHANISM.is_file(), 'R3 mechanism absent; availability assertion remains red')
