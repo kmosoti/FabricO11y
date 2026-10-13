@@ -489,14 +489,16 @@ if [ "$DEFER_REMOVAL" = 0 ]; then
 # A13 remove keeps data, configuration and the account; purge removes data and
 # configuration.
 package_remove >"$W/remove.log" 2>&1; rc=$?
-stopped=$(systemctl is-active fabrico11y-node.service fabrico11y-server.service | tr '\n' ' ')
-stopped_ok=1
-case " $stopped " in *" active "*|*" activating "*|*" deactivating "*|*" reloading "*) stopped_ok=0 ;; esac
+stopped_rc=0
+stopped=$(systemctl is-active fabrico11y-node.service fabrico11y-server.service) || stopped_rc=$?
+stopped_ok=0
+case "$stopped_rc:$stopped" in
+  $'3:inactive\ninactive'|$'3:inactive\nfailed'|$'3:failed\ninactive'|$'3:failed\nfailed') stopped_ok=1 ;; esac
 if [ $rc -eq 0 ] && [ ! -e /usr/bin/fabric-server ] && [ -d /var/lib/fabrico11y/server ] \
    && [ -f /etc/fabrico11y/server.conf ] && getent passwd fabricolly >/dev/null && [ "$stopped_ok" -eq 1 ]; then
   pass A13a "remove: binaries gone, services '$stopped', state, configuration and account kept"
 else
-  fail A13a "rc=$rc stopped='$stopped'"
+  fail A13a "rc=$rc stopped_rc=$stopped_rc stopped='$stopped'"
 fi
 package_purge >"$W/purge.log" 2>&1; rc=$?
 if [ $rc -eq 0 ] && [ ! -e /var/lib/fabrico11y ] && [ ! -e /etc/fabrico11y ]; then

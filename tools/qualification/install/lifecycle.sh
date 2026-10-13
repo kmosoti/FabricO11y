@@ -93,9 +93,11 @@ PY
     [ -d /var/lib/fabrico11y/server ]
     [ -f /etc/fabrico11y/server.conf ]
     getent passwd fabricolly | cmp - "$W/lifecycle-account"
-    stopped=$(systemctl is-active fabrico11y-server.service fabrico11y-node.service | tr '\n' ' ' || true)
-    case " $stopped " in *" active "*|*" activating "*|*" deactivating "*|*" reloading "*)
-      echo "ACCEPT A13a FAIL services still live: '$stopped'"; exit 1 ;; esac
+    stopped_rc=0
+    stopped=$(systemctl is-active fabrico11y-server.service fabrico11y-node.service) || stopped_rc=$?
+    case "$stopped_rc:$stopped" in
+      $'3:inactive\ninactive'|$'3:inactive\nfailed'|$'3:failed\ninactive'|$'3:failed\nfailed') ;;
+      *) echo "ACCEPT A13a FAIL stopped-state observation rc=$stopped_rc: '$stopped'"; exit 1 ;; esac
     echo 'ACCEPT A13a PASS remove retained telemetry/configuration/account and stopped services'
     if [ "$family" = debian ]; then
       dpkg -P fabrico11y
@@ -108,9 +110,12 @@ PY
       audit_search_rc=0
       ausearch -m AVC,USER_AVC -ts boot > "$W/selinux-reboot-avc.log" 2>&1 || audit_search_rc=$?
       [ "$audit_search_rc" -le 1 ]
-      if grep -E 'comm="(fabric-server|fabric-node|fabricctl)"' "$W/selinux-reboot-avc.log"; then
-        echo 'ACCEPT F4 FAIL Fabric process AVC after reboot'; exit 1
-      fi
+      avc_rc=0
+      grep -E 'comm="(fabric-server|fabric-node|fabricctl)"' "$W/selinux-reboot-avc.log" || avc_rc=$?
+      case "$avc_rc" in
+        0) echo 'ACCEPT F4 FAIL Fabric process AVC after reboot'; exit 1 ;;
+        1) ;;
+        *) echo "ACCEPT F4 FAIL audit read error rc=$avc_rc"; exit 1 ;; esac
       rm -rf /var/lib/fabrico11y /etc/fabrico11y
       echo 'ACCEPT A13b PASS explicit guest cleanup after RPM preserved state/configuration'
       echo 'ACCEPT F4 PASS enforcing SELinux across reboot with no Fabric process AVC'
