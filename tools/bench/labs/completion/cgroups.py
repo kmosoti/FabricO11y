@@ -58,6 +58,7 @@ def enter(group):
 
 def snapshot(parent):
     return {str(g.relative_to(parent)): {k: (g/k).read_text().strip()
-            for k in ('memory.max','memory.high','memory.peak','memory.current',
-                      'memory.events','memory.swap.current','cpu.max','cpu.stat','pids.max')}
-            for g in parent.rglob('*') if g.is_dir()}
+            for k in ('memory.max','memory.high','memory.swap.max','memory.peak','memory.current',
+                      'memory.events','memory.swap.current','cpu.max','cpu.stat','io.stat',
+                      'pids.max','pids.current','pids.peak','cgroup.events','cgroup.procs')}
+            for g in (parent, *(g for g in parent.rglob('*') if g.is_dir()))}
