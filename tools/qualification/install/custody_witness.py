@@ -18,6 +18,26 @@ MAX_BATCH = 1048576
 BINDING = ('run_id', 'candidate_frozen', 'candidate_package_sha256',
            'package_source_commit', 'harness_commit')
 UNITS = ('fabrico11y-server.service', 'fabrico11y-node.service')
+SCHEMAS = {
+    'logs': {1: 'resource_logs'},
+    'resource_logs': {1: 'resource', 2: 'scope_logs', 3: 'utf8'},
+    'scope_logs': {1: 'scope', 2: 'record', 3: 'utf8'},
+    'record': {1: 1, 2: 0, 3: 'utf8', 5: 'any', 6: 'kv', 7: 0, 8: 5, 9: 2, 10: 2, 11: 1, 12: 'utf8'},
+    'resource': {1: 'kv', 2: 0, 3: 'entity'},
+    'scope': {1: 'utf8', 2: 'utf8', 3: 'kv', 4: 0},
+    'entity': {1: 'utf8', 2: 'utf8', 3: 'utf8', 4: 'utf8'},
+    'kv': {1: 'utf8', 2: 'any', 3: 0},
+    'any': {1: 'utf8', 2: 0, 3: 0, 4: 1, 5: 'array', 6: 'kvlist', 7: 2, 8: 0},
+    'array': {1: 'any'}, 'kvlist': {1: 'kv'},
+    # Metric/Span nested leaves stay opaque; product ingest owns their semantics.
+    'metrics': {1: 'resource_metrics'}, 'traces': {1: 'resource_traces'},
+    'resource_metrics': {1: 2, 2: 'scope_metrics', 3: 2},
+    'resource_traces': {1: 2, 2: 'scope_traces', 3: 2},
+    'scope_metrics': {1: 2, 2: 'metric', 3: 2}, 'scope_traces': {1: 2, 2: 'span', 3: 2},
+    'metric': {1: 2, 2: 2, 3: 2, 5: 2, 7: 2, 9: 2, 10: 2, 11: 2, 12: 2},
+    'span': {1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 0, 7: 1, 8: 1, 9: 2, 10: 0,
+             11: 2, 12: 0, 13: 2, 14: 0, 15: 2, 16: 5},
+}
 
 
 def require(condition, message):
@@ -25,22 +45,112 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def fields(raw, types):
-    try:
-        result = oracle.parse_fields(raw)
-        require(all(number > 0 for number in result), 'invalid protobuf field')
-        for number, values in result.items():
-            for wire, value in values:
-                require(number not in types or wire == types[number], 'wrong known-field wire type')
-                if wire == 0:
-                    require(0 <= value <= U64, 'protobuf integer overflow')
-        return result
-    except oracle.MalformedInput as error:
-        raise ValueError(str(error)) from error
+def varint(raw, at):
+    value = 0
+    for index in range(10):
+        require(at < len(raw), 'truncated protobuf varint')
+        byte = raw[at]
+        at += 1
+        require(index != 9 or byte <= 1, 'protobuf varint overflow')
+        value |= (byte & 127) << (7 * index)
+        if byte < 128:
+            return value, at
+    raise ValueError('protobuf varint too long')
+
+
+def read_fields(raw, types, depth=0, at=0, group=None):
+    require(0 <= depth <= 100, 'protobuf recursion depth exhausted')
+    result = {}
+    while at < len(raw):
+        key, at = varint(raw, at)
+        number, wire = key >> 3, key & 7
+        require(0 < number < 2**29 and key <= 2**32 - 1, 'invalid protobuf field/tag')
+        require(wire in (0, 1, 2, 3, 4, 5), 'invalid protobuf wire type')
+        if wire == 4:
+            require(group == number, 'unmatched protobuf end group')
+            return result, at
+        spec = types.get(number)
+        require(spec is not None or depth < 100, 'protobuf recursion depth exhausted')
+        expected = 2 if isinstance(spec, str) else spec
+        packed = isinstance(spec, tuple)
+        require(spec is None or wire == expected or (packed and wire in (2, spec[1])),
+                'wrong known-field wire type')
+        if wire == 3:
+            _, at = read_fields(raw, {}, depth + 1, at, number)
+            continue
+        if wire == 0:
+            value, at = varint(raw, at)
+        else:
+            size, at = varint(raw, at) if wire == 2 else (8 if wire == 1 else 4, at)
+            require(size <= len(raw) - at, 'truncated protobuf length/fixed field')
+            value, at = raw[at:at + size], at + size
+        if packed and wire == 2:
+            require(spec[0] == 'packed' and spec[1] in (0, 1, 5), 'invalid packed specification')
+            if spec[1] == 0:
+                packed_at = 0
+                while packed_at < len(value):
+                    _, packed_at = varint(value, packed_at)
+            else:
+                require(len(value) % (8 if spec[1] == 1 else 4) == 0, 'packed fixed width')
+        if group is None:
+            # Last-occurrence order identifies the active known oneof arm.
+            values = result.pop(number, [])
+            values.append((wire, value))
+            result[number] = values
+    require(group is None, 'unterminated protobuf group')
+    return result, at
+
+
+def fields(raw, types, depth=0):
+    return read_fields(raw, types, depth)[0]
+
+
+def validate(raw, schema, depth=0):
+    types = SCHEMAS[schema]
+    for number, values in fields(raw, types, depth).items():
+        spec = types.get(number)
+        if isinstance(spec, str):
+            for _, value in values:
+                if spec == 'utf8':
+                    value.decode('utf-8')
+                else:
+                    require(depth < 100, 'protobuf message recursion depth exhausted')
+                    validate(value, spec, depth + 1)
 
 
 def one(values, number, default=0):
     return values.get(number, [(None, default)])[-1][1]
+
+
+def length_field(number, raw):
+    size, encoded = len(raw), bytearray()
+    while size >= 128:
+        encoded.append((size & 127) | 128)
+        size >>= 7
+    return bytes([number << 3 | 2]) + bytes(encoded) + bytes([size]) + raw
+
+
+def string_projection(values):
+    f = fields(b''.join(raw for _, raw in values), SCHEMAS['any'])
+    active = next((number for number in reversed(f) if number in SCHEMAS['any']), None)
+    return length_field(1, one(f, 1, b'')) if active == 1 else b''
+
+
+def log_rows(raw, batch):
+    index = 0
+    for _, resource in fields(raw, SCHEMAS['logs']).get(1, []):
+        for _, scope in fields(resource, SCHEMAS['resource_logs']).get(2, []):
+            for _, record in fields(scope, SCHEMAS['scope_logs']).get(2, []):
+                f = fields(record, SCHEMAS['record'])
+                projection = [b'\x59' + one(f, 11, b'\0' * 8), length_field(5, string_projection(f.get(5, [])))]
+                for _, attribute in f.get(6, []):
+                    kv = fields(attribute, SCHEMAS['kv'])
+                    projection.append(length_field(6, length_field(1, one(kv, 1, b''))
+                        + length_field(2, string_projection(kv.get(2, [])))))
+                row = oracle.decode_log_record(b''.join(projection))
+                yield dict(node='spindle-1', node_id=batch['node_id'].hex(), sequence=batch['sequence'],
+                    index=index, observed_ns=row['observed_time_unix_nano'], body=row['body'], attributes=row['attributes'])
+                index += 1
 
 
 def cursor(raw):
@@ -74,8 +184,10 @@ def envelope(raw):
         for gap in gaps:
             gap.decode('utf-8')
         cursors = [cursor(value) for _, value in f.get(7, [])]
-        batch = oracle.decode_batch(raw)
-        rows = oracle.materialize_record('spindle-1', 0, raw).log_rows
+        batch = dict(version=one(f, 1), node_id=one(f, 2, b''), generation=one(f, 3), sequence=one(f, 4))
+        for signal, schema in zip(signals, ('metrics', 'logs', 'traces')):
+            validate(signal, schema)
+        rows = list(log_rows(signals[1], batch))
         return batch, cursors, rows
     except (oracle.MalformedInput, UnicodeError, TypeError, struct.error) as error:
         raise ValueError(str(error)) from error
