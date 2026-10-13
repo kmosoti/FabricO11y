@@ -124,6 +124,12 @@ class SessionClock:
 
 
 def native_admission(executable,helper,output,deadline,report):
+    def close(current,evidence):
+        try:current.close()
+        except BaseException as error:
+            report['native_cleanup_error']=type(error).__name__+': '+str(error);raise
+        finally:
+            evidence['ledger']=list(current.rows);evidence['frames']=[frame.hex() for frame in current.frames]
     target=SessionClock(executable,helper,output/'positive.stderr',deadline);report['clocks']=[];report['system_time']=[]
     try:
         ready=target.line();report['ready']=ready
@@ -152,7 +158,7 @@ def native_admission(executable,helper,output,deadline,report):
             oracle.require(row['returned_ns']==row['raw_ns']+row['offset_s']*1000000000,'clock-realtime-only')
         target.command('quit');oracle.require(target.process.wait(timeout=max(.001,deadline-time.monotonic()))==0,'fixture-probe-exit')
     finally:
-        target.close();report['ledger']=target.rows;report['frames']=[frame.hex() for frame in target.frames]
+        close(target,report)
     oracle.require(target.error is None,'fixture-ledger-error')
     for row in report['clocks']+report['system_time']:
         oracle.require({key:value for key,value in row.items() if not key.startswith('syscall_')} in report['ledger'],'clock-ledger-binding')
@@ -164,6 +170,7 @@ def native_admission(executable,helper,output,deadline,report):
               ('count',None,'FCLK-COUNT'),('death',None,'FCLK-EOF'),('closed',None,'FCLK-RECV'),('descriptor',None,'FCLK-FD'),('type',None,'FCLK-TYPE'),('unpreloaded',None,'isolation-interception')]
     for name,packet,expected in controls:
         error_path=output/(name+'.stderr');current=SessionClock(executable,helper,error_path,deadline,initial=packet,socket_type=socket.SOCK_STREAM if name=='type' else socket.SOCK_SEQPACKET,preload=name!='unpreloaded',invalid_fd=name=='descriptor')
+        evidence={'case':name,'refusal':expected,'exit':None,'stderr':None};report['controls'].append(evidence)
         try:
             if name=='unpreloaded':
                 oracle.require(current.line()=={'kind':'absent','pid':current.process.pid},'fixture-unpreloaded')
@@ -181,9 +188,9 @@ def native_admission(executable,helper,output,deadline,report):
                             for seq,value in values:current.parent.send(initial[:8]+seq.to_bytes(8,'little')+value.to_bytes(8,'little'))
                     current.command('close' if name=='closed' else 'clock')
                 oracle.require(current.process.wait(timeout=max(.001,deadline-time.monotonic()))==78,'fixture-control-exit')
-        finally:current.close()
+        finally:close(current,evidence)
         stderr=error_path.read_text();oracle.require(name=='unpreloaded' or stderr.strip()==expected,'fixture-wrong-refusal')
-        report['controls'].append({'case':name,'refusal':expected,'exit':current.process.returncode,'stderr':stderr,'ledger':current.rows})
+        evidence.update(exit=current.process.returncode,stderr=stderr)
 
 
 def main():
@@ -229,7 +236,7 @@ def main():
     finally:
         try:
             if report['state']=='completed':shutil.rmtree(directory)
-            elif 'tool_cleanup_error' in report:report['failure_evidence']=str(directory)
+            elif any(name in report for name in ('tool_cleanup_error','native_cleanup_error')):report['failure_evidence']=str(directory)
             else:
                 retained=output/'failed-fixture';shutil.move(str(directory),str(retained));report['failure_evidence']=str(retained)
         except BaseException as error:
