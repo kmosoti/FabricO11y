@@ -31,6 +31,9 @@ Both builders use the same binaries, static systemd units, configuration example
 license/notice and complete hash-verified console in
 `/usr/share/fabrico11y/console`. `asset-manifest.json` records the asset identity;
 `console-headers.json` preserves the build's CSP including inline script hashes.
+The console build generates its icons with ImageMagick `-strip`, and staging refuses
+any console PNG carrying time or text metadata, so separate console builds of the
+same source give identical assets and packages.
 The server reads the configured console directory and serves the shell at
 `/console/` on the API's trusted HTTPS origin. Configure `access_origin` and
 `access_rp_id` together before enabling `console_dir`.

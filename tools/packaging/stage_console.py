@@ -13,6 +13,25 @@ from resource_group import require_limits
 ROOT = Path(__file__).resolve().parents[2]
 
 
+PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
+
+
+def require_timeless_png(name, body):
+    """Refuse a PNG carrying time or text metadata: it makes rebuilds differ."""
+    if not body.startswith(PNG_SIGNATURE):
+        raise ValueError('console icon is not a PNG: ' + name)
+    offset = len(PNG_SIGNATURE)
+    while offset + 12 <= len(body):
+        length = int.from_bytes(body[offset:offset + 4], 'big')
+        kind = body[offset + 4:offset + 8]
+        if kind in (b'tIME', b'tEXt', b'zTXt', b'iTXt'):
+            raise ValueError('console icon carries time or text metadata: ' + name)
+        if kind == b'IEND':
+            return
+        offset += 12 + length
+    raise ValueError('truncated console icon: ' + name)
+
+
 def stage(build, destination):
     receipt = json.loads((build / 'build.json').read_text())
     if receipt.get('exit') != 0 or not isinstance(receipt.get('assets'), dict):
@@ -40,6 +59,8 @@ def stage(build, destination):
         body = source.read_bytes()
         if len(body) != identity['bytes'] or hashlib.sha256(body).hexdigest() != identity['sha256']:
             raise ValueError('asset differs from console build receipt: ' + name)
+        if name.endswith('.png'):
+            require_timeless_png(name, body)
     if sum(identity['bytes'] for identity in assets.values()) > 8 * 1024 * 1024:
         raise ValueError('console exceeds 8 MiB budget')
     destination.mkdir(parents=True, exist_ok=False)

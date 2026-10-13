@@ -61,9 +61,11 @@ def verify_offers(seed, identities, seconds, burst, events, ledger):
     return mapping
 
 
-def missing_management_slots(management, began_ns, seconds):
-    actual = {(r['started_unix_ns']-began_ns)//(NS//2) for r in management}
-    return sorted(set(range(seconds*2))-actual)
+def missing_management_slots(management, began_ns, seconds, *, interval_ns=NS//2):
+    actual = {(r['started_unix_ns']-began_ns)//interval_ns for r in management
+              if interval_ns == NS//2 or (r.get('complete') is True
+                  and r.get('inventory_status') == r.get('configuration_status') == 200)}
+    return sorted(set(range(seconds*NS//interval_ns))-actual)
 
 
 def first_creation(path, stop):
@@ -111,6 +113,11 @@ def perform(f, args, summary):
     reader = f.reader([e['enrollment_id'] for e in enrollments])
     tokens = f.work / 'tokens'
     tokens.write_text(''.join(e['token'] + '\n' for e in enrollments)); tokens.chmod(0o600)
+    summary['owner_login'] = login = {'started_unix_ns': time.time_ns()}
+    try:
+        login['fresh_until_unix_s'] = f.bridge.login()['fresh_until_unix_s']
+    finally:
+        login['finished_unix_ns'] = time.time_ns()
     f.bridge.poll_ui(True)
     last_ui_health = time.monotonic()
     sim = f.spawn([f.helpers / 'spindle_sim', '--server-url', f.origin, '--ca', f.work / 'ca.pem',
@@ -119,40 +126,54 @@ def perform(f, args, summary):
                    '--burst-from', str(burst[0]), '--burst-to', str(burst[1]), '--burst-factor', '5'], 'sim')
     began = time.monotonic()
     failures, management, samples, rejected, rejections = [], [], [], [], []
+    summary.update(management=management, failures=failures, management_interval_ns=NS)
     attack_clock = {}
     stop = threading.Event()
 
     def manager():
         tick = 0
         while not stop.is_set():
-            scheduled = began + .25 + tick * .5
+            scheduled = began + .25 + tick
             if stop.wait(max(0, scheduled - time.monotonic())):
                 break
             tick += 1
             started = time.monotonic()
             started_unix_ns = time.time_ns()
+            row = {'complete': False, 'started_unix_ns': started_unix_ns,
+                   'scheduled_monotonic_s': scheduled, 'started_monotonic_s': started,
+                   'scheduling_lag_s': max(0, started-scheduled),
+                   'inventory_status': None, 'configuration_status': None}
+            management.append(row)
+            first_page = len(reader.observations)
             try:
                 status, _ = f.bridge.request('/v1/console/nodes')
+                row['inventory_status'] = status
                 if status != 200:
                     raise RuntimeError('inventory refused')
                 node = f'sim{rng.randrange(identities):04d}'
+                interval = rng.choice([15, 30])
+                row.update(node=node, metric_interval_s=interval)
                 status, _ = f.bridge.request(f'/v1/console/nodes/{node}/config', 'PUT',
-                    {'logs': [], 'metric_interval_s': rng.choice([15, 30])})
+                    {'logs': [], 'metric_interval_s': interval})
+                row['configuration_status'] = status
                 if status != 200:
                     raise RuntimeError('configuration refused')
                 now = time.time_ns()
                 elapsed, pages = reader.pages({'kind': 'logs', 'node': node,
                     'from_ns': now-30*NS, 'to_ns': now, 'limit': 1000})
+                row.update(query_s=elapsed, pages=len(pages), query_pages=pages)
                 if any(not page.get('complete') for page in pages):
                     raise RuntimeError('incomplete concurrent query')
-                management.append({'elapsed_s': time.monotonic()-started,
-                                   'started_unix_ns': started_unix_ns,
-                                   'scheduled_monotonic_s': scheduled,
-                                   'started_monotonic_s': started,
-                                   'scheduling_lag_s': max(0, started-scheduled),
-                                   'query_s': elapsed, 'pages': len(pages)})
+                row['complete'] = True
             except Exception as error:
+                row['query_pages'] = getattr(error, 'pages', row.get('query_pages', []))
+                row['pages'] = len(row['query_pages'])
+                row['exception'] = repr(error)
                 failures.append('management: ' + repr(error))
+            finally:
+                row.update(elapsed_s=time.monotonic()-started,
+                           finished_unix_ns=time.time_ns(),
+                           query_observations=reader.observations[first_page:])
 
     def attacker():
         try:
@@ -264,7 +285,7 @@ def perform(f, args, summary):
     attack_clock['actual_first_round_s'] = actual_attack_start
     overlap = [r['round'] for r in rejections
                if burst[0]*NS <= r['started_unix_ns']-started_ns < burst[1]*NS]
-    missing_slots = missing_management_slots(management, started_ns, seconds)
+    missing_slots = missing_management_slots(management, started_ns, seconds, interval_ns=NS)
     at = [burst[0]-1 if args.smoke else 55, seconds-1 if args.smoke else 175]
     backlog = [sum(c <= started_ns+t*NS and acked.get(k, 1 << 127) > started_ns+t*NS
                    for k,c in made.items()) for t in at]
