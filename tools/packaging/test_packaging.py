@@ -5,9 +5,12 @@ import json
 import lzma
 import os
 from pathlib import Path
+import signal
 import subprocess
+import sys
 import tempfile
 import tarfile
+import time
 from types import SimpleNamespace
 import unittest
 import zlib
@@ -15,6 +18,7 @@ from unittest.mock import patch
 
 import dependency_notices
 import build_candidate_rpm
+from test_payload import assert_fixture_stopped, owned_process_fixture
 
 from stage_console import stage
 from stage_predecessor import stage_predecessor
@@ -37,6 +41,133 @@ def png(extra=None):
 
 
 class PackageTests(unittest.TestCase):
+    def test_build_stops_real_descendant_on_success_and_timeout(self):
+        # Only the test's real communicate timer is shortened; production requests 300s.
+        real_popen = subprocess.Popen
+        for mode in ('success', 'timeout'):
+            with self.subTest(mode=mode), owned_process_fixture() as (directory, command):
+                timeouts = []
+                def spawn(*args, **kwargs):
+                    process = real_popen(*args, **kwargs)
+                    communicate = process.communicate
+                    def bounded_communicate(*args, **kwargs):
+                        timeouts.append(kwargs.get('timeout'))
+                        if kwargs.get('timeout') == 300:
+                            kwargs['timeout'] = 1
+                        return communicate(*args, **kwargs)
+                    process.communicate = bounded_communicate
+                    return process
+                with patch.object(build_candidate_rpm.subprocess, 'Popen', side_effect=spawn):
+                    if mode == 'success':
+                        self.assertEqual(build_candidate_rpm.run_build(command + [mode], os.environ.copy(), directory), 0)
+                    else:
+                        with self.assertRaises(subprocess.TimeoutExpired):
+                            build_candidate_rpm.run_build(command + [mode], os.environ.copy(), directory)
+                self.assertIn(300, timeouts, 'native build deadline changed in the control')
+                self.assertEqual((directory / 'build.stdout').read_text(), 'literal process stdout\n')
+                self.assertEqual((directory / 'build.stderr').read_text(), 'literal process stderr\n')
+                assert_fixture_stopped(self, directory)
+
+    def test_build_final_drain_interruption_preserves_raw_diagnostics(self):
+        # Inject a typed final-drain error only AFTER a real bounded drain/reap.
+        real_popen = subprocess.Popen
+        with owned_process_fixture() as (directory, command):
+            timeouts = []
+            def spawn(*args, **kwargs):
+                process = real_popen(*args, **kwargs)
+                communicate = process.communicate
+                def bounded_communicate(*args, **kwargs):
+                    timeouts.append(kwargs.get('timeout'))
+                    kwargs['timeout'] = 1
+                    stdout, stderr = communicate(*args, **kwargs)
+                    if len(timeouts) == 3:
+                        raise subprocess.TimeoutExpired(process.args, 10, output=stdout, stderr=stderr)
+                    return stdout, stderr
+                process.communicate = bounded_communicate
+                return process
+            with patch.object(build_candidate_rpm.subprocess, 'Popen', side_effect=spawn):
+                with self.assertRaises(subprocess.TimeoutExpired):
+                    build_candidate_rpm.run_build(command + ['drain'], os.environ.copy(), directory)
+            self.assertEqual(timeouts, [300, 10, 10])
+            assert_fixture_stopped(self, directory)
+            for stream in ('stdout', 'stderr'):
+                with self.subTest(stream=stream):
+                    path = directory / ('build.' + stream)
+                    self.assertTrue(path.is_file(), 'final drain interruption lost raw ' + stream)
+                    self.assertEqual(path.read_text(), 'literal process ' + stream + '\n')
+
+    def test_constructor_parent_term_preserves_interrupted_receipt_and_stage(self):
+        # Admission is synthetic; signals, children, staging and diagnostics are real.
+        with owned_process_fixture() as (directory, command):
+            driver = directory / 'constructor.py'
+            driver.write_text('''import json, os, sys
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+import build_candidate_rpm as builder
+directory = Path(sys.argv[1])
+controls = json.loads((builder.ROOT / 'docs/experiments/formal/fixtures/owner-walkthrough.json').read_text())
+packages = {family: directory / family for family in ('debian', 'fedora')}
+for package in packages.values(): package.write_bytes(b'literal package stand-in')
+receipt = directory / 'input.json'
+receipt.write_text(json.dumps({'source': {'original_head': controls['original_head'], 'source_date_epoch': controls['source_date_epoch']}}))
+def command_output(command):
+    if command == ['dpkg', '--compare-versions', '0.1.0~alpha.0', 'lt', '0.1.0~alpha.1']: return b''
+    if command[0] == 'dpkg-deb': return b'0.1.0~alpha.1'
+    if '--eval' in command: return b'-1'
+    return b'0' if '%{EPOCHNUM}' in command else b'0.1.0-0.alpha.1'
+real_build = builder.run_build
+def owned_build(command, env, out, label):
+    if command[:2] != ['dpkg-deb', '-R'] or label != 'deb-unpack': raise AssertionError('unexpected native build command')
+    stage = Path(command[-1]).parent
+    return real_build([sys.executable, '-B', str(directory / 'child.py'), str(directory), 'timeout', str(stage)], env, out, label)
+sys.argv = ['constructor.py', '--same-code-fixture', '--deb-receipt', str(receipt), '--rpm-receipt', str(receipt),
+            '--out', str(directory / 'results/out'), '--frozen', controls['original_head'],
+            '--source-date-epoch', str(controls['source_date_epoch']), '--harness-commit', '1' * 40]
+with patch.dict('sys.modules', {'inputs': SimpleNamespace(validate_inputs=lambda *args: packages)}), \\
+     patch.object(builder, 'STORAGE', directory), \\
+     patch.object(builder, 'validate_harness'), \\
+     patch.object(builder, 'inventory', return_value={'usr/bin/fabric-server': {'bytes': 3}}), \\
+     patch.object(builder, 'deb_controls', return_value={'preinst': {'bytes': 3}}), \\
+     patch.object(builder, 'rpm_records', return_value={'scripts': {'PREIN': {'bytes': 3}}, 'metadata': {}}), \\
+     patch.object(builder, 'bounded_command', side_effect=command_output), \\
+     patch.object(builder, 'run_build', side_effect=owned_build):
+    raise SystemExit(builder.main())
+''')
+            scratch = directory / 'scratch'
+            scratch.mkdir()
+            env = {**os.environ, 'PYTHONPATH': str(ROOT / 'tools/packaging'), 'FABRIC_SCRATCH_ROOT': str(scratch)}
+            process = subprocess.Popen([sys.executable, '-B', str(driver), str(directory)], env=env,
+                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+            descriptor = os.pidfd_open(process.pid)
+            try:
+                deadline = time.monotonic() + 5
+                while not (directory / 'diagnostics-ready').exists() and process.poll() is None and time.monotonic() < deadline:
+                    time.sleep(.01)
+                self.assertTrue((directory / 'diagnostics-ready').is_file(), 'constructor did not reach real owned staging')
+                signal.pidfd_send_signal(descriptor, signal.SIGTERM)
+                stdout, stderr = process.communicate(timeout=8)
+                self.assertNotEqual(process.returncode, 0, stdout + stderr)
+                path = directory / 'results/out/fixture-receipt.json'
+                self.assertTrue(path.is_file(), 'parent TERM lost interrupted receipt; exit=' + str(process.returncode))
+                report = json.loads(path.read_text())
+                self.assertEqual((report['state'], report['exit']), ('interrupted', 2))
+                retained = Path(report['failure_evidence'])
+                self.assertTrue(retained.is_relative_to(directory / 'results/out'))
+                self.assertEqual((retained / 'held-stage.bin').read_bytes(), b'literal owned staging')
+                for stream in ('stdout', 'stderr'):
+                    self.assertEqual((directory / ('results/out/deb-unpack.' + stream)).read_text(),
+                                     'literal process ' + stream + '\n')
+                self.assertEqual(list(scratch.iterdir()), [])
+                assert_fixture_stopped(self, directory)
+            finally:
+                if process.poll() is None:
+                    signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+                process.wait(timeout=3)
+                os.close(descriptor)
+                process.stdout.close()
+                process.stderr.close()
+
     def test_same_code_fixture_archive_errors_preserve_failed_receipt(self):
         # Origin: #59 C-041 SF2, a corrupt archive escaped after staging began.
         controls = json.loads((ROOT / 'docs/experiments/formal/fixtures/owner-walkthrough.json').read_text())

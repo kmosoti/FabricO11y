@@ -1,6 +1,6 @@
 # Fresh owner guide walkthrough
 
-Revision 2, registered prospectively for [#46](https://github.com/kmosoti/FabricO11y/issues/46).
+Revision 3, registered prospectively for [#46](https://github.com/kmosoti/FabricO11y/issues/46).
 Native construction, walkthrough and browser/record acceptance remain prospective;
 unit-regression evidence belongs to its actual revision and wiki record.
 This protocol supplements [console acceptance](console-access-protocol.md) and
@@ -90,6 +90,59 @@ archive/parser errors must not escape with an unrecorded failure directory.
 Require preceding controls' confirmed outer stop and actual input/harness/helper
 hashes before native construction. Synthetic corruption controls do not establish
 native transformation; its own completed record must also confirm outer stop.
+
+### Constructor process-control amendment
+
+Register these real-process controls before correcting command ownership. A
+command's normal return, cap failure, timeout or signal interruption must leave
+no live owned descendants before its caller hashes, archives or removes staging.
+Parent SIGTERM must stop owned command descendants and produce exit2 with an
+interrupted receipt, preserved staging and raw stdout/stderr. A typed error while
+finishing cleanup must retain already captured diagnostics. Existing 30s payload,
+300s build and 10s termination/drain limits remain unchanged.
+
+The literal fixture forks one child that ignores TERM, closes stdout/stderr and
+holds a tiny owned staging file; the leader exits normally or waits. Both stay
+inside the launcher's cgroup, with a private process group and finite 45s fixture
+lifetime. Tests require actual containment and disk-backed `FABRIC_SCRATCH_ROOT`.
+The test temporarily enables Linux child-subreaper ownership, restores its exact
+old setting and unconditionally stops/reaps the recorded fixture processes.
+Cleanup uses pidfds plus PID/start-tick identity, never a process-name match or
+an unbound reused PID. No native installation, project service or guest runs.
+
+| Literal control | Required observation |
+| --- | --- |
+| Payload leader exits0; closed-pipe child survives | Exact stdout and no live descendant at return |
+| Payload real30s timeout; closed-pipe child survives | Timeout remains typed, literal stderr retained, no live descendant |
+| Build leader exits0; closed-pipe child ignores TERM | Exit0 and literal stdout/stderr, no live descendant at return |
+| Build real timeout with TEST-ONLY1s timer | Typed interruption, literal stdout/stderr, no live descendant |
+| Typed final-drain error after actual bounded drain/reap | Both raw diagnostic files retained despite interruption |
+| SIGTERM to the actual constructor parent after staging/diagnostics readiness | Interrupted exit2 receipt, archived exact staging and raw diagnostics, no live descendants |
+
+The build controls explicitly assert the requested production300s timeout and
+shorten only their real `communicate` wait to1s. The final-drain control similarly
+records original300/10/10s requests, uses1s real waits, then injects a typed
+TimeoutExpired only after the last real drain/reap completes. It tests retained
+evidence, not an elapsed native300s/10s limit or an unbounded hostile pipe.
+The parent-TERM control synthetically admits inputs, storage placement, harness
+and native metadata queries; it invokes the actual constructor main, staging,
+command-owner code and real signal/process behavior. These synthetic admission
+fixtures cannot establish canonical-package validation or native construction.
+
+Root runs these exact selectors through the admitted resource driver with its
+normal outer1800s containment and full1GiB reservation:
+
+```sh
+env PYTHONPATH=tools/packaging python3 -B -m unittest \
+  test_payload.PayloadTests.test_extraction_stops_real_descendant_on_success_and_timeout \
+  test_packaging.PackageTests.test_build_stops_real_descendant_on_success_and_timeout \
+  test_packaging.PackageTests.test_build_final_drain_interruption_preserves_raw_diagnostics \
+  test_packaging.PackageTests.test_constructor_parent_term_preserves_interrupted_receipt_and_stage
+```
+
+These newly registered controls are not run at registration. Capture actual
+head-bound red and stopped descendants before the separate ownership correction;
+rerun the unchanged controls and broad packaging/payload suite afterward.
 
 Require native strictly-older comparison, exact phase package/source identities,
 unchanged account/configuration/retained telemetry, new login and installed
