@@ -165,6 +165,171 @@ Revision-bound source-only checker execution evidence is recorded in the
 [installation checker results wiki](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-checker-prerequisite-results-01).
 These controls establish no guest or package acceptance.
 
+### Prospective stopped-custody upgrade witness
+
+Issue #41's Spool/backlog upgrade obligation needs a predecessor-produced
+unacknowledged Batch and a distinct unread newline-terminated source suffix
+across stopped native install, then exact candidate ACK/query and real reboot.
+Historical L1/L2 checks remain required. A retained file hash alone cannot
+establish recoverable delivery; shared-Rust `spool_dump` is a diagnostic.
+
+`test_custody_witness.py` independently hand-encodes small FAB1/FAC1/protobuf
+fixtures for prospective `custody_witness.stopped_snapshot` and `conserve`.
+The initial named `MechanismAvailability` failure records absence of the
+adapter; it is not a product defect or corrupt-frame counterexample. The
+[`custody_witness.py`](../../../tools/qualification/install/custody_witness.py)
+adapter now exists; source-control results belong to the linked checker-results
+wiki, while native stopped-custody integration and guest acceptance remain
+pending. Its unchanged
+`CustodyWitnessControls` require complete CRC-checked frames, envelope/wire/u64
+bounds, nonterminal sequence/ACK, full Cursor/Btrfs identity and consumed-prefix
+CRC, last cursor in sequence order rather than maximum offset, complete stopped
+service observations, no-follow owned paths, and exact two-line custody joins.
+Reset source identity, missing/changed pending bytes, premature ACK, duplicated
+or changed projected query rows and unchanged reboot identity must be refused. ACK events
+must match the independently observed candidate node PID/unit/boot/run window
+and exact raw Batch hash; their message alone omits Strand identity.
+
+Query equality compares the projected node label, node ID, sequence, index,
+observed timestamp, string body and string attributes, not every raw LogRecord
+field or nonstring AnyValue arm. Retained source hashes and candidate exact-byte
+ACKs bind the original node-side Batch bytes. This witness does not independently
+reread raw server storage; its raw-byte commitment evidence is the observed
+node's ACK. Host-copy device/inode/mode/uid/gid are drift witnesses, not guest
+ownership-policy admission. Native callers must bind and verify their guest
+observations separately. The raw reader refuses an incomplete active tail,
+including a legitimate torn tail after a crash; it does not repair or tolerate
+that tail as complete custody.
+
+#### Complete archived-prefix conservation amendment, 2026-10-13
+
+Coordination [C-aud-11](https://github.com/kmosoti/FabricO11y/issues/59#issuecomment-6138325736)
+identified a consumed leading line absent from every Batch and query row while
+the two sentinels and candidate ACKs remained valid. Preregister
+`CustodyWitnessControls.test_archived_leading_lost_line_cannot_escape_source_conservation`
+before repair. Its archive is exactly `accept-line-lost-by-reader\n` followed by
+the literal pending and unread lines. Hand-encoded source offsets, Cursor prefix
+length/CRC, FAB1/FAC1 CRCs and exact-byte candidate ACK hashes are rebuilt for that
+archive; the lost line is absent from all raw and projected rows. Snapshot
+admission must succeed, then `conserve` must raise `ValueError` naming
+`source prefix conservation`, rather than rejecting a stale CRC or missing ACK.
+
+For each archived path with a final cursor, the expected old, pending and unread
+projected rows for that path must tile `[0, final_cursor_offset)` exactly in
+source order, with no gap, overlap or duplicate interval. Every interval must
+match the archived newline-terminated body bytes and source device/inode. The
+existing three-row lifecycle baseline and sentinel checks remain required;
+matching them alone cannot establish full archived-prefix conservation.
+This tiling witness is limited to the registered finite fixture of complete
+UTF-8 newline-terminated source lines. The actual
+[`log_source.rs`](../../../crates/fabric-adapter-linux/src/log_source.rs)
+collector skips oversized lines (more than 4,096 body bytes) and invalid UTF-8,
+reports collection gaps, and can commit cursor-only progress through a skipped
+oversized line. Such consumed bytes have no `body + '\n'` row interval, so this
+witness refuses that archive. It does not establish general source conservation
+for intentional skips, incomplete tails or arbitrary log-input histories.
+Keep every prior control, oracle and gate unchanged. Run the named fixture only
+through the registered serial default1800/full1GiB control cell and preserve its
+actual red before production correction. This amendment changes no product wire
+semantics and records no execution or native acceptance.
+
+Run only through the admitted serial resource launcher: default1800 outer and
+1GiB reservation for synthetic controls. Native cells keep1800 outer,180-second
+lifecycle phases and9GiB whole guest reservation. Preserve failures and raw
+source custody, exporting only hashes of credentials. Frozen packages, wire
+semantics, query/delivery/rate oracles and all existing gate limits stay fixed.
+This prospective registration claims no checker or guest acceptance.
+
+#### Nested OTLP structural amendment, 2026-10-13
+
+Preregister `CustodyWitnessControls.test_nested_otlp_structural_refusals` with
+hand-encoded inner OTLP logs inside CRC-valid FAB1/FAC1 frames. A sparse LogRecord
+containing valid unknown field99 is a positive, even though its projected body is
+empty. ExportLogsServiceRequest field0 (`00 00`), a nested LogRecord field number
+greater than `(1<<29)-1`, and an eleven-byte nested varint must raise `ValueError`
+for the malformed protobuf field/tag or varint; accepting an empty projection or
+rejecting only missing sentinels is insufficient. The locked prost0.14.4
+`encoding::decode_key` bounds the key to u32 and tags to1 through `(1<<29)-1`, and
+its varint decoder rejects values requiring more than ten bytes. The existing
+Rust `Batch::validate` decodes each OTLP signal before admitting its bytes.
+These source constraints add no new wire semantics or oracle changes. Run the
+named control only through the registered default1800s/full1GiB serial driver;
+retain the actual red before a separately reviewed structural-validator repair.
+
+#### Bounded reader and original-byte projection amendment, 2026-10-13
+
+Coordination C-061/X-106 admits a 420-line production ceiling, at most +120 after
+the 297-line adapter, with no oracle or limit change. Register seven additional
+`CustodyWitnessControls` methods before repair; the three malformed cases and
+sparse positive in `test_nested_otlp_structural_refusals` stay unchanged.
+
+`test_generic_reader_positive_forms` admits opaque unknown bytes, nonminimal
+valid varints, the largest legal tag/u64 and matched unknown groups, including
+100 empty nested groups. `test_generic_reader_structural_refusals` rejects
+invalid keys/wires, truncation, overlong/overflowing value and length varints,
+lone/mismatched/unterminated groups, 101 nested groups and an unknown field at
+exhausted depth. Controls call the existing `fields(raw, types)` reader directly.
+`test_packed_numeric_reader_forms_and_refusals` registers its explicit
+`('packed', element_wire_kind)` spec for kinds 0/1/5: both unpacked and packed
+forms are admitted; malformed packed varints and nondivisible fixed-8/fixed-4
+payloads are refused. Arbitrary opaque bytes are never guessed to be messages.
+
+`test_logs_common_schema_and_utf8_refusals` requires declared wires and UTF-8
+through ExportLogsServiceRequest/ResourceLogs/ScopeLogs/LogRecord and all
+consumed common schemas: Resource, InstrumentationScope, EntityRef, KeyValue,
+AnyValue, ArrayValue and KeyValueList. `test_logs_common_and_message_depth_boundaries`
+admits literal common fields, opaque bytes and nonzero bools. From the export
+root, 48 AnyValue.array/ArrayValue.values pairs place a known string at depth 100
+and remain valid; 49 pairs or an unknown scalar at exhausted depth fail.
+Each signal export has its own recursion budget, matching pinned prost 0.14.4.
+
+`test_metrics_traces_container_scope` requires strict Export→Resource→Scope→
+Metric/Span wire containers; malformed keys/varints/lengths and container wires
+fail. Hand-encoded `system.memory.total` Gauge and `system.cpu.time` cumulative
+Sum use the actual host shapes in `src/spindle/runtime.rs:266-299` and
+`crates/fabric-adapter-linux/src/host.rs:190-217`; a literal Span is also positive.
+Metric/Span nested leaves remain opaque, explicitly witnessed by a malformed
+nested Gauge/Event fixture that this reader admits without asserting semantic
+validity. Product ingest decoding is the leaf-semantics authority; frame CRC
+establishes byte integrity, not semantic validity. No general prost parity or
+native product acceptance is claimed by these finite controls.
+
+`test_original_payload_log_projection_binding` registers exact literal log rows
+for valid unknown groups, last oneof arm and merged optional body/value messages.
+The stored original Batch payload and SHA-256 must remain exact. A separately
+filtered log projection may feed the byte-identical query oracle; it cannot
+replace raw custody or exact-byte candidate ACK evidence. The caller projects
+log rows only and must not reinterpret opaque metric/trace leaves through the
+oracle merely to obtain those rows. Query/delivery/rate oracles remain unchanged;
+native caller authentication against immutable candidate receipts stays separate.
+
+Run these source-only fixtures through the same serial default 1800s/full 1GiB
+driver; preserve actual red before production repair and rerun unchanged controls.
+Refusals name the violated wire/string/group/depth property. Legitimate-form
+rejections or wrong projections on the old reader are harness defects, not
+product qualification failures. No execution result is recorded by this amendment.
+
+#### Nested envelope recursion amendment, 2026-10-13
+
+Static review of the bounded repair found that Cursor and BtrfsIdentity readers
+restart their recursion budget. Register two literal controls before correction:
+`test_cursor_inherits_batch_recursion_budget` and
+`test_btrfs_inherits_cursor_recursion_budget`. Locked prost 0.14.4
+`Message::merge` starts at budget 100; `encoding::message::merge` decrements it
+for each nested message. Batch field 7 is Cursor at depth 1, and Cursor field 8 is
+BtrfsIdentity at depth 2 (`fabric-frame::envelope`). Unknown group and scalar
+skipping use that inherited context, including its exhausted-budget refusal.
+
+Inside CRC-valid Batch frames, Cursor admits 99 matched empty field 99 groups and
+refuses 100; BtrfsIdentity admits 98 and refuses 99. An unknown field 98 scalar inside
+the accepted number of groups must also be refused at exhausted depth. Positives
+retain the literal cursor identity/offset and exact original payload. Existing
+root-reader 100-group positives and all earlier expectations remain unchanged.
+This is an envelope/strict-reader correction within the existing 420/+120 scope;
+it adds no metric/trace leaf semantics or general prost-parity claim. Root must
+retain the contained named red before a separate production repair. These new
+controls and native acceptance are NOT RUN in this registration.
+
 Keep the existing named Debian package defects: root-user must fail A6,
 no-collision-check must fail A2a/A2b, and no-memory-max must fail A8. The existing
 mutation grader must reject unrelated failures and bad provenance/environment.
