@@ -1,6 +1,6 @@
 # Native installation custody input registration
 
-Status: prospective qualification-only amendment, 2026-10-13; NOT RUN.
+Status: prospective qualification-only amendment, revision 2, 2026-10-13; NOT RUN.
 Coordination [C-092](https://github.com/kmosoti/FabricO11y/issues/59#issuecomment-6139100360)
 admits this separate registration from `77d32ece01646f39d97e98b942fa7c776463a19c`.
 It extends the [stopped-custody witness](installation-release-protocol.md#prospective-stopped-custody-upgrade-witness)
@@ -87,6 +87,9 @@ Existing limited metric/trace leaf scope remains unchanged;
 product ingest is its semantic authority. Reject incomplete/torn active tails,
 failed-writer markers, CRC errors, malformed diagnostic log fields and drift.
 Never reencode, replace or expose a filtered/copied Spool as the actual raw root.
+Common Resource, InstrumentationScope and schema-URL fields in all three signals
+are typed messages/UTF-8, not opaque Metric/Span leaves. The C-096 container
+amendment below closes their separate existing strict-reader gap.
 
 Only after full admission, select fixture rows by the registered path and
 their exact archived source intervals, never by body text or a substring.
@@ -96,6 +99,19 @@ gap, overlap or duplicate. Apply the same path selection to the complete raw
 query pages, while keeping the unfiltered pages available. A diagnostic row
 whose body equals a fixture sentinel must not enter or duplicate that fixture.
 Extra fixture-path query rows still fail exact projected row conservation.
+The actual [fixture enrollment](../../../tools/qualification/install/acceptance.sh)
+adds the credential label `spindle-1`; that label is not present in Batch bytes.
+[HTTP authentication](../../../crates/fabric-server/src/http.rs) supplies the
+credential label to the committed Entry, and [server extraction](../../../crates/fabric-server/src/rows.rs)
+preserves that label in query rows. The reader's fixed `spindle-1` is an explicit
+fixture expectation, never evidence of the actual enrollment. All three old query
+rows must retain that label and the node ID decoded from genuine FAI1/Batch input.
+The native caller must independently join the observed enrollment/trimmed-token
+hash, immutable credential-file stat/hash, actual Spool node ID and complete
+unmodified query pages. Never synthesize labels, UUIDs or projected query rows
+from source bytes to satisfy this join. A source-derived expected projection
+and a genuine queried answer remain distinct observations.
+
 Projection compares node label/ID, sequence/index, observed time, string body
 and string attributes; it is not equality of every raw OTLP field. Query,
 delivery and rate oracles remain byte-identical.
@@ -144,6 +160,47 @@ or noninteger service-identity refusals.
 The final unchanged green must run every method with zero skips. Adding the
 keyword alone is not an implementation-availability success for these controls.
 
+### Common containers and old-row identity amendment before first execution
+
+Coordination C-096/C-097 requests four additional literal methods before this
+initial source cell runs. The locked `opentelemetry-proto=0.33.0` generated
+`opentelemetry.proto.metrics.v1.rs` defines ResourceMetrics fields 1/2/3 as
+Resource/ScopeMetrics/schema URL (lines 49-88); `opentelemetry.proto.trace.v1.rs`
+does the same for ResourceSpans/ScopeSpans (lines 31-70). Both use optional message
+field 1 for Resource/InstrumentationScope and string field 3 for schema URL.
+Resource and InstrumentationScope are the same common schemas already consumed
+strictly in logs. Pinned prost 0.14.4 `encoding::string::merge` checks UTF-8;
+[`Batch::validate`](../../../crates/fabric-frame/src/envelope.rs) decodes each
+full signal request. Primary cached sources are under
+`DATA/toolchain-cache/cargo/registry/src/index.crates.io-1949cf8c6b5b557f/`;
+the repository lockfile and actual field attributes supply version authority.
+
+`test_resource_metrics_resource_must_be_strictly_decoded`,
+`test_resource_spans_resource_must_be_strictly_decoded` and
+`test_scope_metrics_scope_must_be_strictly_decoded` each admit a valid literal
+common message then require refusal of its field-zero bytes `00 00` inside an
+otherwise valid Batch. `test_schema_url_utf8_is_required_at_every_common_placement`
+admits a valid literal URL and requires refusal of `ff` at all six Resource/Scope
+placements across metrics, traces and logs. The two log URL refusals already
+work in the original strict logs schema; the four metric/trace URL cases are
+predicted assertion failures because those fields are currently bare wire 2.
+Metric/Span nested leaves remain deliberately opaque; this adds no full leaf
+semantics or general prost-parity claim. Future schema correction reuses the
+existing `resource`, `scope` and `utf8` rules and need add no production lines.
+
+The additional `test_predecessor_query_rows_cannot_substitute_label_or_strand`
+uses the unchanged legacy fixture without inheriting/duplicating its tests.
+Its two mutations consistently replace only the three predecessor query rows'
+label or node ID in all before/drain/reboot answers. Genuine raw identity,
+pending/unread records and candidate ACKs stay exact. The positive original chain
+is required; both substitutions must then fail an old-row identity/baseline check.
+This is a source deduction and predicted counterexample, NOT RUN: the current
+conservation function treats `queries.before` as its own expected old baseline
+without binding those rows to the raw Strand. Keep their actual red before the
+small separately committed correction; native enrollment authentication remains
+a later caller prerequisite. QUAL-INSTALL/QUAL-H evidence mapping is queued for
+the first genuine native result, not added as a claim here.
+
 From this worktree, the exact inside-launcher source command is:
 
 ```sh
@@ -153,12 +210,15 @@ env PYTHONPATH=tools/qualification/install:tools/qualification:tools \
 
 Root invokes it through `python3 -B tools/resource_group.py --`, with a fresh
 serial full-1-GiB reservation and default 1800 seconds/16 GiB high/20 GiB max/no
-swap. Expected initial registration result: 43 methods, 32 positive methods,
-one named unsupported-native-shape assertion failure and 10 explicit skips,
+swap. Expected initial registration result: 48 methods, 32 positive methods,
+six named failing methods (10 failed assertions/subtests) and 10 explicit skips,
 exit 1. This prediction is NOT RUN and must be checked against the actual log.
-The existing 30 installation methods are unchanged; the new file adds 13. A
+Failure breakdown: native root availability 1; common ResourceMetrics,
+ResourceSpans and ScopeMetrics 1 each; schema URLs 4; old query identity 2.
+The existing 30 installation methods are unchanged; the new file adds 18. A
 focused reader-only command would instead name `test_custody_witness
-test_custody_native` and predict 30/19/1/10; it is not the complete source cell.
+test_custody_native` and predict 35 methods/19 positive/6 failing methods with
+10 failed assertions/10 skips; it is not the complete source cell.
 Preserve that actual red before any separately committed production correction.
 Root/Wren/Pip exact source-pin preflight comes first; review is not run evidence.
 

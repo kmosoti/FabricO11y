@@ -13,6 +13,7 @@ import tempfile
 import unittest
 import zlib
 
+import test_custody_witness as legacy
 from test_custody_witness import BINDING, NODE, PROCESS, SOURCE, adapter, frame, ld, vi
 
 DIAG = '/var/lib/fabrico11y/node/spool/diagnostics/spindle.log'
@@ -55,6 +56,11 @@ def payload(sequence, rows, cursors):
     logs = ld(1, ld(2, b''.join(ld(2, record(row)) for row in rows)))
     return (vi(1, 1) + ld(2, NODE) + vi(3, 1) + vi(4, sequence) + ld(6, logs)
             + b''.join(ld(7, current) for current in cursors))
+
+
+def signal_batch(signal, export):
+    row = literal_row(4, 0, SOURCE, 7, 9, 0, PENDING)
+    return payload(4, [row], []) + ld(signal, export)
 
 
 class NativeFixture:
@@ -197,6 +203,55 @@ class LiteralNativeRecords(unittest.TestCase):
             original = prefix + ld(6, ld(1, ld(2, ld(2, record(fixture)) + ld(2, malformed))))
             with self.subTest(diagnostic=name), self.assertRaisesRegex(ValueError, reason):
                 adapter().envelope(original)
+
+    def test_resource_metrics_resource_must_be_strictly_decoded(self):
+        resource = ld(1, ld(1, b'host.name') + ld(2, ld(1, b'literal-host')))
+        self.assertEqual(adapter().envelope(signal_batch(5, ld(1, ld(1, resource))))[2],
+                         [literal_row(4, 0, SOURCE, 7, 9, 0, PENDING)])
+        with self.assertRaisesRegex(ValueError, 'protobuf (field|tag)'):
+            adapter().envelope(signal_batch(5, ld(1, ld(1, b'\x00\x00'))))
+
+    def test_resource_spans_resource_must_be_strictly_decoded(self):
+        resource = ld(1, ld(1, b'host.name') + ld(2, ld(1, b'literal-host')))
+        self.assertEqual(adapter().envelope(signal_batch(9, ld(1, ld(1, resource))))[2],
+                         [literal_row(4, 0, SOURCE, 7, 9, 0, PENDING)])
+        with self.assertRaisesRegex(ValueError, 'protobuf (field|tag)'):
+            adapter().envelope(signal_batch(9, ld(1, ld(1, b'\x00\x00'))))
+
+    def test_scope_metrics_scope_must_be_strictly_decoded(self):
+        scope = ld(1, b'literal-scope') + ld(2, b'1.0')
+        self.assertEqual(adapter().envelope(signal_batch(5, ld(1, ld(2, ld(1, scope)))))[2],
+                         [literal_row(4, 0, SOURCE, 7, 9, 0, PENDING)])
+        with self.assertRaisesRegex(ValueError, 'protobuf (field|tag)'):
+            adapter().envelope(signal_batch(5, ld(1, ld(2, ld(1, b'\x00\x00')))))
+
+    def test_schema_url_utf8_is_required_at_every_common_placement(self):
+        for signal, name in ((5, 'metrics'), (9, 'traces'), (6, 'logs')):
+            for placement in ('resource', 'scope'):
+                def export(url):
+                    field = ld(3, url)
+                    return ld(1, field if placement == 'resource' else ld(2, field))
+                with self.subTest(signal=name, placement=placement):
+                    self.assertEqual(adapter().envelope(signal_batch(
+                        signal, export(b'https://schemas.example.test/1.0')))[2],
+                        [] if signal == 6 else [literal_row(4, 0, SOURCE, 7, 9, 0, PENDING)])
+                    with self.assertRaisesRegex(ValueError, 'UTF|utf'):
+                        adapter().envelope(signal_batch(signal, export(b'\xff')))
+
+    def test_predecessor_query_rows_cannot_substitute_label_or_strand(self):
+        # Source deduction: queries.before currently becomes its own expected baseline.
+        fixture = legacy.CustodyWitnessControls('test_clean_raw_snapshot_and_two_line_conservation')
+        fixture.module = adapter(); self.addCleanup(fixture.doCleanups); fixture.setUp()
+        chain = fixture.chain(); fixture.module.conserve(*chain)
+        for field, value in (('node', 'unrelated-enrollment'), ('node_id', '00' * 16)):
+            args = copy.deepcopy(chain)
+            for phase in ('before', 'after_drain', 'after_reboot'):
+                for row in args[3][phase][:3]: row[field] = value
+            self.assertEqual(args[0]['node_id'], NODE.hex())
+            self.assertEqual(args[0]['sources'], chain[0]['sources'])
+            self.assertEqual(args[4], chain[4])
+            with self.subTest(substitution=field), self.assertRaisesRegex(ValueError, 'old.row|baseline'):
+                fixture.module.conserve(*args)
 
 
 class NativeShapeControls(NativeFixture, unittest.TestCase):
