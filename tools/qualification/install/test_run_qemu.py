@@ -173,7 +173,10 @@ systemctl() {
     def test_acceptance_remove_rejects_either_live_unit(self):
         source = Path(__file__).with_name('acceptance.sh').read_text()
         functions = '\n'.join(line for line in source.splitlines() if line.startswith(('pass()', 'fail()')))
-        block = source[source.index('package_remove >'):source.index('package_purge >')]
+        start = source.index('package_remove >')
+        block = source[start:source.index('package_purge >', start)]
+        for decision in ('stopped=$(systemctl is-active ', 'pass A13a ', 'fail A13a '):
+            self.assertIn(decision, block, 'actual nonempty A13a decision required')
         program = 'set -u\nFAILS=0\nW=/root/accept\n' + functions + '\n' + block + '\nexit "$FAILS"\n'
         for unit in ('fabrico11y-server.service', 'fabrico11y-node.service'):
             for state in ('active', 'activating', 'deactivating', 'reloading', 'inactive'):
