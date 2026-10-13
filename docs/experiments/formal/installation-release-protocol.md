@@ -1,12 +1,20 @@
 # Registered release package and lifecycle checks
 
-Status: revision 4 registered 2026-10-12 for the frozen candidate: its exact
-candidate and L1 predecessor versions and the dated Debian image. Revision 3,
+Status: revision 5 amended 2026-10-13 for the existing unreadable-audit gate.
+Revision 4 registered 2026-10-12 the frozen candidate's exact candidate and L1
+predecessor versions and the dated Debian image. Revision 3,
 registered 2026-10-10 before stopped-overlay continuation, named the earlier
 candidate; a result belongs to the revision it ran under. This extends the
 [baseline installation protocol](installation-acceptance-protocol.md) for the
 owner-selected Debian/Fedora release matrix. No result is recorded here.
 These checks are finite local guest measurements, not deployment qualification.
+
+Revision 5 preregisters the literal baseline Fedora F3 control
+`InstallationShellControls.test_acceptance_fedora_rejects_unreadable_audit`:
+execute the actual audit decision with readable-empty audit evidence (PASS) and
+an audit-file `grep` exit 2 (FAIL, with no F3 PASS). An unavailable or unreadable
+audit already cannot support a pass; this adds its baseline control without
+changing guest limits, gate outcomes or the frozen package inputs.
 
 ## Stopped-overlay continuation
 
@@ -130,6 +138,32 @@ receipt. A synthetic predecessor must be labeled as such and cannot establish
 migration from a historical implementation it did not contain.
 
 ## Negative controls and evidence
+
+### Prospective removal-checker counterexample controls
+
+Coordination C-035 / C-aud-7 minimized an unenforced-check defect at harness
+`de77de7399710c5afd50ae0de981fda6e0b75f30`: negated commands and the first
+member of `&&` lists bypass Bash errexit; baseline A13a accepted one live unit.
+`InstallationShellControls` in `tools/qualification/install/test_run_qemu.py`
+invokes the actual lifecycle remove phase with isolated paths and package/service
+stubs. Either active, activating, deactivating or reloading unit, literal Fabric
+AVC, missing retained state and incomplete purge must exit1 without the affected
+PASS; clean fixtures must exit0. Baseline A13a rejects the same live states.
+Service-query controls additionally require both observed states: empty or one-line
+output and exit1 despite two inactive lines fail A13a. A literal grep exit2 at the
+post-reboot AVC check fails F4; clean inactive queries and readable empty audits
+remain positive controls. These are verifier prerequisites, not guest outcomes.
+The actual QEMU cleanup AST additionally requires an independently detected RPM mutation
+and confirmed process stop; unrelated/provenance failures retain scratch.
+These prospective controls precede repair and claim no guest outcome. Preserve
+the contained red first; after repair, register its actual fix commit in
+`docs/formal/counterexamples.json` in a separate trust-boundary commit. RPM
+construction plans explicitly create each fresh mutant output directory before
+`build-rpm.sh`; an existing directory is refused. Limits and gate rules remain.
+
+Revision-bound source-only checker execution evidence is recorded in the
+[installation checker results wiki](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-checker-prerequisite-results-01).
+These controls establish no guest or package acceptance.
 
 Keep the existing named Debian package defects: root-user must fail A6,
 no-collision-check must fail A2a/A2b, and no-memory-max must fail A8. The existing
