@@ -10,6 +10,10 @@ This file registers helper identity and lifetime only;
 the separately registered R3 phase amendment belongs to the soak harness.
 No result is recorded here.
 
+The separate [finite native control registration](simulator-native-witness-protocol.md)
+defines the sealed-helper missing-begin red, loopback TLS fixture, helper-only
+build prerequisites and later native refusal cells. It records no execution.
+
 ## Source question and fixed scope
 
 Frozen candidate `8fb6f413179b094288316e25845c137440ba23fa` parses no live begin
