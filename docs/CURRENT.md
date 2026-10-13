@@ -41,6 +41,12 @@ package, device or deployment acceptance.
 
 Known limits and open checks:
 
+- The prospective [R3 soak](experiments/benchmarks/soak-protocol-r3.md) requires
+  7,200 seconds of actual offered work, nine registered cohorts, measured
+  non-exposure headroom and a stopped raw checkpoint before separate grading.
+  Its controls and implementation remain unrun; R2 retains its 5,460-second
+  exposure and historical meaning. No new soak acceptance is recorded.
+
 - The [fixed-query caller prerequisites](experiments/formal/query-caller-run-01.md) retain an unpaced-page HTTP 429 and the obsolete fixture-only oracle corpus. The repaired disposable query smoke exited 0 with all eight gates; four full query successors remain pending. Six main cells retain their original `8484493` results under prospectively selected `clearing-v2`; older sampled-v1 edge diagnostics failed in five cells. No broader qualification follows.
 - An attacker spread over many IPv6 /48s or IPv4 addresses can still fill the 1,024-entry peer table; a denial at a new second costs up to two access-state syncs (clock watermark and denial record), though at most one denial is stored per second ([#47](https://github.com/kmosoti/FabricO11y/issues/47)).
 - Exact shipped units ran successfully in fresh Debian 13/Fedora 44 baseline and lifecycle cells ([#41](https://github.com/kmosoti/FabricO11y/issues/41)); independent adversarial probes of every added hardening directive remain outside that finite installation result.

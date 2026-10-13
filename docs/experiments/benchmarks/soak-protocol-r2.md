@@ -6,6 +6,10 @@ revision accounts for the mandatory dedicated Spindle. The original
 [protocol](soak-protocol.md) and [failed run 01](soak-run-01.md) remain historical
 evidence with their original meanings. No new result is claimed here.
 
+The prospective [exposure revision 3](soak-protocol-r3.md) registers a true
+7,200-second offered interval and separately bounded checkpoint/grading. It does
+not relabel this revision's 5,460 offered seconds or its historical results.
+
 ## Fixed workload and gates
 
 Retain the original 100 simulator identities, seed `0xA11FA001`, two 512-byte
