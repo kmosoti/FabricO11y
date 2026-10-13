@@ -154,12 +154,12 @@ def log_rows(raw, batch):
 
 
 def cursor(raw):
-    f = fields(raw, {1: 2, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 2})
+    f = fields(raw, {1: 2, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 2}, depth=1)
     path = one(f, 1, b'').decode('utf-8')
     require(len(path.encode()) <= 4096, 'cursor path cap')
     identity = None
     if 8 in f:
-        stable = fields(b''.join(value for _, value in f[8]), {1: 2, 2: 0})
+        stable = fields(b''.join(value for _, value in f[8]), {1: 2, 2: 0}, depth=2)
         uuid, subvolume = one(stable, 1, b''), one(stable, 2)
         require(len(uuid) == 16 and any(uuid) and subvolume > 0, 'invalid Btrfs identity')
         identity = dict(uuid=uuid.hex(), subvolume_id=subvolume)
