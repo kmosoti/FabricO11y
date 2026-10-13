@@ -11,17 +11,10 @@ The [constructor plan](https://github.com/kmosoti/FabricO11y/wiki/Experiment-for
 holds prospective commands and revision-bound preparation evidence; its recorded
 unit controls do not establish native construction or walkthrough acceptance.
 
-The original `f98a3bf` focused run's 22 failures included four positive-mock
-setup refusals before staging; they are not archive counterexamples. Correcting
-only that mock on uncorrected production at `4e58b94` reproduced escaped
-ReadError/LZMAError/KeyError/EOFError (exit1, confirmed stop; raw log SHA256
-`97dca23a1cfb1ab3037554b4222c8e40e72e4db515337daed4dd8ed896bef479`).
-On corrected `ea7ba174`, four focused methods and 17 broad packaging/payload
-tests exited0 with confirmed stop; their raw log hashes are respectively
-`22a59fd56e9eb745b20af8331abbcec605fbcdc94e8e813fe7c21f8276d56e92` and
-`590688122af21e87a8f71c96324871dd6f084e6e49c28b8f542b95688ed601db`.
-The constructor record keeps the original failures, corrected counterexample
-and new green receipts separately. Native transformation remains not run.
+Historical constructor setup failures, minimized archive/process counterexamples
+and revision-bound source controls are preserved in the
+[constructor source record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-owner-fixture-source-results-01).
+Those controls do not establish native construction or walkthrough acceptance.
 
 ## Input and guide boundary
 
