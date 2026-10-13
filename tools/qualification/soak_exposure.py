@@ -12,8 +12,10 @@ import stat
 
 NS = 1_000_000_000
 EDGES = (60, 853, 1646, 2440, 3233, 4026, 4820, 5613, 6406, 7200)
-CEILINGS = {'setup': 180, 'exposure': 7200, 'drain_seal': 60,
+CEILINGS = {'setup': 170, 'exposure': 7210, 'drain_seal': 60,
             'shutdown': 20, 'checkpoint': 20, 'closeout': 20}
+HEADROOM = {name: seconds for name, seconds in CEILINGS.items() if name != 'exposure'}
+HEADROOM['exposure_transition'] = 10
 PARENT_FIELDS = ('memory.high', 'memory.max', 'memory.swap.max', 'pids.max',
     'memory.events', 'memory.peak', 'memory.current', 'memory.swap.current',
     'pids.current', 'pids.peak', 'cgroup.events', 'cgroup.procs', 'cpu.max', 'cpu.stat', 'io.stat')
@@ -59,12 +61,12 @@ def remaining_ns(phase, launcher_begin, phase_begin, now):
 
 
 def validate_phase_headroom(measurements):
-    require(isinstance(measurements, dict) and set(measurements) == set(CEILINGS) - {'exposure'}, 'phase headroom')
+    require(isinstance(measurements, dict) and set(measurements) == set(HEADROOM), 'phase headroom')
     for phase, record in measurements.items():
         require(isinstance(record, dict), 'phase headroom')
         maximum = record.get('maximum_ns')
         require(type(maximum) is int and maximum > 0
-            and (5 * maximum + 3) // 4 <= CEILINGS[phase] * NS
+            and (5 * maximum + 3) // 4 <= HEADROOM[phase] * NS
             and record.get('kind') in ('native-r2', 'full-rate-smoke')
             and record.get('stop_confirmed') is True and sha256(record.get('source_sha256')), 'phase headroom')
     return True
