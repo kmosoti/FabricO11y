@@ -1,8 +1,9 @@
 # Fresh owner guide walkthrough
 
-Revision 1, registered prospectively for [#46](https://github.com/kmosoti/FabricO11y/issues/46).
-No walkthrough, constructor, browser control or validator has run under this
-protocol. It supplements [console acceptance](console-access-protocol.md) and
+Revision 2, registered prospectively for [#46](https://github.com/kmosoti/FabricO11y/issues/46).
+Native construction, walkthrough and browser/record acceptance remain prospective;
+unit-regression evidence belongs to its actual revision and wiki record.
+This protocol supplements [console acceptance](console-access-protocol.md) and
 [installation acceptance](installation-release-protocol.md), without regrading
 their historical results. Results and the redacted transcript belong in the
 [research wiki](https://github.com/kmosoti/FabricO11y/wiki).
@@ -26,9 +27,13 @@ final release publication is not a circular prerequisite.
 Declare OS and role before selecting the guide's OS-specific install block.
 Execute fenced `sh` blocks in document order. A link is a callpoint only when its
 sentence says “now … then return here”; execute that linked section's fences in
-order, apply the conditional rule below and record the return point. Every other
-link is a reference. A fence introduced by a sentence starting “If …” runs only
-when that condition is observed; record the condition and whether it ran. Inline
+order through the next heading of the same or higher level, apply the conditional
+rule below and record the return point. Nested callpoints are allowed with their
+source spans and return stack recorded; cycles or an ambiguous extent are guide
+defects. Every other link is a reference. A fence introduced by “If …” runs only
+when that condition is observed; “Otherwise …” runs only when the corresponding
+condition was false. Record the condition and selected branch. An unpaired or
+ambiguous “Otherwise” is a guide defect. Inline
 code in prose is not executed. Perform and record prose-only browser enrollment,
 console revoke, `access.conf` creation and other configuration actions explicitly.
 The runner may substitute only HOST/IP,
@@ -50,9 +55,26 @@ Construct lower metadata versions from the exact canonical inputs: Debian
 `0.1.0~alpha.0`, RPM `0.1.0-0.alpha.0`, then upgrade to canonical alpha1 with native
 package managers. Preserve every regular payload byte and maintainer
 script/scriptlet, including canonical RPM `CANDIDATE-PROVENANCE.json`.
+Compare every data/control tar member header, including directories: exact name,
+type, mode, uid/gid, uname/gname, mtime, size and linkname. Keep complete control
+contents identical except the one declared Version field. Require RPM provide
+and recommend/suggest/supplement/enhance names, flags and versions unchanged.
+Normalize only the exact self-provides `fabrico11y` and `fabrico11y(x86-64)`, with
+equality flag `8` and the declared `0.1.0-0.alpha.1` to `0.1.0-0.alpha.0` transition;
+an unrelated dependency with the same version text must remain unchanged.
 Keep the fixture declaration outside the package payload. Changing a builder
 hash inside that provenance file is a payload change and must be rejected.
 Do not relax the historical predecessor's fixed digest admission.
+
+Write new constructor outputs only beneath the standalone
+`FABRIC_STORAGE_ROOT/results/owner-fixture-constructor-01`, never inside frozen
+#40 evidence. Refuse an existing output. Archive bounded command/stderr diagnostics
+in the driver log, including pre-output refusals. Every exception after staging
+begins must leave an explicit failed receipt, diagnosis and preserved staging;
+archive/parser errors must not escape with an unrecorded failure directory.
+Require preceding controls' confirmed outer stop and actual input/harness/helper
+hashes before native construction. Synthetic corruption controls do not establish
+native transformation; its own completed record must also confirm outer stop.
 
 Require native strictly-older comparison, exact phase package/source identities,
 unchanged account/configuration/retained telemetry, new login and installed
@@ -133,7 +155,13 @@ confirmed cleanup can complete #46.
 Registered [literal controls](fixtures/owner-walkthrough.json) include wrong
 original frozen head/epoch, payload or script mutation, equal version, omitted
 restore/fresh-candidate enrollment phase, wrong candidate record and unrelated
-HTTP refusal. Each must reject at its named boundary before affected guest
+HTTP refusal. The expanded constructor controls cover corrupt tar/xz, missing or
+truncated members, every declared DEB header field and RPM provides/weak metadata.
+Only the two expected self-provide EVRs may normalize. A trusted-positive browser
+control must succeed; wrong SAN and untrusted CA must reject specifically. For
+revocation, HTTP403/429/503, timeout or connection reset are not the required
+specific HTTP401 for a revoked credential. Each defect must reject at its named
+boundary before affected guest
 mutation or a completed verdict; unavailable startup is not defect detection.
 Run constructor/record/browser controls prospectively under containment, retaining
 raw exits/failures. These remain NOT RUN until actual executable consumers run.

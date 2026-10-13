@@ -1,10 +1,14 @@
 """Packaging regressions: exact assets, tamper rejection and bounded unit policy."""
 import hashlib
+import io
 import json
+import lzma
 import os
 from pathlib import Path
 import subprocess
 import tempfile
+import tarfile
+from types import SimpleNamespace
 import unittest
 import zlib
 from unittest.mock import patch
@@ -33,6 +37,132 @@ def png(extra=None):
 
 
 class PackageTests(unittest.TestCase):
+    def test_same_code_fixture_archive_errors_preserve_failed_receipt(self):
+        # Origin: #59 C-041 SF2, a corrupt archive escaped after staging began.
+        controls = json.loads((ROOT / 'docs/experiments/formal/fixtures/owner-walkthrough.json').read_text())
+        for case in controls['archive_error_controls']:
+            with self.subTest(defect=case['defect']), tempfile.TemporaryDirectory() as scratch:
+                directory = Path(scratch)
+                packages = {family: directory / family for family in ('debian', 'fedora')}
+                for package in packages.values():
+                    package.write_bytes(b'literal package stand-in; no native installation')
+                receipt = directory / 'deb-receipt.json'
+                receipt.write_text(json.dumps({'source': {'original_head': controls['original_head'],
+                                                        'source_date_epoch': controls['source_date_epoch']}}))
+                args = SimpleNamespace(deb_receipt=receipt, rpm_receipt=receipt, out=directory / 'results/out',
+                                       frozen=controls['original_head'], source_date_epoch=controls['source_date_epoch'],
+                                       harness_commit='1' * 40)
+                def command_output(command):
+                    if command[0] == 'dpkg-deb':
+                        return b'0.1.0~alpha.1'
+                    if '--eval' in command:
+                        return b'-1'
+                    return b'0' if '%{EPOCHNUM}' in command else b'0.1.0-0.alpha.1'
+                def corrupt_archive(command, env, out, label):
+                    work = Path(command[-1]).parent
+                    raw = bytes.fromhex(case['bytes_hex'])
+                    (work / 'literal-corrupt-archive.bin').write_bytes(raw)
+                    if case['defect'] == 'truncated-control-tar':
+                        with tarfile.open(fileobj=io.BytesIO(raw)):
+                            pass
+                    elif case['defect'] == 'invalid-xz':
+                        lzma.decompress(raw)
+                    elif case['defect'] == 'missing-member':
+                        {}['literal-required-control-member']
+                    else:
+                        raise EOFError('literal truncated archive member')
+                    self.fail('literal archive defect did not raise')
+                with patch.dict('sys.modules', {'inputs': SimpleNamespace(validate_inputs=lambda *args: packages)}), \
+                     patch.dict(os.environ, {'FABRIC_SCRATCH_ROOT': scratch}), \
+                     patch.object(build_candidate_rpm, 'STORAGE', directory), \
+                     patch.object(build_candidate_rpm, 'validate_harness'), \
+                     patch.object(build_candidate_rpm, 'inventory', return_value={'usr/bin/fabric-server': {'bytes': 3}}), \
+                     patch.object(build_candidate_rpm, 'deb_controls', return_value={'preinst': {'bytes': 3}}), \
+                     patch.object(build_candidate_rpm, 'rpm_records', return_value={'scripts': {'PREIN': {'bytes': 3}}, 'metadata': {}}), \
+                     patch.object(build_candidate_rpm, 'bounded_command', side_effect=command_output), \
+                     patch.object(build_candidate_rpm, 'run_build', side_effect=corrupt_archive):
+                    escaped = None
+                    result = None
+                    try:
+                        result = build_candidate_rpm.fixture_main(args)
+                    except Exception as error:
+                        escaped = error
+                        self.assertEqual(type(error).__name__, case['exception'])
+                report = json.loads((args.out / 'fixture-receipt.json').read_text())
+                self.assertIsNone(escaped, 'archive exception escaped without an archived failed verdict')
+                self.assertEqual(result, 2)
+                self.assertEqual((report['state'], report['exit']), ('failed', 2))
+                self.assertTrue(report.get('error'), 'archive failure diagnosis is missing')
+                retained = Path(report['failure_evidence'])
+                self.assertTrue(retained.is_relative_to(args.out))
+                self.assertEqual((retained / 'literal-corrupt-archive.bin').read_bytes(), bytes.fromhex(case['bytes_hex']))
+                self.assertEqual(list(directory.glob('owner-fixture-*')), [])
+                self.assertEqual(report['packages'], {})
+
+    def test_same_code_fixture_deb_tar_header_controls(self):
+        # Origin: #59 C-041 SF4, equal bytes did not bind tar member metadata.
+        controls = json.loads((ROOT / 'docs/experiments/formal/fixtures/owner-walkthrough.json').read_text())
+        self.assertTrue(callable(getattr(build_candidate_rpm, 'deb_headers', None)),
+                        'missing complete fixture Debian tar-header collector')
+        original = controls['deb_header_fixture']
+        def collect(records):
+            archives = {}
+            for name, rows in records.items():
+                raw = io.BytesIO()
+                with tarfile.open(fileobj=raw, mode='w') as archive:
+                    for row in rows:
+                        member = tarfile.TarInfo(row['name'])
+                        member.type = row['type'].encode()
+                        for field in ('mode', 'uid', 'gid', 'uname', 'gname', 'mtime', 'size', 'linkname'):
+                            setattr(member, field, row[field])
+                        archive.addfile(member, io.BytesIO(b'x' * row['size']))
+                archives[name] = raw.getvalue()
+            with patch.object(build_candidate_rpm, 'bounded_command', side_effect=lambda command: archives[command[-1]]):
+                return build_candidate_rpm.deb_headers(Path('literal.deb'))
+        self.assertEqual(collect(original), original)
+        for archive in original:
+            for member in range(len(original[archive])):
+                for case in controls['deb_header_controls']:
+                    if original[archive][member]['type'] == '5' and case['field'] == 'size':
+                        continue
+                    with self.subTest(archive=archive, member=member, field=case['field']):
+                        changed = json.loads(json.dumps(original))
+                        if case['field'] == 'omitted':
+                            changed[archive].pop(member)
+                        else:
+                            changed[archive][member][case['field']] = case['value']
+                        self.assertNotEqual(collect(changed), original, 'tar-header drift was invisible')
+
+    def test_same_code_fixture_rpm_provide_and_weak_dependency_controls(self):
+        # Origin: #59 C-041 SF3; only the two native self-provide EVRs may change.
+        controls = json.loads((ROOT / 'docs/experiments/formal/fixtures/owner-walkthrough.json').read_text())
+        def collect(records):
+            xml = '<rpmHeader>'
+            for name, value in records.items():
+                kind, values = value['kind'], value['values']
+                item = 'integer' if kind.startswith('integer') else 'string'
+                body = ''.join('<' + item + '>' + str(v) + '</' + item + '>' for v in values)
+                if kind.endswith('Array'):
+                    body = '<' + kind + '>' + body + '</' + kind + '>'
+                xml += '<rpmTag name="' + name + '">' + body + '</rpmTag>'
+            xml += '</rpmHeader>'
+            with patch.object(build_candidate_rpm, 'bounded_command', return_value=xml.encode()):
+                return build_candidate_rpm.rpm_records(Path('literal.rpm'))['metadata']
+        original = controls['rpm_metadata_fixture']
+        expected = collect(original)
+        for case in controls['rpm_metadata_controls']:
+            with self.subTest(defect=case['defect']):
+                changed = json.loads(json.dumps(original))
+                changed['RELEASE']['values'][0] = '0.alpha.0'
+                changed['PROVIDEVERSION']['values'][:2] = ['0.1.0-0.alpha.0'] * 2
+                if case['tag'] is not None:
+                    changed[case['tag']]['values'][case['index']] = case['value']
+                actual = collect(changed)
+                if case['expected'] == 'accepted':
+                    self.assertEqual(actual, expected, 'expected self-provide EVR change was refused')
+                else:
+                    self.assertNotEqual(actual, expected, 'unrelated native metadata drift was invisible')
+
     def test_same_code_fixture_source_and_literal_transform_controls(self):
         # Origin: owner walkthrough requires a real native version increase
         # without rewriting exact candidate payload, scripts or provenance.

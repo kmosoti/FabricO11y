@@ -13,15 +13,95 @@
     {"defect": "script", "expected": "fixture scripts differ"},
     {"defect": "equal-version", "expected": "fixture native metadata differs"}
   ],
+  "archive_error_controls": [
+    {"defect": "truncated-control-tar", "exception": "ReadError", "bytes_hex": "6261642d61726368697665", "expected": "failed receipt and preserved staging"},
+    {"defect": "invalid-xz", "exception": "LZMAError", "bytes_hex": "6261642d61726368697665", "expected": "failed receipt and preserved staging"},
+    {"defect": "missing-member", "exception": "KeyError", "bytes_hex": "6261642d61726368697665", "expected": "failed receipt and preserved staging"},
+    {"defect": "truncated-member", "exception": "EOFError", "bytes_hex": "6261642d61726368697665", "expected": "failed receipt and preserved staging"}
+  ],
+  "deb_header_fixture": {
+    "control.tar.xz": [
+      {"name": ".", "type": "5", "mode": 493, "uid": 0, "gid": 0, "uname": "root", "gname": "root", "mtime": 1791841113, "size": 0, "linkname": ""},
+      {"name": "control", "type": "0", "mode": 420, "uid": 0, "gid": 0, "uname": "root", "gname": "root", "mtime": 1791841113, "size": 3, "linkname": ""},
+      {"name": "preinst", "type": "0", "mode": 493, "uid": 0, "gid": 0, "uname": "root", "gname": "root", "mtime": 1791841113, "size": 3, "linkname": ""}
+    ],
+    "data.tar.xz": [
+      {"name": ".", "type": "5", "mode": 493, "uid": 0, "gid": 0, "uname": "root", "gname": "root", "mtime": 1791841113, "size": 0, "linkname": ""},
+      {"name": "usr", "type": "5", "mode": 493, "uid": 0, "gid": 0, "uname": "root", "gname": "root", "mtime": 1791841113, "size": 0, "linkname": ""},
+      {"name": "usr/bin", "type": "5", "mode": 493, "uid": 0, "gid": 0, "uname": "root", "gname": "root", "mtime": 1791841113, "size": 0, "linkname": ""},
+      {"name": "usr/bin/fabric-server", "type": "0", "mode": 493, "uid": 0, "gid": 0, "uname": "root", "gname": "root", "mtime": 1791841113, "size": 3, "linkname": ""}
+    ]
+  },
+  "deb_header_controls": [
+    {"field": "omitted", "value": null},
+    {"field": "name", "value": "changed-member"},
+    {"field": "type", "value": "7"},
+    {"field": "mode", "value": 448},
+    {"field": "uid", "value": 1},
+    {"field": "gid", "value": 1},
+    {"field": "uname", "value": "changed-owner"},
+    {"field": "gname", "value": "changed-group"},
+    {"field": "mtime", "value": 1791841114},
+    {"field": "size", "value": 4},
+    {"field": "linkname", "value": "changed-linkname"}
+  ],
+  "rpm_metadata_fixture": {
+    "NAME": {"kind": "string", "values": ["fabrico11y"]},
+    "VERSION": {"kind": "string", "values": ["0.1.0"]},
+    "RELEASE": {"kind": "string", "values": ["0.alpha.1"]},
+    "ARCH": {"kind": "string", "values": ["x86_64"]},
+    "FILEMODES": {"kind": "integerArray", "values": [33261]},
+    "FILEUSERNAME": {"kind": "stringArray", "values": ["root"]},
+    "FILEGROUPNAME": {"kind": "stringArray", "values": ["root"]},
+    "PROVIDENAME": {"kind": "stringArray", "values": ["fabrico11y", "fabrico11y(x86-64)", "literal-external-dependency"]},
+    "PROVIDEFLAGS": {"kind": "integerArray", "values": [8, 8, 8]},
+    "PROVIDEVERSION": {"kind": "stringArray", "values": ["0.1.0-0.alpha.1", "0.1.0-0.alpha.1", "0.1.0-0.alpha.1"]},
+    "RECOMMENDNAME": {"kind": "stringArray", "values": ["literal-recommend-dependency"]},
+    "RECOMMENDFLAGS": {"kind": "integerArray", "values": [8]},
+    "RECOMMENDVERSION": {"kind": "stringArray", "values": ["0.1.0-0.alpha.1"]},
+    "SUGGESTNAME": {"kind": "stringArray", "values": ["literal-suggest-dependency"]},
+    "SUGGESTFLAGS": {"kind": "integerArray", "values": [8]},
+    "SUGGESTVERSION": {"kind": "stringArray", "values": ["0.1.0-0.alpha.1"]},
+    "SUPPLEMENTNAME": {"kind": "stringArray", "values": ["literal-supplement-dependency"]},
+    "SUPPLEMENTFLAGS": {"kind": "integerArray", "values": [8]},
+    "SUPPLEMENTVERSION": {"kind": "stringArray", "values": ["0.1.0-0.alpha.1"]},
+    "ENHANCENAME": {"kind": "stringArray", "values": ["literal-enhance-dependency"]},
+    "ENHANCEFLAGS": {"kind": "integerArray", "values": [8]},
+    "ENHANCEVERSION": {"kind": "stringArray", "values": ["0.1.0-0.alpha.1"]}
+  },
+  "rpm_metadata_controls": [
+    {"defect": "only-expected-self-provide-EVR", "tag": null, "index": null, "value": null, "expected": "accepted"},
+    {"defect": "additional-auto-provide-name", "tag": "PROVIDENAME", "index": 2, "value": "unexpected-auto-provide", "expected": "different"},
+    {"defect": "provide-flags", "tag": "PROVIDEFLAGS", "index": 0, "value": 4, "expected": "different"},
+    {"defect": "unexpected-self-provide-EVR", "tag": "PROVIDEVERSION", "index": 0, "value": "0.1.0-0.alpha.9", "expected": "different"},
+    {"defect": "unrelated-provide-EVR", "tag": "PROVIDEVERSION", "index": 2, "value": "0.1.0-0.alpha.0", "expected": "different"},
+    {"defect": "recommend-name", "tag": "RECOMMENDNAME", "index": 0, "value": "unexpected-weak-dependency", "expected": "different"},
+    {"defect": "recommend-flags", "tag": "RECOMMENDFLAGS", "index": 0, "value": 4, "expected": "different"},
+    {"defect": "recommend-version", "tag": "RECOMMENDVERSION", "index": 0, "value": "0.1.0-0.alpha.0", "expected": "different"},
+    {"defect": "suggest-name", "tag": "SUGGESTNAME", "index": 0, "value": "unexpected-weak-dependency", "expected": "different"},
+    {"defect": "suggest-flags", "tag": "SUGGESTFLAGS", "index": 0, "value": 4, "expected": "different"},
+    {"defect": "suggest-version", "tag": "SUGGESTVERSION", "index": 0, "value": "0.1.0-0.alpha.0", "expected": "different"},
+    {"defect": "supplement-name", "tag": "SUPPLEMENTNAME", "index": 0, "value": "unexpected-weak-dependency", "expected": "different"},
+    {"defect": "supplement-flags", "tag": "SUPPLEMENTFLAGS", "index": 0, "value": 4, "expected": "different"},
+    {"defect": "supplement-version", "tag": "SUPPLEMENTVERSION", "index": 0, "value": "0.1.0-0.alpha.0", "expected": "different"},
+    {"defect": "enhance-name", "tag": "ENHANCENAME", "index": 0, "value": "unexpected-weak-dependency", "expected": "different"},
+    {"defect": "enhance-flags", "tag": "ENHANCEFLAGS", "index": 0, "value": 4, "expected": "different"},
+    {"defect": "enhance-version", "tag": "ENHANCEVERSION", "index": 0, "value": "0.1.0-0.alpha.0", "expected": "different"}
+  ],
   "record_controls": [
     {"defect": "wrong-original-head", "expected": "reject before output/guest creation"},
     {"defect": "wrong-epoch", "expected": "reject before output/guest creation"},
     {"defect": "missing-restore", "expected": "reject completed verdict"},
     {"defect": "missing-actual-candidate-fresh-enrollment", "expected": "reject completed verdict"},
     {"defect": "foreign-package-digest", "expected": "reject completed verdict"},
-    {"defect": "HTTP429-instead-of-revoked-401", "expected": "reject named refusal detection"}
+    {"defect": "HTTP429-instead-of-revoked-401", "expected": "reject named refusal detection"},
+    {"defect": "HTTP403-instead-of-revoked-401", "expected": "reject named refusal detection"},
+    {"defect": "HTTP503-instead-of-revoked-401", "expected": "reject named refusal detection"},
+    {"defect": "timeout-instead-of-revoked-401", "expected": "reject named refusal detection"},
+    {"defect": "connection-reset-instead-of-revoked-401", "expected": "reject named refusal detection"}
   ],
   "browser_controls": [
+    {"defect": "none", "expected": "trusted CA and matching hostname permit verified enrollment"},
     {"defect": "wrong-SAN", "expected": "specific hostname certificate rejection before enrollment"},
     {"defect": "untrusted-CA", "expected": "specific CA certificate rejection before enrollment"}
   ]

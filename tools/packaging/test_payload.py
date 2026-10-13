@@ -17,6 +17,14 @@ def entry(name, body=b'', mode=stat.S_IFREG | 0o644):
 
 
 class PayloadTests(unittest.TestCase):
+    def test_extraction_failure_retains_stderr_and_command(self):
+        # Origin: #59 C-041 nit4; the bounded reader discarded failure stderr.
+        command = [sys.executable, '-c', 'import sys; sys.stderr.write("literal archive diagnostic\\n"); sys.exit(7)']
+        with self.assertRaises(ValueError) as caught:
+            payload.bounded_command(command)
+        self.assertIn('literal archive diagnostic', str(caught.exception))
+        self.assertIn(sys.executable, str(caught.exception))
+
     def test_extraction_stops_at_cap_before_materializing_oversized_output(self):
         with patch.object(payload, 'CAP', 1024):
             self.assertEqual(payload.bounded_command([sys.executable, '-c', 'print("small")']), b'small\n')
