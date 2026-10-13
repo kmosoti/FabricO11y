@@ -547,8 +547,8 @@ sha256sum /home/accept/a12-memory-pressure.py
                             ('bootstrap.txt', ssh_log)):
             if value:
                 (result_dir / name).write_text(value)
-        completed_mutation = bool(args.mutate and mutation_package_archive and
-                                  mutation_rejected(args.mutate, rc, acceptance_log, error))
+        completed_mutation = bool((args.expected_mutation or mutation_package_archive) and
+                                  mutation_rejected(grading_mutation, rc, acceptance_log, error))
         if work_dir.exists() and cleanup_ok and error is None and (rc == 0 or completed_mutation):
             shutil.rmtree(work_dir)
             if completed_mutation:

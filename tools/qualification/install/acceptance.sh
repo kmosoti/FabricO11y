@@ -490,8 +490,10 @@ if [ "$DEFER_REMOVAL" = 0 ]; then
 # configuration.
 package_remove >"$W/remove.log" 2>&1; rc=$?
 stopped=$(systemctl is-active fabrico11y-node.service fabrico11y-server.service | tr '\n' ' ')
+stopped_ok=1
+case " $stopped " in *" active "*|*" activating "*|*" deactivating "*|*" reloading "*) stopped_ok=0 ;; esac
 if [ $rc -eq 0 ] && [ ! -e /usr/bin/fabric-server ] && [ -d /var/lib/fabrico11y/server ] \
-   && [ -f /etc/fabrico11y/server.conf ] && getent passwd fabricolly >/dev/null && [ "$stopped" != "active active " ]; then
+   && [ -f /etc/fabrico11y/server.conf ] && getent passwd fabricolly >/dev/null && [ "$stopped_ok" -eq 1 ]; then
   pass A13a "remove: binaries gone, services '$stopped', state, configuration and account kept"
 else
   fail A13a "rc=$rc stopped='$stopped'"

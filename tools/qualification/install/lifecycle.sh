@@ -90,14 +90,17 @@ PY
   remove)
     if [ "$family" = debian ]; then dpkg -r fabrico11y; else rpm -e fabrico11y; fi
     [ ! -e /usr/bin/fabric-server ]
-    [ -d /var/lib/fabrico11y/server ] && [ -f /etc/fabrico11y/server.conf ]
+    [ -d /var/lib/fabrico11y/server ]
+    [ -f /etc/fabrico11y/server.conf ]
     getent passwd fabricolly | cmp - "$W/lifecycle-account"
-    ! systemctl is-active --quiet fabrico11y-server.service
-    ! systemctl is-active --quiet fabrico11y-node.service
+    stopped=$(systemctl is-active fabrico11y-server.service fabrico11y-node.service | tr '\n' ' ' || true)
+    case " $stopped " in *" active "*|*" activating "*|*" deactivating "*|*" reloading "*)
+      echo "ACCEPT A13a FAIL services still live: '$stopped'"; exit 1 ;; esac
     echo 'ACCEPT A13a PASS remove retained telemetry/configuration/account and stopped services'
     if [ "$family" = debian ]; then
       dpkg -P fabrico11y
-      [ ! -e /var/lib/fabrico11y ] && [ ! -e /etc/fabrico11y ]
+      [ ! -e /var/lib/fabrico11y ]
+      [ ! -e /etc/fabrico11y ]
       echo 'ACCEPT A13b PASS Debian purge removed state/configuration'
     else
       [ "$(getenforce)" = Enforcing ]
@@ -105,7 +108,9 @@ PY
       audit_search_rc=0
       ausearch -m AVC,USER_AVC -ts boot > "$W/selinux-reboot-avc.log" 2>&1 || audit_search_rc=$?
       [ "$audit_search_rc" -le 1 ]
-      ! grep -E 'comm="(fabric-server|fabric-node|fabricctl)"' "$W/selinux-reboot-avc.log"
+      if grep -E 'comm="(fabric-server|fabric-node|fabricctl)"' "$W/selinux-reboot-avc.log"; then
+        echo 'ACCEPT F4 FAIL Fabric process AVC after reboot'; exit 1
+      fi
       rm -rf /var/lib/fabrico11y /etc/fabrico11y
       echo 'ACCEPT A13b PASS explicit guest cleanup after RPM preserved state/configuration'
       echo 'ACCEPT F4 PASS enforcing SELinux across reboot with no Fabric process AVC'
