@@ -170,6 +170,35 @@ that revision. The earlier bare-Bun attempt exited2 because Bun was unavailable;
 its failure evidence remains preserved. These finite checker results establish
 no new guest or package outcome.
 
+### Prospective stopped-custody upgrade witness
+
+Issue #41's Spool/backlog upgrade obligation needs a predecessor-produced
+unacknowledged Batch and a distinct unread newline-terminated source suffix
+across stopped native install, then exact candidate ACK/query and real reboot.
+Historical L1/L2 checks remain required. A retained file hash alone cannot
+establish recoverable delivery; shared-Rust `spool_dump` is a diagnostic.
+
+`test_custody_witness.py` independently hand-encodes small FAB1/FAC1/protobuf
+fixtures for prospective `custody_witness.stopped_snapshot` and `conserve`.
+The initial named `MechanismAvailability` failure records absence of the
+adapter; it is not a product defect or corrupt-frame counterexample. Actual
+specific refusals remain NOT RUN until that adapter exists. Its unchanged
+`CustodyWitnessControls` require complete CRC-checked frames, envelope/wire/u64
+bounds, nonterminal sequence/ACK, full Cursor/Btrfs identity and consumed-prefix
+CRC, last cursor in sequence order rather than maximum offset, complete stopped
+service observations, no-follow owned paths, and exact two-line custody joins.
+Reset source identity, missing/changed pending bytes, premature ACK, duplicated
+or changed query rows and unchanged reboot identity must be refused. ACK events
+must match the independently observed candidate node PID/unit/boot/run window
+and exact raw Batch hash; their message alone omits Strand identity.
+
+Run only through the admitted serial resource launcher: default1800 outer and
+1GiB reservation for synthetic controls. Native cells keep1800 outer,180-second
+lifecycle phases and9GiB whole guest reservation. Preserve failures and raw
+source custody, exporting only hashes of credentials. Frozen packages, wire
+semantics, query/delivery/rate oracles and all existing gate limits stay fixed.
+This prospective registration claims no checker or guest acceptance.
+
 Keep the existing named Debian package defects: root-user must fail A6,
 no-collision-check must fail A2a/A2b, and no-memory-max must fail A8. The existing
 mutation grader must reject unrelated failures and bad provenance/environment.
