@@ -69,3 +69,31 @@ Controls must retain an inflight refusal and distinguish a native UI pause from
 a merely asserted probe-active flag. If the frozen product cannot refresh this
 way, preserve that counterexample; do not change a frozen package or weaken the
 full-interval contract. Native supervisor/clock controls remain separate.
+
+## Source-bound S1, session and grader closeout joins
+
+S1 records bind both actual outer stop receipt and actual runtime receipt by
+file hash. Require zero command/wrapper/child exits, exact admitted command,
+unit/cgroup, confirmed stop, no forced shutdown, unchanged inputs, matching
+owner-admitted headroom binding and the full registered rate profile. Derive
+each phase maximum from the runtime phase timestamps; derive transition from
+exposure elapsed minus offered seconds. A supplied maximum that differs from
+these raw timestamps refuses admission. Historical native-R2 records need the
+same explicit normalized phase/stop binding; descriptive elapsed prose is not
+a phase witness. No fabricated receipt can authenticate its own authority.
+
+Frozen `8fb6f413` uses `fresh=false` for ordinary node control publication,
+an eight-hour session lifetime and a thirty-minute idle timeout. The R3 bridge
+may avoid eager UV renewal only for `GET /v1/console/nodes` and
+`PUT /v1/console/nodes/sim[0-9]{4}/config`. All session, CSRF, Origin and status
+checks remain. Authenticate actual expiry beyond the remaining offered interval
+before launch; keep the real periodic management/UI activity. No general
+skip-fresh switch or authentication-policy change is admitted.
+
+Grading emits `pending_grader_stop`, never final acceptance. A later, separate
+default-contained closeout binds its immutable result hash and actual grading
+launcher receipt, exact command/unit/cgroup, zero exits and confirmed stop. It
+also rehashes the original pending receipts and complete stopped manifests.
+Only a fresh exclusive final receipt may describe acceptance; the measurement,
+runtime and grading results retain their original states and bytes. Missing or
+substituted grading stop is a refusal, even when all ten gates were true.
