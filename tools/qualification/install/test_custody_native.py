@@ -529,5 +529,62 @@ class NativeShapeControls(NativeFixture, unittest.TestCase):
             self.temp.cleanup(); self.setUp()
 
 
+class RebootRawControls(NativeFixture, unittest.TestCase):
+    """Synthetic review counterexample: startup adds a genuine new raw log row."""
+    def setUp(self):
+        super().setUp()
+        self.module = adapter()
+
+    def reboot_chain(self):
+        chain = list(self.chain())
+        before, installed, drained, queries, events = chain
+        raw = self.active.read_bytes()
+        line = b'event candidate-reboot-started\n'
+        self.active.write_bytes(raw + line)
+        sequence = drained['sources'][-1]['sequence'] + 1
+        info = self.active.stat()
+        row = literal_row(sequence, 0, DIAG, info.st_dev, info.st_ino, len(raw), line)
+        reboot_payload = payload(sequence, [row], [source_cursor(SOURCE, 7, 9,
+            drained['logs'][SOURCE]['bytes'], drained['cursors'][SOURCE]['offset']),
+            source_cursor(DIAG, info.st_dev, info.st_ino, raw + line, len(raw + line))])
+        reboot_process = dict(PROCESS, pid=77, boot_id='literal-boot-b', start_ns=300, end_ns=400)
+        reboot = self.snapshot('reboot', [item['payload'] for item in drained['sources']] + [reboot_payload],
+            sequence, drained['logs'][SOURCE]['bytes'], receipt_change=lambda receipt: receipt.update(
+                boot_id='literal-boot-b', candidate_process=reboot_process))
+        queries['after_reboot'].append(row)
+        reboot_events = [dict(unit=PROCESS['unit'], pid=77, boot_id='literal-boot-b', at_ns=350,
+            message=f'delivery sequence={sequence} sha256={hashlib.sha256(reboot_payload).hexdigest()} '
+                    f'status=ack committed_through={sequence} elapsed_us=1')]
+        return chain, reboot, reboot_events
+
+    def test_old_three_phase_rule_rejects_new_reboot_diagnostic(self):
+        chain, _, _ = self.reboot_chain()
+        with self.assertRaisesRegex(ValueError, 'exact row conservation'):
+            self.module.conserve(*chain)
+
+    def test_fourth_raw_snapshot_admits_exact_new_reboot_diagnostic(self):
+        chain, reboot, events = self.reboot_chain()
+        self.module.conserve(*chain, after_reboot=reboot, reboot_ack_events=events)
+
+    def test_fourth_snapshot_rejects_unjustified_or_changed_rows_and_sender(self):
+        for mutation in ('drop', 'duplicate', 'forge', 'early-answer', 'raw-conflict',
+                         'same-boot', 'ack-pid', 'ack-hash', 'missing-ack', 'fixture-extra'):
+            with self.subTest(mutation=mutation):
+                chain, reboot, events = self.reboot_chain()
+                if mutation == 'drop': chain[3]['after_reboot'].pop()
+                elif mutation == 'duplicate': chain[3]['after_reboot'].append(copy.deepcopy(chain[3]['after_reboot'][-1]))
+                elif mutation == 'forge': chain[3]['after_reboot'][-1]['body'] = 'forged'
+                elif mutation == 'early-answer': chain[3]['after_drain'].append(chain[3]['after_reboot'][-1])
+                elif mutation == 'raw-conflict': reboot['sources'][0]['sha256'] = '0' * 64
+                elif mutation == 'same-boot': reboot['boot_id'] = chain[0]['boot_id']
+                elif mutation == 'ack-pid': events[0]['pid'] = 55
+                elif mutation == 'ack-hash': events[0]['message'] = events[0]['message'].replace(reboot['sources'][-1]['sha256'], '0' * 64)
+                elif mutation == 'missing-ack': events.clear()
+                elif mutation == 'fixture-extra': reboot['sources'][-1]['rows'][0]['attributes']['log.file.path'] = SOURCE
+                with self.assertRaises(ValueError):
+                    self.module.conserve(*chain, after_reboot=reboot, reboot_ack_events=events)
+            self.temp.cleanup(); self.setUp()
+
+
 if __name__ == '__main__':
     unittest.main()

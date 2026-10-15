@@ -231,3 +231,39 @@ for both-family positives, Debian producer refusals, owner-admitted package/help
 source binding, credentials, raw observations, transfers, deadlines and cleanup.
 Those requirements remain mandatory and NOT RUN; no source-only green completes
 installation acceptance or authenticates a guest stop/service UID.
+
+
+## Fourth stopped reboot checkpoint (prospective revision 4)
+
+The three-phase strict rule rejects a genuine newly committed startup diagnostic
+in the reboot answer. The deterministic `RebootRawControls` counterexample is
+synthetic source evidence, not a native trace. Native admission now requires a
+fourth stopped raw checkpoint after reboot; the optional three-checkpoint API
+remains only for legacy and explicitly synthetic callers.
+
+The drain answer must equal its full acknowledged baseline plus every raw log row
+above the initial ACK from checkpoints through drain. The reboot answer must equal
+that baseline plus every such raw log row through reboot. Later evidence cannot
+justify an earlier answer. Check conflicting sequence/payload or row identities
+before forming either union; reject missing, duplicate, forged and arbitrary extra
+rows. Preserve the exact five fixture rows, stopped before/install equality,
+original retained payloads, all source archives, monotone durable ACKs and the
+append/single-rotation diagnostic preservation rule between each stopped phase.
+Retain even reclaimed prior raw authority. The fourth snapshot binds the same
+candidate/Strand/fixture registration and an actually changed boot. Every new
+reboot Batch requires its exact payload SHA-256 ACK from the independently
+observed reboot candidate PID/start identity, executable, UID/cgroup and calibrated
+window. These requirements add coverage; no filtered answer or arbitrary extra
+row is admitted. The independent query/delivery/rate oracles remain unchanged.
+
+Register `test_fourth_raw_snapshot_admits_exact_new_reboot_diagnostic` as initial
+red (missing fourth-snapshot API). The old strict refusal remains a required
+counterexample. Separate controls remove/duplicate/forge the extra row, move it
+into the earlier answer, conflict retained raw identity, reuse boot, substitute
+ACK PID/hash, omit ACK or misattribute the extra source. Every control must refuse
+at its conservation/sender boundary with otherwise coherent synthetic input.
+The reader refinement has a separately justified maximum +55 net lines over
+`30ef218` (540 total), replacing the earlier 497 total ceiling only for the
+fourth checkpoint and shared phase conservation/ACK checks. The producer remains
++180 and bridge/caller +220; no cosmetic compression is required to satisfy them.
+Native VM execution still requires separate exact source/command preflight.
