@@ -360,3 +360,9 @@ same separation for operator instructions: an immutable command and its source
 span identify what was documented, while an actual process exit and independent
 observations establish what happened. Extraction must preserve shell bytes,
 including heredocs, and cannot decide whether a conditional step was applicable.
+
+The owner driver treats opaque query identifiers as data, not storage offsets.
+Its [registered snapshot adapter](experiments/formal/owner-walkthrough-protocol.md#production-snapshot-and-observer-binding-amendment)
+uses independent source-prefix bounds and keeps the original query oracle.
+The [guest observer](../tools/qualification/owner_observation.py) distinguishes
+configured unit properties from actual process privileges and kernel limits.
