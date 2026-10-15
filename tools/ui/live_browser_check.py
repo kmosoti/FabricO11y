@@ -403,9 +403,19 @@ def main():
     parser.add_argument('--pressure',action='store_true',help='finite authenticated body/admission timeout probe')
     parser.add_argument('--poll-seconds',type=int,choices=(0,120),default=0)
     parser.add_argument('--role-matrix',action='store_true',help='complete 144-cell role matrix; finish after existing setup')
+    parser.add_argument('--session-expiry-helper',type=Path,help='separate controlled-time AB/C cell using an already admitted native helper')
+    parser.add_argument('--session-expiry-admission',type=Path,help='successful exact-helper native admission receipt')
+    parser.add_argument('--candidate-commit',help='exact candidate commit for controlled-time receipts')
+    parser.add_argument('--package',type=Path,help='exact candidate package for controlled-time receipts')
     args = parser.parse_args()
     if args.role_matrix and (args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery):
         parser.error('role matrix is a separate finite cell; polling/pressure/cursor/shell/recovery retain their own cells')
+    expiry=args.session_expiry_helper is not None
+    if expiry and (args.role_matrix or args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery
+            or any((args.inject_rejection_defect,args.inject_api_cache_defect,args.inject_role_defect,args.inject_nonresident_enrollment))):
+        parser.error('session expiry is a separate finite cell')
+    if expiry and (not args.session_expiry_admission or not args.package or not re.fullmatch('[a-f0-9]{40}',args.candidate_commit or '')):
+        parser.error('session expiry requires exact native admission, candidate commit and package')
     fixture_started = time.monotonic()
     limits = require_limits()
     # The combined browser/server fixture uses a stricter cap than build jobs.
@@ -447,6 +457,9 @@ def main():
     server_port = free_port()
     origin = f'https://localhost:{server_port}'
     context = None
+    tls_opener = None
+    clock_targets = {}
+    state_descriptors = []
     deadline = fixture_started + (1200 if args.expired_cursor_probe else 240)
     group_parent, owned_groups = begin_browser_domain(limits, deadline), []
     samples = []
@@ -570,9 +583,9 @@ def main():
             else:answer['status']=429
         return answer['status'],body
 
-    def bearer_api(token,path,method='GET',body=None,*,cookie=None,csrf=None,role=None):
+    def bearer_api(token,path,method='GET',body=None,*,cookie=None,csrf=None,role=None,paced=True):
         dispatch_timeout(deadline,storage_violation,15)
-        pace_api()
+        if paced:pace_api()
         dispatch_timeout(deadline,storage_violation,15)
         request=urllib.request.Request(origin+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={
             **({'Authorization':'Bearer '+token} if token else {}),**({'Cookie':cookie} if cookie else {}),
@@ -653,13 +666,20 @@ def main():
         check(bool(inventory) and all(c['resident'] is True and c['rp']=='localhost' for c in inventory),
               label + ' stores actual resident credentials for the fixture RP')
 
-    def launch(label, command):
-        log = (out / f'{label}.log').open('w')
-        logs.append(log)
+    def launch(label, command, controlled=False):
         environment=os.environ.copy()
         for key in ('XDG_DATA_HOME','XDG_CONFIG_HOME','XDG_CACHE_HOME'):
             directory=work/key.lower();directory.mkdir(exist_ok=True);environment[key]=str(directory)
-        proc = browser_group_launch(group_parent, owned_groups, label, command, log, environment)
+        if controlled:
+            from session_clock import SessionClock
+            def spawn(argv,env,fd,helper,log):
+                return browser_group_launch(group_parent,owned_groups,label,argv,log,env,clock=(helper,fd))
+            clock=SessionClock(args.server,args.session_expiry_helper,out/f'{label}.log',deadline,
+                server_argv=command,server_launch=spawn)
+            clock_targets[label]=clock;proc=clock.process
+        else:
+            log = (out / f'{label}.log').open('w');logs.append(log)
+            proc = browser_group_launch(group_parent, owned_groups, label, command, log, environment)
         processes.append((label, proc))
         return proc
 
@@ -679,6 +699,17 @@ def main():
             snapshots[role]={'source':str(source),'sha256':identity,'bytes':destination.stat().st_size}
             setattr(args,role,destination)
         receipt['immutable_binary_snapshots']=snapshots
+        if expiry:
+            from session_clock import digest
+            helper=args.session_expiry_helper.resolve();admission=args.session_expiry_admission.resolve();package=args.package.resolve()
+            check(all(path.is_relative_to(DATA) and path.is_file() for path in (helper,admission,package)), 'controlled-time inputs reside on data drive')
+            native=json.loads(admission.read_text())
+            check(native.get('state')=='completed' and native.get('exit')==0 and native.get('retained_helper')=={'path':str(helper),'sha256':digest(helper)}, 'exact retained helper has successful native admission')
+            check(all(native['hashes'].get(str(ROOT/'tools/ui'/name))==digest(ROOT/'tools/ui'/name)
+                for name in ('session_clock.py','session_clock.c','session_clock_probe.rs')), 'native admission binds current clock implementation sources')
+            args.session_expiry_helper=helper
+            receipt['session_expiry_inputs']={'candidate_commit':args.candidate_commit,'package_sha256':digest(package),
+                'package_path':str(package),'helper_sha256':digest(helper),'native_admission':str(admission),'native_admission_sha256':digest(admission)}
         check(semantic_rejection((403,{'error':'access denied'}),403,'access denied') and not semantic_rejection((429,{'error':'access denied'}),403,'access denied') and not semantic_rejection((403,{'error':'wrong error'}),403,'access denied'),'semantic rejection grader rejects wrong status and wrong error negative controls')
         stage(build, work / 'console')
         if args.packaged_console:
@@ -734,143 +765,171 @@ self.addEventListener("fetch",event=>{
         admin.chmod(0o600)
         config = work / 'server.conf'
         config.write_text(f'listen=127.0.0.1:{server_port}\ntls_cert={work}/server.pem\ntls_key={work}/server.key\nstate_dir={work}/state\nadmin_token_file={admin}\nconsole_dir={work}/console\naccess_origin={origin}\naccess_rp_id=localhost\njournal_bytes=8388608\njournal_file_bytes=1048576\nretention_s=86400\nretention_bytes=33554432\nseal_workers=1\nself_spindle_url={origin}\nself_spindle_ca={work}/ca.pem\nself_spindle_executable={args.spindle.resolve()}\n')
-        server = launch('server', [str(args.server.resolve()), 'serve', str(config)])
-        context = ssl.create_default_context(cafile=str(work / 'ca.pem'))
-        tls_opener=urllib.request.build_opener(urllib.request.HTTPSHandler(context=context),NoRedirect())
-        def healthy():
-            if server.poll() is not None:
-                raise RuntimeError('server exited; inspect server.log')
-            try:
-                with urllib.request.urlopen(origin + '/v1/health', context=context, timeout=1) as response:
-                    return response.status == 200
-            except (OSError, urllib.error.URLError):
-                return False
-        wait(healthy, 'production TLS server')
-        build_receipt=json.loads((build/'build.json').read_text())
-        served_assets=[]
-        for name,identity in build_receipt['assets'].items():
-            if args.inject_api_cache_defect and name=='service-worker.js':
-                identity=json.loads((work/'console/asset-manifest.json').read_text())[name]
-                receipt['injected_worker_identity']=identity
-            with urllib.request.urlopen(origin+'/console/'+name,context=context,timeout=15) as response:
-                content=response.read(8*1024*1024+1)
-                mime=response.headers.get_content_type()
-                expected_mime={'html':'text/html','js':'text/javascript','css':'text/css','wasm':'application/wasm','webmanifest':'application/manifest+json','png':'image/png','svg':'image/svg+xml'}[name.rsplit('.',1)[1]]
-                # HTTP permits application/javascript as the legacy registered JS MIME.
-                correct_mime=mime==expected_mime or expected_mime=='text/javascript' and mime=='application/javascript'
-                check(len(content)==identity['bytes'] and hashlib.sha256(content).hexdigest()==identity['sha256'] and correct_mime,'actual TLS shell asset hash size and MIME: '+name)
-                check(all(response.headers.get(header)==value for header,value in build_receipt['headers'].items()),'actual shell headers match frozen build: '+name)
-                served_assets.append({'name':name,'bytes':len(content),'mime':mime})
-        receipt['served_assets']=served_assets
-        with urllib.request.urlopen(origin+'/console/manifest.webmanifest',context=context,timeout=5) as response:pwa_manifest=json.load(response)
-        check(pwa_manifest['scope']=='/console/' and pwa_manifest['start_url']=='/console/','actual manifest limits shell scope and start URL')
-        bootstrap_file = work / 'state/access/access-bootstrap.secret'
-        wait(lambda: bootstrap_file.is_file(), 'one-time bootstrap')
-        bootstrap = bootstrap_file.read_text().strip()
-        if args.browser=='firefox':
-            profile=work/'profile';profile.mkdir()
-            certutil=args.certutil.resolve()
-            for command in ([str(certutil),'-N','--empty-password','-d','sql:'+str(profile)],
-                            [str(certutil),'-A','-d','sql:'+str(profile),'-n','Owned Fabric fixture CA','-t','C,,','-i',str(work/'ca.pem')]):
-                subprocess.run(command,check=True,capture_output=True,timeout=10)
-            receipt['tls_scope']='fixture CA trusted only in owned Firefox NSS profile; acceptInsecureCerts false; Spindle trusts fixture CA'
-            receipt['virtual_authenticator_driver_workaround']='geckodriver2239 camelCase mismatch; privileged fixture invokes Gecko WebAuthn module, then restores content context'
-            driver=launch('webdriver',[str(DATA/'tools/ui/geckodriver'),'--host','127.0.0.1','--port',str(driver_port),'--allow-system-access'])
-        else:
-            driver = launch('webdriver', [str(TOOLS / 'chromedriver-linux64/chromedriver'), '--port=' + str(driver_port), '--allowed-ips=127.0.0.1'])
-        def driver_ready():
-            if driver.poll() is not None:
-                raise RuntimeError('driver exited; inspect webdriver.log')
-            try:
-                return call('GET', '/status').get('ready') is True
-            except (OSError, RuntimeError):
-                return False
-        wait(driver_ready, 'Chrome WebDriver')
-        chrome_capabilities={'browserName':'chrome','goog:chromeOptions': {
-            'binary': str(TOOLS / 'chrome-linux64/chrome'),
-            'args': ['--headless=new','--disable-dev-shm-usage','--user-data-dir=' + str(work/'profile'),
-                     '--ignore-certificate-errors-spki-list=' + spki, '--window-size=1440,1100', '--no-first-run','--no-default-browser-check']}}
-        if args.shell_lifecycle:
-            chrome_capabilities['goog:chromeOptions']['args'].append('--remote-debugging-pipe')
-        firefox_capabilities={'browserName':'firefox','acceptInsecureCerts':False,'moz:firefoxOptions':{
-            'binary':'/usr/bin/firefox','args':['-headless','-profile',str(work/'profile')],
-            # Firefox 157 dispatches USB before the software manager. A virtual
-            # authenticator belongs to the software manager, so select that
-            # fixture transport explicitly; the server still requires UV.
-            'prefs':{'security.enterprise_roots.enabled':False,
-                     'security.webauth.webauthn_enable_softtoken':True,
-                     'security.webauth.webauthn_enable_usbtoken':False}}}
-        info = call('POST','/session',{'capabilities':{'alwaysMatch':firefox_capabilities if args.browser=='firefox' else chrome_capabilities}})
-        session = info['sessionId']
-        receipt['browser_version_actual'] = info['capabilities']['browserVersion']
-        check(receipt['browser_version_actual'] == receipt['browser_version_expected'], 'actual browser matches reviewed version')
-        if args.browser=='firefox':
-            wd('/moz/context',{'context':'chrome'})
-            try:
-                receipt['virtual_authenticator_transport_prefs']=js('return {software:Services.prefs.getBoolPref("security.webauth.webauthn_enable_softtoken",false),usb:Services.prefs.getBoolPref("security.webauth.webauthn_enable_usbtoken",true)}')
-            finally:
-                wd('/moz/context',{'context':'content'})
-            check(receipt['virtual_authenticator_transport_prefs']=={'software':True,'usb':False},
-                  'virtual authenticator dispatch selects software transport instead of physical USB')
-        wd('/timeouts', {'script': 35000, 'pageLoad': 30000, 'implicit': 0})
-        if args.browser=='chrome':cdp('WebAuthn.enable', {})
-        authenticator = add_authenticator()
-        wd('/window/rect',{'width':1440,'height':1100})
-        receipt['virtual_authenticator'] = {
-            'protocol':'ctap2_1' if args.browser=='firefox' else 'ctap2',
-            'transport':'usb' if args.browser=='firefox' else 'internal',
-            'user_verified':True,'resident_key_capability':True}
-        wd('/url', {'url': origin + '/console/'})
-        wait(lambda: js('return !!document.querySelector("[data-testid=connect-server]")'), 'WASM mounted')
-        check(js('return !!document.querySelector("[data-testid=locked-screen]")'), 'initial view is locked')
-        receipt['cold_shell_timing']=js('return {navigation:performance.getEntriesByType("navigation")[0]?.toJSON(),assets:performance.getEntriesByType("resource").map(e=>({path:new URL(e.name).pathname,duration_ms:e.duration,transfer_bytes:e.transferSize,encoded_bytes:e.encodedBodySize}))}')
-        async_js('const done=arguments[arguments.length-1];navigator.serviceWorker.ready.then(()=>done(true)).catch(error=>done({error:String(error)}))')
-        # Gecko WebDriver refresh bypasses worker control. Ordinary navigation
-        # exercises the installed public-shell worker in both engines.
-        js('location.assign(location.href)')
-        wait(lambda: js('return !!document.querySelector("[data-testid=connect-server]") && !!navigator.serviceWorker.controller'), 'public worker controls reloaded shell')
-        check(async_js('const done=arguments[arguments.length-1];navigator.serviceWorker.getRegistration().then(r=>done(new URL(r.scope).pathname==="/console/" && new URL(r.active.scriptURL).pathname==="/console/service-worker.js"))'),'actual worker registration and script remain inside console scope')
-        receipt['warm_shell_timing']=js('return {navigation:performance.getEntriesByType("navigation")[0]?.toJSON(),assets:performance.getEntriesByType("resource").map(e=>({path:new URL(e.name).pathname,duration_ms:e.duration,transfer_bytes:e.transferSize,encoded_bytes:e.encodedBodySize}))}')
-        js('''window.fixtureApiHeaders=[];window.fixtureApiHeadersTruncated=false;window.fixturePaceQueue=Promise.resolve();window.fixtureLastDispatch=-Infinity;
-          const interval=arguments[0],original=window.fetch;
-          window.fixturePace=(dispatch)=>{const slot=window.fixturePaceQueue.then(async()=>{let delay;while((delay=interval-(performance.now()-window.fixtureLastDispatch))>0)await new Promise(resolve=>setTimeout(resolve,delay));const started=performance.now();window.fixtureLastDispatch=started;return {response:dispatch?.(started)}});window.fixturePaceQueue=slot.then(()=>{},()=>{});return slot};
-          window.fetch=async(...args)=>{const url=typeof args[0]==="string"?args[0]:args[0].url;const path=new URL(url,location.href).pathname;
-            if(!path.startsWith('/v1/'))return original(...args);const paced=!window.fixtureUnpacedBurst;
-            const dispatch=async(started_ms)=>{const entry={path,method:args[1]?.method||args[0]?.method||'GET',started_ms,paced,status:null};
-            if(window.fixtureApiHeaders.length>=512)window.fixtureApiHeadersTruncated=true;else window.fixtureApiHeaders.push(entry);
-            try{const response=await original(...args);Object.assign(entry,{status:response.status,retry_after:response.headers.get('retry-after'),cache_control:response.headers.get('cache-control'),csp:response.headers.get('content-security-policy'),coop:response.headers.get('cross-origin-opener-policy'),corp:response.headers.get('cross-origin-resource-policy')});return response}
-            finally{entry.finished_ms=performance.now()}};
-            return paced?(await window.fixturePace(dispatch)).response:dispatch(performance.now())}''',cadence.interval*1000)
-        click('Connect to server')
-        wait(lambda: js('return document.body.textContent.includes("Sign in with a passkey") && !document.body.textContent.includes("Working…")'), 'live sign-in locked view')
-        js('''const weakenResident=arguments[0];const original=window.fabricPasskey;window.fabricPasskey=async function(register,text){
-          const parsed=JSON.parse(text);const options=parsed.publicKey;window.fixtureCeremonyDiagnostic={register,attestation:options.attestation,authenticatorSelection:{...options.authenticatorSelection}};
-          if(register && weakenResident){options.authenticatorSelection.residentKey='discouraged';options.authenticatorSelection.requireResidentKey=false;text=JSON.stringify(parsed);}
-          try{const result=await original(register,text);window.fixtureCeremonyDiagnostic.complete=true;return result;}
-          catch(error){window.fixtureCeremonyDiagnostic.errorName=error.name;window.fixtureCeremonyDiagnostic.errorMessage=error.message;throw error;}}''', args.inject_nonresident_enrollment)
-        js('Array.from(document.querySelectorAll("details")).find(e=>e.querySelector("button")?.textContent.trim()==="Create owner passkey").open=true')
-        expect(api('/v1/console/auth/register/start','POST',{'bootstrap_secret':'','display_name':'First visitor'}), 403, 'access denied', 'first visitor cannot claim owner without protected bootstrap')
-        field('Display name', 'Browser fixture owner')
-        field('One-time setup secret', bootstrap)
-        bootstrap_replay=bootstrap
-        bootstrap = None
-        click('Create owner passkey')
-        wait(lambda: js('return document.body.textContent.includes("Browser fixture owner · owner")'), 'actual WebAuthn owner registration',seconds=65 if args.browser=='firefox' else 25)
-        check(not bootstrap_file.exists(), 'first owner consumed protected one-time bootstrap')
-        selection=js('return window.fixtureCeremonyDiagnostic.authenticatorSelection')
-        receipt['registration_selection']=selection
-        check(selection.get('residentKey')=='required' and selection.get('requireResidentKey') is True
-              and selection.get('userVerification')=='required',
-              'server enrollment requires resident credentials and user verification')
-        resident_credentials(authenticator, 'owner enrollment')
-        expect(api('/v1/console/auth/register/start','POST',{'bootstrap_secret':bootstrap_replay,'display_name':'Replayed owner'}), 403, 'access denied', 'consumed one-time bootstrap cannot start another owner')
-        bootstrap_replay=None
-        cookies = wd('/cookie', method='GET')
-        cookie = next(item for item in cookies if item['name'].startswith('__Host-'))
-        check(cookie.get('secure') and cookie.get('httpOnly') and cookie.get('sameSite') == 'Strict' and cookie.get('path') == '/', 'session cookie Secure HttpOnly SameSite Strict host path')
-        code, view = api('/v1/console/session')
-        check(code == 200 and view['api_version'] == 1, 'real server session compatibility')
-        principal_id = view['principal_id']
+        def start_owner(label):
+            nonlocal session,endpoint,context,tls_opener
+            fixture=work/label if label else work
+            if label:fixture.mkdir(mode=0o700)
+            fixture_config=fixture/'server.conf'
+            if label:fixture_config.write_text(config.read_text().replace(f'state_dir={work}/state',f'state_dir={fixture}/state'))
+            state_record=None
+            if expiry:
+                from session_clock import kernel_time
+                created=kernel_time(1);state=fixture/'state';state.mkdir(mode=0o700)
+                held=browser_hold_directory(state)
+                state_record=dict(path=str(state),device=held['dev'],inode=held['ino'],descriptor_held=True,
+                    created_monotonic_ns=created,initial_entries=[p.name for p in state.iterdir()],copy_source=None,
+                    observed_monotonic_ns=kernel_time(1))
+                state_descriptors.append(held)
+            driver_port=free_port();endpoint=f'http://127.0.0.1:{driver_port}'
+            started=time.monotonic_ns()
+            server = launch(label+'server', [str(args.server.resolve()), 'serve', str(fixture_config)], controlled=expiry)
+            context = ssl.create_default_context(cafile=str(work / 'ca.pem'))
+            tls_opener=urllib.request.build_opener(urllib.request.HTTPSHandler(context=context),NoRedirect())
+            def healthy():
+                if server.poll() is not None:
+                    raise RuntimeError('server exited; inspect server.log')
+                try:
+                    with urllib.request.urlopen(origin + '/v1/health', context=context, timeout=1) as response:
+                        return response.status == 200
+                except (OSError, urllib.error.URLError):
+                    return False
+            wait(healthy, 'production TLS server')
+            build_receipt=json.loads((build/'build.json').read_text())
+            served_assets=[]
+            for name,identity in build_receipt['assets'].items():
+                if args.inject_api_cache_defect and name=='service-worker.js':
+                    identity=json.loads((work/'console/asset-manifest.json').read_text())[name]
+                    receipt['injected_worker_identity']=identity
+                with urllib.request.urlopen(origin+'/console/'+name,context=context,timeout=15) as response:
+                    content=response.read(8*1024*1024+1)
+                    mime=response.headers.get_content_type()
+                    expected_mime={'html':'text/html','js':'text/javascript','css':'text/css','wasm':'application/wasm','webmanifest':'application/manifest+json','png':'image/png','svg':'image/svg+xml'}[name.rsplit('.',1)[1]]
+                    # HTTP permits application/javascript as the legacy registered JS MIME.
+                    correct_mime=mime==expected_mime or expected_mime=='text/javascript' and mime=='application/javascript'
+                    check(len(content)==identity['bytes'] and hashlib.sha256(content).hexdigest()==identity['sha256'] and correct_mime,'actual TLS shell asset hash size and MIME: '+name)
+                    check(all(response.headers.get(header)==value for header,value in build_receipt['headers'].items()),'actual shell headers match frozen build: '+name)
+                    served_assets.append({'name':name,'bytes':len(content),'mime':mime})
+            receipt['served_assets']=served_assets
+            with urllib.request.urlopen(origin+'/console/manifest.webmanifest',context=context,timeout=5) as response:pwa_manifest=json.load(response)
+            check(pwa_manifest['scope']=='/console/' and pwa_manifest['start_url']=='/console/','actual manifest limits shell scope and start URL')
+            bootstrap_file = fixture / 'state/access/access-bootstrap.secret'
+            wait(lambda: bootstrap_file.is_file(), 'one-time bootstrap')
+            bootstrap = bootstrap_file.read_text().strip()
+            if args.browser=='firefox':
+                profile=fixture/'profile';profile.mkdir()
+                certutil=args.certutil.resolve()
+                for command in ([str(certutil),'-N','--empty-password','-d','sql:'+str(profile)],
+                                [str(certutil),'-A','-d','sql:'+str(profile),'-n','Owned Fabric fixture CA','-t','C,,','-i',str(work/'ca.pem')]):
+                    subprocess.run(command,check=True,capture_output=True,timeout=10)
+                receipt['tls_scope']='fixture CA trusted only in owned Firefox NSS profile; acceptInsecureCerts false; Spindle trusts fixture CA'
+                receipt['virtual_authenticator_driver_workaround']='geckodriver2239 camelCase mismatch; privileged fixture invokes Gecko WebAuthn module, then restores content context'
+                driver=launch(label+'webdriver',[str(DATA/'tools/ui/geckodriver'),'--host','127.0.0.1','--port',str(driver_port),'--allow-system-access'])
+            else:
+                driver = launch(label+'webdriver', [str(TOOLS / 'chromedriver-linux64/chromedriver'), '--port=' + str(driver_port), '--allowed-ips=127.0.0.1'])
+            def driver_ready():
+                if driver.poll() is not None:
+                    raise RuntimeError('driver exited; inspect webdriver.log')
+                try:
+                    return call('GET', '/status').get('ready') is True
+                except (OSError, RuntimeError):
+                    return False
+            wait(driver_ready, 'Chrome WebDriver')
+            chrome_capabilities={'browserName':'chrome','goog:chromeOptions': {
+                'binary': str(TOOLS / 'chrome-linux64/chrome'),
+                'args': ['--headless=new','--disable-dev-shm-usage','--user-data-dir=' + str(fixture/'profile'),
+                         '--ignore-certificate-errors-spki-list=' + spki, '--window-size=1440,1100', '--no-first-run','--no-default-browser-check']}}
+            if args.shell_lifecycle:
+                chrome_capabilities['goog:chromeOptions']['args'].append('--remote-debugging-pipe')
+            firefox_capabilities={'browserName':'firefox','acceptInsecureCerts':False,'moz:firefoxOptions':{
+                'binary':'/usr/bin/firefox','args':['-headless','-profile',str(fixture/'profile')],
+                # Firefox 157 dispatches USB before the software manager. A virtual
+                # authenticator belongs to the software manager, so select that
+                # fixture transport explicitly; the server still requires UV.
+                'prefs':{'security.enterprise_roots.enabled':False,
+                         'security.webauth.webauthn_enable_softtoken':True,
+                         'security.webauth.webauthn_enable_usbtoken':False}}}
+            info = call('POST','/session',{'capabilities':{'alwaysMatch':firefox_capabilities if args.browser=='firefox' else chrome_capabilities}})
+            session = info['sessionId']
+            receipt['browser_version_actual'] = info['capabilities']['browserVersion']
+            check(receipt['browser_version_actual'] == receipt['browser_version_expected'], 'actual browser matches reviewed version')
+            if args.browser=='firefox':
+                wd('/moz/context',{'context':'chrome'})
+                try:
+                    receipt['virtual_authenticator_transport_prefs']=js('return {software:Services.prefs.getBoolPref("security.webauth.webauthn_enable_softtoken",false),usb:Services.prefs.getBoolPref("security.webauth.webauthn_enable_usbtoken",true)}')
+                finally:
+                    wd('/moz/context',{'context':'content'})
+                check(receipt['virtual_authenticator_transport_prefs']=={'software':True,'usb':False},
+                      'virtual authenticator dispatch selects software transport instead of physical USB')
+            wd('/timeouts', {'script': 35000, 'pageLoad': 30000, 'implicit': 0})
+            if args.browser=='chrome':cdp('WebAuthn.enable', {})
+            authenticator = add_authenticator()
+            wd('/window/rect',{'width':1440,'height':1100})
+            receipt['virtual_authenticator'] = {
+                'protocol':'ctap2_1' if args.browser=='firefox' else 'ctap2',
+                'transport':'usb' if args.browser=='firefox' else 'internal',
+                'user_verified':True,'resident_key_capability':True}
+            wd('/url', {'url': origin + '/console/'})
+            wait(lambda: js('return !!document.querySelector("[data-testid=connect-server]")'), 'WASM mounted')
+            check(js('return !!document.querySelector("[data-testid=locked-screen]")'), 'initial view is locked')
+            receipt['cold_shell_timing']=js('return {navigation:performance.getEntriesByType("navigation")[0]?.toJSON(),assets:performance.getEntriesByType("resource").map(e=>({path:new URL(e.name).pathname,duration_ms:e.duration,transfer_bytes:e.transferSize,encoded_bytes:e.encodedBodySize}))}')
+            async_js('const done=arguments[arguments.length-1];navigator.serviceWorker.ready.then(()=>done(true)).catch(error=>done({error:String(error)}))')
+            # Gecko WebDriver refresh bypasses worker control. Ordinary navigation
+            # exercises the installed public-shell worker in both engines.
+            js('location.assign(location.href)')
+            wait(lambda: js('return !!document.querySelector("[data-testid=connect-server]") && !!navigator.serviceWorker.controller'), 'public worker controls reloaded shell')
+            check(async_js('const done=arguments[arguments.length-1];navigator.serviceWorker.getRegistration().then(r=>done(new URL(r.scope).pathname==="/console/" && new URL(r.active.scriptURL).pathname==="/console/service-worker.js"))'),'actual worker registration and script remain inside console scope')
+            receipt['warm_shell_timing']=js('return {navigation:performance.getEntriesByType("navigation")[0]?.toJSON(),assets:performance.getEntriesByType("resource").map(e=>({path:new URL(e.name).pathname,duration_ms:e.duration,transfer_bytes:e.transferSize,encoded_bytes:e.encodedBodySize}))}')
+            js('''window.fixtureApiHeaders=[];window.fixtureApiHeadersTruncated=false;window.fixturePaceQueue=Promise.resolve();window.fixtureLastDispatch=-Infinity;
+              const interval=arguments[0],original=window.fetch;
+              window.fixturePace=(dispatch)=>{const slot=window.fixturePaceQueue.then(async()=>{let delay;while((delay=interval-(performance.now()-window.fixtureLastDispatch))>0)await new Promise(resolve=>setTimeout(resolve,delay));const started=performance.now();window.fixtureLastDispatch=started;return {response:dispatch?.(started)}});window.fixturePaceQueue=slot.then(()=>{},()=>{});return slot};
+              window.fetch=async(...args)=>{const url=typeof args[0]==="string"?args[0]:args[0].url;const path=new URL(url,location.href).pathname;
+                if(!path.startsWith('/v1/'))return original(...args);const paced=!window.fixtureUnpacedBurst;
+                const dispatch=async(started_ms)=>{const entry={path,method:args[1]?.method||args[0]?.method||'GET',started_ms,paced,status:null};
+                if(window.fixtureApiHeaders.length>=512)window.fixtureApiHeadersTruncated=true;else window.fixtureApiHeaders.push(entry);
+                try{const response=await original(...args);Object.assign(entry,{status:response.status,retry_after:response.headers.get('retry-after'),cache_control:response.headers.get('cache-control'),csp:response.headers.get('content-security-policy'),coop:response.headers.get('cross-origin-opener-policy'),corp:response.headers.get('cross-origin-resource-policy')});return response}
+                finally{entry.finished_ms=performance.now()}};
+                return paced?(await window.fixturePace(dispatch)).response:dispatch(performance.now())}''',cadence.interval*1000)
+            click('Connect to server')
+            wait(lambda: js('return document.body.textContent.includes("Sign in with a passkey") && !document.body.textContent.includes("Working…")'), 'live sign-in locked view')
+            js('''const weakenResident=arguments[0];const original=window.fabricPasskey;window.fabricPasskey=async function(register,text){
+              const parsed=JSON.parse(text);const options=parsed.publicKey;window.fixtureCeremonyDiagnostic={register,attestation:options.attestation,authenticatorSelection:{...options.authenticatorSelection}};
+              if(register && weakenResident){options.authenticatorSelection.residentKey='discouraged';options.authenticatorSelection.requireResidentKey=false;text=JSON.stringify(parsed);}
+              try{const result=await original(register,text);window.fixtureCeremonyDiagnostic.complete=true;return result;}
+              catch(error){window.fixtureCeremonyDiagnostic.errorName=error.name;window.fixtureCeremonyDiagnostic.errorMessage=error.message;throw error;}}''', args.inject_nonresident_enrollment)
+            js('Array.from(document.querySelectorAll("details")).find(e=>e.querySelector("button")?.textContent.trim()==="Create owner passkey").open=true')
+            expect(api('/v1/console/auth/register/start','POST',{'bootstrap_secret':'','display_name':'First visitor'}), 403, 'access denied', 'first visitor cannot claim owner without protected bootstrap')
+            field('Display name', 'Browser fixture owner')
+            field('One-time setup secret', bootstrap)
+            bootstrap_replay=bootstrap
+            bootstrap = None
+            click('Create owner passkey')
+            wait(lambda: js('return document.body.textContent.includes("Browser fixture owner · owner")'), 'actual WebAuthn owner registration',seconds=65 if args.browser=='firefox' else 25)
+            check(not bootstrap_file.exists(), 'first owner consumed protected one-time bootstrap')
+            selection=js('return window.fixtureCeremonyDiagnostic.authenticatorSelection')
+            receipt['registration_selection']=selection
+            check(selection.get('residentKey')=='required' and selection.get('requireResidentKey') is True
+                  and selection.get('userVerification')=='required',
+                  'server enrollment requires resident credentials and user verification')
+            resident_credentials(authenticator, 'owner enrollment')
+            expect(api('/v1/console/auth/register/start','POST',{'bootstrap_secret':bootstrap_replay,'display_name':'Replayed owner'}), 403, 'access denied', 'consumed one-time bootstrap cannot start another owner')
+            bootstrap_replay=None
+            cookies = wd('/cookie', method='GET')
+            cookie = next(item for item in cookies if item['name'].startswith('__Host-'))
+            check(cookie.get('secure') and cookie.get('httpOnly') and cookie.get('sameSite') == 'Strict' and cookie.get('path') == '/', 'session cookie Secure HttpOnly SameSite Strict host path')
+            code, view = api('/v1/console/session')
+            check(code == 200 and view['api_version'] == 1, 'real server session compatibility')
+            principal_id = view['principal_id']
+            return server,cookie,view,principal_id,bootstrap_file,authenticator,dict(
+                started_monotonic_ns=started,state_before=state_record)
+
+        server,cookie,view,principal_id,bootstrap_file,authenticator,first_fixture=start_owner('AB' if expiry else '')
+        if expiry:
+            from browser_expiry import run_expiry
+            run_expiry(args,receipt,clock_targets,owned_groups,group_parent,state_descriptors,first_fixture,
+                start_owner,wd,js,async_js,click,wait,check,api,bearer_api,pace_api,
+                deadline,cadence,cookie,view,fixture_started)
+            verify_binary_identity();receipt['exit']=0
+            return
         expect(api('/v1/console/logout','POST',csrf=False), 403, 'access denied', 'cookie mutation without CSRF rejected')
         check(api('/v1/console/session')[0] == 200, 'rejected CSRF mutation preserves session')
         request=urllib.request.Request(origin+'/v1/console/logout',data=b'',method='POST',headers={
@@ -1514,11 +1573,19 @@ self.addEventListener("fetch",event=>{
         except BaseException as error:
             cleanup_error = error
         finally:
+            for label,clock in clock_targets.items():
+                try:
+                    if not getattr(clock,'closed',False):clock.close()
+                except BaseException as error:
+                    cleanup_error=cleanup_error or error
+                finally:
+                    receipt.setdefault('session_clock_ledgers',{})[label]={'rows':clock.rows,'frames':[frame.hex() for frame in clock.frames],'error':clock.error}
             stop_samples.set()
             sampler.join(timeout=2)
             if sampler.is_alive(): cleanup_error = cleanup_error or RuntimeError('browser sampler stop')
             (out/'resource-samples.json').write_text(json.dumps(samples, indent=2) + '\n')
             for log in logs: log.close()
+            for held in state_descriptors:os.close(held['fd'])
             receipt['own_children_empty'] = group_parent.get('own_children_empty', False)
             receipt['reader_namespaces'] = group_parent.get('namespaces')
             receipt['process_exits'] = {label: proc.returncode for label, proc in processes}

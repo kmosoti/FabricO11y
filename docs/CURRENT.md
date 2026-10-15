@@ -1,5 +1,13 @@
 # Current project state
 
+The controlled-time browser expiry caller now has a server-only native clock
+adapter and complete serialized request-window joins. At `479b356`, 17 focused
+source controls exited0 with confirmed containment cleanup. The additive timing
+ABI, actual-server clock binding and exact32 AB/C browser observations still
+need native execution on the replacement candidate; source checks do not supply
+package or browser acceptance. The expiry cell retains one240-second deadline
+and stops/reaps AB before creating the independent C fixture.
+
 The standalone console bridge smoke now selects the owned browser supervisor,
 with a fresh held1GiB browser budget, finite deadline and bounded close. Failed
 scratch is retained. Focused ownership controls and the actual replacement

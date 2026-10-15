@@ -366,3 +366,13 @@ Its [registered snapshot adapter](experiments/formal/owner-walkthrough-protocol.
 uses independent source-prefix bounds and keeps the original query oracle.
 The [guest observer](../tools/qualification/owner_observation.py) distinguishes
 configured unit properties from actual process privileges and kernel limits.
+
+The [controlled-time session fixture](experiments/formal/console-session-clock-protocol.md)
+connects Rust's `SystemTime` effect boundary to native evidence. Its original
+`#[repr(C)]` six-u64 clock observation stays stable while a separate timing
+accessor adds native monotonic brackets. Explain why a controller timestamp
+cannot identify the server's authorization clock, why an HTTP request may contain
+several wall-clock calls, and why retaining their complete set is stronger than
+choosing a convenient call. The exact boundary caller uses two untouched idle
+sessions and one continually active absolute-expiry session; controlled time is
+not eight hours of elapsed endurance.

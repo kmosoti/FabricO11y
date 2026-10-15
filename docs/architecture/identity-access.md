@@ -163,6 +163,14 @@ epoch, which discards sessions and reader tokens, so an old backup never resurre
 
 ## Evidence
 
+The disposable [session-clock protocol](../experiments/formal/console-session-clock-protocol.md)
+keeps controlled wall-time expiry separate from real elapsed endurance. Its
+harness adapter installs the helper only at the owned server exec, brackets
+actual native calls with unchanged monotonic time, and retains every possible
+REALTIME call in each serialized request window. A mixed-second or straddling
+window is inconclusive. The caller supplies all32 unchanged AB/C oracle rows;
+compiled native and replacement-package browser execution remain prerequisites.
+
 The [console protocol](../experiments/formal/console-access-protocol.md) registers the
 checks and negative controls: passkey, session and CSRF rejections, the role matrix over
 every console and Spindle route (widening any role must fail), reader expiry, revocation
