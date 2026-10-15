@@ -178,6 +178,10 @@ def main():
         raise ValueError('R3 final observation requires exact 7500 seconds and delegation')
     require_storage()
     high, cap = memory_limits()
+    if observe_final:
+        if cap < 6 * 1024**3:
+            raise ValueError('R3 exact 6 GiB parent unavailable on this host')
+        high, cap = 5 * 1024**3, 6 * 1024**3
     scratch = STORAGE / 'scratch'
     scratch.mkdir(parents=True, exist_ok=True)
     temporary = Path(tempfile.mkdtemp(prefix='work-', dir=scratch))
@@ -196,6 +200,7 @@ def main():
         command.append('--property=Delegate=yes')
     if observe_final:
         command.append('--property=RemainAfterExit=yes')
+        command.append('--property=TasksMax=1536')
     # Preserve build/tool locations, including explicitly configured toolchains.
     for key in ('PATH', 'CARGO_HOME', 'RUSTUP_HOME', 'CARGO_BUILD_JOBS', 'RUST_TEST_THREADS', 'CARGO_INCREMENTAL', 'CARGO_PROFILE_DEV_DEBUG', 'CARGO_PROFILE_TEST_DEBUG'):
         if key in os.environ:
