@@ -78,10 +78,15 @@ fn clock_bracket(lo: u64, hi: u64) -> std::io::Result<Duration> {
 }
 
 fn witness_partition(count: usize, workers: usize, seconds: u64) -> std::io::Result<usize> {
-    witness_require((1..=100).contains(&count) && (1..=100).contains(&workers)
-        && (1..=7200).contains(&seconds), "native witness requires bounded positive parameters")?;
+    witness_require(
+        (1..=100).contains(&count) && (1..=100).contains(&workers) && (1..=7200).contains(&seconds),
+        "native witness requires bounded positive parameters",
+    )?;
     let per_worker = count.div_ceil(workers);
-    witness_require(count.div_ceil(per_worker) == workers, "native witness requires exact worker partition")?;
+    witness_require(
+        count.div_ceil(per_worker) == workers,
+        "native witness requires exact worker partition",
+    )?;
     Ok(per_worker)
 }
 
@@ -567,7 +572,9 @@ fn run(args: Args) -> std::io::Result<()> {
     let count = identities.len();
     let per_worker = if args.begin_witness.is_some() {
         witness_partition(count, args.workers, args.seconds)?
-    } else { count.div_ceil(args.workers.max(1)) };
+    } else {
+        count.div_ceil(args.workers.max(1))
+    };
     if let Some(path) = &args.begin_witness {
         witness_require(
             path.parent() == Some(args.out.as_path()),
@@ -939,7 +946,8 @@ mod tests {
 
     #[test]
     fn native_witness_requires_duration_and_actual_workers() {
-        for (count, workers, seconds) in [(0, 1, 2), (2, 0, 2), (2, 2, 0), (2, 2, 7201), (5, 4, 2)] {
+        for (count, workers, seconds) in [(0, 1, 2), (2, 0, 2), (2, 2, 0), (2, 2, 7201), (5, 4, 2)]
+        {
             assert!(witness_partition(count, workers, seconds).is_err());
         }
         assert_eq!(witness_partition(5, 3, 2).unwrap(), 2);
