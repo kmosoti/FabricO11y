@@ -97,3 +97,24 @@ also rehashes the original pending receipts and complete stopped manifests.
 Only a fresh exclusive final receipt may describe acceptance; the measurement,
 runtime and grading results retain their original states and bytes. Missing or
 substituted grading stop is a refusal, even when all ten gates were true.
+
+### Cross-job and phase forgery controls
+
+Before correction, add literal controls that mix otherwise valid runtime and
+outer receipts from different jobs, change a checkpoint output inode/path,
+change source helper/profile, alter the independent launcher activation anchor,
+or forge a phase elapsed value. Each must refuse S1. Require the runtime's actual
+service/cgroup identity and checkpoint root device/inode to match the source
+outer receipt and separately admitted output; a common descriptive binding
+label cannot establish this. Reparse the complete source checkpoint manifest,
+original simulator summary and complete created-event coverage. Runtime phase
+records must have exactly the six registered phases, start setup at the
+independently observed systemd activation anchor, preserve disjoint order and
+meet every local/global ceiling. The exposure record must enclose the actual
+native begin bracket and conservative full end. The same phase validator is
+mandatory again before grading, including refusal of forged elapsed fields.
+
+The closeout artifact stays `pending_closeout_stop`. The coordinator's actual
+closeout launcher exit/resource/empty-stop receipt is the terminal ledger join;
+do not label the artifact final acceptance before that observation, and do not
+create another recursive launcher layer to attest the final ledger write.
