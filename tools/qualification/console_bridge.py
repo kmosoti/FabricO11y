@@ -38,7 +38,7 @@ from fixture_cadence import FixtureCadence, PEER_ADMISSION
 
 VERSION = "155.0.8059.39"
 TOOLS = STORAGE / "tools/ui" / ("chrome-for-testing-" + VERSION)
-FIREFOX_VERSION = "157.0"
+FIREFOX_VERSION = "157.0.1"
 GECKODRIVER = STORAGE / "tools/ui/geckodriver"
 CERTUTIL = STORAGE / "tools/ui/nss-tools-3.129.0-1.fc44/usr/bin/certutil"
 MAX_BODY = 8 * 1024**2
