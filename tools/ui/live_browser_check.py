@@ -407,7 +407,13 @@ def main():
     parser.add_argument('--session-expiry-admission',type=Path,help='successful exact-helper native admission receipt')
     parser.add_argument('--candidate-commit',help='exact candidate commit for controlled-time receipts')
     parser.add_argument('--package',type=Path,help='exact candidate package for controlled-time receipts')
+    parser.add_argument('--security-probes',action='store_true',help='signed virtual-key, replay, fixation and real reader expiry cell')
+    parser.add_argument('--inject-security-defect',choices=('registration-replay','login-replay','wrong-origin','wrong-rp','missing-uv','attacker-cookie','previous-cookie','reader-expiry'))
     args = parser.parse_args()
+    if args.inject_security_defect and not args.security_probes:
+        parser.error('security defect requires its isolated security cell')
+    if args.security_probes and (args.session_expiry_helper or args.role_matrix or args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery):
+        parser.error('security probes use a separate finite cell')
     if args.role_matrix and (args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery):
         parser.error('role matrix is a separate finite cell; polling/pressure/cursor/shell/recovery retain their own cells')
     expiry=args.session_expiry_helper is not None
@@ -889,6 +895,12 @@ self.addEventListener("fetch",event=>{
                 try{const response=await original(...args);Object.assign(entry,{status:response.status,retry_after:response.headers.get('retry-after'),cache_control:response.headers.get('cache-control'),csp:response.headers.get('content-security-policy'),coop:response.headers.get('cross-origin-opener-policy'),corp:response.headers.get('cross-origin-resource-policy')});return response}
                 finally{entry.finished_ms=performance.now()}};
                 return paced?(await window.fixturePace(dispatch)).response:dispatch(performance.now())}''',cadence.interval*1000)
+            if args.security_probes:
+                js('''const original=window.fetch;window.fixtureCompletedRegistration=null;
+                  window.fetch=(...args)=>{const p=new URL(typeof args[0]==='string'?args[0]:args[0].url,location.href).pathname;
+                  if(p==='/v1/console/auth/register/finish' && !window.fixtureCompletedRegistration)
+                    window.fixtureCompletedRegistration=JSON.parse(args[1].body);
+                  return original(...args)}''')
             click('Connect to server')
             wait(lambda: js('return document.body.textContent.includes("Sign in with a passkey") && !document.body.textContent.includes("Working…")'), 'live sign-in locked view')
             js('''const weakenResident=arguments[0];const original=window.fabricPasskey;window.fabricPasskey=async function(register,text){
@@ -941,6 +953,26 @@ self.addEventListener("fetch",event=>{
         except urllib.error.HTTPError as error:
             expect((error.code,json.load(error)),403,'access denied','cookie mutation with foreign Origin rejected')
         check(api('/v1/console/session')[0] == 200, 'rejected Origin mutation preserves session')
+        if args.security_probes:
+            import browser_security
+            def export_fixture_credentials():
+                if args.browser == 'firefox':
+                    wd('/moz/context', {'context':'chrome'})
+                    try:
+                        return js('return ChromeUtils.importESModule("chrome://remote/content/marionette/webauthn.sys.mjs").webauthn.getCredentials(arguments[0])', authenticator)
+                    finally:
+                        wd('/moz/context', {'context':'content'})
+                return cdp('WebAuthn.getCredentials', {'authenticatorId':authenticator})['credentials']
+            registration=js('const r=window.fixtureCompletedRegistration;window.fixtureCompletedRegistration=null;return r')
+            receipt['security_probes']=[]
+            browser_security.run(api=api,bearer=bearer_api,js=js,async_js=async_js,wd=wd,
+                export_credentials=export_fixture_credentials,origin=origin,principal=principal_id,
+                work=work,deadline=deadline,registration=registration,inject=args.inject_security_defect,
+                observations=receipt['security_probes'])
+            check(browser_security.grade(receipt['security_probes']),'all signed browser security properties')
+            registration=None
+            capture_api_metadata();verify_binary_identity();receipt['exit']=0
+            return
         if args.pressure:
             held=[]
             try:
