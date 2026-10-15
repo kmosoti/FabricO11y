@@ -202,7 +202,21 @@ class ConsoleBridge:
             # default Resource Timing buffer these counters cannot fill up.
             self._js('''window.fabricCampaignUiProbe={active:false,attempts:0,headers:0,completed:0,
               statusFailures:0,transportFailures:0,inflight:0,lastAttemptMs:null,lastCompletedMs:null,
-              maxAttemptGapMs:0,refreshes:0,phases:0,phaseLastAttemptMs:null};
+              maxAttemptGapMs:0,refreshes:0,phases:0,phaseLastAttemptMs:null,
+              documentId:crypto.randomUUID(),events:[],eventCount:0,eventOverflow:false,tickCount:0,latestTick:null};
+              window.fabricCampaignUiEvent=function(event){const p=window.fabricCampaignUiProbe;
+                event.seq=++p.eventCount;if(p.events.length<8192)p.events.push(event);else p.eventOverflow=true;};
+              const nativeInterval=window.setInterval;let observedTimer=0;
+              window.setInterval=function(callback,delay,...args){if(delay!==5000)return nativeInterval.call(this,callback,delay,...args);
+                const timer=++observedTimer;window.fabricCampaignUiEvent({event:'timer',timer,delay,atMs:performance.now()});
+                return nativeInterval.call(this,function(...values){const p=window.fabricCampaignUiProbe;
+                  const check=Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()==='Check session');
+                  const tick=++p.tickCount;p.latestTick=tick;
+                  window.fabricCampaignUiEvent({event:'tick',timer,tick,atMs:performance.now(),
+                    visibility:document.visibilityState,busy:check?check.disabled:null,
+                    connected:document.body.textContent.includes('Connected'),
+                    running:Array.from(document.querySelectorAll('button')).some(e=>e.textContent.trim()==='Pause 5-second polling')});
+                  return callback.apply(this,values);},delay,...args);};
               const original=window.fetch;window.fetch=function(...args){
                 const p=window.fabricCampaignUiProbe;
                 const native=p.active && args[0] instanceof Request &&
@@ -211,10 +225,13 @@ class ConsoleBridge:
                 const now=performance.now();if(p.phaseLastAttemptMs!==null)
                   p.maxAttemptGapMs=Math.max(p.maxAttemptGapMs,now-p.phaseLastAttemptMs);
                 p.phaseLastAttemptMs=now;p.lastAttemptMs=now;p.attempts++;p.inflight++;
+                const id=p.attempts;window.fabricCampaignUiEvent({event:'attempt',id,tick:p.latestTick,atMs:now});
                 let finished=false;const finish=(failed)=>{if(finished)return;finished=true;
-                  p.inflight--;if(failed)p.transportFailures++;else{p.completed++;p.lastCompletedMs=performance.now();}};
+                  p.inflight--;window.fabricCampaignUiEvent({event:'complete',id,atMs:performance.now(),failed});
+                  if(failed)p.transportFailures++;else{p.completed++;p.lastCompletedMs=performance.now();}};
                 return original.apply(this,args).then(response=>{
-                  p.headers++;if(response.status<200||response.status>=300)p.statusFailures++;
+                  p.headers++;window.fabricCampaignUiEvent({event:'headers',id,atMs:performance.now(),status:response.status});
+                  if(response.status<200||response.status>=300)p.statusFailures++;
                   if(!response.body){finish(false);return response;}
                   const stream=response.body;const getReader=stream.getReader.bind(stream);
                   stream.getReader=function(...options){const reader=getReader(...options);
@@ -292,7 +309,17 @@ class ConsoleBridge:
           done({status:response.status,text:new TextDecoder('utf-8',{fatal:true}).decode(bytes)});
           }catch(e){done({error:true});}finally{clearTimeout(timer);}})();''', path, method, raw, csrf, MAX_BODY, asynchronous=True)
         if answer.get("error"):
+            observer = getattr(self, 'raw_observer', None)
+            if observer is not None:
+                observer({'path': path, 'method': method, 'answer': answer,
+                          'ended_ns': time.monotonic_ns()})
             raise RuntimeError("console transport failed, expired or exceeded body bound")
+        observer = getattr(self, 'raw_observer', None)
+        if observer is not None:
+            # Credential-issuing routes are intentionally excluded: the R3
+            # consumer attaches this sink only after all setup credentials exist.
+            observer({'path': path, 'method': method, 'answer': answer,
+                      'ended_ns': time.monotonic_ns()})
         self.records.append({"path": path, "method": method, "status": answer["status"],
                              "duration_s": time.monotonic() - start})
         if len(self.records) > 10000:
@@ -337,13 +364,28 @@ class ConsoleBridge:
             if not self.principal_id:
                 raise RuntimeError("bootstrap the owner before login")
             polling = self.ui_polling
-            if polling:
+            continuous = polling and getattr(self, 'continuous_polling', False)
+            if polling and not continuous:
                 self.poll_ui(False)
             view = self._ceremony("login", {"principal_id": self.principal_id})
             if polling:
                 # Authentication replaces both cookie session and CSRF. Reload
                 # the UI session before resuming its requested visible phase.
-                self.poll_ui(True)
+                if continuous:
+                    # R3 keeps the actual view running while the real passkey
+                    # ceremony replaces the cookie. Update application session
+                    # state through its native control; preserve every inflight
+                    # answer and the original phase/cadence/event counters.
+                    self._js('''const button=Array.from(document.querySelectorAll('button')).find(e=>
+                      e.textContent.trim()==='Check session');if(!button)throw Error('native session control missing');button.click();''')
+                    deadline = time.monotonic() + 15
+                    while not self._js("return document.body.textContent.includes('Connected') && !document.body.textContent.includes('Working…')"):
+                        if time.monotonic() >= deadline:
+                            raise RuntimeError('continuous native UI session refresh did not finish')
+                        time.sleep(.1)
+                    self.poll_health(require_progress=False)
+                else:
+                    self.poll_ui(True)
                 self._js("window.fabricCampaignUiProbe.refreshes++")
             return view
 
@@ -373,6 +415,7 @@ class ConsoleBridge:
         """Explicitly activate/pause the actual bounded native UI polling view."""
         with self.lock:
             if not enabled:
+                self._js("window.fabricCampaignUiEvent({event:'polling',active:false,atMs:performance.now()})")
                 self._js("window.fabricCampaignUiProbe.active=false")
                 self.ui_polling = False
             if enabled:
@@ -394,6 +437,7 @@ class ConsoleBridge:
                     time.sleep(.1)
             else:
                 self._js("const p=window.fabricCampaignUiProbe;p.active=true;p.phaseLastAttemptMs=null;p.phases++")
+                self._js("window.fabricCampaignUiEvent({event:'polling',active:true,atMs:performance.now()})")
                 self.ui_polling = True
                 self.ui_previous = None
                 self.ui_phase_baseline = self.poll_health(require_progress=False)
@@ -424,13 +468,13 @@ class ConsoleBridge:
     def poll_health(self, *, require_progress=True, record=True):
         """Bounded actual UI body-consumption/status evidence, not owner API success."""
         with self.lock:
-            sample = self._js('''const p=window.fabricCampaignUiProbe;const text=document.body.textContent;
-              return {...p,visibility:document.visibilityState,connected:text.includes('Connected'),
+            sample = self._js('''const p=window.fabricCampaignUiProbe;const {events,...summary}=p;const text=document.body.textContent;
+              return {...summary,visibility:document.visibilityState,connected:text.includes('Connected'),
                 pauseVisible:Array.from(document.querySelectorAll('button')).some(e=>
                   e.textContent.trim()==='Pause 5-second polling'),nowMs:performance.now()};''')
             sample['requested_polling'] = self.ui_polling
             if record:
-                if len(self.ui_samples) >= 1280:
+                if len(self.ui_samples) >= getattr(self, 'ui_sample_limit', 1280):
                     raise RuntimeError('bounded UI polling receipt exceeds 1280 samples')
                 self.ui_samples.append(sample)
                 self.receipt['ui_polling'] = self.ui_samples
@@ -449,6 +493,28 @@ class ConsoleBridge:
                         raise RuntimeError('actual requested UI polling made no observed progress')
                 self.ui_previous = sample
             return sample
+
+    def continuity_snapshot(self):
+        """Bind newly observed native UI events to a host monotonic bracket.
+
+        This captures evidence; the independent R3 validator checks complete
+        sequence/cadence/body/status/session/document continuity later. A native
+        timestamp bracket is uncertainty, never exact browser clock precision.
+        """
+        with self.lock:
+            before = time.monotonic_ns()
+            cursor = getattr(self, '_continuity_cursor', 0)
+            value = self._js('''const p=window.fabricCampaignUiProbe;
+              return {documentId:p.documentId,timeOriginMs:performance.timeOrigin,nowMs:performance.now(),
+                visibility:document.visibilityState,active:p.active,phases:p.phases,refreshes:p.refreshes,
+                eventCount:p.eventCount,eventOverflow:p.eventOverflow,
+                events:p.events.filter(e=>e.seq>arguments[0])};''', cursor)
+            after = time.monotonic_ns()
+            value.update(mono_before_ns=before, mono_after_ns=after, webdriver_session=self.session)
+            if value['eventOverflow']:
+                raise RuntimeError('native UI attempt ledger exceeded 8192 events')
+            self._continuity_cursor = value['eventCount']
+            return value
 
     def close(self):
         if self.closed:

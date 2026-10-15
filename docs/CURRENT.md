@@ -5,6 +5,11 @@
 FabricO11y collects, durably forwards, retains and queries Linux telemetry. It is
 usable for bounded development trials; no current deployment profile is qualified
 and no release tag has been produced.
+The prospective [R3 runtime integration](experiments/benchmarks/soak-runtime-protocol.md)
+adds a separate two-hour measurement path, native UI event capture and stopped
+checkpoint/separate grading. Its live native trace and supervised browser
+bindings, continuous-refresh controls and real S1 headroom remain prerequisites;
+implementation alone supplies no new soak acceptance evidence.
 The [product contract](PRODUCT-CONTRACT.md) defines the promises and the
 [verification matrix](formal/verification-matrix.md) maps each invariant to checks
 and remaining limits.
