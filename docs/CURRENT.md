@@ -47,6 +47,8 @@ Known limits and open checks:
 - The browser checks added for the role matrix (`live_browser_check`, bridge smoke, packaged console) are CI-only and have no recorded result.
 - In cloud containers the `xtask` tests `check_logs` (needs the launcher) and `evidence` (needs full git history) fail, and `tests/control.rs` fails under umask 022; these are environmental.
 
+The [simulator accounting source controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-simulator-accounting-source-results-01) now execute 33 methods without skips; the sealed helper produced the registered missing-begin native red after four actual ACKs. A separate opt-in helper is implemented but uncompiled. Its [pinned sysroot and source preparation](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-simulator-helper-preparation-results-01) succeeded; helper build/native witness controls and full exposure remain pending. Frozen package/helper bytes are unchanged.
+
 ## Results that shape the design
 
 Measurements below belong to their linked workloads and revisions. Heap, RSS and
