@@ -373,7 +373,7 @@ def stopped_snapshot(root, stopped_receipt, archived_allowed_logs, *, fixture_pa
         os.close(fd)
 
 
-def conserve(before, after_install, after_drain, queries, candidate_ack_events):
+def conserve(before, after_install, after_drain, queries, candidate_ack_events, *, after_reboot=None, reboot_ack_events=()):
     paths = before.get('fixture_paths')
     selected = lambda row: paths is None or row['attributes'].get('log.file.path') in paths
     for snapshot in (after_install, after_drain):
@@ -386,12 +386,14 @@ def conserve(before, after_install, after_drain, queries, candidate_ack_events):
     require(pending and after_drain['ack'] >= pending[-1]['sequence'], 'missing pending custody/drain ACK')
     require(all(log == after_drain['logs'].get(path) for path, log in before['logs'].items()
         if paths is None or path in paths), 'source archive rewritten')
-    if paths:
-        prior, drained = before['diagnostics'], after_drain['diagnostics']
-        same = lambda a, b: (a['device'], a['inode']) == (b['device'], b['inode'])
+    def preserve_diagnostics(prior, drained, stable_namespace=False):
+        same = lambda a, b: a['inode'] == b['inode'] and (stable_namespace or a['device'] == b['device'])
         active, new = prior['spindle.log'], drained['spindle.log']
         if same(active, new):
-            require(new['bytes'].startswith(active['bytes']) and prior.get('spindle.log.1') == drained.get('spindle.log.1'),
+            old, retained_old = prior.get('spindle.log.1'), drained.get('spindle.log.1')
+            unchanged = old == retained_old or (stable_namespace and old is not None and retained_old is not None
+                and all(value == retained_old.get(key) for key, value in old.items() if key != 'device'))
+            require(new['bytes'].startswith(active['bytes']) and unchanged,
                     'diagnostic prefix preservation')
         else:
             old = drained.get('spindle.log.1', {})
@@ -399,6 +401,19 @@ def conserve(before, after_install, after_drain, queries, candidate_ack_events):
             require(old and same(active, old) and old['bytes'].startswith(active['bytes'])
                 and b'\n' in new['bytes'] and len(first) <= 4096 and len(old['bytes']) + len(first) > 262144,
                     'diagnostic rotation preservation')
+    if paths:
+        preserve_diagnostics(before['diagnostics'], after_drain['diagnostics'])
+    if after_reboot is not None:
+        require(paths is not None and all(after_reboot[key] == before[key] for key in
+            ('binding', 'node_id', 'generation', 'fixture_paths')) and after_reboot['boot_id'] == queries['boot_after']
+            and after_reboot['boot_id'] != before['boot_id'] and after_reboot['ack'] >= after_drain['ack'], 'reboot checkpoint binding')
+        require(all(all(value == after_reboot['logs'].get(path, {}).get(key) for key, value in log.items()
+            if key != 'device' or log['btrfs_identity'] is None) for path, log in before['logs'].items() if path in paths),
+                'reboot fixture archive rewritten')
+        diagnostic = '/var/lib/fabrico11y/node/spool/diagnostics/spindle.log'
+        namespace = after_drain['logs'][diagnostic]['btrfs_identity']
+        require(namespace == after_reboot['logs'][diagnostic]['btrfs_identity'], 'reboot diagnostic namespace changed')
+        preserve_diagnostics(after_drain['diagnostics'], after_reboot['diagnostics'], namespace is not None)
     retained = {source['sequence']: source['sha256'] for source in before['sources']}
     require(all(source['sequence'] not in retained or source['sha256'] == retained[source['sequence']]
         for source in after_drain['sources']), 'retained committed bytes changed')
@@ -434,11 +449,17 @@ def conserve(before, after_install, after_drain, queries, candidate_ack_events):
         if source['sequence'] <= before['ack'] for row in source['rows']), 'old-row baseline raw mismatch')
     expected = old + [pending_row, unread_row]
     require(all(row in old + [pending_row] for source in pending for row in source['rows'] if selected(row)), 'unexpected pending log row')
-    if paths:
-        all_sources = {source['sequence']: source for source in before['sources'] + after_drain['sources']}
-        required_rows = [row for source in all_sources.values() if source['sequence'] > before['ack'] for row in source['rows']]
+    def raw_union(snapshots):
+        all_sources = {}
+        for snapshot in snapshots:
+            for source in snapshot['sources']:
+                previous = all_sources.setdefault(source['sequence'], source)
+                require(previous == source, 'conflicting retained raw identity')
+        rows = [row for source in all_sources.values() if source['sequence'] > before['ack'] for row in source['rows']]
+        require(len({(row['node_id'], row['sequence'], row['index']) for row in rows}) == len(rows), 'duplicate raw row identity')
         require(not any(path in gap for source in all_sources.values() if source['sequence'] > before['ack']
             for gap in source['collection_gaps'] for path in paths), 'fixture source gap')
+        return all_sources, rows
     for path, current in after_drain['cursors'].items():
         if paths is not None and path not in paths: continue
         log, offset = after_drain['logs'][path], 0
@@ -455,31 +476,40 @@ def conserve(before, after_install, after_drain, queries, candidate_ack_events):
     keys = lambda rows: sorted((row['node_id'], row['sequence'], row['index']) for row in rows)
     encoded = lambda rows: sorted(json.dumps(row, sort_keys=True, allow_nan=False) for row in rows)
     require(len(set(keys(expected))) == len(expected), 'duplicate expected identity')
-    for observed in (queries['after_drain'], queries['after_reboot']):
-        complete = queries['before'] + required_rows if paths else expected
+    for phase, snapshots in (('after_drain', (before, after_install, after_drain)),
+                             ('after_reboot', (before, after_install, after_drain) + ((after_reboot,) if after_reboot else ()))):
+        observed = queries[phase]
+        complete = queries['before'] + raw_union(snapshots)[1] if paths else expected
         projected = [row for row in observed if selected(row)]
         require(keys(projected) == keys(expected) and encoded(projected) == encoded(expected), 'exact row conservation')
         require(keys(observed) == keys(complete) and encoded(observed) == encoded(complete), 'exact row conservation')
     require(queries['boot_before'] == before['boot_id'] and queries['boot_after']
         and queries['boot_after'] != queries['boot_before'], 'no actual reboot identity')
-    process = after_drain['candidate_process']
-    require(isinstance(process, dict) and all(process.get(key) == before['binding'][key] for key in BINDING)
-        and process.get('unit') == UNITS[1] and type(process.get('pid')) is int and process['pid'] > 0
-        and process.get('boot_id') == after_drain['boot_id'] and type(process.get('start_ns')) is int
-        and type(process.get('end_ns')) is int and 0 <= process['start_ns'] <= process['end_ns'], 'candidate sender not bound')
+    def ack_join(snapshot, required, events):
+        process = snapshot['candidate_process']
+        require(isinstance(process, dict) and all(process.get(key) == before['binding'][key] for key in BINDING)
+            and process.get('unit') == UNITS[1] and type(process.get('pid')) is int and process['pid'] > 0
+            and process.get('boot_id') == snapshot['boot_id'] and type(process.get('start_ns')) is int
+            and type(process.get('end_ns')) is int and 0 <= process['start_ns'] <= process['end_ns'], 'candidate sender not bound')
+        witnessed = set()
+        for event in events:
+            match = re.fullmatch(r'delivery sequence=([0-9]+) sha256=([0-9a-f]{64}) status=ack committed_through=([0-9]+) elapsed_us=([0-9]+)', event['message'])
+            if not match:
+                continue
+            sequence, digest, through, _ = match.groups()
+            sequence, through = int(sequence), int(through)
+            require(all(event.get(key) == process[key] for key in ('unit', 'pid', 'boot_id'))
+                and type(event.get('at_ns')) is int and process['start_ns'] <= event['at_ns'] <= process['end_ns'], 'ACK sender/window mismatch')
+            if sequence in required:
+                require(digest == required[sequence] and sequence <= through <= snapshot['ack'], 'ACK exact bytes/cursor mismatch')
+                witnessed.add(sequence)
+        require(witnessed == set(required), 'missing candidate exact-byte ACK')
     required = {source['sequence']: source['sha256'] for source in pending}
     required[unread_row['sequence']] = next(source['sha256'] for source in after_drain['sources']
                                           if source['sequence'] == unread_row['sequence'])
-    witnessed = set()
-    for event in candidate_ack_events:
-        match = re.fullmatch(r'delivery sequence=([0-9]+) sha256=([0-9a-f]{64}) status=ack committed_through=([0-9]+) elapsed_us=([0-9]+)', event['message'])
-        if not match:
-            continue
-        sequence, digest, through, _ = match.groups()
-        sequence, through = int(sequence), int(through)
-        require(all(event.get(key) == process[key] for key in ('unit', 'pid', 'boot_id'))
-            and type(event.get('at_ns')) is int and process['start_ns'] <= event['at_ns'] <= process['end_ns'], 'ACK sender/window mismatch')
-        if sequence in required:
-            require(digest == required[sequence] and sequence <= through <= after_drain['ack'], 'ACK exact bytes/cursor mismatch')
-            witnessed.add(sequence)
-    require(witnessed == set(required), 'missing candidate exact-byte ACK')
+    ack_join(after_drain, required, candidate_ack_events)
+    if after_reboot is not None:
+        process = after_reboot['candidate_process']
+        require(isinstance(process, dict) and process.get('boot_id') != after_drain['candidate_process']['boot_id'], 'reboot sender not distinct')
+        ack_join(after_reboot, {source['sequence']: source['sha256'] for source in after_reboot['sources']
+            if source['sequence'] > after_drain['ack']}, reboot_ack_events)
