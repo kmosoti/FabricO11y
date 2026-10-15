@@ -141,6 +141,8 @@ def run(unit, receipt_path, command):
             workload.rmdir()
             workload.mkdir()
         before = time.monotonic_ns()
+        current = workload.stat()
+        report['workload_path_identity_before_snapshot'] = {'device': current.st_dev, 'inode': current.st_ino}
         report.update(wrapper_wait_exit=status, wrapper_reaped=True, descendants_echild=descendants_echild, command_receipt=child,
                       before_ns=before, workload=snapshot(workload, workload_fd), outer=snapshot(outer, outer_fd),
                       after_ns=time.monotonic_ns(), state='observed_workload_empty')
