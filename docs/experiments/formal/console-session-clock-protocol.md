@@ -561,3 +561,11 @@ clears keys and restores CLOEXEC in the server. Source controls must reject
 preloading the entry helper, absent control FD, and an unbound server executable.
 No Python launcher is preloaded. Actual executable/helper mapping, control FD,
 companion isolation and native request timing remain required run evidence.
+
+The `browser-expiry-source-green-02` source run at `ef4cf8a` retained nine
+`NameError: clock_targets` failures in ordinary cleanup controls. Their extracted
+real finalizer needs the newly introduced clock/state registries as explicit
+context. The minimized fixture correction supplies empty `clock_targets` and
+`state_descriptors` for these ordinary-clock cases; every prior stop, retention,
+population, sampler and reaping expectation remains unchanged. This corrects the
+synthetic setup, not a production cleanup failure or packaged-browser result.
