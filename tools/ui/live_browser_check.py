@@ -1,6 +1,7 @@
 """Finite virtual-passkey checks against the production TLS server and Spindle."""
 import argparse
 import base64
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -11,6 +12,7 @@ import shutil
 import signal
 import socket
 import ssl
+import stat
 import subprocess
 import sys
 import threading
@@ -25,14 +27,346 @@ sys.path.insert(0, str(ROOT / 'tools'))
 from resource_group import STORAGE as DATA, require_limits
 sys.path.insert(0, str(ROOT / 'tools/packaging'))
 from stage_console import stage
+sys.path.insert(0, str(ROOT / 'tools/bench/labs/completion'))
+import cgroups
 
 VERSION = '155.0.8059.39'
 TOOLS = DATA / 'tools/ui' / f'chrome-for-testing-{VERSION}'
+ROLE_FIXTURE = ROOT / 'docs/experiments/formal/fixtures/console-route-roles.json'
+
+
+def browser_group_check(ok, reason):
+    if not ok:
+        raise RuntimeError('browser-group-' + reason)
+
+
+def browser_directory(record):
+    path = record['path']
+    actual, held = path.lstat(), os.fstat(record['fd'])
+    browser_group_check(path.resolve(strict=True) == path and stat.S_ISDIR(actual.st_mode)
+        and (actual.st_dev, actual.st_ino) == (held.st_dev, held.st_ino)
+        == (record['dev'], record['ino']), 'identity')
+
+
+def browser_pid(pid):
+    path = Path('/proc') / str(pid)
+    fields = (path / 'stat').read_text().rsplit(')', 1)[1].split()
+    browser_group_check(path.stat().st_uid == os.getuid(), 'identity')
+    return int(fields[19]), fields[0]
+
+
+def browser_pidfd(fd):
+    return int(next(line.split(':', 1)[1] for line in
+        (Path('/proc/self/fdinfo') / str(fd)).read_text().splitlines() if line.startswith('Pid:')))
+
+
+def browser_members(group):
+    known = {row['pid']: row for row in group.setdefault('members', [])}
+    paths = [group['path'], *(p for p in group['path'].rglob('*') if p.is_dir())]
+    for path in paths:
+        for text in (path / 'cgroup.procs').read_text().split():
+            pid = int(text)
+            if pid in known:
+                browser_group_check(browser_pid(pid)[0] == known[pid]['start_ticks'], 'identity')
+                continue
+            descriptor = os.pidfd_open(pid)
+            try:
+                start = browser_pid(pid)[0]
+                placement = cgroups.ROOT / next(line[3:] for line in
+                    (Path('/proc') / text / 'cgroup').read_text().splitlines() if line.startswith('0::')).lstrip('/')
+                browser_group_check(placement == group['path'] or placement.is_relative_to(group['path']), 'placement')
+                browser_group_check(browser_pidfd(descriptor) == pid and browser_pid(pid)[0] == start, 'identity')
+                row = dict(pid=pid, start_ticks=start, pidfd=descriptor)
+                group['members'].append(row); known[pid] = row
+            except BaseException:
+                os.close(descriptor)
+                raise
+
+
+def bind_browser_group(parent, group, proc):
+    binding = None
+    try:
+        browser_directory(parent); browser_directory(group)
+        browser_group_check(parent['path'].name.startswith('fabric-work-')
+            and cgroups.current() == parent['path'] / 'supervisor', 'parent')
+        browser_group_check({'memory', 'cpu', 'pids', 'io'} <=
+            set((parent['path'] / 'cgroup.subtree_control').read_text().split()), 'delegation')
+        browser_group_check(group['path'].parent == parent['path'] and group['exclusive'] is True, 'ownership')
+        browser_group_check((group['path'] / 'cgroup.kill').is_file(), 'capability')
+        browser_group_check(time.monotonic_ns() < parent['deadline_monotonic_ns'], 'deadline')
+        browser_group_check(isinstance(proc, subprocess.Popen) and proc is group['process']
+            and proc.pid == group['pid'] and browser_pid(proc.pid)[0] == group['start_ticks']
+            and browser_pidfd(group['pidfd']) == proc.pid, 'identity')
+        binding = {'parent': dict(parent), 'group': dict(group, members=[])}
+        binding['group']['pidfd_inode'] = os.fstat(group['pidfd']).st_ino
+        browser_members(binding['group'])
+        browser_group_check(any(row['pid'] == proc.pid for row in binding['group']['members']), 'placement')
+        return binding
+    except (OSError, KeyError, ValueError, StopIteration, RuntimeError) as error:
+        if binding is not None:
+            for row in binding['group']['members']: os.close(row['pidfd'])
+        if isinstance(error, RuntimeError): raise
+        raise RuntimeError('browser-group-identity') from None
+
+
+def stop_browser_groups(parent, bindings):
+    errors = []
+    for binding in reversed(bindings):
+        group = binding['group']
+        try:
+            browser_directory(parent); browser_directory(binding['parent']); browser_directory(group)
+            browser_group_check(all(binding['parent'][key] == parent[key] for key in
+                ('path', 'fd', 'dev', 'ino', 'deadline_monotonic_ns')) and group['path'].parent == parent['path']
+                and group['exclusive'] is True, 'identity')
+            proc = group['process']
+            browser_group_check(isinstance(proc, subprocess.Popen) and proc.pid == group['pid']
+                and os.fstat(group['pidfd']).st_ino == group['pidfd_inode'], 'identity')
+            observed_pid = browser_pidfd(group['pidfd'])
+            browser_group_check(observed_pid == group['pid'] or
+                (observed_pid == -1 and proc.returncode is not None and not (Path('/proc') / str(group['pid'])).exists()), 'identity')
+            if 'namespaces' in parent:
+                browser_group_check(browser_namespaces() == parent['namespaces'], 'namespace')
+            browser_members(group)
+            for row in group['members']:
+                try:
+                    browser_group_check(browser_pid(row['pid'])[0] == row['start_ticks']
+                        and browser_pidfd(row['pidfd']) == row['pid'], 'identity')
+                    signal.pidfd_send_signal(row['pidfd'], signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                except FileNotFoundError:
+                    browser_group_check(browser_pidfd(row['pidfd']) == -1, 'identity')
+            try:
+                proc.wait(timeout=min(15, max(0, parent['deadline_monotonic_ns'] / 1e9 - time.monotonic())))
+            except subprocess.TimeoutExpired:
+                pass
+            end = min(time.monotonic() + 5, parent['deadline_monotonic_ns'] / 1e9)
+            browser_directory(group)
+            if 'populated 1' in (group['path'] / 'cgroup.events').read_text().splitlines():
+                descriptor = os.open('cgroup.kill', os.O_WRONLY | os.O_NOFOLLOW, dir_fd=group['fd'])
+                try: os.write(descriptor, b'1')
+                finally: os.close(descriptor)
+            # Reap only retained process identities, including adopted zombies.
+            while True:
+                remaining = []
+                for row in group['members']:
+                    path = Path('/proc') / str(row['pid'])
+                    if path.exists():
+                        browser_group_check(browser_pid(row['pid'])[0] == row['start_ticks'], 'identity')
+                        if row['pid'] == proc.pid:
+                            proc.poll()  # Popen alone consumes and records its leader's status.
+                        else:
+                            try: os.waitid(os.P_PIDFD, row['pidfd'], os.WEXITED | os.WNOHANG)
+                            except ChildProcessError: pass
+                    if path.exists(): remaining.append(row['pid'])
+                group['kernel_empty'] = 'populated 0' in (group['path'] / 'cgroup.events').read_text().splitlines()
+                group['children_reaped'] = not remaining
+                if group['kernel_empty'] and group['children_reaped']: break
+                if time.monotonic() >= end: raise RuntimeError('browser-group-stop')
+                time.sleep(.01)
+            proc.wait(timeout=0)
+        except (OSError, RuntimeError, KeyError, ValueError, subprocess.TimeoutExpired) as error:
+            errors.append(str(error))
+            group['stop_error'] = str(error)
+    if errors:
+        raise RuntimeError('browser-group-stop')
+
+
+def browser_namespaces():
+    return {name: os.readlink('/proc/self/ns/' + name) for name in ('pid', 'mnt', 'cgroup')}
+
+
+def browser_hold_directory(path):
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    info = os.fstat(descriptor)
+    return dict(path=path, fd=descriptor, dev=info.st_dev, ino=info.st_ino)
+
+
+def begin_browser_domain(limits, deadline):
+    import ctypes
+    browser_group_check(os.uname().machine == 'x86_64' and ctypes.sizeof(ctypes.c_void_p) == 8, 'signal-abi')
+    class Action(ctypes.Structure):
+        _fields_ = [('handler', ctypes.c_void_p), ('mask', ctypes.c_ulong * 16),
+                    ('flags', ctypes.c_int), ('restorer', ctypes.c_void_p)]
+    libc, action, previous = ctypes.CDLL(None, use_errno=True), Action(), ctypes.c_int()
+    browser_group_check(libc.sigaction(signal.SIGCHLD, None, ctypes.byref(action)) == 0
+        and action.handler is None and not action.flags & 2, 'signal-ownership')
+    try:
+        os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOHANG | os.WNOWAIT | 0x40000000)
+    except ChildProcessError:
+        pass
+    else:
+        raise RuntimeError('browser-group-foreign-child')
+    values = {name: (limits / name).read_text().strip() for name in
+        ('memory.max', 'memory.high', 'memory.swap.max', 'cpu.max', 'pids.max')}
+    browser_group_check(0 < int(values['memory.high']) <= 3500000000
+        and int(values['memory.high']) <= int(values['memory.max']) <= 4000000000
+        and values['memory.swap.max'] == '0' and values['cpu.max'] == '200000 100000'
+        and values['pids.max'] == '512', 'limits')
+    parent = browser_hold_directory(limits)
+    parent.update(deadline_monotonic_ns=int(deadline * 1e9), namespaces=browser_namespaces())
+    try:
+        browser_group_check(libc.prctl(37, ctypes.byref(previous), 0, 0, 0) == 0
+            and libc.prctl(36, 1, 0, 0, 0) == 0, 'subreaper')
+        parent['previous_subreaper'] = previous.value
+        actual = ctypes.c_int()
+        browser_group_check(libc.prctl(37, ctypes.byref(actual), 0, 0, 0) == 0 and actual.value == 1, 'subreaper')
+        browser_group_check(cgroups.delegate() == limits, 'parent')
+        cgroups.set_limits(limits / 'supervisor', 4000000000, 3500000000, 512, 2)
+        return parent
+    except BaseException:
+        if 'previous_subreaper' in parent: libc.prctl(36, previous.value, 0, 0, 0)
+        os.close(parent['fd'])
+        raise
+
+
+def browser_group_launch(parent, bindings, label, command, log, environment):
+    browser_directory(parent)
+    browser_group_check(browser_namespaces() == parent['namespaces'], 'namespace')
+    path, _ = cgroups.subgroup(parent['path'], 'browser-' + str(len(bindings)), 4000000000, 3500000000, 512, 2)
+    group = browser_hold_directory(path)
+    group['exclusive'] = True
+    helper = ROOT / 'tools/bench/labs/completion/enter_group.py'
+    proc = subprocess.Popen([sys.executable, '-B', str(helper), str(path), *command],
+        stdout=log, stderr=subprocess.STDOUT, start_new_session=True, env=environment)
+    group.update(process=proc, pid=proc.pid, pidfd=os.pidfd_open(proc.pid), start_ticks=browser_pid(proc.pid)[0])
+    until = min(time.monotonic() + 5, parent['deadline_monotonic_ns'] / 1e9)
+    try:
+        while True:
+            placement = cgroups.ROOT / next(line[3:] for line in
+                (Path('/proc') / str(proc.pid) / 'cgroup').read_text().splitlines() if line.startswith('0::')).lstrip('/')
+            if placement == path: break
+            browser_group_check(proc.poll() is None and time.monotonic() < until, 'placement')
+            time.sleep(.01)
+        binding = bind_browser_group(parent, group, proc)
+        binding['group']['label'] = label
+        bindings.append(binding)
+        return proc
+    except BaseException:
+        # Unbound children remain confined by the outer launcher; no PID fallback.
+        os.close(group['pidfd']); os.close(group['fd'])
+        raise
+
+
+def browser_reap_domain(parent, bindings):
+    deadline = min(time.monotonic() + 5, parent['deadline_monotonic_ns'] / 1e9)
+    while True:
+        if 'namespaces' in parent:
+            browser_group_check(browser_namespaces() == parent['namespaces'], 'namespace')
+        try:
+            observed = os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOHANG | os.WNOWAIT | 0x40000000)
+        except ChildProcessError:
+            parent['own_children_empty'] = True
+            return
+        if observed is not None:
+            pid = observed.si_pid
+            start, state = browser_pid(pid)
+            fields = (Path('/proc') / str(pid) / 'stat').read_text().rsplit(')', 1)[1].split()
+            placement = cgroups.ROOT / next(line[3:] for line in
+                (Path('/proc') / str(pid) / 'cgroup').read_text().splitlines() if line.startswith('0::')).lstrip('/')
+            binding = next((b for b in bindings if placement == b['group']['path']
+                or placement.is_relative_to(b['group']['path'])), None)
+            browser_group_check(binding is not None and int(fields[1]) == os.getpid() and state == 'Z', 'foreign-child')
+            group = binding['group']; browser_directory(parent); browser_directory(group)
+            descriptor = os.pidfd_open(pid)
+            try:
+                browser_group_check(browser_pidfd(descriptor) == pid and browser_pid(pid)[0] == start, 'identity')
+                result = os.waitid(os.P_PIDFD, descriptor, os.WEXITED | os.WNOHANG | 0x40000000)
+                browser_group_check(result is not None and result.si_pid == pid
+                    and not (Path('/proc') / str(pid)).exists(), 'reap')
+                group.setdefault('late_reaped', []).append(dict(pid=pid, start_ticks=start, status=result.si_status))
+                browser_group_check(len(group['late_reaped']) <= 512, 'tasks')
+            finally:
+                os.close(descriptor)
+        browser_group_check(time.monotonic() < deadline, 'stop')
+        if observed is None: time.sleep(.01)
+
+
+def end_browser_domain(parent, bindings):
+    if 'previous_subreaper' not in parent: return  # Synthetic source fixtures own their subreaper.
+    import ctypes
+    browser_group_check(parent.get('own_children_empty') is True, 'stop')
+    browser_group_check(ctypes.CDLL(None).prctl(36, parent['previous_subreaper'], 0, 0, 0) == 0, 'subreaper')
+    descriptors = {parent['fd']}
+    for binding in bindings:
+        group = binding['group']; descriptors.update((group['fd'], group['pidfd']))
+        descriptors.update(row['pidfd'] for row in group['members'])
+    for descriptor in descriptors: os.close(descriptor)
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, response, code, message, headers, url):
+        return None
+
+
+def run_role_matrix(request, check, observations=None):
+    fixture = json.loads(ROLE_FIXTURE.read_text())
+    observations = [] if observations is None else observations
+    for method, template, path, body, outcomes in fixture['rows']:
+        for role, (expected_status, expected_refusal) in zip(fixture['roles'], outcomes):
+            status, response = request(role, method, path, body)
+            field = fixture['refusal_fields'].get(path, 'error')
+            refusal = response.get(field) if status>=400 and isinstance(response, dict) else None
+            observations.append({'role':role,'method':method,'template':template,'path':path,
+                                 'status':status,'refusal':refusal})
+            check(status == expected_status and (expected_refusal is None or refusal == expected_refusal),
+                  f'{role} {method} {path}: expected {expected_status} {expected_refusal}')
+    cells = {(item['role'], item['method'], item['path']) for item in observations}
+    check(len(observations) == len(cells) == 144, 'all 144 route-role cells dispatched exactly once')
+    return observations
 
 
 def semantic_rejection(answer, status, message):
     code, body = answer
     return code == status and isinstance(body, dict) and body.get('error') == message
+
+
+def dispatch_timeout(deadline, storage, ceiling):
+    if storage.is_set():raise RuntimeError('owned fixture exceeds 512 MiB storage ceiling')
+    remaining=deadline-time.monotonic()
+    if remaining<=0:raise RuntimeError('browser fixture inner deadline expired')
+    return min(ceiling,remaining)
+
+
+@contextmanager
+def io_deadline(deadline, storage):
+    if threading.current_thread() is not threading.main_thread():raise RuntimeError('fixture I/O guard requires the main thread')
+    previous_mask=signal.pthread_sigmask(signal.SIG_BLOCK,{signal.SIGALRM})
+    previous_handler=signal.getsignal(signal.SIGALRM)
+    try:
+        if signal.SIGALRM in previous_mask or any(signal.getitimer(signal.ITIMER_REAL)) or signal.SIGALRM in signal.sigpending():
+            raise RuntimeError('fixture I/O guard conflicts with existing signal ownership')
+        def tick(*_):
+            signal.setitimer(signal.ITIMER_REAL,dispatch_timeout(deadline,storage,.1))
+        signal.signal(signal.SIGALRM,tick)
+        try:
+            tick()
+            signal.pthread_sigmask(signal.SIG_SETMASK,previous_mask)
+            yield
+        finally:
+            signal.pthread_sigmask(signal.SIG_BLOCK,{signal.SIGALRM})
+            signal.setitimer(signal.ITIMER_REAL,0)
+            if signal.SIGALRM in signal.sigpending():signal.sigwait({signal.SIGALRM})
+            signal.signal(signal.SIGALRM,previous_handler)
+    finally:
+        signal.pthread_sigmask(signal.SIG_SETMASK,previous_mask)
+
+
+def read_response(response, maximum, deadline, storage, ceiling):
+    reader=response.fp if isinstance(response,urllib.error.HTTPError) else response
+    chunks=bytearray()
+    while reader.fp is not None:
+        timeout=dispatch_timeout(deadline,storage,ceiling)
+        sock=getattr(getattr(reader.fp,'raw',None),'_sock',None)
+        if sock is None:raise RuntimeError('cannot enforce fixture receive timeout')
+        sock.settimeout(timeout)
+        part=reader.read1(65536 if maximum is None else min(65536,maximum+1-len(chunks)))
+        dispatch_timeout(deadline,storage,ceiling)
+        if not part:break
+        chunks.extend(part)
+        if maximum is not None and len(chunks)>maximum:raise RuntimeError('TLS response exceeds existing query response bound')
+    dispatch_timeout(deadline,storage,ceiling)
+    return bytes(chunks)
 
 
 def free_port():
@@ -61,7 +395,11 @@ def main():
     parser.add_argument('--shell-lifecycle',action='store_true')
     parser.add_argument('--pressure',action='store_true',help='finite authenticated body/admission timeout probe')
     parser.add_argument('--poll-seconds',type=int,choices=(0,120),default=0)
+    parser.add_argument('--role-matrix',action='store_true',help='complete 144-cell role matrix; finish after existing setup')
     args = parser.parse_args()
+    if args.role_matrix and (args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery):
+        parser.error('role matrix is a separate finite cell; polling/pressure/cursor/shell/recovery retain their own cells')
+    fixture_started = time.monotonic()
     limits = require_limits()
     # The combined browser/server fixture uses a stricter cap than build jobs.
     subprocess.run(['systemctl','--user','set-property','--runtime',limits.name,
@@ -91,7 +429,7 @@ def main():
                'injected_nonresident_enrollment': args.inject_nonresident_enrollment,
                'injected_rejection_defect':args.inject_rejection_defect,
                'source_sha256': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-                                 for p in (Path(__file__), ROOT / 'tools/ui/fixture_cadence.py', ROOT / 'tools/ui/browser_producer.py', ROOT / 'tools/packaging/stage_console.py')},
+                                 for p in (Path(__file__), ROLE_FIXTURE, ROOT / 'tools/ui/fixture_cadence.py', ROOT / 'tools/ui/browser_producer.py', ROOT / 'tools/packaging/stage_console.py')},
                'binaries': {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in (args.server, args.spindle)},
                'browser_download': json.loads((TOOLS / 'download.json').read_text()) if args.browser=='chrome' else json.loads((DATA/'tools/ui/geckodriver.json').read_text())}
     processes = []
@@ -102,7 +440,8 @@ def main():
     server_port = free_port()
     origin = f'https://localhost:{server_port}'
     context = None
-    deadline = time.monotonic() + (1200 if args.expired_cursor_probe else 240)
+    deadline = fixture_started + (1200 if args.expired_cursor_probe else 240)
+    group_parent, owned_groups = begin_browser_domain(limits, deadline), []
     samples = []
     stop_samples = threading.Event()
     storage_violation = threading.Event()
@@ -144,15 +483,18 @@ def main():
         checks.append(label)
 
     def call(method, path, body=None):
-        if storage_violation.is_set():raise RuntimeError("owned fixture exceeds 512 MiB storage ceiling")
+        dispatch_timeout(deadline,storage_violation,35)
         data = None if body is None else json.dumps(body).encode()
         request = urllib.request.Request(endpoint + path, data=data, method=method,
                                          headers={'Content-Type': 'application/json'})
-        try:
-            with urllib.request.urlopen(request, timeout=35) as response:
-                return json.load(response).get('value')
-        except urllib.error.HTTPError as error:
-            raise RuntimeError(error.read().decode()) from error
+        with io_deadline(deadline,storage_violation):
+            try:
+                with urllib.request.urlopen(request, timeout=dispatch_timeout(deadline,storage_violation,35)) as response:
+                    value=json.loads(read_response(response,None,deadline,storage_violation,35)).get('value')
+                    dispatch_timeout(deadline,storage_violation,35)
+                    return value
+            except urllib.error.HTTPError as error:
+                raise RuntimeError(read_response(error,None,deadline,storage_violation,35).decode()) from error
 
     def wd(path, body=None, method='POST'):
         return call(method, f'/session/{session}' + path, body)
@@ -164,7 +506,7 @@ def main():
         return wd('/execute/async', {'script': script, 'args': values})
 
     def click(text):
-        pace_api()
+        cadence.pace()
         button=js('const button=Array.from(document.querySelectorAll("button")).find(e=>e.textContent.trim()===arguments[0]); if(!button)throw Error("button absent:"+arguments[0]);return button', text)
         wd('/element/'+button['element-6066-11e4-a52e-4f735466cecf']+'/click',{})
 
@@ -175,20 +517,36 @@ def main():
         js('Array.from(document.querySelectorAll(".sidebar .nav-item")).find(e=>e.textContent.includes(arguments[0])).click()', text)
 
     cadence = FixtureCadence()
-    pace_api = cadence.pace
     receipt['benign_explicit_action_interval_ms'] = 550
+
+    def pace_api():
+        dispatch_timeout(deadline,storage_violation,35)
+        if session and js('return !!window.fixturePace'):
+            async_js('const done=arguments[arguments.length-1];window.fixturePace().then(()=>done(true))')
+        cadence.pace()
+        dispatch_timeout(deadline,storage_violation,35)
+
+    def capture_api_metadata():
+        receipt['actual_api_headers']=js('return window.fixtureApiHeaders')
+        check(bool(receipt['actual_api_headers']) and not js('return window.fixtureApiHeadersTruncated') and all(item['cache_control']=='no-store' and item['csp'] and item['coop']=='same-origin' and item['corp']=='same-origin' for item in receipt['actual_api_headers']),'actual authentication and API responses carry no-store CSP COOP and CORP')
+
+    def verify_binary_identity():
+        receipt['native_input_hashes_after']={name:hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in receipt['binaries']}
+        receipt['native_snapshot_hashes_after']={role:hashlib.sha256(getattr(args,role).read_bytes()).hexdigest() for role in ('server','spindle')}
+        check(receipt['native_input_hashes_after']==receipt['binaries'],'native input artifact identities remain unchanged throughout run')
+        check(all(receipt['native_snapshot_hashes_after'][role]==identity['sha256'] for role,identity in receipt['immutable_binary_snapshots'].items()),'all fixture launches retain immutable candidate binary bytes')
 
     def expect(answer, status, message, label):
         code, body = answer
         receipt.setdefault('semantic_rejections', []).append({'label':label,'status':code,'error':body.get('error') if isinstance(body,dict) else None})
         check(semantic_rejection(answer,status,message), label)
 
-    def api(path, method='GET', body=None, version=True):
+    def api(path, method='GET', body=None, version=True, csrf=True):
         query_csrf=None
-        if path=='/v1/console/query':
+        if csrf and method!='GET' and path.startswith('/v1/console/') and '/auth/' not in path:
             session_status,session_view=api('/v1/console/session')
             if session_status==200:query_csrf=session_view.get('csrf')
-        pace_api()
+        if not js('return !!window.fixturePace'):cadence.pace()
         # Decode returned text in Python, never JS JSON.parse on telemetry.
         answer = async_js('''const [path,method,body,version,csrf]=arguments;const done=arguments[arguments.length-1];
           const headers={};if(csrf)headers['x-fabric-csrf']=csrf;if(version)headers['x-fabric-client-version']='1';if(body!==null)headers['content-type']='application/json';
@@ -205,16 +563,34 @@ def main():
             else:answer['status']=429
         return answer['status'],body
 
-    def bearer_api(token,path,method='GET',body=None):
+    def bearer_api(token,path,method='GET',body=None,*,cookie=None,csrf=None,role=None):
+        dispatch_timeout(deadline,storage_violation,15)
         pace_api()
+        dispatch_timeout(deadline,storage_violation,15)
         request=urllib.request.Request(origin+path,method=method,data=None if body is None else json.dumps(body).encode(),headers={
-            **({'Authorization':'Bearer '+token} if token else {}),'x-fabric-client-version':'1','Content-Type':'application/json'})
+            **({'Authorization':'Bearer '+token} if token else {}),**({'Cookie':cookie} if cookie else {}),
+            **({'x-fabric-csrf':csrf} if csrf else {}),'Origin':origin,'x-fabric-client-version':'1','Content-Type':'application/json'})
+        entry={'role':role,'method':method,'path':path,'started_ns':time.monotonic_ns(),'status':None}
+        calls=receipt.setdefault('explicit_tls_requests',[])
+        if len(calls)>=1024:raise RuntimeError('explicit request ledger exceeds its bound')
+        calls.append(entry)
         try:
-            with urllib.request.urlopen(request,context=context,timeout=15) as response:
-                result=response.status,json.load(response)
-        except urllib.error.HTTPError as error:
-            text=error.read().decode()
-            result=error.code,json.loads(text) if text else None
+            with io_deadline(deadline,storage_violation):
+                try:
+                    with tls_opener.open(request,timeout=dispatch_timeout(deadline,storage_violation,15)) as response:
+                        code,text=response.status,read_response(response,8*1024*1024,deadline,storage_violation,15)
+                except urllib.error.HTTPError as error:
+                    code,text=error.code,read_response(error,8*1024*1024,deadline,storage_violation,15)
+            entry['status']=code
+            try:response=json.loads(text) if text else None
+            except json.JSONDecodeError:response=None
+            field='status' if path in ('/v1/batches','/v1/config') else 'error'
+            entry['refusal']=response.get(field) if code>=400 and isinstance(response,dict) else None
+            result=code,response
+            dispatch_timeout(deadline,storage_violation,15)
+        finally:
+            entry['finished_ns']=time.monotonic_ns()
+            cadence.last=cadence.clock()
         if args.inject_role_defect and token and path=='/v1/console/audit' and result[0]==403:
             receipt['role_injection_actual_witness']={'status':result[0],'error':result[1].get('error')}
             return 200,{'events':[]}
@@ -276,7 +652,7 @@ def main():
         environment=os.environ.copy()
         for key in ('XDG_DATA_HOME','XDG_CONFIG_HOME','XDG_CACHE_HOME'):
             directory=work/key.lower();directory.mkdir(exist_ok=True);environment[key]=str(directory)
-        proc = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,env=environment)
+        proc = browser_group_launch(group_parent, owned_groups, label, command, log, environment)
         processes.append((label, proc))
         return proc
 
@@ -353,6 +729,7 @@ self.addEventListener("fetch",event=>{
         config.write_text(f'listen=127.0.0.1:{server_port}\ntls_cert={work}/server.pem\ntls_key={work}/server.key\nstate_dir={work}/state\nadmin_token_file={admin}\nconsole_dir={work}/console\naccess_origin={origin}\naccess_rp_id=localhost\njournal_bytes=8388608\njournal_file_bytes=1048576\nretention_s=86400\nretention_bytes=33554432\nseal_workers=1\nself_spindle_url={origin}\nself_spindle_ca={work}/ca.pem\nself_spindle_executable={args.spindle.resolve()}\n')
         server = launch('server', [str(args.server.resolve()), 'serve', str(config)])
         context = ssl.create_default_context(cafile=str(work / 'ca.pem'))
+        tls_opener=urllib.request.build_opener(urllib.request.HTTPSHandler(context=context),NoRedirect())
         def healthy():
             if server.poll() is not None:
                 raise RuntimeError('server exited; inspect server.log')
@@ -447,7 +824,16 @@ self.addEventListener("fetch",event=>{
         wait(lambda: js('return !!document.querySelector("[data-testid=connect-server]") && !!navigator.serviceWorker.controller'), 'public worker controls reloaded shell')
         check(async_js('const done=arguments[arguments.length-1];navigator.serviceWorker.getRegistration().then(r=>done(new URL(r.scope).pathname==="/console/" && new URL(r.active.scriptURL).pathname==="/console/service-worker.js"))'),'actual worker registration and script remain inside console scope')
         receipt['warm_shell_timing']=js('return {navigation:performance.getEntriesByType("navigation")[0]?.toJSON(),assets:performance.getEntriesByType("resource").map(e=>({path:new URL(e.name).pathname,duration_ms:e.duration,transfer_bytes:e.transferSize,encoded_bytes:e.encodedBodySize}))}')
-        js('window.fixtureApiHeaders=[];window.fixtureApiHeadersTruncated=false;const original=window.fetch;window.fetch=async(...args)=>{const started_ms=performance.now();const response=await original(...args);const url=typeof args[0]==="string"?args[0]:args[0].url;const path=new URL(url,location.href).pathname;if(path.startsWith("/v1/")){if(window.fixtureApiHeaders.length>=512)window.fixtureApiHeadersTruncated=true;else window.fixtureApiHeaders.push({path,status:response.status,started_ms,retry_after:response.headers.get("retry-after"),cache_control:response.headers.get("cache-control"),csp:response.headers.get("content-security-policy"),coop:response.headers.get("cross-origin-opener-policy"),corp:response.headers.get("cross-origin-resource-policy")});}return response}')
+        js('''window.fixtureApiHeaders=[];window.fixtureApiHeadersTruncated=false;window.fixturePaceQueue=Promise.resolve();window.fixtureLastDispatch=-Infinity;
+          const interval=arguments[0],original=window.fetch;
+          window.fixturePace=(dispatch)=>{const slot=window.fixturePaceQueue.then(async()=>{let delay;while((delay=interval-(performance.now()-window.fixtureLastDispatch))>0)await new Promise(resolve=>setTimeout(resolve,delay));const started=performance.now();window.fixtureLastDispatch=started;return {response:dispatch?.(started)}});window.fixturePaceQueue=slot.then(()=>{},()=>{});return slot};
+          window.fetch=async(...args)=>{const url=typeof args[0]==="string"?args[0]:args[0].url;const path=new URL(url,location.href).pathname;
+            if(!path.startsWith('/v1/'))return original(...args);const paced=!window.fixtureUnpacedBurst;
+            const dispatch=async(started_ms)=>{const entry={path,method:args[1]?.method||args[0]?.method||'GET',started_ms,paced,status:null};
+            if(window.fixtureApiHeaders.length>=512)window.fixtureApiHeadersTruncated=true;else window.fixtureApiHeaders.push(entry);
+            try{const response=await original(...args);Object.assign(entry,{status:response.status,retry_after:response.headers.get('retry-after'),cache_control:response.headers.get('cache-control'),csp:response.headers.get('content-security-policy'),coop:response.headers.get('cross-origin-opener-policy'),corp:response.headers.get('cross-origin-resource-policy')});return response}
+            finally{entry.finished_ms=performance.now()}};
+            return paced?(await window.fixturePace(dispatch)).response:dispatch(performance.now())}''',cadence.interval*1000)
         click('Connect to server')
         wait(lambda: js('return document.body.textContent.includes("Sign in with a passkey") && !document.body.textContent.includes("Working…")'), 'live sign-in locked view')
         js('''const weakenResident=arguments[0];const original=window.fabricPasskey;window.fabricPasskey=async function(register,text){
@@ -478,7 +864,7 @@ self.addEventListener("fetch",event=>{
         code, view = api('/v1/console/session')
         check(code == 200 and view['api_version'] == 1, 'real server session compatibility')
         principal_id = view['principal_id']
-        expect(api('/v1/console/logout','POST'), 403, 'access denied', 'cookie mutation without CSRF rejected')
+        expect(api('/v1/console/logout','POST',csrf=False), 403, 'access denied', 'cookie mutation without CSRF rejected')
         check(api('/v1/console/session')[0] == 200, 'rejected CSRF mutation preserves session')
         request=urllib.request.Request(origin+'/v1/console/logout',data=b'',method='POST',headers={
             'Cookie':cookie['name']+'='+cookie['value'],'x-fabric-client-version':'1',
@@ -521,7 +907,7 @@ self.addEventListener("fetch",event=>{
         check(js('return document.body.textContent.includes("enrollment_id")'), 'inventory exposes immutable enrollment IDs')
         click('Refresh status')
         wait(lambda: js('return document.body.textContent.includes("retention_bytes")'), 'effective measured storage policy')
-        overload=async_js('''const done=arguments[arguments.length-1];Promise.all(Array.from({length:16},()=>fetch('/v1/console/session',{headers:{'x-fabric-client-version':'1'},cache:'no-store',credentials:'same-origin'}).then(async r=>({status:r.status,retry_after:r.headers.get('retry-after'),cache_control:r.headers.get('cache-control'),body:await r.text()})))).then(done);''')
+        overload=async_js('''const done=arguments[arguments.length-1];window.fixtureUnpacedBurst=true;Promise.all(Array.from({length:16},()=>fetch('/v1/console/session',{headers:{'x-fabric-client-version':'1'},cache:'no-store',credentials:'same-origin'}).then(async r=>({status:r.status,retry_after:r.headers.get('retry-after'),cache_control:r.headers.get('cache-control'),body:await r.text()})))).finally(()=>{window.fixtureUnpacedBurst=false}).then(done);''')
         # Retain only public rejection metadata, never the successful sessions.
         receipt['peer_overload']=[{k:r[k] for k in ('status','retry_after','cache_control')} for r in overload]
         refused=[r for r in overload if r['status']==429]
@@ -801,6 +1187,33 @@ self.addEventListener("fetch",event=>{
         # nor a Spindle token are console credentials.
         code,reader_nodes=bearer_api(credential,'/v1/console/nodes')
         check(code==200 and {n['name'] for n in reader_nodes['nodes']}==names,'reader inventory lists every enrolled source')
+        if args.role_matrix:
+            previous_cookie=next(item for item in wd('/cookie',method='GET') if item['name'].startswith('__Host-'))
+            previous_session=hashlib.sha256(previous_cookie['value'].encode()).hexdigest();previous_cookie=None
+            click('Reverify with passkey')
+            wait(lambda:not js('return document.body.textContent.includes("Working…")'),'real owner freshness before complete route matrix')
+            owner_cookie=next(item for item in wd('/cookie',method='GET') if item['name'].startswith('__Host-'))
+            current_session=hashlib.sha256(owner_cookie['value'].encode()).hexdigest()
+            check(current_session!=previous_session,'real passkey reverification replaces owner cookie before matrix')
+            code,owner_view=api('/v1/console/session');check(code==200,'fresh owner session for matrix')
+            matrix=receipt['route_matrix']={'fixture_sha256':hashlib.sha256(ROLE_FIXTURE.read_bytes()).hexdigest(),'owner_session':current_session,'observations':[]}
+            def matrix_request(role,method,path,body):
+                return bearer_api({'anonymous':None,'spindle':spindle_token,'reader':credential,'owner':None}[role],path,method,body,
+                                  cookie=owner_cookie['name']+'='+owner_cookie['value'] if role=='owner' else None,
+                                  csrf=owner_view['csrf'] if role=='owner' and method!='GET' else None,role=role)
+            run_role_matrix(matrix_request,check,matrix['observations'])
+            matrix['dispatches']=[item for item in receipt['explicit_tls_requests'] if item['role'] is not None]
+            fields=('role','method','path','status','refusal')
+            check([tuple(r[k] for k in fields) for r in matrix['dispatches']]==[tuple(r[k] for k in fields) for r in matrix['observations']], 'actual TLS dispatch ledger agrees with all matrix cells')
+            check(all(b['started_ns']-a['started_ns']>=550_000_000 for a,b in zip(matrix['dispatches'],matrix['dispatches'][1:])),'every matrix dispatch retains shared 550ms cadence')
+            matrix['auth_dispatch_count']=sum('/auth/' in item['path'] for item in matrix['dispatches'])
+            matrix['browser_setup_auth_dispatches']=js('return window.fixtureApiHeaders.filter(item=>item.path.includes("/auth/"))')
+            check(matrix['auth_dispatch_count']==16 and len(matrix['browser_setup_auth_dispatches'])==7,'literal matrix16 and real browser setup7 auth dispatches recorded')
+            check(all(b['started_ms']-a['started_ms']>=550 for a,b in zip(matrix['browser_setup_auth_dispatches'],matrix['browser_setup_auth_dispatches'][1:])),'automatic WebAuthn dispatches retain shared cadence')
+            owner_cookie=None;owner_view=None
+            click('Check session');wait(lambda:js('return document.body.textContent.includes("Sign in to view your telemetry.")'),'matrix owner logout locks actual browser')
+            capture_api_metadata();verify_binary_identity();receipt['exit']=0
+            return
         owner_routes=(('GET','/v1/console/session',None),('GET','/v1/console/audit',None),('GET','/v1/console/passkeys',None),
                       ('GET','/v1/console/sessions',None),('GET','/v1/console/readers',None),('POST','/v1/console/readers',{'name':'escalation','ttl_s':60}),
                       ('POST','/v1/console/nodes',{'name':'escalation'}),('POST','/v1/console/nodes/browser-edge/pause',None),
@@ -952,8 +1365,7 @@ self.addEventListener("fetch",event=>{
         wait(lambda:js('return document.body.textContent.includes("Browser fixture owner · owner")'),'owner login after sign out')
         check(js('return !document.querySelector(".results")'),'relogin contains no previous telemetry display')
         check(edge.poll() is None,'native producer remains running after bounded expiry and polling')
-        receipt['actual_api_headers']=js('return window.fixtureApiHeaders')
-        check(bool(receipt['actual_api_headers']) and not js('return window.fixtureApiHeadersTruncated') and all(item['cache_control']=='no-store' and item['csp'] and item['coop']=='same-origin' and item['corp']=='same-origin' for item in receipt['actual_api_headers']),'actual authentication and API responses carry no-store CSP COOP and CORP')
+        capture_api_metadata()
         if args.browser=='chrome':
             cdp('Network.enable',{})
             cdp('Network.emulateNetworkConditions',{'offline':True,'latency':0,'downloadThroughput':0,'uploadThroughput':0})
@@ -965,7 +1377,7 @@ self.addEventListener("fetch",event=>{
             cdp('Network.emulateNetworkConditions',{'offline':False,'latency':0,'downloadThroughput':-1,'uploadThroughput':-1})
         check(js('return !document.body.textContent.includes("Partial fixture")'), 'live workspace contains no synthetic evidence badges')
         if args.recovery:
-            os.killpg(server.pid,signal.SIGTERM);server.wait(timeout=15)
+            stop_browser_groups(group_parent, [b for b in owned_groups if b['group']['process'] is server])
             recovery=subprocess.run([str(args.server.resolve()),'recover-access',str(config),principal_id],capture_output=True,text=True,timeout=20)
             (out/'owner-recovery.log').write_text(recovery.stdout+recovery.stderr)
             check(recovery.returncode==0,'actual offline owner recovery command succeeds after server stop')
@@ -995,7 +1407,7 @@ self.addEventListener("fetch",event=>{
             original_cache=original_worker.split('const CACHE = ')[1].split(';')[0].strip('"')
             def restart_server(worker_text):
                 nonlocal server
-                os.killpg(server.pid,signal.SIGTERM);server.wait(timeout=15)
+                stop_browser_groups(group_parent, [b for b in owned_groups if b['group']['process'] is server])
                 worker.write_text(worker_text)
                 manifest_path=work/'console/asset-manifest.json'
                 asset_manifest=json.loads(manifest_path.read_text())
@@ -1055,10 +1467,7 @@ self.addEventListener("fetch",event=>{
                 try:cdp('PWA.uninstall',{'manifestId':manifest_id})
                 except RuntimeError:pass
                 raise
-        receipt['native_input_hashes_after']={name:hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in receipt['binaries']}
-        receipt['native_snapshot_hashes_after']={role:hashlib.sha256(getattr(args,role).read_bytes()).hexdigest() for role in ('server','spindle')}
-        check(receipt['native_input_hashes_after']==receipt['binaries'],'native input artifact identities remain unchanged throughout run')
-        check(all(receipt['native_snapshot_hashes_after'][role]==identity['sha256'] for role,identity in receipt['immutable_binary_snapshots'].items()),'all fixture launches retain immutable candidate binary bytes')
+        verify_binary_identity()
         receipt['exit'] = 0
     except BaseException as error:
         receipt['error'] = str(error)
@@ -1090,23 +1499,32 @@ self.addEventListener("fetch",event=>{
                 call('DELETE', '/session/' + session)
             except BaseException:
                 pass
-        for label, proc in reversed(processes):
-            if proc.poll() is None:
-                os.killpg(proc.pid, signal.SIGTERM)
-                try:
-                    proc.wait(timeout=15)
-                except subprocess.TimeoutExpired:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                    proc.wait(timeout=5)
-            receipt.setdefault('process_exits', {})[label] = proc.returncode
-        stop_samples.set()
-        sampler.join(timeout=2)
-        (out/'resource-samples.json').write_text(json.dumps(samples, indent=2) + '\n')
-        for log in logs:
-            log.close()
-        # Do not archive private keys, bootstrap secrets, browser credentials or cookies.
-        shutil.rmtree(work)
-        receipt['cleanup'] = 'owned TLS/server/browser fixtures removed; process groups stopped; screenshots/logs retained'
+        cleanup_error = None
+        try:
+            stop_browser_groups(group_parent, owned_groups)
+            browser_reap_domain(group_parent, owned_groups)
+            end_browser_domain(group_parent, owned_groups)
+        except BaseException as error:
+            cleanup_error = error
+        finally:
+            stop_samples.set()
+            sampler.join(timeout=2)
+            if sampler.is_alive(): cleanup_error = cleanup_error or RuntimeError('browser sampler stop')
+            (out/'resource-samples.json').write_text(json.dumps(samples, indent=2) + '\n')
+            for log in logs: log.close()
+            receipt['own_children_empty'] = group_parent.get('own_children_empty', False)
+            receipt['reader_namespaces'] = group_parent.get('namespaces')
+            receipt['process_exits'] = {label: proc.returncode for label, proc in processes}
+            receipt['group_stops'] = [{key: binding['group'].get(key) for key in
+                ('pid', 'start_ticks', 'kernel_empty', 'children_reaped', 'late_reaped', 'stop_error')} for binding in owned_groups]
+            if cleanup_error is None:
+                shutil.rmtree(work)
+                receipt['cleanup'] = 'owned fixtures removed; process groups stopped and bound children reaped'
+            else:
+                receipt['cleanup_error'] = str(cleanup_error)
+                receipt['exit'] = 1
+            (out/'browser.json').write_text(json.dumps(receipt, indent=2) + '\n')
+        if cleanup_error is not None: raise cleanup_error
         receipt['remaining_uncertainty'] = 'virtual authenticator only; no physical/synced passkeys, OS trust installation, mobile OS, general capacity or release qualification'
         (out/'browser.json').write_text(json.dumps(receipt, indent=2) + '\n')
     print(json.dumps({'exit':receipt['exit'],'checks':len(checks),'out':str(out)}))

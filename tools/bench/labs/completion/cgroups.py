@@ -33,7 +33,10 @@ def set_limits(group, maximum, high, tasks, cores):
 def delegate():
     parent = current()
     if not parent.name.startswith('fabric-work-'):
-        raise RuntimeError('expected fresh owned launcher service')
+        from resource_guardian import workload_context
+        context = workload_context()
+        if context is None or context['workload'] != parent:
+            raise RuntimeError('expected fresh owned launcher service or held workload root')
     supervisor = parent / 'supervisor'
     supervisor.mkdir()
     for pid in (parent / 'cgroup.procs').read_text().split():
@@ -58,6 +61,7 @@ def enter(group):
 
 def snapshot(parent):
     return {str(g.relative_to(parent)): {k: (g/k).read_text().strip()
-            for k in ('memory.max','memory.high','memory.peak','memory.current',
-                      'memory.events','memory.swap.current','cpu.max','cpu.stat','pids.max')}
-            for g in parent.rglob('*') if g.is_dir()}
+            for k in ('memory.max','memory.high','memory.swap.max','memory.peak','memory.current',
+                      'memory.events','memory.swap.current','cpu.max','cpu.stat','io.stat',
+                      'pids.max','pids.current','pids.peak','cgroup.events','cgroup.procs')}
+            for g in (parent, *(g for g in parent.rglob('*') if g.is_dir()))}

@@ -76,8 +76,10 @@ def protected_secret(path):
 
 
 class ConsoleBridge:
+    supervised_cleanup = True  # Capability; each R3 instance must select it explicitly.
     """One browser, one serialized request, ephemeral owner and authenticator."""
-    def __init__(self, origin, leaf_certificate, work, out, *, browser_group=None):
+    def __init__(self, origin, leaf_certificate, work, out, *, browser_group=None,
+                 browser_parent=None, browser_deadline=None):
         self.group = require_limits()
         self.browser_group = None
         if browser_group is None:
@@ -118,6 +120,7 @@ class ConsoleBridge:
         self.lock = threading.RLock()
         self.session = None
         self.driver = None
+        self.supervisor = None
         self.log = None
         self.browser_temporary = None
         self.principal_id = None
@@ -160,13 +163,22 @@ class ConsoleBridge:
             self.log = (self.out / "webdriver.log").open("w")
             command = [str(TOOLS / "chromedriver-linux64/chromedriver"),
                        "--port=" + str(driver_port), "--allowed-ips=127.0.0.1"]
-            if self.browser_group is not None:
+            if browser_parent is not None:
+                if self.browser_group is None or browser_parent['path'] != self.browser_group or browser_deadline is None:
+                    raise ValueError('R3 supervisor needs the actual held browser budget and run deadline')
+                from browser_supervisor import BrowserSupervisor
+                self.supervisor = BrowserSupervisor(command, env, self.log, browser_deadline,
+                                                     self.out / 'supervisor', browser_parent=browser_parent)
+                self.driver = self.supervisor
+                self.receipt['supervised_browser'] = True
+            elif self.browser_group is not None:
                 helper = Path(__file__).parent / "enter_group.py"
                 if not helper.is_file():
                     helper = ROOT / "tools/bench/labs/completion/enter_group.py"
                 command = [sys.executable, str(helper), str(self.browser_group), *command]
-            self.driver = subprocess.Popen(command,
-                                          stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
+            if self.supervisor is None:
+                self.driver = subprocess.Popen(command,
+                                              stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
             deadline = time.monotonic() + 15
             while True:
                 try:
@@ -202,7 +214,21 @@ class ConsoleBridge:
             # default Resource Timing buffer these counters cannot fill up.
             self._js('''window.fabricCampaignUiProbe={active:false,attempts:0,headers:0,completed:0,
               statusFailures:0,transportFailures:0,inflight:0,lastAttemptMs:null,lastCompletedMs:null,
-              maxAttemptGapMs:0,refreshes:0,phases:0,phaseLastAttemptMs:null};
+              maxAttemptGapMs:0,refreshes:0,phases:0,phaseLastAttemptMs:null,
+              documentId:crypto.randomUUID(),events:[],eventCount:0,eventOverflow:false,tickCount:0,latestTick:null};
+              window.fabricCampaignUiEvent=function(event){const p=window.fabricCampaignUiProbe;
+                event.seq=++p.eventCount;if(p.events.length<8192)p.events.push(event);else p.eventOverflow=true;};
+              const nativeInterval=window.setInterval;let observedTimer=0;
+              window.setInterval=function(callback,delay,...args){if(delay!==5000)return nativeInterval.call(this,callback,delay,...args);
+                const timer=++observedTimer;window.fabricCampaignUiEvent({event:'timer',timer,delay,atMs:performance.now()});
+                return nativeInterval.call(this,function(...values){const p=window.fabricCampaignUiProbe;
+                  const check=Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()==='Check session');
+                  const tick=++p.tickCount;p.latestTick=tick;
+                  window.fabricCampaignUiEvent({event:'tick',timer,tick,atMs:performance.now(),
+                    visibility:document.visibilityState,busy:check?check.disabled:null,
+                    connected:document.body.textContent.includes('Connected'),
+                    running:Array.from(document.querySelectorAll('button')).some(e=>e.textContent.trim()==='Pause 5-second polling')});
+                  return callback.apply(this,values);},delay,...args);};
               const original=window.fetch;window.fetch=function(...args){
                 const p=window.fabricCampaignUiProbe;
                 const native=p.active && args[0] instanceof Request &&
@@ -211,10 +237,13 @@ class ConsoleBridge:
                 const now=performance.now();if(p.phaseLastAttemptMs!==null)
                   p.maxAttemptGapMs=Math.max(p.maxAttemptGapMs,now-p.phaseLastAttemptMs);
                 p.phaseLastAttemptMs=now;p.lastAttemptMs=now;p.attempts++;p.inflight++;
+                const id=p.attempts;window.fabricCampaignUiEvent({event:'attempt',id,tick:p.latestTick,atMs:now});
                 let finished=false;const finish=(failed)=>{if(finished)return;finished=true;
-                  p.inflight--;if(failed)p.transportFailures++;else{p.completed++;p.lastCompletedMs=performance.now();}};
+                  p.inflight--;window.fabricCampaignUiEvent({event:'complete',id,atMs:performance.now(),failed});
+                  if(failed)p.transportFailures++;else{p.completed++;p.lastCompletedMs=performance.now();}};
                 return original.apply(this,args).then(response=>{
-                  p.headers++;if(response.status<200||response.status>=300)p.statusFailures++;
+                  p.headers++;window.fabricCampaignUiEvent({event:'headers',id,atMs:performance.now(),status:response.status});
+                  if(response.status<200||response.status>=300)p.statusFailures++;
                   if(!response.body){finish(false);return response;}
                   const stream=response.body;const getReader=stream.getReader.bind(stream);
                   stream.getReader=function(...options){const reader=getReader(...options);
@@ -224,9 +253,13 @@ class ConsoleBridge:
                   return response;
                 },error=>{finish(true);throw error;});};''')
             if self.browser_group is not None:
-                actual = next(line[3:] for line in Path(f"/proc/{self.driver.pid}/cgroup").read_text().splitlines() if line.startswith("0::"))
-                if Path("/sys/fs/cgroup") / actual.lstrip("/") != self.browser_group:
+                driver_pid = self.supervisor.receipt['ready']['driver_pid'] if self.supervisor else self.driver.pid
+                actual = next(line[3:] for line in Path(f"/proc/{driver_pid}/cgroup").read_text().splitlines() if line.startswith("0::"))
+                actual_group = Path("/sys/fs/cgroup") / actual.lstrip("/")
+                if ((self.supervisor is None and actual_group != self.browser_group) or
+                        (self.supervisor is not None and not actual_group.is_relative_to(self.supervisor.domain['path']))):
                     raise RuntimeError("WebDriver did not enter its declared browser subgroup")
+                self.receipt['actual_driver_group'] = str(actual_group)
                 self.receipt["browser_subgroup"] = str(self.browser_group)
                 self.receipt["browser_limits"] = {key: (self.browser_group / key).read_text().strip() for key in
                     ("memory.max", "memory.high", "memory.swap.max", "cpu.max", "pids.max")}
@@ -292,7 +325,17 @@ class ConsoleBridge:
           done({status:response.status,text:new TextDecoder('utf-8',{fatal:true}).decode(bytes)});
           }catch(e){done({error:true});}finally{clearTimeout(timer);}})();''', path, method, raw, csrf, MAX_BODY, asynchronous=True)
         if answer.get("error"):
+            observer = getattr(self, 'raw_observer', None)
+            if observer is not None:
+                observer({'path': path, 'method': method, 'answer': answer,
+                          'ended_ns': time.monotonic_ns()})
             raise RuntimeError("console transport failed, expired or exceeded body bound")
+        observer = getattr(self, 'raw_observer', None)
+        if observer is not None:
+            # Credential-issuing routes are intentionally excluded: the R3
+            # consumer attaches this sink only after all setup credentials exist.
+            observer({'path': path, 'method': method, 'answer': answer,
+                      'ended_ns': time.monotonic_ns()})
         self.records.append({"path": path, "method": method, "status": answer["status"],
                              "duration_s": time.monotonic() - start})
         if len(self.records) > 10000:
@@ -337,13 +380,28 @@ class ConsoleBridge:
             if not self.principal_id:
                 raise RuntimeError("bootstrap the owner before login")
             polling = self.ui_polling
-            if polling:
+            continuous = polling and getattr(self, 'continuous_polling', False)
+            if polling and not continuous:
                 self.poll_ui(False)
             view = self._ceremony("login", {"principal_id": self.principal_id})
             if polling:
                 # Authentication replaces both cookie session and CSRF. Reload
                 # the UI session before resuming its requested visible phase.
-                self.poll_ui(True)
+                if continuous:
+                    # R3 keeps the actual view running while the real passkey
+                    # ceremony replaces the cookie. Update application session
+                    # state through its native control; preserve every inflight
+                    # answer and the original phase/cadence/event counters.
+                    self._js('''const button=Array.from(document.querySelectorAll('button')).find(e=>
+                      e.textContent.trim()==='Check session');if(!button)throw Error('native session control missing');button.click();''')
+                    deadline = time.monotonic() + 15
+                    while not self._js("return document.body.textContent.includes('Connected') && !document.body.textContent.includes('Working…')"):
+                        if time.monotonic() >= deadline:
+                            raise RuntimeError('continuous native UI session refresh did not finish')
+                        time.sleep(.1)
+                    self.poll_health(require_progress=False)
+                else:
+                    self.poll_ui(True)
                 self._js("window.fabricCampaignUiProbe.refreshes++")
             return view
 
@@ -362,7 +420,10 @@ class ConsoleBridge:
                     interval=PEER_ADMISSION['private']['command_interval_s'])
             self._private_cadence.pace()
             view = self.session_view()
-            if method != "GET" and path != "/v1/console/query" and view["fresh_until_unix_s"] <= int(time.time()) + 60:
+            r3_control = getattr(self, 'r3_control_session', False) and (
+                (method == 'GET' and path == '/v1/console/nodes') or
+                (method == 'PUT' and re.fullmatch(r'/v1/console/nodes/sim[0-9]{4}/config', path)))
+            if method != "GET" and path != "/v1/console/query" and not r3_control and view["fresh_until_unix_s"] <= int(time.time()) + 60:
                 view = self.login()
             return self._request(path, method, body, view["csrf"])
 
@@ -373,6 +434,7 @@ class ConsoleBridge:
         """Explicitly activate/pause the actual bounded native UI polling view."""
         with self.lock:
             if not enabled:
+                self._js("window.fabricCampaignUiEvent({event:'polling',active:false,atMs:performance.now()})")
                 self._js("window.fabricCampaignUiProbe.active=false")
                 self.ui_polling = False
             if enabled:
@@ -394,6 +456,7 @@ class ConsoleBridge:
                     time.sleep(.1)
             else:
                 self._js("const p=window.fabricCampaignUiProbe;p.active=true;p.phaseLastAttemptMs=null;p.phases++")
+                self._js("window.fabricCampaignUiEvent({event:'polling',active:true,atMs:performance.now()})")
                 self.ui_polling = True
                 self.ui_previous = None
                 self.ui_phase_baseline = self.poll_health(require_progress=False)
@@ -424,13 +487,13 @@ class ConsoleBridge:
     def poll_health(self, *, require_progress=True, record=True):
         """Bounded actual UI body-consumption/status evidence, not owner API success."""
         with self.lock:
-            sample = self._js('''const p=window.fabricCampaignUiProbe;const text=document.body.textContent;
-              return {...p,visibility:document.visibilityState,connected:text.includes('Connected'),
+            sample = self._js('''const p=window.fabricCampaignUiProbe;const {events,...summary}=p;const text=document.body.textContent;
+              return {...summary,visibility:document.visibilityState,connected:text.includes('Connected'),
                 pauseVisible:Array.from(document.querySelectorAll('button')).some(e=>
                   e.textContent.trim()==='Pause 5-second polling'),nowMs:performance.now()};''')
             sample['requested_polling'] = self.ui_polling
             if record:
-                if len(self.ui_samples) >= 1280:
+                if len(self.ui_samples) >= getattr(self, 'ui_sample_limit', 1280):
                     raise RuntimeError('bounded UI polling receipt exceeds 1280 samples')
                 self.ui_samples.append(sample)
                 self.receipt['ui_polling'] = self.ui_samples
@@ -450,6 +513,28 @@ class ConsoleBridge:
                 self.ui_previous = sample
             return sample
 
+    def continuity_snapshot(self):
+        """Bind newly observed native UI events to a host monotonic bracket.
+
+        This captures evidence; the independent R3 validator checks complete
+        sequence/cadence/body/status/session/document continuity later. A native
+        timestamp bracket is uncertainty, never exact browser clock precision.
+        """
+        with self.lock:
+            before = time.monotonic_ns()
+            cursor = getattr(self, '_continuity_cursor', 0)
+            value = self._js('''const p=window.fabricCampaignUiProbe;
+              return {documentId:p.documentId,timeOriginMs:performance.timeOrigin,nowMs:performance.now(),
+                visibility:document.visibilityState,active:p.active,phases:p.phases,refreshes:p.refreshes,
+                eventCount:p.eventCount,eventOverflow:p.eventOverflow,
+                events:p.events.filter(e=>e.seq>arguments[0])};''', cursor)
+            after = time.monotonic_ns()
+            value.update(mono_before_ns=before, mono_after_ns=after, webdriver_session=self.session)
+            if value['eventOverflow']:
+                raise RuntimeError('native UI attempt ledger exceeded 8192 events')
+            self._continuity_cursor = value['eventCount']
+            return value
+
     def close(self):
         if self.closed:
             return
@@ -463,7 +548,13 @@ class ConsoleBridge:
                 self._call("DELETE", "/session/" + self.session)
             except (OSError, RuntimeError):
                 pass
-        if self.driver:
+        supervisor = getattr(self, 'supervisor', None)
+        if supervisor is not None:
+            supervisor.close(deadline=getattr(self, 'shutdown_deadline', None))
+            if not supervisor.cleanup_confirmed:
+                raise RuntimeError('browser supervisor stop not confirmed; whole campaign stop required')
+            self.receipt['supervised_cleanup'] = supervisor.receipt
+        elif self.driver:
             try:
                 os.killpg(self.driver.pid, signal.SIGTERM)
                 self.driver.wait(timeout=10)
@@ -474,6 +565,8 @@ class ConsoleBridge:
                 pass
         if self.browser_group is not None:
             if "populated 1" in (self.browser_group / "cgroup.events").read_text().splitlines():
+                if supervisor is not None:
+                    raise RuntimeError('supervised browser budget remains populated; whole campaign stop required')
                 (self.browser_group / "cgroup.kill").write_text("1")
                 deadline = time.monotonic() + 5
                 while "populated 1" in (self.browser_group / "cgroup.events").read_text().splitlines():

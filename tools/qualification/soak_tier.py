@@ -36,7 +36,7 @@ IDENTITIES = 100
 WARMUP = 60
 WINDOW = 600
 WINDOWS = 9
-SECONDS = WARMUP + WINDOW * WINDOWS
+SECONDS = 7200
 QUERY_EVERY = 10
 MANAGE_EVERY = 60
 SAMPLE_EVERY = 5
@@ -72,6 +72,9 @@ def evaluate(m):
 
 
 def main():
+    if '--r3' in sys.argv:
+        from soak_r3 import main as r3_main
+        return r3_main([value for value in sys.argv[1:] if value != '--r3'])
     try:
         return trial()
     finally:
@@ -118,6 +121,9 @@ def trial():
     if args.production_access and not args.companion:
         raise SystemExit("production soak requires strict companion custody")
     global WARMUP, WINDOW, WINDOWS, SECONDS
+    # Historical R1/R2 execution remains the registered 5,460-second profile.
+    # R3 is an explicit separate runtime; a larger timeout is never exposure.
+    SECONDS = WARMUP + WINDOW * WINDOWS
     if args.smoke:
         WARMUP, WINDOW, WINDOWS = 10, 30, 2
         SECONDS = WARMUP + WINDOW * WINDOWS

@@ -31,3 +31,14 @@ uses the unchanged packaged companion and installation-wide reader role. Its
 disposable smoke verifies independent companion corpus handling; full service
 and deployment gates remain separate. Component ownership and deployment
 boundaries are unchanged.
+
+The prospective [R3 soak](../experiments/benchmarks/soak-protocol-r3.md) separates
+measurement, stopped raw checkpoint and later grading. Its
+[observation checks](../../tools/qualification/soak_exposure.py) consume caller
+observations and independently pinned expected inputs; they neither observe
+elapsed exposure nor authenticate that admission record. The checkpoint uses a
+same-filesystem no-replace rename, retaining uncertain state on failure, and the
+preservation guard refuses decoded mounts before inventory and first unlink.
+Whole-parent and subgroup snapshots record actual kernel fields. Runtime
+integration and verification remain pending; these mechanisms do not establish
+native soak or deployment acceptance and change no packaged service limit.
