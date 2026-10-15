@@ -25,6 +25,15 @@ The existing `enter_group.py` exec wrapper performs placement; no threaded
 parent uses `preexec_fn`. Nested delegation must use the same inherited
 controllers and leave the original aggregate cap intact.
 
+R3 additionally supplies its already registered, empty 1 GiB/850 MiB browser
+budget with its retained no-follow descriptor, identity and actual exclusive
+creation observation. CPU 200%, 512 tasks and no swap remain enforced there.
+The new 4 GB controller domain is nested beneath that budget and inherits its
+stronger 1 GiB effective aggregate bound; the inner 4 GB value is never described
+as the effective limit. Both ancestors, actual limits and placement are retained.
+Changing or substituting the supplied budget must refuse before launch. No
+browser process may move to the old sibling budget outside its owned domain.
+
 One private inherited SOCK_SEQPACKET pair carries bounded JSON ready/stop/closed
 messages, each at most 8 KiB. Ready means the supervisor has actually acquired
 and bound the driver subgroup/identity. It does not mean WebDriver is ready;
@@ -49,8 +58,10 @@ owned wait domain before checkpoint/removal; populated zero alone cannot prove
 that adopted zombies were reaped.
 
 Register separate source and delegated native controls before execution. Native
-controls cover normal driver/descendant cleanup, startup refusal, supervisor
-death before ready, and death during cleanup. An independent fixture guardian
+controls cover normal driver/descendant cleanup in both the direct and preserved
+1 GiB budget shapes, startup refusal, supervisor death before ready and death
+during cleanup in the nested shape, plus wrong/changed ancestor refusals with
+no launch or descriptor leak: seven controls total. An independent fixture guardian
 owns the complete test wait domain and verifies exact descendant absence and
 ECHILD even when the supervisor cannot complete. Retain failures and resource
 receipts. Existing thirteen source controls and four native cleanup cases must
