@@ -346,3 +346,9 @@ must also include the companion. Use native ACK/source times to bound a concurre
 snapshot, preserve original source bytes and check freshness/retention alongside
 rows. Why would excluding a source from the expected corpus create a false failure,
 and why would ignoring metadata hide a real omission?
+
+The [owner guide extractor](../tools/qualification/owner_guide.py) illustrates the
+same separation for operator instructions: an immutable command and its source
+span identify what was documented, while an actual process exit and independent
+observations establish what happened. Extraction must preserve shell bytes,
+including heredocs, and cannot decide whether a conditional step was applicable.

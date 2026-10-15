@@ -114,6 +114,13 @@ protocols and executable evidence inputs stay here under the
 
 ## Assumptions and risks
 
+The fresh-owner walkthrough has a byte-preserving
+[guide extractor](../tools/qualification/owner_guide.py) for its two admitted
+operator guides. It archives exact commands and source spans; it does not execute
+the guide or establish walkthrough acceptance. Conditional choices, linked
+callpoints, prose actions and native observations remain runner responsibilities
+under the [registered protocol](experiments/formal/owner-walkthrough-protocol.md).
+
 - Durability assumes successful sync calls are honored by the filesystem/device;
   physical power loss has not been tested.
 - Exact-byte identity uses SHA-256; collisions are assumed infeasible.
