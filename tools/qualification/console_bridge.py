@@ -256,6 +256,8 @@ class ConsoleBridge:
             info = self._call("POST", "/session", {"capabilities": {"alwaysMatch": capabilities}})
             self.session = info["sessionId"]
             actual = info["capabilities"]
+            self.receipt['browser_capabilities_actual'] = {
+                key: actual.get(key) for key in ('browserName', 'browserVersion', 'acceptInsecureCerts')}
             if actual["browserVersion"] != (VERSION if backend == "chrome" else FIREFOX_VERSION):
                 raise RuntimeError("browser differs from reviewed version")
             if backend == "firefox" and actual.get("acceptInsecureCerts") is not False:
