@@ -25,7 +25,8 @@ ROOT = HERE.parents[1]
 sys.path[:0] = [str(HERE), str(ROOT / 'tools'), str(ROOT / 'tools/ui')]
 from owner_commands import Commands, PHASES, private_write
 from owner_guide import Guide
-from owner_evidence import require, grade_queries, completed
+from owner_evidence import require, grade_queries, grade_custody, completed
+import owner_observation
 from cross_family.guest import Guest, Q, image
 from cross_family.inputs import validate_inputs
 
@@ -126,6 +127,7 @@ class Walkthrough:
         self.queries = []
         self.query_stages = {}
         self.source_log = b'owner-walkthrough-original-log\n'
+        self.previous_boot_ids = set()
 
     def event(self, kind, **value):
         self.record['events'].append(dict(kind=kind, phase=PHASES[self.commands.index][0],
@@ -179,20 +181,45 @@ class Walkthrough:
 
     def pages(self, query):
         pages, request = [], dict(query)
+        proof = {'before': self.edge_position()}
         for _ in range(1000):
             self.commands.remaining()
             time.sleep(.25)
+            attempted = time.monotonic_ns()
             status, answer = self.bridge.request('/v1/console/query', 'POST', request)
+            finished = time.monotonic_ns()
             require(status == 200, 'authorized query refused')
+            if not pages:
+                proof.update(attempted_ns=attempted, completed_ns=finished, after=self.edge_position())
             pages.append(answer)
             require(sum(len(json.dumps(page)) for page in pages) <= 16 * 1024**2, 'query evidence exceeds bound')
             if not answer.get('next_page'):
-                self.queries.append((query, pages))
+                self.queries.append((query, pages, proof))
                 return pages
             request['page'] = answer['next_page']
         raise ValueError('query page count exceeded')
 
+    def edge_position(self):
+        began = time.monotonic_ns()
+        text = self.observed(self.edge, 'fabricctl inspect /etc/fabrico11y/node.conf\n',
+                             'edge-query-position-' + str(began))
+        fields = dict(word.split('=', 1) for word in text.split() if '=' in word)
+        require(fields['coverage_unknown'] == fields['recovery_required'] == fields['interrupted_append'] == 'false',
+                'edge inspection incomplete or concurrently interrupted')
+        return dict(boot_id=self.edge.boot_id, node_id=fields['node_id'], generation=int(fields['generation']),
+                    acked_through=int(fields['acked_through']), next_sequence=int(fields['next_sequence']),
+                    started_ns=began, finished_ns=time.monotonic_ns())
+
+    def processes(self, guest, stage, *, active):
+        value = json.loads(self.observed(guest, "python3 - <<'OBS'\n" + owner_observation.NATIVE + '\nOBS\n',
+                                        stage + '-' + guest.role + '-processes'))
+        owner_observation.verify(value, guest.role, guest.boot_id, active=active)
+        self.record.setdefault('process_observations', []).append(dict(stage=stage, role=guest.role, active=active, value=value))
+        return value
+
     def received(self, stage):
+        for guest in (self.server, self.edge):
+            self.processes(guest, stage, active=True)
         before = len(self.queries)
         upper = time.time_ns()
         for kind in ('logs', 'metrics', 'spans'):
@@ -202,6 +229,8 @@ class Walkthrough:
         self.query_stages[stage] = (before, len(self.queries))
 
     def snapshot(self, stage):
+        for guest in (self.server, self.edge):
+            self.processes(guest, stage, active=False)
         require('inactive' in self.observed(self.server,
             'systemctl is-active fabrico11y-server.service || test "$?" = 3\n', stage + '-stopped'),
             'stopped server required before raw journal capture')
@@ -221,10 +250,50 @@ OBS
         journals = [json.loads(line) for line in text.splitlines()]
         replay = [json.loads(line) for line in self.observed(self.server,
             '/root/owner-observers/server_dump /etc/fabrico11y/server.conf --records\n', stage + '-replay').splitlines()]
+        spools = []
+        for guest, config in ((self.server, '/var/lib/fabrico11y/server/self-spindle/node.conf'),
+                              (self.edge, '/etc/fabrico11y/node.conf')):
+            rows = [json.loads(line) for line in self.observed(guest,
+                '/root/owner-observers/spool_dump ' + config + '\n', stage + '-' + guest.role + '-original-spool').splitlines()]
+            spools.append(rows)
+            self.capture_sources(guest, stage)
+        self.record.setdefault('custody', {})[stage] = grade_custody(spools, replay)
         for name, (start, end) in self.query_stages.items():
             if name not in self.record['signals']:
                 self.record['signals'][name] = grade_queries(journals, replay, self.queries[start:end], self.source_log)
         private_write(self.out / 'protected-transcript' / (stage + '-queries.json'), json.dumps(self.queries).encode())
+
+    def capture_sources(self, guest, stage):
+        # Read only the selected log and diagnostic directories. Token, CA and
+        # access-store private material is never included in this observation.
+        roots = (['/var/lib/fabrico11y/server/diagnostics',
+                  '/var/lib/fabrico11y/server/self-spindle/spool/diagnostics'] if guest.role == 'server'
+                 else ['/var/log/app.log', '/var/lib/fabrico11y/node/spool/diagnostics'])
+        command = "python3 - <<'OBS'\nimport base64,json,os,stat\nfrom pathlib import Path\nroots=" + repr(roots) + r'''
+rows=[];total=0
+for name in roots:
+ root=Path(name)
+ if root.is_symlink() or not root.exists():raise ValueError('source input missing or symlinked')
+ paths=sorted(root.iterdir()) if root.is_dir() else [root]
+ for p in paths:
+  before=p.lstat()
+  if not stat.S_ISREG(before.st_mode) or before.st_nlink!=1:raise ValueError('source is not an owned regular file')
+  total+=before.st_size
+  if total>4*1024**2:raise ValueError('source archive exceeds bounded observer output')
+  raw=p.read_bytes();after=p.stat()
+  if (before.st_dev,before.st_ino,before.st_size,before.st_mtime_ns,before.st_ctime_ns)!=(after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns):raise ValueError('stopped source changed')
+  rows.append({'path':str(p),'device':before.st_dev,'inode':before.st_ino,'bytes':base64.b64encode(raw).decode()})
+print(json.dumps(rows))
+OBS
+'''
+        rows = json.loads(self.observed(guest, command, stage + '-' + guest.role + '-original-source-files'))
+        require(rows, 'original selected/diagnostic files missing')
+        if guest.role == 'edge':
+            original = next(row for row in rows if row['path'] == '/var/log/app.log')
+            require(base64.b64decode(original['bytes'], validate=True) == self.source_log, 'original selected log changed')
+        self.record.setdefault('original_source_files', {})[stage + '-' + guest.role] = [
+            dict(path=row['path'], device=row['device'], inode=row['inode'],
+                 sha256=hashlib.sha256(base64.b64decode(row['bytes'], validate=True)).hexdigest()) for row in rows]
 
     def installed_payload(self, guest, candidate):
         expected = self.artifacts['identity']['payload_identity']
@@ -479,6 +548,8 @@ OBS
         self.server.ready(deadline=deadline)
         self.edge.ready(deadline=deadline)
         require(self.server.boot_id != self.edge.boot_id, 'two distinct fresh guest identities required')
+        require(not self.previous_boot_ids.intersection((self.server.boot_id, self.edge.boot_id)),
+                'reversed pair reused a previous guest boot identity')
         self.record['guests'] = {guest.role: dict(family=guest.family, boot_id=guest.boot_id, command=guest.command)
                                  for guest in (self.server, self.edge)}
         for guest in (self.server, self.edge):
@@ -494,6 +565,7 @@ OBS
             self.observed(guest, 'install -d -m0700 /root/owner-observers\ninstall -m0700 /home/accept/server_dump /home/accept/spool_dump /root/owner-observers/\n'
                 'systemctl is-active fabrico11y-server.service fabrico11y-node.service; test "$?" = 3\n',
                 'initial-inactive-' + guest.role)
+            self.processes(guest, 'initial-install', active=False)
         self.commands.phase('tls')
         ca, leaf = self.configure_server()
         if self.server.family == 'fedora':
@@ -601,6 +673,35 @@ OBS
         self.snapshot('fresh-candidate')
 
 
+def stop_owned(walk, budget):
+    """Try every owned cleanup even when a preceding operation raises."""
+    errors = []
+    if walk is not None:
+        if walk.bridge is not None:
+            try:
+                walk.bridge.shutdown_deadline = min(walk.overall_end, time.monotonic() + 20)
+                walk.bridge.close()
+                require(walk.bridge.supervisor.cleanup_confirmed, 'browser supervisor stop unconfirmed')
+            except BaseException as error:
+                errors.append('browser: ' + type(error).__name__ + ': ' + str(error))
+        for guest in (walk.server, walk.edge):
+            try:
+                require(guest.stop(), 'guest stop unconfirmed')
+            except BaseException as error:
+                errors.append(guest.role + ': ' + type(error).__name__ + ': ' + str(error))
+    if budget is not None:
+        try:
+            require('populated 0' in (budget['path'] / 'cgroup.events').read_text().splitlines(),
+                    'browser domain remains populated')
+        except BaseException as error:
+            errors.append('browser budget: ' + type(error).__name__ + ': ' + str(error))
+        try:
+            os.close(budget['fd'])
+        except BaseException as error:
+            errors.append('budget descriptor: ' + type(error).__name__ + ': ' + str(error))
+    return errors
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--admission', type=Path, required=True)
@@ -629,21 +730,25 @@ def main():
             'strict complete namespace census and full pair reservation required')
     plan, artifacts, fixture, guides = admit(args.admission, args.admission_sha256)
     for family in ('debian', 'fedora'): image(family)
+    previous_boot_ids = set()
     if plan.get('previous_pair'):
         previous = json.loads(artifact(plan['previous_pair']['path'], plan['previous_pair']['sha256']).read_text())
         require(previous['exit'] == 0 and previous['cleanup_confirmed'] is True
                 and previous['guests']['server']['family'] != args.server_family,
                 'first pair must finish and stop before fresh reversed pair')
+        previous_boot_ids = {guest['boot_id'] for guest in previous['guests'].values()}
+        require(len(previous_boot_ids) == 2 and all(previous_boot_ids), 'previous pair boot identities incomplete')
     root = Q.DATA / 'scratch' / ('owner-walkthrough-' + args.run_id)
     out = Q.DATA / 'results/owner-walkthrough' / args.run_id
     require(not root.exists() and not out.exists(), 'fresh guest/output paths required')
-    root.mkdir(mode=0o700)
     out.mkdir(mode=0o700, parents=True)
-    for guide in guides.values(): guide.archive(out)
     walk = None
     rc = 2
     budget = None
+    setup_failure = None
     try:
+        root.mkdir(mode=0o700)
+        for guide in guides.values(): guide.archive(out)
         # Delegate before any VM/browser is spawned. The outer aggregate8GiB cap
         # remains authoritative; all children inherit an explicit CPU/task cap.
         import live_browser_check as browser
@@ -655,6 +760,7 @@ def main():
         budget['exclusive'] = True
         walk = Walkthrough(plan, artifacts, fixture, guides, root, out, args.server_family)
         walk.budget = budget
+        walk.previous_boot_ids = previous_boot_ids
         walk.record['admission_sha256'] = args.admission_sha256
         walk.record['host_cgroup'] = {**limits, 'cpu_max': (service / 'cpu.max').read_text().strip(),
                                       'pids_max': (service / 'pids.max').read_text().strip(), 'browser': budget_limits}
@@ -665,27 +771,13 @@ def main():
             walk.record['failure'] = {'type': type(error).__name__, 'reason': str(error)}
             walk.commands.failed = True
         else:
-            private_write(out / 'setup-failure.json', json.dumps({'exit': 2, 'type': type(error).__name__, 'reason': str(error)}).encode())
+            setup_failure = {'exit': 2, 'type': type(error).__name__, 'reason': str(error)}
     finally:
-        clean = True
+        errors = stop_owned(walk, budget)
+        clean = not errors
         if walk is not None:
-            if walk.bridge is not None:
-                try:
-                    walk.bridge.shutdown_deadline = min(walk.overall_end, time.monotonic() + 20)
-                    walk.bridge.close()
-                    clean = bool(walk.bridge.receipt.get('browser_supervisor_cleanup_confirmed'))
-                    # ConsoleBridge.close also raises if its supervised domain
-                    # cannot be confirmed empty; do not infer cleanup from exit.
-                    if getattr(walk.bridge, 'supervisor', None) is not None:
-                        clean = walk.bridge.supervisor.cleanup_confirmed
-                except BaseException as error:
-                    clean = False
-                    walk.record['browser_cleanup_error'] = type(error).__name__
-            stopped = [walk.server.stop(), walk.edge.stop()]
-            clean = all(stopped) and clean
-            if budget is not None:
-                clean = clean and 'populated 0' in (budget['path'] / 'cgroup.events').read_text().splitlines()
             walk.record['cleanup_confirmed'] = clean
+            walk.record['cleanup_errors'] = errors
             walk.record['query_evidence'] = 'protected-transcript'
             if rc == 0 and clean:
                 try:
@@ -699,10 +791,18 @@ def main():
                 rc = 2
                 walk.record.update(exit=2, scratch_retained=str(root))
             else:
-                shutil.rmtree(root)
-                walk.record['scratch_removed'] = not root.exists()
+                try:
+                    shutil.rmtree(root)
+                    walk.record['scratch_removed'] = not root.exists()
+                except BaseException as error:
+                    rc = 2
+                    walk.record.update(exit=2, scratch_retained=str(root),
+                                       scratch_cleanup_error=type(error).__name__ + ': ' + str(error))
             private_write(out / 'receipt.json', (json.dumps(walk.record, indent=2) + '\n').encode())
-        if budget is not None: os.close(budget['fd'])
+        else:
+            private_write(out / 'receipt.json', json.dumps({'exit': 2, 'failure': setup_failure,
+                'cleanup_confirmed': clean, 'cleanup_errors': errors, 'scratch_retained': str(root),
+                'admission_sha256': args.admission_sha256}).encode())
     return rc
 
 

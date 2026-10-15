@@ -5,14 +5,62 @@ all of their framing, row, page, completeness and freshness checks.
 """
 import base64
 import hashlib
+import json
 
 import query_oracle
-from cross_family.snapshot import decode, select
+from cross_family.snapshot import decode
+from release_query import grade
+import delivery_oracle
+import soak_companion
 
 
 def require(value, reason):
     if not value:
         raise ValueError(reason)
+
+
+def bounded_edge_records(records, proof):
+    before, after = proof['before'], proof['after']
+    require(before['boot_id'] == after['boot_id'] and before['boot_id'], 'edge boot changed')
+    require((before['node_id'], before['generation']) == (after['node_id'], after['generation']),
+            'edge source identity changed')
+    require(before['finished_ns'] <= proof['attempted_ns'] <= proof['completed_ns'] <= after['started_ns'],
+            'edge snapshot observations do not surround first page')
+    lower, upper = before['acked_through'], after['next_sequence'] - 1
+    require(type(lower) is int and type(upper) is int and 1 <= lower <= upper
+            and upper - lower < 32, 'edge snapshot bounds unavailable or too wide')
+    selected = []
+    for record in records:
+        if record['label'] != 'edge':
+            continue
+        batch = query_oracle.decode_batch(base64.b64decode(record['bytes'], validate=True))
+        require((batch['node_id'].hex(), batch['generation']) == (before['node_id'], before['generation']),
+                'recovered edge identity differs from observed source')
+        require(not batch['gaps'], 'edge gap violates scoped zero-gap admission')
+        selected.append((batch['sequence'], record))
+    require([sequence for sequence, _ in selected] == list(range(1, len(selected) + 1)),
+            'independent recovered edge prefix missing or reordered')
+    require(len(selected) >= lower, 'acknowledged edge prefix absent from recovery')
+    return lower, min(upper, len(selected)), selected
+
+
+def grade_custody(spools, replay):
+    """Spool sources and durable cursors; no invented wire attempts or responses."""
+    observations = [soak_companion.inspect_records(rows) for rows in spools]
+    sources = [record for observation in observations for record in observation['projected_sources']]
+    recovered = []
+    for record in replay:
+        raw = base64.b64decode(record['bytes'], validate=True)
+        batch = query_oracle.decode_batch(raw)
+        recovered.append(dict(type='recovered', node_id=batch['node_id'].hex(),
+                              generation=batch['generation'], sequence=batch['sequence'],
+                              bytes=base64.b64encode(hashlib.sha256(raw).digest()).decode()))
+    ledger = sources + recovered + [{'type': 'end'}]
+    verdict = delivery_oracle.check(json.dumps(record) for record in ledger).to_json()
+    require(verdict['passed'], 'independent delivery oracle rejected walkthrough custody')
+    return {'delivery_oracle': verdict,
+            'durable_cursors': [soak_companion.validate_recovery(observation, recovered)
+                               for observation in observations], 'wire_attempts_observed': False}
 
 
 def grade_queries(journals, replay, queries, source_log):
@@ -28,10 +76,20 @@ def grade_queries(journals, replay, queries, source_log):
             'independent raw journal differs from exact replay helper')
     verdicts = []
     seen = set()
-    for query, pages in queries:
-        records = select(groups, pages)
-        verdict = query_oracle.check(records, query, pages)
-        require(verdict['passed'], 'independent query oracle rejected walkthrough answer')
+    for query, pages, proof in queries:
+        require(query.get('node') == 'edge', 'walkthrough query scope differs')
+        lower, upper, records = bounded_edge_records(replay, proof)
+        attempts = []
+        for prefix in range(lower, upper + 1):
+            verdict = grade([record for sequence, record in records if sequence <= prefix],
+                            query, pages, {'edge'})
+            attempts.append({'prefix': prefix, 'verdict': verdict})
+            if verdict['passed']:
+                break
+        require(attempts and attempts[-1]['verdict']['passed'],
+                'independent query oracle rejected every bounded walkthrough snapshot')
+        verdict = dict(attempts[-1]['verdict'], snapshot_bounds={'lower': lower, 'upper': upper},
+                       snapshot_attempts=attempts)
         rows = [row for page in pages for row in page['rows']]
         require(rows, 'walkthrough signal query is empty')
         if query.get('node') == 'edge':
