@@ -135,7 +135,11 @@ def process_affinities(group, expected):
 
 class CandidateFixture:
     def __init__(self, deb_receipt, rpm_receipt, out, *, mode='segment',
-                 server_cpus='0-1',supervisor_cpus='2-3'):
+                 server_cpus='0-1',supervisor_cpus='2-3', browser_deadline=None):
+        if browser_deadline is not None:
+            # Import before the loaded-source census; the supervisor and its
+            # cleanup dependency must be frozen alongside the live adapter.
+            import browser_supervisor  # noqa: F401
         self.parent = require_limits()
         self.server_cpus=server_cpus;self.supervisor_cpus=supervisor_cpus
         server_affinity=cpu_pair(server_cpus);supervisor_affinity=cpu_pair(supervisor_cpus)
@@ -231,8 +235,19 @@ class CandidateFixture:
                 f'journal_bytes=4294967296\njournal_file_bytes={16*1024**2 if mode == "segment" else 2*1024**3}\n'
                 'retention_bytes=100000000000\nretention_s=86400\n')
             self.start_server()
-            self.bridge = ConsoleBridge(self.origin, self.work / 'server.pem', self.work / 'browser',
-                                        self.out / 'browser', browser_group=self.browser_group)
+            browser_options = {}
+            held_browser = None
+            if browser_deadline is not None:
+                from live_browser_check import browser_hold_directory
+                held_browser = browser_hold_directory(self.browser_group)
+                held_browser['exclusive'] = True  # This constructor just created this empty budget.
+                browser_options = {'browser_parent': held_browser, 'browser_deadline': browser_deadline}
+            try:
+                self.bridge = ConsoleBridge(self.origin, self.work / 'server.pem', self.work / 'browser',
+                                            self.out / 'browser', browser_group=self.browser_group, **browser_options)
+            finally:
+                if held_browser is not None:
+                    os.close(held_browser['fd'])
             self.owner = self.bridge.bootstrap_owner(self.work / 'state/access/access-bootstrap.secret')
             self.receipt['state'] = 'ready'
         except BaseException:

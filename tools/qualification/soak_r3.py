@@ -321,6 +321,9 @@ class Probes:
     def check(self):
         require(not self.errors and all(thread.is_alive() for thread in self.threads),
                 'probe continuity lost: ' + repr(self.errors))
+        supervisor = self.fixture.bridge.supervisor
+        require(supervisor is not None and supervisor.poll() is None,
+                'browser supervisor died; whole campaign stop required')
         now = time.monotonic_ns()
         require(all(start is None or now - start <= self.cadences[name] * NS
                     for name, start in self.inflight.items()), 'probe blocked beyond its cadence')
@@ -383,8 +386,10 @@ def measure(value, admission_sha):
         clock.call(parent_boundary, 'admission')
         args = SimpleNamespace(production_access=True, production_server_cpus='0-1',
             deb_receipt=Path(value['inputs']['deb']['path']), rpm_receipt=Path(value['inputs']['rpm']['path']),
-            production_out=Path(value['fixture_output']))
+            production_out=Path(value['fixture_output']), r3_browser_deadline=clock.launcher_begin / NS + 7500)
         fixture = clock.call(ProductionAccess, args, raw, soak=True)
+        require(fixture.bridge.receipt.get('supervised_browser') is True and fixture.bridge.supervisor is not None,
+                'R3 actual browser supervisor was not selected')
         fixture.bridge.continuous_polling = True
         fixture.bridge.ui_sample_limit = 2048
         fixture.bridge.r3_control_session = True
@@ -415,7 +420,10 @@ def measure(value, admission_sha):
                 '--server-url', fixture.origin, '--ca', str(fixture.work / 'ca.pem'),
                 '--tokens', str(tokens), '--seed', hex(SEED), '--seconds', str(value['seconds']),
                 '--workers', '100', '--out', str(raw / 'sim'), '--begin-witness', str(raw / 'begin.json')]
-            sim = clock.call(NativeTrace.start, command, descriptor, raw / 'native-trace')
+            sim = clock.call(NativeTrace.start, command, descriptor, raw / 'native-trace',
+                strace=Path(value['inputs']['strace']['path']),
+                strace_sha256=value['inputs']['strace']['sha256'],
+                deadline=clock.launcher_begin / NS + 7500)
             while not (raw / 'begin.json').exists():
                 probes.check()
                 require(sim.poll() is None, 'simulator exited before native begin')
@@ -461,6 +469,7 @@ def measure(value, admission_sha):
                 and summary.get('ended_monotonic_ns', 0) >= boundary,
                 'native summary does not establish exposure')
         clock.enter('shutdown')
+        fixture.bridge.shutdown_deadline = (clock.started + 20 * NS) / NS
         from fleet_tier import status_kib
         server_hwm = status_kib(fixture.server.pid, 'VmHWM')
         clock.call(fixture.bridge.poll_ui, False)

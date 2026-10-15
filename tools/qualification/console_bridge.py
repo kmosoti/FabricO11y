@@ -76,8 +76,10 @@ def protected_secret(path):
 
 
 class ConsoleBridge:
+    supervised_cleanup = True  # Capability; each R3 instance must select it explicitly.
     """One browser, one serialized request, ephemeral owner and authenticator."""
-    def __init__(self, origin, leaf_certificate, work, out, *, browser_group=None):
+    def __init__(self, origin, leaf_certificate, work, out, *, browser_group=None,
+                 browser_parent=None, browser_deadline=None):
         self.group = require_limits()
         self.browser_group = None
         if browser_group is None:
@@ -118,6 +120,7 @@ class ConsoleBridge:
         self.lock = threading.RLock()
         self.session = None
         self.driver = None
+        self.supervisor = None
         self.log = None
         self.browser_temporary = None
         self.principal_id = None
@@ -160,13 +163,22 @@ class ConsoleBridge:
             self.log = (self.out / "webdriver.log").open("w")
             command = [str(TOOLS / "chromedriver-linux64/chromedriver"),
                        "--port=" + str(driver_port), "--allowed-ips=127.0.0.1"]
-            if self.browser_group is not None:
+            if browser_parent is not None:
+                if self.browser_group is None or browser_parent['path'] != self.browser_group or browser_deadline is None:
+                    raise ValueError('R3 supervisor needs the actual held browser budget and run deadline')
+                from browser_supervisor import BrowserSupervisor
+                self.supervisor = BrowserSupervisor(command, env, self.log, browser_deadline,
+                                                     self.out / 'supervisor', browser_parent=browser_parent)
+                self.driver = self.supervisor
+                self.receipt['supervised_browser'] = True
+            elif self.browser_group is not None:
                 helper = Path(__file__).parent / "enter_group.py"
                 if not helper.is_file():
                     helper = ROOT / "tools/bench/labs/completion/enter_group.py"
                 command = [sys.executable, str(helper), str(self.browser_group), *command]
-            self.driver = subprocess.Popen(command,
-                                          stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
+            if self.supervisor is None:
+                self.driver = subprocess.Popen(command,
+                                              stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
             deadline = time.monotonic() + 15
             while True:
                 try:
@@ -241,9 +253,13 @@ class ConsoleBridge:
                   return response;
                 },error=>{finish(true);throw error;});};''')
             if self.browser_group is not None:
-                actual = next(line[3:] for line in Path(f"/proc/{self.driver.pid}/cgroup").read_text().splitlines() if line.startswith("0::"))
-                if Path("/sys/fs/cgroup") / actual.lstrip("/") != self.browser_group:
+                driver_pid = self.supervisor.receipt['ready']['driver_pid'] if self.supervisor else self.driver.pid
+                actual = next(line[3:] for line in Path(f"/proc/{driver_pid}/cgroup").read_text().splitlines() if line.startswith("0::"))
+                actual_group = Path("/sys/fs/cgroup") / actual.lstrip("/")
+                if ((self.supervisor is None and actual_group != self.browser_group) or
+                        (self.supervisor is not None and not actual_group.is_relative_to(self.supervisor.domain['path']))):
                     raise RuntimeError("WebDriver did not enter its declared browser subgroup")
+                self.receipt['actual_driver_group'] = str(actual_group)
                 self.receipt["browser_subgroup"] = str(self.browser_group)
                 self.receipt["browser_limits"] = {key: (self.browser_group / key).read_text().strip() for key in
                     ("memory.max", "memory.high", "memory.swap.max", "cpu.max", "pids.max")}
@@ -532,7 +548,13 @@ class ConsoleBridge:
                 self._call("DELETE", "/session/" + self.session)
             except (OSError, RuntimeError):
                 pass
-        if self.driver:
+        supervisor = getattr(self, 'supervisor', None)
+        if supervisor is not None:
+            supervisor.close(deadline=getattr(self, 'shutdown_deadline', None))
+            if not supervisor.cleanup_confirmed:
+                raise RuntimeError('browser supervisor stop not confirmed; whole campaign stop required')
+            self.receipt['supervised_cleanup'] = supervisor.receipt
+        elif self.driver:
             try:
                 os.killpg(self.driver.pid, signal.SIGTERM)
                 self.driver.wait(timeout=10)
@@ -543,6 +565,8 @@ class ConsoleBridge:
                 pass
         if self.browser_group is not None:
             if "populated 1" in (self.browser_group / "cgroup.events").read_text().splitlines():
+                if supervisor is not None:
+                    raise RuntimeError('supervised browser budget remains populated; whole campaign stop required')
                 (self.browser_group / "cgroup.kill").write_text("1")
                 deadline = time.monotonic() + 5
                 while "populated 1" in (self.browser_group / "cgroup.events").read_text().splitlines():
