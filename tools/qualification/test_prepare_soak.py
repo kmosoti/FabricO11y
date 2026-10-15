@@ -28,7 +28,7 @@ class SourceCensusTests(unittest.TestCase):
             "packaging/systemd/fabrico11y-server.service",
             "packaging/licenses/webauthn-rs-0.5.5/LICENSE.md",
             "tools/packaging/stage_candidate.py", "tools/packaging/stage_console.py",
-            "tools/resource_group.py", "tools/ui/build.py",
+            "tools/resource_group.py", "tools/resource_final_group.py", "tools/ui/build.py",
             ".cargo/config.toml", "Cargo.lock", "src/bin/fabricctl.rs",
         }
         self.excluded = {"operator-token", "local-server.conf", ".env",
@@ -77,7 +77,7 @@ class SourceCensusTests(unittest.TestCase):
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text("#!/bin/sh\nexit 0\n")
             path.chmod(0o700)
-        runtime_helpers = ("packaging/build-rpm.sh", "tools/resource_group.py", "tools/packaging/stage_console.py",
+        runtime_helpers = ("packaging/build-rpm.sh", "tools/resource_group.py", "tools/resource_final_group.py", "tools/packaging/stage_console.py",
                            "tools/ui/fixture_cadence.py",
                            "tools/packaging/stage_candidate.py", "tools/packaging/payload.py",
                            "tools/qualification/cross_family/inputs.py",
