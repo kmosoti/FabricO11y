@@ -202,7 +202,7 @@ class Guest:
         raise ValueError('query page ceiling')
 
     def process(self):
-        show = self.command(['systemctl', 'show', UNITS[1], '-p', 'MainPID', '-p', 'ControlGroup'])
+        show = self.command(['systemctl', 'show', UNITS[1], '-p', 'MainPID', '-p', 'ControlGroup', '-p', 'InvocationID'])
         values = dict(line.split('=', 1) for line in show['stdout'].splitlines())
         pid = int(values['MainPID']); proc = Path('/proc') / str(pid)
         info = (proc / 'stat').read_text(); uid = (proc / 'status').read_text()
@@ -211,13 +211,14 @@ class Guest:
         start_ns = max(0, now - uptime + start_ticks * 1000000000 // ticks - 1000000000)
         executable = self.command(['sha256sum', str(proc / 'exe')])['stdout'].split()[0]
         witness.require(executable == self.config['node_sha256'] and pid > 0
+            and re.fullmatch('[0-9a-f]{32}', values['InvocationID']) and values['InvocationID'] != '0' * 32
             and values['ControlGroup'] == '/system.slice/system-fabrico11y.slice/' + UNITS[1]
             and (proc / 'cgroup').read_text().strip() == '0::' + values['ControlGroup']
             and all(int(value) == pwd.getpwnam('fabricolly').pw_uid for value in re.search(r'^Uid:\s+(.+)$', uid, re.M)[1].split())
             and all(int(value) == pwd.getpwnam('fabricolly').pw_gid for value in re.search(r'^Gid:\s+(.+)$', uid, re.M)[1].split()),
             'candidate executable/service identity')
         return dict(**self.config['binding'], unit=UNITS[1], pid=pid, boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
-                    start_ns=start_ns, end_ns=0, proc_stat=info, status=uid, exe_sha256=executable, show=show,
+                    start_ns=start_ns, end_ns=0, proc_stat=info, status=uid, exe_sha256=executable, show=show, invocation_id=values['InvocationID'],
                     calibration=dict(realtime_ns=now, boottime_ns=uptime, clock_ticks=ticks, start_ticks=start_ticks))
 
     def finish(self):
@@ -271,7 +272,7 @@ def guest_main(config, phase):
                 witness.require(time.monotonic() < deadline, 'native drain deadline')
                 time.sleep(1)
             current = guest.process()
-            witness.require(current['pid'] == process['pid'] and current['proc_stat'].rsplit(')', 1)[1].split()[19]
+            witness.require(current['pid'] == process['pid'] and current['invocation_id'] == process['invocation_id'] and current['proc_stat'].rsplit(')', 1)[1].split()[19]
                 == process['proc_stat'].rsplit(')', 1)[1].split()[19], 'candidate process changed before stop')
             guest.command(['systemctl', 'stop', UNITS[1]])
             rows = guest.query('after_' + phase)
@@ -309,6 +310,7 @@ def observed_events(raw, process):
         if event.get('_PID') != str(process['pid']): continue
         if event.get('MESSAGE', '').startswith('delivery sequence='):
             witness.require(event.get('_SYSTEMD_UNIT') == process['unit'] and event.get('_EXE') == '/usr/bin/fabric-node'
+                and event.get('_SYSTEMD_INVOCATION_ID') == process['invocation_id']
                 and event.get('_SYSTEMD_CGROUP') == '/system.slice/system-fabrico11y.slice/' + process['unit']
                 and event.get('_UID') == re.search(r'^Uid:\s+(\d+)', process['status'], re.M)[1]
                 and event.get('_GID') == re.search(r'^Gid:\s+(\d+)', process['status'], re.M)[1], 'raw journal sender mismatch')
@@ -452,8 +454,9 @@ def admit_transfer(bundle, admission, guest_sha256, *, control=None):
                     and entry['original_stat'][:2] == [entry['device'], entry['inode']], 'original source archive join')
             if phase in ('drain', 'reboot'):
                 process = snapshot['candidate_process']
+                shown = dict(line.split('=', 1) for line in process['show']['stdout'].splitlines())
                 witness.require(process['exe_sha256'] == admission['node_sha256']
-                    and process['pid'] == int(dict(line.split('=', 1) for line in process['show']['stdout'].splitlines())['MainPID']), 'candidate process executable mismatch')
+                    and process['pid'] == int(shown['MainPID']) and process['invocation_id'] == shown['InvocationID'], 'candidate process executable/incarnation mismatch')
                 raw_journal = archive.extractfile(files[phase + '/journal.jsonl']['item']).read().decode()
                 witness.require(read(phase + '/ack-events.json') == observed_events(raw_journal, process), 'raw journal/ACK observation mismatch')
             for source in snapshot['sources']:
