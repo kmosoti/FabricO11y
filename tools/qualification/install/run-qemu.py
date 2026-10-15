@@ -288,7 +288,7 @@ def main() -> int:
     start_clock = time.monotonic()
     global OUTER_DEADLINE
     OUTER_DEADLINE = start_clock + TOTAL_TIMEOUT_S
-    native_config, native_transfer, native_ready = None, None, False
+    native_config, native_transfer, native_ready, native_setup_seconds = None, None, False, None
     qemu: subprocess.Popen[bytes] | None = None
     qemu_log = work_dir / 'serial.log'
     qemu_stderr = work_dir / 'qemu.stderr'
@@ -450,6 +450,7 @@ printf 'instance_id='; cat /var/lib/cloud/data/instance-id
         if native_frozen:
             transfers += [(source, 'accept@127.0.0.1:/home/accept/' + source.name) for source in native_sources]
             transfers.append((result_dir / 'native-input.json', 'accept@127.0.0.1:/home/accept/native-input.json'))
+        native_setup_started = time.monotonic()
         for source, target in transfers:
             run([*scp, str(source), target], timeout=120)
         setup_script = '''set -eu
@@ -489,6 +490,7 @@ sha256sum /home/accept/a12-memory-pressure.py
                 if received.get(source.name) != digest(source, 'sha256'):
                     raise RuntimeError('native producer/input transfer mismatch')
             native_ready = True
+            native_setup_seconds = time.monotonic() - native_setup_started
         if args.mutate:
             mutation_package_sha256 = prepare_guest_package(ssh, args.mutate)
             tested_package_sha256 = mutation_package_sha256
@@ -635,6 +637,7 @@ sha256sum export.tar
         mutation_rejection_confirmed = mutation_rejected(
             grading_mutation, rc, acceptance_log, error)
     receipt = {
+        'native_setup_elapsed_seconds': native_setup_seconds,
         'native_custody_admission': native_frozen,
         'native_custody_transfer': native_transfer,
         'native_custody_control': args.native_custody_control,

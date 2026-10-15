@@ -41,6 +41,7 @@ class Guest:
     def __init__(self, config, phase):
         witness.require(os.geteuid() == 0 and Path('/run/cloud-init').is_dir(), 'disposable guest root required')
         self.config, self.phase, self.commands = config, phase, []
+        self.started = time.monotonic()
         self.deadline = float(os.environ['FABRIC_NATIVE_PHASE_DEADLINE'])
         witness.require(config['fixture_paths'] == [SOURCE] and config['spool_root'] == str(ROOT)
             and Path('/var/lib/cloud/data/instance-id').read_text().strip() == 'fabric-install-' + config['binding']['run_id'],
@@ -64,8 +65,9 @@ class Guest:
     def command(self, argv, check=True):
         remaining = self.deadline - time.monotonic()
         witness.require(remaining > 0, 'native phase deadline')
+        started = time.monotonic()
         result = subprocess.run(argv, capture_output=True, text=True, timeout=min(30, remaining))
-        record = dict(argv=argv, exit=result.returncode, stdout=result.stdout, stderr=result.stderr)
+        record = dict(argv=argv, exit=result.returncode, stdout=result.stdout, stderr=result.stderr, elapsed_seconds=time.monotonic()-started)
         self.commands.append(record)
         self.save('commands.json', self.commands)
         witness.require(not check or result.returncode == 0, 'observer command failed: ' + argv[0])
@@ -224,7 +226,7 @@ class Guest:
     def finish(self):
         files = {path.name: dict(sha256=sha(path.read_bytes()), stat=witness.identity(path.lstat()))
                  for path in self.output.iterdir() if path.is_file()}
-        self.save('manifest.json', dict(binding=self.config['binding'], phase=self.phase, files=files))
+        self.save('manifest.json', dict(binding=self.config['binding'], phase=self.phase, files=files, elapsed_seconds=time.monotonic()-self.started))
         witness.require(sum(path.stat().st_size for path in self.base.rglob('*') if path.is_file()) <= 512 * 1024**2,
                         'native checkpoint overhead exceeds half-GiB transfer budget')
 
@@ -339,7 +341,7 @@ def host_admission(owner_path, source_root, storage, package, source_commit, run
     for path, expected in fixed.items(): witness.require(sha(path.read_bytes()) == expected, 'owner package/admission receipt mismatch')
     deb, rpm = (json.loads((directory / 'receipt.json').read_text()) for directory in (debdir, rpmdir))
     frozen, canonical = '8fb6f413179b094288316e25845c137440ba23fa', '73ff77867d10ef521ca985b094e1d177f7786b77'
-    witness.require(source_commit == frozen == deb['source']['original_head'] and deb['source_commit'] == canonical
+    witness.require(frozen == deb['source']['original_head'] and source_commit == deb['source_commit'] == canonical
         == rpm['source']['source_commit'] and rpm['source'] == deb['source'], 'candidate frozen/source mismatch')
     for receipt in (deb, rpm):
         path = Path(receipt['package'])
