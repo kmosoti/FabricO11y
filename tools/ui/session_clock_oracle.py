@@ -1,4 +1,5 @@
 """Independent literal checks for the disposable controlled-time fixture."""
+import json
 
 
 def require(condition, name):
@@ -37,6 +38,33 @@ def check_sleep(row):
     a,b,c,d=(row[k] for k in ('start_before_ns','start_after_ns','end_before_ns','end_after_ns'))
     require(a<=b<=c<=d and 500_000_000<=c-b<=d-a<=1_000_000_000, 'sleep-bracket-inconclusive')
     require(c-b<=row['instant_elapsed_ns']<=d-a, 'sleep-monotonic')
+
+
+def check_request_window(ledger, pid, sequence, offset, second, before, after):
+    """Retain all possible REALTIME calls; no unique auth call is inferred."""
+    fields={'pid','tid','call_index','sequence','offset_s','clock_id','raw_ns','returned_ns',
+            'monotonic_before_ns','monotonic_after_ns'}
+    sizes=[len(json.dumps(row,separators=(',',':')).encode()) for row in ledger]
+    require(sum(sizes)<=1048576 and all(size<=255 for size in sizes), 'request-ledger-bound')
+    require(type(before) is int and type(after) is int and 0<=before<=after, 'request-ledger-fields')
+    selected=[]
+    previous=0
+    for index,row in enumerate(ledger,1):
+        require(set(row)==fields and all(type(value) is int and 0<=value<2**64 for value in row.values())
+                and 0<row['tid']<2**31 and 0<row['pid']<2**31
+                and row['clock_id'] in (0,1,4) and row['sequence']<64 and row['offset_s']<=28860
+                and previous<=row['monotonic_before_ns']<=row['monotonic_after_ns'], 'request-ledger-fields')
+        require(row['pid']==pid, 'request-ledger-pid')
+        require(row['call_index']==index, 'request-ledger-index')
+        previous=row['monotonic_after_ns']
+        if row['clock_id']!=0 or row['monotonic_after_ns']<before or row['monotonic_before_ns']>after:continue
+        require(before<=row['monotonic_before_ns']<=row['monotonic_after_ns']<=after, 'request-native-straddle')
+        require((row['sequence'],row['offset_s'])==(sequence,offset), 'request-native-frame')
+        require(row['returned_ns']==row['raw_ns']+offset*1000000000
+                and row['returned_ns']//1000000000==second, 'request-native-wall')
+        selected.append(row)
+    require(bool(selected), 'request-native-missing')
+    return selected
 
 
 def check_isolation(row, target_pid, helper_sha256, executable_sha256):

@@ -516,3 +516,56 @@ complete retained descriptor ownership, native wait-domain admission, exact late
 child reaping and bounded failure receipts readably. This follow-up permits at
 most +360 net lines in live_browser_check.py from 90cdf68 and a native fixture
 of at most 240 lines. No existing outcome, deadline or oracle is relaxed.
+
+## Native request-window binding amendment
+
+Prospective registration; no new native or browser result is implied. The frozen
+six-u64 `fabric_clock_last` ABI and exact probe oracle rows remain unchanged.
+Each native ledger row additionally records positive Linux TID, a process-wide
+contiguous successful invocation index beginning at1, and unshifted native
+CLOCK_MONOTONIC nanoseconds immediately before and after the actual underlying
+clock call. These brackets surround the wall call itself, not controller receipt
+time. A separately named timing accessor binds probe records to independent raw
+kernel MONOTONIC brackets without altering the old ABI. Preserve the actual
+underlying return/errno, other clock IDs, 256-byte record, 1MiB total ledger,
+64 frames and offset28860 limits. Overflow is a refusal, never truncation.
+
+For a serialized HTTPS request, capture controller raw-kernel MONOTONIC before
+send and after the bounded response read. Because every native ledger send
+completes before the intercepted call returns, draining the channel under the
+receiver's mutex after response completion captures every call that could have
+contributed to that response. Preserve the complete ledger and contiguous indices;
+select every REALTIME invocation whose native interval overlaps the request.
+Require a nonempty set, all intervals entirely within the request bracket, all
+from the admitted PID/frame/offset, and every returned wall second equal to the
+registered target second. Select the first actual invocation only as the scalar
+witness required by the existing32-row oracle; retain the entire candidate set
+in each row. This supplies complete possible-call-set evidence, not a claimed
+unique middleware/authorization call. Missing calls, gaps, wrong PID/TID/frame,
+straddling intervals, mixed seconds, malformed/oversize records and absent
+interception must refuse. Controller receipt timestamps never substitute for
+native monotonic observations.
+
+Literal source controls register: a valid multi-call window; missing REALTIME;
+call-index gap/duplicate; zero TID; wrong PID/frame/offset; shifted wall or
+monotonic bracket; overlapping straddler; mixed second; and record/ledger overflow.
+Native admission must retain every old probe equality and independently bind the
+new timing accessor to raw-kernel monotonic brackets. Compile/probe controls run
+before an actual-server request-join cell and before any browser expiry cell.
+
+The server adapter starts the ordinary Python cgroup-entry helper without
+LD_PRELOAD/control environment. Only after confirmed placement does that helper
+set the two values immediately before same-PID exec of the exact admitted ELF,
+passing only the protected channel FD. The existing constructor consumes offset0,
+clears keys and restores CLOEXEC in the server. Source controls must reject
+preloading the entry helper, absent control FD, and an unbound server executable.
+No Python launcher is preloaded. Actual executable/helper mapping, control FD,
+companion isolation and native request timing remain required run evidence.
+
+The `browser-expiry-source-green-02` source run at `ef4cf8a` retained nine
+`NameError: clock_targets` failures in ordinary cleanup controls. Their extracted
+real finalizer needs the newly introduced clock/state registries as explicit
+context. The minimized fixture correction supplies empty `clock_targets` and
+`state_descriptors` for these ordinary-clock cases; every prior stop, retention,
+population, sampler and reaping expectation remains unchanged. This corrects the
+synthetic setup, not a production cleanup failure or packaged-browser result.

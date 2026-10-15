@@ -27,8 +27,8 @@ def digest(path):
 
 
 class KernelTime(ctypes.Structure):_fields_=[('sec',ctypes.c_long),('nsec',ctypes.c_long)]
-def kernel_time():
-    value=KernelTime();oracle.require(ctypes.CDLL(None,use_errno=True).syscall(228,0,ctypes.byref(value))==0,'fixture-raw-clock');return value.sec*1000000000+value.nsec
+def kernel_time(clock_id=0):
+    value=KernelTime();oracle.require(ctypes.CDLL(None,use_errno=True).syscall(228,clock_id,ctypes.byref(value))==0,'fixture-raw-clock');return value.sec*1000000000+value.nsec
 
 
 def freeze_images(executable,helper):
@@ -77,33 +77,57 @@ def stop_group(process):
 
 
 class SessionClock:
-    def __init__(self, executable, helper, directory, deadline, initial=None, socket_type=socket.SOCK_SEQPACKET, preload=True, invalid_fd=False):
+    def __init__(self, executable, helper, directory, deadline, initial=None, socket_type=socket.SOCK_SEQPACKET, preload=True, invalid_fd=False, *, server_argv=None, server_launch=None):
         self.deadline=deadline;self.frames=[];self.rows=[];self.bytes=0;self.error=None;self.buffer=b''
+        self.lock=threading.Lock();self.owned_server=server_argv is not None
+        oracle.require((server_argv is None)==(server_launch is None),'fixture-server-launch')
         env=dict(os.environ);oracle.require(not any(name in env for name in ('LD_PRELOAD','LD_AUDIT','FABRIC_CLOCK_FD')),'fixture-environment')
         self.parent,self.child=socket.socketpair(socket.AF_UNIX,socket_type|socket.SOCK_NONBLOCK|socket.SOCK_CLOEXEC)
         self.fd=self.child.fileno();self.socket_identity=os.readlink(f'/proc/self/fd/{self.fd}')
         self.parent.send(initial if initial is not None else self.frame(0));self.stderr=directory.open('xb')
-        if preload:env.update(LD_PRELOAD=str(helper),FABRIC_CLOCK_FD=str(1048575 if invalid_fd else self.fd))
-        self.argv=[str(executable),'interactive',str(self.fd),str(helper),self.socket_identity]
-        try:self.process=subprocess.Popen(self.argv,env=env,pass_fds=(self.fd,),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.stderr,start_new_session=True)
+        if preload and not self.owned_server:env.update(LD_PRELOAD=str(helper),FABRIC_CLOCK_FD=str(1048575 if invalid_fd else self.fd))
+        self.argv=list(server_argv) if self.owned_server else [str(executable),'interactive',str(self.fd),str(helper),self.socket_identity]
+        oracle.require(not self.owned_server or (self.argv[0]==str(executable) and preload and not invalid_fd),'fixture-server-executable')
+        try:
+            self.process=(server_launch(self.argv,env,self.fd,helper,self.stderr) if self.owned_server else
+                subprocess.Popen(self.argv,env=env,pass_fds=(self.fd,),stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=self.stderr,start_new_session=True))
         except BaseException:self.parent.close();self.child.close();self.stderr.close();raise
         self.child.close();self.receiver=threading.Thread(target=self.receive,daemon=True);self.receiver.start()
     def frame(self,offset):
         frame=b'FCLKv1\0\0'+len(self.frames).to_bytes(8,'little')+offset.to_bytes(8,'little')
         oracle.check_frames(self.frames+[frame]);self.frames.append(frame);return frame
     def advance(self,offset):oracle.require(self.parent.send(self.frame(offset))==24,'fixture-control-send')
+    def drain(self):
+        while True:
+            try:raw=self.parent.recv(257)
+            except BlockingIOError:return
+            if not raw:return
+            self.bytes+=len(raw);oracle.require(len(raw)<=256 and self.bytes<=1048576,'fixture-ledger-bound')
+            self.rows.append(json.loads(raw))
+    def snapshot(self):
+        with self.lock:
+            self.drain();oracle.require(self.error is None,'fixture-ledger-error');return list(self.rows)
+    def request(self,dispatch,second):
+        before=kernel_time(1);answer=dispatch();after=kernel_time(1)
+        calls=oracle.check_request_window(self.snapshot(),self.process.pid,len(self.frames)-1,
+            int.from_bytes(self.frames[-1][16:24],'little'),second,before,after)
+        return answer,dict(request_before_monotonic_ns=before,request_after_monotonic_ns=after,
+            server_call_monotonic_ns=calls[0]['monotonic_before_ns'],server_call_s=calls[0]['returned_ns']//1000000000,
+            native_calls=calls)
     def receive(self):
         try:
             while True:
                 if not select.select([self.parent],[],[],.1)[0]:continue
-                raw=self.parent.recv(257)
-                if not raw:return
-                self.bytes+=len(raw);oracle.require(len(raw)<=256 and self.bytes<=1048576,'fixture-ledger-bound')
-                self.rows.append(json.loads(raw))
+                with self.lock:
+                    try:
+                        if self.parent.recv(1,socket.MSG_PEEK)==b'':return
+                    except BlockingIOError:continue
+                    self.drain()
         except BaseException as error:
             self.error=type(error).__name__+': '+str(error)
-            try:os.killpg(self.process.pid,signal.SIGTERM)
-            except ProcessLookupError:pass
+            if not self.owned_server:
+                try:os.killpg(self.process.pid,signal.SIGTERM)
+                except ProcessLookupError:pass
     def line(self):
         while b'\n' not in self.buffer:
             oracle.require(self.error is None,'fixture-ledger-error')
@@ -114,9 +138,13 @@ class SessionClock:
         raw,self.buffer=self.buffer.split(b'\n',1);return json.loads(raw)
     def command(self,name):self.process.stdin.write((name+'\n').encode());self.process.stdin.flush()
     def close(self):
-        try:stop_group(self.process)
+        try:
+            if getattr(self,'owned_server',False):oracle.require(self.process.poll() is not None,'fixture-owned-server-stop')
+            else:stop_group(self.process)
         finally:
-            self.receiver.join(timeout=1);self.parent.close();self.process.stdin.close();self.process.stdout.close();self.stderr.close()
+            self.receiver.join(timeout=1);self.parent.close()
+            for stream in (self.process.stdin,self.process.stdout,self.stderr):
+                if stream is not None:stream.close()
         oracle.require(not self.receiver.is_alive(),'fixture-receiver-stop')
         try:os.killpg(self.process.pid,0)
         except ProcessLookupError:return
@@ -130,7 +158,7 @@ def native_admission(executable,helper,output,deadline,report):
             report['native_cleanup_error']=type(error).__name__+': '+str(error);raise
         finally:
             evidence['ledger']=list(current.rows);evidence['frames']=[frame.hex() for frame in current.frames]
-    target=SessionClock(executable,helper,output/'positive.stderr',deadline);report['clocks']=[];report['system_time']=[]
+    target=SessionClock(executable,helper,output/'positive.stderr',deadline);report['clocks']=[];report['system_time']=[];report['native_timing']=[]
     try:
         ready=target.line();report['ready']=ready
         oracle.require(ready=={'kind':'ready','pid':target.process.pid,'env_clear':True,'cloexec':True,'socket_type':5} and os.readlink(f'/proc/{target.process.pid}/fd/{target.fd}')==target.socket_identity and int(Path(f'/proc/{target.process.pid}/fdinfo/{target.fd}').read_text().split('flags:',1)[1].split()[0],8)&os.O_CLOEXEC,'isolation-control')
@@ -148,7 +176,9 @@ def native_admission(executable,helper,output,deadline,report):
             target.command('clock')
             for _ in range(3):
                 value=target.line();oracle.require(value['kind']=='clock','clock-binding');report['clocks'].append(value['row'])
+                timing=target.line();oracle.require(timing['kind']=='timing','clock-native-timing');report['native_timing'].append(timing['row'])
             system=target.line();oracle.require(system['kind']=='system','clock-binding');report['system_time'].append(system['row'])
+            timing=target.line();oracle.require(timing['kind']=='timing','clock-native-timing');report['native_timing'].append(timing['row'])
             before=kernel_time();clock=time.time_ns();after=kernel_time();oracle.require(before<=clock<=after and after-before<=1000000000 and (not report['host_clocks'] or before>=report['host_clocks'][-1]['syscall_after_ns']),'isolation-host-clock');report['host_clocks'].append({'sequence':sequence,'syscall_before_ns':before,'clock_ns':clock,'syscall_after_ns':after})
         target.command('sleep');sleep=target.line();oracle.require(sleep['kind']=='sleep','sleep-fields');report['sleep']=sleep['row']
         oracle.check_frames(target.frames);oracle.check_probe_clocks(report['clocks'],target.process.pid);oracle.check_sleep(report['sleep'])
@@ -161,7 +191,12 @@ def native_admission(executable,helper,output,deadline,report):
         close(target,report)
     oracle.require(target.error is None,'fixture-ledger-error')
     for row in report['clocks']+report['system_time']:
-        oracle.require({key:value for key,value in row.items() if not key.startswith('syscall_')} in report['ledger'],'clock-ledger-binding')
+        original={key:value for key,value in row.items() if not key.startswith('syscall_')}
+        oracle.require(any(all(record[key]==value for key,value in original.items()) for record in report['ledger']),'clock-ledger-binding')
+    for timing in report['native_timing']:
+        oracle.require(timing['tid']==target.process.pid and timing['syscall_before_ns']<=timing['monotonic_before_ns']<=timing['monotonic_after_ns']<=timing['syscall_after_ns']
+            and timing['syscall_after_ns']-timing['syscall_before_ns']<=1000000000,'clock-native-timing')
+        oracle.require(any(all(record[key]==value for key,value in timing.items() if not key.startswith('syscall_')) for record in report['ledger']),'clock-ledger-binding')
     report['controls']=[]
     initial=b'FCLKv1\0\0'+bytes(16)
     controls=[('short',initial[:-1],'FCLK-FRAME'),('oversize',initial+b'x','FCLK-FRAME'),('version',b'bad-v001'+bytes(16),'FCLK-FRAME'),
@@ -194,7 +229,7 @@ def native_admission(executable,helper,output,deadline,report):
 
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,required=True);parser.add_argument('--rustc',required=True);parser.add_argument('--cc',default='gcc');args=parser.parse_args()
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--output',type=Path,required=True);parser.add_argument('--rustc',required=True);parser.add_argument('--cc',default='gcc');parser.add_argument('--retain-helper',action='store_true',help='retain exact admitted non-secret helper for later server cells');args=parser.parse_args()
     require_limits();oracle.require(platform.system()=='Linux' and platform.machine()=='x86_64','fixture-platform')
     output=args.output;oracle.require(output.is_absolute() and output.resolve()==output and output.is_relative_to(STORAGE),'fixture-output');output.mkdir(mode=0o700)
     scratch=Path(os.environ['FABRIC_SCRATCH_ROOT']);oracle.require(scratch.is_dir() and scratch.is_relative_to(STORAGE),'fixture-scratch')
@@ -221,7 +256,7 @@ def main():
     try:
         compiler=Path(shutil.which(args.cc)).resolve();rustc=Path(shutil.which(args.rustc)).resolve();version=run([str(rustc),'-vV'])
         oracle.require('release: 1.99.0' in version and 'commit-hash: b940084d7' in version,'fixture-toolchain')
-        run([str(compiler),'--version']);helper=directory/'session-clock.so';executable=directory/'session-clock-probe'
+        run([str(compiler),'--version']);helper=(output if args.retain_helper else directory)/'session-clock.so';executable=directory/'session-clock-probe'
         run([str(compiler),'-shared','-fPIC','-pthread','-O2','-Wall','-Wextra','-Werror','-o',str(helper),str(HERE/'session_clock.c'),'-ldl'])
         run([str(rustc),'--edition=2021','-C','opt-level=1','-o',str(executable),str(HERE/'session_clock_probe.rs')])
         dynamic=run(['readelf','--dyn-syms','--wide',str(executable)]);oracle.require('clock_gettime@' in dynamic,'fixture-dynamic-clock-import')
@@ -232,6 +267,7 @@ def main():
         oracle.require(sum(path.stat().st_size for path in directory.rglob('*') if path.is_file())<=512*1024**2,'fixture-storage-bound')
         native_admission(executable,helper,output,deadline,report)
         report['build_id_notes']={str(path):run(['readelf','-nW',str(path)]) for path in (helper,executable,Path(interpreter),Path(report['target']['libc']))};report.update(state='completed',exit=0)
+        if args.retain_helper:helper.chmod(0o500);report['retained_helper']={'path':str(helper),'sha256':digest(helper)}
     except BaseException as error:report['error']=type(error).__name__+': '+str(error);raise
     finally:
         try:
