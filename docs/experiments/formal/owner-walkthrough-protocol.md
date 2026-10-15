@@ -250,3 +250,37 @@ Wren reviews the registered protocol and actual preflight; neither prose nor
 model consensus replaces executable evidence. Read #59 before each step and
 after each run, stop on unresolved requests/resource/input/guide drift, and
 archive/stop/clean the first pair before admitting the reversed pair.
+
+### Production snapshot and observer binding amendment
+
+The production console deliberately uses opaque snapshot identifiers; the legacy
+`gN-M` parser cannot grade this walkthrough. Before the first page of each edge
+query, retain the actual read-only `fabricctl inspect` observation of its durable
+ACK cursor. Immediately after that first page, retain a second observation of its
+next sequence. Both observations must have the same guest boot, node identity and
+generation, no interrupted/recovery-required inspection, and ordered native host
+timestamps surrounding the first request. The pre-query ACK is a lower bound on
+the committed edge prefix; post-query `next_sequence - 1` is its upper bound.
+Reject an empty acknowledged population, inconsistent bounds or more than 32
+candidate prefixes. These observations supply only bounds, never expected rows.
+
+After both writers stop, independently decode complete original server journal
+groups and require exact agreement with the source-matched recovery helper. For
+each bounded edge prefix, use the existing zero-gap scoped signal projection and
+unchanged query oracle. Reject any authorized edge gap, missing sequence or
+identity mismatch; preserve all attempted verdicts and the admitted prefix bounds.
+The answer's opaque identifier must remain consistent across pages, but cannot
+choose its own prefix bounds. A failed query is not retried into a passing result.
+Controls reject a legacy identifier assumption, a prefix outside the independent
+bounds, a changed node/generation, missing source sequence and other-label or
+other-signal metadata leakage. This replaces only the inapplicable legacy
+snapshot adapter, not any oracle or acceptance threshold.
+
+Retain stopped native Spool source/cursor dumps, original selected and diagnostic
+file bytes, and an independent `/proc`/unit inventory proving writers stopped.
+Compare every recovered Batch to its original Spool source with the unchanged
+delivery oracle and separately require every durable Spool ACK in recovery; no
+wire-attempt observation is inferred. Observe real guest UID/GID, privileges and
+effective service/slice kernel limits while active. Require four different boot
+identities across the two pairs. A cleanup failure must not prevent stopping the
+other owned guest or writing the failed receipt; retain uncertain scratch.
