@@ -45,19 +45,58 @@ class Commands:
         self.deadline_ns = None
         self.records = []
         self.failed = False
+        self.started_ns = None
+        self.spent = {name: 0 for name, _ in PHASES}
+        self.segments = []
+        self.active = None
+        self.finished = False
+
+    def _close(self, now):
+        if self.active is None:
+            return
+        if now > self.active['deadline_ns']:
+            self.failed = True
+            raise TimeoutError("walkthrough phase exceeded its accumulated allocation")
+        self.active.update(end_ns=now, exit=0)
+        self.spent[self.active['name']] += now - self.active['start_ns']
+        self.records.append(dict(kind="phase-end", **self.active))
+        self.active = None
 
     def phase(self, name):
-        if self.failed or self.index + 1 >= len(PHASES) or PHASES[self.index + 1][0] != name:
-            raise ValueError("walkthrough phase omitted, reordered or resumed after failure")
+        if self.failed or self.finished:
+            raise ValueError("walkthrough resumed after failure")
+        if name not in self.spent:
+            raise ValueError("unknown walkthrough phase")
         now = time.monotonic_ns()
-        if self.deadline_ns is not None and now > self.deadline_ns:
+        if self.started_ns is None:
+            self.started_ns = now
+        if now > self.started_ns + 1800 * 10**9:
             self.failed = True
-            raise TimeoutError("previous walkthrough phase exceeded its allocation")
-        self.index += 1
-        self.deadline_ns = now + PHASES[self.index][1] * 1_000_000_000
+            raise TimeoutError("walkthrough overall deadline exceeded")
+        self._close(now)
+        self.index = next(i for i, (phase, _) in enumerate(PHASES) if phase == name)
+        self.deadline_ns = min(now + PHASES[self.index][1] * 10**9 - self.spent[name],
+                               self.started_ns + 1800 * 10**9)
+        self.active = dict(name=name, start_ns=now, deadline_ns=self.deadline_ns)
+        self.segments.append(self.active)
         self.records.append({"kind": "phase", "phase": name, "start_monotonic_ns": now,
-                             "deadline_monotonic_ns": self.deadline_ns})
+                             "deadline_monotonic_ns": self.deadline_ns,
+                             "previous_elapsed_ns": self.spent[name]})
         self.save()
+
+    def finish(self):
+        if self.failed or self.finished:
+            raise ValueError("walkthrough resumed after failure")
+        self._close(time.monotonic_ns())
+        missing = set(self.spent) - {row['name'] for row in self.segments}
+        if missing:
+            self.failed = True
+            self.save()
+            raise ValueError("walkthrough phase omitted at completion")
+        self.finished = True
+        self.deadline_ns = None
+        self.save()
+        return list(self.segments)
 
     def remaining(self):
         if self.failed or self.deadline_ns is None:
@@ -88,7 +127,7 @@ class Commands:
         sequence = len(self.records)
         stdout_path = self.evidence / f"command-{sequence:04d}.stdout"
         stderr_path = self.evidence / f"command-{sequence:04d}.stderr"
-        record = {"kind": "guide-command", "phase": PHASES[self.index][0],
+        record = {"kind": "guide-prose-action" if block.record().get("kind") == "prose" else "guide-command", "phase": PHASES[self.index][0],
                   "role": guest.role, "family": guest.family, "boot_id": guest.boot_id,
                   "source": block.record(), "substitutions": [],
                   "shell": "fresh bash -c in SSH login directory",
