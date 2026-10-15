@@ -16,7 +16,8 @@ def fixture():
             'descendants_echild': True, 'wrapper_identity': {'pid': 701, 'start_ticks': 11, 'boot_id': 'native-boot'},
             'guardian_identity': {'pid': 700, 'start_ticks': 10, 'boot_id': 'native-boot'},
             'systemd': {'MainPID': '700', 'ActiveState': 'active', 'SubState': 'running'},
-            'activation_monotonic_ns': 1, 'workload_cgroup': '/sys/fs/cgroup/owned.service/workload',
+            'activation_monotonic_ns': 1, 'before_ns': 2, 'after_ns': 3,
+            'workload_cgroup': '/sys/fs/cgroup/owned.service/workload',
             'command_receipt': {'exit': 0, 'state': 'completed', 'cgroup': '/sys/fs/cgroup/owned.service/workload'},
             'workload': {'groups': workload}, 'outer': {'groups': outer}}
 
@@ -27,7 +28,8 @@ class GuardianControls(unittest.TestCase):
 
     def test_live_unreaped_wrong_wrapper_and_mainpid(self):
         mutations = [('wrapper_reaped', False), ('descendants_echild', False),
-                     ('wrapper_wait_exit', 7), ('activation_monotonic_ns', 0)]
+                     ('wrapper_wait_exit', 7), ('activation_monotonic_ns', 0),
+                     ('after_ns', 7500 * 1_000_000_000 + 1)]
         for key, value in mutations:
             with self.subTest(key=key):
                 record = fixture()

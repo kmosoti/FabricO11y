@@ -6,6 +6,7 @@ import subprocess
 import sys
 import time
 import ctypes
+import signal
 
 from resource_final_group import FIELDS, require, show, snapshot, validate_empty
 
@@ -39,6 +40,10 @@ def validate_observation(report):
             and report['systemd']['ActiveState'] == 'active'
             and report['systemd']['SubState'] == 'running'
             and report['activation_monotonic_ns'] > 0, 'actual guardian/unit identity mismatch')
+    require(type(report['before_ns']) is int and type(report['after_ns']) is int
+            and report['activation_monotonic_ns'] <= report['before_ns'] <= report['after_ns']
+            < report['activation_monotonic_ns'] + 7500 * 1_000_000_000,
+            'guardian observation exhausted activation deadline')
     require(report['command_receipt']['cgroup'] == report['workload_cgroup']
             and report['command_receipt']['state'] == 'completed', 'wrapper receipt workload mismatch')
     validate_empty(report['workload']['groups'])
@@ -59,8 +64,6 @@ def validate_observation(report):
 
 def read_receipt(path, unit, command, workload):
     try:
-        require(ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0,
-                'guardian subreaper unavailable')
         value = json.loads(path.read_text())
         if (value['unit'] == unit and value['command'] == command
                 and value['cgroup'] == str(workload) and value['state'] == 'completed'
@@ -81,7 +84,12 @@ def run(unit, receipt_path, command):
               'control_only': fault is not None, 'control': fault}
     outer_fd = workload_fd = gate_read = gate_write = None
     wrapper = None
+    previous_handler = signal.signal(signal.SIGALRM,
+        lambda *_: (_ for _ in ()).throw(TimeoutError('guardian activation deadline exhausted')))
+    signal.setitimer(signal.ITIMER_REAL, 7500)
     try:
+        require(ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0,
+                'guardian subreaper unavailable')
         outer_fd = os.open(outer, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         control = outer / 'control-plane'
         control.mkdir()
@@ -101,6 +109,9 @@ def run(unit, receipt_path, command):
                 'systemd does not independently identify guardian')
         anchor = int(state['ActiveEnterTimestampMonotonic']) * 1000
         require(anchor > 0, 'missing actual activation anchor')
+        remaining = anchor / 1e9 + 7500 - time.monotonic()
+        require(remaining > 0, 'guardian activation deadline exhausted')
+        signal.setitimer(signal.ITIMER_REAL, remaining)
         gate_read, gate_write = os.pipe()
         environment = dict(os.environ, FABRIC_WORKLOAD_ROOT=str(workload),
                            FABRIC_WORKLOAD_FD=str(workload_fd), FABRIC_RESOURCE_UNIT=unit,
@@ -159,6 +170,8 @@ def run(unit, receipt_path, command):
         write_command_receipt(report_path, report)
         return 2
     finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
         for descriptor in (outer_fd, workload_fd, gate_read, gate_write):
             if descriptor is not None:
                 os.close(descriptor)
