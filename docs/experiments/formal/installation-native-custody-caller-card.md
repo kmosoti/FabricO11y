@@ -138,3 +138,23 @@ committing additional diagnostics between checkpoints. L2 still observes both
 healthy services and a changed boot before its stopped raw capture. Full source
 and exact native-command preflight remain required; implementation and native
 execution are NOT RUN at this registration.
+
+
+## Registered stopped-bundle copy controls
+
+`test_custody_capture.py` constructs explicitly synthetic tar bundles around the
+existing hand-encoded Batch/source fixtures. Its literal unit/process/account
+records authenticate no guest. The complete four-phase bundle must admit, while
+otherwise coherent copies must refuse at their named boundaries: independent
+transfer digest, escaping path/root ownership, candidate/source binding, live
+independent process inventory, nonzero unit PID, missing original raw leaf,
+changed original raw bytes, dropped/duplicated complete query row, exact ACK hash,
+candidate executable hash, original configured root and credential stat/hash
+drift. Dirty or replaced harness source must refuse before canonical package
+access. The producer/caller source suite is prospective and NOT RUN here.
+
+The host retains the unchanged SSH-observed guest archive SHA-256 as independent
+transfer authority. Synthetic copy controls may provide the copy's own digest
+only to reach deeper admission/conservation checks; that never authenticates the
+copy as genuine guest evidence. Actual native admission requires the separately
+observed original digest and the frozen owner source/package/helper tuple.
