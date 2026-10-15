@@ -212,3 +212,5 @@ budget are implemented in the harness. At `04349aa`, 23 finite source controls
 and the trusted-origin, wrong-SAN and untrusted-CA native controls exited 0 with
 confirmed stops; see the [revision-bound results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-firefox-trust-results-01).
 No owner-walkthrough/package acceptance follows from these mechanism controls. See the [registered owner protocol](experiments/formal/owner-walkthrough-protocol.md).
+
+- Packaged legacy administration migration now has a prospective isolated browser supplement (`tools/ui/browser_migration.py`): exact CLI enrollment/query, stopped original state/prefix witnesses, actual resident owner/reader transition and separate normal-start format1 refusal. Source controls and both-engine package cells remain not run; see [registered protocol](experiments/formal/browser-migration-protocol.md).
