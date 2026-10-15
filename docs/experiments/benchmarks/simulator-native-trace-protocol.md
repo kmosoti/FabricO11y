@@ -23,6 +23,14 @@ must be frozen before execution. Unsupported options or missing live binding
 are inconclusive, never success. No preloading, host clock change, privilege or
 product/helper byte change is permitted.
 
+The tracer receives only fixed PATH/LANG/LC_ALL; it never inherits account or
+service secrets. All write/writev arguments are rendered raw as numeric
+FD/pointer/count values, never decoded buffers: startup token-file writes must
+not place credentials into traces. The parser accepts explicit decimal/hex
+numeric formats, tracks the held stage FD without close/reuse/alias/extra write,
+and joins its sole complete byte count to actual final same-inode JSON bytes and
+hash. It does not claim to have captured the write buffer.
+
 Raw single-thread trace bytes and offsets, actual target identity, actual target
 exit and separate tracer exit are retained. A complete positive join also
 requires the unchanged live/final begin descriptor observation and native TLS
