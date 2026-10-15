@@ -151,7 +151,16 @@ def run_inside(arguments):
     path = Path(receipt_path)
     receipt = {'unit': unit, 'command': command, 'cgroup': str(group), 'state': 'started'}
     write_command_receipt(path, receipt)
-    status = subprocess.call(command)
+    inherited = ()
+    if os.environ.get('FABRIC_RESOURCE_TOPOLOGY') == 'guardian-v1':
+        descriptor = int(os.environ['FABRIC_WORKLOAD_FD'])
+        held = os.fstat(descriptor)
+        actual = group.stat()
+        if (group != Path(os.environ['FABRIC_WORKLOAD_ROOT'])
+                or (held.st_dev, held.st_ino) != (actual.st_dev, actual.st_ino)):
+            raise RuntimeError('actual inside wrapper differs from held workload root')
+        inherited = (descriptor,)
+    status = subprocess.call(command, **({'pass_fds': inherited} if inherited else {}))
     status = status if status >= 0 else min(255, 128 - status)
     receipt.update(state='completed', exit=status)
     # Cgroup charge includes descendants and can differ from summed process RSS.
@@ -170,15 +179,32 @@ def main():
     arguments = sys.argv[1:]
     if arguments and arguments[0] == '--inside':
         return run_inside(arguments[1:])
+    if arguments[:1] == ['--guarded-inside']:
+        descriptor = int(arguments[1])
+        if os.read(descriptor, 1) != b'1':
+            raise RuntimeError('guardian did not authenticate wrapper startup')
+        os.close(descriptor)
+        return run_inside(arguments[2:])
+    if arguments[:1] == ['--guardian']:
+        from resource_guardian import run
+        return run(arguments[1], Path(arguments[2]), arguments[3:])
+    observe_workload = arguments[:1] == ['--observe-workload-stop']
+    if observe_workload:
+        arguments = arguments[1:]
+    guardian_control = None
+    if observe_workload and arguments[:1] == ['--guardian-control']:
+        if len(arguments) < 2 or arguments[1] not in ('unexited', 'wrong-identity'):
+            raise ValueError('invalid finite guardian control')
+        guardian_control, arguments = arguments[1], arguments[2:]
     observe_final = arguments[:1] == ['--observe-final-group']
     if observe_final:
         arguments = arguments[1:]
     runtime, delegated, arguments = command_options(arguments)
-    if observe_final and (runtime != 7500 or not delegated):
+    if (observe_final or observe_workload) and (runtime != 7500 or not delegated):
         raise ValueError('R3 final observation requires exact 7500 seconds and delegation')
     require_storage()
     high, cap = memory_limits()
-    if observe_final:
+    if observe_final or observe_workload:
         if cap < 6 * 1024**3:
             raise ValueError('R3 exact 6 GiB parent unavailable on this host')
         high, cap = 5 * 1024**3, 6 * 1024**3
@@ -200,6 +226,7 @@ def main():
         command.append('--property=Delegate=yes')
     if observe_final:
         command.append('--property=RemainAfterExit=yes')
+    if observe_final or observe_workload:
         command.append('--property=TasksMax=1536')
     # Preserve build/tool locations, including explicitly configured toolchains.
     for key in ('PATH', 'CARGO_HOME', 'RUSTUP_HOME', 'CARGO_BUILD_JOBS', 'RUST_TEST_THREADS', 'CARGO_INCREMENTAL', 'CARGO_PROFILE_DEV_DEBUG', 'CARGO_PROFILE_TEST_DEBUG'):
@@ -214,8 +241,10 @@ def main():
         '--setenv=CARGO_TARGET_DIR=' + str(STORAGE / 'cargo'),
         '--setenv=FABRIC_RESOURCE_RUNTIME_SECONDS=' + str(runtime),
     ]
-    command += [sys.executable, str(Path(__file__).resolve()), '--inside',
+    command += [sys.executable, str(Path(__file__).resolve()), '--guardian' if observe_workload else '--inside',
                 unit, str(receipt_path), *arguments]
+    if guardian_control:
+        command.insert(-len(arguments) - 5, '--setenv=FABRIC_GUARDIAN_CONTROL=' + guardian_control)
     started = time.time()
     status = None
     wrapper_status = None
@@ -225,6 +254,11 @@ def main():
             from resource_final_group import observe_service
             wrapper_status, final_observation = observe_service(command, receipt_path, unit, arguments,
                                                                runtime, read_command_receipt)
+        elif observe_workload:
+            try:
+                wrapper_status = subprocess.run(command, timeout=runtime).returncode
+            except subprocess.TimeoutExpired:
+                wrapper_status = None
         else:
             wrapper_status = subprocess.call(command)
     finally:
@@ -234,12 +268,21 @@ def main():
         try:
             stopped = subprocess.run(['systemctl', '--user', 'stop', unit],
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                     **({'timeout': 5} if observe_final else {}))
+                                     **({'timeout': 5} if observe_final or observe_workload else {}))
             stop_status = stopped.returncode
         except (OSError, subprocess.TimeoutExpired) as error:
             stop_status = None
             stop_error = str(error)
         child = read_command_receipt(receipt_path, unit, arguments)
+        if observe_workload:
+            try:
+                from resource_guardian import read_receipt, validate_observation
+                final_observation = json.loads(receipt_path.with_name('.resource-guardian.json').read_text())
+                validate_observation(final_observation)
+                child = read_receipt(receipt_path, unit, arguments,
+                                     Path(final_observation['workload_cgroup']))
+            except (OSError, ValueError, TypeError, KeyError):
+                child = None
         safe = group_stopped(child, stop_status)
         status = completed_status(wrapper_status, child) if safe else 2
         if observe_final and (final_observation is None or final_observation.get('state') != 'observed_empty'):
@@ -271,7 +314,7 @@ def main():
             'delegated': delegated,
             **({'final_kernel_observation': final_observation,
                 'activation_monotonic_ns': final_observation.get('activation_monotonic_ns')
-                    if final_observation else None} if observe_final else {}),
+                    if final_observation else None} if observe_final or observe_workload else {}),
         }, indent=2) + '\n')
     return status
 

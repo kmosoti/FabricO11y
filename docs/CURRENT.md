@@ -10,6 +10,10 @@ adds a separate two-hour measurement path, native UI event capture and stopped
 checkpoint/separate grading. Its live native trace and supervised browser
 bindings, continuous-refresh controls and real S1 headroom remain prerequisites;
 implementation alone supplies no new soak acceptance evidence.
+The separately registered [lifecycle guardian amendment](experiments/benchmarks/soak-guardian-protocol.md)
+separates empty workload accounting, aggregate accounting before guardian exit,
+and independent whole-service stop. Its opt-in launcher remains unqualified
+until the registered finite native controls run.
 The [product contract](PRODUCT-CONTRACT.md) defines the promises and the
 [verification matrix](formal/verification-matrix.md) maps each invariant to checks
 and remaining limits.
