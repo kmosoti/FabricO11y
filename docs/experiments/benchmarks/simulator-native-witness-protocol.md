@@ -11,6 +11,27 @@ preflight and checks #59 before every later cell and after every run.
 
 ## Invariant, fixture and scope
 
+### Ledger association follow-up, 2026-10-15
+
+Before native execution, `test_simulator_accounting.py` registers nine additional
+source controls (at most 100 lines). Literal complete/pending ledgers must pass;
+missing attempts, substituted source/attempt/response identities, duplicate
+responses or final states, unoffered pending sources on another Strand and
+boolean/integer identity aliases must fail. Sources must exactly cover both
+sequences on each independently observed sink stream; attempted/raw keys must
+match (only sequence one for the unavailable fixture), hashes must agree, and
+responses must pair with attempts on the same identity. Final states must cover
+every stream once. Unsent pending bytes are not claimed observed on the wire.
+The canonical command must use only sealed-helper options: no begin-witness
+option, so unknown-argument refusal cannot masquerade as the missing-begin red.
+The source-only command adds `test_simulator_accounting` to the existing two
+modules. Predicted initial result: 33 methods, 26 successful and seven failing
+methods (eleven failure entries), no skips, exit 1; preserve actual outcomes.
+The correction may add at most 40 net native-controller lines (400 total),
+limited to these identity/accounting joins and canonical argv correction.
+This supersedes only that file's earlier size budget; all acceptance gates,
+independent oracles, frozen artifacts and native admission duties remain intact.
+
 The opt-in native helper must publish a complete, exclusive pre-offer begin
 file and keep successful native lifetime through both conservative end bounds.
 Only `examples/spindle_sim.rs` may differ among Rust compilation inputs from
