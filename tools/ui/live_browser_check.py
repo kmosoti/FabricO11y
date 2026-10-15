@@ -409,7 +409,13 @@ def main():
     parser.add_argument('--package',type=Path,help='exact candidate package for controlled-time receipts')
     parser.add_argument('--security-probes',action='store_true',help='signed virtual-key, replay, fixation and real reader expiry cell')
     parser.add_argument('--inject-security-defect',choices=('registration-replay','login-replay','wrong-origin','wrong-rp','missing-uv','attacker-cookie','previous-cookie','reader-expiry'))
+    parser.add_argument('--migration',action='store_true',help='isolated packaged legacy-to-passkey transition and format1 refusal')
+    parser.add_argument('--fabricctl',type=Path,help='exact extracted candidate CLI for migration')
     args = parser.parse_args()
+    if args.migration and (not args.fabricctl or args.session_expiry_helper or args.security_probes or args.role_matrix or args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery or any((args.inject_rejection_defect,args.inject_api_cache_defect,args.inject_role_defect,args.inject_nonresident_enrollment,args.inject_security_defect))):
+        parser.error('migration requires exact fabricctl and its own ordinary-clock cell')
+    if args.fabricctl and not args.migration:
+        parser.error('fabricctl is reserved for the isolated migration cell')
     if args.inject_security_defect and not args.security_probes:
         parser.error('security defect requires its isolated security cell')
     if args.security_probes and (args.session_expiry_helper or args.role_matrix or args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery):
@@ -435,7 +441,7 @@ def main():
     build = args.build.resolve()
     if not out.is_relative_to(DATA / 'results') or out.exists() or not build.is_relative_to(DATA / 'results'):
         raise SystemExit('fresh owned data-drive result directories required')
-    for binary in (args.server, args.spindle):
+    for binary in (args.server, args.spindle, *([args.fabricctl] if args.migration else [])):
         if not binary.resolve().is_relative_to(DATA) or not binary.is_file():
             raise SystemExit('project binaries must be existing data-drive artifacts')
     out.mkdir()
@@ -453,7 +459,7 @@ def main():
                'injected_rejection_defect':args.inject_rejection_defect,
                'source_sha256': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                                  for p in (Path(__file__), ROLE_FIXTURE, ROOT / 'tools/ui/fixture_cadence.py', ROOT / 'tools/ui/browser_producer.py', ROOT / 'tools/packaging/stage_console.py')},
-               'binaries': {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in (args.server, args.spindle)},
+               'binaries': {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in (args.server, args.spindle, *([args.fabricctl] if args.migration else []))},
                'browser_download': json.loads((TOOLS / 'download.json').read_text()) if args.browser=='chrome' else json.loads((DATA/'tools/ui/geckodriver.json').read_text())}
     processes = []
     logs = []
@@ -558,7 +564,7 @@ def main():
 
     def verify_binary_identity():
         receipt['native_input_hashes_after']={name:hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in receipt['binaries']}
-        receipt['native_snapshot_hashes_after']={role:hashlib.sha256(getattr(args,role).read_bytes()).hexdigest() for role in ('server','spindle')}
+        receipt['native_snapshot_hashes_after']={role:hashlib.sha256(getattr(args,role).read_bytes()).hexdigest() for role in ('server','spindle', *(['fabricctl'] if args.migration else []))}
         check(receipt['native_input_hashes_after']==receipt['binaries'],'native input artifact identities remain unchanged throughout run')
         check(all(receipt['native_snapshot_hashes_after'][role]==identity['sha256'] for role,identity in receipt['immutable_binary_snapshots'].items()),'all fixture launches retain immutable candidate binary bytes')
 
@@ -694,7 +700,7 @@ def main():
     try:
         artifact_dir=work/'binaries';artifact_dir.mkdir(mode=0o700)
         snapshots={}
-        for role in ('server','spindle'):
+        for role in ('server','spindle', *(['fabricctl'] if args.migration else [])):
             source=getattr(args,role)
             destination=artifact_dir/role
             shutil.copyfile(source,destination)
@@ -771,6 +777,19 @@ self.addEventListener("fetch",event=>{
         admin.chmod(0o600)
         config = work / 'server.conf'
         config.write_text(f'listen=127.0.0.1:{server_port}\ntls_cert={work}/server.pem\ntls_key={work}/server.key\nstate_dir={work}/state\nadmin_token_file={admin}\nconsole_dir={work}/console\naccess_origin={origin}\naccess_rp_id=localhost\njournal_bytes=8388608\njournal_file_bytes=1048576\nretention_s=86400\nretention_bytes=33554432\nseal_workers=1\nself_spindle_url={origin}\nself_spindle_ca={work}/ca.pem\nself_spindle_executable={args.spindle.resolve()}\n')
+        migration_prepared = None
+        if args.migration:
+            import browser_migration
+            args._migration_origin = origin
+            def stop_migration(prefix):
+                selected = [b for b in owned_groups if b['group']['label'].startswith(prefix)]
+                check(bool(selected),'migration owned processes observed')
+                stop_browser_groups(group_parent,selected)
+                check(all(b['group'].get('kernel_empty') and b['group'].get('children_reaped') for b in selected),
+                    'migration kernel-empty stopped descendants')
+            receipt['source_sha256'].update({str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in (ROOT/'tools/ui/browser_migration.py',ROOT/'tools/ui/migration_contract.py')})
+            migration_prepared = browser_migration.prepare(args,work,out,origin,config,admin,launch,stop_migration,wait,receipt)
         def start_owner(label):
             nonlocal session,endpoint,context,tls_opener
             fixture=work/label if label else work
@@ -935,6 +954,10 @@ self.addEventListener("fetch",event=>{
                 started_monotonic_ns=started,state_before=state_record)
 
         server,cookie,view,principal_id,bootstrap_file,authenticator,first_fixture=start_owner('AB' if expiry else '')
+        if args.migration:
+            browser_migration.finish(args,work,out,config,admin,migration_prepared,api,bearer_api,launch,stop_migration,wait)
+            capture_api_metadata();verify_binary_identity();receipt['exit']=0
+            return
         if expiry:
             from browser_expiry import run_expiry
             run_expiry(args,receipt,clock_targets,owned_groups,group_parent,state_descriptors,first_fixture,

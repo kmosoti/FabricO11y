@@ -193,3 +193,5 @@ and its storage root `FABRIC_STORAGE_ROOT`. The laboratory ceiling is the smalle
 20 GiB and 75% of RAM with no swap; the server experiment cap is 4 GB and the total
 storage ceiling 100 GB. Remote hosts use their own smaller verified budgets. Preserve
 failure evidence and remove owned scratch.
+
+- Packaged legacy administration migration now has a prospective isolated browser supplement (`tools/ui/browser_migration.py`): exact CLI enrollment/query, stopped original state/prefix witnesses, actual resident owner/reader transition and separate normal-start format1 refusal. Source controls and both-engine package cells remain not run; see [registered protocol](experiments/formal/browser-migration-protocol.md).
