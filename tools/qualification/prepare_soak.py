@@ -26,6 +26,8 @@ PROTOCOL_NAMES = ("docs/experiments/benchmarks/soak-protocol.md",
                   "docs/experiments/benchmarks/production-access-campaign-protocol.md")
 RUNTIME_HELPER_NAMES = ("packaging/build-rpm.sh", "tools/resource_group.py", "tools/resource_final_group.py", "tools/packaging/stage_console.py",
                         "tools/ui/fixture_cadence.py",
+                        "tools/ui/browser_supervisor.py", "tools/ui/live_browser_check.py",
+                        "tools/ui/browser_producer.py",
                         "tools/packaging/stage_candidate.py", "tools/packaging/payload.py",
                         "tools/qualification/cross_family/inputs.py",
                         "tools/bench/labs/completion/cgroups.py",
