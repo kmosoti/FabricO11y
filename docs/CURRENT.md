@@ -208,6 +208,7 @@ failure evidence and remove owned scratch.
 
 Trusted Firefox owner-walkthrough bridge support is prospective: isolated public
 CA NSS trust, exact profile-only hostname mapping and supervised1GiB browser
-budget are implemented in the harness;20finite source controls and three actual
-TLS controls remain unrun. No owner-walkthrough/package acceptance follows from
-this implementation. See the [registered owner protocol](experiments/formal/owner-walkthrough-protocol.md).
+budget are implemented in the harness. At `04349aa`, 23 finite source controls
+and the trusted-origin, wrong-SAN and untrusted-CA native controls exited 0 with
+confirmed stops; see the [revision-bound results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-firefox-trust-results-01).
+No owner-walkthrough/package acceptance follows from these mechanism controls. See the [registered owner protocol](experiments/formal/owner-walkthrough-protocol.md).
