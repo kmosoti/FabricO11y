@@ -249,6 +249,7 @@ def main():
     status = None
     wrapper_status = None
     final_observation = None
+    guardian_valid = False
     try:
         if observe_final:
             from resource_final_group import observe_service
@@ -278,13 +279,20 @@ def main():
             try:
                 from resource_guardian import read_receipt, validate_observation
                 final_observation = json.loads(receipt_path.with_name('.resource-guardian.json').read_text())
+                workload = Path(final_observation['workload_cgroup'])
+                if (workload.name != 'workload' or workload.parent.name != unit + '.service'
+                        or not workload.is_absolute() or '..' in workload.parts
+                        or not str(workload).startswith('/sys/fs/cgroup/')):
+                    raise ValueError('guardian workload path is not owned unit')
+                child = read_receipt(receipt_path, unit, arguments, workload)
                 validate_observation(final_observation)
-                child = read_receipt(receipt_path, unit, arguments,
-                                     Path(final_observation['workload_cgroup']))
+                guardian_valid = True
             except (OSError, ValueError, TypeError, KeyError):
-                child = None
+                pass
         safe = group_stopped(child, stop_status)
         status = completed_status(wrapper_status, child) if safe else 2
+        if observe_workload and not guardian_valid:
+            status = 2
         if observe_final and (final_observation is None or final_observation.get('state') != 'observed_empty'):
             status = 2
         if status == 2:
