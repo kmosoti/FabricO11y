@@ -79,3 +79,20 @@ before ten-gate evaluation. Observer facts carry no invented exit fields; the
 observer's own raw receipt must bind target/tracer exit0 and actual identities.
 The frozen harness inventory includes the guardian and native observer modules;
 these harness changes do not refreeze product packages.
+
+## Actual terminal closeout boundary
+
+The closeout phase includes the final runtime receipt I/O, guardian snapshot,
+guardian receipt I/O and exit, and actual whole-service stop. A runtime phase
+record written before its own final I/O is an intermediate observation, never
+the complete closeout duration. The outside launcher records a CLOCK_MONOTONIC
+stop-before/after bracket and actual kernel boot ID; stop-after is captured once
+the owned service's stop is independently confirmed. Subsequent outer receipt
+writing and analysis are outside that terminal measurement, with no recursive
+receipt layer. The stopped evidence join requires matching host boot/clock,
+guardian-after ≤ stop-before ≤ stop-after and stop-after within the same global
+7500 seconds and closeout-start +20 seconds. S1's actual closeout maximum is
+conservatively stop-after minus closeout-start, including all final I/O/stop
+work; the unchanged25% margin applies to it. Missing brackets, another boot,
+forged elapsed or20 seconds +1ns refuse admission/acceptance. Existing phase
+ceilings and all ten gates remain unchanged.
