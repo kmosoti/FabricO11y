@@ -20,7 +20,7 @@ def manifest(root):
     return result
 
 
-def prepare(args, work, out, origin, config, admin, launch, stop, wait, receipt):
+def prepare(args, work, out, origin, config, admin, launch, stop, wait, pace, receipt):
     state = work/'state'
     require(not state.exists(), 'migration needs fresh original state')
     record = receipt['migration'] = {'commands': [], 'source': CANARY}
@@ -39,6 +39,7 @@ def prepare(args, work, out, origin, config, admin, launch, stop, wait, receipt)
                 return response.status == 200
         except OSError: return False
     def cli(mode, cfg, *words, secret=False):
+        pace()
         command = [str(args.fabricctl), mode, str(cfg), *words]
         result = subprocess.run(command, capture_output=True, text=True, timeout=10)
         record['commands'].append({'argv': command, 'exit': result.returncode})
@@ -63,6 +64,7 @@ def prepare(args, work, out, origin, config, admin, launch, stop, wait, receipt)
     wait(observed, 'independent legacy canary committed')
     require(len(record['legacy']['rows']) == 1 and record['legacy']['rows'][0]['body'] == CANARY
         and record['legacy']['next_page'] is None, 'legacy complete literal canary')
+    wait(lambda:'status=ack' in (out/'migration-legacy-edge.log').read_text(), 'actual migration source ACK')
     stop('migration-legacy')
     record['legacy_stopped'] = True
     record['before'] = manifest(state)

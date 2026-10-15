@@ -789,7 +789,7 @@ self.addEventListener("fetch",event=>{
                     'migration kernel-empty stopped descendants')
             receipt['source_sha256'].update({str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
                 for p in (ROOT/'tools/ui/browser_migration.py',ROOT/'tools/ui/migration_contract.py')})
-            migration_prepared = browser_migration.prepare(args,work,out,origin,config,admin,launch,stop_migration,wait,receipt)
+            migration_prepared = browser_migration.prepare(args,work,out,origin,config,admin,launch,stop_migration,wait,pace_api,receipt)
         def start_owner(label):
             nonlocal session,endpoint,context,tls_opener
             fixture=work/label if label else work
