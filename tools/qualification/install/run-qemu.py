@@ -281,7 +281,7 @@ def main() -> int:
     work_dir = DATA / 'scratch' / (namespace + '-' + args.run_id)
     if result_dir.exists() or work_dir.exists():
         raise RuntimeError(f'refusing to reuse existing run path: {result_dir} or {work_dir}')
-    result_dir.mkdir(parents=True)
+    result_dir.mkdir(parents=True, mode=0o700)
     work_dir.mkdir(mode=0o700)
 
     started = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -585,7 +585,7 @@ sha256sum export.tar
                 remaining = OUTER_DEADLINE - time.monotonic()
                 if remaining <= 0:
                     raise RuntimeError('outer deadline before native transfer')
-                with bundle.open('xb') as stream:
+                with os.fdopen(os.open(bundle, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'wb') as stream:
                     subprocess.run([*ssh, 'sudo', 'cat', '/var/lib/fabric-custody-fixture/' + args.run_id + '/export.tar'], stdout=stream, stderr=subprocess.PIPE, timeout=min(60, remaining), check=True)
                 current = custody_native.host_admission(args.native_custody_owner, Path(__file__).resolve().parents[3], DATA, deb, args.source_commit, args.run_id, args.family)
                 if current != native_frozen or digest(previous, 'sha256') != owner['predecessor_sha256']:

@@ -152,7 +152,9 @@ class Guest:
         receipt = self.observe_stop()  # Refuse before reading any source or raw root.
         settings = dict(line.split('=', 1) for line in Path('/etc/fabrico11y/node.conf').read_text().splitlines()
                         if line and not line.startswith('#') and '=' in line)
-        witness.require(settings.get('spool_dir') == str(ROOT) and settings.get('spool_bytes') == '268435456',
+        witness.require(settings.get('spool_dir') == str(ROOT) and settings.get('spool_bytes') == '268435456'
+            and settings.get('token_file') == '/etc/fabrico11y/node-token'
+            and [line[4:] for line in Path('/etc/fabrico11y/node.conf').read_text().splitlines() if line.startswith('log=')] == [SOURCE, '/var/log/fabric-accept/denied.log'],
                         'configured root/cap mismatch')
         sources = {}
         for index, path in enumerate((SOURCE, DIAG)):
@@ -375,7 +377,7 @@ def admit_transfer(bundle, admission, guest_sha256, *, control=None):
         for item in entries:
             path = Path(item.name)
             witness.require(not path.is_absolute() and '..' not in path.parts and item.uid == item.gid == 0
-                and ((item.isdir() and item.mode == 0o700) or (item.isfile() and item.mode == 0o600)), 'transfer path/ownership')
+                and ((item.isdir() and item.mode == 0o700 and len(path.parts) == 1 and path.name in expected_phases) or (item.isfile() and item.mode == 0o600)), 'transfer path/ownership')
             if item.isfile():
                 witness.require(len(path.parts) == 2 and path.parts[0] in expected_phases, 'transfer phase/path')
                 stream = archive.extractfile(item)
