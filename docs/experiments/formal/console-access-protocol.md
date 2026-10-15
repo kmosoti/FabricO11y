@@ -203,3 +203,27 @@ observed result after its real positive mechanism has run; the checker must
 reject the named property, never an unrelated startup error. This supplements
 existing CSRF, XSS, resident inventory and complete route-matrix cells; it does
 not establish their missing coverage or physical-device certification.
+
+## Prospective UI response-handling supplement
+
+A separate `--ui-responses` desktop cell first requires a successful actual
+packaged query and original producer-row witness. It then intercepts only the
+next query response at the browser fetch boundary. This is diagnostic response
+handling, not evidence that the server emitted synthetic responses. Preserve the
+unmodified response text hash; Python JSON decoding preserves integer fields.
+
+Literal cases are empty success, incomplete success, reported gap, HTTP 410,
+429, 503, 403 and 401, transport rejection and the application's real 15-second
+abort deadline. Each consumes exactly one query dispatch. Require visible
+coverage/empty/error text, cleared busy state and no automatic retry. The 401 and
+403 cases must clear sensitive rows and lock the UI; a subsequent real session
+check may restore the still-live fixture cookie. Timeout requires the actual
+AbortSignal event and at least 14.5 seconds elapsed, not a manufactured immediate
+error. The native API response, injected case, UI observation and timing remain
+distinct records. Keep the original 240-second cell deadline and resource caps.
+
+Literal checker controls reject every missing/duplicate case and every missing
+rendering/lock/busy/dispatch/deadline witness. A named
+`--inject-ui-response-defect CASE` supplies a contradictory response for only
+that case; it must fail that case's UI assertion after the actual query witness.
+No injected status repairs an unexpected failure in ordinary acceptance.
