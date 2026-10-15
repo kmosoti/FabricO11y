@@ -2,7 +2,7 @@
 import copy
 import unittest
 
-from soak_runtime_bindings import validate_job, validate_phases
+from soak_runtime_bindings import validate_job, validate_phases, validate_final_parent
 
 NS = 1_000_000_000
 
@@ -32,6 +32,25 @@ def fixture():
 
 
 class BindingControls(unittest.TestCase):
+    def test_final_parent_must_match_admitted_inode_and_subgroups(self):
+        from test_resource_final_group import groups
+        runtime, outer, _ = fixture()
+        runtime['parent_identity'] = {'device': 7, 'inode': 9}
+        kernel = groups()
+        kernel['supervisor'] = dict(kernel['.'])
+        runtime['parent_observations'] = [{'groups': kernel}]
+        outer['final_kernel_observation'] = dict(state='observed_empty', forced_cleanup=False, stop_exit=0,
+            unit=outer['unit'], cgroup=outer['command_receipt']['cgroup'], activation_monotonic_ns=NS,
+            before_ns=runtime['phases'][-1]['end_ns'] + 1, after_ns=runtime['phases'][-1]['end_ns'] + 2,
+            device=7, inode=9, groups=copy.deepcopy(kernel))
+        self.assertTrue(validate_final_parent(runtime, outer))
+        for mutate in [lambda o: o.update(inode=10), lambda o: o['groups'].pop('supervisor'),
+                       lambda o: o.update(forced_cleanup=True), lambda o: o.update(unit='other')]:
+            bad = copy.deepcopy(outer)
+            mutate(bad['final_kernel_observation'])
+            with self.assertRaises(ValueError):
+                validate_final_parent(runtime, bad)
+
     def test_exact_job_and_literal_six_phases(self):
         runtime, outer, expected = fixture()
         self.assertTrue(validate_job(runtime, outer, expected))

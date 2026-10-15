@@ -1,6 +1,7 @@
 """R3 final-parent finite controls; native source stays independently observed."""
 import copy
 import unittest
+import signal
 from pathlib import Path
 from unittest import mock
 
@@ -16,7 +17,7 @@ def groups():
 
 
 class FinalGroupControls(unittest.TestCase):
-    def controller(self, *, receipt=None, states=None, transport_exit=None, stop_exit=0, elapsed=False):
+    def controller(self, *, receipt=None, states=None, transport_exit=None, stop_exit=0, elapsed=False, kernel=None):
         unit = 'fabric-work-literal'
         child = {'state': 'completed', 'exit': 0, 'cgroup': '/sys/fs/cgroup/' + unit + '.service'}
         if receipt is not None:
@@ -32,7 +33,7 @@ class FinalGroupControls(unittest.TestCase):
              mock.patch('resource_final_group.show', side_effect=states if states else None, return_value=state), \
              mock.patch('resource_final_group.os.open', return_value=77), \
              mock.patch('resource_final_group.os.close'), \
-             mock.patch('resource_final_group.snapshot', return_value={'device': 7, 'inode': 9, 'groups': groups()}), \
+             mock.patch('resource_final_group.snapshot', return_value={'device': 7, 'inode': 9, 'groups': kernel or groups()}), \
              mock.patch('resource_final_group.time.monotonic', side_effect=[0, 7500] if elapsed else None, return_value=1):
             return observe_service(['literal-launcher'], Path('/literal/receipt'), unit, ['literal'], 7500,
                                    lambda *_: child)
@@ -56,6 +57,28 @@ class FinalGroupControls(unittest.TestCase):
                 'ActiveEnterTimestampMonotonic': '1000000', 'ControlGroup': '/fabric-work-literal.service',
                 'ExecMainStatus': '0', 'Result': 'success'}
         _, report = self.controller(states=[live], transport_exit=0)
+        self.assertEqual(report['state'], 'failed')
+
+    def test_spawn_failure_restores_alarm_and_never_waits_nonexistent_child(self):
+        previous = signal.getsignal(signal.SIGALRM)
+        with mock.patch('resource_final_group.subprocess.Popen', side_effect=OSError('literal spawn failure')), \
+             mock.patch('resource_final_group.subprocess.run', return_value=mock.Mock(returncode=0)):
+            status, report = observe_service(['literal'], Path('/literal'), 'fabric-work-literal',
+                                            ['literal'], 7500, lambda *_: None)
+        self.assertIsNone(status)
+        self.assertEqual(report['state'], 'failed')
+        self.assertEqual(signal.getsignal(signal.SIGALRM), previous)
+        self.assertEqual(signal.getitimer(signal.ITIMER_REAL)[0], 0)
+
+    def test_orphan_descendant_and_failed_unit_are_not_empty_stop(self):
+        orphan = groups()
+        orphan['.']['cgroup.events'] = 'populated 1'
+        _, report = self.controller(kernel=orphan)
+        self.assertEqual(report['state'], 'failed')
+        failed = {'ActiveState': 'failed', 'SubState': 'failed', 'MainPID': '0',
+                  'ActiveEnterTimestampMonotonic': '1000000', 'ControlGroup': '/fabric-work-literal.service',
+                  'ExecMainStatus': '1', 'Result': 'exit-code'}
+        _, report = self.controller(states=[failed])
         self.assertEqual(report['state'], 'failed')
 
     def test_mode_rejects_unregistered_limits_before_storage_or_launch(self):
