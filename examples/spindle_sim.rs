@@ -43,23 +43,46 @@ const CONFIG_POLL: Duration = Duration::from_secs(5);
 const SEEDS: [u64; 3] = [0xA11FA001, 0xA11FA002, 0xA11FA003];
 
 fn witness_require(ok: bool, message: &str) -> std::io::Result<()> {
-    if ok { Ok(()) } else { Err(std::io::Error::other(message)) }
+    if ok {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(message))
+    }
 }
 
 fn monotonic_ns() -> std::io::Result<u64> {
-    let mut time = libc::timespec { tv_sec: 0, tv_nsec: 0 };
+    let mut time = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
     // The pointer names a live timespec; CLOCK_MONOTONIC never changes host time.
     if unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut time) } != 0 {
         return Err(std::io::Error::last_os_error());
     }
-    witness_require(time.tv_sec >= 0 && (0..1_000_000_000).contains(&time.tv_nsec), "invalid monotonic clock")?;
-    (time.tv_sec as u64).checked_mul(1_000_000_000).and_then(|n| n.checked_add(time.tv_nsec as u64))
+    witness_require(
+        time.tv_sec >= 0 && (0..1_000_000_000).contains(&time.tv_nsec),
+        "invalid monotonic clock",
+    )?;
+    (time.tv_sec as u64)
+        .checked_mul(1_000_000_000)
+        .and_then(|n| n.checked_add(time.tv_nsec as u64))
         .ok_or_else(|| std::io::Error::other("monotonic clock overflow"))
 }
 
 fn clock_bracket(lo: u64, hi: u64) -> std::io::Result<Duration> {
-    witness_require(hi >= lo && hi - lo <= 1_000_000, "begin clock bracket exceeds bound")?;
+    witness_require(
+        hi >= lo && hi - lo <= 1_000_000,
+        "begin clock bracket exceeds bound",
+    )?;
     Ok(Duration::from_nanos(hi - lo))
+}
+
+fn witness_partition(count: usize, workers: usize, seconds: u64) -> std::io::Result<usize> {
+    witness_require((1..=100).contains(&count) && (1..=100).contains(&workers)
+        && (1..=7200).contains(&seconds), "native witness requires bounded positive parameters")?;
+    let per_worker = count.div_ceil(workers);
+    witness_require(count.div_ceil(per_worker) == workers, "native witness requires exact worker partition")?;
+    Ok(per_worker)
 }
 
 struct BeginWitness {
@@ -70,25 +93,53 @@ struct BeginWitness {
 }
 
 impl BeginWitness {
-    fn publish(path: PathBuf, value: serde_json::Value, mut step: impl FnMut(&str) -> std::io::Result<()>) -> std::io::Result<Self> {
-        let parent = path.parent().ok_or_else(|| std::io::Error::other("witness parent absent"))?;
+    fn publish(
+        path: PathBuf,
+        value: serde_json::Value,
+        mut step: impl FnMut(&str) -> std::io::Result<()>,
+    ) -> std::io::Result<Self> {
+        let parent = path
+            .parent()
+            .ok_or_else(|| std::io::Error::other("witness parent absent"))?;
         let meta = std::fs::symlink_metadata(parent)?;
         // geteuid has no arguments or pointer preconditions.
-        witness_require(path.is_absolute() && parent.canonicalize()? == parent && meta.is_dir()
-            && meta.uid() == unsafe { libc::geteuid() } && meta.mode() & 0o7777 == 0o700,
-            "witness parent must be canonical, owned and private")?;
+        witness_require(
+            path.is_absolute()
+                && parent.canonicalize()? == parent
+                && meta.is_dir()
+                && meta.uid() == unsafe { libc::geteuid() }
+                && meta.mode() & 0o7777 == 0o700,
+            "witness parent must be canonical, owned and private",
+        )?;
         let mounts = std::fs::read_to_string("/proc/self/mountinfo")?;
-        witness_require(!mounts.lines().any(|line| line.split_whitespace().nth(4) == parent.to_str()), "witness parent is a mount")?;
+        witness_require(
+            !mounts
+                .lines()
+                .any(|line| line.split_whitespace().nth(4) == parent.to_str()),
+            "witness parent is a mount",
+        )?;
         let raw = serde_json::to_vec(&value)?;
         witness_require(raw.len() <= 131072, "bounded witness")?;
         let stage = parent.join(format!(".begin-witness-{}.stage", std::process::id()));
-        let file = File::options().read(true).write(true).create_new(true).mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW).open(&stage)?;
+        let file = File::options()
+            .read(true)
+            .write(true)
+            .create_new(true)
+            .mode(0o600)
+            .custom_flags(libc::O_NOFOLLOW)
+            .open(&stage)?;
         // Failed stages are retained. Only this successfully-created name may be unlinked.
-        let mut witness = Self { path, file, raw, value };
+        let mut witness = Self {
+            path,
+            file,
+            raw,
+            value,
+        };
         step("write")?;
         witness.file.write_all(&witness.raw)?;
-        witness.file.set_permissions(std::fs::Permissions::from_mode(0o400))?;
+        witness
+            .file
+            .set_permissions(std::fs::Permissions::from_mode(0o400))?;
         step("sync")?;
         witness.file.sync_all()?;
         step("link")?;
@@ -103,26 +154,61 @@ impl BeginWitness {
     fn verify(&mut self) -> std::io::Result<()> {
         let held = self.file.metadata()?;
         let named = std::fs::symlink_metadata(&self.path)?;
-        witness_require(named.is_file() && held.is_file() && named.dev() == held.dev() && named.ino() == held.ino()
-            && held.nlink() == 1 && held.mode() & 0o7777 == 0o400 && held.len() == self.raw.len() as u64,
-            "witness identity or metadata changed")?;
+        witness_require(
+            named.is_file()
+                && held.is_file()
+                && named.dev() == held.dev()
+                && named.ino() == held.ino()
+                && held.nlink() == 1
+                && held.mode() & 0o7777 == 0o400
+                && held.len() == self.raw.len() as u64,
+            "witness identity or metadata changed",
+        )?;
         self.file.seek(SeekFrom::Start(0))?;
         let mut raw = Vec::new();
-        Read::by_ref(&mut self.file).take(131073).read_to_end(&mut raw)?;
+        Read::by_ref(&mut self.file)
+            .take(131073)
+            .read_to_end(&mut raw)?;
         let final_held = self.file.metadata()?;
         let final_named = std::fs::symlink_metadata(&self.path)?;
-        let identity = |m: &std::fs::Metadata| (m.dev(), m.ino(), m.mode(), m.uid(), m.gid(), m.nlink(),
-            m.len(), m.mtime(), m.mtime_nsec(), m.ctime(), m.ctime_nsec());
-        witness_require(raw == self.raw && identity(&held) == identity(&final_held)
-            && identity(&held) == identity(&final_named), "held witness bytes changed")
+        let identity = |m: &std::fs::Metadata| {
+            (
+                m.dev(),
+                m.ino(),
+                m.mode(),
+                m.uid(),
+                m.gid(),
+                m.nlink(),
+                m.len(),
+                m.mtime(),
+                m.mtime_nsec(),
+                m.ctime(),
+                m.ctime_nsec(),
+            )
+        };
+        witness_require(
+            raw == self.raw
+                && identity(&held) == identity(&final_held)
+                && identity(&held) == identity(&final_named),
+            "held witness bytes changed",
+        )
     }
 }
 
-fn begin_value(args: &Args, count: usize, lo: u64, hi: u64, wall: u64) -> std::io::Result<serde_json::Value> {
+fn begin_value(
+    args: &Args,
+    count: usize,
+    lo: u64,
+    hi: u64,
+    wall: u64,
+) -> std::io::Result<serde_json::Value> {
     clock_bracket(lo, hi)?;
     let process = std::fs::read_to_string("/proc/self/stat")?;
-    let ticks: u64 = process.rsplit_once(')').and_then(|(_, fields)| fields.split_whitespace().nth(19))
-        .and_then(|value| value.parse().ok()).ok_or_else(|| std::io::Error::other("process start identity"))?;
+    let ticks: u64 = process
+        .rsplit_once(')')
+        .and_then(|(_, fields)| fields.split_whitespace().nth(19))
+        .and_then(|value| value.parse().ok())
+        .ok_or_else(|| std::io::Error::other("process start identity"))?;
     let mut executable = File::open("/proc/self/exe")?;
     let metadata = executable.metadata()?;
     witness_require(metadata.len() <= 268435456, "bounded executable identity")?;
@@ -130,7 +216,9 @@ fn begin_value(args: &Args, count: usize, lo: u64, hi: u64, wall: u64) -> std::i
     let mut block = [0; 65536];
     loop {
         let size = executable.read(&mut block)?;
-        if size == 0 { break; }
+        if size == 0 {
+            break;
+        }
         hash.update(&block[..size]);
     }
     Ok(serde_json::json!({
@@ -477,12 +565,14 @@ fn run(args: Args) -> std::io::Result<()> {
         });
     }
     let count = identities.len();
-    let per_worker = count.div_ceil(args.workers.max(1));
+    let per_worker = if args.begin_witness.is_some() {
+        witness_partition(count, args.workers, args.seconds)?
+    } else { count.div_ceil(args.workers.max(1)) };
     if let Some(path) = &args.begin_witness {
-        witness_require((1..=100).contains(&count) && (1..=7200).contains(&args.seconds)
-            && args.workers > 0 && count.div_ceil(per_worker) == args.workers,
-            "native witness requires positive duration and exact worker partition")?;
-        witness_require(path.parent() == Some(args.out.as_path()), "begin witness must use the owned output directory")?;
+        witness_require(
+            path.parent() == Some(args.out.as_path()),
+            "begin witness must use the owned output directory",
+        )?;
     }
     let shared = Arc::new(Shared {
         events: Mutex::new(BufWriter::new(File::create(args.out.join("events.jsonl"))?)),
@@ -491,14 +581,30 @@ fn run(args: Args) -> std::io::Result<()> {
         )?)),
     });
     let stop = Arc::new(AtomicBool::new(false));
-    let lo = if args.begin_witness.is_some() { monotonic_ns()? } else { 0 };
+    let lo = if args.begin_witness.is_some() {
+        monotonic_ns()?
+    } else {
+        0
+    };
     let began = Instant::now();
     let began_ns = unix_ns();
-    let hi = if args.begin_witness.is_some() { monotonic_ns()? } else { 0 };
+    let hi = if args.begin_witness.is_some() {
+        monotonic_ns()?
+    } else {
+        0
+    };
     let mut witness = if let Some(path) = &args.begin_witness {
-        Some(BeginWitness::publish(path.clone(), begin_value(&args, count, lo, hi, began_ns)?, |_| Ok(()))?)
-    } else { None };
-    let completion = witness.as_ref().map(|_| Duration::from_secs(args.seconds) + Duration::from_nanos(hi - lo));
+        Some(BeginWitness::publish(
+            path.clone(),
+            begin_value(&args, count, lo, hi, began_ns)?,
+            |_| Ok(()),
+        )?)
+    } else {
+        None
+    };
+    let completion = witness
+        .as_ref()
+        .map(|_| Duration::from_secs(args.seconds) + Duration::from_nanos(hi - lo));
     let mut slices: Vec<Vec<Identity>> = Vec::new();
     let mut rest = identities;
     while !rest.is_empty() {
@@ -676,13 +782,19 @@ fn run(args: Args) -> std::io::Result<()> {
         witness.verify()?;
         let elapsed = began.elapsed().as_nanos();
         let ended = monotonic_ns()?;
-        witness_require(elapsed >= u128::from(args.seconds) * 1_000_000_000
-            && ended >= hi + args.seconds * 1_000_000_000, "native lifetime ended early")?;
+        witness_require(
+            elapsed >= u128::from(args.seconds) * 1_000_000_000
+                && ended >= hi + args.seconds * 1_000_000_000,
+            "native lifetime ended early",
+        )?;
         let summary = serde_json::json!({"identities": count, "seconds": args.seconds, "seed": args.seed,
             "began_unix_ns": began_ns, "undelivered": undelivered, "workers": args.workers,
             "elapsed_ns": elapsed, "ended_monotonic_ns": ended,
             "begin_witness_sha256": hex(&Sha256::digest(&witness.raw)), "process": witness.value["process"]});
-        std::fs::write(args.out.join("sim-summary.json"), serde_json::to_vec(&summary)?)?;
+        std::fs::write(
+            args.out.join("sim-summary.json"),
+            serde_json::to_vec(&summary)?,
+        )?;
         return witness_require(undelivered == 0, "native witness has undelivered work");
     }
     std::fs::write(
@@ -704,8 +816,13 @@ mod tests {
     impl WitnessDirectory {
         fn new() -> Self {
             static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-            let path = PathBuf::from(std::env::var_os("FABRIC_SCRATCH_ROOT").expect("contained scratch"))
-                .join(format!("native-witness-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::SeqCst)));
+            let path =
+                PathBuf::from(std::env::var_os("FABRIC_SCRATCH_ROOT").expect("contained scratch"))
+                    .join(format!(
+                        "native-witness-{}-{}",
+                        std::process::id(),
+                        NEXT.fetch_add(1, Ordering::SeqCst)
+                    ));
             std::fs::create_dir(&path).unwrap();
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
             Self(path)
@@ -713,7 +830,9 @@ mod tests {
     }
 
     impl Drop for WitnessDirectory {
-        fn drop(&mut self) { std::fs::remove_dir_all(&self.0).expect("owned witness fixture cleanup"); }
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).expect("owned witness fixture cleanup");
+        }
     }
 
     #[test]
@@ -725,11 +844,17 @@ mod tests {
         let mut witness = BeginWitness::publish(path.clone(), value.clone(), |step| {
             seen.push(step.to_owned());
             if step == "unlink" {
-                assert_eq!(std::fs::read(&path).unwrap(), serde_json::to_vec(&value).unwrap());
+                assert_eq!(
+                    std::fs::read(&path).unwrap(),
+                    serde_json::to_vec(&value).unwrap()
+                );
                 assert_eq!(std::fs::metadata(&path).unwrap().nlink(), 2);
-            } else { assert!(!path.exists()); }
+            } else {
+                assert!(!path.exists());
+            }
             Ok(())
-        }).unwrap();
+        })
+        .unwrap();
         assert_eq!(seen, ["write", "sync", "link", "unlink"]);
         assert_eq!(std::fs::metadata(&path).unwrap().nlink(), 1);
         assert_eq!(std::fs::metadata(&path).unwrap().mode() & 0o7777, 0o400);
@@ -741,12 +866,15 @@ mod tests {
         for failed in ["write", "sync", "link", "unlink"] {
             let root = WitnessDirectory::new();
             let path = root.0.join("begin.json");
-            let result = BeginWitness::publish(path.clone(), serde_json::json!({"literal": 1}), |step| {
-                witness_require(step != failed, "literal injected file-operation failure")
-            });
+            let result =
+                BeginWitness::publish(path.clone(), serde_json::json!({"literal": 1}), |step| {
+                    witness_require(step != failed, "literal injected file-operation failure")
+                });
             assert!(result.is_err());
             assert_eq!(path.exists(), failed == "unlink");
-            if path.exists() { assert_eq!(std::fs::read(path).unwrap(), b"{\"literal\":1}"); }
+            if path.exists() {
+                assert_eq!(std::fs::read(path).unwrap(), b"{\"literal\":1}");
+            }
         }
     }
 
@@ -757,7 +885,12 @@ mod tests {
             let path = root.0.join("begin.json");
             let target = root.0.join("existing");
             std::fs::write(&target, b"preserve these bytes").unwrap();
-            let alias = if staged { root.0.join(format!(".begin-witness-{}.stage", std::process::id())) } else { path.clone() };
+            let alias = if staged {
+                root.0
+                    .join(format!(".begin-witness-{}.stage", std::process::id()))
+            } else {
+                path.clone()
+            };
             std::os::unix::fs::symlink(&target, alias).unwrap();
             assert!(BeginWitness::publish(path, serde_json::json!({}), |_| Ok(())).is_err());
             assert_eq!(std::fs::read(target).unwrap(), b"preserve these bytes");
@@ -769,7 +902,9 @@ mod tests {
         for mutation in 0..3 {
             let root = WitnessDirectory::new();
             let path = root.0.join("begin.json");
-            let mut witness = BeginWitness::publish(path.clone(), serde_json::json!({"literal": 1}), |_| Ok(())).unwrap();
+            let mut witness =
+                BeginWitness::publish(path.clone(), serde_json::json!({"literal": 1}), |_| Ok(()))
+                    .unwrap();
             if mutation == 0 {
                 std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
                 std::fs::write(&path, b"{\"literal\":2}").unwrap();
@@ -789,7 +924,10 @@ mod tests {
     fn native_witness_clock_brackets_are_bounded() {
         assert!(clock_bracket(2, 1).is_err());
         assert!(clock_bracket(0, 1_000_001).is_err());
-        assert_eq!(clock_bracket(1, 1_000_001).unwrap(), Duration::from_millis(1));
+        assert_eq!(
+            clock_bracket(1, 1_000_001).unwrap(),
+            Duration::from_millis(1)
+        );
         assert!(monotonic_ns().unwrap() <= monotonic_ns().unwrap());
     }
 
@@ -797,6 +935,15 @@ mod tests {
     fn native_witness_duplicate_option_refuses_before_io() {
         let raw = ["--begin-witness", "/a", "--begin-witness", "/b"].map(str::to_owned);
         assert!(parse_arguments(&raw).err().unwrap().contains("duplicate"));
+    }
+
+    #[test]
+    fn native_witness_requires_duration_and_actual_workers() {
+        for (count, workers, seconds) in [(0, 1, 2), (2, 0, 2), (2, 2, 0), (2, 2, 7201), (5, 4, 2)] {
+            assert!(witness_partition(count, workers, seconds).is_err());
+        }
+        assert_eq!(witness_partition(5, 3, 2).unwrap(), 2);
+        assert_eq!(witness_partition(2, 2, 7200).unwrap(), 1);
     }
 
     #[test]
