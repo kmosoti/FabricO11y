@@ -1,5 +1,10 @@
 # Current project state
 
+The standalone console bridge smoke now selects the owned browser supervisor,
+with a fresh held1GiB browser budget, finite deadline and bounded close. Failed
+scratch is retained. Focused ownership controls and the actual replacement
+candidate smoke remain required; this caller change supplies no acceptance.
+
 ## Implemented
 
 FabricO11y collects, durably forwards, retains and queries Linux telemetry. It is
