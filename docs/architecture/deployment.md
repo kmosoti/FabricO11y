@@ -31,3 +31,12 @@ uses the unchanged packaged companion and installation-wide reader role. Its
 disposable smoke verifies independent companion corpus handling; full service
 and deployment gates remain separate. Component ownership and deployment
 boundaries are unchanged.
+
+The qualification-only [native custody caller](../experiments/formal/installation-native-custody-caller-card.md)
+observes the installed edge Spool in place with both units and every observed
+writer stopped. Complete labelled archives retain original guest metadata;
+host copies never become the installed-root authority. Four stopped checkpoints
+separate unchanged native installation, candidate drain and actual reboot.
+Full query pages and exact payload ACKs join independently observed candidate
+processes and boot identities. This harness adds no product dependency or service
+and has no executed native acceptance result yet.

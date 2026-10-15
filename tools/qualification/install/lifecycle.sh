@@ -3,6 +3,13 @@
 set -euo pipefail
 phase=${1:?phase}; family=${2:?family}; candidate=${3:?candidate}; previous=${4:-}
 W=/root/accept
+if [ -n "${FABRIC_NATIVE_CONFIG:-}" ]; then
+  FABRIC_NATIVE_PHASE_DEADLINE=$(python3 -c 'import time; print(time.monotonic()+170)')
+  export FABRIC_NATIVE_PHASE_DEADLINE
+fi
+native_phase() {
+  python3 -B /home/accept/custody_native.py "$FABRIC_NATIVE_CONFIG" "$1"
+}
 query_fixture() {
   fabricctl admin "$W/admin.conf" query '{"kind":"logs","node":"spindle-1","from_ns":0,"to_ns":9223372036854775807,"limit":1000}'
 }
@@ -43,14 +50,17 @@ PY
     fi
     query_fixture > "$W/lifecycle-before.json"
     grade_rows "$W/lifecycle-before.json" "$W/lifecycle-identity.json"
+    [ -z "${FABRIC_NATIVE_CONFIG:-}" ] || native_phase prepare
     sha256sum /etc/fabrico11y/*.conf > "$W/lifecycle-config.sha256"
     getent passwd fabricolly > "$W/lifecycle-account"
     if [ "$family" = debian ]; then dpkg -i "$candidate"; else rpm -Uvh "$candidate"; fi
+    [ -z "${FABRIC_NATIVE_CONFIG:-}" ] || native_phase installed
     # Explicit migration fixture: authenticated console acceptance is separate.
     mkdir -p /etc/systemd/system/fabrico11y-server.service.d
     printf '[Service]\nExecStart=\nExecStart=/usr/bin/fabric-server serve-legacy /etc/fabrico11y/server.conf\n' > /etc/systemd/system/fabrico11y-server.service.d/legacy-fixture.conf
     systemctl daemon-reload
-    systemctl restart fabrico11y-server.service fabrico11y-node.service
+    if [ -n "${FABRIC_NATIVE_CONFIG:-}" ]; then native_phase drain
+    else systemctl restart fabrico11y-server.service fabrico11y-node.service; fi
     for attempt in $(seq 60); do
       if query_fixture > "$W/lifecycle-upgraded.json" 2>/dev/null; then break; fi
       sleep 1
@@ -85,6 +95,7 @@ PY
     sha256sum -c "$W/lifecycle-config.sha256"
     getent passwd fabricolly | cmp - "$W/lifecycle-account"
     [ "$family" != fedora ] || [ "$(getenforce)" = Enforcing ]
+    [ -z "${FABRIC_NATIVE_CONFIG:-}" ] || native_phase reboot
     echo 'ACCEPT L2 PASS real changed boot identity; enabled services healthy; exact retained rows/configuration/account'
     ;;
   remove)

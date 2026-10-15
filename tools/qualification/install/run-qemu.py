@@ -22,6 +22,8 @@ import subprocess
 import sys
 import time
 
+import custody_native
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from resource_group import STORAGE as DATA, require_storage
 IMAGE_NAME = 'debian-13-genericcloud-amd64.qcow2'
@@ -40,6 +42,7 @@ GUEST_DISK_BYTES = 8 * 1024**3
 BOOT_TIMEOUT_S = 600
 ACCEPTANCE_TIMEOUT_S = 900
 TOTAL_TIMEOUT_S = 26 * 60
+OUTER_DEADLINE = None
 MUTATIONS = {'root-user', 'no-collision-check', 'no-memory-max'}
 MUTATION_EXPECTED_FAILURES = {
     'root-user': {'A6'},
@@ -60,6 +63,11 @@ def mutation_rejected(mutation: str, code: int | None, output: str,
 
 def run(args: list[str], *, timeout: int | None = None,
         input_text: str | None = None, check: bool = True) -> subprocess.CompletedProcess[str]:
+    if OUTER_DEADLINE is not None:
+        remaining = OUTER_DEADLINE - time.monotonic()
+        if remaining <= 0:
+            raise RuntimeError('installation outer deadline exhausted')
+        timeout = min(timeout or remaining, remaining)
     return subprocess.run(args, text=True, input=input_text, capture_output=True,
                           timeout=timeout, check=check)
 
@@ -218,6 +226,8 @@ def main() -> int:
                         help='A12 fixture; parallel uses the registered concurrent-page stressor')
     parser.add_argument('--family', choices=('debian', 'fedora'), default='debian')
     parser.add_argument('--upgrade-from', type=Path, help='strictly older exact package for real lifecycle upgrade and VM reboot')
+    parser.add_argument('--native-custody-owner', type=Path, help='exact reviewed owner tuple and merged harness hashes')
+    parser.add_argument('--native-custody-control', choices=('pending-not-produced', 'live-writer'))
     parser.add_argument('--expected-mutation', choices=sorted(MUTATIONS), help='grade a separately built mutated package without Debian repacking')
     args = parser.parse_args()
     if args.mutate and args.expected_mutation:
@@ -252,11 +262,23 @@ def main() -> int:
     previous = args.upgrade_from.resolve(strict=True) if args.upgrade_from else None
     if previous and (previous.suffix != suffix or grading_mutation):
         parser.error('upgrade-from must match family and cannot combine with mutation')
+    if args.native_custody_control and not args.native_custody_owner:
+        parser.error('native refusal requires owner admission')
+    if args.native_custody_owner and (not previous or grading_mutation or (args.native_custody_control and args.family != 'debian')):
+        parser.error('native custody requires positive lifecycle or Debian-only producer refusal')
+    native_sources = [Path(__file__).with_name(name) for name in ('custody_native.py', 'custody_witness.py')] + [Path(__file__).parents[1] / 'query_oracle.py']
+    native_frozen = None
+    if args.native_custody_owner:
+        native_frozen = custody_native.host_admission(args.native_custody_owner, Path(__file__).resolve().parents[3], DATA, deb, args.source_commit, args.run_id, args.family)
+        owner = json.loads(args.native_custody_owner.read_text())
+        if str(previous) != owner['predecessor_path'] or digest(previous, 'sha256') != owner['predecessor_sha256']:
+            raise RuntimeError('owner predecessor package mismatch')
     lifecycle = Path(__file__).with_name('lifecycle.sh').resolve(strict=True)
     acceptance = Path(__file__).with_name('acceptance.sh').resolve(strict=True)
     parallel_helper = Path(__file__).with_name('a12-memory-pressure.py').resolve(strict=True)
-    result_dir = DATA / 'results' / 'installation-qemu' / args.run_id
-    work_dir = DATA / 'scratch' / ('installation-qemu-' + args.run_id)
+    namespace = 'installation-native-custody' if native_frozen else 'installation-qemu'
+    result_dir = DATA / 'results' / namespace / args.run_id
+    work_dir = DATA / 'scratch' / (namespace + '-' + args.run_id)
     if result_dir.exists() or work_dir.exists():
         raise RuntimeError(f'refusing to reuse existing run path: {result_dir} or {work_dir}')
     result_dir.mkdir(parents=True)
@@ -264,6 +286,9 @@ def main() -> int:
 
     started = dt.datetime.now(dt.timezone.utc).isoformat()
     start_clock = time.monotonic()
+    global OUTER_DEADLINE
+    OUTER_DEADLINE = start_clock + TOTAL_TIMEOUT_S
+    native_config, native_transfer, native_ready = None, None, False
     qemu: subprocess.Popen[bytes] | None = None
     qemu_log = work_dir / 'serial.log'
     qemu_stderr = work_dir / 'qemu.stderr'
@@ -290,7 +315,7 @@ def main() -> int:
     try:
         frozen_sources = result_dir / 'sources'
         frozen_sources.mkdir()
-        for source in (Path(__file__), acceptance, parallel_helper, lifecycle):
+        for source in (Path(__file__), acceptance, parallel_helper, lifecycle, *(native_sources if native_frozen else ())):
             shutil.copy2(source, frozen_sources / source.name)
             if digest(source, 'sha256') != digest(frozen_sources / source.name, 'sha256'):
                 raise RuntimeError('VM harness changed during source freeze')
@@ -393,6 +418,8 @@ printf 'cgroup='; stat -fc %T /sys/fs/cgroup
 printf 'controllers='; cat /sys/fs/cgroup/cgroup.controllers
 grep '^MemTotal:' /proc/meminfo
 nproc
+printf 'boot_id='; cat /proc/sys/kernel/random/boot_id
+printf 'instance_id='; cat /var/lib/cloud/data/instance-id
 '''
         info = run([*ssh, 'sudo', 'bash', '-s'], input_text=guest_probe, timeout=30)
         guest_info = info.stdout
@@ -404,6 +431,11 @@ nproc
             raise RuntimeError('guest OS/PID1/cgroup differs from registered family: ' + guest_info)
 
 
+        if native_frozen:
+            native_config = dict(native_frozen, control=args.native_custody_control, boot_before=re.search(r'^boot_id=(.+)$', guest_info, re.M)[1])
+            if not re.search(r'^instance_id=fabric-install-' + re.escape(args.run_id) + r'$', guest_info, re.M):
+                raise RuntimeError('independent guest/run identity mismatch')
+            (result_dir / 'native-input.json').write_text(json.dumps(native_config) + '\n')
         scp = [executable('scp'), '-P', str(port), '-i', str(private_key),
                '-o', 'IdentitiesOnly=yes', '-o', 'BatchMode=yes',
                '-o', 'StrictHostKeyChecking=accept-new',
@@ -415,6 +447,9 @@ nproc
                           (lifecycle, 'accept@127.0.0.1:/home/accept/lifecycle.sh')]
         if args.memory_stressor == 'parallel':
             transfers.append((parallel_helper, 'accept@127.0.0.1:/home/accept/a12-memory-pressure.py'))
+        if native_frozen:
+            transfers += [(source, 'accept@127.0.0.1:/home/accept/' + source.name) for source in native_sources]
+            transfers.append((result_dir / 'native-input.json', 'accept@127.0.0.1:/home/accept/native-input.json'))
         for source, target in transfers:
             run([*scp, str(source), target], timeout=120)
         setup_script = '''set -eu
@@ -431,6 +466,8 @@ sha256sum /home/accept/a12-memory-pressure.py
 '''
         if previous:
             setup_script += 'sha256sum /home/accept/fabrico11y-previous.pkg /home/accept/lifecycle.sh\n'
+        if native_frozen:
+            setup_script += 'sha256sum /home/accept/custody_native.py /home/accept/custody_witness.py /home/accept/query_oracle.py /home/accept/native-input.json\n'
         setup = run([*ssh, 'sudo', 'bash', '-s'], input_text=setup_script,
                     timeout=30, check=False)
         if setup.returncode != 0:
@@ -447,6 +484,11 @@ sha256sum /home/accept/a12-memory-pressure.py
         if previous and (received.get('fabrico11y-previous.pkg') != digest(previous, 'sha256')
                          or received.get('lifecycle.sh') != digest(lifecycle, 'sha256')):
             raise RuntimeError('previous package or lifecycle helper changed during transfer')
+        if native_frozen:
+            for source in (*native_sources, result_dir / 'native-input.json'):
+                if received.get(source.name) != digest(source, 'sha256'):
+                    raise RuntimeError('native producer/input transfer mismatch')
+            native_ready = True
         if args.mutate:
             mutation_package_sha256 = prepare_guest_package(ssh, args.mutate)
             tested_package_sha256 = mutation_package_sha256
@@ -492,7 +534,7 @@ sha256sum /home/accept/a12-memory-pressure.py
         if previous and rc == 0:
             def lifecycle_phase(phase):
                 nonlocal acceptance_log
-                result = run([*ssh, 'sudo', 'bash', '/home/accept/lifecycle.sh', phase,
+                result = run([*ssh, 'sudo', 'env', *(('FABRIC_NATIVE_CONFIG=/home/accept/native-input.json',) if native_frozen else ()), 'bash', '/home/accept/lifecycle.sh', phase,
                               args.family, '/home/accept/fabrico11y.deb',
                               '/home/accept/fabrico11y-previous.pkg'], timeout=180, check=False)
                 acceptance_log += result.stdout + result.stderr
@@ -527,6 +569,34 @@ sha256sum /home/accept/a12-memory-pressure.py
         error = f'{type(exc).__name__}: {exc}'
         rc = 2
     finally:
+        if native_ready and qemu is not None and qemu.poll() is None:
+            try:
+                script = 'set -eu\ncd /var/lib/fabric-custody-fixture/' + args.run_id + '''
+[ "$(du -sb . | cut -f1)" -le 536870912 ]
+set --
+for phase in prepare installed drain reboot; do [ ! -d "$phase" ] || set -- "$@" "$phase"; done
+[ "$#" -gt 0 ]
+(umask 077; tar --format=posix --numeric-owner -cf export.tar "$@")
+sha256sum export.tar
+'''
+                exported = run([*ssh, 'sudo', 'bash', '-s'], input_text=script, timeout=60)
+                expected_digest = exported.stdout.split()[0]
+                bundle = result_dir / 'guest-stopped-bundle.tar'
+                remaining = OUTER_DEADLINE - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError('outer deadline before native transfer')
+                with bundle.open('xb') as stream:
+                    subprocess.run([*ssh, 'sudo', 'cat', '/var/lib/fabric-custody-fixture/' + args.run_id + '/export.tar'], stdout=stream, stderr=subprocess.PIPE, timeout=min(60, remaining), check=True)
+                current = custody_native.host_admission(args.native_custody_owner, Path(__file__).resolve().parents[3], DATA, deb, args.source_commit, args.run_id, args.family)
+                if current != native_frozen or digest(previous, 'sha256') != owner['predecessor_sha256']:
+                    raise RuntimeError('native owner/source/package changed before admission')
+                native_transfer = custody_native.admit_transfer(bundle, native_config, expected_digest, control=args.native_custody_control)
+                if time.monotonic() > OUTER_DEADLINE: raise RuntimeError('outer deadline during native admission')
+                if args.native_custody_control and guest_acceptance_exit == 0 and error and error.startswith('RuntimeError: lifecycle phase upgrade failed:'):
+                    rc, error = 0, None
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError, KeyError) as native_error:
+                error = (error + '; ' if error else '') + 'native transfer/admission: ' + str(native_error)
+                rc = 2
         if qemu is not None and qemu.poll() is None:
             qemu.terminate()
             try:
@@ -565,6 +635,9 @@ sha256sum /home/accept/a12-memory-pressure.py
         mutation_rejection_confirmed = mutation_rejected(
             grading_mutation, rc, acceptance_log, error)
     receipt = {
+        'native_custody_admission': native_frozen,
+        'native_custody_transfer': native_transfer,
+        'native_custody_control': args.native_custody_control,
         'run_id': args.run_id,
         'package_family': args.family,
         'storage_admission': storage_admission,
