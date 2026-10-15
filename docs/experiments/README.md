@@ -98,3 +98,5 @@ Historical reviewer probes, verdicts and notes remain under [data/alpha-review](
 Performance records should state the hypothesis, workload and seed, baseline, changed variable, commands, environment, predefined metrics, results, limitations and decision impact. Formal records should state the property, assumptions, model/code relation, bounds, tool version, command and counterexamples. Bounded model results do not establish unbounded implementation correctness.
 
 The learning path covers the delivery model, log and measurement ([learning path](../LEARNING_PATH.md)); scoped experiments follow the [experiment skill](../../.agents/skills/fabric-experiment/SKILL.md). Create a record for a concrete hypothesis and link results from the relevant architecture view and ADR. Documentation checks are in the [contributor workflow](../CONTRIBUTING.md).
+
+- [Browser owned cleanup source repair](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-owned-cleanup-source-results-01): actual process/reaping controls; modeled cgroups; native integration remains pending.
