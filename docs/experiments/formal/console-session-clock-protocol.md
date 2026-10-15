@@ -467,3 +467,52 @@ python3 -B tools/resource_group.py -- env PYTHONPATH=tools/ui python3 -B -m unit
 This cell does not use `--delegate`: all its cgroup interfaces are source mocks,
 while its real synthetic descendants remain under the enforced outer service.
 The future actual kernel/browser cell requires `--delegate` and separate scope.
+
+## Native cleanup integration follow-up, 2026-10-15
+
+This prospective follow-up retains all thirteen source controls and their exact
+outcomes. It registers a dedicated whole-fixture wait domain in the existing
+controller: before launching persistent children, require the kernel's own-child
+`ECHILD`, ordinary SIGCHLD disposition without `SA_NOCLDWAIT`, a saved/verified
+subreaper setting, stable reader PID/mount/cgroup namespaces, and held parent
+aggregate limits. The sampler reads files only; only the controller waits.
+
+Each persistent launch exclusively creates a bounded subgroup, holds its
+no-follow directory and leader pidfd, executes the existing placement helper,
+and binds after observed placement. No PID/PGID signaling fallback is admitted.
+The retained subgroup's `cgroup.kill` handles later live forks; after all groups
+are kernel-empty, non-consuming `waitid(P_ALL, WEXITED|WNOHANG|WNOWAIT|__WALL)`
+discovers adopted exits. Every returned child must independently join a held
+owned subgroup by its actual `/proc/PID/cgroup`, controller parentage, start ticks
+and pidfd before exact `P_PIDFD` consumption. A foreign child is neither consumed
+nor signaled. No-event means pending, never empty; only `ECHILD` closes the domain.
+This removes the need for a live fork snapshot/freezer as a completeness claim.
+The kernel-empty and own-child-empty observations remain separate evidence.
+
+Bound the final adoption drain to the existing five-second stop phase and the
+original global deadline; timeout retains scratch. Restore subreaper state only
+after confirmed cleanup. Native success requires actual absence of each known
+original PID/start identity and retained raw namespace/group/wait observations.
+No concurrent waiter, debugger or foreign child launcher is admitted. Support is
+limited to the inspected Linux x86_64/glibc sigaction layout; unsupported ABI or
+signal ownership refuses before launches. Original session timing/pacing,
+private-file bounds and all independent oracles stay unchanged.
+
+Four prospective native cleanup controls use real delegated groups: ordinary
+TERM-resistant descendant; late double-fork/setsid after binding; late child
+already zombie and absent from cgroup.procs; and a same-UID foreign direct child
+that must remain unconsumed after refusal. The fixture independently holds its
+child pidfds and records actual /proc identities, group events and exact exits;
+its bounded guardian reaps only those identities on failure. Existing thirteen
+modeled cgroup controls still run separately and are not native evidence.
+Native control invocation is registered as `python3 -B tools/resource_group.py
+--delegate -- env PYTHONPATH=tools/ui python3 -B tools/ui/browser_cleanup_native.py
+--out DATA/results/browser-cleanup-native-01`; source/final command hashes and
+full1GiB reservation are frozen before execution. Combined limits are unchanged:
+3.5/4 GB high/max, CPU200%, tasks512, no swap, 240 seconds inside outer1800.
+
+The earlier unexecuted +190-line design estimate was insufficient to express
+complete retained descriptor ownership, native wait-domain admission, exact late
+child reaping and bounded failure receipts readably. This follow-up permits at
+most +360 net lines in live_browser_check.py from 90cdf68 and a native fixture
+of at most 240 lines. No existing outcome, deadline or oracle is relaxed.
