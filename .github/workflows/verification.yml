@@ -5,7 +5,9 @@ on:
   schedule:
     - cron: "17 4 * * 1"
   workflow_dispatch:
+  merge_group:
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "xtask/**"
       - "crates/**"
@@ -32,6 +34,7 @@ permissions:
 
 jobs:
   extended:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:

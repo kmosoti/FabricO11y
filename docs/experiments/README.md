@@ -36,6 +36,10 @@ Each line of `archived-runs.tsv` gives a run's path, file count, bytes and the S
 
 ## Recent investigations
 
+The [fresh-owner walkthrough protocol](formal/owner-walkthrough-protocol.md)
+registers guide callpoints, exact candidate phases, same-code native upgrade
+fixtures and literal controls; preparation is not an execution result.
+
 Latest exact-candidate checkpoints: [replacement installation](formal/installation-release-run-03.md), [console-command admission prerequisite](formal/console-command-admission-run-01.md) and [fixed-query caller prerequisites](formal/query-caller-run-01.md). Original failed attempts remain failed; repaired smokes do not replace measured cells.
 
 Historical finite release checkpoints: [package installation](formal/installation-release-run-01.md), [scoped evidence cache](benchmarks/scoped-evidence-cache-run-01.md), and [production-access campaign prerequisites](benchmarks/production-access-campaign-run-01.md). These retain their exact revisions, failures and limits; successor campaign acceptance is separate.
