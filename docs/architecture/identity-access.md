@@ -163,6 +163,12 @@ epoch, which discards sessions and reader tokens, so an old backup never resurre
 
 ## Evidence
 
+The private [announcement environment probe](../experiments/formal/browser-announcement-protocol.md)
+separates DOM live-region prerequisites, actual AT-SPI events, accepted Orca speech
+and selected-backend synthesis. Its public-text environment probe is implemented;
+native execution and later actual-console announcements remain pending. No owner
+desktop, audio, configuration or accessibility-conformance claim is implied.
+
 The disposable [session-clock protocol](../experiments/formal/console-session-clock-protocol.md)
 keeps controlled wall-time expiry separate from real elapsed endurance. Its
 harness adapter installs the helper only at the owned server exec, brackets

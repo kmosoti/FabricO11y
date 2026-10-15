@@ -376,3 +376,10 @@ several wall-clock calls, and why retaining their complete set is stronger than
 choosing a convenient call. The exact boundary caller uses two untouched idle
 sessions and one continually active absolute-expiry session; controlled time is
 not eight hours of elapsed endurance.
+
+The [announcement probe](experiments/formal/browser-announcement-protocol.md)
+illustrates the same evidence boundary for effects: a DOM `aria-live` attribute
+expresses intent, while an actual AT-SPI event, Orca utterance accepted by Speech
+Dispatcher and selected synthesizer output establish different observations.
+Keep the original speech call's arguments and return unchanged, and explain why
+public environment success would still not establish actual console behavior.
