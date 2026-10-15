@@ -52,3 +52,9 @@ guide's call sequence. Native execution remains subject to the
 [walkthrough protocol](../experiments/formal/owner-walkthrough-protocol.md);
 source controls alone establish no deployment acceptance. This is qualification
 tooling outside the runtime boundaries shown above.
+
+The [signed browser security fixture](../experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement)
+exports only a newly created virtual authenticator key into protected, owned
+scratch. It signs and independently verifies malformed-origin/RP/UV assertions
+without changing packaged product state. Private keys, ceremonies and cookies
+are excluded from public receipts; existing owned-group cleanup applies.

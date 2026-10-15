@@ -1,5 +1,10 @@
 # Current project state
 
+The separate signed browser security cell is implemented for virtual fixture
+keys, completed-ceremony replay, cookie replacement and real reader expiry.
+Its [registered controls](experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement)
+are not yet executed; exact-package browser acceptance remains open.
+
 The standalone console bridge smoke now selects the owned browser supervisor,
 with a fresh held1GiB browser budget, finite deadline and bounded close. Failed
 scratch is retained. Focused ownership controls and the actual replacement

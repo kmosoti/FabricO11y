@@ -366,3 +366,11 @@ Its [registered snapshot adapter](experiments/formal/owner-walkthrough-protocol.
 uses independent source-prefix bounds and keeps the original query oracle.
 The [guest observer](../tools/qualification/owner_observation.py) distinguishes
 configured unit properties from actual process privileges and kernel limits.
+
+The browser security supplement separates a correctly signed one-field refusal
+from a signature failure: actual virtual fixture keys produce assertions and an
+independent OpenSSL verification runs before the packaged server sees them.
+[Literal controls](experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement)
+reject a convenient but unrelated status such as HTTP 429. Ordinary reader
+expiry retains real monotonic and wall-clock observations; it is not an in-flight
+authorization-race proof.
