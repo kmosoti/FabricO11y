@@ -70,6 +70,8 @@ Known limits and open checks:
 - The [R3 browser supervisor](experiments/formal/browser-supervisor-protocol.md) preserves the 1 GiB browser budget while isolating its child wait domain. Its seven native lifecycle/ancestor controls and exact-revision source/documentation follow-up are registered but unrun. Supervisor failure requires whole-campaign stop/reaping; the native session request binding and browser acceptance remain pending.
 - In cloud containers the `xtask` tests `check_logs` (needs the launcher) and `evidence` (needs full git history) fail, and `tests/control.rs` fails under umask 022; these are environmental.
 
+The [simulator accounting source controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-simulator-accounting-source-results-01) execute 33 methods without skips; the sealed helper produced the registered missing-begin native red after four actual ACKs. A separate opt-in helper compiled successfully. Its [eight finite native witness diagnostics](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-simulator-native-controls-results-01/dc17be3) exited 0 at `6bd5250`, with confirmed stops; full source/build admission checked all 463 frozen compilation inputs. The [initial-thread syscall observer](experiments/benchmarks/simulator-native-trace-protocol.md), ten literal parser controls and eight native publication/fault controls are registered but unrun. Seven Rust tests, atomic publication certification and full exposure remain pending. Frozen package/helper bytes are unchanged.
+
 ## Results that shape the design
 
 Measurements below belong to their linked workloads and revisions. Heap, RSS and
