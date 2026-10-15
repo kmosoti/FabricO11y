@@ -1,5 +1,7 @@
 # Experiments
 
+Native custody reader source controls: [registered protocol](formal/installation-native-custody-protocol.md), [revision-bound red and correction](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-custody-native-reader-source-results-01/0364b1c). Native guest acceptance remains pending.
+
 Research, experiment reports and observations belong in the
 [research wiki](https://github.com/kmosoti/FabricO11y/wiki). This index connects
 those reports to the registered protocols and executable evidence kept here.
