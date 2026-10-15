@@ -409,7 +409,11 @@ def main():
     parser.add_argument('--package',type=Path,help='exact candidate package for controlled-time receipts')
     parser.add_argument('--security-probes',action='store_true',help='signed virtual-key, replay, fixation and real reader expiry cell')
     parser.add_argument('--inject-security-defect',choices=('registration-replay','login-replay','wrong-origin','wrong-rp','missing-uv','attacker-cookie','previous-cookie','reader-expiry'))
+    parser.add_argument('--ui-responses',action='store_true',help='isolated diagnostic query response handling')
+    parser.add_argument('--inject-ui-response-defect',choices=('empty','incomplete','gap','410','429','503','transport','timeout','403','401'))
     args = parser.parse_args()
+    if args.inject_ui_response_defect and not args.ui_responses:parser.error('UI response defect requires its own cell')
+    if args.ui_responses and (args.session_expiry_helper or args.security_probes or args.role_matrix or args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery):parser.error('UI responses use a separate finite cell')
     if args.inject_security_defect and not args.security_probes:
         parser.error('security defect requires its isolated security cell')
     if args.security_probes and (args.session_expiry_helper or args.role_matrix or args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery):
@@ -1094,6 +1098,17 @@ self.addEventListener("fetch",event=>{
         wait(lambda:js('return document.querySelectorAll(".results tbody tr").length===200'),'bounded first actual log page')
         first_page=js('return Array.from(document.querySelectorAll(".results tbody tr pre")).map(e=>e.textContent)')
         check(all(f'ordinal={i:03d}' in row for i,row in enumerate(first_page)), 'first page matches independent producer ordinals')
+        if args.ui_responses:
+            import browser_responses
+            query={'kind':'logs','node':'browser-edge','from_ns':trace_origin-60_000_000_000,'to_ns':time.time_ns()+60_000_000_000,'contains':'browser-page-fixture','limit':200,'page':None}
+            status,baseline=api('/v1/console/query','POST',query)
+            check(status==200 and len(baseline['rows'])==200,'actual package response before diagnostic UI corpus')
+            receipt['ui_response_observations']=[]
+            receipt['ui_response_witness']=browser_responses.run(js=js,click=click,wait=wait,field=field,nav=nav,
+                baseline=baseline,observations=receipt['ui_response_observations'],inject=args.inject_ui_response_defect)
+            check(browser_responses.grade(receipt['ui_response_observations']),'all diagnostic UI response properties')
+            capture_api_metadata();verify_binary_identity();receipt['exit']=0
+            return
         click('Next snapshot page')
         wait(lambda:js('return document.querySelectorAll(".results tbody tr").length===50'),'bounded continuation actual log page')
         second_page=js('return Array.from(document.querySelectorAll(".results tbody tr pre")).map(e=>e.textContent)')

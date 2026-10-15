@@ -17,7 +17,12 @@ and stops/reaps AB before creating the independent C fixture.
 The separate signed browser security cell is implemented for virtual fixture
 keys, completed-ceremony replay, cookie replacement and real reader expiry.
 Its [registered controls](experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement)
-are not yet executed; exact-package browser acceptance remains open.
+and the separate [UI response diagnostics](experiments/formal/console-access-protocol.md#prospective-ui-response-handling-supplement)
+are implemented. At `b211398`, 32 affected source tests and all three documentation
+checks exited 0 through separately contained runs, with stops confirmed. The first
+combined run remains interrupted: its strict storage census raced launcher scratch
+cleanup even though the inner checks exited 0. Native signed-key and diagnostic UI
+cells have not run; exact-package browser acceptance remains open.
 
 The standalone console bridge smoke now selects the owned browser supervisor,
 with a fresh held1GiB browser budget, finite deadline and bounded close. Failed

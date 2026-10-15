@@ -391,3 +391,10 @@ expresses intent, while an actual AT-SPI event, Orca utterance accepted by Speec
 Dispatcher and selected synthesizer output establish different observations.
 Keep the original speech call's arguments and return unchanged, and explain why
 public environment success would still not establish actual console behavior.
+
+UI response diagnostics distinguish a renderer boundary from server semantics.
+A real packaged query and independent producer ordinals establish the baseline;
+explicitly injected responses then exercise coverage, errors and lock behavior.
+Their [separate protocol](experiments/formal/console-access-protocol.md#prospective-ui-response-handling-supplement)
+requires the actual browser abort signal and elapsed deadline for timeout, and
+never treats an injected HTTP status as evidence that the server emitted it.
