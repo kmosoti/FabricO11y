@@ -160,9 +160,9 @@ copy as genuine guest evidence. Actual native admission requires the separately
 observed original digest and the frozen owner source/package/helper tuple.
 
 
-Before implementation, the final measured uncommitted design is 228 producer and
-349 caller net lines (all new module code and both lifecycle/host call sites),
-577 combined. The final caller ceiling is350, replacing340 for independent
+Before implementation, the final measured design is 230 producer and
+350 caller net lines (all new module code and both lifecycle/host call sites),
+580 combined. The final caller ceiling is350, replacing340 for independent
 nested raw-frame/payload and original source-archive joins. This does not change
 an acceptance expectation. Shared original-input reading supplies stable kernel
 Btrfs namespace observations for credential stat witnesses too. Before/install/
