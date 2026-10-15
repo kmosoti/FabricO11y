@@ -146,8 +146,11 @@ def stop_browser_groups(parent, bindings):
                     path = Path('/proc') / str(row['pid'])
                     if path.exists():
                         browser_group_check(browser_pid(row['pid'])[0] == row['start_ticks'], 'identity')
-                        try: os.waitid(os.P_PIDFD, row['pidfd'], os.WEXITED | os.WNOHANG)
-                        except ChildProcessError: pass
+                        if row['pid'] == proc.pid:
+                            proc.poll()  # Popen alone consumes and records its leader's status.
+                        else:
+                            try: os.waitid(os.P_PIDFD, row['pidfd'], os.WEXITED | os.WNOHANG)
+                            except ChildProcessError: pass
                     if path.exists(): remaining.append(row['pid'])
                 group['kernel_empty'] = 'populated 0' in (group['path'] / 'cgroup.events').read_text().splitlines()
                 group['children_reaped'] = not remaining
