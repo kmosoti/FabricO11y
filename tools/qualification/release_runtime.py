@@ -5,6 +5,7 @@ reader token (ADR-0029) performs benchmark reads; the visible UI remains active.
 """
 from __future__ import annotations
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -133,13 +134,24 @@ def process_affinities(group, expected):
     return observed
 
 
+def fixture_browser_deadline(explicit, entered):
+    if explicit is not None:
+        if type(explicit) not in (int, float) or not math.isfinite(explicit) or explicit <= entered:
+            raise ValueError('finite future explicit browser deadline required')
+        return explicit
+    runtime = int(os.environ['FABRIC_RESOURCE_RUNTIME_SECONDS'])
+    if not 0 < runtime <= 16000:
+        raise ValueError('finite admitted launcher runtime required')
+    return entered + runtime
+
+
 class CandidateFixture:
     def __init__(self, deb_receipt, rpm_receipt, out, *, mode='segment',
                  server_cpus='0-1',supervisor_cpus='2-3', browser_deadline=None):
-        if browser_deadline is not None:
-            # Import before the loaded-source census; the supervisor and its
-            # cleanup dependency must be frozen alongside the live adapter.
-            import browser_supervisor  # noqa: F401
+        browser_deadline = fixture_browser_deadline(browser_deadline, time.monotonic())
+        # Every shared consumer uses the supervised lifecycle. Import before
+        # the source census so cleanup is frozen alongside the live adapter.
+        import browser_supervisor  # noqa: F401
         self.parent = require_limits()
         from resource_guardian import workload_context
         guardian = workload_context()
@@ -238,13 +250,10 @@ class CandidateFixture:
                 f'journal_bytes=4294967296\njournal_file_bytes={16*1024**2 if mode == "segment" else 2*1024**3}\n'
                 'retention_bytes=100000000000\nretention_s=86400\n')
             self.start_server()
-            browser_options = {}
-            held_browser = None
-            if browser_deadline is not None:
-                from live_browser_check import browser_hold_directory
-                held_browser = browser_hold_directory(self.browser_group)
-                held_browser['exclusive'] = True  # This constructor just created this empty budget.
-                browser_options = {'browser_parent': held_browser, 'browser_deadline': browser_deadline}
+            from live_browser_check import browser_hold_directory
+            held_browser = browser_hold_directory(self.browser_group)
+            held_browser['exclusive'] = True  # This constructor just created this empty budget.
+            browser_options = {'browser_parent': held_browser, 'browser_deadline': browser_deadline}
             try:
                 self.bridge = ConsoleBridge(self.origin, self.work / 'server.pem', self.work / 'browser',
                                             self.out / 'browser', browser_group=self.browser_group, **browser_options)

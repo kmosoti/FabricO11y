@@ -11,6 +11,22 @@ from soak_r3 import Probes
 
 
 class LiveAdapterControls(unittest.TestCase):
+    def test_shared_fixture_default_and_explicit_browser_deadlines(self):
+        from release_runtime import fixture_browser_deadline
+        with mock.patch.dict(os.environ, {'FABRIC_RESOURCE_RUNTIME_SECONDS': '1800'}):
+            self.assertEqual(fixture_browser_deadline(None, 100), 1900)
+            self.assertEqual(fixture_browser_deadline(7500, 100), 7500)
+        for runtime in ('0', '16001', 'invalid'):
+            with mock.patch.dict(os.environ, {'FABRIC_RESOURCE_RUNTIME_SECONDS': runtime}):
+                with self.assertRaises(ValueError):
+                    fixture_browser_deadline(None, 100)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaises(KeyError):
+                fixture_browser_deadline(None, 100)
+        for explicit in (100, float('inf'), True):
+            with self.assertRaises(ValueError):
+                fixture_browser_deadline(explicit, 100)
+
     def bridge(self, root):
         bridge = ConsoleBridge.__new__(ConsoleBridge)
         bridge.closed, bridge.session, bridge.log = False, None, None
