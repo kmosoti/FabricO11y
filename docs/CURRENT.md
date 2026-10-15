@@ -193,3 +193,9 @@ and its storage root `FABRIC_STORAGE_ROOT`. The laboratory ceiling is the smalle
 20 GiB and 75% of RAM with no swap; the server experiment cap is 4 GB and the total
 storage ceiling 100 GB. Remote hosts use their own smaller verified budgets. Preserve
 failure evidence and remove owned scratch.
+
+Trusted Firefox owner-walkthrough bridge support is prospective: isolated public
+CA NSS trust, exact profile-only hostname mapping and supervised1GiB browser
+budget are implemented in the harness;20finite source controls and three actual
+TLS controls remain unrun. No owner-walkthrough/package acceptance follows from
+this implementation. See the [registered owner protocol](experiments/formal/owner-walkthrough-protocol.md).

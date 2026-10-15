@@ -38,6 +38,9 @@ from fixture_cadence import FixtureCadence, PEER_ADMISSION
 
 VERSION = "155.0.8059.39"
 TOOLS = STORAGE / "tools/ui" / ("chrome-for-testing-" + VERSION)
+FIREFOX_VERSION = "157.0.1"
+GECKODRIVER = STORAGE / "tools/ui/geckodriver"
+CERTUTIL = STORAGE / "tools/ui/nss-tools-3.129.0-1.fc44/usr/bin/certutil"
 MAX_BODY = 8 * 1024**2
 MAX_REQUEST = 1024**2
 MAX_PROFILE = 512 * 1024**2
@@ -49,6 +52,32 @@ def validate_route(path, method):
         raise ValueError("only canonical production console routes are allowed")
     if any(part in ("", ".", "..") for part in path.split("/")[1:]):
         raise ValueError("noncanonical console route")
+
+
+def bridge_origin(origin, backend, private_dns):
+    parsed = urllib.parse.urlsplit(origin)
+    common = (parsed.scheme == "https" and parsed.port and not any(
+        (parsed.username, parsed.password, parsed.path, parsed.query, parsed.fragment)))
+    if backend == "chrome":
+        valid = parsed.hostname == "localhost" and private_dns is None
+    elif backend == "firefox":
+        valid = (isinstance(private_dns, str) and parsed.hostname == private_dns
+                 and re.fullmatch(r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", private_dns))
+    else:
+        valid = False
+    if not common or not valid:
+        raise ValueError("exact owned HTTPS browser origin and confined DNS mapping required")
+    return parsed
+
+
+def firefox_capabilities(profile, hostname):
+    return {"browserName": "firefox", "acceptInsecureCerts": False,
+            "moz:firefoxOptions": {"binary": "/usr/bin/firefox", "args": ["-headless", "-profile", str(profile)],
+                "prefs": {"security.enterprise_roots.enabled": False,
+                          "security.webauth.webauthn_enable_softtoken": True,
+                          "security.webauth.webauthn_enable_usbtoken": False,
+                          "network.dns.localDomains": hostname, "network.trr.mode": 5,
+                          "network.proxy.type": 0}}}
 
 
 def protected_secret(path):
@@ -79,7 +108,14 @@ class ConsoleBridge:
     supervised_cleanup = True  # Capability; each R3 instance must select it explicitly.
     """One browser, one serialized request, ephemeral owner and authenticator."""
     def __init__(self, origin, leaf_certificate, work, out, *, browser_group=None,
-                 browser_parent=None, browser_deadline=None):
+                 browser_parent=None, browser_deadline=None, backend="chrome",
+                 trusted_ca=None, private_dns=None):
+        bridge_origin(origin, backend, private_dns)
+        if backend == "chrome" and trusted_ca is not None:
+            raise ValueError("trusted CA requires the Firefox backend")
+        if backend == "firefox" and (trusted_ca is None or browser_parent is None or browser_group is None):
+            raise ValueError("Firefox requires a public CA and supervised browser budget")
+        self.backend, self.authenticators = backend, []
         self.group = require_limits()
         self.browser_group = None
         if browser_group is None:
@@ -102,10 +138,8 @@ class ConsoleBridge:
                     or "populated 0" not in (bounded / "cgroup.events").read_text().splitlines()):
                 raise ValueError("empty browser subgroup needs explicit memory/swap/CPU/task limits")
             self.browser_group = bounded
-        parsed = urllib.parse.urlsplit(origin)
-        if (parsed.scheme != "https" or parsed.hostname != "localhost" or not parsed.port
-                or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment):
-            raise ValueError("exact owned HTTPS localhost origin with port required")
+        if backend == "firefox" and int((self.browser_group / "memory.max").read_text()) > 1024**3:
+            raise ValueError("Firefox walkthrough browser budget must be at most1GiB")
         self.origin = origin
         self.work, self.out = Path(work), Path(out)
         scratch = Path(os.environ["FABRIC_SCRATCH_ROOT"]).resolve(strict=True)
@@ -130,7 +164,8 @@ class ConsoleBridge:
         self.ui_previous = None
         self.ui_phase_baseline = None
         self.records = []
-        self.receipt = {"state": "starting", "origin": origin, "browser": VERSION,
+        self.receipt = {"state": "starting", "origin": origin, "browser": VERSION if backend == "chrome" else FIREFOX_VERSION,
+                        "backend": backend,
                         "authenticator": "virtual CTAP2 with user verification",
                         "scope": "campaign fixture, not physical authenticator qualification",
                         "requests": self.records, "source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
@@ -144,6 +179,26 @@ class ConsoleBridge:
             spki = base64.b64encode(hashlib.sha256(der).digest()).decode()
             self.receipt["tls_scope"] = "exact owned leaf SPKI trusted only in this isolated Chrome profile"
             self.receipt["leaf_sha256"] = hashlib.sha256(leaf.read_bytes()).hexdigest()
+            if backend == "firefox":
+                ca = Path(trusted_ca)
+                if (not ca.is_absolute() or ca.is_symlink() or not ca.resolve().is_relative_to(STORAGE)
+                        or not ca.is_file() or not 1 <= ca.stat().st_size <= 65536):
+                    raise ValueError("bounded public DATA CA certificate required")
+                ca_raw = ca.read_bytes()
+                if ca_raw.count(b"-----BEGIN CERTIFICATE-----") != 1 or b"PRIVATE KEY" in ca_raw:
+                    raise ValueError("one public CA certificate only")
+                constraint = subprocess.run(["openssl", "x509", "-noout", "-ext", "basicConstraints"],
+                    input=ca_raw, check=True, capture_output=True, timeout=10).stdout
+                if b"CA:TRUE" not in constraint:
+                    raise ValueError("actual CA basic constraint required")
+                profile = self.work / "profile"; profile.mkdir(mode=0o700)
+                ca_copy = self.work / "trusted-ca.pem"; ca_copy.write_bytes(ca_raw); ca_copy.chmod(0o600)
+                for cmd in ([str(CERTUTIL), "-N", "--empty-password", "-d", "sql:" + str(profile)],
+                            [str(CERTUTIL), "-A", "-d", "sql:" + str(profile), "-n", "Owned Fabric fixture CA",
+                             "-t", "C,,", "-i", str(ca_copy)]):
+                    subprocess.run(cmd, check=True, capture_output=True, timeout=10)
+                self.receipt.update(tls_scope="isolated NSS public CA; no bypass; exact hostname",
+                                    ca_sha256=hashlib.sha256(ca_raw).hexdigest(), private_dns=private_dns)
             with socket.socket() as port:
                 port.bind(("127.0.0.1", 0))
                 driver_port = port.getsockname()[1]
@@ -163,6 +218,8 @@ class ConsoleBridge:
             self.log = (self.out / "webdriver.log").open("w")
             command = [str(TOOLS / "chromedriver-linux64/chromedriver"),
                        "--port=" + str(driver_port), "--allowed-ips=127.0.0.1"]
+            if backend == "firefox":
+                command = [str(GECKODRIVER), "--host", "127.0.0.1", "--port", str(driver_port), "--allow-system-access"]
             if browser_parent is not None:
                 if self.browser_group is None or browser_parent['path'] != self.browser_group or browser_deadline is None:
                     raise ValueError('R3 supervisor needs the actual held browser budget and run deadline')
@@ -189,26 +246,35 @@ class ConsoleBridge:
                 if self.driver.poll() is not None or time.monotonic() >= deadline:
                     raise RuntimeError("owned WebDriver did not start")
                 time.sleep(.1)
-            info = self._call("POST", "/session", {"capabilities": {"alwaysMatch": {
-                "browserName": "chrome", "goog:chromeOptions": {
-                    "binary": str(TOOLS / "chrome-linux64/chrome"), "args": [
-                        "--headless=new", "--disable-dev-shm-usage", "--no-first-run",
-                        "--no-default-browser-check", "--user-data-dir=" + str(self.work / "profile"),
-                        "--ignore-certificate-errors-spki-list=" + spki, "--window-size=1440,1100"]}}}})
+            capabilities = {"browserName": "chrome", "goog:chromeOptions": {
+                "binary": str(TOOLS / "chrome-linux64/chrome"), "args": [
+                    "--headless=new", "--disable-dev-shm-usage", "--no-first-run",
+                    "--no-default-browser-check", "--user-data-dir=" + str(self.work / "profile"),
+                    "--ignore-certificate-errors-spki-list=" + spki, "--window-size=1440,1100"]}}
+            if backend == "firefox":
+                capabilities = firefox_capabilities(self.work / "profile", private_dns)
+            info = self._call("POST", "/session", {"capabilities": {"alwaysMatch": capabilities}})
             self.session = info["sessionId"]
-            if info["capabilities"]["browserVersion"] != VERSION:
+            actual = info["capabilities"]
+            self.receipt['browser_capabilities_actual'] = {
+                key: actual.get(key) for key in ('browserName', 'browserVersion', 'acceptInsecureCerts')}
+            if actual["browserVersion"] != (VERSION if backend == "chrome" else FIREFOX_VERSION):
                 raise RuntimeError("browser differs from reviewed version")
+            if backend == "firefox" and actual.get("acceptInsecureCerts") is not False:
+                raise RuntimeError("Firefox did not retain strict certificate verification")
+            self.receipt["browser_version_actual"] = actual["browserVersion"]
             self._wd("/timeouts", {"script": 45000, "pageLoad": 30000, "implicit": 0})
-            self._cdp("WebAuthn.enable", {})
-            self._cdp("WebAuthn.addVirtualAuthenticator", {"options": {
-                "protocol": "ctap2", "transport": "internal", "hasResidentKey": True,
-                "hasUserVerification": True, "isUserVerified": True, "automaticPresenceSimulation": True}})
+            if backend == "chrome":
+                self._cdp("WebAuthn.enable", {})
+            self.add_authenticator()
+            self._tls_startup_pending = True
             self._wd("/url", {"url": origin + "/console/"})
             deadline = time.monotonic() + 30
             while not self._js("return typeof window.fabricPasskey==='function'"):
                 if time.monotonic() >= deadline:
                     raise RuntimeError("production console passkey helper did not load")
                 time.sleep(.1)
+            self._tls_startup_pending = False
             # Observe only native UI Request objects, never bridge string-based
             # requests, response contents, cookies or credentials. Unlike the
             # default Resource Timing buffer these counters cannot fill up.
@@ -266,8 +332,30 @@ class ConsoleBridge:
             self.receipt["state"] = "ready"
         except BaseException as error:
             self.receipt["startup_failure_type"] = type(error).__name__
+            if backend == "firefox" and self.session and getattr(self, "_tls_startup_pending", False):
+                try:
+                    self.receipt["tls_navigation_failure"] = self._firefox_tls_failure()
+                except (OSError, RuntimeError):
+                    self.receipt["tls_navigation_failure"] = {"codes": [], "inconclusive": True}
             self.close()
             raise
+
+    def _firefox_tls_failure(self):
+        # Firefox 157 renders the certificate detail in net-error-card rather
+        # than light-DOM text. Observe its actual errorInfo; never infer a code
+        # from the fixture case or from the generic about:certerror URI.
+        deadline = time.monotonic() + 5
+        while True:
+            observed = self._js("""const card=document.querySelector('net-error-card');
+              const model=card && (card.wrappedJSObject || card);
+              const code=String(model?.errorInfo?.errorCodeString || '').slice(0,120);
+              const text=document.documentElement.textContent;
+              return {uri:document.documentURI.slice(0,2048), observedCode:code, codes:
+                ['SSL_ERROR_BAD_CERT_DOMAIN','SEC_ERROR_UNKNOWN_ISSUER','MOZILLA_PKIX_ERROR_SELF_SIGNED_CERT']
+                .filter(value=>code===value || (!code && text.includes(value)))};""")
+            if observed.get('codes') or time.monotonic() >= deadline:
+                return observed
+            time.sleep(0.1)
 
     def _call(self, method, path, body=None):
         data = None if body is None else json.dumps(body).encode()
@@ -297,6 +385,54 @@ class ConsoleBridge:
 
     def _js(self, script, *args, asynchronous=False):
         return self._wd("/execute/async" if asynchronous else "/execute/sync", {"script": script, "args": args})
+
+    def _gecko_auth(self, expression, *arguments):
+        self._wd("/moz/context", {"context": "chrome"})
+        try:
+            return self._js('const auth=ChromeUtils.importESModule("chrome://remote/content/marionette/webauthn.sys.mjs").webauthn;' + expression, *arguments)
+        finally:
+            self._wd("/moz/context", {"context": "content"})
+
+    def add_authenticator(self):
+        options = {"protocol": "ctap2", "transport": "internal", "hasResidentKey": True,
+                   "hasUserVerification": True, "isUserVerified": True}
+        if self.backend == "firefox":
+            options.update(protocol="ctap2_1", transport="usb", isUserConsenting=True)
+            identifier = self._gecko_auth('return auth.addVirtualAuthenticator(arguments[0])', options)
+        else:
+            options["automaticPresenceSimulation"] = True
+            identifier = self._cdp("WebAuthn.addVirtualAuthenticator", {"options": options})["authenticatorId"]
+        self.authenticators.append(identifier)
+        self.receipt.setdefault("virtual_devices", []).append({"event": "added", "ordinal": 1 + sum(row["event"] == "added" for row in self.receipt.get("virtual_devices", [])),
+                                                               "identifier": identifier,
+                                                               "resident": True, "uv_configured": True})
+        return identifier
+
+    def remove_authenticator(self, identifier):
+        if identifier not in self.authenticators:
+            raise ValueError("owned virtual authenticator required")
+        if self.backend == "firefox":
+            self._gecko_auth('auth.removeVirtualAuthenticator(arguments[0]);return null', identifier)
+        else:
+            self._cdp("WebAuthn.removeVirtualAuthenticator", {"authenticatorId": identifier})
+        self.authenticators.remove(identifier)
+        self.receipt.setdefault("virtual_devices", []).append({"event": "removed", "identifier": identifier})
+
+    def replace_authenticator(self):
+        for identifier in list(self.authenticators):
+            self.remove_authenticator(identifier)
+        return self.add_authenticator()
+
+    def resident_credentials(self, identifier):
+        if identifier not in self.authenticators:
+            raise ValueError("owned virtual authenticator required")
+        if self.backend == "firefox":
+            credentials = self._gecko_auth('return auth.getCredentials(arguments[0]).map(c=>({resident:c.isResidentCredential,rp:c.rpId}))', identifier)
+        else:
+            credentials = [{"resident": value.get("isResidentCredential"), "rp": value.get("rpId")}
+                           for value in self._cdp("WebAuthn.getCredentials", {"authenticatorId": identifier})["credentials"]]
+        public = [{"resident": value.get("resident"), "rp": value.get("rp")} for value in credentials]
+        return {"count": len(public), "credentials": public, "uv_configured": True}
 
     def _cdp(self, command, body):
         return self._wd("/goog/cdp/execute", {"cmd": command, "params": body})

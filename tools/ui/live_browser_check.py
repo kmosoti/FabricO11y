@@ -443,7 +443,7 @@ def main():
     work.mkdir(mode=0o700)
     checks = []
     receipt = {'command': sys.argv, 'exit': 1, 'checks': checks, 'build': str(build),
-               'browser':args.browser,'browser_version_expected': VERSION if args.browser=='chrome' else '157.0', 'fixture_storage': str(work), 'combined_memory_cap_bytes':4000000000,'fixture_storage_cap_bytes':512*1024*1024,
+               'browser':args.browser,'browser_version_expected': VERSION if args.browser=='chrome' else '157.0.1', 'fixture_storage': str(work), 'combined_memory_cap_bytes':4000000000,'fixture_storage_cap_bytes':512*1024*1024,
                'enforced_limits':{key:(limits/key).read_text().strip() for key in ('memory.max','memory.high','memory.swap.max','cpu.max','pids.max')},
                'scope': 'finite virtual CTAP2 desktop/narrow browser integration; not hardware/mobile/installed-app qualification',
                'tls_scope': 'exact fixture leaf SPKI trusted by this isolated browser only; Spindle trusts fixture CA',

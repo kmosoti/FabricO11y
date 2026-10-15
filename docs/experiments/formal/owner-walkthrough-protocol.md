@@ -284,3 +284,34 @@ wire-attempt observation is inferred. Observe real guest UID/GID, privileges and
 effective service/slice kernel limits while active. Require four different boot
 identities across the two pairs. A cleanup failure must not prevent stopping the
 other owned guest or writing the failed receipt; retain uncertain scratch.
+
+## Trusted Firefox bridge controls before enrollment
+
+The narrow optional ConsoleBridge Firefox backend preserves the supervised owned
+wait domain and actual1GiB browser budget. Default Chrome behavior is unchanged.
+Firefox uses157.0, retained geckodriver0.37.1 and owned NSS tools; record actual
+binary/version identities in each native receipt. Import only the single public
+fixture CA into a fresh isolated NSS profile, disable enterprise roots and keep
+acceptInsecureCerts false (including returned capabilities). Private DNS maps
+only the exact guide hostname to loopback inside that profile; URL/Origin/RP/SAN
+are unchanged, with no host DNS/trust mutation or certificate bypass.
+
+Before any enrollment, run three finite native controls using actual supervised
+Firefox: trusted CA+matching SAN succeeds with exact secure origin; trusted CA+
+wrong SAN refuses with actual SSL_ERROR_BAD_CERT_DOMAIN; untrusted CA+matching
+SAN refuses with actual SEC_ERROR_UNKNOWN_ISSUER. Generic driver errors, timeouts
+and absent error codes are inconclusive, not certificate refusals. These may use
+an explicit miniature TLS page solely to expose the existing bridge passkey-helper
+readiness hook; no fake page authenticates an owner or claims package acceptance.
+Keep actual TLS error-page code and origin witnesses; archive no secret bodies.
+Pure source controls pin capabilities, DNS confinement and narrow authenticator
+operations; actual browser controls are independent evidence. Register exact
+source/commands/tool pins and bounded fresh fixtures before native execution.
+
+The bridge exposes add/remove/resident_credentials/replace_authenticator. Replacing
+removes all existing virtual devices and creates a fresh independent token; it
+cannot switch back. Resident inventory returns public resident/RP/count/UV
+configuration only, never private keys. Recovery must first demonstrate denial of
+the still-active old token before replacing it. This is virtual-device evidence,
+not physical/mobile certification. Existing request/UI pacing and source oracles
+are unchanged.

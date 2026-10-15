@@ -203,3 +203,16 @@ observed result after its real positive mechanism has run; the checker must
 reject the named property, never an unrelated startup error. This supplements
 existing CSRF, XSS, resident inventory and complete route-matrix cells; it does
 not establish their missing coverage or physical-device certification.
+
+### Exact Firefox maintenance-version correction
+
+The successor desktop fixture is pinned to Firefox **157.0.1**, retaining the
+same CTAP 2.1 selection, required resident/UV behavior and isolated NSS trust.
+The earlier 157.0 expectation remains attached to its failed runs. The native
+trust diagnostic reported `browserVersion=157.0.1`, with
+`acceptInsecureCerts=false`; installed RPM metadata and application.ini agree.
+The prior tool manifest's Firefox version label was stale even though its two
+Firefox executable hashes matched the installed files. The successor requires
+exact version equality, plus an inventory of all regular Firefox installation
+files (including application metadata and libxul), not a relaxed version range.
+No expected certificate refusal or product requirement changes.
