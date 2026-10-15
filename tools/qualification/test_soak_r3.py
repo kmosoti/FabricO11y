@@ -33,6 +33,31 @@ def ui_fixture():
 
 
 class RuntimeControls(unittest.TestCase):
+    def test_outer_stop_and_command_identity_are_not_self_asserted(self):
+        expected = {'unit': 'fabric-work-owned.service', 'command': ['grader'], 'cgroup': '/owned'}
+        actual = dict(expected, runtime_max_seconds=1800, stop_confirmed=True,
+                      exit=0, wrapper_exit=0, command_receipt={'cgroup': '/owned', 'state': 'completed', 'exit': 0})
+        self.assertIsNone(soak_r3.stopped_outer(actual, expected, 1800))
+        for key, value in [('stop_confirmed', False), ('unit', 'other'), ('command', ['replacement']),
+                           ('runtime_max_seconds', 7500), ('exit', True)]:
+            bad = dict(actual, **{key: value})
+            with self.subTest(key=key), self.assertRaises(ValueError):
+                soak_r3.stopped_outer(bad, expected, 1800)
+
+    def test_narrow_r3_control_keeps_freshness_for_other_mutations(self):
+        from console_bridge import ConsoleBridge
+        bridge = ConsoleBridge.__new__(ConsoleBridge)
+        bridge.lock = __import__('threading').RLock()
+        bridge.r3_control_session = True
+        bridge._private_cadence = mock.Mock()
+        bridge.session_view = lambda: {'csrf': 'fixture', 'fresh_until_unix_s': 0}
+        bridge._request = mock.Mock(return_value=(200, {}))
+        bridge.login = mock.Mock(return_value={'csrf': 'fresh'})
+        bridge.request('/v1/console/nodes/sim0000/config', 'PUT', {})
+        bridge.login.assert_not_called()
+        bridge.request('/v1/console/readers', 'POST', {})
+        bridge.login.assert_called_once()
+
     def test_phase_order_and_no_borrowing(self):
         now = [100 * NS]
         with mock.patch.object(soak_r3.signal, 'setitimer'):
