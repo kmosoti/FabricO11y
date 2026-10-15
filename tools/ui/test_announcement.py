@@ -1,0 +1,51 @@
+"""Literal controls; these records are not native accessibility evidence."""
+import copy
+from pathlib import Path
+import unittest
+import announcement_oracle as oracle
+
+
+class AnnouncementTests(unittest.TestCase):
+    def evidence(self):
+        return (dict(before_ns=100,after_ns=200,text='Public probe complete',browser_pid=700,role='status',live='polite',focus_elsewhere=True),
+                [dict(pid=700,monotonic_ns=150,text='Public probe complete',type='object:text-changed:insert')],
+                [dict(before_ns=160,after_ns=170,text='Public probe complete',module='espeak-ng',ssip_code=225,message_id=4)],
+                dict(module='espeak-ng',pid=701,libespeak_mapped=True,pcm_before_bytes=0,pcm_after_bytes=4096))
+
+    def test_actual_observer_source_is_available(self):
+        self.assertTrue((Path(__file__).parent/'announcement_probe.py').is_file(),'missing actual AT-SPI/Orca observer')
+
+    def test_literal_speech_event_and_synthesis_defects_are_rejected(self):
+        oracle.check_announcement(*self.evidence())
+        for item,field,value,refusal in ((3,'module','dummy','announcement-backend'),
+                (3,'pcm_after_bytes',0,'announcement-synthesis'),(0,'focus_elsewhere',False,'announcement-dom')):
+            changed=list(copy.deepcopy(self.evidence()));changed[item][field]=value
+            with self.subTest(field=field),self.assertRaisesRegex(ValueError,refusal):oracle.check_announcement(*changed)
+        for index,refusal in ((1,'announcement-event'),(2,'announcement-utterance')):
+            changed=list(self.evidence());changed[index]=[]
+            with self.assertRaisesRegex(ValueError,refusal):oracle.check_announcement(*changed)
+        changed=list(self.evidence());changed[1][0]['pid']=702
+        with self.assertRaisesRegex(ValueError,'announcement-event'):oracle.check_announcement(*changed)
+        changed=list(self.evidence());changed[2][0]['after_ns']=201
+        with self.assertRaisesRegex(ValueError,'announcement-utterance'):oracle.check_announcement(*changed)
+
+    def test_orca_observer_preserves_speak_arguments_result_and_capture_gate(self):
+        import json,os,tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import announcement_probe as probe
+        calls=[];answer=(225,'queued',['123'])
+        class Client:
+            def speak(self,*args,**kwargs):calls.append((args,kwargs));return answer
+            def get_output_module(self):return 'espeak-ng'
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            work=Path(directory);out=work/'out';out.mkdir()
+            with patch.dict('sys.modules',speechd=SimpleNamespace(SSIPClient=Client)):
+                exec(probe.customization(work,out),{})
+                client=Client();self.assertIs(client.speak('before capture'),answer)
+                self.assertFalse((out/'speech.jsonl').exists())
+                (work/'capture').touch();callback=object()
+                self.assertIs(client.speak('Public probe complete',callback=callback),answer)
+            self.assertEqual(calls,[(('before capture',),{}),(('Public probe complete',),{'callback':callback})])
+            rows=[json.loads(line) for line in (out/'speech.jsonl').read_text().splitlines()]
+            self.assertEqual(len(rows),1);self.assertEqual((rows[0]['ssip_code'],rows[0]['message_id'],rows[0]['module']),(225,123,'espeak-ng'))

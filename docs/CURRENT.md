@@ -1,5 +1,11 @@
 # Current project state
 
+The private [announcement environment probe](experiments/formal/browser-announcement-protocol.md)
+now observes AT-SPI and the real Orca/Speech Dispatcher/espeak path using public
+text, private buses/settings and file/null audio output. Its source controls and
+native headless/headful probes remain pending. It supplies no actual console
+announcement, acoustic or accessibility-conformance result.
+
 The controlled-time browser expiry caller now has a server-only native clock
 adapter and complete serialized request-window joins. At `479b356`, 17 focused
 source controls exited0 with confirmed containment cleanup. The additive timing

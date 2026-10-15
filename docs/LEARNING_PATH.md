@@ -384,3 +384,10 @@ independent OpenSSL verification runs before the packaged server sees them.
 reject a convenient but unrelated status such as HTTP 429. Ordinary reader
 expiry retains real monotonic and wall-clock observations; it is not an in-flight
 authorization-race proof.
+
+The [announcement probe](experiments/formal/browser-announcement-protocol.md)
+illustrates the same evidence boundary for effects: a DOM `aria-live` attribute
+expresses intent, while an actual AT-SPI event, Orca utterance accepted by Speech
+Dispatcher and selected synthesizer output establish different observations.
+Keep the original speech call's arguments and return unchanged, and explain why
+public environment success would still not establish actual console behavior.
