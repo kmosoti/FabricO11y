@@ -374,3 +374,10 @@ independent OpenSSL verification runs before the packaged server sees them.
 reject a convenient but unrelated status such as HTTP 429. Ordinary reader
 expiry retains real monotonic and wall-clock observations; it is not an in-flight
 authorization-race proof.
+
+UI response diagnostics distinguish a renderer boundary from server semantics.
+A real packaged query and independent producer ordinals establish the baseline;
+explicitly injected responses then exercise coverage, errors and lock behavior.
+Their [separate protocol](experiments/formal/console-access-protocol.md#prospective-ui-response-handling-supplement)
+requires the actual browser abort signal and elapsed deadline for timeout, and
+never treats an injected HTTP status as evidence that the server emitted it.
