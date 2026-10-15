@@ -46,3 +46,26 @@ Existing ten-gate adverse controls and independent Python oracles stay unchanged
 Source controls cannot establish native lifetime, real UI continuity, S1 headroom
 or full acceptance. Their exact commands, exits, pins and containment receipts
 must be recorded separately by the admission scheduler.
+
+## Native UI timer and refresh observation
+
+The R3 adapter records the actual native `setInterval(5000)` registration and
+each invocation, request start, HTTP status and body completion; it preserves
+the native view's busy/error/visibility decisions. Timer callback timestamps
+are observations, not ideal deadlines. Request-gap distributions and their
+maximum remain descriptive. Reuse the existing twenty-second progress bound
+(the configured five-second poll plus fifteen-second transport deadline).
+Do not invent a five-second-plus-one-millisecond request-gap threshold. A
+missing timer registration/event, hidden or paused interval, changed document,
+failed native response, no progress for twenty seconds, or missing raw records
+refuses continuity. A timer callback skipped by the native busy guard remains
+recorded and must be explained by its native state; fabricated aggregate
+counters cannot stand in for attempts or completions.
+
+R3 owner refresh performs the existing real passkey ceremony while the native
+view keeps running, then activates the native `Check session` control to update
+its cookie/CSRF view. It does not pause, reset phases or reset cadence counters.
+Controls must retain an inflight refusal and distinguish a native UI pause from
+a merely asserted probe-active flag. If the frozen product cannot refresh this
+way, preserve that counterexample; do not change a frozen package or weaken the
+full-interval contract. Native supervisor/clock controls remain separate.
