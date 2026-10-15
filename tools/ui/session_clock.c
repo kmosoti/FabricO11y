@@ -10,16 +10,19 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/syscall.h>
 #include <time.h>
 #include <unistd.h>
 
 struct observation { uint64_t pid, sequence, offset_s, clock_id, raw_ns, returned_ns; };
 static _Thread_local struct observation last;
+struct timing { uint64_t tid, call_index, monotonic_before_ns, monotonic_after_ns; };
+static _Thread_local struct timing timing;
 static int (*underlying)(clockid_t, struct timespec *);
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 static pid_t original;
 static int control = -1, ready;
-static uint64_t sequence, offset, packets, ledger_bytes;
+static uint64_t sequence, offset, packets, ledger_bytes, call_index;
 
 static void fail(const char *reason) {
     (void)write(STDERR_FILENO, reason, strlen(reason)); (void)write(STDERR_FILENO, "\n", 1); _exit(78);
@@ -57,6 +60,7 @@ __attribute__((constructor(101))) static void initialize(void) {
     ready = 1;
 }
 struct observation fabric_clock_last(void) { return last; }
+struct timing fabric_clock_timing(void) { return timing; }
 int clock_gettime(clockid_t id, struct timespec *result) {
     if (!ready) fail("FCLK-INIT");
     pid_t pid = getpid();
@@ -73,7 +77,10 @@ int clock_gettime(clockid_t id, struct timespec *result) {
     for (attempt = 0; attempt < 64 && pthread_mutex_trylock(&mutex); ++attempt) sched_yield();
     if (attempt == 64) fail("FCLK-LOCK");
     if (id == CLOCK_REALTIME) receive(0);
+    struct timespec before, after;
+    if (underlying(CLOCK_MONOTONIC, &before)) fail("FCLK-MONOTONIC");
     int status = underlying(id, result), saved_errno = errno;
+    if (underlying(CLOCK_MONOTONIC, &after)) fail("FCLK-MONOTONIC");
     if (!status) {
         uint64_t raw = (uint64_t)result->tv_sec * 1000000000ULL + (uint64_t)result->tv_nsec;
         time_t shifted;
@@ -83,10 +90,15 @@ int clock_gettime(clockid_t id, struct timespec *result) {
         }
         last = (struct observation){(uint64_t)pid, sequence, offset, (uint64_t)id, raw,
                                    (uint64_t)result->tv_sec * 1000000000ULL + (uint64_t)result->tv_nsec};
+        timing = (struct timing){(uint64_t)syscall(SYS_gettid), ++call_index,
+            (uint64_t)before.tv_sec * 1000000000ULL + (uint64_t)before.tv_nsec,
+            (uint64_t)after.tv_sec * 1000000000ULL + (uint64_t)after.tv_nsec};
         char line[256]; int size = snprintf(line, sizeof line,
-            "{\"pid\":%llu,\"sequence\":%llu,\"offset_s\":%llu,\"clock_id\":%llu,\"raw_ns\":%llu,\"returned_ns\":%llu}",
+            "{\"pid\":%llu,\"sequence\":%llu,\"offset_s\":%llu,\"clock_id\":%llu,\"raw_ns\":%llu,\"returned_ns\":%llu,\"tid\":%llu,\"call_index\":%llu,\"monotonic_before_ns\":%llu,\"monotonic_after_ns\":%llu}",
             (unsigned long long)last.pid, (unsigned long long)last.sequence, (unsigned long long)last.offset_s,
-            (unsigned long long)last.clock_id, (unsigned long long)last.raw_ns, (unsigned long long)last.returned_ns);
+            (unsigned long long)last.clock_id, (unsigned long long)last.raw_ns, (unsigned long long)last.returned_ns,
+            (unsigned long long)timing.tid, (unsigned long long)timing.call_index,
+            (unsigned long long)timing.monotonic_before_ns, (unsigned long long)timing.monotonic_after_ns);
         if (size < 0 || (size_t)size >= sizeof line || ledger_bytes + (uint64_t)size > 1048576) fail("FCLK-LEDGER");
         if (send(control, line, (size_t)size, MSG_DONTWAIT | MSG_NOSIGNAL) != size) fail("FCLK-LEDGER");
         ledger_bytes += (uint64_t)size;

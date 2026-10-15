@@ -220,15 +220,22 @@ def begin_browser_domain(limits, deadline):
         raise
 
 
-def browser_group_launch(parent, bindings, label, command, log, environment):
+def browser_group_launch(parent, bindings, label, command, log, environment, *, clock=None):
     browser_directory(parent)
     browser_group_check(browser_namespaces() == parent['namespaces'], 'namespace')
     path, _ = cgroups.subgroup(parent['path'], 'browser-' + str(len(bindings)), 4000000000, 3500000000, 512, 2)
     group = browser_hold_directory(path)
     group['exclusive'] = True
     helper = ROOT / 'tools/bench/labs/completion/enter_group.py'
-    proc = subprocess.Popen([sys.executable, '-B', str(helper), str(path), *command],
-        stdout=log, stderr=subprocess.STDOUT, start_new_session=True, env=environment)
+    arguments=[sys.executable, '-B', str(helper), str(path), *command]
+    inherited={}
+    if clock is not None:
+        browser_group_check(not any(key in environment for key in ('LD_PRELOAD','LD_AUDIT','FABRIC_CLOCK_FD')), 'clock-environment')
+        helper=ROOT/'tools/ui/session_clock_exec.py'
+        arguments=[sys.executable,'-B',str(helper),str(path),str(clock[0]),str(clock[1]),*command]
+        inherited['pass_fds']=(clock[1],)
+    proc = subprocess.Popen(arguments, stdout=log, stderr=subprocess.STDOUT,
+        start_new_session=True, env=environment, **inherited)
     group.update(process=proc, pid=proc.pid, pidfd=os.pidfd_open(proc.pid), start_ticks=browser_pid(proc.pid)[0])
     until = min(time.monotonic() + 5, parent['deadline_monotonic_ns'] / 1e9)
     try:

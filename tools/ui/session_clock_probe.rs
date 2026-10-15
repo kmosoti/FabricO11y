@@ -2,6 +2,7 @@ use std::{env, fs, io::{self, BufRead, Write}, os::unix::process::CommandExt, pr
 #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))] compile_error!("clock probe requires Linux x86_64");
 #[repr(C)] #[derive(Default)] struct Timespec { sec: i64, nsec: i64 }
 #[repr(C)] #[derive(Clone, Copy, Default)] struct Observation { pid: u64, sequence: u64, offset_s: u64, clock_id: u64, raw_ns: u64, returned_ns: u64 }
+#[repr(C)] struct Timing { tid: u64, call_index: u64, monotonic_before_ns: u64, monotonic_after_ns: u64 }
 #[link(name = "dl")] extern "C" {
     fn clock_gettime(id: i32, value: *mut Timespec) -> i32; fn syscall(number: i64, ...) -> i64;
     fn dlsym(handle: *mut std::ffi::c_void, name: *const std::ffi::c_char) -> *mut std::ffi::c_void;
@@ -14,6 +15,11 @@ fn env_clear() -> bool { env::var_os("LD_PRELOAD").is_none() && env::var_os("FAB
 fn row(kind: &str, value: Observation, before: u64, after: u64) {
     println!("{{\"kind\":\"{}\",\"row\":{{\"pid\":{},\"sequence\":{},\"offset_s\":{},\"clock_id\":{},\"raw_ns\":{},\"returned_ns\":{},\"syscall_before_ns\":{},\"syscall_after_ns\":{}}}}}",
         kind, value.pid, value.sequence, value.offset_s, value.clock_id, value.raw_ns, value.returned_ns, before, after);
+}
+fn timing(last: unsafe extern "C" fn() -> Timing, before: u64) {
+    let value = unsafe { last() }; let after = raw(1);
+    println!("{{\"kind\":\"timing\",\"row\":{{\"tid\":{},\"call_index\":{},\"monotonic_before_ns\":{},\"monotonic_after_ns\":{},\"syscall_before_ns\":{},\"syscall_after_ns\":{}}}}}",
+        value.tid, value.call_index, value.monotonic_before_ns, value.monotonic_after_ns, before, after);
 }
 fn main() {
     let args: Vec<_> = env::args().collect(); let fd: i32 = args[2].parse().unwrap(); let helper = &args[3]; let socket = &args[4];
@@ -30,6 +36,8 @@ fn main() {
         let mut input = String::new(); io::stdin().read_line(&mut input).unwrap(); eprintln!("FCLK-MISSING"); std::process::exit(76);
     }
     let last: unsafe extern "C" fn() -> Observation = unsafe { std::mem::transmute(symbol) };
+    let timing_symbol = unsafe { dlsym(std::ptr::null_mut(), c"fabric_clock_timing".as_ptr()) }; assert!(!timing_symbol.is_null());
+    let last_timing: unsafe extern "C" fn() -> Timing = unsafe { std::mem::transmute(timing_symbol) };
     let mut socket_type = 0; let mut length = 4;
     assert_eq!(unsafe { getsockopt(fd, 1, 3, &mut socket_type, &mut length) }, 0);
     println!("{{\"kind\":\"ready\",\"pid\":{},\"env_clear\":{},\"cloexec\":{},\"socket_type\":{}}}",
@@ -37,10 +45,10 @@ fn main() {
     for input in io::stdin().lock().lines() {
         match input.unwrap().as_str() {
             "clock" => {
-                for id in [0, 1, 4] { let before = raw(id); let mut value = Timespec::default(); assert_eq!(unsafe { clock_gettime(id, &mut value) }, 0);
-                    let observation = unsafe { last() }; let after = raw(id); assert_eq!(ns(&value), observation.returned_ns); row("clock", observation, before, after); }
-                let before = raw(0); let value = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(); let observation = unsafe { last() }; let after = raw(0);
-                assert_eq!(value, observation.returned_ns as u128); row("system", observation, before, after);
+                for id in [0, 1, 4] { let mono = raw(1); let before = raw(id); let mut value = Timespec::default(); assert_eq!(unsafe { clock_gettime(id, &mut value) }, 0);
+                    let observation = unsafe { last() }; let after = raw(id); assert_eq!(ns(&value), observation.returned_ns); row("clock", observation, before, after); timing(last_timing, mono); }
+                let mono = raw(1); let before = raw(0); let value = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos(); let observation = unsafe { last() }; let after = raw(0);
+                assert_eq!(value, observation.returned_ns as u128); row("system", observation, before, after); timing(last_timing, mono);
             }
             "sleep" => { let a = raw(1); let began = Instant::now(); let b = raw(1); std::thread::sleep(Duration::from_millis(500));
                 let c = raw(1); let elapsed = began.elapsed().as_nanos(); let d = raw(1);
