@@ -43,6 +43,21 @@ def workload_context():
             'activation_monotonic_ns': int(state['ActiveEnterTimestampMonotonic']) * 1000}
 
 
+def outer_stopped(report, unit):
+    """Read the whole outer kernel population, including escaped control tasks."""
+    group = Path(report['outer_cgroup'])
+    require(group.is_absolute() and '..' not in group.parts and str(group).startswith('/sys/fs/cgroup/')
+            and group.name == unit + '.service', 'wrong owned outer stop path')
+    try:
+        stamp = group.stat()
+        require((stamp.st_dev, stamp.st_ino) == (report['outer']['device'], report['outer']['inode']),
+                'outer stop directory identity changed')
+        return ('populated 0' in (group / 'cgroup.events').read_text().splitlines()
+                and not (group / 'cgroup.procs').read_text().strip())
+    except OSError:
+        return not group.exists()
+
+
 def validate_inventory(outer, workload_name, guardian_pid):
     outside = {name: fields['cgroup.procs'].split() for name, fields in outer['groups'].items()
                if name != workload_name and not name.startswith(workload_name + '/')}

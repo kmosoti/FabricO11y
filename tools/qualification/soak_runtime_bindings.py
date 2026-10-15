@@ -65,6 +65,15 @@ def validate_final_parent(runtime, outer):
     from resource_guardian import validate_observation
     observation = outer['final_kernel_observation']
     validate_observation(observation)
+    bracket = outer['stop_bracket']
+    require(exact(outer['clock_identity'], runtime['clock_identity'])
+            and outer['clock_identity'] == {'clock': 'CLOCK_MONOTONIC',
+                                          'boot_id': observation['guardian_identity']['boot_id']}
+            and all(type(bracket[key]) is int for key in ('before_ns', 'after_ns'))
+            and observation['after_ns'] <= bracket['before_ns'] <= bracket['after_ns']
+            and bracket['after_ns'] - runtime['phases'][-1]['start_ns'] <= 20 * NS
+            and bracket['after_ns'] < outer['activation_monotonic_ns'] + 7500 * NS,
+            'actual terminal closeout/clock boundary missing or exhausted')
     require(observation.get('control_only') is False and outer['stop_confirmed'] is True
             and all(type(status) is int for status in
                     (outer['exit'], outer['wrapper_exit'], outer['command_receipt']['exit']))

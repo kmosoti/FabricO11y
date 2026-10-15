@@ -250,6 +250,8 @@ def main():
     wrapper_status = None
     final_observation = None
     guardian_valid = False
+    clock_identity = ({'clock': 'CLOCK_MONOTONIC',
+        'boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip()} if observe_workload else None)
     try:
         if observe_final:
             from resource_final_group import observe_service
@@ -266,6 +268,7 @@ def main():
         # Ensure no descendant can still use these files before deleting them,
         # including on an interrupted caller. Never delete shared build caches.
         stop_error = None
+        stop_before_ns = time.monotonic_ns() if observe_workload else None
         try:
             stopped = subprocess.run(['systemctl', '--user', 'stop', unit],
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -290,6 +293,13 @@ def main():
             except (OSError, ValueError, TypeError, KeyError):
                 pass
         safe = group_stopped(child, stop_status)
+        if observe_workload:
+            try:
+                from resource_guardian import outer_stopped
+                safe = outer_stopped(final_observation, unit)
+            except (OSError, ValueError, TypeError, KeyError):
+                safe = False
+        stop_after_ns = time.monotonic_ns() if observe_workload else None
         status = completed_status(wrapper_status, child) if safe else 2
         if observe_workload and not guardian_valid:
             status = 2
@@ -320,6 +330,8 @@ def main():
             'memory_high_bytes': high, 'memory_max_bytes': cap, 'swap_max_bytes': 0,
             'runtime_max_seconds': runtime,
             'delegated': delegated,
+            **({'clock_identity': clock_identity,
+                'stop_bracket': {'before_ns': stop_before_ns, 'after_ns': stop_after_ns}} if observe_workload else {}),
             **({'final_kernel_observation': final_observation,
                 'activation_monotonic_ns': final_observation.get('activation_monotonic_ns')
                     if final_observation else None} if observe_final or observe_workload else {}),

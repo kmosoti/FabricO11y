@@ -5,8 +5,9 @@ import os
 from pathlib import Path
 import tempfile
 from unittest import mock
+from types import SimpleNamespace
 
-from resource_guardian import validate_observation, workload_context
+from resource_guardian import validate_observation, workload_context, outer_stopped
 from test_resource_final_group import groups
 
 
@@ -27,6 +28,19 @@ def fixture():
 
 
 class GuardianControls(unittest.TestCase):
+    def test_outer_stop_must_observe_whole_population_and_same_inode(self):
+        report = {'outer_cgroup': '/sys/fs/cgroup/fabric-work-owned.service', 'outer': {'device': 7, 'inode': 9}}
+        for population, expected in [('populated 1', False), ('populated 0', True)]:
+            with mock.patch.object(Path, 'stat', return_value=SimpleNamespace(st_dev=7, st_ino=9)):
+                # Root procs are empty only for the positive whole-group read.
+                def read(path, *args, **kwargs):
+                    return population if path.name == 'cgroup.events' else ''
+                with mock.patch.object(Path, 'read_text', read):
+                    self.assertEqual(outer_stopped(report, 'fabric-work-owned'), expected)
+        with mock.patch.object(Path, 'stat', return_value=SimpleNamespace(st_dev=7, st_ino=10)):
+            with self.assertRaises(ValueError):
+                outer_stopped(report, 'fabric-work-owned')
+
     def test_forged_environment_without_held_workload_inode_is_refused(self):
         with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
             root = Path(directory)

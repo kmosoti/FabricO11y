@@ -200,6 +200,8 @@ def validate_headroom_sources(value):
             durations[name], previous = ended - began, ended
         if phase == 'exposure_transition':
             actual = durations['exposure'] - runtime['offered_seconds'] * NS
+        elif phase == 'closeout':
+            actual = source['stop_bracket']['after_ns'] - runtime['phases'][-1]['start_ns']
         else:
             actual = durations[phase]
         require(actual == record['maximum_ns'], 'S1 supplied maximum differs from raw phase')
@@ -564,6 +566,7 @@ def measure(value, admission_sha):
             'parent_identity': {'device': aggregate_parent.stat().st_dev, 'inode': aggregate_parent.stat().st_ino},
             'workload_identity': {'device': parent.stat().st_dev, 'inode': parent.stat().st_ino},
             'workload_cgroup': str(parent), 'wrapper_identity': wrapper_identity,
+            'clock_identity': {'clock': 'CLOCK_MONOTONIC', 'boot_id': wrapper_identity['boot_id']},
             'output_identity': {'path': str(output), 'device': output.stat().st_dev, 'inode': output.stat().st_ino},
             'native_interval': {'start_ns': lower, 'conservative_end_ns': boundary},
             'production_exits': record['production_exits'], 'measurement_sha256': digest(output / 'measurement.json')})

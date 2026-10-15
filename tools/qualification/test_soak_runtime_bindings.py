@@ -50,12 +50,22 @@ class BindingControls(unittest.TestCase):
         observation['command_receipt']['command'] = ['actual-helper']
         outer.update(final_kernel_observation=observation, stop_confirmed=True, exit=0, wrapper_exit=0,
                      command=['actual-helper'], command_receipt=copy.deepcopy(observation['command_receipt']))
+        runtime['clock_identity'] = {'clock': 'CLOCK_MONOTONIC', 'boot_id': 'native-boot'}
+        outer.update(clock_identity=copy.deepcopy(runtime['clock_identity']),
+                     stop_bracket={'before_ns': observation['after_ns'] + 1, 'after_ns': observation['after_ns'] + 2})
         self.assertTrue(validate_final_parent(runtime, outer))
         for mutate in [lambda o: o['outer'].update(inode=10), lambda o: o['outer']['groups'].pop('control-plane'),
                        lambda o: o.update(control_only=True), lambda o: o.update(unit='other'),
                        lambda o: o['wrapper_identity'].update(start_ticks=999)]:
             bad = copy.deepcopy(outer)
             mutate(bad['final_kernel_observation'])
+            with self.assertRaises(ValueError):
+                validate_final_parent(runtime, bad)
+        for mutate in [lambda o: o['clock_identity'].update(boot_id='other-boot'),
+                       lambda o: o['stop_bracket'].update(after_ns=runtime['phases'][-1]['start_ns'] + 20 * NS + 1),
+                       lambda o: o['stop_bracket'].update(after_ns=o['stop_bracket']['before_ns'] - 1)]:
+            bad = copy.deepcopy(outer)
+            mutate(bad)
             with self.assertRaises(ValueError):
                 validate_final_parent(runtime, bad)
 
