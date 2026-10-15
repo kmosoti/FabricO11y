@@ -334,14 +334,28 @@ class ConsoleBridge:
             self.receipt["startup_failure_type"] = type(error).__name__
             if backend == "firefox" and self.session and getattr(self, "_tls_startup_pending", False):
                 try:
-                    self.receipt["tls_navigation_failure"] = self._js("""const text=document.documentElement.textContent;
-                      return {uri:document.documentURI.slice(0,2048), codes:
-                        ['SSL_ERROR_BAD_CERT_DOMAIN','SEC_ERROR_UNKNOWN_ISSUER','MOZILLA_PKIX_ERROR_SELF_SIGNED_CERT']
-                        .filter(code=>text.includes(code))};""")
+                    self.receipt["tls_navigation_failure"] = self._firefox_tls_failure()
                 except (OSError, RuntimeError):
                     self.receipt["tls_navigation_failure"] = {"codes": [], "inconclusive": True}
             self.close()
             raise
+
+    def _firefox_tls_failure(self):
+        # Firefox 157 renders the certificate detail in net-error-card rather
+        # than light-DOM text. Observe its actual errorInfo; never infer a code
+        # from the fixture case or from the generic about:certerror URI.
+        deadline = time.monotonic() + 5
+        while True:
+            observed = self._js("""const card=document.querySelector('net-error-card');
+              const model=card && (card.wrappedJSObject || card);
+              const code=String(model?.errorInfo?.errorCodeString || '').slice(0,120);
+              const text=document.documentElement.textContent;
+              return {uri:document.documentURI.slice(0,2048), observedCode:code, codes:
+                ['SSL_ERROR_BAD_CERT_DOMAIN','SEC_ERROR_UNKNOWN_ISSUER','MOZILLA_PKIX_ERROR_SELF_SIGNED_CERT']
+                .filter(value=>code===value || (!code && text.includes(value)))};""")
+            if observed.get('codes') or time.monotonic() >= deadline:
+                return observed
+            time.sleep(0.1)
 
     def _call(self, method, path, body=None):
         data = None if body is None else json.dumps(body).encode()

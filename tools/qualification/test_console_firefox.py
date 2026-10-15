@@ -85,6 +85,24 @@ class FirefoxBridgeTests(unittest.TestCase):
             with self.assertRaises(ValueError): ConsoleBridge('https://guide.example:8443', '/owned/leaf', '/owned/work', '/owned/out', backend='firefox', trusted_ca='/owned/ca', private_dns='guide.example')
             limits.assert_not_called()
 
+class FirefoxCertificateObservationTests(unittest.TestCase):
+    def test_waits_for_actual_code_after_generic_certificate_page(self):
+        value=ConsoleBridge.__new__(ConsoleBridge)
+        generic={'uri':'about:certerror','codes':[]}
+        specific={'uri':'about:certerror','codes':['SSL_ERROR_BAD_CERT_DOMAIN']}
+        value._js=Mock(side_effect=[generic,specific])
+        with patch('console_bridge.time.sleep'), patch('console_bridge.time.monotonic',side_effect=[0,0,1]):
+            self.assertEqual(value._firefox_tls_failure(),specific)
+        self.assertEqual(value._js.call_count,2)
+
+    def test_generic_page_never_becomes_specific_refusal(self):
+        value=ConsoleBridge.__new__(ConsoleBridge)
+        generic={'uri':'about:certerror','codes':[]}
+        value._js=Mock(return_value=generic)
+        with patch('console_bridge.time.monotonic',side_effect=[0,6]):
+            self.assertEqual(value._firefox_tls_failure(),generic)
+
+
 class FirefoxToolPinsTests(unittest.TestCase):
     def test_actual_inventory_content_and_link_controls(self):
         import tempfile, hashlib, os
