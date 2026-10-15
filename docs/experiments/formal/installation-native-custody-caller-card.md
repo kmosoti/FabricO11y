@@ -177,3 +177,22 @@ buffers and root-ID request. Local authoritative headers inspected:
 and `btrfs_tree.h`
 `856fe1cf3c741fab992b73c328d4def16bad6351f6b0b75ca590a69e1f748444`.
 These source controls do not establish a genuine kernel ioctl result.
+
+
+## Exact sender invocation amendment
+
+Before implementation, register a final235producer/355caller ceiling (590combined)
+for exact systemd invocation binding. Each candidate process observation retains
+`InvocationID`, PID and `/proc/PID/stat` start ticks; reobserve them while running
+before stopping. Every delivery journal record must carry that exact trusted
+`_SYSTEMD_INVOCATION_ID` as well as PID/unit/executable/UID/GID/cgroup/boot and the
+registered realtime window. A same-PID, same-boot, in-window ACK from another
+invocation must refuse (`raw journal sender mismatch`). Literal stopped-bundle
+copy controls inject that defect while keeping the ACK bytes/window coherent.
+
+Full journals retain `__MONOTONIC_TIMESTAMP` but no comparison treats it as
+CLOCK_BOOTTIME: suspend changes those clock domains differently. Exact invocation
+binding avoids admitting another incarnation through the realtime calibration's
+one-second allowance. No no-suspend assumption or clock-domain equality is used.
+The native command plan must pin a clean merged implementation revision present
+in `origin/main`; source-only green does not bypass that host admission rule.

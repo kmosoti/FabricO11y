@@ -39,8 +39,9 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
             if process:
                 process['boot_id'] = boots[process['boot_id']]
                 process['start_ns'] *= 1000; process['end_ns'] *= 1000
+                process['invocation_id'] = ('1' if phase == 'drain' else '2') * 32
                 process.update(exe_sha256='a' * 64, status=f'Uid:\t{os.getuid()}\nGid:\t{os.getgid()}\n',
-                    show=dict(stdout=f"MainPID={process['pid']}\nControlGroup=/system.slice/system-fabrico11y.slice/{native.UNITS[1]}\n"))
+                    show=dict(stdout=f"MainPID={process['pid']}\nInvocationID={process['invocation_id']}\nControlGroup=/system.slice/system-fabrico11y.slice/{native.UNITS[1]}\n"))
             receipt = dict(binding=BINDING, spool_root=str(native.ROOT), boot_id=snapshot['boot_id'],
                 root_stat=list(native.witness.identity(self.spool.stat())))
             files[phase + '/' + name + '-receipt.json'] = receipt
@@ -56,6 +57,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                     event['boot_id'] = boots[event['boot_id']]; event['at_ns'] *= 1000
                     journal.append(dict(MESSAGE=event['message'], _PID=str(event['pid']),
                         _BOOT_ID=event['boot_id'].replace('-', ''), _SYSTEMD_UNIT=event['unit'],
+                        _SYSTEMD_INVOCATION_ID=process['invocation_id'], __MONOTONIC_TIMESTAMP='123456',
                         _SYSTEMD_CGROUP='/system.slice/system-fabrico11y.slice/' + event['unit'],
                         _EXE='/usr/bin/fabric-node', _UID=str(os.getuid()), _GID=str(os.getgid()),
                         __REALTIME_TIMESTAMP=str(event['at_ns'] // 1000)))
@@ -135,7 +137,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                 ('unit-pid', 'native stop'), ('missing-unit', 'stopped observations'), ('raw-tree', 'raw tree'), ('raw-bytes', 'raw bytes'),
                 ('query-drop', 'row conservation'), ('query-duplicate', 'row conservation'),
                 ('ack-hash', 'ACK exact bytes'), ('credential', 'credential metadata'),
-                ('candidate', 'candidate process executable'), ('snapshot-root', 'root/binding')):
+                ('candidate', 'candidate process executable'), ('journal-incarnation', 'raw journal sender'), ('snapshot-root', 'root/binding')):
             with self.subTest(variant=variant):
                 files, admission = self.fixture_files()
                 if variant == 'binding': admission['binding'] = dict(BINDING, candidate_frozen='0' * 40)
@@ -157,6 +159,8 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                     event = files['reboot/ack-events.json'][0]
                     original = event['message']; event['message'] = original.replace(original.split('sha256=')[1][:64], '0' * 64)
                     files['reboot/journal.jsonl'] = files['reboot/journal.jsonl'].replace(original.encode(), event['message'].encode())
+                elif variant == 'journal-incarnation':
+                    files['reboot/journal.jsonl'] = files['reboot/journal.jsonl'].replace(('2' * 32).encode(), ('f' * 32).encode())
                 elif variant == 'credential': files['reboot/reboot-credential.json']['files']['/etc/fabrico11y/node-token']['stat'][1] = 42
                 elif variant == 'candidate': files['drain/drain-snapshot.json']['candidate_process']['exe_sha256'] = 'b' * 64
                 elif variant == 'snapshot-root': files['prepare/before-receipt.json']['spool_root'] = '/var/lib/filtered'
