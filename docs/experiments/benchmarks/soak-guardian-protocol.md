@@ -56,3 +56,26 @@ These are finite negative-control mechanisms, never campaign admission modes.
 Source controls inject every individual missing field, dirty field, wrong cap,
 wrapper/guardian identity and inventory disagreement. Native outcomes and exact
 commands/pins are recorded before any S1; these controls qualify no product.
+
+## Runtime and stopped-evidence mapping
+
+R3 activation now requires this topology and an inherited held workload-root
+descriptor. Bind actual unit/guardian via systemd and `/proc`, use the workload
+root for delegated project groups, and sample the actual outer aggregate. Final
+offline joins reparse the guardian's raw fields/inventory against admitted
+outer/workload inodes, all runtime subgroup caps, actual command/wrapper identity,
+and the independently stopped outer receipt. A control-only record is refused.
+The historical removed-parent topology remains a counterexample, not fallback.
+
+Use unchanged NativeTrace source3b3794abbd539085f02585356a035d5b37ec3a04.
+Launch its held ELF directly after authenticating the caller's actual held
+supervisor cgroup; inherit exact CPUs2–3 using a temporarily narrowed calling
+thread affinity, restore it in finally and check actual target affinity/cgroup.
+Its live trace directory starts under the result tree, then receives a stopped
+same-filesystem rename to `native-trace`, included in the immutable checkpoint
+manifest. The raw begin file retains its inode through the separate raw rename.
+Offline `NativeTrace.validate_stopped` reparses actual trace/receipt/begin bytes
+before ten-gate evaluation. Observer facts carry no invented exit fields; the
+observer's own raw receipt must bind target/tracer exit0 and actual identities.
+The frozen harness inventory includes the guardian and native observer modules;
+these harness changes do not refreeze product packages.

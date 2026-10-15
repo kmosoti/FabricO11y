@@ -25,6 +25,7 @@ PROTOCOL_NAMES = ("docs/experiments/benchmarks/soak-protocol.md",
                   "docs/experiments/benchmarks/alpha-phase5-outage-protocol.md",
                   "docs/experiments/benchmarks/production-access-campaign-protocol.md")
 RUNTIME_HELPER_NAMES = ("packaging/build-rpm.sh", "tools/resource_group.py", "tools/resource_final_group.py", "tools/packaging/stage_console.py",
+                        "tools/resource_guardian.py", "tools/qualification/simulator_native_trace.py",
                         "tools/ui/fixture_cadence.py",
                         "tools/ui/browser_supervisor.py", "tools/ui/live_browser_check.py",
                         "tools/ui/browser_producer.py",

@@ -78,6 +78,7 @@ class SourceCensusTests(unittest.TestCase):
             path.write_text("#!/bin/sh\nexit 0\n")
             path.chmod(0o700)
         runtime_helpers = ("packaging/build-rpm.sh", "tools/resource_group.py", "tools/resource_final_group.py", "tools/packaging/stage_console.py",
+                           "tools/resource_guardian.py", "tools/qualification/simulator_native_trace.py",
                            "tools/ui/fixture_cadence.py",
                            "tools/ui/browser_supervisor.py", "tools/ui/live_browser_check.py",
                            "tools/ui/browser_producer.py",
