@@ -117,6 +117,7 @@ def inside(args):
         for key,value in (('speech-server-factory','speechdispatcherfactory'),('synthesizer','espeak-ng')):
             run(['/usr/bin/gsettings','set','org.gnome.Orca.Speech:/org/gnome/orca/default/speech/',key,value])
         # The private session bus activates its own AT-SPI bus, never the owner's.
+        run(['/usr/bin/gsettings','set','org.gnome.desktop.interface','toolkit-accessibility','true'])
         run(['/usr/bin/gdbus','call','--session','--dest','org.a11y.Bus','--object-path','/org/a11y/bus','--method','org.a11y.Bus.GetAddress'])
         launch('atspi',[sys.executable,'-B',str(Path(__file__)),'--observe',str(out/'events.jsonl')])
         wait(lambda:(out/'events.ready').exists())
@@ -232,7 +233,12 @@ def main():
     finally:
         if process and process.poll() is None:
             os.killpg(process.pid,signal.SIGKILL);process.wait(timeout=5)
-        record['namespace_stopped']=process is not None and process.poll() is not None
+        record['namespace_leader_reaped']=process is not None and process.poll() is not None
+        if (out/'inside.json').exists():
+            inner=json.loads((out/'inside.json').read_text())
+            isolated=all(inner['namespaces'][name]!=value for name,value in record['namespaces_before'].items())
+            record['actual_private_namespaces']=isolated
+            if not isolated:record.update(exit=1,error='announcement-namespace-isolation')
         record['resources']={key:(group/key).read_text().strip() for key in ('memory.peak','memory.events','memory.swap.current')}
         if record['exit']==0:shutil.rmtree(work);record['cleanup']='owned private configuration/profile/runtime removed'
         else:record['failure_evidence']=str(work)
