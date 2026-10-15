@@ -84,3 +84,22 @@ class FirefoxBridgeTests(unittest.TestCase):
         with patch('console_bridge.require_limits') as limits:
             with self.assertRaises(ValueError): ConsoleBridge('https://guide.example:8443', '/owned/leaf', '/owned/work', '/owned/out', backend='firefox', trusted_ca='/owned/ca', private_dns='guide.example')
             limits.assert_not_called()
+
+class FirefoxToolPinsTests(unittest.TestCase):
+    def test_actual_inventory_content_and_link_controls(self):
+        import tempfile, hashlib, os
+        from pathlib import Path
+        from console_firefox_trust import verify_tool_pins
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);binary=root/'firefox';binary.write_bytes(b'original')
+            alias=root/'alias';alias.symlink_to('firefox')
+            pins=dict(firefox_root=str(root),firefox_files=sorted([str(binary),str(alias)]),
+                      links={str(alias):'firefox'},tools={str(binary):hashlib.sha256(b'original').hexdigest()})
+            verify_tool_pins(pins)
+            binary.write_bytes(b'changed')
+            with self.assertRaisesRegex(ValueError,'tool identity'):verify_tool_pins(pins)
+            binary.write_bytes(b'original');alias.unlink();alias.symlink_to('./firefox')
+            with self.assertRaisesRegex(ValueError,'link changed'):verify_tool_pins(pins)
+            alias.unlink();alias.symlink_to('firefox');(root/'new').write_bytes(b'new')
+            with self.assertRaisesRegex(ValueError,'inventory changed'):verify_tool_pins(pins)
+

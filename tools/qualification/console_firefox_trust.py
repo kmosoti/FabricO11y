@@ -25,6 +25,19 @@ def sha(path):
         return hashlib.file_digest(stream, 'sha256').hexdigest()
 
 
+def verify_tool_pins(pins):
+    root = Path(pins['firefox_root'])
+    actual = sorted(str(path) for path in root.rglob('*') if path.is_file() or path.is_symlink())
+    if actual != pins['firefox_files']:
+        raise ValueError('Firefox installation inventory changed')
+    for path, target in pins['links'].items():
+        if not Path(path).is_symlink() or os.readlink(path) != target:
+            raise ValueError('Firefox installation link changed')
+    for path, expected in pins['tools'].items():
+        if sha(path) != expected or Path(path).is_symlink():
+            raise ValueError('Firefox tool identity changed')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--case', required=True, choices=('trusted', 'wrong-san', 'untrusted-ca'))
@@ -37,8 +50,7 @@ def main():
     require = browser_supervisor.require
     require(sha(args.pins) == args.pins_sha256, 'trust-tool-pins')
     pins = json.loads(args.pins.read_text())
-    for path, expected in pins['tools'].items():
-        require(sha(path) == expected and not Path(path).is_symlink(), 'trust-tool-identity')
+    verify_tool_pins(pins)
     subprocess.run(['systemctl', '--user', 'set-property', '--runtime', limits.name,
                     'MemoryHigh=5G', 'MemoryMax=6G', 'MemorySwapMax=0', 'CPUQuota=200%', 'TasksMax=1536'], check=True, timeout=15)
     require(not args.out.exists() and args.out.parent.resolve().is_relative_to(browser.DATA / 'results'), 'trust-output')
@@ -155,6 +167,13 @@ def main():
         for held in (parent, budget):
             if held is not None: os.close(held['fd'])
         signal.alarm(0); signal.signal(signal.SIGALRM, old_alarm)
+        try:
+            require(sha(args.pins) == args.pins_sha256, 'trust-tool-pins-after')
+            verify_tool_pins(pins)
+            report['immutable_tools'] = True
+        except BaseException as error:
+            errors.append(type(error).__name__ + ': ' + str(error))
+            report['immutable_tools'] = False
         report.update(cleanup_errors=errors, guardian_own_children_empty=clean, tls_stopped=loop is None or not loop.is_alive())
         if errors: report['exit'] = 2
         (args.out / 'receipt.json').write_text(json.dumps(report, indent=2) + '\n')
