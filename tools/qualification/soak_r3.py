@@ -100,6 +100,9 @@ def expired(_signum, _frame):
 
 def launcher_begin(parent):
     require(os.environ.get('FABRIC_RESOURCE_RUNTIME_SECONDS') == '7500', 'R3 requires exact 7500-second launcher')
+    retained = subprocess.check_output(['systemctl', '--user', 'show', parent.name,
+        '--property=RemainAfterExit', '--value'], timeout=2).strip()
+    require(retained == b'yes', 'R3 requires retained service for actual final parent observation')
     raw = subprocess.check_output(['systemctl', '--user', 'show', parent.name,
         '--property=ActiveEnterTimestampMonotonic', '--value'], timeout=2).strip()
     require(raw.isdigit() and int(raw) > 0, 'native launcher monotonic activation missing')
