@@ -188,6 +188,12 @@ These are operating-profile claims; none has recorded target-profile qualificati
 
 ## Server self-observation (ADR-0026)
 
+The [fresh-owner guide protocol](../experiments/formal/owner-walkthrough-protocol.md)
+also has a [native caller](../../tools/qualification/owner_walkthrough.py) and
+[independent record/query joins](../../tools/qualification/owner_evidence.py).
+These are executable prerequisites, not a new `QUAL-INSTALL` result; complete
+fresh native walkthrough acceptance remains pending.
+
 The additional CLI self-observation capability is tracked separately in
 [its protocol and findings](../experiments/formal/server-self-observation-findings.md).
 `operational_log` unit tests check bounded rotation, unsafe files and locking;

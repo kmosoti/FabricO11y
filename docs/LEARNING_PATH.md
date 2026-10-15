@@ -217,6 +217,14 @@ Try it:
 
 ## Working rule
 
+The [owner walkthrough caller](../tools/qualification/owner_walkthrough.py)
+applies the same explicit-outcome discipline to operations: a command's exit is
+separate from a completed phase, and resuming a phase spends its remaining
+budget. Inspect [the literal controls](../tools/qualification/test_owner_phase_resume.py)
+to see a valid reentry and an exhausted allocation distinguished from omitted
+work. Original journal bytes and the independent query oracle remain the
+authority for received rows; the caller's transcript cannot authenticate itself.
+
 For each new component, answer these in plain language before coding:
 
 1. What does it receive and produce?

@@ -31,3 +31,13 @@ uses the unchanged packaged companion and installation-wide reader role. Its
 disposable smoke verifies independent companion corpus handling; full service
 and deployment gates remain separate. Component ownership and deployment
 boundaries are unchanged.
+
+The [fresh-owner guide caller](../../tools/qualification/owner_walkthrough.py)
+uses the native package managers and normal production console in two disposable
+guests. It archives guide command spans, protected raw observations and original
+stopped journal bytes; the existing independent framing and query oracles grade
+the answers. Its phase table bounds accumulated time, rather than replacing the
+guide's call sequence. Native execution remains subject to the
+[walkthrough protocol](../experiments/formal/owner-walkthrough-protocol.md);
+source controls alone establish no deployment acceptance. This is qualification
+tooling outside the runtime boundaries shown above.
