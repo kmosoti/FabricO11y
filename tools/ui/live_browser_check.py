@@ -84,6 +84,7 @@ def browser_members(group):
 
 
 def bind_browser_group(parent, group, proc):
+    binding = None
     try:
         browser_directory(parent); browser_directory(group)
         browser_group_check(parent['path'].name.startswith('fabric-work-')
@@ -101,7 +102,10 @@ def bind_browser_group(parent, group, proc):
         browser_members(binding['group'])
         browser_group_check(any(row['pid'] == proc.pid for row in binding['group']['members']), 'placement')
         return binding
-    except (OSError, KeyError, ValueError, StopIteration):
+    except (OSError, KeyError, ValueError, StopIteration, RuntimeError) as error:
+        if binding is not None:
+            for row in binding['group']['members']: os.close(row['pidfd'])
+        if isinstance(error, RuntimeError): raise
         raise RuntimeError('browser-group-identity') from None
 
 
@@ -1507,6 +1511,8 @@ self.addEventListener("fetch",event=>{
             if sampler.is_alive(): cleanup_error = cleanup_error or RuntimeError('browser sampler stop')
             (out/'resource-samples.json').write_text(json.dumps(samples, indent=2) + '\n')
             for log in logs: log.close()
+            receipt['own_children_empty'] = group_parent.get('own_children_empty', False)
+            receipt['reader_namespaces'] = group_parent.get('namespaces')
             receipt['process_exits'] = {label: proc.returncode for label, proc in processes}
             receipt['group_stops'] = [{key: binding['group'].get(key) for key in
                 ('pid', 'start_ticks', 'kernel_empty', 'children_reaped', 'late_reaped', 'stop_error')} for binding in owned_groups]
