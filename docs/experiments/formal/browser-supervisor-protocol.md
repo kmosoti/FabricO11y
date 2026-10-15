@@ -32,7 +32,11 @@ the bridge still probes its actual `/status`. Startup, EOF, malformed messages,
 driver exit and the run's original absolute monotonic deadline enter the same
 bounded cleanup. The supervisor's ready and cleanup receipts contain no tokens,
 cookies or response bodies. The parent bounds startup at 10 seconds and normal
-shutdown at 30 seconds without extending the R3 deadline.
+shutdown at 20 seconds and the caller's shutdown-phase deadline, whichever is
+earlier, without extending the R3 deadline. The stop packet may only tighten the
+original absolute deadline; both retained parent records use that tighter bound.
+After expiry, owned-domain kill/reap attempts are failed cleanup, never credited
+as completion of the expired phase.
 
 Only a clean supervisor exit plus its separate populated-zero, exact child
 absence and own-child ECHILD observations can establish browser cleanup.
@@ -52,6 +56,13 @@ ECHILD even when the supervisor cannot complete. Retain failures and resource
 receipts. Existing thirteen source controls and four native cleanup cases must
 retain their exact outcomes at the resulting source revision; their historical
 receipts remain bound to their original revisions.
+
+Harness-only deterministic `before-ready` and `during-cleanup` fault points
+publish a bounded PID/start marker and SIGSTOP the supervisor itself. The
+independent fixture guardian authenticates that identity with its own pidfd and
+kills it. The second point follows subgroup stop and precedes late-child
+adoption draining, exercising the distinction between kernel population and
+reaping. Ordinary bridge callers select no fault point.
 
 This registration does not change product authentication, package bytes,
 session expiry rules, polling continuity, R3 deadlines or acceptance gates.
