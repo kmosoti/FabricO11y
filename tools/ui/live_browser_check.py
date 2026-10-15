@@ -115,7 +115,8 @@ def stop_browser_groups(parent, bindings):
         group = binding['group']
         try:
             browser_directory(parent); browser_directory(binding['parent']); browser_directory(group)
-            browser_group_check(binding['parent'] == parent and group['path'].parent == parent['path']
+            browser_group_check(all(binding['parent'][key] == parent[key] for key in
+                ('path', 'fd', 'dev', 'ino', 'deadline_monotonic_ns')) and group['path'].parent == parent['path']
                 and group['exclusive'] is True, 'identity')
             proc = group['process']
             browser_group_check(isinstance(proc, subprocess.Popen) and proc.pid == group['pid']
