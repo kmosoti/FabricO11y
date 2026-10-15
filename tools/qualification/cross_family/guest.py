@@ -25,7 +25,9 @@ def image(family):
 
 
 class Guest:
-    def __init__(self, role, family, root, results, key, memory_mib, data_port=None):
+    def __init__(self, role, family, root, results, key, memory_mib, data_port=None, *, network=None):
+        if network not in (None, '192.0.2.0/24'):
+            raise ValueError('only the registered walkthrough network may override usernet')
         self.role = role
         self.family = family
         self.root = root / role
@@ -34,6 +36,7 @@ class Guest:
         self.memory_mib = memory_mib
         self.port = Q.free_port()
         self.data_port = data_port
+        self.network = network
         self.child = None
         self.boot_id = None
         self.root.mkdir(exist_ok=False)
@@ -70,6 +73,8 @@ class Guest:
         if json.loads(Q.run([Q.executable('qemu-img'), 'info', '--output=json', str(disk)]).stdout)['virtual-size'] != 6 * 1024**3:
             raise ValueError('guest disk cap not applied')
         net = f'user,id=net0,hostfwd=tcp:127.0.0.1:{self.port}-:22'
+        if self.network is not None:
+            net += ',net=' + self.network
         if self.data_port is not None:
             net += f',hostfwd=tcp:127.0.0.1:{self.data_port}-:7443'
         command = [Q.executable('qemu-system-x86_64'), '-accel', 'tcg,thread=multi', '-cpu', 'max', '-smp', '2', '-m', str(self.memory_mib),
@@ -80,14 +85,15 @@ class Guest:
             self.child = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=stream)
         self.command = command
 
-    def ready(self):
-        deadline = time.monotonic() + Q.BOOT_TIMEOUT_S
+    def ready(self, *, deadline=None):
+        deadline = deadline if deadline is not None else time.monotonic() + Q.BOOT_TIMEOUT_S
         attempts = []
         while time.monotonic() < deadline:
             if self.child.poll() is not None:
                 raise RuntimeError(self.role + ' guest stopped during boot')
             try:
-                result = Q.run([*self.ssh, 'sudo', 'cloud-init', 'status', '--long'], timeout=15, check=False)
+                result = Q.run([*self.ssh, 'sudo', 'cloud-init', 'status', '--long'],
+                               timeout=min(15, deadline - time.monotonic()), check=False)
                 attempts.append(result.stdout + result.stderr)
                 if result.returncode == 0 and 'status: done' in result.stdout:
                     break

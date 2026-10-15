@@ -217,6 +217,14 @@ Try it:
 
 ## Working rule
 
+The [owner walkthrough caller](../tools/qualification/owner_walkthrough.py)
+applies the same explicit-outcome discipline to operations: a command's exit is
+separate from a completed phase, and resuming a phase spends its remaining
+budget. Inspect [the literal controls](../tools/qualification/test_owner_phase_resume.py)
+to see a valid reentry and an exhausted allocation distinguished from omitted
+work. Original journal bytes and the independent query oracle remain the
+authority for received rows; the caller's transcript cannot authenticate itself.
+
 For each new component, answer these in plain language before coding:
 
 1. What does it receive and produce?
@@ -346,3 +354,15 @@ must also include the companion. Use native ACK/source times to bound a concurre
 snapshot, preserve original source bytes and check freshness/retention alongside
 rows. Why would excluding a source from the expected corpus create a false failure,
 and why would ignoring metadata hide a real omission?
+
+The [owner guide extractor](../tools/qualification/owner_guide.py) illustrates the
+same separation for operator instructions: an immutable command and its source
+span identify what was documented, while an actual process exit and independent
+observations establish what happened. Extraction must preserve shell bytes,
+including heredocs, and cannot decide whether a conditional step was applicable.
+
+The owner driver treats opaque query identifiers as data, not storage offsets.
+Its [registered snapshot adapter](experiments/formal/owner-walkthrough-protocol.md#production-snapshot-and-observer-binding-amendment)
+uses independent source-prefix bounds and keeps the original query oracle.
+The [guest observer](../tools/qualification/owner_observation.py) distinguishes
+configured unit properties from actual process privileges and kernel limits.

@@ -37,6 +37,8 @@ Each line of `archived-runs.tsv` gives a run's path, file count, bytes and the S
 The [fresh-owner walkthrough protocol](formal/owner-walkthrough-protocol.md)
 registers guide callpoints, exact candidate phases, same-code native upgrade
 fixtures and literal controls; preparation is not an execution result.
+The [owner driver source results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-owner-driver-source-results-01)
+record finite caller controls and the production snapshot adapter limitation.
 
 Latest exact-candidate checkpoints: [replacement installation](formal/installation-release-run-03.md), [console-command admission prerequisite](formal/console-command-admission-run-01.md) and [fixed-query caller prerequisites](formal/query-caller-run-01.md). Original failed attempts remain failed; repaired smokes do not replace measured cells.
 

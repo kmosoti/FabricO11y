@@ -39,6 +39,16 @@ observations and independently pinned expected inputs; they neither observe
 elapsed exposure nor authenticate that admission record. The checkpoint uses a
 same-filesystem no-replace rename, retaining uncertain state on failure, and the
 preservation guard refuses decoded mounts before inventory and first unlink.
-Whole-parent and subgroup snapshots record actual kernel fields. Runtime
-integration and verification remain pending; these mechanisms do not establish
+The held workload hierarchy remains readable while the guardian records aggregate
+accounting and its sole outer process; independent closeout then confirms whole
+service stop. Live S1/FULL integration verification remains pending; these mechanisms do not establish
 native soak or deployment acceptance and change no packaged service limit.
+The [fresh-owner guide caller](../../tools/qualification/owner_walkthrough.py)
+uses the native package managers and normal production console in two disposable
+guests. It archives guide command spans, protected raw observations and original
+stopped journal bytes; the existing independent framing and query oracles grade
+the answers. Its phase table bounds accumulated time, rather than replacing the
+guide's call sequence. Native execution remains subject to the
+[walkthrough protocol](../experiments/formal/owner-walkthrough-protocol.md);
+source controls alone establish no deployment acceptance. This is qualification
+tooling outside the runtime boundaries shown above.

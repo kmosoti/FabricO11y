@@ -59,12 +59,13 @@ Known limits and open checks:
 - The prospective [R3 soak](experiments/benchmarks/soak-protocol-r3.md) requires
   7,200 seconds of actual offered work, nine registered cohorts, measured
   non-exposure headroom and a stopped raw checkpoint before separate grading.
-  The pure observation checks, guarded rename, parent snapshots and preservation
-  mount guards are implemented with verification pending. Runtime integration,
-  simulator helper authority, boundary timing and full admission remain pending;
+  The observation checks, guarded rename, held workload accounting and preservation
+  mount guards have finite source and native evidence. Live S1/FULL integration,
+  patched simulator helper authority, boundary timing and full admission remain pending;
   R2 retains its 5,460-second exposure and historical meaning. No new soak
   acceptance is recorded.
 
+- The [fresh-owner walkthrough](experiments/formal/owner-walkthrough-protocol.md) has byte-preserving guide extraction, protected command transport and accumulated phase budgets. Its native caller is implemented; fresh constructor, browser and complete two-direction walkthrough acceptance remain pending exact candidate and merged-guide admission. The [31 source controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-owner-driver-source-results-01) cover bounded production snapshots, source/custody joins and cleanup failures; they do not establish native acceptance.
 - The [fixed-query caller prerequisites](experiments/formal/query-caller-run-01.md) retain an unpaced-page HTTP 429 and the obsolete fixture-only oracle corpus. The repaired disposable query smoke exited 0 with all eight gates; four full query successors remain pending. Six main cells retain their original `8484493` results under prospectively selected `clearing-v2`; older sampled-v1 edge diagnostics failed in five cells. No broader qualification follows.
 - An attacker spread over many IPv6 /48s or IPv4 addresses can still fill the 1,024-entry peer table; a denial at a new second costs up to two access-state syncs (clock watermark and denial record), though at most one denial is stored per second ([#47](https://github.com/kmosoti/FabricO11y/issues/47)).
 - Exact shipped units ran successfully in fresh Debian 13/Fedora 44 baseline and lifecycle cells ([#41](https://github.com/kmosoti/FabricO11y/issues/41)); independent adversarial probes of every added hardening directive remain outside that finite installation result.
@@ -72,7 +73,7 @@ Known limits and open checks:
 - The [stopped-custody upgrade witness](experiments/formal/installation-release-protocol.md#prospective-stopped-custody-upgrade-witness) registers independent framing/Cursor and exact pending/unread-source conservation controls. Its raw snapshot/conservation adapter is implemented; verification and native integration remain pending. No new package lifecycle outcome is recorded.
 - The browser checks added for the role matrix (`live_browser_check`, bridge smoke, packaged console) are CI-only and have no recorded result.
 - The [serial session-state and cleanup controls](experiments/formal/console-session-clock-protocol.md#two-serial-state-fixtures-and-browser-cleanup-registration) retain [actual registration failures](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-session-fixture-registration-red-results-01): four missing-checker assertions and five finalizer defects. The explicit AB/C checker has [source evidence](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-session-source-results-01) with unchanged session semantics. The [delegated ownership registration](experiments/formal/console-session-clock-protocol.md#delegated-browser-launch-ownership-amendment) separates cleanup from native monotonic request binding and browser acceptance, which remain pending. Both fresh states share one 240-second deadline. The [owned cleanup source repair](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-owned-cleanup-source-results-01) executes all 13 controls without skips at `336949e`; cgroup behavior is modeled. Native launch ownership and later-fork reaping are now integrated. At `0152363`, the [native cleanup controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-native-cleanup-results-01) exited 0 for all 13 source controls and four real-kernel cases, with confirmed stop; this does not establish browser acceptance.
-- The [R3 browser supervisor](experiments/formal/browser-supervisor-protocol.md) preserves the 1 GiB browser budget while isolating its child wait domain. Its seven native lifecycle/ancestor controls and exact-revision source/documentation follow-up are registered but unrun. Supervisor failure requires whole-campaign stop/reaping; the native session request binding and browser acceptance remain pending.
+- The [R3 browser supervisor](experiments/formal/browser-supervisor-protocol.md) preserves the 1 GiB browser budget while isolating its child wait domain. Its seven native lifecycle/ancestor controls and exact-revision source/documentation follow-up ran at d6bb252, as recorded in the [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-supervisor-results-01). Supervisor failure requires whole-campaign stop/reaping; the native session request binding and browser acceptance remain pending.
 - In cloud containers the `xtask` tests `check_logs` (needs the launcher) and `evidence` (needs full git history) fail, and `tests/control.rs` fails under umask 022; these are environmental.
 
 The [simulator accounting source controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-simulator-accounting-source-results-01) execute 33 methods without skips; the sealed helper produced the registered missing-begin native red after four actual ACKs. A separate opt-in helper compiled successfully. Its [eight finite native witness diagnostics](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-simulator-native-controls-results-01/dc17be3) exited 0 at `6bd5250`, with confirmed stops; full source/build admission checked all 463 frozen compilation inputs. The [initial-thread syscall observer](experiments/benchmarks/simulator-native-trace-protocol.md), ten literal parser controls and eight native publication/fault controls are registered but unrun. Seven Rust tests, atomic publication certification and full exposure remain pending. Frozen package/helper bytes are unchanged.
@@ -141,6 +142,13 @@ protocols and executable evidence inputs stay here under the
 [migration manifest](wiki-migration.json) pins 151 migrated reports.
 
 ## Assumptions and risks
+
+The fresh-owner walkthrough has a byte-preserving
+[guide extractor](../tools/qualification/owner_guide.py) for its two admitted
+operator guides. It archives exact commands and source spans; it does not execute
+the guide or establish walkthrough acceptance. Conditional choices, linked
+callpoints, prose actions and native observations remain runner responsibilities
+under the [registered protocol](experiments/formal/owner-walkthrough-protocol.md).
 
 - Durability assumes successful sync calls are honored by the filesystem/device;
   physical power loss has not been tested.
