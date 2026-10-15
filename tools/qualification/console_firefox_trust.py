@@ -141,8 +141,8 @@ def main():
         except BaseException as error:
             errors.append(type(error).__name__ + ': ' + str(error))
         if server is not None:
-            server.shutdown()
-            if loop is not None: loop.join(timeout=5)
+            if loop is not None and loop.is_alive():
+                server.shutdown(); loop.join(timeout=5)
             server.server_close()
             if loop is not None and loop.is_alive(): errors.append('TLS thread not stopped')
         for name in ('ca.key', 'decoy.key', 'server.key'):
