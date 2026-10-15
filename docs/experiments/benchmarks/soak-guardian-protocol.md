@@ -47,6 +47,12 @@ opt-in launcher, fresh DATA output/reserve and independently pinned driver:
 | wrong-identity | replace empty workload pathname after its held FD was acquired | reject inode mismatch; whole stop |
 | escaped | owned idle task moves into guardian control leaf | reject actual extra outside PID even if workload empty; whole stop |
 
+The two control-plane faults use the explicit `--guardian-control unexited` or
+`--guardian-control wrong-identity` option before `--delegate`. The former caps
+the actual wrapper wait at three seconds; the latter replaces the empty root
+pathname after wrapper reap. Both permanently mark the observation control-only.
+These are finite negative-control mechanisms, never campaign admission modes.
+
 Source controls inject every individual missing field, dirty field, wrong cap,
 wrapper/guardian identity and inventory disagreement. Native outcomes and exact
 commands/pins are recorded before any S1; these controls qualify no product.
