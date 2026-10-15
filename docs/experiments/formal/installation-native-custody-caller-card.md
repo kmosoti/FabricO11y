@@ -107,3 +107,34 @@ overhead before native admission; do not silently exceed the reserved 1-GiB
 overhead. Stop/reap all descendants before cleanup, retain failed raw observations
 and archives, and require actual stopped/cleanup receipts. No native command,
 image boot, Rust build or producer/caller completion is established here.
+
+## Prospective fourth-checkpoint implementation ceiling amendment
+
+The [fourth stopped checkpoint](installation-native-custody-protocol.md#fourth-stopped-reboot-checkpoint-prospective-revision-4)
+adds phase-specific raw and sender evidence. Source inspection of the complete
+uncommitted producer/caller design measured 212 producer lines and 296 caller
+lines (including all new host admission and lifecycle call sites), beyond the
+original 180/220 estimate. Before any native execution, separately register
+maximum **230 producer** and **340 caller** net lines, **570 combined**. The
+reader's separate 540-total ceiling remains independent. Actual final deltas,
+including every new production helper and call site, must be reported.
+
+The added responsibilities are concrete: independent Btrfs filesystem/subvolume
+observations through Linux UAPI `BTRFS_IOC_FS_INFO` and the root-ID
+`BTRFS_IOC_INO_LOOKUP` (objectid256), complete nested raw-archive membership and
+original ownership checks, exact full-page reconstruction on host admission,
+and a distinct reboot process/ACK window. The installed product never imports
+these helpers. This expands the source budget only; the fixed paths, candidate,
+packages, historical gates, finite five-row projection, independent oracles,
+VM/cgroup/disk envelopes, 180-second lifecycle phases, outer deadline and
+1-GiB evidence overhead remain unchanged. A native refusal never starts candidate
+installation, and no source result substitutes for native acceptance.
+
+For the stopped drain phase, the candidate node is stopped but stays enabled;
+the server alone restarts for the unchanged L1 query/config/account/console
+checks. The actual reboot starts the node, whose distinct sender joins every
+new raw reboot Batch. This prevents an unobserved intervening sender from
+committing additional diagnostics between checkpoints. L2 still observes both
+healthy services and a changed boot before its stopped raw capture. Full source
+and exact native-command preflight remain required; implementation and native
+execution are NOT RUN at this registration.
