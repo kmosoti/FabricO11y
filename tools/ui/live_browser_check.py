@@ -12,6 +12,7 @@ import shutil
 import signal
 import socket
 import ssl
+import stat
 import subprocess
 import sys
 import threading
@@ -26,10 +27,139 @@ sys.path.insert(0, str(ROOT / 'tools'))
 from resource_group import STORAGE as DATA, require_limits
 sys.path.insert(0, str(ROOT / 'tools/packaging'))
 from stage_console import stage
+sys.path.insert(0, str(ROOT / 'tools/bench/labs/completion'))
+import cgroups
 
 VERSION = '155.0.8059.39'
 TOOLS = DATA / 'tools/ui' / f'chrome-for-testing-{VERSION}'
 ROLE_FIXTURE = ROOT / 'docs/experiments/formal/fixtures/console-route-roles.json'
+
+
+def browser_group_check(ok, reason):
+    if not ok:
+        raise RuntimeError('browser-group-' + reason)
+
+
+def browser_directory(record):
+    path = record['path']
+    actual, held = path.lstat(), os.fstat(record['fd'])
+    browser_group_check(path.resolve(strict=True) == path and stat.S_ISDIR(actual.st_mode)
+        and (actual.st_dev, actual.st_ino) == (held.st_dev, held.st_ino)
+        == (record['dev'], record['ino']), 'identity')
+
+
+def browser_pid(pid):
+    path = Path('/proc') / str(pid)
+    fields = (path / 'stat').read_text().rsplit(')', 1)[1].split()
+    browser_group_check(path.stat().st_uid == os.getuid(), 'identity')
+    return int(fields[19]), fields[0]
+
+
+def browser_pidfd(fd):
+    return int(next(line.split(':', 1)[1] for line in
+        (Path('/proc/self/fdinfo') / str(fd)).read_text().splitlines() if line.startswith('Pid:')))
+
+
+def browser_members(group):
+    known = {row['pid']: row for row in group.setdefault('members', [])}
+    paths = [group['path'], *(p for p in group['path'].rglob('*') if p.is_dir())]
+    for path in paths:
+        for text in (path / 'cgroup.procs').read_text().split():
+            pid = int(text)
+            if pid in known:
+                browser_group_check(browser_pid(pid)[0] == known[pid]['start_ticks'], 'identity')
+                continue
+            descriptor = os.pidfd_open(pid)
+            try:
+                start = browser_pid(pid)[0]
+                placement = cgroups.ROOT / next(line[3:] for line in
+                    (Path('/proc') / text / 'cgroup').read_text().splitlines() if line.startswith('0::')).lstrip('/')
+                browser_group_check(placement == group['path'] or placement.is_relative_to(group['path']), 'placement')
+                browser_group_check(browser_pidfd(descriptor) == pid and browser_pid(pid)[0] == start, 'identity')
+                row = dict(pid=pid, start_ticks=start, pidfd=descriptor)
+                group['members'].append(row); known[pid] = row
+            except BaseException:
+                os.close(descriptor)
+                raise
+
+
+def bind_browser_group(parent, group, proc):
+    try:
+        browser_directory(parent); browser_directory(group)
+        browser_group_check(parent['path'].name.startswith('fabric-work-')
+            and cgroups.current() == parent['path'] / 'supervisor', 'parent')
+        browser_group_check({'memory', 'cpu', 'pids', 'io'} <=
+            set((parent['path'] / 'cgroup.subtree_control').read_text().split()), 'delegation')
+        browser_group_check(group['path'].parent == parent['path'] and group['exclusive'] is True, 'ownership')
+        browser_group_check((group['path'] / 'cgroup.kill').is_file(), 'capability')
+        browser_group_check(time.monotonic_ns() < parent['deadline_monotonic_ns'], 'deadline')
+        browser_group_check(isinstance(proc, subprocess.Popen) and proc is group['process']
+            and proc.pid == group['pid'] and browser_pid(proc.pid)[0] == group['start_ticks']
+            and browser_pidfd(group['pidfd']) == proc.pid, 'identity')
+        binding = {'parent': dict(parent), 'group': dict(group, members=[])}
+        binding['group']['pidfd_inode'] = os.fstat(group['pidfd']).st_ino
+        browser_members(binding['group'])
+        browser_group_check(any(row['pid'] == proc.pid for row in binding['group']['members']), 'placement')
+        return binding
+    except (OSError, KeyError, ValueError, StopIteration):
+        raise RuntimeError('browser-group-identity') from None
+
+
+def stop_browser_groups(parent, bindings):
+    errors = []
+    for binding in reversed(bindings):
+        group = binding['group']
+        try:
+            browser_directory(parent); browser_directory(binding['parent']); browser_directory(group)
+            browser_group_check(binding['parent'] == parent and group['path'].parent == parent['path']
+                and group['exclusive'] is True, 'identity')
+            proc = group['process']
+            browser_group_check(isinstance(proc, subprocess.Popen) and proc.pid == group['pid']
+                and os.fstat(group['pidfd']).st_ino == group['pidfd_inode'], 'identity')
+            observed_pid = browser_pidfd(group['pidfd'])
+            browser_group_check(observed_pid == group['pid'] or
+                (observed_pid == -1 and proc.returncode is not None and not (Path('/proc') / str(group['pid'])).exists()), 'identity')
+            browser_members(group)
+            for row in group['members']:
+                try:
+                    browser_group_check(browser_pid(row['pid'])[0] == row['start_ticks']
+                        and browser_pidfd(row['pidfd']) == row['pid'], 'identity')
+                    signal.pidfd_send_signal(row['pidfd'], signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+                except FileNotFoundError:
+                    browser_group_check(browser_pidfd(row['pidfd']) == -1, 'identity')
+            try:
+                proc.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                pass
+            end = min(time.monotonic() + 5, parent['deadline_monotonic_ns'] / 1e9)
+            browser_directory(group)
+            if 'populated 1' in (group['path'] / 'cgroup.events').read_text().splitlines():
+                descriptor = os.open('cgroup.kill', os.O_WRONLY | os.O_NOFOLLOW, dir_fd=group['fd'])
+                try: os.write(descriptor, b'1')
+                finally: os.close(descriptor)
+            # Reap only retained process identities, including adopted zombies.
+            while True:
+                remaining = []
+                for row in group['members']:
+                    path = Path('/proc') / str(row['pid'])
+                    if path.exists():
+                        browser_group_check(browser_pid(row['pid'])[0] == row['start_ticks'], 'identity')
+                        try: os.waitid(os.P_PIDFD, row['pidfd'], os.WEXITED | os.WNOHANG)
+                        except ChildProcessError: pass
+                    if path.exists(): remaining.append(row['pid'])
+                group['kernel_empty'] = 'populated 0' in (group['path'] / 'cgroup.events').read_text().splitlines()
+                group['children_reaped'] = not remaining
+                if group['kernel_empty'] and group['children_reaped']: break
+                if time.monotonic() >= end: raise RuntimeError('browser-group-stop')
+                time.sleep(.01)
+            proc.wait(timeout=0)
+        except (OSError, RuntimeError, KeyError, ValueError, subprocess.TimeoutExpired) as error:
+            errors.append(str(error))
+            group['stop_error'] = str(error)
+    if errors:
+        raise RuntimeError('browser-group-stop')
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -137,6 +267,7 @@ def main():
     args = parser.parse_args()
     if args.role_matrix and (args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery):
         parser.error('role matrix is a separate finite cell; polling/pressure/cursor/shell/recovery retain their own cells')
+    raise RuntimeError('browser native launch ownership integration pending; source controls only')
     limits = require_limits()
     # The combined browser/server fixture uses a stricter cap than build jobs.
     subprocess.run(['systemctl','--user','set-property','--runtime',limits.name,
@@ -1235,23 +1366,28 @@ self.addEventListener("fetch",event=>{
                 call('DELETE', '/session/' + session)
             except BaseException:
                 pass
-        for label, proc in reversed(processes):
-            if proc.poll() is None:
-                os.killpg(proc.pid, signal.SIGTERM)
-                try:
-                    proc.wait(timeout=15)
-                except subprocess.TimeoutExpired:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                    proc.wait(timeout=5)
-            receipt.setdefault('process_exits', {})[label] = proc.returncode
-        stop_samples.set()
-        sampler.join(timeout=2)
-        (out/'resource-samples.json').write_text(json.dumps(samples, indent=2) + '\n')
-        for log in logs:
-            log.close()
-        # Do not archive private keys, bootstrap secrets, browser credentials or cookies.
-        shutil.rmtree(work)
-        receipt['cleanup'] = 'owned TLS/server/browser fixtures removed; process groups stopped; screenshots/logs retained'
+        cleanup_error = None
+        try:
+            stop_browser_groups(group_parent, owned_groups)
+        except BaseException as error:
+            cleanup_error = error
+        finally:
+            stop_samples.set()
+            sampler.join(timeout=2)
+            if sampler.is_alive(): cleanup_error = cleanup_error or RuntimeError('browser sampler stop')
+            (out/'resource-samples.json').write_text(json.dumps(samples, indent=2) + '\n')
+            for log in logs: log.close()
+            receipt['process_exits'] = {label: proc.returncode for label, proc in processes}
+            receipt['group_stops'] = [{key: binding['group'].get(key) for key in
+                ('pid', 'start_ticks', 'kernel_empty', 'children_reaped', 'stop_error')} for binding in owned_groups]
+            if cleanup_error is None:
+                shutil.rmtree(work)
+                receipt['cleanup'] = 'owned fixtures removed; process groups stopped and bound children reaped'
+            else:
+                receipt['cleanup_error'] = str(cleanup_error)
+                receipt['exit'] = 1
+            (out/'browser.json').write_text(json.dumps(receipt, indent=2) + '\n')
+        if cleanup_error is not None: raise cleanup_error
         receipt['remaining_uncertainty'] = 'virtual authenticator only; no physical/synced passkeys, OS trust installation, mobile OS, general capacity or release qualification'
         (out/'browser.json').write_text(json.dumps(receipt, indent=2) + '\n')
     print(json.dumps({'exit':receipt['exit'],'checks':len(checks),'out':str(out)}))
