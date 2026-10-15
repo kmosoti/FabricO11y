@@ -23,6 +23,8 @@ import soak_exposure as exposure
 NS = exposure.NS
 PHASES = tuple(exposure.CEILINGS)
 SEED = 0xA11FA001
+PROFILE = {'identities': 100, 'workers': 100, 'seed': SEED, 'logs_per_second': 2,
+           'log_bytes': 512, 'metrics_per_15_seconds': 32}
 
 
 def require(value, message):
@@ -124,12 +126,52 @@ def admission(path, expected):
                 and certificate.get('source_sha256') == value['inputs'][kind]['sha256'],
                 'uncertified ' + kind + ' prerequisite')
     if not value['smoke']:
-        measurements = value.get('phase_headroom', {})
-        exposure.validate_phase_headroom(measurements)
-        for record in measurements.values():
-            source = pinned(record['source_receipt'], record['source_sha256'])
-            require(source.get('stop_confirmed') is True, 'S1 source stop missing')
+        validate_headroom_sources(value)
     return value
+
+
+def stopped_outer(actual, expected, seconds):
+    child = actual.get('command_receipt', {})
+    require(actual.get('unit') == expected['unit'] and bool(expected['unit'])
+            and actual.get('command') == expected['command'] and bool(expected['command'])
+            and child.get('cgroup') == expected['cgroup'] and bool(expected['cgroup'])
+            and actual.get('runtime_max_seconds') == seconds
+            and actual.get('stop_confirmed') is True and child.get('state') == 'completed'
+            and all(type(exit_code) is int and exit_code == 0 for exit_code in
+                    (actual.get('exit'), actual.get('wrapper_exit'), child.get('exit'))),
+            'exact stopped launcher binding missing')
+
+
+def validate_headroom_sources(value):
+    measurements = value.get('phase_headroom', {})
+    exposure.validate_phase_headroom(measurements)
+    for phase, record in measurements.items():
+        source = pinned(record['source_receipt'], record['source_sha256'])
+        stopped_outer(source, record['outer_expected'], record['outer_runtime_seconds'])
+        runtime = pinned(record['runtime_path'], record['runtime_sha256'])
+        require(runtime.get('state') == 'closed_pending_acceptance'
+                and runtime.get('cleanup_ok') is True and runtime.get('forced_shutdown') is False
+                and runtime.get('immutable_inputs') is True and runtime.get('profile') == PROFILE
+                and runtime.get('headroom_binding') == value['headroom_binding']
+                and bool(value['headroom_binding'])
+                and runtime.get('production_exits') == {'simulator': 0, 'server': 0},
+                'S1 source runtime binding missing')
+        require(runtime.get('smoke') is True if record['kind'] == 'full-rate-smoke'
+                else runtime.get('protocol') == 'R2', 'S1 source kind mismatch')
+        durations = {}
+        previous = None
+        for item in runtime['phases']:
+            name, began, ended = item['phase'], item['start_ns'], item['end_ns']
+            require(name not in durations and type(began) is int and type(ended) is int
+                    and 0 <= began < ended and (previous is None or previous <= began)
+                    and ended - began == item['elapsed_ns'], 'S1 source phase timestamps invalid')
+            durations[name], previous = ended - began, ended
+        if phase == 'exposure_transition':
+            actual = durations['exposure'] - runtime['offered_seconds'] * NS
+        else:
+            actual = durations[phase]
+        require(actual == record['maximum_ns'], 'S1 supplied maximum differs from raw phase')
+    return True
 
 
 def inventory(root):
@@ -316,12 +358,18 @@ def measure(value, admission_sha):
         fixture = clock.call(ProductionAccess, args, raw, soak=True)
         fixture.bridge.continuous_polling = True
         fixture.bridge.ui_sample_limit = 2048
+        fixture.bridge.r3_control_session = True
         from soak_tier import enroll_sources
         enrolled = clock.call(enroll_sources, fixture, 100)
         clock.call(fixture.issue_reader, [item['enrollment_id'] for item in enrolled], 7800)
+        session = clock.call(fixture.bridge.session_view)
+        require(type(session.get('expires_unix_s')) is int
+                and session['expires_unix_s'] > time.time() + value['seconds'] + 90,
+                'actual owner session cannot cover offered interval')
         tokens = raw / 'tokens'
         tokens.write_text('\n'.join(item['token'] for item in enrolled) + '\n')
         tokens.chmod(0o600)
+        token_stamp, token_sha = tokens.stat(), digest(tokens)
         clock.call(fixture.bridge.poll_ui, True)
         probes = Probes(fixture, raw, clock)
         clock.call(probes.start)
@@ -394,6 +442,12 @@ def measure(value, admission_sha):
         require_empty(fixture.groups)
         require(fixture.receipt['cleanup_confirmed'] and fixture.receipt['immutable_inputs'],
                 'production/browser cleanup not confirmed')
+        current_token = tokens.lstat()
+        require(stat.S_ISREG(current_token.st_mode) and current_token.st_nlink == 1
+                and (current_token.st_dev, current_token.st_ino, current_token.st_uid) ==
+                    (token_stamp.st_dev, token_stamp.st_ino, os.getuid())
+                and digest(tokens) == token_sha, 'owned simulator credential changed')
+        tokens.unlink()
         clock.enter('checkpoint')
         # Every rename keeps the stopped inode. No fallback copy or recursive
         # deletion can make a partially checkpointed run successful.
@@ -407,6 +461,7 @@ def measure(value, admission_sha):
             'members': members, 'begin_sha256': begin_sha, 'native_begin': begin,
             'parent_observations': parent_observations,
             'server_hwm_kib': server_hwm,
+            'credential_cleanup': {'tokens_removed': not tokens.exists(), 'sha256': token_sha},
             'exposure': {'start_ns': lower, 'end_ns': observed_end,
                          'conservative_end_ns': boundary, 'probes_started': probes.started,
                          'probes_ready': probes.ready_ns,
@@ -425,6 +480,8 @@ def measure(value, admission_sha):
             'admission_sha256': admission_sha, 'binding': value['binding'], 'phases': clock.records,
             'cleanup_ok': True, 'immutable_inputs': True, 'forced_shutdown': False,
             'parent_observations': parent_observations,
+            'profile': PROFILE, 'smoke': value['smoke'], 'protocol': 'R3', 'offered_seconds': value['seconds'],
+            'headroom_binding': value['headroom_binding'],
             'production_exits': record['production_exits'], 'measurement_sha256': digest(output / 'measurement.json')})
         exposure.remaining_ns('closeout', clock.launcher_begin, closeout_start, time.monotonic_ns())
         return 0
@@ -531,6 +588,8 @@ def grade(value, admission_sha, expected_path, expected_sha, destination):
     require(expected['binding'] == value['binding'] and expected['admission_sha256'] == admission_sha,
             'owner grading binding changed')
     root, destination = Path(value['output']), Path(destination)
+    require(set(path.name for path in root.iterdir()) == {'raw', 'work', 'fixture', 'measurement.json', 'runtime.json'},
+            'failed or incomplete measurement root')
     require(not destination.exists() and not destination.is_relative_to(root), 'fresh separate grading output required')
     measurement = pinned(root / 'measurement.json', expected['receipt_sha256']['measurement'])
     runtime = pinned(root / 'runtime.json', expected['receipt_sha256']['runtime'])
@@ -609,16 +668,64 @@ def grade(value, admission_sha, expected_path, expected_sha, destination):
     return 0 if all(gates.values()) else 1
 
 
+def close_grading(value, admission_sha, expected_path, expected_sha, destination):
+    """Close only an already stopped grading cell, preserving every input."""
+    from resource_group import require_limits
+    require_limits()
+    require(os.environ.get('FABRIC_RESOURCE_RUNTIME_SECONDS') == '1800', 'closeout needs default contained cell')
+    expected = pinned(expected_path, expected_sha)
+    result = pinned(expected['grading_path'], expected['grading_sha256'])
+    outer = pinned(expected['outer_path'], expected['outer_sha256'])
+    stopped_outer(outer, expected['outer_expected'], 1800)
+    require(result.get('state') == 'pending_grader_stop' and result['binding'] == value['binding']
+            and result['admission_sha256'] == admission_sha, 'grading result/admission mismatch')
+    original = pinned(expected['grading_expected_path'], result['expected_sha256'])
+    root = Path(value['output'])
+    require(set(path.name for path in root.iterdir()) == {'raw', 'work', 'fixture', 'measurement.json', 'runtime.json'},
+            'failed or incomplete measurement root')
+    measurement = pinned(root / 'measurement.json', original['receipt_sha256']['measurement'])
+    runtime = pinned(root / 'runtime.json', original['receipt_sha256']['runtime'])
+    measurement_outer = pinned(original['outer_path'], original['receipt_sha256']['outer'])
+    exposure.validate_checkpoint(
+        {'sha256': digest(root / 'measurement.json'), 'value': measurement},
+        {'sha256': digest(root / 'runtime.json'), 'value': runtime},
+        {'sha256': digest(original['outer_path']), 'value': measurement_outer}, original)
+    require(result['input_receipt_sha256'] == original['receipt_sha256'] and not measurement['smoke'],
+            'grading input substitution')
+    for label, members in measurement['members'].items():
+        require(inventory(root / label) == members, 'stopped raw input changed after grading')
+    from soak_tier import evaluate
+    gates = evaluate(result['metrics'])
+    require(gates == result['gates'] and result['all_gates'] is True and all(gates.values()),
+            'not all original ten gates succeeded')
+    target = Path(destination)
+    require(not target.exists() and not target.is_relative_to(root)
+            and target.resolve(strict=False) != Path(expected['grading_path']).resolve(strict=True),
+            'fresh separate acceptance receipt required')
+    target.parent.resolve(strict=True).relative_to(Path(os.environ['FABRIC_STORAGE_ROOT']).resolve(strict=True) / 'results')
+    write_new(target, {'state': 'accepted_finite_r3_trial', 'binding': value['binding'],
+        'gates': gates, 'admission_sha256': admission_sha, 'closeout_expected_sha256': expected_sha,
+        'grading_sha256': expected['grading_sha256'], 'grading_outer_sha256': expected['outer_sha256'],
+        'input_receipt_sha256': original['receipt_sha256'],
+        'limits': 'one finite same-host loopback trial; no deployment or universal stability qualification'})
+    return 0
+
+
 def main(arguments=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--admission', type=Path, required=True)
     parser.add_argument('--admission-sha256', required=True)
     parser.add_argument('--grade', action='store_true')
+    parser.add_argument('--close-grading', action='store_true')
     parser.add_argument('--expected', type=Path)
     parser.add_argument('--expected-sha256')
     parser.add_argument('--grading-output', type=Path)
     args = parser.parse_args(arguments)
     value = admission(args.admission, args.admission_sha256)
+    if args.close_grading:
+        require(not args.grade and args.expected and args.expected_sha256 and args.grading_output,
+                'closeout requires separately pinned stopped grader expectations')
+        return close_grading(value, args.admission_sha256, args.expected, args.expected_sha256, args.grading_output)
     if args.grade:
         require(args.expected and args.expected_sha256 and args.grading_output, 'grading requires independently pinned stopped expectations')
         return grade(value, args.admission_sha256, args.expected, args.expected_sha256, args.grading_output)

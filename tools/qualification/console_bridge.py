@@ -404,7 +404,10 @@ class ConsoleBridge:
                     interval=PEER_ADMISSION['private']['command_interval_s'])
             self._private_cadence.pace()
             view = self.session_view()
-            if method != "GET" and path != "/v1/console/query" and view["fresh_until_unix_s"] <= int(time.time()) + 60:
+            r3_control = getattr(self, 'r3_control_session', False) and (
+                (method == 'GET' and path == '/v1/console/nodes') or
+                (method == 'PUT' and re.fullmatch(r'/v1/console/nodes/sim[0-9]{4}/config', path)))
+            if method != "GET" and path != "/v1/console/query" and not r3_control and view["fresh_until_unix_s"] <= int(time.time()) + 60:
                 view = self.login()
             return self._request(path, method, body, view["csrf"])
 
