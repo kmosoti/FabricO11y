@@ -566,6 +566,24 @@ class RebootRawControls(NativeFixture, unittest.TestCase):
         chain, reboot, events = self.reboot_chain()
         self.module.conserve(*chain, after_reboot=reboot, reboot_ack_events=events)
 
+    def test_reboot_diagnostic_namespace_preserves_device_independent_identity(self):
+        # Explicitly synthetic post-reader metadata: source controls authenticate no guest.
+        for wrong_namespace in (False, True):
+            with self.subTest(wrong_namespace=wrong_namespace):
+                chain, reboot, events = self.reboot_chain()
+                namespace = dict(uuid='01' * 16, subvolume_id=256)
+                for snapshot in (chain[0], chain[1], chain[2], reboot):
+                    snapshot['logs'][DIAG]['btrfs_identity'] = copy.deepcopy(namespace)
+                reboot['logs'][DIAG]['device'] += 1
+                reboot['diagnostics']['spindle.log']['device'] += 1
+                if wrong_namespace:
+                    reboot['logs'][DIAG]['btrfs_identity']['subvolume_id'] += 1
+                    with self.assertRaisesRegex(ValueError, 'diagnostic namespace'):
+                        self.module.conserve(*chain, after_reboot=reboot, reboot_ack_events=events)
+                else:
+                    self.module.conserve(*chain, after_reboot=reboot, reboot_ack_events=events)
+            self.temp.cleanup(); self.setUp()
+
     def test_fourth_snapshot_rejects_unjustified_or_changed_rows_and_sender(self):
         for mutation in ('drop', 'duplicate', 'forge', 'early-answer', 'raw-conflict',
                          'same-boot', 'ack-pid', 'ack-hash', 'missing-ack', 'fixture-extra'):

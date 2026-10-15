@@ -267,3 +267,13 @@ The reader refinement has a separately justified maximum +55 net lines over
 fourth checkpoint and shared phase conservation/ACK checks. The producer remains
 +180 and bridge/caller +220; no cosmetic compression is required to satisfy them.
 Native VM execution still requires separate exact source/command preflight.
+
+
+The fourth checkpoint also compares the independently observed diagnostic Btrfs
+namespace before choosing inode identity across reboot: equal filesystem UUID /
+subvolume permits changed kernel `st_dev`, while changed namespace refuses.
+The append/rotation and retained-old-file byte invariants remain exact. A literal
+post-reader metadata control is explicitly synthetic and cannot authenticate a
+guest mount. The native producer's UAPI observations, source archive joins and
+changed-boot sender remain mandatory. The existing non-Btrfs device/inode rule
+and all three-phase controls remain unchanged.
