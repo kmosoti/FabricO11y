@@ -16,6 +16,45 @@ from cross_family import test_snapshot as snapshot_fixtures
 
 
 class WalkthroughCallerTests(unittest.TestCase):
+    def test_original_spool_custody_rejects_missing_duplicate_and_altered_recovery(self):
+        from cross_family.producer import batch, metrics
+        encoded = base64.b64encode(batch('a' * 32, 1, metrics(1, 10, 20))).decode()
+        spool = [{'type': 'source', 'node_id': 'a' * 32, 'generation': 1, 'sequence': 1, 'bytes': encoded},
+                 {'type': 'node_state', 'node_id': 'a' * 32, 'generation': 1,
+                  'ack_cursor': 1, 'retained_sequences': [1]}]
+        recovered = [{'label': 'edge', 'received_ns': 30, 'bytes': encoded}]
+        self.assertTrue(grade_custody([spool], recovered)['delivery_oracle']['passed'])
+        altered = [dict(recovered[0], bytes=base64.b64encode(batch('a' * 32, 1, metrics(9, 10, 20))).decode())]
+        for records in ([], recovered * 2, altered):
+            with self.subTest(records=len(records)), self.assertRaises(ValueError):
+                grade_custody([spool], records)
+
+    def test_effective_guest_limits_and_real_process_privileges(self):
+        import owner_observation as observation
+        service = 'fabrico11y-node.service'
+        path = '/system.slice/system-fabrico11y.slice/' + service
+        value = {'boot_id': 'literal-boot', 'account': {'uid': 991, 'gid': 991, 'shell': '/sbin/nologin'},
+                 'processes': [{'pid': 123, 'start_ticks': 456, 'uids': [991] * 4, 'gids': [991] * 4,
+                                'cap_eff': 0, 'no_new_privs': 1, 'exe': '/usr/bin/fabric-node', 'cgroup': '0::' + path}],
+                 'units': {}}
+        for name, high, maximum, tasks in ((service, 128, 256, 128), ('system-fabrico11y.slice', 2816, 3328, 640)):
+            value['units'][name] = {'properties': {'ActiveState': 'active', 'MainPID': '123',
+                'User': 'fabricolly', 'Group': 'fabricolly', 'ControlGroup': path,
+                'EffectiveMemoryHigh': str(high * 1024**2), 'EffectiveMemoryMax': str(maximum * 1024**2),
+                'EffectiveTasksMax': str(tasks)}, 'kernel': {'memory.high': str(high * 1024**2),
+                'memory.max': str(maximum * 1024**2), 'memory.swap.max': '0' if name == service else 'max',
+                'pids.max': str(tasks)}}
+        observation.verify(value, 'edge', 'literal-boot', active=True)
+        for defect in ('uid', 'capability', 'kernel', 'effective', 'companion'):
+            changed = copy.deepcopy(value)
+            if defect == 'uid': changed['processes'][0]['uids'] = [0] * 4
+            elif defect == 'capability': changed['processes'][0]['cap_eff'] = 1
+            elif defect == 'kernel': changed['units'][service]['kernel']['memory.max'] = 'max'
+            elif defect == 'effective': changed['units'][service]['properties']['EffectiveMemoryMax'] = 'infinity'
+            else: changed['processes'].append(copy.deepcopy(changed['processes'][0]))
+            with self.subTest(defect=defect), self.assertRaises(ValueError):
+                observation.verify(changed, 'edge', 'literal-boot', active=True)
+
     def test_cleanup_attempts_second_guest_after_first_raises(self):
         stopped = []
         def fail():
