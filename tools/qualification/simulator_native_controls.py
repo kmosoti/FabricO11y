@@ -181,31 +181,57 @@ def original_records(root, sink, identities, pending=False):
                 yield json.loads(line)
     events = list(lines('events.jsonl'))
     created = [(item['id'], item['seq']) for item in events if item.get('e') == 'created']
-    require(len(created) == identities * 2 and set(created) == {(i, s) for i in range(identities) for s in (1, 2)},
+    require(all(type(i) is int and type(s) is int for i, s in created)
+            and len(created) == identities * 2 and set(created) == {(i, s) for i in range(identities) for s in (1, 2)},
             'real finite original offers')
+    streams = {stream for stream, _ in sink.streams.values()}
+    require(len(sink.streams) == len(streams) == identities, 'unique authenticated streams')
+    expected = {(*stream, sequence) for stream in streams for sequence in (1, 2)}
+    attempted = {key for key in expected if not pending or key[2] == 1}
+    require(set(sink.raw) == attempted, 'exact accepted wire identities')
     transcript = list(lines('transcript.jsonl'))
-    sources, responses, states = {}, [], []
+    sources, responses, states, attempts, outstanding = {}, [], {}, set(), {}
     for item in transcript:
+        stream = item['node_id'], item['generation']
+        require(type(item['generation']) is int and stream in streams, 'original stream identity')
+        if item['type'] != 'node_state':
+            require(type(item['sequence']) is int, 'original sequence type')
+            key = (*stream, item['sequence'])
+            require(key in expected, 'original source identity')
         if item['type'] in ('source', 'attempt'):
-            key = item['node_id'], item['generation'], item['sequence']
             raw = sink.raw.get(key)
+            require(type(item['bytes']) is str and len(base64.b64decode(item['bytes'], validate=True)) == 32,
+                    'original digest encoding')
             if item['type'] == 'source':
                 require(key not in sources, 'duplicate original source')
                 sources[key] = item['bytes']
+            else:
+                require(key in attempted and sources.get(key) == item['bytes']
+                        and item.get('injected_conflict') is False, 'original attempt/source association')
+                attempts.add(key)
+                outstanding[key] = outstanding.get(key, 0) + 1
             if raw is not None:
                 require(item['bytes'] == base64.b64encode(hashlib.sha256(raw).digest()).decode(), 'original wire hash')
         elif item['type'] == 'response':
+            require(outstanding.get(key, 0) > 0, 'original response/attempt association')
+            outstanding[key] -= 1
+            require(pending or type(item.get('committed_through')) is int, 'original ACK cursor type')
             responses.append(item)
         elif item['type'] == 'node_state':
-            states.append(item)
-    require(len(sources) == identities * 2 and len(states) == identities and not sink.errors, 'complete original streams/setup')
+            require(stream not in states and type(item['ack_cursor']) is int
+                    and all(type(seq) is int for seq in item['retained_sequences']), 'unique original state identity')
+            states[stream] = item
+        else:
+            raise ValueError('unexpected original transcript record')
+    require(set(sources) == expected and attempts == attempted and not any(outstanding.values())
+            and set(states) == streams and not sink.errors, 'complete original streams/setup')
     if pending:
         require(len(sink.raw) == identities and responses and all(item['kind'] == 'unavailable' for item in responses)
-                and all(item['ack_cursor'] == 0 and item['retained_sequences'] == [1, 2] for item in states), 'real undelivered fixture')
+                and all(item['ack_cursor'] == 0 and item['retained_sequences'] == [1, 2] for item in states.values()), 'real undelivered fixture')
     else:
         require(len(sink.raw) == identities * 2 and len(responses) == identities * 2
                 and all(item['kind'] == 'ack' and item['committed_through'] == item['sequence'] for item in responses)
-                and all(item['ack_cursor'] == 2 and item['retained_sequences'] == [] for item in states), 'real finite ACK prerequisite')
+                and all(item['ack_cursor'] == 2 and item['retained_sequences'] == [] for item in states.values()), 'real finite ACK prerequisite')
     return events
 
 
@@ -254,7 +280,7 @@ def main():
         command = [f'/proc/self/fd/{fd}', '--server-url', f'https://127.0.0.1:{sink.server_port}',
                    '--ca', str(root / 'ca.pem'), '--tokens', str(tokens), '--seed', '0xA11FA001',
                    '--seconds', '2', '--workers', str(workers), '--out', str(root)]
-        if args.case != 'legacy':
+        if args.case not in ('legacy', 'canonical-red'):
             command += ['--begin-witness', str(begin)]
         if args.case == 'duplicate':
             command += ['--begin-witness', str(root / 'other.json')]
