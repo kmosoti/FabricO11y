@@ -1,0 +1,52 @@
+# R3 bounded lifecycle guardian amendment
+
+Prospective registration, 2026-10-15. This supersedes only the final observation
+topology in [parent stop](soak-parent-stop-protocol.md), not the ten independent
+soak gates, exposure, phase or resource ceilings. Native results are not implied.
+
+The old topology requires readable empty outer-service fields after its final
+process exits. Two retained counterexamples show that systemd removes that
+kernel cgroup despite RemainAfterExit; all thirty preopened field descriptors
+then return ENODEV. No empty path or failed read counts as an observation.
+
+`resource_group.py --observe-workload-stop --delegate --runtime-seconds 7500`
+keeps one lifecycle guardian inside the original exact 5/6 GiB, tasks1536,
+zero-swap service. It creates a dedicated workload root with the same caps and
+CPU ceiling. The inside wrapper and every project process execute there. Only
+the guardian may execute outside it; it performs lifecycle/provenance work, no
+server, browser, simulator, oracle or test. Default launcher behavior is unchanged.
+
+Three separately named claims are required: (1) after the actual independently
+identified wrapper exits and is reaped, every workload subgroup is empty and
+all required kernel fields are read against the held workload inode; (2) while
+only the exact guardian remains, actual aggregate outer fields and complete PID
+inventory are read against the held outer inode; (3) the outside launcher reaps
+the guardian/transport and independently confirms whole-service stop. Outer
+accounting is explicitly before guardian exit; no post-guardian peak is claimed.
+The same outer aggregate cap bounds both branches throughout. A gate requiring
+post-last-control-plane outer accounting remains unavailable under this topology.
+
+Bind real unit activation, service MainPID to guardian PID/start/boot identity,
+held outer/workload device/inode, actual wrapper PID/start/boot identity, real
+wait exit and completed command/unit/workload receipt. Keep raw field bytes and
+PID inventories. Reject changed identity, nonzero OOM/swap, missing fields,
+populated workload, incomplete/unexited wrapper, any task outside workload other
+than the guardian, failed service, exhausted deadline or unconfirmed outer stop.
+Failure preserves evidence and stops the entire owned service; forced cleanup
+does not convert it into successful observation. All phases still share the
+single activation-based 7500-second deadline.
+
+Before acceptance run source controls plus finite native cases through this
+opt-in launcher, fresh DATA output/reserve and independently pinned driver:
+
+| Case | Actual action | Required result |
+| --- | --- | --- |
+| positive | finite command returns0; archive real identity/caps | empty workload, guardian-only outer, complete fields, launcher0 and whole stop |
+| unexited | publish otherwise completed wrapper receipt while wrapper remains alive | no snapshot accepted before real wait; bounded failure/whole stop |
+| populated | leave owned idle descendant in workload after wrapper returns | reject actual populated workload; whole stop |
+| wrong-identity | replace empty workload pathname after its held FD was acquired | reject inode mismatch; whole stop |
+| escaped | owned idle task moves into guardian control leaf | reject actual extra outside PID even if workload empty; whole stop |
+
+Source controls inject every individual missing field, dirty field, wrong cap,
+wrapper/guardian identity and inventory disagreement. Native outcomes and exact
+commands/pins are recorded before any S1; these controls qualify no product.
