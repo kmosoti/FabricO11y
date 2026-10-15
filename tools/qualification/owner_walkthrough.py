@@ -145,12 +145,13 @@ class Walkthrough:
     def observed(self, guest, command, label, *, timeout=30):
         # Observers are distinctly recorded; they never masquerade as guide fences.
         before = time.monotonic_ns()
-        result = guest.script(command, timeout=min(timeout, self.commands.remaining()))
-        require(len(result.stdout.encode()) + len(result.stderr.encode()) <= 8 * 1024**2, 'observer output exceeded bound')
+        result = guest.script(command, timeout=min(timeout, self.commands.remaining()), check=False)
         path = self.out / 'protected-transcript' / (label + '.json')
         private_write(path, json.dumps({'role': guest.role, 'boot_id': guest.boot_id,
             'command': command, 'start_ns': before, 'end_ns': time.monotonic_ns(),
             'exit': result.returncode, 'stdout': result.stdout, 'stderr': result.stderr}).encode())
+        require(len(result.stdout.encode()) + len(result.stderr.encode()) <= 8 * 1024**2, 'observer output exceeded bound')
+        require(result.returncode == 0, 'read-only guest observer failed; raw output retained')
         self.commands.remaining()
         return result.stdout
 
@@ -401,6 +402,20 @@ cp /usr/share/doc/fabrico11y/examples/access.conf.example /home/operator/.config
         self.fence(self.edge, 'reader-tokens-and-read-only-clients', document='docs/access-operations.md')
         return token
 
+    def reader_status(self, token):
+        # A real query permission is exercised, not an owner-only route that
+        # would also refuse a perfectly valid read-only token.
+        result = self.prose(self.edge, 'reader-tokens-and-read-only-clients', 'Copy the [access client example]',
+            "python3 -c 'import json,ssl,sys,urllib.request,urllib.error; token=sys.stdin.read().strip(); "
+            "body=json.dumps({\"kind\":\"logs\",\"node\":\"edge\",\"from_ns\":0,\"to_ns\":9223372036854775807,\"limit\":1}).encode(); "
+            "request=urllib.request.Request(\"https://telemetry.example.com:7443/v1/console/query\",data=body,"
+            "headers={\"Authorization\":\"Bearer \"+token,\"Content-Type\":\"application/json\",\"X-Fabric-Client-Version\":\"1\"});\n"
+            "try:\n response=urllib.request.urlopen(request,context=ssl.create_default_context(cafile=\"/etc/fabrico11y/ca.pem\"),timeout=5); print(response.status); response.close()\n"
+            "except urllib.error.HTTPError as error: print(error.code)'\n",
+            document='docs/access-operations.md', stdin=token.encode(),
+            purpose='Observe actual read-only query authority before and after offline recovery')
+        return int(Path(result['stdout']['path']).read_text().strip())
+
     def configure_server(self, reuse=False):
         self.prose(self.server, 'server', '1. Create `/etc/fabrico11y/server.conf`',
             'sudo install -m 0644 /usr/share/doc/fabrico11y/examples/server.conf.example /etc/fabrico11y/server.conf\n'
@@ -588,6 +603,7 @@ OBS
         self.edge_token = self.node_enroll()
         self.configure_edge()
         self.reader_token = self.reader()
+        require(self.reader_status(self.reader_token) == 200, 'fresh read-only token query failed')
         self.received('fixture')
         self.commands.phase('queries-revoke-restart')
         self.event('received-guide-queries', role='edge')
@@ -618,6 +634,8 @@ OBS
         require(any(row == dict(route='/v1/console/auth/login/finish', status=401) for row in requests),
                 'old resident owner key did not receive actual server refusal')
         self.record['old_owner_denied'] = True
+        self.record['old_reader_http'] = self.reader_status(self.reader_token)
+        require(self.record['old_reader_http'] == 401, 'restored old reader retained query authority')
         # Only after the old key's actual refusal do we replace its virtual device.
         self.bridge.replace_authenticator()
         require(self.enroll_owner('restored') == self.principal, 'recovery changed immutable principal')
