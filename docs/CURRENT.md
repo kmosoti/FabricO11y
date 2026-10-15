@@ -12,8 +12,9 @@ bindings, continuous-refresh controls and real S1 headroom remain prerequisites;
 implementation alone supplies no new soak acceptance evidence.
 The separately registered [lifecycle guardian amendment](experiments/benchmarks/soak-guardian-protocol.md)
 separates empty workload accounting, aggregate accounting before guardian exit,
-and independent whole-service stop. Its opt-in launcher remains unqualified
-until the registered finite native controls run.
+and independent whole-service stop. Finite guardian controls establish that
+topology on the local host; live R3 integration and actual phase headroom remain
+separate prerequisites, with no candidate soak acceptance implied.
 The [product contract](PRODUCT-CONTRACT.md) defines the promises and the
 [verification matrix](formal/verification-matrix.md) maps each invariant to checks
 and remaining limits.

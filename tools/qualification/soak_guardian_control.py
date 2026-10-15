@@ -30,6 +30,18 @@ def main():
     record = {'case': args.case, 'process': identity(os.getpid()), 'wrapper': identity(os.getppid()),
               'fields': {key: (group / key).read_text().strip() for key in FIELDS},
               'at_ns': time.monotonic_ns(), 'scope': 'unqualified guardian control only'}
+    if args.case == 'positive':
+        from resource_guardian import workload_context
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'bench/labs/completion'))
+        import cgroups
+        context = workload_context()
+        require(context is not None and context['workload'] == group, 'native held runtime context failed')
+        require(cgroups.delegate() == group, 'native held workload delegation failed')
+        cgroups.set_limits(group / 'supervisor', 2 * 1024**3, 1700 * 1024**2, 512, 4)
+        require(workload_context()['workload'] == group and cgroups.current() == group / 'supervisor',
+                'native delegated caller left authenticated workload')
+        record['runtime_context'] = {'unit': context['unit'], 'activation_monotonic_ns': context['activation_monotonic_ns'],
+                                    'delegated_process': identity(os.getpid()), 'groups': cgroups.snapshot(group)}
     if args.case in ('populated', 'escaped'):
         code = 'import time; time.sleep(120)'
         if args.case == 'escaped':

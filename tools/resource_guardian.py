@@ -18,6 +18,31 @@ def identity(pid):
             'cgroup': (process / 'cgroup').read_text()}
 
 
+def workload_context():
+    """Authenticate inherited directory authority against actual unit/processes."""
+    if os.environ.get('FABRIC_RESOURCE_TOPOLOGY') != 'guardian-v1':
+        return None
+    workload = Path(os.environ['FABRIC_WORKLOAD_ROOT'])
+    descriptor = int(os.environ['FABRIC_WORKLOAD_FD'])
+    held, path = os.fstat(descriptor), workload.stat()
+    require(workload.name == 'workload' and workload.is_absolute()
+            and '..' not in workload.parts and str(workload).startswith('/sys/fs/cgroup/')
+            and (held.st_dev, held.st_ino) == (path.st_dev, path.st_ino), 'held workload authority changed')
+    unit, outer = os.environ['FABRIC_RESOURCE_UNIT'], workload.parent
+    require(outer.name == unit + '.service' and unit.startswith('fabric-work-'), 'wrong workload service')
+    state = show(unit, 2)
+    guardian = identity(int(state['MainPID']))
+    current = Path('/sys/fs/cgroup') / next(line[3:] for line in Path('/proc/self/cgroup').read_text().splitlines()
+                                         if line.startswith('0::')).lstrip('/')
+    require(current.is_relative_to(workload) and state['ActiveState'] == 'active'
+            and state['SubState'] == 'running'
+            and state['ControlGroup'] == str(outer).removeprefix('/sys/fs/cgroup')
+            and guardian['cgroup'] == '0::' + str(outer / 'control-plane').removeprefix('/sys/fs/cgroup') + '\n',
+            'actual guardian/workload placement mismatch')
+    return {'workload': workload, 'outer': outer, 'unit': unit, 'fd': descriptor,
+            'activation_monotonic_ns': int(state['ActiveEnterTimestampMonotonic']) * 1000}
+
+
 def validate_inventory(outer, workload_name, guardian_pid):
     outside = {name: fields['cgroup.procs'].split() for name, fields in outer['groups'].items()
                if name != workload_name and not name.startswith(workload_name + '/')}

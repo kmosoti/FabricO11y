@@ -19,8 +19,12 @@ def exact(left, right):
 
 def validate_job(runtime, outer, expected):
     identity = runtime['outer_identity']
+    actual_group = outer['command_receipt']['cgroup']
+    if 'workload_cgroup' in runtime:
+        require(actual_group == runtime['workload_cgroup'], 'different workload command receipt')
+        actual_group = outer['final_kernel_observation']['outer_cgroup']
     require(identity['unit'] == outer['unit']
-            and identity['cgroup'] == outer['command_receipt']['cgroup']
+            and identity['cgroup'] == actual_group
             and type(identity['activation_monotonic_ns']) is int
             and identity['activation_monotonic_ns'] == outer['activation_monotonic_ns'],
             'S1 runtime/stop receipts are different jobs')
@@ -58,25 +62,33 @@ def validate_phases(runtime, anchor):
 
 
 def validate_final_parent(runtime, outer):
-    from resource_final_group import validate_empty
+    from resource_guardian import validate_observation
     observation = outer['final_kernel_observation']
-    require(observation['state'] == 'observed_empty' and observation['forced_cleanup'] is False
-            and observation['stop_exit'] == 0
+    validate_observation(observation)
+    require(observation.get('control_only') is False and outer['stop_confirmed'] is True
+            and all(type(status) is int for status in
+                    (outer['exit'], outer['wrapper_exit'], outer['command_receipt']['exit']))
+            and outer['exit'] == outer['wrapper_exit'] == outer['command_receipt']['exit'] == 0
+            and exact(observation['command_receipt'], outer['command_receipt'])
+            and observation['command_receipt']['command'] == outer['command']
+            and exact(observation['wrapper_identity'], runtime['wrapper_identity'])
             and observation['unit'] == outer['unit'] == runtime['outer_identity']['unit']
-            and observation['cgroup'] == runtime['outer_identity']['cgroup']
+            and observation['outer_cgroup'] == runtime['outer_identity']['cgroup']
+            and observation['workload_cgroup'] == runtime['workload_cgroup']
             and observation['activation_monotonic_ns'] == outer['activation_monotonic_ns']
             and observation['activation_monotonic_ns'] == runtime['outer_identity']['activation_monotonic_ns']
             and type(observation['before_ns']) is int and type(observation['after_ns']) is int
             and runtime['phases'][-1]['end_ns'] <= observation['before_ns'] <= observation['after_ns']
             and observation['after_ns'] < outer['activation_monotonic_ns'] + 7500 * NS,
             'final actual parent observation binding missing')
-    require(exact({key: observation[key] for key in ('device', 'inode')}, runtime['parent_identity']),
-            'final parent directory differs from admitted parent')
+    require(exact({key: observation['outer'][key] for key in ('device', 'inode')}, runtime['parent_identity'])
+            and exact({key: observation['workload'][key] for key in ('device', 'inode')}, runtime['workload_identity'])
+            and exact({key: observation['workload_admission'][key] for key in ('device', 'inode')}, runtime['workload_identity']),
+            'final outer/workload directory differs from admission')
     final_runtime_groups = runtime['parent_observations'][-1]['groups']
-    require(set(observation['groups']) == set(final_runtime_groups), 'final parent subgroup observation missing')
-    for name, group in observation['groups'].items():
+    require(set(observation['outer']['groups']) == set(final_runtime_groups), 'final parent subgroup observation missing')
+    for name, group in observation['outer']['groups'].items():
         require(all(group[key] == final_runtime_groups[name][key] for key in
                     ('memory.high', 'memory.max', 'memory.swap.max', 'pids.max', 'cpu.max')),
                 'final parent/subgroup cap changed')
-    validate_empty(observation['groups'])
     return True

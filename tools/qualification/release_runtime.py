@@ -141,6 +141,9 @@ class CandidateFixture:
             # cleanup dependency must be frozen alongside the live adapter.
             import browser_supervisor  # noqa: F401
         self.parent = require_limits()
+        from resource_guardian import workload_context
+        guardian = workload_context()
+        self.aggregate_parent = guardian['outer'] if guardian else self.parent
         self.server_cpus=server_cpus;self.supervisor_cpus=supervisor_cpus
         server_affinity=cpu_pair(server_cpus);supervisor_affinity=cpu_pair(supervisor_cpus)
         available=os.sched_getaffinity(0)
@@ -148,7 +151,7 @@ class CandidateFixture:
             raise RuntimeError('disjoint selected server/supervisor CPUs unavailable')
         if mode not in ('segment', 'journal'):
             raise ValueError('unknown registered storage mode')
-        subprocess.run(['systemctl', '--user', 'set-property', '--runtime', self.parent.name,
+        subprocess.run(['systemctl', '--user', 'set-property', '--runtime', self.aggregate_parent.name,
                         'MemoryMax=6G', 'MemoryHigh=5G', 'MemorySwapMax=0', 'TasksMax=1536'], check=True)
         if int((self.parent / 'memory.max').read_text()) != 6 * 1024**3:
             raise RuntimeError('whole-fixture cap not enforced')

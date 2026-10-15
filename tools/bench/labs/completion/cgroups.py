@@ -33,7 +33,10 @@ def set_limits(group, maximum, high, tasks, cores):
 def delegate():
     parent = current()
     if not parent.name.startswith('fabric-work-'):
-        raise RuntimeError('expected fresh owned launcher service')
+        from resource_guardian import workload_context
+        context = workload_context()
+        if context is None or context['workload'] != parent:
+            raise RuntimeError('expected fresh owned launcher service or held workload root')
     supervisor = parent / 'supervisor'
     supervisor.mkdir()
     for pid in (parent / 'cgroup.procs').read_text().split():

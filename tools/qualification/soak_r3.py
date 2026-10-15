@@ -100,13 +100,10 @@ def expired(_signum, _frame):
 
 def launcher_begin(parent):
     require(os.environ.get('FABRIC_RESOURCE_RUNTIME_SECONDS') == '7500', 'R3 requires exact 7500-second launcher')
-    retained = subprocess.check_output(['systemctl', '--user', 'show', parent.name,
-        '--property=RemainAfterExit', '--value'], timeout=2).strip()
-    require(retained == b'yes', 'R3 requires retained service for actual final parent observation')
-    raw = subprocess.check_output(['systemctl', '--user', 'show', parent.name,
-        '--property=ActiveEnterTimestampMonotonic', '--value'], timeout=2).strip()
-    require(raw.isdigit() and int(raw) > 0, 'native launcher monotonic activation missing')
-    return int(raw) * 1000
+    from resource_guardian import workload_context
+    context = workload_context()
+    require(context is not None and parent == context['workload'], 'R3 requires actual held guardian workload root')
+    return context['activation_monotonic_ns']
 
 
 def admission(path, expected):
@@ -170,6 +167,12 @@ def validate_headroom_sources(value):
                 and measured['binding'] == runtime['binding'], 'S1 runtime/measurement mismatch')
         for label, members in measured['members'].items():
             require(inventory(checkpoint / label) == members, 'S1 stopped source changed')
+        native_expected = {'observer_receipt_sha256': measured['members']['native-trace']['observer-receipt.json']['sha256'],
+            'trace_sha256': measured['members']['native-trace']['syscalls.raw']['sha256'],
+            'begin_sha256': measured['begin_sha256'], 'process': measured['native_begin']['process'],
+            'binary_sha256': runtime['input_sha256']['simulator']}
+        validate_native_checkpoint(checkpoint, measured, native_expected, runtime['input_sha256']['simulator'])
+        validate_ui_checkpoint(checkpoint, measured, runtime['offered_seconds'])
         sim = json.loads((checkpoint / 'raw/sim/sim-summary.json').read_text())
         require(sim['seconds'] == runtime['offered_seconds'] and sim['identities'] == sim['workers'] == 100
                 and sim['seed'] == SEED and sim['undelivered'] == 0,
@@ -297,7 +300,7 @@ class Probes:
             from fleet_tier import cpu_s, status_kib
             import cgroups
             self.fixture.sample_bound()
-            groups = cgroups.snapshot(self.fixture.parent)
+            groups = cgroups.snapshot(self.fixture.aggregate_parent)
             exposure.validate_parent(groups)
             # Native browser-clock/session/document witness is provided by the
             # separately certified bridge. Counter-only health is insufficient.
@@ -348,6 +351,39 @@ def require_empty(groups):
                 'production/browser/simulator group remains populated')
 
 
+def launch_native(observer, fixture, command, descriptor, out, inputs, clock):
+    import cgroups
+    supervisor = fixture.parent / 'supervisor'
+    held_supervisor = os.open(supervisor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    previous_affinity = os.sched_getaffinity(0)
+    sim = None
+    try:
+        held = os.fstat(held_supervisor)
+        actual = supervisor.stat()
+        require(cgroups.current() == supervisor
+                and (held.st_dev, held.st_ino) == (actual.st_dev, actual.st_ino),
+                'native observer caller is not in actual held supervisor')
+        os.sched_setaffinity(0, {2, 3})
+        require(os.sched_getaffinity(0) == {2, 3}, 'native caller affinity missing')
+        sim = clock.call(observer.start, command, descriptor, out,
+            strace=Path(inputs['strace']['path']),
+            strace_sha256=inputs['strace']['sha256'],
+            deadline=clock.launcher_begin / NS + 7500)
+        placement = Path('/proc/%d/cgroup' % sim.target_pid).read_text()
+        require(placement == '0::' + str(supervisor).removeprefix('/sys/fs/cgroup') + '\n'
+                and os.sched_getaffinity(sim.target_pid) == {2, 3}
+                and (supervisor.stat().st_dev, supervisor.stat().st_ino) == (held.st_dev, held.st_ino),
+                'native helper escaped actual supervisor/CPU placement')
+    except BaseException:
+        if sim is not None:
+            sim.abort()
+        raise
+    finally:
+        os.sched_setaffinity(0, previous_affinity)
+        os.close(held_supervisor)
+    return sim
+
+
 def measure(value, admission_sha):
     from production_access import ProductionAccess
     from console_bridge import ConsoleBridge
@@ -362,6 +398,10 @@ def measure(value, admission_sha):
             'isolated supervised browser lifecycle unavailable')
     parent = require_limits()
     clock = PhaseClock(launcher_begin(parent))
+    from resource_guardian import workload_context, identity
+    context = workload_context()
+    aggregate_parent = context['outer']
+    wrapper_identity = identity(os.getppid())
     old_handler = signal.signal(signal.SIGALRM, expired)
     raw = Path(value['raw'])
     output = Path(value['output'])
@@ -374,12 +414,12 @@ def measure(value, admission_sha):
     parent_observations = []
     try:
         clock.enter('setup')
-        clock.call(subprocess.run, ['systemctl', '--user', 'set-property', '--runtime', parent.name,
+        clock.call(subprocess.run, ['systemctl', '--user', 'set-property', '--runtime', aggregate_parent.name,
             'MemoryHigh=5G', 'MemoryMax=6G', 'MemorySwapMax=0', 'TasksMax=1536'], check=True,
             timeout=clock.remaining() / NS)
         import cgroups
         def parent_boundary(label):
-            groups = cgroups.snapshot(parent)
+            groups = cgroups.snapshot(aggregate_parent)
             exposure.validate_parent(groups)
             parent_observations.append({'boundary': label, 'at_ns': time.monotonic_ns(), 'groups': groups})
         clock.boundary_hook = parent_boundary
@@ -414,16 +454,12 @@ def measure(value, admission_sha):
         try:
             require(digest('/proc/self/fd/' + str(descriptor)) == value['inputs']['simulator']['sha256'],
                     'held simulator ELF changed')
-            command = ['taskset', '-c', '2-3', sys.executable, '-B',
-                str(Path(__file__).parents[1] / 'bench/labs/completion/enter_group.py'),
-                str(fixture.parent / 'supervisor'), '/proc/self/fd/' + str(descriptor),
+            command = ['/proc/self/fd/' + str(descriptor),
                 '--server-url', fixture.origin, '--ca', str(fixture.work / 'ca.pem'),
                 '--tokens', str(tokens), '--seed', hex(SEED), '--seconds', str(value['seconds']),
                 '--workers', '100', '--out', str(raw / 'sim'), '--begin-witness', str(raw / 'begin.json')]
-            sim = clock.call(NativeTrace.start, command, descriptor, raw / 'native-trace',
-                strace=Path(value['inputs']['strace']['path']),
-                strace_sha256=value['inputs']['strace']['sha256'],
-                deadline=clock.launcher_begin / NS + 7500)
+            sim = launch_native(NativeTrace, fixture, command, descriptor, output / '_native-live',
+                                value['inputs'], clock)
             while not (raw / 'begin.json').exists():
                 probes.check()
                 require(sim.poll() is None, 'simulator exited before native begin')
@@ -453,7 +489,8 @@ def measure(value, admission_sha):
         sim_exit = clock.call(sim.wait, timeout=clock.remaining() / NS)
         require(sim_exit == 0, 'native simulator failed')
         native_observation = clock.call(sim.finish, raw / 'begin.json')
-        require(sim.tracer_exit == 0, 'native tracer failed or remained alive')
+        require(native_observation['exit'] == native_observation['tracer_exit'] == 0,
+                'native tracer failed or remained alive')
         write_new(raw / 'native-observation.json', native_observation)
         journal = fixture.state_root / 'journal'
         while any(journal.glob('sealed-*.faj')):
@@ -490,7 +527,8 @@ def measure(value, admission_sha):
         # Every rename keeps the stopped inode. No fallback copy or recursive
         # deletion can make a partially checkpointed run successful.
         moves = {}
-        for label, source in [('raw', raw), ('work', fixture.work), ('fixture', fixture.out)]:
+        for label, source in [('raw', raw), ('work', fixture.work), ('fixture', fixture.out),
+                              ('native-trace', output / '_native-live')]:
             destination = output / label
             moves[label] = clock.call(exposure.checkpoint_tree, source, destination, processes_stopped=True)
         members = {label: clock.call(inventory, output / label) for label in moves}
@@ -508,7 +546,7 @@ def measure(value, admission_sha):
         clock.call(write_new, output / 'measurement.json', record)
         clock.enter('closeout')
         require_empty(fixture.groups)
-        exposure.validate_parent(cgroups.snapshot(parent))
+        exposure.validate_parent(cgroups.snapshot(aggregate_parent))
         closeout_start = clock.started
         clock.finish()
         # Keep final receipt I/O inside the same closeout/global budget.
@@ -521,9 +559,11 @@ def measure(value, admission_sha):
             'profile': PROFILE, 'smoke': value['smoke'], 'protocol': 'R3', 'offered_seconds': value['seconds'],
             'headroom_binding': value['headroom_binding'],
             'input_sha256': {name: ref['sha256'] for name, ref in value['inputs'].items()},
-            'outer_identity': {'unit': parent.name.removesuffix('.service'), 'cgroup': str(parent),
+            'outer_identity': {'unit': context['unit'], 'cgroup': str(aggregate_parent),
                                'activation_monotonic_ns': clock.launcher_begin},
-            'parent_identity': {'device': parent.stat().st_dev, 'inode': parent.stat().st_ino},
+            'parent_identity': {'device': aggregate_parent.stat().st_dev, 'inode': aggregate_parent.stat().st_ino},
+            'workload_identity': {'device': parent.stat().st_dev, 'inode': parent.stat().st_ino},
+            'workload_cgroup': str(parent), 'wrapper_identity': wrapper_identity,
             'output_identity': {'path': str(output), 'device': output.stat().st_dev, 'inode': output.stat().st_ino},
             'native_interval': {'start_ns': lower, 'conservative_end_ns': boundary},
             'production_exits': record['production_exits'], 'measurement_sha256': digest(output / 'measurement.json')})
@@ -623,6 +663,32 @@ def measurements(raw, begin, interval):
         'query_failed': query_failed, 'management_ok': management_ok, 'management_failed': management_failed}, ui
 
 
+def validate_native_checkpoint(root, measurement, expected, binary_sha256):
+    """Reparse trace bytes and join the exact consumed helper command/begin."""
+    import ast
+    from simulator_native_trace import NativeTrace, trace_calls
+    require(expected['process'] == measurement['native_begin']['process']
+            and expected['binary_sha256'] == binary_sha256
+            and expected['begin_sha256'] == measurement['begin_sha256'], 'native checkpoint identity mismatch')
+    facts = NativeTrace.validate_stopped(root / 'native-trace', root / 'raw/begin.json', expected)
+    record = json.loads((root / 'native-trace/observer-receipt.json').read_text())
+    executions = [call for call in trace_calls((root / 'native-trace/syscalls.raw').read_bytes())
+                  if call['name'] == 'execve']
+    require(len(executions) == 2 and record['command'] == measurement['simulator_command']
+            and ast.literal_eval('[' + executions[1]['args'] + ']')[1] == measurement['simulator_command']
+            and record['begin_path'] == str(Path(measurement['checkpoint']['raw']['source']) / 'begin.json'),
+            'native raw command/checkpoint path mismatch')
+    return facts
+
+
+def validate_ui_checkpoint(root, measurement, seconds):
+    from soak_ui_continuity import validate
+    snapshots = [sample['ui'] for sample in rows(root / 'raw/sampler.jsonl')]
+    snapshots.append(json.loads((root / 'raw/ui-final.json').read_text()))
+    begin = measurement['native_begin']
+    return validate(snapshots, begin['mono_before_ns'], begin['mono_after_ns'] + seconds * NS)
+
+
 def grade(value, admission_sha, expected_path, expected_sha, destination):
     """Separate stopped-input grading cell; never rewrites pending receipts."""
     from resource_group import require_limits
@@ -632,7 +698,7 @@ def grade(value, admission_sha, expected_path, expected_sha, destination):
     require(expected['binding'] == value['binding'] and expected['admission_sha256'] == admission_sha,
             'owner grading binding changed')
     root, destination = Path(value['output']), Path(destination)
-    require(set(path.name for path in root.iterdir()) == {'raw', 'work', 'fixture', 'measurement.json', 'runtime.json'},
+    require(set(path.name for path in root.iterdir()) == {'raw', 'work', 'fixture', 'native-trace', 'measurement.json', 'runtime.json'},
             'failed or incomplete measurement root')
     require(not destination.exists() and not destination.is_relative_to(root), 'fresh separate grading output required')
     measurement = pinned(root / 'measurement.json', expected['receipt_sha256']['measurement'])
@@ -654,9 +720,7 @@ def grade(value, admission_sha, expected_path, expected_sha, destination):
     require(runtime['measurement_sha256'] == expected['receipt_sha256']['measurement'], 'pending measurement changed')
     # The concrete observer re-parses actual syscall evidence. A runtime's
     # JSON facts or a preexisting control certificate cannot replace this join.
-    from simulator_native_trace import validate_stopped
-    native = validate_stopped(root / 'raw/native-trace', root / 'raw/begin.json', expected['native'])
-    require(native['target_exit'] == native['tracer_exit'] == 0, 'native target/tracer stop missing')
+    native = validate_native_checkpoint(root, measurement, expected['native'], value['inputs']['simulator']['sha256'])
     metrics, ui = measurements(root / 'raw', measurement['native_begin'], measurement['exposure'])
     destination.parent.resolve(strict=True).relative_to(Path(os.environ['FABRIC_STORAGE_ROOT']).resolve(strict=True) / 'results')
     destination.mkdir(mode=0o700)
@@ -729,7 +793,7 @@ def close_grading(value, admission_sha, expected_path, expected_sha, destination
             and result['admission_sha256'] == admission_sha, 'grading result/admission mismatch')
     original = pinned(expected['grading_expected_path'], result['expected_sha256'])
     root = Path(value['output'])
-    require(set(path.name for path in root.iterdir()) == {'raw', 'work', 'fixture', 'measurement.json', 'runtime.json'},
+    require(set(path.name for path in root.iterdir()) == {'raw', 'work', 'fixture', 'native-trace', 'measurement.json', 'runtime.json'},
             'failed or incomplete measurement root')
     measurement = pinned(root / 'measurement.json', original['receipt_sha256']['measurement'])
     runtime = pinned(root / 'runtime.json', original['receipt_sha256']['runtime'])
@@ -746,6 +810,8 @@ def close_grading(value, admission_sha, expected_path, expected_sha, destination
             'grading input substitution')
     for label, members in measurement['members'].items():
         require(inventory(root / label) == members, 'stopped raw input changed after grading')
+    validate_native_checkpoint(root, measurement, original['native'], value['inputs']['simulator']['sha256'])
+    validate_ui_checkpoint(root, measurement, runtime['offered_seconds'])
     from soak_tier import evaluate
     gates = evaluate(result['metrics'])
     require(gates == result['gates'] and result['all_gates'] is True and all(gates.values()),

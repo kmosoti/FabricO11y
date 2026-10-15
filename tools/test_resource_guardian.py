@@ -1,8 +1,12 @@
 """Finite independent literal controls for the new guardian boundary."""
 import copy
 import unittest
+import os
+from pathlib import Path
+import tempfile
+from unittest import mock
 
-from resource_guardian import validate_observation
+from resource_guardian import validate_observation, workload_context
 from test_resource_final_group import groups
 
 
@@ -23,6 +27,22 @@ def fixture():
 
 
 class GuardianControls(unittest.TestCase):
+    def test_forged_environment_without_held_workload_inode_is_refused(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            root = Path(directory)
+            wrong = root / 'wrong'
+            wrong.mkdir()
+            workload = root / 'workload'
+            workload.mkdir()
+            descriptor = os.open(wrong, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                with mock.patch.dict(os.environ, {'FABRIC_RESOURCE_TOPOLOGY': 'guardian-v1',
+                        'FABRIC_WORKLOAD_ROOT': str(workload), 'FABRIC_WORKLOAD_FD': str(descriptor)}):
+                    with self.assertRaises(ValueError):
+                        workload_context()
+            finally:
+                os.close(descriptor)
+
     def test_empty_workload_and_only_guardian_outer(self):
         self.assertTrue(validate_observation(fixture()))
 

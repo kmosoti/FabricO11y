@@ -33,19 +33,27 @@ def fixture():
 
 class BindingControls(unittest.TestCase):
     def test_final_parent_must_match_admitted_inode_and_subgroups(self):
-        from test_resource_final_group import groups
+        from test_resource_guardian import fixture as guardian_fixture
         runtime, outer, _ = fixture()
         runtime['parent_identity'] = {'device': 7, 'inode': 9}
-        kernel = groups()
-        kernel['supervisor'] = dict(kernel['.'])
-        runtime['parent_observations'] = [{'groups': kernel}]
-        outer['final_kernel_observation'] = dict(state='observed_empty', forced_cleanup=False, stop_exit=0,
-            unit=outer['unit'], cgroup=outer['command_receipt']['cgroup'], activation_monotonic_ns=NS,
-            before_ns=runtime['phases'][-1]['end_ns'] + 1, after_ns=runtime['phases'][-1]['end_ns'] + 2,
-            device=7, inode=9, groups=copy.deepcopy(kernel))
+        runtime['workload_identity'] = {'device': 7, 'inode': 10}
+        observation = guardian_fixture()
+        observation.update(control_only=False, unit=outer['unit'],
+            outer_cgroup=runtime['outer_identity']['cgroup'], activation_monotonic_ns=NS,
+            before_ns=runtime['phases'][-1]['end_ns'] + 1, after_ns=runtime['phases'][-1]['end_ns'] + 2)
+        observation['outer'].update(device=7, inode=9)
+        observation['workload'].update(device=7, inode=10)
+        observation['workload_admission'] = {'device': 7, 'inode': 10}
+        runtime['workload_cgroup'] = observation['workload_cgroup']
+        runtime['wrapper_identity'] = copy.deepcopy(observation['wrapper_identity'])
+        runtime['parent_observations'] = [{'groups': copy.deepcopy(observation['outer']['groups'])}]
+        observation['command_receipt']['command'] = ['actual-helper']
+        outer.update(final_kernel_observation=observation, stop_confirmed=True, exit=0, wrapper_exit=0,
+                     command=['actual-helper'], command_receipt=copy.deepcopy(observation['command_receipt']))
         self.assertTrue(validate_final_parent(runtime, outer))
-        for mutate in [lambda o: o.update(inode=10), lambda o: o['groups'].pop('supervisor'),
-                       lambda o: o.update(forced_cleanup=True), lambda o: o.update(unit='other')]:
+        for mutate in [lambda o: o['outer'].update(inode=10), lambda o: o['outer']['groups'].pop('control-plane'),
+                       lambda o: o.update(control_only=True), lambda o: o.update(unit='other'),
+                       lambda o: o['wrapper_identity'].update(start_ticks=999)]:
             bad = copy.deepcopy(outer)
             mutate(bad['final_kernel_observation'])
             with self.assertRaises(ValueError):
