@@ -57,3 +57,19 @@ Retain all failed traces and exact raw fixture receipts. Confirm actual helper,
 tracer, TLS sink and outer containment stopped before the next cell. These are
 finite publication controls, not Fabric durability, S1, arbitrary crash recovery
 or product acceptance. Native execution requires its own pinned command preflight.
+
+## Corrective bootstrap after native counterexample
+
+Actual positive01 refused identity binding: strace7.2 does not inject its startup
+exec, so the registered first exec delay was absent. Retain that failure. A
+contained pinned env-to-true probe observed the next exec delayed100ms with
+injection when1, actual target state t, and no delay with when2. Correction:
+open and hash-pin /usr/bin/env505168d7e1cc5ad8e7dc93d2b5c3867987bf605ff323b679c847441ca1569eeb,
+execute it through its held FD with exactly -i PATH/LANG/LC_ALL and the original
+held helper command. Trace must contain exactly the initial shim exec and one
+successful delayed target exec, same actual PID; no extra exec/fork escapes.
+The target still must be held state t with one task and matching held ELF
+identity before returning to the controller. Neither this fixture nor the
+bootstrap probe certifies publication. Add literal wrong-shim/control coverage;
+11 affected literal plus33 unchanged controls are44. Original expected native
+publication/refusal properties and source/binary/tool identities stay unchanged.
