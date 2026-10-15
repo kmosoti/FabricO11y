@@ -40,3 +40,33 @@ class NativeRequestJoinTests(unittest.TestCase):
 
 
 if __name__=='__main__':unittest.main()
+
+class ServerExecBoundaryTests(unittest.TestCase):
+    def test_entry_helper_sets_clock_only_after_cgroup_placement(self):
+        import os
+        from unittest.mock import patch
+        import session_clock_exec as entry
+        events=[]
+        def entered(group):
+            self.assertEqual(group,'/owned/group')
+            self.assertNotIn('LD_PRELOAD',os.environ);events.append('entered')
+        def executed(binary,command):
+            self.assertEqual(events,['entered'])
+            self.assertEqual(binary,'/owned/server');self.assertEqual(command,['/owned/server','serve','/owned/config'])
+            self.assertEqual(os.environ['LD_PRELOAD'],'/owned/helper.so')
+            self.assertEqual(os.environ['FABRIC_CLOCK_FD'],'7');events.append('exec')
+        with patch.dict(os.environ,{},clear=True), patch.object(entry.cgroups,'enter',side_effect=entered), \
+             patch.object(entry.os,'get_inheritable',return_value=True), patch.object(entry.os,'execv',side_effect=executed):
+            entry.main(['/owned/group','/owned/helper.so','7','/owned/server','serve','/owned/config'])
+        self.assertEqual(events,['entered','exec'])
+
+    def test_preloaded_launcher_and_missing_descriptor_refuse_before_exec(self):
+        import os
+        from unittest.mock import patch
+        import session_clock_exec as entry
+        for environment,inherited,refusal in [({'LD_PRELOAD':'/bad'},True,'fixture-environment'),
+                ({'FABRIC_CLOCK_FD':'7'},True,'fixture-environment'),({},False,'fixture-server-control')]:
+            with patch.dict(os.environ,environment,clear=True), patch.object(entry.cgroups,'enter') as enter, \
+                 patch.object(entry.os,'get_inheritable',return_value=inherited), patch.object(entry.os,'execv') as execute:
+                with self.assertRaisesRegex(ValueError,refusal):entry.main(['/owned/group','/owned/helper.so','7','/owned/server'])
+                enter.assert_not_called();execute.assert_not_called()
