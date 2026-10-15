@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import owner_walkthrough as W
 from owner_evidence import grade_queries
-from cross_family.test_snapshot import IndependentSnapshots
+from cross_family import test_snapshot as snapshot_fixtures
 
 
 class WalkthroughCallerTests(unittest.TestCase):
@@ -47,14 +47,14 @@ class WalkthroughCallerTests(unittest.TestCase):
             walk.installed_payload(types.SimpleNamespace(role='edge', family='debian'), True)
 
     def test_corrupt_original_journal_cannot_supply_query_expectations(self):
-        raw = IndependentSnapshots().fixture()
+        raw = snapshot_fixtures.IndependentSnapshots().fixture()
         for changed in (raw[:-1], b'BAD!' + raw[4:]):
             with self.subTest(size=len(changed)):
                 with self.assertRaises(ValueError):
                     grade_queries([{'file': 'batches.faj', 'bytes': base64.b64encode(changed).decode()}], [], [], b'one\n')
 
     def test_replay_helper_cannot_replace_independent_original_bytes(self):
-        raw = IndependentSnapshots().fixture()
+        raw = snapshot_fixtures.IndependentSnapshots().fixture()
         with self.assertRaisesRegex(ValueError, 'independent raw journal differs'):
             grade_queries([{'file': 'batches.faj', 'bytes': base64.b64encode(raw).decode()}], [], [], b'one\n')
 
