@@ -119,6 +119,8 @@ def stop_browser_groups(parent, bindings):
             observed_pid = browser_pidfd(group['pidfd'])
             browser_group_check(observed_pid == group['pid'] or
                 (observed_pid == -1 and proc.returncode is not None and not (Path('/proc') / str(group['pid'])).exists()), 'identity')
+            if 'namespaces' in parent:
+                browser_group_check(browser_namespaces() == parent['namespaces'], 'namespace')
             browser_members(group)
             for row in group['members']:
                 try:
@@ -130,7 +132,7 @@ def stop_browser_groups(parent, bindings):
                 except FileNotFoundError:
                     browser_group_check(browser_pidfd(row['pidfd']) == -1, 'identity')
             try:
-                proc.wait(timeout=15)
+                proc.wait(timeout=min(15, max(0, parent['deadline_monotonic_ns'] / 1e9 - time.monotonic())))
             except subprocess.TimeoutExpired:
                 pass
             end = min(time.monotonic() + 5, parent['deadline_monotonic_ns'] / 1e9)
@@ -163,6 +165,128 @@ def stop_browser_groups(parent, bindings):
             group['stop_error'] = str(error)
     if errors:
         raise RuntimeError('browser-group-stop')
+
+
+def browser_namespaces():
+    return {name: os.readlink('/proc/self/ns/' + name) for name in ('pid', 'mnt', 'cgroup')}
+
+
+def browser_hold_directory(path):
+    descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+    info = os.fstat(descriptor)
+    return dict(path=path, fd=descriptor, dev=info.st_dev, ino=info.st_ino)
+
+
+def begin_browser_domain(limits, deadline):
+    import ctypes
+    browser_group_check(os.uname().machine == 'x86_64' and ctypes.sizeof(ctypes.c_void_p) == 8, 'signal-abi')
+    class Action(ctypes.Structure):
+        _fields_ = [('handler', ctypes.c_void_p), ('mask', ctypes.c_ulong * 16),
+                    ('flags', ctypes.c_int), ('restorer', ctypes.c_void_p)]
+    libc, action, previous = ctypes.CDLL(None, use_errno=True), Action(), ctypes.c_int()
+    browser_group_check(libc.sigaction(signal.SIGCHLD, None, ctypes.byref(action)) == 0
+        and action.handler is None and not action.flags & 2, 'signal-ownership')
+    try:
+        os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOHANG | os.WNOWAIT | 0x40000000)
+    except ChildProcessError:
+        pass
+    else:
+        raise RuntimeError('browser-group-foreign-child')
+    values = {name: (limits / name).read_text().strip() for name in
+        ('memory.max', 'memory.high', 'memory.swap.max', 'cpu.max', 'pids.max')}
+    browser_group_check(0 < int(values['memory.high']) <= 3500000000
+        and int(values['memory.high']) <= int(values['memory.max']) <= 4000000000
+        and values['memory.swap.max'] == '0' and values['cpu.max'] == '200000 100000'
+        and values['pids.max'] == '512', 'limits')
+    parent = browser_hold_directory(limits)
+    parent.update(deadline_monotonic_ns=int(deadline * 1e9), namespaces=browser_namespaces())
+    try:
+        browser_group_check(libc.prctl(37, ctypes.byref(previous), 0, 0, 0) == 0
+            and libc.prctl(36, 1, 0, 0, 0) == 0, 'subreaper')
+        parent['previous_subreaper'] = previous.value
+        actual = ctypes.c_int()
+        browser_group_check(libc.prctl(37, ctypes.byref(actual), 0, 0, 0) == 0 and actual.value == 1, 'subreaper')
+        browser_group_check(cgroups.delegate() == limits, 'parent')
+        cgroups.set_limits(limits / 'supervisor', 4000000000, 3500000000, 512, 2)
+        return parent
+    except BaseException:
+        if 'previous_subreaper' in parent: libc.prctl(36, previous.value, 0, 0, 0)
+        os.close(parent['fd'])
+        raise
+
+
+def browser_group_launch(parent, bindings, label, command, log, environment):
+    browser_directory(parent)
+    browser_group_check(browser_namespaces() == parent['namespaces'], 'namespace')
+    path, _ = cgroups.subgroup(parent['path'], 'browser-' + str(len(bindings)), 4000000000, 3500000000, 512, 2)
+    group = browser_hold_directory(path)
+    group['exclusive'] = True
+    helper = ROOT / 'tools/bench/labs/completion/enter_group.py'
+    proc = subprocess.Popen([sys.executable, '-B', str(helper), str(path), *command],
+        stdout=log, stderr=subprocess.STDOUT, start_new_session=True, env=environment)
+    group.update(process=proc, pid=proc.pid, pidfd=os.pidfd_open(proc.pid), start_ticks=browser_pid(proc.pid)[0])
+    until = min(time.monotonic() + 5, parent['deadline_monotonic_ns'] / 1e9)
+    try:
+        while True:
+            placement = cgroups.ROOT / next(line[3:] for line in
+                (Path('/proc') / str(proc.pid) / 'cgroup').read_text().splitlines() if line.startswith('0::')).lstrip('/')
+            if placement == path: break
+            browser_group_check(proc.poll() is None and time.monotonic() < until, 'placement')
+            time.sleep(.01)
+        binding = bind_browser_group(parent, group, proc)
+        binding['group']['label'] = label
+        bindings.append(binding)
+        return proc
+    except BaseException:
+        # Unbound children remain confined by the outer launcher; no PID fallback.
+        os.close(group['pidfd']); os.close(group['fd'])
+        raise
+
+
+def browser_reap_domain(parent, bindings):
+    deadline = min(time.monotonic() + 5, parent['deadline_monotonic_ns'] / 1e9)
+    while True:
+        if 'namespaces' in parent:
+            browser_group_check(browser_namespaces() == parent['namespaces'], 'namespace')
+        try:
+            observed = os.waitid(os.P_ALL, 0, os.WEXITED | os.WNOHANG | os.WNOWAIT | 0x40000000)
+        except ChildProcessError:
+            parent['own_children_empty'] = True
+            return
+        if observed is not None:
+            pid = observed.si_pid
+            start, state = browser_pid(pid)
+            fields = (Path('/proc') / str(pid) / 'stat').read_text().rsplit(')', 1)[1].split()
+            placement = cgroups.ROOT / next(line[3:] for line in
+                (Path('/proc') / str(pid) / 'cgroup').read_text().splitlines() if line.startswith('0::')).lstrip('/')
+            binding = next((b for b in bindings if placement == b['group']['path']
+                or placement.is_relative_to(b['group']['path'])), None)
+            browser_group_check(binding is not None and int(fields[1]) == os.getpid() and state == 'Z', 'foreign-child')
+            group = binding['group']; browser_directory(parent); browser_directory(group)
+            descriptor = os.pidfd_open(pid)
+            try:
+                browser_group_check(browser_pidfd(descriptor) == pid and browser_pid(pid)[0] == start, 'identity')
+                result = os.waitid(os.P_PIDFD, descriptor, os.WEXITED | os.WNOHANG | 0x40000000)
+                browser_group_check(result is not None and result.si_pid == pid
+                    and not (Path('/proc') / str(pid)).exists(), 'reap')
+                group.setdefault('late_reaped', []).append(dict(pid=pid, start_ticks=start, status=result.si_status))
+                browser_group_check(len(group['late_reaped']) <= 512, 'tasks')
+            finally:
+                os.close(descriptor)
+        browser_group_check(time.monotonic() < deadline, 'stop')
+        if observed is None: time.sleep(.01)
+
+
+def end_browser_domain(parent, bindings):
+    if 'previous_subreaper' not in parent: return  # Synthetic source fixtures own their subreaper.
+    import ctypes
+    browser_group_check(parent.get('own_children_empty') is True, 'stop')
+    browser_group_check(ctypes.CDLL(None).prctl(36, parent['previous_subreaper'], 0, 0, 0) == 0, 'subreaper')
+    descriptors = {parent['fd']}
+    for binding in bindings:
+        group = binding['group']; descriptors.update((group['fd'], group['pidfd']))
+        descriptors.update(row['pidfd'] for row in group['members'])
+    for descriptor in descriptors: os.close(descriptor)
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -270,7 +394,7 @@ def main():
     args = parser.parse_args()
     if args.role_matrix and (args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery):
         parser.error('role matrix is a separate finite cell; polling/pressure/cursor/shell/recovery retain their own cells')
-    raise RuntimeError('browser native launch ownership integration pending; source controls only')
+    fixture_started = time.monotonic()
     limits = require_limits()
     # The combined browser/server fixture uses a stricter cap than build jobs.
     subprocess.run(['systemctl','--user','set-property','--runtime',limits.name,
@@ -311,7 +435,8 @@ def main():
     server_port = free_port()
     origin = f'https://localhost:{server_port}'
     context = None
-    deadline = time.monotonic() + (1200 if args.expired_cursor_probe else 240)
+    deadline = fixture_started + (1200 if args.expired_cursor_probe else 240)
+    group_parent, owned_groups = begin_browser_domain(limits, deadline), []
     samples = []
     stop_samples = threading.Event()
     storage_violation = threading.Event()
@@ -522,7 +647,7 @@ def main():
         environment=os.environ.copy()
         for key in ('XDG_DATA_HOME','XDG_CONFIG_HOME','XDG_CACHE_HOME'):
             directory=work/key.lower();directory.mkdir(exist_ok=True);environment[key]=str(directory)
-        proc = subprocess.Popen(command, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,env=environment)
+        proc = browser_group_launch(group_parent, owned_groups, label, command, log, environment)
         processes.append((label, proc))
         return proc
 
@@ -1247,7 +1372,7 @@ self.addEventListener("fetch",event=>{
             cdp('Network.emulateNetworkConditions',{'offline':False,'latency':0,'downloadThroughput':-1,'uploadThroughput':-1})
         check(js('return !document.body.textContent.includes("Partial fixture")'), 'live workspace contains no synthetic evidence badges')
         if args.recovery:
-            os.killpg(server.pid,signal.SIGTERM);server.wait(timeout=15)
+            stop_browser_groups(group_parent, [b for b in owned_groups if b['group']['process'] is server])
             recovery=subprocess.run([str(args.server.resolve()),'recover-access',str(config),principal_id],capture_output=True,text=True,timeout=20)
             (out/'owner-recovery.log').write_text(recovery.stdout+recovery.stderr)
             check(recovery.returncode==0,'actual offline owner recovery command succeeds after server stop')
@@ -1277,7 +1402,7 @@ self.addEventListener("fetch",event=>{
             original_cache=original_worker.split('const CACHE = ')[1].split(';')[0].strip('"')
             def restart_server(worker_text):
                 nonlocal server
-                os.killpg(server.pid,signal.SIGTERM);server.wait(timeout=15)
+                stop_browser_groups(group_parent, [b for b in owned_groups if b['group']['process'] is server])
                 worker.write_text(worker_text)
                 manifest_path=work/'console/asset-manifest.json'
                 asset_manifest=json.loads(manifest_path.read_text())
@@ -1372,6 +1497,8 @@ self.addEventListener("fetch",event=>{
         cleanup_error = None
         try:
             stop_browser_groups(group_parent, owned_groups)
+            browser_reap_domain(group_parent, owned_groups)
+            end_browser_domain(group_parent, owned_groups)
         except BaseException as error:
             cleanup_error = error
         finally:
@@ -1382,7 +1509,7 @@ self.addEventListener("fetch",event=>{
             for log in logs: log.close()
             receipt['process_exits'] = {label: proc.returncode for label, proc in processes}
             receipt['group_stops'] = [{key: binding['group'].get(key) for key in
-                ('pid', 'start_ticks', 'kernel_empty', 'children_reaped', 'stop_error')} for binding in owned_groups]
+                ('pid', 'start_ticks', 'kernel_empty', 'children_reaped', 'late_reaped', 'stop_error')} for binding in owned_groups]
             if cleanup_error is None:
                 shutil.rmtree(work)
                 receipt['cleanup'] = 'owned fixtures removed; process groups stopped and bound children reaped'
