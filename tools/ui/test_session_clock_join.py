@@ -70,3 +70,32 @@ class ServerExecBoundaryTests(unittest.TestCase):
                  patch.object(entry.os,'get_inheritable',return_value=inherited), patch.object(entry.os,'execv') as execute:
                 with self.assertRaisesRegex(ValueError,refusal):entry.main(['/owned/group','/owned/helper.so','7','/owned/server'])
                 enter.assert_not_called();execute.assert_not_called()
+
+class ExpiryAlignmentTests(unittest.TestCase):
+    def clock(self,offset):
+        from unittest.mock import Mock
+        return Mock(frames=[b'FCLKv1\0\0'+bytes(8)+offset.to_bytes(8,'little')])
+
+    def test_adjacent_boundary_keeps_offset_and_waits_real_time(self):
+        from unittest.mock import Mock,patch
+        import browser_expiry as expiry
+        clock=self.clock(10);pace=Mock()
+        with patch.object(expiry,'kernel_time',side_effect=[100_050_000_000,101_050_000_000]), \
+             patch.object(expiry.time,'monotonic',return_value=0), patch.object(expiry.time,'sleep') as sleep:
+            expiry.align(clock,111,240,pace)
+        clock.advance.assert_not_called();sleep.assert_called_once_with(.005);pace.assert_called_once_with()
+
+    def test_forward_step_and_late_boundary_have_distinct_outcomes(self):
+        from unittest.mock import Mock,patch
+        import browser_expiry as expiry
+        clock=self.clock(10)
+        with patch.object(expiry,'kernel_time',return_value=100_050_000_000), patch.object(expiry.time,'monotonic',return_value=0):
+            expiry.align(clock,1800,240,Mock())
+            clock.advance.assert_called_once_with(1700)
+            with self.assertRaisesRegex(ValueError,'session-boundary-inconclusive'):expiry.align(clock,109,240,Mock())
+
+    def test_deadline_cannot_be_reset_by_a_new_boundary(self):
+        from unittest.mock import Mock,patch
+        import browser_expiry as expiry
+        with patch.object(expiry.time,'monotonic',return_value=240):
+            with self.assertRaisesRegex(ValueError,'fixture-deadline'):expiry.align(self.clock(0),1000,240,Mock())
