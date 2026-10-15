@@ -77,3 +77,17 @@ reaping. Ordinary bridge callers select no fault point.
 
 This registration does not change product authentication, package bytes,
 session expiry rules, polling continuity, R3 deadlines or acceptance gates.
+
+## Shared production fixture consumer mapping
+
+Prospective integration correction, 2026-10-15: CandidateFixture must select the
+supervised browser lifecycle for ordinary release-main/query consumers as well
+as R3. When no explicit browser deadline is supplied, derive a finite monotonic
+deadline at fixture entry using the actual launcher runtime environment (1800
+seconds for the default launcher). An explicit R3 deadline remains the earlier
+activation-based global deadline. Import the supervisor before the loaded-source
+census and always pass the held freshly-created browser-budget descriptor. The
+outer launcher remains the hard whole-tree backstop; this grants no additional
+service runtime. Source controls cover default1800, explicit deadline preservation
+and invalid/missing runtime refusal. The actual #42 consumer smoke remains a
+separate prerequisite; a direct supervisor control cannot substitute for it.
