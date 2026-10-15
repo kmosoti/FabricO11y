@@ -84,7 +84,7 @@ def main():
             log = (out / (mode + '.log')).open('x'); logs.append(log)
             proc = browser.browser_group_launch(parent, bindings, mode,
                 [sys.executable, '-B', str(script), str(cell), 'normal' if mode == 'foreign' else mode], log, dict(os.environ))
-            leaders.append(proc)
+            leaders.append((proc, os.pidfd_open(proc.pid), observed(proc.pid)['start_ticks']))
             bound = bindings[-1]['group']
             row = dict(case=mode, bound_pids=[p['pid'] for p in bound['members']],
                 leader=observed(proc.pid), group=str(bound['path']), before=(bound['path'] / 'cgroup.events').read_text())
@@ -138,24 +138,35 @@ def main():
     finally:
         # Independent guardian signals and reaps only its separately held identities.
         guardian_errors = []
+        if foreign is not None:
+            leaders.append((foreign, os.pidfd_open(foreign.pid), observed(foreign.pid)['start_ticks']))
+        for proc, descriptor, start in leaders:
+            try:
+                if (Path('/proc') / str(proc.pid)).exists():
+                    assert observed(proc.pid)['start_ticks'] == start
+                    signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+            except BaseException as error: guardian_errors.append(str(error))
         for pid, start, descriptor in guardians:
             try:
                 if (Path('/proc') / str(pid)).exists():
                     assert observed(pid)['start_ticks'] == start
                     signal.pidfd_send_signal(descriptor, signal.SIGKILL)
-                    until = time.monotonic() + 5
-                    while (Path('/proc') / str(pid)).exists():
-                        try: os.waitid(os.P_PIDFD, descriptor, os.WEXITED | os.WNOHANG | 0x40000000)
-                        except ChildProcessError: pass
-                        if time.monotonic() >= until: raise RuntimeError('guardian reap timeout')
-                        time.sleep(.01)
+            except BaseException as error: guardian_errors.append(str(error))
+        for proc, descriptor, start in leaders:
+            try: proc.wait(timeout=5)
             except BaseException as error: guardian_errors.append(str(error))
             finally: os.close(descriptor)
-        for proc in leaders + ([foreign] if foreign else []):
+        for pid, start, descriptor in guardians:
             try:
-                if proc.poll() is None: proc.kill()
-                proc.wait(timeout=5)
+                until = time.monotonic() + 5
+                while (Path('/proc') / str(pid)).exists():
+                    assert observed(pid)['start_ticks'] == start
+                    try: os.waitid(os.P_PIDFD, descriptor, os.WEXITED | os.WNOHANG | 0x40000000)
+                    except ChildProcessError: pass
+                    if time.monotonic() >= until: raise RuntimeError('guardian reap timeout')
+                    time.sleep(.01)
             except BaseException as error: guardian_errors.append(str(error))
+            finally: os.close(descriptor)
         for log in logs: log.close()
         report['guardian_errors'] = guardian_errors
         if guardian_errors: report['exit'] = 1
