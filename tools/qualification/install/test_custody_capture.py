@@ -65,7 +65,18 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
             if rows is not None:
                 label = 'before' if phase == 'prepare' else 'after_' + phase
                 files[phase + '/' + label + '-query-1-page-0.json'] = dict(rows=rows, next_page=None)
-            files[phase + '/' + name + '-credential.json'] = dict(enrollment='literal-only', stat=[0, 0, 0])
+            files[phase + '/' + name + '-credential.json'] = dict(enrollment='literal-only',
+                files={'/etc/fabrico11y/node-token': dict(stat=[7, 9, 0, 0, 0, 1, 32, 0, 0],
+                    sha256='d' * 64, trimmed_sha256='d' * 64, btrfs_identity=None)})
+            sources = {}
+            for index, path in enumerate((SOURCE, native.DIAG)):
+                log = snapshot['logs'][path]
+                leaf = name + '-source-' + str(index)
+                files[phase + '/' + leaf] = log['bytes']
+                sources[path] = dict(archive_path=str(native.FIXTURE / BINDING['run_id'] / phase / leaf),
+                    device=log['device'], inode=log['inode'], sha256=log['sha256'],
+                    btrfs_identity=log['btrfs_identity'], original_stat=[log['device'], log['inode']])
+            files[phase + '/' + name + '-sources.json'] = sources
             content = {'identity': b'FAI1' + NODE + struct.pack('<Q', 1),
                 'acked': b'FAK1' + struct.pack('<QQ', 1, snapshot['ack']), 'writer.lock': b'', 'batches.faj': b''}
             for source in snapshot['sources']:
@@ -121,7 +132,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
 
     def test_bound_copy_controls_refuse_at_named_boundary(self):
         for variant, message in (('binding', 'binding'), ('live-ps', 'stopped observations'),
-                ('unit-pid', 'native stop'), ('raw-tree', 'raw tree'), ('raw-bytes', 'raw bytes'),
+                ('unit-pid', 'native stop'), ('missing-unit', 'stopped observations'), ('raw-tree', 'raw tree'), ('raw-bytes', 'raw bytes'),
                 ('query-drop', 'row conservation'), ('query-duplicate', 'row conservation'),
                 ('ack-hash', 'ACK exact bytes'), ('credential', 'credential metadata'),
                 ('candidate', 'candidate process executable'), ('snapshot-root', 'root/binding')):
@@ -129,6 +140,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                 files, admission = self.fixture_files()
                 if variant == 'binding': admission['binding'] = dict(BINDING, candidate_frozen='0' * 40)
                 elif variant == 'live-ps': files['prepare/processes.json']['ps']['stdout'] = '55 1 1000 1000 fabric-node /usr/bin/fabric-node\n'
+                elif variant == 'missing-unit': del files['prepare/' + native.UNITS[1] + '.json']
                 elif variant == 'unit-pid': files['prepare/' + native.UNITS[1] + '.json']['show']['stdout'] = 'MainPID=55\nActiveState=inactive\n'
                 elif variant in ('raw-tree', 'raw-bytes'):
                     original = files['prepare/before-raw.tar']; modified = io.BytesIO()
@@ -145,7 +157,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                     event = files['reboot/ack-events.json'][0]
                     original = event['message']; event['message'] = original.replace(original.split('sha256=')[1][:64], '0' * 64)
                     files['reboot/journal.jsonl'] = files['reboot/journal.jsonl'].replace(original.encode(), event['message'].encode())
-                elif variant == 'credential': files['reboot/reboot-credential.json']['stat'][0] = 42
+                elif variant == 'credential': files['reboot/reboot-credential.json']['files']['/etc/fabrico11y/node-token']['stat'][1] = 42
                 elif variant == 'candidate': files['drain/drain-snapshot.json']['candidate_process']['exe_sha256'] = 'b' * 64
                 elif variant == 'snapshot-root': files['prepare/before-receipt.json']['spool_root'] = '/var/lib/filtered'
                 bundle = self.bundle(files)
@@ -162,3 +174,47 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                     patch.object(native.subprocess, 'run'):
                 with self.assertRaisesRegex(ValueError, 'clean harness source|producer/helper source'):
                     native.host_admission(owner, source_root, self.root, self.root / 'package.deb', 'a' * 40, 'literal', 'debian')
+
+
+    def test_btrfs_reboot_device_is_separate_from_immutable_credential_metadata(self):
+        for changed_namespace in (False, True):
+            with self.subTest(changed_namespace=changed_namespace):
+                files, admission = self.fixture_files()
+                for phase in ('prepare', 'installed', 'drain', 'reboot'):
+                    name = 'before' if phase == 'prepare' else phase
+                    item = files[phase + '/' + name + '-credential.json']['files']['/etc/fabrico11y/node-token']
+                    item['btrfs_identity'] = dict(uuid='01' * 16, subvolume_id=256)
+                    if phase == 'reboot':
+                        item['stat'][0] = 42
+                        if changed_namespace: item['btrfs_identity']['subvolume_id'] = 257
+                bundle = self.bundle(files)
+                if changed_namespace:
+                    with self.assertRaisesRegex(ValueError, 'credential metadata/hash drift'):
+                        native.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()))
+                else:
+                    native.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()))
+            self.temp.cleanup(); self.setUp()
+
+    def test_btrfs_uapi_buffers_use_literal_kernel_layout(self):
+        source = self.root / 'source'; source.write_bytes(b'literal source\n')
+        guest = native.Guest.__new__(native.Guest)
+        guest.command = lambda argv: dict(stdout='9123683e\n')
+        requests = []
+        def ioctl(descriptor, request, buffer, mutate):
+            requests.append(request)
+            self.assertTrue(mutate)
+            if request == 0x8400941f:
+                self.assertEqual(len(buffer), 1024)
+                self.assertEqual(buffer, bytes(1024))
+                buffer[16:32] = bytes(range(1, 17))
+            elif request == 0xd0009412:
+                self.assertEqual(len(buffer), 4096)
+                self.assertEqual(struct.unpack_from('<QQ', buffer), (0, 256))
+                struct.pack_into('<Q', buffer, 0, 257)
+            else:
+                self.fail('unexpected Btrfs ioctl')
+        with patch.object(native.fcntl, 'ioctl', side_effect=ioctl):
+            raw, _, observed = guest.read_input(str(source), 4096)
+        self.assertEqual(raw, b'literal source\n')
+        self.assertEqual(observed, dict(uuid=bytes(range(1, 17)).hex(), subvolume_id=257))
+        self.assertEqual(requests, [0x8400941f, 0xd0009412])

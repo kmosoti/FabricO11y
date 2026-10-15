@@ -115,7 +115,7 @@ adds phase-specific raw and sender evidence. Source inspection of the complete
 uncommitted producer/caller design measured 212 producer lines and 296 caller
 lines (including all new host admission and lifecycle call sites), beyond the
 original 180/220 estimate. Before any native execution, separately register
-maximum **230 producer** and **340 caller** net lines, **570 combined**. The
+maximum **230 producer** and **350 caller** net lines, **580 combined**. The
 reader's separate 540-total ceiling remains independent. Actual final deltas,
 including every new production helper and call site, must be reported.
 
@@ -158,3 +158,22 @@ transfer authority. Synthetic copy controls may provide the copy's own digest
 only to reach deeper admission/conservation checks; that never authenticates the
 copy as genuine guest evidence. Actual native admission requires the separately
 observed original digest and the frozen owner source/package/helper tuple.
+
+
+Before implementation, the final measured uncommitted design is 228 producer and
+349 caller net lines (all new module code and both lifecycle/host call sites),
+577 combined. The final caller ceiling is350, replacing340 for independent
+nested raw-frame/payload and original source-archive joins. This does not change
+an acceptance expectation. Shared original-input reading supplies stable kernel
+Btrfs namespace observations for credential stat witnesses too. Before/install/
+drain credential stat/hash records stay exact. Only the reboot comparison may
+normalize `st_dev`, and only with the same independently observed nonzero Btrfs
+filesystem UUID and subvolume; original records remain retained. Wrong inode,
+mode, owner, hash or namespace still refuses. New literal controls cover this
+legitimate device change, changed-namespace refusal, and the 1024/4096-byte UAPI
+buffers and root-ID request. Local authoritative headers inspected:
+`/usr/include/linux/btrfs.h` SHA-256
+`bfbd7845999edf81c6b7c6034f25e7981a17f12e603981fef20c3895fecf76aa`
+and `btrfs_tree.h`
+`856fe1cf3c741fab992b73c328d4def16bad6351f6b0b75ca590a69e1f748444`.
+These source controls do not establish a genuine kernel ioctl result.
