@@ -28,9 +28,9 @@ class CommandTests(unittest.TestCase):
     def test_registered_allocations_total_1800(self):
         self.assertEqual(sum(seconds for _, seconds in PHASES), 1800)
 
-    def test_phase_omission_refused(self):
-        with self.assertRaisesRegex(ValueError, "omitted"):
-            self.commands.phase("tls")
+    def test_unknown_phase_refused(self):
+        with self.assertRaisesRegex(ValueError, "unknown"):
+            self.commands.phase("unknown-phase")
 
     def test_verbatim_shell_quoting_and_private_stdin(self):
         block = Block("docs/operations.md", "literal", 1, 3, b"printf '%s\\n' 'a $HOME `literal`'\ncat\n")
