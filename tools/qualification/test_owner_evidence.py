@@ -31,7 +31,7 @@ def fixture():
 
 class OwnerEvidenceTests(unittest.TestCase):
     def check(self, record, binding):
-        return completed(record, binding, [name for name, _ in PHASES])
+        return completed(record, binding, dict(PHASES))
 
     def test_explicitly_synthetic_complete_record(self):
         self.assertEqual(self.check(*fixture())['exit'], 0)
