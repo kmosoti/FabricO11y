@@ -28,3 +28,24 @@ class AnnouncementTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'announcement-event'):oracle.check_announcement(*changed)
         changed=list(self.evidence());changed[2][0]['after_ns']=201
         with self.assertRaisesRegex(ValueError,'announcement-utterance'):oracle.check_announcement(*changed)
+
+    def test_orca_observer_preserves_speak_arguments_result_and_capture_gate(self):
+        import json,os,tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import announcement_probe as probe
+        calls=[];answer=(225,'queued',['123'])
+        class Client:
+            def speak(self,*args,**kwargs):calls.append((args,kwargs));return answer
+            def get_output_module(self):return 'espeak-ng'
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            work=Path(directory);out=work/'out';out.mkdir()
+            with patch.dict('sys.modules',speechd=SimpleNamespace(SSIPClient=Client)):
+                exec(probe.customization(work,out),{})
+                client=Client();self.assertIs(client.speak('before capture'),answer)
+                self.assertFalse((out/'speech.jsonl').exists())
+                (work/'capture').touch();callback=object()
+                self.assertIs(client.speak('Public probe complete',callback=callback),answer)
+            self.assertEqual(calls,[(('before capture',),{}),(('Public probe complete',),{'callback':callback})])
+            rows=[json.loads(line) for line in (out/'speech.jsonl').read_text().splitlines()]
+            self.assertEqual(len(rows),1);self.assertEqual((rows[0]['ssip_code'],rows[0]['message_id'],rows[0]['module']),(225,123,'espeak-ng'))
