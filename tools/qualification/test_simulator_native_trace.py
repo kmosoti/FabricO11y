@@ -9,7 +9,7 @@ BEGIN = b'{"process":{"pid":7}}'
 PATH = Path('/owned/begin.json')
 STAGE = '/owned/.begin-witness-7.stage'
 LINES = [
-    'execve("/proc/self/fd/9", [], 0) = 0 (DELAYED) <0.100001>',
+    'execve("/proc/self/fd/9", ["/proc/self/fd/9"], ["PATH=/usr/bin:/bin", "LANG=C", "LC_ALL=C"]) = 0 (DELAYED) <0.100001>',
     f'openat(AT_FDCWD, "{STAGE}", O_RDWR|O_CREAT|O_EXCL|O_NOFOLLOW|O_CLOEXEC, 0600) = 3<{STAGE}>',
     f'write(0x3, 0x1234, {hex(len(BEGIN))}) = {hex(len(BEGIN))}',
     f'fchmod(3<{STAGE}>, 0400) = 0',
@@ -24,9 +24,12 @@ LINES = [
 ]
 
 
-def fixture(lines=None):
+SHIM = 'execve("/proc/self/fd/10", ["/proc/self/fd/10", "-i", "PATH=/usr/bin:/bin", "LANG=C", "LC_ALL=C", "/proc/self/fd/9"], ["PATH=/usr/bin:/bin", "LANG=C", "LC_ALL=C"]) = 0'
+
+
+def fixture(lines=None, shim=SHIM):
     # exit_group normally has no numeric return and is not a publication step.
-    return ('\n'.join(LINES[:-2] + LINES[-1:] if lines is None else lines) + '\n').encode()
+    return ('\n'.join([shim] + (LINES[:-2] + LINES[-1:] if lines is None else lines)) + '\n').encode()
 
 
 class NativeTraceLiteralTests(unittest.TestCase):
@@ -84,3 +87,8 @@ class NativeTraceLiteralTests(unittest.TestCase):
     def test_incomplete_or_oversized_trace_refuses(self):
         with self.assertRaises(ValueError): trace.trace_calls(b'write(3, "x", 1 <unfinished ...>\n')
         with self.assertRaises(ValueError): trace.trace_calls(b'x' * (trace.MAX_TRACE + 1))
+
+    def test_wrong_bootstrap_shim_or_environment(self):
+        for old, new in (("/proc/self/fd/10", "/usr/bin/env"), ("-i", "-"), ("LANG=C", "LANG=foreign"), ("/proc/self/fd/9", "/proc/self/fd/8")):
+            with self.subTest(old=old), self.assertRaises(ValueError):
+                trace.publication(fixture(shim=SHIM.replace(old, new)), PATH, BEGIN, 99)

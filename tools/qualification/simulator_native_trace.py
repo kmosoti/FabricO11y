@@ -13,6 +13,9 @@ import time
 
 POPEN = subprocess.Popen
 MAX_TRACE = 32 * 2**20
+BOOTSTRAP_ENV = "/usr/bin/env"
+BOOTSTRAP_ENV_SHA256 = "505168d7e1cc5ad8e7dc93d2b5c3867987bf605ff323b679c847441ca1569eeb"
+MINIMAL_ENV = {"PATH": "/usr/bin:/bin", "LANG": "C", "LC_ALL": "C"}
 SYSCALLS = 'execve,execveat,open,openat,write,writev,fchmod,fsync,fdatasync,link,linkat,unlink,unlinkat,clone,clone3,fork,vfork,fstat,newfstatat,statx,close,close_range,dup,dup2,dup3,fcntl'
 QUOTED = re.compile(r'"(?:[^"\\]|\\.)*"')
 
@@ -54,8 +57,15 @@ def publication(raw, begin_path, begin_raw, inode):
     stage = str(begin_path.parent / f'.begin-witness-{pid}.stage')
     calls = trace_calls(raw)
     execution = [call for call in calls if call['name'] in ('execve', 'execveat')]
-    require(len(execution) == 1 and execution[0]['result'] == 0
-            and execution[0]['name'] == 'execve' and '(DELAYED)' in execution[0]['tail'], 'exec')
+    require(len(execution) == 2 and all(call['result'] == 0 and call['name'] == 'execve' for call in execution)
+            and '(DELAYED)' not in execution[0]['tail'] and '(DELAYED)' in execution[1]['tail'], 'exec')
+    shim, target = [ast.literal_eval('[' + call['args'] + ']') for call in execution]
+    environment = [key + '=' + value for key, value in MINIMAL_ENV.items()]
+    require(len(shim) == len(target) == 3 and re.fullmatch(r'/proc/self/fd/[0-9]+', shim[0])
+            and shim[1][0] == shim[0] and shim[1][1:5] == ['-i', *environment]
+            and shim[1][5:] == target[1] and target[0] == target[1][0]
+            and re.fullmatch(r'/proc/self/fd/[0-9]+', target[0])
+            and shim[2] == target[2] == environment, 'bootstrap-exec')
     require(not any(call['name'] in ('fork', 'vfork') for call in calls), 'fork-escape')
     opened = [call for call in calls if call['name'] in ('open', 'openat') and stage in strings(call['args'])]
     require(len(opened) == 1 and opened[0]['result'] >= 0
@@ -120,9 +130,10 @@ class NativeTrace:
         self = cls()
         self.out, self.deadline = Path(out), deadline
         self.binary_fd, self.target_pidfd = os.dup(binary_fd), None
+        self.bootstrap_fd = None
         self.files, self.target_pid, self.returncode = [], None, None
         self.tracer = None
-        self.record = dict(state='starting', command=command, bootstrap_delay='first execve delay_exit=100ms')
+        self.record = dict(state='starting', command=command, bootstrap_delay='first post-startup execve delay_exit=100ms')
         try:
             require(self.out.is_absolute() and not self.out.exists()
                     and self.out.parent.resolve().is_relative_to(Path('/run/media/kmosoti/data/FabricO11y/results')), 'output')
@@ -142,11 +153,19 @@ class NativeTrace:
             if injection is not None:
                 require(re.fullmatch(r'(write|fsync|link|linkat|unlink|unlinkat):error=EIO:when=[1-9][0-9]*', injection), 'injection')
                 argv += ['-e', 'inject=' + injection]
-            argv += ['--', *command]
+            self.bootstrap_fd = os.open(BOOTSTRAP_ENV, os.O_RDONLY | os.O_CLOEXEC | os.O_NOFOLLOW)
+            bootstrap_info = os.fstat(self.bootstrap_fd)
+            require(stat.S_ISREG(bootstrap_info.st_mode)
+                    and sha(Path('/proc/self/fd') / str(self.bootstrap_fd)) == BOOTSTRAP_ENV_SHA256, 'bootstrap-tool')
+            bootstrap_command = [f'/proc/self/fd/{self.bootstrap_fd}', '-i',
+                *[key + '=' + value for key, value in MINIMAL_ENV.items()], *command]
+            self.record['bootstrap'] = dict(source=BOOTSTRAP_ENV, sha256=BOOTSTRAP_ENV_SHA256,
+                device=bootstrap_info.st_dev, inode=bootstrap_info.st_ino, command=bootstrap_command)
+            argv += ['--', *bootstrap_command]
             self.record.update(tracer_command=argv, tool_sha256=strace_sha256, launched_monotonic_ns=time.monotonic_ns())
-            environment = {'PATH': '/usr/bin:/bin', 'LANG': 'C', 'LC_ALL': 'C'}
+            environment = dict(MINIMAL_ENV)
             self.record['environment'] = environment
-            self.tracer = POPEN(argv, pass_fds=(binary_fd,), stdout=self.stdout, stderr=self.stderr, env=environment)
+            self.tracer = POPEN(argv, pass_fds=(binary_fd, self.bootstrap_fd), stdout=self.stdout, stderr=self.stderr, env=environment)
             until = min(deadline, time.monotonic() + 5)
             while time.monotonic() < until and self.tracer.poll() is None:
                 children = Path(f'/proc/{self.tracer.pid}/task/{self.tracer.pid}/children').read_text().split()
@@ -239,7 +258,7 @@ class NativeTrace:
         if self.out.exists(): (self.out / 'observer-receipt.json').write_text(json.dumps(self.record, indent=2) + '\n')
 
     def release(self):
-        for name in ('binary_fd', 'target_pidfd'):
+        for name in ('binary_fd', 'target_pidfd', 'bootstrap_fd'):
             descriptor = getattr(self, name, None)
             if descriptor is not None: os.close(descriptor); setattr(self, name, None)
         for stream in self.files: stream.close()
@@ -270,7 +289,8 @@ class NativeTrace:
         record = json.loads(receipt.read_text())
         require(record['state'] == 'stopped' and record['exit'] == record['tracer_exit'] == 0
                 and record['process'] == expected['process']
-                and record['binary_sha256'] == expected['binary_sha256'], 'offline-identity')
+                and record['binary_sha256'] == expected['binary_sha256']
+                and record['bootstrap']['sha256'] == BOOTSTRAP_ENV_SHA256, 'offline-identity')
         require(beginfile.stat().st_ino == record['begin_inode'], 'offline-inode')
         facts = publication(trace.read_bytes(), Path(record['begin_path']), beginfile.read_bytes(), record['begin_inode'])
         require(facts == record['publication'], 'offline-publication')
