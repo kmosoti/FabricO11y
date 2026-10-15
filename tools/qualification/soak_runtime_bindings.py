@@ -55,3 +55,28 @@ def validate_phases(runtime, anchor):
             and interval['conservative_end_ns'] - interval['start_ns'] >= runtime['offered_seconds'] * NS,
             'phase does not enclose actual native exposure')
     return True
+
+
+def validate_final_parent(runtime, outer):
+    from resource_final_group import validate_empty
+    observation = outer['final_kernel_observation']
+    require(observation['state'] == 'observed_empty' and observation['forced_cleanup'] is False
+            and observation['stop_exit'] == 0
+            and observation['unit'] == outer['unit'] == runtime['outer_identity']['unit']
+            and observation['cgroup'] == runtime['outer_identity']['cgroup']
+            and observation['activation_monotonic_ns'] == outer['activation_monotonic_ns']
+            and observation['activation_monotonic_ns'] == runtime['outer_identity']['activation_monotonic_ns']
+            and type(observation['before_ns']) is int and type(observation['after_ns']) is int
+            and runtime['phases'][-1]['end_ns'] <= observation['before_ns'] <= observation['after_ns']
+            and observation['after_ns'] < outer['activation_monotonic_ns'] + 7500 * NS,
+            'final actual parent observation binding missing')
+    require(exact({key: observation[key] for key in ('device', 'inode')}, runtime['parent_identity']),
+            'final parent directory differs from admitted parent')
+    final_runtime_groups = runtime['parent_observations'][-1]['groups']
+    require(set(observation['groups']) == set(final_runtime_groups), 'final parent subgroup observation missing')
+    for name, group in observation['groups'].items():
+        require(all(group[key] == final_runtime_groups[name][key] for key in
+                    ('memory.high', 'memory.max', 'memory.swap.max', 'pids.max', 'cpu.max')),
+                'final parent/subgroup cap changed')
+    validate_empty(observation['groups'])
+    return True

@@ -143,7 +143,7 @@ def stopped_outer(actual, expected, seconds):
 
 
 def validate_headroom_sources(value):
-    from soak_runtime_bindings import validate_job, validate_phases
+    from soak_runtime_bindings import validate_job, validate_phases, validate_final_parent
     measurements = value.get('phase_headroom', {})
     exposure.validate_phase_headroom(measurements)
     for phase, record in measurements.items():
@@ -152,6 +152,7 @@ def validate_headroom_sources(value):
         runtime = pinned(record['runtime_path'], record['runtime_sha256'])
         validate_job(runtime, source, record['runtime_expected'])
         validate_phases(runtime, source['activation_monotonic_ns'])
+        validate_final_parent(runtime, source)
         require(runtime.get('state') == 'closed_pending_acceptance'
                 and runtime.get('cleanup_ok') is True and runtime.get('forced_shutdown') is False
                 and runtime.get('immutable_inputs') is True and runtime.get('profile') == PROFILE
@@ -510,6 +511,7 @@ def measure(value, admission_sha):
             'input_sha256': {name: ref['sha256'] for name, ref in value['inputs'].items()},
             'outer_identity': {'unit': parent.name.removesuffix('.service'), 'cgroup': str(parent),
                                'activation_monotonic_ns': clock.launcher_begin},
+            'parent_identity': {'device': parent.stat().st_dev, 'inode': parent.stat().st_ino},
             'output_identity': {'path': str(output), 'device': output.stat().st_dev, 'inode': output.stat().st_ino},
             'native_interval': {'start_ns': lower, 'conservative_end_ns': boundary},
             'production_exits': record['production_exits'], 'measurement_sha256': digest(output / 'measurement.json')})
@@ -628,9 +630,10 @@ def grade(value, admission_sha, expected_path, expected_sha, destination):
         {'sha256': digest(root / 'measurement.json'), 'value': measurement},
         {'sha256': digest(root / 'runtime.json'), 'value': runtime},
         {'sha256': digest(expected['outer_path']), 'value': outer}, expected)
-    from soak_runtime_bindings import validate_job, validate_phases
+    from soak_runtime_bindings import validate_job, validate_phases, validate_final_parent
     validate_job(runtime, outer, expected['runtime_expected'])
     validate_phases(runtime, outer['activation_monotonic_ns'])
+    validate_final_parent(runtime, outer)
     require(not measurement['smoke'], 'short smoke is not full R3 acceptance')
     for label, members in measurement['members'].items():
         require(inventory(root / label) == members, 'stopped raw input changed')
@@ -723,9 +726,10 @@ def close_grading(value, admission_sha, expected_path, expected_sha, destination
         {'sha256': digest(root / 'measurement.json'), 'value': measurement},
         {'sha256': digest(root / 'runtime.json'), 'value': runtime},
         {'sha256': digest(original['outer_path']), 'value': measurement_outer}, original)
-    from soak_runtime_bindings import validate_job, validate_phases
+    from soak_runtime_bindings import validate_job, validate_phases, validate_final_parent
     validate_job(runtime, measurement_outer, original['runtime_expected'])
     validate_phases(runtime, measurement_outer['activation_monotonic_ns'])
+    validate_final_parent(runtime, measurement_outer)
     require(result['input_receipt_sha256'] == original['receipt_sha256'] and not measurement['smoke'],
             'grading input substitution')
     for label, members in measurement['members'].items():

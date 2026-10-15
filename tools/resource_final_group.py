@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 import subprocess
+import signal
 import time
 
 FIELDS = ('memory.high', 'memory.max', 'memory.swap.max', 'pids.max', 'memory.events',
@@ -57,13 +58,16 @@ def snapshot(group, descriptor):
     held = identity(os.fstat(descriptor))
     require(identity(group.stat()) == held, 'final cgroup directory identity changed')
     paths = [group, *(path for path in group.rglob('*') if path.is_dir())]
+    identities = {str(path.relative_to(group)): identity(path.stat()) for path in paths}
     groups = {str(path.relative_to(group)): {key: (path / key).read_text().strip() for key in FIELDS}
               for path in paths}
     require(identity(group.stat()) == held == identity(os.fstat(descriptor)), 'final cgroup replaced during read')
     require(set(groups) == {str(path.relative_to(group)) for path in
                           [group, *(path for path in group.rglob('*') if path.is_dir())]},
             'final subgroup set changed during read')
-    return {'device': held[0], 'inode': held[1], 'groups': groups}
+    require(identities == {str(path.relative_to(group)): identity(path.stat()) for path in paths},
+            'final subgroup directory identity changed')
+    return {'device': held[0], 'inode': held[1], 'groups': groups, 'subgroup_identities': identities}
 
 
 def observe_service(command, receipt_path, unit, arguments, runtime, read_receipt):
@@ -74,7 +78,11 @@ def observe_service(command, receipt_path, unit, arguments, runtime, read_receip
     """
     deadline = time.monotonic() + runtime
     report = {'state': 'observing', 'unit': unit, 'observations': [], 'forced_cleanup': False}
-    transport = subprocess.Popen(command)
+    def expired(_number, _frame):
+        raise TimeoutError('R3 outside observation deadline exhausted')
+    previous_handler = signal.signal(signal.SIGALRM, expired)
+    signal.setitimer(signal.ITIMER_REAL, runtime)
+    transport = None
     descriptor = None
     group = None
     def remaining(limit=5):
@@ -82,6 +90,7 @@ def observe_service(command, receipt_path, unit, arguments, runtime, read_receip
         require(left > 0, 'R3 final observation global deadline exhausted')
         return min(left, limit)
     try:
+        transport = subprocess.Popen(command)
         while True:
             remaining()
             child = read_receipt(receipt_path, unit, arguments)
@@ -93,6 +102,7 @@ def observe_service(command, receipt_path, unit, arguments, runtime, read_receip
             anchor = int(observed['ActiveEnterTimestampMonotonic']) * 1000
             require(anchor > 0, 'missing actual service activation anchor')
             deadline = min(deadline, anchor / 1_000_000_000 + runtime)
+            signal.setitimer(signal.ITIMER_REAL, remaining(runtime))
             expected_group = Path('/sys/fs/cgroup') / observed['ControlGroup'].lstrip('/')
             require(observed['ControlGroup'].startswith('/') and '..' not in expected_group.parts
                     and expected_group.name == unit + '.service' and str(expected_group) == child['cgroup'],
@@ -123,7 +133,8 @@ def observe_service(command, receipt_path, unit, arguments, runtime, read_receip
             status = transport.wait(timeout=remaining())
             require(status == child['exit'], 'transport exit differs from actual inside exit')
             return status, report
-    except (OSError, ValueError, subprocess.SubprocessError) as error:
+    except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError, KeyboardInterrupt) as error:
+        signal.setitimer(signal.ITIMER_REAL, 0)
         report.update(state='failed', error=repr(error), forced_cleanup=True)
         try:
             stopped = subprocess.run(['systemctl', '--user', 'stop', unit], capture_output=True,
@@ -131,13 +142,17 @@ def observe_service(command, receipt_path, unit, arguments, runtime, read_receip
             report['failure_stop_exit'] = stopped.returncode
         except (OSError, subprocess.SubprocessError) as stop_error:
             report['failure_stop_error'] = repr(stop_error)
-        try:
-            status = transport.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            transport.kill()
-            status = transport.wait(timeout=5)
-            report['transport_forced_kill'] = True
+        status = None
+        if transport is not None:
+            try:
+                status = transport.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                transport.kill()
+                status = transport.wait(timeout=5)
+                report['transport_forced_kill'] = True
         return status, report
     finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
         if descriptor is not None:
             os.close(descriptor)

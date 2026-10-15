@@ -37,6 +37,7 @@ def validate(samples, start_ns, end_ns):
         offset_hi = right if offset_hi is None else min(offset_hi, right)
         require(offset_lo <= offset_hi, 'inconsistent native/browser clocks')
         require(sample['visibility'] == 'visible' and not sample['eventOverflow'], 'hidden UI or missing events')
+        require(sample.get('active') is True, 'snapshot observed paused native polling')
         for event in sample['events']:
             require(type(event['seq']) is int and event['seq'] == sequence + 1, 'lost or duplicate raw event')
             require(type(event['atMs']) in (int, float) and math.isfinite(event['atMs']), 'invalid event clock')
