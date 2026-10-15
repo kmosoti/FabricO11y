@@ -489,12 +489,16 @@ if [ "$DEFER_REMOVAL" = 0 ]; then
 # A13 remove keeps data, configuration and the account; purge removes data and
 # configuration.
 package_remove >"$W/remove.log" 2>&1; rc=$?
-stopped=$(systemctl is-active fabrico11y-node.service fabrico11y-server.service | tr '\n' ' ')
+stopped_rc=0
+stopped=$(systemctl is-active fabrico11y-node.service fabrico11y-server.service) || stopped_rc=$?
+stopped_ok=0
+case "$stopped_rc:$stopped" in
+  $'3:inactive\ninactive'|$'3:inactive\nfailed'|$'3:failed\ninactive'|$'3:failed\nfailed') stopped_ok=1 ;; esac
 if [ $rc -eq 0 ] && [ ! -e /usr/bin/fabric-server ] && [ -d /var/lib/fabrico11y/server ] \
-   && [ -f /etc/fabrico11y/server.conf ] && getent passwd fabricolly >/dev/null && [ "$stopped" != "active active " ]; then
+   && [ -f /etc/fabrico11y/server.conf ] && getent passwd fabricolly >/dev/null && [ "$stopped_ok" -eq 1 ]; then
   pass A13a "remove: binaries gone, services '$stopped', state, configuration and account kept"
 else
-  fail A13a "rc=$rc stopped='$stopped'"
+  fail A13a "rc=$rc stopped_rc=$stopped_rc stopped='$stopped'"
 fi
 package_purge >"$W/purge.log" 2>&1; rc=$?
 if [ $rc -eq 0 ] && [ ! -e /var/lib/fabrico11y ] && [ ! -e /etc/fabrico11y ]; then
@@ -517,9 +521,12 @@ if [ "$PACKAGE_FAMILY" = fedora ]; then
   fi
   ausearch -m AVC,USER_AVC -ts boot > "$W/selinux-avc.log" 2>&1; audit_search_rc=$?
   [ "$audit_search_rc" -le 1 ] || fail F3 "audit search failed: $audit_search_rc"
-  if grep -E 'comm="(fabric-server|fabric-node|fabricctl)"' "$W/selinux-avc.log"; then
-    fail F3 "Fabric process SELinux denial; retain AVC evidence"
-  else pass F3 "no Fabric process AVC in guest audit"; fi
+  grep -E 'comm="(fabric-server|fabric-node|fabricctl)"' "$W/selinux-avc.log"; avc_rc=$?
+  case "$avc_rc" in
+    0) fail F3 "Fabric process SELinux denial; retain AVC evidence" ;;
+    1) pass F3 "no Fabric process AVC in guest audit" ;;
+    *) fail F3 "audit read error rc=$avc_rc; retain audit evidence" ;;
+  esac
 fi
 echo "RESULT fails=$FAILS not_run=$NOTRUN"
 [ $FAILS -gt 0 ] && exit 1

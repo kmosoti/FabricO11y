@@ -3,6 +3,54 @@
   "description": "Counterexamples kept as deterministic regression fixtures. `cargo xtask check-counterexamples` requires each reproducer test to exist in its file and each fix commit to exist. Removing an entry is a trust-boundary change.",
   "counterexamples": [
     {
+      "id": "CX-INSTALLATION-BASELINE-AUDIT-READ",
+      "origin": "PR review C-aud-10 S1; prospective control commit 42e45f5d7ce75fbb5494e898467c75a721c4cd09",
+      "defect": "Baseline Fedora F3 treated grep exit 2 on unreadable required audit evidence as a clean audit and printed PASS",
+      "seed_or_trace": "Actual Fedora F3 shell block with readable-empty positive and literal grep exit 2. Only grep_error=True failed: actual exit 0 and ACCEPT F3 PASS with retained synthetic audit read error. Named red exit 1 with confirmed stop; log SHA256 ab5e80c3cace15c704088cebd2bc1f9ea89d733ca350029f35fbe00611f4e591; resource receipt SHA256 14ec587fa0a5f1719e7f0120e8c7729f537a258441fbbe90da96bbea086b6351",
+      "contract": "QUAL-INSTALL and registered Fedora F3: unreadable required audit evidence cannot support PASS",
+      "reproducer": {
+        "file": "tools/qualification/install/test_run_qemu.py",
+        "test": "test_acceptance_fedora_rejects_unreadable_audit"
+      },
+      "fix_commit": "f437f0e12682d1f32bf22909679c5d98431665ef"
+    },
+    {
+      "id": "CX-INSTALLATION-PREREQUISITE-OBSERVATION",
+      "origin": "Follow-up review of installation removal checks; contained red at 8b5d3329cb03d6c470f24b5dba46fba03121804e",
+      "defect": "Removal accepted empty, incomplete or failed service-state observations, and the post-reboot AVC check accepted grep exit 2 as absence of a Fabric denial",
+      "seed_or_trace": "Literal shell stubs return empty output, one inactive line or exit 1 with two inactive lines on both lifecycle and baseline removal, plus grep exit 2 on the lifecycle audit read. Actual red: five methods, seven failures, exit 1/stopped; log SHA256 accc6c250b667e9a8b86664e4e8d6c354118a730430c7b36fed85ababb93c397. The baseline counterpart is test_acceptance_remove_rejects_either_live_unit. Clean inactive and prior live/mutation controls remain unchanged. At the fix commit, the complete nine-test file exits 0/stopped; log SHA256 a77f13b9a487d5a928e54cb437e007c20e7a2ec8255b3fdb3bfd1ff37598d6d9",
+      "contract": "QUAL-INSTALL and registered A13a/F4: both stopped states must be observed as inactive or failed with systemctl exit 3; unreadable required audit evidence cannot support PASS",
+      "reproducer": {
+        "file": "tools/qualification/install/test_run_qemu.py",
+        "test": "test_lifecycle_remove_rejects_unobserved_services_and_unreadable_audit"
+      },
+      "fix_commit": "ce387f75610bc4bac82955fbb722c9d61e4fcbc1"
+    },
+    {
+      "id": "CX-INSTALLATION-REMOVAL-CHECKS",
+      "origin": "Coordination C-035 / C-aud-7 review of harness de77de7399710c5afd50ae0de981fda6e0b75f30; corrected contained red at d5e52368854fd87ddce8d941e0c2164c27cf2e9e",
+      "defect": "Bash errexit ignores negated service/AVC commands and the first member of retention/purge AND lists; baseline removal accepted one live service, allowing false A13/F4 PASS output",
+      "seed_or_trace": "Actual remove shell with isolated paths and stubs: either unit in active/activating/deactivating/reloading, each of three Fabric comm AVCs, missing retained server directory and state surviving purge; 21 shell failures before repair, clean inactive Debian/Fedora fixtures succeed. Root red exit 1/stopped, log SHA256 334c573b5de73e3a91f7952ff66eb3387e3106fccfe7757088d685b3fb43c711. Earlier empty-slice control failures at 903d68f5 remain control defects, not guest evidence",
+      "contract": "QUAL-INSTALL and registered installation A13a/A13b/F4; failed required phases cannot produce passing installation evidence",
+      "reproducer": {
+        "file": "tools/qualification/install/test_run_qemu.py",
+        "test": "test_lifecycle_remove_rejects_active_services_and_fabric_avc"
+      },
+      "fix_commit": "fe6e2b1e83bafd6b6cae57f601bbbd48e73ec948"
+    },
+    {
+      "id": "CX-INSTALLATION-EXPECTED-MUTATION-SCRATCH",
+      "origin": "C-aud-7 note 6 / C-035; corrected contained red at d5e52368854fd87ddce8d941e0c2164c27cf2e9e",
+      "defect": "QEMU cleanup required a Debian repacking mutation and its archive, so a confirmed separately built expected RPM mutation retained its stopped owned scratch",
+      "seed_or_trace": "Execute the actual cleanup AST with expected root-user RPM, acceptance exit 1/A6 FAIL, no provenance error and confirmed process stop: before repair no cleanup call. Unrelated A12 failure, unconfirmed stop and helper mismatch retain scratch. Root red exit 1/stopped, shared log SHA256 334c573b5de73e3a91f7952ff66eb3387e3106fccfe7757088d685b3fb43c711; no actual guest run is claimed",
+      "contract": "Registered installation named-mutation grading and owned stopped-scratch cleanup; packages, sources, logs and unexpected failures remain preserved",
+      "reproducer": {
+        "file": "tools/qualification/install/test_run_qemu.py",
+        "test": "test_expected_rpm_mutation_cleans_only_confirmed_stopped_scratch"
+      },
+      "fix_commit": "fe6e2b1e83bafd6b6cae57f601bbbd48e73ec948"
+    },
+    {
       "id": "CX-CONSOLE-ICON-TIMESTAMP",
       "origin": "Cross-check of the a5dbda7 rebuild on #40: icon-192.png, icon-512.png, asset-manifest.json and service-worker.js differed from the ca84d98 build although no console input changed (#55)",
       "defect": "ImageMagick wrote date:modify and date:timestamp tEXt chunks into the generated icons, so separate console builds of one commit produced different icons, asset manifests, service-worker cache versions and package hashes",
