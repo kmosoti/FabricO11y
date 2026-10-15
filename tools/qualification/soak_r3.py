@@ -143,12 +143,15 @@ def stopped_outer(actual, expected, seconds):
 
 
 def validate_headroom_sources(value):
+    from soak_runtime_bindings import validate_job, validate_phases
     measurements = value.get('phase_headroom', {})
     exposure.validate_phase_headroom(measurements)
     for phase, record in measurements.items():
         source = pinned(record['source_receipt'], record['source_sha256'])
         stopped_outer(source, record['outer_expected'], record['outer_runtime_seconds'])
         runtime = pinned(record['runtime_path'], record['runtime_sha256'])
+        validate_job(runtime, source, record['runtime_expected'])
+        validate_phases(runtime, source['activation_monotonic_ns'])
         require(runtime.get('state') == 'closed_pending_acceptance'
                 and runtime.get('cleanup_ok') is True and runtime.get('forced_shutdown') is False
                 and runtime.get('immutable_inputs') is True and runtime.get('profile') == PROFILE
@@ -156,6 +159,28 @@ def validate_headroom_sources(value):
                 and bool(value['headroom_binding'])
                 and runtime.get('production_exits') == {'simulator': 0, 'server': 0},
                 'S1 source runtime binding missing')
+        measurement_path = Path(record['runtime_path']).parent / 'measurement.json'
+        measured = pinned(measurement_path, runtime['measurement_sha256'])
+        checkpoint = measurement_path.parent
+        require(measured['admission_sha256'] == runtime['admission_sha256']
+                and measured['binding'] == runtime['binding'], 'S1 runtime/measurement mismatch')
+        for label, members in measured['members'].items():
+            require(inventory(checkpoint / label) == members, 'S1 stopped source changed')
+        sim = json.loads((checkpoint / 'raw/sim/sim-summary.json').read_text())
+        require(sim['seconds'] == runtime['offered_seconds'] and sim['identities'] == sim['workers'] == 100
+                and sim['seed'] == SEED and sim['undelivered'] == 0,
+                'S1 actual simulator profile mismatch')
+        offered = bytearray(100 * sim['seconds'])
+        for event in rows(checkpoint / 'raw/sim/events.jsonl'):
+            if event.get('e') != 'created':
+                continue
+            identity, seq = event['id'], event['seq']
+            require(type(identity) is int and type(seq) is int and 0 <= identity < 100
+                    and 1 <= seq <= sim['seconds'], 'S1 malformed native offer')
+            slot = identity * sim['seconds'] + seq - 1
+            require(not offered[slot], 'S1 duplicate native offer')
+            offered[slot] = 1
+        require(all(offered), 'S1 missing native worker offers')
         require(runtime.get('smoke') is True if record['kind'] == 'full-rate-smoke'
                 else runtime.get('protocol') == 'R2', 'S1 source kind mismatch')
         durations = {}
@@ -482,6 +507,11 @@ def measure(value, admission_sha):
             'parent_observations': parent_observations,
             'profile': PROFILE, 'smoke': value['smoke'], 'protocol': 'R3', 'offered_seconds': value['seconds'],
             'headroom_binding': value['headroom_binding'],
+            'input_sha256': {name: ref['sha256'] for name, ref in value['inputs'].items()},
+            'outer_identity': {'unit': parent.name.removesuffix('.service'), 'cgroup': str(parent),
+                               'activation_monotonic_ns': clock.launcher_begin},
+            'output_identity': {'path': str(output), 'device': output.stat().st_dev, 'inode': output.stat().st_ino},
+            'native_interval': {'start_ns': lower, 'conservative_end_ns': boundary},
             'production_exits': record['production_exits'], 'measurement_sha256': digest(output / 'measurement.json')})
         exposure.remaining_ns('closeout', clock.launcher_begin, closeout_start, time.monotonic_ns())
         return 0
@@ -598,6 +628,9 @@ def grade(value, admission_sha, expected_path, expected_sha, destination):
         {'sha256': digest(root / 'measurement.json'), 'value': measurement},
         {'sha256': digest(root / 'runtime.json'), 'value': runtime},
         {'sha256': digest(expected['outer_path']), 'value': outer}, expected)
+    from soak_runtime_bindings import validate_job, validate_phases
+    validate_job(runtime, outer, expected['runtime_expected'])
+    validate_phases(runtime, outer['activation_monotonic_ns'])
     require(not measurement['smoke'], 'short smoke is not full R3 acceptance')
     for label, members in measurement['members'].items():
         require(inventory(root / label) == members, 'stopped raw input changed')
@@ -690,6 +723,9 @@ def close_grading(value, admission_sha, expected_path, expected_sha, destination
         {'sha256': digest(root / 'measurement.json'), 'value': measurement},
         {'sha256': digest(root / 'runtime.json'), 'value': runtime},
         {'sha256': digest(original['outer_path']), 'value': measurement_outer}, original)
+    from soak_runtime_bindings import validate_job, validate_phases
+    validate_job(runtime, measurement_outer, original['runtime_expected'])
+    validate_phases(runtime, measurement_outer['activation_monotonic_ns'])
     require(result['input_receipt_sha256'] == original['receipt_sha256'] and not measurement['smoke'],
             'grading input substitution')
     for label, members in measurement['members'].items():
@@ -703,7 +739,7 @@ def close_grading(value, admission_sha, expected_path, expected_sha, destination
             and target.resolve(strict=False) != Path(expected['grading_path']).resolve(strict=True),
             'fresh separate acceptance receipt required')
     target.parent.resolve(strict=True).relative_to(Path(os.environ['FABRIC_STORAGE_ROOT']).resolve(strict=True) / 'results')
-    write_new(target, {'state': 'accepted_finite_r3_trial', 'binding': value['binding'],
+    write_new(target, {'state': 'pending_closeout_stop', 'binding': value['binding'],
         'gates': gates, 'admission_sha256': admission_sha, 'closeout_expected_sha256': expected_sha,
         'grading_sha256': expected['grading_sha256'], 'grading_outer_sha256': expected['outer_sha256'],
         'input_receipt_sha256': original['receipt_sha256'],

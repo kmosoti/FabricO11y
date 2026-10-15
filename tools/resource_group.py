@@ -170,7 +170,12 @@ def main():
     arguments = sys.argv[1:]
     if arguments and arguments[0] == '--inside':
         return run_inside(arguments[1:])
+    observe_final = arguments[:1] == ['--observe-final-group']
+    if observe_final:
+        arguments = arguments[1:]
     runtime, delegated, arguments = command_options(arguments)
+    if observe_final and (runtime != 7500 or not delegated):
+        raise ValueError('R3 final observation requires exact 7500 seconds and delegation')
     require_storage()
     high, cap = memory_limits()
     scratch = STORAGE / 'scratch'
@@ -189,6 +194,8 @@ def main():
     ]
     if delegated:
         command.append('--property=Delegate=yes')
+    if observe_final:
+        command.append('--property=RemainAfterExit=yes')
     # Preserve build/tool locations, including explicitly configured toolchains.
     for key in ('PATH', 'CARGO_HOME', 'RUSTUP_HOME', 'CARGO_BUILD_JOBS', 'RUST_TEST_THREADS', 'CARGO_INCREMENTAL', 'CARGO_PROFILE_DEV_DEBUG', 'CARGO_PROFILE_TEST_DEBUG'):
         if key in os.environ:
@@ -207,22 +214,31 @@ def main():
     started = time.time()
     status = None
     wrapper_status = None
+    final_observation = None
     try:
-        wrapper_status = subprocess.call(command)
+        if observe_final:
+            from resource_final_group import observe_service
+            wrapper_status, final_observation = observe_service(command, receipt_path, unit, arguments,
+                                                               runtime, read_command_receipt)
+        else:
+            wrapper_status = subprocess.call(command)
     finally:
         # Ensure no descendant can still use these files before deleting them,
         # including on an interrupted caller. Never delete shared build caches.
         stop_error = None
         try:
             stopped = subprocess.run(['systemctl', '--user', 'stop', unit],
-                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                     **({'timeout': 5} if observe_final else {}))
             stop_status = stopped.returncode
-        except OSError as error:
+        except (OSError, subprocess.TimeoutExpired) as error:
             stop_status = None
             stop_error = str(error)
         child = read_command_receipt(receipt_path, unit, arguments)
         safe = group_stopped(child, stop_status)
         status = completed_status(wrapper_status, child) if safe else 2
+        if observe_final and (final_observation is None or final_observation.get('state') != 'observed_empty'):
+            status = 2
         if status == 2:
             print('resource group: incomplete or unconfirmed command; retaining evidence',
                   file=sys.stderr)
@@ -248,6 +264,9 @@ def main():
             'memory_high_bytes': high, 'memory_max_bytes': cap, 'swap_max_bytes': 0,
             'runtime_max_seconds': runtime,
             'delegated': delegated,
+            **({'final_kernel_observation': final_observation,
+                'activation_monotonic_ns': final_observation.get('activation_monotonic_ns')
+                    if final_observation else None} if observe_final else {}),
         }, indent=2) + '\n')
     return status
 
