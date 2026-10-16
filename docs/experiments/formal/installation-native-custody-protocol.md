@@ -322,3 +322,17 @@ a550-total ceiling specifically for this typed metadata boundary. No VM, resourc
 deadline, source authority or acceptance threshold changes. Actual source controls
 and the restarted native cells must run on separately recorded pins; no result
 from the first failed attempt is relabeled.
+## Independent host configuration admission join
+
+Native bundle admission must independently require the original sidecar and
+validate its typed bytes/ownership against the stopped service identity and
+the exact #41 fixture profile. Source-frozen producer checks alone do not supply
+that host join. `admit_transfer` has only the native installation runner and
+synthetic capture tests as callers; owner-guide execution does not call it, so
+its legitimate configuration revisions are unaffected. Update literal complete
+bundles with the real sidecar shape, retaining synthetic classification.
+Register `test_coherently_rehashed_missing_or_forged_configuration_is_refused`:
+remove it from every snapshot/raw tree or coherently replace paused=false with
+true; recompute metadata, raw/member/manifest/transfer hashes. Both copies must
+refuse at `native applied configuration` while the complete baseline passes.
+No missing byte may be justified by a matching fabricated inventory.
