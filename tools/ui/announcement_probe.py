@@ -111,6 +111,22 @@ def loopback():
     return {'flags':flags,'up':True,'exact_delivery':True,'namespace':os.readlink('/proc/self/ns/net')}
 
 
+def snapshot_documents(desktop,path):
+    """Read identity from the AT tree; these rows are explicitly not events."""
+    pending=[desktop];count=0;deadline=time.monotonic()+5
+    while pending:
+        require(count<2048 and time.monotonic()<deadline,'announcement-document-snapshot-bound')
+        source=pending.pop();count+=1
+        try:attributes=source.queryDocument().getAttributes()
+        except (NotImplementedError,AttributeError):
+            require(source.childCount<=2048-count,'announcement-document-snapshot-bound')
+            pending.extend(source[index] for index in range(source.childCount))
+        else:
+            append(path,dict(type='document:snapshot',pid=source.getApplication().get_process_id(),
+                role=source.getRoleName(),attributes=source.getAttributes(),document_attributes=attributes,
+                text='',monotonic_ns=time.monotonic_ns()))
+
+
 def observe(path):
     import pyatspi
     def event(value):
@@ -126,6 +142,7 @@ def observe(path):
         'object:children-changed','object:announcement','document:load-complete')
     require(pyatspi.Registry.getDesktopCount()>0 and pyatspi.Registry.getDesktop(0) is not None,
         'announcement-at-desktop')
+    snapshot_documents(pyatspi.Registry.getDesktop(0),path)
     path.with_suffix('.ready').write_text(str(os.getpid()))
     pyatspi.Registry.start()
 
@@ -201,7 +218,8 @@ def inside(args):
     require(not os.environ.get('WAYLAND_DISPLAY') and not os.environ.get('AT_SPI_BUS_ADDRESS'),'announcement-private-bus')
     interactive=json.loads(args.interactive_driver.read_text()) if args.interactive_driver else None
     processes=[];logs=[];end=interactive['deadline'] if interactive else time.monotonic()+150;session=None
-    result={'exit':1,'scope':'public environment probe only; no package acceptance','mode':args.mode,
+    result={'exit':1,'scope':('owned console AT environment; caller supplies package verdict' if interactive
+        else 'public environment probe only; no package acceptance'),'mode':args.mode,
         'namespaces':{name:os.readlink('/proc/self/ns/'+name) for name in ('pid','net','mnt','ipc')},'commands':[],
         'affinity':sorted(os.sched_getaffinity(0)),'task_observations':[]}
     def task_phase(label):result['task_observations'].append(tasks(Path(os.environ['FABRIC_AT_CGROUP']),label))
@@ -259,6 +277,9 @@ def inside(args):
         (prefs/'orca-customizations.py').write_text(customization(work,out))
         for key,value in (('speech-server-factory','speechdispatcherfactory'),('synthesizer','espeak-ng')):
             run(['/usr/bin/gsettings','set','org.gnome.Orca.Speech:/org/gnome/orca/default/speech/',key,value])
+        if interactive:
+            run(['/usr/bin/gsettings','set','org.gnome.Orca.Document:/org/gnome/orca/default/document/',
+                'say-all-on-load','false'])
         # The private session bus activates its own AT-SPI bus, never the owner's.
         run(['/usr/bin/gsettings','set','org.gnome.desktop.interface','toolkit-accessibility','true'])
         address=ast.literal_eval(run(['/usr/bin/gdbus','call','--session','--dest','org.a11y.Bus','--object-path','/org/a11y/bus','--method','org.a11y.Bus.GetAddress']))
@@ -270,7 +291,8 @@ def inside(args):
         if interactive:
             launch('webdriver',interactive['argv'])
             (out/'driver-ready').touch()
-            while not (work/'start-reader').exists():tick();time.sleep(.05)
+            while not (work/'start-reader').exists():
+                require(not (work/'stop-reader').exists(),'announcement-start-cancelled');tick();time.sleep(.05)
             (work/'capture').touch()
         launch('atspi',[sys.executable,'-B',str(Path(__file__)),'--observe',str(out/'events.jsonl')])
         wait(lambda:(out/'events.ready').exists())
@@ -292,6 +314,8 @@ def inside(args):
             (out/'at-ready.json').write_text(json.dumps(dict(backend=backend,namespaces=result['namespaces'],
                 orca_runtime=result.get('orca_runtime'),affinity=sorted(os.sched_getaffinity(0)))))
             while not (work/'stop-reader').exists():tick();time.sleep(.05)
+            require(dict(line.split() for line in (Path(os.environ['FABRIC_AT_CGROUP'])/'pids.events').read_text().splitlines())['max']=='0',
+                'announcement-task-admission')
             result['exit']=0
         else:
             launch('webdriver',[str(DATA/'tools/ui/geckodriver'),'--host','127.0.0.1','--port','48751'])

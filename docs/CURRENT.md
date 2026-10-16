@@ -12,6 +12,12 @@ text, private buses/settings and file/null audio output. Its source controls and
 native headless/headful probes remain pending. It supplies no actual console
 announcement, acoustic or accessibility-conformance result.
 
+The separate actual-console announcement caller is implemented with an owned
+interactive display/AT subtree, real status/alert speech joins, keyboard actions
+and a finite desktop/narrow target inventory. It preserves the original browser
+deadline and shared cleanup. Its source controls and exact-package native cells
+have not run; the public Orca51.1 environment positive remains a prerequisite.
+
 The controlled-time browser expiry caller now has a server-only native clock
 adapter and complete serialized request-window joins. At `479b356`, 17 focused
 source controls exited0 with confirmed containment cleanup. The additive timing

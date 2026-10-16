@@ -413,7 +413,13 @@ def main():
     parser.add_argument('--inject-ui-response-defect',choices=('empty','incomplete','gap','410','429','503','transport','timeout','403','401'))
     parser.add_argument('--migration',action='store_true',help='isolated packaged legacy-to-passkey transition and format1 refusal')
     parser.add_argument('--fabricctl',type=Path,help='exact extracted candidate CLI for migration')
+    parser.add_argument('--announcement-probes',action='store_true',help='isolated actual console AT, keyboard and target inventory cell')
+    parser.add_argument('--announcement-xvfb-admission',type=Path)
+    parser.add_argument('--announcement-orca-admission',type=Path)
+    parser.add_argument('--suppress-announcement',action='store_true',help='negative control: disable the original status live region')
     args = parser.parse_args()
+    import browser_announcements
+    browser_announcements.validate_mode(args,parser)
     if args.inject_ui_response_defect and not args.ui_responses:parser.error('UI response defect requires its own cell')
     if args.ui_responses and (args.migration or args.session_expiry_helper or args.security_probes or args.role_matrix or args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery):parser.error('UI responses use a separate finite cell')
     if args.migration and (not args.fabricctl or args.ui_responses or args.session_expiry_helper or args.security_probes or args.role_matrix or args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery or any((args.inject_rejection_defect,args.inject_api_cache_defect,args.inject_role_defect,args.inject_nonresident_enrollment,args.inject_security_defect))):
@@ -476,6 +482,7 @@ def main():
     tls_opener = None
     clock_targets = {}
     state_descriptors = []
+    announcements = None
     deadline = fixture_started + (1200 if args.expired_cursor_probe else 240)
     group_parent, owned_groups = begin_browser_domain(limits, deadline), []
     samples = []
@@ -501,7 +508,7 @@ def main():
                 except FileNotFoundError:
                     pass
             if group and group.exists():
-                entry['cgroup'] = {key: (group / key).read_text().strip() for key in ('memory.current', 'memory.peak', 'memory.events', 'memory.swap.current', 'pids.current', 'cpu.stat')}
+                entry['cgroup'] = {key: (group / key).read_text().strip() for key in ('memory.current', 'memory.peak', 'memory.events', 'memory.swap.current', 'pids.current', 'pids.peak', 'pids.events', 'cpu.stat')}
             samples.append(entry)
 
     def wait(predicate, label, seconds=25):
@@ -683,6 +690,7 @@ def main():
               label + ' stores actual resident credentials for the fixture RP')
 
     def launch(label, command, controlled=False):
+        nonlocal announcements
         environment=os.environ.copy()
         for key in ('XDG_DATA_HOME','XDG_CONFIG_HOME','XDG_CACHE_HOME'):
             directory=work/key.lower();directory.mkdir(exist_ok=True);environment[key]=str(directory)
@@ -694,8 +702,12 @@ def main():
                 server_argv=command,server_launch=spawn)
             clock_targets[label]=clock;proc=clock.process
         else:
+            if label=='webdriver' and args.announcement_probes:
+                announcements=browser_announcements.Runtime(work,out,args,deadline)
+                command=announcements.command(command)
             log = (out / f'{label}.log').open('w');logs.append(log)
             proc = browser_group_launch(group_parent, owned_groups, label, command, log, environment)
+            if label=='webdriver' and announcements is not None:announcements.process=proc
         processes.append((label, proc))
         return proc
 
@@ -877,6 +889,9 @@ self.addEventListener("fetch",event=>{
                 'prefs':{'security.enterprise_roots.enabled':False,
                          'security.webauth.webauthn_enable_softtoken':True,
                          'security.webauth.webauthn_enable_usbtoken':False}}}
+            if args.announcement_probes:
+                firefox_capabilities['moz:firefoxOptions']['args'].remove('-headless')
+                firefox_capabilities['moz:firefoxOptions']['prefs']['accessibility.force_disabled']=0
             info = call('POST','/session',{'capabilities':{'alwaysMatch':firefox_capabilities if args.browser=='firefox' else chrome_capabilities}})
             session = info['sessionId']
             receipt['browser_version_actual'] = info['capabilities']['browserVersion']
@@ -955,7 +970,7 @@ self.addEventListener("fetch",event=>{
             check(code == 200 and view['api_version'] == 1, 'real server session compatibility')
             principal_id = view['principal_id']
             return server,cookie,view,principal_id,bootstrap_file,authenticator,dict(
-                started_monotonic_ns=started,state_before=state_record)
+                started_monotonic_ns=started,state_before=state_record,browser_pid=info['capabilities'].get('moz:processID'))
 
         server,cookie,view,principal_id,bootstrap_file,authenticator,first_fixture=start_owner('AB' if expiry else '')
         if args.migration:
@@ -980,6 +995,16 @@ self.addEventListener("fetch",event=>{
         except urllib.error.HTTPError as error:
             expect((error.code,json.load(error)),403,'access denied','cookie mutation with foreign Origin rejected')
         check(api('/v1/console/session')[0] == 200, 'rejected Origin mutation preserves session')
+        if args.announcement_probes:
+            for name in ('browser_announcements.py','announcement_probe.py','announcement_oracle.py','announcement_contract.py'):
+                path=ROOT/'tools/ui'/name
+                receipt['source_sha256'][str(path.relative_to(ROOT))]=hashlib.sha256(path.read_bytes()).hexdigest()
+            browser_announcements.run(announcements,js=js,wd=wd,click=click,field=field,nav=nav,wait=wait,
+                principal=principal_id,origin=origin,browser_pid=first_fixture['browser_pid'],receipt=receipt)
+            check(dict(line.split() for line in (limits/'pids.events').read_text().splitlines())['max']=='0',
+                'actual announcement aggregate has no refused tasks')
+            capture_api_metadata();verify_binary_identity();receipt['exit']=0
+            return
         if args.security_probes:
             import browser_security
             def export_fixture_credentials():
@@ -1636,12 +1661,15 @@ self.addEventListener("fetch",event=>{
             except BaseException:
                 pass
         cleanup_error = None
+        if announcements is not None:
+            try:announcements.close()
+            except BaseException as error:cleanup_error=error
         try:
             stop_browser_groups(group_parent, owned_groups)
             browser_reap_domain(group_parent, owned_groups)
             end_browser_domain(group_parent, owned_groups)
         except BaseException as error:
-            cleanup_error = error
+            cleanup_error = cleanup_error or error
         finally:
             for label,clock in clock_targets.items():
                 try:

@@ -1,10 +1,65 @@
 """Literal caller controls, never packaged AT or pointer evidence."""
 import copy
 import unittest
+from pathlib import Path
+from types import SimpleNamespace
 from announcement_contract import check_alert,grade_targets,square_fits
 
 
 class AnnouncementCallTests(unittest.TestCase):
+    def test_modes_fail_before_starting_incompatible_cells(self):
+        import browser_announcements as caller
+        class Parser:
+            def error(self,reason):raise ValueError(reason)
+        args=SimpleNamespace(announcement_probes=True,suppress_announcement=False,browser='firefox',
+            announcement_xvfb_admission=Path('/prepared-xvfb'),announcement_orca_admission=Path('/prepared-orca'))
+        caller.validate_mode(args,Parser())
+        for mode in caller.MODES:
+            changed=copy.copy(args);setattr(changed,mode,True)
+            with self.subTest(mode=mode),self.assertRaisesRegex(ValueError,'separate Firefox cell'):
+                caller.validate_mode(changed,Parser())
+        for field,value in (('browser','chrome'),('announcement_orca_admission',None),
+                ('announcement_xvfb_admission',None),('announcement_probes',False)):
+            changed=copy.copy(args);setattr(changed,field,value)
+            with self.subTest(field=field),self.assertRaises(ValueError):caller.validate_mode(changed,Parser())
+        changed=copy.copy(args);changed.announcement_probes=False;changed.suppress_announcement=True
+        with self.assertRaisesRegex(ValueError,'suppression requires'):caller.validate_mode(changed,Parser())
+
+    def test_document_snapshot_is_identity_only_and_cannot_substitute_for_events(self):
+        from browser_announcements import document_identity
+        from announcement_oracle import check_announcement
+        row=dict(type='document:snapshot',pid=700,document_attributes=['DocURL:https://localhost:443/console/'],
+            text='Public probe complete',monotonic_ns=150)
+        self.assertEqual(document_identity([row],700,'https://localhost:443'),[row])
+        self.assertEqual(document_identity([row],701,'https://localhost:443'),[])
+        self.assertEqual(document_identity([row],700,'https://localhost:444'),[])
+        row['document_attributes']=['DocURL:https://localhost:443/console-attacker/']
+        self.assertEqual(document_identity([row],700,'https://localhost:443'),[])
+        with self.assertRaisesRegex(ValueError,'announcement-event'):
+            check_announcement(dict(before_ns=100,after_ns=200,text=row['text'],browser_pid=700,
+                role='status',live='polite',focus_elsewhere=True),[row],
+                [dict(before_ns=160,after_ns=170,text=row['text'],module='espeak-ng',ssip_code=225,message_id=8)],
+                dict(module='espeak-ng',pid=701,libespeak_mapped=True,pcm_before_bytes=0,pcm_after_bytes=4096))
+
+    def test_snapshot_reads_document_attributes_without_walking_or_capturing_its_contents(self):
+        import os,tempfile
+        from announcement_probe import snapshot_documents,read_rows
+        class Document:
+            childCount=1
+            def queryDocument(self):return SimpleNamespace(getAttributes=lambda:['DocURL:https://fixture.invalid/console/'])
+            def getApplication(self):return SimpleNamespace(get_process_id=lambda:700)
+            def getRoleName(self):return 'document web'
+            def getAttributes(self):return ['tag:body']
+            def __getitem__(self,index):raise AssertionError('must not inspect document contents')
+        class Desktop:
+            childCount=1
+            def queryDocument(self):raise NotImplementedError
+            def __getitem__(self,index):return Document()
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            path=Path(directory)/'events.jsonl';snapshot_documents(Desktop(),path);rows=read_rows(path)
+        self.assertEqual(len(rows),1);self.assertEqual(rows[0]['type'],'document:snapshot')
+        self.assertEqual(rows[0]['text'],'');self.assertEqual(rows[0]['pid'],700)
+
     def target(self,name,x=0,y=0,width=24,height=24):
         return dict(id=name,kind='button',text=name,x=x,y=y,width=width,height=height,
             radii=[[0,0]]*4,transform='none',clip='none',inline={})
