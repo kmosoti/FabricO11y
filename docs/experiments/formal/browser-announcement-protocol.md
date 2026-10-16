@@ -222,3 +222,17 @@ process, positive nonzero exit, forced kill or failed stop makes the final probe
 verdict fail. Preserve its original action error separately. Literal lifecycle
 controls must reject the observed premature-dependency/false-credit mechanism.
 The actual console caller shares this lifecycle rather than copying a looser one.
+
+## Complete synthesis diagnostic allowance
+
+The retained HTTP Xvfb07 probe wrote1,019,394 PCM bytes before any accepted target
+utterance, leaving only29,182 bytes within the original1MiB raw-file allowance.
+The actual caller requires several additional utterances. Prospectively allow
+only the exact `speech.raw` diagnostic file up to8MiB inclusive for the public
+probe and caller. Preserve every byte; do not truncate, rotate, discard or split
+output to bypass a bound. No sample rate or audio duration is inferred here.
+Require8MiB acceptance/8MiB+1 rejection controls, while every other raw stream
+remains1MiB and the daemon's previously registered exact log remains4MiB. Keep
+records4KiB, aggregate512MiB, reservation1GiB, cgroups/deadlines and all independent
+AT events, accepted utterance, exact backend and PCM-growth assertions unchanged.
+This is a bounded auxiliary diagnostic allowance, not a semantic/product gate.
