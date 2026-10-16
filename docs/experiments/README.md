@@ -1,5 +1,7 @@
 # Experiments
 
+Native custody reader source controls: [registered protocol](formal/installation-native-custody-protocol.md), [revision-bound red and correction](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-custody-native-reader-source-results-01/0364b1c). Native guest acceptance remains pending.
+
 Research, experiment reports and observations belong in the
 [research wiki](https://github.com/kmosoti/FabricO11y/wiki). This index connects
 those reports to the registered protocols and executable evidence kept here.
@@ -107,3 +109,5 @@ The learning path covers the delivery model, log and measurement ([learning path
 
 - [Browser owned cleanup source repair](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-owned-cleanup-source-results-01): actual process/reaping controls; modeled cgroups; native integration remains pending.
 - [Simulator accounting source controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-simulator-accounting-source-results-01) and [separate helper preparation](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-simulator-helper-preparation-results-01): source controls and canonical native red; no rebuilt-helper or acceptance result.
+
+The [fourth-checkpoint custody source record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-custody-fourth-checkpoint-source-results-01) retains the original missing-API red and the later 70-method correction; native guest acceptance remains separate.

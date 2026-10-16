@@ -398,3 +398,12 @@ explicitly injected responses then exercise coverage, errors and lock behavior.
 Their [separate protocol](experiments/formal/console-access-protocol.md#prospective-ui-response-handling-supplement)
 requires the actual browser abort signal and elapsed deadline for timeout, and
 never treats an injected HTTP status as evidence that the server emitted it.
+
+The [native custody checkpoint exercise](experiments/formal/installation-native-custody-caller-card.md)
+connects the Rust Spool's durable ACK ownership to independent system observations.
+Read a complete stopped raw tree before projecting its fixture rows; compare the
+original payload hash with the candidate sender's journal ACK. Distinguish an
+archived byte copy, original descriptor/stat identity, and a live writer's custody.
+Explain why startup diagnostics need a separate reboot checkpoint and why its
+later evidence cannot justify an earlier query answer. The new harness remains
+unverified until its registered source checks and genuine native cells execute.

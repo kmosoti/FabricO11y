@@ -167,6 +167,11 @@ These controls establish no guest or package acceptance.
 
 ### Prospective stopped-custody upgrade witness
 
+The separately registered [native input-shape amendment](installation-native-custody-protocol.md)
+adds prospective unfiltered diagnostic-root handling and explicit finite fixture
+projection. It leaves this legacy reader contract and existing controls unchanged;
+native producer/admission/caller acceptance remains pending.
+
 Issue #41's Spool/backlog upgrade obligation needs a predecessor-produced
 unacknowledged Batch and a distinct unread newline-terminated source suffix
 across stopped native install, then exact candidate ACK/query and real reboot.
