@@ -1,0 +1,16 @@
+{
+  "origin": "/run/media/kmosoti/data/FabricO11y/results/browser-announcement-native-xvfb-04/speech.jsonl",
+  "source_sha256": "73550c3139a97a3bb8ba18e822cb73a476e400219adeacc15d3f6c40267eba38",
+  "harness_commit": "58bd5cf16580329765bacbad222f20b3c6f8e65f",
+  "classification": "actual public startup SSIP format; not target announcement evidence",
+  "actual_row": {
+    "pid": 54,
+    "before_ns": 202568066995525,
+    "after_ns": 202568067241743,
+    "text": "<speak><mark name=\"0:6\"/>Fabric <mark name=\"7:13\"/>public <mark name=\"14:16\"/>AT <mark name=\"17:22\"/>probe</speak>",
+    "module": "espeak-ng",
+    "ssip_code": 225,
+    "message_id": 3
+  },
+  "expected_spoken_text": "Fabric public AT probe"
+}

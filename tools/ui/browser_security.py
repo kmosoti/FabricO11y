@@ -48,6 +48,51 @@ def grade(rows):
     return True
 
 
+def fixture_key(original,export_credentials,work,deadline):
+    exported = export_credentials()
+    keys = [key for key in exported if decode(key['credentialId']) == decode(original['id'])]
+    require(len(keys) == 1 and keys[0].get('privateKey'), 'matching virtual fixture private key unavailable')
+    protected = work / 'security-private'
+    protected.mkdir(mode=0o700)
+    private = protected / 'key.der'
+    fd = os.open(private, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(fd, 'wb') as output:
+        output.write(decode(keys[0]['privateKey']))
+    exported = keys = None
+    public = protected / 'public.pem'
+    def openssl(argv, data=None):
+        require(time.monotonic() < deadline, 'security probe deadline exhausted')
+        process = subprocess.run(['openssl', *argv], input=data, capture_output=True,
+                                 timeout=max(.1, min(10, deadline-time.monotonic())))
+        require(process.returncode == 0, 'independent signature tool failed')
+        return process.stdout
+    public.write_bytes(openssl(['pkey', '-inform', 'DER', '-in', str(private), '-pubout']))
+    return protected,private,public,openssl
+
+
+def probe_key(*,api,bearer,async_js,export_credentials,origin,principal,work,deadline):
+    require(api('/v1/console/session')[0]==200,'key probe owner session unavailable')
+    status,challenge=bearer(None,'/v1/console/auth/login/start','POST',{'principal_id':principal})
+    require(status==200,'fresh login challenge unavailable')
+    value=async_js('const done=arguments[arguments.length-1];window.fabricPasskey(false,arguments[0]).then(x=>done({value:x})).catch(e=>done({error:String(e)}))',json.dumps(challenge['public_key']))
+    require('value' in value,'actual virtual assertion unavailable')
+    original=json.loads(value['value'])
+    status,_=api('/v1/console/auth/login/finish','POST',{'ceremony_id':challenge['ceremony_id'],'credential':original})
+    require(status==200,'real browser assertion positive failed')
+    auth=decode(original['response']['authenticatorData']);raw_client=decode(original['response']['clientDataJSON'])
+    client=json.loads(raw_client)
+    require(client.get('type')=='webauthn.get' and client.get('origin')==origin,'actual assertion client binding differs')
+    require(len(auth)==37 and auth[32]&5==5 and auth[:32]==hashlib.sha256(b'localhost').digest(),
+        'fixture assertion shape/RP/UP/UV differs')
+    protected,private,public,openssl=fixture_key(original,export_credentials,work,deadline)
+    signature=decode(original['response']['signature']);signature_path=protected/'browser-signature.der'
+    signature_path.write_bytes(signature)
+    openssl(['dgst','-sha256','-verify',str(public),'-signature',str(signature_path)],auth+hashlib.sha256(raw_client).digest())
+    return dict(server_login_status=status,matched_credentials=1,export_format='DER accepted by OpenSSL pkey',
+        private_bytes=private.stat().st_size,public_key_sha256=hashlib.sha256(public.read_bytes()).hexdigest(),
+        browser_signature_bytes=len(signature),browser_signature_verified=True)
+
+
 def run(*, api, bearer, js, async_js, wd, export_credentials, origin, principal, work, deadline, registration, inject=None, observations=None):
     rows = observations if observations is not None else []
     def response(row, outcome, positive=200):
@@ -84,24 +129,7 @@ def run(*, api, bearer, js, async_js, wd, export_credentials, origin, principal,
     require(client.get('type') == 'webauthn.get' and client.get('origin') == origin, 'actual assertion client binding differs')
     require(len(auth) == 37 and auth[32] & 5 == 5 and auth[:32] == hashlib.sha256(b'localhost').digest(),
             'fixture assertion shape/RP/UP/UV differs')
-    exported = export_credentials()
-    keys = [key for key in exported if decode(key['credentialId']) == decode(original['id'])]
-    require(len(keys) == 1 and keys[0].get('privateKey'), 'matching virtual fixture private key unavailable')
-    protected = work / 'security-private'
-    protected.mkdir(mode=0o700)
-    private = protected / 'key.der'
-    fd = os.open(private, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, 'wb') as output:
-        output.write(decode(keys[0]['privateKey']))
-    exported = keys = None
-    public = protected / 'public.pem'
-    def openssl(argv, data=None):
-        check_time()
-        process = subprocess.run(['openssl', *argv], input=data, capture_output=True,
-                                 timeout=max(.1, min(10, deadline-time.monotonic())))
-        require(process.returncode == 0, 'independent signature tool failed')
-        return process.stdout
-    public.write_bytes(openssl(['pkey', '-inform', 'DER', '-in', str(private), '-pubout']))
+    protected,private,public,openssl=fixture_key(original,export_credentials,work,deadline)
     counter = int.from_bytes(auth[33:37], 'big')
     def signed(challenge, change=None):
         nonlocal counter

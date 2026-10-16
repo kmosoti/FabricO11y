@@ -230,3 +230,22 @@ exclusive `results/owner-fixture-constructor-02`; its output must be independent
 validated before #46 consumes it. Existing native #41 predecessor packages,
 images, positive cells, missing-pending/live-writer refusals, source controls,
 resource/storage/deadline limits and cleanup gates remain mandatory.
+## Applied configuration and failure-export ceiling amendment
+
+The replacement Debian native counterexample in the native custody protocol
+requires original raw export before semantic reader admission and a mandatory
+exact fixture configuration join. The measured producer delta is+3 lines:
+233 to236; moving the existing complete-tree export adds no lines. Prospectively
+register240 producer /355 caller /595 combined ceilings, replacing235/355/590
+only for this explicit metadata join and failure preservation. Reader ceiling550
+is separately justified by the measured545-line implementation. Count all new
+production helpers/callsites as before; no cosmetic compression, VM/resource/time
+relaxation, protocol/oracle omission, or historical acceptance credit follows.
+## Independent host metadata ceiling refinement
+
+The host must repeat typed/exact-profile admission on original archived sidecar
+bytes, including an explicit presence join. This reserves six readable caller
+lines beyond the previous355; prospectively allow365 caller /240 producer,
+605 combined. Sharing the finite profile adds two producer lines (236 to238).
+All helper/callsite lines count. This is an additional authenticity check, with
+no resource, deadline, oracle, package or previous negative-control relaxation.

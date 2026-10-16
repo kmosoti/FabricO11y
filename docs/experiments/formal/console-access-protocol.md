@@ -162,6 +162,21 @@ release claim until resolved or explicitly rescoped by the owner.
 
 ## Prospective signed browser security supplement
 
+Before full signed-security cells, a separate finite `--security-key-probe` cell
+must admit each actual browser's fresh virtual credential export format. The
+ordinary baseline retains only resident/RP booleans, which cannot establish key
+parsing. Reuse genuine candidate owner registration, login assertion and the
+unchanged exact credential-ID/private-key selection and OpenSSL DER parsing path.
+Require actual server login200 and independent verification of that original
+browser assertion with the public key derived from the exported private key.
+No full-security result is required to run this prerequisite. It excludes all
+other browser modes; records contain only byte counts, tool outcomes and a public
+key hash. Keep private key/signature material inside protected owned scratch and
+the existing confirmed cleanup. Unsupported exports, ambiguous/missing keys,
+malformed DER, tool failures or mismatched signatures fail explicitly. Literal
+source controls must reject those cases. Exact-package/native pre-flight and
+all existing deadline/resource/ownership gates still apply.
+
 Before replacement-candidate execution, a separate `--security-probes` cell uses
 only the exact packaged server and freshly enrolled virtual browser credential.
 It shares the existing 240-second deadline, resource bounds, shared request
