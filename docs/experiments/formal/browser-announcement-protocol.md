@@ -207,3 +207,50 @@ before browser actions. Retain the identical status page/eight-second action
 window/event→Orca→SSIP→module/PCM assertions and all resource limits. Publish exact
 prepared hashes in a separate native pre-flight; tool preparation alone is no
 announcement or package acceptance evidence.
+
+## Actual console announcement caller
+
+The isolated announcement cell uses the exact packaged server, Spindle and console
+assets admitted by the ordinary caller. It excludes migration, expiry, security,
+response injection, roles, polling, pressure, cursor, recovery, shell and unrelated
+negative-control modes. Firefox157.0.1 remains explicit; no silent engine change.
+The controller/server retain their existing ownership/cgroups. Only the owned
+WebDriver/browser/display/AT subtree enters private PID/mount/IPC namespaces,
+private DATA-backed `/tmp`, runtime/config/cache/data, authenticated Xvfb and DBus.
+It shares the existing fixture network so the actual TLS localhost server remains
+reachable. This differs explicitly from the public environment probe's private
+network. The combined4GB/512-task/CPU200%/240-second/storage limits remain; restrict
+the AT subtree to CPUs2-3. Register exact topology/tools/source before native use.
+
+Start the private observer/Orca only after genuine owner registration, bootstrap
+secret removal and positive CSRF/Origin controls; reject residual secret fields.
+Use owned file markers solely for start/stop/capture coordination, never to supply
+events or utterances. Join actual Firefox namespace PID, AT document URL, events,
+real Orca SSIP225/module and PCM growth. Every action has its own bounded eight-
+second observation interval within the original shared240-second deadline.
+
+Observe actual status `Working…` and completed owner status during Check session,
+holding only the already received real server response for1second so busy remains
+observable; keep actual fetch arguments/response and request pacing unchanged.
+Observe the real4097-byte filter validation alert, logout/locked status, keyboard
+Tab/Enter authentication with the real virtual resident/UV key and native keyboard
+skip-link activation. Alert DOM may rely on its implicit assertive live behavior;
+require genuine AT alert/assertive attributes as well as actual speech/synthesis.
+The status checker retains its exact existing role/polite/focus assertions.
+Suppress only the actual status's `aria-live` after its original DOM prerequisites;
+its expected utterance must then be absent at the announcement join. A startup,
+DOM, transport, resource or cleanup failure is inconclusive for that control.
+
+Inventory every rendered actionable button/input/select/textarea/summary/link in
+the finite Explore, Settings and locked/auth views at1440 and375 CSS pixels. The
+target criterion is24×24 CSS pixels, or the WCAG2.2 spacing exception (a24-pixel
+circle at each undersized target's center intersects no other target or another
+undersized target's circle), or a literal inline text-link exception. Preserve
+every rectangle, target text/type and exemption reason; a single button cannot
+stand in for the inventory. This is finite desktop/narrow CSS coverage, not
+physical-device compatibility or general WCAG certification. Literal geometric
+overlap and missing/wrong alert/event/speech controls must be rejected.
+
+Stop the interactive AT subtree before final cgroup teardown and retain actual
+exit/namespace/cleanup receipts. The private native environment positive and
+successful exact replacement installation remain prerequisites for package cells.

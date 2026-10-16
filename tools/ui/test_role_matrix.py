@@ -481,7 +481,7 @@ if mode not in ('exited', 'setsid'): time.sleep(max(0, expires - time.monotonic(
                          receipt={'exit': 0}, stop_samples=stop_samples, sampler=sampler,
                          out=out, samples=[], logs=[], work=work,
                          group_parent=parent, owned_groups=[item['binding'] for item in groups],
-                         clock_targets={}, state_descriptors=[],
+                         clock_targets={}, state_descriptors=[], announcements=None,
                          cgroup_kill_attempts=kill_attempts, cgroup_fault=fault)
         yield namespace, groups
     except BaseException as error:
