@@ -84,3 +84,28 @@ class AnnouncementTests(unittest.TestCase):
             values[2][0]['text']=invalid
             with self.subTest(raw=invalid),self.assertRaisesRegex(ValueError,'announcement-(utterance|speech-format)'):
                 oracle.check_announcement(*values)
+
+    def test_reader_admission_rejects_changed_missing_extra_and_symlink_source(self):
+        import hashlib,os,tempfile
+        import announcement_probe as probe
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            root=Path(directory)/'extract';binary=root/'usr/bin/orca'
+            purelib=root/'usr/lib/python3.15/site-packages';schemas=root/'usr/share/glib-2.0/schemas'
+            for folder in (binary.parent,purelib/'orca',schemas):folder.mkdir(parents=True,exist_ok=True)
+            binary.write_text('literal launcher control');code=purelib/'orca/orca_platform.py';code.write_text('literal source control')
+            compiled=schemas/'gschemas.compiled';compiled.write_bytes(b'literal schema control')
+            digest=lambda path:hashlib.sha256(path.read_bytes()).hexdigest()
+            record=dict(state='prepared',exit=0,package_identity='orca|51.1|1.fc45|noarch',binary=str(binary),
+                pythonpath=str(purelib),schemas=str(schemas),binary_sha256=digest(binary),schema_sha256=digest(compiled),
+                extracted_files={str(path.relative_to(root)):digest(path) for path in root.rglob('*') if path.is_file()})
+            self.assertEqual(probe.admitted_orca(record)[0],binary)
+            for path in (binary,code,compiled):
+                original=path.read_bytes();path.write_bytes(original+b'changed')
+                with self.subTest(path=path),self.assertRaisesRegex(ValueError,'announcement-orca-admission'):probe.admitted_orca(record)
+                path.write_bytes(original)
+            extra=purelib/'unexpected.py';extra.write_text('not in receipt')
+            with self.assertRaisesRegex(ValueError,'announcement-orca-admission'):probe.admitted_orca(record)
+            extra.unlink();original=code.read_bytes();code.unlink()
+            with self.assertRaisesRegex(ValueError,'announcement-orca-admission'):probe.admitted_orca(record)
+            code.write_bytes(original);extra.symlink_to(code)
+            with self.assertRaisesRegex(ValueError,'announcement-orca-admission'):probe.admitted_orca(record)
