@@ -146,3 +146,5 @@ and its storage root `FABRIC_STORAGE_ROOT`. The laboratory ceiling is the smalle
 20 GiB and 75% of RAM with no swap; the server experiment cap is 4 GB and the total
 storage ceiling 100 GB. Remote hosts use their own smaller verified budgets. Preserve
 failure evidence and remove owned scratch.
+
+- Native installation custody admission now targets the completed TLS replacement e078ba2 (canonical package source28bcdf7), preserving historical8fb evidence. Four fresh guest cells and same-code fixture constructor02 remain not run; see the [replacement binding](experiments/formal/installation-native-custody-caller-card.md#replacement-tls-candidate-binding-prospective-revision-6).
