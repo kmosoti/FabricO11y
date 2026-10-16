@@ -110,6 +110,9 @@ def inside(args):
     def task_phase(label):result['task_observations'].append(tasks(Path(os.environ['FABRIC_AT_CGROUP']),label))
     def tick():
         require(time.monotonic()<end,'announcement-deadline')
+        for process,command in zip(processes,result['commands']):
+            if not command['label'].startswith('tool-'):
+                require(process.poll() is None,'announcement-process-exit:'+command['label'])
         require(sum(path.stat().st_size for root in (work,out) for path in root.rglob('*') if path.is_file())<=512*1024**2,'announcement-storage-bound')
         for path in out.rglob('*'):
             if path.is_file() and path.suffix in ('.log','.jsonl','.raw'):check_stream(path,out)
@@ -217,6 +220,8 @@ def inside(args):
         backend['pcm_after_bytes']=pcm.stat().st_size if pcm.exists() else 0
         result.update(case=case,backend=backend,events=read_rows(out/'events.jsonl'),speech=read_rows(out/'speech.jsonl'))
         check_announcement(case,result['events'],result['speech'],backend)
+        require(dict(line.split() for line in (Path(os.environ['FABRIC_AT_CGROUP'])/'pids.events').read_text().splitlines())['max']=='0',
+            'announcement-task-admission')
         result['exit']=0
     except BaseException as error:result['error']=type(error).__name__+': '+str(error)
     finally:
@@ -254,9 +259,9 @@ def main():
     scratch=Path(os.environ['FABRIC_SCRATCH_ROOT']);require(scratch.is_relative_to(DATA),'announcement-scratch')
     work=scratch/('announcement-'+out.name);work.mkdir(mode=0o700);out.mkdir(mode=0o700)
     for name in ('tmp','runtime','config','cache','data'):(work/name).mkdir(mode=0o700)
-    subprocess.run(['systemctl','--user','set-property','--runtime',group.name,'MemoryHigh=1G','MemoryMax=2G','MemorySwapMax=0','CPUQuota=200%','TasksMax=256'],check=True,capture_output=True)
+    subprocess.run(['systemctl','--user','set-property','--runtime',group.name,'MemoryHigh=1G','MemoryMax=2G','MemorySwapMax=0','CPUQuota=200%','TasksMax=512'],check=True,capture_output=True)
     require({key:(group/key).read_text().strip() for key in ('memory.high','memory.max','memory.swap.max','cpu.max','pids.max')}=={
-        'memory.high':str(2**30),'memory.max':str(2**31),'memory.swap.max':'0','cpu.max':'200000 100000','pids.max':'256'},'announcement-limits')
+        'memory.high':str(2**30),'memory.max':str(2**31),'memory.swap.max':'0','cpu.max':'200000 100000','pids.max':'512'},'announcement-limits')
     if args.mode=='xvfb':
         require(args.xvfb_receipt is not None,'announcement-xvfb-admission')
         prepared=json.loads(args.xvfb_receipt.read_text());args.xvfb=Path(prepared['binary'])
