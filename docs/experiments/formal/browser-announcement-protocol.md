@@ -141,3 +141,21 @@ but restrict the owned probe and descendants to allowed CPUs2-3, within the same
 `pids.current`, `pids.peak`, `pids.events` before launch, at critical inner phases
 and on completion. This discriminates task-admission pressure without raising a
 resource ceiling or changing any announcement expectation. Preserve the crash.
+
+## Faithful SSML observation join
+
+The retained Xvfb04 startup SSIP225 record contains the public title as an XML
+`speak` element with empty interword `mark` elements. Literal raw substring
+matching therefore rejects the actual spoken title despite preserving every
+word. The minimized format fixture records the original raw row, source hash,
+revision and public-only scope; it is not a target announcement pass.
+
+Prospectively parse only a plain utterance or an XML `speak` root without
+attributes containing empty `mark` children with only the observed numeric
+`name` offsets. Join XML text/tails in order without case, whitespace, punctuation
+or word normalization. Keep the raw SSIP utterance. Reject malformed XML, DTDs,
+processing instructions, unsupported roots/elements/attributes, attribute-only
+expected text and wrong spoken words. Existing literal controls, actual event
+PID/action times, exact expected words, SSIP225/message ID, selected backend and
+real PCM growth remain mandatory. This is an oracle trust-boundary correction
+registered separately from implementation; no direct substring relaxation.

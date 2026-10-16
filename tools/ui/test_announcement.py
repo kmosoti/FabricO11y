@@ -62,3 +62,25 @@ class AnnouncementTests(unittest.TestCase):
                 with path.open('r+b') as stream:stream.truncate(limit+1)
                 with self.subTest(path=path.name),self.assertRaisesRegex(ValueError,'announcement-stream-bound'):
                     probe.check_stream(path,root)
+
+
+    def test_actual_marked_ssip_format_preserves_words_and_rejects_markup_defects(self):
+        import json
+        fixture=json.loads((Path(__file__).resolve().parents[2]/'docs/experiments/formal/fixtures/orca-marked-speech.json').read_text())
+        expected=fixture['expected_spoken_text'];raw=fixture['actual_row']['text']
+        self.assertNotIn(expected,raw)
+        values=list(copy.deepcopy(self.evidence()))
+        values[0]['text']=values[1][0]['text']=expected
+        values[2][0]['text']=raw
+        oracle.check_announcement(*values)
+        for invalid in ('<speak><mark name="0:6"/>Fabric public AT probe',
+                '<speak><emphasis>Fabric public AT probe</emphasis></speak>',
+                '<speak><mark name="Fabric public AT probe"/></speak>',
+                '<speak><mark name="0:6"/>Different words</speak>',
+                '<other>Fabric public AT probe</other>',
+                '<speak voice="other">Fabric public AT probe</speak>',
+                '<!DOCTYPE speak [<!ENTITY x "Fabric public AT probe">]><speak>&x;</speak>',
+                '<speak><?extra data?>Fabric public AT probe</speak>'):
+            values[2][0]['text']=invalid
+            with self.subTest(raw=invalid),self.assertRaisesRegex(ValueError,'announcement-(utterance|speech-format)'):
+                oracle.check_announcement(*values)
