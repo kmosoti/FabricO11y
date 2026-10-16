@@ -5,8 +5,9 @@ its custody reader omitted the original `applied-config.json` sidecar. The
 [registered counterexample and controls](experiments/formal/installation-native-custody-protocol.md#applied-configuration-counterexample-and-raw-failure-preservation)
 now cover strict typed/private metadata validation, unchanged configuration in
 the finite installation lifecycle, and original raw export before parser refusal.
-At `8bda65e`, all 62 focused custody source tests exited 0 after the registered
-source counterexamples failed; restarted native acceptance remains pending. Retained checksum-bypassed disk diagnostics supply no
+At `3b485bee`, all 63 focused custody source tests exited 0 after registered
+source counterexamples, including rehashed missing/forged profile admission,
+exposed the earlier failures. Restarted native acceptance remains pending. Retained checksum-bypassed disk diagnostics supply no
 filesystem-integrity or native-acceptance result. Package bytes remain unchanged.
 
 Hosted CI controller setup now explicitly requests CPU/I/O/memory/task delegation
