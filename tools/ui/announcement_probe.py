@@ -118,6 +118,9 @@ def inside(args):
     def js(script):return call('POST','/session/'+session+'/execute/sync',{'script':script,'args':[]})
     try:
         result['loopback']=loopback()
+        variants=Path('/usr/share/espeak-ng-data/voices/!v')
+        result['private_voice_variants']=[path.name for path in variants.iterdir()]
+        require(result['private_voice_variants']==[],'announcement-private-voice-variants')
         if args.mode=='xvfb':
             run(['/usr/bin/xauth','-f',str(work/'xauthority'),'add',':87','.',secrets.token_hex(16)])
             launch('xvfb',[str(args.xvfb),':87','-screen','0','1280x960x24','-nolisten','tcp','-auth',str(work/'xauthority')])
@@ -208,7 +211,7 @@ def main():
     require(out and out.is_absolute() and out.is_relative_to(DATA/'results') and not out.exists(),'announcement-output')
     scratch=Path(os.environ['FABRIC_SCRATCH_ROOT']);require(scratch.is_relative_to(DATA),'announcement-scratch')
     work=scratch/('announcement-'+out.name);work.mkdir(mode=0o700);out.mkdir(mode=0o700)
-    for name in ('tmp','runtime','config','cache','data'):(work/name).mkdir(mode=0o700)
+    for name in ('tmp','runtime','config','cache','data','voice-variants'):(work/name).mkdir(mode=0o700)
     subprocess.run(['systemctl','--user','set-property','--runtime',group.name,'MemoryHigh=1G','MemoryMax=2G','MemorySwapMax=0','CPUQuota=200%','TasksMax=256'],check=True,capture_output=True)
     require({key:(group/key).read_text().strip() for key in ('memory.high','memory.max','memory.swap.max','cpu.max','pids.max')}=={
         'memory.high':str(2**30),'memory.max':str(2**31),'memory.swap.max':'0','cpu.max':'200000 100000','pids.max':'256'},'announcement-limits')
@@ -220,6 +223,7 @@ def main():
     command=['/usr/bin/bwrap','--die-with-parent','--unshare-user','--unshare-pid','--unshare-net','--cap-add','CAP_NET_ADMIN','--unshare-ipc','--unshare-uts',
         '--ro-bind','/','/','--proc','/proc','--dev','/dev','--bind',str(work),str(work),'--bind',str(out),str(out),
         '--bind',str(work/'tmp'),'/tmp','--bind',str(work/'runtime'),f'/run/user/{os.getuid()}','--clearenv']
+    command[command.index('--clearenv'):command.index('--clearenv')]=['--ro-bind',str(work/'voice-variants'),'/usr/share/espeak-ng-data/voices/!v']
     environment={'PATH':'/usr/bin:/usr/sbin:/bin','LANG':'C.UTF-8','TMPDIR':str(work/'tmp'),
         'XDG_RUNTIME_DIR':str(work/'runtime'),'XDG_CONFIG_HOME':str(work/'config'),'XDG_CACHE_HOME':str(work/'cache'),
         'XDG_DATA_HOME':str(work/'data'),'GSETTINGS_BACKEND':'keyfile','SPEECHD_ADDRESS':'unix_socket:'+str(work/'speech.sock'),
