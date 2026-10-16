@@ -196,3 +196,37 @@ binding avoids admitting another incarnation through the realtime calibration's
 one-second allowance. No no-suspend assumption or clock-domain equality is used.
 The native command plan must pin a clean merged implementation revision present
 in `origin/main`; source-only green does not bypass that host admission rule.
+
+## Replacement TLS candidate binding, prospective revision 6
+
+Reason: RUSTSEC-2026-0349 made the historical candidate unsuitable for fresh
+acceptance. PR70 changed only the exact rustls patch dependency and corresponding
+locks. The completed #40 replacement is frozen at
+`e078ba23b543126011a2136dd1f7e98ca65370eb`, epoch1792100410, canonical minimized
+package source `28bcdf7ac833ab634d3b130b85cb2a0aa47eb7a8`. Historical candidate,
+packages, constructor01 and all source/native failure evidence remain unchanged.
+This registration replaces only the native admission's prospective candidate
+identity for the next four cells; it changes no observation, ceiling or oracle.
+
+| DATA-relative immutable input | SHA-256 |
+| --- | --- |
+| `results/candidate-build-replacement-tls-01/candidate-admission.json` | `bf27a2576bba8c32c7e27f9e434f27822c37aba60bbda387587723f2a1f36eb2` |
+| `results/candidate-build-replacement-tls-01/package-inspection.json` | `46c7e53ac698a34cebb4f85f84eca460f131aec2ce6a419cfb23b71092ef5d4b` |
+| `results/installation-package-build/replacement-tls-01-deb-a/receipt.json` | `f2a06e16fd8f82e27517eee12a1d8176d052765ac2e75959a85f70cdaeb6fd85` |
+| Canonical DEB named by that receipt | `2a555bec6334fde6774d21c414d7d42e041c39ca170e3a30fd3676e134b9f593` |
+| `results/packages/replacement-tls-01-rpm-a/receipt.json` | `4a2a800e8351ec8480359d0912f05d36682d27834c11c60bae87752961a5326a` |
+| Canonical RPM named by that receipt | `12c03f92e96c7d1a848a5198f017c21a1e17d485cdfca7feb8464c3a425971c1` |
+| `results/console-replacement-tls-01-a/build.json` | `5fd251faa4c5145a4813bdb8e3c8a56812d5e52887c8e040101440aa891d0c13` |
+
+Actual provenance bundle/manifest and qualification-helper hashes are taken from
+these immutable receipts and checked exactly by the existing admission; the
+independent #40 inspection must also be admitted before any guest. The actual
+clean merged harness/owner/source tuple must be frozen before dependent execution.
+Native cells use new exclusive run IDs/output records under
+`results/installation-native-custody/native-pipeline-replacement-01`; no old
+result is relabelled. The same-code fixture constructor uses the unchanged
+constructor with these actual canonical receipts/frozen commit/epoch and a new
+exclusive `results/owner-fixture-constructor-02`; its output must be independently
+validated before #46 consumes it. Existing native #41 predecessor packages,
+images, positive cells, missing-pending/live-writer refusals, source controls,
+resource/storage/deadline limits and cleanup gates remain mandatory.
