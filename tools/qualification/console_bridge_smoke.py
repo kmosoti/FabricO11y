@@ -1,5 +1,6 @@
 """Finite production bridge prerequisite, not a registered long campaign result."""
 import argparse
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -18,6 +19,29 @@ from console_bridge import ConsoleBridge, ROOT, STORAGE, require_limits
 from delivery_faults import free_port, openssl
 sys.path.insert(0, str(ROOT / "tools/packaging"))
 from stage_console import stage
+sys.path.insert(0, str(ROOT / "tools/bench/labs/completion"))
+sys.path.insert(0, str(ROOT / "tools/ui"))
+import cgroups
+from live_browser_check import browser_hold_directory
+
+
+@contextmanager
+def supervised_bridge(origin, certificate, work, out, parent, deadline):
+    """Own the same bounded browser lifecycle as campaign callers."""
+    budget, limits = cgroups.subgroup(parent, 'browser', 1024**3, 850*1024**2, 512, 2)
+    held = browser_hold_directory(budget)
+    held['exclusive'] = True  # subgroup() exclusively created this empty budget.
+    try:
+        bridge = ConsoleBridge(origin, certificate, work, out, browser_group=budget,
+                               browser_parent=held, browser_deadline=deadline)
+    finally:
+        os.close(held['fd'])
+    bridge.receipt['smoke_browser_budget'] = {'path': str(budget), 'limits': limits}
+    try:
+        yield bridge
+    finally:
+        bridge.shutdown_deadline = min(deadline, time.monotonic() + 20)
+        bridge.close()
 
 
 def main():
@@ -35,6 +59,8 @@ def main():
                     "CPUQuota=200%", "TasksMax=512"], check=True, capture_output=True)
     if int((group / "memory.max").read_text()) > 4_000_000_000:
         raise RuntimeError("4 GB combined fixture cap was not enforced")
+    # Delegate before any server child; the outer aggregate cap stays in force.
+    parent = cgroups.delegate()
     out = args.out
     if (not out.is_absolute() or out.exists() or out.is_symlink()
             or not out.parent.resolve(strict=True).is_relative_to(STORAGE / "results")):
@@ -45,7 +71,7 @@ def main():
     if not bins.is_relative_to(STORAGE) or any(p.is_symlink() or not p.is_file() for p in binaries):
         raise ValueError("actual data-drive production binaries required")
     out.mkdir(mode=0o700)
-    work = Path(os.environ["FABRIC_SCRATCH_ROOT"]) / "console-bridge-smoke"
+    work = Path(os.environ["FABRIC_SCRATCH_ROOT"]) / ("console-bridge-smoke-" + out.name)
     work.mkdir(mode=0o700)
     receipt = {"command": sys.argv, "exit": 1, "checks": [], "cgroup": str(group),
                "scope": "finite bridge smoke only; no long campaign or physical-device claim",
@@ -103,7 +129,8 @@ def main():
         tls = ssl.create_default_context(cafile=str(work / "ca.pem"))
         (work / "server.conf").write_text(f"listen=127.0.0.1:{port}\ntls_cert={work}/server.pem\ntls_key={work}/server.key\nstate_dir={work}/state\nadmin_token_file={admin}\nconsole_dir={work}/console\naccess_origin={origin}\naccess_rp_id=localhost\njournal_bytes=8388608\njournal_file_bytes=1048576\nself_spindle_ca={work}/ca.pem\n")
         server = launch_server()
-        with ConsoleBridge(origin, work / "server.pem", work / "browser", out / "bridge") as bridge:
+        with supervised_bridge(origin, work / "server.pem", work / "browser", out / "bridge",
+                               parent, time.monotonic() + args.poll_seconds + 180) as bridge:
             view = bridge.bootstrap_owner(work / "state/access/access-bootstrap.secret")
             check(view["role"] == "owner" and not (work / "state/access/access-bootstrap.secret").exists(), "real passkey owner consumed bootstrap")
             status, enrolled = bridge.request("/v1/console/nodes", "POST", {"name": "campaign-source", "metric_interval_s": 15})
@@ -169,8 +196,12 @@ def main():
                 except subprocess.TimeoutExpired:
                     os.killpg(proc.pid, signal.SIGKILL);proc.wait(timeout=10)
         for log in logs:log.close()
-        shutil.rmtree(work)
-        receipt["cleanup"] = "owned production servers stopped; certificates/state/browser fixtures removed"
+        if receipt['exit'] == 0:
+            shutil.rmtree(work)
+            receipt["cleanup"] = "owned servers and supervised browser stopped; fixtures removed"
+        else:
+            receipt['retained_work'] = str(work)
+            receipt['cleanup'] = 'owned servers stopped; failed scratch retained for diagnosis'
         (out / "receipt.json").write_text(json.dumps(receipt, indent=2) + "\n")
 
 

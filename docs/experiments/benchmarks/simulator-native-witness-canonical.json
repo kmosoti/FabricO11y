@@ -1,0 +1,9 @@
+{
+  "binary_sha256": "be82dabd621e59383aa296754ba8ee18f5ab28fc6dfa8b2fb69e59d847d351cc",
+  "source_commit": "28bcdf7ac833ab634d3b130b85cb2a0aa47eb7a8",
+  "source_tree": "a82fc425751829bb7ec8acd0db0268b3e67225e1",
+  "source_manifest_sha256": "c09f94d52368f6b84ed390086f8a8e2a1f638aaa4ff575c87ab12f385c8f3957",
+  "source_bundle_sha256": "c9200fafd3e7fb08a327c23beecc63f4d48d2b6b6c242dd52fc52b751d708ba3",
+  "build_receipt_sha256": "f2a06e16fd8f82e27517eee12a1d8176d052765ac2e75959a85f70cdaeb6fd85",
+  "canonical_helper_manifest_sha256": "e23a9b50599e2330b89335d1abbb8fe8789f2757936fdc1f0450aba699903c4d"
+}

@@ -217,6 +217,14 @@ Try it:
 
 ## Working rule
 
+The [owner walkthrough caller](../tools/qualification/owner_walkthrough.py)
+applies the same explicit-outcome discipline to operations: a command's exit is
+separate from a completed phase, and resuming a phase spends its remaining
+budget. Inspect [the literal controls](../tools/qualification/test_owner_phase_resume.py)
+to see a valid reentry and an exhausted allocation distinguished from omitted
+work. Original journal bytes and the independent query oracle remain the
+authority for received rows; the caller's transcript cannot authenticate itself.
+
 For each new component, answer these in plain language before coding:
 
 1. What does it receive and produce?
@@ -346,6 +354,50 @@ must also include the companion. Use native ACK/source times to bound a concurre
 snapshot, preserve original source bytes and check freshness/retention alongside
 rows. Why would excluding a source from the expected corpus create a false failure,
 and why would ignoring metadata hide a real omission?
+
+The [owner guide extractor](../tools/qualification/owner_guide.py) illustrates the
+same separation for operator instructions: an immutable command and its source
+span identify what was documented, while an actual process exit and independent
+observations establish what happened. Extraction must preserve shell bytes,
+including heredocs, and cannot decide whether a conditional step was applicable.
+
+The owner driver treats opaque query identifiers as data, not storage offsets.
+Its [registered snapshot adapter](experiments/formal/owner-walkthrough-protocol.md#production-snapshot-and-observer-binding-amendment)
+uses independent source-prefix bounds and keeps the original query oracle.
+The [guest observer](../tools/qualification/owner_observation.py) distinguishes
+configured unit properties from actual process privileges and kernel limits.
+
+The [controlled-time session fixture](experiments/formal/console-session-clock-protocol.md)
+connects Rust's `SystemTime` effect boundary to native evidence. Its original
+`#[repr(C)]` six-u64 clock observation stays stable while a separate timing
+accessor adds native monotonic brackets. Explain why a controller timestamp
+cannot identify the server's authorization clock, why an HTTP request may contain
+several wall-clock calls, and why retaining their complete set is stronger than
+choosing a convenient call. The exact boundary caller uses two untouched idle
+sessions and one continually active absolute-expiry session; controlled time is
+not eight hours of elapsed endurance.
+
+The browser security supplement separates a correctly signed one-field refusal
+from a signature failure: actual virtual fixture keys produce assertions and an
+independent OpenSSL verification runs before the packaged server sees them.
+[Literal controls](experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement)
+reject a convenient but unrelated status such as HTTP 429. Ordinary reader
+expiry retains real monotonic and wall-clock observations; it is not an in-flight
+authorization-race proof.
+
+The [announcement probe](experiments/formal/browser-announcement-protocol.md)
+illustrates the same evidence boundary for effects: a DOM `aria-live` attribute
+expresses intent, while an actual AT-SPI event, Orca utterance accepted by Speech
+Dispatcher and selected synthesizer output establish different observations.
+Keep the original speech call's arguments and return unchanged, and explain why
+public environment success would still not establish actual console behavior.
+
+UI response diagnostics distinguish a renderer boundary from server semantics.
+A real packaged query and independent producer ordinals establish the baseline;
+explicitly injected responses then exercise coverage, errors and lock behavior.
+Their [separate protocol](experiments/formal/console-access-protocol.md#prospective-ui-response-handling-supplement)
+requires the actual browser abort signal and elapsed deadline for timeout, and
+never treats an injected HTTP status as evidence that the server emitted it.
 
 The [native custody checkpoint exercise](experiments/formal/installation-native-custody-caller-card.md)
 connects the Rust Spool's durable ACK ownership to independent system observations.

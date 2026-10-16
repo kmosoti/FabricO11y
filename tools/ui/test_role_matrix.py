@@ -1,0 +1,949 @@
+"""ADR-derived route coverage; origin: issue45/C-027 and the missing legacy rows."""
+import ast
+import copy
+from contextlib import contextmanager, ExitStack
+import ctypes
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import signal
+import socket
+import stat
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from types import SimpleNamespace
+import unittest
+from unittest.mock import patch
+
+import live_browser_check as browser
+
+ROOT = Path(__file__).resolve().parents[2]
+FIXTURE = ROOT / 'docs/experiments/formal/fixtures/console-route-roles.json'
+
+
+def registered_routes(source):
+    routes = set()
+    for match in re.finditer(r'\.route\(\s*"([^"]+)"\s*,', source):
+        depth, end = 1, match.end()
+        while depth:
+            depth += (source[end] == '(') - (source[end] == ')')
+            end += 1
+        for method in re.findall(r'\b(get|post|put|patch|delete|head|options)\s*\(', source[match.end():end]):
+            routes.add((method.upper(), match.group(1)))
+    return routes
+
+
+def witnessed_calls(request, check):
+    if hasattr(browser, 'run_role_matrix'):
+        browser.run_role_matrix(request, check)
+        return
+    # Execute ONLY the retained selected-matrix AST against synthetic transports.
+    # No main(), browser, sockets, subprocesses or native authority are invoked.
+    main = next(node for node in ast.parse(Path(browser.__file__).read_text()).body
+                if isinstance(node, ast.FunctionDef) and node.name == 'main')
+    statements = next(node.body for node in ast.walk(main) if isinstance(node, ast.Try)
+                      and any(isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'owner_routes'
+                                                               for t in n.targets) for n in node.body))
+    begin = next(i for i, node in enumerate(statements) if isinstance(node, ast.Assign)
+                 and any(isinstance(t, ast.Name) and t.id == 'owner_routes' for t in node.targets))
+    end = next(i for i in range(begin + 1, len(statements)) if isinstance(statements[i], ast.Assign)
+               and any(isinstance(t, ast.Name) and t.id == 'read' for t in statements[i].targets))
+    namespace = {'credential': 'reader', 'spindle_token': 'spindle', 'check': check,
+                 'bearer_api': lambda role, path, method='GET', body=None: request(role or 'anonymous', method, path, body),
+                 'api': lambda path, method='GET', body=None: request('owner', method, path, body),
+                 'expect': lambda answer, status, message, label: check(browser.semantic_rejection(answer, status, message), label)}
+    exec(compile(ast.Module(body=statements[begin:end], type_ignores=[]), '<retained-matrix>', 'exec'), namespace)
+
+
+class RoleMatrixTests(unittest.TestCase):
+    def setUp(self):
+        self.fixture = json.loads(FIXTURE.read_text())
+        self.expected = {(role, method, path): outcome
+                         for method, _, path, _, outcomes in self.fixture['rows']
+                         for role, outcome in zip(self.fixture['roles'], outcomes)}
+
+    def request(self, role, method, path, body=None):
+        # The retained fixture targeted browser-edge; the successor owns matrix.
+        path = path.replace('/v1/console/nodes/browser-edge/', '/v1/console/nodes/matrix/')
+        status, error = self.expected.get((role, method, path), (200, None))
+        field = self.fixture['refusal_fields'].get(path, 'error')
+        return status, {field: error} if error else {}
+
+    def test_fixture_covers_both_registered_routers_and_all_control_actions(self):
+        rows = self.fixture['rows']
+        self.assertEqual(self.fixture['roles'], ['anonymous', 'spindle', 'reader', 'owner'])
+        self.assertEqual(len(rows), 36)
+        self.assertEqual(len(self.expected), 144)
+        registered = set().union(*(registered_routes((ROOT / 'crates/fabric-server/src' / name).read_text())
+                                  for name in ('console.rs', 'http.rs')))
+        self.assertEqual({(row[0], row[1]) for row in rows}, registered)
+        for prefix in ('/v1/console', '/v1/admin'):
+            self.assertEqual({row[2].rsplit('/', 1)[1] for row in rows
+                              if row[1] == prefix + '/nodes/{name}/{action}'}, {'pause', 'resume', 'revoke'})
+
+    def test_live_matrix_calls_all_credentials_on_every_route_and_legacy_action(self):
+        calls = []
+
+        def request(role, method, path, body):
+            calls.append((role, method, path))
+            return self.request(role, method, path, body)
+
+        witnessed_calls(request, self.assertTrue)
+        self.assertEqual(set(calls), set(self.expected),
+                         'live role matrix missing cells: ' + repr(sorted(set(self.expected) - set(calls))))
+        self.assertEqual(len(calls), 144, 'each registered role-route cell must run exactly once')
+
+    def test_reader_admission_mutation_is_rejected_by_the_live_checker(self):
+        def request(role, method, path, body):
+            if (role, method, path) == ('reader', 'GET', '/v1/console/audit'):
+                return 200, {'events': []}
+            return self.request(role, method, path, body)
+
+        with self.assertRaisesRegex(AssertionError, 'reader.*GET /v1/console/audit'):
+            witnessed_calls(request, self.assertTrue)
+
+    def test_independent_outcomes_never_accept_admission_refusal_or_role_crossover(self):
+        for role, path, expected in [
+            ('spindle', '/v1/console/status', [401, 'sign in required']),
+            ('reader', '/v1/console/audit', [403, 'role not permitted']),
+            ('owner', '/v1/admin/nodes', [401, 'use a console credential']),
+        ]:
+            self.assertEqual(self.expected[(role, 'GET', path)], expected)
+            self.assertFalse(browser.semantic_rejection((429, {'error': expected[1]}), *expected))
+            self.assertFalse(browser.semantic_rejection((200, {'error': expected[1]}), *expected))
+            self.assertFalse(browser.semantic_rejection((expected[0], {'error': 'wrong refusal'}), *expected))
+        missing = copy.deepcopy(self.fixture['rows'])
+        missing.remove(next(row for row in missing if row[0:3] ==
+                            ['POST', '/v1/admin/nodes/{name}/{action}', '/v1/admin/nodes/matrix/resume']))
+        self.assertEqual(len({(r[0], r[1]) for r in missing}), len({(r[0], r[1]) for r in self.fixture['rows']}))
+        self.assertNotEqual({(r[0], r[2]) for r in missing}, {(r[0], r[2]) for r in self.fixture['rows']})
+
+    def test_transports_refuse_expired_or_storage_limited_dispatch_and_progressing_body(self):
+        # Origin: Miso's independent review of0de4b46; no main/network/process.
+        source = ast.parse(Path(browser.__file__).read_text())
+        main = next(n for n in source.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+        functions = [n for n in source.body if isinstance(n, ast.FunctionDef) and n.name != 'main']
+        functions += [n for n in main.body if isinstance(n, ast.FunctionDef) and n.name in ('call', 'bearer_api')]
+        for transport in ('call', 'bearer_api'):
+            for case in ('expired', 'storage', 'paced_expiry', 'timeout', 'progressing'):
+                if transport == 'call' and case == 'paced_expiry':continue
+                with self.subTest(transport=transport, case=case):
+                    now, opened, reads = [2.0 if case == 'expired' else 0.0], [], []
+                    class Response:
+                        status = 200
+                        fp = SimpleNamespace(raw=SimpleNamespace(_sock=SimpleNamespace(settimeout=lambda _: None)))
+                        def __enter__(self):return self
+                        def __exit__(self, *_):pass
+                        def read(self, size=None):
+                            reads.append('whole')
+                            if case == 'progressing':now[0] = 2.0
+                            return b'{"value":{"ready":true}}'
+                        def read1(self, size):
+                            reads.append('chunk')
+                            if case == 'progressing':now[0] = 2.0
+                            return b'{"value":{"ready":true}}' if len(reads) == 1 else b''
+                    def open_response(request, **kwargs):
+                        opened.append(kwargs['timeout'])
+                        return Response()
+                    namespace = dict(vars(browser))
+                    namespace.update(time=SimpleNamespace(monotonic=lambda:now[0], monotonic_ns=lambda:int(now[0]*1e9)),
+                                     deadline=1.0, storage_violation=SimpleNamespace(is_set=lambda:case == 'storage'),
+                                     endpoint='http://localhost:1', origin='https://localhost:1', receipt={},
+                                     args=SimpleNamespace(inject_role_defect=False), tls_opener=SimpleNamespace(open=open_response),
+                                     pace_api=lambda:now.__setitem__(0, 2.0 if case == 'paced_expiry' else now[0]),
+                                     cadence=SimpleNamespace(clock=lambda:now[0], last=None),
+                                     urllib=SimpleNamespace(request=SimpleNamespace(Request=browser.urllib.request.Request, urlopen=open_response),
+                                                            error=browser.urllib.error))
+                    exec(compile(ast.Module(body=functions, type_ignores=[]), '<transport-boundary>', 'exec'), namespace)
+                    invoke = (lambda:namespace['call']('GET', '/status')) if transport == 'call' else (lambda:namespace['bearer_api'](None, '/v1/console/nodes'))
+                    if case == 'timeout':
+                        invoke()
+                        self.assertEqual(len(opened), 1)
+                        self.assertGreater(opened[0], 0)
+                        self.assertLessEqual(opened[0], 1.0, 'socket timeout exceeds remaining inner deadline')
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, 'deadline|storage|512 MiB'):
+                            invoke()
+                        if case == 'progressing':self.assertEqual(reads, ['chunk'], 'wall bound must stop a progressively readable body')
+                        else:self.assertEqual(opened, [], 'expired/storage-limited dispatch reached network')
+
+    def test_actual_slow_headers_and_chunk_metadata_cannot_outlive_inner_io_bounds(self):
+        # Origin: CPython read1 still reads chunk metadata/header lines internally.
+        source = ast.parse(Path(browser.__file__).read_text())
+        main = next(n for n in source.body if isinstance(n, ast.FunctionDef) and n.name == 'main')
+        functions = [n for n in source.body if isinstance(n, ast.FunctionDef) and n.name != 'main']
+        functions += [n for n in main.body if isinstance(n, ast.FunctionDef) and n.name == 'call']
+        for case in ('headers', 'chunk_metadata', 'storage'):
+            with self.subTest(case=case):
+                storage, stop, errors = threading.Event(), threading.Event(), []
+                with socket.socket() as listener:
+                    listener.bind(('127.0.0.1', 0));listener.listen(1);listener.settimeout(2)
+                    def peer():
+                        try:
+                            connection, _ = listener.accept()
+                            with connection:
+                                connection.settimeout(1);request=b''
+                                while b'\r\n\r\n' not in request:request+=connection.recv(4096)
+                                body=b'{"value":{"ready":true}}'
+                                prefix=(b'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n'+f'{len(body):x};note='.encode()
+                                        if case == 'chunk_metadata' else b'HTTP/1.1 200 OK\r\nX-Progress: ')
+                                connection.sendall(prefix);began=time.monotonic()
+                                while time.monotonic()-began<.6 and not stop.is_set():
+                                    if case == 'storage' and time.monotonic()-began>=.12:storage.set()
+                                    connection.sendall(b'x');stop.wait(.01)
+                                suffix=(b'\r\n'+body+b'\r\n0\r\n\r\n' if case == 'chunk_metadata'
+                                        else b'\r\nContent-Length: '+str(len(body)).encode()+b'\r\n\r\n'+body)
+                                if not stop.is_set():connection.sendall(suffix)
+                        except (BrokenPipeError, ConnectionResetError):pass
+                        except Exception as error:errors.append(error)
+                    worker=threading.Thread(target=peer, daemon=True);worker.start()
+                    namespace=dict(vars(browser));began=time.monotonic()
+                    namespace.update(endpoint=f'http://127.0.0.1:{listener.getsockname()[1]}',
+                                     deadline=began+(2 if case == 'storage' else .12),storage_violation=storage)
+                    exec(compile(ast.Module(body=functions, type_ignores=[]), '<actual-io-boundary>', 'exec'), namespace)
+                    previous_handler=browser.signal.getsignal(browser.signal.SIGALRM)
+                    previous_timer=browser.signal.getitimer(browser.signal.ITIMER_REAL)
+                    try:
+                        with self.assertRaisesRegex(RuntimeError, 'storage|512 MiB' if case == 'storage' else 'deadline'):
+                            namespace['call']('GET', '/status')
+                        elapsed=time.monotonic()-began
+                    finally:
+                        stop.set();worker.join(1)
+                    self.assertFalse(worker.is_alive(), 'synthetic peer did not stop')
+                    self.assertEqual(errors, [], 'synthetic peer failed before exercising the bound')
+                    self.assertEqual(browser.signal.getsignal(browser.signal.SIGALRM), previous_handler)
+                    self.assertEqual(browser.signal.getitimer(browser.signal.ITIMER_REAL), previous_timer)
+                    self.assertLessEqual(elapsed, .35, 'continuous metadata progress evaded the absolute I/O bound')
+
+    def test_actual_browser_dispatch_gap_survives_delayed_pace_continuation(self):
+        # Origin: Miso's 5ms continuation counterexample; execute actual injected JS.
+        source=ast.parse(Path(browser.__file__).read_text())
+        scripts=[n.args[0].value for n in ast.walk(source) if isinstance(n, ast.Call)
+                 and isinstance(n.func, ast.Name) and n.func.id == 'js' and n.args
+                 and isinstance(n.args[0], ast.Constant) and isinstance(n.args[0].value, str)
+                 and 'window.fixturePaceQueue=Promise.resolve()' in n.args[0].value]
+        self.assertEqual(len(scripts), 1, 'one actual fetch scheduler must supply the control')
+        runner=browser.DATA/'tools/bun-1.4.0/bun'
+        if not runner.is_file():runner=Path(browser.shutil.which('bun') or str(runner))
+        self.assertTrue(runner.is_file(), 'Bun is required for the actual JavaScript control')
+        script='const setup='+json.dumps(scripts[0])+r''';
+          let now=0,delayed=false;const actual=[];
+          const window={fetch:async(url)=>{actual.push({path:url,started_ms:now});return {status:200,headers:{get:()=>null}}}};
+          new Function('window','performance','setTimeout','location','return function(){'+setup+'}')(
+            window,{now:()=>now},(resolve,delay)=>{now+=delay;resolve()},{href:'https://fixture.invalid/console/'})(550);
+          const pace=window.fixturePace;
+          window.fixturePace=async(...args)=>{const value=await pace(...args);if(!delayed){delayed=true;now+=5}return value};
+          await window.fetch('/v1/console/auth/login/start');await window.fetch('/v1/console/auth/login/finish');
+          window.fixtureUnpacedBurst=true;
+          await Promise.all(Array.from({length:16},()=>window.fetch('/v1/console/auth/login/start')));
+          console.log(JSON.stringify({actual,recorded:window.fixtureApiHeaders,truncated:window.fixtureApiHeadersTruncated}));
+        '''
+        result=subprocess.run([str(runner),'--eval',script],capture_output=True,text=True,timeout=5)
+        self.assertEqual(result.returncode,0,result.stderr)
+        witness=json.loads(result.stdout);actual=witness['actual'];recorded=witness['recorded']
+        self.assertEqual(len(actual),18,'two paced requests and the unchanged16-request unpaced control')
+        self.assertEqual([r['started_ms'] for r in actual],[r['started_ms'] for r in recorded], 'receipt stamps actual fetch dispatch')
+        self.assertEqual([r['status'] for r in recorded],[200]*18)
+        self.assertEqual([r['paced'] for r in recorded],[True,True]+[False]*16)
+        self.assertEqual(len({r['started_ms'] for r in actual[2:]}),1,'registered burst remains unpaced')
+        self.assertFalse(witness['truncated'])
+        self.assertGreaterEqual(actual[1]['started_ms']-actual[0]['started_ms'],550,
+                                '5ms pace-continuation delay shrank actual dispatch gap: '+repr(actual[:2]))
+
+
+def owned_browser_identity(pid):
+    process = Path('/proc') / str(pid)
+    fields = (process / 'stat').read_text().rsplit(')', 1)[1].split()
+    if process.stat().st_uid != os.getuid() or int(fields[19]) <= 0:
+        raise AssertionError('unowned browser control process')
+    return int(fields[19]), int(fields[2])
+
+
+@contextmanager
+def browser_cleanup_fixture(modes, blocked_sampler=False, cgroup_fault=None):
+    # Every process is real but synthetic, with a finite 45-second lifespan.
+    sys.path.insert(0, str(ROOT / 'tools'))
+    from resource_group import require_limits
+    require_limits()
+    libc, previous = ctypes.CDLL(None, use_errno=True), ctypes.c_int()
+    if libc.prctl(37, ctypes.byref(previous), 0, 0, 0) or libc.prctl(36, 1, 0, 0, 0):
+        raise RuntimeError('browser process controls require Linux subreaper')
+    directory = parent_path = None
+    groups, identities, process_logs, group_descriptors, registry_pidfds = [], [], [], [], []
+    sampler = None
+    mocks = None
+    body_failure = None
+    restore_attempted = False
+    stop_samples, release_sampler = threading.Event(), threading.Event()
+    try:
+        directory = Path(tempfile.mkdtemp(dir=os.environ['FABRIC_SCRATCH_ROOT'], prefix='browser-cleanup-control-'))
+        work, out = directory / 'work', directory / 'out'
+        work.mkdir()
+        out.mkdir()
+        parent_path = directory / 'fabric-work-browser-control.service'
+        parent_path.mkdir()
+        (parent_path / 'supervisor').mkdir()
+        for name, value in {'cgroup.controllers': 'memory cpu pids io',
+                            'cgroup.subtree_control': 'memory cpu pids io',
+                            'memory.max': '4000000000', 'memory.high': '3500000000',
+                            'memory.swap.max': '0', 'cpu.max': '200000 100000',
+                            'pids.max': '512'}.items():
+            (parent_path / name).write_text(value)
+
+        def held_directory(path):
+            descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+            observed = os.fstat(descriptor)
+            group_descriptors.append((descriptor, observed.st_dev, observed.st_ino))
+            return {'path': path, 'fd': descriptor, 'dev': observed.st_dev, 'ino': observed.st_ino}
+
+        parent = held_directory(parent_path)
+        parent['deadline_monotonic_ns'] = time.monotonic_ns() + 240_000_000_000
+        script = directory / 'owned-process.py'
+        script.write_text('''import os, select, signal, sys, time
+from pathlib import Path
+directory, work, mode = Path(sys.argv[1]), Path(sys.argv[2]), sys.argv[3]
+expires = time.monotonic() + 45
+def atomic(name, text):
+    pending = directory / (name + '.pending')
+    with pending.open('x') as stream:
+        stream.write(text); stream.flush(); os.fsync(stream.fileno())
+    pending.replace(directory / name)
+if mode == 'timeout': signal.signal(signal.SIGTERM, signal.SIG_IGN)
+gate_read, gate_write = os.pipe()
+child = os.fork()
+if child == 0:
+    os.close(gate_write)
+    if not select.select([gate_read], [], [], 5)[0] or os.read(gate_read, 1) != b'1': os._exit(1)
+    os.close(gate_read)
+    signal.signal(signal.SIGTERM, signal.SIG_IGN)
+    if mode == 'setsid': os.setsid()
+    held = (work / ('held-' + directory.name)).open('xb')
+    held.write(b'literal browser private fixture'); held.flush()
+    atomic('ready', 'ready')
+    time.sleep(max(0, expires - time.monotonic()))
+    os._exit(0)
+os.close(gate_read)
+try:
+    process = Path('/proc') / str(child)
+    fields = (process / 'stat').read_text().rsplit(')', 1)[1].split()
+    if process.stat().st_uid != os.getuid() or int(fields[19]) <= 0 or int(fields[1]) != os.getpid() or int(fields[2]) != os.getpid():
+        raise RuntimeError('fork child is outside owned private group')
+    atomic('child.pid', f'{child} {fields[19]}')
+    os.write(gate_write, b'1')
+finally:
+    os.close(gate_write)
+deadline = time.monotonic() + 5
+while not (directory / 'ready').exists():
+    if time.monotonic() >= deadline: raise RuntimeError('child readiness deadline')
+    time.sleep(.01)
+while not (directory / 'admitted').exists():
+    if time.monotonic() >= deadline: raise RuntimeError('controller admission deadline')
+    time.sleep(.01)
+if mode not in ('exited', 'setsid'): time.sleep(max(0, expires - time.monotonic()))
+''')
+        original_read, original_write, original_fd_write = Path.read_text, Path.write_text, os.write
+        kill_attempts = []
+        fault = {'value': cgroup_fault}
+
+        def members(item):
+            living = []
+            for pid, start in ((item['process'].pid, item['start']),
+                               (item.get('child'), item.get('child_start'))):
+                if pid is None:
+                    continue
+                try:
+                    fields = original_read(Path('/proc') / str(pid) / 'stat').rsplit(')', 1)[1].split()
+                except FileNotFoundError:
+                    continue
+                if int(fields[19]) != start:
+                    raise AssertionError('mock cgroup member identity changed')
+                if fields[0] not in ('Z', 'X'):
+                    living.append(pid)
+            return living
+
+        def cgroup_read(path, *args, **kwargs):
+            for item in groups:
+                group_path = item['group']['path']
+                if path == group_path / 'cgroup.procs':
+                    return ''.join(str(pid) + '\n' for pid in members(item))
+                if path == group_path / 'cgroup.events':
+                    populated = bool(members(item)) or fault['value'] == 'stuck-population'
+                    return 'populated ' + str(int(populated)) + '\nfrozen 0\n'
+                if any(path == Path('/proc') / str(pid) / 'cgroup'
+                       for pid in (item['process'].pid, item.get('child')) if pid is not None):
+                    placement = parent_path / 'supervisor' if fault['value'] == 'outside-placement' else group_path
+                    return '0::/' + str(placement.relative_to(directory)) + '\n'
+            return original_read(path, *args, **kwargs)
+
+        def cgroup_kill(item, value):
+            if value not in ('1', b'1'):
+                raise AssertionError('mock kill accepts only the registered kill value')
+            kill_attempts.append(item['process'].pid)
+            if fault['value'] == 'first-stop-refused' and item is groups[-1]:
+                raise PermissionError('literal owned group stop failure')
+            living = members(item)
+            for pid, start, descriptor in identities:
+                if pid in living:
+                    try:
+                        signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+            return 1
+
+        def cgroup_write(path, value, *args, **kwargs):
+            for item in groups:
+                if path == item['group']['path'] / 'cgroup.kill':
+                    return cgroup_kill(item, value)
+            return original_write(path, value, *args, **kwargs)
+
+        def cgroup_fd_write(descriptor, value):
+            observed = os.fstat(descriptor)
+            for item in groups:
+                if (observed.st_dev, observed.st_ino) == item['kill_identity']:
+                    return cgroup_kill(item, value)
+            return original_fd_write(descriptor, value)
+
+        mocks = ExitStack()
+        mocks.enter_context(patch.object(Path, 'read_text', cgroup_read))
+        mocks.enter_context(patch.object(Path, 'write_text', cgroup_write))
+        mocks.enter_context(patch.object(os, 'write', cgroup_fd_write))
+        if hasattr(browser, 'cgroups'):
+            mocks.enter_context(patch.object(browser.cgroups, 'ROOT', directory))
+            mocks.enter_context(patch.object(browser.cgroups, 'current', return_value=parent_path / 'supervisor'))
+        for index, mode in enumerate(modes):
+            group_dir = directory / ('group-' + str(index))
+            group_dir.mkdir()
+            group_path = parent_path / ('group-' + str(index))
+            group_path.mkdir()
+            for name in ('cgroup.procs', 'cgroup.events', 'cgroup.kill'):
+                (group_path / name).write_text('')
+            for name in ('memory.max', 'memory.high', 'memory.swap.max', 'cpu.max', 'pids.max'):
+                (group_path / name).write_text((parent_path / name).read_text())
+            kill_identity = (group_path / 'cgroup.kill').stat()
+            group = held_directory(group_path)
+            group['exclusive'] = True
+            log = (group_dir / 'process.log').open('xb')
+            process_logs.append(log)
+            process = subprocess.Popen([sys.executable, '-B', str(script), str(group_dir), str(work), mode],
+                                       start_new_session=True, stdout=log, stderr=log)
+            groups.append({'process': process, 'directory': group_dir, 'group': group,
+                           'kill_identity': (kill_identity.st_dev, kill_identity.st_ino)})
+            start, pgid = owned_browser_identity(process.pid)
+            descriptor = os.pidfd_open(process.pid)
+            identities.append((process.pid, start, descriptor))
+            groups[-1]['start'] = start
+            registry_pidfd = os.dup(descriptor)
+            registry_pidfds.append((registry_pidfd, process.pid))
+            group.update(process=process, pid=process.pid, start_ticks=start, pidfd=registry_pidfd)
+            if owned_browser_identity(process.pid) != (start, process.pid) or pgid != process.pid:
+                raise AssertionError('owned leader identity changed')
+            deadline = time.monotonic() + 5
+            while not (group_dir / 'ready').exists():
+                if time.monotonic() >= deadline:
+                    raise AssertionError('owned child did not publish readiness')
+                time.sleep(.01)
+            marker = group_dir / 'child.pid'
+            info = marker.lstat()
+            if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1 or info.st_size > 128:
+                raise AssertionError('invalid child identity marker')
+            child, child_start = map(int, marker.read_text().split())
+            expected_pgid = child if mode == 'setsid' else process.pid
+            if child <= 1 or child_start <= 0 or owned_browser_identity(child) != (child_start, expected_pgid):
+                raise AssertionError('unbound owned child identity')
+            child_descriptor = os.pidfd_open(child)
+            identities.append((child, child_start, child_descriptor))
+            if owned_browser_identity(child) != (child_start, expected_pgid):
+                raise AssertionError('child identity changed during pidfd binding')
+            groups[-1].update(child=child, child_start=child_start, child_pidfd=child_descriptor)
+            binding = {'parent': parent, 'group': group}
+            if callable(getattr(browser, 'bind_browser_group', None)):
+                binding = browser.bind_browser_group(parent, group, process)
+                for member in binding['group'].get('members', []):
+                    descriptor = member['pidfd']
+                    if descriptor in {identity[2] for identity in identities}:
+                        raise AssertionError('registry cannot consume independent guardian pidfd')
+                    if descriptor not in {entry[0] for entry in registry_pidfds}:
+                        registry_pidfds.append((descriptor, member['pid']))
+            groups[-1]['binding'] = binding
+            (group_dir / 'admitted').write_text('owned by controller')
+            if mode in ('exited', 'setsid'):
+                process.wait(timeout=5)
+        sampler = threading.Thread(target=lambda: release_sampler.wait(4) if blocked_sampler else stop_samples.wait(4))
+        sampler.start()
+        namespace = dict(vars(browser))
+        namespace.update(session=None, processes=[('group-' + str(i), item['process']) for i, item in enumerate(groups)],
+                         receipt={'exit': 0}, stop_samples=stop_samples, sampler=sampler,
+                         out=out, samples=[], logs=[], work=work,
+                         group_parent=parent, owned_groups=[item['binding'] for item in groups],
+                         clock_targets={}, state_descriptors=[],
+                         cgroup_kill_attempts=kill_attempts, cgroup_fault=fault)
+        yield namespace, groups
+    except BaseException as error:
+        body_failure = {'type': type(error).__name__, 'message': str(error)[:1024]}
+        raise
+    finally:
+        try:
+            if mocks is not None:
+                mocks.close()
+            errors = []
+            stop_evidence, group_evidence, file_evidence = [], [], []
+            cleanup_began_monotonic_ns = time.monotonic_ns()
+            sampler_alive_before_cleanup = sampler is not None and sampler.is_alive()
+            stop_samples.set()
+            release_sampler.set()
+            if sampler is not None:
+                try:
+                    sampler.join(timeout=5)
+                    if sampler.is_alive():
+                        errors.append('sampler did not stop')
+                except RuntimeError as error:
+                    errors.append(str(error))
+            for pid, start, descriptor in identities:
+                observed = {'pid': pid, 'expected_start_ticks': start,
+                            'began_monotonic_ns': time.monotonic_ns(),
+                            'pidfd_kill_attempted': False, 'stop_confirmed': False}
+                stop_evidence.append(observed)
+                try:
+                    try:
+                        current, pgid = owned_browser_identity(pid)
+                    except FileNotFoundError:
+                        observed.update(stop_confirmed=True, outcome='already absent')
+                        continue
+                    observed.update(observed_start_ticks=current, pgid=pgid)
+                    if current != start:
+                        raise AssertionError('refuse cleanup of reused PID')
+                    fields = (Path('/proc') / str(pid) / 'stat').read_text().rsplit(')', 1)[1].split()
+                    if int(fields[19]) != start:
+                        raise AssertionError('process identity changed before state observation')
+                    observed['state_before_signal'] = fields[0]
+                    try:
+                        observed['pidfd_kill_attempted'] = True
+                        signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                    deadline = time.monotonic() + 5
+                    while True:
+                        try:
+                            reaped, status = os.waitpid(pid, os.WNOHANG)
+                        except ChildProcessError:
+                            reaped = 0
+                        if reaped == pid:
+                            observed.update(stop_confirmed=True, outcome='reaped by control', wait_status=status)
+                            break
+                        try:
+                            current, _ = owned_browser_identity(pid)
+                        except FileNotFoundError:
+                            observed.update(stop_confirmed=True, outcome='confirmed absent')
+                            break
+                        if current != start or time.monotonic() >= deadline:
+                            raise AssertionError('owned process identity/cleanup not confirmed')
+                        time.sleep(.01)
+                except (OSError, ValueError, IndexError, AssertionError) as error:
+                    errors.append(str(error))
+                    observed['error'] = str(error)[:512]
+                finally:
+                    observed['ended_monotonic_ns'] = time.monotonic_ns()
+                    try:
+                        os.close(descriptor)
+                    except OSError as error:
+                        errors.append(str(error))
+            for item in groups:
+                observed = {'pgid': item['process'].pid, 'confirmed_zero_population': False,
+                            'before_monotonic_ns': time.monotonic_ns()}
+                group_evidence.append(observed)
+                try:
+                    os.killpg(item['process'].pid, 0)
+                except ProcessLookupError:
+                    observed['confirmed_zero_population'] = True
+                    continue
+                except OSError as error:
+                    errors.append(str(error))
+                    observed['error'] = str(error)[:512]
+                else:
+                    errors.append('owned group is still populated')
+                finally:
+                    observed['after_monotonic_ns'] = time.monotonic_ns()
+            for log in process_logs:
+                try:
+                    log.close()
+                except OSError as error:
+                    errors.append(str(error))
+            for descriptor, device, inode in group_descriptors:
+                try:
+                    observed = os.fstat(descriptor)
+                    if (observed.st_dev, observed.st_ino) != (device, inode):
+                        raise AssertionError('refuse closing reused control directory descriptor')
+                    os.close(descriptor)
+                except OSError as error:
+                    if error.errno != 9:
+                        errors.append(str(error))
+                except AssertionError as error:
+                    errors.append(str(error))
+            for descriptor, pid in registry_pidfds:
+                try:
+                    fields = (Path('/proc/self/fdinfo') / str(descriptor)).read_text().splitlines()
+                    bound_pid = int(next(line.split(':', 1)[1] for line in fields if line.startswith('Pid:')))
+                    if bound_pid not in (pid, -1):
+                        raise AssertionError('refuse closing reused registry pidfd')
+                    os.close(descriptor)
+                except FileNotFoundError:
+                    pass
+                except (OSError, ValueError, StopIteration, AssertionError) as error:
+                    errors.append(str(error))
+            restore_attempted = True
+            subreaper_restored = libc.prctl(36, previous.value, 0, 0, 0) == 0
+            if not subreaper_restored:
+                errors.append('restore previous test subreaper setting')
+            if directory is not None:
+                witnesses = [(directory / 'owned-process.py', 8192)]
+                if parent_path is not None:
+                    witnesses.extend((parent_path / name, 128) for name in
+                                     ('cgroup.controllers', 'cgroup.subtree_control', 'memory.max',
+                                      'memory.high', 'memory.swap.max', 'cpu.max', 'pids.max'))
+                for item in groups:
+                    witnesses.extend((item['directory'] / name, cap)
+                                     for name, cap in (('child.pid', 128), ('ready', 128), ('admitted', 128), ('process.log', 8192)))
+                for path, cap in witnesses:
+                    record = {'path': str(path.relative_to(directory))}
+                    file_evidence.append(record)
+                    try:
+                        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC)
+                        try:
+                            before = os.fstat(descriptor)
+                            if not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid() or before.st_nlink != 1 or before.st_size > cap:
+                                raise AssertionError('invalid bounded evidence file')
+                            raw = os.read(descriptor, cap + 1)
+                            after = os.fstat(descriptor)
+                            identity = lambda value: {key: getattr(value, 'st_' + key) for key in
+                                                       ('dev', 'ino', 'mode', 'uid', 'nlink', 'size', 'mtime_ns', 'ctime_ns')}
+                            if len(raw) != before.st_size or identity(before) != identity(after):
+                                raise AssertionError('evidence file changed during observation')
+                            record.update(identity=identity(before), sha256=hashlib.sha256(raw).hexdigest())
+                            if path.name == 'child.pid':
+                                child, child_start = map(int, raw.split())
+                                record.update(pid=child, start_ticks=child_start)
+                                record['pidfd_bound'] = any((pid, start) == (child, child_start)
+                                                           for pid, start, _ in identities)
+                                if not record['pidfd_bound']:
+                                    raise AssertionError('marker lacks independently bound pidfd identity')
+                        finally:
+                            os.close(descriptor)
+                    except (OSError, ValueError, AssertionError) as error:
+                        record['error'] = str(error)[:512]
+                        errors.append('evidence ' + record['path'] + ': ' + str(error)[:512])
+                retained = body_failure is not None or bool(errors)
+                evidence = {'body_failure': body_failure, 'scratch_retained': retained,
+                            'cleanup_began_monotonic_ns': cleanup_began_monotonic_ns,
+                            'processes': stop_evidence, 'groups': group_evidence, 'files': file_evidence,
+                            'sampler_alive_before_cleanup': sampler_alive_before_cleanup,
+                            'sampler_stopped': sampler is None or not sampler.is_alive(),
+                            'subreaper_restored': subreaper_restored,
+                            'work_exists_after_control': (directory / 'work').exists(),
+                            'cgroup_observations_are_mocked': True,
+                            'mock_cgroup_kill_attempts': kill_attempts if mocks is not None else [],
+                            'mock_cgroup_fault': fault['value'] if mocks is not None else None,
+                            'cleanup_errors': errors, 'recorded_monotonic_ns': time.monotonic_ns()}
+                try:
+                    raw = json.dumps(evidence, indent=2) + '\n'
+                    if len(raw.encode()) > 32768:
+                        raise AssertionError('control cleanup evidence exceeds 32KiB')
+                    with (directory / 'cleanup-evidence.json').open('x') as stream:
+                        stream.write(raw)
+                        stream.flush()
+                        os.fsync(stream.fileno())
+                except (OSError, ValueError, AssertionError) as error:
+                    errors.append('cleanup evidence: ' + str(error)[:512])
+                    retained = True
+                if retained:
+                    print('browser control evidence retained: ' + str(directory), file=sys.stderr)
+            if errors:
+                raise AssertionError('control scratch retained at ' + str(directory) + ': ' + '; '.join(errors))
+            if directory is not None and body_failure is None:
+                shutil.rmtree(directory)
+        finally:
+            if not restore_attempted and libc.prctl(36, previous.value, 0, 0, 0):
+                raise RuntimeError('restore previous test subreaper setting')
+
+
+def actual_browser_finally(namespace):
+    # Execute the actual main finally; no browser/server or main setup is invoked.
+    source = ast.parse(Path(browser.__file__).read_text())
+    main = next(node for node in source.body if isinstance(node, ast.FunctionDef) and node.name == 'main')
+    finalizers = [node.finalbody for node in main.body if isinstance(node, ast.Try) and node.finalbody]
+    if len(finalizers) != 1:
+        raise AssertionError('one actual browser main finalizer must supply the control')
+    exec(compile(ast.Module(body=finalizers[0], type_ignores=[]), browser.__file__, 'exec'), namespace)
+
+
+class BrowserFixtureCleanupTests(unittest.TestCase):
+    def assert_zero_population(self, groups):
+        for item in groups:
+            self.assertFalse((Path('/proc') / str(item['child'])).exists(), 'actual finalizer left an unreaped owned child')
+            with self.assertRaises(ProcessLookupError, msg='actual finalizer did not confirm zero private-group population'):
+                os.killpg(item['process'].pid, 0)
+
+    def test_actual_finally_normal_empty_fixture_has_confirmed_cleanup(self):
+        with browser_cleanup_fixture([]) as (namespace, groups):
+            actual_browser_finally(namespace)
+            self.assertFalse(namespace['sampler'].is_alive())
+            self.assertFalse(namespace['work'].exists())
+            self.assertTrue((namespace['out'] / 'browser.json').is_file())
+            self.assertTrue((namespace['out'] / 'resource-samples.json').is_file())
+
+    def test_actual_finally_stops_child_when_leader_already_exited(self):
+        with browser_cleanup_fixture(['exited']) as (namespace, groups):
+            self.assertEqual(groups[0]['process'].returncode, 0)
+            actual_browser_finally(namespace)
+            self.assert_zero_population(groups)
+
+    def test_actual_finally_stops_term_resistant_child_after_leader_termination(self):
+        with browser_cleanup_fixture(['normal']) as (namespace, groups):
+            actual_browser_finally(namespace)
+            self.assert_zero_population(groups)
+
+    def test_actual_finally_timeout_escalation_stops_whole_group(self):
+        with browser_cleanup_fixture(['timeout']) as (namespace, groups):
+            process = groups[0]['process']
+            original_wait, requested = process.wait, []
+
+            def shortened_wait(timeout=None):
+                requested.append(timeout)
+                return original_wait(timeout=min(timeout, .2) if timeout is not None else None)
+
+            # TEST ONLY real wait shortening; production 15s/5s limits stay fixed.
+            with patch.object(process, 'wait', side_effect=shortened_wait):
+                actual_browser_finally(namespace)
+            self.assertIn(15, requested, 'the actual production TERM wait supplied the timeout path')
+            self.assert_zero_population(groups)
+
+    def test_actual_finally_attempts_all_groups_and_retains_scratch_after_failed_stop(self):
+        with browser_cleanup_fixture(['normal', 'normal'], cgroup_fault='first-stop-refused') as (namespace, groups):
+            attempted, real_killpg = [], os.killpg
+            real_pidfd_signal = signal.pidfd_send_signal
+            failed = groups[-1]['process'].pid
+
+            def fail_one_group(pgid, sig):
+                if sig:
+                    attempted.append(pgid)
+                if pgid == failed and sig:
+                    raise PermissionError('literal owned group stop failure')
+                return real_killpg(pgid, sig)
+
+            def fail_one_pidfd(descriptor, sig, *args, **kwargs):
+                fields = (Path('/proc/self/fdinfo') / str(descriptor)).read_text().splitlines()
+                pid = int(next(line.split(':', 1)[1] for line in fields if line.startswith('Pid:')))
+                item = next((item for item in groups if pid in (item['process'].pid, item['child'])), None)
+                if item is None:
+                    raise AssertionError('cleanup tried signaling an unbound control pidfd')
+                if sig:
+                    attempted.append(item['process'].pid)
+                if item['process'].pid == failed and sig:
+                    raise PermissionError('literal owned group stop failure')
+                return real_pidfd_signal(descriptor, sig, *args, **kwargs)
+
+            with patch.object(browser.os, 'killpg', side_effect=fail_one_group), \
+                    patch.object(signal, 'pidfd_send_signal', side_effect=fail_one_pidfd):
+                try:
+                    actual_browser_finally(namespace)
+                except (OSError, RuntimeError):
+                    pass
+            self.assertEqual(set(attempted + namespace['cgroup_kill_attempts']), {item['process'].pid for item in groups},
+                             'a first stop error must not suppress other owned group attempts')
+            self.assertTrue(namespace['work'].is_dir(), 'unconfirmed stop must retain private fixture scratch')
+            self.assertTrue((Path('/proc') / str(groups[-1]['child'])).exists(), 'injected refusal must reach a real living group')
+            self.assertNotIn('process groups stopped', namespace['receipt'].get('cleanup', ''), 'do not claim cleanup on refusal')
+
+    def test_actual_finally_preserves_scratch_until_bounded_sampler_is_stopped(self):
+        with browser_cleanup_fixture([], blocked_sampler=True) as (namespace, groups):
+            started = time.monotonic()
+            try:
+                actual_browser_finally(namespace)
+            except RuntimeError:
+                pass
+            self.assertTrue(namespace['stop_samples'].is_set(), 'actual finalizer must reach sampler stop')
+            self.assertLess(time.monotonic() - started, 3, 'sampler refusal must remain bounded')
+            self.assertTrue(namespace['sampler'].is_alive(), 'literal sampler must still be alive at refusal')
+            self.assertTrue(namespace['work'].is_dir(), 'scratch must not be removed while sampler lives')
+            self.assertNotIn('process groups stopped', namespace['receipt'].get('cleanup', ''), 'unconfirmed sampler stop is not cleanup')
+
+
+class DelegatedBrowserOwnershipTests(unittest.TestCase):
+    # C-084 source mocks are not evidence of kernel delegation or subtree kill.
+    assert_zero_population = BrowserFixtureCleanupTests.assert_zero_population
+
+    def assert_authority_retained(self, namespace, groups):
+        for record in (namespace['group_parent'], groups[0]['group']):
+            observed = os.fstat(record['fd'])
+            self.assertEqual((observed.st_dev, observed.st_ino), (record['dev'], record['ino']))
+        group = groups[0]['group']
+        info = (Path('/proc/self/fdinfo') / str(group['pidfd'])).read_text().splitlines()
+        self.assertEqual(int(next(line.split(':', 1)[1] for line in info if line.startswith('Pid:'))), group['pid'])
+
+    def require_mechanism(self):
+        if not all(callable(getattr(browser, name, None)) for name in
+                   ('bind_browser_group', 'stop_browser_groups')) or not hasattr(browser, 'cgroups'):
+            self.skipTest('dependent cgroup control: owned binder/stopper mechanism is unavailable')
+
+    def test_owned_group_binding_and_stop_mechanisms_are_available(self):
+        for name in ('bind_browser_group', 'stop_browser_groups'):
+            self.assertTrue(callable(getattr(browser, name, None)), 'missing owned browser cgroup mechanism: ' + name)
+        self.assertTrue(hasattr(browser, 'cgroups'), 'missing existing delegated cgroup plumbing')
+        with browser_cleanup_fixture(['normal']) as (namespace, groups):
+            item = groups[0]
+            binding = item['binding']
+            self.assertIsNot(binding['parent'], namespace['group_parent'], 'retain a defensive parent record')
+            self.assertIsNot(binding['group'], item['group'], 'retain a defensive launch record')
+            self.assertIs(binding['group']['process'], item['process'])
+            for field in ('pid', 'start_ticks', 'pidfd', 'path', 'fd', 'dev', 'ino', 'exclusive'):
+                self.assertEqual(binding['group'][field], item['group'][field])
+            member = next((row for row in binding['group'].get('members', []) if row['pid'] == item['child']), None)
+            self.assertIsNotNone(member, 'retain the actual source-fixture child identity before it becomes a zombie')
+            self.assertEqual(member['start_ticks'], item['child_start'])
+            info = (Path('/proc/self/fdinfo') / str(member['pidfd'])).read_text().splitlines()
+            self.assertEqual(int(next(line.split(':', 1)[1] for line in info if line.startswith('Pid:'))), item['child'])
+
+    def test_binding_refuses_literal_capability_and_placement_defects(self):
+        self.require_mechanism()
+        cases = (('missing-delegation', 'delegation'), ('missing-group', 'identity'),
+                 ('missing-kill', 'capability'), ('outside-placement', 'placement'),
+                 ('nonexclusive-group', 'ownership'), ('supervisor-as-parent', 'parent'),
+                 ('expired-global-deadline', 'deadline'))
+        for defect, diagnostic in cases:
+            with self.subTest(defect=defect), browser_cleanup_fixture(['normal']) as (namespace, groups):
+                parent, group = dict(namespace['group_parent']), dict(groups[0]['group'])
+                moved, extra_fd = None, None
+                try:
+                    if defect == 'missing-delegation':
+                        (parent['path'] / 'cgroup.subtree_control').write_text('')
+                    elif defect == 'missing-group':
+                        moved = group['path'].with_name('moved-group')
+                        group['path'].rename(moved)
+                    elif defect == 'missing-kill':
+                        (group['path'] / 'cgroup.kill').unlink()
+                    elif defect == 'outside-placement':
+                        namespace['cgroup_fault']['value'] = defect
+                    elif defect == 'nonexclusive-group':
+                        group['exclusive'] = False
+                    elif defect == 'expired-global-deadline':
+                        parent['deadline_monotonic_ns'] = time.monotonic_ns() - 1
+                    else:
+                        path = parent['path'] / 'supervisor'
+                        extra_fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+                        observed = os.fstat(extra_fd)
+                        parent.update(path=path, fd=extra_fd, dev=observed.st_dev, ino=observed.st_ino)
+                    with patch.object(signal, 'pidfd_send_signal', side_effect=AssertionError('binding must never signal')):
+                        with self.assertRaisesRegex(RuntimeError, '^browser-group-' + diagnostic + '$'):
+                            browser.bind_browser_group(parent, group, groups[0]['process'])
+                    self.assertFalse(namespace['cgroup_kill_attempts'], 'refuse before kill-file writes')
+                    self.assertTrue((Path('/proc') / str(groups[0]['child'])).exists())
+                    self.assert_authority_retained(namespace, groups)
+                finally:
+                    if moved is not None:
+                        moved.rename(group['path'])
+                    if extra_fd is not None:
+                        os.close(extra_fd)
+
+    def test_binding_refuses_literal_process_descriptor_and_directory_identity_defects(self):
+        self.require_mechanism()
+        for defect in ('wrong-process', 'wrong-pid', 'wrong-start', 'wrong-pidfd',
+                       'wrong-parent-inode', 'wrong-group-inode', 'unbound-group-fd'):
+            with self.subTest(defect=defect), browser_cleanup_fixture(['normal']) as (namespace, groups):
+                parent, group = dict(namespace['group_parent']), dict(groups[0]['group'])
+                process = groups[0]['process']
+                if defect == 'wrong-process':
+                    process = SimpleNamespace(pid=process.pid)
+                elif defect == 'wrong-pid':
+                    group['pid'] = groups[0]['child']
+                elif defect == 'wrong-start':
+                    group['start_ticks'] += 1
+                elif defect == 'wrong-pidfd':
+                    group['pidfd'] = groups[0]['child_pidfd']
+                elif defect == 'wrong-parent-inode':
+                    parent['ino'] += 1
+                elif defect == 'wrong-group-inode':
+                    group['ino'] += 1
+                else:
+                    group['fd'] = parent['fd']
+                with patch.object(signal, 'pidfd_send_signal', side_effect=AssertionError('binding must never signal')):
+                    with self.assertRaisesRegex(RuntimeError, '^browser-group-identity$'):
+                        browser.bind_browser_group(parent, group, process)
+                self.assertFalse(namespace['cgroup_kill_attempts'])
+                self.assertTrue((Path('/proc') / str(groups[0]['child'])).exists())
+                self.assert_authority_retained(namespace, groups)
+
+    def test_actual_finally_stops_setsid_child_after_its_leader_exited(self):
+        with browser_cleanup_fixture(['setsid']) as (namespace, groups):
+            item = groups[0]
+            self.assertEqual(item['process'].returncode, 0)
+            self.assertEqual(owned_browser_identity(item['child'])[1], item['child'])
+            actual_browser_finally(namespace)
+            self.assert_zero_population(groups)
+            with self.assertRaises(ProcessLookupError):
+                os.killpg(item['child'], 0)
+
+    def test_actual_finally_reaps_adopted_zombie_even_when_mock_kernel_population_is_zero(self):
+        with browser_cleanup_fixture(['exited']) as (namespace, groups):
+            item = groups[0]
+            signal.pidfd_send_signal(item['child_pidfd'], signal.SIGKILL)
+            deadline = time.monotonic() + 2
+            while True:
+                fields = (Path('/proc') / str(item['child']) / 'stat').read_text().rsplit(')', 1)[1].split()
+                self.assertEqual(int(fields[19]), item['child_start'])
+                if fields[0] == 'Z':
+                    break
+                self.assertLess(time.monotonic(), deadline, 'literal adopted child must become a zombie')
+                time.sleep(.01)
+            self.assertEqual((item['group']['path'] / 'cgroup.events').read_text(), 'populated 0\nfrozen 0\n')
+            self.assertEqual((item['group']['path'] / 'cgroup.procs').read_text(), '')
+            actual_browser_finally(namespace)
+            self.assert_zero_population(groups)
+
+    def test_actual_finally_stuck_population_is_bounded_and_retains_scratch(self):
+        self.require_mechanism()
+        with browser_cleanup_fixture(['exited']) as (namespace, groups):
+            namespace['cgroup_fault']['value'] = 'stuck-population'
+            started = time.monotonic()
+            with self.assertRaisesRegex(RuntimeError, '^browser-group-stop$'):
+                actual_browser_finally(namespace)
+            self.assertLess(time.monotonic() - started, 23, 'unchanged 15/5/2-second stop bounds')
+            self.assertTrue(namespace['work'].is_dir())
+            self.assertNotIn('process groups stopped', namespace['receipt'].get('cleanup', ''))
+            self.assert_zero_population(groups)
+
+    def test_stop_refuses_replaced_registry_identity_before_any_signal(self):
+        self.require_mechanism()
+        for defect in ('replaced-directory', 'replaced-parent', 'wrong-process', 'wrong-pidfd'):
+            with self.subTest(defect=defect), browser_cleanup_fixture(['normal']) as (namespace, groups):
+                binding = groups[0]['binding']
+                copied = {'parent': dict(binding['parent']), 'group': dict(binding['group'])}
+                group, moved, replaced = copied['group'], None, None
+                try:
+                    if defect in ('replaced-directory', 'replaced-parent'):
+                        replaced = group['path'] if defect == 'replaced-directory' else copied['parent']['path']
+                        moved = replaced.with_name('old-owned-' + replaced.name)
+                        replaced.rename(moved)
+                        replaced.mkdir()
+                    elif defect == 'wrong-process':
+                        group['process'] = SimpleNamespace(pid=group['pid'])
+                    else:
+                        group['pidfd'] = groups[0]['child_pidfd']
+                    with patch.object(signal, 'pidfd_send_signal', side_effect=AssertionError('unbound stop must never signal')):
+                        with self.assertRaisesRegex(RuntimeError, '^browser-group-stop$'):
+                            browser.stop_browser_groups(namespace['group_parent'], [copied])
+                    self.assertFalse(namespace['cgroup_kill_attempts'])
+                    self.assertTrue((Path('/proc') / str(groups[0]['child'])).exists())
+                    self.assert_authority_retained(namespace, groups)
+                finally:
+                    if moved is not None:
+                        replaced.rmdir()
+                        moved.rename(replaced)
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -38,6 +38,9 @@ from fixture_cadence import FixtureCadence, PEER_ADMISSION
 
 VERSION = "155.0.8059.39"
 TOOLS = STORAGE / "tools/ui" / ("chrome-for-testing-" + VERSION)
+FIREFOX_VERSION = "157.0.1"
+GECKODRIVER = STORAGE / "tools/ui/geckodriver"
+CERTUTIL = STORAGE / "tools/ui/nss-tools-3.129.0-1.fc44/usr/bin/certutil"
 MAX_BODY = 8 * 1024**2
 MAX_REQUEST = 1024**2
 MAX_PROFILE = 512 * 1024**2
@@ -49,6 +52,32 @@ def validate_route(path, method):
         raise ValueError("only canonical production console routes are allowed")
     if any(part in ("", ".", "..") for part in path.split("/")[1:]):
         raise ValueError("noncanonical console route")
+
+
+def bridge_origin(origin, backend, private_dns):
+    parsed = urllib.parse.urlsplit(origin)
+    common = (parsed.scheme == "https" and parsed.port and not any(
+        (parsed.username, parsed.password, parsed.path, parsed.query, parsed.fragment)))
+    if backend == "chrome":
+        valid = parsed.hostname == "localhost" and private_dns is None
+    elif backend == "firefox":
+        valid = (isinstance(private_dns, str) and parsed.hostname == private_dns
+                 and re.fullmatch(r"(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}", private_dns))
+    else:
+        valid = False
+    if not common or not valid:
+        raise ValueError("exact owned HTTPS browser origin and confined DNS mapping required")
+    return parsed
+
+
+def firefox_capabilities(profile, hostname):
+    return {"browserName": "firefox", "acceptInsecureCerts": False,
+            "moz:firefoxOptions": {"binary": "/usr/bin/firefox", "args": ["-headless", "-profile", str(profile)],
+                "prefs": {"security.enterprise_roots.enabled": False,
+                          "security.webauth.webauthn_enable_softtoken": True,
+                          "security.webauth.webauthn_enable_usbtoken": False,
+                          "network.dns.localDomains": hostname, "network.trr.mode": 5,
+                          "network.proxy.type": 0}}}
 
 
 def protected_secret(path):
@@ -76,8 +105,17 @@ def protected_secret(path):
 
 
 class ConsoleBridge:
+    supervised_cleanup = True  # Capability; each R3 instance must select it explicitly.
     """One browser, one serialized request, ephemeral owner and authenticator."""
-    def __init__(self, origin, leaf_certificate, work, out, *, browser_group=None):
+    def __init__(self, origin, leaf_certificate, work, out, *, browser_group=None,
+                 browser_parent=None, browser_deadline=None, backend="chrome",
+                 trusted_ca=None, private_dns=None):
+        bridge_origin(origin, backend, private_dns)
+        if backend == "chrome" and trusted_ca is not None:
+            raise ValueError("trusted CA requires the Firefox backend")
+        if backend == "firefox" and (trusted_ca is None or browser_parent is None or browser_group is None):
+            raise ValueError("Firefox requires a public CA and supervised browser budget")
+        self.backend, self.authenticators = backend, []
         self.group = require_limits()
         self.browser_group = None
         if browser_group is None:
@@ -100,10 +138,8 @@ class ConsoleBridge:
                     or "populated 0" not in (bounded / "cgroup.events").read_text().splitlines()):
                 raise ValueError("empty browser subgroup needs explicit memory/swap/CPU/task limits")
             self.browser_group = bounded
-        parsed = urllib.parse.urlsplit(origin)
-        if (parsed.scheme != "https" or parsed.hostname != "localhost" or not parsed.port
-                or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment):
-            raise ValueError("exact owned HTTPS localhost origin with port required")
+        if backend == "firefox" and int((self.browser_group / "memory.max").read_text()) > 1024**3:
+            raise ValueError("Firefox walkthrough browser budget must be at most1GiB")
         self.origin = origin
         self.work, self.out = Path(work), Path(out)
         scratch = Path(os.environ["FABRIC_SCRATCH_ROOT"]).resolve(strict=True)
@@ -118,6 +154,7 @@ class ConsoleBridge:
         self.lock = threading.RLock()
         self.session = None
         self.driver = None
+        self.supervisor = None
         self.log = None
         self.browser_temporary = None
         self.principal_id = None
@@ -127,7 +164,8 @@ class ConsoleBridge:
         self.ui_previous = None
         self.ui_phase_baseline = None
         self.records = []
-        self.receipt = {"state": "starting", "origin": origin, "browser": VERSION,
+        self.receipt = {"state": "starting", "origin": origin, "browser": VERSION if backend == "chrome" else FIREFOX_VERSION,
+                        "backend": backend,
                         "authenticator": "virtual CTAP2 with user verification",
                         "scope": "campaign fixture, not physical authenticator qualification",
                         "requests": self.records, "source_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest()}
@@ -141,6 +179,26 @@ class ConsoleBridge:
             spki = base64.b64encode(hashlib.sha256(der).digest()).decode()
             self.receipt["tls_scope"] = "exact owned leaf SPKI trusted only in this isolated Chrome profile"
             self.receipt["leaf_sha256"] = hashlib.sha256(leaf.read_bytes()).hexdigest()
+            if backend == "firefox":
+                ca = Path(trusted_ca)
+                if (not ca.is_absolute() or ca.is_symlink() or not ca.resolve().is_relative_to(STORAGE)
+                        or not ca.is_file() or not 1 <= ca.stat().st_size <= 65536):
+                    raise ValueError("bounded public DATA CA certificate required")
+                ca_raw = ca.read_bytes()
+                if ca_raw.count(b"-----BEGIN CERTIFICATE-----") != 1 or b"PRIVATE KEY" in ca_raw:
+                    raise ValueError("one public CA certificate only")
+                constraint = subprocess.run(["openssl", "x509", "-noout", "-ext", "basicConstraints"],
+                    input=ca_raw, check=True, capture_output=True, timeout=10).stdout
+                if b"CA:TRUE" not in constraint:
+                    raise ValueError("actual CA basic constraint required")
+                profile = self.work / "profile"; profile.mkdir(mode=0o700)
+                ca_copy = self.work / "trusted-ca.pem"; ca_copy.write_bytes(ca_raw); ca_copy.chmod(0o600)
+                for cmd in ([str(CERTUTIL), "-N", "--empty-password", "-d", "sql:" + str(profile)],
+                            [str(CERTUTIL), "-A", "-d", "sql:" + str(profile), "-n", "Owned Fabric fixture CA",
+                             "-t", "C,,", "-i", str(ca_copy)]):
+                    subprocess.run(cmd, check=True, capture_output=True, timeout=10)
+                self.receipt.update(tls_scope="isolated NSS public CA; no bypass; exact hostname",
+                                    ca_sha256=hashlib.sha256(ca_raw).hexdigest(), private_dns=private_dns)
             with socket.socket() as port:
                 port.bind(("127.0.0.1", 0))
                 driver_port = port.getsockname()[1]
@@ -160,13 +218,24 @@ class ConsoleBridge:
             self.log = (self.out / "webdriver.log").open("w")
             command = [str(TOOLS / "chromedriver-linux64/chromedriver"),
                        "--port=" + str(driver_port), "--allowed-ips=127.0.0.1"]
-            if self.browser_group is not None:
+            if backend == "firefox":
+                command = [str(GECKODRIVER), "--host", "127.0.0.1", "--port", str(driver_port), "--allow-system-access"]
+            if browser_parent is not None:
+                if self.browser_group is None or browser_parent['path'] != self.browser_group or browser_deadline is None:
+                    raise ValueError('R3 supervisor needs the actual held browser budget and run deadline')
+                from browser_supervisor import BrowserSupervisor
+                self.supervisor = BrowserSupervisor(command, env, self.log, browser_deadline,
+                                                     self.out / 'supervisor', browser_parent=browser_parent)
+                self.driver = self.supervisor
+                self.receipt['supervised_browser'] = True
+            elif self.browser_group is not None:
                 helper = Path(__file__).parent / "enter_group.py"
                 if not helper.is_file():
                     helper = ROOT / "tools/bench/labs/completion/enter_group.py"
                 command = [sys.executable, str(helper), str(self.browser_group), *command]
-            self.driver = subprocess.Popen(command,
-                                          stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
+            if self.supervisor is None:
+                self.driver = subprocess.Popen(command,
+                                              stdout=self.log, stderr=subprocess.STDOUT, env=env, start_new_session=True)
             deadline = time.monotonic() + 15
             while True:
                 try:
@@ -177,32 +246,55 @@ class ConsoleBridge:
                 if self.driver.poll() is not None or time.monotonic() >= deadline:
                     raise RuntimeError("owned WebDriver did not start")
                 time.sleep(.1)
-            info = self._call("POST", "/session", {"capabilities": {"alwaysMatch": {
-                "browserName": "chrome", "goog:chromeOptions": {
-                    "binary": str(TOOLS / "chrome-linux64/chrome"), "args": [
-                        "--headless=new", "--disable-dev-shm-usage", "--no-first-run",
-                        "--no-default-browser-check", "--user-data-dir=" + str(self.work / "profile"),
-                        "--ignore-certificate-errors-spki-list=" + spki, "--window-size=1440,1100"]}}}})
+            capabilities = {"browserName": "chrome", "goog:chromeOptions": {
+                "binary": str(TOOLS / "chrome-linux64/chrome"), "args": [
+                    "--headless=new", "--disable-dev-shm-usage", "--no-first-run",
+                    "--no-default-browser-check", "--user-data-dir=" + str(self.work / "profile"),
+                    "--ignore-certificate-errors-spki-list=" + spki, "--window-size=1440,1100"]}}
+            if backend == "firefox":
+                capabilities = firefox_capabilities(self.work / "profile", private_dns)
+            info = self._call("POST", "/session", {"capabilities": {"alwaysMatch": capabilities}})
             self.session = info["sessionId"]
-            if info["capabilities"]["browserVersion"] != VERSION:
+            actual = info["capabilities"]
+            self.receipt['browser_capabilities_actual'] = {
+                key: actual.get(key) for key in ('browserName', 'browserVersion', 'acceptInsecureCerts')}
+            if actual["browserVersion"] != (VERSION if backend == "chrome" else FIREFOX_VERSION):
                 raise RuntimeError("browser differs from reviewed version")
+            if backend == "firefox" and actual.get("acceptInsecureCerts") is not False:
+                raise RuntimeError("Firefox did not retain strict certificate verification")
+            self.receipt["browser_version_actual"] = actual["browserVersion"]
             self._wd("/timeouts", {"script": 45000, "pageLoad": 30000, "implicit": 0})
-            self._cdp("WebAuthn.enable", {})
-            self._cdp("WebAuthn.addVirtualAuthenticator", {"options": {
-                "protocol": "ctap2", "transport": "internal", "hasResidentKey": True,
-                "hasUserVerification": True, "isUserVerified": True, "automaticPresenceSimulation": True}})
+            if backend == "chrome":
+                self._cdp("WebAuthn.enable", {})
+            self.add_authenticator()
+            self._tls_startup_pending = True
             self._wd("/url", {"url": origin + "/console/"})
             deadline = time.monotonic() + 30
             while not self._js("return typeof window.fabricPasskey==='function'"):
                 if time.monotonic() >= deadline:
                     raise RuntimeError("production console passkey helper did not load")
                 time.sleep(.1)
+            self._tls_startup_pending = False
             # Observe only native UI Request objects, never bridge string-based
             # requests, response contents, cookies or credentials. Unlike the
             # default Resource Timing buffer these counters cannot fill up.
             self._js('''window.fabricCampaignUiProbe={active:false,attempts:0,headers:0,completed:0,
               statusFailures:0,transportFailures:0,inflight:0,lastAttemptMs:null,lastCompletedMs:null,
-              maxAttemptGapMs:0,refreshes:0,phases:0,phaseLastAttemptMs:null};
+              maxAttemptGapMs:0,refreshes:0,phases:0,phaseLastAttemptMs:null,
+              documentId:crypto.randomUUID(),events:[],eventCount:0,eventOverflow:false,tickCount:0,latestTick:null};
+              window.fabricCampaignUiEvent=function(event){const p=window.fabricCampaignUiProbe;
+                event.seq=++p.eventCount;if(p.events.length<8192)p.events.push(event);else p.eventOverflow=true;};
+              const nativeInterval=window.setInterval;let observedTimer=0;
+              window.setInterval=function(callback,delay,...args){if(delay!==5000)return nativeInterval.call(this,callback,delay,...args);
+                const timer=++observedTimer;window.fabricCampaignUiEvent({event:'timer',timer,delay,atMs:performance.now()});
+                return nativeInterval.call(this,function(...values){const p=window.fabricCampaignUiProbe;
+                  const check=Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()==='Check session');
+                  const tick=++p.tickCount;p.latestTick=tick;
+                  window.fabricCampaignUiEvent({event:'tick',timer,tick,atMs:performance.now(),
+                    visibility:document.visibilityState,busy:check?check.disabled:null,
+                    connected:document.body.textContent.includes('Connected'),
+                    running:Array.from(document.querySelectorAll('button')).some(e=>e.textContent.trim()==='Pause 5-second polling')});
+                  return callback.apply(this,values);},delay,...args);};
               const original=window.fetch;window.fetch=function(...args){
                 const p=window.fabricCampaignUiProbe;
                 const native=p.active && args[0] instanceof Request &&
@@ -211,10 +303,13 @@ class ConsoleBridge:
                 const now=performance.now();if(p.phaseLastAttemptMs!==null)
                   p.maxAttemptGapMs=Math.max(p.maxAttemptGapMs,now-p.phaseLastAttemptMs);
                 p.phaseLastAttemptMs=now;p.lastAttemptMs=now;p.attempts++;p.inflight++;
+                const id=p.attempts;window.fabricCampaignUiEvent({event:'attempt',id,tick:p.latestTick,atMs:now});
                 let finished=false;const finish=(failed)=>{if(finished)return;finished=true;
-                  p.inflight--;if(failed)p.transportFailures++;else{p.completed++;p.lastCompletedMs=performance.now();}};
+                  p.inflight--;window.fabricCampaignUiEvent({event:'complete',id,atMs:performance.now(),failed});
+                  if(failed)p.transportFailures++;else{p.completed++;p.lastCompletedMs=performance.now();}};
                 return original.apply(this,args).then(response=>{
-                  p.headers++;if(response.status<200||response.status>=300)p.statusFailures++;
+                  p.headers++;window.fabricCampaignUiEvent({event:'headers',id,atMs:performance.now(),status:response.status});
+                  if(response.status<200||response.status>=300)p.statusFailures++;
                   if(!response.body){finish(false);return response;}
                   const stream=response.body;const getReader=stream.getReader.bind(stream);
                   stream.getReader=function(...options){const reader=getReader(...options);
@@ -224,17 +319,43 @@ class ConsoleBridge:
                   return response;
                 },error=>{finish(true);throw error;});};''')
             if self.browser_group is not None:
-                actual = next(line[3:] for line in Path(f"/proc/{self.driver.pid}/cgroup").read_text().splitlines() if line.startswith("0::"))
-                if Path("/sys/fs/cgroup") / actual.lstrip("/") != self.browser_group:
+                driver_pid = self.supervisor.receipt['ready']['driver_pid'] if self.supervisor else self.driver.pid
+                actual = next(line[3:] for line in Path(f"/proc/{driver_pid}/cgroup").read_text().splitlines() if line.startswith("0::"))
+                actual_group = Path("/sys/fs/cgroup") / actual.lstrip("/")
+                if ((self.supervisor is None and actual_group != self.browser_group) or
+                        (self.supervisor is not None and not actual_group.is_relative_to(self.supervisor.domain['path']))):
                     raise RuntimeError("WebDriver did not enter its declared browser subgroup")
+                self.receipt['actual_driver_group'] = str(actual_group)
                 self.receipt["browser_subgroup"] = str(self.browser_group)
                 self.receipt["browser_limits"] = {key: (self.browser_group / key).read_text().strip() for key in
                     ("memory.max", "memory.high", "memory.swap.max", "cpu.max", "pids.max")}
             self.receipt["state"] = "ready"
         except BaseException as error:
             self.receipt["startup_failure_type"] = type(error).__name__
+            if backend == "firefox" and self.session and getattr(self, "_tls_startup_pending", False):
+                try:
+                    self.receipt["tls_navigation_failure"] = self._firefox_tls_failure()
+                except (OSError, RuntimeError):
+                    self.receipt["tls_navigation_failure"] = {"codes": [], "inconclusive": True}
             self.close()
             raise
+
+    def _firefox_tls_failure(self):
+        # Firefox 157 renders the certificate detail in net-error-card rather
+        # than light-DOM text. Observe its actual errorInfo; never infer a code
+        # from the fixture case or from the generic about:certerror URI.
+        deadline = time.monotonic() + 5
+        while True:
+            observed = self._js("""const card=document.querySelector('net-error-card');
+              const model=card && (card.wrappedJSObject || card);
+              const code=String(model?.errorInfo?.errorCodeString || '').slice(0,120);
+              const text=document.documentElement.textContent;
+              return {uri:document.documentURI.slice(0,2048), observedCode:code, codes:
+                ['SSL_ERROR_BAD_CERT_DOMAIN','SEC_ERROR_UNKNOWN_ISSUER','MOZILLA_PKIX_ERROR_SELF_SIGNED_CERT']
+                .filter(value=>code===value || (!code && text.includes(value)))};""")
+            if observed.get('codes') or time.monotonic() >= deadline:
+                return observed
+            time.sleep(0.1)
 
     def _call(self, method, path, body=None):
         data = None if body is None else json.dumps(body).encode()
@@ -265,6 +386,54 @@ class ConsoleBridge:
     def _js(self, script, *args, asynchronous=False):
         return self._wd("/execute/async" if asynchronous else "/execute/sync", {"script": script, "args": args})
 
+    def _gecko_auth(self, expression, *arguments):
+        self._wd("/moz/context", {"context": "chrome"})
+        try:
+            return self._js('const auth=ChromeUtils.importESModule("chrome://remote/content/marionette/webauthn.sys.mjs").webauthn;' + expression, *arguments)
+        finally:
+            self._wd("/moz/context", {"context": "content"})
+
+    def add_authenticator(self):
+        options = {"protocol": "ctap2", "transport": "internal", "hasResidentKey": True,
+                   "hasUserVerification": True, "isUserVerified": True}
+        if self.backend == "firefox":
+            options.update(protocol="ctap2_1", transport="usb", isUserConsenting=True)
+            identifier = self._gecko_auth('return auth.addVirtualAuthenticator(arguments[0])', options)
+        else:
+            options["automaticPresenceSimulation"] = True
+            identifier = self._cdp("WebAuthn.addVirtualAuthenticator", {"options": options})["authenticatorId"]
+        self.authenticators.append(identifier)
+        self.receipt.setdefault("virtual_devices", []).append({"event": "added", "ordinal": 1 + sum(row["event"] == "added" for row in self.receipt.get("virtual_devices", [])),
+                                                               "identifier": identifier,
+                                                               "resident": True, "uv_configured": True})
+        return identifier
+
+    def remove_authenticator(self, identifier):
+        if identifier not in self.authenticators:
+            raise ValueError("owned virtual authenticator required")
+        if self.backend == "firefox":
+            self._gecko_auth('auth.removeVirtualAuthenticator(arguments[0]);return null', identifier)
+        else:
+            self._cdp("WebAuthn.removeVirtualAuthenticator", {"authenticatorId": identifier})
+        self.authenticators.remove(identifier)
+        self.receipt.setdefault("virtual_devices", []).append({"event": "removed", "identifier": identifier})
+
+    def replace_authenticator(self):
+        for identifier in list(self.authenticators):
+            self.remove_authenticator(identifier)
+        return self.add_authenticator()
+
+    def resident_credentials(self, identifier):
+        if identifier not in self.authenticators:
+            raise ValueError("owned virtual authenticator required")
+        if self.backend == "firefox":
+            credentials = self._gecko_auth('return auth.getCredentials(arguments[0]).map(c=>({resident:c.isResidentCredential,rp:c.rpId}))', identifier)
+        else:
+            credentials = [{"resident": value.get("isResidentCredential"), "rp": value.get("rpId")}
+                           for value in self._cdp("WebAuthn.getCredentials", {"authenticatorId": identifier})["credentials"]]
+        public = [{"resident": value.get("resident"), "rp": value.get("rp")} for value in credentials]
+        return {"count": len(public), "credentials": public, "uv_configured": True}
+
     def _cdp(self, command, body):
         return self._wd("/goog/cdp/execute", {"cmd": command, "params": body})
 
@@ -292,7 +461,17 @@ class ConsoleBridge:
           done({status:response.status,text:new TextDecoder('utf-8',{fatal:true}).decode(bytes)});
           }catch(e){done({error:true});}finally{clearTimeout(timer);}})();''', path, method, raw, csrf, MAX_BODY, asynchronous=True)
         if answer.get("error"):
+            observer = getattr(self, 'raw_observer', None)
+            if observer is not None:
+                observer({'path': path, 'method': method, 'answer': answer,
+                          'ended_ns': time.monotonic_ns()})
             raise RuntimeError("console transport failed, expired or exceeded body bound")
+        observer = getattr(self, 'raw_observer', None)
+        if observer is not None:
+            # Credential-issuing routes are intentionally excluded: the R3
+            # consumer attaches this sink only after all setup credentials exist.
+            observer({'path': path, 'method': method, 'answer': answer,
+                      'ended_ns': time.monotonic_ns()})
         self.records.append({"path": path, "method": method, "status": answer["status"],
                              "duration_s": time.monotonic() - start})
         if len(self.records) > 10000:
@@ -337,13 +516,28 @@ class ConsoleBridge:
             if not self.principal_id:
                 raise RuntimeError("bootstrap the owner before login")
             polling = self.ui_polling
-            if polling:
+            continuous = polling and getattr(self, 'continuous_polling', False)
+            if polling and not continuous:
                 self.poll_ui(False)
             view = self._ceremony("login", {"principal_id": self.principal_id})
             if polling:
                 # Authentication replaces both cookie session and CSRF. Reload
                 # the UI session before resuming its requested visible phase.
-                self.poll_ui(True)
+                if continuous:
+                    # R3 keeps the actual view running while the real passkey
+                    # ceremony replaces the cookie. Update application session
+                    # state through its native control; preserve every inflight
+                    # answer and the original phase/cadence/event counters.
+                    self._js('''const button=Array.from(document.querySelectorAll('button')).find(e=>
+                      e.textContent.trim()==='Check session');if(!button)throw Error('native session control missing');button.click();''')
+                    deadline = time.monotonic() + 15
+                    while not self._js("return document.body.textContent.includes('Connected') && !document.body.textContent.includes('Working…')"):
+                        if time.monotonic() >= deadline:
+                            raise RuntimeError('continuous native UI session refresh did not finish')
+                        time.sleep(.1)
+                    self.poll_health(require_progress=False)
+                else:
+                    self.poll_ui(True)
                 self._js("window.fabricCampaignUiProbe.refreshes++")
             return view
 
@@ -362,7 +556,10 @@ class ConsoleBridge:
                     interval=PEER_ADMISSION['private']['command_interval_s'])
             self._private_cadence.pace()
             view = self.session_view()
-            if method != "GET" and path != "/v1/console/query" and view["fresh_until_unix_s"] <= int(time.time()) + 60:
+            r3_control = getattr(self, 'r3_control_session', False) and (
+                (method == 'GET' and path == '/v1/console/nodes') or
+                (method == 'PUT' and re.fullmatch(r'/v1/console/nodes/sim[0-9]{4}/config', path)))
+            if method != "GET" and path != "/v1/console/query" and not r3_control and view["fresh_until_unix_s"] <= int(time.time()) + 60:
                 view = self.login()
             return self._request(path, method, body, view["csrf"])
 
@@ -373,6 +570,7 @@ class ConsoleBridge:
         """Explicitly activate/pause the actual bounded native UI polling view."""
         with self.lock:
             if not enabled:
+                self._js("window.fabricCampaignUiEvent({event:'polling',active:false,atMs:performance.now()})")
                 self._js("window.fabricCampaignUiProbe.active=false")
                 self.ui_polling = False
             if enabled:
@@ -394,6 +592,7 @@ class ConsoleBridge:
                     time.sleep(.1)
             else:
                 self._js("const p=window.fabricCampaignUiProbe;p.active=true;p.phaseLastAttemptMs=null;p.phases++")
+                self._js("window.fabricCampaignUiEvent({event:'polling',active:true,atMs:performance.now()})")
                 self.ui_polling = True
                 self.ui_previous = None
                 self.ui_phase_baseline = self.poll_health(require_progress=False)
@@ -424,13 +623,13 @@ class ConsoleBridge:
     def poll_health(self, *, require_progress=True, record=True):
         """Bounded actual UI body-consumption/status evidence, not owner API success."""
         with self.lock:
-            sample = self._js('''const p=window.fabricCampaignUiProbe;const text=document.body.textContent;
-              return {...p,visibility:document.visibilityState,connected:text.includes('Connected'),
+            sample = self._js('''const p=window.fabricCampaignUiProbe;const {events,...summary}=p;const text=document.body.textContent;
+              return {...summary,visibility:document.visibilityState,connected:text.includes('Connected'),
                 pauseVisible:Array.from(document.querySelectorAll('button')).some(e=>
                   e.textContent.trim()==='Pause 5-second polling'),nowMs:performance.now()};''')
             sample['requested_polling'] = self.ui_polling
             if record:
-                if len(self.ui_samples) >= 1280:
+                if len(self.ui_samples) >= getattr(self, 'ui_sample_limit', 1280):
                     raise RuntimeError('bounded UI polling receipt exceeds 1280 samples')
                 self.ui_samples.append(sample)
                 self.receipt['ui_polling'] = self.ui_samples
@@ -450,6 +649,28 @@ class ConsoleBridge:
                 self.ui_previous = sample
             return sample
 
+    def continuity_snapshot(self):
+        """Bind newly observed native UI events to a host monotonic bracket.
+
+        This captures evidence; the independent R3 validator checks complete
+        sequence/cadence/body/status/session/document continuity later. A native
+        timestamp bracket is uncertainty, never exact browser clock precision.
+        """
+        with self.lock:
+            before = time.monotonic_ns()
+            cursor = getattr(self, '_continuity_cursor', 0)
+            value = self._js('''const p=window.fabricCampaignUiProbe;
+              return {documentId:p.documentId,timeOriginMs:performance.timeOrigin,nowMs:performance.now(),
+                visibility:document.visibilityState,active:p.active,phases:p.phases,refreshes:p.refreshes,
+                eventCount:p.eventCount,eventOverflow:p.eventOverflow,
+                events:p.events.filter(e=>e.seq>arguments[0])};''', cursor)
+            after = time.monotonic_ns()
+            value.update(mono_before_ns=before, mono_after_ns=after, webdriver_session=self.session)
+            if value['eventOverflow']:
+                raise RuntimeError('native UI attempt ledger exceeded 8192 events')
+            self._continuity_cursor = value['eventCount']
+            return value
+
     def close(self):
         if self.closed:
             return
@@ -463,7 +684,13 @@ class ConsoleBridge:
                 self._call("DELETE", "/session/" + self.session)
             except (OSError, RuntimeError):
                 pass
-        if self.driver:
+        supervisor = getattr(self, 'supervisor', None)
+        if supervisor is not None:
+            supervisor.close(deadline=getattr(self, 'shutdown_deadline', None))
+            if not supervisor.cleanup_confirmed:
+                raise RuntimeError('browser supervisor stop not confirmed; whole campaign stop required')
+            self.receipt['supervised_cleanup'] = supervisor.receipt
+        elif self.driver:
             try:
                 os.killpg(self.driver.pid, signal.SIGTERM)
                 self.driver.wait(timeout=10)
@@ -474,6 +701,8 @@ class ConsoleBridge:
                 pass
         if self.browser_group is not None:
             if "populated 1" in (self.browser_group / "cgroup.events").read_text().splitlines():
+                if supervisor is not None:
+                    raise RuntimeError('supervised browser budget remains populated; whole campaign stop required')
                 (self.browser_group / "cgroup.kill").write_text("1")
                 deadline = time.monotonic() + 5
                 while "populated 1" in (self.browser_group / "cgroup.events").read_text().splitlines():

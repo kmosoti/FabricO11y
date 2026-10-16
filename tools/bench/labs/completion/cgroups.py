@@ -30,15 +30,29 @@ def set_limits(group, maximum, high, tasks, cores):
         raise RuntimeError(f'cgroup enforcement mismatch: {actual} != {values}')
     return actual
 
+def enable_controllers(group):
+    required = {'memory', 'cpu', 'pids', 'io'}
+    available = set((group / 'cgroup.controllers').read_text().split())
+    if not required <= available:
+        raise RuntimeError(f'required cgroup controllers unavailable: {sorted(required-available)}; available={sorted(available)}')
+    (group / 'cgroup.subtree_control').write_text('+memory +cpu +pids +io')
+    enabled = set((group / 'cgroup.subtree_control').read_text().split())
+    if not required <= enabled:
+        raise RuntimeError(f'required cgroup controllers not enabled: {sorted(required-enabled)}')
+
+
 def delegate():
     parent = current()
     if not parent.name.startswith('fabric-work-'):
-        raise RuntimeError('expected fresh owned launcher service')
+        from resource_guardian import workload_context
+        context = workload_context()
+        if context is None or context['workload'] != parent:
+            raise RuntimeError('expected fresh owned launcher service or held workload root')
     supervisor = parent / 'supervisor'
     supervisor.mkdir()
     for pid in (parent / 'cgroup.procs').read_text().split():
         (supervisor / 'cgroup.procs').write_text(pid)
-    (parent / 'cgroup.subtree_control').write_text('+memory +cpu +pids +io')
+    enable_controllers(parent)
     set_limits(supervisor, 20*2**30, 16*2**30, 1024, 4)
     return parent
 
@@ -47,7 +61,7 @@ def subgroup(parent, name, maximum, high, tasks, cores, children=False):
     group.mkdir()
     limits = set_limits(group, maximum, high, tasks, cores)
     if children:
-        (group / 'cgroup.subtree_control').write_text('+memory +cpu +pids +io')
+        enable_controllers(group)
     return group, limits
 
 def enter(group):
@@ -58,6 +72,7 @@ def enter(group):
 
 def snapshot(parent):
     return {str(g.relative_to(parent)): {k: (g/k).read_text().strip()
-            for k in ('memory.max','memory.high','memory.peak','memory.current',
-                      'memory.events','memory.swap.current','cpu.max','cpu.stat','pids.max')}
-            for g in parent.rglob('*') if g.is_dir()}
+            for k in ('memory.max','memory.high','memory.swap.max','memory.peak','memory.current',
+                      'memory.events','memory.swap.current','cpu.max','cpu.stat','io.stat',
+                      'pids.max','pids.current','pids.peak','cgroup.events','cgroup.procs')}
+            for g in (parent, *(g for g in parent.rglob('*') if g.is_dir()))}

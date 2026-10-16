@@ -184,9 +184,15 @@ These are operating-profile claims; none has recorded target-profile qualificati
 | QUAL-QLAT | Query latency | p99 ≤ 2 s over 1,000,000 records | history run 01 under revision 2, four-CPU host (`63bbeac`): p99 ≤ 481 ms Segments, ≤ 1,515 ms journal-only | Measured on `63bbeac` (not target profile) |
 | QUAL-DRAIN | Outage drain | 30 min buffered, drained ≤ 10 min | outage run 01 (`bb8d06d`, four-CPU host): drain ≤ 99 s, oracle exact | Measured on `bb8d06d` (not target profile) |
 | QUAL-INSTALL | Installation behavior | running-installation acceptance | [Exact installation run 03](../experiments/formal/installation-release-run-03.md), frozen `a5dbda7a`: four fresh Debian/Fedora baseline and upgrade/reboot/removal cells passed; all six named package controls detected; companion absence and separate stopped-disk cleanup recorded. Historical [legacy-cgroup run 01](../experiments/formal/installation-acceptance-run-01.md) remains inconclusive | Tested on these exact packages; not deployment qualification |
-| QUAL-H | Harness correctness | runner limits, rate oracle | Existing suites plus [console-command admission](../experiments/formal/console-command-admission-run-01.md): initial native HTTP 429 preserved, independent legacy schedule rejected, 50 targeted controls and native successor smoke exited 0 | Tested within recorded finite bounds; full service/query cells remain open |
+| QUAL-H | Harness correctness | runner limits, rate oracle | Existing suites plus [console-command admission](../experiments/formal/console-command-admission-run-01.md): initial native HTTP 429 preserved, independent legacy schedule rejected, 50 targeted controls and native successor smoke exited 0; prospective [R3 exposure controls](../experiments/benchmarks/soak-protocol-r3.md) are registered separately, not run | Tested within recorded finite bounds; full service/query cells remain open |
 
 ## Server self-observation (ADR-0026)
+
+The [fresh-owner guide protocol](../experiments/formal/owner-walkthrough-protocol.md)
+also has a [native caller](../../tools/qualification/owner_walkthrough.py) and
+[independent record/query joins](../../tools/qualification/owner_evidence.py).
+These are executable prerequisites, not a new `QUAL-INSTALL` result; complete
+fresh native walkthrough acceptance remains pending.
 
 The additional CLI self-observation capability is tracked separately in
 [its protocol and findings](../experiments/formal/server-self-observation-findings.md).

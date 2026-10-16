@@ -31,7 +31,7 @@ The package installs `fabric-node`, `fabric-server` and `fabricctl` in `/usr/bin
 
 ## Server
 
-1. Create `/etc/fabrico11y/server.conf` from the example. Provide a TLS certificate and key trusted by both browsers and Spindles: create them now with the [certificate recipe](#network-and-certificate-setup) and open the firewall as described there, then return here. Configure the exact `access_origin`, hostname-only `access_rp_id`, and packaged `console_dir`. Normal serving needs no administrator token: `admin_token_file` is read only by the migration mode `serve-legacy`. Make the TLS key `0640 root:fabricolly`. Every token and secret file must be a single-link regular file, not a symlink, owned by the service user or root, with mode `0600` or, if root owns it, `0640`; anything else is refused at start ([security hardening](architecture/security-hardening.md#credential-files)).
+1. Create `/etc/fabrico11y/server.conf` from the example. Provide a TLS certificate and key trusted by both browsers and Spindles. If valid TLS material is already available, install that certificate, CA and key at the configured paths. If it is unavailable, create it now with the [certificate recipe](#network-and-certificate-setup) and open the firewall as described there, then return here. Configure the exact `access_origin`, hostname-only `access_rp_id`, and packaged `console_dir`. Normal serving needs no administrator token: `admin_token_file` is read only by the migration mode `serve-legacy`. Make the TLS key `0640 root:fabricolly`. Every token and secret file must be a single-link regular file, not a symlink, owned by the service user or root, with mode `0600` or, if root owns it, `0640`; anything else is refused at start ([security hardening](architecture/security-hardening.md#credential-files)).
 2. `sudo systemctl enable --now fabrico11y-server.service`.
 3. Now follow [first-owner setup](access-operations.md#configure-and-enroll-the-first-owner) to read the protected local bootstrap secret and enroll a passkey at `https://YOUR_HOST:PORT/console/`, then return here. Add a second passkey and save the immutable owner ID for recovery.
 
@@ -231,7 +231,7 @@ sudo systemctl start fabrico11y-server.service
 Do not run a copied Spool alongside the original: both would share an identity.
 A copied configuration alone cannot recover acknowledged telemetry.
 
-Install the checksum-verified candidate as in [Install](#install). The package reloads unit
+Now follow [Install](#install) to checksum-verify and install the candidate, then return here. The package reloads unit
 definitions and preserves operator configuration; it does not perform the
 operator's service restart. Explicitly start the roles configured on that host.
 For a central-only host, start `fabrico11y-server.service`; it starts its own
@@ -249,8 +249,13 @@ data. After stopping/removing the services and deciding what backup to retain,
 Debian's `sudo apt purge fabrico11y` deletes the default `/etc/fabrico11y` and
 `/var/lib/fabrico11y` trees. RPM removal has no purge operation; for the same reset run
 `sudo dnf remove fabrico11y && sudo rm -rf /etc/fabrico11y /var/lib/fabrico11y`.
-The `fabricolly` account remains. Custom paths are outside that default cleanup. Reinstallation with
-empty state requires fresh owner and edge enrollment. Restoring an older access
+The `fabricolly` account remains. Custom paths are outside that default cleanup.
+Now follow [Install](#install) to reinstall into empty state, then return here.
+Recreate the server and edge configuration from the examples using the Server and
+Node instructions above, reusing protected valid TLS material when available;
+do not overwrite a retained CA or rerun its creation in an existing `fabric-pki`
+directory. Empty state requires fresh first-owner setup, a second passkey and
+edge enrollment before repeating the received-signal checks. Restoring an older access
 snapshot requires the [offline owner recovery](access-operations.md#offline-owner-recovery)
 procedure before reopening remote access; package rollback alone does not rotate
 old credentials or restore lost telemetry.

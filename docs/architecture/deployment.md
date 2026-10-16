@@ -32,6 +32,33 @@ disposable smoke verifies independent companion corpus handling; full service
 and deployment gates remain separate. Component ownership and deployment
 boundaries are unchanged.
 
+The prospective [R3 soak](../experiments/benchmarks/soak-protocol-r3.md) separates
+measurement, stopped raw checkpoint and later grading. Its
+[observation checks](../../tools/qualification/soak_exposure.py) consume caller
+observations and independently pinned expected inputs; they neither observe
+elapsed exposure nor authenticate that admission record. The checkpoint uses a
+same-filesystem no-replace rename, retaining uncertain state on failure, and the
+preservation guard refuses decoded mounts before inventory and first unlink.
+The held workload hierarchy remains readable while the guardian records aggregate
+accounting and its sole outer process; independent closeout then confirms whole
+service stop. Live S1/FULL integration verification remains pending; these mechanisms do not establish
+native soak or deployment acceptance and change no packaged service limit.
+The [fresh-owner guide caller](../../tools/qualification/owner_walkthrough.py)
+uses the native package managers and normal production console in two disposable
+guests. It archives guide command spans, protected raw observations and original
+stopped journal bytes; the existing independent framing and query oracles grade
+the answers. Its phase table bounds accumulated time, rather than replacing the
+guide's call sequence. Native execution remains subject to the
+[walkthrough protocol](../experiments/formal/owner-walkthrough-protocol.md);
+source controls alone establish no deployment acceptance. This is qualification
+tooling outside the runtime boundaries shown above.
+
+The [signed browser security fixture](../experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement)
+exports only a newly created virtual authenticator key into protected, owned
+scratch. It signs and independently verifies malformed-origin/RP/UV assertions
+without changing packaged product state. Private keys, ceremonies and cookies
+are excluded from public receipts; existing owned-group cleanup applies.
+
 The qualification-only [native custody caller](../experiments/formal/installation-native-custody-caller-card.md)
 observes the installed edge Spool in place with both units and every observed
 writer stopped. Complete labelled archives retain original guest metadata;

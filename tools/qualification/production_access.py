@@ -46,8 +46,10 @@ class ProductionAccess(CandidateFixture):
         allocated = int(subprocess.check_output(['du', '-s', '-B1', str(STORAGE)]).split()[0])
         if allocated + 5 * 1024**3 > 95_000_000_000:
             raise RuntimeError('5 GiB reservation exceeds 95 GB admission stop')
+        browser_options = ({'browser_deadline': args.r3_browser_deadline}
+                           if getattr(args, 'r3_browser_deadline', None) is not None else {})
         super().__init__(args.deb_receipt, args.rpm_receipt, args.production_out,
-                         server_cpus=placement, supervisor_cpus='2-3')
+                         server_cpus=placement, supervisor_cpus='2-3', **browser_options)
         # Match the original bin/examples layout using immutable verified copies.
         examples = self.bins / 'examples'
         examples.mkdir()

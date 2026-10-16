@@ -5,6 +5,7 @@ reader token (ADR-0029) performs benchmark reads; the visible UI remains active.
 """
 from __future__ import annotations
 import json
+import math
 import os
 from pathlib import Path
 import re
@@ -54,7 +55,7 @@ class WorkloadReader:
                 data=None if body is None else json.dumps(body).encode(), method=method,
                 headers={'authorization': 'Bearer ' + self.token,
                          'x-fabric-client-version': '1', 'content-type': 'application/json'})
-        status = None
+        raw, status = b'', None
         try:
             with urllib.request.urlopen(request, context=self.context, timeout=15) as response:
                 status = getattr(response, 'status', None)
@@ -63,10 +64,20 @@ class WorkloadReader:
                     raise RuntimeError('bounded console response exceeded 8 MiB')
                 value = json.loads(raw)
         except Exception as error:
+            observer = getattr(self, 'raw_observer', None)
+            if observer is not None:
+                if isinstance(error, urllib.error.HTTPError):
+                    raw = error.read(8 * 1024**2 + 1)
+                observer({'path': path, 'started_ns': began, 'finished_ns': time.monotonic_ns(),
+                    'status': getattr(error, 'code', status), 'raw': raw, 'error': repr(error)})
             self.observations.append({'path': path, 'started_ns': began,
                 'finished_ns': time.monotonic_ns(), 'status': getattr(error, 'code', status),
                 'error': repr(error)})
             raise
+        observer = getattr(self, 'raw_observer', None)
+        if observer is not None:
+            observer({'path': path, 'started_ns': began, 'finished_ns': time.monotonic_ns(),
+                'status': status, 'raw': raw})
         self.observations.append({'path': path, 'started_ns': began,
                                   'finished_ns': time.monotonic_ns(), 'bytes': len(raw)})
         return value
@@ -123,10 +134,28 @@ def process_affinities(group, expected):
     return observed
 
 
+def fixture_browser_deadline(explicit, entered):
+    if explicit is not None:
+        if type(explicit) not in (int, float) or not math.isfinite(explicit) or explicit <= entered:
+            raise ValueError('finite future explicit browser deadline required')
+        return explicit
+    runtime = int(os.environ['FABRIC_RESOURCE_RUNTIME_SECONDS'])
+    if not 0 < runtime <= 16000:
+        raise ValueError('finite admitted launcher runtime required')
+    return entered + runtime
+
+
 class CandidateFixture:
     def __init__(self, deb_receipt, rpm_receipt, out, *, mode='segment',
-                 server_cpus='0-1',supervisor_cpus='2-3'):
+                 server_cpus='0-1',supervisor_cpus='2-3', browser_deadline=None):
+        browser_deadline = fixture_browser_deadline(browser_deadline, time.monotonic())
+        # Every shared consumer uses the supervised lifecycle. Import before
+        # the source census so cleanup is frozen alongside the live adapter.
+        import browser_supervisor  # noqa: F401
         self.parent = require_limits()
+        from resource_guardian import workload_context
+        guardian = workload_context()
+        self.aggregate_parent = guardian['outer'] if guardian else self.parent
         self.server_cpus=server_cpus;self.supervisor_cpus=supervisor_cpus
         server_affinity=cpu_pair(server_cpus);supervisor_affinity=cpu_pair(supervisor_cpus)
         available=os.sched_getaffinity(0)
@@ -134,7 +163,7 @@ class CandidateFixture:
             raise RuntimeError('disjoint selected server/supervisor CPUs unavailable')
         if mode not in ('segment', 'journal'):
             raise ValueError('unknown registered storage mode')
-        subprocess.run(['systemctl', '--user', 'set-property', '--runtime', self.parent.name,
+        subprocess.run(['systemctl', '--user', 'set-property', '--runtime', self.aggregate_parent.name,
                         'MemoryMax=6G', 'MemoryHigh=5G', 'MemorySwapMax=0', 'TasksMax=1536'], check=True)
         if int((self.parent / 'memory.max').read_text()) != 6 * 1024**3:
             raise RuntimeError('whole-fixture cap not enforced')
@@ -221,8 +250,16 @@ class CandidateFixture:
                 f'journal_bytes=4294967296\njournal_file_bytes={16*1024**2 if mode == "segment" else 2*1024**3}\n'
                 'retention_bytes=100000000000\nretention_s=86400\n')
             self.start_server()
-            self.bridge = ConsoleBridge(self.origin, self.work / 'server.pem', self.work / 'browser',
-                                        self.out / 'browser', browser_group=self.browser_group)
+            from live_browser_check import browser_hold_directory
+            held_browser = browser_hold_directory(self.browser_group)
+            held_browser['exclusive'] = True  # This constructor just created this empty budget.
+            browser_options = {'browser_parent': held_browser, 'browser_deadline': browser_deadline}
+            try:
+                self.bridge = ConsoleBridge(self.origin, self.work / 'server.pem', self.work / 'browser',
+                                            self.out / 'browser', browser_group=self.browser_group, **browser_options)
+            finally:
+                if held_browser is not None:
+                    os.close(held_browser['fd'])
             self.owner = self.bridge.bootstrap_owner(self.work / 'state/access/access-bootstrap.secret')
             self.receipt['state'] = 'ready'
         except BaseException:

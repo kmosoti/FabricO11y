@@ -250,3 +250,94 @@ Wren reviews the registered protocol and actual preflight; neither prose nor
 model consensus replaces executable evidence. Read #59 before each step and
 after each run, stop on unresolved requests/resource/input/guide drift, and
 archive/stop/clean the first pair before admitting the reversed pair.
+
+### Production snapshot and observer binding amendment
+
+The production console deliberately uses opaque snapshot identifiers; the legacy
+`gN-M` parser cannot grade this walkthrough. Before the first page of each edge
+query, retain the actual read-only `fabricctl inspect` observation of its durable
+ACK cursor. Immediately after that first page, retain a second observation of its
+next sequence. Both observations must have the same guest boot, node identity and
+generation, no interrupted/recovery-required inspection, and ordered native host
+timestamps surrounding the first request. The pre-query ACK is a lower bound on
+the committed edge prefix; post-query `next_sequence - 1` is its upper bound.
+Reject an empty acknowledged population, inconsistent bounds or more than 32
+candidate prefixes. These observations supply only bounds, never expected rows.
+
+After both writers stop, independently decode complete original server journal
+groups and require exact agreement with the source-matched recovery helper. For
+each bounded edge prefix, use the existing zero-gap scoped signal projection and
+unchanged query oracle. Reject any authorized edge gap, missing sequence or
+identity mismatch; preserve all attempted verdicts and the admitted prefix bounds.
+The answer's opaque identifier must remain consistent across pages, but cannot
+choose its own prefix bounds. A failed query is not retried into a passing result.
+Controls reject a legacy identifier assumption, a prefix outside the independent
+bounds, a changed node/generation, missing source sequence and other-label or
+other-signal metadata leakage. This replaces only the inapplicable legacy
+snapshot adapter, not any oracle or acceptance threshold.
+
+Retain stopped native Spool source/cursor dumps, original selected and diagnostic
+file bytes, and an independent `/proc`/unit inventory proving writers stopped.
+Compare every recovered Batch to its original Spool source with the unchanged
+delivery oracle and separately require every durable Spool ACK in recovery; no
+wire-attempt observation is inferred. Observe real guest UID/GID, privileges and
+effective service/slice kernel limits while active. Require four different boot
+identities across the two pairs. A cleanup failure must not prevent stopping the
+other owned guest or writing the failed receipt; retain uncertain scratch.
+
+## Trusted Firefox bridge controls before enrollment
+
+The narrow optional ConsoleBridge Firefox backend preserves the supervised owned
+wait domain and actual1GiB browser budget. Default Chrome behavior is unchanged.
+Firefox uses157.0, retained geckodriver0.37.1 and owned NSS tools; record actual
+binary/version identities in each native receipt. Import only the single public
+fixture CA into a fresh isolated NSS profile, disable enterprise roots and keep
+acceptInsecureCerts false (including returned capabilities). Private DNS maps
+only the exact guide hostname to loopback inside that profile; URL/Origin/RP/SAN
+are unchanged, with no host DNS/trust mutation or certificate bypass.
+
+Before any enrollment, run three finite native controls using actual supervised
+Firefox: trusted CA+matching SAN succeeds with exact secure origin; trusted CA+
+wrong SAN refuses with actual SSL_ERROR_BAD_CERT_DOMAIN; untrusted CA+matching
+SAN refuses with actual SEC_ERROR_UNKNOWN_ISSUER. Generic driver errors, timeouts
+and absent error codes are inconclusive, not certificate refusals. These may use
+an explicit miniature TLS page solely to expose the existing bridge passkey-helper
+readiness hook; no fake page authenticates an owner or claims package acceptance.
+Keep actual TLS error-page code and origin witnesses; archive no secret bodies.
+Pure source controls pin capabilities, DNS confinement and narrow authenticator
+operations; actual browser controls are independent evidence. Register exact
+source/commands/tool pins and bounded fresh fixtures before native execution.
+
+The bridge exposes add/remove/resident_credentials/replace_authenticator. Replacing
+removes all existing virtual devices and creates a fresh independent token; it
+cannot switch back. Resident inventory returns public resident/RP/count/UV
+configuration only, never private keys. Recovery must first demonstrate denial of
+the still-active old token before replacing it. This is virtual-device evidence,
+not physical/mobile certification. Existing request/UI pacing and source oracles
+are unchanged.
+
+
+## Replacement TLS input and constructor identity, prospective revision 7
+
+Reason: the historical8fb candidate contains rustls0.23.45 and is held after
+RUSTSEC-2026-0349. The completed #40 replacement is frozen at
+`e078ba23b543126011a2136dd1f7e98ca65370eb`, epoch1792100410, canonical minimized
+source `28bcdf7ac833ab634d3b130b85cb2a0aa47eb7a8`. For the next actual constructor
+and walkthrough only, substitute this exact identity and canonical receipts:
+`results/installation-package-build/replacement-tls-01-deb-a/receipt.json`
+(SHA256 `f2a06e16fd8f82e27517eee12a1d8176d052765ac2e75959a85f70cdaeb6fd85`)
+and `results/packages/replacement-tls-01-rpm-a/receipt.json`
+(SHA256 `4a2a800e8351ec8480359d0912f05d36682d27834c11c60bae87752961a5326a`).
+Their canonical DEB/RPM hashes are respectively
+`2a555bec6334fde6774d21c414d7d42e041c39ca170e3a30fd3676e134b9f593`
+and `12c03f92e96c7d1a848a5198f017c21a1e17d485cdfca7feb8464c3a425971c1`.
+
+The new exclusive constructor output is
+`FABRIC_STORAGE_ROOT/results/owner-fixture-constructor-02`. Preserve constructor01
+and all historical packages/results unchanged. This supersedes only the frozen
+input/epoch/canonical receipt tuple and exclusive output path above; every native
+payload/header/control/metadata/version comparator, preceding control/stop gate,
+actual clean harness and merged-guide binding, fresh #41 prerequisite before
+walkthrough, resource/deadline limit and observation remains required. No actual
+construction or walkthrough is established by this registration. The matching
+native-installation binding is [revision6](installation-native-custody-caller-card.md#replacement-tls-candidate-binding-prospective-revision-6).

@@ -19,6 +19,7 @@ import tarfile
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tools"))
 from resource_group import require_limits, require_storage, STORAGE  # noqa: E402
+from soak_exposure import require_no_mounts  # noqa: E402
 
 FREEZE = STORAGE / "scratch/soak-r2-02"
 MARKER = ".fabric-soak-freeze-owned"
@@ -178,6 +179,7 @@ def tagged_processes(token):
 
 
 def tree_manifest(root):
+    require_no_mounts(root)
     result = [{"path": ".", "type": "directory",
                "mode": stat.S_IMODE(root.stat().st_mode), "size": 0, "sha256": None}]
     for directory, dirs, files in os.walk(root, topdown=True, followlinks=False):
@@ -333,6 +335,7 @@ def cleanup(postcheck, launcher_receipt):
         stream.write((json.dumps(started, sort_keys=True, indent=2) + "\n").encode())
         stream.flush()
         os.fsync(stream.fileno())
+    require_no_mounts(owned)
     shutil.rmtree(owned)
     if owned.exists():
         raise ValueError("owned freeze remains after deletion")

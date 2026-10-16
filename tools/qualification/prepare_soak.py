@@ -18,11 +18,17 @@ BINARY_NAMES = ("fabric-server", "fabric-node", "examples/spindle_sim",
                 "examples/server_dump", "examples/spool_dump")
 PROTOCOL_NAMES = ("docs/experiments/benchmarks/soak-protocol.md",
                   "docs/experiments/benchmarks/soak-protocol-r2.md",
+                  "docs/experiments/benchmarks/soak-protocol-r3.md",
+                  "docs/experiments/benchmarks/soak-runtime-protocol.md",
+                  "docs/experiments/benchmarks/soak-parent-stop-protocol.md",
                   "docs/experiments/formal/readiness-continuation-protocol.md",
                   "docs/experiments/benchmarks/alpha-phase5-outage-protocol.md",
                   "docs/experiments/benchmarks/production-access-campaign-protocol.md")
-RUNTIME_HELPER_NAMES = ("packaging/build-rpm.sh", "tools/resource_group.py", "tools/packaging/stage_console.py",
+RUNTIME_HELPER_NAMES = ("packaging/build-rpm.sh", "tools/resource_group.py", "tools/resource_final_group.py", "tools/packaging/stage_console.py",
+                        "tools/resource_guardian.py", "tools/qualification/simulator_native_trace.py",
                         "tools/ui/fixture_cadence.py",
+                        "tools/ui/browser_supervisor.py", "tools/ui/live_browser_check.py",
+                        "tools/ui/browser_producer.py",
                         "tools/packaging/stage_candidate.py", "tools/packaging/payload.py",
                         "tools/qualification/cross_family/inputs.py",
                         "tools/bench/labs/completion/cgroups.py",
@@ -59,7 +65,7 @@ def source_paths(*, include_missing=False):
         vendor_input = path.parts[0] == "vendor"
         console_input = path.parts[:2] == ("crates", "fabric-ui")
         package_input = path.parts[0] == "packaging"
-        helper_input = name in ("tools/resource_group.py", "tools/ui/build.py") or (
+        helper_input = name in ("tools/resource_group.py", "tools/resource_final_group.py", "tools/ui/build.py") or (
             path.parts[:2] == ("tools", "packaging") and path.suffix == ".py")
         if (root_input or rust_input or proto_input or vendor_input or console_input
                 or package_input or helper_input) and (include_missing or (ROOT / path).exists()):
