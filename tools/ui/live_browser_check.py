@@ -431,7 +431,8 @@ def main():
     parser.add_argument('--fabricctl',type=Path,help='exact extracted candidate CLI for migration')
     parser.add_argument('--security-key-probe',action='store_true',help='isolated actual virtual credential export/DER/signature admission')
     args = parser.parse_args()
-    if args.security_key_probe and any((args.migration,args.fabricctl,args.security_probes,args.session_expiry_helper,
+    if args.security_key_probe and any((getattr(args,'announcement_probes',False),getattr(args,'suppress_announcement',False),
+            args.migration,args.fabricctl,args.security_probes,args.session_expiry_helper,
             args.session_expiry_admission,args.ui_responses,args.role_matrix,args.poll_seconds,args.pressure,
             args.expired_cursor_probe,args.shell_lifecycle,args.recovery,args.inject_rejection_defect,
             args.inject_api_cache_defect,args.inject_role_defect,args.inject_nonresident_enrollment,
@@ -1013,6 +1014,8 @@ self.addEventListener("fetch",event=>{
                         wd('/moz/context', {'context':'content'})
                 return cdp('WebAuthn.getCredentials', {'authenticatorId':authenticator})['credentials']
             if args.security_key_probe:
+                path=ROOT/'tools/ui/browser_security.py'
+                receipt['source_sha256'][str(path.relative_to(ROOT))]=hashlib.sha256(path.read_bytes()).hexdigest()
                 receipt['security_key_probe']=browser_security.probe_key(api=api,bearer=bearer_api,async_js=async_js,
                     export_credentials=export_fixture_credentials,origin=origin,principal=principal_id,
                     work=work,deadline=deadline)
