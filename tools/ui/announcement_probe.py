@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+import xml.etree.ElementTree as ET
 
 HERE=Path(__file__).resolve().parent
 sys.path.insert(0,str(HERE.parent))
@@ -171,10 +172,17 @@ def inside(args):
             'prefs':{'accessibility.force_disabled':0,'security.enterprise_roots.enabled':False}}}}})
         session=info['sessionId'];browser_pid=info['capabilities']['moz:processID']
         result['browser_capabilities']=info['capabilities']
+        (work/'capture').touch()
         html='<title>Fabric public AT probe</title><h1>Public accessibility probe</h1><button id="focus">Keep focus here</button><p id="status" role="status" aria-live="polite"></p>'
         call('POST','/session/'+session+'/url',{'url':'data:text/html;base64,'+base64.b64encode(html.encode()).decode()})
+        def heard(text):
+            return any(text in (''.join(ET.fromstring(row['text']).itertext()) if row['text'].startswith('<speak>') else row['text'])
+                and row['ssip_code']==225 and row['message_id']>0 for row in read_rows(out/'speech.jsonl'))
+        wait(lambda:heard('Fabric public AT probe'))
+        js('document.querySelector("h1").setAttribute("tabindex","-1");document.querySelector("h1").focus()')
         prerequisite=js('const e=document.querySelector("#status");document.querySelector("#focus").focus();return {role:e.getAttribute("role"),live:e.getAttribute("aria-live"),focus_elsewhere:document.activeElement.id==="focus"}')
         require(prerequisite=={'role':'status','live':'polite','focus_elsewhere':True},'announcement-dom')
+        wait(lambda:heard('Keep focus here'))
         backend=None
         def find_backend():
             nonlocal backend
