@@ -328,6 +328,22 @@ def semantic_rejection(answer, status, message):
     return code == status and isinstance(body, dict) and body.get('error') == message
 
 
+def native_clock_sources(hashes,root):
+    rows=[];roots=set()
+    if not isinstance(hashes,dict):raise ValueError('native-clock-source-binding')
+    for name in ('session_clock.py','session_clock.c','session_clock_probe.rs'):
+        suffix='/tools/ui/'+name
+        keys=[key for key in hashes if isinstance(key,str) and key.endswith(suffix)]
+        if len(keys)!=1:raise ValueError('native-clock-source-binding')
+        key=keys[0];path=Path(key)
+        if not path.is_absolute() or '..' in path.parts or str(path)!=key:raise ValueError('native-clock-source-binding')
+        current=hashlib.sha256((root/'tools/ui'/name).read_bytes()).hexdigest()
+        if hashes[key]!=current:raise ValueError('native-clock-source-binding')
+        roots.add(key[:-len(suffix)]);rows.append({'recorded_path':key,'current_sha256':current})
+    if len(roots)!=1:raise ValueError('native-clock-source-binding')
+    return rows
+
+
 def dispatch_timeout(deadline, storage, ceiling):
     if storage.is_set():raise RuntimeError('owned fixture exceeds 512 MiB storage ceiling')
     remaining=deadline-time.monotonic()
@@ -721,8 +737,7 @@ def main():
             check(all(path.is_relative_to(DATA) and path.is_file() for path in (helper,admission,package)), 'controlled-time inputs reside on data drive')
             native=json.loads(admission.read_text())
             check(native.get('state')=='completed' and native.get('exit')==0 and native.get('retained_helper')=={'path':str(helper),'sha256':digest(helper)}, 'exact retained helper has successful native admission')
-            check(all(native['hashes'].get(str(ROOT/'tools/ui'/name))==digest(ROOT/'tools/ui'/name)
-                for name in ('session_clock.py','session_clock.c','session_clock_probe.rs')), 'native admission binds current clock implementation sources')
+            receipt['native_clock_source_binding']=native_clock_sources(native['hashes'],ROOT)
             args.session_expiry_helper=helper
             receipt['session_expiry_inputs']={'candidate_commit':args.candidate_commit,'package_sha256':digest(package),
                 'package_path':str(package),'helper_sha256':digest(helper),'native_admission':str(admission),'native_admission_sha256':digest(admission)}
