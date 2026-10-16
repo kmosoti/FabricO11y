@@ -353,6 +353,14 @@ def require_empty(groups):
                 'production/browser/simulator group remains populated')
 
 
+def simulator_command(descriptor, origin, work, raw, seconds):
+    """Match the helper ABI: its begin witness belongs to its owned output."""
+    return ['/proc/self/fd/' + str(descriptor),
+        '--server-url', origin, '--ca', str(work / 'ca.pem'),
+        '--tokens', str(raw / 'tokens'), '--seed', hex(SEED), '--seconds', str(seconds),
+        '--workers', '100', '--out', str(raw / 'sim'), '--begin-witness', str(raw / 'sim/begin.json')]
+
+
 def launch_native(observer, fixture, command, descriptor, out, inputs, clock):
     import cgroups
     supervisor = fixture.parent / 'supervisor'
@@ -456,18 +464,16 @@ def measure(value, admission_sha):
         try:
             require(digest('/proc/self/fd/' + str(descriptor)) == value['inputs']['simulator']['sha256'],
                     'held simulator ELF changed')
-            command = ['/proc/self/fd/' + str(descriptor),
-                '--server-url', fixture.origin, '--ca', str(fixture.work / 'ca.pem'),
-                '--tokens', str(tokens), '--seed', hex(SEED), '--seconds', str(value['seconds']),
-                '--workers', '100', '--out', str(raw / 'sim'), '--begin-witness', str(raw / 'begin.json')]
+            command = simulator_command(descriptor, fixture.origin, fixture.work, raw, value['seconds'])
+            begin_path = Path(command[command.index('--begin-witness') + 1])
             sim = launch_native(NativeTrace, fixture, command, descriptor, output / '_native-live',
                                 value['inputs'], clock)
-            while not (raw / 'begin.json').exists():
+            while not begin_path.exists():
                 probes.check()
                 require(sim.poll() is None, 'simulator exited before native begin')
                 clock.call(time.sleep, .01)
-            begin_sha = digest(raw / 'begin.json')
-            begin = pinned(raw / 'begin.json', begin_sha)
+            begin_sha = digest(begin_path)
+            begin = pinned(begin_path, begin_sha)
             require(begin['process'] == process_identity(sim.target_pid)
                     and digest('/proc/%d/exe' % sim.target_pid) == value['inputs']['simulator']['sha256'],
                     'loaded native simulator identity changed')
@@ -484,13 +490,13 @@ def measure(value, admission_sha):
                 clock.call(time.sleep, min(.05, (boundary - time.monotonic_ns()) / NS))
             observed_end = time.monotonic_ns()
             probes.check()
-            require(digest(raw / 'begin.json') == begin_sha, 'native begin bytes changed')
+            require(digest(begin_path) == begin_sha, 'native begin bytes changed')
         finally:
             os.close(descriptor)
         clock.enter('drain_seal')
         sim_exit = clock.call(sim.wait, timeout=clock.remaining() / NS)
         require(sim_exit == 0, 'native simulator failed')
-        native_observation = clock.call(sim.finish, raw / 'begin.json')
+        native_observation = clock.call(sim.finish, begin_path)
         require(native_observation['exit'] == native_observation['tracer_exit'] == 0,
                 'native tracer failed or remained alive')
         write_new(raw / 'native-observation.json', native_observation)
@@ -673,13 +679,13 @@ def validate_native_checkpoint(root, measurement, expected, binary_sha256):
     require(expected['process'] == measurement['native_begin']['process']
             and expected['binary_sha256'] == binary_sha256
             and expected['begin_sha256'] == measurement['begin_sha256'], 'native checkpoint identity mismatch')
-    facts = NativeTrace.validate_stopped(root / 'native-trace', root / 'raw/begin.json', expected)
+    facts = NativeTrace.validate_stopped(root / 'native-trace', root / 'raw/sim/begin.json', expected)
     record = json.loads((root / 'native-trace/observer-receipt.json').read_text())
     executions = [call for call in trace_calls((root / 'native-trace/syscalls.raw').read_bytes())
                   if call['name'] == 'execve']
     require(len(executions) == 2 and record['command'] == measurement['simulator_command']
             and ast.literal_eval('[' + executions[1]['args'] + ']')[1] == measurement['simulator_command']
-            and record['begin_path'] == str(Path(measurement['checkpoint']['raw']['source']) / 'begin.json'),
+            and record['begin_path'] == str(Path(measurement['checkpoint']['raw']['source']) / 'sim/begin.json'),
             'native raw command/checkpoint path mismatch')
     return facts
 
