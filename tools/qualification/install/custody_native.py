@@ -24,6 +24,8 @@ FIXTURE = Path('/var/lib/fabric-custody-fixture')
 UNITS = witness.UNITS
 PENDING = 'accept-upgrade-pending-literal'
 UNREAD = 'accept-upgrade-unread-literal'
+NATIVE_PROFILE = dict(revision=1, paused=False, logs=[SOURCE, '/var/log/fabric-accept/denied.log'],
+                      metric_interval_s=15)
 sha = lambda raw: hashlib.sha256(raw).hexdigest()
 
 
@@ -171,7 +173,7 @@ class Guest:
             archive.add(ROOT, arcname='spool', recursive=True)
         snapshot = witness.stopped_snapshot(ROOT, receipt, sources, fixture_paths=(SOURCE,))
         witness.require(snapshot['applied_configuration'] is not None and json.loads(snapshot['applied_configuration'])
-            == dict(revision=1, paused=False, logs=[SOURCE, '/var/log/fabric-accept/denied.log'], metric_interval_s=15),
+            == NATIVE_PROFILE,
             'registered native applied configuration missing or changed')
         self.save(name + '-snapshot.json', snapshot)
         self.save(name + '-receipt.json', receipt)
@@ -412,6 +414,7 @@ def admit_transfer(bundle, admission, guest_sha256, *, control=None):
             snapshot = unpack(read(phase + '/' + name + '-snapshot.json'))
             snapshot['fixture_paths'] = tuple(snapshot['fixture_paths'])
             snapshots[phase] = snapshot
+            witness.require('applied-config.json' in snapshot['file_observations'], 'native applied configuration absent')
             witness.require((phase == 'reboot' or receipt['boot_id'] == admission['boot_before'])
                 and receipt['spool_root'] == str(ROOT) and snapshot['fixture_paths'] == (SOURCE,)
                 and snapshot['binding'] == admission['binding'] and snapshot['boot_id'] == receipt['boot_id'], 'native root/binding mismatch')
@@ -433,6 +436,10 @@ def admit_transfer(bundle, admission, guest_sha256, *, control=None):
                     if item.isfile():
                         content = raw_archive.extractfile(item).read()
                         witness.require(sha(content) == snapshot['files'][relative]['sha256'], 'original raw bytes mismatch')
+                        if relative == 'applied-config.json':
+                            witness.applied_configuration(content, info, receipt['service_identity'])
+                            witness.require(content == snapshot.get('applied_configuration')
+                                and json.loads(content) == NATIVE_PROFILE, 'native applied configuration profile mismatch')
                         if relative.endswith('.faj'): raw_files[relative] = content
             payloads = []
             for filename in sorted(name for name in raw_files if name.startswith('sealed-')) + ['batches.faj']:
