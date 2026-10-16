@@ -155,13 +155,52 @@ speechd.SSIPClient.speak=observed
 '''
 
 
+
+def backend_process():
+    for proc in Path('/proc').iterdir():
+        if not proc.name.isdigit():continue
+        try:
+            if (proc/'exe').resolve()==Path('/usr/lib64/speech-dispatcher-modules/sd_espeak-ng'):
+                return dict(pid=int(proc.name),module='espeak-ng',libespeak_mapped='libespeak-ng.so' in (proc/'maps').read_text())
+        except (FileNotFoundError,PermissionError):pass
+    return None
+
+
+def driver_wrapper(descriptor):
+    require_limits()
+    require(descriptor.is_relative_to(DATA) and descriptor.stat().st_size<=16384,'announcement-driver-descriptor')
+    info=json.loads(descriptor.read_text());work,out,write_root=(Path(info[name]) for name in ('work','out','write_root'))
+    require(all(path.is_relative_to(DATA) and path.resolve(strict=True)==path for path in (work,out,write_root))
+        and work.is_relative_to(write_root) and 0<info['deadline']-time.monotonic()<=240,'announcement-driver-descriptor')
+    require({2,3}<=os.sched_getaffinity(0),'announcement-allowed-cpus');os.sched_setaffinity(0,{2,3})
+    prepared=json.loads(Path(info['orca_receipt']).read_text());orca,reader_environment=admitted_orca(prepared)
+    xvfb_record=json.loads(Path(info['xvfb_receipt']).read_text());xvfb=Path(xvfb_record['binary'])
+    require(xvfb_record['state']=='prepared' and xvfb_record['exit']==0 and xvfb.is_relative_to(DATA)
+        and hashlib.sha256(xvfb.read_bytes()).hexdigest()==xvfb_record['binary_sha256'],'announcement-xvfb-admission')
+    command=['/usr/bin/bwrap','--die-with-parent','--unshare-user','--unshare-pid','--unshare-ipc','--unshare-uts',
+        '--ro-bind','/','/','--proc','/proc','--dev','/dev','--bind',str(write_root),str(write_root),'--bind',str(out),str(out),
+        '--bind',str(work/'tmp'),'/tmp','--bind',str(work/'runtime'),f'/run/user/{os.getuid()}','--clearenv']
+    environment=dict(PATH='/usr/bin:/usr/sbin:/bin',LANG='C.UTF-8',TMPDIR=str(work/'tmp'),
+        FABRIC_STORAGE_ROOT=str(DATA),FABRIC_SCRATCH_ROOT=str(write_root),FABRIC_AT_CGROUP=str(require_limits()),
+        XDG_RUNTIME_DIR=f'/run/user/{os.getuid()}',XDG_CONFIG_HOME=str(work/'config'),XDG_CACHE_HOME=str(work/'cache'),
+        XDG_DATA_HOME=str(work/'data'),GSETTINGS_BACKEND='keyfile',SPEECHD_ADDRESS=f'unix_socket:/run/user/{os.getuid()}/speech.sock',
+        SPEECHD_CMD='/bin/false',ALSA_CONFIG_PATH=str(work/'asound.conf'),GTK_MODULES='atk-bridge',NO_AT_BRIDGE='0',
+        DBUS_SYSTEM_BUS_ADDRESS='unix:path='+str(work/'absent-system-bus'),DISPLAY=':87',XAUTHORITY=str(work/'xauthority'))
+    environment.update(reader_environment)
+    for key,value in environment.items():command.extend(['--setenv',key,value])
+    command+=['/usr/bin/dbus-run-session','--',sys.executable,'-B',str(Path(__file__)),'--inside',
+        '--mode','xvfb','--xvfb',str(xvfb),'--orca',str(orca),'--work',str(work),'--output',str(out),'--interactive-driver',str(descriptor)]
+    os.execv(command[0],command)
+
+
 def inside(args):
     work,out=args.work,args.output
     runtime=Path(os.environ['XDG_RUNTIME_DIR'])
     require((runtime.stat().st_dev,runtime.stat().st_ino)==((work/'runtime').stat().st_dev,(work/'runtime').stat().st_ino),'announcement-private-runtime')
     require(os.environ.get('DISPLAY')==(':87' if args.mode=='xvfb' else None),'announcement-private-display')
     require(not os.environ.get('WAYLAND_DISPLAY') and not os.environ.get('AT_SPI_BUS_ADDRESS'),'announcement-private-bus')
-    processes=[];logs=[];end=time.monotonic()+150;session=None
+    interactive=json.loads(args.interactive_driver.read_text()) if args.interactive_driver else None
+    processes=[];logs=[];end=interactive['deadline'] if interactive else time.monotonic()+150;session=None
     result={'exit':1,'scope':'public environment probe only; no package acceptance','mode':args.mode,
         'namespaces':{name:os.readlink('/proc/self/ns/'+name) for name in ('pid','net','mnt','ipc')},'commands':[],
         'affinity':sorted(os.sched_getaffinity(0)),'task_observations':[]}
@@ -228,6 +267,11 @@ def inside(args):
         os.environ['AT_SPI_BUS_ADDRESS']=address[0]
         result['at_bus_address']=address[0]
         launch('atspi-registry',['/usr/libexec/at-spi2-registryd'])
+        if interactive:
+            launch('webdriver',interactive['argv'])
+            (out/'driver-ready').touch()
+            while not (work/'start-reader').exists():tick();time.sleep(.05)
+            (work/'capture').touch()
         launch('atspi',[sys.executable,'-B',str(Path(__file__)),'--observe',str(out/'events.jsonl')])
         wait(lambda:(out/'events.ready').exists())
         task_phase('before-orca')
@@ -238,63 +282,75 @@ def inside(args):
             require(result['orca_runtime']['version']==os.environ['FABRIC_AT_EXPECTED_ORCA']
                 and Path(result['orca_runtime']['module']).is_relative_to(Path(os.environ['PYTHONPATH'])/'orca'),
                 'announcement-orca-runtime')
-        launch('webdriver',[str(DATA/'tools/ui/geckodriver'),'--host','127.0.0.1','--port','48751'])
-        def ready():
-            try:return call('GET','/status').get('ready') is True
-            except OSError:return False
-        wait(ready)
-        profile=work/'profile';profile.mkdir()
-        info=call('POST','/session',{'capabilities':{'alwaysMatch':{'browserName':'firefox','moz:firefoxOptions':{
-            'binary':'/usr/bin/firefox','args':(['-headless'] if args.mode=='headless' else [])+['-profile',str(profile)],
-            'prefs':{'accessibility.force_disabled':0,'security.enterprise_roots.enabled':False}}}}})
-        session=info['sessionId'];browser_pid=info['capabilities']['moz:processID']
-        result['browser_capabilities']=info['capabilities']
-        task_phase('browser-ready')
-        (work/'capture').touch()
-        html='<title>Fabric public AT probe</title><h1>Public accessibility probe</h1><button id="focus">Keep focus here</button><p id="status" role="status" aria-live="polite"></p>'
-        public=work/'public.html';public.write_bytes(html.encode())
-        launch('public-http',[sys.executable,'-B',str(Path(__file__)),'--serve-public',str(public),'--output',str(out)])
-        wait(lambda:(out/'public-http.ready').exists())
-        uri='http://127.0.0.1:48752/probe'
-        call('POST','/session/'+session+'/url',{'url':uri})
-        def heard(text):
-            return any(text in (''.join(ET.fromstring(row['text']).itertext()) if row['text'].startswith('<speak>') else row['text'])
-                and row['ssip_code']==225 and row['message_id']>0 for row in read_rows(out/'speech.jsonl'))
-        wait(lambda:heard('Fabric public AT probe'))
-        wait(lambda:any(row['pid']==browser_pid and 'DocURL:'+uri in row.get('document_attributes',[]) for row in read_rows(out/'events.jsonl')))
-        result.update(document_url=uri,public_http=read_rows(out/'public-http.jsonl'),public_html_sha256=hashlib.sha256(public.read_bytes()).hexdigest())
-        require(any(row['bytes']==len(html.encode()) and row['sha256']==result['public_html_sha256'] for row in result['public_http']),
-            'announcement-public-body')
-        task_phase('document-heard')
-        js('document.querySelector("h1").setAttribute("tabindex","-1");document.querySelector("h1").focus()')
-        prerequisite=js('const e=document.querySelector("#status");document.querySelector("#focus").focus();return {role:e.getAttribute("role"),live:e.getAttribute("aria-live"),focus_elsewhere:document.activeElement.id==="focus"}')
-        require(prerequisite=={'role':'status','live':'polite','focus_elsewhere':True},'announcement-dom')
-        wait(lambda:heard('Keep focus here'))
-        task_phase('focus-heard')
-        backend=None
-        def find_backend():
-            nonlocal backend
-            for proc in Path('/proc').iterdir():
-                if not proc.name.isdigit():continue
-                try:
-                    if (proc/'exe').resolve()==Path('/usr/lib64/speech-dispatcher-modules/sd_espeak-ng'):
-                        backend={'pid':int(proc.name),'module':'espeak-ng','libespeak_mapped':'libespeak-ng.so' in (proc/'maps').read_text()};return True
-                except (FileNotFoundError,PermissionError):pass
-            return False
-        wait(find_backend)
-        pcm=out/'speech.raw';backend['pcm_before_bytes']=pcm.stat().st_size if pcm.exists() else 0
-        if args.suppress_live:js('document.querySelector("#status").setAttribute("aria-live","off")')
-        (work/'capture').touch();case=dict(prerequisite,browser_pid=browser_pid,text=TEXT,before_ns=time.monotonic_ns())
-        js('document.querySelector("#status").textContent='+json.dumps(TEXT))
-        until=min(end,time.monotonic()+8)
-        while time.monotonic()<until:tick();time.sleep(.05)
-        case['after_ns']=time.monotonic_ns();(work/'capture').unlink()
-        backend['pcm_after_bytes']=pcm.stat().st_size if pcm.exists() else 0
-        result.update(case=case,backend=backend,events=read_rows(out/'events.jsonl'),speech=read_rows(out/'speech.jsonl'))
-        check_announcement(case,result['events'],result['speech'],backend)
-        require(dict(line.split() for line in (Path(os.environ['FABRIC_AT_CGROUP'])/'pids.events').read_text().splitlines())['max']=='0',
-            'announcement-task-admission')
-        result['exit']=0
+        if interactive:
+            backend=None
+            def backend_ready():
+                nonlocal backend
+                backend=backend_process();return backend is not None
+            wait(backend_ready)
+            result['backend']=backend
+            (out/'at-ready.json').write_text(json.dumps(dict(backend=backend,namespaces=result['namespaces'],
+                orca_runtime=result.get('orca_runtime'),affinity=sorted(os.sched_getaffinity(0)))))
+            while not (work/'stop-reader').exists():tick();time.sleep(.05)
+            result['exit']=0
+        else:
+            launch('webdriver',[str(DATA/'tools/ui/geckodriver'),'--host','127.0.0.1','--port','48751'])
+            def ready():
+                try:return call('GET','/status').get('ready') is True
+                except OSError:return False
+            wait(ready)
+            profile=work/'profile';profile.mkdir()
+            info=call('POST','/session',{'capabilities':{'alwaysMatch':{'browserName':'firefox','moz:firefoxOptions':{
+                'binary':'/usr/bin/firefox','args':(['-headless'] if args.mode=='headless' else [])+['-profile',str(profile)],
+                'prefs':{'accessibility.force_disabled':0,'security.enterprise_roots.enabled':False}}}}})
+            session=info['sessionId'];browser_pid=info['capabilities']['moz:processID']
+            result['browser_capabilities']=info['capabilities']
+            task_phase('browser-ready')
+            (work/'capture').touch()
+            html='<title>Fabric public AT probe</title><h1>Public accessibility probe</h1><button id="focus">Keep focus here</button><p id="status" role="status" aria-live="polite"></p>'
+            public=work/'public.html';public.write_bytes(html.encode())
+            launch('public-http',[sys.executable,'-B',str(Path(__file__)),'--serve-public',str(public),'--output',str(out)])
+            wait(lambda:(out/'public-http.ready').exists())
+            uri='http://127.0.0.1:48752/probe'
+            call('POST','/session/'+session+'/url',{'url':uri})
+            def heard(text):
+                return any(text in (''.join(ET.fromstring(row['text']).itertext()) if row['text'].startswith('<speak>') else row['text'])
+                    and row['ssip_code']==225 and row['message_id']>0 for row in read_rows(out/'speech.jsonl'))
+            wait(lambda:heard('Fabric public AT probe'))
+            wait(lambda:any(row['pid']==browser_pid and 'DocURL:'+uri in row.get('document_attributes',[]) for row in read_rows(out/'events.jsonl')))
+            result.update(document_url=uri,public_http=read_rows(out/'public-http.jsonl'),public_html_sha256=hashlib.sha256(public.read_bytes()).hexdigest())
+            require(any(row['bytes']==len(html.encode()) and row['sha256']==result['public_html_sha256'] for row in result['public_http']),
+                'announcement-public-body')
+            task_phase('document-heard')
+            js('document.querySelector("h1").setAttribute("tabindex","-1");document.querySelector("h1").focus()')
+            prerequisite=js('const e=document.querySelector("#status");document.querySelector("#focus").focus();return {role:e.getAttribute("role"),live:e.getAttribute("aria-live"),focus_elsewhere:document.activeElement.id==="focus"}')
+            require(prerequisite=={'role':'status','live':'polite','focus_elsewhere':True},'announcement-dom')
+            wait(lambda:heard('Keep focus here'))
+            task_phase('focus-heard')
+            backend=None
+            def find_backend():
+                nonlocal backend
+                for proc in Path('/proc').iterdir():
+                    if not proc.name.isdigit():continue
+                    try:
+                        if (proc/'exe').resolve()==Path('/usr/lib64/speech-dispatcher-modules/sd_espeak-ng'):
+                            backend={'pid':int(proc.name),'module':'espeak-ng','libespeak_mapped':'libespeak-ng.so' in (proc/'maps').read_text()};return True
+                    except (FileNotFoundError,PermissionError):pass
+                return False
+            wait(find_backend)
+            pcm=out/'speech.raw';backend['pcm_before_bytes']=pcm.stat().st_size if pcm.exists() else 0
+            if args.suppress_live:js('document.querySelector("#status").setAttribute("aria-live","off")')
+            (work/'capture').touch();case=dict(prerequisite,browser_pid=browser_pid,text=TEXT,before_ns=time.monotonic_ns())
+            js('document.querySelector("#status").textContent='+json.dumps(TEXT))
+            until=min(end,time.monotonic()+8)
+            while time.monotonic()<until:tick();time.sleep(.05)
+            case['after_ns']=time.monotonic_ns();(work/'capture').unlink()
+            backend['pcm_after_bytes']=pcm.stat().st_size if pcm.exists() else 0
+            result.update(case=case,backend=backend,events=read_rows(out/'events.jsonl'),speech=read_rows(out/'speech.jsonl'))
+            check_announcement(case,result['events'],result['speech'],backend)
+            require(dict(line.split() for line in (Path(os.environ['FABRIC_AT_CGROUP'])/'pids.events').read_text().splitlines())['max']=='0',
+                'announcement-task-admission')
+            result['exit']=0
     except BaseException as error:result['error']=type(error).__name__+': '+str(error)
     finally:
         task_phase('before-cleanup')
@@ -313,10 +369,12 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--observe',type=Path);parser.add_argument('--inside',action='store_true')
     parser.add_argument('--serve-public',type=Path)
+    parser.add_argument('--interactive-driver',type=Path);parser.add_argument('--driver-wrapper',type=Path)
     parser.add_argument('--orca-receipt',type=Path);parser.add_argument('--orca',type=Path,default=Path('/usr/bin/orca'))
     parser.add_argument('--mode',choices=('headless','xvfb'),default='headless');parser.add_argument('--xvfb',type=Path)
     parser.add_argument('--xvfb-receipt',type=Path);parser.add_argument('--output',type=Path);parser.add_argument('--work',type=Path)
     parser.add_argument('--suppress-live',action='store_true');args=parser.parse_args()
+    if args.driver_wrapper:driver_wrapper(args.driver_wrapper);return 0
     if args.observe:observe(args.observe);return 0
     if args.serve_public:serve_public(args.serve_public,args.output);return 0
     if args.inside:return inside(args)
