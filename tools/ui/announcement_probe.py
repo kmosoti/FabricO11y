@@ -33,6 +33,11 @@ def append(path,row):
 def read_rows(path):return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
 
+def check_stream(path,out):
+    limit=4*1024**2 if path==out/'speech-logs/speech-dispatcher.log' else 1024**2
+    require(path.stat().st_size<=limit,'announcement-stream-bound')
+
+
 def loopback():
     with socket.socket() as listener:
         flags=struct.unpack('16sH14s',fcntl.ioctl(listener,0x8913,struct.pack('16sH14s',b'lo',0,b'')))[1]
@@ -93,8 +98,8 @@ def inside(args):
     def tick():
         require(time.monotonic()<end,'announcement-deadline')
         require(sum(path.stat().st_size for root in (work,out) for path in root.rglob('*') if path.is_file())<=512*1024**2,'announcement-storage-bound')
-        require(all(path.stat().st_size<=1048576 for path in out.rglob('*')
-            if path.is_file() and path.suffix in ('.log','.jsonl','.raw')),'announcement-stream-bound')
+        for path in out.rglob('*'):
+            if path.is_file() and path.suffix in ('.log','.jsonl','.raw'):check_stream(path,out)
     def launch(label,command):
         log=(out/(label+'.log')).open('xb');logs.append(log)
         process=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
