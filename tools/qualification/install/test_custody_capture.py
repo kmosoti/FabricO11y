@@ -25,6 +25,25 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
 
     reboot_chain = literal.RebootRawControls.reboot_chain
 
+    def test_original_raw_tree_survives_semantic_reader_refusal(self):
+        observer = native.Guest.__new__(native.Guest)
+        observer.output = self.root / 'captured'; observer.output.mkdir()
+        observer.observe_stop = lambda: {}
+        observer.read_input = lambda path, limit: (b'original source',list(native.witness.identity(self.spool.stat())),None)
+        original_read = Path.read_text
+        def settings(path, *args, **kwargs):
+            return (f'spool_dir={self.spool}\nspool_bytes=268435456\ntoken_file=/etc/fabrico11y/node-token\n'
+                    f'log={SOURCE}\nlog=/var/log/fabric-accept/denied.log\n') if str(path)=='/etc/fabrico11y/node.conf' else original_read(path,*args,**kwargs)
+        def reject(*args, **kwargs):
+            with tarfile.open(observer.output/'before-raw.tar') as archive:
+                self.assertEqual(archive.extractfile('spool/identity').read(), (self.spool/'identity').read_bytes())
+                self.assertIn('spool/diagnostics/spindle.log',archive.getnames())
+            raise ValueError('injected semantic reader refusal')
+        with patch.object(native,'ROOT',self.spool), patch.object(Path,'read_text',settings), \
+                patch.object(native.witness,'stopped_snapshot',side_effect=reject):
+            with self.assertRaisesRegex(ValueError,'injected semantic reader refusal'):
+                observer.capture('before')
+
     def fixture_files(self):
         chain, reboot, reboot_events = self.reboot_chain()
         before, installed, drain, queries, events = chain

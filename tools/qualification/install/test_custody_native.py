@@ -24,6 +24,11 @@ UNREAD = b'accept-upgrade-unread-literal\n'
 DIAG_OLD, DIAG_PENDING, DIAG_NEW = b'event starting\n', b'event pending\n', b'event sample\n'
 STOP = b'event stopping\n'
 CAP = 262144
+# Actual134-byte sidecar observed after replacement-deb-life-01 failed.
+# stopped-inspection-02 used checksum-bypassed debugfs: diagnostic bytes only,
+# not a valid recovered filesystem snapshot or native acceptance.
+APPLIED = (b'{"revision":1,"paused":false,"logs":["/var/log/fabric-accept/allowed.log",'
+           b'"/var/log/fabric-accept/denied.log"],"metric_interval_s":15}')
 
 
 def literal_row(sequence, index, path, device, inode, start, line):
@@ -201,6 +206,50 @@ class NativeShapeAvailability(NativeFixture, unittest.TestCase):
             self.fail(f'native reader shape unavailable (qualification harness, not product): {error}')
         self.assertEqual(observed.get('fixture_paths'), (SOURCE,), 'explicit fixture projection is absent')
         self.assertIn('diagnostics/spindle.log', observed['files'], 'full raw-root inventory is absent')
+
+
+class AppliedConfigurationControls(NativeFixture, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        self.module = adapter()
+        self.config = self.spool / 'applied-config.json'
+        self.config.write_bytes(APPLIED); self.config.chmod(0o600)
+
+    def test_original_applied_configuration_is_preserved(self):
+        try:
+            chain = self.chain()
+        except ValueError as error:
+            self.fail('actual applied configuration shape unavailable: '+str(error))
+        self.assertEqual(chain[0]['files']['applied-config.json']['sha256'], hashlib.sha256(APPLIED).hexdigest())
+        self.assertIn('applied-config.json', chain[0]['file_observations'])
+        self.module.conserve(*chain)
+
+    def test_malformed_applied_configuration_refuses_at_named_boundary(self):
+        for raw in (APPLIED[:-1]+b',"unknown":1}', APPLIED[:-1]+b',"revision":2}',
+                    APPLIED.replace(b'"revision":1', b'"revision":true'),
+                    APPLIED.replace(b'false', b'0'), APPLIED.replace(b':15', b':0'),
+                    APPLIED.replace(b'/var/log', b'relative'), b'\xff', b'x'*65537):
+            with self.subTest(raw=raw[:140]):
+                self.config.write_bytes(raw)
+                with self.assertRaisesRegex(ValueError, 'applied configuration'):
+                    self.snapshot('bad-config', [], 0, b'')
+
+    def test_applied_configuration_mode_and_links_are_refused(self):
+        for variant in ('mode','symlink','hardlink'):
+            with self.subTest(variant=variant):
+                self.config.unlink()
+                target = self.root / ('config-'+variant); target.write_bytes(APPLIED); target.chmod(0o600)
+                if variant == 'symlink': self.config.symlink_to(target)
+                elif variant == 'hardlink': os.link(target,self.config)
+                else: self.config.write_bytes(APPLIED); self.config.chmod(0o644)
+                with self.assertRaisesRegex(ValueError, 'applied configuration'):
+                    self.snapshot('unsafe-config', [], 0, b'')
+
+    def test_registered_no_configuration_change_survives_drain(self):
+        chain = self.chain()
+        chain[2]['files']['applied-config.json']['sha256'] = 'f'*64
+        with self.assertRaisesRegex(ValueError, 'applied configuration changed'):
+            self.module.conserve(*chain)
 
 
 class LiteralNativeRecords(unittest.TestCase):

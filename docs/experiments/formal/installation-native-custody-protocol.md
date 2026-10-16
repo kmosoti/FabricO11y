@@ -277,3 +277,48 @@ post-reader metadata control is explicitly synthetic and cannot authenticate a
 guest mount. The native producer's UAPI observations, source archive joins and
 changed-boot sender remain mandatory. The existing non-Btrfs device/inode rule
 and all three-phase controls remain unchanged.
+## Applied configuration counterexample and raw failure preservation
+
+The first replacement native Debian cell `replacement-deb-life-01`, clean
+`da250b7ab135374d1231ab66f2a454e367884fec`, exited2 after guest acceptance0:
+the reader rejected the original root before its first snapshot. Original
+qcow and failure bundle remain retained. Diagnostic01 was inconclusive despite
+outer0 because debugfs returned0 after refusing filesystem open. Diagnostic02
+read disposable copies with debugfs1.47.3 `-n`; metadata checksums were bypassed,
+the ext4 image needed journal recovery, and the exported ACK inode was stale.
+Those exports are diagnostic bytes only, never a valid stopped snapshot or
+native acceptance. The original qcow SHA256 remained
+`7d87a7288baa941cfe030eae9a00f87154c57e2f1aabc7bea084e0bcd014fc12`.
+It exposed the134-byte private service-owned `applied-config.json` containing
+revision1, paused=false, the allowed/denied fixture paths, interval15.
+Independent source `RemoteView` denies unknown fields; the runtime persists it
+by synced rename before activation. The earlier synthetic root omitted it.
+
+Prospectively recognize only that named additional native metadata leaf.
+Read it with existing no-follow/one-link/drift guards, limit65536 bytes, mode0600
+and independently observed service UID/GID. Require UTF-8 JSON with no duplicate
+or unknown fields: u64 revision, boolean paused, list of at most16 absolute
+log paths of at most240 UTF-8 bytes, integer interval1..3600. Preserve exact
+original bytes, digest and metadata in snapshot/raw authority. Native qualification
+capture requires this file and the exact observed fixture configuration above;
+absence remains supported only for legacy or explicitly synthetic reader callers.
+Unknown leaves, staged `.tmp` files and both failed-writer markers still refuse.
+The stopped before/install invariant remains exact. The registered #41 lifecycle
+does not change configuration, so its sidecar must also remain unchanged through
+drain/reboot. This rule does not prohibit legitimate revision changes in the
+separate owner-guide execution, which follows its own configuration transcript.
+
+Register `AppliedConfigurationControls`: original-byte preservation; duplicate,
+unknown, scalar/path/range/UTF-8/size refusals; private-mode/link refusals; changed
+configuration at drain refusal. Register the producer counterexample
+`test_original_raw_tree_survives_semantic_reader_refusal`: export the entire
+independently stopped original root before semantic parsing, and retain that
+export if parsing refuses. A synthetic injected parser failure is not a native
+failure simulation. All existing frame/source/query/sender/fourth-phase controls
+remain required, with unchanged expected outcomes and independent oracles.
+
+The smallest readable measured reader delta is+30 lines (515 to545); register
+a550-total ceiling specifically for this typed metadata boundary. No VM, resource,
+deadline, source authority or acceptance threshold changes. Actual source controls
+and the restarted native cells must run on separately recorded pins; no result
+from the first failed attempt is relabeled.
