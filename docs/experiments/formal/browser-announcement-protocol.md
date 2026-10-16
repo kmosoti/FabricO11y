@@ -98,3 +98,13 @@ then pointed to its private XDG cache, and geckodriver failed with ENOENT. Pass
 the admitted DATA storage root and owned scratch root explicitly into the private
 environment. Preserve the original missing-tool failure; it is not an AT
 announcement refusal or a display limitation.
+
+The actual headless06 probe reached the real Firefox document and synthesizer,
+but Orca exited1 because no Desktop/display was available. The signed-Xvfb01
+successor then aborted during optional GLX initialization in the NVIDIA EGL/libdrm
+path; its complete backtrace and stop receipt remain preserved. For this CPU
+virtual text/announcement fixture, disable optional GLX with the tool's supported
+`-extension GLX` flag, precreate only the private DATA-backed X socket directory,
+and require the display process to remain alive during readiness. No GPU/3D
+coverage is claimed; no owner graphics configuration or display is changed.
+Every actual event, Orca speech, selected backend and PCM assertion remains.

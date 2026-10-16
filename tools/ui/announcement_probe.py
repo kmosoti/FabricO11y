@@ -126,9 +126,14 @@ def inside(args):
     try:
         result['loopback']=loopback()
         if args.mode=='xvfb':
+            (work/'tmp/.X11-unix').mkdir(mode=0o1777)
+            (work/'tmp/.X11-unix').chmod(0o1777)
             run(['/usr/bin/xauth','-f',str(work/'xauthority'),'add',':87','.',secrets.token_hex(16)])
-            launch('xvfb',[str(args.xvfb),':87','-screen','0','1280x960x24','-nolisten','tcp','-auth',str(work/'xauthority')])
-            wait(lambda:(Path('/tmp/.X11-unix/X87')).exists())
+            display=launch('xvfb',[str(args.xvfb),':87','-screen','0','1280x960x24','-nolisten','tcp','-auth',str(work/'xauthority'),'-extension','GLX'])
+            def display_ready():
+                require(display.poll() is None,'announcement-display-exit')
+                return Path('/tmp/.X11-unix/X87').exists()
+            wait(display_ready)
         config=work/'speech';config.mkdir();(config/'modules').mkdir()
         speech_logs=out/'speech-logs';speech_logs.mkdir()
         shutil.copyfile('/etc/speech-dispatcher/modules/espeak-ng.conf',config/'modules/espeak-ng.conf')
