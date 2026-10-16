@@ -2,6 +2,7 @@
 import hashlib
 import json
 from pathlib import Path
+import re
 import sys
 import time
 from announcement_oracle import check_announcement,require,spoken_text
@@ -20,6 +21,26 @@ def validate_mode(args,parser):
         return
     if args.browser!='firefox' or any(getattr(args,name,False) for name in MODES):parser.error('announcements require a separate Firefox cell')
     if not args.announcement_xvfb_admission or not args.announcement_orca_admission:parser.error('announcements require exact prepared display and reader')
+    if not args.package or not args.packaged_console or not re.fullmatch('[a-f0-9]{40}',args.candidate_commit or ''):
+        parser.error('announcements require exact package, packaged console and packaged source commit')
+
+
+def join_package_identity(provenance,commit,package_sha,snapshots):
+    require(provenance['source_commit']==commit and provenance['deb_sha256']==package_sha,'announcement-package-identity')
+    require(all(provenance['payload_identity']['usr/bin/'+binary]['sha256']==snapshots[role]['sha256']
+        for role,binary in (('server','fabric-server'),('spindle','fabric-node'))),'announcement-package-identity')
+
+
+def admit_package(args,receipt):
+    from resource_group import STORAGE
+    package=args.package.resolve();console=args.packaged_console.resolve()
+    require(package.is_relative_to(STORAGE) and package.is_file() and console.is_relative_to(STORAGE),
+        'announcement-package-identity')
+    record=console.parent.parent/'doc/fabrico11y/CANDIDATE-PROVENANCE.json'
+    provenance=json.loads(record.read_text());digest=hashlib.sha256(package.read_bytes()).hexdigest()
+    join_package_identity(provenance,args.candidate_commit,digest,receipt['immutable_binary_snapshots'])
+    receipt['announcement_package']=dict(package=str(package),package_sha256=digest,packaged_source_commit=args.candidate_commit,
+        provenance_sha256=hashlib.sha256(record.read_bytes()).hexdigest(),payload_identity=provenance['payload_identity'])
 
 
 def document_identity(rows,pid,origin):

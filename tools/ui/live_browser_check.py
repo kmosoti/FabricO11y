@@ -762,6 +762,7 @@ def main():
                 shutil.copyfile(source,expected)
             receipt['extracted_packaged_console']={'path':str(packaged),'assets':identities}
             check(True,'actual extracted package console assets match frozen build before serving')
+        if args.announcement_probes:browser_announcements.admit_package(args,receipt)
         if args.inject_api_cache_defect:
             worker=work/'console/service-worker.js'
             worker.write_text(worker.read_text()+'''

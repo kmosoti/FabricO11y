@@ -12,18 +12,31 @@ class AnnouncementCallTests(unittest.TestCase):
         class Parser:
             def error(self,reason):raise ValueError(reason)
         args=SimpleNamespace(announcement_probes=True,suppress_announcement=False,browser='firefox',
-            announcement_xvfb_admission=Path('/prepared-xvfb'),announcement_orca_admission=Path('/prepared-orca'))
+            announcement_xvfb_admission=Path('/prepared-xvfb'),announcement_orca_admission=Path('/prepared-orca'),
+            package=Path('/candidate.deb'),packaged_console=Path('/stage/console'),candidate_commit='2'*40)
         caller.validate_mode(args,Parser())
         for mode in caller.MODES:
             changed=copy.copy(args);setattr(changed,mode,True)
             with self.subTest(mode=mode),self.assertRaisesRegex(ValueError,'separate Firefox cell'):
                 caller.validate_mode(changed,Parser())
         for field,value in (('browser','chrome'),('announcement_orca_admission',None),
-                ('announcement_xvfb_admission',None),('announcement_probes',False)):
+                ('announcement_xvfb_admission',None),('announcement_probes',False),('package',None),
+                ('packaged_console',None),('candidate_commit','not a source identity')):
             changed=copy.copy(args);setattr(changed,field,value)
             with self.subTest(field=field),self.assertRaises(ValueError):caller.validate_mode(changed,Parser())
         changed=copy.copy(args);changed.announcement_probes=False;changed.suppress_announcement=True
         with self.assertRaisesRegex(ValueError,'suppression requires'):caller.validate_mode(changed,Parser())
+
+    def test_package_join_refuses_original_head_and_changed_payload(self):
+        from browser_announcements import join_package_identity
+        provenance=dict(source_commit='2'*40,deb_sha256='a'*64,payload_identity={
+            'usr/bin/fabric-server':dict(sha256='b'*64),'usr/bin/fabric-node':dict(sha256='c'*64)})
+        snapshots=dict(server=dict(sha256='b'*64),spindle=dict(sha256='c'*64))
+        join_package_identity(provenance,'2'*40,'a'*64,snapshots)
+        for commit,digest,changed in (('e'*40,'a'*64,snapshots),('2'*40,'d'*64,snapshots),
+                ('2'*40,'a'*64,dict(snapshots,server=dict(sha256='f'*64)))):
+            with self.assertRaisesRegex(ValueError,'announcement-package-identity'):
+                join_package_identity(provenance,commit,digest,changed)
 
     def test_document_snapshot_is_identity_only_and_cannot_substitute_for_events(self):
         from browser_announcements import document_identity
