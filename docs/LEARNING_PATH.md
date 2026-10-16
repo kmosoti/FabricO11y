@@ -377,9 +377,33 @@ choosing a convenient call. The exact boundary caller uses two untouched idle
 sessions and one continually active absolute-expiry session; controlled time is
 not eight hours of elapsed endurance.
 
+The browser security supplement separates a correctly signed one-field refusal
+from a signature failure: actual virtual fixture keys produce assertions and an
+independent OpenSSL verification runs before the packaged server sees them.
+[Literal controls](experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement)
+reject a convenient but unrelated status such as HTTP 429. Ordinary reader
+expiry retains real monotonic and wall-clock observations; it is not an in-flight
+authorization-race proof.
+
 The [announcement probe](experiments/formal/browser-announcement-protocol.md)
 illustrates the same evidence boundary for effects: a DOM `aria-live` attribute
 expresses intent, while an actual AT-SPI event, Orca utterance accepted by Speech
 Dispatcher and selected synthesizer output establish different observations.
 Keep the original speech call's arguments and return unchanged, and explain why
 public environment success would still not establish actual console behavior.
+
+UI response diagnostics distinguish a renderer boundary from server semantics.
+A real packaged query and independent producer ordinals establish the baseline;
+explicitly injected responses then exercise coverage, errors and lock behavior.
+Their [separate protocol](experiments/formal/console-access-protocol.md#prospective-ui-response-handling-supplement)
+requires the actual browser abort signal and elapsed deadline for timeout, and
+never treats an injected HTTP status as evidence that the server emitted it.
+
+The [native custody checkpoint exercise](experiments/formal/installation-native-custody-caller-card.md)
+connects the Rust Spool's durable ACK ownership to independent system observations.
+Read a complete stopped raw tree before projecting its fixture rows; compare the
+original payload hash with the candidate sender's journal ACK. Distinguish an
+archived byte copy, original descriptor/stat identity, and a live writer's custody.
+Explain why startup diagnostics need a separate reboot checkpoint and why its
+later evidence cannot justify an earlier query answer. The new harness remains
+unverified until its registered source checks and genuine native cells execute.

@@ -1,5 +1,11 @@
 # Current project state
 
+Hosted CI controller setup now explicitly requests CPU/I/O/memory/task delegation
+and checks actual availability/readback. The PR72 browser startup failure is
+retained; affected controls and hosted rerun remain required. This harness-only
+correction changes no packaged candidate bytes.
+
+
 The private [announcement environment probe](experiments/formal/browser-announcement-protocol.md)
 now observes AT-SPI and the real Orca/Speech Dispatcher/espeak path using public
 text, private buses/settings and file/null audio output. Its source controls and
@@ -13,6 +19,16 @@ ABI, actual-server clock binding and exact32 AB/C browser observations still
 need native execution on the replacement candidate; source checks do not supply
 package or browser acceptance. The expiry cell retains one240-second deadline
 and stops/reaps AB before creating the independent C fixture.
+
+The separate signed browser security cell is implemented for virtual fixture
+keys, completed-ceremony replay, cookie replacement and real reader expiry.
+Its [registered controls](experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement)
+and the separate [UI response diagnostics](experiments/formal/console-access-protocol.md#prospective-ui-response-handling-supplement)
+are implemented. At `b211398`, 32 affected source tests and all three documentation
+checks exited 0 through separately contained runs, with stops confirmed. The first
+combined run remains interrupted: its strict storage census raced launcher scratch
+cleanup even though the inner checks exited 0. Native signed-key and diagnostic UI
+cells have not run; exact-package browser acceptance remains open.
 
 The standalone console bridge smoke now selects the owned browser supervisor,
 with a fresh held1GiB browser budget, finite deadline and bounded close. Failed
@@ -80,11 +96,13 @@ Known limits and open checks:
   acceptance is recorded.
 
 - The [fresh-owner walkthrough](experiments/formal/owner-walkthrough-protocol.md) has byte-preserving guide extraction, protected command transport and accumulated phase budgets. Its native caller is implemented; fresh constructor, browser and complete two-direction walkthrough acceptance remain pending exact candidate and merged-guide admission. The [31 source controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-owner-driver-source-results-01) cover bounded production snapshots, source/custody joins and cleanup failures; they do not establish native acceptance.
+- The TLS dependency is pinned to `rustls 0.23.46` to address [RUSTSEC-2026-0349](https://rustsec.org/advisories/RUSTSEC-2026-0349.html). Provider and feature selections are unchanged. The previous `8fb6f413` candidate remains historical evidence; a replacement freeze, rebuilt packages and fresh acceptance are required before release. No dependency-policy exception applies.
 - The [fixed-query caller prerequisites](experiments/formal/query-caller-run-01.md) retain an unpaced-page HTTP 429 and the obsolete fixture-only oracle corpus. The repaired disposable query smoke exited 0 with all eight gates; four full query successors remain pending. Six main cells retain their original `8484493` results under prospectively selected `clearing-v2`; older sampled-v1 edge diagnostics failed in five cells. No broader qualification follows.
 - An attacker spread over many IPv6 /48s or IPv4 addresses can still fill the 1,024-entry peer table; a denial at a new second costs up to two access-state syncs (clock watermark and denial record), though at most one denial is stored per second ([#47](https://github.com/kmosoti/FabricO11y/issues/47)).
 - Exact shipped units ran successfully in fresh Debian 13/Fedora 44 baseline and lifecycle cells ([#41](https://github.com/kmosoti/FabricO11y/issues/41)); independent adversarial probes of every added hardening directive remain outside that finite installation result.
 - The [installation verifier controls](experiments/formal/installation-release-protocol.md#prospective-removal-checker-counterexample-controls) require both observed removal states to be inactive or failed with systemctl exit 3 and reject unreadable Fedora audit evidence. Revision-bound source-only execution evidence belongs to the [checker results wiki](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-checker-prerequisite-results-01); guest acceptance remains separate.
 - The [stopped-custody upgrade witness](experiments/formal/installation-release-protocol.md#prospective-stopped-custody-upgrade-witness) registers independent framing/Cursor and exact pending/unread-source conservation controls. Its raw snapshot/conservation adapter is implemented; verification and native integration remain pending. No new package lifecycle outcome is recorded.
+- The [native custody reader](experiments/formal/installation-native-custody-protocol.md) admits full diagnostic roots and checks append/rotation, fixture paths, common protobuf containers and raw query conservation. Its [60 source controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-custody-native-reader-source-results-01/0364b1c) ran at `30ef218`. The [producer/caller](experiments/formal/installation-native-custody-caller-card.md) now implements stopped installed-root capture, complete raw/source archives, independent process/unit/cgroup observations, candidate ACK windows, immutable owner transfer admission and four lifecycle checkpoints. All 70 source controls ran at `5d6ea844` with exit 0 and no skips ([source record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-custody-fourth-checkpoint-source-results-01)); genuine native cells remain NOT RUN. No new package lifecycle outcome is claimed.
 - The browser checks added for the role matrix (`live_browser_check`, bridge smoke, packaged console) are CI-only and have no recorded result.
 - The [serial session-state and cleanup controls](experiments/formal/console-session-clock-protocol.md#two-serial-state-fixtures-and-browser-cleanup-registration) retain [actual registration failures](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-session-fixture-registration-red-results-01): four missing-checker assertions and five finalizer defects. The explicit AB/C checker has [source evidence](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-session-source-results-01) with unchanged session semantics. The [delegated ownership registration](experiments/formal/console-session-clock-protocol.md#delegated-browser-launch-ownership-amendment) separates cleanup from native monotonic request binding and browser acceptance, which remain pending. Both fresh states share one 240-second deadline. The [owned cleanup source repair](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-owned-cleanup-source-results-01) executes all 13 controls without skips at `336949e`; cgroup behavior is modeled. Native launch ownership and later-fork reaping are now integrated. At `0152363`, the [native cleanup controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-native-cleanup-results-01) exited 0 for all 13 source controls and four real-kernel cases, with confirmed stop; this does not establish browser acceptance.
 - The [R3 browser supervisor](experiments/formal/browser-supervisor-protocol.md) preserves the 1 GiB browser budget while isolating its child wait domain. Its seven native lifecycle/ancestor controls and exact-revision source/documentation follow-up ran at d6bb252, as recorded in the [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-supervisor-results-01). Supervisor failure requires whole-campaign stop/reaping; the native session request binding and browser acceptance remain pending.
@@ -194,3 +212,14 @@ and its storage root `FABRIC_STORAGE_ROOT`. The laboratory ceiling is the smalle
 20 GiB and 75% of RAM with no swap; the server experiment cap is 4 GB and the total
 storage ceiling 100 GB. Remote hosts use their own smaller verified budgets. Preserve
 failure evidence and remove owned scratch.
+
+Trusted Firefox owner-walkthrough bridge support is prospective: isolated public
+CA NSS trust, exact profile-only hostname mapping and supervised1GiB browser
+budget are implemented in the harness. At `04349aa`, 23 finite source controls
+and the trusted-origin, wrong-SAN and untrusted-CA native controls exited 0 with
+confirmed stops; see the [revision-bound results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-firefox-trust-results-01).
+No owner-walkthrough/package acceptance follows from these mechanism controls. See the [registered owner protocol](experiments/formal/owner-walkthrough-protocol.md).
+
+- Packaged legacy administration migration now has a prospective isolated browser supplement (`tools/ui/browser_migration.py`): exact CLI enrollment/query, stopped original state/prefix witnesses, actual resident owner/reader transition and separate normal-start format1 refusal. Source controls and both-engine package cells remain not run; see [registered protocol](experiments/formal/browser-migration-protocol.md).
+
+- Native installation custody admission now targets the completed TLS replacement e078ba2 (canonical package source28bcdf7), preserving historical8fb evidence. Four fresh guest cells and same-code fixture constructor02 remain not run; see the [replacement binding](experiments/formal/installation-native-custody-caller-card.md#replacement-tls-candidate-binding-prospective-revision-6).

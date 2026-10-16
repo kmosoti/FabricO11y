@@ -407,7 +407,23 @@ def main():
     parser.add_argument('--session-expiry-admission',type=Path,help='successful exact-helper native admission receipt')
     parser.add_argument('--candidate-commit',help='exact candidate commit for controlled-time receipts')
     parser.add_argument('--package',type=Path,help='exact candidate package for controlled-time receipts')
+    parser.add_argument('--security-probes',action='store_true',help='signed virtual-key, replay, fixation and real reader expiry cell')
+    parser.add_argument('--inject-security-defect',choices=('registration-replay','login-replay','wrong-origin','wrong-rp','missing-uv','attacker-cookie','previous-cookie','reader-expiry'))
+    parser.add_argument('--ui-responses',action='store_true',help='isolated diagnostic query response handling')
+    parser.add_argument('--inject-ui-response-defect',choices=('empty','incomplete','gap','410','429','503','transport','timeout','403','401'))
+    parser.add_argument('--migration',action='store_true',help='isolated packaged legacy-to-passkey transition and format1 refusal')
+    parser.add_argument('--fabricctl',type=Path,help='exact extracted candidate CLI for migration')
     args = parser.parse_args()
+    if args.inject_ui_response_defect and not args.ui_responses:parser.error('UI response defect requires its own cell')
+    if args.ui_responses and (args.migration or args.session_expiry_helper or args.security_probes or args.role_matrix or args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery):parser.error('UI responses use a separate finite cell')
+    if args.migration and (not args.fabricctl or args.ui_responses or args.session_expiry_helper or args.security_probes or args.role_matrix or args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery or any((args.inject_rejection_defect,args.inject_api_cache_defect,args.inject_role_defect,args.inject_nonresident_enrollment,args.inject_security_defect))):
+        parser.error('migration requires exact fabricctl and its own ordinary-clock cell')
+    if args.fabricctl and not args.migration:
+        parser.error('fabricctl is reserved for the isolated migration cell')
+    if args.inject_security_defect and not args.security_probes:
+        parser.error('security defect requires its isolated security cell')
+    if args.security_probes and (args.session_expiry_helper or args.role_matrix or args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery):
+        parser.error('security probes use a separate finite cell')
     if args.role_matrix and (args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery):
         parser.error('role matrix is a separate finite cell; polling/pressure/cursor/shell/recovery retain their own cells')
     expiry=args.session_expiry_helper is not None
@@ -429,7 +445,7 @@ def main():
     build = args.build.resolve()
     if not out.is_relative_to(DATA / 'results') or out.exists() or not build.is_relative_to(DATA / 'results'):
         raise SystemExit('fresh owned data-drive result directories required')
-    for binary in (args.server, args.spindle):
+    for binary in (args.server, args.spindle, *([args.fabricctl] if args.migration else [])):
         if not binary.resolve().is_relative_to(DATA) or not binary.is_file():
             raise SystemExit('project binaries must be existing data-drive artifacts')
     out.mkdir()
@@ -437,7 +453,7 @@ def main():
     work.mkdir(mode=0o700)
     checks = []
     receipt = {'command': sys.argv, 'exit': 1, 'checks': checks, 'build': str(build),
-               'browser':args.browser,'browser_version_expected': VERSION if args.browser=='chrome' else '157.0', 'fixture_storage': str(work), 'combined_memory_cap_bytes':4000000000,'fixture_storage_cap_bytes':512*1024*1024,
+               'browser':args.browser,'browser_version_expected': VERSION if args.browser=='chrome' else '157.0.1', 'fixture_storage': str(work), 'combined_memory_cap_bytes':4000000000,'fixture_storage_cap_bytes':512*1024*1024,
                'enforced_limits':{key:(limits/key).read_text().strip() for key in ('memory.max','memory.high','memory.swap.max','cpu.max','pids.max')},
                'scope': 'finite virtual CTAP2 desktop/narrow browser integration; not hardware/mobile/installed-app qualification',
                'tls_scope': 'exact fixture leaf SPKI trusted by this isolated browser only; Spindle trusts fixture CA',
@@ -447,7 +463,7 @@ def main():
                'injected_rejection_defect':args.inject_rejection_defect,
                'source_sha256': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                                  for p in (Path(__file__), ROLE_FIXTURE, ROOT / 'tools/ui/fixture_cadence.py', ROOT / 'tools/ui/browser_producer.py', ROOT / 'tools/packaging/stage_console.py')},
-               'binaries': {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in (args.server, args.spindle)},
+               'binaries': {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in (args.server, args.spindle, *([args.fabricctl] if args.migration else []))},
                'browser_download': json.loads((TOOLS / 'download.json').read_text()) if args.browser=='chrome' else json.loads((DATA/'tools/ui/geckodriver.json').read_text())}
     processes = []
     logs = []
@@ -552,7 +568,7 @@ def main():
 
     def verify_binary_identity():
         receipt['native_input_hashes_after']={name:hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in receipt['binaries']}
-        receipt['native_snapshot_hashes_after']={role:hashlib.sha256(getattr(args,role).read_bytes()).hexdigest() for role in ('server','spindle')}
+        receipt['native_snapshot_hashes_after']={role:hashlib.sha256(getattr(args,role).read_bytes()).hexdigest() for role in ('server','spindle', *(['fabricctl'] if args.migration else []))}
         check(receipt['native_input_hashes_after']==receipt['binaries'],'native input artifact identities remain unchanged throughout run')
         check(all(receipt['native_snapshot_hashes_after'][role]==identity['sha256'] for role,identity in receipt['immutable_binary_snapshots'].items()),'all fixture launches retain immutable candidate binary bytes')
 
@@ -688,7 +704,7 @@ def main():
     try:
         artifact_dir=work/'binaries';artifact_dir.mkdir(mode=0o700)
         snapshots={}
-        for role in ('server','spindle'):
+        for role in ('server','spindle', *(['fabricctl'] if args.migration else [])):
             source=getattr(args,role)
             destination=artifact_dir/role
             shutil.copyfile(source,destination)
@@ -765,6 +781,19 @@ self.addEventListener("fetch",event=>{
         admin.chmod(0o600)
         config = work / 'server.conf'
         config.write_text(f'listen=127.0.0.1:{server_port}\ntls_cert={work}/server.pem\ntls_key={work}/server.key\nstate_dir={work}/state\nadmin_token_file={admin}\nconsole_dir={work}/console\naccess_origin={origin}\naccess_rp_id=localhost\njournal_bytes=8388608\njournal_file_bytes=1048576\nretention_s=86400\nretention_bytes=33554432\nseal_workers=1\nself_spindle_url={origin}\nself_spindle_ca={work}/ca.pem\nself_spindle_executable={args.spindle.resolve()}\n')
+        migration_prepared = None
+        if args.migration:
+            import browser_migration
+            args._migration_origin = origin
+            def stop_migration(prefix):
+                selected = [b for b in owned_groups if b['group']['label'].startswith(prefix)]
+                check(bool(selected),'migration owned processes observed')
+                stop_browser_groups(group_parent,selected)
+                check(all(b['group'].get('kernel_empty') and b['group'].get('children_reaped') for b in selected),
+                    'migration kernel-empty stopped descendants')
+            receipt['source_sha256'].update({str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in (ROOT/'tools/ui/browser_migration.py',ROOT/'tools/ui/migration_contract.py')})
+            migration_prepared = browser_migration.prepare(args,work,out,origin,config,admin,launch,stop_migration,wait,pace_api,receipt)
         def start_owner(label):
             nonlocal session,endpoint,context,tls_opener
             fixture=work/label if label else work
@@ -889,6 +918,12 @@ self.addEventListener("fetch",event=>{
                 try{const response=await original(...args);Object.assign(entry,{status:response.status,retry_after:response.headers.get('retry-after'),cache_control:response.headers.get('cache-control'),csp:response.headers.get('content-security-policy'),coop:response.headers.get('cross-origin-opener-policy'),corp:response.headers.get('cross-origin-resource-policy')});return response}
                 finally{entry.finished_ms=performance.now()}};
                 return paced?(await window.fixturePace(dispatch)).response:dispatch(performance.now())}''',cadence.interval*1000)
+            if args.security_probes:
+                js('''const original=window.fetch;window.fixtureCompletedRegistration=null;
+                  window.fetch=(...args)=>{const p=new URL(typeof args[0]==='string'?args[0]:args[0].url,location.href).pathname;
+                  if(p==='/v1/console/auth/register/finish' && !window.fixtureCompletedRegistration)
+                    window.fixtureCompletedRegistration=JSON.parse(args[1].body);
+                  return original(...args)}''')
             click('Connect to server')
             wait(lambda: js('return document.body.textContent.includes("Sign in with a passkey") && !document.body.textContent.includes("Working…")'), 'live sign-in locked view')
             js('''const weakenResident=arguments[0];const original=window.fabricPasskey;window.fabricPasskey=async function(register,text){
@@ -923,6 +958,10 @@ self.addEventListener("fetch",event=>{
                 started_monotonic_ns=started,state_before=state_record)
 
         server,cookie,view,principal_id,bootstrap_file,authenticator,first_fixture=start_owner('AB' if expiry else '')
+        if args.migration:
+            browser_migration.finish(args,work,out,config,admin,migration_prepared,api,bearer_api,launch,stop_migration,wait)
+            capture_api_metadata();verify_binary_identity();receipt['exit']=0
+            return
         if expiry:
             from browser_expiry import run_expiry
             run_expiry(args,receipt,clock_targets,owned_groups,group_parent,state_descriptors,first_fixture,
@@ -941,6 +980,26 @@ self.addEventListener("fetch",event=>{
         except urllib.error.HTTPError as error:
             expect((error.code,json.load(error)),403,'access denied','cookie mutation with foreign Origin rejected')
         check(api('/v1/console/session')[0] == 200, 'rejected Origin mutation preserves session')
+        if args.security_probes:
+            import browser_security
+            def export_fixture_credentials():
+                if args.browser == 'firefox':
+                    wd('/moz/context', {'context':'chrome'})
+                    try:
+                        return js('return ChromeUtils.importESModule("chrome://remote/content/marionette/webauthn.sys.mjs").webauthn.getCredentials(arguments[0])', authenticator)
+                    finally:
+                        wd('/moz/context', {'context':'content'})
+                return cdp('WebAuthn.getCredentials', {'authenticatorId':authenticator})['credentials']
+            registration=js('const r=window.fixtureCompletedRegistration;window.fixtureCompletedRegistration=null;return r')
+            receipt['security_probes']=[]
+            browser_security.run(api=api,bearer=bearer_api,js=js,async_js=async_js,wd=wd,
+                export_credentials=export_fixture_credentials,origin=origin,principal=principal_id,
+                work=work,deadline=deadline,registration=registration,inject=args.inject_security_defect,
+                observations=receipt['security_probes'])
+            check(browser_security.grade(receipt['security_probes']),'all signed browser security properties')
+            registration=None
+            capture_api_metadata();verify_binary_identity();receipt['exit']=0
+            return
         if args.pressure:
             held=[]
             try:
@@ -1062,6 +1121,17 @@ self.addEventListener("fetch",event=>{
         wait(lambda:js('return document.querySelectorAll(".results tbody tr").length===200'),'bounded first actual log page')
         first_page=js('return Array.from(document.querySelectorAll(".results tbody tr pre")).map(e=>e.textContent)')
         check(all(f'ordinal={i:03d}' in row for i,row in enumerate(first_page)), 'first page matches independent producer ordinals')
+        if args.ui_responses:
+            import browser_responses
+            query={'kind':'logs','node':'browser-edge','from_ns':trace_origin-60_000_000_000,'to_ns':time.time_ns()+60_000_000_000,'contains':'browser-page-fixture','limit':200,'page':None}
+            status,baseline=api('/v1/console/query','POST',query)
+            check(status==200 and len(baseline['rows'])==200,'actual package response before diagnostic UI corpus')
+            receipt['ui_response_observations']=[]
+            receipt['ui_response_witness']=browser_responses.run(js=js,click=click,wait=wait,field=field,nav=nav,
+                baseline=baseline,observations=receipt['ui_response_observations'],inject=args.inject_ui_response_defect)
+            check(browser_responses.grade(receipt['ui_response_observations']),'all diagnostic UI response properties')
+            capture_api_metadata();verify_binary_identity();receipt['exit']=0
+            return
         click('Next snapshot page')
         wait(lambda:js('return document.querySelectorAll(".results tbody tr").length===50'),'bounded continuation actual log page')
         second_page=js('return Array.from(document.querySelectorAll(".results tbody tr pre")).map(e=>e.textContent)')

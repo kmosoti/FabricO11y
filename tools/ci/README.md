@@ -8,6 +8,16 @@ disk-backed storage root, memory/swap limits and bounded process-tree cleanup.
 on the hosted runner's disk) for later steps and sizes the parent cgroup with
 the launcher's own `memory_limits`, so CI no longer bind-mounts an owner path.
 
+Hosted setup explicitly delegates CPU, I/O, memory and task controllers through
+a hosted-only runtime unit drop-in for `user@UID.service` and records actual availability before project jobs. The
+completion harness checks all four before enabling descendants and verifies
+kernel readback. Missing controllers fail setup; they are not made optional. Hosted setup refuses
+to restart its own user-manager tree. A runtime unit drop-in is required because
+systemd 255 accepts DelegateControllers over D-Bus only for transient units.
+This addresses the retained PR72 Ubuntu browser startup failure. Its hosted
+integration rerun remains required; local source controls cannot establish
+Ubuntu delegation.
+
 ## Scheduling
 
 The main Rust workflow runs on pull requests, main-branch pushes, tag pushes and

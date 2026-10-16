@@ -1,0 +1,232 @@
+# Native installation custody producer and caller card
+
+Status: prospective qualification-only follow-up, 2026-10-13; NOT RUN.
+This card preserves the later obligations separated from the
+[native reader registration](installation-native-custody-protocol.md) under C-101.
+No producer/caller implementation, native command or result is admitted here.
+Source-only controls do not authenticate a guest stop, service identity or transfer.
+An exact source preflight and separate native producer/caller admission remain required.
+
+## Prospective production ceilings
+
+| Card / owned production paths | Maximum net addition | Reason |
+| --- | ---: | --- |
+| Guest producer: new `tools/qualification/install/custody_native.py` | +180 | Fixed-path stopped capture, manifest, complete raw roots, source archives/query pages and candidate process/journal joins. |
+| Bridge/admission/caller: `tools/qualification/install/run-qemu.py`, `lifecycle.sh`, and the same `custody_native.py` | +220 combined, separately counted from producer | Expected #40 tuple/transfer binding, bounded evidence transfer, lifecycle entry/exit and unchanged-reader invocation. |
+
+These are ceilings, not targets or observed deltas. Together with the separately
+registered +80 reader ceiling, the combined ceiling is +480. No generic caller
+API or optional raw-server reread is required by the source registration.
+Minimize each actual diff and preserve all earlier controls and independent oracles.
+
+## Native producer, admission and caller obligations
+
+
+The guest producer reads `/var/lib/fabrico11y/node/spool` in place after stopping
+both installed units and every server-owned companion. It retains raw systemctl
+query exit/state/MainPID, actual ControlGroup membership and independent process
+inventory, boot ID, service UID/GID and stable descriptor/stat inventories.
+No literal `stop_confirmed`, `cgroup_empty` or successful exit bit is accepted
+without its independently captured, expected-bound raw observation. Any live or
+unreadable writer observation refuses capture before source/archive collection.
+
+The producer's fixed guest read-only namespace is `/var/lib`: source archives
+and receipts go under a newly exclusive, root-owned 0700
+`/var/lib/fabric-custody-fixture/<run_id>/`, with 0600 files. Only that disposable
+QEMU guest may set `FABRIC_SCRATCH_ROOT=/var/lib` for reading the two exact
+registered roots; host commands always retain their DATA-owned scratch root.
+The caller must establish the guest/run/boot/configured-root tuple and exact
+allowlist before invoking the reader. This namespace variable authenticates
+neither the guest nor any path. The actual Spool stays service-owned; the producer
+does not chown, link or relocate it. Export complete raw trees as explicitly
+labelled archives after reading the actual root, never as replacement roots.
+
+Capture an unchanged stopped pre-install checkpoint and a separate stopped
+post-install checkpoint; record all original guest paths, metadata, raw hashes,
+source-prefix bytes/cursor CRCs and observer command/exits. During the bounded
+server outage, actually collect the predecessor pending line, then stop the node
+and append a distinct unread line. The former must occur in a committed raw
+Batch after the durable ACK cursor; the latter must be an adjacent unread source
+suffix. Candidate install must preserve that checkpoint. After candidate restart,
+capture every query page without body filtering, full ACK journal JSON and an
+independently observed node `/proc/PID/exe` hash, PID/start identity, service
+UID/cgroup/boot and calibrated run window. ACKs must join that exact sender and
+window, every required pending payload hash, Strand and durable ACK cursor.
+Observe changed reboot identity and exact projected rows through the existing L2;
+unchanged historical lifecycle/removal gates stay required.
+
+On the host, use a new exclusive DATA scratch/output pair per cell. Before boot
+and again before admission, freeze and validate the owner-admitted #40 tuple:
+FROZEN `8fb6f413179b094288316e25845c137440ba23fa`, package/source/console,
+canonical helper manifest and binaries, exact clean merged harness/source/helper
+hashes, producer manifest, raw transfer hashes and actual stopped observations.
+No guessed main revision or claimed boolean replaces the frozen owner record.
+Canonical package source is `73ff77867d10ef521ca985b094e1d177f7786b77`.
+
+| Immutable owner input under `/run/media/kmosoti/data/FabricO11y` | Expected SHA-256 |
+| --- | --- |
+| `results/installation-package-build/fresh-8fb6f413179b-01-deb-a/receipt.json` | `b10a4e4c2d83d8dbed7c1d6e74673fd377a83123fc1bce31fffc97e034beb9af` |
+| Canonical candidate DEB named by that receipt | `8edfc7709f4b5dc3da01c00a1d8c442470298e96f8c8e502cfb14e8c9e713e92` |
+| `results/packages/fresh-8fb6f413179b-01-rpm-a/receipt.json` | `eadbbd217804efdeae217fe04d4800c9482cc23650942860df4d756e45ac8434` |
+| Canonical candidate RPM named by that receipt | `a54f55e7bf1b2230e026b49d6b86023778a9648ae49b11c6bcb0d558db34a840` |
+
+Read the actual canonical #40 provenance and helper receipts to complete the
+expected tuple before the native preflight; this table is not permission to
+omit those joins. Output owns only
+`DATA/results/installation-native-custody/<run_id>/` and exclusive scratch under
+`DATA/scratch/installation-native-custody-<run_id>/`. Retain a manifest mapping
+each guest source to its archive, original stat/ownership, digest and raw producer
+receipt. Credential files retain only original path/stat/hash witnesses; never
+export credential contents. Fixture/archive/source authority remains available.
+
+Native cells: one positive Debian and one positive enforcing Fedora lifecycle;
+two additional producer refusals on Debian only. Pending-not-produced deliberately
+leaves the new line uncollected and must fail the named missing-committed-pending
+check after successful raw decoding. Live-writer deliberately keeps the node
+active and must fail the named stop observation before checkpointing. A boot,
+credential, capture, timeout, import or package setup failure is not detection.
+No candidate install starts after either intended producer refusal.
+
+Host controls mutate explicitly labelled stopped-bundle **copies**: original
+payload/CRC/ACK identity, source-prefix interval, transfer digest/path/ownership,
+producer/package/helper/source mismatch and incomplete stopped observations.
+Credential hash/metadata drift uses literal host records plus the positive native
+credential join; no extra credential VM. Controls must fail their named admission
+or conservation check with otherwise coherent inputs. Never mutate immutable
+actual receipts, packages, raw archives or retained historical failures.
+
+Keep the existing one-guest 2-vCPU/6144-MiB/8-GiB disk envelope, 7/8-GiB host
+high/max and zero swap; default 1800-second outer deadline and 180-second lifecycle
+phase ceiling. Charge every SSH/helper/copy/query against remaining phase/outer
+time; the 20-second outage and bounded readiness/drain must fit those ceilings.
+Setup/copy overhead is unmeasured and must be measured before native admission;
+an overrun is a refusal, never an implicit deadline extension.
+Full admission reserves 9663676416 bytes (9 GiB), stays at or below 95e9 including
+reserve, and enforces the unchanged 100-GB DATA ceiling. Measure raw/checkpoint
+overhead before native admission; do not silently exceed the reserved 1-GiB
+overhead. Stop/reap all descendants before cleanup, retain failed raw observations
+and archives, and require actual stopped/cleanup receipts. No native command,
+image boot, Rust build or producer/caller completion is established here.
+
+## Prospective fourth-checkpoint implementation ceiling amendment
+
+The [fourth stopped checkpoint](installation-native-custody-protocol.md#fourth-stopped-reboot-checkpoint-prospective-revision-4)
+adds phase-specific raw and sender evidence. Source inspection of the complete
+uncommitted producer/caller design measured 212 producer lines and 296 caller
+lines (including all new host admission and lifecycle call sites), beyond the
+original 180/220 estimate. Before any native execution, separately register
+maximum **230 producer** and **350 caller** net lines, **580 combined**. The
+reader's separate 540-total ceiling remains independent. Actual final deltas,
+including every new production helper and call site, must be reported.
+
+The added responsibilities are concrete: independent Btrfs filesystem/subvolume
+observations through Linux UAPI `BTRFS_IOC_FS_INFO` and the root-ID
+`BTRFS_IOC_INO_LOOKUP` (objectid256), complete nested raw-archive membership and
+original ownership checks, exact full-page reconstruction on host admission,
+and a distinct reboot process/ACK window. The installed product never imports
+these helpers. This expands the source budget only; the fixed paths, candidate,
+packages, historical gates, finite five-row projection, independent oracles,
+VM/cgroup/disk envelopes, 180-second lifecycle phases, outer deadline and
+1-GiB evidence overhead remain unchanged. A native refusal never starts candidate
+installation, and no source result substitutes for native acceptance.
+
+For the stopped drain phase, the candidate node is stopped but stays enabled;
+the server alone restarts for the unchanged L1 query/config/account/console
+checks. The actual reboot starts the node, whose distinct sender joins every
+new raw reboot Batch. This prevents an unobserved intervening sender from
+committing additional diagnostics between checkpoints. L2 still observes both
+healthy services and a changed boot before its stopped raw capture. Full source
+and exact native-command preflight remain required; implementation and native
+execution are NOT RUN at this registration.
+
+
+## Registered stopped-bundle copy controls
+
+`test_custody_capture.py` constructs explicitly synthetic tar bundles around the
+existing hand-encoded Batch/source fixtures. Its literal unit/process/account
+records authenticate no guest. The complete four-phase bundle must admit, while
+otherwise coherent copies must refuse at their named boundaries: independent
+transfer digest, escaping path/root ownership, candidate/source binding, live
+independent process inventory, nonzero unit PID, missing original raw leaf,
+changed original raw bytes, dropped/duplicated complete query row, exact ACK hash,
+candidate executable hash, original configured root and credential stat/hash
+drift. Dirty or replaced harness source must refuse before canonical package
+access. The producer/caller source suite is prospective and NOT RUN here.
+
+The host retains the unchanged SSH-observed guest archive SHA-256 as independent
+transfer authority. Synthetic copy controls may provide the copy's own digest
+only to reach deeper admission/conservation checks; that never authenticates the
+copy as genuine guest evidence. Actual native admission requires the separately
+observed original digest and the frozen owner source/package/helper tuple.
+
+
+Before implementation, the final measured design is 230 producer and
+350 caller net lines (all new module code and both lifecycle/host call sites),
+580 combined. The final caller ceiling is350, replacing340 for independent
+nested raw-frame/payload and original source-archive joins. This does not change
+an acceptance expectation. Shared original-input reading supplies stable kernel
+Btrfs namespace observations for credential stat witnesses too. Before/install/
+drain credential stat/hash records stay exact. Only the reboot comparison may
+normalize `st_dev`, and only with the same independently observed nonzero Btrfs
+filesystem UUID and subvolume; original records remain retained. Wrong inode,
+mode, owner, hash or namespace still refuses. New literal controls cover this
+legitimate device change, changed-namespace refusal, and the 1024/4096-byte UAPI
+buffers and root-ID request. Local authoritative headers inspected:
+`/usr/include/linux/btrfs.h` SHA-256
+`bfbd7845999edf81c6b7c6034f25e7981a17f12e603981fef20c3895fecf76aa`
+and `btrfs_tree.h`
+`856fe1cf3c741fab992b73c328d4def16bad6351f6b0b75ca590a69e1f748444`.
+These source controls do not establish a genuine kernel ioctl result.
+
+
+## Exact sender invocation amendment
+
+Before implementation, register a final235producer/355caller ceiling (590combined)
+for exact systemd invocation binding. Each candidate process observation retains
+`InvocationID`, PID and `/proc/PID/stat` start ticks; reobserve them while running
+before stopping. Every delivery journal record must carry that exact trusted
+`_SYSTEMD_INVOCATION_ID` as well as PID/unit/executable/UID/GID/cgroup/boot and the
+registered realtime window. A same-PID, same-boot, in-window ACK from another
+invocation must refuse (`raw journal sender mismatch`). Literal stopped-bundle
+copy controls inject that defect while keeping the ACK bytes/window coherent.
+
+Full journals retain `__MONOTONIC_TIMESTAMP` but no comparison treats it as
+CLOCK_BOOTTIME: suspend changes those clock domains differently. Exact invocation
+binding avoids admitting another incarnation through the realtime calibration's
+one-second allowance. No no-suspend assumption or clock-domain equality is used.
+The native command plan must pin a clean merged implementation revision present
+in `origin/main`; source-only green does not bypass that host admission rule.
+
+## Replacement TLS candidate binding, prospective revision 6
+
+Reason: RUSTSEC-2026-0349 made the historical candidate unsuitable for fresh
+acceptance. PR70 changed only the exact rustls patch dependency and corresponding
+locks. The completed #40 replacement is frozen at
+`e078ba23b543126011a2136dd1f7e98ca65370eb`, epoch1792100410, canonical minimized
+package source `28bcdf7ac833ab634d3b130b85cb2a0aa47eb7a8`. Historical candidate,
+packages, constructor01 and all source/native failure evidence remain unchanged.
+This registration replaces only the native admission's prospective candidate
+identity for the next four cells; it changes no observation, ceiling or oracle.
+
+| DATA-relative immutable input | SHA-256 |
+| --- | --- |
+| `results/candidate-build-replacement-tls-01/candidate-admission.json` | `bf27a2576bba8c32c7e27f9e434f27822c37aba60bbda387587723f2a1f36eb2` |
+| `results/candidate-build-replacement-tls-01/package-inspection.json` | `46c7e53ac698a34cebb4f85f84eca460f131aec2ce6a419cfb23b71092ef5d4b` |
+| `results/installation-package-build/replacement-tls-01-deb-a/receipt.json` | `f2a06e16fd8f82e27517eee12a1d8176d052765ac2e75959a85f70cdaeb6fd85` |
+| Canonical DEB named by that receipt | `2a555bec6334fde6774d21c414d7d42e041c39ca170e3a30fd3676e134b9f593` |
+| `results/packages/replacement-tls-01-rpm-a/receipt.json` | `4a2a800e8351ec8480359d0912f05d36682d27834c11c60bae87752961a5326a` |
+| Canonical RPM named by that receipt | `12c03f92e96c7d1a848a5198f017c21a1e17d485cdfca7feb8464c3a425971c1` |
+| `results/console-replacement-tls-01-a/build.json` | `5fd251faa4c5145a4813bdb8e3c8a56812d5e52887c8e040101440aa891d0c13` |
+
+Actual provenance bundle/manifest and qualification-helper hashes are taken from
+these immutable receipts and checked exactly by the existing admission; the
+independent #40 inspection must also be admitted before any guest. The actual
+clean merged harness/owner/source tuple must be frozen before dependent execution.
+Native cells use new exclusive run IDs/output records under
+`results/installation-native-custody/native-pipeline-replacement-01`; no old
+result is relabelled. The same-code fixture constructor uses the unchanged
+constructor with these actual canonical receipts/frozen commit/epoch and a new
+exclusive `results/owner-fixture-constructor-02`; its output must be independently
+validated before #46 consumes it. Existing native #41 predecessor packages,
+images, positive cells, missing-pending/live-writer refusals, source controls,
+resource/storage/deadline limits and cleanup gates remain mandatory.

@@ -31,9 +31,9 @@ SCHEMAS = {
     'array': {1: 'any'}, 'kvlist': {1: 'kv'},
     # Metric/Span nested leaves stay opaque; product ingest owns their semantics.
     'metrics': {1: 'resource_metrics'}, 'traces': {1: 'resource_traces'},
-    'resource_metrics': {1: 2, 2: 'scope_metrics', 3: 2},
-    'resource_traces': {1: 2, 2: 'scope_traces', 3: 2},
-    'scope_metrics': {1: 2, 2: 'metric', 3: 2}, 'scope_traces': {1: 2, 2: 'span', 3: 2},
+    'resource_metrics': {1: 'resource', 2: 'scope_metrics', 3: 'utf8'},
+    'resource_traces': {1: 'resource', 2: 'scope_traces', 3: 'utf8'},
+    'scope_metrics': {1: 'scope', 2: 'metric', 3: 'utf8'}, 'scope_traces': {1: 'scope', 2: 'span', 3: 'utf8'},
     'metric': {1: 2, 2: 2, 3: 2, 5: 2, 7: 2, 9: 2, 10: 2, 11: 2, 12: 2},
     'span': {1: 2, 2: 2, 3: 2, 4: 2, 5: 2, 6: 0, 7: 1, 8: 1, 9: 2, 10: 0,
              11: 2, 12: 0, 13: 2, 14: 0, 15: 2, 16: 5},
@@ -181,7 +181,8 @@ def envelope(raw):
         for gap in gaps:
             gap.decode('utf-8')
         cursors = [cursor(value) for _, value in f.get(7, [])]
-        batch = dict(version=one(f, 1), node_id=one(f, 2, b''), generation=one(f, 3), sequence=one(f, 4))
+        batch = dict(version=one(f, 1), node_id=one(f, 2, b''), generation=one(f, 3), sequence=one(f, 4),
+                     collection_gaps=[gap.decode('utf-8') for gap in gaps])
         decoded = [validate(signal, schema) for signal, schema in zip(signals, ('metrics', 'logs', 'traces'))]
         rows = list(log_rows(decoded[1], batch))
         return batch, cursors, rows
@@ -232,9 +233,39 @@ def read_regular(path, limit):
         os.close(fd)
 
 
-def stopped_snapshot(root, stopped_receipt, archived_allowed_logs):
+def diagnostic_inventory(root, service):
+    directory, observed, result = root / 'diagnostics', {}, {}
+    try:
+        require(all(type(service.get(key)) is int and service[key] >= 0 for key in ('uid', 'gid')), 'service identity')
+        before = identity(owned(directory).lstat())
+        require(stat.S_ISDIR(before[2]) and stat.S_IMODE(before[2]) == 0o700
+            and before[3:5] == (service['uid'], service['gid']), 'directory ownership/mode')
+        fd = open_owned(directory, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            names = sorted(os.listdir(fd))
+            require(set(names) in ({'spindle.log'}, {'spindle.log', 'spindle.log.1'}), 'directory inventory')
+            for name in names:
+                raw, info = read_regular(directory / name, 262144)
+                require(stat.S_IMODE(info[2]) == 0o600 and info[3:5] == before[3:5], 'file ownership/mode')
+                observed['diagnostics/' + name] = info
+                result[name] = dict(bytes=raw, sha256=hashlib.sha256(raw).hexdigest(), size=len(raw),
+                    device=info[0], inode=info[1], mode=info[2], uid=info[3], gid=info[4], nlink=info[5])
+            require(identity(os.fstat(fd)) == before == identity(directory.lstat())
+                and sorted(os.listdir(fd)) == names, 'directory drift')
+        finally:
+            os.close(fd)
+        observed['diagnostics'] = before
+        return result, observed
+    except (OSError, ValueError, TypeError, KeyError) as error:
+        raise ValueError('diagnostic input: ' + str(error)) from error
+
+
+def stopped_snapshot(root, stopped_receipt, archived_allowed_logs, *, fixture_paths=None):
     root = owned(root)
     receipt = copy.deepcopy(stopped_receipt)
+    require(fixture_paths is None or (type(fixture_paths) is tuple and len(fixture_paths) == 1
+        and isinstance(fixture_paths[0], str) and Path(fixture_paths[0]).is_absolute()
+        and fixture_paths[0] in archived_allowed_logs), 'invalid fixture paths')
     require(receipt.get('spool_root') == str(root) and receipt.get('stop_confirmed') is True
         and receipt.get('extra_project_units') == [] and isinstance(receipt.get('boot_id'), str)
         and receipt['boot_id'], 'incomplete stop receipt')
@@ -258,12 +289,14 @@ def stopped_snapshot(root, stopped_receipt, archived_allowed_logs):
         require(identity(os.fstat(fd)) == root_before, 'Spool root changed')
         names = sorted(os.listdir(fd))
         require({'identity', 'writer.lock', 'batches.faj'} <= set(names), 'missing Spool input')
-        require(all(name in ('identity', 'acked', 'writer.lock', 'batches.faj')
+        diagnostics, observed = diagnostic_inventory(root, receipt.get('service_identity', {})) if fixture_paths else ({}, {})
+        require(all(name in ('identity', 'acked', 'writer.lock', 'batches.faj') or (fixture_paths and name == 'diagnostics')
             or re.fullmatch(r'sealed-[0-9]{20}\.faj', name) for name in names), 'unexpected or failed Spool input')
-        observed, files, raw_files = {}, {}, {}
+        files, raw_files = {'diagnostics/' + name: value for name, value in diagnostics.items()}, {}
         require(sum((root / name).lstat().st_size for name in names if name.endswith('.faj')) <= cap - 4096,
                 'framed Spool cap')
         for name in names:
+            if fixture_paths and name == 'diagnostics': continue
             raw, info = read_regular(root / name, cap - 4096 if name.endswith('.faj') else 28)
             raw_files[name], observed[name] = raw, info
             files[name] = dict(sha256=hashlib.sha256(raw).hexdigest(), size=len(raw),
@@ -298,7 +331,7 @@ def stopped_snapshot(root, stopped_receipt, archived_allowed_logs):
                 require(not sources or sequence == sources[-1]['sequence'] + 1, 'lost/reordered source')
                 require(not first or name == 'batches.faj' or int(name[7:-4]) == sequence, 'sealed label')
                 sources.append(dict(sequence=sequence, sha256=hashlib.sha256(payload).hexdigest(),
-                                    payload=payload, rows=rows))
+                                    payload=payload, rows=rows, collection_gaps=batch['collection_gaps']))
                 cursors.update((item['path'], item) for item in current)
                 at, first = end + 16, False
             require(name == 'batches.faj' or not first, 'empty sealed source')
@@ -322,33 +355,70 @@ def stopped_snapshot(root, stopped_receipt, archived_allowed_logs):
             require(namespace and current['inode'] == log['inode'] and offset <= log['size']
                 and not current['skipping_oversize'] and (offset == 0 or log['bytes'][offset - 1:offset] == b'\n')
                 and zlib.crc32(log['bytes'][:current['prefix_len']]) == current['prefix_crc'], 'latest cursor/source mismatch')
+        if fixture_paths:
+            diagnostic = logs.get('/var/lib/fabrico11y/node/spool/diagnostics/spindle.log', {})
+            require(all(diagnostic.get(key) == diagnostics['spindle.log'][key]
+                for key in ('bytes', 'device', 'inode')), 'diagnostic archive/source mismatch')
         require(owned(root) == root and sorted(os.listdir(fd)) == names and identity(os.fstat(fd)) == root_before
             and identity(root.lstat()) == root_before, 'Spool changed during snapshot')
         require(all(identity((root / name).lstat()) == info for name, info in observed.items()), 'Spool file drift')
         require(all(identity(owned(path).lstat()) == info for path, info in log_observations.items()), 'archive drift')
         return dict(binding=binding, boot_id=receipt['boot_id'], node_id=node.hex(), generation=generation,
             ack=ack, files=files, file_observations=observed, sources=sources, cursors=cursors,
-            logs=logs, log_observations=log_observations, candidate_process=receipt.get('candidate_process'))
+            logs=logs, log_observations=log_observations, candidate_process=receipt.get('candidate_process'),
+            fixture_paths=fixture_paths, diagnostics=diagnostics)
     except (OSError, KeyError, TypeError) as error:
         raise ValueError(str(error)) from error
     finally:
         os.close(fd)
 
 
-def conserve(before, after_install, after_drain, queries, candidate_ack_events):
+def conserve(before, after_install, after_drain, queries, candidate_ack_events, *, after_reboot=None, reboot_ack_events=()):
+    paths = before.get('fixture_paths')
+    selected = lambda row: paths is None or row['attributes'].get('log.file.path') in paths
     for snapshot in (after_install, after_drain):
+        require(snapshot.get('fixture_paths') == paths, 'fixture paths changed')
         require(all(snapshot[key] == before[key] for key in ('binding', 'node_id', 'generation', 'boot_id')),
                 'candidate/Strand/boot substitution')
     require(all(before[key] == after_install[key] for key in ('ack', 'files', 'sources', 'cursors', 'logs')),
             'stopped install changed retained custody')
     pending = [source for source in before['sources'] if source['sequence'] > before['ack']]
     require(pending and after_drain['ack'] >= pending[-1]['sequence'], 'missing pending custody/drain ACK')
-    require(before['logs'] == after_drain['logs'], 'source archive rewritten')
+    require(all(log == after_drain['logs'].get(path) for path, log in before['logs'].items()
+        if paths is None or path in paths), 'source archive rewritten')
+    def preserve_diagnostics(prior, drained, stable_namespace=False):
+        same = lambda a, b: a['inode'] == b['inode'] and (stable_namespace or a['device'] == b['device'])
+        active, new = prior['spindle.log'], drained['spindle.log']
+        if same(active, new):
+            old, retained_old = prior.get('spindle.log.1'), drained.get('spindle.log.1')
+            unchanged = old == retained_old or (stable_namespace and old is not None and retained_old is not None
+                and all(value == retained_old.get(key) for key, value in old.items() if key != 'device'))
+            require(new['bytes'].startswith(active['bytes']) and unchanged,
+                    'diagnostic prefix preservation')
+        else:
+            old = drained.get('spindle.log.1', {})
+            first = new['bytes'].split(b'\n', 1)[0] + b'\n'
+            require(old and same(active, old) and old['bytes'].startswith(active['bytes'])
+                and b'\n' in new['bytes'] and len(first) <= 4096 and len(old['bytes']) + len(first) > 262144,
+                    'diagnostic rotation preservation')
+    if paths:
+        preserve_diagnostics(before['diagnostics'], after_drain['diagnostics'])
+    if after_reboot is not None:
+        require(paths is not None and all(after_reboot[key] == before[key] for key in
+            ('binding', 'node_id', 'generation', 'fixture_paths')) and after_reboot['boot_id'] == queries['boot_after']
+            and after_reboot['boot_id'] != before['boot_id'] and after_reboot['ack'] >= after_drain['ack'], 'reboot checkpoint binding')
+        require(all(all(value == after_reboot['logs'].get(path, {}).get(key) for key, value in log.items()
+            if key != 'device' or log['btrfs_identity'] is None) for path, log in before['logs'].items() if path in paths),
+                'reboot fixture archive rewritten')
+        diagnostic = '/var/lib/fabrico11y/node/spool/diagnostics/spindle.log'
+        namespace = after_drain['logs'][diagnostic]['btrfs_identity']
+        require(namespace == after_reboot['logs'][diagnostic]['btrfs_identity'], 'reboot diagnostic namespace changed')
+        preserve_diagnostics(after_drain['diagnostics'], after_reboot['diagnostics'], namespace is not None)
     retained = {source['sequence']: source['sha256'] for source in before['sources']}
     require(all(source['sequence'] not in retained or source['sha256'] == retained[source['sequence']]
         for source in after_drain['sources']), 'retained committed bytes changed')
     def sentinel(snapshot, body):
-        rows = [row for source in snapshot['sources'] for row in source['rows'] if row['body'] == body]
+        rows = [row for source in snapshot['sources'] for row in source['rows'] if selected(row) and row['body'] == body]
         require(len(rows) == 1, 'missing/duplicate raw sentinel')
         row, attrs = rows[0], rows[0]['attributes']
         path = attrs.get('log.file.path')
@@ -363,19 +433,35 @@ def conserve(before, after_install, after_drain, queries, candidate_ack_events):
         return row, path, start, end
     pending_row, path, _, end = sentinel(before, queries['pending_body'])
     require(pending_row['sequence'] > before['ack'], 'sentinel already acknowledged')
-    require(not any(row['body'] == queries['unread_body'] for source in before['sources'] for row in source['rows']),
+    require(not any(selected(row) and row['body'] == queries['unread_body'] for source in before['sources'] for row in source['rows']),
             'unread sentinel already committed')
     require(before['cursors'][path]['offset'] == end
         and before['logs'][path]['bytes'][end:] == (queries['unread_body'] + '\n').encode(), 'unread suffix mismatch')
     unread_row, unread_path, start, unread_end = sentinel(after_drain, queries['unread_body'])
     require(unread_path == path and start == end and unread_row['sequence'] > before['sources'][-1]['sequence']
         and after_drain['cursors'][path]['offset'] == unread_end == after_drain['logs'][path]['size'], 'unread not drained')
-    old = queries['before']
+    old = [row for row in queries['before'] if selected(row)]
+    require(all(row['node'] == 'spindle-1' and row['node_id'] == before['node_id']
+        and row['sequence'] <= before['ack'] for row in queries['before']), 'old-row baseline identity')
     require(len(old) == 3 and queries['pending_body'] != queries['unread_body']
         and not any(row['body'] in (queries['pending_body'], queries['unread_body']) for row in old), 'invalid old-row baseline')
+    require(all(queries['before'].count(row) == 1 for source in before['sources']
+        if source['sequence'] <= before['ack'] for row in source['rows']), 'old-row baseline raw mismatch')
     expected = old + [pending_row, unread_row]
-    require(all(row in old + [pending_row] for source in pending for row in source['rows']), 'unexpected pending log row')
+    require(all(row in old + [pending_row] for source in pending for row in source['rows'] if selected(row)), 'unexpected pending log row')
+    def raw_union(snapshots):
+        all_sources = {}
+        for snapshot in snapshots:
+            for source in snapshot['sources']:
+                previous = all_sources.setdefault(source['sequence'], source)
+                require(previous == source, 'conflicting retained raw identity')
+        rows = [row for source in all_sources.values() if source['sequence'] > before['ack'] for row in source['rows']]
+        require(len({(row['node_id'], row['sequence'], row['index']) for row in rows}) == len(rows), 'duplicate raw row identity')
+        require(not any(path in gap for source in all_sources.values() if source['sequence'] > before['ack']
+            for gap in source['collection_gaps'] for path in paths), 'fixture source gap')
+        return all_sources, rows
     for path, current in after_drain['cursors'].items():
+        if paths is not None and path not in paths: continue
         log, offset = after_drain['logs'][path], 0
         for row in sorted((row for row in expected if row['attributes'].get('log.file.path') == path),
                           key=lambda row: int(row['attributes']['log.file.offset.start'])):
@@ -390,28 +476,40 @@ def conserve(before, after_install, after_drain, queries, candidate_ack_events):
     keys = lambda rows: sorted((row['node_id'], row['sequence'], row['index']) for row in rows)
     encoded = lambda rows: sorted(json.dumps(row, sort_keys=True, allow_nan=False) for row in rows)
     require(len(set(keys(expected))) == len(expected), 'duplicate expected identity')
-    for observed in (queries['after_drain'], queries['after_reboot']):
-        require(keys(observed) == keys(expected) and encoded(observed) == encoded(expected), 'exact row conservation')
+    for phase, snapshots in (('after_drain', (before, after_install, after_drain)),
+                             ('after_reboot', (before, after_install, after_drain) + ((after_reboot,) if after_reboot else ()))):
+        observed = queries[phase]
+        complete = queries['before'] + raw_union(snapshots)[1] if paths else expected
+        projected = [row for row in observed if selected(row)]
+        require(keys(projected) == keys(expected) and encoded(projected) == encoded(expected), 'exact row conservation')
+        require(keys(observed) == keys(complete) and encoded(observed) == encoded(complete), 'exact row conservation')
     require(queries['boot_before'] == before['boot_id'] and queries['boot_after']
         and queries['boot_after'] != queries['boot_before'], 'no actual reboot identity')
-    process = after_drain['candidate_process']
-    require(isinstance(process, dict) and all(process.get(key) == before['binding'][key] for key in BINDING)
-        and process.get('unit') == UNITS[1] and type(process.get('pid')) is int and process['pid'] > 0
-        and process.get('boot_id') == after_drain['boot_id'] and type(process.get('start_ns')) is int
-        and type(process.get('end_ns')) is int and 0 <= process['start_ns'] <= process['end_ns'], 'candidate sender not bound')
+    def ack_join(snapshot, required, events):
+        process = snapshot['candidate_process']
+        require(isinstance(process, dict) and all(process.get(key) == before['binding'][key] for key in BINDING)
+            and process.get('unit') == UNITS[1] and type(process.get('pid')) is int and process['pid'] > 0
+            and process.get('boot_id') == snapshot['boot_id'] and type(process.get('start_ns')) is int
+            and type(process.get('end_ns')) is int and 0 <= process['start_ns'] <= process['end_ns'], 'candidate sender not bound')
+        witnessed = set()
+        for event in events:
+            match = re.fullmatch(r'delivery sequence=([0-9]+) sha256=([0-9a-f]{64}) status=ack committed_through=([0-9]+) elapsed_us=([0-9]+)', event['message'])
+            if not match:
+                continue
+            sequence, digest, through, _ = match.groups()
+            sequence, through = int(sequence), int(through)
+            require(all(event.get(key) == process[key] for key in ('unit', 'pid', 'boot_id'))
+                and type(event.get('at_ns')) is int and process['start_ns'] <= event['at_ns'] <= process['end_ns'], 'ACK sender/window mismatch')
+            if sequence in required:
+                require(digest == required[sequence] and sequence <= through <= snapshot['ack'], 'ACK exact bytes/cursor mismatch')
+                witnessed.add(sequence)
+        require(witnessed == set(required), 'missing candidate exact-byte ACK')
     required = {source['sequence']: source['sha256'] for source in pending}
     required[unread_row['sequence']] = next(source['sha256'] for source in after_drain['sources']
                                           if source['sequence'] == unread_row['sequence'])
-    witnessed = set()
-    for event in candidate_ack_events:
-        match = re.fullmatch(r'delivery sequence=([0-9]+) sha256=([0-9a-f]{64}) status=ack committed_through=([0-9]+) elapsed_us=([0-9]+)', event['message'])
-        if not match:
-            continue
-        sequence, digest, through, _ = match.groups()
-        sequence, through = int(sequence), int(through)
-        require(all(event.get(key) == process[key] for key in ('unit', 'pid', 'boot_id'))
-            and type(event.get('at_ns')) is int and process['start_ns'] <= event['at_ns'] <= process['end_ns'], 'ACK sender/window mismatch')
-        if sequence in required:
-            require(digest == required[sequence] and sequence <= through <= after_drain['ack'], 'ACK exact bytes/cursor mismatch')
-            witnessed.add(sequence)
-    require(witnessed == set(required), 'missing candidate exact-byte ACK')
+    ack_join(after_drain, required, candidate_ack_events)
+    if after_reboot is not None:
+        process = after_reboot['candidate_process']
+        require(isinstance(process, dict) and process.get('boot_id') != after_drain['candidate_process']['boot_id'], 'reboot sender not distinct')
+        ack_join(after_reboot, {source['sequence']: source['sha256'] for source in after_reboot['sources']
+            if source['sequence'] > after_drain['ack']}, reboot_ack_events)

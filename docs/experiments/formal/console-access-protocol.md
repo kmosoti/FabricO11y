@@ -159,3 +159,84 @@ candidate. A virtual authenticator is an independent browser/protocol fixture,
 not a claim of physical authenticator, mobile installation or universal security
 qualification. A failed or unavailable required cell blocks the corresponding
 release claim until resolved or explicitly rescoped by the owner.
+
+## Prospective signed browser security supplement
+
+Before replacement-candidate execution, a separate `--security-probes` cell uses
+only the exact packaged server and freshly enrolled virtual browser credential.
+It shares the existing 240-second deadline, resource bounds, shared request
+cadence and cleanup. It cannot run together with another lifecycle mode.
+
+Capture the completed registration request only in private browser memory, replay
+it once and require 403 `access denied`. Obtain a real browser login assertion,
+submit it successfully, then replay the identical completed ceremony and require
+the same refusal. No secret, challenge, cookie, CSRF value or credential private
+key is written into public receipts.
+
+Export only that fresh virtual fixture credential's private key into protected
+scratch. For each fresh challenge, sign a one-field negative: foreign client
+origin, foreign RP hash, or absent UV bit. Preserve the other authenticator flags,
+credential ID, client-data fields and increasing signature counter. OpenSSL must
+verify every signature independently before dispatch. Each negative must receive
+403 `access denied`; an adjacent correctly signed assertion must receive 200.
+A signature error, 429, missing fixture key or transport failure is inconclusive,
+not the named rejection. Never mutate the product access store or production key.
+
+Before a valid login, set an independently chosen attacker cookie in the private
+browser profile. The resulting session cookie must differ; the chosen cookie
+must receive 401 `sign in required`. Separately submit a successful login carrying
+the actual previous cookie and require that previous cookie to receive the same
+401 while the replacement works. Record only public hashes and outcomes.
+
+Issue an independent three-second reader and a 60-second reader through the
+actual owner API. Require the short reader to succeed before expiry, wait at
+least four real monotonic seconds from issuance and beyond its returned Unix
+expiry, then require 401 `sign in required`, with adjacent long-reader and owner
+200 witnesses. Retain wall/monotonic brackets; a clock discontinuity fails this
+ordinary-time cell. This is new-request expiry, not the native in-flight race.
+
+The literal result checker requires each named property exactly once. Source
+controls must reject missing/duplicate properties, forged success, wrong error,
+429, missing independent signature evidence, and insufficient real wait. A
+separate diagnostic `--inject-security-defect PROPERTY` changes only that named
+observed result after its real positive mechanism has run; the checker must
+reject the named property, never an unrelated startup error. This supplements
+existing CSRF, XSS, resident inventory and complete route-matrix cells; it does
+not establish their missing coverage or physical-device certification.
+
+### Exact Firefox maintenance-version correction
+
+The successor desktop fixture is pinned to Firefox **157.0.1**, retaining the
+same CTAP 2.1 selection, required resident/UV behavior and isolated NSS trust.
+The earlier 157.0 expectation remains attached to its failed runs. The native
+trust diagnostic reported `browserVersion=157.0.1`, with
+`acceptInsecureCerts=false`; installed RPM metadata and application.ini agree.
+The prior tool manifest's Firefox version label was stale even though its two
+Firefox executable hashes matched the installed files. The successor requires
+exact version equality, plus an inventory of all regular Firefox installation
+files (including application metadata and libxul), not a relaxed version range.
+No expected certificate refusal or product requirement changes.
+
+## Prospective UI response-handling supplement
+
+A separate `--ui-responses` desktop cell first requires a successful actual
+packaged query and original producer-row witness. It then intercepts only the
+next query response at the browser fetch boundary. This is diagnostic response
+handling, not evidence that the server emitted synthetic responses. Preserve the
+unmodified response text hash; Python JSON decoding preserves integer fields.
+
+Literal cases are empty success, incomplete success, reported gap, HTTP 410,
+429, 503, 403 and 401, transport rejection and the application's real 15-second
+abort deadline. Each consumes exactly one query dispatch. Require visible
+coverage/empty/error text, cleared busy state and no automatic retry. The 401 and
+403 cases must clear sensitive rows and lock the UI; a subsequent real session
+check may restore the still-live fixture cookie. Timeout requires the actual
+AbortSignal event and at least 14.5 seconds elapsed, not a manufactured immediate
+error. The native API response, injected case, UI observation and timing remain
+distinct records. Keep the original 240-second cell deadline and resource caps.
+
+Literal checker controls reject every missing/duplicate case and every missing
+rendering/lock/busy/dispatch/deadline witness. A named
+`--inject-ui-response-defect CASE` supplies a contradictory response for only
+that case; it must fail that case's UI assertion after the actual query witness.
+No injected status repairs an unexpected failure in ordinary acceptance.

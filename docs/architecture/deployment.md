@@ -52,3 +52,18 @@ guide's call sequence. Native execution remains subject to the
 [walkthrough protocol](../experiments/formal/owner-walkthrough-protocol.md);
 source controls alone establish no deployment acceptance. This is qualification
 tooling outside the runtime boundaries shown above.
+
+The [signed browser security fixture](../experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement)
+exports only a newly created virtual authenticator key into protected, owned
+scratch. It signs and independently verifies malformed-origin/RP/UV assertions
+without changing packaged product state. Private keys, ceremonies and cookies
+are excluded from public receipts; existing owned-group cleanup applies.
+
+The qualification-only [native custody caller](../experiments/formal/installation-native-custody-caller-card.md)
+observes the installed edge Spool in place with both units and every observed
+writer stopped. Complete labelled archives retain original guest metadata;
+host copies never become the installed-root authority. Four stopped checkpoints
+separate unchanged native installation, candidate drain and actual reboot.
+Full query pages and exact payload ACKs join independently observed candidate
+processes and boot identities. This harness adds no product dependency or service
+and has no executed native acceptance result yet.

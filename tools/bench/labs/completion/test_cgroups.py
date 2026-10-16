@@ -56,5 +56,32 @@ class MemoryLimitValues(unittest.TestCase):
                         cgroups.set_limits(group, 4_000_000_000, 3_000_000_000, 64, 2)
 
 
+class DelegationControllers(unittest.TestCase):
+    def test_missing_io_fails_before_any_controller_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            group=Path(directory)
+            (group/'cgroup.controllers').write_text('cpu memory pids')
+            (group/'cgroup.subtree_control').write_text('')
+            with self.assertRaisesRegex(RuntimeError,"unavailable:.*io"):
+                cgroups.enable_controllers(group)
+            self.assertEqual((group/'cgroup.subtree_control').read_text(),'')
+
+    def test_all_four_required_and_kernel_readback_is_checked(self):
+        for enabled in ('cpu io memory pids','cpu memory pids'):
+            with self.subTest(enabled=enabled), tempfile.TemporaryDirectory() as directory:
+                group=Path(directory)
+                (group/'cgroup.controllers').write_text('cpu io memory pids cpuset')
+                (group/'cgroup.subtree_control').write_text('')
+                original=Path.write_text
+                def kernel_write(path, value, *args, **kwargs):
+                    self.assertEqual(set(value.split()),{'+cpu','+io','+memory','+pids'})
+                    return original(path,enabled,*args,**kwargs)
+                with patch.object(Path,'write_text',kernel_write):
+                    if 'io' in enabled.split():cgroups.enable_controllers(group)
+                    else:
+                        with self.assertRaisesRegex(RuntimeError,'not enabled:.*io'):
+                            cgroups.enable_controllers(group)
+
+
 if __name__ == '__main__':
     unittest.main()
