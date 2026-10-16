@@ -315,3 +315,29 @@ configuration only, never private keys. Recovery must first demonstrate denial o
 the still-active old token before replacing it. This is virtual-device evidence,
 not physical/mobile certification. Existing request/UI pacing and source oracles
 are unchanged.
+
+
+## Replacement TLS input and constructor identity, prospective revision 7
+
+Reason: the historical8fb candidate contains rustls0.23.45 and is held after
+RUSTSEC-2026-0349. The completed #40 replacement is frozen at
+`e078ba23b543126011a2136dd1f7e98ca65370eb`, epoch1792100410, canonical minimized
+source `28bcdf7ac833ab634d3b130b85cb2a0aa47eb7a8`. For the next actual constructor
+and walkthrough only, substitute this exact identity and canonical receipts:
+`results/installation-package-build/replacement-tls-01-deb-a/receipt.json`
+(SHA256 `f2a06e16fd8f82e27517eee12a1d8176d052765ac2e75959a85f70cdaeb6fd85`)
+and `results/packages/replacement-tls-01-rpm-a/receipt.json`
+(SHA256 `4a2a800e8351ec8480359d0912f05d36682d27834c11c60bae87752961a5326a`).
+Their canonical DEB/RPM hashes are respectively
+`2a555bec6334fde6774d21c414d7d42e041c39ca170e3a30fd3676e134b9f593`
+and `12c03f92e96c7d1a848a5198f017c21a1e17d485cdfca7feb8464c3a425971c1`.
+
+The new exclusive constructor output is
+`FABRIC_STORAGE_ROOT/results/owner-fixture-constructor-02`. Preserve constructor01
+and all historical packages/results unchanged. This supersedes only the frozen
+input/epoch/canonical receipt tuple and exclusive output path above; every native
+payload/header/control/metadata/version comparator, preceding control/stop gate,
+actual clean harness and merged-guide binding, fresh #41 prerequisite before
+walkthrough, resource/deadline limit and observation remains required. No actual
+construction or walkthrough is established by this registration. The matching
+native-installation binding is [revision6](installation-native-custody-caller-card.md#replacement-tls-candidate-binding-prospective-revision-6).
