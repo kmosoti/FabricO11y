@@ -105,7 +105,43 @@ class AnnouncementTests(unittest.TestCase):
                 path.write_bytes(original)
             extra=purelib/'unexpected.py';extra.write_text('not in receipt')
             with self.assertRaisesRegex(ValueError,'announcement-orca-admission'):probe.admitted_orca(record)
+
             extra.unlink();original=code.read_bytes();code.unlink()
             with self.assertRaisesRegex(ValueError,'announcement-orca-admission'):probe.admitted_orca(record)
             code.write_bytes(original);extra.symlink_to(code)
             with self.assertRaisesRegex(ValueError,'announcement-orca-admission'):probe.admitted_orca(record)
+
+    def test_shutdown_waits_for_reader_before_its_dependencies(self):
+        import signal,time
+        from unittest.mock import patch
+        import announcement_probe as probe
+        actions=[]
+        class Process:
+            def __init__(self,pid,label):self.pid=pid;self.label=label;self.returncode=None
+            def poll(self):return self.returncode
+            def wait(self,timeout):
+                self.assert_dependencies()
+                actions.append(('wait',self.label));self.returncode=0;return 0
+            def assert_dependencies(self):
+                if self.label=='orca':self_outer.assertIsNone(display.returncode)
+        self_outer=self;display=Process(910,'display');reader=Process(911,'orca');driver=Process(912,'webdriver')
+        processes=[display,reader,driver];commands=[dict(label=process.label) for process in processes]
+        with patch('announcement_probe.os.killpg',side_effect=lambda pid,sig:actions.append(('signal',pid,sig))):
+            rows,errors=probe.stop_processes(processes,commands,time.monotonic()+25)
+        self.assertEqual(errors,[]);self.assertEqual([row['label'] for row in rows],['webdriver','orca','display'])
+        self.assertEqual(actions,[('signal',912,signal.SIGTERM),('wait','webdriver'),
+            ('signal',911,signal.SIGTERM),('wait','orca'),('signal',910,signal.SIGTERM),('wait','display')])
+
+    def test_forced_or_failed_cleanup_cannot_credit_success(self):
+        import subprocess,time
+        from unittest.mock import patch
+        import announcement_probe as probe
+        class Process:
+            pid=913;returncode=None
+            def poll(self):return self.returncode
+            def wait(self,timeout):
+                if self.returncode is None:self.returncode=-9;raise subprocess.TimeoutExpired('literal stuck reader',timeout)
+                return self.returncode
+        with patch('announcement_probe.os.killpg'):
+            rows,errors=probe.stop_processes([Process()],[dict(label='orca')],time.monotonic()+25)
+        self.assertTrue(errors);self.assertTrue(rows[0]['kill_sent']);self.assertEqual(rows[0]['exit'],-9)

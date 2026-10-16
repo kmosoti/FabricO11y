@@ -254,3 +254,19 @@ overlap and missing/wrong alert/event/speech controls must be rejected.
 Stop the interactive AT subtree before final cgroup teardown and retain actual
 exit/namespace/cleanup receipts. The private native environment positive and
 successful exact replacement installation remain prerequisites for package cells.
+||||||| 629006d
+
+## Dependency-ordered reader cleanup
+
+The retained Xvfb07 shutdown showed Orca exit1 after its display and registry
+received concurrent termination. The probe's old final verdict preceded that
+cleanup outcome. Before the prospective51.1 native cell, stop and wait for each
+owned process in reverse launch order so driver/browser and Orca finish while
+their display, registry and synthesizer remain alive. Record before/after exits,
+signals, forced kills and actual waits. Each wait is bounded at2seconds, with
+at most25seconds total cleanup within the existing outer180-second bound; do not
+extend or reset the action/measurement deadline. An unexpectedly exited persistent
+process, positive nonzero exit, forced kill or failed stop makes the final probe
+verdict fail. Preserve its original action error separately. Literal lifecycle
+controls must reject the observed premature-dependency/false-credit mechanism.
+The actual console caller shares this lifecycle rather than copying a looser one.

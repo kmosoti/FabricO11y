@@ -77,6 +77,27 @@ def admitted_orca(record):
         GSETTINGS_SCHEMA_DIR=str(schemas),XDG_DATA_DIRS=str(schemas.parents[1])+':/usr/share',FABRIC_AT_EXPECTED_ORCA='51.1')
 
 
+def stop_processes(processes,commands,deadline):
+    rows=[];errors=[]
+    for process,command in reversed(list(zip(processes,commands))):
+        row=dict(label=command['label'],pid=process.pid,before_exit=process.poll(),
+            before_ns=time.monotonic_ns(),term_sent=False,kill_sent=False)
+        try:
+            if row['before_exit'] is None:
+                os.killpg(process.pid,signal.SIGTERM);row['term_sent']=True
+                try:process.wait(timeout=min(2,max(.001,deadline-time.monotonic())))
+                except subprocess.TimeoutExpired:
+                    os.killpg(process.pid,signal.SIGKILL);row['kill_sent']=True
+                    process.wait(timeout=min(2,max(.001,deadline-time.monotonic())))
+            require(time.monotonic()<=deadline and not row['kill_sent']
+                and process.returncode in (0,-signal.SIGTERM)
+                and (row['before_exit'] is None or command['label'].startswith('tool-')),
+                'announcement-cleanup-exit')
+        except BaseException as error:errors.append(command['label']+': '+type(error).__name__+': '+str(error))
+        row.update(exit=process.returncode,after_ns=time.monotonic_ns());rows.append(row)
+    return rows,errors
+
+
 def loopback():
     with socket.socket() as listener:
         flags=struct.unpack('16sH14s',fcntl.ioctl(listener,0x8913,struct.pack('16sH14s',b'lo',0,b'')))[1]
@@ -280,15 +301,8 @@ def inside(args):
         if session:
             try:call('DELETE','/session/'+session)
             except BaseException:pass
-        for process in reversed(processes):
-            try:os.killpg(process.pid,signal.SIGTERM)
-            except ProcessLookupError:pass
-        for process in reversed(processes):
-            try:process.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                try:os.killpg(process.pid,signal.SIGKILL)
-                except ProcessLookupError:pass
-                process.wait(timeout=2)
+        result['process_stops'],result['cleanup_errors']=stop_processes(processes,result['commands'],min(time.monotonic()+25,end+25))
+        if result['cleanup_errors']:result['exit']=1
         for log in logs:log.close()
         result['process_exits']=[process.returncode for process in processes]
         (out/'inside.json').write_text(json.dumps(result,indent=2)+'\n')
