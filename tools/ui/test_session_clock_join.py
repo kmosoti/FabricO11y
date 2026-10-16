@@ -99,3 +99,27 @@ class ExpiryAlignmentTests(unittest.TestCase):
         import browser_expiry as expiry
         with patch.object(expiry.time,'monotonic',return_value=240):
             with self.assertRaisesRegex(ValueError,'fixture-deadline'):expiry.align(self.clock(0),1000,240,Mock())
+
+class NativeSourceReceiptTests(unittest.TestCase):
+    def test_recorded_worktree_may_differ_but_source_bytes_and_unique_root_must_match(self):
+        import hashlib,os,tempfile
+        from pathlib import Path
+        import live_browser_check as browser
+        names=('session_clock.py','session_clock.c','session_clock_probe.rs')
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            root=Path(directory);(root/'tools/ui').mkdir(parents=True)
+            values={}
+            for name in names:
+                body=('literal original '+name).encode();(root/'tools/ui'/name).write_bytes(body)
+                values['/original/owned/worktree/tools/ui/'+name]=hashlib.sha256(body).hexdigest()
+            observed=browser.native_clock_sources(values,root)
+            self.assertEqual({row['recorded_path'] for row in observed},set(values))
+            for case in ('missing','duplicate','changed','mixed-root'):
+                changed=dict(values)
+                key='/original/owned/worktree/tools/ui/session_clock.c'
+                if case=='missing':changed.pop(key)
+                elif case=='duplicate':changed['/other/tools/ui/session_clock.c']=changed[key]
+                elif case=='changed':changed[key]='f'*64
+                else:changed['/other/tools/ui/session_clock.c']=changed.pop(key)
+                with self.subTest(case=case),self.assertRaisesRegex(ValueError,'native-clock-source-binding'):
+                    browser.native_clock_sources(changed,root)
