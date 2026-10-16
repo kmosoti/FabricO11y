@@ -1,9 +1,9 @@
 """Private public-text AT-SPI -> Orca -> espeak environment probe, not acceptance."""
 import argparse
 import ast
-import base64
 import fcntl
 import hashlib
+import http.server
 import json
 import os
 from pathlib import Path
@@ -35,6 +35,19 @@ def append(path,row):
 def read_rows(path):return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
 
+def serve_public(path,out):
+    body=path.read_bytes();require(len(body)<=4096,'announcement-public-body')
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            if self.path!='/probe':self.send_error(404);return
+            self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8')
+            self.send_header('Content-Length',str(len(body)));self.end_headers()
+            count=self.wfile.write(body)
+            append(out/'public-http.jsonl',dict(path=self.path,bytes=count,sha256=hashlib.sha256(body).hexdigest(),monotonic_ns=time.monotonic_ns()))
+    with http.server.HTTPServer(('127.0.0.1',48752),Handler) as server:
+        (out/'public-http.ready').touch();server.serve_forever()
+
+
 def check_stream(path,out):
     limit=4*1024**2 if path==out/'speech-logs/speech-dispatcher.log' else 1024**2
     require(path.stat().st_size<=limit,'announcement-stream-bound')
@@ -64,11 +77,13 @@ def observe(path):
         try:
             source=value.source
             text=source.queryText().getText(0,-1) if source.queryText() else source.name
-            append(path,dict(type=value.type,pid=source.getApplication().get_process_id(),
-                role=source.getRoleName(),attributes=source.getAttributes(),text=(text or '')[:1024],monotonic_ns=time.monotonic_ns()))
+            row=dict(type=value.type,pid=source.getApplication().get_process_id(),
+                role=source.getRoleName(),attributes=source.getAttributes(),text=(text or '')[:1024],monotonic_ns=time.monotonic_ns())
+            if value.type.startswith('document:'):row['document_attributes']=source.queryDocument().getAttributes()
+            append(path,row)
         except (NotImplementedError,AttributeError):pass
     pyatspi.Registry.registerEventListener(event,'object:text-changed','object:property-change',
-        'object:children-changed','object:announcement')
+        'object:children-changed','object:announcement','document:load-complete')
     require(pyatspi.Registry.getDesktopCount()>0 and pyatspi.Registry.getDesktop(0) is not None,
         'announcement-at-desktop')
     path.with_suffix('.ready').write_text(str(os.getpid()))
@@ -188,11 +203,19 @@ def inside(args):
         task_phase('browser-ready')
         (work/'capture').touch()
         html='<title>Fabric public AT probe</title><h1>Public accessibility probe</h1><button id="focus">Keep focus here</button><p id="status" role="status" aria-live="polite"></p>'
-        call('POST','/session/'+session+'/url',{'url':'data:text/html;base64,'+base64.b64encode(html.encode()).decode()})
+        public=work/'public.html';public.write_bytes(html.encode())
+        launch('public-http',[sys.executable,'-B',str(Path(__file__)),'--serve-public',str(public),'--output',str(out)])
+        wait(lambda:(out/'public-http.ready').exists())
+        uri='http://127.0.0.1:48752/probe'
+        call('POST','/session/'+session+'/url',{'url':uri})
         def heard(text):
             return any(text in (''.join(ET.fromstring(row['text']).itertext()) if row['text'].startswith('<speak>') else row['text'])
                 and row['ssip_code']==225 and row['message_id']>0 for row in read_rows(out/'speech.jsonl'))
         wait(lambda:heard('Fabric public AT probe'))
+        wait(lambda:any(row['pid']==browser_pid and 'DocURL:'+uri in row.get('document_attributes',[]) for row in read_rows(out/'events.jsonl')))
+        result.update(document_url=uri,public_http=read_rows(out/'public-http.jsonl'),public_html_sha256=hashlib.sha256(public.read_bytes()).hexdigest())
+        require(any(row['bytes']==len(html.encode()) and row['sha256']==result['public_html_sha256'] for row in result['public_http']),
+            'announcement-public-body')
         task_phase('document-heard')
         js('document.querySelector("h1").setAttribute("tabindex","-1");document.querySelector("h1").focus()')
         prerequisite=js('const e=document.querySelector("#status");document.querySelector("#focus").focus();return {role:e.getAttribute("role"),live:e.getAttribute("aria-live"),focus_elsewhere:document.activeElement.id==="focus"}')
@@ -247,10 +270,12 @@ def inside(args):
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--observe',type=Path);parser.add_argument('--inside',action='store_true')
+    parser.add_argument('--serve-public',type=Path)
     parser.add_argument('--mode',choices=('headless','xvfb'),default='headless');parser.add_argument('--xvfb',type=Path)
     parser.add_argument('--xvfb-receipt',type=Path);parser.add_argument('--output',type=Path);parser.add_argument('--work',type=Path)
     parser.add_argument('--suppress-live',action='store_true');args=parser.parse_args()
     if args.observe:observe(args.observe);return 0
+    if args.serve_public:serve_public(args.serve_public,args.output);return 0
     if args.inside:return inside(args)
     group=require_limits();out=args.output
     allowed=os.sched_getaffinity(0);require({2,3}<=allowed,'announcement-allowed-cpus')
