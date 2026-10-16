@@ -49,3 +49,16 @@ class AnnouncementTests(unittest.TestCase):
             self.assertEqual(calls,[(('before capture',),{}),(('Public probe complete',),{'callback':callback})])
             rows=[json.loads(line) for line in (out/'speech.jsonl').read_text().splitlines()]
             self.assertEqual(len(rows),1);self.assertEqual((rows[0]['ssip_code'],rows[0]['message_id'],rows[0]['module']),(225,123,'espeak-ng'))
+
+    def test_daemon_diagnostic_allowance_has_exact_boundary_and_other_streams_stay_bounded(self):
+        import os,tempfile
+        import announcement_probe as probe
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            root=Path(directory);(root/'speech-logs').mkdir()
+            daemon=root/'speech-logs/speech-dispatcher.log';other=root/'other.log'
+            for path,limit in ((daemon,4*1024**2),(other,1024**2)):
+                with path.open('wb') as stream:stream.truncate(limit)
+                probe.check_stream(path,root)
+                with path.open('r+b') as stream:stream.truncate(limit+1)
+                with self.subTest(path=path.name),self.assertRaisesRegex(ValueError,'announcement-stream-bound'):
+                    probe.check_stream(path,root)
