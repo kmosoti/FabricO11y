@@ -1,5 +1,6 @@
 """Private public-text AT-SPI -> Orca -> espeak environment probe, not acceptance."""
 import argparse
+import ast
 import base64
 import fcntl
 import hashlib
@@ -62,6 +63,8 @@ def observe(path):
         except (NotImplementedError,AttributeError):pass
     pyatspi.Registry.registerEventListener(event,'object:text-changed','object:property-change',
         'object:children-changed','object:announcement')
+    require(pyatspi.Registry.getDesktopCount()>0 and pyatspi.Registry.getDesktop(0) is not None,
+        'announcement-at-desktop')
     path.with_suffix('.ready').write_text(str(os.getpid()))
     pyatspi.Registry.start()
 
@@ -114,8 +117,9 @@ def inside(args):
             time.sleep(.05)
         raise RuntimeError('announcement-prerequisite-timeout')
     def run(command):
-        process=launch('tool-'+str(len(processes)),command)
+        label='tool-'+str(len(processes));process=launch(label,command)
         wait(lambda:process.poll() is not None);require(process.returncode==0,'announcement-tool-exit')
+        return (out/(label+'.log')).read_text()
     endpoint='http://127.0.0.1:48751'
     def call(method,path,body=None):
         tick();request=urllib.request.Request(endpoint+path,method=method,
@@ -147,7 +151,12 @@ def inside(args):
             run(['/usr/bin/gsettings','set','org.gnome.Orca.Speech:/org/gnome/orca/default/speech/',key,value])
         # The private session bus activates its own AT-SPI bus, never the owner's.
         run(['/usr/bin/gsettings','set','org.gnome.desktop.interface','toolkit-accessibility','true'])
-        run(['/usr/bin/gdbus','call','--session','--dest','org.a11y.Bus','--object-path','/org/a11y/bus','--method','org.a11y.Bus.GetAddress'])
+        address=ast.literal_eval(run(['/usr/bin/gdbus','call','--session','--dest','org.a11y.Bus','--object-path','/org/a11y/bus','--method','org.a11y.Bus.GetAddress']))
+        require(isinstance(address,tuple) and len(address)==1 and isinstance(address[0],str)
+            and address[0].startswith('unix:'),'announcement-private-at-address')
+        os.environ['AT_SPI_BUS_ADDRESS']=address[0]
+        result['at_bus_address']=address[0]
+        launch('atspi-registry',['/usr/libexec/at-spi2-registryd'])
         launch('atspi',[sys.executable,'-B',str(Path(__file__)),'--observe',str(out/'events.jsonl')])
         wait(lambda:(out/'events.ready').exists())
         launch('orca',['/usr/bin/orca','--speech-system','speechdispatcherfactory','--debug-file',str(out/'orca-debug.log')])
@@ -245,6 +254,7 @@ def main():
     if args.suppress_live:command+=['--suppress-live']
     tools=[Path(name) for name in ('/usr/bin/bwrap','/usr/bin/dbus-run-session','/usr/bin/orca',
         '/usr/bin/firefox','/usr/bin/speech-dispatcher','/usr/libexec/at-spi-bus-launcher',
+        '/usr/libexec/at-spi2-registryd',
         '/usr/lib64/speech-dispatcher-modules/sd_espeak-ng','/usr/sbin/ip','/usr/bin/xauth')]
     tools.append(DATA/'tools/ui/geckodriver')
     if args.xvfb:tools.append(args.xvfb)
