@@ -1,6 +1,7 @@
 """Private public-text AT-SPI -> Orca -> espeak environment probe, not acceptance."""
 import argparse
 import base64
+import fcntl
 import hashlib
 import json
 import os
@@ -8,6 +9,8 @@ from pathlib import Path
 import secrets
 import shutil
 import signal
+import socket
+import struct
 import subprocess
 import sys
 import time
@@ -28,6 +31,19 @@ def append(path,row):
 
 
 def read_rows(path):return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
+
+
+def loopback():
+    with socket.socket() as listener:
+        flags=struct.unpack('16sH14s',fcntl.ioctl(listener,0x8913,struct.pack('16sH14s',b'lo',0,b'')))[1]
+        require(flags&1,'announcement-private-loopback')
+        listener.bind(('127.0.0.1',0));listener.listen(1)
+        with socket.create_connection(listener.getsockname(),timeout=2) as sender:
+            receiver,_=listener.accept()
+            with receiver:
+                sender.sendall(b'AT-loopback-control')
+                require(receiver.recv(64)==b'AT-loopback-control','announcement-private-loopback')
+    return {'flags':flags,'up':True,'exact_delivery':True,'namespace':os.readlink('/proc/self/ns/net')}
 
 
 def observe(path):
@@ -101,7 +117,7 @@ def inside(args):
             raw=response.read(65537);require(len(raw)<=65536,'announcement-driver-bound');return json.loads(raw)['value']
     def js(script):return call('POST','/session/'+session+'/execute/sync',{'script':script,'args':[]})
     try:
-        run(['/usr/sbin/ip','link','set','lo','up'])
+        result['loopback']=loopback()
         if args.mode=='xvfb':
             run(['/usr/bin/xauth','-f',str(work/'xauthority'),'add',':87','.',secrets.token_hex(16)])
             launch('xvfb',[str(args.xvfb),':87','-screen','0','1280x960x24','-nolisten','tcp','-auth',str(work/'xauthority')])
@@ -190,7 +206,7 @@ def main():
     group=require_limits();out=args.output
     require(out and out.is_absolute() and out.is_relative_to(DATA/'results') and not out.exists(),'announcement-output')
     scratch=Path(os.environ['FABRIC_SCRATCH_ROOT']);require(scratch.is_relative_to(DATA),'announcement-scratch')
-    work=scratch/'announcement';work.mkdir(mode=0o700);out.mkdir(mode=0o700)
+    work=scratch/('announcement-'+out.name);work.mkdir(mode=0o700);out.mkdir(mode=0o700)
     for name in ('tmp','runtime','config','cache','data'):(work/name).mkdir(mode=0o700)
     subprocess.run(['systemctl','--user','set-property','--runtime',group.name,'MemoryHigh=1G','MemoryMax=2G','MemorySwapMax=0','CPUQuota=200%','TasksMax=256'],check=True,capture_output=True)
     require({key:(group/key).read_text().strip() for key in ('memory.high','memory.max','memory.swap.max','cpu.max','pids.max')}=={
