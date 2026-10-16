@@ -273,3 +273,7 @@ phase deadline in finally. Prospectively reserve265 producer /470 caller,
 readable lines for this correction. No query-oracle, row completeness,40-second
 readiness or overall/phase/resource limit relaxation follows; old Fedora03
 failure and all historical controls remain mandatory.
+
+Measured readiness implementation adds26 and removes6 producer lines, net20:
+238 to258, within265; caller465/470 and reader547/550 unchanged. The whole local
+helper and replacement call site are included, with no compressed exclusions.
