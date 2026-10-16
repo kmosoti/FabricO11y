@@ -197,3 +197,12 @@ real S1 setup/transition and other phase maxima with 25% margin, stopped
 immutable checkpoint and separate grading. If measured values do not fit the
 owner's 7,500-second deadline, request a concrete larger deadline with the
 numbers; never shave the 7,200-second offered interval.
+
+## Replacement candidate identity revision, 2026-10-16
+
+New cells use the explicit replacement identity amendment in the
+[native witness protocol](simulator-native-witness-protocol.md#replacement-candidate-identity-revision-2026-10-16).
+Only the active canonical candidate and receipt/source/helper identities change.
+The literal source-build fixture keeps independent expected values for
+`e078ba23b543126011a2136dd1f7e98ca65370eb`; all semantic controls and
+comparison rules remain unchanged. Prior 8fb records are not promoted.

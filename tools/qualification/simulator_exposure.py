@@ -1,7 +1,7 @@
 """Pure qualification joins; callers authenticate files, observers and receipts."""
 import re
 
-BASE = '8fb6f413179b094288316e25845c137440ba23fa'
+BASE = 'e078ba23b543126011a2136dd1f7e98ca65370eb'
 HELPER = 'examples/spindle_sim.rs'
 NS = 1_000_000_000
 U64 = 2**64 - 1

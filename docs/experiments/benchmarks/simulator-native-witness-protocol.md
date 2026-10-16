@@ -215,3 +215,27 @@ space/RAM. Never touch frozen A/B, canonical manifests/packages, quarantine,
 shared caches or another helper's branch. No build or cleanup is executed by
 this registration. Native controls and source-only green do not authorize S1
 or advance any candidate acceptance gate.
+
+## Replacement candidate identity revision, 2026-10-16
+
+For new replacement cells only, the canonical product is
+`e078ba23b543126011a2136dd1f7e98ca65370eb`, epoch `1792100410`,
+with minimized source `28bcdf7ac833ab634d3b130b85cb2a0aa47eb7a8`.
+The current [canonical fixture](simulator-native-witness-canonical.json) binds the
+actual successful replacement DEB-A receipt, complete source manifest/bundle,
+unmodified canonical simulator ELF and complete helper manifest. Previous
+fixture bytes remain in history and all old artifacts/results remain immutable.
+The original helper still lacks the native begin mechanism; its named red must
+be demonstrated on these actual bytes.
+
+The separately built replacement witness retains the exact `af3f40c5` example
+source admitted by X211; every other compilation input must match the new
+canonical manifest. Its actual cold-build source/ELF/projection and native
+observer results require fresh external hashes before use. No historical
+helper ELF or old native pass is renamed or substituted.
+
+This revision changes only active candidate/source/artifact identities and the
+literal candidate in source-build controls. It changes no oracle, expected
+rejection, timing, cohort, exposure, rate, phase, resource or custody rule. The
+`simulator_exposure.BASE` binding applies to the replacement product for new
+cells; the former 8fb binding and its results retain their original revisions.
