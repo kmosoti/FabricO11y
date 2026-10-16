@@ -5,39 +5,44 @@ its custody reader omitted the original `applied-config.json` sidecar. The
 [registered counterexample and controls](experiments/formal/installation-native-custody-protocol.md#applied-configuration-counterexample-and-raw-failure-preservation)
 now cover strict typed/private metadata validation, unchanged configuration in
 the finite installation lifecycle, and original raw export before parser refusal.
-The bounded repair is implemented; focused source checks and restarted native
-cells remain pending. Retained checksum-bypassed disk diagnostics supply no
+At `8bda65e`, all 62 focused custody source tests exited 0 after the registered
+source counterexamples failed; restarted native acceptance remains pending. Retained checksum-bypassed disk diagnostics supply no
 filesystem-integrity or native-acceptance result. Package bytes remain unchanged.
 
 Hosted CI controller setup now explicitly requests CPU/I/O/memory/task delegation
-and checks actual availability/readback. The PR72 browser startup failure is
-retained; affected controls and hosted rerun remain required. This harness-only
-correction changes no packaged candidate bytes.
+and checks actual availability/readback. Original PR72 startup and receipt-grading
+failures are retained; corrected local controls and required hosted fast, security
+and extended checks completed before its merge as `76d3da6`. This harness-only
+correction changed no packaged candidate bytes.
 
 The separate virtual-key admission caller reuses actual candidate registration,
 login/export and unchanged OpenSSL DER parsing, then independently verifies the
-original browser assertion. Its source controls and per-engine native executions
-remain pending. Baseline resident/RP booleans alone do not admit a key format.
+original browser assertion. At `a08dca14`, 37 source tests and all three
+documentation checks exited 0; the original synthetic-fixture failure is retained.
+Per-engine native key-format executions remain pending. Baseline resident/RP booleans alone do not admit a key format.
 
 
 The private [announcement environment probe](experiments/formal/browser-announcement-protocol.md)
 now observes AT-SPI and the real Orca/Speech Dispatcher/espeak path using public
-text, private buses/settings and file/null audio output. Its source controls and
-native headless/headful probes remain pending. It supplies no actual console
-announcement, acoustic or accessibility-conformance result.
+text, private buses/settings and file/null audio output. Private-environment
+source controls passed, while the original headless/headful failures remain
+recorded. The signed, isolated Orca 51.1 positive remains unrun. These source
+results supply no actual console announcement, acoustic or accessibility-conformance result.
 
 The separate actual-console announcement caller is implemented with an owned
 interactive display/AT subtree, real status/alert speech joins, keyboard actions
 and a finite desktop/narrow target inventory. It preserves the original browser
-deadline and shared cleanup. Its source controls and exact-package native cells
-have not run; the public Orca51.1 environment positive remains a prerequisite.
+deadline and shared cleanup. At `2815dfa6`, all 52 affected source tests and
+all three documentation checks exited 0. Exact-package native cells remain
+unrun; the public Orca 51.1 environment positive remains a prerequisite.
 
 The controlled-time browser expiry caller now has a server-only native clock
 adapter and complete serialized request-window joins. At `479b356`, 17 focused
 source controls exited0 with confirmed containment cleanup. The additive timing
-ABI, actual-server clock binding and exact32 AB/C browser observations still
-need native execution on the replacement candidate; source checks do not supply
-package or browser acceptance. The expiry cell retains one240-second deadline
+ABI subsequently passed 16 native refusal controls and 24 actual Rust-accessor/
+kernel-monotonic bindings with a retained, hash-bound clock helper. Actual-server
+clock binding and the exact 32 AB/C browser observations still need replacement
+package execution; source/probe checks do not supply package or browser acceptance. The expiry cell retains one240-second deadline
 and stops/reaps AB before creating the independent C fixture.
 
 The separate signed browser security cell is implemented for virtual fixture
@@ -63,8 +68,11 @@ and no release tag has been produced.
 The prospective [R3 runtime integration](experiments/benchmarks/soak-runtime-protocol.md)
 adds a separate two-hour measurement path, native UI event capture and stopped
 checkpoint/separate grading. Its live native trace and supervised browser
-bindings, continuous-refresh controls and real S1 headroom remain prerequisites;
-implementation alone supplies no new soak acceptance evidence.
+bindings now have finite native publication/identity and 60-second UI-continuity
+certificates, including a real owner refresh. The first S1 attempt failed before
+any exposure because its begin path violated the helper output boundary. The
+path repair passed all 63 soak source tests at `2255fb57`; fresh S1, headroom and
+full stopped grading remain required. No new soak acceptance is claimed.
 The separately registered [lifecycle guardian amendment](experiments/benchmarks/soak-guardian-protocol.md)
 separates empty workload accounting, aggregate accounting before guardian exit,
 and independent whole-service stop. Finite guardian controls establish that
@@ -111,7 +119,10 @@ Known limits and open checks:
   non-exposure headroom and a stopped raw checkpoint before separate grading.
   The observation checks, guarded rename, held workload accounting and preservation
   mount guards have finite source and native evidence. Live S1/FULL integration,
-  patched simulator helper authority, boundary timing and full admission remain pending;
+  actual S1 headroom, full admission and stopped grading remain pending. The
+  [patched helper/native publication](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-patched-simulator-native-publication-results-01)
+  and [finite UI continuity](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-browser-continuity-mechanism-results-01)
+  capability evidence does not qualify a soak;
   R2 retains its 5,460-second exposure and historical meaning. No new soak
   acceptance is recorded.
 
@@ -122,7 +133,7 @@ Known limits and open checks:
 - Exact shipped units ran successfully in fresh Debian 13/Fedora 44 baseline and lifecycle cells ([#41](https://github.com/kmosoti/FabricO11y/issues/41)); independent adversarial probes of every added hardening directive remain outside that finite installation result.
 - The [installation verifier controls](experiments/formal/installation-release-protocol.md#prospective-removal-checker-counterexample-controls) require both observed removal states to be inactive or failed with systemctl exit 3 and reject unreadable Fedora audit evidence. Revision-bound source-only execution evidence belongs to the [checker results wiki](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-checker-prerequisite-results-01); guest acceptance remains separate.
 - The [stopped-custody upgrade witness](experiments/formal/installation-release-protocol.md#prospective-stopped-custody-upgrade-witness) registers independent framing/Cursor and exact pending/unread-source conservation controls. Its raw snapshot/conservation adapter is implemented; verification and native integration remain pending. No new package lifecycle outcome is recorded.
-- The [native custody reader](experiments/formal/installation-native-custody-protocol.md) admits full diagnostic roots and checks append/rotation, fixture paths, common protobuf containers and raw query conservation. Its [60 source controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-custody-native-reader-source-results-01/0364b1c) ran at `30ef218`. The [producer/caller](experiments/formal/installation-native-custody-caller-card.md) now implements stopped installed-root capture, complete raw/source archives, independent process/unit/cgroup observations, candidate ACK windows, immutable owner transfer admission and four lifecycle checkpoints. All 70 source controls ran at `5d6ea844` with exit 0 and no skips ([source record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-custody-fourth-checkpoint-source-results-01)); genuine native cells remain NOT RUN. No new package lifecycle outcome is claimed.
+- The [native custody reader](experiments/formal/installation-native-custody-protocol.md) admits full diagnostic roots and checks append/rotation, fixture paths, common protobuf containers and raw query conservation. Its [60 source controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-custody-native-reader-source-results-01/0364b1c) ran at `30ef218`. The [producer/caller](experiments/formal/installation-native-custody-caller-card.md) now implements stopped installed-root capture, complete raw/source archives, independent process/unit/cgroup observations, candidate ACK windows, immutable owner transfer admission and four lifecycle checkpoints. All 70 source controls ran at `5d6ea844` with exit 0 and no skips ([source record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-custody-fourth-checkpoint-source-results-01)); fresh native acceptance remains incomplete after the retained first replacement capture failure. No new package lifecycle acceptance is claimed.
 - The browser checks added for the role matrix (`live_browser_check`, bridge smoke, packaged console) are CI-only and have no recorded result.
 - The [serial session-state and cleanup controls](experiments/formal/console-session-clock-protocol.md#two-serial-state-fixtures-and-browser-cleanup-registration) retain [actual registration failures](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-session-fixture-registration-red-results-01): four missing-checker assertions and five finalizer defects. The explicit AB/C checker has [source evidence](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-session-source-results-01) with unchanged session semantics. The [delegated ownership registration](experiments/formal/console-session-clock-protocol.md#delegated-browser-launch-ownership-amendment) separates cleanup from native monotonic request binding and browser acceptance, which remain pending. Both fresh states share one 240-second deadline. The [owned cleanup source repair](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-owned-cleanup-source-results-01) executes all 13 controls without skips at `336949e`; cgroup behavior is modeled. Native launch ownership and later-fork reaping are now integrated. At `0152363`, the [native cleanup controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-native-cleanup-results-01) exited 0 for all 13 source controls and four real-kernel cases, with confirmed stop; this does not establish browser acceptance.
 - The [R3 browser supervisor](experiments/formal/browser-supervisor-protocol.md) preserves the 1 GiB browser budget while isolating its child wait domain. Its seven native lifecycle/ancestor controls and exact-revision source/documentation follow-up ran at d6bb252, as recorded in the [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-supervisor-results-01). Supervisor failure requires whole-campaign stop/reaping; the native session request binding and browser acceptance remain pending.
@@ -244,4 +255,4 @@ No owner-walkthrough/package acceptance follows from these mechanism controls. S
 
 - Native installation custody admission now targets the completed TLS replacement e078ba2 (canonical package source28bcdf7), preserving historical8fb evidence. The metadata-only same-code fixture constructor02 completed with exact payload/metadata comparisons. Four-cell native acceptance remains incomplete: the first Debian attempt reached guest acceptance exit 0, then lifecycle grading refused an unexpected or failed Spool input before the custody snapshot (outer exit 2). The stopped failure is retained under [#41](https://github.com/kmosoti/FabricO11y/issues/41); see the [replacement binding](experiments/formal/installation-native-custody-caller-card.md#replacement-tls-candidate-binding-prospective-revision-6).
 
-- The guest-placement loader now resolves the installation custody helper from its own repository paths, including dynamic imports without an install PYTHONPATH. The isolated production-shaped counterexample failed with custody_native ModuleNotFoundError on0eed764 (direct QEMU CLI help succeeded); At `525373dc`, all three production CLI help commands passed with ambient `PYTHONPATH` removed, and the isolated loader test passed (exit 0); the [red and green record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-guest-loader-import-counterexample-results-01) retains exact commands and stopped receipts. No guest/package acceptance follows from importability.
+- The guest-placement loader now resolves the installation custody helper from its own repository paths, including dynamic imports without an install PYTHONPATH. The isolated production-shaped counterexample failed with custody_native ModuleNotFoundError on0eed764 (direct QEMU CLI help succeeded). At `525373dc`, all three production CLI help commands passed with ambient `PYTHONPATH` removed, and the isolated loader test passed (exit 0); the [red and green record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-guest-loader-import-counterexample-results-01) retains exact commands and stopped receipts. No guest/package acceptance follows from importability.
