@@ -682,6 +682,18 @@ def actual_browser_finally(namespace):
 
 
 class BrowserFixtureCleanupTests(unittest.TestCase):
+    def test_reader_cleanup_failure_still_reaps_domain_and_retains_failure(self):
+        with browser_cleanup_fixture([]) as (namespace,groups):
+            def failed_reader_stop():raise ValueError('literal reader cleanup failure')
+            namespace['announcements']=SimpleNamespace(close=failed_reader_stop)
+            with self.assertRaisesRegex(ValueError,'literal reader cleanup failure'):
+                actual_browser_finally(namespace)
+            self.assertTrue(namespace['work'].exists())
+            self.assertTrue(namespace['receipt']['own_children_empty'])
+            self.assertEqual(namespace['receipt']['exit'],1)
+            self.assertEqual(namespace['receipt']['cleanup_error'],'literal reader cleanup failure')
+            self.assertFalse(namespace['sampler'].is_alive())
+
     def assert_zero_population(self, groups):
         for item in groups:
             self.assertFalse((Path('/proc') / str(item['child'])).exists(), 'actual finalizer left an unreaped owned child')
