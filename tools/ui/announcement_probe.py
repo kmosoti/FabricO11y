@@ -40,6 +40,11 @@ def check_stream(path,out):
     require(path.stat().st_size<=limit,'announcement-stream-bound')
 
 
+def tasks(group,label):
+    return dict(phase=label,monotonic_ns=time.monotonic_ns(),
+        **{key:(group/key).read_text().strip() for key in ('pids.current','pids.peak','pids.events')})
+
+
 def loopback():
     with socket.socket() as listener:
         flags=struct.unpack('16sH14s',fcntl.ioctl(listener,0x8913,struct.pack('16sH14s',b'lo',0,b'')))[1]
@@ -100,7 +105,9 @@ def inside(args):
     require(not os.environ.get('WAYLAND_DISPLAY') and not os.environ.get('AT_SPI_BUS_ADDRESS'),'announcement-private-bus')
     processes=[];logs=[];end=time.monotonic()+150;session=None
     result={'exit':1,'scope':'public environment probe only; no package acceptance','mode':args.mode,
-        'namespaces':{name:os.readlink('/proc/self/ns/'+name) for name in ('pid','net','mnt','ipc')},'commands':[]}
+        'namespaces':{name:os.readlink('/proc/self/ns/'+name) for name in ('pid','net','mnt','ipc')},'commands':[],
+        'affinity':sorted(os.sched_getaffinity(0)),'task_observations':[]}
+    def task_phase(label):result['task_observations'].append(tasks(Path(os.environ['FABRIC_AT_CGROUP']),label))
     def tick():
         require(time.monotonic()<end,'announcement-deadline')
         require(sum(path.stat().st_size for root in (work,out) for path in root.rglob('*') if path.is_file())<=512*1024**2,'announcement-storage-bound')
@@ -129,6 +136,7 @@ def inside(args):
             raw=response.read(65537);require(len(raw)<=65536,'announcement-driver-bound');return json.loads(raw)['value']
     def js(script):return call('POST','/session/'+session+'/execute/sync',{'script':script,'args':[]})
     try:
+        task_phase('before-display')
         result['loopback']=loopback()
         if args.mode=='xvfb':
             (work/'tmp/.X11-unix').mkdir(mode=0o1777)
@@ -146,6 +154,7 @@ def inside(args):
         (work/'asound.conf').write_text(f'pcm.null {{ type null }}\npcm.fabric_capture {{ type file slave.pcm "null" file "{out}/speech.raw" format "raw" }}\n')
         launch('speech-dispatcher-process',['/usr/bin/speech-dispatcher','-s','-C',str(config),'-S',str(runtime/'speech.sock'),'-P',str(work/'speech.pid')])
         wait(lambda:(runtime/'speech.sock').exists())
+        task_phase('speech-ready')
         prefs=work/'data/orca';prefs.mkdir(parents=True)
         (prefs/'orca-customizations.py').write_text(customization(work,out))
         for key,value in (('speech-server-factory','speechdispatcherfactory'),('synthesizer','espeak-ng')):
@@ -160,6 +169,7 @@ def inside(args):
         launch('atspi-registry',['/usr/libexec/at-spi2-registryd'])
         launch('atspi',[sys.executable,'-B',str(Path(__file__)),'--observe',str(out/'events.jsonl')])
         wait(lambda:(out/'events.ready').exists())
+        task_phase('before-orca')
         launch('orca',['/usr/bin/orca','--speech-system','speechdispatcherfactory','--debug-file',str(out/'orca-debug.log')])
         launch('webdriver',[str(DATA/'tools/ui/geckodriver'),'--host','127.0.0.1','--port','48751'])
         def ready():
@@ -172,6 +182,7 @@ def inside(args):
             'prefs':{'accessibility.force_disabled':0,'security.enterprise_roots.enabled':False}}}}})
         session=info['sessionId'];browser_pid=info['capabilities']['moz:processID']
         result['browser_capabilities']=info['capabilities']
+        task_phase('browser-ready')
         (work/'capture').touch()
         html='<title>Fabric public AT probe</title><h1>Public accessibility probe</h1><button id="focus">Keep focus here</button><p id="status" role="status" aria-live="polite"></p>'
         call('POST','/session/'+session+'/url',{'url':'data:text/html;base64,'+base64.b64encode(html.encode()).decode()})
@@ -179,10 +190,12 @@ def inside(args):
             return any(text in (''.join(ET.fromstring(row['text']).itertext()) if row['text'].startswith('<speak>') else row['text'])
                 and row['ssip_code']==225 and row['message_id']>0 for row in read_rows(out/'speech.jsonl'))
         wait(lambda:heard('Fabric public AT probe'))
+        task_phase('document-heard')
         js('document.querySelector("h1").setAttribute("tabindex","-1");document.querySelector("h1").focus()')
         prerequisite=js('const e=document.querySelector("#status");document.querySelector("#focus").focus();return {role:e.getAttribute("role"),live:e.getAttribute("aria-live"),focus_elsewhere:document.activeElement.id==="focus"}')
         require(prerequisite=={'role':'status','live':'polite','focus_elsewhere':True},'announcement-dom')
         wait(lambda:heard('Keep focus here'))
+        task_phase('focus-heard')
         backend=None
         def find_backend():
             nonlocal backend
@@ -207,6 +220,7 @@ def inside(args):
         result['exit']=0
     except BaseException as error:result['error']=type(error).__name__+': '+str(error)
     finally:
+        task_phase('before-cleanup')
         if session:
             try:call('DELETE','/session/'+session)
             except BaseException:pass
@@ -234,6 +248,8 @@ def main():
     if args.observe:observe(args.observe);return 0
     if args.inside:return inside(args)
     group=require_limits();out=args.output
+    allowed=os.sched_getaffinity(0);require({2,3}<=allowed,'announcement-allowed-cpus')
+    os.sched_setaffinity(0,{2,3});require(os.sched_getaffinity(0)=={2,3},'announcement-affinity')
     require(out and out.is_absolute() and out.is_relative_to(DATA/'results') and not out.exists(),'announcement-output')
     scratch=Path(os.environ['FABRIC_SCRATCH_ROOT']);require(scratch.is_relative_to(DATA),'announcement-scratch')
     work=scratch/('announcement-'+out.name);work.mkdir(mode=0o700);out.mkdir(mode=0o700)
@@ -250,6 +266,7 @@ def main():
         '--ro-bind','/','/','--proc','/proc','--dev','/dev','--bind',str(work),str(work),'--bind',str(out),str(out),
         '--bind',str(work/'tmp'),'/tmp','--bind',str(work/'runtime'),f'/run/user/{os.getuid()}','--clearenv']
     environment={'PATH':'/usr/bin:/usr/sbin:/bin','LANG':'C.UTF-8','TMPDIR':str(work/'tmp'),
+        'FABRIC_AT_CGROUP':str(group),
         'FABRIC_STORAGE_ROOT':str(DATA),'FABRIC_SCRATCH_ROOT':str(scratch),
         'XDG_RUNTIME_DIR':f'/run/user/{os.getuid()}','XDG_CONFIG_HOME':str(work/'config'),'XDG_CACHE_HOME':str(work/'cache'),
         'XDG_DATA_HOME':str(work/'data'),'GSETTINGS_BACKEND':'keyfile','SPEECHD_ADDRESS':f'unix_socket:/run/user/{os.getuid()}/speech.sock',
@@ -267,6 +284,8 @@ def main():
     tools.append(DATA/'tools/ui/geckodriver')
     if args.xvfb:tools.append(args.xvfb)
     record={'scope':'public AT environment only; no package acceptance','command':command,'exit':1,
+        'affinity_before':sorted(allowed),'affinity':sorted(os.sched_getaffinity(0)),
+        'task_observations':[tasks(group,'before-launch')],
         'source_sha256':hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
         'tool_sha256':{str(tool):hashlib.sha256(tool.read_bytes()).hexdigest() for tool in tools},
         'namespaces_before':{name:os.readlink('/proc/self/ns/'+name) for name in ('pid','net','mnt','ipc')}}
@@ -282,6 +301,7 @@ def main():
         if process and process.poll() is None:
             os.killpg(process.pid,signal.SIGKILL);process.wait(timeout=5)
         record['namespace_leader_reaped']=process is not None and process.poll() is not None
+        record['task_observations'].append(tasks(group,'after-stop'))
         if (out/'inside.json').exists():
             inner=json.loads((out/'inside.json').read_text())
             isolated=all(inner['namespaces'][name]!=value for name,value in record['namespaces_before'].items())
