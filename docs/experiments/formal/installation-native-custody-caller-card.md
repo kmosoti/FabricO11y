@@ -261,3 +261,15 @@ Prospectively allow470 caller /240 producer,710 combined; reader550 remains
 unchanged. Every new helper line and both baseline/lifecycle call sites count.
 No cosmetic compression, package/oracle/resource/deadline change or acceptance
 credit for failed Debian02 follows. Native cells need fresh unique03 identities.
+
+## Initial listener readiness source ceiling
+
+The actual Fedora03 first readiness query encountered a refused listener after
+unit start. A local bounded retry must preserve every raw command, distinguish
+that exact first-query failure from partial-page/other errors, cap each command
+at the original absolute deadline, check late success and restore the original
+phase deadline in finally. Prospectively reserve265 producer /470 caller,
+735 combined; reader550 unchanged. The existing producer238 gains at most27
+readable lines for this correction. No query-oracle, row completeness,40-second
+readiness or overall/phase/resource limit relaxation follows; old Fedora03
+failure and all historical controls remain mandatory.
