@@ -66,3 +66,17 @@ stream bound before browser/AT actions. Its actual loopback witness succeeded.
 The successor uses level2 diagnostics and distinct daemon/process output files;
 module identity, real SSIP acknowledgement, PCM output and every existing bound
 remain mandatory. Original logs, exits and namespace stop receipts are retained.
+
+## English fixture voice-variant bound
+
+Headless03 also exceeded1MiB: upstream Speech Dispatcher0.12.1
+[`output.c`](https://github.com/brailcom/speechd/blob/0.12.1/src/server/output.c#L536)
+logs every enumerated voice at level1, so level2 cannot remove this inventory.
+The successor retains error logging and every original bound. Only inside the
+private mount namespace, bind an owned empty directory read-only over
+`/usr/share/espeak-ng-data/voices/!v`. This excludes optional voice variants from
+the English fixture; base language voices, installed synthesizer executable and
+libraries, real SSIP acknowledgements, AT events and PCM output remain required.
+Observe that the private variant directory is empty before launch. Do not change
+host voice files or claim multilingual/variant coverage. The actual headless and
+signed-Xvfb headful cells remain distinct, preserving every prerequisite failure.
