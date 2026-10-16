@@ -22,9 +22,8 @@ import subprocess
 import sys
 import time
 
+sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parents[2])]
 import custody_native
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from resource_group import STORAGE as DATA, require_storage
 IMAGE_NAME = 'debian-13-genericcloud-amd64.qcow2'
 # Debian's dated build 20261001-2618, not the moving `latest` directory.
