@@ -569,3 +569,17 @@ context. The minimized fixture correction supplies empty `clock_targets` and
 `state_descriptors` for these ordinary-clock cases; every prior stop, retention,
 population, sampler and reaping expectation remains unchanged. This corrects the
 synthetic setup, not a production cleanup failure or packaged-browser result.
+
+## Portable native source-receipt join
+
+The actual native admission receipt records source keys under its original
+`browser-expiry` worktree. A later merged caller has a different absolute ROOT;
+requiring those strings to match would reject identical admitted source bytes.
+The successor requires exactly one absolute canonical recorded key for each of
+`tools/ui/session_clock.py`, `session_clock.c` and `session_clock_probe.rs`, all
+under one common recorded root, and compares each actual recorded SHA256 with
+the current source bytes. Retain both recorded paths and current hashes in the
+browser receipt. Reject missing, duplicate/ambiguous, mixed-root or changed-byte
+entries. No helper rebuild, native outcome, source hash, clock ABI, package or
+PID/map binding is substituted. This registration changes only the receipt join;
+the original native admission and its file/hash evidence remain immutable.
