@@ -1,5 +1,14 @@
 # Current project state
 
+The first replacement native installation cell failed after guest acceptance0:
+its custody reader omitted the original `applied-config.json` sidecar. The
+[registered counterexample and controls](experiments/formal/installation-native-custody-protocol.md#applied-configuration-counterexample-and-raw-failure-preservation)
+now cover strict typed/private metadata validation, unchanged configuration in
+the finite installation lifecycle, and original raw export before parser refusal.
+The bounded repair is implemented; focused source checks and restarted native
+cells remain pending. Retained checksum-bypassed disk diagnostics supply no
+filesystem-integrity or native-acceptance result. Package bytes remain unchanged.
+
 Hosted CI controller setup now explicitly requests CPU/I/O/memory/task delegation
 and checks actual availability/readback. The PR72 browser startup failure is
 retained; affected controls and hosted rerun remain required. This harness-only

@@ -167,12 +167,15 @@ class Guest:
                                  original_stat=before, sha256=sha(raw), btrfs_identity=stable)
         receipt['candidate_process'] = process
         receipt['root_stat'] = witness.identity(ROOT.lstat())
+        with tarfile.open(self.output / (name + '-raw.tar'), 'x') as archive:
+            archive.add(ROOT, arcname='spool', recursive=True)
         snapshot = witness.stopped_snapshot(ROOT, receipt, sources, fixture_paths=(SOURCE,))
+        witness.require(snapshot['applied_configuration'] is not None and json.loads(snapshot['applied_configuration'])
+            == dict(revision=1, paused=False, logs=[SOURCE, '/var/log/fabric-accept/denied.log'], metric_interval_s=15),
+            'registered native applied configuration missing or changed')
         self.save(name + '-snapshot.json', snapshot)
         self.save(name + '-receipt.json', receipt)
         self.save(name + '-sources.json', sources)
-        with tarfile.open(self.output / (name + '-raw.tar'), 'x') as archive:
-            archive.add(ROOT, arcname='spool', recursive=True)
         # Compare every leaf after the complete tree export, retaining original stats.
         witness.require(snapshot == witness.stopped_snapshot(ROOT, receipt, sources, fixture_paths=(SOURCE,)),
                         'raw root drift during archive')
