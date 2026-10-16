@@ -66,3 +66,21 @@ stream bound before browser/AT actions. Its actual loopback witness succeeded.
 The successor uses level2 diagnostics and distinct daemon/process output files;
 module identity, real SSIP acknowledgement, PCM output and every existing bound
 remain mandatory. Original logs, exits and namespace stop receipts are retained.
+
+## Native diagnostic stream allowance correction
+
+Headless02/03 retained complete Speech Dispatcher startup inventories of
+1,370,173 and1,369,137 bytes respectively. Upstream0.12.1 emits those legitimate
+voice rows at log level1. The owner explicitly selected preservation of the full
+installed voice inventory and errors, rather than masking tool data or disabling
+logging. No voice-data masking was executed; that prospective proposal is
+withdrawn. Preserve the existing synthesizer configuration and voice tree.
+
+Prospectively allow only the daemon's exact
+`speech-logs/speech-dispatcher.log` up to4MiB inclusive; every other stream retains
+1MiB and records retain4KiB. The aggregate512MiB owned-fixture ceiling and1GiB
+reservation remain unchanged, as do launcher limits and every AT-SPI, Orca,
+SSIP225, actual module/library and PCM assertion. Nonzero exits remain errors.
+A literal boundary control must accept4MiB, reject4MiB+1 for that exact daemon
+log, and reject1MiB+1 for any other stream. This corrects the undersized auxiliary
+diagnostic allowance, not a product or semantic acceptance gate.
