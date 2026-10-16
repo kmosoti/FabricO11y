@@ -44,7 +44,7 @@ class SecurityControls(unittest.TestCase):
                 elif defect=='signature':assertion['response']['signature']=security.encode(signed[:-1]+bytes([signed[-1]^1]))
                 elif defect=='origin':assertion['response']['clientDataJSON']=security.encode(client.replace(b'localhost',b'attacker'))
                 def api(path,*args):return (403 if defect=='login' and path.endswith('/finish') else 200),{}
-                call=lambda:security.probe_key(api=api,bearer=lambda *args:(200,dict(public_key={})),
+                call=lambda:security.probe_key(api=api,bearer=lambda *args:(200,dict(ceremony_id='literal-source-challenge',public_key={})),
                     async_js=lambda *args:dict(value=json.dumps(assertion)),export_credentials=lambda:keys,
                     origin=origin,principal='fixture',work=work,deadline=time.monotonic()+10)
                 if defect:
