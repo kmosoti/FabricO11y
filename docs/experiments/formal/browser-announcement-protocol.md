@@ -108,3 +108,13 @@ virtual text/announcement fixture, disable optional GLX with the tool's supporte
 and require the display process to remain alive during readiness. No GPU/3D
 coverage is claimed; no owner graphics configuration or display is changed.
 Every actual event, Orca speech, selected backend and PCM assertion remains.
+
+Xvfb02 retained a working private headful Firefox document and51,102 startup PCM
+bytes, but the AT registry never activated: the installed AT bus broker requested
+`org.freedesktop.systemd1` on the private session bus and reported a failed registry
+unit. The isolated fixture deliberately has no owner session manager. Start the
+installed real `at-spi2-registryd` explicitly on the freshly returned private AT
+bus address, without GNOME session registration, before Orca/browser startup.
+Require the observer to obtain a genuine AT desktop before writing its readiness
+marker. This changes service startup ownership only; no event, speech or synthesis
+is supplied by the harness, and all action-window assertions remain unchanged.
