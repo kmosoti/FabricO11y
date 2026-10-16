@@ -59,3 +59,10 @@ The unnecessary interface mutation is removed. Require the actual private
 IFF_UP flag and exact owned loopback delivery instead; never change an owner
 interface. All AT-SPI/Orca/espeak requirements remain unchanged. Successor runs
 use a fresh output-derived scratch directory, preserving the failed first run.
+
+The corrected headless02 run retained a second prerequisite failure: Speech
+Dispatcher's level3 voice-inventory diagnostics exceeded the unchanged1MiB
+stream bound before browser/AT actions. Its actual loopback witness succeeded.
+The successor uses level2 diagnostics and distinct daemon/process output files;
+module identity, real SSIP acknowledgement, PCM output and every existing bound
+remain mandatory. Original logs, exits and namespace stop receipts are retained.
