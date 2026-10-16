@@ -159,3 +159,16 @@ expected text and wrong spoken words. Existing literal controls, actual event
 PID/action times, exact expected words, SSIP225/message ID, selected backend and
 real PCM growth remain mandatory. This is an oracle trust-boundary correction
 registered separately from implementation; no direct substring relaxation.
+
+## Measured private fixture task allowance
+
+The CPU2-3 Xvfb05 probe recorded task peak256 and nine refused task admissions;
+at browser readiness `pids.current` was252. Orca heard the initial document and
+focus control, but Firefox content crashed before the target action. The owner
+authorizes a prospective512-task internal fixture ceiling, matching the scoped
+browser envelope. Keep2GiB memory, no swap, CPU2-3/200%, all deadlines, storage
+bounds and every semantic oracle. The whole-project launcher's memory/runtime
+limits do not change. Retain the original refusal/crash and task observations.
+Require no task-admission refusals in a successful successor and treat an exited
+persistent display, bus registry, reader, synthesizer or driver as an environment
+failure, preserving actual exits. No failing startup may count as suppression.
