@@ -59,6 +59,15 @@ scratch. It signs and independently verifies malformed-origin/RP/UV assertions
 without changing packaged product state. Private keys, ceremonies and cookies
 are excluded from public receipts; existing owned-group cleanup applies.
 
+The [announcement caller](../../tools/ui/browser_announcements.py) keeps its
+interactive browser/display/AT subtree in private PID/mount/IPC namespaces and
+DATA-backed settings, buses and file/null audio. It shares only the existing
+fixture network with the genuine TLS console server. AT document snapshots bind
+identity; actual events, Orca/Speech Dispatcher utterances and espeak PCM growth
+remain separate action evidence. Its dependency-ordered stop precedes the
+existing authoritative browser cgroup teardown. This is acceptance tooling,
+with native execution pending, and adds no runtime product component.
+
 The qualification-only [native custody caller](../experiments/formal/installation-native-custody-caller-card.md)
 observes the installed edge Spool in place with both units and every observed
 writer stopped. Complete labelled archives retain original guest metadata;
