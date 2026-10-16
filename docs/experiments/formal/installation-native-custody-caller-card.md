@@ -241,3 +241,11 @@ only for this explicit metadata join and failure preservation. Reader ceiling550
 is separately justified by the measured545-line implementation. Count all new
 production helpers/callsites as before; no cosmetic compression, VM/resource/time
 relaxation, protocol/oracle omission, or historical acceptance credit follows.
+## Independent host metadata ceiling refinement
+
+The host must repeat typed/exact-profile admission on original archived sidecar
+bytes, including an explicit presence join. This reserves six readable caller
+lines beyond the previous355; prospectively allow365 caller /240 producer,
+605 combined. Sharing the finite profile adds two producer lines (236 to238).
+All helper/callsite lines count. This is an additional authenticity check, with
+no resource, deadline, oracle, package or previous negative-control relaxation.

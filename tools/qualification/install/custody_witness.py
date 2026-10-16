@@ -269,7 +269,9 @@ def applied_configuration(raw, info, service):
                 require(key not in result, 'duplicate JSON field')
                 result[key] = value
             return result
-        require(stat.S_IMODE(info[2]) == 0o600 and info[3:5] == (service['uid'], service['gid']),
+        require(len(raw) <= 65536 and stat.S_ISREG(info[2]) and info[5] == 1 and info[6] == len(raw),
+                'bounded original regular single-link bytes required')
+        require(stat.S_IMODE(info[2]) == 0o600 and (info[3], info[4]) == (service['uid'], service['gid']),
                 'private service ownership required')
         value = json.loads(raw.decode('utf-8'), object_pairs_hook=pairs)
         require(type(value) is dict and set(value) == {'revision', 'paused', 'logs', 'metric_interval_s'}, 'RemoteView fields')

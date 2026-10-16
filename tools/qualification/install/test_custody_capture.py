@@ -45,6 +45,8 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                 observer.capture('before')
 
     def fixture_files(self):
+        configuration = self.spool / 'applied-config.json'
+        configuration.write_bytes(literal.APPLIED); configuration.chmod(0o600)
         chain, reboot, reboot_events = self.reboot_chain()
         before, installed, drain, queries, events = chain
         boots = {'literal-boot-a': '00000000-0000-4000-8000-000000000001',
@@ -62,6 +64,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                 process.update(exe_sha256='a' * 64, status=f'Uid:\t{os.getuid()}\nGid:\t{os.getgid()}\n',
                     show=dict(stdout=f"MainPID={process['pid']}\nInvocationID={process['invocation_id']}\nControlGroup=/system.slice/system-fabrico11y.slice/{native.UNITS[1]}\n"))
             receipt = dict(binding=BINDING, spool_root=str(native.ROOT), boot_id=snapshot['boot_id'],
+                service_identity=dict(uid=os.getuid(),gid=os.getgid()),
                 root_stat=list(native.witness.identity(self.spool.stat())))
             files[phase + '/' + name + '-receipt.json'] = receipt
             files[phase + '/' + name + '-snapshot.json'] = native.packed(snapshot)
@@ -99,7 +102,8 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                     btrfs_identity=log['btrfs_identity'], original_stat=[log['device'], log['inode']])
             files[phase + '/' + name + '-sources.json'] = sources
             content = {'identity': b'FAI1' + NODE + struct.pack('<Q', 1),
-                'acked': b'FAK1' + struct.pack('<QQ', 1, snapshot['ack']), 'writer.lock': b'', 'batches.faj': b''}
+                'acked': b'FAK1' + struct.pack('<QQ', 1, snapshot['ack']), 'writer.lock': b'', 'batches.faj': b'',
+                'applied-config.json': literal.APPLIED}
             for source in snapshot['sources']:
                 content['batches.faj'] += frame(source['payload'], len(content['batches.faj']))
             for leaf, observed in snapshot['diagnostics'].items(): content['diagnostics/' + leaf] = observed['bytes']
@@ -141,6 +145,37 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
         bundle = self.bundle(files)
         self.assertEqual(native.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()))['phases'],
                          ['drain', 'installed', 'prepare', 'reboot'])
+
+    def test_coherently_rehashed_missing_or_forged_configuration_is_refused(self):
+        for missing in (True, False):
+            with self.subTest(missing=missing):
+                files, admission = self.fixture_files()
+                for phase in ('prepare','installed','drain','reboot'):
+                    name = 'before' if phase == 'prepare' else phase
+                    key = phase+'/'+name+'-snapshot.json'
+                    snapshot = native.unpack(files[key])
+                    changed = literal.APPLIED.replace(b'false',b'true')
+                    if missing:
+                        snapshot['applied_configuration'] = None
+                        snapshot['files'].pop('applied-config.json')
+                        snapshot['file_observations'].pop('applied-config.json')
+                    else:
+                        snapshot['applied_configuration'] = changed
+                        snapshot['files']['applied-config.json'].update(sha256=native.sha(changed),size=len(changed))
+                        snapshot['file_observations']['applied-config.json'][6] = len(changed)
+                    files[key] = native.packed(snapshot)
+                    rawkey=phase+'/'+name+'-raw.tar'; stream=io.BytesIO()
+                    with tarfile.open(fileobj=io.BytesIO(files[rawkey])) as old, tarfile.open(fileobj=stream,mode='w') as new:
+                        for item in old.getmembers():
+                            if item.name == 'spool/applied-config.json' and missing: continue
+                            raw=old.extractfile(item).read() if item.isfile() else None
+                            if item.name == 'spool/applied-config.json': raw=changed; item.size=len(raw)
+                            new.addfile(item,io.BytesIO(raw) if raw is not None else None)
+                    files[rawkey]=stream.getvalue()
+                bundle=self.bundle(files)  # Recomputes every manifest and transfer hash.
+                with self.assertRaisesRegex(ValueError,'native applied configuration'):
+                    native.admit_transfer(bundle,admission,native.sha(bundle.read_bytes()))
+            self.temp.cleanup(); self.setUp()
 
     def test_transfer_digest_path_and_ownership_refusals(self):
         files, admission = self.fixture_files()
