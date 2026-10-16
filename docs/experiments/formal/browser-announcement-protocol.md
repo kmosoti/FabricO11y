@@ -91,3 +91,10 @@ appends its socket suffix. Use the existing private bind at `/run/user/UID` as
 kernel limits. The inner process checks that this alias has exactly the owned
 DATA-backed runtime directory device/inode. This does not expose the owner bus;
 the private bind continues to hide the owner runtime path.
+
+Headless05 reached the private AT bus after retaining the full voice inventory,
+but `--clearenv` omitted `FABRIC_STORAGE_ROOT`: the inner imported storage default
+then pointed to its private XDG cache, and geckodriver failed with ENOENT. Pass
+the admitted DATA storage root and owned scratch root explicitly into the private
+environment. Preserve the original missing-tool failure; it is not an AT
+announcement refusal or a display limitation.

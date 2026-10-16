@@ -228,6 +228,7 @@ def main():
         '--ro-bind','/','/','--proc','/proc','--dev','/dev','--bind',str(work),str(work),'--bind',str(out),str(out),
         '--bind',str(work/'tmp'),'/tmp','--bind',str(work/'runtime'),f'/run/user/{os.getuid()}','--clearenv']
     environment={'PATH':'/usr/bin:/usr/sbin:/bin','LANG':'C.UTF-8','TMPDIR':str(work/'tmp'),
+        'FABRIC_STORAGE_ROOT':str(DATA),'FABRIC_SCRATCH_ROOT':str(scratch),
         'XDG_RUNTIME_DIR':f'/run/user/{os.getuid()}','XDG_CONFIG_HOME':str(work/'config'),'XDG_CACHE_HOME':str(work/'cache'),
         'XDG_DATA_HOME':str(work/'data'),'GSETTINGS_BACKEND':'keyfile','SPEECHD_ADDRESS':f'unix_socket:/run/user/{os.getuid()}/speech.sock',
         'SPEECHD_CMD':'/bin/false','ALSA_CONFIG_PATH':str(work/'asound.conf'),'GTK_MODULES':'atk-bridge','NO_AT_BRIDGE':'0',
