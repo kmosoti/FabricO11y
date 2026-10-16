@@ -30,6 +30,17 @@ def set_limits(group, maximum, high, tasks, cores):
         raise RuntimeError(f'cgroup enforcement mismatch: {actual} != {values}')
     return actual
 
+def enable_controllers(group):
+    required = {'memory', 'cpu', 'pids', 'io'}
+    available = set((group / 'cgroup.controllers').read_text().split())
+    if not required <= available:
+        raise RuntimeError(f'required cgroup controllers unavailable: {sorted(required-available)}; available={sorted(available)}')
+    (group / 'cgroup.subtree_control').write_text('+memory +cpu +pids +io')
+    enabled = set((group / 'cgroup.subtree_control').read_text().split())
+    if not required <= enabled:
+        raise RuntimeError(f'required cgroup controllers not enabled: {sorted(required-enabled)}')
+
+
 def delegate():
     parent = current()
     if not parent.name.startswith('fabric-work-'):
@@ -41,7 +52,7 @@ def delegate():
     supervisor.mkdir()
     for pid in (parent / 'cgroup.procs').read_text().split():
         (supervisor / 'cgroup.procs').write_text(pid)
-    (parent / 'cgroup.subtree_control').write_text('+memory +cpu +pids +io')
+    enable_controllers(parent)
     set_limits(supervisor, 20*2**30, 16*2**30, 1024, 4)
     return parent
 
@@ -50,7 +61,7 @@ def subgroup(parent, name, maximum, high, tasks, cores, children=False):
     group.mkdir()
     limits = set_limits(group, maximum, high, tasks, cores)
     if children:
-        (group / 'cgroup.subtree_control').write_text('+memory +cpu +pids +io')
+        enable_controllers(group)
     return group, limits
 
 def enter(group):

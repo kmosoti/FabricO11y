@@ -1,5 +1,11 @@
 # Current project state
 
+Hosted CI controller setup now explicitly requests CPU/I/O/memory/task delegation
+and checks actual availability/readback. The PR72 browser startup failure is
+retained; affected controls and hosted rerun remain required. This harness-only
+correction changes no packaged candidate bytes.
+
+
 The private [announcement environment probe](experiments/formal/browser-announcement-protocol.md)
 now observes AT-SPI and the real Orca/Speech Dispatcher/espeak path using public
 text, private buses/settings and file/null audio output. Its source controls and
