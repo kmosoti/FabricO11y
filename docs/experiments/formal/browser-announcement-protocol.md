@@ -263,7 +263,21 @@ a24-pixel circle's bounding box alone does not satisfy the square requirement.
 Transforms or clip paths outside that finite geometry model fail explicitly.
 The literal inline exception requires an inline anchor within surrounding text,
 not an arbitrary button or a paragraph containing only a standalone link.
-||||||| 629006d
+
+The interactive reader starts after authentication. Record its initial accessible
+document as an explicitly named `document:snapshot`, including the genuine AT
+document URL and Firefox namespace PID. This bounded tree inspection is an
+identity witness, never an event credited by an announcement oracle. Keep actual
+object events and utterances as the independent action evidence. Configure only
+the private reader's supported `say-all-on-load=false` setting, avoiding automatic
+whole-page narration while retaining normal focus and live-region presentation.
+The public environment probe keeps its original reader configuration.
+
+Keep action summaries within the existing4KiB record bound; raw events and SSIP
+rows remain in their original complete streams, referenced by action windows.
+Stop actions at the original240-second deadline. Dependency cleanup has a separate
+bounded25-second grace, never a new measurement window; any failed actual wait or
+unexpected process exit fails the caller, followed by authoritative cgroup cleanup.
 
 ## Dependency-ordered reader cleanup
 
