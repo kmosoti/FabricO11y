@@ -1,5 +1,15 @@
 # Current project state
 
+Replacement native Debian02 at c14092e completed acceptance0, actual upgrade/
+reboot and all four custody checkpoints with host transfer admission, but its
+overall run exited2 when the removal shell rejected removed-unit LSBstatus4.
+The failed VM/raw records remain retained. The
+[registered removal observer correction](experiments/formal/installation-release-protocol.md#removed-unit-observation-correction)
+adds independently observed unit states, original process inventory and empty
+project cgroups, shared by baseline/lifecycle callers and regraded by the VM host.
+Source checks and fresh native03 execution remain pending; no package acceptance
+or filesystem-integrity claim follows from the earlier partial custody success.
+
 The first replacement native installation cell failed after guest acceptance0:
 its custody reader omitted the original `applied-config.json` sidecar. The
 [registered counterexample and controls](experiments/formal/installation-native-custody-protocol.md#applied-configuration-counterexample-and-raw-failure-preservation)

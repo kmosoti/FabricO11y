@@ -493,9 +493,10 @@ stopped_rc=0
 stopped=$(systemctl is-active fabrico11y-node.service fabrico11y-server.service) || stopped_rc=$?
 stopped_ok=0
 case "$stopped_rc:$stopped" in
-  $'3:inactive\ninactive'|$'3:inactive\nfailed'|$'3:failed\ninactive'|$'3:failed\nfailed') stopped_ok=1 ;; esac
+  $'3:inactive\ninactive'|$'3:inactive\nfailed'|$'3:failed\ninactive'|$'3:failed\nfailed'|$'4:inactive\ninactive') stopped_ok=1 ;; esac
 if [ $rc -eq 0 ] && [ ! -e /usr/bin/fabric-server ] && [ -d /var/lib/fabrico11y/server ] \
-   && [ -f /etc/fabrico11y/server.conf ] && getent passwd fabricolly >/dev/null && [ "$stopped_ok" -eq 1 ]; then
+   && [ -f /etc/fabrico11y/server.conf ] && getent passwd fabricolly >/dev/null && [ "$stopped_ok" -eq 1 ] \
+   && python3 "$(dirname "$0")/removal_observer.py"; then
   pass A13a "remove: binaries gone, services '$stopped', state, configuration and account kept"
 else
   fail A13a "rc=$rc stopped_rc=$stopped_rc stopped='$stopped'"
