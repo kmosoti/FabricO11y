@@ -118,3 +118,14 @@ bus address, without GNOME session registration, before Orca/browser startup.
 Require the observer to obtain a genuine AT desktop before writing its readiness
 marker. This changes service startup ownership only; no event, speech or synthesis
 is supplied by the harness, and all action-window assertions remain unchanged.
+
+Xvfb03 obtained genuine registry events for the target status and actual PCM
+growth, but retained `announcement-utterance`: Orca was still presenting the
+initial document and rejected the immediate live update as a short-time event
+duplicate. Before changing the status, require actual successful Orca speech for
+the initial public document, then refocus the existing public button and require
+its real utterance. SSML markup in those setup utterances is parsed as XML text
+only to establish setup readiness. The target action still uses the original
+eight-second window inside the unchanged overall deadline, with every original
+event, utterance and synthesis assertion. Setup observations never satisfy the
+target window and no direct Orca presentation call is made.
