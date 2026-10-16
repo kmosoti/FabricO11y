@@ -1,15 +1,55 @@
 """Finite adapter controls; native syscall controls belong to the observer."""
 import os
+import json
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from soak_r3 import launch_native, validate_native_checkpoint
+from soak_r3 import launch_native, simulator_command, validate_native_checkpoint
 
 
 class NativeAdapterControls(unittest.TestCase):
+    def test_actual_failed_command_is_repaired_without_changing_workload(self):
+        failure = json.loads((Path(__file__).parent / 'fixtures/soak-witness-output-boundary.json').read_text())
+        original = failure['command']
+        option = lambda command, name: command[command.index(name) + 1]
+        raw = Path(option(original, '--tokens')).parent
+        self.assertNotEqual(Path(option(original, '--begin-witness')).parent, Path(option(original, '--out')))
+        self.assertEqual(failure['helper_stderr'], 'spindle_sim: begin witness must use the owned output directory\n')
+        repaired = simulator_command(18, option(original, '--server-url'),
+            Path(option(original, '--ca')).parent, raw, 70)
+        self.assertEqual(Path(option(repaired, '--begin-witness')).parent, Path(option(repaired, '--out')))
+        expected = list(original)
+        expected[expected.index('--begin-witness') + 1] = str(raw / 'sim/begin.json')
+        self.assertEqual(repaired, expected)
+
+    def test_stopped_reader_joins_relocated_witness_to_original_raw_path(self):
+        from simulator_native_trace import NativeTrace
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            root = Path(directory)
+            trace = root / 'native-trace'
+            trace.mkdir()
+            command = simulator_command(18, 'https://localhost', Path('/work'), Path('/original/raw'), 70)
+            expected = {'process': {'pid': 7}, 'binary_sha256': '2' * 64, 'begin_sha256': '1' * 64}
+            measured = {'native_begin': {'process': {'pid': 7}}, 'begin_sha256': '1' * 64,
+                'simulator_command': command, 'checkpoint': {'raw': {'source': '/original/raw'}}}
+            record = {'command': command, 'begin_path': '/original/raw/sim/begin.json'}
+            path = trace / 'observer-receipt.json'
+            path.write_text(json.dumps(record))
+            (trace / 'syscalls.raw').write_text('')
+            calls = [{'name': 'execve', 'args': repr(['/bootstrap', [], []])[1:-1]},
+                {'name': 'execve', 'args': repr([command[0], command, []])[1:-1]}]
+            with mock.patch.object(NativeTrace, 'validate_stopped', return_value={'native': 'validated'}) as native, \
+                 mock.patch('simulator_native_trace.trace_calls', return_value=calls):
+                self.assertEqual(validate_native_checkpoint(root, measured, expected, '2' * 64), {'native': 'validated'})
+                native.assert_called_once_with(trace, root / 'raw/sim/begin.json', expected)
+                record['begin_path'] = '/original/raw/begin.json'
+                path.write_text(json.dumps(record))
+                with self.assertRaisesRegex(ValueError, 'native raw command/checkpoint path mismatch'):
+                    validate_native_checkpoint(root, measured, expected, '2' * 64)
+
     def launch(self, root, *, target_affinity=None, wrong_caller=False):
         supervisor = root / 'supervisor'
         supervisor.mkdir()

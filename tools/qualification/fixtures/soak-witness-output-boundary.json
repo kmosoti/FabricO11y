@@ -1,0 +1,30 @@
+{
+  "origin": "Actual first replacement-candidate R3 S1, 2026-10-16T04:37:23Z; no native exposure began",
+  "source_sha256": "3ef34181406a585de25876383b0385a789c320758e2f1bdcd024f238be880691",
+  "source_revision": "2a8e11e7fe3a48f0177da718f64d4045fc70e960",
+  "command": [
+    "/proc/self/fd/18",
+    "--server-url",
+    "https://localhost:50859",
+    "--ca",
+    "/run/media/kmosoti/data/FabricO11y/scratch/release-r3-s1-replacement-tls-01-fixture/ca.pem",
+    "--tokens",
+    "/run/media/kmosoti/data/FabricO11y/scratch/r3-s1-replacement-tls-01/tokens",
+    "--seed",
+    "0xa11fa001",
+    "--seconds",
+    "70",
+    "--workers",
+    "100",
+    "--out",
+    "/run/media/kmosoti/data/FabricO11y/scratch/r3-s1-replacement-tls-01/sim",
+    "--begin-witness",
+    "/run/media/kmosoti/data/FabricO11y/scratch/r3-s1-replacement-tls-01/begin.json"
+  ],
+  "helper_stderr": "spindle_sim: begin witness must use the owned output directory\n",
+  "trace_sha256": "5b68a61ab2a206e2901af44cb56ff465450e238ea733231cfee7d37e5029fde4",
+  "outer_receipt_sha256": "0aabf33c17a9b132323bad9f49f64700b97f4f6485ee97daab037d194632b6fd",
+  "exit": 2,
+  "stop_confirmed": true,
+  "contract": "The begin witness parent equals the exact owned --out directory; no witness-directory relaxation."
+}
