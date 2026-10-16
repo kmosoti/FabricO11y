@@ -433,7 +433,15 @@ def main():
     parser.add_argument('--announcement-xvfb-admission',type=Path)
     parser.add_argument('--announcement-orca-admission',type=Path)
     parser.add_argument('--suppress-announcement',action='store_true',help='negative control: disable the original status live region')
+    parser.add_argument('--security-key-probe',action='store_true',help='isolated actual virtual credential export/DER/signature admission')
     args = parser.parse_args()
+    if args.security_key_probe and any((getattr(args,'announcement_probes',False),getattr(args,'suppress_announcement',False),
+            args.migration,args.fabricctl,args.security_probes,args.session_expiry_helper,
+            args.session_expiry_admission,args.ui_responses,args.role_matrix,args.poll_seconds,args.pressure,
+            args.expired_cursor_probe,args.shell_lifecycle,args.recovery,args.inject_rejection_defect,
+            args.inject_api_cache_defect,args.inject_role_defect,args.inject_nonresident_enrollment,
+            args.inject_security_defect,args.inject_ui_response_defect)):
+        parser.error('security key admission requires its own finite cell')
     import browser_announcements
     browser_announcements.validate_mode(args,parser)
     if args.inject_ui_response_defect and not args.ui_responses:parser.error('UI response defect requires its own cell')
@@ -1021,7 +1029,7 @@ self.addEventListener("fetch",event=>{
                 'actual announcement aggregate has no refused tasks')
             capture_api_metadata();verify_binary_identity();receipt['exit']=0
             return
-        if args.security_probes:
+        if args.security_probes or args.security_key_probe:
             import browser_security
             def export_fixture_credentials():
                 if args.browser == 'firefox':
@@ -1031,6 +1039,14 @@ self.addEventListener("fetch",event=>{
                     finally:
                         wd('/moz/context', {'context':'content'})
                 return cdp('WebAuthn.getCredentials', {'authenticatorId':authenticator})['credentials']
+            if args.security_key_probe:
+                path=ROOT/'tools/ui/browser_security.py'
+                receipt['source_sha256'][str(path.relative_to(ROOT))]=hashlib.sha256(path.read_bytes()).hexdigest()
+                receipt['security_key_probe']=browser_security.probe_key(api=api,bearer=bearer_api,async_js=async_js,
+                    export_credentials=export_fixture_credentials,origin=origin,principal=principal_id,
+                    work=work,deadline=deadline)
+                capture_api_metadata();verify_binary_identity();receipt['exit']=0
+                return
             registration=js('const r=window.fixtureCompletedRegistration;window.fixtureCompletedRegistration=null;return r')
             receipt['security_probes']=[]
             browser_security.run(api=api,bearer=bearer_api,js=js,async_js=async_js,wd=wd,

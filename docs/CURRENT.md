@@ -14,6 +14,11 @@ and checks actual availability/readback. The PR72 browser startup failure is
 retained; affected controls and hosted rerun remain required. This harness-only
 correction changes no packaged candidate bytes.
 
+The separate virtual-key admission caller reuses actual candidate registration,
+login/export and unchanged OpenSSL DER parsing, then independently verifies the
+original browser assertion. Its source controls and per-engine native executions
+remain pending. Baseline resident/RP booleans alone do not admit a key format.
+
 
 The private [announcement environment probe](experiments/formal/browser-announcement-protocol.md)
 now observes AT-SPI and the real Orca/Speech Dispatcher/espeak path using public
