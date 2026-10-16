@@ -346,3 +346,12 @@ must also include the companion. Use native ACK/source times to bound a concurre
 snapshot, preserve original source bytes and check freshness/retention alongside
 rows. Why would excluding a source from the expected corpus create a false failure,
 and why would ignoring metadata hide a real omission?
+
+The [native custody checkpoint exercise](experiments/formal/installation-native-custody-caller-card.md)
+connects the Rust Spool's durable ACK ownership to independent system observations.
+Read a complete stopped raw tree before projecting its fixture rows; compare the
+original payload hash with the candidate sender's journal ACK. Distinguish an
+archived byte copy, original descriptor/stat identity, and a live writer's custody.
+Explain why startup diagnostics need a separate reboot checkpoint and why its
+later evidence cannot justify an earlier query answer. The new harness remains
+unverified until its registered source checks and genuine native cells execute.

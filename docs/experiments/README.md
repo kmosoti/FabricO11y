@@ -1,5 +1,7 @@
 # Experiments
 
+Native custody reader source controls: [registered protocol](formal/installation-native-custody-protocol.md), [revision-bound red and correction](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-custody-native-reader-source-results-01/0364b1c). Native guest acceptance remains pending.
+
 Research, experiment reports and observations belong in the
 [research wiki](https://github.com/kmosoti/FabricO11y/wiki). This index connects
 those reports to the registered protocols and executable evidence kept here.
@@ -102,3 +104,5 @@ Historical reviewer probes, verdicts and notes remain under [data/alpha-review](
 Performance records should state the hypothesis, workload and seed, baseline, changed variable, commands, environment, predefined metrics, results, limitations and decision impact. Formal records should state the property, assumptions, model/code relation, bounds, tool version, command and counterexamples. Bounded model results do not establish unbounded implementation correctness.
 
 The learning path covers the delivery model, log and measurement ([learning path](../LEARNING_PATH.md)); scoped experiments follow the [experiment skill](../../.agents/skills/fabric-experiment/SKILL.md). Create a record for a concrete hypothesis and link results from the relevant architecture view and ADR. Documentation checks are in the [contributor workflow](../CONTRIBUTING.md).
+
+The [fourth-checkpoint custody source record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-custody-fourth-checkpoint-source-results-01) retains the original missing-API red and the later 70-method correction; native guest acceptance remains separate.
