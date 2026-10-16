@@ -58,6 +58,25 @@ def tasks(group,label):
         **{key:(group/key).read_text().strip() for key in ('pids.current','pids.peak','pids.events')})
 
 
+def admitted_orca(record):
+    require(record.get('state')=='prepared' and record.get('exit')==0
+        and record.get('package_identity')=='orca|51.1|1.fc45|noarch','announcement-orca-admission')
+    binary,purelib,schemas=(Path(record[name]) for name in ('binary','pythonpath','schemas'))
+    root=binary.parents[2]
+    require(root.is_relative_to(DATA) and root.resolve(strict=True)==root
+        and all(path.is_relative_to(root) and path.resolve(strict=True)==path for path in (binary,purelib,schemas)),
+        'announcement-orca-admission')
+    require(not any(path.is_symlink() for folder in (purelib,schemas) for path in folder.rglob('*')),
+        'announcement-orca-admission')
+    manifest={str(path.relative_to(root)):hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in root.rglob('*') if path.is_file() and not path.is_symlink()}
+    require(manifest==record['extracted_files'] and manifest[str(binary.relative_to(root))]==record['binary_sha256']
+        and manifest[str((schemas/'gschemas.compiled').relative_to(root))]==record['schema_sha256'],
+        'announcement-orca-admission')
+    return binary,dict(PYTHONPATH=str(purelib),PYTHONDONTWRITEBYTECODE='1',
+        GSETTINGS_SCHEMA_DIR=str(schemas),XDG_DATA_DIRS=str(schemas.parents[1])+':/usr/share',FABRIC_AT_EXPECTED_ORCA='51.1')
+
+
 def loopback():
     with socket.socket() as listener:
         flags=struct.unpack('16sH14s',fcntl.ioctl(listener,0x8913,struct.pack('16sH14s',b'lo',0,b'')))[1]
@@ -95,6 +114,9 @@ def customization(work,out):
     return f'''import json,os,time
 from pathlib import Path
 import speechd
+if os.environ.get('FABRIC_AT_EXPECTED_ORCA'):
+    from orca import orca_platform
+    Path({str(out/'orca-runtime.json')!r}).write_text(json.dumps(dict(version=orca_platform.version,module=orca_platform.__file__)))
 original=speechd.SSIPClient.speak
 marker=Path({str(work/'capture')!r});output=Path({str(out/'speech.jsonl')!r})
 def observed(self,text,*args,**kwargs):
@@ -188,7 +210,13 @@ def inside(args):
         launch('atspi',[sys.executable,'-B',str(Path(__file__)),'--observe',str(out/'events.jsonl')])
         wait(lambda:(out/'events.ready').exists())
         task_phase('before-orca')
-        launch('orca',['/usr/bin/orca','--speech-system','speechdispatcherfactory','--debug-file',str(out/'orca-debug.log')])
+        launch('orca',[sys.executable,str(args.orca),'--speech-system','speechdispatcherfactory','--debug-file',str(out/'orca-debug.log')])
+        if os.environ.get('FABRIC_AT_EXPECTED_ORCA'):
+            wait(lambda:(out/'orca-runtime.json').exists())
+            result['orca_runtime']=json.loads((out/'orca-runtime.json').read_text())
+            require(result['orca_runtime']['version']==os.environ['FABRIC_AT_EXPECTED_ORCA']
+                and Path(result['orca_runtime']['module']).is_relative_to(Path(os.environ['PYTHONPATH'])/'orca'),
+                'announcement-orca-runtime')
         launch('webdriver',[str(DATA/'tools/ui/geckodriver'),'--host','127.0.0.1','--port','48751'])
         def ready():
             try:return call('GET','/status').get('ready') is True
@@ -271,6 +299,7 @@ def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--observe',type=Path);parser.add_argument('--inside',action='store_true')
     parser.add_argument('--serve-public',type=Path)
+    parser.add_argument('--orca-receipt',type=Path);parser.add_argument('--orca',type=Path,default=Path('/usr/bin/orca'))
     parser.add_argument('--mode',choices=('headless','xvfb'),default='headless');parser.add_argument('--xvfb',type=Path)
     parser.add_argument('--xvfb-receipt',type=Path);parser.add_argument('--output',type=Path);parser.add_argument('--work',type=Path)
     parser.add_argument('--suppress-live',action='store_true');args=parser.parse_args()
@@ -303,15 +332,22 @@ def main():
         'SPEECHD_CMD':'/bin/false','ALSA_CONFIG_PATH':str(work/'asound.conf'),'GTK_MODULES':'atk-bridge','NO_AT_BRIDGE':'0',
         'DBUS_SYSTEM_BUS_ADDRESS':'unix:path='+str(work/'absent-system-bus')}
     if args.mode=='xvfb':environment.update(DISPLAY=':87',XAUTHORITY=str(work/'xauthority'))
+    orca_record=None
+    if args.orca_receipt:
+        require(args.orca_receipt.resolve().is_relative_to(DATA),'announcement-orca-admission')
+        orca_record=json.loads(args.orca_receipt.read_text())
+        args.orca,orca_environment=admitted_orca(orca_record);environment.update(orca_environment)
     for key,value in environment.items():command.extend(['--setenv',key,value])
     command+=['/usr/bin/dbus-run-session','--',sys.executable,'-B',str(Path(__file__)),'--inside','--output',str(out),'--work',str(work),'--mode',args.mode]
     if args.xvfb:command+=['--xvfb',str(args.xvfb)]
+    command+=['--orca',str(args.orca)]
     if args.suppress_live:command+=['--suppress-live']
-    tools=[Path(name) for name in ('/usr/bin/bwrap','/usr/bin/dbus-run-session','/usr/bin/orca',
+    tools=[Path(name) for name in ('/usr/bin/bwrap','/usr/bin/dbus-run-session',
         '/usr/bin/firefox','/usr/bin/speech-dispatcher','/usr/libexec/at-spi-bus-launcher',
         '/usr/libexec/at-spi2-registryd',
         '/usr/lib64/speech-dispatcher-modules/sd_espeak-ng','/usr/sbin/ip','/usr/bin/xauth')]
     tools.append(DATA/'tools/ui/geckodriver')
+    tools.append(args.orca)
     if args.xvfb:tools.append(args.xvfb)
     record={'scope':'public AT environment only; no package acceptance','command':command,'exit':1,
         'affinity_before':sorted(allowed),'affinity':sorted(os.sched_getaffinity(0)),
@@ -320,6 +356,8 @@ def main():
         'tool_sha256':{str(tool):hashlib.sha256(tool.read_bytes()).hexdigest() for tool in tools},
         'namespaces_before':{name:os.readlink('/proc/self/ns/'+name) for name in ('pid','net','mnt','ipc')}}
     process=None
+    if orca_record:record.update(orca_admission=str(args.orca_receipt),
+        orca_admission_sha256=hashlib.sha256(args.orca_receipt.read_bytes()).hexdigest(),orca_runtime_inventory=orca_record['extracted_files'])
     try:
         with (out/'namespace.log').open('xb') as log:
             process=subprocess.Popen(command,stdout=log,stderr=subprocess.STDOUT,start_new_session=True);end=time.monotonic()+180
