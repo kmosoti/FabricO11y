@@ -185,3 +185,25 @@ Record actual response bytes/hash and the real AT document URL for the fixture
 browser before the target action. This isolates document URI behavior; keep the
 512 tasks, CPU2-3/200%,2GiB, eight-second action window and every existing oracle.
 Preserve the no-URI result and never substitute setup speech for target speech.
+
+## Official corrected reader admission
+
+Xvfb07 retained the HTTP/AT document URL, real status events and PCM growth, but
+Orca50.3 classified the status-bar insertion as UI_UPDATE before testing live
+regions and omitted its utterance. Upstream's exact correction is
+[2f8d804](https://github.com/GNOME/orca/commit/2f8d804ca2998d2cee7a9e81b61e7bcd238285b0),
+with an independent native status-role regression. Use the unmodified official
+[Orca51.1 release](https://download.gnome.org/sources/orca/51/) as a separate tool
+input, preserving the50.3 limitation. Its signed Fedora noarch package is privately
+extracted; corrected source files must equal the checksum-pinned upstream archive.
+No host installation, presentation patch, DOM change or oracle relaxation occurs.
+
+Before native use, bind the prepared receipt to the entire regular-file inventory,
+launcher, private Python source path and private compiled schemas; reject changed,
+missing or extra files and symlinks in executable source/schema paths. Launch its
+unmodified script with installed Python3.14, within upstream's supported minimum.
+Require the actual loaded Orca version/module path from the private customization
+before browser actions. Retain the identical status page/eight-second action
+window/event→Orca→SSIP→module/PCM assertions and all resource limits. Publish exact
+prepared hashes in a separate native pre-flight; tool preparation alone is no
+announcement or package acceptance evidence.
