@@ -21,6 +21,7 @@ import fixture_cadence
 from fixture_cadence import FixtureCadence
 sys.path.insert(0, str(ROOT / 'tools/qualification'))
 from check_delivery_fault_control import detected
+from test_browser_defect import BrowserDefectTests  # Include the hosted counterexample in this gate.
 
 
 class DeliveryControlTests(unittest.TestCase):

@@ -91,3 +91,22 @@ outer launcher remains the hard whole-tree backstop; this grants no additional
 service runtime. Source controls cover default1800, explicit deadline preservation
 and invalid/missing runtime refusal. The actual #42 consumer smoke remains a
 separate prerequisite; a direct supervisor control cannot substitute for it.
+
+
+## Hosted defect-receipt cleanup binding correction
+
+Prospective trust-boundary correction, 2026-10-16: hosted run 38843945807 at
+`d537086` reached the unchanged API-cache defect assertion with exit 1, then
+failed its receipt checker because that checker still required the removed
+cleanup prose. Preserve that failed run. The minimized observed receipt lives
+at `tools/ci/fixtures/browser-api-cache-d537.json` with its original digest.
+
+Both browser defect graders must retain their existing exact defect, status,
+flag and prerequisite checks. Replace only the obsolete cleanup substring with
+the current exact cleanup label plus nonempty unique positive PID/start-tick
+bindings, all kernel-empty and children-reaped observations, no stop error,
+matching complete integer process exits and own-child ECHILD confirmation.
+Reject absent/false observations, duplicate bindings and the historical prose
+alone. Do not change the injected defect or its expected assertion. Test the
+observed hosted receipt and representative corruptions before rerunning CI.
+A corrected offline grade does not relabel the original failed workflow green.

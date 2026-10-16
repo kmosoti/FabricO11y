@@ -1,0 +1,78 @@
+{
+  "exit": 1,
+  "error": "worker caches only public shell paths",
+  "injected_api_cache_defect": true,
+  "cleanup": "owned fixtures removed; process groups stopped and bound children reaped",
+  "own_children_empty": true,
+  "process_exits": {
+    "server": 0,
+    "webdriver": -15,
+    "edge": 0,
+    "canary-b": 0
+  },
+  "group_stops": [
+    {
+      "pid": 13635,
+      "start_ticks": 106911,
+      "kernel_empty": true,
+      "children_reaped": true,
+      "late_reaped": null,
+      "stop_error": null
+    },
+    {
+      "pid": 13645,
+      "start_ticks": 106940,
+      "kernel_empty": true,
+      "children_reaped": true,
+      "late_reaped": [
+        {
+          "pid": 13653,
+          "start_ticks": 106949,
+          "status": 0
+        },
+        {
+          "pid": 13655,
+          "start_ticks": 106950,
+          "status": 0
+        },
+        {
+          "pid": 13659,
+          "start_ticks": 106950,
+          "status": 0
+        },
+        {
+          "pid": 13660,
+          "start_ticks": 106950,
+          "status": 0
+        }
+      ],
+      "stop_error": null
+    },
+    {
+      "pid": 13820,
+      "start_ticks": 108292,
+      "kernel_empty": true,
+      "children_reaped": true,
+      "late_reaped": null,
+      "stop_error": null
+    },
+    {
+      "pid": 13828,
+      "start_ticks": 108402,
+      "kernel_empty": true,
+      "children_reaped": true,
+      "late_reaped": null,
+      "stop_error": null
+    }
+  ],
+  "checks": [
+    "actual browser matches reviewed version",
+    "two real virtual-authenticator passkeys enrolled"
+  ],
+  "origin": {
+    "run_id": 38843945807,
+    "revision": "d537086747f5dc84b23ed8d62d3b1a567ce051e5",
+    "raw_sha256": "62cd062a69aacfb2659881e82776659eceb730a9565a5657cfdd47f836608ea3",
+    "limitation": "minimized hosted defect receipt; not new acceptance"
+  }
+}

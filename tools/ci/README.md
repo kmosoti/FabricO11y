@@ -202,3 +202,10 @@ limits, suppress the browser check, or relax its expected rows to obtain a green
 run. Qualify benign workload pacing and record the actual request sequence before
 changing either the application or its verifier. Formal/mutation checks also
 remain required; long execution alone does not establish a deadlock or bad code.
+
+
+Browser defect receipt grading requires the exact registered failure and the
+current structured process cleanup observations, including kernel-empty groups,
+reaped bound children and own-child ECHILD. A historical cleanup string alone is
+insufficient; the retained hosted counterexample and correction are registered
+in the [browser protocol](../../docs/experiments/formal/browser-supervisor-protocol.md#hosted-defect-receipt-cleanup-binding-correction).
