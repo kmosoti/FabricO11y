@@ -362,3 +362,34 @@ Every receipt records the exact package/helper/image/source identities, command,
 exit, chosen A12 fixture, measured resources, real lifecycle stages and cleanup.
 A failed, interrupted or missing required phase blocks the corresponding cell.
 First-run results and limitations belong in a separate result record.
+## Removed-unit observation correction
+
+Replacement Debian `replacement-deb-life-02` at clean c14092e completed guest
+acceptance0, upgrade/reboot and all four stopped custody checkpoints with host
+transfer admission. It nevertheless exited2 at removal: dpkg-r succeeded, but
+the shell rejected systemctl is-active4 with two inactive lines. This stopped
+failure remains retained and is not installation acceptance. Installed systemctl
+documentation maps4 to no such unit and warns against relying on LSB codes alone.
+A contained host259 user-manager probe independently observed is-active4/inactive
+and show0 with Id, LoadState=not-found, ActiveState=inactive, SubState=dead,
+MainPID0, empty ControlGroup. That does not authenticate guest257 behavior.
+
+Keep A13a's existing stopped-service/no-descendant meaning. Prospectively admit
+only complete independently observed per-unit facts: show exit0/no stderr,
+exact Id and all six named properties; either loaded/inactive/dead or
+loaded/failed/failed with is-active3 matching state, or not-found/inactive/dead
+with is-active4 and empty ControlGroup. MainPID must be0 in every case. Retain
+raw command argv/exit/stdout/stderr, full ps inventory, original /proc executable
+matches (including deleted project binaries), and every cgroup.procs under the
+project slice. Reject any project process/descendant, missing property, query
+error, inconsistent state or incomplete cgroup observation. A vanished /proc exe
+may be absent; other read/permission errors remain fatal. No unit is started.
+
+The same bounded shared observer is copied and frozen into both baseline and
+lifecycle callers. The VM host checks its exact transfer digest and independently
+regrades retained removal-observer.json; failure observations remain in raw
+acceptance output. Register the old shell guard's valid removed-unit counterexample,
+an unobserved4 refusal and literal query/state/PID/process/cgroup counterexamples.
+Existing active/transitional/partial-output/audit-error/purge refusals remain
+unchanged. Fresh guest evidence, strict source/main admission and a new unique
+run are still required. No package, resource, time or independent oracle changes.

@@ -116,3 +116,12 @@ Report the host kernel, the systemd version and the cgroup controllers. A contai
 - **Host sharing.** The container shares the host kernel. Its hostname, `/proc` and `/sys` views are the container's.
 - **Pressure tests.** They use transient units in the slice, not the daemons themselves under load.
 - **Not covered.** Power loss, reboots and upgrades from an earlier package version are not exercised.
+## Complete removal observation
+
+The [removed-unit correction](installation-release-protocol.md#removed-unit-observation-correction)
+applies to baseline A13a as well as upgrade/reboot lifecycle removal. LSB exit4
+alone is never acceptance. Require complete structured per-unit stopped facts,
+no project executable in original /proc or ps inventory, and no project cgroup
+descendant. Keep all existing live-state, incomplete/query-error, retained-state,
+purge and audit refusals. The shared observer is a qualification payload, not
+installed product code; its deployment/digest and raw observations must be retained.

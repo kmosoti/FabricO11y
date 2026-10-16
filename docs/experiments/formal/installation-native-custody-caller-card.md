@@ -249,3 +249,15 @@ lines beyond the previous355; prospectively allow365 caller /240 producer,
 605 combined. Sharing the finite profile adds two producer lines (236 to238).
 All helper/callsite lines count. This is an additional authenticity check, with
 no resource, deadline, oracle, package or previous negative-control relaxation.
+## Removal observer source ceiling
+
+The actual Debian02 failure reached successful four-phase custody admission but
+exposed an incorrect LSB-status-only removal guard. The independently registered
+structured unit/process/cgroup observer preserves the existing removal contract.
+The smallest readable implementation adds the whole90-line shared collector/
+grader and initially14 net deployment/transfer/digest/host-regrade/caller lines.
+The explicit retained-report type guard adds one further line: caller360 to465.
+Prospectively allow470 caller /240 producer,710 combined; reader550 remains
+unchanged. Every new helper line and both baseline/lifecycle call sites count.
+No cosmetic compression, package/oracle/resource/deadline change or acceptance
+credit for failed Debian02 follows. Native cells need fresh unique03 identities.

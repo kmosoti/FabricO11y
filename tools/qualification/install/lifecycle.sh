@@ -107,8 +107,9 @@ PY
     stopped_rc=0
     stopped=$(systemctl is-active fabrico11y-server.service fabrico11y-node.service) || stopped_rc=$?
     case "$stopped_rc:$stopped" in
-      $'3:inactive\ninactive'|$'3:inactive\nfailed'|$'3:failed\ninactive'|$'3:failed\nfailed') ;;
+      $'3:inactive\ninactive'|$'3:inactive\nfailed'|$'3:failed\ninactive'|$'3:failed\nfailed'|$'4:inactive\ninactive') ;;
       *) echo "ACCEPT A13a FAIL stopped-state observation rc=$stopped_rc: '$stopped'"; exit 1 ;; esac
+    python3 "$(dirname "$0")/removal_observer.py"
     echo 'ACCEPT A13a PASS remove retained telemetry/configuration/account and stopped services'
     if [ "$family" = debian ]; then
       dpkg -P fabrico11y

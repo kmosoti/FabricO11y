@@ -104,6 +104,22 @@ class InstallationShellControls(unittest.TestCase):
             (work / 'lifecycle-account').write_text(account)
             (config / 'server.conf').write_text('synthetic configuration\n')
             for old, new in paths.items(): program = program.replace(old, str(new))
+            program = program.replace('python3 "$(dirname "$0")/removal_observer.py"', 'python3 "$W/removal_observer.py"')
+            helper = Path(__file__).with_name('removal_observer.py')
+            (work/'removal_observer.py').write_text('''import os, runpy
+api=runpy.run_path('''+repr(str(helper))+''')
+units={}
+missing=os.environ['SYSTEMCTL_MODE'].startswith('not-found')
+for name in api['UNITS']:
+    state=os.environ['BAD_STATE'] if name==os.environ['BAD_UNIT'] else 'inactive'
+    props=dict(Id=name,LoadState='not-found' if missing else 'loaded',ActiveState=state,
+        SubState='failed' if state=='failed' else 'dead',MainPID='0',ControlGroup='')
+    if os.environ['SYSTEMCTL_MODE']=='not-found-unobserved': props.pop('MainPID')
+    units[name]=dict(active=dict(exit=4 if missing else 3,stdout=state+'\\n',stderr=''),
+        show=dict(exit=0,stdout=''.join(k+'='+v+'\\n' for k,v in props.items()),stderr=''))
+api['grade'](dict(units=units,ps=dict(exit=0,stdout='',stderr=''),project_processes=[],
+    cgroup=dict(complete=True,exists=False,members={})))
+''')
             stubs = '''
 rpm() { [ "$*" = '-e fabrico11y' ]; }
 dpkg() {
@@ -134,6 +150,7 @@ systemctl() {
     empty) return 3 ;;
     incomplete) echo inactive; return 3 ;;
     error) printf 'inactive\\ninactive\\n'; echo 'synthetic systemctl query error' >&2; return 1 ;;
+    not-found|not-found-unobserved) printf 'inactive\\ninactive\\n'; return 4 ;;
   esac
   local rc=3 value unit
   for unit; do
@@ -193,6 +210,15 @@ systemctl() {
         self.assertIn('synthetic audit read error', result.stderr)
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertNotIn('ACCEPT F4 PASS', result.stdout)
+
+    def test_lifecycle_removed_unit_status_requires_complete_observations(self):
+        program = Path(__file__).with_name('lifecycle.sh').read_text()
+        result=self.shell(program,'debian',systemctl_mode='not-found')
+        self.assertEqual(result.returncode,0,result.stdout+result.stderr)
+        self.assertIn('ACCEPT A13b PASS',result.stdout)
+        result=self.shell(program,'debian',systemctl_mode='not-found-unobserved')
+        self.assertEqual(result.returncode,1,result.stdout+result.stderr)
+        self.assertNotIn('ACCEPT A13a PASS',result.stdout)
 
     def test_acceptance_remove_rejects_either_live_unit(self):
         source = Path(__file__).with_name('acceptance.sh').read_text()

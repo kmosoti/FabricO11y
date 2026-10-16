@@ -24,6 +24,7 @@ import time
 
 sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parents[2])]
 import custody_native
+import removal_observer
 from resource_group import STORAGE as DATA, require_storage
 IMAGE_NAME = 'debian-13-genericcloud-amd64.qcow2'
 # Debian's dated build 20261001-2618, not the moving `latest` directory.
@@ -275,6 +276,7 @@ def main() -> int:
     lifecycle = Path(__file__).with_name('lifecycle.sh').resolve(strict=True)
     acceptance = Path(__file__).with_name('acceptance.sh').resolve(strict=True)
     parallel_helper = Path(__file__).with_name('a12-memory-pressure.py').resolve(strict=True)
+    removal_helper = Path(__file__).with_name('removal_observer.py').resolve(strict=True)
     namespace = 'installation-native-custody' if native_frozen else 'installation-qemu'
     result_dir = DATA / 'results' / namespace / args.run_id
     work_dir = DATA / 'scratch' / (namespace + '-' + args.run_id)
@@ -314,7 +316,7 @@ def main() -> int:
     try:
         frozen_sources = result_dir / 'sources'
         frozen_sources.mkdir()
-        for source in (Path(__file__), acceptance, parallel_helper, lifecycle, *(native_sources if native_frozen else ())):
+        for source in (Path(__file__), acceptance, parallel_helper, lifecycle, removal_helper, *(native_sources if native_frozen else ())):
             shutil.copy2(source, frozen_sources / source.name)
             if digest(source, 'sha256') != digest(frozen_sources / source.name, 'sha256'):
                 raise RuntimeError('VM harness changed during source freeze')
@@ -440,7 +442,8 @@ printf 'instance_id='; cat /var/lib/cloud/data/instance-id
                '-o', 'StrictHostKeyChecking=accept-new',
                '-o', 'UserKnownHostsFile=' + str(known_hosts)]
         transfers = [(deb, 'accept@127.0.0.1:/home/accept/fabrico11y.deb'),
-                     (acceptance, 'accept@127.0.0.1:/home/accept/acceptance.sh')]
+                     (acceptance, 'accept@127.0.0.1:/home/accept/acceptance.sh'),
+                     (removal_helper, 'accept@127.0.0.1:/home/accept/removal_observer.py')]
         if previous:
             transfers += [(previous, 'accept@127.0.0.1:/home/accept/fabrico11y-previous.pkg'),
                           (lifecycle, 'accept@127.0.0.1:/home/accept/lifecycle.sh')]
@@ -456,7 +459,7 @@ printf 'instance_id='; cat /var/lib/cloud/data/instance-id
 chown accept:accept /home/accept/fabrico11y.deb /home/accept/acceptance.sh
 chmod 0644 /home/accept/fabrico11y.deb
 chmod 0755 /home/accept/acceptance.sh
-sha256sum /home/accept/fabrico11y.deb /home/accept/acceptance.sh
+sha256sum /home/accept/fabrico11y.deb /home/accept/acceptance.sh /home/accept/removal_observer.py
 '''
         if args.memory_stressor == 'parallel':
             setup_script += '''
@@ -475,7 +478,8 @@ sha256sum /home/accept/a12-memory-pressure.py
         received = {Path(line.split(maxsplit=1)[1]).name: line.split()[0]
                     for line in setup.stdout.splitlines() if len(line.split()) == 2}
         if (received.get('fabrico11y.deb') != package_sha256
-                or received.get('acceptance.sh') != acceptance_sha256):
+                or received.get('acceptance.sh') != acceptance_sha256
+                or received.get('removal_observer.py') != digest(removal_helper, 'sha256')):
             raise RuntimeError('guest package or acceptance script hash changed during transfer')
         if (args.memory_stressor == 'parallel'
                 and received.get('a12-memory-pressure.py') != parallel_helper_sha256):
@@ -560,6 +564,13 @@ sha256sum /home/accept/a12-memory-pressure.py
                 raise RuntimeError('guest did not complete a distinct reboot')
             lifecycle_phase('reboot')
             lifecycle_phase('remove')
+        if rc == 0:
+            removal = run([*ssh, 'sudo', 'cat', '/root/accept/removal-observer.json'], timeout=30)
+            (result_dir / 'removal-observer.json').write_text(removal.stdout)
+            observed_removal = json.loads(removal.stdout)
+            if not isinstance(observed_removal, dict) or observed_removal.get('state') != 'accepted':
+                raise RuntimeError('guest removal observer did not accept')
+            removal_observer.grade(observed_removal)
         journal = run([*ssh, 'sudo', 'journalctl', '--no-pager', '-q',
                        '-u', 'fabrico11y-node', '-u', 'fabrico11y-server'],
                       timeout=60, check=False)
@@ -657,6 +668,7 @@ sha256sum export.tar
         'upgrade_from': None if previous is None else str(previous),
         'upgrade_from_sha256': None if previous is None else digest(previous, 'sha256'),
         'lifecycle_sha256': digest(lifecycle, 'sha256'),
+        'removal_observer_sha256': digest(removal_helper, 'sha256'),
         'package_sha256': package_sha256,
         'tested_package_sha256': tested_package_sha256,
         'acceptance_sha256': acceptance_sha256,

@@ -333,7 +333,7 @@ def host_admission(owner_path, source_root, storage, package, source_commit, run
     git = lambda *args: subprocess.check_output(['git', '-C', str(source_root), *args], text=True).strip()
     witness.require(not git('status', '--porcelain') and git('rev-parse', 'HEAD') == owner['harness_commit'], 'clean harness source mismatch')
     subprocess.run(['git', '-C', str(source_root), 'merge-base', '--is-ancestor', owner['harness_commit'], 'origin/main'], check=True)
-    names = ('custody_native.py', 'custody_witness.py', 'lifecycle.sh', 'run-qemu.py', 'acceptance.sh')
+    names = ('custody_native.py', 'custody_witness.py', 'lifecycle.sh', 'run-qemu.py', 'acceptance.sh', 'removal_observer.py')
     paths = [source_root / 'tools/qualification/install' / name for name in names] + [source_root / 'tools/qualification/query_oracle.py']
     source_hashes = {str(path.relative_to(source_root)): sha(path.read_bytes()) for path in paths}
     witness.require(source_hashes == owner['source_hashes'], 'producer/helper source mismatch')

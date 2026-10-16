@@ -66,6 +66,7 @@ echo "system state: $state" > "$out/system-state.txt"
 docker cp "$out/fabrico11y.deb" "$name:/root/fabrico11y.deb"
 docker cp "$here/acceptance.sh" "$name:/root/acceptance.sh"
 docker cp "$here/a12-memory-pressure.py" "$name:/root/a12-memory-pressure.py"
+docker cp "$here/removal_observer.py" "$name:/root/removal_observer.py"
 set +e
 docker exec "$name" bash /root/acceptance.sh /root/fabrico11y.deb --memory-stressor "$memory_stressor" > "$out/acceptance.txt" 2>&1
 rc=$?
