@@ -46,3 +46,16 @@ cleanup; keep failed public evidence and uncertain scratch. Record exact source,
 tool/config hashes, argv, versions, namespaces, process IDs, resource observations,
 actual command exits and cleanup. Xvfb acquisition is separately registered by
 X218; a prepared tool is not a working AT environment or packaged-browser result.
+
+## Private loopback prerequisite correction
+
+The first headless native probe retained `ip link set lo up` exit2 with
+`RTNETLINK ... Operation not permitted`; no accessibility step ran. A separately
+contained same-topology diagnostic at `f90c4be` exited0: private loopback flags73
+included IFF_UP, the network namespace differed from the owner namespace, and
+an owned 127.0.0.1 socket delivered exact fixed bytes. Its Python process retained
+CAP_NET_ADMIN, so capability loss is not an established cause of the ip refusal.
+The unnecessary interface mutation is removed. Require the actual private
+IFF_UP flag and exact owned loopback delivery instead; never change an owner
+interface. All AT-SPI/Orca/espeak requirements remain unchanged. Successor runs
+use a fresh output-derived scratch directory, preserving the failed first run.
