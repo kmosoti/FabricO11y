@@ -221,3 +221,5 @@ confirmed stops; see the [revision-bound results](https://github.com/kmosoti/Fab
 No owner-walkthrough/package acceptance follows from these mechanism controls. See the [registered owner protocol](experiments/formal/owner-walkthrough-protocol.md).
 
 - Packaged legacy administration migration now has a prospective isolated browser supplement (`tools/ui/browser_migration.py`): exact CLI enrollment/query, stopped original state/prefix witnesses, actual resident owner/reader transition and separate normal-start format1 refusal. Source controls and both-engine package cells remain not run; see [registered protocol](experiments/formal/browser-migration-protocol.md).
+
+- Native installation custody admission now targets the completed TLS replacement e078ba2 (canonical package source28bcdf7), preserving historical8fb evidence. Four fresh guest cells and same-code fixture constructor02 remain not run; see the [replacement binding](experiments/formal/installation-native-custody-caller-card.md#replacement-tls-candidate-binding-prospective-revision-6).
