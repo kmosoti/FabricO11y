@@ -90,6 +90,8 @@ speechd.SSIPClient.speak=observed
 
 def inside(args):
     work,out=args.work,args.output
+    runtime=Path(os.environ['XDG_RUNTIME_DIR'])
+    require((runtime.stat().st_dev,runtime.stat().st_ino)==((work/'runtime').stat().st_dev,(work/'runtime').stat().st_ino),'announcement-private-runtime')
     require(os.environ.get('DISPLAY')==(':87' if args.mode=='xvfb' else None),'announcement-private-display')
     require(not os.environ.get('WAYLAND_DISPLAY') and not os.environ.get('AT_SPI_BUS_ADDRESS'),'announcement-private-bus')
     processes=[];logs=[];end=time.monotonic()+150;session=None
@@ -132,8 +134,8 @@ def inside(args):
         shutil.copyfile('/etc/speech-dispatcher/modules/espeak-ng.conf',config/'modules/espeak-ng.conf')
         (config/'speechd.conf').write_text(f'LogLevel 2\nLogDir "{speech_logs}"\nAddModule "espeak-ng" "sd_espeak-ng" "espeak-ng.conf"\nDefaultModule espeak-ng\nAudioOutputMethod "alsa"\nAudioALSADevice "fabric_capture"\n')
         (work/'asound.conf').write_text(f'pcm.null {{ type null }}\npcm.fabric_capture {{ type file slave.pcm "null" file "{out}/speech.raw" format "raw" }}\n')
-        launch('speech-dispatcher-process',['/usr/bin/speech-dispatcher','-s','-C',str(config),'-S',str(work/'speech.sock'),'-P',str(work/'speech.pid')])
-        wait(lambda:(work/'speech.sock').exists())
+        launch('speech-dispatcher-process',['/usr/bin/speech-dispatcher','-s','-C',str(config),'-S',str(runtime/'speech.sock'),'-P',str(work/'speech.pid')])
+        wait(lambda:(runtime/'speech.sock').exists())
         prefs=work/'data/orca';prefs.mkdir(parents=True)
         (prefs/'orca-customizations.py').write_text(customization(work,out))
         for key,value in (('speech-server-factory','speechdispatcherfactory'),('synthesizer','espeak-ng')):
@@ -226,8 +228,8 @@ def main():
         '--ro-bind','/','/','--proc','/proc','--dev','/dev','--bind',str(work),str(work),'--bind',str(out),str(out),
         '--bind',str(work/'tmp'),'/tmp','--bind',str(work/'runtime'),f'/run/user/{os.getuid()}','--clearenv']
     environment={'PATH':'/usr/bin:/usr/sbin:/bin','LANG':'C.UTF-8','TMPDIR':str(work/'tmp'),
-        'XDG_RUNTIME_DIR':str(work/'runtime'),'XDG_CONFIG_HOME':str(work/'config'),'XDG_CACHE_HOME':str(work/'cache'),
-        'XDG_DATA_HOME':str(work/'data'),'GSETTINGS_BACKEND':'keyfile','SPEECHD_ADDRESS':'unix_socket:'+str(work/'speech.sock'),
+        'XDG_RUNTIME_DIR':f'/run/user/{os.getuid()}','XDG_CONFIG_HOME':str(work/'config'),'XDG_CACHE_HOME':str(work/'cache'),
+        'XDG_DATA_HOME':str(work/'data'),'GSETTINGS_BACKEND':'keyfile','SPEECHD_ADDRESS':f'unix_socket:/run/user/{os.getuid()}/speech.sock',
         'SPEECHD_CMD':'/bin/false','ALSA_CONFIG_PATH':str(work/'asound.conf'),'GTK_MODULES':'atk-bridge','NO_AT_BRIDGE':'0',
         'DBUS_SYSTEM_BUS_ADDRESS':'unix:path='+str(work/'absent-system-bus')}
     if args.mode=='xvfb':environment.update(DISPLAY=':87',XAUTHORITY=str(work/'xauthority'))
