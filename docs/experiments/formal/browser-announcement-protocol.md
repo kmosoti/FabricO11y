@@ -88,6 +88,6 @@ diagnostic allowance, not a product or semantic acceptance gate.
 The output-derived private runtime backing path can be103 bytes before AT-SPI
 appends its socket suffix. Use the existing private bind at `/run/user/UID` as
 `XDG_RUNTIME_DIR` and the speech-socket alias, keeping UNIX socket names within
-kernel limits. The inner process checks that this alias has exactly the held
+kernel limits. The inner process checks that this alias has exactly the owned
 DATA-backed runtime directory device/inode. This does not expose the owner bus;
 the private bind continues to hide the owner runtime path.
