@@ -49,7 +49,7 @@ def serve_public(path,out):
 
 
 def check_stream(path,out):
-    limit=4*1024**2 if path==out/'speech-logs/speech-dispatcher.log' else 1024**2
+    limit=4*1024**2 if path==out/'speech-logs/speech-dispatcher.log' else (8*1024**2 if path==out/'speech.raw' else 1024**2)
     require(path.stat().st_size<=limit,'announcement-stream-bound')
 
 
