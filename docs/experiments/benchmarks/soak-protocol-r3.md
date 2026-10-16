@@ -230,6 +230,17 @@ dependency, exact clean source, package/helper/console and plan/driver hashes
 before any new smoke. Full admission additionally requires fresh candidate
 #41, #42, #45, #43 and #46 evidence, a complete admitted smoke and S1 headroom.
 
+### Simulator witness location
+
+The simulator requires `--begin-witness` to be a child of its exact `--out`
+directory. R3 uses `raw/sim/begin.json`; the stopped checkpoint reader must
+reparse that same file and join its original path to the recorded helper argv
+and observer receipt. A witness beside `raw/sim` is invalid. Keep the actual
+failed S1 attempt from 2026-10-16 (helper refusal before publication) and cover
+the caller's output/witness relationship and checkpoint path substitution with
+regressions. This path correction changes no exposure, phase, syscall, identity,
+resource, oracle or acceptance requirement; repeat S1 in a fresh namespace.
+
 Root alone runs the prospective control cell; **not run at registration**:
 
 ```sh
