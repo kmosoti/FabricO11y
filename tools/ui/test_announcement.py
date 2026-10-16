@@ -106,6 +106,11 @@ class AnnouncementTests(unittest.TestCase):
             extra=purelib/'unexpected.py';extra.write_text('not in receipt')
             with self.assertRaisesRegex(ValueError,'announcement-orca-admission'):probe.admitted_orca(record)
 
+            extra.unlink();original=code.read_bytes();code.unlink()
+            with self.assertRaisesRegex(ValueError,'announcement-orca-admission'):probe.admitted_orca(record)
+            code.write_bytes(original);extra.symlink_to(code)
+            with self.assertRaisesRegex(ValueError,'announcement-orca-admission'):probe.admitted_orca(record)
+
     def test_shutdown_waits_for_reader_before_its_dependencies(self):
         import signal,time
         from unittest.mock import patch
@@ -140,7 +145,3 @@ class AnnouncementTests(unittest.TestCase):
         with patch('announcement_probe.os.killpg'):
             rows,errors=probe.stop_processes([Process()],[dict(label='orca')],time.monotonic()+25)
         self.assertTrue(errors);self.assertTrue(rows[0]['kill_sent']);self.assertEqual(rows[0]['exit'],-9)
-            extra.unlink();original=code.read_bytes();code.unlink()
-            with self.assertRaisesRegex(ValueError,'announcement-orca-admission'):probe.admitted_orca(record)
-            code.write_bytes(original);extra.symlink_to(code)
-            with self.assertRaisesRegex(ValueError,'announcement-orca-admission'):probe.admitted_orca(record)
