@@ -239,6 +239,11 @@ adapters remain [proposed use cases](research/application-use-cases.md).
 
 ## Resource envelope
 
+The R3 soak caller creates the simulator output directory exclusively with mode
+0700 before fixture setup. Its native witness still independently requires a
+canonical private owned parent; existing outputs are refused. This harness
+precondition supplies no exposure or endurance acceptance.
+
 All builds, tests and experiments use the [resource launcher](CONTRIBUTING.md#resource-containment)
 and its storage root `FABRIC_STORAGE_ROOT`. The laboratory ceiling is the smaller of
 20 GiB and 75% of RAM with no swap; the server experiment cap is 4 GB and the total

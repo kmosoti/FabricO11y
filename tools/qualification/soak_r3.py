@@ -353,6 +353,17 @@ def require_empty(groups):
                 'production/browser/simulator group remains populated')
 
 
+def prepare_simulator_output(raw):
+    """Create the helper's private output exclusively, before expensive setup."""
+    require(raw.is_absolute() and raw.resolve(strict=True) == raw,
+            'canonical simulator output parent required')
+    output = raw / 'sim'
+    output.mkdir(mode=0o700)
+    info = output.lstat()
+    require(stat.S_ISDIR(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o700
+            and info.st_uid == os.geteuid(), 'private owned simulator output required')
+
+
 def simulator_command(descriptor, origin, work, raw, seconds):
     """Match the helper ABI: its begin witness belongs to its owned output."""
     return ['/proc/self/fd/' + str(descriptor),
@@ -424,6 +435,7 @@ def measure(value, admission_sha):
     parent_observations = []
     try:
         clock.enter('setup')
+        clock.call(prepare_simulator_output, raw)
         clock.call(subprocess.run, ['systemctl', '--user', 'set-property', '--runtime', aggregate_parent.name,
             'MemoryHigh=5G', 'MemoryMax=6G', 'MemorySwapMax=0', 'TasksMax=1536'], check=True,
             timeout=clock.remaining() / NS)
