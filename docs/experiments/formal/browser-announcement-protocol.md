@@ -129,3 +129,15 @@ only to establish setup readiness. The target action still uses the original
 eight-second window inside the unchanged overall deadline, with every original
 event, utterance and synthesis assertion. Setup observations never satisfy the
 target window and no direct Orca presentation call is made.
+
+Xvfb04 failed before the target action: accepted document SSIP225 was observed,
+then Orca exited with `RuntimeError: can't start new thread` in its genuine speech
+health-check thread; Firefox content processes also crashed. The initial timing
+hypothesis alone does not explain that failure. Memory remained below1GiB with
+no OOM; the256-task ceiling is a hypothesis because task-event counters were not
+recorded. Prospectively retain the256-task limit and all existing gates/windows,
+but restrict the owned probe and descendants to allowed CPUs2-3, within the same
+200% quota, to bound tool thread pools. Record actual affinity and cgroup
+`pids.current`, `pids.peak`, `pids.events` before launch, at critical inner phases
+and on completion. This discriminates task-admission pressure without raising a
+resource ceiling or changing any announcement expectation. Preserve the crash.
