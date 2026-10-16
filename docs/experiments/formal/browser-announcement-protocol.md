@@ -254,6 +254,15 @@ overlap and missing/wrong alert/event/speech controls must be rejected.
 Stop the interactive AT subtree before final cgroup teardown and retain actual
 exit/namespace/cleanup receipts. The private native environment positive and
 successful exact replacement installation remain prerequisites for package cells.
+
+The geometry checker follows the finite size/spacing model from
+[W3C's target-size explanation](https://www.w3.org/WAI/WCAG22/Understanding/target-size-minimum.html).
+For axis-aligned rounded rectangles it tests whether a centered24-pixel square
+fits the actual corner radii, including percentage radii and CSS radius scaling;
+a24-pixel circle's bounding box alone does not satisfy the square requirement.
+Transforms or clip paths outside that finite geometry model fail explicitly.
+The literal inline exception requires an inline anchor within surrounding text,
+not an arbitrary button or a paragraph containing only a standalone link.
 ||||||| 629006d
 
 ## Dependency-ordered reader cleanup
