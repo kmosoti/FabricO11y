@@ -172,3 +172,16 @@ limits do not change. Retain the original refusal/crash and task observations.
 Require no task-admission refusals in a successful successor and treat an exited
 persistent display, bus registry, reader, synthesizer or driver as an environment
 failure, preserving actual exits. No failing startup may count as suppression.
+
+## Public document URI control
+
+Xvfb06 kept task peak342/max0 and the browser alive, with accepted document and
+focus utterances. The target emitted actual AT events, but no target utterance
+or PCM growth. Orca reported that the data-URI document had no AT document URI;
+its debug queue then stopped at a stale New Tab load/cache event. Prospectively
+serve the identical public HTML bytes through an owned HTTP server inside the
+existing private loopback namespace, leaving browser preferences unchanged.
+Record actual response bytes/hash and the real AT document URL for the fixture
+browser before the target action. This isolates document URI behavior; keep the
+512 tasks, CPU2-3/200%,2GiB, eight-second action window and every existing oracle.
+Preserve the no-URI result and never substitute setup speech for target speech.
