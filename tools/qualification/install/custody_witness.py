@@ -260,6 +260,29 @@ def diagnostic_inventory(root, service):
         raise ValueError('diagnostic input: ' + str(error)) from error
 
 
+def applied_configuration(raw, info, service):
+    """Strict RemoteView shape; original bytes remain raw inventory authority."""
+    try:
+        def pairs(items):
+            result = {}
+            for key, value in items:
+                require(key not in result, 'duplicate JSON field')
+                result[key] = value
+            return result
+        require(stat.S_IMODE(info[2]) == 0o600 and info[3:5] == (service['uid'], service['gid']),
+                'private service ownership required')
+        value = json.loads(raw.decode('utf-8'), object_pairs_hook=pairs)
+        require(type(value) is dict and set(value) == {'revision', 'paused', 'logs', 'metric_interval_s'}, 'RemoteView fields')
+        require(type(value['revision']) is int and 0 <= value['revision'] <= U64
+            and type(value['paused']) is bool and type(value['metric_interval_s']) is int
+            and 1 <= value['metric_interval_s'] <= 3600, 'RemoteView scalar types/ranges')
+        require(type(value['logs']) is list and len(value['logs']) <= 16
+            and all(type(path) is str and Path(path).is_absolute() and len(path.encode()) <= 240
+                    for path in value['logs']), 'RemoteView log profile')
+    except (ValueError, TypeError, KeyError, UnicodeError) as error:
+        raise ValueError('applied configuration: ' + str(error)) from error
+
+
 def stopped_snapshot(root, stopped_receipt, archived_allowed_logs, *, fixture_paths=None):
     root = owned(root)
     receipt = copy.deepcopy(stopped_receipt)
@@ -290,14 +313,18 @@ def stopped_snapshot(root, stopped_receipt, archived_allowed_logs, *, fixture_pa
         names = sorted(os.listdir(fd))
         require({'identity', 'writer.lock', 'batches.faj'} <= set(names), 'missing Spool input')
         diagnostics, observed = diagnostic_inventory(root, receipt.get('service_identity', {})) if fixture_paths else ({}, {})
-        require(all(name in ('identity', 'acked', 'writer.lock', 'batches.faj') or (fixture_paths and name == 'diagnostics')
+        require(all(name in ('identity', 'acked', 'writer.lock', 'batches.faj') or (fixture_paths and name in ('diagnostics', 'applied-config.json'))
             or re.fullmatch(r'sealed-[0-9]{20}\.faj', name) for name in names), 'unexpected or failed Spool input')
         files, raw_files = {'diagnostics/' + name: value for name, value in diagnostics.items()}, {}
         require(sum((root / name).lstat().st_size for name in names if name.endswith('.faj')) <= cap - 4096,
                 'framed Spool cap')
         for name in names:
             if fixture_paths and name == 'diagnostics': continue
-            raw, info = read_regular(root / name, cap - 4096 if name.endswith('.faj') else 28)
+            try:
+                raw, info = read_regular(root / name, cap - 4096 if name.endswith('.faj') else 65536 if name == 'applied-config.json' else 28)
+                if name == 'applied-config.json': applied_configuration(raw, info, receipt['service_identity'])
+            except ValueError as error:
+                raise ValueError(('applied configuration: ' if name == 'applied-config.json' else '') + str(error)) from error
             raw_files[name], observed[name] = raw, info
             files[name] = dict(sha256=hashlib.sha256(raw).hexdigest(), size=len(raw),
                               mode=info[2], uid=info[3], gid=info[4])
@@ -366,7 +393,7 @@ def stopped_snapshot(root, stopped_receipt, archived_allowed_logs, *, fixture_pa
         return dict(binding=binding, boot_id=receipt['boot_id'], node_id=node.hex(), generation=generation,
             ack=ack, files=files, file_observations=observed, sources=sources, cursors=cursors,
             logs=logs, log_observations=log_observations, candidate_process=receipt.get('candidate_process'),
-            fixture_paths=fixture_paths, diagnostics=diagnostics)
+            fixture_paths=fixture_paths, diagnostics=diagnostics, applied_configuration=raw_files.get('applied-config.json'))
     except (OSError, KeyError, TypeError) as error:
         raise ValueError(str(error)) from error
     finally:
@@ -382,6 +409,9 @@ def conserve(before, after_install, after_drain, queries, candidate_ack_events, 
                 'candidate/Strand/boot substitution')
     require(all(before[key] == after_install[key] for key in ('ack', 'files', 'sources', 'cursors', 'logs')),
             'stopped install changed retained custody')
+    require(all(snapshot['files'].get('applied-config.json') == before['files'].get('applied-config.json')
+        for snapshot in (after_drain,) + ((after_reboot,) if after_reboot is not None else ())),
+        'registered lifecycle applied configuration changed')
     pending = [source for source in before['sources'] if source['sequence'] > before['ack']]
     require(pending and after_drain['ack'] >= pending[-1]['sequence'], 'missing pending custody/drain ACK')
     require(all(log == after_drain['logs'].get(path) for path, log in before['logs'].items()
