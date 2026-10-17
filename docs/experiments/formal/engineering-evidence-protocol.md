@@ -68,7 +68,8 @@ Output is deterministically ordered by a lexicographic topological traversal.
 ## Primitives and composition
 
 Use bounded strict UTF-8 JSON: duplicate keys, non-finite values, excessive
-nesting and oversized documents fail. Limits: 4 MiB JSON, depth 32, 4,096
+nesting and oversized documents fail. Limits: 4 MiB per JSON document and 64 MiB
+aggregate retained JSON payload before parsing, depth 32, 4,096
 artifacts/jobs and 65,536 edges; 1 MiB string per command argument, 256 arguments.
 Resolve files relative to held no-follow directory descriptors; refuse symlinks,
 non-regular files, noncanonical paths and path escape. Hash with 1 MiB streaming
