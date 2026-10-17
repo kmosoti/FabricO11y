@@ -10,7 +10,8 @@ Existing package, custody, query, browser and soak graders remain authoritative.
 No product contract, oracle, registered acceptance outcome or release gate changes.
 
 The caller pins a version-1 plan by its SHA-256 on the command line. The plan
-records `candidate` (40 lowercase hex characters), `artifacts`, and `jobs`.
+records integer `version=1`, `candidate` (40 lowercase hex characters),
+`artifacts`, and `jobs`.
 The caller separately supplies `--candidate`, `--root`, `--plan` (relative to root)
 and `--plan-sha256`; candidate disagreement is an error. Root must already exist,
 be absolute and contain no symlink components. Plans may not choose another root.
