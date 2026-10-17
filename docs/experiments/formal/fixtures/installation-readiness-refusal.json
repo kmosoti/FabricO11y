@@ -1,0 +1,60 @@
+{
+  "origin": "actual replacement-rpm-life-03 overall2 atclean56868710; guestacceptance0; first drain readinessquery after systemctlstart. Original guestdisk retained, incomplete4phase custody notadmitted.",
+  "original_bundle_sha256": "7a7bc37338e5b901309ef92aa8897609da61718741906b4cf299211a92985902",
+  "phase": "drain",
+  "commands": [
+    {
+      "argv": [
+        "systemctl",
+        "start",
+        "fabrico11y-server.service",
+        "fabrico11y-node.service"
+      ],
+      "elapsed_seconds": 0.6422377509999819,
+      "exit": 0,
+      "stderr": "",
+      "stdout": ""
+    },
+    {
+      "argv": [
+        "systemctl",
+        "show",
+        "fabrico11y-node.service",
+        "-p",
+        "MainPID",
+        "-p",
+        "ControlGroup",
+        "-p",
+        "InvocationID"
+      ],
+      "elapsed_seconds": 0.13024456800002326,
+      "exit": 0,
+      "stderr": "",
+      "stdout": "InvocationID=a7d0e8abca3d4134b718f9067ce019df\nMainPID=4895\nControlGroup=/system.slice/system-fabrico11y.slice/fabrico11y-node.service\n"
+    },
+    {
+      "argv": [
+        "sha256sum",
+        "/proc/4895/exe"
+      ],
+      "elapsed_seconds": 0.08458975899998222,
+      "exit": 0,
+      "stderr": "",
+      "stdout": "f10c3449e0a4f7700530b82b79d900331e5f2741cc4cd23891ae0da3b903628b  /proc/4895/exe\n"
+    },
+    {
+      "argv": [
+        "fabricctl",
+        "admin",
+        "/root/accept/admin.conf",
+        "query",
+        "{\"kind\": \"logs\", \"node\": \"spindle-1\", \"from_ns\": 0, \"to_ns\": 9223372036854775807, \"limit\": 1000}"
+      ],
+      "elapsed_seconds": 0.06684417899998607,
+      "exit": 2,
+      "stderr": "fabricctl: transport: io: Connection refused\n",
+      "stdout": ""
+    }
+  ],
+  "expected": "Retry only exact first-query connectionrefused under original40s absolute deadline; no othererrors or partialanswers admitted."
+}

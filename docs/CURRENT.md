@@ -272,3 +272,13 @@ No owner-walkthrough/package acceptance follows from these mechanism controls. S
 - Native installation custody admission now targets the completed TLS replacement e078ba2 (canonical package source28bcdf7), preserving historical8fb evidence. The metadata-only same-code fixture constructor02 completed with exact payload/metadata comparisons. Four-cell native acceptance remains incomplete: the first Debian attempt reached guest acceptance exit 0, then lifecycle grading refused an unexpected or failed Spool input before the custody snapshot (outer exit 2). The stopped failure is retained under [#41](https://github.com/kmosoti/FabricO11y/issues/41); see the [replacement binding](experiments/formal/installation-native-custody-caller-card.md#replacement-tls-candidate-binding-prospective-revision-6).
 
 - The guest-placement loader now resolves the installation custody helper from its own repository paths, including dynamic imports without an install PYTHONPATH. The isolated production-shaped counterexample failed with custody_native ModuleNotFoundError on0eed764 (direct QEMU CLI help succeeded). At `525373dc`, all three production CLI help commands passed with ambient `PYTHONPATH` removed, and the isolated loader test passed (exit 0); the [red and green record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-guest-loader-import-counterexample-results-01) retains exact commands and stopped receipts. No guest/package acceptance follows from importability.
+
+The replacement Debian native03 full lifecycle actually exited0 with independent
+four-phase custody and removal admission. Fedora03 initial acceptance exited0,
+but its first post-start drain query saw connection-refused and the old readiness
+loop aborted before its40-second bound. Preserve the overall2/incomplete transfer
+and original stopped guest. The separately registered initial-listener correction
+retries only that exact first-query refusal under the same absolute deadline;
+all raw attempts, partial-page/other-error refusal, late-success deadline and
+final full-row/ACK gates remain required. Focused source/native checks are pending;
+no complete replacement #41 qualification is claimed.
