@@ -439,7 +439,9 @@ class CompositionControls(unittest.TestCase):
                 for key in keys[:-1]:
                     target = target[key]
                 del target[keys[-1]]
-                pin = self.publish_raw_receipts()
+                # A resource mutation needs its wrapper hash refreshed, or a
+                # stale join could conceal an accepted missing required field.
+                pin = self.publish() if kind == "resource" else self.publish_raw_receipts()
                 with self.assertRaises(ValueError):
                     self.verify(pin=pin)
 
@@ -453,6 +455,11 @@ class CompositionControls(unittest.TestCase):
             path = self.root / "literal-resource.json"
             path.write_bytes(raw)
             self.plan["artifacts"][0]["sha256"] = digest(raw)
+            wrapper = self.receipts["literal-wrapper"]
+            wrapper["resource_receipts"][0]["sha256"] = digest(raw)
+            wrapper_raw = encoded(wrapper)
+            (self.root / "literal-wrapper.json").write_bytes(wrapper_raw)
+            self.plan["artifacts"][1]["sha256"] = digest(wrapper_raw)
             plan_raw = encoded(self.plan)
             (self.root / "plan.json").write_bytes(plan_raw)
             with self.subTest(raw=raw), self.assertRaises(ValueError):
@@ -547,7 +554,7 @@ class CompositionControls(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.verify(pin=pin)
 
-    def test_each_artifact_streamed_once_and_parse_uses_held_bytes(self):
+    def test_each_artifact_streamed_once(self):
         pin = self.publish()
         tracked = {}
         for name in ("literal-resource.json", "literal-wrapper.json"):
@@ -602,6 +609,36 @@ class CompositionControls(unittest.TestCase):
                     with self.assertRaises((ValueError, OSError)):
                         self.verify(pin=pin)
                 self.assertTrue(triggered, "race hook must observe artifact descriptor EOF")
+
+    def test_final_composition_rechecks_previously_consumed_artifacts(self):
+        pin = self.publish()
+        artifacts = {}
+        for name in ("literal-resource.json", "literal-wrapper.json"):
+            path = self.root / name
+            stat = path.stat()
+            artifacts[(stat.st_dev, stat.st_ino)] = (path, path.read_bytes())
+        real_read = os.read
+        triggered = []
+        consumed = []
+
+        def late_replacement(fd, count):
+            stat = os.fstat(fd)
+            raw = real_read(fd, count)
+            identity = (stat.st_dev, stat.st_ino)
+            if not raw and identity in artifacts and identity not in consumed:
+                consumed.append(identity)
+            if len(consumed) == 2 and not triggered:
+                triggered.append(True)
+                path, original = artifacts[consumed[0]]
+                replacement = self.root / "late-replacement.json"
+                replacement.write_bytes(original)
+                replacement.replace(path)
+            return raw
+
+        with mock.patch.object(evidence.os, "read", side_effect=late_replacement):
+            with self.assertRaises((ValueError, OSError)):
+                self.verify(pin=pin)
+        self.assertTrue(triggered, "late race must run after earlier artifact consumption")
 
 
 if __name__ == "__main__":
