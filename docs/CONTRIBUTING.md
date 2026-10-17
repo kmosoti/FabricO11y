@@ -150,8 +150,28 @@ Rules for these tools:
 
 ## Skills and hooks
 
-Repository skills in `.agents/skills` are ordinary Markdown: [fabric-architecture](../.agents/skills/fabric-architecture/SKILL.md), [fabric-lesson](../.agents/skills/fabric-lesson/SKILL.md) and [fabric-experiment](../.agents/skills/fabric-experiment/SKILL.md). [.codex/hooks.json](../.codex/hooks.json) runs [read-only handlers](../.codex/hooks/run.py): `SessionStart` supplies a bounded copy of `CURRENT.md`. The Bun documentation `Stop` hook is disabled by owner direction during experimentation; the checker remains available manually. Hooks need runtime trust in Codex (`/hooks`). The same configuration holds silent [agent-telemetry](../tools/telemetry/README.md) observers that write under ignored `.local/`; validate them with `python3 -B tools/telemetry/test_contract.py` and `python3 -B tools/telemetry/test_cli.py`.
+Repository skills in `.agents/skills` are ordinary Markdown: [fabric-architecture](../.agents/skills/fabric-architecture/SKILL.md), [fabric-lesson](../.agents/skills/fabric-lesson/SKILL.md) [fabric-experiment](../.agents/skills/fabric-experiment/SKILL.md) and [architecture-review](../.agents/skills/architecture-review/SKILL.md). [.codex/hooks.json](../.codex/hooks.json) runs [read-only handlers](../.codex/hooks/run.py): `SessionStart` supplies a bounded copy of `CURRENT.md`. The Bun documentation `Stop` hook is disabled by owner direction during experimentation; the checker remains available manually. Hooks need runtime trust in Codex (`/hooks`). The same configuration holds silent [agent-telemetry](../tools/telemetry/README.md) observers that write under ignored `.local/`; validate them with `python3 -B tools/telemetry/test_contract.py` and `python3 -B tools/telemetry/test_cli.py`.
 
 ## Editor tools
 
 [.vscode/extensions.json](../.vscode/extensions.json) recommends [Foam](https://marketplace.visualstudio.com/items?itemName=foam.foam-vscode), [Mermaid Preview](https://marketplace.visualstudio.com/items?itemName=vstirbu.vscode-mermaid-preview), [Mermaid Visual Diff](https://marketplace.visualstudio.com/items?itemName=orhymed.mermaid-visual-diff) and [CodeTour](https://marketplace.visualstudio.com/items?itemName=vsls-contrib.codetour). None is required; all navigation uses ordinary Markdown links.
+
+## Evidence preflight
+
+The [read-only CLI](../tools/engineering/evidence.py) checks a caller-frozen plan
+under the launcher's actual storage root. See its [schema and limits](experiments/formal/engineering-evidence-protocol.md).
+For example, with explicit owner-selected pins:
+
+```sh
+python3 tools/resource_group.py -- python3 -B tools/engineering/evidence.py \
+  --root "$FABRIC_STORAGE_ROOT" --plan results/registered-plan.json \
+  --plan-sha256 "$PLAN_SHA256" --candidate "$CANDIDATE_SHA"
+```
+
+Exit 0 means all listed evidence structurally matches; exit 3 retains pending
+work; exit 2 refuses malformed or inconsistent input. The CLI never executes
+plan commands, rewrites the queue or grants acceptance. Reconcile required
+cases against their original protocols before freezing the inventory. Source
+controls run with `python3 -B -m unittest discover -s tools/engineering -p 'test_*.py'`;
+the registered finite comparison runs with `python3 -B tools/engineering/measure.py`.
+Both require the resource launcher and data-drive scratch like every validator.
