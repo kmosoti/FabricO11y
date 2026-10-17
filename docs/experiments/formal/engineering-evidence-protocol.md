@@ -40,6 +40,8 @@ Every listed artifact is hashed, including unreferenced prerequisite pins.
   describe structural joins; named fault/refusal graders still establish reason.
 - `evidence`: null for not run, otherwise `{wrapper, resource}` artifact IDs.
   Both must resolve to JSON objects; sharing either receipt between jobs fails.
+  Resource units must also be unique across jobs, so copying receipt bytes to
+  another path cannot count the same stopped service twice.
 
 The wrapper must contain `state=completed`, exact `command`, `harness_revision`
 (40 hex characters), integer `exit` and `launcher_exit` equal to expected exit,
