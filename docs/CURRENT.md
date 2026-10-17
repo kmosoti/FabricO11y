@@ -1,10 +1,14 @@
 # Current project state
 
 The [engineering evidence preflight](architecture/engineering-evidence.md) adds
-a read-only consistency aid and focused architecture-review workflow. Its
-[registered controls and measurements](experiments/formal/engineering-evidence-protocol.md)
-remain pending execution. It supplies no candidate acceptance, source-test
-substitution, release authorization or change to the existing independent oracles.
+a read-only consistency aid and focused architecture-review workflow. At
+`21ecbaba`, 29 source controls and the registered paired measurements exited 0,
+with actual whole-service stops. The finite graph reference covers 4,165 directed
+graphs; hashing reuse trades larger read buffers for fewer bytes read. See the
+[protocol](experiments/formal/engineering-evidence-protocol.md) and
+[bounded results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-engineering-evidence-results-01).
+The controls are included in the fast registry. This supplies no candidate
+acceptance, source-test substitution or change to the independent product oracles.
 
 Replacement native Debian02 at c14092e completed acceptance0, actual upgrade/
 reboot and all four custody checkpoints with host transfer admission, but its

@@ -2,7 +2,9 @@
 
 The [engineering evidence protocol](formal/engineering-evidence-protocol.md) registers
 bounded artifact/dependency/receipt composition controls and matched finite costs.
-This tooling supplies structural consistency only, with no release acceptance.
+The [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-engineering-evidence-results-01)
+retain exact source, controls and trade-offs. This tooling supplies structural
+consistency only, with no release acceptance.
 
 Native custody reader source controls: [registered protocol](formal/installation-native-custody-protocol.md), [revision-bound red and correction](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-custody-native-reader-source-results-01/0364b1c). Native guest acceptance remains pending.
 
