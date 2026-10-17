@@ -53,7 +53,10 @@ integer `exit` and `wrapper_exit`, `stop_confirmed=true`, `stop_error=null`, a
 `storage_root` exactly root, a `unit` matching `fabric-work-[0-9a-f]+`, and a
 completed `command_receipt` matching command, unit, exit and cgroup.
 Its cgroup must be an absolute canonical path under `/sys/fs/cgroup`, ending in
-that unit plus `.service`. Wrapper harness revision must equal the job pin and child `revision`
+that unit plus `.service`, or that exact service's `/workload` child only when
+resource `delegated` is literally true. This follows the launcher's two actual
+accounting topologies; arbitrary descendants are refused. Wrapper harness
+revision must equal the job pin and child `revision`
 only if such a child field exists; otherwise no source execution claim follows.
 Resource limits are not re-certified by this join; the launcher and original
 job-specific admission retain that responsibility.
