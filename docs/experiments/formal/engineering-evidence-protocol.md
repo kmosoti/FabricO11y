@@ -1,5 +1,33 @@
 # Engineering evidence preflight protocol
 
+## Rust implementation amendment
+
+Owner requested incremental Rust migration on 2026-10-17. The existing version-1
+data and refusal contracts below remain authoritative. Implement the aid inside
+the existing tooling-layer `xtask` crate as `cargo xtask evidence-preflight`;
+remove the newly introduced `tools/engineering` Python implementation, tests and
+measurement runner after Rust equivalents are verified. The existing independent
+Python delivery/query/rate oracles and required resource launcher remain unchanged.
+Use existing locked `serde`, `serde_json`, `sha2` and `libc` versions; no product
+or core dependency changes. Keep descriptor ownership and Linux no-follow lookup,
+bounded JSON with duplicate rejection, numeric-indexed adjacency/indegrees and
+deterministic ready selection as separable Rust primitives before composition.
+
+The Rust CLI checks actual cgroup-v2 memory.max (positive and at most20GiB) and
+memory.swap.max=0, and requires --root to match explicit FABRIC_STORAGE_ROOT.
+No environment/storage fallback is allowed. Existing launcher job admission,
+actual whole-service stop and storage enforcement remain required.
+
+Repeat the original negative/positive fixture families and exhaustive4,165-graph
+permutation reference against Rust; retain meaningful discrepancies. For measured
+Rust costs, use the same seed17/sizes/shapes/32hash-joins/seven alternating pairs
+after one warmup, exact outputs and byte counts, with elapsed monotonic walltime.
+Report whole-command cgroup memory. The earlier Python tracemalloc metric does
+not apply to Rust; make no cross-language speed or allocation claim. Register
+Rust source/build settings and commands before running, preserve earlier Python
+raw outcomes as historical tool evidence only. No product acceptance is gained.
+
+
 ## Boundary and authority
 
 This is a prospective, read-only consistency aid for registered work. It neither
@@ -97,7 +125,8 @@ Preserve any surprising failure as a minimized deterministic fixture.
 An independently written finite graph reference must agree on ordered output
 or cycle rejection across all directed graphs up to four vertices.
 
-Measure graph composition at 64, 512 and 2,048 vertices, chain and fan-out graphs,
+The original Python measurement (historical after the Rust amendment) measures
+graph composition at 64, 512 and 2,048 vertices, chain and fan-out graphs,
 seed 17, seven paired samples after one warmup. Compare indexed heap traversal
 with repeated sorted scans on identical inputs/output. Report wall time medians,
 peak Python allocations and exact-output equality; no minimum speed gate.
