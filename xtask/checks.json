@@ -3,6 +3,26 @@
   "description": "Required repository checks. `cargo xtask checks --profile fast` runs the CI set; `extended` needs release builds, openssl, java or time; `qualification` entries point at registered protocols and never report success from the runner. See docs/formal/verification-strategy.md.",
   "checks": [
     {
+      "id": "engineering-evidence",
+      "profile": "fast",
+      "command": [
+        "python3",
+        "-B",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tools/engineering",
+        "-p",
+        "test_*.py"
+      ],
+      "scope": "Bounded read-only artifact, dependency and stopped-receipt composition; exhaustive finite graph reference and injected invalid evidence",
+      "requires": ["python3"],
+      "expected": "exit 0",
+      "contracts": [],
+      "unchecked": "Development-tool structure only; no truthful-producer, complete-inventory, product semantic or qualification claim."
+    },
+    {
       "id": "fmt",
       "profile": "fast",
       "command": [
