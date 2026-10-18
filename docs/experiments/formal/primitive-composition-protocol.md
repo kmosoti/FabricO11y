@@ -95,6 +95,29 @@ pending refinement. Timer-scale cases do not support speed claims. This is a
 screen on the observed host, not an optimality proof or an end-to-end service
 benchmark. Actual caller adaptation remains a separate gate.
 
+## Actual inspection decoder
+
+Use the literal successful `fabricctl inspect` stdout retained by the local
+effect capture as the first decoder fixture. The current formatter has15 unique
+key/value fields, lowercase hex node identity, unsigned integers and three
+literal booleans. Decode observations only: recovery flags remain representable
+and are refused by the lifecycle decision, not hidden as parse errors.
+
+Run the draft decoder's five controls before refining it. Compare a refinement
+that caps input at4096 bytes, iterates without a token vector, and borrows the
+node identity instead of allocating it. Preserve numeric overflow, duplicate,
+unknown/missing field, line ending, sequence and health-flag behavior. Reject
+oversize input before tokenization. New stricter bounds are an explicit tooling
+contract; they do not change product output or independent oracles.
+
+Compare all fields on the literal capture and deliberate malformed inputs;
+include the u64 boundary and field permutations. If measuring decode cost, use
+the same captured fixture, fixed100000 decodes per sample, three alternating
+old/new pairs, black-box inputs/results and the registered Rust profile above.
+Exclude compilation and file I/O. A decoder-only result does not establish
+native capture authenticity or an acceptance-level speedup. Shared use requires
+the actual caller's controls, not just this parser experiment.
+
 ## Resources and completion
 
 All jobs use the existing resource launcher and DATA scratch, with fresh strict
