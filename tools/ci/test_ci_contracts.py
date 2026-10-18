@@ -269,7 +269,7 @@ class WorkflowTests(unittest.TestCase):
             '--browser-entry-helper-sha256 "$FABRIC_BROWSER_ENTRY_HELPER_SHA256"')
         security_flag = '--security-probes'
         browser_calls = [line for line in workflow.splitlines() if 'live_browser_check.py' in line]
-        normal_positive = next((line for line in browser_calls if '--out $FABRIC_STORAGE_ROOT/results/ci-live-browser ' in line), '')
+        normal_positive = next((line for line in browser_calls if line.endswith('--out $FABRIC_STORAGE_ROOT/results/ci-live-browser')), '')
         security_positive = next((line for line in browser_calls if '--out $FABRIC_STORAGE_ROOT/results/ci-live-browser-security' in line), '')
         api_cache_negative = next((line for line in browser_calls if '--inject-api-cache-defect' in line), '')
         fixture_at = workflow.find(fixture)
@@ -315,7 +315,7 @@ class WorkflowTests(unittest.TestCase):
             '--browser-entry-helper-sha256 "$FABRIC_BROWSER_ENTRY_HELPER_SHA256"')
         security_flag = '--security-probes'
         browser_calls = [line for line in workflow.splitlines() if 'live_browser_check.py' in line]
-        normal_positive = next((line for line in browser_calls if '--out $FABRIC_STORAGE_ROOT/results/ci-live-browser ' in line), '')
+        normal_positive = next((line for line in browser_calls if line.endswith('--out $FABRIC_STORAGE_ROOT/results/ci-live-browser')), '')
         security_positive = next((line for line in browser_calls if '--out $FABRIC_STORAGE_ROOT/results/ci-live-browser-security' in line), '')
         api_cache_negative = next((line for line in browser_calls if '--inject-api-cache-defect' in line), '')
         missing_launcher = workflow.replace(fixture, '', 1)
