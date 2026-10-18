@@ -55,6 +55,11 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
         snapshots = dict(prepare=before, installed=installed, drain=drain, reboot=reboot)
         for phase, snapshot in snapshots.items():
             name = 'before' if phase == 'prepare' else phase
+            configuration = json.dumps(native.expected_profile(phase), separators=(',', ':')).encode()
+            snapshot['applied_configuration'] = configuration
+            snapshot['files']['applied-config.json'].update(sha256=native.sha(configuration), size=len(configuration))
+            snapshot['file_observations']['applied-config.json'] = list(snapshot['file_observations']['applied-config.json'])
+            snapshot['file_observations']['applied-config.json'][6] = len(configuration)
             snapshot['boot_id'] = boots[snapshot['boot_id']]
             process = snapshot['candidate_process']
             if process:
@@ -103,7 +108,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
             files[phase + '/' + name + '-sources.json'] = sources
             content = {'identity': b'FAI1' + NODE + struct.pack('<Q', 1),
                 'acked': b'FAK1' + struct.pack('<QQ', 1, snapshot['ack']), 'writer.lock': b'', 'batches.faj': b'',
-                'applied-config.json': literal.APPLIED}
+                'applied-config.json': configuration}
             for source in snapshot['sources']:
                 content['batches.faj'] += frame(source['payload'], len(content['batches.faj']))
             for leaf, observed in snapshot['diagnostics'].items(): content['diagnostics/' + leaf] = observed['bytes']

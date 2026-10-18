@@ -26,6 +26,10 @@ PENDING = 'accept-upgrade-pending-literal'
 UNREAD = 'accept-upgrade-unread-literal'
 NATIVE_PROFILE = dict(revision=1, paused=False, logs=[SOURCE, '/var/log/fabric-accept/denied.log'],
                       metric_interval_s=15)
+def expected_profile(phase):
+    revision = {'prepare': 1, 'before': 1, 'installed': 1, 'drain': 2, 'reboot': 4}[phase]
+    return dict(NATIVE_PROFILE, revision=revision, paused=phase in ('drain', 'reboot'))
+
 sha = lambda raw: hashlib.sha256(raw).hexdigest()
 
 
@@ -92,6 +96,55 @@ class Guest:
         self.save('commands.json', self.commands)
         witness.require(not check or result.returncode == 0, 'observer command failed: ' + argv[0])
         return record
+
+    def transition(self, revision, paused, *, require_applied, issue=True):
+        if issue:
+            action = 'pause' if paused else 'resume'
+            self.command(['fabricctl', 'admin', '/root/accept/admin.conf', 'node', action, 'spindle-1'])
+        deadline = min(self.deadline, time.monotonic() + 30)
+        status = 'paused' if paused else 'active'
+        while time.monotonic() < deadline:
+            record = self.command(['fabricctl', 'admin', '/root/accept/admin.conf', 'node', 'list'])
+            rows = json.loads(record['stdout'])['nodes']
+            matches = [row for row in rows if row.get('name') == 'spindle-1']
+            witness.require(len(matches) == 1, 'native control inventory identity')
+            row = matches[0]
+            witness.require(all(type(row[key]) is int for key in
+                ('desired_revision', 'applied_revision', 'metric_interval_s')),
+                'native control integer fields')
+            witness.require(row['desired_revision'] == revision and row['status'] == status
+                and row['config_error'] is None and row['logs'] == NATIVE_PROFILE['logs']
+                and row['metric_interval_s'] == NATIVE_PROFILE['metric_interval_s'],
+                            'native desired profile transition')
+            if not require_applied or row['applied_revision'] == revision:
+                return row
+            time.sleep(min(.25, deadline - time.monotonic()))
+        witness.require(False, 'native applied profile deadline')
+
+    def drain_prefix(self, minimum=-1, *, exact=None):
+        deadline = min(self.deadline, time.monotonic() + 40)
+        previous = None
+        while time.monotonic() < deadline:
+            record = self.command(['fabricctl', 'inspect', '/etc/fabrico11y/node.conf'], check=False)
+            if record['exit']:
+                witness.require(any(record['stderr'].endswith(message) for message in (
+                    'log rotated during inspection; retry\n', 'log append or rotation in progress; retry inspection\n',
+                    'log append completed during inspection; retry\n', 'log failure recorded during inspection; retry\n',
+                    'sealed log reclaimed during inspection; retry\n', 'log rotated or reclaimed during inspection; retry\n',
+                    'log append in progress or recovery required; retry inspection\n')),
+                    'native spool inspection failed')
+                time.sleep(min(.25, deadline - time.monotonic()))
+                continue
+            values = dict(field.split('=', 1) for field in record['stdout'].split())
+            witness.require(values['recovery_required'] == 'false'
+                and values['interrupted_append'] == 'false', 'native spool requires recovery')
+            highwater = int(values['next_sequence']) - 1
+            matches = highwater == exact if exact is not None else highwater > minimum
+            if matches and highwater == previous and int(values['acked_through']) >= highwater:
+                return highwater
+            previous = highwater
+            time.sleep(min(.25, deadline - time.monotonic()))
+        witness.require(False, 'native fixed-prefix ACK deadline')
 
     def observe_stop(self):
         account = self.command(['getent', 'passwd', 'fabricolly'])['stdout']
@@ -191,7 +244,7 @@ class Guest:
             archive.add(ROOT, arcname='spool', recursive=True)
         snapshot = witness.stopped_snapshot(ROOT, receipt, sources, fixture_paths=(SOURCE,))
         witness.require(snapshot['applied_configuration'] is not None and json.loads(snapshot['applied_configuration'])
-            == NATIVE_PROFILE,
+            == expected_profile(name),
             'registered native applied configuration missing or changed')
         self.save(name + '-snapshot.json', snapshot)
         self.save(name + '-receipt.json', receipt)
@@ -324,9 +377,26 @@ def guest_main(config, phase):
             if phase == 'drain':
                 guest.command(['systemctl', 'start', *UNITS])
             process = guest.process()
-            # Stop collection first, then drain the fixed committed prefix during normal stop.
+            # Readiness precedes the explicit pause and fixed-prefix drain.
             deadline = min(guest.deadline - 40, time.monotonic() + 40)
             wait_readiness(guest, deadline)
+            current = guest.process()
+            witness.require(current['pid'] == process['pid'] and current['invocation_id'] == process['invocation_id'] and current['proc_stat'].rsplit(')', 1)[1].split()[19]
+                == process['proc_stat'].rsplit(')', 1)[1].split()[19], 'candidate process changed before quiesce')
+            if phase == 'reboot':
+                prior = unpack(json.loads((guest.base / 'drain' / 'drain-snapshot.json').read_text()))
+                prior_ack = prior['ack']
+                guest.transition(3, False, require_applied=True, issue=False)
+                # This active-revision prefix is only a lower bound; a commit may race pause application.
+                guest.drain_prefix(prior_ack)
+            current = guest.process()
+            witness.require(current['pid'] == process['pid'] and current['invocation_id'] == process['invocation_id']
+                and current['proc_stat'].rsplit(')', 1)[1].split()[19]
+                == process['proc_stat'].rsplit(')', 1)[1].split()[19], 'candidate process changed before quiesce')
+            revision = 2 if phase == 'drain' else 4
+            guest.transition(revision, True, require_applied=True)
+            # The applied_revision response confirms pause application; the journal marker is checked later.
+            guest.drain_prefix()
             current = guest.process()
             witness.require(current['pid'] == process['pid'] and current['invocation_id'] == process['invocation_id'] and current['proc_stat'].rsplit(')', 1)[1].split()[19]
                 == process['proc_stat'].rsplit(')', 1)[1].split()[19], 'candidate process changed before stop')
@@ -340,6 +410,11 @@ def guest_main(config, phase):
             guest.save('ack-events.json', events)
             guest.command(['systemctl', 'stop', UNITS[0]])
             snapshot = guest.capture(phase, process)
+            # Inspect the stopped cutoff before restarting the server or changing the node profile.
+            guest.command(['fabricctl', 'inspect', '/etc/fabrico11y/node.conf'])
+            guest.command(['systemctl', 'start', UNITS[0]])
+            # Resume exactly once while the node remains stopped.
+            guest.transition(3 if phase == 'drain' else 5, False, require_applied=False)
             if phase == 'reboot':
                 read = lambda phase, name: unpack(json.loads((guest.base / phase / name).read_text()))
                 before, installed, drain = (read(phase, name + '-snapshot.json') for phase, name in
@@ -348,9 +423,10 @@ def guest_main(config, phase):
                 witness.conserve(before, installed, drain, dict(before=read('prepare', 'baseline.json'),
                     after_drain=read('drain', 'rows.json'), after_reboot=rows, pending_body=PENDING, unread_body=UNREAD,
                     boot_before=before['boot_id'], boot_after=snapshot['boot_id']), read('drain', 'ack-events.json'),
-                    after_reboot=snapshot, reboot_ack_events=events)
+                    after_reboot=snapshot, reboot_ack_events=events, native_configuration_transition=True)
                 guest.save('conservation.json', dict(status='accepted', required_checkpoints=4))
-            guest.command(['systemctl', 'start', *(UNITS if phase == 'reboot' else (UNITS[0],))])
+            if phase == 'reboot':
+                guest.command(['systemctl', 'start', UNITS[1]])
         else:
             raise ValueError('unknown native phase')
     except Exception as error:
@@ -490,7 +566,7 @@ def admit_transfer(bundle, admission, guest_sha256, *, control=None):
                         if relative == 'applied-config.json':
                             witness.applied_configuration(content, info, receipt['service_identity'])
                             witness.require(content == snapshot.get('applied_configuration')
-                                and json.loads(content) == NATIVE_PROFILE, 'native applied configuration profile mismatch')
+                                and json.loads(content) == expected_profile(phase), 'native applied configuration profile mismatch')
                         if relative.endswith('.faj'): raw_files[relative] = content
             payloads = []
             for filename in sorted(name for name in raw_files if name.startswith('sealed-')) + ['batches.faj']:
@@ -547,7 +623,7 @@ def admit_transfer(bundle, admission, guest_sha256, *, control=None):
                 dict(before=query_rows('prepare', 'before'), after_drain=query_rows('drain', 'after_drain'),
                     after_reboot=query_rows('reboot', 'after_reboot'), pending_body=PENDING, unread_body=UNREAD,
                     boot_before=snapshots['prepare']['boot_id'], boot_after=snapshots['reboot']['boot_id']),
-                read('drain/ack-events.json'), after_reboot=snapshots['reboot'], reboot_ack_events=read('reboot/ack-events.json'))
+                read('drain/ack-events.json'), after_reboot=snapshots['reboot'], reboot_ack_events=read('reboot/ack-events.json'), native_configuration_transition=True)
             credentials = [read(phase + '/' + ('before' if phase == 'prepare' else phase) + '-credential.json') for phase in ('prepare', 'installed', 'drain', 'reboot')]
             witness.require(credentials[0] == credentials[1] == credentials[2], 'credential metadata/hash drift')
             for path, observed in credentials[3]['files'].items():

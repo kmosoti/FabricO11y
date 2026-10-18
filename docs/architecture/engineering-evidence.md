@@ -67,6 +67,11 @@ four stopped profiles are fixed at revision1/active, revision1/active,
 revision2/paused and revision4/paused. It reparses retained configuration bytes
 and joins their digest, size and original private file metadata; a cached parsed
 view cannot override those bytes. The default static-profile rule is unchanged.
+The guest effect adapter now requests the registered pause before observing a
+stable acknowledged prefix, records a stopped inspection, and requests resume
+while collection remains stopped. Reboot repeats the distinct revision sequence.
+These operational waits do not replace the Rust cutoff or independent raw joins;
+host helper adoption and an actual matching native capture remain pending.
 The [adapter contract](../experiments/formal/native-cutoff-adapter-protocol.md)
 and [primitive protocol](../experiments/formal/primitive-composition-protocol.md)
 separate finite controls from native caller adoption and alpha acceptance.

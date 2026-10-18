@@ -16,6 +16,31 @@ the corrected raw-byte join and unchanged default path passed 82 affected contro
 The [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-primitive-composition-results-01) retain measurements, counterexamples and the scratch cleanup correction.
 This work grants no package acceptance credit; alpha acceptance remains owner-paused.
 
+Owner stop checkpoint (2026-10-18): the native producer now applies pause2,
+waits for a stable acknowledged prefix, captures the independent stopped state
+and final inspection, then requests resume3 while the node remains stopped.
+The distinct reboot uses active3/pause4/resume5. Effect controls exercise the
+actual guest lifecycle; they do not establish native journal authenticity.
+The independent profile change is isolated in commit `d81c26b`; its default
+static-profile path and source/ACK/query rules remain intact. The rejected
+cached-view draft, setup failure, causal refusals and corrected controls remain
+on the data drive. Full fast verification belongs to `02f5b6c`, not these later
+Python changes; rerun it after the remaining caller integration.
+
+Resume with the explicitly pinned native caller bridge: transport actual captured
+metadata into Rust version2, join inspection members to the admitted archive,
+retain helper results and failures, and clean only owned scratch after success.
+The bridge draft is DATA-only and unverified. Then replay the historical Fedora
+missing116-ACK refusal unchanged, run affected controls and the full fast profile,
+and register an engineering-only native capture before executing it. No matching
+native capture has run yet. Do not resume alpha acceptance or rebuild frozen
+product packages merely for these harness changes. The persistent engineering
+queue is `results/primitive-composition-01/queue.json` on the mounted data drive;
+the archived Rust helper and source bundle are under
+`results/native-cutoff-adapter-01/artifacts-02f5b6c/`. The private compiler target
+and temporary documentation dependencies were removed after archiving; meaningful
+failures and frozen package evidence remain retained.
+
 Engineering tooling now includes an experimental Rust `xtask verify-receipts`
 command, sharing bounded descriptor-owned artifact reads with evidence preflight.
 The [architecture boundary](architecture/engineering-evidence.md#native-verification-receipts)
