@@ -1,0 +1,127 @@
+schema_version = 1
+kind = "planning_backlog"
+capability = "recursive-hexagonal-execution"
+target_release = "v0.1.0-alpha.2"
+predecessor_release = "v0.1.0-alpha.1"
+planning_base = "f001175ff4006e2f95294458ce36f4f089d3be7d"
+source_blueprint_sha256 = "2e1a22f80a36f11147d77c75b6a09470370e40f0a0d77e71e965f9c6ef1ddcd8"
+tracking_issue = 88
+execution_admitted = false
+max_assertion_failed_attempts = 3
+max_active_experimental_implementations = 2
+heavy_measurements_parallel = false
+selected_resource_track = "unselected"
+allowed_resource_tracks = ["lifecycle_accounting", "cooperative_cancellation"]
+allowed_mission_types = ["PORT_CONTRACT", "PRIMITIVE_OPT", "COMPOSITE_WIRE"]
+closure_authority = "trusted_external_verifier_and_coordinator"
+
+# This file is a planning DAG, not an execution manifest or trusted runtime state.
+# Gate activities intentionally have no mission_type. All execution requires
+# a separately admitted manifest, protected input hashes, commands and budgets.
+
+[[items]]
+id = "G0"
+kind = "gate"
+class = "release_admission"
+state = "Blocked"
+depends_on = []
+external_requirement = "Published predecessor and approved execution base"
+objective = "Pin actual released artifacts; do not reopen first-alpha acceptance"
+
+[[items]]
+id = "M01"
+kind = "mission"
+mission_type = "PORT_CONTRACT"
+class = "policy"
+state = "Backlog"
+depends_on = ["G0"]
+objective = "Ratify scoped recursion, mission schema, immutable oracles and five-stage contracts"
+
+[[items]]
+id = "M02"
+kind = "mission"
+mission_type = "PRIMITIVE_OPT"
+class = "assurance"
+state = "Backlog"
+depends_on = ["M01"]
+objective = "Fail-closed admission and architecture validation with independent controls"
+
+[[items]]
+id = "M03"
+kind = "mission"
+mission_type = "COMPOSITE_WIRE"
+class = "assurance"
+state = "Backlog"
+depends_on = ["M02"]
+objective = "Isolated bounded attempts, protected verification, failures and completion records"
+
+[[items]]
+id = "G1"
+kind = "gate"
+class = "baseline"
+state = "Backlog"
+depends_on = ["M03"]
+objective = "Register workload and baseline, then freeze budgets before optimization"
+
+[[items]]
+id = "M04"
+kind = "mission"
+mission_type = "PORT_CONTRACT"
+class = "query"
+state = "Backlog"
+depends_on = ["G1"]
+objective = "Lock bounded selection and delayed-materialization contracts"
+
+[[items]]
+id = "M05"
+kind = "mission"
+mission_type = "PRIMITIVE_OPT"
+class = "query"
+state = "Backlog"
+depends_on = ["M04"]
+objective = "Refine or reuse a safe bounded candidate-selection primitive"
+
+[[items]]
+id = "M06"
+kind = "mission"
+mission_type = "COMPOSITE_WIRE"
+class = "query"
+state = "Backlog"
+depends_on = ["M05"]
+objective = "Integrate delayed materialization with complete query/evidence equality"
+
+[[items]]
+id = "M07"
+kind = "mission"
+mission_type = "PORT_CONTRACT"
+class = "resource"
+state = "Backlog"
+depends_on = ["G1"]
+objective = "Select one resource track and freeze ownership/progress invariants"
+
+[[items]]
+id = "M08"
+kind = "mission"
+mission_type = "PRIMITIVE_OPT"
+class = "resource"
+state = "Backlog"
+depends_on = ["M07"]
+objective = "Implement selected checked-accounting or cancellation state primitive"
+
+[[items]]
+id = "M09"
+kind = "mission"
+mission_type = "COMPOSITE_WIRE"
+class = "resource"
+state = "Backlog"
+depends_on = ["M08", "M06"]
+objective = "Integrate selected resource policy through actual work completion"
+
+[[items]]
+id = "G2"
+kind = "gate"
+class = "integration_and_release_readiness"
+state = "Backlog"
+depends_on = ["M06", "M09"]
+objective = "Exact-candidate integration, predecessor upgrade and package acceptance"
+release_publication_authorized = false
