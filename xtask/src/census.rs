@@ -21,14 +21,20 @@ pub struct Totals {
 }
 
 #[derive(Clone, Copy)]
-enum EntryKind { RegularFile, OtherFile, DirectorySymlink }
+enum EntryKind {
+    RegularFile,
+    OtherFile,
+    DirectorySymlink,
+}
 
 impl Totals {
     fn add(&mut self, kind: EntryKind, size: u64) -> Result<(), ()> {
         let data_bytes = self.data_bytes.checked_add(size).ok_or(())?;
         let regular_path_bytes = if matches!(kind, EntryKind::RegularFile) {
             self.regular_path_bytes.checked_add(size).ok_or(())?
-        } else { self.regular_path_bytes };
+        } else {
+            self.regular_path_bytes
+        };
         let path_count = if matches!(kind, EntryKind::DirectorySymlink) {
             self.path_count
         } else {
@@ -58,17 +64,36 @@ pub struct ScanError {
 
 impl ScanError {
     fn io(path: PathBuf, error: io::Error) -> Self {
-        Self { path, kind: error.kind(), raw_os_error: error.raw_os_error(), attempt: 0, detail: error.to_string() }
+        Self {
+            path,
+            kind: error.kind(),
+            raw_os_error: error.raw_os_error(),
+            attempt: 0,
+            detail: error.to_string(),
+        }
     }
 
     fn overflow(path: PathBuf) -> Self {
-        Self { path, kind: io::ErrorKind::InvalidData, raw_os_error: None, attempt: 0, detail: "census counter overflow".into() }
+        Self {
+            path,
+            kind: io::ErrorKind::InvalidData,
+            raw_os_error: None,
+            attempt: 0,
+            detail: "census counter overflow".into(),
+        }
     }
 }
 
 impl std::fmt::Display for ScanError {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(formatter, "{} (errno {:?}, attempt {}): {}", self.path.display(), self.raw_os_error, self.attempt, self.detail)
+        write!(
+            formatter,
+            "{} (errno {:?}, attempt {}): {}",
+            self.path.display(),
+            self.raw_os_error,
+            self.attempt,
+            self.detail
+        )
     }
 }
 
@@ -79,19 +104,31 @@ struct Frame {
 }
 
 fn openat(parent: RawFd, name: &OsStr, flags: i32) -> io::Result<File> {
-    let name = CString::new(name.as_bytes()).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    let name =
+        CString::new(name.as_bytes()).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
     // SAFETY: the component is a live NUL-free CString; flags never include O_CREAT.
     let fd = unsafe { libc::openat(parent, name.as_ptr(), flags | libc::O_CLOEXEC) };
-    if fd < 0 { return Err(io::Error::last_os_error()); }
+    if fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
     // SAFETY: openat returned a unique owned descriptor.
     Ok(unsafe { File::from_raw_fd(fd) })
 }
 
 fn open_absolute_directory(path: &Path) -> io::Result<File> {
-    let bytes = CString::new(path.as_os_str().as_bytes()).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    let bytes = CString::new(path.as_os_str().as_bytes())
+        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
     // SAFETY: path is a live NUL-free absolute CString and O_CREAT is absent.
-    let fd = unsafe { libc::openat(libc::AT_FDCWD, bytes.as_ptr(), libc::O_PATH | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC) };
-    if fd < 0 { return Err(io::Error::last_os_error()); }
+    let fd = unsafe {
+        libc::openat(
+            libc::AT_FDCWD,
+            bytes.as_ptr(),
+            libc::O_PATH | libc::O_DIRECTORY | libc::O_NOFOLLOW | libc::O_CLOEXEC,
+        )
+    };
+    if fd < 0 {
+        return Err(io::Error::last_os_error());
+    }
     // SAFETY: openat returned a unique owned descriptor.
     Ok(unsafe { File::from_raw_fd(fd) })
 }
@@ -105,39 +142,74 @@ fn valid_suffix(value: &OsStr, alphabet: impl Fn(u8) -> bool) -> bool {
     !value.is_empty() && value.as_bytes().iter().copied().all(alphabet)
 }
 
-fn named_category(path: &Path, root: &Path, prefix: &str, alphabet: impl Fn(u8) -> bool + Copy) -> bool {
+fn named_category(
+    path: &Path,
+    root: &Path,
+    prefix: &str,
+    alphabet: impl Fn(u8) -> bool + Copy,
+) -> bool {
     let scratch = root.join("scratch");
-    let Ok(relative) = path.strip_prefix(&scratch) else { return false; };
+    let Ok(relative) = path.strip_prefix(&scratch) else {
+        return false;
+    };
     let mut components = relative.components();
-    let Some(std::path::Component::Normal(name)) = components.next() else { return false; };
-    let Some(name) = name.to_str() else { return false; };
-    let Some(suffix) = name.strip_prefix(prefix) else { return false; };
-    if !valid_suffix(OsStr::new(suffix), alphabet) { return false; }
+    let Some(std::path::Component::Normal(name)) = components.next() else {
+        return false;
+    };
+    let Some(name) = name.to_str() else {
+        return false;
+    };
+    let Some(suffix) = name.strip_prefix(prefix) else {
+        return false;
+    };
+    if !valid_suffix(OsStr::new(suffix), alphabet) {
+        return false;
+    }
     let base = scratch.join(name);
     path == base || path.starts_with(&base)
 }
 
 fn runner_controls_category(path: &Path, root: &Path) -> bool {
-    named_category(path, root, "runner-controls-", |byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    named_category(path, root, "runner-controls-", |byte| {
+        byte.is_ascii_alphanumeric() || byte == b'_'
+    })
 }
 
 fn owned_category(path: &Path, root: &Path) -> bool {
-    named_category(path, root, "installation-qemu-", |byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
-        || named_category(path, root, "owner-walkthrough-", |byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.'))
+    named_category(path, root, "installation-qemu-", |byte| {
+        byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.')
+    }) || named_category(path, root, "owner-walkthrough-", |byte| {
+        byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.')
+    })
 }
 
 fn valid_owned_argument(root: &Path, path: &Path) -> Result<(), String> {
-    if !path.is_absolute() { return Err("--owned-scratch must be absolute".into()); }
+    if !path.is_absolute() {
+        return Err("--owned-scratch must be absolute".into());
+    }
     let text = path.to_str().ok_or("--owned-scratch must be UTF-8")?;
-    if text.as_bytes().contains(&0) { return Err("invalid owned scratch path".into()); }
+    if text.as_bytes().contains(&0) {
+        return Err("invalid owned scratch path".into());
+    }
     let scratch = root.join("scratch");
     let parent = fs::symlink_metadata(&scratch).map_err(|error| error.to_string())?;
-    if !parent.is_dir() || parent.file_type().is_symlink() { return Err("DATA scratch must be an ordinary directory".into()); }
-    if path.parent() != Some(scratch.as_path()) { return Err("owned scratch must be a direct DATA scratch child".into()); }
-    if !owned_category(path, root) || path.file_name().is_none() { return Err("unrecognized exact owned scratch category".into()); }
-    let name = path.file_name().and_then(OsStr::to_str).ok_or("owned scratch basename must be UTF-8")?;
+    if !parent.is_dir() || parent.file_type().is_symlink() {
+        return Err("DATA scratch must be an ordinary directory".into());
+    }
+    if path.parent() != Some(scratch.as_path()) {
+        return Err("owned scratch must be a direct DATA scratch child".into());
+    }
+    if !owned_category(path, root) || path.file_name().is_none() {
+        return Err("unrecognized exact owned scratch category".into());
+    }
+    let name = path
+        .file_name()
+        .and_then(OsStr::to_str)
+        .ok_or("owned scratch basename must be UTF-8")?;
     let canonical_form = format!("{}/{}", scratch.display(), name);
-    if path.as_os_str().as_bytes() != canonical_form.as_bytes() { return Err("owned scratch path must be canonical".into()); }
+    if path.as_os_str().as_bytes() != canonical_form.as_bytes() {
+        return Err("owned scratch path must be canonical".into());
+    }
     Ok(())
 }
 
@@ -147,9 +219,14 @@ fn retry_allowed(root: &Path, owned: Option<&Path>, path: &Path) -> bool {
 }
 
 fn scan_once(root: &Path) -> Result<Totals, ScanError> {
-    let anchor = open_absolute_directory(root).map_err(|error| ScanError::io(root.to_path_buf(), error))?;
+    let anchor =
+        open_absolute_directory(root).map_err(|error| ScanError::io(root.to_path_buf(), error))?;
     let entries = read_directory(&anchor, root)?;
-    let mut stack = vec![Frame { anchor, entries, logical_path: root.to_path_buf() }];
+    let mut stack = vec![Frame {
+        anchor,
+        entries,
+        logical_path: root.to_path_buf(),
+    }];
     let mut totals = Totals::default();
     while !stack.is_empty() {
         let next = {
@@ -160,26 +237,51 @@ fn scan_once(root: &Path) -> Result<Totals, ScanError> {
                 None => None,
             }
         };
-        let Some((name, parent_path)) = next else { stack.pop(); continue; };
+        let Some((name, parent_path)) = next else {
+            stack.pop();
+            continue;
+        };
         let path = parent_path.join(&name);
         #[cfg(test)]
         tests::test_after_enumeration(&path)?;
         let parent = stack.last().expect("entry retains parent frame");
-        let entry = openat(parent.anchor.as_raw_fd(), &name, libc::O_PATH | libc::O_NOFOLLOW)
+        let entry = openat(
+            parent.anchor.as_raw_fd(),
+            &name,
+            libc::O_PATH | libc::O_NOFOLLOW,
+        )
+        .map_err(|error| ScanError::io(path.clone(), error))?;
+        let metadata = entry
+            .metadata()
             .map_err(|error| ScanError::io(path.clone(), error))?;
-        let metadata = entry.metadata().map_err(|error| ScanError::io(path.clone(), error))?;
         if metadata.file_type().is_symlink() {
             let target_is_directory = openat(parent.anchor.as_raw_fd(), &name, libc::O_PATH)
                 .and_then(|target| target.metadata())
                 .is_ok_and(|target| target.is_dir());
-            let kind = if target_is_directory { EntryKind::DirectorySymlink } else { EntryKind::OtherFile };
-            totals.add(kind, metadata.size()).map_err(|_| ScanError::overflow(path))?;
+            let kind = if target_is_directory {
+                EntryKind::DirectorySymlink
+            } else {
+                EntryKind::OtherFile
+            };
+            totals
+                .add(kind, metadata.size())
+                .map_err(|_| ScanError::overflow(path))?;
         } else if metadata.is_dir() {
             let entries = read_directory(&entry, &path)?;
-            stack.push(Frame { anchor: entry, entries, logical_path: path });
+            stack.push(Frame {
+                anchor: entry,
+                entries,
+                logical_path: path,
+            });
         } else {
-            let kind = if metadata.is_file() { EntryKind::RegularFile } else { EntryKind::OtherFile };
-            totals.add(kind, metadata.size()).map_err(|_| ScanError::overflow(path))?;
+            let kind = if metadata.is_file() {
+                EntryKind::RegularFile
+            } else {
+                EntryKind::OtherFile
+            };
+            totals
+                .add(kind, metadata.size())
+                .map_err(|_| ScanError::overflow(path))?;
         }
     }
     Ok(totals)
@@ -187,23 +289,46 @@ fn scan_once(root: &Path) -> Result<Totals, ScanError> {
 
 fn pause_before_retry() {
     #[cfg(test)]
-    { tests::test_retry_pause(DELAY); }
+    {
+        tests::test_retry_pause(DELAY);
+    }
     #[cfg(not(test))]
     std::thread::sleep(DELAY);
 }
 
 /// Count a canonical directory tree. `owned` is an exact, caller-derived scratch root.
 pub fn scan(root: &Path, owned: Option<&Path>) -> Result<ScanResult, ScanError> {
-    let canonical = root.canonicalize().map_err(|error| ScanError::io(root.to_path_buf(), error))?;
-    if canonical != root { return Err(ScanError { path: root.to_path_buf(), kind: io::ErrorKind::InvalidInput, raw_os_error: None, attempt: 0, detail: "canonical absolute DATA root required".into() }); }
-    if let Some(path) = owned { valid_owned_argument(root, path).map_err(|detail| ScanError { path: path.to_path_buf(), kind: io::ErrorKind::InvalidInput, raw_os_error: None, attempt: 0, detail })?; }
+    let canonical = root
+        .canonicalize()
+        .map_err(|error| ScanError::io(root.to_path_buf(), error))?;
+    if canonical != root {
+        return Err(ScanError {
+            path: root.to_path_buf(),
+            kind: io::ErrorKind::InvalidInput,
+            raw_os_error: None,
+            attempt: 0,
+            detail: "canonical absolute DATA root required".into(),
+        });
+    }
+    if let Some(path) = owned {
+        valid_owned_argument(root, path).map_err(|detail| ScanError {
+            path: path.to_path_buf(),
+            kind: io::ErrorKind::InvalidInput,
+            raw_os_error: None,
+            attempt: 0,
+            detail,
+        })?;
+    }
     for attempt in 1..=ATTEMPTS {
         match scan_once(root) {
             Ok(totals) => return Ok(ScanResult { totals, attempt }),
             Err(mut error) => {
                 error.attempt = attempt;
-                let retry = error.raw_os_error == Some(libc::ENOENT) && retry_allowed(root, owned, &error.path);
-                if !retry || attempt == ATTEMPTS { return Err(error); }
+                let retry = error.raw_os_error == Some(libc::ENOENT)
+                    && retry_allowed(root, owned, &error.path);
+                if !retry || attempt == ATTEMPTS {
+                    return Err(error);
+                }
                 pause_before_retry();
             }
         }
@@ -215,12 +340,18 @@ fn parse_owned(root: &Path, args: Vec<String>) -> Result<Option<PathBuf>, String
     let mut args = args.into_iter();
     let mut owned = None;
     while let Some(flag) = args.next() {
-        if flag != "--owned-scratch" { return Err(format!("unknown argument: {flag}")); }
-        if owned.is_some() { return Err("duplicate --owned-scratch".into()); }
+        if flag != "--owned-scratch" {
+            return Err(format!("unknown argument: {flag}"));
+        }
+        if owned.is_some() {
+            return Err("duplicate --owned-scratch".into());
+        }
         let value = args.next().ok_or("--owned-scratch value required")?;
         owned = Some(PathBuf::from(value));
     }
-    if let Some(path) = &owned { valid_owned_argument(root, path)?; }
+    if let Some(path) = &owned {
+        valid_owned_argument(root, path)?;
+    }
     Ok(owned)
 }
 
@@ -242,12 +373,19 @@ fn require_disk_root(root: &Path) -> Result<(), String> {
 
 pub fn cli(args: Vec<String>) -> ExitCode {
     let result = (|| -> Result<ScanResult, String> {
-        let configured = std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("explicit FABRIC_STORAGE_ROOT required")?;
+        let configured = std::env::var_os("FABRIC_STORAGE_ROOT")
+            .ok_or("explicit FABRIC_STORAGE_ROOT required")?;
         let configured = PathBuf::from(configured);
         let metadata = fs::symlink_metadata(&configured).map_err(|error| error.to_string())?;
-        if !metadata.is_dir() || metadata.file_type().is_symlink() { return Err("FABRIC_STORAGE_ROOT must be an existing ordinary directory".into()); }
-        let root = configured.canonicalize().map_err(|error| error.to_string())?;
-        if configured.as_os_str().as_bytes() != root.as_os_str().as_bytes() { return Err("FABRIC_STORAGE_ROOT must already be canonical".into()); }
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            return Err("FABRIC_STORAGE_ROOT must be an existing ordinary directory".into());
+        }
+        let root = configured
+            .canonicalize()
+            .map_err(|error| error.to_string())?;
+        if configured.as_os_str().as_bytes() != root.as_os_str().as_bytes() {
+            return Err("FABRIC_STORAGE_ROOT must already be canonical".into());
+        }
         require_disk_root(&root)?;
         let owned = parse_owned(&root, args)?;
         scan(&root, owned.as_deref()).map_err(|error| error.to_string())
@@ -256,10 +394,16 @@ pub fn cli(args: Vec<String>) -> ExitCode {
         Ok(result) => {
             // SAFETY: these read-only identity calls take no pointer arguments.
             let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
-            println!("{}", json!({"data_bytes":result.totals.data_bytes,"regular_path_bytes":result.totals.regular_path_bytes,"path_count":result.totals.path_count,"uid":uid,"gid":gid,"attempt":result.attempt}));
+            println!(
+                "{}",
+                json!({"data_bytes":result.totals.data_bytes,"regular_path_bytes":result.totals.regular_path_bytes,"path_count":result.totals.path_count,"uid":uid,"gid":gid,"attempt":result.attempt})
+            );
             ExitCode::SUCCESS
         }
-        Err(error) => { eprintln!("storage census FAILED: {error}"); ExitCode::from(2) }
+        Err(error) => {
+            eprintln!("storage census FAILED: {error}");
+            ExitCode::from(2)
+        }
     }
 }
 
@@ -278,34 +422,73 @@ mod tests {
 
     #[derive(Clone)]
     enum Action {
-        DeleteSecondFile { directory: PathBuf, seen: usize, target: Option<PathBuf>, restore: Vec<u8> },
-        DeleteRoot { target: PathBuf, relative_file: PathBuf, restore: Vec<u8>, fired: bool },
-        Inject { trigger: PathBuf, error_path: PathBuf, errno: i32 },
+        DeleteSecondFile {
+            directory: PathBuf,
+            seen: usize,
+            target: Option<PathBuf>,
+            restore: Vec<u8>,
+        },
+        DeleteRoot {
+            target: PathBuf,
+            relative_file: PathBuf,
+            restore: Vec<u8>,
+            fired: bool,
+        },
+        Inject {
+            trigger: PathBuf,
+            error_path: PathBuf,
+            errno: i32,
+        },
     }
 
-    struct TestHook { action: Action }
+    struct TestHook {
+        action: Action,
+    }
 
     pub(super) fn test_after_enumeration(path: &Path) -> Result<(), ScanError> {
         HOOK.with(|slot| {
             let mut slot = slot.borrow_mut();
-            let Some(hook) = slot.as_mut() else { return Ok(()); };
+            let Some(hook) = slot.as_mut() else {
+                return Ok(());
+            };
             match &mut hook.action {
-                Action::DeleteSecondFile { directory, seen, target, .. }
-                    if path.parent() == Some(directory.as_path())
-                        && path.file_name().and_then(OsStr::to_str).is_some_and(|name| name.starts_with("file-")) => {
+                Action::DeleteSecondFile {
+                    directory,
+                    seen,
+                    target,
+                    ..
+                } if path.parent() == Some(directory.as_path())
+                    && path
+                        .file_name()
+                        .and_then(OsStr::to_str)
+                        .is_some_and(|name| name.starts_with("file-")) =>
+                {
                     *seen += 1;
                     if *seen == 2 {
-                        fs::remove_file(path).unwrap(); *target = Some(path.to_path_buf());
-                        EVENTS.with(|events| events.borrow_mut().push("real-file-unlink-second-enumerated".into()));
+                        fs::remove_file(path).unwrap();
+                        *target = Some(path.to_path_buf());
+                        EVENTS.with(|events| {
+                            events
+                                .borrow_mut()
+                                .push("real-file-unlink-second-enumerated".into())
+                        });
                     }
                 }
                 Action::DeleteRoot { target, fired, .. } if !*fired && path == target => {
-                    fs::remove_dir_all(target).unwrap(); *fired = true;
+                    fs::remove_dir_all(target).unwrap();
+                    *fired = true;
                     EVENTS.with(|events| events.borrow_mut().push("real-root-removal".into()));
                 }
-                Action::Inject { trigger, error_path, errno } if path == trigger => {
+                Action::Inject {
+                    trigger,
+                    error_path,
+                    errno,
+                } if path == trigger => {
                     EVENTS.with(|events| events.borrow_mut().push(format!("injected-{errno}")));
-                    return Err(ScanError::io(error_path.clone(), io::Error::from_raw_os_error(*errno)));
+                    return Err(ScanError::io(
+                        error_path.clone(),
+                        io::Error::from_raw_os_error(*errno),
+                    ));
                 }
                 _ => {}
             }
@@ -319,8 +502,17 @@ mod tests {
         HOOK.with(|slot| {
             if let Some(hook) = slot.borrow_mut().as_mut() {
                 match &hook.action {
-                    Action::DeleteSecondFile { target: Some(target), restore, .. } => fs::write(target, restore).unwrap(),
-                    Action::DeleteRoot { target, relative_file, restore, fired: true } => {
+                    Action::DeleteSecondFile {
+                        target: Some(target),
+                        restore,
+                        ..
+                    } => fs::write(target, restore).unwrap(),
+                    Action::DeleteRoot {
+                        target,
+                        relative_file,
+                        restore,
+                        fired: true,
+                    } => {
                         fs::create_dir_all(target.join(relative_file.parent().unwrap())).unwrap();
                         fs::write(target.join(relative_file), restore).unwrap();
                     }
@@ -333,8 +525,13 @@ mod tests {
     struct Scratch(PathBuf);
     impl Scratch {
         fn new() -> Self {
-            let root = PathBuf::from(std::env::var_os("FABRIC_SCRATCH_ROOT").expect("DATA scratch"));
-            let path = root.join(format!("runner-controls-census_{}_{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
+            let root =
+                PathBuf::from(std::env::var_os("FABRIC_SCRATCH_ROOT").expect("DATA scratch"));
+            let path = root.join(format!(
+                "runner-controls-census_{}_{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
             fs::create_dir(&path).unwrap();
             Self(path)
         }
@@ -357,17 +554,32 @@ mod tests {
         (scratch, owned)
     }
 
-    fn set_hook(action: Action) { EVENTS.with(|events| events.borrow_mut().clear()); HOOK.with(|slot| *slot.borrow_mut() = Some(TestHook { action })); }
-    fn clear_hook() { HOOK.with(|slot| *slot.borrow_mut() = None); }
-    fn events() -> Vec<String> { EVENTS.with(|events| events.borrow().clone()) }
+    fn set_hook(action: Action) {
+        EVENTS.with(|events| events.borrow_mut().clear());
+        HOOK.with(|slot| *slot.borrow_mut() = Some(TestHook { action }));
+    }
+    fn clear_hook() {
+        HOOK.with(|slot| *slot.borrow_mut() = None);
+    }
+    fn events() -> Vec<String> {
+        EVENTS.with(|events| events.borrow().clone())
+    }
 
     #[test]
     fn checked_counter_updates_are_atomic() {
-        let mut totals = Totals { data_bytes: u64::MAX, regular_path_bytes: 3, path_count: 4 };
+        let mut totals = Totals {
+            data_bytes: u64::MAX,
+            regular_path_bytes: 3,
+            path_count: 4,
+        };
         let before = totals;
         assert!(totals.add(EntryKind::RegularFile, 1).is_err());
         assert_eq!(totals, before);
-        let mut totals = Totals { data_bytes: 4, regular_path_bytes: u64::MAX, path_count: 2 };
+        let mut totals = Totals {
+            data_bytes: 4,
+            regular_path_bytes: u64::MAX,
+            path_count: 2,
+        };
         let before = totals;
         assert!(totals.add(EntryKind::RegularFile, 1).is_err());
         assert_eq!(totals, before);
@@ -378,7 +590,14 @@ mod tests {
         assert_eq!(totals, before);
         let mut totals = Totals::default();
         totals.add(EntryKind::DirectorySymlink, 9).unwrap();
-        assert_eq!(totals, Totals { data_bytes: 9, regular_path_bytes: 0, path_count: 0 });
+        assert_eq!(
+            totals,
+            Totals {
+                data_bytes: 9,
+                regular_path_bytes: 0,
+                path_count: 0
+            }
+        );
     }
 
     #[test]
@@ -388,7 +607,10 @@ mod tests {
         fs::write(owned.join("regular"), b"1234567").unwrap();
         fs::hard_link(owned.join("regular"), owned.join("hardlink")).unwrap();
         fs::write(owned.join("empty"), b"").unwrap();
-        File::create(owned.join("sparse")).unwrap().set_len(65_537).unwrap();
+        File::create(owned.join("sparse"))
+            .unwrap()
+            .set_len(65_537)
+            .unwrap();
         fs::create_dir(owned.join("directory")).unwrap();
         fs::write(owned.join("nested"), b"1234567890123").unwrap();
         symlink("regular", owned.join("file-link")).unwrap();
@@ -400,7 +622,14 @@ mod tests {
         // SAFETY: fifo_name is a live NUL-free path, and creation is confined to this test fixture.
         assert_eq!(unsafe { libc::mkfifo(fifo_name.as_ptr(), 0o600) }, 0);
         let actual = scan(root, Some(&owned)).unwrap();
-        assert_eq!(actual.totals, Totals { data_bytes: 65_594, regular_path_bytes: 65_564, path_count: 8 });
+        assert_eq!(
+            actual.totals,
+            Totals {
+                data_bytes: 65_594,
+                regular_path_bytes: 65_564,
+                path_count: 8
+            }
+        );
         assert_eq!(actual.attempt, 1);
     }
 
@@ -408,39 +637,113 @@ mod tests {
     fn only_exact_owned_and_runner_control_descendants_retry() {
         let (scratch, owned) = fixture();
         assert!(retry_allowed(&scratch.0, Some(&owned), &owned.join("x")));
-        assert!(retry_allowed(&scratch.0, None, &scratch.0.join("scratch/runner-controls-other/x")));
-        assert!(!retry_allowed(&scratch.0, Some(&owned), &owned.with_file_name("installation-qemu-case1-sibling")));
-        assert!(!retry_allowed(&scratch.0, Some(&owned), Path::new("scratch/installation-qemu-case1/x")));
+        assert!(retry_allowed(
+            &scratch.0,
+            None,
+            &scratch.0.join("scratch/runner-controls-other/x")
+        ));
+        assert!(!retry_allowed(
+            &scratch.0,
+            Some(&owned),
+            &owned.with_file_name("installation-qemu-case1-sibling")
+        ));
+        assert!(!retry_allowed(
+            &scratch.0,
+            Some(&owned),
+            Path::new("scratch/installation-qemu-case1/x")
+        ));
         assert!(valid_owned_argument(&scratch.0, &owned).is_ok());
         assert!(parse_owned(&scratch.0, vec![]).unwrap().is_none());
-        assert!(parse_owned(&scratch.0, vec!["--owned-scratch".into(), owned.display().to_string()]).unwrap().is_some());
-        assert!(parse_owned(&scratch.0, vec!["--root".into(), scratch.0.display().to_string()]).is_err());
-        assert!(parse_owned(&scratch.0, vec!["--owned-scratch".into(), owned.display().to_string(), "--owned-scratch".into(), owned.display().to_string()]).is_err());
+        assert!(
+            parse_owned(
+                &scratch.0,
+                vec!["--owned-scratch".into(), owned.display().to_string()]
+            )
+            .unwrap()
+            .is_some()
+        );
+        assert!(
+            parse_owned(
+                &scratch.0,
+                vec!["--root".into(), scratch.0.display().to_string()]
+            )
+            .is_err()
+        );
+        assert!(
+            parse_owned(
+                &scratch.0,
+                vec![
+                    "--owned-scratch".into(),
+                    owned.display().to_string(),
+                    "--owned-scratch".into(),
+                    owned.display().to_string()
+                ]
+            )
+            .is_err()
+        );
     }
 
     #[test]
     fn real_second_file_unlink_restarts_and_discards_partial_totals() {
         let (scratch, owned) = fixture();
-        for index in 0..8 { fs::write(owned.join(format!("file-{index}")), b"same").unwrap(); }
-        set_hook(Action::DeleteSecondFile { directory: owned.clone(), seen: 0, target: None, restore: b"same".to_vec() });
+        for index in 0..8 {
+            fs::write(owned.join(format!("file-{index}")), b"same").unwrap();
+        }
+        set_hook(Action::DeleteSecondFile {
+            directory: owned.clone(),
+            seen: 0,
+            target: None,
+            restore: b"same".to_vec(),
+        });
         let result = scan(&scratch.0, Some(&owned)).unwrap();
         clear_hook();
         assert_eq!(result.attempt, 2);
-        assert_eq!(events().iter().filter(|event| event.as_str() == "real-file-unlink-second-enumerated").count(), 1);
-        assert_eq!(events().iter().filter(|event| event.as_str() == "retry-delay").count(), 1);
-        assert_eq!(result.totals, Totals { data_bytes: 32, regular_path_bytes: 32, path_count: 8 });
+        assert_eq!(
+            events()
+                .iter()
+                .filter(|event| event.as_str() == "real-file-unlink-second-enumerated")
+                .count(),
+            1
+        );
+        assert_eq!(
+            events()
+                .iter()
+                .filter(|event| event.as_str() == "retry-delay")
+                .count(),
+            1
+        );
+        assert_eq!(
+            result.totals,
+            Totals {
+                data_bytes: 32,
+                regular_path_bytes: 32,
+                path_count: 8
+            }
+        );
     }
 
     #[test]
     fn real_exact_root_removal_restarts() {
         let (scratch, owned) = fixture();
         fs::write(owned.join("stable"), b"stable").unwrap();
-        set_hook(Action::DeleteRoot { target: owned.clone(), relative_file: PathBuf::from("restored"), restore: b"fresh".to_vec(), fired: false });
+        set_hook(Action::DeleteRoot {
+            target: owned.clone(),
+            relative_file: PathBuf::from("restored"),
+            restore: b"fresh".to_vec(),
+            fired: false,
+        });
         let result = scan(&scratch.0, Some(&owned)).unwrap();
         clear_hook();
         assert_eq!(result.attempt, 2);
         assert!(events().contains(&"real-root-removal".to_owned()));
-        assert_eq!(result.totals, Totals { data_bytes: 5, regular_path_bytes: 5, path_count: 1 });
+        assert_eq!(
+            result.totals,
+            Totals {
+                data_bytes: 5,
+                regular_path_bytes: 5,
+                path_count: 1
+            }
+        );
     }
 
     #[test]
@@ -449,19 +752,42 @@ mod tests {
         let trigger = scratch.0.join("trigger");
         fs::write(&trigger, b"trigger").unwrap();
         for (name, error_path, errno, expected_attempts) in [
-            ("unknown", scratch.0.join("unowned/missing"), libc::ENOENT, 1u8),
-            ("prefix", owned.with_file_name("installation-qemu-case1-sibling").join("missing"), libc::ENOENT, 1u8),
+            (
+                "unknown",
+                scratch.0.join("unowned/missing"),
+                libc::ENOENT,
+                1u8,
+            ),
+            (
+                "prefix",
+                owned
+                    .with_file_name("installation-qemu-case1-sibling")
+                    .join("missing"),
+                libc::ENOENT,
+                1u8,
+            ),
             ("permission", owned.join("missing"), libc::EACCES, 1u8),
             ("io", owned.join("missing"), libc::EIO, 1u8),
             ("exhaustion", owned.join("missing"), libc::ENOENT, 10u8),
         ] {
-            set_hook(Action::Inject { trigger: trigger.clone(), error_path, errno });
+            set_hook(Action::Inject {
+                trigger: trigger.clone(),
+                error_path,
+                errno,
+            });
             let error = scan(&scratch.0, Some(&owned)).unwrap_err();
             clear_hook();
             assert_eq!(error.attempt, expected_attempts, "{name}: {error}");
             assert_eq!(error.raw_os_error, Some(errno), "{name}");
-            let retries = events().iter().filter(|event| event.as_str() == "retry-delay").count();
-            assert_eq!(retries, usize::from(expected_attempts.saturating_sub(1)), "{name}");
+            let retries = events()
+                .iter()
+                .filter(|event| event.as_str() == "retry-delay")
+                .count();
+            assert_eq!(
+                retries,
+                usize::from(expected_attempts.saturating_sub(1)),
+                "{name}"
+            );
         }
     }
 }

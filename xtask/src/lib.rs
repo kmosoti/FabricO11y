@@ -2,8 +2,8 @@
 //! with a stable category code so tests can assert *why* a fixture failed,
 //! not merely that a command exited non-zero.
 
-pub mod checks;
 pub mod census;
+pub mod checks;
 mod digest;
 pub mod evidence;
 pub mod layers;
