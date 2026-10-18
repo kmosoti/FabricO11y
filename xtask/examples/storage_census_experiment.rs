@@ -13,9 +13,19 @@ const HELPER_SHA: &str = "d044822178a2d64305ea496d9df324021ff2514b6185975dece133
 const OLD_ROOT: &[u8] = b"root='/run/media/kmosoti/data/FabricO11y'";
 
 fn git(root: &Path, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("timeout").args(["--signal=KILL", "10s", "git"])
-        .args(args).current_dir(root).output().map_err(|e| e.to_string())?;
-    if !output.status.success() { return Err(format!("git {:?}: {}", output.status.code(), String::from_utf8_lossy(&output.stderr))); }
+    let output = Command::new("timeout")
+        .args(["--signal=KILL", "10s", "git"])
+        .args(args)
+        .current_dir(root)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err(format!(
+            "git {:?}: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
@@ -26,7 +36,11 @@ fn source_state(root: &Path) -> Result<Value, String> {
 }
 
 fn write_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let mut file = OpenOptions::new().write(true).create_new(true).open(path).map_err(|e| e.to_string())?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|e| e.to_string())?;
     file.write_all(bytes).map_err(|e| e.to_string())?;
     file.sync_all().map_err(|e| e.to_string())
 }
@@ -37,7 +51,15 @@ fn report(out: &Path, value: &Value) -> Result<(), String> {
 }
 
 fn file_identity(metadata: &fs::Metadata) -> (u64, u64, u64, i64, i64, i64, i64) {
-    (metadata.dev(), metadata.ino(), metadata.len(), metadata.mtime(), metadata.mtime_nsec(), metadata.ctime(), metadata.ctime_nsec())
+    (
+        metadata.dev(),
+        metadata.ino(),
+        metadata.len(),
+        metadata.mtime(),
+        metadata.mtime_nsec(),
+        metadata.ctime(),
+        metadata.ctime_nsec(),
+    )
 }
 
 fn read_helper(path: &Path) -> Result<(Vec<u8>, (u64, u64, u64, i64, i64, i64, i64)), String> {
@@ -45,19 +67,25 @@ fn read_helper(path: &Path) -> Result<(Vec<u8>, (u64, u64, u64, i64, i64, i64, i
     if !before.is_file() || before.file_type().is_symlink() || before.len() > 65_536 {
         return Err("pinned helper must be an ordinary file no larger than 64 KiB".into());
     }
-    let mut file = OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path).map_err(|e| e.to_string())?;
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .map_err(|e| e.to_string())?;
     let opened = file.metadata().map_err(|e| e.to_string())?;
     let identity = file_identity(&before);
     if !opened.is_file() || file_identity(&opened) != identity {
         return Err("pinned helper changed before read".into());
     }
     let mut bytes = Vec::new();
-    Read::take(&mut file, 65_537).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    Read::take(&mut file, 65_537)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
     let after = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
     if bytes.len() as u64 != opened.len()
         || file_identity(&file.metadata().map_err(|e| e.to_string())?) != identity
-        || file_identity(&after) != identity {
+        || file_identity(&after) != identity
+    {
         return Err("pinned helper changed while read".into());
     }
     Ok((bytes, identity))
@@ -82,8 +110,13 @@ fn fixture(work: &Path) -> Result<(PathBuf, Value), String> {
     symlink("absent", case.join("dangling-link")).map_err(|e| e.to_string())?;
     symlink("../outside", case.join("outside-link")).map_err(|e| e.to_string())?;
     let fifo = case.join("fifo");
-    let created = Command::new("mkfifo").arg(&fifo).status().map_err(|e| e.to_string())?;
-    if !created.success() { return Err("mkfifo failed".into()); }
+    let created = Command::new("mkfifo")
+        .arg(&fifo)
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !created.success() {
+        return Err("mkfifo failed".into());
+    }
     let manifest = json!({
         "included_paths":[
             {"path":"regular","kind":"regular","logical_bytes":7},
@@ -105,36 +138,75 @@ fn fixture(work: &Path) -> Result<(PathBuf, Value), String> {
 
 fn main() -> Result<(), String> {
     let mut args = std::env::args_os().skip(1);
-    let out_arg = args.next().ok_or("usage: storage_census_experiment DATA_OUTPUT_DIR")?;
-    if args.next().is_some() { return Err("one output directory argument required".into()); }
-    let storage = PathBuf::from(std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("FABRIC_STORAGE_ROOT required")?)
-        .canonicalize().map_err(|e| e.to_string())?;
-    let scratch = PathBuf::from(std::env::var_os("FABRIC_SCRATCH_ROOT").ok_or("FABRIC_SCRATCH_ROOT required")?)
-        .canonicalize().map_err(|e| e.to_string())?;
-    if !scratch.starts_with(&storage) { return Err("scratch must be under DATA".into()); }
+    let out_arg = args
+        .next()
+        .ok_or("usage: storage_census_experiment DATA_OUTPUT_DIR")?;
+    if args.next().is_some() {
+        return Err("one output directory argument required".into());
+    }
+    let storage = PathBuf::from(
+        std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("FABRIC_STORAGE_ROOT required")?,
+    )
+    .canonicalize()
+    .map_err(|e| e.to_string())?;
+    let scratch = PathBuf::from(
+        std::env::var_os("FABRIC_SCRATCH_ROOT").ok_or("FABRIC_SCRATCH_ROOT required")?,
+    )
+    .canonicalize()
+    .map_err(|e| e.to_string())?;
+    if !scratch.starts_with(&storage) {
+        return Err("scratch must be under DATA".into());
+    }
     let out_arg = PathBuf::from(out_arg);
-    if !out_arg.is_absolute() { return Err("output path must be absolute".into()); }
-    let parent = out_arg.parent().ok_or("output parent required")?.canonicalize().map_err(|e| e.to_string())?;
-    if !parent.starts_with(&storage) { return Err("output parent must be under DATA".into()); }
+    if !out_arg.is_absolute() {
+        return Err("output path must be absolute".into());
+    }
+    let parent = out_arg
+        .parent()
+        .ok_or("output parent required")?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if !parent.starts_with(&storage) {
+        return Err("output parent must be under DATA".into());
+    }
     let out = parent.join(out_arg.file_name().ok_or("output name required")?);
     fs::create_dir(&out).map_err(|e| format!("new output directory required: {e}"))?;
-    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().ok_or("repository root missing")?.to_path_buf();
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .ok_or("repository root missing")?
+        .to_path_buf();
     let before = source_state(&repo)?;
-    if before["dirty"] != false { return Err("project source must be clean".into()); }
+    if before["dirty"] != false {
+        return Err("project source must be clean".into());
+    }
     let helper = storage.join(HELPER_REL);
     let (source, helper_identity) = read_helper(&helper)?;
     if xtask::sha256_hex(&source) != HELPER_SHA {
         return Err("pinned helper size or SHA-256 mismatch".into());
     }
-    if source.windows(OLD_ROOT.len()).filter(|part| *part == OLD_ROOT).count() != 1 {
+    if source
+        .windows(OLD_ROOT.len())
+        .filter(|part| *part == OLD_ROOT)
+        .count()
+        != 1
+    {
         return Err("expected exactly one literal DATA root assignment".into());
     }
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e| e.to_string())?.as_nanos();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|e| e.to_string())?
+        .as_nanos();
     let work = scratch.join(format!("storage-census-{}-{nanos}", std::process::id()));
     fs::create_dir(&work).map_err(|e| e.to_string())?;
     let (root, manifest) = fixture(&work)?;
-    let new_root = format!("root={}", serde_json::to_string(&root.to_string_lossy()).map_err(|e| e.to_string())?);
-    let substitution = source.windows(OLD_ROOT.len()).position(|part| part == OLD_ROOT).ok_or("literal root assignment disappeared")?;
+    let new_root = format!(
+        "root={}",
+        serde_json::to_string(&root.to_string_lossy()).map_err(|e| e.to_string())?
+    );
+    let substitution = source
+        .windows(OLD_ROOT.len())
+        .position(|part| part == OLD_ROOT)
+        .ok_or("literal root assignment disappeared")?;
     let mut transformed = Vec::with_capacity(source.len() + new_root.len());
     transformed.extend_from_slice(&source[..substitution]);
     transformed.extend_from_slice(new_root.as_bytes());
@@ -142,8 +214,16 @@ fn main() -> Result<(), String> {
     let transformed_hash = xtask::sha256_hex(&transformed);
     let transformed_path = out.join("census-owned-retry.transformed.py");
     write_new(&transformed_path, &transformed)?;
-    let argv = vec!["python3".to_owned(), "-B".to_owned(), transformed_path.display().to_string()];
-    let output = Command::new(&argv[0]).arg(&argv[1]).arg(&argv[2]).output().map_err(|e| e.to_string())?;
+    let argv = vec![
+        "python3".to_owned(),
+        "-B".to_owned(),
+        transformed_path.display().to_string(),
+    ];
+    let output = Command::new(&argv[0])
+        .arg(&argv[1])
+        .arg(&argv[2])
+        .output()
+        .map_err(|e| e.to_string())?;
     write_new(&out.join("stdout.bin"), &output.stdout)?;
     write_new(&out.join("stderr.bin"), &output.stderr)?;
     let observed: Value = serde_json::from_slice(&output.stdout).unwrap_or(Value::Null);
@@ -172,14 +252,25 @@ fn main() -> Result<(), String> {
     });
     report(&out, &record)?;
     if !matched || !source_unchanged || !helper_unchanged {
-        write_new(&out.join("cleanup.json"), br#"{"outcome":"fixture retained because validation failed"}"#)?;
-        return Err(format!("baseline validation failed; fixture retained at {}", work.display()));
+        write_new(
+            &out.join("cleanup.json"),
+            br#"{"outcome":"fixture retained because validation failed"}"#,
+        )?;
+        return Err(format!(
+            "baseline validation failed; fixture retained at {}",
+            work.display()
+        ));
     }
     let cleanup = match fs::remove_dir_all(&work) {
         Ok(()) => json!({"outcome":"owned fixture removed after report was retained"}),
-        Err(error) => json!({"outcome":"cleanup failed; fixture retained","error":error.to_string(),"fixture":work}),
+        Err(error) => {
+            json!({"outcome":"cleanup failed; fixture retained","error":error.to_string(),"fixture":work})
+        }
     };
-    write_new(&out.join("cleanup.json"), &serde_json::to_vec_pretty(&cleanup).map_err(|e| e.to_string())?)?;
+    write_new(
+        &out.join("cleanup.json"),
+        &serde_json::to_vec_pretty(&cleanup).map_err(|e| e.to_string())?,
+    )?;
     if cleanup["outcome"] != "owned fixture removed after report was retained" {
         return Err("baseline passed but owned fixture cleanup failed; see cleanup.json".into());
     }
