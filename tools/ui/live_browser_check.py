@@ -668,6 +668,7 @@ def main():
     viewport_websocket_url = None
     viewport_context_handle = None
     viewport_restore_required = False
+    viewport_helper_attempt = 0
     driver_port = free_port()
     endpoint = f'http://127.0.0.1:{driver_port}'
     server_port = free_port()
@@ -749,11 +750,13 @@ def main():
         return wd('/execute/sync', {'script': script, 'args': values})
 
     def run_viewport(mode, context_handle):
+        nonlocal viewport_helper_attempt
         if args.browser != 'firefox' or mode not in ('narrow', 'restore'):
             raise ValueError('BiDi viewport adapter is Firefox-only and mode-bounded')
         if not isinstance(viewport_websocket_url, str) or not context_handle:
             raise ValueError('Firefox BiDi endpoint or classic window context is missing')
-        label = 'browser-bidi-viewport-' + mode
+        viewport_helper_attempt += 1
+        label = 'browser-bidi-viewport-' + str(viewport_helper_attempt) + '-' + mode
         command = [str(args.browser_entry_helper), 'browser-bidi-viewport',
                    '--ws-url', viewport_websocket_url, '--context', context_handle,
                    '--mode', mode]
@@ -2075,7 +2078,7 @@ self.addEventListener("fetch",event=>{
                 pass
         if announcements is not None:
             try:announcements.close()
-            except BaseException as error:cleanup_error=error
+            except BaseException as error:cleanup_error=cleanup_error or error
         try:
             browser_cleanup_provisionals(group_parent)
             stop_browser_groups(group_parent, owned_groups)

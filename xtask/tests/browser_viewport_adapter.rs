@@ -100,25 +100,32 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
     handle = 'fixture-context'
 
     def runner(acknowledgement, exit_code=0, mode='narrow'):
-        encoded = acknowledgement if isinstance(acknowledgement, bytes) else json.dumps(acknowledgement).encode()
+        reports = (acknowledgement if isinstance(acknowledgement, dict)
+                   and set(acknowledgement) <= {'narrow', 'restore'}
+                   else {mode: acknowledgement})
         processes, bindings, logs, stopped = [], [], [], []
-        label = 'browser-bidi-viewport-' + mode
-        class Process:
-            returncode = exit_code
-            def wait(self, timeout):
-                assert timeout <= 5
-                assert processes == [(label, self)], 'helper process was not registered before wait'
-                return exit_code
-        process = Process()
+        attempts, launched_labels = [0], []
         def launch(parent, groups, launched_label, argv, log, environment, **kwargs):
-            assert launched_label == label
+            launched_mode = argv[-1]
+            attempts[0] += 1
+            expected_label = 'browser-bidi-viewport-' + str(attempts[0]) + '-' + launched_mode
+            assert launched_label == expected_label
             assert argv == [str(helper), 'browser-bidi-viewport', '--ws-url', url,
-                            '--context', handle, '--mode', mode]
+                            '--context', handle, '--mode', launched_mode]
             assert kwargs == {'entry_helper': helper, 'entry_helper_sha256': 'a' * 64}
             assert environment == {'PATH': '/usr/bin:/bin'}
+            report = reports[launched_mode]
+            encoded = report if isinstance(report, bytes) else json.dumps(report).encode()
             log.write(encoded)
             groups.append({'group': {'kernel_empty': True, 'children_reaped': True}})
-            return process
+            launched_labels.append(launched_label)
+            class Process:
+                returncode = exit_code
+                def wait(self, timeout):
+                    assert timeout <= 5
+                    assert processes[-1] == (expected_label, self), 'helper process was not registered before wait'
+                    return exit_code
+            return Process()
         namespace = {
             'args': type('Args', (), {'browser':'firefox','browser_entry_helper':helper,
                                       'browser_entry_helper_sha256':'a' * 64})(),
@@ -134,11 +141,13 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
                                   copy.deepcopy(functions['verify_viewport_geometry'])],
                            type_ignores=[])
         exec(compile(module, str(path), 'exec'), namespace)
-        return namespace, processes, stopped
+        return namespace, processes, stopped, launched_labels
 
     valid = {'command':'browsingContext.setViewport','context':handle,'mode':'narrow',
              'result':{},'received_messages':2,'actual_viewport_verified':False}
-    namespace, processes, stopped = runner(valid)
+    namespace, processes, stopped, labels = runner({'narrow':valid,
+        'restore':{'command':'browsingContext.setViewport','context':handle,'mode':'restore',
+                   'result':{},'received_messages':2,'actual_viewport_verified':False}})
     assert namespace['run_viewport']('narrow', handle) == valid
     assert len(processes) == len(stopped) == 1
     try:
@@ -148,10 +157,20 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
     else:
         raise AssertionError('a valid Rust ACK let actual CSS innerWidth 500 satisfy the 390px predicate')
 
-    restore = dict(valid); restore['mode'] = 'restore'
-    namespace, processes, stopped = runner(restore, mode='restore')
+    restore = {'command':'browsingContext.setViewport','context':handle,'mode':'restore',
+               'result':{},'received_messages':2,'actual_viewport_verified':False}
+    narrow_log = scratch / (labels[0] + '.log')
+    narrow_bytes = narrow_log.read_bytes()
     assert namespace['run_viewport']('restore', handle) == restore
-    assert len(processes) == len(stopped) == 1
+    assert namespace['run_viewport']('restore', handle) == restore
+    assert len(labels) == 3 and len(set(labels)) == 3
+    assert narrow_log.read_bytes() == narrow_bytes, 'later restoration overwrote earlier helper evidence'
+    assert sorted(path.name for path in scratch.glob('browser-bidi-viewport-*.log')) == sorted(
+        [labels[0] + '.log', labels[1] + '.log', labels[2] + '.log'])
+    assert len(processes) == len(stopped) == 3
+
+    namespace, processes, stopped, _ = runner(valid)
+    assert namespace['run_viewport']('narrow', handle) == valid
 
     defects = []
     for key, wrong in [('command','wrong'), ('context','other'), ('mode','restore'),
@@ -161,21 +180,21 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
     defect = dict(valid); defect.pop('context'); defects.append(defect)
     defect = dict(valid); defect['unexpected'] = 1; defects.append(defect)
     for defect in defects:
-        namespace, _, _ = runner(defect)
+        namespace, _, _, _ = runner(defect)
         try:
             namespace['run_viewport']('narrow', handle)
         except ValueError as error:
             assert 'acknowledgement' in str(error), str(error)
         else:
             raise AssertionError('malformed BiDi acknowledgement was accepted: ' + repr(defect))
-    namespace, _, _ = runner(valid, exit_code=1)
+    namespace, _, _, _ = runner(valid, exit_code=1)
     try:
         namespace['run_viewport']('narrow', handle)
     except ValueError as error:
         assert 'exited unsuccessfully' in str(error)
     else:
         raise AssertionError('failed helper was accepted')
-    namespace, _, _ = runner(b'x' * (64 * 1024 + 1))
+    namespace, _, _, _ = runner(b'x' * (64 * 1024 + 1))
     try:
         namespace['run_viewport']('narrow', handle)
     except ValueError as error:
@@ -196,6 +215,8 @@ assert "entry_helper=args.browser_entry_helper" in ast.unparse(run_node)
 assert 'helper.wait(timeout=helper_timeout)' in ast.unparse(run_node)
 assert 'min(5, max(0, deadline - time.monotonic()))' in ast.unparse(run_node)
 assert 'helper_log.read(64 * 1024 + 1)' in ast.unparse(run_node)
+assert 'viewport_helper_attempt += 1' in ast.unparse(run_node)
+assert ast.unparse(run_node).index('viewport_helper_attempt += 1') < ast.unparse(run_node).index('helper_log =')
 assert "wd('/window', method='GET')" in text
 assert "window.fixtureNextAction.style.fontSize='18px'" in text
 assert "document.documentElement.style.zoom=\"200%\"" in text
@@ -208,6 +229,7 @@ finally_restore = text.index("run_viewport('restore', viewport_context_handle)",
 delete = text.index("call('DELETE', '/session/' + session)", finally_restore)
 assert failure_png < failure_text < finally_restore < delete
 assert 'cleanup_error = error' in text[finally_restore:delete]
+assert 'cleanup_error=cleanup_error or error' in text[delete:]
 "#;
     let output = Command::new("python3")
         .args(["-B", "-c", script])
