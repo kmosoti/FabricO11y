@@ -4,7 +4,7 @@ Register before canonical workflow adoption. The completed pilot and canonical
 comparison used the same tested merge source `faf148ec`; all ten extended
 receipt command/property inventories agreed and both complete validators exited
 zero. Its finite results belong in the
-[scheduling record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-scheduling-results-01).
+[completed paired-shards record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-shards-results-01).
 One observed wall-time reduction, heterogeneous CPUs and cache/setup conditions
 do not establish a universal speedup. Lower elapsed time costs another hosted
 worker; no resource cap or billing setting changes.
