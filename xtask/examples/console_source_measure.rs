@@ -33,19 +33,30 @@ fn run(command: &mut Command, timing: &Path) -> Result<Value, String> {
     let output = command.output().map_err(|e| e.to_string())?;
     let elapsed = start.elapsed().as_nanos();
     if !output.status.success() {
-        return Err(format!("command {:?}: {}", output.status.code(), String::from_utf8_lossy(&output.stderr)));
+        return Err(format!(
+            "command {:?}: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        ));
     }
     let observation = strict_json(&output.stdout)?;
     let time = fs::read_to_string(timing).map_err(|e| e.to_string())?;
     let fields: Vec<_> = time.split_whitespace().collect();
-    if fields.len() != 3 { return Err("GNU time observation".into()); }
-    Ok(json!({"actual_exit":0,"wall_ns":elapsed.to_string(),"user_seconds":fields[0],
-        "system_seconds":fields[1],"peak_rss_kib":fields[2],"output":observation}))
+    if fields.len() != 3 {
+        return Err("GNU time observation".into());
+    }
+    Ok(
+        json!({"actual_exit":0,"wall_ns":elapsed.to_string(),"user_seconds":fields[0],
+        "system_seconds":fields[1],"peak_rss_kib":fields[2],"output":observation}),
+    )
 }
 
 fn timed(program: &Path, timing: &Path) -> Command {
     let mut command = Command::new("/usr/bin/time");
-    command.args(["-f", "%U %S %M", "-o"]).arg(timing).arg(program);
+    command
+        .args(["-f", "%U %S %M", "-o"])
+        .arg(timing)
+        .arg(program);
     command
 }
 
@@ -56,7 +67,11 @@ fn pairs(root: &Path, receipt: &Path, scratch: &Path) -> Result<Value, String> {
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     let mut observations = Vec::new();
     for pair in 0..7 {
-        for kind in if pair % 2 == 0 { ["python", "rust"] } else { ["rust", "python"] } {
+        for kind in if pair % 2 == 0 {
+            ["python", "rust"]
+        } else {
+            ["rust", "python"]
+        } {
             let timing = scratch.join(format!("{pair}-{kind}.time"));
             let mut command = if kind == "python" {
                 let mut command = timed(Path::new("/usr/bin/python3"), &timing);
@@ -68,7 +83,9 @@ fn pairs(root: &Path, receipt: &Path, scratch: &Path) -> Result<Value, String> {
                 command
             };
             let observation = run(&mut command, &timing)?;
-            if observation["output"] != expected { return Err("hash accounting differs".into()); }
+            if observation["output"] != expected {
+                return Err("hash accounting differs".into());
+            }
             observations.push(json!({"pair":pair,"implementation":kind,"observation":observation}));
         }
     }
@@ -78,8 +95,12 @@ fn pairs(root: &Path, receipt: &Path, scratch: &Path) -> Result<Value, String> {
 }
 
 fn write_new(path: &Path, value: &Value) -> Result<(), String> {
-    OpenOptions::new().write(true).create_new(true).open(path)
-        .map_err(|e| e.to_string())?.write_all(&serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?)
+    OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|e| e.to_string())?
+        .write_all(&serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())
 }
 
@@ -87,19 +108,41 @@ fn execute() -> Result<(), String> {
     xtask::preflight::require_limits()?;
     let arguments: Vec<_> = std::env::args_os().skip(1).collect();
     if arguments.len() == 3 && arguments[0] == "hash" {
-        println!("{}", native_hash(Path::new(&arguments[1]), Path::new(&arguments[2]))?);
+        println!(
+            "{}",
+            native_hash(Path::new(&arguments[1]), Path::new(&arguments[2]))?
+        );
         return Ok(());
     }
-    if arguments.len() != 3 { return Err("usage: console_source_measure PRODUCT_ROOT BUILD_RECEIPT NEW_OUTPUT_DIR".into()); }
-    let root = PathBuf::from(&arguments[0]).canonicalize().map_err(|e| e.to_string())?;
-    let receipt = PathBuf::from(&arguments[1]).canonicalize().map_err(|e| e.to_string())?;
+    if arguments.len() != 3 {
+        return Err(
+            "usage: console_source_measure PRODUCT_ROOT BUILD_RECEIPT NEW_OUTPUT_DIR".into(),
+        );
+    }
+    let root = PathBuf::from(&arguments[0])
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let receipt = PathBuf::from(&arguments[1])
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
     let out = PathBuf::from(&arguments[2]);
     let data = PathBuf::from(std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("DATA required")?)
-        .canonicalize().map_err(|e| e.to_string())?;
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
     let scratch = PathBuf::from(std::env::var_os("FABRIC_SCRATCH_ROOT").ok_or("scratch required")?)
-        .canonicalize().map_err(|e| e.to_string())?.join(format!("console-source-measure-{}",std::process::id()));
-    let parent = out.parent().ok_or("output parent")?.canonicalize().map_err(|e| e.to_string())?;
-    if !root.starts_with(&data) || !receipt.starts_with(&data) || !parent.starts_with(&data) || !scratch.starts_with(&data) {
+        .canonicalize()
+        .map_err(|e| e.to_string())?
+        .join(format!("console-source-measure-{}", std::process::id()));
+    let parent = out
+        .parent()
+        .ok_or("output parent")?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    if !root.starts_with(&data)
+        || !receipt.starts_with(&data)
+        || !parent.starts_with(&data)
+        || !scratch.starts_with(&data)
+    {
         return Err("explicit DATA roots required".into());
     }
     fs::create_dir(&out).map_err(|e| e.to_string())?;
@@ -118,15 +161,24 @@ fn execute() -> Result<(), String> {
         let fixture_receipt = scratch.join("fixture.json");
         write_new(&fixture_receipt, &json!({"source_sha256":sources}))?;
         let synthetic = pairs(&fixture, &fixture_receipt, &scratch)?;
-        write_new(&out.join("measurement.json"), &json!({"canonical":canonical,"synthetic":synthetic,
+        write_new(
+            &out.join("measurement.json"),
+            &json!({"canonical":canonical,"synthetic":synthetic,
             "source_root":root,"receipt":receipt,"receipt_sha256":xtask::sha256_hex(&fs::read(&receipt).map_err(|e|e.to_string())?),
-            "limits":"hash-loop equivalence on regular fixtures; native Git/provenance join measured separately; no acceptance credit"}))
+            "limits":"hash-loop equivalence on regular fixtures; native Git/provenance join measured separately; no acceptance credit"}),
+        )
     })();
-    if result.is_ok() { fs::remove_dir_all(&scratch).map_err(|e| e.to_string())?; }
-    else { eprintln!("failure scratch retained: {}",scratch.display()); }
+    if result.is_ok() {
+        fs::remove_dir_all(&scratch).map_err(|e| e.to_string())?;
+    } else {
+        eprintln!("failure scratch retained: {}", scratch.display());
+    }
     result
 }
 
 fn main() {
-    if let Err(error) = execute() { eprintln!("console source measurement failed: {error}"); std::process::exit(1); }
+    if let Err(error) = execute() {
+        eprintln!("console source measurement failed: {error}");
+        std::process::exit(1);
+    }
 }

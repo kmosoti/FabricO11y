@@ -3,9 +3,9 @@
 
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
+use std::io::Read;
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
-use std::io::Read;
 use std::process::{Command, ExitStatus, Stdio};
 
 const SOURCE_LIMIT: usize = 512;
@@ -15,7 +15,11 @@ const GIT_OUTPUT_LIMIT: usize = 4 * 1024 * 1024;
 const RAMFS_MAGIC: libc::c_long = 0x8584_58f6;
 
 fn require(condition: bool, message: &str) -> Result<(), String> {
-    if condition { Ok(()) } else { Err(message.to_owned()) }
+    if condition {
+        Ok(())
+    } else {
+        Err(message.to_owned())
+    }
 }
 
 fn valid_hex(value: &str, length: usize) -> bool {
@@ -26,15 +30,17 @@ fn valid_hex(value: &str, length: usize) -> bool {
 }
 
 fn canonical_data_root() -> Result<PathBuf, String> {
-    let configured = std::env::var_os("FABRIC_STORAGE_ROOT")
-        .ok_or("explicit FABRIC_STORAGE_ROOT required")?;
+    let configured =
+        std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("explicit FABRIC_STORAGE_ROOT required")?;
     let configured = PathBuf::from(configured);
     let metadata = std::fs::symlink_metadata(&configured).map_err(|error| error.to_string())?;
     require(
         metadata.is_dir() && !metadata.file_type().is_symlink(),
         "FABRIC_STORAGE_ROOT must be an ordinary directory",
     )?;
-    let root = configured.canonicalize().map_err(|error| error.to_string())?;
+    let root = configured
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
     require(configured == root, "FABRIC_STORAGE_ROOT must be canonical")?;
     let descriptor = std::fs::File::open(&root).map_err(|error| error.to_string())?;
     let mut information = std::mem::MaybeUninit::<libc::statfs>::uninit();
@@ -68,10 +74,7 @@ fn admitted_directory(path: &Path, data: &Path, label: &str) -> Result<PathBuf, 
     Ok(canonical)
 }
 
-fn bounded_process(
-    command: &mut Command,
-    label: &str,
-) -> Result<(ExitStatus, Vec<u8>), String> {
+fn bounded_process(command: &mut Command, label: &str) -> Result<(ExitStatus, Vec<u8>), String> {
     command.stdout(Stdio::piped()).stderr(Stdio::null());
     let mut child = command
         .spawn()
@@ -96,7 +99,9 @@ fn bounded_process(
         }
         Ok(())
     })();
-    let status = child.wait().map_err(|error| format!("{label} wait failed: {error}"))?;
+    let status = child
+        .wait()
+        .map_err(|error| format!("{label} wait failed: {error}"))?;
     read_result?;
     require(!too_large, "Git query output exceeds 4 MiB")?;
     Ok((status, output))
@@ -112,7 +117,12 @@ fn configure_git(command: &mut Command, root: &Path) {
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
         .env("GIT_OPTIONAL_LOCKS", "0")
-        .args(["-c", "core.fsmonitor=false", "-c", "core.excludesFile=/dev/null"])
+        .args([
+            "-c",
+            "core.fsmonitor=false",
+            "-c",
+            "core.excludesFile=/dev/null",
+        ])
         .current_dir(root);
 }
 
@@ -120,8 +130,7 @@ fn git(root: &Path, arguments: &[&str]) -> Result<(ExitStatus, Vec<u8>), String>
     // The existing timeout utility supplies a hard deadline and reaps Git;
     // every query is from a fixed command set and no shell is involved.
     let mut command = Command::new("timeout");
-    command
-        .args(["--signal=KILL", "10s", "git", "--no-replace-objects"]);
+    command.args(["--signal=KILL", "10s", "git", "--no-replace-objects"]);
     configure_git(&mut command, root);
     command.args(arguments);
     bounded_process(&mut command, "bounded Git query")
@@ -151,9 +160,7 @@ fn canonical_paths(value: &Value) -> Result<BTreeMap<String, String>, String> {
             path.len() <= PATH_LIMIT
                 && !path.starts_with('/')
                 && !path.contains('\0')
-                && path
-                    .split('/')
-                    .all(|part| !matches!(part, "" | "." | "..")),
+                && path.split('/').all(|part| !matches!(part, "" | "." | "..")),
             "source path must be canonical relative POSIX path",
         )?;
         let digest = digest.as_str().ok_or("source digest must be a string")?;
@@ -166,9 +173,10 @@ fn canonical_paths(value: &Value) -> Result<BTreeMap<String, String>, String> {
 fn tracked_sources(root: &Path, sources: &BTreeMap<String, String>) -> Result<(), String> {
     // A single literal-pathspec query bounds subprocess count independently of
     // inventory size; the inventory cap and per-path cap bound its argv.
-    let argument_bytes = sources.keys().try_fold(0usize, |total, path| {
-        total.checked_add(path.len() + 1)
-    }).ok_or("source path argument size overflow")?;
+    let argument_bytes = sources
+        .keys()
+        .try_fold(0usize, |total, path| total.checked_add(path.len() + 1))
+        .ok_or("source path argument size overflow")?;
     require(
         argument_bytes <= TRACK_QUERY_BYTES_LIMIT,
         "source path arguments exceed bounded Git query size",
@@ -177,7 +185,14 @@ fn tracked_sources(root: &Path, sources: &BTreeMap<String, String>) -> Result<()
     command.args(["--signal=KILL", "10s", "git", "--no-replace-objects"]);
     configure_git(&mut command, root);
     command
-        .args(["--literal-pathspecs", "ls-files", "-v", "-z", "--error-unmatch", "--"])
+        .args([
+            "--literal-pathspecs",
+            "ls-files",
+            "-v",
+            "-z",
+            "--error-unmatch",
+            "--",
+        ])
         .args(sources.keys());
     let (status, output) = bounded_process(&mut command, "bounded Git tracked-path query")?;
     require(
@@ -189,16 +204,24 @@ fn tracked_sources(root: &Path, sources: &BTreeMap<String, String>) -> Result<()
         if entry.is_empty() {
             continue;
         }
-        require(entry.len() >= 3 && entry[1] == b' ', "malformed tracked path record")?;
+        require(
+            entry.len() >= 3 && entry[1] == b' ',
+            "malformed tracked path record",
+        )?;
         require(
             entry[0] == b'H',
             "source index has assume-unchanged or skip-worktree flags",
         )?;
         actual.push(std::str::from_utf8(&entry[2..]).map_err(|_| "tracked path is not UTF-8")?);
     }
-    require(actual.len() == sources.len(), "tracked source inventory mismatch")?;
     require(
-        actual.into_iter().collect::<std::collections::BTreeSet<_>>()
+        actual.len() == sources.len(),
+        "tracked source inventory mismatch",
+    )?;
+    require(
+        actual
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>()
             == sources.keys().map(String::as_str).collect(),
         "source inventory contains an untracked or missing path",
     )
@@ -212,8 +235,7 @@ fn source_identity(root: &Path, expected: &str) -> Result<(), String> {
         "source HEAD does not match pinned commit",
     )?;
     require(
-        git_text(root, &["status", "--porcelain", "--untracked-files=all"])?
-            .is_empty(),
+        git_text(root, &["status", "--porcelain", "--untracked-files=all"])?.is_empty(),
         "source checkout is not clean",
     )
 }
@@ -227,7 +249,10 @@ pub fn verify(
     receipt_sha256: &str,
 ) -> Result<Value, String> {
     crate::preflight::require_limits()?;
-    require(valid_hex(source_commit, 40), "source commit must be a full lowercase SHA-1")?;
+    require(
+        valid_hex(source_commit, 40),
+        "source commit must be a full lowercase SHA-1",
+    )?;
     require(valid_hex(receipt_sha256, 64), "receipt SHA-256 required")?;
     let data = canonical_data_root()?;
     let source_root = admitted_directory(source_root, &data, "source root")?;
@@ -235,10 +260,8 @@ pub fn verify(
 
     source_identity(&source_root, source_commit)?;
 
-    let mut receipt = crate::preflight::ArtifactStore::with_json_budget(
-        &build_root,
-        4 * 1024 * 1024,
-    )?;
+    let mut receipt =
+        crate::preflight::ArtifactStore::with_json_budget(&build_root, 4 * 1024 * 1024)?;
     receipt.read("build.json", receipt_sha256, true)?;
     let document = receipt.json("build.json")?;
     require(
@@ -290,15 +313,26 @@ pub fn cli(arguments: Vec<String>) -> u8 {
             require(!value.starts_with("--"), "argument value required")?;
             require(values.insert(flag, value).is_none(), "duplicate argument")?;
         }
-        let source = values.remove("--source-root").ok_or("--source-root required")?;
-        let commit = values.remove("--source-commit").ok_or("--source-commit required")?;
-        let build = values.remove("--build-root").ok_or("--build-root required")?;
-        let receipt = values.remove("--receipt-sha256").ok_or("--receipt-sha256 required")?;
+        let source = values
+            .remove("--source-root")
+            .ok_or("--source-root required")?;
+        let commit = values
+            .remove("--source-commit")
+            .ok_or("--source-commit required")?;
+        let build = values
+            .remove("--build-root")
+            .ok_or("--build-root required")?;
+        let receipt = values
+            .remove("--receipt-sha256")
+            .ok_or("--receipt-sha256 required")?;
         verify(Path::new(&source), &commit, Path::new(&build), &receipt)
     })();
     match result {
         Ok(report) => {
-            println!("{}", serde_json::to_string_pretty(&report).unwrap_or_default());
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&report).unwrap_or_default()
+            );
             0
         }
         Err(error) => {

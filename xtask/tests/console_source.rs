@@ -16,7 +16,10 @@ struct Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         if std::thread::panicking() {
-            eprintln!("failed console-source fixture retained: {}", self.base.display());
+            eprintln!(
+                "failed console-source fixture retained: {}",
+                self.base.display()
+            );
         } else {
             let _ = fs::remove_dir_all(&self.base);
         }
@@ -29,7 +32,12 @@ fn git(root: &Path, args: &[&str]) -> String {
         .current_dir(root)
         .output()
         .expect("git available in fixture environment");
-    assert!(output.status.success(), "git {:?}: {}", args, String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "git {:?}: {}",
+        args,
+        String::from_utf8_lossy(&output.stderr)
+    );
     String::from_utf8(output.stdout).unwrap().trim().to_owned()
 }
 
@@ -66,7 +74,10 @@ fn fixture() -> Fixture {
     init_repo(&harness);
     fs::write(harness.join("Cargo.lock"), "harness-lock-v2\n").unwrap();
     fs::create_dir_all(harness.join("tools/packaging")).unwrap();
-    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().unwrap().to_path_buf();
+    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .to_path_buf();
     fs::copy(
         workspace.join("tools/packaging/stage_console.py"),
         harness.join("tools/packaging/stage_console.py"),
@@ -80,11 +91,17 @@ fn fixture() -> Fixture {
     .unwrap();
     commit(&harness, "newer harness");
     fs::create_dir(&build).unwrap();
-    Fixture { base, product, harness, build }
+    Fixture {
+        base,
+        product,
+        harness,
+        build,
+    }
 }
 
 fn receipt(fixture: &Fixture, sources: serde_json::Value) -> String {
-    let body = serde_json::to_vec(&json!({"exit": 0, "assets": {}, "source_sha256": sources})).unwrap();
+    let body =
+        serde_json::to_vec(&json!({"exit": 0, "assets": {}, "source_sha256": sources})).unwrap();
     fs::write(fixture.build.join("build.json"), &body).unwrap();
     xtask::sha256_hex(&body)
 }
@@ -116,7 +133,10 @@ fn command(fixture: &Fixture, commit: &str, pin: &str) -> Output {
             "--receipt-sha256",
             pin,
         ])
-        .env("FABRIC_STORAGE_ROOT", std::env::var_os("FABRIC_STORAGE_ROOT").unwrap())
+        .env(
+            "FABRIC_STORAGE_ROOT",
+            std::env::var_os("FABRIC_STORAGE_ROOT").unwrap(),
+        )
         .output()
         .unwrap()
 }
@@ -125,7 +145,10 @@ fn expect_rejection(fixture: &Fixture, commit: &str, pin: &str, diagnostic: &str
     let rejected = command(fixture, commit, pin);
     assert!(!rejected.status.success());
     let stderr = String::from_utf8_lossy(&rejected.stderr);
-    assert!(stderr.contains(diagnostic), "expected {diagnostic:?}, got {stderr}");
+    assert!(
+        stderr.contains(diagnostic),
+        "expected {diagnostic:?}, got {stderr}"
+    );
 }
 
 fn product_commit(fixture: &Fixture) -> String {
@@ -147,7 +170,11 @@ fn pinned_product_is_accepted_while_newer_harness_stager_refuses_its_source_pin(
     let stager = Command::new("python3")
         .args([
             "-B",
-            fixture.harness.join("tools/packaging/stage_console.py").to_str().unwrap(),
+            fixture
+                .harness
+                .join("tools/packaging/stage_console.py")
+                .to_str()
+                .unwrap(),
             fixture.build.to_str().unwrap(),
             fixture.base.join("staged").to_str().unwrap(),
         ])
@@ -155,10 +182,17 @@ fn pinned_product_is_accepted_while_newer_harness_stager_refuses_its_source_pin(
         .unwrap();
     assert!(!stager.status.success());
     let diagnostic = String::from_utf8_lossy(&stager.stderr);
-    assert!(diagnostic.contains("console was built from different source: Cargo.lock"), "{diagnostic}");
+    assert!(
+        diagnostic.contains("console was built from different source: Cargo.lock"),
+        "{diagnostic}"
+    );
 
     let verified = command(&fixture, &product_commit, &receipt_pin);
-    assert!(verified.status.success(), "{}", String::from_utf8_lossy(&verified.stderr));
+    assert!(
+        verified.status.success(),
+        "{}",
+        String::from_utf8_lossy(&verified.stderr)
+    );
     let report: serde_json::Value = serde_json::from_slice(&verified.stdout).unwrap();
     assert_eq!(report["source_commit"], product_commit);
     assert_eq!(report["source_root"], fixture.product.to_str().unwrap());
@@ -176,7 +210,11 @@ fn committed_source_corruption_is_rejected_by_the_receipt_hash_control() {
     // This models the meaningful skipped-hash defect: the changed source is
     // committed and caller-pinned, so the clean-HEAD guard cannot mask a
     // missing comparison against the original receipt digest.
-    fs::write(fixture.product.join("src/lib.rs"), "pub fn product() -> u8 { 2 }\n").unwrap();
+    fs::write(
+        fixture.product.join("src/lib.rs"),
+        "pub fn product() -> u8 { 2 }\n",
+    )
+    .unwrap();
     let changed_commit = commit(&fixture.product, "corrupt pinned source");
     assert_ne!(old_commit, changed_commit);
     let rejected = command(&fixture, &changed_commit, &receipt_pin);
@@ -191,7 +229,13 @@ fn committed_source_corruption_is_rejected_by_the_receipt_hash_control() {
 #[test]
 fn cli_rejects_duplicate_flags_before_touching_inputs() {
     let output = Command::new(env!("CARGO_BIN_EXE_xtask"))
-        .args(["console-source", "--source-root", "/bad", "--source-root", "/bad"])
+        .args([
+            "console-source",
+            "--source-root",
+            "/bad",
+            "--source-root",
+            "/bad",
+        ])
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
@@ -256,7 +300,9 @@ fn source_symlink_is_rejected_by_descriptor_relative_artifact_read() {
     std::os::unix::fs::symlink("../Cargo.lock", fixture.product.join("src/lib.rs")).unwrap();
     let changed_commit = commit(&fixture.product, "tracked source symlink");
     let mut sources = source_inventory(&fixture);
-    sources["src/lib.rs"] = json!(xtask::sha256_hex(&fs::read(fixture.product.join("src/lib.rs")).unwrap()));
+    sources["src/lib.rs"] = json!(xtask::sha256_hex(
+        &fs::read(fixture.product.join("src/lib.rs")).unwrap()
+    ));
     let pin = receipt(&fixture, sources);
     let rejected = command(&fixture, &changed_commit, &pin);
     assert!(!rejected.status.success());
@@ -274,7 +320,9 @@ fn untracked_missing_unsafe_and_excess_source_inventories_are_rejected() {
     let commit = commit(&untracked.product, "ignore generated source");
     fs::write(untracked.product.join("ignored-source.txt"), "ignored\n").unwrap();
     let mut sources = source_inventory(&untracked);
-    sources["ignored-source.txt"] = json!(xtask::sha256_hex(&fs::read(untracked.product.join("ignored-source.txt")).unwrap()));
+    sources["ignored-source.txt"] = json!(xtask::sha256_hex(
+        &fs::read(untracked.product.join("ignored-source.txt")).unwrap()
+    ));
     let pin = receipt(&untracked, sources);
     expect_rejection(
         &untracked,
@@ -351,8 +399,15 @@ fn strict_receipt_rejects_duplicate_keys_and_nonzero_or_boolean_exit() {
 fn assumed_unchanged_source_flag_cannot_hide_a_same_commit_mutation() {
     let fixture = fixture();
     let commit = product_commit(&fixture);
-    fs::write(fixture.product.join("src/lib.rs"), "pub fn product() -> u8 { 9 }\n").unwrap();
-    git(&fixture.product, &["update-index", "--assume-unchanged", "src/lib.rs"]);
+    fs::write(
+        fixture.product.join("src/lib.rs"),
+        "pub fn product() -> u8 { 9 }\n",
+    )
+    .unwrap();
+    git(
+        &fixture.product,
+        &["update-index", "--assume-unchanged", "src/lib.rs"],
+    );
     let pin = receipt(&fixture, source_inventory(&fixture));
     expect_rejection(
         &fixture,
