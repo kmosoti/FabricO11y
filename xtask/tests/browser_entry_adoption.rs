@@ -16,12 +16,14 @@ soak_path = root / 'tools/qualification/soak_r3.py'
 production_path = root / 'tools/qualification/production_access.py'
 runtime_path = root / 'tools/qualification/release_runtime.py'
 bridge_path = root / 'tools/qualification/console_bridge.py'
+native_fixture_path = root / 'tools/ui/browser_supervisor_native.py'
 supervisor_tree = ast.parse(supervisor_path.read_text())
 browser_tree = ast.parse(browser_path.read_text())
 soak_tree = ast.parse(soak_path.read_text())
 production_tree = ast.parse(production_path.read_text())
 runtime_tree = ast.parse(runtime_path.read_text())
 bridge_tree = ast.parse(bridge_path.read_text())
+native_fixture_tree = ast.parse(native_fixture_path.read_text())
 supervise = next(node for node in supervisor_tree.body
                  if isinstance(node, ast.FunctionDef) and node.name == 'supervise')
 launch_call = next(node for node in ast.walk(supervise)
@@ -110,6 +112,12 @@ entry_flags = {item.value for item in ast.walk(browser_supervisor_init)
                if isinstance(item, ast.Constant) and isinstance(item.value, str)}
 assert {'--browser-entry-helper', '--browser-entry-helper-sha256'} <= entry_flags
 assert {'entry_helper', 'entry_helper_sha256'} <= keyword_names(launch_call)
+native_constructor_calls = [call for call in calls(native_fixture_tree, '__init__')
+    if isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name)
+    and call.func.value.id == 'instance']
+assert len(native_constructor_calls) == 2
+assert all({'browser_entry_helper', 'browser_entry_helper_sha256'} <= keyword_names(call)
+           for call in native_constructor_calls)
 
 # Keep the actual required keyword-only signature while replacing only the
 # launch body so this source control has no cgroup/process side effects.
