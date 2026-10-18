@@ -2,10 +2,10 @@
 //! with a stable category code so tests can assert *why* a fixture failed,
 //! not merely that a command exited non-zero.
 
+pub mod browser_enter;
 pub mod census;
 pub mod checks;
 pub mod console_source;
-pub mod browser_enter;
 mod digest;
 pub mod evidence;
 pub mod layers;

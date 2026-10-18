@@ -63,9 +63,7 @@ fn parse(arguments: &[String]) -> Result<Options, String> {
                 if timeout_ms.is_some() {
                     return Err("duplicate flag".into());
                 }
-                let parsed = value
-                    .parse::<u64>()
-                    .map_err(|_| "invalid timeout")?;
+                let parsed = value.parse::<u64>().map_err(|_| "invalid timeout")?;
                 if !(1..=MAX_HANDSHAKE_MS).contains(&parsed) {
                     return Err("timeout must be within 1..=5000 ms".into());
                 }
@@ -113,7 +111,8 @@ fn fd_flags(fd: RawFd) -> Result<(libc::c_int, libc::mode_t), String> {
         return Err("control descriptor unavailable".into());
     }
     let mut stat = unsafe { std::mem::zeroed::<libc::stat>() };
-    if unsafe { libc::fstat(fd, &mut stat) } != 0 || (stat.st_mode & libc::S_IFMT) != libc::S_IFIFO {
+    if unsafe { libc::fstat(fd, &mut stat) } != 0 || (stat.st_mode & libc::S_IFMT) != libc::S_IFIFO
+    {
         return Err("control descriptor must be a pipe".into());
     }
     Ok((flags & libc::O_ACCMODE, stat.st_mode))
@@ -143,8 +142,8 @@ fn open_owned_cgroup(path: &Path) -> Result<(OwnedFd, OwnedFd), String> {
     if canonical != path {
         return Err("cgroup path must be canonical".into());
     }
-    let path_c = CString::new(path.as_os_str().as_encoded_bytes())
-        .map_err(|_| "invalid cgroup path")?;
+    let path_c =
+        CString::new(path.as_os_str().as_encoded_bytes()).map_err(|_| "invalid cgroup path")?;
     let directory = unsafe {
         libc::open(
             path_c.as_ptr(),
@@ -185,8 +184,8 @@ fn enter_and_verify(path: &Path, group_fd: RawFd, procs_fd: RawFd) -> Result<(),
         .map_err(|_| "cannot enter owned cgroup")?;
     drop(file);
 
-    let cgroup_contents = fs::read_to_string("/proc/self/cgroup")
-        .map_err(|_| "cannot verify cgroup placement")?;
+    let cgroup_contents =
+        fs::read_to_string("/proc/self/cgroup").map_err(|_| "cannot verify cgroup placement")?;
     let actual = cgroup_contents
         .lines()
         .find_map(|line| line.strip_prefix("0::"))
@@ -217,9 +216,13 @@ fn wait_fd(fd: RawFd, events: libc::c_short, deadline: u64) -> Result<libc::c_sh
         if now >= deadline {
             return Err("entry handshake deadline".into());
         }
-        let remaining_ms = ((deadline - now).saturating_add(999_999) / 1_000_000)
-            .min(i32::MAX as u64) as i32;
-        let mut item = libc::pollfd { fd, events, revents: 0 };
+        let remaining_ms =
+            ((deadline - now).saturating_add(999_999) / 1_000_000).min(i32::MAX as u64) as i32;
+        let mut item = libc::pollfd {
+            fd,
+            events,
+            revents: 0,
+        };
         let result = unsafe { libc::poll(&mut item, 1, remaining_ms) };
         if result > 0 {
             if monotonic_ns()? >= deadline {
@@ -395,7 +398,15 @@ mod tests {
         assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
         assert_eq!(unsafe { libc::write(pipe[1], b"G".as_ptr().cast(), 1) }, 1);
         unsafe { libc::close(pipe[1]) };
-        assert!(wait_frame(pipe[0], b'G', "RELEASE", monotonic_ns().unwrap() + 100_000_000).is_ok());
+        assert!(
+            wait_frame(
+                pipe[0],
+                b'G',
+                "RELEASE",
+                monotonic_ns().unwrap() + 100_000_000
+            )
+            .is_ok()
+        );
         unsafe {
             libc::close(pipe[0]);
         }
@@ -404,7 +415,15 @@ mod tests {
         assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
         assert_eq!(unsafe { libc::write(pipe[1], b"X".as_ptr().cast(), 1) }, 1);
         unsafe { libc::close(pipe[1]) };
-        assert!(wait_frame(pipe[0], b'G', "RELEASE", monotonic_ns().unwrap() + 100_000_000).is_err());
+        assert!(
+            wait_frame(
+                pipe[0],
+                b'G',
+                "RELEASE",
+                monotonic_ns().unwrap() + 100_000_000
+            )
+            .is_err()
+        );
         unsafe {
             libc::close(pipe[0]);
         }
@@ -412,12 +431,28 @@ mod tests {
         let mut pipe = [0; 2];
         assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
         unsafe { libc::close(pipe[1]) };
-        assert!(wait_frame(pipe[0], b'G', "RELEASE", monotonic_ns().unwrap() + 100_000_000).is_err());
+        assert!(
+            wait_frame(
+                pipe[0],
+                b'G',
+                "RELEASE",
+                monotonic_ns().unwrap() + 100_000_000
+            )
+            .is_err()
+        );
         unsafe { libc::close(pipe[0]) };
 
         let mut pipe = [0; 2];
         assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
-        assert!(wait_frame(pipe[0], b'G', "RELEASE", monotonic_ns().unwrap() + 1_000_000).is_err());
+        assert!(
+            wait_frame(
+                pipe[0],
+                b'G',
+                "RELEASE",
+                monotonic_ns().unwrap() + 1_000_000
+            )
+            .is_err()
+        );
         unsafe {
             libc::close(pipe[0]);
             libc::close(pipe[1]);
@@ -427,13 +462,29 @@ mod tests {
         assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
         assert_eq!(unsafe { libc::write(pipe[1], b"GX".as_ptr().cast(), 2) }, 2);
         unsafe { libc::close(pipe[1]) };
-        assert!(wait_frame(pipe[0], b'G', "RELEASE", monotonic_ns().unwrap() + 100_000_000).is_err());
+        assert!(
+            wait_frame(
+                pipe[0],
+                b'G',
+                "RELEASE",
+                monotonic_ns().unwrap() + 100_000_000
+            )
+            .is_err()
+        );
         unsafe { libc::close(pipe[0]) };
 
         let mut pipe = [0; 2];
         assert_eq!(unsafe { libc::pipe(pipe.as_mut_ptr()) }, 0);
         assert_eq!(unsafe { libc::write(pipe[1], b"G".as_ptr().cast(), 1) }, 1);
-        assert!(wait_frame(pipe[0], b'G', "RELEASE", monotonic_ns().unwrap() + 1_000_000).is_err());
+        assert!(
+            wait_frame(
+                pipe[0],
+                b'G',
+                "RELEASE",
+                monotonic_ns().unwrap() + 1_000_000
+            )
+            .is_err()
+        );
         unsafe {
             libc::close(pipe[0]);
             libc::close(pipe[1]);

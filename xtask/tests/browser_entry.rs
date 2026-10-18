@@ -291,10 +291,7 @@ shutil.rmtree(fixture)
 #[ignore = "requires explicit DATA-backed resource_group admission and delegated cgroup v2"]
 fn actual_parent_seam_binds_before_releasing_native_short_child() {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let root = manifest_dir
-        .parent()
-        .expect("workspace root")
-        .to_path_buf();
+    let root = manifest_dir.parent().expect("workspace root").to_path_buf();
     let helper = env!("CARGO_BIN_EXE_xtask");
     let result = Command::new("python3")
         .arg("-c")
