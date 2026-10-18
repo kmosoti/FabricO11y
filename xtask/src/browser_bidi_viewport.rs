@@ -280,7 +280,8 @@ fn validate_reply(message: Message, expected_id: u8, method: &str) -> Result<Val
     if text.len() > MAX_FRAME_BYTES {
         return Err("BiDi reply exceeds size limit".into());
     }
-    let value: Value = serde_json::from_str(text.as_str()).map_err(|_| "malformed BiDi JSON")?;
+    let value = crate::preflight::strict_json(text.as_str().as_bytes())
+        .map_err(|_| "malformed or ambiguous BiDi JSON")?;
     if value.get("type").and_then(Value::as_str) != Some("success")
         || value.get("id").and_then(Value::as_u64) != Some(u64::from(expected_id))
         || value.get("error").is_some()
@@ -317,20 +318,17 @@ fn send_command(
     if Instant::now() >= deadline {
         return Err("absolute BiDi deadline".into());
     }
-    loop {
-        if *received >= MAX_MESSAGES {
-            return Err("BiDi received-message limit".into());
-        }
-        let message = socket
-            .read()
-            .map_err(|error| format!("BiDi reply read failed: {error}"))?;
-        *received += 1;
-        if Instant::now() >= deadline {
-            return Err("absolute BiDi deadline".into());
-        }
-        let result = validate_reply(message, id, method)?;
-        return Ok(result);
+    if *received >= MAX_MESSAGES {
+        return Err("BiDi received-message limit".into());
     }
+    let message = socket
+        .read()
+        .map_err(|error| format!("BiDi reply read failed: {error}"))?;
+    *received += 1;
+    if Instant::now() >= deadline {
+        return Err("absolute BiDi deadline".into());
+    }
+    validate_reply(message, id, method)
 }
 
 fn run(options: Options) -> Result<Value, String> {
@@ -545,6 +543,22 @@ mod tests {
         assert!(
             validate_reply(Message::Text("{".into()), 2, "browsingContext.setViewport").is_err()
         );
+        assert!(validate_reply(
+            Message::Text(
+                r#"{"type":"success","type":"success","id":2,"result":{}}"#.into()
+            ),
+            2,
+            "browsingContext.setViewport"
+        )
+        .is_err());
+        assert!(validate_reply(
+            Message::Text(
+                r#"{"type":"success","id":2,"result":{},"result":{}}"#.into()
+            ),
+            2,
+            "browsingContext.setViewport"
+        )
+        .is_err());
     }
 
     #[test]
@@ -710,6 +724,70 @@ mod tests {
         let mut configured = options("narrow");
         configured.ws_url = url;
         assert!(run(configured).is_err());
+        worker.join().unwrap();
+    }
+
+    struct DribbleUpgrade(TcpStream);
+
+    impl Read for DribbleUpgrade {
+        fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+            self.0.read(bytes)
+        }
+    }
+
+    impl Write for DribbleUpgrade {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            thread::sleep(Duration::from_millis(15));
+            self.0.write(&bytes[..bytes.len().min(1)])
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            self.0.flush()
+        }
+    }
+
+    #[test]
+    fn absolute_deadline_covers_slowly_dribbled_upgrade_response() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let worker = thread::spawn(move || {
+            if let Ok((stream, _)) = listener.accept() {
+                let _ = tungstenite::accept(DribbleUpgrade(stream));
+            }
+        });
+        let mut configured = options("narrow");
+        configured.ws_url = format!("ws://{address}/session/mock-session");
+        let started = Instant::now();
+        assert!(run_with_timeout(configured, Duration::from_millis(120)).is_err());
+        assert!(started.elapsed() < Duration::from_millis(700));
+        worker.join().unwrap();
+    }
+
+    #[test]
+    fn cumulative_input_wrapper_never_reads_past_two_mibibytes() {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let worker = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let bytes = vec![0x5a; MAX_INPUT_BYTES + 1];
+            let _ = stream.write_all(&bytes);
+        });
+        let stream = TcpStream::connect(address).unwrap();
+        let mut bounded = BoundedStream {
+            stream,
+            deadline: Instant::now() + Duration::from_secs(2),
+            input_bytes: 0,
+        };
+        let mut bytes = vec![0u8; MAX_INPUT_BYTES + 1];
+        let mut total = 0;
+        while total < MAX_INPUT_BYTES {
+            let count = bounded.read(&mut bytes[total..]).unwrap();
+            assert!(count > 0);
+            total += count;
+        }
+        assert_eq!(total, MAX_INPUT_BYTES);
+        assert!(bounded.read(&mut bytes[MAX_INPUT_BYTES..]).is_err());
+        assert_eq!(bounded.input_bytes, MAX_INPUT_BYTES);
         worker.join().unwrap();
     }
 }
