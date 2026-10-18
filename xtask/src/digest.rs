@@ -76,8 +76,7 @@ mod tests {
         let bytes: Vec<u8> = (0..=u8::MAX).collect();
         let mut actual = String::new();
         let mut expected = String::new();
-        for chunk in bytes.chunks_exact(32) {
-            let digest: &[u8; 32] = chunk.try_into().unwrap();
+        for digest in bytes.as_chunks::<32>().0 {
             actual.push_str(&hex(digest));
             for byte in digest {
                 expected.push_str(&format!("{byte:02x}"));
