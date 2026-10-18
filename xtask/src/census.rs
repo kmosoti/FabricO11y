@@ -163,7 +163,7 @@ fn scan_once(root: &Path) -> Result<Totals, ScanError> {
         let Some((name, parent_path)) = next else { stack.pop(); continue; };
         let path = parent_path.join(&name);
         #[cfg(test)]
-        test_after_enumeration(&path)?;
+        tests::test_after_enumeration(&path)?;
         let parent = stack.last().expect("entry retains parent frame");
         let entry = openat(parent.anchor.as_raw_fd(), &name, libc::O_PATH | libc::O_NOFOLLOW)
             .map_err(|error| ScanError::io(path.clone(), error))?;
@@ -187,7 +187,7 @@ fn scan_once(root: &Path) -> Result<Totals, ScanError> {
 
 fn pause_before_retry() {
     #[cfg(test)]
-    { test_retry_pause(); }
+    { tests::test_retry_pause(DELAY); }
     #[cfg(not(test))]
     std::thread::sleep(DELAY);
 }
@@ -241,7 +241,8 @@ pub fn cli(args: Vec<String>) -> ExitCode {
             ExitCode::SUCCESS
         }
         Err(error) => { eprintln!("storage census FAILED: {error}"); ExitCode::from(2) }
-                }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -265,7 +266,7 @@ mod tests {
 
     struct TestHook { action: Action }
 
-    fn test_after_enumeration(path: &Path) -> Result<(), ScanError> {
+    pub(super) fn test_after_enumeration(path: &Path) -> Result<(), ScanError> {
         HOOK.with(|slot| {
             let mut slot = slot.borrow_mut();
             let Some(hook) = slot.as_mut() else { return Ok(()); };
@@ -293,7 +294,8 @@ mod tests {
         })
     }
 
-    fn test_retry_pause() {
+    pub(super) fn test_retry_pause(delay: Duration) {
+        assert_eq!(delay, Duration::from_millis(250));
         EVENTS.with(|events| events.borrow_mut().push("retry-delay".into()));
         HOOK.with(|slot| {
             if let Some(hook) = slot.borrow_mut().as_mut() {
@@ -318,7 +320,16 @@ mod tests {
             Self(path)
         }
     }
-    impl Drop for Scratch { fn drop(&mut self) { if !std::thread::panicking() { let _ = fs::remove_dir_all(&self.0); } } }
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            clear_hook();
+            if std::thread::panicking() {
+                eprintln!("failed census fixture retained: {}", self.0.display());
+            } else {
+                let _ = fs::remove_dir_all(&self.0);
+            }
+        }
+    }
 
     fn fixture() -> (Scratch, PathBuf) {
         let scratch = Scratch::new();
