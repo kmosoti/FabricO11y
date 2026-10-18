@@ -48,7 +48,7 @@ fn verify_receipts(root: &std::path::Path, arguments: Vec<String>) -> ExitCode {
         Ok(values) => values,
         Err(error) => { eprintln!("receipt verification NOT RUN: {error}"); return ExitCode::from(2); }
     };
-    let result = (|| {
+    let result: Result<serde_json::Value, String> = (|| {
         let commit = receipt_git(root, &["rev-parse", "HEAD"])?;
         if !receipt_git(root, &["status", "--porcelain"])?.is_empty() { return Err("candidate worktree changed".into()); }
         let report = xtask::receipts::verify(root, &profile, &commit, &receipts)?;
