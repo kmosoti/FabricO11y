@@ -30,8 +30,10 @@ fn native_hash(root: &Path, receipt: &Path) -> Result<Value, String> {
 }
 
 fn run(command: &mut Command, timing: &Path) -> Result<Value, String> {
-    let argv: Vec<_> = std::iter::once(command.get_program()).chain(command.get_args())
-        .map(|argument| argument.to_string_lossy().into_owned()).collect();
+    let argv: Vec<_> = std::iter::once(command.get_program())
+        .chain(command.get_args())
+        .map(|argument| argument.to_string_lossy().into_owned())
+        .collect();
     let start = Instant::now();
     let output = command.output().map_err(|e| e.to_string())?;
     let elapsed = start.elapsed().as_nanos();
@@ -66,11 +68,18 @@ fn timed(program: &Path, timing: &Path) -> Command {
     command
 }
 
-fn pairs(root: &Path, receipt: &Path, scratch: &Path, expected_count: u64) -> Result<Value, String> {
+fn pairs(
+    root: &Path,
+    receipt: &Path,
+    scratch: &Path,
+    expected_count: u64,
+) -> Result<Value, String> {
     // The reference is the exact legacy source-hash loop, not a substitute
     // for Git identity or the complete asset stager.
     let expected = native_hash(root, receipt)?;
-    if expected["files"] != expected_count { return Err("registered source count differs".into()); }
+    if expected["files"] != expected_count {
+        return Err("registered source count differs".into());
+    }
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     let mut observations = Vec::new();
     for pair in 0..7 {
@@ -133,7 +142,9 @@ fn execute() -> Result<(), String> {
         .canonicalize()
         .map_err(|e| e.to_string())?;
     let commit = arguments[2].to_str().ok_or("UTF-8 source commit")?;
-    let helper = PathBuf::from(&arguments[3]).canonicalize().map_err(|e|e.to_string())?;
+    let helper = PathBuf::from(&arguments[3])
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
     let out = PathBuf::from(&arguments[4]);
     let data = PathBuf::from(std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("DATA required")?)
         .canonicalize()
@@ -159,19 +170,23 @@ fn execute() -> Result<(), String> {
     fs::create_dir(&scratch).map_err(|e| e.to_string())?;
     let result = (|| {
         let canonical = pairs(&root, &receipt, &scratch, 17)?;
-        let receipt_pin = xtask::sha256_hex(&fs::read(&receipt).map_err(|e|e.to_string())?);
+        let receipt_pin = xtask::sha256_hex(&fs::read(&receipt).map_err(|e| e.to_string())?);
         let mut complete_cli = Vec::new();
         for index in 0..7 {
             let timing = scratch.join(format!("complete-cli-{index}.time"));
             let mut command = timed(&helper, &timing);
-            command.args(["console-source", "--source-root"]).arg(&root)
-                .args(["--source-commit", commit, "--build-root"]).arg(receipt.parent().ok_or("receipt parent")?)
+            command
+                .args(["console-source", "--source-root"])
+                .arg(&root)
+                .args(["--source-commit", commit, "--build-root"])
+                .arg(receipt.parent().ok_or("receipt parent")?)
                 .args(["--receipt-sha256", &receipt_pin]);
             let observation = run(&mut command, &timing)?;
             if observation["output"]["source_commit"] != commit
                 || observation["output"]["receipt_sha256"] != receipt_pin
                 || observation["output"]["source_count"] != 17
-                || observation["output"]["source_bytes_hashed"] != canonical["expected"]["bytes"] {
+                || observation["output"]["source_bytes_hashed"] != canonical["expected"]["bytes"]
+            {
                 return Err("complete CLI identity/accounting differs".into());
             }
             complete_cli.push(observation);
