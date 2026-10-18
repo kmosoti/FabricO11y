@@ -137,10 +137,23 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
             'subprocess':subprocess, 'time':time, 'json':json,
             'check':fail_if_false,
         }
-        module = ast.Module(body=[copy.deepcopy(functions['run_viewport']),
-                                  copy.deepcopy(functions['verify_viewport_geometry'])],
-                           type_ignores=[])
+        factory = ast.FunctionDef(
+            name='_bind_actual_adapter_functions',
+            args=ast.arguments(posonlyargs=[], args=[], vararg=None, kwonlyargs=[],
+                               kw_defaults=[], kwarg=None, defaults=[]),
+            body=[ast.Assign(targets=[ast.Name(id='viewport_helper_attempt', ctx=ast.Store())],
+                             value=ast.Constant(value=0)),
+                  copy.deepcopy(functions['run_viewport']),
+                  copy.deepcopy(functions['verify_viewport_geometry']),
+                  ast.Return(value=ast.Tuple(elts=[ast.Name(id='run_viewport', ctx=ast.Load()),
+                                                   ast.Name(id='verify_viewport_geometry', ctx=ast.Load())],
+                                             ctx=ast.Load()))],
+            decorator_list=[])
+        module = ast.Module(body=[factory], type_ignores=[])
+        ast.fix_missing_locations(module)
         exec(compile(module, str(path), 'exec'), namespace)
+        namespace['run_viewport'], namespace['verify_viewport_geometry'] = (
+            namespace['_bind_actual_adapter_functions']())
         return namespace, processes, stopped, launched_labels
 
     valid = {'command':'browsingContext.setViewport','context':handle,'mode':'narrow',
