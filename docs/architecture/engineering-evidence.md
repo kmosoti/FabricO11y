@@ -81,6 +81,17 @@ old direct caller's missing-keyword `TypeError`. Verification remains pending.
 No behavior in frozen #43/#46 runtimes changes, and these controls establish
 harness input wiring only, not native launch or browser acceptance.
 
+## Qualification adapter test gate
+
+The Rust integration test `xtask/tests/qualification_adapters.rs` invokes the
+eleven existing Python qualification unittest modules from `tools/qualification`
+with a fixed `python3 -B -m unittest -v` argument list. It inherits the child's
+output and propagates its exit status, so the workspace test gate cannot silently
+skip the legacy controls. One existing sparse-file control exercises a logical
+5 GiB boundary; the contained test job needs at least 6 GiB of DATA scratch for
+the Python fixtures, plus the launcher's separate build allowance. This gate
+checks finite adapter regressions only, not native or browser acceptance.
+
 ## Native BiDi viewport effect
 
 The [viewport calibration](../experiments/formal/browser-supervisor-protocol.md#native-webdriver-bidi-viewport-calibration)
@@ -107,15 +118,16 @@ neither that probe nor the source controls grant browser acceptance. The [finite
 
 The opt-in `--security-probes` browser check captures the completed registration
 payload in private browser memory for the existing replay assertions. An
-actual-source, no-network Bun diagnostic found that the prototype observer threw
-before dispatch for `fetch(Request)` without an init argument, while the URL plus
-init control dispatched and captured the payload. The candidate correction is
-to clone a `Request` input before constructing the inspection request, read that
-clone, then forward the original fetch arguments unchanged. It remains held
-pending a blank Chrome body/forwarding probe; Bun alone does not establish Chrome
-behavior. The flag is required only on the positive Chrome CI invocation. This
-is harness instrumentation evidence, not product authentication or browser
-acceptance. See the
+actual-source, no-network Bun diagnostic of frozen harness `73cccefc` found its
+old observer threw before dispatch for `fetch(Request)` without init, while a
+URL-plus-init control dispatched. The current candidate wrapper's pinned-Bun
+effect control passed Request-only capture, URL-plus-init, Request-plus-init
+body override, and original Request-body readability at source SHA
+`667337d4`; both controls remain diagnostics, not Chrome evidence. A blank Chrome
+body/forwarding probe is still pending before deciding whether to clone a
+Request before constructing the inspection request. The flag is required only
+on the positive Chrome CI invocation. This is harness instrumentation evidence,
+not product authentication or browser acceptance. See the
 [security-probe criteria](../experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement).
 
 ## Console source provenance
