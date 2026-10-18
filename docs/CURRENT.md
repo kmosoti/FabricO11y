@@ -14,7 +14,7 @@ warm measurements are recorded in the
 [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01).
 At `76d9f2b`, focused Rust/legacy adapter, packaging, UI and cleanup checks and
 Clippy exited 0, including the unchanged snapshot-inventory and copy-race
-regressions after their recorded RED results. Full required checks remain pending.
+regressions after their recorded RED results. Full required checks gate adoption.
 Remaining exact-package trials retain their
 original gates, including actual two-hour soak exposure.
 
