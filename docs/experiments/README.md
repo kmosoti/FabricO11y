@@ -1,5 +1,9 @@
 # Experiments
 
+The [Rust receipt-verifier migration](formal/verification-receipts-protocol.md)
+registers baseline controls, differential verification and standalone benchmarks.
+It does not replace required CI checks or credit synthetic fixtures as execution.
+
 The [engineering evidence protocol](formal/engineering-evidence-protocol.md) registers
 bounded artifact/dependency/receipt composition controls and matched finite costs.
 The [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-engineering-evidence-results-01)
