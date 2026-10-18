@@ -14,12 +14,9 @@ supervisor_path = root / 'tools/ui/browser_supervisor.py'
 browser_path = root / 'tools/ui/live_browser_check.py'
 supervisor_tree = ast.parse(supervisor_path.read_text())
 browser_tree = ast.parse(browser_path.read_text())
-supervisor_class = next(node for node in supervisor_tree.body
-                        if isinstance(node, ast.ClassDef)
-                        and node.name == 'BrowserSupervisor')
-supervisor_main = next(node for node in supervisor_class.body
-                       if isinstance(node, ast.FunctionDef) and node.name == 'main')
-launch_call = next(node for node in ast.walk(supervisor_main)
+supervise = next(node for node in supervisor_tree.body
+                 if isinstance(node, ast.FunctionDef) and node.name == 'supervise')
+launch_call = next(node for node in ast.walk(supervise)
                    if isinstance(node, ast.Call)
                    and isinstance(node.func, ast.Attribute)
                    and isinstance(node.func.value, ast.Name)
