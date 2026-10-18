@@ -264,6 +264,12 @@ path. The owner caller validates the helper file and digest and records both
 values in its run binding. The census change does not grant a different scratch
 path or alter its cleanup evidence.
 
+The owner CLI pair must also equal the independently pinned
+`inputs.browser_entry_helper.path` and `inputs.browser_entry_helper.sha256` in
+the admitted owner plan. The caller checks that equality and the actual file
+identity before effectful host limit or browser setup. A caller-supplied pair
+does not replace the admission's expected pin.
+
 ## Production health-wait scope correction
 
 Prospective harness regression, 2026-10-18. The retained Chrome #45 baseline
