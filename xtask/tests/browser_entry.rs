@@ -116,21 +116,22 @@ bindings = []
 total_started = time.monotonic_ns()
 positive_started = time.monotonic_ns()
 real_write = module.os.write
-release_guard_calls = 0
-def verify_binding_before_release(fd, data):
-    global release_guard_calls
+release_guard_calls = [0]
+def verify_binding_before_release(fd, data, guarded_bindings, calls, write):
     if data == b'G':
-        release_guard_calls += 1
-        assert len(bindings) == 1, 'binding must be recorded before RELEASE'
-        bound_group = bindings[0]['group']
+        calls[0] += 1
+        assert len(guarded_bindings) == 1, 'binding must be recorded before RELEASE'
+        bound_group = guarded_bindings[0]['group']
         bound_proc = bound_group['process']
         assert bound_proc.poll() is None, 'bound leader must still be live at RELEASE'
         assert module.browser_pidfd(bound_group['pidfd']) == bound_proc.pid
         assert module.browser_pid(bound_proc.pid)[0] == bound_group['start_ticks']
         members = {int(pid) for pid in (bound_group['path'] / 'cgroup.procs').read_text().split()}
         assert bound_proc.pid in members, 'bound leader must be in target cgroup at RELEASE'
-    return real_write(fd, data)
-module.os.write = verify_binding_before_release
+    return write(fd, data)
+def positive_release_guard(fd, data):
+    return verify_binding_before_release(fd, data, bindings, release_guard_calls, real_write)
+module.os.write = positive_release_guard
 try:
     with (fixture / 'positive.log').open('wb') as log:
         proc = module.browser_group_launch(parent, bindings, 'immediate-true',
@@ -138,7 +139,7 @@ try:
             entry_helper_sha256=helper_sha)
 finally:
     module.os.write = real_write
-assert release_guard_calls == 1, release_guard_calls
+assert release_guard_calls == [1], release_guard_calls
 assert len(bindings) == 1 and proc is bindings[0]['group']['process']
 binding = bindings[0]
 assert binding['group'].get('entry_helper_sha256') == helper_sha
@@ -164,16 +165,11 @@ mutant.__file__ = str(script)
 exec(compile(source, str(script), 'exec'), mutant.__dict__)
 mutant_bindings = []
 mutant_marker = fixture / 'append-after-release-target-executed'
-mutant_release_calls = 0
+mutant_release_calls = [0]
 mutant_write = mutant.os.write
-def reject_unbound_release(fd, data):
-    global mutant_release_calls
-    if data == b'G':
-        mutant_release_calls += 1
-        assert not mutant_bindings, 'append-after-release mutation exposed an unbound release'
-        raise AssertionError('release-before-binding')
-    return mutant_write(fd, data)
-mutant.os.write = reject_unbound_release
+def mutant_release_guard(fd, data):
+    return verify_binding_before_release(fd, data, mutant_bindings, mutant_release_calls, mutant_write)
+mutant.os.write = mutant_release_guard
 try:
     with (fixture / 'append-after-release.log').open('wb') as log:
         try:
@@ -182,11 +178,11 @@ try:
                 entry_helper=helper, entry_helper_sha256=helper_sha)
             raise AssertionError('append-after-release mutation was accepted')
         except AssertionError as error:
-            assert str(error) == 'release-before-binding', str(error)
+            assert str(error) == 'binding must be recorded before RELEASE', str(error)
 finally:
     mutant.os.write = mutant_write
 mutant_record = parent['provisional_children'][-1]
-assert mutant_release_calls == 1 and mutant_record['state'] == 'cleaned'
+assert mutant_release_calls == [1] and mutant_record['state'] == 'cleaned'
 assert mutant_record.get('children_reaped') is True and not mutant_marker.exists()
 
 # Alter only the child group argv while running the actual parent launch seam.
