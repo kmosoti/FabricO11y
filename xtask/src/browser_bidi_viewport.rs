@@ -770,10 +770,11 @@ mod tests {
         let handshake_finished = Arc::new(AtomicBool::new(false));
         let server_finished = Arc::clone(&handshake_finished);
         let worker = thread::spawn(move || {
-            if let Ok((stream, _)) = listener.accept() {
-                if tungstenite::accept(DribbleUpgrade(stream)).is_ok() {
-                    server_finished.store(true, Ordering::Release);
-                }
+            let Ok((stream, _)) = listener.accept() else {
+                return;
+            };
+            if tungstenite::accept(DribbleUpgrade(stream)).is_ok() {
+                server_finished.store(true, Ordering::Release);
             }
         });
         let mut configured = options("narrow");
