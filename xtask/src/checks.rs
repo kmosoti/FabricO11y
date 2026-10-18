@@ -423,7 +423,7 @@ mod shard_workflow_contract {
         for required in [
             "fail-fast: false",
             "max-parallel: 2",
-            "python3 -B tools/resource_group.py -- cargo xtask checks --only \"$check\"",
+            "python3 -B tools/resource_group.py -- cargo xtask checks --only \"$check\" --receipts \"$SHARD_RECEIPTS\"",
         ] {
             if !source.contains(required) {
                 return Err(format!("missing canonical shard contract: {required}"));
@@ -432,7 +432,7 @@ mod shard_workflow_contract {
         if !source.contains("name: pilot-receipts-${{ matrix.shard }}")
             || !source.contains("pattern: pilot-receipts-*")
             || !source.contains("merge-multiple: false")
-            || !source.contains("path: target/verification/receipts/")
+            || !source.contains("path: ${{ env.FABRIC_STORAGE_ROOT }}/results/verification-producer/")
         {
             return Err("both complete receipt artifacts must be separately uploaded and collected".into());
         }
@@ -468,10 +468,11 @@ mod shard_workflow_contract {
     fn representative_workflow_mutations_are_rejected() {
         let original = include_str!("../../.github/workflows/verification-concurrency-experiment.yml");
         let mutations = [
-            ("command-wrapper", "python3 -B tools/resource_group.py -- cargo xtask checks --only \"$check\"", "cargo xtask checks --only \"$check\""),
+            ("command-wrapper", "python3 -B tools/resource_group.py -- cargo xtask checks --only \"$check\" --receipts \"$SHARD_RECEIPTS\"", "cargo xtask checks --only \"$check\" --receipts \"$SHARD_RECEIPTS\""),
             ("missing-check", " coverage-report)", ")"),
             ("extra-check", "checks=(semantic-mutants)", "checks=(semantic-mutants extra-check)"),
             ("worker-bound", "max-parallel: 2", "max-parallel: 3"),
+            ("fail-fast", "fail-fast: false", "fail-fast: true"),
             ("missing-validator", "tools/ci/verify_receipts.py --profile extended", "tools/ci/verify_receipts.py --profile fast"),
             ("producer-status", "if [ \"$SHARD_RESULT\" != success ]; then", "if [ \"$SHARD_RESULT\" = success ]; then"),
         ];
@@ -480,5 +481,15 @@ mod shard_workflow_contract {
             let changed = original.replacen(from, to, 1);
             assert!(contract(&changed).is_err(), "workflow mutation accepted: {name}");
         }
+    }
+
+    #[test]
+    fn retired_pilot_workflow_is_manual_only() {
+        let pilot = include_str!("../../.github/workflows/verification-concurrency-experiment.yml");
+        let triggers = pilot.split_once("\nconcurrency:\n").unwrap().0;
+        assert!(triggers.contains("\non:\n  workflow_dispatch:\n"));
+        assert!(!triggers.contains("pull_request:"));
+        assert!(!triggers.contains("schedule:"));
+        assert!(!triggers.contains("merge_group:"));
     }
 }

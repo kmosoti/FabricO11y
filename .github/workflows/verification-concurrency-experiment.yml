@@ -1,12 +1,7 @@
 name: Verification sharding experiment
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - ".github/workflows/verification-concurrency-experiment.yml"
-      - "xtask/examples/merge_verification_receipts.rs"
-      - "docs/experiments/formal/verification-shards-protocol.md"
+  workflow_dispatch:
 
 concurrency:
   group: verification-shards-${{ github.event.pull_request.number || github.ref }}
@@ -17,7 +12,6 @@ permissions:
 
 jobs:
   shards:
-    if: github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
@@ -155,7 +149,7 @@ jobs:
 
   aggregate:
     needs: shards
-    if: ${{ always() && github.event.pull_request.draft == false }}
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
