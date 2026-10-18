@@ -17,10 +17,13 @@ controls do not substitute for actual console announcements; key-format and
 controlled-time checks still need both engines and exact package/ELF bindings.
 
 The [Rust evidence preflight](architecture/engineering-evidence.md) is a read-only
-consistency aid under implementation/verification. Its
-[contract](experiments/formal/engineering-evidence-protocol.md) preserves existing
-acceptance authorities. Historical Python-tool checks do not establish Rust
-correctness. No current deployment profile is qualified or release tag published.
+consistency aid. At `6ac6932`, four library controls, twelve integration controls
+and the registered native paired experiment exited 0 with confirmed stops.
+The superseded Python aid is removed; independent product oracles are unchanged.
+Its [contract](experiments/formal/engineering-evidence-protocol.md) and
+[finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-engineering-evidence-results-01)
+preserve the distinction between structural consistency and acceptance.
+No current deployment profile is qualified or release tag published.
 
 ## Implemented
 
