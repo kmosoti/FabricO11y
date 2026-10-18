@@ -51,6 +51,42 @@ class ArchiveBounds(unittest.TestCase):
             with patch.object(runtime, 'STORAGE', root), self.assertRaises(RuntimeError):
                 f.archive_dir()
 
+    def test_browser_entry_snapshot_is_independent_and_closeout_checks_its_bytes(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            root = Path(directory)
+            for label, mutate_snapshot in (('unchanged', False), ('changed', True)):
+                case = root / label
+                case.mkdir()
+                caller = case / 'caller-helper'
+                caller.write_bytes(b'original pinned entry helper')
+                caller.chmod(0o700)
+                expected = runtime.digest(caller)
+                f = self.fixture(case)
+                snapshot = runtime.snapshot_browser_entry_helper(caller, expected, f.work)
+                self.assertEqual(snapshot.parent.name, 'native-browser-entry')
+                self.assertEqual(snapshot.stat().st_mode & 0o777, 0o500)
+                self.assertNotEqual(snapshot.stat().st_ino, caller.stat().st_ino)
+                caller.write_bytes(b'replaced caller path')
+                self.assertEqual(snapshot.read_bytes(), b'original pinned entry helper')
+                self.assertEqual(runtime.digest(snapshot), expected)
+                relative = str(snapshot.relative_to(f.work))
+                f.closed, f.bridge, f.parent = False, None, case / 'parent'
+                f.groups, f.processes, f.logs = [], [], []
+                f.input_hashes, f.receipt = {relative: expected}, {'passed': False}
+                if mutate_snapshot:
+                    snapshot.chmod(0o600)
+                    snapshot.write_bytes(b'mutated owned helper snapshot')
+                with patch.object(runtime.cgroups, 'snapshot', return_value={}):
+                    if mutate_snapshot:
+                        with self.assertRaisesRegex(RuntimeError, 'frozen input identity'):
+                            f.close()
+                        self.assertFalse(f.receipt['immutable_inputs'])
+                        self.assertFalse(f.receipt['cleanup_confirmed'])
+                    else:
+                        f.close()
+                        self.assertTrue(f.receipt['immutable_inputs'])
+                        self.assertTrue(f.receipt['cleanup_confirmed'])
+
     def test_source_archives_are_in_the_same_live_disk_budget(self):
         with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
             root = Path(directory)

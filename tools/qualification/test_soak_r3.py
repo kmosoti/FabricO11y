@@ -100,8 +100,14 @@ class RuntimeControls(unittest.TestCase):
     def test_missing_prerequisites_refused_before_any_launch(self):
         with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
             path = Path(directory) / 'admission.json'
+            helper = Path(directory) / 'xtask-browser-enter-exec'
+            helper.write_bytes(b'synthetic admitted native entry helper')
+            helper.chmod(0o500)
+            helper_sha256 = soak_r3.digest(helper)
             soak_r3.write_new(path, {'protocol': 'R3', 'seed': 0xA11FA001, 'identities': 100,
-                                   'workers': 100, 'seconds': 7200, 'smoke': False, 'inputs': {}})
+                                   'workers': 100, 'seconds': 7200, 'smoke': False,
+                                   'inputs': {'browser_entry_helper': {
+                                       'path': str(helper), 'sha256': helper_sha256}}})
             with mock.patch.object(soak_r3.subprocess, 'Popen', side_effect=AssertionError('launched')):
                 with self.assertRaisesRegex(ValueError, 'missing certified native_publication'):
                     soak_r3.admission(path, soak_r3.digest(path))

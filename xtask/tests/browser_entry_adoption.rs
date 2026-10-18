@@ -103,11 +103,26 @@ assert base_calls and any(item.arg is None and isinstance(item.value, ast.Name)
 candidate_init = method(runtime_tree, 'CandidateFixture', '__init__')
 assert {'browser_entry_helper', 'browser_entry_helper_sha256'} <= {
     arg.arg for arg in candidate_init.args.kwonlyargs}
+snapshot_calls = calls(candidate_init, 'snapshot_browser_entry_helper')
+assert len(snapshot_calls) == 1, 'candidate must take one owned helper snapshot'
+assert any(isinstance(node, ast.Attribute) and node.attr == 'browser_entry_helper_dir'
+           for node in ast.walk(candidate_init)), 'helper snapshot must join immutable inputs'
 console_calls = calls(candidate_init, 'ConsoleBridge')
 option_dicts = [item for item in ast.walk(candidate_init) if isinstance(item, ast.Dict)
                 and {'browser_entry_helper', 'browser_entry_helper_sha256'} <= {
                     key.value for key in item.keys if isinstance(key, ast.Constant)}]
 assert console_calls and option_dicts
+helper_options = next(item for item in option_dicts
+                      if any(isinstance(key, ast.Constant)
+                             and key.value == 'browser_entry_helper'
+                             for key in item.keys))
+helper_value = next(value for key, value in zip(helper_options.keys, helper_options.values)
+                    if isinstance(key, ast.Constant) and key.value == 'browser_entry_helper')
+assert isinstance(helper_value, ast.Attribute) and helper_value.attr == 'browser_entry_helper', helper_value
+assert any(isinstance(node, ast.Constant) and node.value == 'caller_sha256'
+           for node in ast.walk(candidate_init)), 'receipt must bind caller helper identity'
+assert any(isinstance(node, ast.Constant) and node.value == 'snapshot_sha256'
+           for node in ast.walk(candidate_init)), 'receipt must bind snapshot helper identity'
 assert any(any(item.arg is None and isinstance(item.value, ast.Name)
                and item.value.id == 'browser_options' for item in call.keywords)
            for call in console_calls)
