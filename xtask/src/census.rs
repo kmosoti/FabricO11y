@@ -376,8 +376,7 @@ pub fn owner_scratch_from_argv(
         .ok_or("owner label must be owner-RUN_ID")?;
     if run_id.is_empty()
         || run_id.len() > 80
-        || (!run_id.as_bytes()[0].is_ascii_lowercase()
-            && !run_id.as_bytes()[0].is_ascii_digit())
+        || (!run_id.as_bytes()[0].is_ascii_lowercase() && !run_id.as_bytes()[0].is_ascii_digit())
         || !run_id
             .bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
@@ -412,7 +411,10 @@ pub fn owner_scratch_from_argv(
             || text.ends_with("/..")
             || text.ends_with('/')
             || path.components().any(|part| {
-                matches!(part, std::path::Component::CurDir | std::path::Component::ParentDir)
+                matches!(
+                    part,
+                    std::path::Component::CurDir | std::path::Component::ParentDir
+                )
             })
             || !path.starts_with(root)
         {
@@ -441,7 +443,12 @@ pub fn owner_scratch_from_argv(
             return Err("duplicate or unknown owner command flag".into());
         }
     }
-    let get = |flag: &str| pairs.get(flag).copied().ok_or_else(|| format!("{flag} required"));
+    let get = |flag: &str| {
+        pairs
+            .get(flag)
+            .copied()
+            .ok_or_else(|| format!("{flag} required"))
+    };
     let argv_admission = canonical_data_path(get("--admission")?)?;
     if argv_admission != supplied_admission || get("--admission-sha256")? != admission_sha256 {
         return Err("caller-bound admission path/hash must match raw argv".into());
@@ -531,11 +538,7 @@ pub fn cli(args: Vec<String>) -> ExitCode {
                 parse_owner_binding(remaining.collect())?
             };
             Some(owner_scratch_from_argv(
-                &root,
-                &label,
-                &admission,
-                &digest,
-                &argv,
+                &root, &label, &admission, &digest, &argv,
             )?)
         } else {
             parse_owned(&root, args)?
@@ -971,9 +974,8 @@ mod owner_binding_tests {
     }
 
     fn bind(family: &str, label: &str, argv: &[String]) -> Result<PathBuf, String> {
-        let admission = format!(
-            "{ROOT}/results/owner-walkthrough-replacement-01/admission-{family}.json"
-        );
+        let admission =
+            format!("{ROOT}/results/owner-walkthrough-replacement-01/admission-{family}.json");
         owner_scratch_from_argv(Path::new(ROOT), label, &admission, HASH, argv)
     }
 
@@ -1034,8 +1036,11 @@ mod owner_binding_tests {
         ];
         for (label, run_id, digest) in cases {
             let argv = command(run_id, "debian");
-            let admission = format!("{ROOT}/results/owner-walkthrough-replacement-01/admission-debian.json");
-            assert!(owner_scratch_from_argv(Path::new(ROOT), label, &admission, digest, &argv).is_err());
+            let admission =
+                format!("{ROOT}/results/owner-walkthrough-replacement-01/admission-debian.json");
+            assert!(
+                owner_scratch_from_argv(Path::new(ROOT), label, &admission, digest, &argv).is_err()
+            );
         }
     }
 
@@ -1045,7 +1050,8 @@ mod owner_binding_tests {
         let label = format!("owner-{run_id}");
         let base = command(run_id, "debian");
         let mut bad_outer = base.clone();
-        bad_outer[8] = format!("{ROOT}/results/service-opening-candidate/owner-{run_id}-sibling.json");
+        bad_outer[8] =
+            format!("{ROOT}/results/service-opening-candidate/owner-{run_id}-sibling.json");
         let mut bad_family = base.clone();
         bad_family[12] = "ubuntu".into();
         let mut bad_hash = base.clone();
@@ -1065,14 +1071,18 @@ mod owner_binding_tests {
         let label = format!("owner-{run_id}");
         let argv = command(run_id, "debian");
         let wrong_path = format!("{ROOT}/results/owner-walkthrough-replacement-01/other.json");
-        assert!(owner_scratch_from_argv(Path::new(ROOT), &label, &wrong_path, HASH, &argv).is_err());
-        assert!(owner_scratch_from_argv(
-            Path::new(ROOT),
-            &label,
-            &format!("{ROOT}/results/owner-walkthrough-replacement-01/admission-debian.json"),
-            &"b".repeat(64),
-            &argv,
-        )
-        .is_err());
+        assert!(
+            owner_scratch_from_argv(Path::new(ROOT), &label, &wrong_path, HASH, &argv).is_err()
+        );
+        assert!(
+            owner_scratch_from_argv(
+                Path::new(ROOT),
+                &label,
+                &format!("{ROOT}/results/owner-walkthrough-replacement-01/admission-debian.json"),
+                &"b".repeat(64),
+                &argv,
+            )
+            .is_err()
+        );
     }
 }
