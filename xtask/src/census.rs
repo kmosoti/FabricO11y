@@ -220,7 +220,7 @@ fn retry_allowed(root: &Path, owned: Option<&Path>, path: &Path) -> bool {
         || owned.is_some_and(|owned| path == owned || path.starts_with(owned))
 }
 
-fn scan_once(root: &Path) -> Result<Totals, ScanError> {
+fn scan_once(root: &Path, totals: &mut Totals) -> Result<(), ScanError> {
     let anchor =
         open_absolute_directory(root).map_err(|error| ScanError::io(root.to_path_buf(), error))?;
     let entries = read_directory(&anchor, root)?;
@@ -229,7 +229,6 @@ fn scan_once(root: &Path) -> Result<Totals, ScanError> {
         entries,
         logical_path: root.to_path_buf(),
     }];
-    let mut totals = Totals::default();
     while !stack.is_empty() {
         let next = {
             let frame = stack.last_mut().expect("nonempty traversal stack");
@@ -286,7 +285,7 @@ fn scan_once(root: &Path) -> Result<Totals, ScanError> {
                 .map_err(|_| ScanError::overflow(path))?;
         }
     }
-    Ok(totals)
+    Ok(())
 }
 
 fn pause_before_retry() {
@@ -321,9 +320,10 @@ pub fn scan(root: &Path, owned: Option<&Path>) -> Result<ScanResult, ScanError> 
             detail,
         })?;
     }
+    let mut totals = Totals::default();
     for attempt in 1..=ATTEMPTS {
-        match scan_once(root) {
-            Ok(totals) => return Ok(ScanResult { totals, attempt }),
+        match scan_once(root, &mut totals) {
+            Ok(()) => return Ok(ScanResult { totals, attempt }),
             Err(mut error) => {
                 error.attempt = attempt;
                 let retry = error.raw_os_error == Some(libc::ENOENT)
