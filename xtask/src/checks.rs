@@ -367,3 +367,118 @@ pub fn run(
     }
     Ok(overall)
 }
+
+#[cfg(test)]
+mod shard_workflow_contract {
+    use serde_json::Value;
+
+    const EXPECTED_IDS: [&str; 10] = [
+        "semantic-mutants",
+        "delivery-faults",
+        "tla-delivery",
+        "tla-transport",
+        "trace-model",
+        "cargo-mutants",
+        "kani-core",
+        "fuzz-smoke",
+        "dependency-policy",
+        "coverage-report",
+    ];
+
+    fn assignment_arrays(source: &str) -> Result<Vec<Vec<String>>, String> {
+        let mut remaining = source;
+        let mut arrays = Vec::new();
+        while let Some((_, after)) = remaining.split_once("checks=(") {
+            let (body, tail) = after.split_once(')').ok_or("unterminated checks array")?;
+            arrays.push(body.split_whitespace().map(str::to_owned).collect());
+            remaining = tail;
+        }
+        Ok(arrays)
+    }
+
+    fn contract(source: &str) -> Result<(), String> {
+        let registry: Value = serde_json::from_str(include_str!("../checks.json"))
+            .map_err(|error| error.to_string())?;
+        let registered: Vec<String> = registry["checks"]
+            .as_array()
+            .ok_or("registry checks missing")?
+            .iter()
+            .filter(|entry| entry["profile"] == "extended")
+            .map(|entry| entry["id"].as_str().unwrap_or("").to_owned())
+            .collect();
+        let expected: Vec<String> = EXPECTED_IDS.iter().map(|id| (*id).to_owned()).collect();
+        if registered != expected {
+            return Err("extended registry IDs changed; review shard ownership".into());
+        }
+        let arrays = assignment_arrays(source)?;
+        if arrays.len() != 2
+            || arrays[0] != vec!["semantic-mutants".to_owned()]
+            || arrays[1] != EXPECTED_IDS[1..].iter().map(|id| (*id).to_owned()).collect::<Vec<_>>()
+        {
+            return Err("shard assignments must own the exact ten extended IDs once".into());
+        }
+        if source.matches("fail-fast:").count() != 1 || source.matches("max-parallel:").count() != 1 {
+            return Err("exactly one bounded, non-fail-fast shard matrix required".into());
+        }
+        for required in [
+            "fail-fast: false",
+            "max-parallel: 2",
+            "python3 -B tools/resource_group.py -- cargo xtask checks --only \"$check\"",
+        ] {
+            if !source.contains(required) {
+                return Err(format!("missing canonical shard contract: {required}"));
+            }
+        }
+        if !source.contains("name: pilot-receipts-${{ matrix.shard }}")
+            || !source.contains("pattern: pilot-receipts-*")
+            || !source.contains("merge-multiple: false")
+            || !source.contains("path: target/verification/receipts/")
+        {
+            return Err("both complete receipt artifacts must be separately uploaded and collected".into());
+        }
+        let aggregate = source
+            .split_once("\n  aggregate:\n")
+            .map(|(_, section)| section)
+            .ok_or("required aggregate job missing")?;
+        for required in [
+            "needs: shards",
+            "always()",
+            "FABRIC_STORAGE_ROOT/results/verification-pilot/shards",
+            "FABRIC_STORAGE_ROOT/results/verification-pilot/combined",
+            "cargo run --locked -p xtask --example merge_verification_receipts",
+            "--shard-result \"$SHARD_RESULT\"",
+            "SHARD_RESULT: ${{ needs.shards.result }}",
+            "python3 -B tools/resource_group.py -- python3 -B tools/ci/verify_receipts.py --profile extended",
+            "if [ \"$SHARD_RESULT\" != success ]; then",
+        ] {
+            if !aggregate.contains(required) {
+                return Err(format!("aggregate missing required evidence guard: {required}"));
+            }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn hosted_shards_preserve_exact_extended_ownership_and_required_aggregate() {
+        contract(include_str!("../../.github/workflows/verification-concurrency-experiment.yml"))
+            .unwrap();
+    }
+
+    #[test]
+    fn representative_workflow_mutations_are_rejected() {
+        let original = include_str!("../../.github/workflows/verification-concurrency-experiment.yml");
+        let mutations = [
+            ("command-wrapper", "python3 -B tools/resource_group.py -- cargo xtask checks --only \"$check\"", "cargo xtask checks --only \"$check\""),
+            ("missing-check", " coverage-report)", ")"),
+            ("extra-check", "checks=(semantic-mutants)", "checks=(semantic-mutants extra-check)"),
+            ("worker-bound", "max-parallel: 2", "max-parallel: 3"),
+            ("missing-validator", "tools/ci/verify_receipts.py --profile extended", "tools/ci/verify_receipts.py --profile fast"),
+            ("producer-status", "if [ \"$SHARD_RESULT\" != success ]; then", "if [ \"$SHARD_RESULT\" = success ]; then"),
+        ];
+        for (name, from, to) in mutations {
+            assert!(original.contains(from), "mutation precondition missing for {name}");
+            let changed = original.replacen(from, to, 1);
+            assert!(contract(&changed).is_err(), "workflow mutation accepted: {name}");
+        }
+    }
+}
