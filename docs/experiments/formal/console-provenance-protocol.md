@@ -167,3 +167,51 @@ CLI observations, controls and measurement boundaries. Change only the Rust buil
 profile and fresh output path; record new source/ELF identities and raw wall,
 CPU/RSS, exit and whole-stop observations. Preserve the debug outputs. This repeat
 authorizes no provider, backend, GPU or other parameter search and no acceptance.
+
+## Prospective local build-footprint correction
+
+X319 stopped at the unchanged 95GB DATA ceiling during the full fast profile;
+its whole-service stop and staged raw evidence remain archived. A private debug
+workspace target grew to about13.42GB. The passing prefix is not a complete fast
+result. Do not retry this default cache footprint or relax the storage guard.
+
+For a fresh local engineering variant only, reduce dev/test debug information to
+`line-tables-only` and disable incremental storage. Explicitly preserve
+codegen-units256, opt-level0, debug-assertions=true and overflow-checks=true for
+both dev and test, so disabling incremental does not silently select Cargo's
+non-incremental codegen-units16 default. Use these environment overrides inside
+the resource launcher, together with an independently named DATA target:
+
+```text
+CARGO_PROFILE_DEV_DEBUG=line-tables-only
+CARGO_PROFILE_TEST_DEBUG=line-tables-only
+CARGO_INCREMENTAL=0
+CARGO_PROFILE_DEV_CODEGEN_UNITS=256
+CARGO_PROFILE_TEST_CODEGEN_UNITS=256
+CARGO_PROFILE_DEV_OPT_LEVEL=0
+CARGO_PROFILE_TEST_OPT_LEVEL=0
+CARGO_PROFILE_DEV_DEBUG_ASSERTIONS=true
+CARGO_PROFILE_TEST_DEBUG_ASSERTIONS=true
+CARGO_PROFILE_DEV_OVERFLOW_CHECKS=true
+CARGO_PROFILE_TEST_OVERFLOW_CHECKS=true
+```
+
+The [Cargo profile reference](https://doc.rust-lang.org/cargo/reference/profiles.html)
+distinguishes line-table debug information from assertions and overflow checks;
+line tables retain filename/line backtraces but omit variable/parameter debug
+information. Record effective compiler arguments and configuration, source and
+tool hashes, per-gate results, disk observations, cleanup and whole-service stops.
+Cargo verbosity may expose compiler arguments without changing registry command
+vectors. All20 original fast checks and both complete receipt validators must run
+on the new clean source, followed by the registered documentation checks. No
+passing-prefix reuse waives a gate. Preserve the12GiB full logical reserve and
+strict whole-DATA95GB admission/periodic census. Reduced footprint is a hypothesis,
+not a guarantee; preserve another interruption if the guard fires.
+
+Before any owned build-cache cleanup, archive and read back the interrupted
+staged logs/receipts, checker and regression ELFs, source identities and meaningful
+counterexamples. List exact owned target paths and artifact custody before
+root confirms deletion. Preserve shared DATA/cargo, frozen product sources and
+packages, failure fixtures and all acceptance evidence. Release settings,
+measured709fdaf artifacts/results, product packages, CI registry commands and
+independent product oracles remain unchanged. No acceptance is authorized.
