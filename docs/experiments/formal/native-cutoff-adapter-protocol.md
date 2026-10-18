@@ -120,3 +120,23 @@ strengthening, mutate each trusted sender field independently for Batch,
 configuration and delivery records. Preserve the preimplementation refusals and
 misses; after correction run these controls and the existing native modules.
 Keep the event output schema and independent Python byte/query joins unchanged.
+
+## Captured-metadata plan composition
+
+After the projection experiment's controls and screen pass, compose it inside
+the existing `custody-cutoff` reader. Version2 has exactly `version`, `candidate`,
+`phase`, `prior_ack`, `relative_phase_root`, `commands`, `observed_events`,
+`process_observations` and `stopped_snapshot`. The snapshot contains exactly
+node identity, generation, ordered source sequence/digest metadata and the final
+candidate process. Other observation objects retain the actual Guest record
+shape, with the required fields and bounds above. Candidate must match the CLI
+pin before projection. The existing owned reader admits the complete input;
+projection emits the same version1 structure into the existing cutoff checker
+and inspection reader. Both versions keep final file identity rechecks.
+
+Version1 remains the direct normalized primitive interface. Version2 adds no
+native authenticity claim: independent host raw archive/journal/process/package
+joins and the Python custody oracle remain required. Use actual CLI controls for
+the composed input, including extra/missing top-level keys, wrong candidate,
+post-marker sample refusal, source/ACK mismatch and body substitution. Do not
+integrate the DATA-only Python projection sketches or a fallback dispatcher.
