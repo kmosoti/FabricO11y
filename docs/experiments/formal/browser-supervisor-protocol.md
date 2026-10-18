@@ -78,6 +78,97 @@ reaping. Ordinary bridge callers select no fault point.
 This registration does not change product authentication, package bytes,
 session expiry rules, polling continuity, R3 deadlines or acceptance gates.
 
+## Native browser child entry handshake
+
+Prospective harness protocol amendment, 2026-10-18. The retained engineering
+probe 04 stopped before browser launch: native helper work completed, then
+`browser_group_launch` failed while binding the child identity and the existing
+cleanup reported an unregistered child. Preserve that failure and its raw
+diagnostic; it is not browser or acceptance evidence.
+
+The entry path will use a bounded `xtask browser-enter-exec` command from an
+explicitly caller-pinned immutable helper binary. The helper receives the exact
+owned cgroup-v2 directory, one private READY write descriptor, one private
+RELEASE read descriptor and an absolute target argv. It must admit a canonical
+cgroup-v2 directory and open `cgroup.procs` without following symlinks, move
+itself into that group and verify its own `/proc` cgroup placement before
+writing the single READY byte. READY framing is exactly `R` followed by EOF:
+the helper closes its READY writer immediately after `R`, and the parent waits
+for that EOF under the same monotonic deadline. The helper then waits for the
+single RELEASE byte using a monotonic deadline no longer than five seconds.
+RELEASE framing is exactly `G` followed by EOF: the parent closes its writer
+immediately after `G`, and the helper waits for that EOF before exec. EOF before
+the byte, malformed or extra framing, a writer held open through the deadline,
+wrong placement and deadline expiry are failures and never exec the target. The
+helper requires distinct inherited control FDs greater than 2 with the correct
+directions and closes both before target exec. It preserves target argv,
+environment, standard streams and unrelated explicitly inherited descriptors.
+The existing session-clock wrapper remains the target when controlled time is
+selected, so its current environment and clock descriptor behavior is unchanged.
+
+The parent creates the subgroup exclusively and the private pipes, launches
+only the exact pinned helper, and immediately retains the Popen object, pidfd,
+start ticks and owned subgroup descriptor. After READY it verifies the same
+process identity, `/proc` placement and existing `cgroup.procs` membership using
+the unchanged identity and membership checks. It records the valid binding
+before writing RELEASE. Subgroup names come from a per-domain monotonic launch
+attempt counter, incremented before each subgroup creation; a failed attempt
+consumes its name, so the next launch cannot collide with an earlier retained
+or cleaned subgroup. The domain launches serially and does not use a generic
+allocator or retry failed names. Any failure before release retains the provisional
+spawn record and may clean only that exact Popen/pidfd and newly owned subgroup;
+it never signals a raw PID or PGID, adopts/reaps an unknown child, weakens the
+foreign-child guard or releases an unbound child. There is no sleep or retry
+substitute for the handshake. Existing process, namespace, cgroup and deadline
+guards remain mandatory.
+
+The helper path and SHA-256 are explicit browser inputs, copied and rechecked
+through the existing immutable-binary snapshot path before any group launch.
+The browser receipt records the caller path, pin, snapshot path and snapshot
+digest. It may be the same xtask binary as the console-source helper only when
+the independently supplied path and digest match exactly. No PATH lookup,
+runtime compilation, helper self-reported pin, product-package change or CI
+policy change is part of this amendment.
+
+Before the correction is admitted, one finite Linux integration fixture must
+invoke the actual parent launch seam and native helper under the existing owned
+cgroup resource boundary. Its positive uses immediate `/bin/true`: READY must
+precede parent validation; exact identity and target membership must be present
+before RELEASE; a test-only `os.write(G)` guard checks the binding list, live
+leader identity and exact target `cgroup.procs` membership at the release call.
+An injected append-after-release source variant must be refused by this guard
+before G is written and leave no child behind. Then exit, exact leader reap,
+empty subgroup and clean outer stop are required. Named controls cover wrong
+placement into a separately owned sibling subgroup (no RELEASE and cleanup of
+only retained identities), READY followed by release-pipe EOF, bounded RELEASE
+timeout, and the existing foreign-child rejection. A cleanup fallback control
+injects exactly one `TimeoutExpired` from the actual Popen wait after pidfd
+signaling, then requires the real wait and owned-cgroup cleanup to succeed using
+the same retained pidfd. Each control records whether target exec occurred,
+exact child identity and cleanup state. The parent fixture must not require a
+browser runtime in Rust unit tests; focused unit controls cover framing,
+descriptor direction/distinctness and timeout parsing, while this one Linux
+fixture establishes actual cgroup placement and parent/helper composition.
+Record each cell's actual elapsed time, peak RSS and cleanup state as bounded
+composition diagnostics, without ranking against an unbarriered launch.
+Preserve all failures and raw logs. These controls establish the entry protocol
+only; they give no browser, package, product or release acceptance credit.
+
+## Hosted CI helper binding adoption
+
+The `fast-checks` hosted job must exercise the ignored Linux entry fixture after
+building workspace binaries, then compute the caller's SHA-256 for the current
+`$FABRIC_STORAGE_ROOT/cargo/debug/xtask` artifact. Both existing Chrome
+`live_browser_check.py` invocations—the positive passkey/HTTPS check and the
+exact API-cache negative—receive that explicit helper path and digest. The
+fixture runs through the delegated resource launcher; it retains its release
+ordering, placement, cleanup, and metric output. CI contract tests reject a
+missing fixture launch or either missing helper pair while preserving the
+existing positive and exact-negative commands and required job names. This is a
+hosted harness-verification policy change only: it adds no acceptance result,
+changes no package, browser oracle, negative cause or required registry check,
+and does not qualify a product or release.
+
 ## Production health-wait scope correction
 
 Prospective harness regression, 2026-10-18. The retained Chrome #45 baseline
@@ -141,3 +232,29 @@ Reject absent/false observations, duplicate bindings and the historical prose
 alone. Do not change the injected defect or its expected assertion. Test the
 observed hosted receipt and representative corruptions before rerunning CI.
 A corrected offline grade does not relabel the original failed workflow green.
+
+## Failed-run evidence retention disposition
+
+Trust-boundary amendment, 2026-10-18. Hosted receipt
+`results/console-source-full-gates-01/pr82-third-fast-negative-browser-01.json`
+has SHA-256
+`b12ff444cac0d4f083f0d9d1b411485cbba781d38930b97fd391dacf7e392e37`. It records
+the unchanged API-cache defect and prerequisites, with complete process stops,
+but its cleanup disposition retains failed-run evidence in owned fixture
+storage. The grader's prior exact cleanup string represented fixture removal and
+therefore refused this valid retained-evidence receipt.
+
+The browser defect graders admit exactly these two cleanup disposition values:
+
+- `owned fixtures removed; process groups stopped and bound children reaped`
+- `failure evidence retained in owned fixture storage; process groups stopped and bound children reaped`
+
+The first records successful fixture removal; the second records intentional
+failure-evidence retention. Either value still requires the existing cleanup
+evidence: nonempty unique positive PID/start-tick bindings; every group
+kernel-empty and children-reaped; no stop or cleanup error; a complete process
+exit map with one exact integer exit per stopped group; and own-child ECHILD
+confirmation. The exact defect name, exit status, injected-defect flag and
+prerequisite checks remain unchanged. Every other cleanup label, including the
+historical prose alone, remains invalid. Preserve and regress the hosted receipt
+without changing its failed workflow outcome.

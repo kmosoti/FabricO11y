@@ -1,0 +1,11 @@
+{
+  "fixture": "browser-api-cache-pr82-retained.json",
+  "origin": "/run/media/kmosoti/data/FabricO11y/results/console-source-full-gates-01/pr82-third-fast-negative-browser-01.json",
+  "origin_sha256": "b12ff444cac0d4f083f0d9d1b411485cbba781d38930b97fd391dacf7e392e37",
+  "hosted_api_head": "352cafb09d0b8319fa7793892e3a40db4d014deb",
+  "candidate_commit": "fd09ea5ade7e0f8dbdb4b87cf34fc13a65ddd7e8",
+  "diagnostic_receipt": "/run/media/kmosoti/data/FabricO11y/results/console-source-full-gates-01/pr82-third-fast-cleanup-mismatch-actual-01.json",
+  "diagnostic_receipt_sha256": "af588c020b39a38611a7eadc6680480adc11f838bd86fc4c8411abd689911598",
+  "minimization": "Retains only exact defect prerequisites, disposition, and process-stop cleanup evidence required by the checker.",
+  "fixture_sha256": "f1aced10cf84fdda5fdf2fbe832cf400cabecebf4760b6dd517ef9829e365c10"
+}

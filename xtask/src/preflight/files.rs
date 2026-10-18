@@ -277,7 +277,7 @@ impl ArtifactStore {
         self.json_total
     }
 
-    pub(super) fn json(&self, path: &str) -> Result<&Value, String> {
+    pub(crate) fn json(&self, path: &str) -> Result<&Value, String> {
         self.records
             .get(path)
             .and_then(|record| record.json.as_ref())

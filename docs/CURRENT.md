@@ -7,9 +7,16 @@ and [strict representation policy](formal/verification-receipt-contract.md)
 describe its limits. Local complete-profile and independent refusal controls ran
 at `7fc4723`; PR #80 merged as `06ccc0c` after complete hosted verification of
 merge candidate `c129013`. Synthetic verifier fixtures do not credit product
-acceptance. Alpha acceptance resumed after the
-finite verification engineering and native census binding controls completed;
-remaining exact-package trials retain their original gates.
+acceptance. Alpha acceptance is owner-paused for verification engineering.
+The [console provenance correction](experiments/formal/console-provenance-protocol.md)
+separates frozen product source from newer harness source; its controls and
+warm measurements are recorded in the
+[finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01).
+At `76d9f2b`, focused Rust/legacy adapter, packaging, UI and cleanup checks and
+Clippy exited 0, including the unchanged snapshot-inventory and copy-race
+regressions after their recorded RED results. Full required checks gate adoption.
+Remaining exact-package trials retain their
+original gates, including actual two-hour soak exposure.
 
 The experimental Rust storage census now has finite classification and cleanup
 race controls plus a measured warm metadata comparison. Its
@@ -26,14 +33,24 @@ stopped positive/forged-binding/canonical closeout. The interrupted segment atte
 remains preserved. The first exact-package Chrome baseline then stopped on an
 undefined readiness predicate after offline owner recovery. The
 [registered regression](experiments/formal/browser-supervisor-protocol.md)
-reproduced that NameError before the scoped helper correction; repaired source
-verification and a fresh actual browser retry remain required.
+reproduced that NameError before the scoped helper correction merged in PR #81.
+The retry stopped before browser launch on the frozen console/newer harness
+Cargo.lock join. The native provenance correction has finite source controls;
+a fresh actual browser retry remains required after the engineering pause. A
+native entry/release barrier now precedes legacy browser child binding. Its
+Linux composition fixture and real-browser transport-state diagnostic completed
+at harness source `7508a989`; the native release-ordering controls and two
+AbortSignal cancellation witnesses were observed, with actual HTTP responses
+still subject to the original header checks. This finite harness evidence grants
+no exact-package browser/PWA acceptance credit. The
+[canonical finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01)
+retain the raw trial records and limits.
 
 Replacement product `e078ba23` is packaged reproducibly as minimized source
 `28bcdf7` ([#40](https://github.com/kmosoti/FabricO11y/issues/40)). Fresh Debian03
 and Fedora04 baseline/lifecycle cells completed with all four custody checkpoints
-and confirmed cleanup; registered controls and final installation closure remain
-tracked in [#41](https://github.com/kmosoti/FabricO11y/issues/41). Earlier custody,
+and confirmed cleanup; registered controls and stopped closeout completed
+[#41](https://github.com/kmosoti/FabricO11y/issues/41). Earlier custody,
 removal and startup failures remain preserved in their protocols and raw records.
 
 The native simulator-publication and browser-continuity prerequisites have finite

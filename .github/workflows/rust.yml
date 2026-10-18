@@ -95,12 +95,19 @@ jobs:
           python3 -B tools/resource_group.py -- env GITHUB_ACTIONS=true python3 -B tools/ci/chrome-sandbox.py
       - name: Build native authenticated browser fixture
         run: python3 -B tools/resource_group.py -- cargo build --locked --workspace --bins
+      - name: Verify native browser entry binding and pin helper
+        run: |
+          python3 -B tools/resource_group.py --delegate -- cargo test --locked -p xtask --test browser_entry actual_parent_seam_binds_before_releasing_native_short_child -- --ignored --exact --nocapture
+          helper="$FABRIC_STORAGE_ROOT/cargo/debug/xtask"
+          test -x "$helper"
+          echo "FABRIC_BROWSER_ENTRY_HELPER=$helper" >> "$GITHUB_ENV"
+          echo "FABRIC_BROWSER_ENTRY_HELPER_SHA256=$(sha256sum "$helper" | cut -d ' ' -f1)" >> "$GITHUB_ENV"
       - name: Check actual passkeys and scoped native HTTPS console in Chrome
-        run: python3 -B tools/resource_group.py --delegate -- python3 -B tools/ui/live_browser_check.py --browser chrome --build $FABRIC_STORAGE_ROOT/results/ci-console --server $FABRIC_STORAGE_ROOT/cargo/debug/fabric-server --spindle $FABRIC_STORAGE_ROOT/cargo/debug/fabric-node --out $FABRIC_STORAGE_ROOT/results/ci-live-browser
+        run: python3 -B tools/resource_group.py --delegate -- python3 -B tools/ui/live_browser_check.py --browser chrome --build $FABRIC_STORAGE_ROOT/results/ci-console --server $FABRIC_STORAGE_ROOT/cargo/debug/fabric-server --spindle $FABRIC_STORAGE_ROOT/cargo/debug/fabric-node --browser-entry-helper "$FABRIC_BROWSER_ENTRY_HELPER" --browser-entry-helper-sha256 "$FABRIC_BROWSER_ENTRY_HELPER_SHA256" --out $FABRIC_STORAGE_ROOT/results/ci-live-browser
       - name: Require the exact API-cache negative-control failure
         run: |
           set +e
-          python3 -B tools/resource_group.py --delegate -- python3 -B tools/ui/live_browser_check.py --browser chrome --build $FABRIC_STORAGE_ROOT/results/ci-console --server $FABRIC_STORAGE_ROOT/cargo/debug/fabric-server --spindle $FABRIC_STORAGE_ROOT/cargo/debug/fabric-node --out $FABRIC_STORAGE_ROOT/results/ci-live-browser-defect --inject-api-cache-defect
+          python3 -B tools/resource_group.py --delegate -- python3 -B tools/ui/live_browser_check.py --browser chrome --build $FABRIC_STORAGE_ROOT/results/ci-console --server $FABRIC_STORAGE_ROOT/cargo/debug/fabric-server --spindle $FABRIC_STORAGE_ROOT/cargo/debug/fabric-node --browser-entry-helper "$FABRIC_BROWSER_ENTRY_HELPER" --browser-entry-helper-sha256 "$FABRIC_BROWSER_ENTRY_HELPER_SHA256" --out $FABRIC_STORAGE_ROOT/results/ci-live-browser-defect --inject-api-cache-defect
           defect_status=$?
           set -e
           python3 -B tools/resource_group.py -- python3 -B tools/ci/check-browser-defect.py "$defect_status" $FABRIC_STORAGE_ROOT/results/ci-live-browser-defect/browser.json
