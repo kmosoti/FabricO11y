@@ -364,7 +364,7 @@ def observed_events(raw, process):
     events = []
     for event in map(json.loads, raw.splitlines()):
         if event.get('_PID') != str(process['pid']): continue
-        if event.get('MESSAGE', '').startswith('delivery sequence='):
+        if event.get('MESSAGE', '').startswith(('delivery sequence=', 'batch=', 'config revision=')):
             witness.require(event.get('_SYSTEMD_UNIT') == process['unit'] and event.get('_EXE') == '/usr/bin/fabric-node'
                 and event.get('_SYSTEMD_INVOCATION_ID') == process['invocation_id']
                 and event.get('_SYSTEMD_CGROUP') == '/system.slice/system-fabrico11y.slice/' + process['unit']

@@ -54,6 +54,9 @@ local stdout supplies none. The result cannot attest a producer, capture
 completeness or process stop. Raw native binding and the independent Python
 custody oracle remain mandatory. Guest capture records real command bounds,
 pinned inspection text and process observations without deciding cutoff policy.
+The native adapter applies its executable/service/InvocationID/cgroup/UID/GID
+join to recognized Batch, configuration and delivery journal records; filtering
+by PID alone does not establish that binding. The event output schema is unchanged.
 The [adapter contract](../experiments/formal/native-cutoff-adapter-protocol.md)
 and [primitive protocol](../experiments/formal/primitive-composition-protocol.md)
 separate finite controls from native caller adoption and alpha acceptance.

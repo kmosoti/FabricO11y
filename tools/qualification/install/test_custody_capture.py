@@ -513,3 +513,30 @@ class GuestObservationControls(literal.NativeFixture, unittest.TestCase):
         self.assertEqual(saved[1]['boot_id'], '00000000-0000-4000-8000-000000000001')
         self.assertEqual(saved[1]['exe_sha256'], 'a' * 64)
         self.assertEqual(saved[1]['cgroup'], cgroup)
+
+
+class RawSenderControls(unittest.TestCase):
+    process=dict(pid=42,unit='fabrico11y-node.service',invocation_id='1'*32,
+        status='Uid: 1000 1000 1000 1000\nGid: 1000 1000 1000 1000\n')
+    event=dict(_PID='42',_SYSTEMD_UNIT='fabrico11y-node.service',_EXE='/usr/bin/fabric-node',
+        _SYSTEMD_INVOCATION_ID='1'*32,_SYSTEMD_CGROUP='/system.slice/system-fabrico11y.slice/fabrico11y-node.service',
+        _UID='1000',_GID='1000',_BOOT_ID='00112233445566778899aabbccddeeff',__REALTIME_TIMESTAMP='1000')
+    messages=['batch=1 metrics=0 logs=0 gaps=0 spool_bytes=0 log_backlog_bytes=0 acked_through=0',
+        'config revision=2 paused=true interval_s=15',
+        'delivery sequence=1 sha256='+'ab'*32+' status=ack committed_through=1 elapsed_us=10']
+
+    def test_valid_record_shapes_remain_unchanged(self):
+        for message in self.messages:
+            rows=native.observed_events(json.dumps(dict(self.event,MESSAGE=message)),self.process)
+            self.assertEqual(rows,[dict(unit=self.process['unit'],pid=42,
+                boot_id='00112233-4455-6677-8899-aabbccddeeff',at_ns=1000000,message=message)])
+
+    def test_each_recognized_message_requires_all_sender_joins(self):
+        for message in self.messages:
+            for key,bad in dict(_SYSTEMD_UNIT='wrong.service',_EXE='/usr/bin/other',
+                    _SYSTEMD_INVOCATION_ID='2'*32,_SYSTEMD_CGROUP='/wrong',_UID='1001',_GID='1001').items():
+                with self.subTest(message=message.split()[0],field=key):
+                    event=dict(self.event,MESSAGE=message);event[key]=bad
+                    with self.assertRaisesRegex(ValueError,'raw journal sender mismatch'):
+                        native.observed_events(json.dumps(event),self.process)
+
