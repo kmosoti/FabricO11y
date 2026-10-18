@@ -8,7 +8,7 @@ fn direct_console_helper_launch_is_included_in_process_exit_accounting() {
         .unwrap()
         .join("tools/ui/live_browser_check.py");
     let script = r#"
-import ast, copy, pathlib, sys
+import ast, pathlib, sys
 path = pathlib.Path(sys.argv[1])
 tree = ast.parse(path.read_text())
 callbacks = [node for node in ast.walk(tree)
@@ -16,18 +16,15 @@ callbacks = [node for node in ast.walk(tree)
 assert len(callbacks) == 1
 
 def accounted(callback):
-    body = callback.body
-    launches = [i for i, node in enumerate(body)
+    nodes = list(ast.walk(callback))
+    launches = [node.lineno for node in nodes
                 if isinstance(node, ast.Assign)
                 and any(isinstance(target, ast.Name) and target.id == 'helper'
                         for target in node.targets)
                 and isinstance(node.value, ast.Call)
                 and isinstance(node.value.func, ast.Name)
                 and node.value.func.id == 'browser_group_launch']
-    if len(launches) != 1:
-        return False
-    launch_index = launches[0]
-    appends = [i for i, node in enumerate(body)
+    appends = [node.lineno for node in nodes
                if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
                and isinstance(node.value.func, ast.Attribute)
                and isinstance(node.value.func.value, ast.Name)
@@ -40,25 +37,24 @@ def accounted(callback):
                and node.value.args[0].elts[0].value == 'console-source-verifier'
                and isinstance(node.value.args[0].elts[1], ast.Name)
                and node.value.args[0].elts[1].id == 'helper']
-    waits = [i for i, node in enumerate(body)
+    waits = [node.lineno for node in nodes
              if isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)
              and isinstance(node.value.func, ast.Attribute)
              and isinstance(node.value.func.value, ast.Name)
              and node.value.func.value.id == 'helper' and node.value.func.attr == 'wait']
-    return len(appends) == 1 and len(waits) == 1 and launch_index < appends[0] < waits[0]
+    return (len(launches) == len(appends) == len(waits) == 1
+            and launches[0] < appends[0] < waits[0])
 
 callback = callbacks[0]
 assert accounted(callback), 'bounded console source child must be recorded before wait'
 
 # Representative accounting defect: a directly launched owned child omitted
 # from `processes` must be rejected, leaving group/process counts incomparable.
-mutant = copy.deepcopy(callback)
-mutant.body = [node for node in mutant.body
-               if not (isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
-                       and isinstance(node.value.func, ast.Attribute)
-                       and isinstance(node.value.func.value, ast.Name)
-                       and node.value.func.value.id == 'processes'
-                       and node.value.func.attr == 'append')]
+without_append = path.read_text().replace(
+    "                    processes.append(('console-source-verifier', helper))\n", '', 1)
+mutant_tree = ast.parse(without_append)
+mutant = next(node for node in ast.walk(mutant_tree)
+              if isinstance(node, ast.FunctionDef) and node.name == 'verify_console_source')
 assert not accounted(mutant), 'accounting control accepted omitted process append'
 "#;
     let output = Command::new("python3")
