@@ -7,27 +7,62 @@
 //! A receipt shows what the runner observed; it is unsigned, so it proves the
 //! record's structure, not that the command ran.
 
-use crate::sha256_hex;
 use crate::digest::{Sha256, hex as digest_hex};
+use crate::sha256_hex;
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::os::unix::fs::MetadataExt;
 use std::os::unix::fs::OpenOptionsExt;
-use std::collections::HashMap;
-use std::sync::{Mutex, atomic::{AtomicUsize, Ordering}};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::{
+    Mutex,
+    atomic::{AtomicUsize, Ordering},
+};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const LIGHT_WORKER_COUNT: usize = 2;
 const LIGHT_COHORT: &[(&str, u64, &[&str])] = &[
-    ("delivery-oracle", 310, &["python3", "-B", "tools/qualification/test_delivery_oracle.py"]),
-    ("query-oracle", 322, &["python3", "-B", "tools/qualification/test_query_oracle.py"]),
-    ("workload-rate-oracle", 887, &["python3", "-B", "tools/qualification/test_workload.py"]),
-    ("soak-decision-rule", 87, &["python3", "-B", "tools/qualification/test_soak_tier.py"]),
-    ("telemetry-contract", 142, &["python3", "-B", "tools/telemetry/test_contract.py"]),
-    ("telemetry-cli", 2241, &["python3", "-B", "tools/telemetry/test_cli.py"]),
-    ("ui-palette", 42, &["python3", "-B", "tools/ui/contrast_check.py"]),
+    (
+        "delivery-oracle",
+        310,
+        &[
+            "python3",
+            "-B",
+            "tools/qualification/test_delivery_oracle.py",
+        ],
+    ),
+    (
+        "query-oracle",
+        322,
+        &["python3", "-B", "tools/qualification/test_query_oracle.py"],
+    ),
+    (
+        "workload-rate-oracle",
+        887,
+        &["python3", "-B", "tools/qualification/test_workload.py"],
+    ),
+    (
+        "soak-decision-rule",
+        87,
+        &["python3", "-B", "tools/qualification/test_soak_tier.py"],
+    ),
+    (
+        "telemetry-contract",
+        142,
+        &["python3", "-B", "tools/telemetry/test_contract.py"],
+    ),
+    (
+        "telemetry-cli",
+        2241,
+        &["python3", "-B", "tools/telemetry/test_cli.py"],
+    ),
+    (
+        "ui-palette",
+        42,
+        &["python3", "-B", "tools/ui/contrast_check.py"],
+    ),
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -214,7 +249,10 @@ fn run_one_recorded(
             .stdout(out)
             .stderr(err);
         if let Some(temp) = temp {
-            command.env("TMPDIR", temp).env("TMP", temp).env("TEMP", temp);
+            command
+                .env("TMPDIR", temp)
+                .env("TMP", temp)
+                .env("TEMP", temp);
         }
         let status = command.status()?;
         // Preserve the existing stdout-then-stderr order and receipt digest.
@@ -270,19 +308,29 @@ impl Context {
         let mut bounded_revisions = HashMap::new();
         for check in checks {
             for key in ["specification", "oracles"] {
-                let files: Vec<String> = check.raw.get(key).and_then(Value::as_array)
-                    .map(|array| array.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+                let files: Vec<String> = check
+                    .raw
+                    .get(key)
+                    .and_then(Value::as_array)
+                    .map(|array| {
+                        array
+                            .iter()
+                            .filter_map(Value::as_str)
+                            .map(str::to_owned)
+                            .collect()
+                    })
                     .unwrap_or_default();
                 if !bounded_revisions.contains_key(&files) {
-                    let value = bounded_revision_of(root, &files).unwrap_or_else(|_| "unavailable".into());
+                    let value =
+                        bounded_revision_of(root, &files).unwrap_or_else(|_| "unavailable".into());
                     bounded_revisions.insert(files, value);
                 }
             }
         }
         Ok(Self {
             root: root.to_path_buf(),
-            commit: bounded_capture(root, "git", &["rev-parse", "HEAD"] )?,
-            dirty: !bounded_capture(root, "git", &["status", "--porcelain"] )?.is_empty(),
+            commit: bounded_capture(root, "git", &["rev-parse", "HEAD"])?,
+            dirty: !bounded_capture(root, "git", &["status", "--porcelain"])?.is_empty(),
             toolchain: json!({
                 "rustc": bounded_capture_or_unavailable(root, "rustc", &["-V"]),
                 "cargo": bounded_capture_or_unavailable(root, "cargo", &["-V"]),
@@ -312,8 +360,15 @@ pub fn receipt(context: &Context, check: &Check, outcome: &Outcome, elapsed_ms: 
     };
     let revision = |key: &str| {
         let paths = files(key);
-        if context.bounded_metadata { context.bounded_revisions.get(&paths).cloned().unwrap_or_else(|| "unavailable".into()) }
-        else { revision_of(&context.root, &paths) }
+        if context.bounded_metadata {
+            context
+                .bounded_revisions
+                .get(&paths)
+                .cloned()
+                .unwrap_or_else(|| "unavailable".into())
+        } else {
+            revision_of(&context.root, &paths)
+        }
     };
     json!({
         "receipt_version": 1,
@@ -352,13 +407,19 @@ fn bounded_capture(root: &Path, program: &str, arguments: &[&str]) -> Result<Str
         .output()
         .map_err(|error| format!("bounded metadata command unavailable ({program}): {error}"))?;
     if !output.status.success() {
-        return Err(format!("bounded metadata command failed ({program}): {:?}: {}", output.status.code(), String::from_utf8_lossy(&output.stderr)));
+        return Err(format!(
+            "bounded metadata command failed ({program}): {:?}: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        ));
     }
     Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
 fn bounded_revision_of(root: &Path, files: &[String]) -> Result<String, String> {
-    if files.is_empty() { return Ok("none".into()); }
+    if files.is_empty() {
+        return Ok("none".into());
+    }
     let mut arguments = vec!["log", "-1", "--format=%H", "--"];
     arguments.extend(files.iter().map(String::as_str));
     bounded_capture(root, "git", &arguments)
@@ -437,7 +498,15 @@ fn run_recorded_check(
     println!("{:<24} running  {}", check.id, check.command.join(" "));
     std::io::stdout().flush().map_err(|e| e.to_string())?;
     let started = Instant::now();
-    let outcome = run_one_recorded(root, check, stdout, stderr, &stdout_path, &stderr_path, temp);
+    let outcome = run_one_recorded(
+        root,
+        check,
+        stdout,
+        stderr,
+        &stdout_path,
+        &stderr_path,
+        temp,
+    );
     let elapsed = started.elapsed().as_millis();
     println!(
         "{:<24} {:<24} {:>8} ms  {}",
@@ -537,7 +606,9 @@ fn safe_receipt_id(value: &str) -> bool {
     let bytes = value.as_bytes();
     !bytes.is_empty()
         && bytes[0].is_ascii_lowercase()
-        && bytes.iter().all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
 }
 
 fn ordered_light_cohort(selected: &[Check]) -> Result<Vec<Check>, String> {
@@ -547,12 +618,17 @@ fn ordered_light_cohort(selected: &[Check]) -> Result<Vec<Check>, String> {
             .iter()
             .find(|check| check.id == id)
             .ok_or_else(|| format!("light cohort check missing: {id}"))?;
-        if check.profile != "fast" || check.command.iter().map(String::as_str).collect::<Vec<_>>() != command {
-            return Err(format!("registered command drift for light cohort check `{id}`"));
+        if check.profile != "fast"
+            || check.command.iter().map(String::as_str).collect::<Vec<_>>() != command
+        {
+            return Err(format!(
+                "registered command drift for light cohort check `{id}`"
+            ));
         }
         cohort.push(check.clone());
     }
-    let expected: std::collections::HashSet<_> = LIGHT_COHORT.iter().map(|(id, _, _)| *id).collect();
+    let expected: std::collections::HashSet<_> =
+        LIGHT_COHORT.iter().map(|(id, _, _)| *id).collect();
     let selected_cohort: std::collections::HashSet<_> = selected
         .iter()
         .filter(|check| expected.contains(check.id.as_str()))
@@ -567,9 +643,17 @@ fn ordered_light_cohort(selected: &[Check]) -> Result<Vec<Check>, String> {
 
 fn sort_light_weighted(checks: &mut [Check]) {
     checks.sort_by(|left, right| {
-        let left_weight = LIGHT_COHORT.iter().find(|(id, _, _)| *id == left.id.as_str()).map_or(0, |item| item.1);
-        let right_weight = LIGHT_COHORT.iter().find(|(id, _, _)| *id == right.id.as_str()).map_or(0, |item| item.1);
-        right_weight.cmp(&left_weight).then_with(|| left.id.cmp(&right.id))
+        let left_weight = LIGHT_COHORT
+            .iter()
+            .find(|(id, _, _)| *id == left.id.as_str())
+            .map_or(0, |item| item.1);
+        let right_weight = LIGHT_COHORT
+            .iter()
+            .find(|(id, _, _)| *id == right.id.as_str())
+            .map_or(0, |item| item.1);
+        right_weight
+            .cmp(&left_weight)
+            .then_with(|| left.id.cmp(&right.id))
     });
 }
 
@@ -633,7 +717,11 @@ fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
     payload
         .downcast_ref::<String>()
         .cloned()
-        .or_else(|| payload.downcast_ref::<&str>().map(|message| (*message).to_owned()))
+        .or_else(|| {
+            payload
+                .downcast_ref::<&str>()
+                .map(|message| (*message).to_owned())
+        })
         .unwrap_or_else(|| "worker panicked".into())
 }
 
@@ -652,37 +740,45 @@ fn dispatch_light_cohort(
     std::thread::scope(|scope| {
         let mut handles = Vec::new();
         for _ in 0..LIGHT_WORKER_COUNT {
-            let spawned = std::thread::Builder::new().name("xtask-light-check".into()).spawn_scoped(scope, || {
-                loop {
-                    let check = queue.lock().unwrap_or_else(|error| error.into_inner()).pop_front();
-                    let Some(check) = check else { break };
-                    let now = active.fetch_add(1, Ordering::Relaxed) + 1;
-                    peak_update(&peak, now);
-                    let stage = stage_root.join(&check.id);
-                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        run_worker_check(root, context, &check, &stage)
-                    }));
-                    active.fetch_sub(1, Ordering::Relaxed);
-                    let record = match result {
-                        Ok(Ok((_elapsed_ms, status))) => WorkerResult {
-                            id: check.id,
-                            status: Some(status),
-                            error: None,
-                        },
-                        Ok(Err(error)) => WorkerResult {
-                            id: check.id,
-                            status: None,
-                            error: Some(error),
-                        },
-                        Err(payload) => WorkerResult {
-                            id: check.id,
-                            status: None,
-                            error: Some(panic_message(payload)),
-                        },
-                    };
-                    results.lock().unwrap_or_else(|error| error.into_inner()).push(record);
-                }
-            });
+            let spawned = std::thread::Builder::new()
+                .name("xtask-light-check".into())
+                .spawn_scoped(scope, || {
+                    loop {
+                        let check = queue
+                            .lock()
+                            .unwrap_or_else(|error| error.into_inner())
+                            .pop_front();
+                        let Some(check) = check else { break };
+                        let now = active.fetch_add(1, Ordering::Relaxed) + 1;
+                        peak_update(&peak, now);
+                        let stage = stage_root.join(&check.id);
+                        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            run_worker_check(root, context, &check, &stage)
+                        }));
+                        active.fetch_sub(1, Ordering::Relaxed);
+                        let record = match result {
+                            Ok(Ok((_elapsed_ms, status))) => WorkerResult {
+                                id: check.id,
+                                status: Some(status),
+                                error: None,
+                            },
+                            Ok(Err(error)) => WorkerResult {
+                                id: check.id,
+                                status: None,
+                                error: Some(error),
+                            },
+                            Err(payload) => WorkerResult {
+                                id: check.id,
+                                status: None,
+                                error: Some(panic_message(payload)),
+                            },
+                        };
+                        results
+                            .lock()
+                            .unwrap_or_else(|error| error.into_inner())
+                            .push(record);
+                    }
+                });
             match spawned {
                 Ok(handle) => handles.push(handle),
                 Err(error) => dispatch_errors.push(format!("cannot start cohort worker: {error}")),
@@ -696,7 +792,10 @@ fn dispatch_light_cohort(
         // If both thread starts failed, or a worker panicked outside a job,
         // drain remaining entries serially but keep the run nonpass.
         loop {
-            let check = queue.lock().unwrap_or_else(|error| error.into_inner()).pop_front();
+            let check = queue
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .pop_front();
             let Some(check) = check else { break };
             let stage = stage_root.join(&check.id);
             let record = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -718,15 +817,29 @@ fn dispatch_light_cohort(
                     error: Some(panic_message(payload)),
                 },
             };
-            results.lock().unwrap_or_else(|error| error.into_inner()).push(record);
+            results
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .push(record);
         }
     });
-    let mut completed = results.into_inner().unwrap_or_else(|error| error.into_inner());
-    completed.sort_by_key(|result| cohort.iter().position(|check| check.id == result.id).unwrap_or(usize::MAX));
+    let mut completed = results
+        .into_inner()
+        .unwrap_or_else(|error| error.into_inner());
+    completed.sort_by_key(|result| {
+        cohort
+            .iter()
+            .position(|check| check.id == result.id)
+            .unwrap_or(usize::MAX)
+    });
     (completed, peak.load(Ordering::Relaxed), dispatch_errors)
 }
 
-fn create_batch_marker(receipts: &Path, context: &Context, checks: &[Check]) -> Result<PathBuf, String> {
+fn create_batch_marker(
+    receipts: &Path,
+    context: &Context,
+    checks: &[Check],
+) -> Result<PathBuf, String> {
     let marker = receipts.join("current-check.json");
     let file = std::fs::OpenOptions::new()
         .write(true)
@@ -752,24 +865,43 @@ fn create_batch_marker(receipts: &Path, context: &Context, checks: &[Check]) -> 
 fn ordinary_digest(source: &Path) -> Result<String, String> {
     let before = std::fs::symlink_metadata(source).map_err(|error| error.to_string())?;
     if !before.is_file() || before.file_type().is_symlink() || before.len() > 64 * 1024 * 1024 {
-        return Err(format!("source artifact is not an ordinary bounded file: {}", source.display()));
+        return Err(format!(
+            "source artifact is not an ordinary bounded file: {}",
+            source.display()
+        ));
     }
     let mut options = std::fs::OpenOptions::new();
-    options.read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    options
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     let mut input = options.open(source).map_err(|error| error.to_string())?;
     let opened = input.metadata().map_err(|error| error.to_string())?;
     let identity = |metadata: &std::fs::Metadata| {
-        (metadata.dev(), metadata.ino(), metadata.len(), metadata.mtime(), metadata.mtime_nsec(), metadata.ctime(), metadata.ctime_nsec())
+        (
+            metadata.dev(),
+            metadata.ino(),
+            metadata.len(),
+            metadata.mtime(),
+            metadata.mtime_nsec(),
+            metadata.ctime(),
+            metadata.ctime_nsec(),
+        )
     };
     if !opened.is_file() || identity(&opened) != identity(&before) {
-        return Err(format!("source artifact changed before digest: {}", source.display()));
+        return Err(format!(
+            "source artifact changed before digest: {}",
+            source.display()
+        ));
     }
     let digest = stream_extent(&mut input, opened.len(), None)?;
     let after_path = std::fs::symlink_metadata(source).map_err(|error| error.to_string())?;
     if identity(&input.metadata().map_err(|error| error.to_string())?) != identity(&opened)
         || identity(&after_path) != identity(&opened)
     {
-        return Err(format!("source artifact changed during digest: {}", source.display()));
+        return Err(format!(
+            "source artifact changed during digest: {}",
+            source.display()
+        ));
     }
     Ok(digest)
 }
@@ -784,14 +916,19 @@ fn stream_extent(
     let mut remaining = extent;
     let mut digest = Sha256::new();
     while remaining > 0 {
-        let limit = usize::try_from(remaining.min(CHUNK as u64)).map_err(|error| error.to_string())?;
-        let count = input.read(&mut buffer[..limit]).map_err(|error| error.to_string())?;
+        let limit =
+            usize::try_from(remaining.min(CHUNK as u64)).map_err(|error| error.to_string())?;
+        let count = input
+            .read(&mut buffer[..limit])
+            .map_err(|error| error.to_string())?;
         if count == 0 {
             return Err("source artifact was truncated during bounded read".into());
         }
         digest.update(&buffer[..count]);
         if let Some(writer) = output.as_deref_mut() {
-            writer.write_all(&buffer[..count]).map_err(|error| error.to_string())?;
+            writer
+                .write_all(&buffer[..count])
+                .map_err(|error| error.to_string())?;
         }
         remaining -= count as u64;
     }
@@ -802,42 +939,79 @@ fn stream_extent(
     Ok(digest_hex(&digest.finish()))
 }
 
-fn copy_ordinary_new(source: &Path, destination: &Path, expected_digest: &str) -> Result<(), String> {
+fn copy_ordinary_new(
+    source: &Path,
+    destination: &Path,
+    expected_digest: &str,
+) -> Result<(), String> {
     let before = std::fs::symlink_metadata(source).map_err(|error| error.to_string())?;
     if !before.is_file() || before.file_type().is_symlink() {
-        return Err(format!("source artifact is not an ordinary file: {}", source.display()));
+        return Err(format!(
+            "source artifact is not an ordinary file: {}",
+            source.display()
+        ));
     }
     if before.len() > 64 * 1024 * 1024 {
-        return Err(format!("source artifact exceeds verifier limit: {}", source.display()));
+        return Err(format!(
+            "source artifact exceeds verifier limit: {}",
+            source.display()
+        ));
     }
     let mut options = std::fs::OpenOptions::new();
-    options.read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    options
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     let mut input = options.open(source).map_err(|error| error.to_string())?;
     let opened = input.metadata().map_err(|error| error.to_string())?;
     let identity = |metadata: &std::fs::Metadata| {
-        (metadata.dev(), metadata.ino(), metadata.len(), metadata.mtime(), metadata.mtime_nsec(), metadata.ctime(), metadata.ctime_nsec())
+        (
+            metadata.dev(),
+            metadata.ino(),
+            metadata.len(),
+            metadata.mtime(),
+            metadata.mtime_nsec(),
+            metadata.ctime(),
+            metadata.ctime_nsec(),
+        )
     };
     if !opened.is_file() || identity(&opened) != identity(&before) {
-        return Err(format!("source artifact changed before copy: {}", source.display()));
+        return Err(format!(
+            "source artifact changed before copy: {}",
+            source.display()
+        ));
     }
     let mut output = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(destination)
-        .map_err(|error| format!("exclusive publication failed for {}: {error}", destination.display()))?;
+        .map_err(|error| {
+            format!(
+                "exclusive publication failed for {}: {error}",
+                destination.display()
+            )
+        })?;
     let digest = stream_extent(&mut input, opened.len(), Some(&mut output))?;
     if digest != expected_digest {
-        return Err(format!("source artifact changed after verification: {}", source.display()));
+        return Err(format!(
+            "source artifact changed after verification: {}",
+            source.display()
+        ));
     }
     output.sync_all().map_err(|error| error.to_string())?;
     let after_path = std::fs::symlink_metadata(source).map_err(|error| error.to_string())?;
     if identity(&input.metadata().map_err(|error| error.to_string())?) != identity(&opened)
         || identity(&after_path) != identity(&opened)
     {
-        return Err(format!("source artifact changed during copy: {}", source.display()));
+        return Err(format!(
+            "source artifact changed during copy: {}",
+            source.display()
+        ));
     }
     if ordinary_digest(destination)? != digest {
-        return Err(format!("published artifact digest mismatch: {}", destination.display()));
+        return Err(format!(
+            "published artifact digest mismatch: {}",
+            destination.display()
+        ));
     }
     Ok(())
 }
@@ -849,17 +1023,26 @@ pub fn run_with_light_workers(
     receipts: &Path,
 ) -> Result<Status, String> {
     crate::preflight::require_limits()?;
-    let storage = PathBuf::from(std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("explicit DATA storage required")?)
-        .canonicalize().map_err(|error| error.to_string())?;
-    let scratch = PathBuf::from(std::env::var_os("FABRIC_SCRATCH_ROOT").ok_or("explicit DATA scratch required")?)
-        .canonicalize().map_err(|error| error.to_string())?;
+    let storage = PathBuf::from(
+        std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("explicit DATA storage required")?,
+    )
+    .canonicalize()
+    .map_err(|error| error.to_string())?;
+    let scratch = PathBuf::from(
+        std::env::var_os("FABRIC_SCRATCH_ROOT").ok_or("explicit DATA scratch required")?,
+    )
+    .canonicalize()
+    .map_err(|error| error.to_string())?;
     if !scratch.starts_with(&storage) || !scratch.is_dir() {
         return Err("launcher scratch must be an existing directory inside DATA".into());
     }
     let receipts = validate_light_output(&storage, receipts)?;
     let commit = clean_identity(root)?;
     let checks = load(registry)?;
-    let selected: Vec<_> = checks.into_iter().filter(|check| check.profile == "fast").collect();
+    let selected: Vec<_> = checks
+        .into_iter()
+        .filter(|check| check.profile == "fast")
+        .collect();
     if selected.is_empty() {
         return Err("fast profile has no checks".into());
     }
@@ -871,14 +1054,23 @@ pub fn run_with_light_workers(
     if context.commit != commit || context.dirty {
         return Err("source changed while initializing check context".into());
     }
-    std::fs::create_dir(&receipts).map_err(|error| format!("new receipts directory required: {error}"))?;
-    let run_id = format!("verification-light-{}-{}", std::process::id(), SystemTime::now().duration_since(UNIX_EPOCH).map_err(|error| error.to_string())?.as_nanos());
+    std::fs::create_dir(&receipts)
+        .map_err(|error| format!("new receipts directory required: {error}"))?;
+    let run_id = format!(
+        "verification-light-{}-{}",
+        std::process::id(),
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| error.to_string())?
+            .as_nanos()
+    );
     let stage_root = scratch.join(&run_id);
     let marker = create_batch_marker(&receipts, &context, &selected)?;
     if ensure_same_clean_identity(root, &commit).is_err() {
         return Err("source changed while creating batch marker".into());
     }
-    std::fs::create_dir(&stage_root).map_err(|error| format!("cannot create unique stage root; marker retained: {error}"))?;
+    std::fs::create_dir(&stage_root)
+        .map_err(|error| format!("cannot create unique stage root; marker retained: {error}"))?;
     let mut stage_errors = Vec::new();
     for check in &selected {
         if let Err(error) = std::fs::create_dir(stage_root.join(&check.id)) {
@@ -890,64 +1082,93 @@ pub fn run_with_light_workers(
     let mut cohort_started = false;
     for step in light_schedule(&selected, &cohort) {
         match step {
-        LightStep::Cohort => {
-            cohort_started = true;
-            let (results, peak, dispatch_errors) = dispatch_light_cohort(root, &context, &cohort, &stage_root);
-            println!("light-worker cohort maximum active workers: {peak}");
-            if peak > LIGHT_WORKER_COUNT || results.len() != cohort.len() || !dispatch_errors.is_empty() {
-                execution_errors.push(format!("light-worker dispatch incomplete: {} results, errors {:?}", results.len(), dispatch_errors));
-            }
-            let mut result_ids = std::collections::HashSet::new();
-            for (item, result) in cohort.iter().zip(&results) {
-                if item.id != result.id || !result_ids.insert(result.id.as_str()) {
-                    execution_errors.push("light-worker result inventory mismatch".into());
+            LightStep::Cohort => {
+                cohort_started = true;
+                let (results, peak, dispatch_errors) =
+                    dispatch_light_cohort(root, &context, &cohort, &stage_root);
+                println!("light-worker cohort maximum active workers: {peak}");
+                if peak > LIGHT_WORKER_COUNT
+                    || results.len() != cohort.len()
+                    || !dispatch_errors.is_empty()
+                {
+                    execution_errors.push(format!(
+                        "light-worker dispatch incomplete: {} results, errors {:?}",
+                        results.len(),
+                        dispatch_errors
+                    ));
                 }
-                if let Some(error) = &result.error {
-                    execution_errors.push(format!("light-worker {} incomplete: {error}", result.id));
-                    overall = combine_status(overall, Status::Failed);
-                }
-                if let Some(status) = result.status {
-                    overall = combine_status(overall, status);
-                }
-            }
-        }
-        LightStep::Serial(check) => {
-            let stage = stage_root.join(&check.id);
-            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                run_worker_check(root, &context, check, &stage)
-            })) {
-                Ok(Ok((_, status))) => overall = combine_status(overall, status),
-                Ok(Err(error)) => {
-                    execution_errors.push(format!("check {} could not be recorded: {error}", check.id));
-                    overall = combine_status(overall, Status::Failed);
-                }
-                Err(payload) => {
-                    execution_errors.push(format!("check {} panicked: {}", check.id, panic_message(payload)));
-                    overall = combine_status(overall, Status::Failed);
+                let mut result_ids = std::collections::HashSet::new();
+                for (item, result) in cohort.iter().zip(&results) {
+                    if item.id != result.id || !result_ids.insert(result.id.as_str()) {
+                        execution_errors.push("light-worker result inventory mismatch".into());
+                    }
+                    if let Some(error) = &result.error {
+                        execution_errors
+                            .push(format!("light-worker {} incomplete: {error}", result.id));
+                        overall = combine_status(overall, Status::Failed);
+                    }
+                    if let Some(status) = result.status {
+                        overall = combine_status(overall, status);
+                    }
                 }
             }
-        }
+            LightStep::Serial(check) => {
+                let stage = stage_root.join(&check.id);
+                match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    run_worker_check(root, &context, check, &stage)
+                })) {
+                    Ok(Ok((_, status))) => overall = combine_status(overall, status),
+                    Ok(Err(error)) => {
+                        execution_errors
+                            .push(format!("check {} could not be recorded: {error}", check.id));
+                        overall = combine_status(overall, Status::Failed);
+                    }
+                    Err(payload) => {
+                        execution_errors.push(format!(
+                            "check {} panicked: {}",
+                            check.id,
+                            panic_message(payload)
+                        ));
+                        overall = combine_status(overall, Status::Failed);
+                    }
+                }
+            }
         }
     }
     if !cohort_started {
         execution_errors.push("light cohort was not scheduled".into());
     }
     if !execution_errors.is_empty() {
-        eprintln!("light-worker failures retained under {}: {execution_errors:?}", stage_root.display());
+        eprintln!(
+            "light-worker failures retained under {}: {execution_errors:?}",
+            stage_root.display()
+        );
         overall = combine_status(overall, Status::Failed);
     }
     if let Err(error) = ensure_same_clean_identity(root, &commit) {
-        return Err(format!("source changed during light-worker verification; marker and stage retained at {}: {error}", stage_root.display()));
+        return Err(format!(
+            "source changed during light-worker verification; marker and stage retained at {}: {error}",
+            stage_root.display()
+        ));
     }
     if overall != Status::Passed {
-        eprintln!("light-worker run did not pass; per-check receipts and logs retained at {}", stage_root.display());
+        eprintln!(
+            "light-worker run did not pass; per-check receipts and logs retained at {}",
+            stage_root.display()
+        );
         return Ok(overall);
     }
     let assembled = stage_root.join("assembled");
-    std::fs::create_dir(&assembled).map_err(|error| format!("cannot create assembled receipts; marker retained: {error}"))?;
+    std::fs::create_dir(&assembled)
+        .map_err(|error| format!("cannot create assembled receipts; marker retained: {error}"))?;
     for check in &selected {
         let stage = stage_root.join(&check.id);
-        for name in [format!("{}.stdout.partial.log", check.id), format!("{}.stderr.partial.log", check.id), format!("{}.log", check.id), format!("{}.json", check.id)] {
+        for name in [
+            format!("{}.stdout.partial.log", check.id),
+            format!("{}.stderr.partial.log", check.id),
+            format!("{}.log", check.id),
+            format!("{}.json", check.id),
+        ] {
             let source = stage.join(&name);
             let digest = ordinary_digest(&source)
                 .map_err(|error| format!("assembly digest failed; marker retained: {error}"))?;
@@ -957,16 +1178,27 @@ pub fn run_with_light_workers(
     }
     let mut verified_digests = HashMap::new();
     for check in &selected {
-        for name in [format!("{}.stdout.partial.log", check.id), format!("{}.stderr.partial.log", check.id), format!("{}.log", check.id), format!("{}.json", check.id)] {
-            let digest = ordinary_digest(&assembled.join(&name))
-                .map_err(|error| format!("pre-validation digest failed; marker retained: {error}"))?;
+        for name in [
+            format!("{}.stdout.partial.log", check.id),
+            format!("{}.stderr.partial.log", check.id),
+            format!("{}.log", check.id),
+            format!("{}.json", check.id),
+        ] {
+            let digest = ordinary_digest(&assembled.join(&name)).map_err(|error| {
+                format!("pre-validation digest failed; marker retained: {error}")
+            })?;
             verified_digests.insert(name, digest);
         }
     }
-    ensure_same_clean_identity(root, &commit)
-        .map_err(|error| format!("source changed before native fast receipt validation: {error}"))?;
-    let verified = crate::receipts::verify(root, "fast", &commit, &assembled)
-        .map_err(|error| format!("native verification failed; marker and stage retained at {}: {error}", stage_root.display()))?;
+    ensure_same_clean_identity(root, &commit).map_err(|error| {
+        format!("source changed before native fast receipt validation: {error}")
+    })?;
+    let verified = crate::receipts::verify(root, "fast", &commit, &assembled).map_err(|error| {
+        format!(
+            "native verification failed; marker and stage retained at {}: {error}",
+            stage_root.display()
+        )
+    })?;
     if verified.get("status").and_then(Value::as_str) != Some("passed")
         || verified.get("check_count").and_then(Value::as_u64) != Some(selected.len() as u64)
     {
@@ -975,21 +1207,32 @@ pub fn run_with_light_workers(
     ensure_same_clean_identity(root, &commit)
         .map_err(|error| format!("source changed during native receipt validation: {error}"))?;
     for check in &selected {
-        for name in [format!("{}.stdout.partial.log", check.id), format!("{}.stderr.partial.log", check.id), format!("{}.log", check.id), format!("{}.json", check.id)] {
+        for name in [
+            format!("{}.stdout.partial.log", check.id),
+            format!("{}.stderr.partial.log", check.id),
+            format!("{}.log", check.id),
+            format!("{}.json", check.id),
+        ] {
             let source = assembled.join(&name);
-            let digest = verified_digests.get(&name)
-                .ok_or_else(|| format!("missing pre-validation digest for {name}; marker retained"))?;
-            copy_ordinary_new(&source, &receipts.join(&name), digest)
-                .map_err(|error| format!("canonical publication failed; marker retained: {error}"))?;
+            let digest = verified_digests.get(&name).ok_or_else(|| {
+                format!("missing pre-validation digest for {name}; marker retained")
+            })?;
+            copy_ordinary_new(&source, &receipts.join(&name), digest).map_err(|error| {
+                format!("canonical publication failed; marker retained: {error}")
+            })?;
         }
     }
-    std::fs::File::open(&receipts).and_then(|directory| directory.sync_all())
+    std::fs::File::open(&receipts)
+        .and_then(|directory| directory.sync_all())
         .map_err(|error| format!("receipt directory sync failed; marker retained: {error}"))?;
     ensure_same_clean_identity(root, &commit)
         .map_err(|error| format!("source changed before canonical receipt publication: {error}"))?;
-    std::fs::remove_dir_all(&stage_root).map_err(|error| format!("stage cleanup failed; marker retained: {error}"))?;
-    std::fs::remove_file(&marker).map_err(|error| format!("batch marker removal failed: {error}"))?;
-    std::fs::File::open(&receipts).and_then(|directory| directory.sync_all())
+    std::fs::remove_dir_all(&stage_root)
+        .map_err(|error| format!("stage cleanup failed; marker retained: {error}"))?;
+    std::fs::remove_file(&marker)
+        .map_err(|error| format!("batch marker removal failed: {error}"))?;
+    std::fs::File::open(&receipts)
+        .and_then(|directory| directory.sync_all())
         .map_err(|error| error.to_string())?;
     Ok(Status::Passed)
 }
@@ -1005,8 +1248,13 @@ mod light_worker_tests {
 
     impl Scratch {
         fn new(label: &str) -> Self {
-            let root = PathBuf::from(std::env::var_os("FABRIC_SCRATCH_ROOT").expect("DATA scratch"));
-            let path = root.join(format!("light-{label}-{}-{}", std::process::id(), NEXT.fetch_add(1, AtomicOrdering::Relaxed)));
+            let root =
+                PathBuf::from(std::env::var_os("FABRIC_SCRATCH_ROOT").expect("DATA scratch"));
+            let path = root.join(format!(
+                "light-{label}-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, AtomicOrdering::Relaxed)
+            ));
             std::fs::create_dir(&path).unwrap();
             Self(path)
         }
@@ -1036,21 +1284,50 @@ mod light_worker_tests {
     #[test]
     fn frozen_cohort_commands_and_weight_order_are_exact() {
         let registry = Path::new(env!("CARGO_MANIFEST_DIR")).join("checks.json");
-        let selected: Vec<_> = load(&registry).unwrap().into_iter().filter(|check| check.profile == "fast").collect();
+        let selected: Vec<_> = load(&registry)
+            .unwrap()
+            .into_iter()
+            .filter(|check| check.profile == "fast")
+            .collect();
         let cohort = ordered_light_cohort(&selected).unwrap();
         assert_eq!(
-            cohort.iter().map(|check| check.id.as_str()).collect::<Vec<_>>(),
-            vec!["telemetry-cli", "workload-rate-oracle", "query-oracle", "delivery-oracle", "telemetry-contract", "soak-decision-rule", "ui-palette"]
+            cohort
+                .iter()
+                .map(|check| check.id.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "telemetry-cli",
+                "workload-rate-oracle",
+                "query-oracle",
+                "delivery-oracle",
+                "telemetry-contract",
+                "soak-decision-rule",
+                "ui-palette"
+            ]
         );
         let mut tied = vec![
             synthetic_check("zeta", &["sh"], &[]),
             synthetic_check("alpha", &["sh"], &[]),
         ];
         sort_light_weighted(&mut tied);
-        assert_eq!(tied.iter().map(|check| check.id.as_str()).collect::<Vec<_>>(), vec!["alpha", "zeta"]);
+        assert_eq!(
+            tied.iter()
+                .map(|check| check.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["alpha", "zeta"]
+        );
         let mut drifted = selected.clone();
-        drifted.iter_mut().find(|check| check.id == "ui-palette").unwrap().command.push("--wrong".into());
-        assert!(ordered_light_cohort(&drifted).unwrap_err().contains("command drift"));
+        drifted
+            .iter_mut()
+            .find(|check| check.id == "ui-palette")
+            .unwrap()
+            .command
+            .push("--wrong".into());
+        assert!(
+            ordered_light_cohort(&drifted)
+                .unwrap_err()
+                .contains("command drift")
+        );
 
         let plan = light_schedule(&selected, &cohort);
         let mut expanded = Vec::new();
@@ -1065,8 +1342,17 @@ mod light_worker_tests {
             }
         }
         assert_eq!(expanded.len(), selected.len());
-        assert_eq!(expanded.iter().collect::<std::collections::HashSet<_>>().len(), selected.len());
-        let first_light = selected.iter().position(|check| check.id == "workload-rate-oracle").unwrap();
+        assert_eq!(
+            expanded
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len(),
+            selected.len()
+        );
+        let first_light = selected
+            .iter()
+            .position(|check| check.id == "workload-rate-oracle")
+            .unwrap();
         assert_eq!(insertion, Some(first_light));
         assert!(expanded.contains(&"ui-palette"));
     }
@@ -1074,13 +1360,19 @@ mod light_worker_tests {
     #[test]
     fn fresh_receipt_root_must_be_absolute_and_data_owned() {
         let scratch = Scratch::new("output-policy");
-        let storage = PathBuf::from(std::env::var_os("FABRIC_STORAGE_ROOT").expect("DATA storage")).canonicalize().unwrap();
+        let storage = PathBuf::from(std::env::var_os("FABRIC_STORAGE_ROOT").expect("DATA storage"))
+            .canonicalize()
+            .unwrap();
         assert!(validate_light_output(&storage, Path::new("relative/receipts")).is_err());
         assert!(validate_light_output(&storage, &Path::new("/tmp/light-outside-data")).is_err());
         let fresh = scratch.0.join("receipts");
         assert_eq!(validate_light_output(&storage, &fresh).unwrap(), fresh);
         std::fs::create_dir(&fresh).unwrap();
-        assert!(validate_light_output(&storage, &fresh).unwrap_err().contains("must be new"));
+        assert!(
+            validate_light_output(&storage, &fresh)
+                .unwrap_err()
+                .contains("must be new")
+        );
         assert!(safe_receipt_id("light-check-2"));
         assert!(!safe_receipt_id("../outside"));
         assert!(!safe_receipt_id("UpperCase"));
@@ -1109,15 +1401,25 @@ mod light_worker_tests {
             bounded_metadata: false,
             bounded_revisions: HashMap::new(),
         };
-        let (results, peak, dispatch_errors) = dispatch_light_cohort(&root, &context, &checks, &stage);
+        let (results, peak, dispatch_errors) =
+            dispatch_light_cohort(&root, &context, &checks, &stage);
         assert!(dispatch_errors.is_empty(), "{dispatch_errors:?}");
         assert!(peak > 0 && peak <= LIGHT_WORKER_COUNT);
         assert_eq!(results.len(), checks.len());
-        assert_eq!(results.iter().map(|result| result.id.as_str()).collect::<Vec<_>>(), ["actual-exit-7", "missing-program", "independent-pass"]);
+        assert_eq!(
+            results
+                .iter()
+                .map(|result| result.id.as_str())
+                .collect::<Vec<_>>(),
+            ["actual-exit-7", "missing-program", "independent-pass"]
+        );
         assert_eq!(results[0].status, Some(Status::Failed));
         assert_eq!(results[1].status, Some(Status::EnvironmentUnavailable));
         assert_eq!(results[2].status, Some(Status::Passed));
-        assert_eq!(combine_status(results[1].status.unwrap(), results[0].status.unwrap()), Status::Failed);
+        assert_eq!(
+            combine_status(results[1].status.unwrap(), results[0].status.unwrap()),
+            Status::Failed
+        );
         for check in &checks {
             let directory = stage.join(&check.id);
             assert!(directory.join(format!("{}.json", check.id)).is_file());
@@ -1150,17 +1452,48 @@ mod light_worker_tests {
         #[cfg(unix)]
         std::os::unix::fs::symlink(source.join("sample.log"), source.join("linked.log")).unwrap();
         let digest = ordinary_digest(&source.join("sample.log")).unwrap();
-        assert!(copy_ordinary_new(&source.join("sample.log"), &destination.join("sample.log"), &digest).is_ok());
-        assert!(copy_ordinary_new(&source.join("sample.log"), &destination.join("sample.log"), &digest).is_err(), "publication must be exclusive");
+        assert!(
+            copy_ordinary_new(
+                &source.join("sample.log"),
+                &destination.join("sample.log"),
+                &digest
+            )
+            .is_ok()
+        );
+        assert!(
+            copy_ordinary_new(
+                &source.join("sample.log"),
+                &destination.join("sample.log"),
+                &digest
+            )
+            .is_err(),
+            "publication must be exclusive"
+        );
         #[cfg(unix)]
         {
-            assert!(copy_ordinary_new(&source.join("linked.log"), &destination.join("linked.log"), &digest).is_err());
+            assert!(
+                copy_ordinary_new(
+                    &source.join("linked.log"),
+                    &destination.join("linked.log"),
+                    &digest
+                )
+                .is_err()
+            );
             assert!(!destination.join("linked.log").exists());
             let fifo = source.join("fifo.log");
-            let status = std::process::Command::new("mkfifo").arg(&fifo).status().unwrap();
+            let status = std::process::Command::new("mkfifo")
+                .arg(&fifo)
+                .status()
+                .unwrap();
             assert!(status.success());
-            assert!(ordinary_digest(&fifo).is_err(), "FIFO must be rejected without blocking");
-            assert!(marker.is_file(), "failed publication must retain the running marker");
+            assert!(
+                ordinary_digest(&fifo).is_err(),
+                "FIFO must be rejected without blocking"
+            );
+            assert!(
+                marker.is_file(),
+                "failed publication must retain the running marker"
+            );
         }
     }
 }
