@@ -159,6 +159,18 @@ responses. The missing-event copy must fail. Keep raw failures, do not weaken
 the existing HTTP-header predicates, and treat these as harness controls with
 no browser acceptance credit.
 
+The finite Chrome engineering probe must also exercise the producer in the
+real browser before any other API traffic: one POST to `/v1/console/query` with
+an already-aborted `Request.signal`, and one with `init.signal` aborted
+synchronously after the actual fetch dispatch begins but before its promise
+settles. The second control may temporarily wrap the existing `fixturePace` to
+call the production dispatch and abort the same controller in that JavaScript
+turn; restore the wrapper in `finally`. Both calls are unauthenticated,
+read-only representation controls. Require two corresponding raw rejected
+rows with no HTTP status and the exact same-signal evidence, and preserve them
+in the separate cancellation list. They receive no HTTP-header, negative
+control or acceptance credit; do not synthesize a response or header row.
+
 ### Retained composition counterexamples
 
 Prospective controls after the finite `babd209` focused run: root inspection found
