@@ -74,3 +74,41 @@ Profile changes in the independent witness and raw-journal binding changes are
 separate trust-boundary work. Do not copy the preserved draft's duplicated host
 cutoff reducer. Its old caller-card source ceilings do not admit a new runtime;
 measure and register the complete successor separately before acceptance.
+
+## Rust projection experiment
+
+Before adding a host projection, exercise a DATA-only Rust function over the
+actual Guest record shapes: ordered commands, ordered process observations,
+ordered `observed_events`, stopped snapshot node/generation/source metadata and
+final candidate process, plus explicit phase, prior ACK, candidate and relative
+phase root. Use only existing locked `serde_json`. Bounds are4096 commands and
+process samples,65536 journal events and sources,4096 normalized trace entries;
+existing4MiB plan,4096-byte inspection and64MiB aggregate input limits remain.
+This function emits the existing version1 plan; it does not add a custody oracle.
+
+Validate stream order without sorting or reconstructing clocks. Require a
+process sample before pause and a distinct sample strictly after the actual
+applied marker and before stop. Bind each used marker, Batch and ACK to its
+recorded sender. Require exactly one successful pause, stop and resume action,
+two post-marker drain inspections and a stopped inspection before resume.
+Incarnations have exactly four fields; unit belongs in window/event records.
+Malformed recognized Batch/delivery messages and cross-stream time ties refuse.
+
+Use a hand-labeled synthetic fixture and the literal inspection body to invoke
+the real `custody::verify_plan` after projection. Exercise valid drain/reboot,
+wrong sender/incarnation, missing or substituted inspection, recovery, absent
+exact ACK, stream disorder and an added incarnation `unit`. In particular move
+the applied marker after the only second process sample while leaving both
+drain reads later: this must refuse. The preserved non-attesting local report
+does not meet the input shape and must not be adapted by inventing fields.
+
+After controls, compare a direct indexed-vector prototype with a refinement
+that borrows ordered records and retains only fixed selection state. Keep the
+same normalized output/refusals and explicit input bounds. Use Rust1.99.0,
+edition2024, opt3, codegen1, assertions/overflow checks enabled and debug0.
+Use the same synthetic valid fixture with0/10/1000/4000 inert ordered records
+added to each command/sample/event stream, construction excluded from timing.
+Compile both first, then three alternating pairs with three samples each of
+100 projections; compare medians at4000. A regression above50% rejects the
+refinement pending investigation. Report source-derived auxiliary bounds
+separately from measured timing; neither is allocator bytes or native latency.
