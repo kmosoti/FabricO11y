@@ -604,11 +604,11 @@ def run(name, rows, truncated=False):
 ok,error,receipt,_=run('valid response',[response()])
 if not ok: failures.append('valid response rejected: '+error)
 for key,value in [('cache_control','private'),('csp',''),('coop','unsafe-none'),('corp','cross-origin')]:
-    ok,error,_,_=run('wrong '+key,[response(**{key:value})])
+    ok,error,_,_=run('wrong '+key,[response(),response(**{key:value})])
     if ok: failures.append('wrong '+key+' accepted')
 for key in ('cache_control','csp','coop','corp'):
     row=response(); del row[key]
-    ok,error,_,_=run('missing '+key,[row])
+    ok,error,_,_=run('missing '+key,[response(),row])
     if ok: failures.append('missing '+key+' accepted')
 
 valid_abort=cancellation()
