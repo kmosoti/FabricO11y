@@ -231,6 +231,9 @@ budget. Inspect [the literal controls](../tools/qualification/test_owner_phase_r
 to see a valid reentry and an exhausted allocation distinguished from omitted
 work. Original journal bytes and the independent query oracle remain the
 authority for received rows; the caller's transcript cannot authenticate itself.
+The owner browser also receives an explicit hash-pinned native entry helper:
+the admitted plan, caller receipt and raw census command must carry the same
+path and digest before a browser child can start.
 
 For each new component, answer these in plain language before coding:
 

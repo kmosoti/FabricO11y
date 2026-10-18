@@ -53,6 +53,14 @@ guide's call sequence. Native execution remains subject to the
 source controls alone establish no deployment acceptance. This is qualification
 tooling outside the runtime boundaries shown above.
 
+The supervised release, bridge smoke, native cleanup, Firefox trust and owner
+walkthrough callers pass the same explicitly admitted native browser-entry
+helper path and SHA-256 into the shared browser launch boundary. The owner
+walkthrough binds the pair to its admission and receipt; the native storage
+census checks its exact command shape and canonical DATA path without opening
+the helper. These harness controls do not alter browser predicates or establish
+acceptance, and their final source verification remains pending.
+
 The browser fixture's readiness predicate receives the current process explicitly
 at initial startup, offline owner recovery and shell restart. The shared helper
 retains TLS health polling, dead-process refusal and the existing bounded wait.
