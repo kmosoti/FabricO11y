@@ -315,8 +315,14 @@ fn production_adapter_bounds_explicit_receipt_before_helper_invocation() {
     let rejected = python_stage(&f, &output, &native, &native_pin, "oversized-receipt");
     let diagnostic = String::from_utf8_lossy(&rejected.stderr);
     assert!(!rejected.status.success(), "{diagnostic}");
-    assert!(diagnostic.contains("console build receipt exceeds 4 MiB bound"), "{diagnostic}");
-    assert!(!f.root.join("helper-invoked").exists(), "oversized receipt invoked the helper");
+    assert!(
+        diagnostic.contains("console build receipt exceeds 4 MiB bound"),
+        "{diagnostic}"
+    );
+    assert!(
+        !f.root.join("helper-invoked").exists(),
+        "oversized receipt invoked the helper"
+    );
     assert!(!output.exists());
 }
 
@@ -336,7 +342,10 @@ fn production_adapter_checks_asset_failures_only_after_pinned_source_join() {
         ("png-time", "console icon carries time or text metadata"),
         ("asset-budget", "console exceeds 8 MiB budget"),
         ("declared-budget", "console exceeds 8 MiB budget"),
-        ("malformed-size", "asset byte count must be a nonnegative integer"),
+        (
+            "malformed-size",
+            "asset byte count must be a nonnegative integer",
+        ),
         ("sparse-asset", "asset differs from console build receipt"),
     ] {
         let f = fixture();
