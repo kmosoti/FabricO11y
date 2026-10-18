@@ -72,9 +72,8 @@ failure capture remains before finalizer cleanup. This adapter addresses the
 observed Firefox 157 `Set Window Rect` mismatch only. Firefox sessions also set
 `unhandledPromptBehavior.confirm` to `ignore`, preserving the existing confirm
 for its explicit WebDriver accept; the capability does not accept the prompt.
-The independent Firefox
-comparison observed the same geometry with Bun and the Rust primitive, but
-neither that probe nor the source controls grant browser acceptance.
+The independent Firefox comparison observed the same geometry with Bun and the Rust primitive, but
+neither that probe nor the source controls grant browser acceptance. The [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01#native-bidi-viewport-and-confirmation-controls) retain actual geometry, confirmation and cleanup observations.
 
 ## Console source provenance
 
