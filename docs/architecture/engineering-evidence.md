@@ -53,6 +53,26 @@ results grant no exact-package browser acceptance credit; raw measurements and
 failure history are in the
 [canonical results record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01).
 
+## Native BiDi viewport effect
+
+The [viewport calibration](../experiments/formal/browser-supervisor-protocol.md#native-webdriver-bidi-viewport-calibration)
+adds one bounded Rust `xtask browser-bidi-viewport` command to the existing
+Firefox fixture. The Python caller requests WebDriver's returned BiDi URL and
+passes that URL with the current classic window handle through the existing
+hash-pinned browser-entry helper. The native command accepts only a loopback
+URL, binds the supplied handle to one unique root context, and applies either
+390 by 844 CSS pixels or `viewport: null`. Connect, handshake, command and reply
+share a five-second deadline, with bounded messages and cumulative input.
+
+The acknowledgement reports protocol completion, not geometry. Classic
+WebDriver JavaScript independently reads 390 by 844 and unchanged DPR before
+the existing zoom/font/negative-overflow predicates run. Normal completion and
+the failure finalizer restore the BiDi viewport and classic desktop window;
+failure capture remains before finalizer cleanup. This adapter addresses the
+observed Firefox 157 `Set Window Rect` mismatch only. The independent Firefox
+comparison observed the same geometry with Bun and the Rust primitive, but
+neither that probe nor the source controls grant browser acceptance.
+
 ## Console source provenance
 
 The [registered correction](../experiments/formal/console-provenance-protocol.md)
