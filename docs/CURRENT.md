@@ -7,9 +7,11 @@ and [strict representation policy](formal/verification-receipt-contract.md)
 describe its limits. Local complete-profile and independent refusal controls ran
 at `7fc4723`; PR #80 merged as `06ccc0c` after complete hosted verification of
 merge candidate `c129013`. Synthetic verifier fixtures do not credit product
-acceptance. Alpha acceptance resumed after the
-finite verification engineering and native census binding controls completed;
-remaining exact-package trials retain their original gates.
+acceptance. Alpha acceptance is owner-paused for verification engineering.
+The [console provenance correction](experiments/formal/console-provenance-protocol.md)
+separates frozen product source from newer harness source; its controls and
+measurements remain pending. Remaining exact-package trials retain their
+original gates, including actual two-hour soak exposure.
 
 The experimental Rust storage census now has finite classification and cleanup
 race controls plus a measured warm metadata comparison. Its

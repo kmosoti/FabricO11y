@@ -1,5 +1,9 @@
 # Experiments
 
+The [console provenance protocol](formal/console-provenance-protocol.md) registers
+the frozen-product/newer-harness source distinction and bounded Rust controls.
+Alpha acceptance remains owner-paused while this engineering work proceeds.
+
 The [Rust receipt-verifier migration](formal/verification-receipts-protocol.md)
 registers baseline controls, differential verification and standalone benchmarks.
 It does not replace required CI checks or credit synthetic fixtures as execution.
