@@ -69,7 +69,9 @@ def run(args):
                'seed': args.seed, 'tier': args.tier, 'seconds': seconds, 'passed': False,
                'backlog_rule': args.backlog_rule}
     with CandidateFixture(args.deb_receipt, args.rpm_receipt, args.out,
-                          server_cpus=args.server_cpus, supervisor_cpus=args.worker_cpus) as fixture:
+                          server_cpus=args.server_cpus, supervisor_cpus=args.worker_cpus,
+                          browser_entry_helper=args.browser_entry_helper,
+                          browser_entry_helper_sha256=args.browser_entry_helper_sha256) as fixture:
         summary_path = fixture.out / 'summary.json'
         try:
             perform(fixture, args, seconds, warmup, summary)
@@ -441,6 +443,8 @@ def main():
     parser.add_argument('--smoke', action='store_true')
     parser.add_argument('--server-cpus', default='0-1')
     parser.add_argument('--worker-cpus', default='2-3')
+    parser.add_argument('--browser-entry-helper', type=Path, required=True)
+    parser.add_argument('--browser-entry-helper-sha256', required=True)
     return run(parser.parse_args())
 
 

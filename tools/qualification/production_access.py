@@ -16,6 +16,8 @@ def options(parser):
     parser.add_argument('--rpm-receipt', type=Path)
     parser.add_argument('--production-out', type=Path)
     parser.add_argument('--production-server-cpus', choices=('0-1', '4-5'), default='0-1')
+    parser.add_argument('--browser-entry-helper', type=Path)
+    parser.add_argument('--browser-entry-helper-sha256')
 
 
 def server_placement(args, *, soak):
@@ -35,6 +37,26 @@ def validate_options(args):
         raise ValueError('production access requires all three exact receipt/output paths')
     if not args.production_access and any(path is not None for path in paths):
         raise ValueError('production options require explicit production access mode')
+    helper = getattr(args, 'browser_entry_helper', None)
+    helper_sha256 = getattr(args, 'browser_entry_helper_sha256', None)
+    has_helper, has_digest = helper is not None, helper_sha256 is not None
+    if has_helper != has_digest or args.production_access != (has_helper and has_digest):
+        raise ValueError('production access requires both exact native browser entry helper inputs')
+
+
+def browser_entry_options(args):
+    helper = getattr(args, 'browser_entry_helper', None)
+    helper_sha256 = getattr(args, 'browser_entry_helper_sha256', None)
+    if helper is None or helper_sha256 is None:
+        raise ValueError('production access requires the exact pinned native browser entry helper')
+    if (not isinstance(helper, Path) or not helper.is_absolute() or helper.is_symlink()
+            or not helper.is_file() or not os.access(helper, os.X_OK)
+            or not isinstance(helper_sha256, str)
+            or re.fullmatch('[0-9a-f]{64}', helper_sha256) is None
+            or digest(helper) != helper_sha256):
+        raise ValueError('production access requires the exact pinned native browser entry helper')
+    return {'browser_entry_helper': helper,
+            'browser_entry_helper_sha256': helper_sha256}
 
 
 class ProductionAccess(CandidateFixture):
@@ -45,17 +67,7 @@ class ProductionAccess(CandidateFixture):
         self.soak = soak
         browser_options = ({'browser_deadline': args.r3_browser_deadline}
                            if getattr(args, 'r3_browser_deadline', None) is not None else {})
-        if soak:
-            helper = getattr(args, 'browser_entry_helper', None)
-            helper_sha256 = getattr(args, 'browser_entry_helper_sha256', None)
-            if (not isinstance(helper, Path) or not helper.is_absolute() or helper.is_symlink()
-                    or not helper.is_file() or not os.access(helper, os.X_OK)
-                    or not isinstance(helper_sha256, str)
-                    or re.fullmatch('[0-9a-f]{64}', helper_sha256) is None
-                    or digest(helper) != helper_sha256):
-                raise ValueError('R3 requires the exact pinned native browser entry helper')
-            browser_options.update(browser_entry_helper=helper,
-                                   browser_entry_helper_sha256=helper_sha256)
+        browser_options.update(browser_entry_options(args))
         allocated = int(subprocess.check_output(['du', '-s', '-B1', str(STORAGE)]).split()[0])
         if allocated + 5 * 1024**3 > 95_000_000_000:
             raise RuntimeError('5 GiB reservation exceeds 95 GB admission stop')
