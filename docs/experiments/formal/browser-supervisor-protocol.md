@@ -130,6 +130,49 @@ the independently supplied path and digest match exactly. No PATH lookup,
 runtime compilation, helper self-reported pin, product-package change or CI
 policy change is part of this amendment.
 
+## R3 caller adoption of the native entry helper
+
+Prospective R3 harness amendment, 2026-10-18. The exact frozen S1-03/full
+caller snapshot at `5220e27` predates the `browser_group_launch` signature that
+requires the pinned native entry helper. Its `BrowserSupervisor.main()` still
+calls that function without `entry_helper` and `entry_helper_sha256`. The
+reachable caller chain is `soak_r3.measure` → `ProductionAccess` →
+`CandidateFixture` → `ConsoleBridge` → `BrowserSupervisor` →
+`browser_group_launch`; the R3 full admission must therefore supply the helper
+as an explicit immutable input and pass its path and SHA-256 through every
+edge. Missing, changed or mismatched helper identity refuses before browser
+launch. There is no PATH lookup, Python `enter_group.py` fallback, runtime
+build or unpinned helper selection on this R3 path. The native helper remains
+the existing `xtask browser-enter-exec` artifact and uses the existing READY /
+RELEASE protocol above. This caller adoption changes no browser geometry,
+BiDi command, confirmation handling, UI oracle, native simulator or workload
+schedule.
+
+Before source correction, a Rust-hosted source regression extracts the actual
+`browser_group_launch` keyword-only signature and actual call expression from
+`BrowserSupervisor.main()`. It executes that call shape against a signature-
+preserving stub, requiring the explicit helper path and exact digest; the
+current missing-keyword call must fail in the test body with the specific
+Python `TypeError`, not a compile or import failure. A separate omitted-helper
+mutant must remain refused after correction. Focused controls also require the
+R3 admission, `ProductionAccess`, `CandidateFixture`, `ConsoleBridge`, and
+`BrowserSupervisor` handoffs to be present and fail closed when either helper
+field is absent. These source controls do not establish native placement or
+cleanup; one bounded Linux caller-composition run must exercise the real
+supervisor, helper, READY-before-binding and RELEASE-after-binding, then exact
+exit, empty subgroup and outer stop.
+
+The prior S1-03 measurement and native-publication certificate remain bound to
+their original `5220e27` source and helper identities. The six recorded S1
+phase maxima remain valid observations for that frozen caller. Browser
+startup occurs inside the measured `setup` phase, so adopting this entry path
+cannot claim the old setup maximum for the changed caller without a bounded
+setup-boundary remeasurement and the original 1.25 headroom rule. The other
+five phase maxima and native-publication certificate are not invalidated by a
+browser-entry-only change. A failed or out-of-margin setup remeasurement
+requires a newly admitted S1; this amendment alone grants no reuse, S1, full
+soak or acceptance credit.
+
 Before the correction is admitted, one finite Linux integration fixture must
 invoke the actual parent launch seam and native helper under the existing owned
 cgroup resource boundary. Its positive uses immediate `/bin/true`: READY must
