@@ -144,6 +144,16 @@ module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 evidence = {}
 snapshot = pathlib.Path(output).parent / 'helper-snapshot'
 shutil.copyfile(helper, snapshot); snapshot.chmod(0o700)
+if mutation == 'mutate-after-mkdir':
+    original_mkdir = pathlib.Path.mkdir
+    expected_index = (pathlib.Path(build) / 'dist/index.html').read_bytes()
+    destination = pathlib.Path(output)
+    def mutate_after_mkdir(self, *args, **kwargs):
+        result = original_mkdir(self, *args, **kwargs)
+        if self == destination:
+            (pathlib.Path(build) / 'dist/index.html').write_bytes(b'changed after verification')
+        return result
+    pathlib.Path.mkdir = mutate_after_mkdir
 def run_helper(snapshot, source_root, source_commit, build_root, receipt_pin):
     command = [str(snapshot), 'console-source', '--source-root', str(source_root),
         '--source-commit', source_commit, '--build-root', str(build_root), '--receipt-sha256', receipt_pin]
@@ -193,6 +203,8 @@ if mutation.startswith('asset-') or mutation in ('png-time', 'declared-budget', 
 module.stage(pathlib.Path(build), pathlib.Path(output),
     product_source=(pathlib.Path(root), commit, pin, snapshot, helper_pin),
     helper_runner=run_helper, evidence=evidence)
+if mutation == 'mutate-after-mkdir' and (pathlib.Path(output) / 'index.html').read_bytes() != expected_index:
+    raise AssertionError('staged asset bytes differ from bytes verified before destination creation')
 print(json.dumps(evidence))
 "#;
     Command::new("python3")
@@ -470,4 +482,58 @@ assert 'helper_log.read(64 * 1024 + 1)' in source
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn verify_binary_identity_checks_every_recorded_snapshot_role_after_accepting_them() {
+    let fixture = fixture();
+    let live = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("tools/ui/live_browser_check.py");
+    let script = r#"
+import ast, hashlib, pathlib, sys
+source = pathlib.Path(sys.argv[1]).read_text()
+tree = ast.parse(source)
+function = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == 'verify_binary_identity')
+root = pathlib.Path(sys.argv[2]); root.mkdir()
+roles = ('server', 'spindle', 'fabricctl', 'console_source_helper')
+args = type('Args', (), {'migration': True})()
+receipt = {'binaries': {}, 'immutable_binary_snapshots': {}, 'native_snapshot_hashes_after': {}}
+for role in roles:
+    original = root / (role + '-input'); original.write_bytes((role + '-input-bytes').encode())
+    snapshot = root / (role + '-snapshot'); snapshot.write_bytes((role + '-snapshot-bytes').encode())
+    setattr(args, role, snapshot)
+    receipt['binaries'][str(original)] = hashlib.sha256(original.read_bytes()).hexdigest()
+    receipt['immutable_binary_snapshots'][role] = {'sha256': hashlib.sha256(snapshot.read_bytes()).hexdigest()}
+namespace = {'Path': pathlib.Path, 'hashlib': hashlib, 'args': args, 'receipt': receipt,
+             'check': lambda condition, message: (_ for _ in ()).throw(AssertionError(message)) if not condition else None}
+exec(compile(ast.Module(body=[function], type_ignores=[]), 'live_browser_check.py', 'exec'), namespace)
+namespace['verify_binary_identity']()
+(root / 'console_source_helper-snapshot').write_bytes(b'changed-helper')
+try:
+    namespace['verify_binary_identity']()
+except AssertionError as error:
+    assert 'all fixture launches retain immutable candidate binary bytes' in str(error), str(error)
+except KeyError as error:
+    raise AssertionError('helper snapshot was omitted from final identity map') from error
+else:
+    raise AssertionError('changed helper snapshot was accepted')
+"#;
+    let output = Command::new("python3")
+        .args(["-B", "-c", script, live.to_str().unwrap()])
+        .arg(fixture.root.join("binary-identity-control"))
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+}
+
+#[test]
+fn staging_writes_the_asset_bytes_verified_before_destination_creation() {
+    let fixture = fixture();
+    let native = helper();
+    let native_pin = xtask::sha256_hex(&fs::read(&native).unwrap());
+    let output = fixture.root.join("mutated-after-mkdir");
+    let staged = python_stage(&fixture, &output, &native, &native_pin, "mutate-after-mkdir");
+    assert!(staged.status.success(), "{}", String::from_utf8_lossy(&staged.stderr));
 }
