@@ -637,9 +637,10 @@ def main():
         import math
         receipt['actual_api_headers']=js('return window.fixtureApiHeaders')
         rows=receipt['actual_api_headers']
-        check(isinstance(rows,list) and not js('return window.fixtureApiHeadersTruncated'),'browser API ledger is a complete bounded list')
+        check(isinstance(rows,list) and len(rows)<=512 and not js('return window.fixtureApiHeadersTruncated'),'browser API ledger is a complete bounded list')
         responses=[]
         cancellations=[]
+        finite=lambda value: type(value) in (int,float) and math.isfinite(value)
         for item in rows:
             check(isinstance(item,dict),'browser API ledger entries are objects')
             if item.get('state')=='response':
@@ -649,9 +650,7 @@ def main():
             started=item.get('started_ms')
             finished=item.get('finished_ms')
             observed=item.get('signal_abort_observed_ms')
-            aborted_at_dispatch=item.get('signal_aborted_at_dispatch') is True
-            finite=lambda value: type(value) in (int,float) and math.isfinite(value)
-            witnessed_abort=(item.get('state')=='rejected' and item.get('path')=='/v1/console/query' and item.get('method')=='POST' and item.get('error_stage')=='fetch' and item.get('error_name')=='AbortError' and item.get('status') is None and item.get('signal_aborted_at_rejection') is True and finite(started) and finite(observed) and finite(finished) and started<=observed<=finished and (aborted_at_dispatch or observed>=started))
+            witnessed_abort=(item.get('state')=='rejected' and item.get('path')=='/v1/console/query' and item.get('method')=='POST' and item.get('error_stage')=='fetch' and item.get('error_name')=='AbortError' and item.get('status') is None and item.get('signal_aborted_at_rejection') is True and finite(started) and finite(observed) and finite(finished) and started<=observed<=finished)
             check(witnessed_abort,'only a witnessed protected-query AbortSignal cancellation has no HTTP response')
             cancellations.append(item)
         receipt['actual_api_cancellations']=cancellations
