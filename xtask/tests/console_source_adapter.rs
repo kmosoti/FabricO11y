@@ -525,7 +525,11 @@ else:
         .arg(fixture.root.join("binary-identity-control"))
         .output()
         .unwrap();
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[test]
@@ -534,6 +538,16 @@ fn staging_writes_the_asset_bytes_verified_before_destination_creation() {
     let native = helper();
     let native_pin = xtask::sha256_hex(&fs::read(&native).unwrap());
     let output = fixture.root.join("mutated-after-mkdir");
-    let staged = python_stage(&fixture, &output, &native, &native_pin, "mutate-after-mkdir");
-    assert!(staged.status.success(), "{}", String::from_utf8_lossy(&staged.stderr));
+    let staged = python_stage(
+        &fixture,
+        &output,
+        &native,
+        &native_pin,
+        "mutate-after-mkdir",
+    );
+    assert!(
+        staged.status.success(),
+        "{}",
+        String::from_utf8_lossy(&staged.stderr)
+    );
 }
