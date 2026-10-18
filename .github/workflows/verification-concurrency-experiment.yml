@@ -1,12 +1,7 @@
 name: Verification sharding experiment
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - ".github/workflows/verification-concurrency-experiment.yml"
-      - "xtask/examples/merge_verification_receipts.rs"
-      - "docs/experiments/formal/verification-shards-protocol.md"
+  workflow_dispatch:
 
 concurrency:
   group: verification-shards-${{ github.event.pull_request.number || github.ref }}
@@ -17,7 +12,6 @@ permissions:
 
 jobs:
   shards:
-    if: github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     strategy:
@@ -116,9 +110,15 @@ jobs:
         if: ${{ always() && !cancelled() && steps.contained.outcome == 'success' && steps.toolchain.outcome == 'success' }}
         env:
           SHARD: ${{ matrix.shard }}
+          SHARD_RECEIPTS: ${{ env.FABRIC_STORAGE_ROOT }}/results/verification-producer/${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
         run: |
           set +e
           failures=0
+          mkdir -p "$FABRIC_STORAGE_ROOT/results/verification-producer"
+          if ! mkdir "$SHARD_RECEIPTS"; then
+            echo "receipt destination already exists or cannot be created: $SHARD_RECEIPTS"
+            exit 1
+          fi
           date +%s%N > target/verification/pilot-host/checks-start-epoch-ns.txt
           if [ "$SHARD" = semantic ]; then
             checks=(semantic-mutants)
@@ -126,7 +126,7 @@ jobs:
             checks=(delivery-faults tla-delivery tla-transport trace-model cargo-mutants kani-core fuzz-smoke dependency-policy coverage-report)
           fi
           for check in "${checks[@]}"; do
-            python3 -B tools/resource_group.py -- cargo xtask checks --only "$check"
+            python3 -B tools/resource_group.py -- cargo xtask checks --only "$check" --receipts "$SHARD_RECEIPTS"
             result=$?
             if [ "$result" -ne 0 ]; then
               echo "$check exited $result"
@@ -140,7 +140,7 @@ jobs:
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: pilot-receipts-${{ matrix.shard }}
-          path: target/verification/receipts/
+          path: ${{ env.FABRIC_STORAGE_ROOT }}/results/verification-producer/${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}/
           if-no-files-found: warn
       - name: Keep runner and resource containment facts
         if: always()
@@ -155,7 +155,7 @@ jobs:
 
   aggregate:
     needs: shards
-    if: ${{ always() && github.event.pull_request.draft == false }}
+    if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:

@@ -1520,3 +1520,265 @@ mod light_worker_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod shard_workflow_contract {
+    use serde_json::Value;
+
+    const EXPECTED_IDS: [&str; 10] = [
+        "semantic-mutants",
+        "delivery-faults",
+        "tla-delivery",
+        "tla-transport",
+        "trace-model",
+        "cargo-mutants",
+        "kani-core",
+        "fuzz-smoke",
+        "dependency-policy",
+        "coverage-report",
+    ];
+
+    fn assignment_arrays(source: &str) -> Result<Vec<Vec<String>>, String> {
+        let mut remaining = source;
+        let mut arrays = Vec::new();
+        while let Some((_, after)) = remaining.split_once("checks=(") {
+            let (body, tail) = after.split_once(')').ok_or("unterminated checks array")?;
+            arrays.push(body.split_whitespace().map(str::to_owned).collect());
+            remaining = tail;
+        }
+        Ok(arrays)
+    }
+
+    fn has_line(section: &str, expected: &str) -> bool {
+        section.lines().any(|line| line.trim() == expected)
+    }
+
+    fn contract(source: &str) -> Result<(), String> {
+        let registry: Value = serde_json::from_str(include_str!("../checks.json"))
+            .map_err(|error| error.to_string())?;
+        let registered: Vec<String> = registry["checks"]
+            .as_array()
+            .ok_or("registry checks missing")?
+            .iter()
+            .filter(|entry| entry["profile"] == "extended")
+            .map(|entry| entry["id"].as_str().unwrap_or("").to_owned())
+            .collect();
+        let expected: Vec<String> = EXPECTED_IDS.iter().map(|id| (*id).to_owned()).collect();
+        if registered != expected {
+            return Err("extended registry IDs changed; review shard ownership".into());
+        }
+        let arrays = assignment_arrays(source)?;
+        if arrays.len() != 2
+            || arrays[0] != vec!["semantic-mutants".to_owned()]
+            || arrays[1]
+                != EXPECTED_IDS[1..]
+                    .iter()
+                    .map(|id| (*id).to_owned())
+                    .collect::<Vec<_>>()
+        {
+            return Err("shard assignments must own the exact ten extended IDs once".into());
+        }
+        let matrix = source
+            .split_once("    strategy:\n")
+            .and_then(|(_, rest)| rest.split_once("    steps:\n").map(|(matrix, _)| matrix))
+            .ok_or("shard matrix section missing")?;
+        if matrix
+            .lines()
+            .filter(|line| line.trim() == "fail-fast: false")
+            .count()
+            != 1
+            || matrix
+                .lines()
+                .filter(|line| line.trim() == "max-parallel: 2")
+                .count()
+                != 1
+        {
+            return Err("shard matrix must be exactly bounded to two and non-fail-fast".into());
+        }
+        let producer = source
+            .split_once("      - name: Run assigned original checks and retain later outcomes\n")
+            .map(|(_, section)| section)
+            .ok_or("serial producer step missing")?;
+        if !has_line(
+            producer,
+            "python3 -B tools/resource_group.py -- cargo xtask checks --only \"$check\" --receipts \"$SHARD_RECEIPTS\"",
+        ) {
+            return Err("producer must use the original contained check command".into());
+        }
+        let receipt_artifact = source
+            .split_once("      - name: Keep shard receipts\n")
+            .and_then(|(_, rest)| {
+                rest.split_once("      - name: Keep runner and resource containment facts\n")
+                    .map(|(section, _)| section)
+            })
+            .ok_or("receipt artifact step missing")?;
+        if !has_line(receipt_artifact, "name: pilot-receipts-${{ matrix.shard }}")
+            || !has_line(
+                receipt_artifact,
+                "path: ${{ env.FABRIC_STORAGE_ROOT }}/results/verification-producer/${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}/",
+            )
+        {
+            return Err("each shard must upload its explicit DATA receipt directory".into());
+        }
+        let aggregate = source
+            .split_once("\n  extended:\n")
+            .map(|(_, section)| section)
+            .ok_or("required extended aggregate job missing")?;
+        let aggregate_header = aggregate
+            .split_once("    steps:\n")
+            .map(|(header, _)| header)
+            .ok_or("aggregate steps missing")?;
+        if !has_line(aggregate_header, "needs: shards")
+            || !has_line(
+                aggregate_header,
+                "if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}",
+            )
+        {
+            return Err(
+                "aggregate must always join producers except for draft pull requests".into(),
+            );
+        }
+        let aggregate_body = aggregate.split_once("    steps:\n").unwrap().1;
+        let download_step = aggregate_body
+            .split_once("      - name: Download both receipt shards\n")
+            .map(|(_, section)| section)
+            .and_then(|section| {
+                section
+                    .split_once("      - name: Require both named receipt directories\n")
+                    .map(|(step, _)| step)
+            })
+            .ok_or("receipt download step missing")?;
+        if !has_line(download_step, "pattern: pilot-receipts-*")
+            || !has_line(
+                download_step,
+                "path: ${{ env.FABRIC_STORAGE_ROOT }}/results/verification-pilot/shards",
+            )
+            || !has_line(download_step, "merge-multiple: false")
+        {
+            return Err("aggregate must download both separate shard artifacts to DATA".into());
+        }
+        let merge_step = aggregate_body
+            .split_once("      - name: Merge exact shard evidence without overwrites\n")
+            .map(|(_, section)| section)
+            .and_then(|section| {
+                section
+                    .split_once(
+                        "      - name: Verify complete extended receipts at this revision\n",
+                    )
+                    .map(|(step, _)| step)
+            })
+            .ok_or("exact receipt merge step missing")?;
+        if !has_line(merge_step, "SHARD_RESULT: ${{ needs.shards.result }}")
+            || !has_line(
+                merge_step,
+                "run: python3 -B tools/resource_group.py -- cargo run --locked -p xtask --example merge_verification_receipts -- --shard-result \"$SHARD_RESULT\" \"$FABRIC_STORAGE_ROOT/results/verification-pilot/shards\" \"$FABRIC_STORAGE_ROOT/results/verification-pilot/combined\"",
+            )
+        {
+            return Err(
+                "aggregate must merge exact current shard outputs with producer result".into(),
+            );
+        }
+        let validator_step = aggregate_body
+            .split_once("      - name: Verify complete extended receipts at this revision\n")
+            .map(|(_, section)| section)
+            .and_then(|section| {
+                section
+                    .split_once("      - name: Keep aggregate evidence and runner facts\n")
+                    .map(|(step, _)| step)
+            })
+            .ok_or("complete-profile validator step missing")?;
+        if !has_line(
+            validator_step,
+            "run: python3 -B tools/resource_group.py -- python3 -B tools/ci/verify_receipts.py --profile extended --receipts \"$FABRIC_STORAGE_ROOT/results/verification-pilot/combined\"",
+        ) {
+            return Err("aggregate must invoke the unchanged complete-profile validator".into());
+        }
+        let status_step = aggregate_body
+            .split_once("      - name: Require both matrix shards to have succeeded\n")
+            .map(|(_, section)| section)
+            .ok_or("producer status step missing")?;
+        if !has_line(status_step, "if: always()")
+            || !has_line(status_step, "SHARD_RESULT: ${{ needs.shards.result }}")
+            || !has_line(status_step, "if [ \"$SHARD_RESULT\" != success ]; then")
+        {
+            return Err("aggregate must reject any unsuccessful producer result".into());
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn hosted_shards_preserve_exact_extended_ownership_and_required_aggregate() {
+        contract(include_str!("../../.github/workflows/verification.yml")).unwrap();
+    }
+
+    #[test]
+    fn representative_workflow_mutations_are_rejected() {
+        let original = include_str!("../../.github/workflows/verification.yml");
+        let mutations = [
+            (
+                "command-wrapper",
+                "python3 -B tools/resource_group.py -- cargo xtask checks --only \"$check\" --receipts \"$SHARD_RECEIPTS\"",
+                "cargo xtask checks --only \"$check\" --receipts \"$SHARD_RECEIPTS\"",
+            ),
+            ("missing-check", " coverage-report)", ")"),
+            (
+                "extra-check",
+                "checks=(semantic-mutants)",
+                "checks=(semantic-mutants extra-check)",
+            ),
+            ("worker-bound", "max-parallel: 2", "max-parallel: 3"),
+            (
+                "worker-bound-over-two-digits",
+                "max-parallel: 2",
+                "max-parallel: 20",
+            ),
+            ("fail-fast", "fail-fast: false", "fail-fast: true"),
+            (
+                "missing-validator",
+                "tools/ci/verify_receipts.py --profile extended",
+                "tools/ci/verify_receipts.py --profile fast",
+            ),
+            (
+                "producer-status",
+                "if [ \"$SHARD_RESULT\" != success ]; then",
+                "if [ \"$SHARD_RESULT\" = success ]; then",
+            ),
+            (
+                "aggregate-needs",
+                "    needs: shards\n",
+                "    needs: other\n",
+            ),
+            (
+                "aggregate-always",
+                "    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}",
+                "    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}",
+            ),
+            (
+                "aggregate-validator-removed",
+                "      - name: Verify complete extended receipts at this revision\n",
+                "      - name: Verify changed receipts at this revision\n",
+            ),
+        ];
+        for (name, from, to) in mutations {
+            assert!(
+                original.contains(from),
+                "mutation precondition missing for {name}"
+            );
+            let changed = original.replacen(from, to, 1);
+            assert!(
+                contract(&changed).is_err(),
+                "workflow mutation accepted: {name}"
+            );
+        }
+    }
+
+    #[test]
+    fn retired_pilot_workflow_is_manual_only() {
+        let pilot = include_str!("../../.github/workflows/verification-concurrency-experiment.yml");
+        let triggers = pilot.split_once("\nconcurrency:\n").unwrap().0;
+        assert!(triggers.contains("\non:\n  workflow_dispatch:\n"));
+        assert!(!triggers.contains("pull_request:"));
+        assert!(!triggers.contains("schedule:"));
+        assert!(!triggers.contains("merge_group:"));
+    }
+}
