@@ -57,6 +57,7 @@ pinned inspection text and process observations without deciding cutoff policy.
 The [adapter contract](../experiments/formal/native-cutoff-adapter-protocol.md)
 and [primitive protocol](../experiments/formal/primitive-composition-protocol.md)
 separate finite controls from native caller adoption and alpha acceptance.
+The [finite composition results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-primitive-composition-results-01) retain the measured variants and counterexamples.
 
 ## Native browser subgroup entry
 

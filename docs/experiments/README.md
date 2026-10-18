@@ -1,5 +1,8 @@
 # Experiments
 
+The [primitive composition results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-primitive-composition-results-01) record the bounded Rust decoder, lifecycle transition and ordered ACK join,
+including rejected variants and limits. Native caller adoption remains pending.
+
 The [console provenance protocol](formal/console-provenance-protocol.md) registers
 the frozen-product/newer-harness source distinction and bounded Rust controls.
 Alpha acceptance remains owner-paused while this engineering work proceeds.

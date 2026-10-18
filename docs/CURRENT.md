@@ -6,8 +6,9 @@ transition and an ordered exact-byte ACK join. Native capture now retains actual
 command intervals, pinned inspection text and process observations. The
 [adapter boundary](architecture/engineering-evidence.md#structural-lifecycle-cutoff)
 keeps raw journal binding and independent Python custody oracles separate.
-Native caller adoption and complete required checks remain pending; this work
-grants no package acceptance credit and alpha acceptance remains owner-paused.
+All 20 fast checks passed at `979f0d3`; native caller adoption remains pending.
+The [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-primitive-composition-results-01) retain measurements, counterexamples and the scratch cleanup correction.
+This work grants no package acceptance credit; alpha acceptance remains owner-paused.
 
 Engineering tooling now includes an experimental Rust `xtask verify-receipts`
 command, sharing bounded descriptor-owned artifact reads with evidence preflight.
