@@ -45,5 +45,10 @@ required check, proof bound, timing exposure or acceptance condition is relaxed.
 The verifier establishes receipt integrity/completeness under filesystem and
 SHA-256 assumptions. It cannot attest that an unsigned synthetic receipt's
 command ran, establish arbitrary-program correctness or confer certification.
+Identity rechecks assume exclusively owned inputs and honest kernel metadata;
+they detect observable changes, not every possible metadata-restoring attack.
+They do not create an immutable filesystem snapshot or protect a compromised
+host. The digest attests the admitted bytes actually read. Existing mutation
+and replacement controls remain required and must keep their expected refusals.
 Production adoption requires the registered differential/failure experiments
 and relevant source checks; a policy document is not their result.
