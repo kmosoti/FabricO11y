@@ -188,4 +188,17 @@ mod tests {
             fs::remove_dir_all(root).unwrap();
         }
     }
+
+    #[test]
+    fn oversized_and_nonregular_sources_cannot_be_copied() {
+        let root = fixture();
+        let oversized = root.join("oversized.json");
+        OpenOptions::new().write(true).create_new(true).open(&oversized).unwrap().set_len(JSON_LIMIT + 1).unwrap();
+        let output = root.join("rejected.json");
+        assert!(copy_bounded(&oversized, &output).is_err());
+        assert!(!output.exists());
+        assert!(copy_bounded(&root.join("inputs"), &output).is_err());
+        assert!(!output.exists());
+        fs::remove_dir_all(root).unwrap();
+    }
 }
