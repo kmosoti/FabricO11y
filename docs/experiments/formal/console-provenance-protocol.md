@@ -103,3 +103,15 @@ Git join to a Python hash loop as equivalent work, or infer a speedup without an
 equivalent baseline. Register any later composite benchmark before execution.
 Stop optional tuning when controls pass and measurements show no actionable
 bottleneck; actual browser and two-hour soak time cannot be optimized away.
+
+### Prospective optimized repeat
+
+X313 used a Rust debug build; retain its actual observations as diagnostic
+results, not adoption performance evidence. Python hashlib already uses optimized
+native hashing, so repeat with `cargo build --offline --release` before assessing
+performance. Keep the same source implementation, host, canonical 17-source and
+deterministic 512-source corpora, seven alternating pairs, seven separate complete
+CLI observations, controls and measurement boundaries. Change only the Rust build
+profile and fresh output path; record new source/ELF identities and raw wall,
+CPU/RSS, exit and whole-stop observations. Preserve the debug outputs. This repeat
+authorizes no provider, backend, GPU or other parameter search and no acceptance.
