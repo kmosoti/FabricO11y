@@ -359,7 +359,7 @@ fn transformed_helper(
     );
     let at = source
         .windows(OLD_ROOT.len())
-        .position(|part| *part == OLD_ROOT)
+        .position(|part| part == OLD_ROOT)
         .ok_or("root assignment disappeared")?;
     let mut bytes = Vec::with_capacity(source.len() + replacement.len());
     bytes.extend_from_slice(&source[..at]);
