@@ -236,7 +236,6 @@ fn registry(command: &str, root: &std::path::Path, args: Vec<String>) -> ExitCod
     let mut only = None;
     let mut only_count = 0usize;
     let mut receipts = root.join("target/verification/receipts");
-    let mut receipts_supplied = false;
     let mut receipts_missing = false;
     let mut receipts_count = 0usize;
     let mut light_workers = None;
@@ -254,7 +253,6 @@ fn registry(command: &str, root: &std::path::Path, args: Vec<String>) -> ExitCod
             }
             "--receipts" => {
                 receipts_count += 1;
-                receipts_supplied = true;
                 match args.next() {
                     Some(value) => receipts = PathBuf::from(value),
                     None => receipts_missing = true,
@@ -296,12 +294,9 @@ fn registry(command: &str, root: &std::path::Path, args: Vec<String>) -> ExitCod
     }
     use xtask::checks::Status;
     let light = match light_workers_request(
-        command,
         &profile,
-        only.as_deref(),
         profile_count,
         only_count,
-        receipts_supplied,
         receipts_missing,
         receipts_count,
         light_workers.as_deref(),
@@ -348,12 +343,9 @@ fn registry(command: &str, root: &std::path::Path, args: Vec<String>) -> ExitCod
 }
 
 fn light_workers_request(
-    command: &str,
     profile: &str,
-    only: Option<&str>,
     profile_count: usize,
     only_count: usize,
-    receipts_supplied: bool,
     receipts_missing: bool,
     receipts_count: usize,
     workers: Option<&str>,
@@ -362,18 +354,13 @@ fn light_workers_request(
     if workers_count == 0 {
         return Ok(false);
     }
-    if command != "checks"
-        || profile != "fast"
-        || profile_count != 1
-        || only.is_some()
-        || only_count != 0
-    {
+    if profile != "fast" || profile_count != 1 || only_count != 0 {
         return Err("--light-workers requires checks --profile fast without --only".into());
     }
     if workers_count != 1 || workers != Some("2") {
         return Err("--light-workers accepts exactly the value 2 once".into());
     }
-    if !receipts_supplied || receipts_missing || receipts_count != 1 {
+    if receipts_missing || receipts_count != 1 {
         return Err("--light-workers requires exactly one explicit --receipts NEW_DIR".into());
     }
     Ok(true)
@@ -384,27 +371,24 @@ mod light_worker_cli_tests {
     use super::light_workers_request;
 
     fn valid() -> Result<bool, String> {
-        light_workers_request("checks", "fast", None, 1, 0, true, false, 1, Some("2"), 1)
+        light_workers_request("fast", 1, 0, false, 1, Some("2"), 1)
     }
 
     #[test]
     fn light_workers_is_explicit_and_strictly_bounded() {
         assert!(valid().unwrap());
         assert!(
-            light_workers_request("checks", "fast", None, 0, 0, true, false, 1, Some("2"), 1)
+            light_workers_request("fast", 0, 0, false, 1, Some("2"), 1)
                 .is_err()
         );
         assert!(
-            !light_workers_request("checks", "fast", None, 1, 0, false, false, 0, None, 0).unwrap()
+            !light_workers_request("fast", 1, 0, false, 0, None, 0).unwrap()
         );
         assert!(
             light_workers_request(
-                "checks",
                 "extended",
-                None,
                 1,
                 0,
-                true,
                 false,
                 1,
                 Some("2"),
@@ -414,12 +398,9 @@ mod light_worker_cli_tests {
         );
         assert!(
             light_workers_request(
-                "checks",
                 "fast",
-                Some("fmt"),
                 1,
                 1,
-                true,
                 false,
                 1,
                 Some("2"),
@@ -428,27 +409,23 @@ mod light_worker_cli_tests {
             .is_err()
         );
         assert!(
-            light_workers_request("checks", "fast", None, 2, 0, true, false, 1, Some("2"), 1)
+            light_workers_request("fast", 2, 0, false, 1, Some("2"), 1)
                 .is_err()
         );
         assert!(
-            light_workers_request("checks", "fast", None, 1, 0, false, false, 0, Some("2"), 1)
+            light_workers_request("fast", 1, 0, false, 0, Some("2"), 1)
                 .is_err()
         );
         assert!(
-            light_workers_request("checks", "fast", None, 1, 0, true, true, 1, Some("2"), 1)
+            light_workers_request("fast", 1, 0, true, 1, Some("2"), 1)
                 .is_err()
         );
         assert!(
-            light_workers_request("checks", "fast", None, 1, 0, true, false, 2, Some("2"), 1)
+            light_workers_request("fast", 1, 0, false, 2, Some("2"), 1)
                 .is_err()
         );
         assert!(
-            light_workers_request("checks", "fast", None, 1, 0, true, false, 1, Some("3"), 1)
-                .is_err()
-        );
-        assert!(
-            light_workers_request("mutants", "fast", None, 1, 0, true, false, 1, Some("2"), 1)
+            light_workers_request("fast", 1, 0, false, 1, Some("3"), 1)
                 .is_err()
         );
     }

@@ -320,11 +320,9 @@ impl Context {
                             .collect()
                     })
                     .unwrap_or_default();
-                if !bounded_revisions.contains_key(&files) {
-                    let value =
-                        bounded_revision_of(root, &files).unwrap_or_else(|_| "unavailable".into());
-                    bounded_revisions.insert(files, value);
-                }
+                bounded_revisions.entry(files).or_insert_with_key(|files| {
+                    bounded_revision_of(root, files).unwrap_or_else(|_| "unavailable".into())
+                });
             }
         }
         Ok(Self {
@@ -1389,7 +1387,7 @@ mod light_worker_tests {
             .canonicalize()
             .unwrap();
         assert!(validate_light_output(&storage, Path::new("relative/receipts")).is_err());
-        assert!(validate_light_output(&storage, &Path::new("/tmp/light-outside-data")).is_err());
+        assert!(validate_light_output(&storage, Path::new("/tmp/light-outside-data")).is_err());
         let fresh = scratch.0.join("receipts");
         assert_eq!(validate_light_output(&storage, &fresh).unwrap(), fresh);
         std::fs::create_dir(&fresh).unwrap();
