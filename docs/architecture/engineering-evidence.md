@@ -66,6 +66,21 @@ not reinterpreted as having the current caller mismatch. The current source
 controls and real supervisor-helper run remain pending; this wiring alone is
 not browser or soak acceptance.
 
+## Current-main release caller pin
+
+The current-main `release_main`, `release_query`, and `release_stress` commands
+now require an explicit browser-entry helper path and SHA-256 and pass both to
+`CandidateFixture`. The production outage adapter exposes the same pair through
+its existing options and validates the executable file and digest before
+constructing the fixture. The shared candidate fixture repeats the pin check
+and snapshots the same helper through its existing immutable-binary path. The
+Rust-hosted source controls include execution of the actual call expressions,
+CLI partial-pair refusals, and a bounded temporary-file `ProductionAccess`
+composition seam; these controls were added after a targeted run observed the
+old direct caller's missing-keyword `TypeError`. Verification remains pending.
+No behavior in frozen #43/#46 runtimes changes, and these controls establish
+harness input wiring only, not native launch or browser acceptance.
+
 ## Native BiDi viewport effect
 
 The [viewport calibration](../experiments/formal/browser-supervisor-protocol.md#native-webdriver-bidi-viewport-calibration)
