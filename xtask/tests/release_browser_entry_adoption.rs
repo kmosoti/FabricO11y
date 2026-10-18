@@ -185,7 +185,8 @@ cases.append((smoke_path, smoke_call, {
     'certificate': pathlib.Path('/owned/cert'), 'work': pathlib.Path('/owned/work'),
     'out': pathlib.Path('/owned/out'), 'budget': pathlib.Path('/owned/browser'),
     'held': {'fd': 1, 'path': pathlib.Path('/owned/browser')}, 'deadline': 30.0,
-    'entry_helper': pin_path, 'entry_helper_sha256': pin_sha}))
+    'browser_entry_helper': pin_path,
+    'browser_entry_helper_sha256': pin_sha}))
 
 cleanup_path, cleanup_call = call_expression(
     'tools/ui/browser_cleanup_native.py', 'browser_cleanup_native', 'function',
@@ -335,6 +336,54 @@ for record in (
 try: check({'inputs': {}}, helper, pin)
 except ValueError: pass
 else: raise AssertionError('owner plan without an admitted helper was accepted')
+
+# Execute the actual main prefix through the admission check. A helper mismatch
+# must stop before the subsequent systemctl command.
+import hashlib, json, tempfile, types
+main = next(node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == 'main')
+main_module = ast.Module(body=[main], type_ignores=[])
+ast.fix_missing_locations(main_module)
+with tempfile.TemporaryDirectory() as temporary:
+    executable = pathlib.Path(temporary) / 'xtask-browser-enter-exec'
+    executable.write_bytes(b'pinned fake helper')
+    executable.chmod(0o700)
+    actual_sha = hashlib.sha256(executable.read_bytes()).hexdigest()
+    data = pathlib.Path('/owned/data')
+    outer_record = {'state': 'running', 'reserved_bytes': 2,
+        'admission_observation': {'uid': 0, 'gid': 0}, 'admission_bytes': 0}
+    class OuterPath:
+        def resolve(self): return data / 'results/service-opening-candidate/owner-test.json'
+        def read_text(self): return json.dumps(outer_record)
+    outer = OuterPath()
+    args = types.SimpleNamespace(browser_entry_helper=executable,
+        browser_entry_helper_sha256=actual_sha, run_id='test-run',
+        admission_sha256='c' * 64, outer_admission=outer,
+        admission=pathlib.Path('/owned/data/admission.json'), server_family='debian')
+    class Parser:
+        def __init__(self, *args, **kwargs): pass
+        def add_argument(self, *args, **kwargs): pass
+        def parse_args(self): return args
+    effects = []
+    class Guard:
+        DATA = data
+        def require_storage(self): pass
+        def require_containment(self): return {'cgroup': 'user.slice/fake'}
+        def run(self, argv, **kwargs): effects.append(argv)
+    namespace = {'argparse': types.SimpleNamespace(ArgumentParser=Parser),
+        '__doc__': 'owner test', 'Path': pathlib.Path, 're': re, 'os': __import__('os'),
+        'signal': types.SimpleNamespace(SIGTERM=15, signal=lambda *args: None),
+        'Q': Guard(), 'RESERVATION': 1, 'json': json, 'shutil': types.SimpleNamespace(
+            disk_usage=lambda path: types.SimpleNamespace(free=10)),
+        'require': require, 'sha': lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest(),
+        'admit': lambda path, digest: ({'inputs': {'browser_entry_helper':
+            {'path': str(helper), 'sha256': pin}}}, {}, {}, {})}
+    exec(compile(main_module, str(source), 'exec'), namespace)
+    try: namespace['main']()
+    except ValueError as error:
+        assert 'differs from admitted owner plan' in str(error), str(error)
+    else: raise AssertionError('main accepted helper differing from owner admission')
+    assert not effects, 'owner helper admission mismatch reached systemctl/process setup'
 "#;
     let output = Command::new("python3")
         .args(["-B", "-c", script])
