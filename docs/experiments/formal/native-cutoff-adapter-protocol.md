@@ -140,3 +140,29 @@ joins and the Python custody oracle remain required. Use actual CLI controls for
 the composed input, including extra/missing top-level keys, wrong candidate,
 post-marker sample refusal, source/ACK mismatch and body substitution. Do not
 integrate the DATA-only Python projection sketches or a fallback dispatcher.
+
+## Independent native profile transition
+
+The native lifecycle uses exact stopped profiles1/false,1/false,2/true,4/true
+for before/install/drain/reboot, with the two registered allowed/denied log paths
+and metric interval15. Before/install byte equality remains mandatory. Add an
+explicit boolean native-transition scope to the independent Python conservation
+oracle; its default generic/static rule remains unchanged. Do not permit a
+caller-supplied expected profile. Require the registered fixture path and four
+stopped checkpoints, retain private regular single-link ownership and stable
+mode/UID/GID, and allow atomic replacement to change inode and raw digest.
+
+Compare each exact profile with the strict parse of its actual raw configuration
+bytes, not a separately supplied cached view. Bind those bytes to recorded size,
+digest and original metadata. Retain every source, exact SHA ACK, query, gap,
+diagnostic and reboot rule. This is a separate trust-boundary change from the
+producer and host caller implementation.
+
+Before implementation, run an exact-transition fixture against the current
+oracle using its existing signature: it must reach the static configuration
+refusal, not a missing-keyword or fixture setup failure. Then exercise exact
+transition success, legacy static success, wrong revision/state/logs/interval,
+noninteger/duplicate JSON, byte/digest/metadata substitution and a forged cached
+view accompanying coherently altered raw bytes. Preserve both the failed
+baseline and the retained Fedora missing116-ACK refusal. These are engineering
+controls, not a new acceptance run or reinterpretation of a historical receipt.
