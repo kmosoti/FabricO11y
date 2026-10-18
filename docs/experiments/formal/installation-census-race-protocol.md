@@ -48,3 +48,27 @@ results immutable. Research results and limitations belong in the wiki; raw
 records remain on DATA. A fresh uniquely named native mutation must still satisfy
 every original named guest check, wrapper and resource exit, stop and cleanup
 requirement. Passing source controls cannot substitute for that native retry.
+
+## Prospective owner-walkthrough extension
+
+Before the fresh-owner VM run, source inspection found the same cleanup-race
+class: its frozen driver uses the original helper, while successful cleanup
+removes `scratch/owner-walkthrough-RUN_ID`. Register this extension before running
+its controls or adopting it. Preserve the original helpers, callers and results.
+
+A new helper revision may also accept that exact path category. The new owner
+caller must derive the one allowed path from the original pinned walkthrough
+argv, require the outer label `owner-RUN_ID` and matching outer-admission record,
+and reject missing/duplicate identities, other programs, invalid names and
+unresolved admission hashes. This does not validate the admission content or
+replace the original walkthrough's independent guards.
+
+Reuse the pinned installation fixture's real filesystem operations and refusal
+checks in a small adapter with owner-specific run names. First reproduce actual
+file and exact-root deletion failures against the original helper. Then require
+the same corrected-helper recovery, independent totals, unknown/prefix-sibling
+refusals, permission/I/O refusals and bounded exhaustion. Label simulated errors
+explicitly. Check path derivation against both original walkthrough templates
+with only their admission-hash placeholder resolved for this pure binding test;
+such a test is not executable VM admission. Preserve all four actual VM gates,
+the prior-pair dependency, source identities, limits and 95 GB storage rule.
