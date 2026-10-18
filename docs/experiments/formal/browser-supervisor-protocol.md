@@ -92,8 +92,13 @@ owned cgroup-v2 directory, one private READY write descriptor, one private
 RELEASE read descriptor and an absolute target argv. It must admit a canonical
 cgroup-v2 directory and open `cgroup.procs` without following symlinks, move
 itself into that group and verify its own `/proc` cgroup placement before
-writing the single READY byte. It then waits for the single RELEASE byte using a
-monotonic deadline no longer than five seconds. EOF, malformed or extra framing,
+writing the single READY byte. READY framing is exactly `R` followed by EOF:
+the helper closes its READY writer immediately after `R`, and the parent waits
+for that EOF under the same monotonic deadline. The helper then waits for the
+single RELEASE byte using a monotonic deadline no longer than five seconds.
+RELEASE framing is exactly `G` followed by EOF: the parent closes its writer
+immediately after `G`, and the helper waits for that EOF before exec. EOF before
+the byte, malformed or extra framing, a writer held open through the deadline,
 wrong placement and deadline expiry are failures and never exec the target. The
 helper requires distinct inherited control FDs greater than 2 with the correct
 directions and closes both before target exec. It preserves target argv,
