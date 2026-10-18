@@ -99,10 +99,10 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
     url = 'ws://127.0.0.1:4444/session/fixture'
     handle = 'fixture-context'
 
-    def runner(acknowledgement, exit_code=0):
+    def runner(acknowledgement, exit_code=0, mode='narrow'):
         encoded = acknowledgement if isinstance(acknowledgement, bytes) else json.dumps(acknowledgement).encode()
         processes, bindings, logs, stopped = [], [], [], []
-        label = 'browser-bidi-viewport-narrow'
+        label = 'browser-bidi-viewport-' + mode
         class Process:
             returncode = exit_code
             def wait(self, timeout):
@@ -113,7 +113,7 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
         def launch(parent, groups, launched_label, argv, log, environment, **kwargs):
             assert launched_label == label
             assert argv == [str(helper), 'browser-bidi-viewport', '--ws-url', url,
-                            '--context', handle, '--mode', 'narrow']
+                            '--context', handle, '--mode', mode]
             assert kwargs == {'entry_helper': helper, 'entry_helper_sha256': 'a' * 64}
             assert environment == {'PATH': '/usr/bin:/bin'}
             log.write(encoded)
@@ -127,7 +127,7 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
             'deadline':time.monotonic() + 20, 'processes':processes,
             'browser_group_launch':launch,
             'stop_browser_groups':lambda parent, selected: stopped.extend(selected),
-            'subprocess':subprocess, 'time':time,
+            'subprocess':subprocess, 'time':time, 'json':json,
             'check':fail_if_false,
         }
         module = ast.Module(body=[copy.deepcopy(functions['run_viewport']),
@@ -147,6 +147,11 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
         pass
     else:
         raise AssertionError('a valid Rust ACK let actual CSS innerWidth 500 satisfy the 390px predicate')
+
+    restore = dict(valid); restore['mode'] = 'restore'
+    namespace, processes, stopped = runner(restore, mode='restore')
+    assert namespace['run_viewport']('restore', handle) == restore
+    assert len(processes) == len(stopped) == 1
 
     defects = []
     for key, wrong in [('command','wrong'), ('context','other'), ('mode','restore'),
