@@ -1048,9 +1048,12 @@ self.addEventListener("fetch",event=>{
               window.fixturePace=(dispatch)=>{const slot=window.fixturePaceQueue.then(async()=>{let delay;while((delay=interval-(performance.now()-window.fixtureLastDispatch))>0)await new Promise(resolve=>setTimeout(resolve,delay));const started=performance.now();window.fixtureLastDispatch=started;return {response:dispatch?.(started)}});window.fixturePaceQueue=slot.then(()=>{},()=>{});return slot};
               window.fetch=async(...args)=>{const url=typeof args[0]==="string"?args[0]:args[0].url;const path=new URL(url,location.href).pathname;
                 if(!path.startsWith('/v1/'))return original(...args);const paced=!window.fixtureUnpacedBurst;
-                const dispatch=async(started_ms)=>{const entry={path,method:args[1]?.method||args[0]?.method||'GET',started_ms,paced,status:null};
+                const dispatch=async(started_ms)=>{const entry={path,method:args[1]?.method||args[0]?.method||'GET',started_ms,paced,status:null,state:'pending'};
                 if(window.fixtureApiHeaders.length>=512)window.fixtureApiHeadersTruncated=true;else window.fixtureApiHeaders.push(entry);
-                try{const response=await original(...args);Object.assign(entry,{status:response.status,retry_after:response.headers.get('retry-after'),cache_control:response.headers.get('cache-control'),csp:response.headers.get('content-security-policy'),coop:response.headers.get('cross-origin-opener-policy'),corp:response.headers.get('cross-origin-resource-policy')});return response}
+                const signal=args[1]?.signal!==undefined?args[1].signal:args[0]?.signal||null;
+                try{let response;try{response=await original(...args)}catch(error){entry.state='rejected';entry.error_stage='fetch';entry.error_name=String(error?.name||'Error').slice(0,80);entry.error_message=String(error?.message||error).slice(0,256);entry.signal_aborted_at_rejection=!!signal?.aborted;throw error}
+                  try{Object.assign(entry,{status:response.status,retry_after:response.headers.get('retry-after'),cache_control:response.headers.get('cache-control'),csp:response.headers.get('content-security-policy'),coop:response.headers.get('cross-origin-opener-policy'),corp:response.headers.get('cross-origin-resource-policy')});entry.state='response';return response}
+                  catch(error){entry.state='rejected';entry.error_stage='metadata';entry.error_name=String(error?.name||'Error').slice(0,80);entry.error_message=String(error?.message||error).slice(0,256);entry.signal_aborted_at_rejection=!!signal?.aborted;throw error}}
                 finally{entry.finished_ms=performance.now()}};
                 return paced?(await window.fixturePace(dispatch)).response:dispatch(performance.now())}''',cadence.interval*1000)
             if args.security_probes:
