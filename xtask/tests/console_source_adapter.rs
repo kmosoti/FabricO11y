@@ -568,11 +568,12 @@ wrapper = next(node for node in ast.walk(tree) if isinstance(node, ast.Call)
                and isinstance(node.args[0].value, str)
                and 'window.fixtureApiHeaders=[]' in node.args[0].value)
 wrapper_js = wrapper.args[0].value
+failures=[]
 for marker in ("state:'pending'", "entry.state='response'", "entry.state='rejected'",
                "error_stage='fetch'", "error_stage='metadata'", "signal_aborted_at_rejection",
                "signal_aborted_at_dispatch", "signal_abort_observed_ms",
                "addEventListener('abort'", "removeEventListener('abort'"):
-    assert marker in wrapper_js, 'production wrapper diagnostic is missing ' + marker
+    if marker not in wrapper_js: failures.append('production wrapper diagnostic is missing '+marker)
 
 namespace = {'receipt': {}, 'js': None, 'check': None}
 exec(compile(ast.Module(body=[consumer], type_ignores=[]), 'live_browser_check.py', 'exec'), namespace)
@@ -600,7 +601,6 @@ def run(name, rows, truncated=False):
         ok=False; error=type(caught).__name__+': '+str(caught)
     return ok, error, receipt, checks
 
-failures=[]
 ok,error,receipt,_=run('valid response',[response()])
 if not ok: failures.append('valid response rejected: '+error)
 for key,value in [('cache_control','private'),('csp',''),('coop','unsafe-none'),('corp','cross-origin')]:
@@ -618,8 +618,9 @@ else:
     if receipt.get('actual_api_headers') != [response(),valid_abort]: failures.append('raw ledger was not retained')
     if receipt.get('actual_api_cancellations') != [valid_abort]: failures.append('cancellation was not separately recorded')
 
+missing_observation=cancellation(); missing_observation.pop('signal_abort_observed_ms')
 invalid_rows = [
-    ('missing abort observation',cancellation(signal_abort_observed_ms=None)),
+    ('missing abort observation',missing_observation),
     ('abort observed before dispatch',cancellation(signal_abort_observed_ms=9.0)),
     ('signal not aborted at rejection',cancellation(signal_aborted_at_rejection=False)),
     ('abort observed after completion',cancellation(signal_abort_observed_ms=12.0)),
@@ -630,15 +631,18 @@ invalid_rows = [
     ('non-POST method',cancellation(method='GET')),
     ('metadata exception',cancellation(error_stage='metadata', **headers)),
     ('pending row',response(state='pending')),
+    ('null response status',response(status=None)),
     ('non-integer response status',response(status='200')),
-    ('cancellation-only ledger',None),
+    ('boolean response status',response(status=True)),
 ]
 for name,row in invalid_rows:
-    rows=[] if row is None else [row]
+    rows=[response(),row]
     ok,error,_,_=run(name,rows)
     if ok: failures.append(name+' accepted')
 if run('pre-aborted signal',[response(),cancellation(signal_aborted_at_dispatch=True,signal_abort_observed_ms=10.0)])[0] is False:
     failures.append('pre-aborted same-signal cancellation rejected')
+if run('cancellation-only ledger',[cancellation()])[0]: failures.append('cancellation-only ledger accepted')
+if run('empty ledger',[])[0]: failures.append('empty ledger accepted')
 if run('truncated response ledger',[response()],truncated=True)[0]: failures.append('truncated ledger accepted')
 if failures:
     raise AssertionError('\n'.join(failures))
