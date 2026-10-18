@@ -53,8 +53,8 @@ fn create_fixture_sized(
         .into_iter()
         .filter(|c| c.profile == "extended")
         .collect();
-    if selected.is_empty() {
-        return Err("registry has no extended checks".into());
+    if selected.len() != 10 {
+        return Err(format!("expected 10 extended checks, found {}", selected.len()));
     }
     let mut ids = Vec::new();
     for check in selected {
@@ -408,38 +408,6 @@ fn validate_candidate_path(binary: &Path, storage: &Path) -> Result<PathBuf, Str
     Ok(canonical)
 }
 
-fn synthetic_log(size: usize) -> Result<Vec<u8>, String> {
-    let mut bytes = b"SYNTHETIC; command not executed\n".to_vec();
-    if size < bytes.len() { return Err("corpus size smaller than trust header".into()); }
-    bytes.resize(size, b'x');
-    Ok(bytes)
-}
-
-fn create_sized_fixture(registry: &Path, receipts: &Path, commit: &str, size: usize) -> Result<Vec<String>, String> {
-    fs::create_dir(receipts).map_err(|error| error.to_string())?;
-    let checks = xtask::checks::load(registry)?;
-    let selected: Vec<_> = checks.into_iter().filter(|check| check.profile == "extended").collect();
-    if selected.len() != 10 { return Err(format!("expected 10 extended checks, found {}", selected.len())); }
-    let mut ids = Vec::new();
-    for check in selected {
-        let id = check.id.clone();
-        let log_name = format!("{id}.log");
-        let log = synthetic_log(size)?;
-        write_new(&receipts.join(&log_name), &log)?;
-        let receipt = json!({
-            "receipt_version": 1, "check_id": id, "candidate_commit": commit,
-            "worktree_dirty": false, "profile": "extended",
-            "command": check.command, "result": "passed", "exit_code": 0,
-            "duration_ms": 1, "output_log": log_name,
-            "output_sha256": xtask::sha256_hex(&log),
-            "trust": "synthetic byte-size corpus; no registered command executed"
-        });
-        write_json_new(&receipts.join(format!("{id}.json")), &receipt)?;
-        ids.push(id);
-    }
-    Ok(ids)
-}
-
 fn bench_trial(
     root: &Path, out: &Path, prefix: &str, argv: &[String],
 ) -> Result<Value, String> {
@@ -466,7 +434,7 @@ fn run_benchmarks(
         let corpus = out.join("benchmark").join(name);
         fs::create_dir(&corpus).map_err(|error| error.to_string())?;
         let receipts = corpus.join("receipts");
-        let ids = create_sized_fixture(registry, &receipts, commit, size)?;
+        let ids = create_fixture_sized(registry, &receipts, commit, Some(size))?;
         let python = python_argv(script, &receipts);
         let native = command_argv(binary, &receipts);
         let mut corpus_ok = true;
@@ -508,6 +476,10 @@ fn run_candidate(
     let storage = PathBuf::from(std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("FABRIC_STORAGE_ROOT required")?)
         .canonicalize().map_err(|error| error.to_string())?;
     let binary = validate_candidate_path(binary_arg, &storage)?;
+    let binary_len = fs::metadata(&binary).map_err(|error| error.to_string())?.len();
+    if binary_len > 64 * 1024 * 1024 {
+        return Err(format!("candidate ELF exceeds 64 MiB bound: {binary_len} bytes"));
+    }
     let binary_bytes = fs::read(&binary).map_err(|error| error.to_string())?;
     if !binary_bytes.starts_with(b"\x7fELF") { return Err("candidate file is not an ELF binary".into()); }
     let binary_hash = xtask::sha256_hex(&binary_bytes);
@@ -580,7 +552,7 @@ fn run_candidate(
         "benchmark_passed": benchmark_ok,
         "timing_boundary": "Includes process start and verifier work; fixture creation is outside the measured interval; compilation is excluded.",
         "gnu_time": "/usr/bin/time -f '%U %S %M %x'", "driver_errors": driver_errors,
-        "overall_status": if differential_ok && benchmark_ok && source_unchanged && binary_unchanged && verifier_inputs_unchanged { "completed" } else { "failed" },
+        "overall_status": if differential_ok && benchmark_ok && source_unchanged && binary_unchanged && verifier_inputs_unchanged && driver_errors_empty { "completed" } else { "failed" },
         "interpretation": "Synthetic structural differential and bounded host measurements only; no command execution or performance generalization."
     });
     write_json_new(&out.join("candidate-report.json"), &record)?;
