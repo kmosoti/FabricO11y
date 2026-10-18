@@ -1315,7 +1315,8 @@ self.addEventListener("fetch",event=>{
                 js('''const original=window.fetch;window.fixtureCompletedRegistration=null;
                   window.fetch=async(...args)=>{const input=args[0];const p=new URL(typeof input==='string'?input:input.url,location.href).pathname;
                   if(p==='/v1/console/auth/register/finish' && !window.fixtureCompletedRegistration){
-                    const inspected=new Request(input,args[1]);
+                    const inspectionInput=input instanceof Request?input.clone():input;
+                    const inspected=new Request(inspectionInput,args[1]);
                     window.fixtureCompletedRegistration=await inspected.clone().json();
                   }
                   return original(...args)}''')

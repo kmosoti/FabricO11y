@@ -691,7 +691,11 @@ fn security_registration_capture_source_clones_request_body_and_forwards_origina
         .join("tools/ui/live_browser_check.py");
     let wrapper = security_registration_wrapper(&live);
     assert!(wrapper.contains("window.fetch=async(...args)=>"));
-    assert!(wrapper.contains("const inspected=new Request(input,args[1])"));
+    assert!(wrapper.contains("const inspectionInput=input instanceof Request?input.clone():input"));
+    assert!(wrapper.contains("const inspected=new Request(inspectionInput,args[1])"));
+    assert!(wrapper.find("const inspectionInput=").unwrap()
+        < wrapper.find("const inspected=").unwrap(),
+        "clone Request input before constructing the effective inspection request");
     assert!(wrapper.contains("await inspected.clone().json()"));
     assert!(wrapper.contains("return original(...args)"));
     assert!(!wrapper.contains("JSON.parse(args[1].body)"));
@@ -714,6 +718,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const wrapper = readFileSync(Bun.argv[2], 'utf8');
+// Minimized defect from the frozen 73cccefc harness: its Request-only capture
+// dereferenced args[1].body and threw before fetch dispatch.
 const defectiveWrapper = `const original=window.fetch;window.fixtureCompletedRegistration=null;
 window.fetch=(...args)=>{const p=new URL(typeof args[0]==='string'?args[0]:args[0].url,location.href).pathname;
 if(p==='/v1/console/auth/register/finish' && !window.fixtureCompletedRegistration)
@@ -724,11 +730,13 @@ const noInit = Symbol('no-init-argument');
 
 async function callWith(source, input, init = noInit) {
   const forwarded = [];
+  const bodyUsedAtDispatch = [];
   globalThis.location = { href: 'https://console.invalid/' };
   globalThis.window = {
     fixtureCompletedRegistration: null,
     fetch: (...args) => {
       forwarded.push(args);
+      bodyUsedAtDispatch.push(args[0] instanceof Request ? args[0].bodyUsed : null);
       return Promise.resolve(new Response(null, { status: 204 }));
     },
   };
@@ -740,7 +748,7 @@ async function callWith(source, input, init = noInit) {
   } catch (caught) {
     error = caught;
   }
-  return { error, forwarded, captured: window.fixtureCompletedRegistration };
+  return { error, forwarded, captured: window.fixtureCompletedRegistration, bodyUsedAtDispatch };
 }
 
 const defectiveRequest = new Request(endpoint, {
@@ -770,6 +778,7 @@ assert.deepEqual(requestResult.captured, requestPayload);
 assert.equal(requestResult.forwarded.length, 1);
 assert.equal(requestResult.forwarded[0].length, 1);
 assert.strictEqual(requestResult.forwarded[0][0], request, 'forward the original Request object');
+assert.deepEqual(requestResult.bodyUsedAtDispatch, [false], 'original Request body remains readable at dispatch');
 assert.equal(await request.clone().text(), requestBody, 'inspection must not consume the original Request body');
 
 const urlPayload = { id: 'url-plus-init' };
@@ -797,6 +806,7 @@ assert.equal(overrideResult.forwarded.length, 1);
 assert.equal(overrideResult.forwarded[0].length, 2);
 assert.strictEqual(overrideResult.forwarded[0][0], overriddenRequest);
 assert.strictEqual(overrideResult.forwarded[0][1], overrideInit);
+assert.deepEqual(overrideResult.bodyUsedAtDispatch, [false], 'overridden original Request body remains readable at dispatch');
 assert.equal(await overriddenRequest.clone().text(), JSON.stringify(originalPayload));
 
 const malformed = new Request(endpoint, {
