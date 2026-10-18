@@ -935,6 +935,14 @@ pub fn run_with_light_workers(
                 .map_err(|error| format!("assembly failed; marker retained: {error}"))?;
         }
     }
+    let mut verified_digests = HashMap::new();
+    for check in &selected {
+        for name in [format!("{}.stdout.partial.log", check.id), format!("{}.stderr.partial.log", check.id), format!("{}.log", check.id), format!("{}.json", check.id)] {
+            let digest = ordinary_digest(&assembled.join(&name))
+                .map_err(|error| format!("pre-validation digest failed; marker retained: {error}"))?;
+            verified_digests.insert(name, digest);
+        }
+    }
     ensure_same_clean_identity(root, &commit)
         .map_err(|error| format!("source changed before native fast receipt validation: {error}"))?;
     let verified = crate::receipts::verify(root, "fast", &commit, &assembled)
@@ -949,9 +957,9 @@ pub fn run_with_light_workers(
     for check in &selected {
         for name in [format!("{}.stdout.partial.log", check.id), format!("{}.stderr.partial.log", check.id), format!("{}.log", check.id), format!("{}.json", check.id)] {
             let source = assembled.join(&name);
-            let digest = ordinary_digest(&source)
-                .map_err(|error| format!("publication digest failed; marker retained: {error}"))?;
-            copy_ordinary_new(&source, &receipts.join(&name), &digest)
+            let digest = verified_digests.get(&name)
+                .ok_or_else(|| format!("missing pre-validation digest for {name}; marker retained"))?;
+            copy_ordinary_new(&source, &receipts.join(&name), digest)
                 .map_err(|error| format!("canonical publication failed; marker retained: {error}"))?;
         }
     }
