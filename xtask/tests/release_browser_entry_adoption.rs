@@ -375,7 +375,8 @@ with tempfile.TemporaryDirectory() as temporary:
         'signal': types.SimpleNamespace(SIGTERM=15, signal=lambda *args: None),
         'Q': Guard(), 'RESERVATION': 1, 'json': json, 'shutil': types.SimpleNamespace(
             disk_usage=lambda path: types.SimpleNamespace(free=10)),
-        'require': require, 'sha': lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest(),
+        'require': require, 'require_admitted_browser_entry_helper': check,
+        'sha': lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest(),
         'admit': lambda path, digest: ({'inputs': {'browser_entry_helper':
             {'path': str(helper), 'sha256': pin}}}, {}, {}, {})}
     exec(compile(main_module, str(source), 'exec'), namespace)
