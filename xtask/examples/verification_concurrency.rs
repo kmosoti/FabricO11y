@@ -30,13 +30,23 @@ const WEIGHTS: [(&str, u64); 7] = [
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Mode { Serial, Fifo, Weighted }
+enum Mode {
+    Serial,
+    Fifo,
+    Weighted,
+}
 
 impl Mode {
     fn name(self) -> &'static str {
-        match self { Self::Serial => "serial", Self::Fifo => "fifo", Self::Weighted => "weighted" }
+        match self {
+            Self::Serial => "serial",
+            Self::Fifo => "fifo",
+            Self::Weighted => "weighted",
+        }
     }
-    fn workers(self) -> usize { if self == Self::Serial { 1 } else { 2 } }
+    fn workers(self) -> usize {
+        if self == Self::Serial { 1 } else { 2 }
+    }
 }
 
 fn root() -> PathBuf {
@@ -149,10 +159,15 @@ fn execute(
     }
     let dispatch = if mode == Mode::Weighted {
         if ids.iter().any(|id| id == "injected-exit-7") {
-            let real_id = ids.iter().find(|id| id.as_str() != "injected-exit-7")
+            let real_id = ids
+                .iter()
+                .find(|id| id.as_str() != "injected-exit-7")
                 .ok_or("weighted control missing real check")?;
-            let real_weight = WEIGHTS.iter().find(|entry| entry.0 == real_id.as_str())
-                .map(|(_, weight)| *weight).ok_or("no frozen weight for control check")?;
+            let real_weight = WEIGHTS
+                .iter()
+                .find(|entry| entry.0 == real_id.as_str())
+                .map(|(_, weight)| *weight)
+                .ok_or("no frozen weight for control check")?;
             let control = vec![(real_id.as_str(), real_weight), ("injected-exit-7", 1)];
             weighted_order(ids, &control)?
         } else {
@@ -202,8 +217,9 @@ fn execute(
         let (send, receive) = std::sync::mpsc::channel();
         for _ in 0..workers {
             let send = send.clone();
-            let (dispatch, cursor, active, peak, current, expected, source) =
-                (&dispatch, &cursor, &active, &peak, &current, &expected, &source);
+            let (dispatch, cursor, active, peak, current, expected, source) = (
+                &dispatch, &cursor, &active, &peak, &current, &expected, &source,
+            );
             scope.spawn(move || {
                 while let Some(id) = dispatch.get(cursor.fetch_add(1, Ordering::Relaxed)) {
                     let result = (|| {
@@ -328,12 +344,20 @@ fn parent(out: &Path) -> Result<(), String> {
     for mode in modes {
         let name = mode.name();
         let (rows, elapsed, peak) = execute(out, &ids, mode, &format!("warmup-{name}"), &registry)?;
-        if !all_pass(&rows) { return Err(format!("warmup {name} had a failed registered check")); }
-        warmups.insert(name, json!({"wall_ms": elapsed, "active_worker_peak": peak,
-            "inventory": inventory(&rows), "per_check_ms": durations(&rows)}));
+        if !all_pass(&rows) {
+            return Err(format!("warmup {name} had a failed registered check"));
+        }
+        warmups.insert(
+            name,
+            json!({"wall_ms": elapsed, "active_worker_peak": peak,
+            "inventory": inventory(&rows), "per_check_ms": durations(&rows)}),
+        );
     }
     let reference = warmups["serial"]["inventory"].clone();
-    if modes.iter().any(|mode| warmups[mode.name()]["inventory"] != reference) {
+    if modes
+        .iter()
+        .any(|mode| warmups[mode.name()]["inventory"] != reference)
+    {
         return Err("warmup modes differ in semantic inventory".into());
     }
     let mut triples = Vec::new();
@@ -343,19 +367,33 @@ fn parent(out: &Path) -> Result<(), String> {
         for offset in 0..3 {
             let mode = modes[(repetition + offset) % 3];
             let name = mode.name();
-            let (rows, elapsed, peak) = execute(out, &ids, mode,
-                &format!("rep-{repetition}-{name}"), &registry)?;
+            let (rows, elapsed, peak) = execute(
+                out,
+                &ids,
+                mode,
+                &format!("rep-{repetition}-{name}"),
+                &registry,
+            )?;
             if !all_pass(&rows) || inventory(&rows) != reference {
-                return Err(format!("repetition {repetition} mode {name} failed or differed"));
+                return Err(format!(
+                    "repetition {repetition} mode {name} failed or differed"
+                ));
             }
             order.push(name);
-            observations.insert(name, json!({"wall_ms": elapsed, "active_worker_peak": peak,
-                "inventory": inventory(&rows), "per_check_ms": durations(&rows)}));
+            observations.insert(
+                name,
+                json!({"wall_ms": elapsed, "active_worker_peak": peak,
+                "inventory": inventory(&rows), "per_check_ms": durations(&rows)}),
+            );
         }
         triples.push(json!({"repetition": repetition, "order": order, "modes": observations}));
     }
     let partition_bound = exhaustive_partition_bound(&WEIGHTS)?;
-    if partition_bound != 2241 { return Err(format!("frozen model bound changed unexpectedly: {partition_bound}")); }
+    if partition_bound != 2241 {
+        return Err(format!(
+            "frozen model bound changed unexpectedly: {partition_bound}"
+        ));
+    }
     fs::write(
         out.join("summary.json"),
         serde_json::to_vec_pretty(&json!({
@@ -448,24 +486,45 @@ fn controls(out: &Path, registry: &Path) -> Result<(), String> {
             fs::write(&rp, &pristine_receipt).map_err(|e| e.to_string())?;
             fs::write(receipts.join(format!("{}.log", IDS[0])), &pristine_log)
                 .map_err(|e| e.to_string())?;
-            if defect == "missing" { fs::remove_file(&rp).map_err(|e| e.to_string())?; }
+            if defect == "missing" {
+                fs::remove_file(&rp).map_err(|e| e.to_string())?;
+            }
             if defect == "stale-source" {
-                let mut v: Value = serde_json::from_slice(&pristine_receipt).map_err(|e| e.to_string())?;
+                let mut v: Value =
+                    serde_json::from_slice(&pristine_receipt).map_err(|e| e.to_string())?;
                 v["candidate_commit"] = json!("stale");
-                fs::write(&rp, serde_json::to_vec(&v).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+                fs::write(&rp, serde_json::to_vec(&v).map_err(|e| e.to_string())?)
+                    .map_err(|e| e.to_string())?;
             }
             if defect == "modified-log" {
-                fs::write(receipts.join(format!("{}.log", IDS[0])), b"changed").map_err(|e| e.to_string())?;
+                fs::write(receipts.join(format!("{}.log", IDS[0])), b"changed")
+                    .map_err(|e| e.to_string())?;
             }
             if defect == "running-marker" {
                 fs::write(receipts.join("current-check.json"), b"{}").map_err(|e| e.to_string())?;
             }
-            let command: Vec<String> = original["checks"].as_array().ok_or("missing checks")?
-                .iter().find(|c| c["id"] == IDS[0]).ok_or("missing check")?["command"].as_array()
-                .ok_or("missing command")?.iter()
+            let command: Vec<String> = original["checks"]
+                .as_array()
+                .ok_or("missing checks")?
+                .iter()
+                .find(|c| c["id"] == IDS[0])
+                .ok_or("missing check")?["command"]
+                .as_array()
+                .ok_or("missing command")?
+                .iter()
                 .map(|arg| arg.as_str().map(str::to_owned).ok_or("invalid argument"))
                 .collect::<Result<_, _>>()?;
-            if read_row(&Job { id: IDS[0].into(), receipts }, success_status(), &command, &git_head()?).is_ok() {
+            if read_row(
+                &Job {
+                    id: IDS[0].into(),
+                    receipts,
+                },
+                success_status(),
+                &command,
+                &git_head()?,
+            )
+            .is_ok()
+            {
                 return Err(format!("{name} collector accepted {defect} evidence"));
             }
         }
@@ -474,7 +533,9 @@ fn controls(out: &Path, registry: &Path) -> Result<(), String> {
 }
 
 fn weighted_order(ids: &[String], weights: &[(&str, u64)]) -> Result<Vec<String>, String> {
-    if ids.len() > IDS.len() { return Err("weighted selection exceeds frozen seven-job set".into()); }
+    if ids.len() > IDS.len() {
+        return Err("weighted selection exceeds frozen seven-job set".into());
+    }
     let mut table = BTreeMap::new();
     for (id, weight) in weights {
         if *weight == 0 || table.insert(*id, *weight).is_some() {
@@ -482,26 +543,39 @@ fn weighted_order(ids: &[String], weights: &[(&str, u64)]) -> Result<Vec<String>
         }
     }
     let selected: BTreeMap<_, _> = ids.iter().map(String::as_str).map(|id| (id, ())).collect();
-    if selected.len() != ids.len() || selected.len() != table.len()
+    if selected.len() != ids.len()
+        || selected.len() != table.len()
         || selected.keys().any(|id| !table.contains_key(id))
     {
         return Err("weight table must match the exact selected ID set".into());
     }
     let mut ordered = ids.to_vec();
-    ordered.sort_by(|a, b| table[b.as_str()].cmp(&table[a.as_str()]).then_with(|| a.cmp(b)));
+    ordered.sort_by(|a, b| {
+        table[b.as_str()]
+            .cmp(&table[a.as_str()])
+            .then_with(|| a.cmp(b))
+    });
     Ok(ordered)
 }
 
 fn exhaustive_partition_bound(weights: &[(&str, u64)]) -> Result<u64, String> {
-    if weights.len() != IDS.len() { return Err("partition bound is defined for exactly seven frozen jobs".into()); }
+    if weights.len() != IDS.len() {
+        return Err("partition bound is defined for exactly seven frozen jobs".into());
+    }
     let frozen_ids: Vec<String> = IDS.iter().map(|id| (*id).to_owned()).collect();
     weighted_order(&frozen_ids, weights)?;
     let mut minimum = u64::MAX;
     for assignment in 0..(1usize << weights.len()) {
         let (mut left, mut right) = (0u64, 0u64);
         for (index, (_, weight)) in weights.iter().enumerate() {
-            let total = if assignment & (1 << index) == 0 { &mut left } else { &mut right };
-            *total = total.checked_add(*weight).ok_or("partition duration overflow")?;
+            let total = if assignment & (1 << index) == 0 {
+                &mut left
+            } else {
+                &mut right
+            };
+            *total = total
+                .checked_add(*weight)
+                .ok_or("partition duration overflow")?;
         }
         minimum = minimum.min(left.max(right));
     }
@@ -533,20 +607,30 @@ mod scheduling_tests {
         permutations(&mut permuted, 0, &forward, &mut count);
         assert_eq!(count, 5040);
         assert_eq!(forward.first().map(String::as_str), Some("telemetry-cli"));
-        assert_eq!(forward.iter().collect::<std::collections::BTreeSet<_>>().len(), IDS.len());
+        assert_eq!(
+            forward
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            IDS.len()
+        );
         assert!(weighted_order(&original[..6], &WEIGHTS).is_err());
         assert!(weighted_order(&original, &[("extra", 1)]).is_err());
-        let mut duplicate = WEIGHTS.to_vec(); duplicate.push(WEIGHTS[0]);
+        let mut duplicate = WEIGHTS.to_vec();
+        duplicate.push(WEIGHTS[0]);
         assert!(weighted_order(&original, &duplicate).is_err());
-        let mut zero = WEIGHTS.to_vec(); zero[0].1 = 0;
+        let mut zero = WEIGHTS.to_vec();
+        zero[0].1 = 0;
         assert!(weighted_order(&original, &zero).is_err());
     }
 
     #[test]
     fn ties_use_canonical_id_order() {
         let ids = vec!["zeta".to_owned(), "alpha".to_owned(), "mu".to_owned()];
-        assert_eq!(weighted_order(&ids, &[("zeta", 3), ("alpha", 3), ("mu", 3)]).unwrap(),
-            vec!["alpha", "mu", "zeta"]);
+        assert_eq!(
+            weighted_order(&ids, &[("zeta", 3), ("alpha", 3), ("mu", 3)]).unwrap(),
+            vec!["alpha", "mu", "zeta"]
+        );
     }
 
     #[test]
