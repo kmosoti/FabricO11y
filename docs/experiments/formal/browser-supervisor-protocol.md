@@ -130,11 +130,17 @@ Before the correction is admitted, one finite Linux integration fixture must
 invoke the actual parent launch seam and native helper under the existing owned
 cgroup resource boundary. Its positive uses immediate `/bin/true`: READY must
 precede parent validation; exact identity and target membership must be present
-before RELEASE; then exit, exact leader reap, empty subgroup and clean outer
-stop are required. Named controls cover wrong placement into a separately owned
-sibling subgroup (no RELEASE and cleanup of only retained identities), READY
-followed by release-pipe EOF, bounded RELEASE timeout, and the existing
-foreign-child rejection. Each control records whether the target exec occurred,
+before RELEASE; a test-only `os.write(G)` guard checks the binding list, live
+leader identity and exact target `cgroup.procs` membership at the release call.
+An injected append-after-release source variant must be refused by this guard
+before G is written and leave no child behind. Then exit, exact leader reap,
+empty subgroup and clean outer stop are required. Named controls cover wrong
+placement into a separately owned sibling subgroup (no RELEASE and cleanup of
+only retained identities), READY followed by release-pipe EOF, bounded RELEASE
+timeout, and the existing foreign-child rejection. A cleanup fallback control
+injects exactly one `TimeoutExpired` from the actual Popen wait after pidfd
+signaling, then requires the real wait and owned-cgroup cleanup to succeed using
+the same retained pidfd. Each control records whether target exec occurred,
 exact child identity and cleanup state. The parent fixture must not require a
 browser runtime in Rust unit tests; focused unit controls cover framing,
 descriptor direction/distinctness and timeout parsing, while this one Linux
