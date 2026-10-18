@@ -421,3 +421,9 @@ descriptor anchoring and bounded retries still do not create an atomic snapshot,
 and why a clean source tree cannot authenticate a cached executable from another
 worktree. Independent reference output and isolated build targets address
 different failure modes.
+
+A restarted process is a new effect handle. The browser health regression shows
+why a helper used by several lifecycle paths needs the current handle as an
+explicit argument: nesting it inside initial setup made recovery unable to call
+it. The source test executes the actual restart expressions with replacement and
+dead processes; only a later packaged browser run checks the full integration.
