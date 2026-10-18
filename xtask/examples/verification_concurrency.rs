@@ -19,6 +19,16 @@ const IDS: [&str; 7] = [
     "ui-palette",
 ];
 
+const WEIGHTS: [(&str, u64); 7] = [
+    ("delivery-oracle", 310),
+    ("query-oracle", 322),
+    ("workload-rate-oracle", 887),
+    ("soak-decision-rule", 87),
+    ("telemetry-contract", 142),
+    ("telemetry-cli", 2241),
+    ("ui-palette", 42),
+];
+
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -126,6 +136,20 @@ fn execute(
     if !(1..=2).contains(&workers) || ids.is_empty() {
         return Err("one or two workers and a nonempty inventory required".into());
     }
+    let dispatch = if label.contains("weighted") {
+        let weights = if ids.iter().any(|id| id == "injected-exit-7") {
+            let real_id = ids.iter().find(|id| id.as_str() != "injected-exit-7")
+                .ok_or("weighted control missing real check")?;
+            let real_weight = WEIGHTS.iter().find(|entry| entry.0 == real_id.as_str())
+                .map(|(_, weight)| *weight).ok_or("no frozen weight for control check")?;
+            let control = vec![(real_id.as_str(), real_weight), ("injected-exit-7", 1)];
+            weighted_order(ids, &control)?
+        } else {
+            weighted_order(ids, &WEIGHTS)?
+        }
+    } else {
+        ids.to_vec()
+    };
     let cursor = AtomicUsize::new(0);
     let active = AtomicUsize::new(0);
     let peak = AtomicUsize::new(0);
@@ -170,7 +194,7 @@ fn execute(
             let (cursor, active, peak, current, expected, source) =
                 (&cursor, &active, &peak, &current, &expected, &source);
             scope.spawn(move || {
-                while let Some(id) = ids.get(cursor.fetch_add(1, Ordering::Relaxed)) {
+                while let Some(id) = dispatch.get(cursor.fetch_add(1, Ordering::Relaxed)) {
                     let result = (|| {
                         let base = out.join(label).join(id);
                         let receipts = base.join("receipts");
@@ -288,42 +312,51 @@ fn parent(out: &Path) -> Result<(), String> {
     let registry = root().join("xtask/checks.json");
     let ids: Vec<String> = IDS.iter().map(|s| (*s).to_owned()).collect();
     controls(out, &registry)?;
-    // One warmup per mode, discarded only from the timing summary; evidence remains.
-    let (one, _, _) = execute(out, &ids, 1, "warmup-one", &registry)?;
-    let (two, _, _) = execute(out, &ids, 2, "warmup-two", &registry)?;
-    if !all_pass(&one) || !all_pass(&two) || inventory(&one) != inventory(&two) {
-        return Err("warmup modes differ or a registered check failed".into());
+    let modes = ["serial", "fifo", "weighted"];
+    let mut warmups = BTreeMap::new();
+    for mode in modes {
+        let (rows, elapsed, peak) = execute(out, &ids, mode_workers(mode), &format!("warmup-{mode}"), &registry)?;
+        if !all_pass(&rows) { return Err(format!("warmup {mode} had a failed registered check")); }
+        warmups.insert(mode, json!({"wall_ms": elapsed, "active_worker_peak": peak,
+            "inventory": inventory(&rows), "per_check_ms": durations(&rows)}));
     }
-    let mut pairs = Vec::new();
-    for pair in 0..7 {
-        let (a, ta, pa, b, tb, pb) = if pair % 2 == 0 {
-            let (a, ta, pa) = execute(out, &ids, 1, &format!("pair-{pair}-one"), &registry)?;
-            let (b, tb, pb) = execute(out, &ids, 2, &format!("pair-{pair}-two"), &registry)?;
-            (a, ta, pa, b, tb, pb)
-        } else {
-            let (b, tb, pb) = execute(out, &ids, 2, &format!("pair-{pair}-two"), &registry)?;
-            let (a, ta, pa) = execute(out, &ids, 1, &format!("pair-{pair}-one"), &registry)?;
-            (a, ta, pa, b, tb, pb)
-        };
-        if !all_pass(&a)
-            || !all_pass(&b)
-            || inventory(&a) != inventory(&b)
-            || inventory(&a) != inventory(&one)
-        {
-            return Err(format!(
-                "pair {pair} has a failed check or semantic inventory mismatch"
-            ));
+    let reference = warmups["serial"]["inventory"].clone();
+    if modes.iter().any(|mode| warmups[*mode]["inventory"] != reference) {
+        return Err("warmup modes differ in semantic inventory".into());
+    }
+    let mut triples = Vec::new();
+    for repetition in 0..7 {
+        let mut order = Vec::new();
+        let mut observations = BTreeMap::new();
+        for offset in 0..3 {
+            let mode = modes[(repetition + offset) % 3];
+            let (rows, elapsed, peak) = execute(out, &ids, mode_workers(mode),
+                &format!("rep-{repetition}-{mode}"), &registry)?;
+            if !all_pass(&rows) || inventory(&rows) != reference {
+                return Err(format!("repetition {repetition} mode {mode} failed or differed"));
+            }
+            order.push(mode);
+            observations.insert(mode, json!({"wall_ms": elapsed, "active_worker_peak": peak,
+                "inventory": inventory(&rows), "per_check_ms": durations(&rows)}));
         }
-        pairs.push(
-            json!({"pair": pair, "one_worker_ms": ta, "two_worker_ms": tb,
-            "one_peak": pa, "two_peak": pb,
-            "per_check_ms_one": durations(&a), "per_check_ms_two": durations(&b)}),
-        );
+        triples.push(json!({"repetition": repetition, "order": order, "modes": observations}));
     }
+    let partition_bound = exhaustive_partition_bound(&WEIGHTS)?;
+    if partition_bound != 2241 { return Err(format!("frozen model bound changed unexpectedly: {partition_bound}")); }
     fs::write(
         out.join("summary.json"),
         serde_json::to_vec_pretty(&json!({
-            "state": "completed", "checks": ids, "inventory": inventory(&one), "pairs": pairs,
+            "state": "completed", "checks": ids, "inventory": reference,
+            "warmups": warmups, "triples": triples,
+            "weights_ms": WEIGHTS.iter().map(|(id, weight)| (*id, *weight)).collect::<BTreeMap<_, _>>(),
+            "mode_worker_limits": {"serial": 1, "fifo": 2, "weighted": 2},
+            "weighted_dispatch_order": weighted_order(&ids, &WEIGHTS)?,
+            "weighted_model_two_worker_lower_bound_ms": partition_bound,
+            "model_partition_ms": {"worker_a": ["telemetry-cli"], "worker_b": [
+                "workload-rate-oracle", "query-oracle", "delivery-oracle",
+                "telemetry-contract", "soak-decision-rule", "ui-palette"
+            ], "makespan": 2241},
+            "model_note": "frozen per-check median additive model only; excludes startup, contention and receipt processing",
             "claim": "observations only; not a performance conclusion"
         }))
         .map_err(|e| e.to_string())?,
@@ -365,12 +398,13 @@ fn controls(out: &Path, registry: &Path) -> Result<(), String> {
         serde_json::to_vec(&fake).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
-    for (label, workers) in [("control-one", 1), ("control-two", 2)] {
+    for (mode, workers) in [("serial", 1), ("fifo", 2), ("weighted", 2)] {
+        let label = format!("control-{mode}");
         let (rows, _, _) = execute(
             out,
             &[IDS[0].into(), "injected-exit-7".into()],
             workers,
-            label,
+            &label,
             &fake_path,
         )?;
         if rows.len() != 2
@@ -386,64 +420,113 @@ fn controls(out: &Path, registry: &Path) -> Result<(), String> {
         {
             return Err(format!("{label} did not retain both actual child outcomes"));
         }
-    }
-    // Exercise the collector's four evidence rejection paths using copied artifacts.
-    let source = out.join("control-one").join(IDS[0]);
-    let pristine_receipt = fs::read(source.join("receipts").join(format!("{}.json", IDS[0])))
-        .map_err(|e| e.to_string())?;
-    let pristine_log = fs::read(source.join("receipts").join(format!("{}.log", IDS[0])))
-        .map_err(|e| e.to_string())?;
-    for defect in ["missing", "stale-source", "modified-log", "running-marker"] {
-        let dest = out.join("evidence-controls").join(defect);
-        let receipts = dest.join("receipts");
-        fs::create_dir_all(&receipts).map_err(|e| e.to_string())?;
-        let rp = receipts.join(format!("{}.json", IDS[0]));
-        fs::write(&rp, &pristine_receipt).map_err(|e| e.to_string())?;
-        fs::write(receipts.join(format!("{}.log", IDS[0])), &pristine_log)
+        // Exercise copied-evidence rejection controls once for every measured mode.
+        let source = out.join(&label).join(IDS[0]);
+        let pristine_receipt = fs::read(source.join("receipts").join(format!("{}.json", IDS[0])))
             .map_err(|e| e.to_string())?;
-        if defect == "missing" {
-            fs::remove_file(&rp).map_err(|e| e.to_string())?;
-        }
-        if defect == "stale-source" {
-            let mut v: Value =
-                serde_json::from_slice(&pristine_receipt).map_err(|e| e.to_string())?;
-            v["candidate_commit"] = json!("stale");
-            fs::write(&rp, serde_json::to_vec(&v).map_err(|e| e.to_string())?)
+        let pristine_log = fs::read(source.join("receipts").join(format!("{}.log", IDS[0])))
+            .map_err(|e| e.to_string())?;
+        for defect in ["missing", "stale-source", "modified-log", "running-marker"] {
+            let dest = out.join("evidence-controls").join(mode).join(defect);
+            let receipts = dest.join("receipts");
+            fs::create_dir_all(&receipts).map_err(|e| e.to_string())?;
+            let rp = receipts.join(format!("{}.json", IDS[0]));
+            fs::write(&rp, &pristine_receipt).map_err(|e| e.to_string())?;
+            fs::write(receipts.join(format!("{}.log", IDS[0])), &pristine_log)
                 .map_err(|e| e.to_string())?;
-        }
-        if defect == "modified-log" {
-            fs::write(receipts.join(format!("{}.log", IDS[0])), b"changed")
-                .map_err(|e| e.to_string())?;
-        }
-        if defect == "running-marker" {
-            fs::write(receipts.join("current-check.json"), b"{}").map_err(|e| e.to_string())?;
-        }
-        let command: Vec<String> = original["checks"]
-            .as_array()
-            .ok_or("missing checks")?
-            .iter()
-            .find(|c| c["id"] == IDS[0])
-            .ok_or("missing check")?["command"]
-            .as_array()
-            .ok_or("missing command")?
-            .iter()
-            .map(|arg| arg.as_str().map(str::to_owned).ok_or("invalid argument"))
-            .collect::<Result<_, _>>()?;
-        let rejected = read_row(
-            &Job {
-                id: IDS[0].into(),
-                receipts,
-            },
-            success_status(),
-            &command,
-            &git_head()?,
-        )
-        .is_err();
-        if !rejected {
-            return Err(format!("collector accepted {defect} evidence"));
+            if defect == "missing" { fs::remove_file(&rp).map_err(|e| e.to_string())?; }
+            if defect == "stale-source" {
+                let mut v: Value = serde_json::from_slice(&pristine_receipt).map_err(|e| e.to_string())?;
+                v["candidate_commit"] = json!("stale");
+                fs::write(&rp, serde_json::to_vec(&v).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+            }
+            if defect == "modified-log" {
+                fs::write(receipts.join(format!("{}.log", IDS[0])), b"changed").map_err(|e| e.to_string())?;
+            }
+            if defect == "running-marker" {
+                fs::write(receipts.join("current-check.json"), b"{}").map_err(|e| e.to_string())?;
+            }
+            let command: Vec<String> = original["checks"].as_array().ok_or("missing checks")?
+                .iter().find(|c| c["id"] == IDS[0]).ok_or("missing check")?["command"].as_array()
+                .ok_or("missing command")?.iter()
+                .map(|arg| arg.as_str().map(str::to_owned).ok_or("invalid argument"))
+                .collect::<Result<_, _>>()?;
+            if read_row(&Job { id: IDS[0].into(), receipts }, success_status(), &command, &git_head()?).is_ok() {
+                return Err(format!("{mode} collector accepted {defect} evidence"));
+            }
         }
     }
     Ok(())
+}
+
+fn mode_workers(mode: &str) -> usize {
+    if mode == "serial" { 1 } else { 2 }
+}
+
+fn weighted_order(ids: &[String], weights: &[(&str, u64)]) -> Result<Vec<String>, String> {
+    let mut table = BTreeMap::new();
+    for (id, weight) in weights {
+        if *weight == 0 || table.insert(*id, *weight).is_some() {
+            return Err("weight table has a zero weight or duplicate ID".into());
+        }
+    }
+    let selected: BTreeMap<_, _> = ids.iter().map(String::as_str).map(|id| (id, ())).collect();
+    if selected.len() != ids.len() || selected.len() != table.len()
+        || selected.keys().any(|id| !table.contains_key(id))
+    {
+        return Err("weight table must match the exact selected ID set".into());
+    }
+    let mut ordered = ids.to_vec();
+    ordered.sort_by(|a, b| table[b.as_str()].cmp(&table[a.as_str()]).then_with(|| a.cmp(b)));
+    Ok(ordered)
+}
+
+fn exhaustive_partition_bound(weights: &[(&str, u64)]) -> Result<u64, String> {
+    if weights.is_empty() || weights.len() >= usize::BITS as usize { return Err("unsupported partition size".into()); }
+    let mut minimum = u64::MAX;
+    for assignment in 0..(1usize << weights.len()) {
+        let (mut left, mut right) = (0u64, 0u64);
+        for (index, (_, weight)) in weights.iter().enumerate() {
+            if assignment & (1 << index) == 0 { left += weight; } else { right += weight; }
+        }
+        minimum = minimum.min(left.max(right));
+    }
+    Ok(minimum)
+}
+
+#[cfg(test)]
+mod scheduling_tests {
+    use super::*;
+
+    #[test]
+    fn weights_are_exact_positive_and_permutation_independent() {
+        let original: Vec<String> = IDS.iter().map(|id| (*id).to_owned()).collect();
+        let forward = weighted_order(&original, &WEIGHTS).unwrap();
+        let mut reversed = original.clone();
+        reversed.reverse();
+        assert_eq!(weighted_order(&reversed, &WEIGHTS).unwrap(), forward);
+        assert_eq!(forward.first().map(String::as_str), Some("telemetry-cli"));
+        assert_eq!(forward.iter().collect::<std::collections::BTreeSet<_>>().len(), IDS.len());
+        assert!(weighted_order(&original[..6], &WEIGHTS).is_err());
+        assert!(weighted_order(&original, &[("extra", 1)]).is_err());
+        let mut duplicate = WEIGHTS.to_vec(); duplicate.push(WEIGHTS[0]);
+        assert!(weighted_order(&original, &duplicate).is_err());
+        let mut zero = WEIGHTS.to_vec(); zero[0].1 = 0;
+        assert!(weighted_order(&original, &zero).is_err());
+    }
+
+    #[test]
+    fn ties_use_canonical_id_order() {
+        let ids = vec!["zeta".to_owned(), "alpha".to_owned(), "mu".to_owned()];
+        assert_eq!(weighted_order(&ids, &[("zeta", 3), ("alpha", 3), ("mu", 3)]).unwrap(),
+            vec!["alpha", "mu", "zeta"]);
+    }
+
+    #[test]
+    fn exhaustive_two_worker_bound_matches_registered_model() {
+        assert_eq!(WEIGHTS.iter().map(|(_, weight)| weight).sum::<u64>(), 4031);
+        assert_eq!(exhaustive_partition_bound(&WEIGHTS).unwrap(), 2241);
+    }
 }
 
 #[cfg(unix)]
