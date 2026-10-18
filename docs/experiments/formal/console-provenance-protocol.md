@@ -123,6 +123,27 @@ declarations, malformed byte counts, and a physically oversized/sparse asset
 whose small declared extent must cause bounded refusal before destination
 creation. Preserve the earlier adapter fixture failures and their corrections.
 
+### Retained composition counterexamples
+
+Prospective controls after the finite `babd209` focused run: root inspection found
+that immutable snapshots include the new helper but final snapshot hashing still
+enumerates only server, Spindle and optional fabricctl. Execute the actual
+`verify_binary_identity` AST function with a helper snapshot to reproduce its
+`KeyError`, then derive the final inventory from the recorded immutable snapshot
+table. Require a helper-byte change to fail the identity check explicitly.
+
+Independent source review also found that the stager verifies bounded asset
+bytes, then reopens each source through unbounded `shutil.copyfile`. A controlled
+mutation at destination creation must reproduce staged bytes differing from the
+receipt. Run both RED controls before changing production code and retain their
+actual failures. Correct staging by retaining the verified asset bodies in an
+invocation-owned map, bounded in total by the existing 8 MiB admission, and
+writing those exact bodies without reopening inputs. The trade-off is at most
+8 MiB retained payload memory for one source-read pass and no verification/copy
+race. A deterministic pre-publication source replacement must leave only the
+verified bytes in the output. No immutable-filesystem or privileged-writer claim
+is made. These are harness invariants, not new product acceptance credit.
+
 ## Measurement and stopping rule
 
 Use seven alternating warm pairs on identical 17-source canonical console
