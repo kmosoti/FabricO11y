@@ -9,6 +9,7 @@ pub mod metadata;
 pub mod mutants;
 pub mod preflight;
 pub mod purity;
+pub mod receipts;
 
 use serde_json::Value;
 use sha2::{Digest, Sha256};
