@@ -250,7 +250,9 @@ fn production_adapter_rejects_wrong_helper_pin_forged_report_and_receipt_race() 
     assert!(!wrong_hash.status.success());
     assert!(
         String::from_utf8_lossy(&wrong_hash.stderr)
-            .contains("console source helper hash differs from caller pin")
+            .contains("console source helper snapshot differs from caller pin"),
+        "{}",
+        String::from_utf8_lossy(&wrong_hash.stderr)
     );
     assert!(!wrong_hash_output.exists());
 
@@ -333,6 +335,7 @@ fn browser_adapter_rejects_incomplete_or_unextracted_source_tuple_before_fixture
         .join("tools/ui/live_browser_check.py");
     let script = r#"
 import argparse, importlib.util, pathlib, sys
+sys.path.insert(0, str(pathlib.Path(sys.argv[1]).parent))
 spec = importlib.util.spec_from_file_location('live_browser_check', sys.argv[1])
 module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
 exec(sys.argv[2])
