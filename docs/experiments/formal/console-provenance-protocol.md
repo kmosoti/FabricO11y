@@ -1,0 +1,76 @@
+# Console product source and harness identity
+
+Prospective registration, 2026-10-18. Alpha acceptance is owner-paused while
+verification engineering continues. This protocol changes no product package,
+oracle, acceptance gate or release authority.
+
+## Retained counterexample and invariant
+
+The second Chrome baseline stopped before browser launch at harness `e08caaaa`.
+Its resource record is `evidence/fabric-work-c1f2e977679b43a3831cdb952cca4c74`;
+exit 1 and whole-service stop were recorded. `stage_console.py` compared the
+frozen console receipt to its own newer harness checkout. The receipt's
+`Cargo.lock` SHA-256 is
+`1bec3939e821e84d60dd4a5b532e6f2acabaee309ee46aee68c5f16532c2496e`;
+the harness has
+`cf5160aab5c004c5b98c1f9bd8a7d28699ad01b89790fb7c3f2ebe830a61efcd`.
+The source change adds tooling dependencies. This is a provenance failure, not
+a browser result. Preserve the failed attempt and original source.
+
+Frozen product source and executing harness source are separate authorities.
+Every build-receipt source must still match its independently pinned product
+commit. The default development stager must keep rejecting a stale build against
+its current checkout. Never accept the receipt's own `source` field as authority,
+skip `Cargo.lock`, rebuild the frozen package, or weaken asset verification.
+
+## Bounded Rust primitive
+
+First implement a read-only `xtask console-source` command taking explicit
+`--source-root`, `--source-commit`, `--build-root` and `--receipt-sha256` pairs.
+Unknown, repeated, missing or malformed arguments fail closed. Require actual
+launcher containment and DATA storage. Pin the complete build receipt externally;
+reuse strict JSON and the descriptor-owned `ArtifactStore`, including full-byte
+digests, no-follow traversal and final identity rechecks. Require integer exit 0,
+a nonempty source inventory of at most 512 canonical relative paths with SHA-256
+identities, and a clean source checkout at the exact 40-character commit before
+and after verification. Require every inventoried path to be tracked. Bound and
+reap Git subprocesses; do not invoke a shell or accept receipt-selected programs.
+Return structural identities, counts and hashed bytes, never acceptance credit.
+
+Reuse existing byte/JSON ceilings without raising them. Source paths are indexed
+once, each admitted source is hashed once per invocation, and subprocess count
+is independent of inventory length. With N paths and B source/receipt bytes,
+full integrity requires Omega(B) byte work; ordered inventory operations may add
+O(N log N). Git repository inspection has separate repository-dependent cost.
+No claim of universal optimality or adversarial immutable snapshot is made.
+
+## Controls before adoption
+
+Run a deterministic Rust-driven fixture against a locally committed product
+source and a different clean harness commit. The current stager must first
+reproduce the observed refusal with the original diagnostic. The new primitive
+must accept the explicitly pinned original product and reject: wrong commit,
+changed tracked source, forged source digest, changed receipt, source symlink,
+untracked inventoried source, duplicate JSON keys, unsafe paths, missing source,
+failed/boolean build exit, excess inventory and duplicate CLI flags. Inject a
+representative skipped-source-hash defect and require the same corruption
+control to reject it. Retain command, revision, output and launcher stop records.
+Product delivery/query/rate oracles remain untouched.
+
+Only after these controls may the legacy packaged-browser adapter select an
+explicit source root after executing a caller-pinned native checker against the
+caller-pinned receipt and commit. Keep default staging unchanged and all existing
+asset, PNG, 8 MiB, inventory and extracted-package byte joins. Register its exact
+adapter controls before execution; no acceptance runs during the owner pause.
+
+## Measurement and stopping rule
+
+Use seven alternating warm pairs on identical 17-source canonical console
+inventories and a deterministic 512-source fixture. Compare existing Python
+source hashing only with Rust hashing only, and separately report complete CLI
+time including Git. Record CPU/tool versions, source/artifact identities, byte
+counts, wall time, peak RSS and cache limitations. Do not compare the full native
+Git join to a Python hash loop as equivalent work, or infer a speedup without an
+equivalent baseline. Register any later composite benchmark before execution.
+Stop optional tuning when controls pass and measurements show no actionable
+bottleneck; actual browser and two-hour soak time cannot be optimized away.
