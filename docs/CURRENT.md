@@ -53,6 +53,14 @@ and confirmed cleanup; registered controls and stopped closeout completed
 [#41](https://github.com/kmosoti/FabricO11y/issues/41). Earlier custody,
 removal and startup failures remain preserved in their protocols and raw records.
 
+Retained-query status now appends visible gap and unavailable-source counts while
+preserving the existing coverage wording and exact evidence disclosure. The
+deterministic incomplete-versus-gap input is preserved in the
+[gap-summary fixture](experiments/formal/fixtures/query-gap-summary-regression.json).
+This source change has not yet been built or checked; the frozen product remains
+unchanged, so a new product build and browser rerun are required before it can
+affect packaged behavior.
+
 The native simulator-publication and browser-continuity prerequisites have finite
 certificates. [S1-03](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-r3-s1-native-headroom-run-03)
 completed 70 seconds of actual offered work and stopped headroom grading. This is
