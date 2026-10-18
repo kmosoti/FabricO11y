@@ -48,3 +48,29 @@ policy with this helper, retain raw observations, pin the helper explicitly and
 run its affected adapter controls plus the required fast profile. Preserve old
 drafts/failures as evidence; do not keep unused alternate dispatch paths in the
 successor. Register successor runtime/source bindings before acceptance resumes.
+
+## Native producer effect experiment
+
+Before changing the current guest lifecycle, exercise its actual `guest_main`
+against a bounded effect fixture. The fixture must reject stopping the node
+without an applied pause and fixed acknowledged prefix. An old implementation
+failure must reach that semantic guard, not fail on a missing mock method.
+After correction, require pause2/drain/stop/resume3 and, on the distinct reboot,
+active3/new-prefix/pause4/drain/stop/resume5 in that order. Keep command intervals,
+inspection bodies and complete process observations from the actual methods.
+Require a successful inspection after the independently observed stop, before
+resume; a successful stop command alone cannot establish stopped state.
+
+Polling is an operational wait, not a custody verdict: bound it by the existing
+phase deadline; retry only the existing inspection-busy refusals; preserve all
+attempts. Recovery, interrupted append, changed incarnation, wrong desired
+configuration and nonmatching fixed prefix must refuse. Do not issue an action
+again merely because its application is delayed. Run the preimplementation
+counterexample and corrected controls through the resource launcher and retain
+their literal outputs. No effect fixture or local stdout run is native journal
+attestation or alpha acceptance.
+
+Profile changes in the independent witness and raw-journal binding changes are
+separate trust-boundary work. Do not copy the preserved draft's duplicated host
+cutoff reducer. Its old caller-card source ceilings do not admit a new runtime;
+measure and register the complete successor separately before acceptance.
