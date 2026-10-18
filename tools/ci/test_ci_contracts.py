@@ -256,6 +256,55 @@ class ReceiptTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
+    @staticmethod
+    def browser_entry_contract(workflow):
+        fixture = (
+            'python3 -B tools/resource_group.py --delegate -- '
+            'cargo test --locked -p xtask --test browser_entry '
+            'actual_parent_seam_binds_before_releasing_native_short_child '
+            '-- --ignored --exact --nocapture')
+        pin = 'FABRIC_BROWSER_ENTRY_HELPER_SHA256=$(sha256sum "$helper" | cut -d \' \' -f1)'
+        helper_pair = (
+            '--browser-entry-helper "$FABRIC_BROWSER_ENTRY_HELPER" '
+            '--browser-entry-helper-sha256 "$FABRIC_BROWSER_ENTRY_HELPER_SHA256"')
+        browser_calls = [line for line in workflow.splitlines() if 'live_browser_check.py' in line]
+        fixture_at = workflow.find(fixture)
+        build_at = workflow.find('name: Build native authenticated browser fixture')
+        pin_at = workflow.find(pin)
+        first_browser_at = workflow.find('live_browser_check.py')
+        return (
+            '  fast-checks:' in workflow
+            and fixture_at >= 0
+            and build_at >= 0
+            and build_at < fixture_at < pin_at < first_browser_at
+            and 'helper="$FABRIC_STORAGE_ROOT/cargo/debug/xtask"' in workflow
+            and 'test -x "$helper"' in workflow
+            and 'FABRIC_BROWSER_ENTRY_HELPER=$helper' in workflow
+            and len(browser_calls) == 2
+            and all(helper_pair in line for line in browser_calls)
+            and '--inject-api-cache-defect' in browser_calls[1]
+            and 'check-browser-defect.py "$defect_status"' in workflow
+            and 'name: Check actual passkeys and scoped native HTTPS console in Chrome' in workflow
+            and 'name: Require the exact API-cache negative-control failure' in workflow)
+
+    def test_hosted_browser_entry_helper_is_required_with_negative_controls(self):
+        workflow = (ROOT / '.github/workflows/rust.yml').read_text()
+        self.assertTrue(self.browser_entry_contract(workflow), 'hosted native browser entry contract drifted')
+        fixture = (
+            'python3 -B tools/resource_group.py --delegate -- '
+            'cargo test --locked -p xtask --test browser_entry '
+            'actual_parent_seam_binds_before_releasing_native_short_child '
+            '-- --ignored --exact --nocapture')
+        helper_pair = (
+            '--browser-entry-helper "$FABRIC_BROWSER_ENTRY_HELPER" '
+            '--browser-entry-helper-sha256 "$FABRIC_BROWSER_ENTRY_HELPER_SHA256"')
+        missing_launcher = workflow.replace(fixture, '', 1)
+        omitted_native_control = workflow.replace(helper_pair, '', 1)
+        self.assertNotEqual(missing_launcher, workflow)
+        self.assertNotEqual(omitted_native_control, workflow)
+        self.assertFalse(self.browser_entry_contract(missing_launcher), 'missing Linux launcher was accepted')
+        self.assertFalse(self.browser_entry_contract(omitted_native_control), 'omitted helper pair was accepted')
+
     def test_extended_workflow_uses_two_shards_and_original_runner(self):
         workflow = (ROOT / '.github/workflows/verification.yml').read_text()
         self.assertIn('checks=(semantic-mutants)', workflow)
