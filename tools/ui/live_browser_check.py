@@ -639,7 +639,7 @@ def main():
 
     def verify_binary_identity():
         receipt['native_input_hashes_after']={name:hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in receipt['binaries']}
-        receipt['native_snapshot_hashes_after']={role:hashlib.sha256(getattr(args,role).read_bytes()).hexdigest() for role in ('server','spindle', *(['fabricctl'] if args.migration else []))}
+        receipt['native_snapshot_hashes_after']={role:hashlib.sha256(getattr(args,role).read_bytes()).hexdigest() for role in receipt['immutable_binary_snapshots']}
         check(receipt['native_input_hashes_after']==receipt['binaries'],'native input artifact identities remain unchanged throughout run')
         check(all(receipt['native_snapshot_hashes_after'][role]==identity['sha256'] for role,identity in receipt['immutable_binary_snapshots'].items()),'all fixture launches retain immutable candidate binary bytes')
 

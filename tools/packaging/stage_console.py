@@ -5,7 +5,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -161,6 +160,7 @@ def stage(build, destination, *, product_source=None, helper_runner=None, eviden
         raise ValueError('console exceeds 8 MiB budget')
     if set(p.name for p in (build / 'dist').iterdir()) != assets.keys():
         raise ValueError('asset inventory differs from build receipt')
+    verified_assets = {}
     for name, identity in assets.items():
         source = build / 'dist' / name
         if Path(name).name != name or source.is_symlink() or not source.is_file():
@@ -171,11 +171,12 @@ def stage(build, destination, *, product_source=None, helper_runner=None, eviden
             raise ValueError('asset differs from console build receipt: ' + name)
         if name.endswith('.png'):
             require_timeless_png(name, body)
+        verified_assets[name] = body
     if product_source is not None and _receipt_digest(receipt_path) != product_source[2]:
         raise ValueError('console build receipt changed before staging')
     destination.mkdir(parents=True, exist_ok=False)
-    for name in assets:
-        shutil.copyfile(build / 'dist' / name, destination / name)
+    for name, body in verified_assets.items():
+        (destination / name).write_bytes(body)
         (destination / name).chmod(0o644)
     (destination / 'console-headers.json').write_text(json.dumps(receipt['headers'], sort_keys=True) + '\n')
     (destination / 'asset-manifest.json').write_text(json.dumps(assets, sort_keys=True) + '\n')
