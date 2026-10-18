@@ -144,7 +144,7 @@ def no_subprocess(*args, **kwargs):
     raise AssertionError('invalid helper reached subprocess/cgroup setup')
 fixture_module = ast.Module(body=[copy.deepcopy(native_main)], type_ignores=[])
 ast.fix_missing_locations(fixture_module)
-fixture_namespace = {'argparse': Argparse,
+fixture_namespace = {'argparse': Argparse, 'Path': pathlib.Path, '__doc__': 'native fixture',
     'supervisor': types.SimpleNamespace(browser=types.SimpleNamespace(
         require_limits=lambda: events.append(('limits', None)) or types.SimpleNamespace(name='unused')),
         require=fixture_require),
