@@ -429,7 +429,7 @@ pub fn owner_scratch_from_argv(
         return Err("raw argv must be the exact owner walkthrough command".into());
     }
     let mut pairs = std::collections::BTreeMap::new();
-    for pair in argv[3..].chunks_exact(2) {
+    for pair in argv[3..].as_chunks::<2>().0 {
         let flag = &pair[0];
         if !matches!(
             flag.as_str(),
