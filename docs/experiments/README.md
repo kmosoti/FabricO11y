@@ -1,8 +1,21 @@
 # Experiments
 
+The [Rust receipt-verifier migration](formal/verification-receipts-protocol.md)
+registers baseline controls, differential verification and standalone benchmarks.
+It does not replace required CI checks or credit synthetic fixtures as execution.
+
+The [native provider measurements and concrete defect control](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-receipt-provider-results-01)
+retain slower variants and exact source identities. The
+[scheduling experiment](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-scheduling-results-01)
+measured only its seven unchanged lightweight checks. The
+[production dispatch policy](../formal/verification-dispatch-policy.md) requires
+separate integration evidence before adoption; neither result resumes acceptance.
+
 The [two-runner verification pilot](formal/verification-shards-protocol.md)
-registers a comparison with the unchanged serial extended workflow. It does not
-replace required CI evidence; measurements and adoption remain pending.
+registers a comparison with the serial extended workflow. Its
+[revision-bound measurements](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-shards-results-01)
+retain the differing CPU/cache conditions and increased aggregate runner time.
+Canonical workflow adoption requires its own current-source checks.
 
 The [engineering evidence protocol](formal/engineering-evidence-protocol.md) registers
 bounded artifact/dependency/receipt composition controls and matched finite costs.

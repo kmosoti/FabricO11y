@@ -28,3 +28,62 @@ crate uses existing locked dependencies; no product/core boundary changes.
 The [architecture review skill](../../.agents/skills/architecture-review/SKILL.md)
 routes unresolved design decisions to focused experiments and documentation work.
 Existing Python product oracles stay independent; no MCP server is required.
+
+## Native verification receipts
+
+`xtask verify-receipts` reuses the descriptor-owned artifact reader to join the
+current registry, complete selected receipt inventory and each log digest. Its
+[representation contract](../formal/verification-receipt-contract.md) deliberately
+rejects duplicate JSON keys and numeric/boolean aliases. Git identity is checked
+before and after validation; missing, failed or running checks cannot count as
+a complete profile. This command is implemented for experimental comparison;
+required CI adoption is a separate step.
+
+JSON is bounded per document and across the composition. Logs are streamed with
+one complete digest per admitted artifact, then identities are rechecked. For N
+checks and B admitted bytes, full-byte I/O requires Theta(B) work; metadata/JSON
+indexing has additional collection-dependent costs. Reporting the stable duration
+ordering adds O(N log N). The byte-reading lower bound is
+Omega(B): sampled hashing cannot establish the same integrity contract. Metadata
+rechecks are not an immutable filesystem snapshot or protection against a
+privileged concurrent writer.
+
+The optional `verification-sha-openssl` feature selects an existing locked crypto
+provider behind a concrete incremental digest adapter. Otherwise RustCrypto is
+used. The rejected assembly experiment remains archived with its protocol and
+measured binaries; its optional feature and dependency were removed.
+Known vectors and cross-provider chunk-boundary tests check equal bytes; this
+changes no file admission, byte budget, product dependency or core policy. An
+unsigned receipt still cannot prove that its declared command actually ran.
+
+## Opt-in verification dispatch
+
+`checks --profile fast --light-workers 2 --receipts NEW_DIR` keeps heavy checks
+serial and dispatches only seven frozen lightweight command vectors through a
+two-worker queue. Descending measured duration orders that queue; canonical ID
+breaks ties. All other checks retain their registry order. Registry drift fails
+closed, and the ordinary no-flag path stays serial. The
+[dispatch policy](../formal/verification-dispatch-policy.md) defines the cohort
+and required adoption controls.
+
+One source/tool context and bounded revision snapshots serve the entire run.
+Each check owns staging logs, receipts and scratch. The whole profile retains a
+canonical running marker while workers finish, including after another failure.
+Passed staged evidence is assembled and hashed before complete native validation;
+exclusive publication checks those pinned bytes again. Artifact copying uses a
+64 KiB buffer, an exact initial extent and a one-byte growth probe. Failure leaves
+the marker and evidence; successful cleanup precedes marker removal. This bounds
+copy scratch independently of log length, while retaining full-byte verification.
+The unchanged Python receipt validator remains an independent cross-check before
+adoption. Local integration receipts bind source `7fc4723`; current-head hosted
+checks still gate workflow adoption.
+
+## Hosted extended verification
+
+Hosted extended verification runs the registered checks in two serial shards:
+`semantic-mutants` and the other nine extended IDs. The required `extended` job
+joins their disjoint receipts and invokes the independent Python completeness
+validator on the same source revision. This scheduling reduces elapsed time in
+one completed hosted comparison while increasing aggregate runner time under
+different CPU, cache and setup conditions; it does not alter check commands or
+product acceptance criteria. See the [finite pilot record](../experiments/formal/verification-shards-protocol.md).

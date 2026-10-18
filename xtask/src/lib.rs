@@ -3,15 +3,16 @@
 //! not merely that a command exited non-zero.
 
 pub mod checks;
+mod digest;
 pub mod evidence;
 pub mod layers;
 pub mod metadata;
 pub mod mutants;
 pub mod preflight;
 pub mod purity;
+pub mod receipts;
 
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::fmt;
 use std::path::Path;
 
@@ -74,8 +75,5 @@ pub fn check_core_purity(
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
-    Sha256::digest(bytes)
-        .iter()
-        .map(|b| format!("{b:02x}"))
-        .collect()
+    digest::hex(&digest::sha256(bytes))
 }

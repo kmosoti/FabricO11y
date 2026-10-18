@@ -2,7 +2,6 @@
 use super::json::{JSON_LIMIT, JSON_TOTAL_LIMIT};
 use super::{hex, io, require, strict_json};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::ffi::CString;
 use std::fs::{File, Metadata};
@@ -93,11 +92,22 @@ pub struct ArtifactStore {
     records: BTreeMap<String, Record>,
     total_bytes: u64,
     json_total: u64,
+    json_budget: u64,
     bytes_hashed: u64,
 }
 
 impl ArtifactStore {
     pub fn new(root: &Path) -> Result<Self, String> {
+        Self::with_json_budget(root, JSON_TOTAL_LIMIT)
+    }
+
+    /// Divide the existing aggregate JSON budget across independent roots.
+    /// A caller may tighten the ceiling, never raise it.
+    pub fn with_json_budget(root: &Path, json_budget: u64) -> Result<Self, String> {
+        require(
+            json_budget > 0 && json_budget <= JSON_TOTAL_LIMIT,
+            "invalid JSON budget",
+        )?;
         let root = root.to_str().ok_or("UTF-8 root required")?.to_owned();
         let directory = open_root(&root)?;
         Ok(Self {
@@ -106,6 +116,7 @@ impl ArtifactStore {
             records: BTreeMap::new(),
             total_bytes: 0,
             json_total: 0,
+            json_budget,
             bytes_hashed: 0,
         })
     }
@@ -140,10 +151,30 @@ impl ArtifactStore {
     }
 
     pub fn read(&mut self, path: &str, expected: &str, keep_json: bool) -> Result<(), String> {
-        parts(path)?;
         require(hex(expected, 64), "invalid SHA-256")?;
+        self.read_inner(path, Some(expected), keep_json)
+    }
+
+    /// Observe a current JSON file without an external digest pin. This is not
+    /// evidence admission: callers must establish its source/receipt authority.
+    /// Reading, hashing, bounds and identity rechecks are identical to `read`.
+    pub fn observe_json(&mut self, path: &str) -> Result<&Value, String> {
+        self.read_inner(path, None, true)?;
+        self.json(path)
+    }
+
+    fn read_inner(
+        &mut self,
+        path: &str,
+        expected: Option<&str>,
+        keep_json: bool,
+    ) -> Result<(), String> {
+        parts(path)?;
         if let Some(record) = self.records.get_mut(path) {
-            require(record.digest == expected, "conflicting path hash")?;
+            require(
+                expected.is_none_or(|pin| record.digest == pin),
+                "conflicting path hash",
+            )?;
             require(
                 !keep_json || record.json.is_some(),
                 "JSON payload was not retained",
@@ -167,7 +198,7 @@ impl ArtifactStore {
         if keep_json {
             self.admit_json(info.len())?;
         }
-        let mut digest = Sha256::new();
+        let mut digest = crate::digest::Sha256::new();
         let mut payload = Vec::new();
         let mut buffer = vec![0; CHUNK];
         let mut size = 0;
@@ -201,8 +232,11 @@ impl ArtifactStore {
                 && size == info.len(),
             "artifact changed during read",
         )?;
-        let actual = format!("{:x}", digest.finalize());
-        require(actual == expected, "artifact hash mismatch")?;
+        let actual = crate::digest::hex(&digest.finish());
+        require(
+            expected.is_none_or(|pin| actual == pin),
+            "artifact hash mismatch",
+        )?;
         let json = if keep_json {
             Some(strict_json(&payload)?)
         } else {
@@ -226,7 +260,7 @@ impl ArtifactStore {
     fn admit_json(&self, size: u64) -> Result<(), String> {
         require(size <= JSON_LIMIT as u64, "JSON exceeds 4 MiB")?;
         require(
-            self.json_total + size <= JSON_TOTAL_LIMIT,
+            self.json_total + size <= self.json_budget,
             "retained JSON exceeds 64 MiB",
         )
     }
@@ -237,6 +271,10 @@ impl ArtifactStore {
 
     pub fn bytes_hashed(&self) -> u64 {
         self.bytes_hashed
+    }
+
+    pub fn json_bytes(&self) -> u64 {
+        self.json_total
     }
 
     pub(super) fn json(&self, path: &str) -> Result<&Value, String> {
@@ -286,6 +324,33 @@ fn after_read(count: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn observed_json_keeps_budget_hash_and_identity_guards() {
+        let scratch = std::env::var_os("FABRIC_SCRATCH_ROOT").expect("contained DATA scratch");
+        let root = Path::new(&scratch).join(format!("observed-json-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        for name in ["one.json", "two.json"] {
+            std::fs::write(root.join(name), b"{}").unwrap();
+        }
+        assert!(ArtifactStore::with_json_budget(&root, 0).is_err());
+        assert!(ArtifactStore::with_json_budget(&root, JSON_TOTAL_LIMIT + 1).is_err());
+        let mut store = ArtifactStore::with_json_budget(&root, 2).unwrap();
+        assert_eq!(
+            store.observe_json("one.json").unwrap(),
+            &serde_json::json!({})
+        );
+        let pin = crate::sha256_hex(b"{}");
+        store.read("one.json", &pin, true).unwrap();
+        assert_eq!((store.bytes_hashed(), store.json_bytes()), (2, 2));
+        assert!(store.read("one.json", &"0".repeat(64), true).is_err());
+        assert!(store.observe_json("two.json").is_err());
+        assert_eq!(store.bytes_hashed(), 2);
+        store.recheck().unwrap();
+        std::fs::write(root.join("one.json"), b"{\"changed\":true}").unwrap();
+        assert!(store.recheck().is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn plan_bytes_share_total_budget() {
