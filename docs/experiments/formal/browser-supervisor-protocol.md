@@ -130,6 +130,54 @@ the independently supplied path and digest match exactly. No PATH lookup,
 runtime compilation, helper self-reported pin, product-package change or CI
 policy change is part of this amendment.
 
+## R3 caller adoption of the native entry helper
+
+Prospective R3 harness amendment, 2026-10-18. The exact frozen S1-03/full
+caller snapshot at `5220e27` uses the older, internally consistent
+`browser_group_launch(..., *, clock=None)` API; it predates the native-entry
+migration and is not asserted to have this mismatch. Current source at
+`73cccef` inherits the same module-level
+`browser_supervisor.supervise(args)` call shape, while the shared
+`browser_group_launch` API now requires the pinned native entry helper. That
+current caller therefore needs the helper path and digest.
+The reachable current R3 caller chain is `soak_r3.measure` → `ProductionAccess` →
+`CandidateFixture` → `ConsoleBridge` → `BrowserSupervisor` →
+`browser_group_launch`; the R3 full admission must therefore supply the helper
+as an explicit immutable input and pass its path and SHA-256 through every
+edge. Missing, changed or mismatched helper identity refuses before browser
+launch. There is no PATH lookup, Python `enter_group.py` fallback, runtime
+build or unpinned helper selection on this R3 path. The native helper remains
+the existing `xtask browser-enter-exec` artifact and uses the existing READY /
+RELEASE protocol above. This caller adoption changes no browser geometry,
+BiDi command, confirmation handling, UI oracle, native simulator or workload
+schedule.
+
+Before current-source correction, a Rust-hosted source regression extracts the
+actual
+`browser_group_launch` keyword-only signature and actual call expression from
+`browser_supervisor.supervise(args)`. It executes that call shape against a signature-
+preserving stub, requiring the explicit helper path and exact digest; the
+current missing-keyword call must fail in the test body with the specific
+Python `TypeError`, not a compile or import failure. A separate omitted-helper
+mutant must remain refused after correction. Focused controls also require the
+R3 admission, `ProductionAccess`, `CandidateFixture`, `ConsoleBridge`, and
+`BrowserSupervisor` handoffs to be present and fail closed when either helper
+field is absent. These source controls do not establish native placement or
+cleanup; one bounded Linux caller-composition run must exercise the real
+supervisor, helper, READY-before-binding and RELEASE-after-binding, then exact
+exit, empty subgroup and outer stop.
+
+The prior S1-03 measurement and native-publication certificate remain bound to
+their original `5220e27` source and helper identities. The six recorded S1
+phase maxima remain valid observations for that frozen caller. Browser
+startup occurs inside the measured `setup` phase, so adopting this entry path
+cannot claim the old setup maximum for the changed caller without a bounded
+setup-boundary remeasurement and the original 1.25 headroom rule. The other
+five phase maxima and native-publication certificate are not invalidated by a
+browser-entry-only change. A failed or out-of-margin setup remeasurement
+requires a newly admitted S1; this amendment alone grants no reuse, S1, full
+soak or acceptance credit.
+
 Before the correction is admitted, one finite Linux integration fixture must
 invoke the actual parent launch seam and native helper under the existing owned
 cgroup resource boundary. Its positive uses immediate `/bin/true`: READY must
@@ -168,6 +216,68 @@ existing positive and exact-negative commands and required job names. This is a
 hosted harness-verification policy change only: it adds no acceptance result,
 changes no package, browser oracle, negative cause or required registry check,
 and does not qualify a product or release.
+
+## Current-main release caller adoption
+
+Prospective harness protocol amendment, 2026-10-18. The native-entry migration
+changed the shared `browser_group_launch` contract to require the existing
+hash-pinned `xtask browser-enter-exec` artifact. The current-main release
+callers `release_main.run`, `release_query.main` and `release_stress.main`
+construct `CandidateFixture` directly, while the production outage adapter
+constructs it through `ProductionAccess(..., soak=False)`. These call paths
+must each receive an explicit helper path and SHA-256 and pass that same pair
+into the existing `CandidateFixture` validation and immutable snapshot path.
+For `ProductionAccess`, both values are explicit command inputs when
+production access is selected, including the non-soak outage path. Each direct
+release command likewise requires both inputs. A missing, partial, malformed,
+non-executable, symlinked or digest-mismatched pair refuses before fixture
+construction or browser launch. There is no PATH lookup, ambient environment
+selection, default helper, Python entry fallback or runtime build. The R3
+admission path remains separately bound to its existing pinned inputs.
+
+The regression must execute the actual caller shape through a signature-
+preserving fixture seam and show that the admitted pair reaches
+`CandidateFixture`; a missing or altered pair must be rejected before any
+browser child starts. A source-presence check alone is insufficient. These
+caller controls establish harness wiring only: they do not establish native
+placement, browser correctness, package qualification or release acceptance.
+The exact frozen #43 and #46 runtimes remain bound to their original source
+snapshots and are not changed by this current-main amendment.
+
+The same current-main adoption covers the remaining direct supervised callers:
+`console_bridge_smoke.supervised_bridge`,
+`browser_cleanup_native.main`, `console_firefox_trust.main`, and
+`Walkthrough.browser` in the owner walkthrough. Each must receive the helper
+path and SHA-256 through explicit CLI inputs and pass them to its existing
+`ConsoleBridge` or `browser_group_launch` call. The owner walkthrough records
+the exact pair in its run binding; its separately pinned package, guide and
+harness inputs are unchanged. Pin validation occurs before the caller creates
+or launches a browser child. Existing descriptor, native cleanup, TLS expected
+error and owner interaction checks remain unchanged. These are harness
+composition fixes; they do not change any oracle or acceptance outcome.
+
+The owner command is also checked by the native storage census through
+`owner_scratch_from_argv`. That raw-argv guard must admit exactly the added
+helper path and SHA-256 pair, retain its duplicate/unknown-option refusal, and
+continue to bind the walkthrough label, admission path/hash and outer-admission
+path. The owner caller validates the helper file and digest and records both
+values in its run binding. The census change does not grant a different scratch
+path or alter its cleanup evidence.
+
+The owner CLI pair must also equal the independently pinned
+`inputs.browser_entry_helper.path` and `inputs.browser_entry_helper.sha256` in
+the admitted owner plan. The caller checks that equality and the actual file
+identity before effectful host limit or browser setup. A caller-supplied pair
+does not replace the admission's expected pin.
+
+`CandidateFixture` verifies the explicit caller path and digest before fixture
+effects, then copies the helper into a fresh `work/native-browser-entry/`
+directory, verifies the copied bytes, and sets the executable to owner-read/
+owner-execute mode. It launches `ConsoleBridge` with this owned snapshot, not
+with the mutable caller path. The receipt records caller and snapshot paths and
+digests; the snapshot joins `immutable_inputs` so closeout refuses if it
+changed. Replacing the caller path after the copy therefore cannot change the
+bytes the browser launch uses.
 
 ## Production health-wait scope correction
 

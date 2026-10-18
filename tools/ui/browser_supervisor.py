@@ -3,6 +3,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import select
 import signal
 import socket
@@ -62,7 +63,8 @@ def budget_limits(record):
 
 class BrowserSupervisor:
     """Owns one exclusively created domain and its actual supervisor Popen."""
-    def __init__(self, command, environment, log, deadline, out, *, fault=None, browser_parent=None):
+    def __init__(self, command, environment, log, deadline, out, *, fault=None, browser_parent=None,
+                 browser_entry_helper=None, browser_entry_helper_sha256=None):
         self.deadline, self.out = deadline, Path(out)
         self.process = self.control = self.domain = self.service = None
         self.budget = None
@@ -71,6 +73,10 @@ class BrowserSupervisor:
         self.receipt = {'state': 'starting', 'cleanup_confirmed': False}
         require(deadline > time.monotonic(), 'deadline')
         require(fault in (None, 'before-ready', 'during-cleanup'), 'fault')
+        require(isinstance(browser_entry_helper, Path) and browser_entry_helper.is_absolute()
+                and isinstance(browser_entry_helper_sha256, str)
+                and re.fullmatch('[0-9a-f]{64}', browser_entry_helper_sha256) is not None,
+                'entry-helper-pin')
         require(self.out.is_absolute() and not self.out.exists()
                 and self.out.parent.resolve().is_relative_to(browser.DATA / 'results'), 'output')
         self.out.mkdir(mode=0o700)
@@ -99,6 +105,8 @@ class BrowserSupervisor:
                           str(path), sys.executable, '-B', str(Path(__file__).resolve()),
                           '--control-fd', str(child.fileno()), '--service-fd', str(self.service['fd']),
                           '--domain-fd', str(self.domain['fd']), '--deadline', repr(deadline),
+                          '--browser-entry-helper', str(browser_entry_helper),
+                          '--browser-entry-helper-sha256', browser_entry_helper_sha256,
                           *(['--budget-fd', str(self.budget['fd'])] if self.budget else []),
                           '--out', str(self.out), *(['--fault', fault] if fault else []), '--', *command]
             try:
@@ -230,7 +238,9 @@ def supervise(args):
     try:
         parent = browser.begin_browser_domain(current, args.deadline)
         log = (args.out / 'driver.log').open('xb')
-        proc = browser.browser_group_launch(parent, bindings, 'webdriver', args.command, log, dict(os.environ))
+        proc = browser.browser_group_launch(parent, bindings, 'webdriver', args.command, log, dict(os.environ),
+            entry_helper=args.browser_entry_helper,
+            entry_helper_sha256=args.browser_entry_helper_sha256)
         ready = dict(kind='ready', supervisor_pid=os.getpid(), domain=str(current),
                      own_domain_acquired=True, driver_pid=proc.pid,
                      driver_start_ticks=bindings[0]['group']['start_ticks'])
@@ -283,6 +293,8 @@ if __name__ == '__main__':
     for option in ('control-fd', 'service-fd', 'domain-fd'):
         parser.add_argument('--' + option, type=int, required=True)
     parser.add_argument('--deadline', type=float, required=True)
+    parser.add_argument('--browser-entry-helper', type=Path, required=True)
+    parser.add_argument('--browser-entry-helper-sha256', required=True)
     parser.add_argument('--budget-fd', type=int)
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--fault', choices=('before-ready', 'during-cleanup'))

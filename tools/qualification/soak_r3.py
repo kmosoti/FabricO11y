@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import random
+import re
 import signal
 import stat
 import subprocess
@@ -35,6 +36,16 @@ def require(value, message):
 def digest(path):
     with Path(path).open('rb') as stream:
         return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def pinned_browser_entry_helper(value):
+    record = value.get('inputs', {}).get('browser_entry_helper')
+    require(type(record) is dict and type(record.get('path')) is str
+            and Path(record['path']).is_absolute()
+            and type(record.get('sha256')) is str
+            and re.fullmatch('[0-9a-f]{64}', record['sha256']) is not None,
+            'explicit pinned native browser entry helper required')
+    return Path(record['path']), record['sha256']
 
 
 def pinned(path, expected):
@@ -111,6 +122,7 @@ def admission(path, expected):
     require(value.get('protocol') == 'R3' and value.get('seed') == SEED
             and value.get('identities') == value.get('workers') == 100, 'registered R3 parameters required')
     require(type(value.get('smoke')) is bool, 'explicit smoke/full admission required')
+    pinned_browser_entry_helper(value)
     seconds = value.get('seconds')
     require(type(seconds) is int and (seconds == 7200 if not value['smoke'] else 60 < seconds < 7200),
             'offered seconds do not match admission')
@@ -446,9 +458,12 @@ def measure(value, admission_sha):
             parent_observations.append({'boundary': label, 'at_ns': time.monotonic_ns(), 'groups': groups})
         clock.boundary_hook = parent_boundary
         clock.call(parent_boundary, 'admission')
+        browser_entry_helper, browser_entry_helper_sha256 = pinned_browser_entry_helper(value)
         args = SimpleNamespace(production_access=True, production_server_cpus='0-1',
             deb_receipt=Path(value['inputs']['deb']['path']), rpm_receipt=Path(value['inputs']['rpm']['path']),
-            production_out=Path(value['fixture_output']), r3_browser_deadline=clock.launcher_begin / NS + 7500)
+            production_out=Path(value['fixture_output']), r3_browser_deadline=clock.launcher_begin / NS + 7500,
+            browser_entry_helper=browser_entry_helper,
+            browser_entry_helper_sha256=browser_entry_helper_sha256)
         fixture = clock.call(ProductionAccess, args, raw, soak=True)
         require(fixture.bridge.receipt.get('supervised_browser') is True and fixture.bridge.supervisor is not None,
                 'R3 actual browser supervisor was not selected')

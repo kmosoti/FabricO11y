@@ -1,6 +1,7 @@
 """Delegated supervisor lifecycle controls with an independent child guardian."""
 import argparse
 import ctypes
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -39,12 +40,20 @@ while time.monotonic() < end: time.sleep(.02)
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--browser-entry-helper', type=Path, required=True)
+    parser.add_argument('--browser-entry-helper-sha256', required=True)
     args = parser.parse_args()
     browser = supervisor.browser
     limits = browser.require_limits()
+    require = supervisor.require
+    require(args.browser_entry_helper.is_absolute() and not args.browser_entry_helper.is_symlink()
+            and args.browser_entry_helper.is_file() and os.access(args.browser_entry_helper, os.X_OK)
+            and len(args.browser_entry_helper_sha256) == 64
+            and all(character in '0123456789abcdef' for character in args.browser_entry_helper_sha256)
+            and hashlib.sha256(args.browser_entry_helper.read_bytes()).hexdigest()
+                == args.browser_entry_helper_sha256, 'fixture-entry-helper-pin')
     subprocess.run(['systemctl', '--user', 'set-property', '--runtime', limits.name,
                     'MemoryHigh=5G', 'MemoryMax=6G', 'MemorySwapMax=0', 'CPUQuota=200%', 'TasksMax=1536'], check=True, timeout=15)
-    require = supervisor.require
     require(not args.out.exists() and args.out.parent.resolve().is_relative_to(browser.DATA / 'results'), 'fixture-output')
     args.out.mkdir(mode=0o700)
     root = Path(tempfile.mkdtemp(prefix='browser-supervisor-native-', dir=os.environ['FABRIC_SCRATCH_ROOT']))
@@ -87,7 +96,8 @@ def main():
                 try:
                     instance.__init__(command, dict(os.environ), log, parent['deadline_monotonic_ns'] / 1e9,
                         args.out / (mode + '-supervisor'), fault=mode if mode in ('before-ready', 'during-cleanup') else None,
-                        browser_parent=budget)
+                        browser_parent=budget, browser_entry_helper=args.browser_entry_helper,
+                        browser_entry_helper_sha256=args.browser_entry_helper_sha256)
                 except BaseException as error:
                     errors.append(type(error).__name__ + ': ' + str(error))
             def close():
@@ -188,7 +198,9 @@ def main():
             try:
                 try:
                     instance.__init__([sys.executable, '-B', '-c', 'raise SystemExit(99)'], dict(os.environ), None,
-                        parent['deadline_monotonic_ns'] / 1e9, args.out / defect, browser_parent=supplied)
+                        parent['deadline_monotonic_ns'] / 1e9, args.out / defect, browser_parent=supplied,
+                        browser_entry_helper=args.browser_entry_helper,
+                        browser_entry_helper_sha256=args.browser_entry_helper_sha256)
                 except RuntimeError as error:
                     require(str(error) == ('browser-supervisor-budget-ancestor' if defect == 'wrong-ancestor'
                                           else 'browser-group-identity'), 'fixture-refusal-diagnostic')

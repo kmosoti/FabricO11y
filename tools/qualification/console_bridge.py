@@ -109,7 +109,8 @@ class ConsoleBridge:
     """One browser, one serialized request, ephemeral owner and authenticator."""
     def __init__(self, origin, leaf_certificate, work, out, *, browser_group=None,
                  browser_parent=None, browser_deadline=None, backend="chrome",
-                 trusted_ca=None, private_dns=None):
+                 trusted_ca=None, private_dns=None, browser_entry_helper=None,
+                 browser_entry_helper_sha256=None):
         bridge_origin(origin, backend, private_dns)
         if backend == "chrome" and trusted_ca is not None:
             raise ValueError("trusted CA requires the Firefox backend")
@@ -223,9 +224,18 @@ class ConsoleBridge:
             if browser_parent is not None:
                 if self.browser_group is None or browser_parent['path'] != self.browser_group or browser_deadline is None:
                     raise ValueError('R3 supervisor needs the actual held browser budget and run deadline')
+                if (not isinstance(browser_entry_helper, Path) or not browser_entry_helper.is_absolute()
+                        or browser_entry_helper.is_symlink() or not browser_entry_helper.is_file()
+                        or not os.access(browser_entry_helper, os.X_OK)
+                        or not isinstance(browser_entry_helper_sha256, str)
+                        or re.fullmatch('[0-9a-f]{64}', browser_entry_helper_sha256) is None
+                        or hashlib.sha256(browser_entry_helper.read_bytes()).hexdigest() != browser_entry_helper_sha256):
+                    raise ValueError('R3 supervisor requires the exact pinned native browser entry helper')
                 from browser_supervisor import BrowserSupervisor
                 self.supervisor = BrowserSupervisor(command, env, self.log, browser_deadline,
-                                                     self.out / 'supervisor', browser_parent=browser_parent)
+                    self.out / 'supervisor', browser_parent=browser_parent,
+                    browser_entry_helper=browser_entry_helper,
+                    browser_entry_helper_sha256=browser_entry_helper_sha256)
                 self.driver = self.supervisor
                 self.receipt['supervised_browser'] = True
             elif self.browser_group is not None:

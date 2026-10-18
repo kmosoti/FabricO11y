@@ -425,7 +425,7 @@ pub fn owner_scratch_from_argv(
     let supplied_admission = canonical_data_path(admission_path)?;
 
     const PROGRAM: [&str; 3] = ["python3", "-B", "tools/qualification/owner_walkthrough.py"];
-    if argv.len() != 13 || argv[..3].iter().map(String::as_str).ne(PROGRAM) {
+    if argv.len() != 17 || argv[..3].iter().map(String::as_str).ne(PROGRAM) {
         return Err("raw argv must be the exact owner walkthrough command".into());
     }
     let mut pairs = std::collections::BTreeMap::new();
@@ -438,6 +438,8 @@ pub fn owner_scratch_from_argv(
                 | "--outer-admission"
                 | "--run-id"
                 | "--server-family"
+                | "--browser-entry-helper"
+                | "--browser-entry-helper-sha256"
         ) || pairs.insert(flag.as_str(), pair[1].as_str()).is_some()
         {
             return Err("duplicate or unknown owner command flag".into());
@@ -458,6 +460,15 @@ pub fn owner_scratch_from_argv(
     }
     if !matches!(get("--server-family")?, "debian" | "fedora") {
         return Err("invalid owner server family".into());
+    }
+    let _helper = canonical_data_path(get("--browser-entry-helper")?)?;
+    let helper_sha256 = get("--browser-entry-helper-sha256")?;
+    if helper_sha256.len() != 64
+        || !helper_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("lowercase browser entry helper SHA-256 required".into());
     }
     let outer = canonical_data_path(get("--outer-admission")?)?;
     if outer != expected_outer {
@@ -954,6 +965,9 @@ mod owner_binding_tests {
 
     const ROOT: &str = "/run/media/kmosoti/data/FabricO11y";
     const HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const HELPER: &str =
+        "/run/media/kmosoti/data/FabricO11y/results/native-artifacts-01/xtask-browser-enter-exec";
+    const HELPER_HASH: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
     fn command(run_id: &str, family: &str) -> Vec<String> {
         vec![
@@ -970,6 +984,10 @@ mod owner_binding_tests {
             run_id.into(),
             "--server-family".into(),
             family.into(),
+            "--browser-entry-helper".into(),
+            HELPER.into(),
+            "--browser-entry-helper-sha256".into(),
+            HELPER_HASH.into(),
         ]
     }
 
@@ -1009,6 +1027,12 @@ mod owner_binding_tests {
         duplicate[11] = "--run-id".into();
         duplicate[12] = "debian".into();
         cases.push(duplicate);
+        let mut missing_helper_pair = base.clone();
+        missing_helper_pair.truncate(13);
+        cases.push(missing_helper_pair);
+        let mut partial_helper_pair = base.clone();
+        partial_helper_pair.truncate(15);
+        cases.push(partial_helper_pair);
         let mut extra = base.clone();
         extra.extend(["--force".into(), "yes".into()]);
         cases.push(extra);
@@ -1056,11 +1080,41 @@ mod owner_binding_tests {
         bad_family[12] = "ubuntu".into();
         let mut bad_hash = base.clone();
         bad_hash[6] = "A".repeat(64);
+        let mut bad_helper_path = base.clone();
+        bad_helper_path[14] = "relative-helper".into();
+        let mut helper_outside_data = base.clone();
+        helper_outside_data[14] = "/tmp/xtask-browser-enter-exec".into();
+        let mut helper_traversal = base.clone();
+        helper_traversal[14] = format!("{ROOT}/results/../scratch/helper");
+        let mut helper_noncanonical = base.clone();
+        helper_noncanonical[14] = format!("{ROOT}/results//helper");
+        let mut bad_helper_hash = base.clone();
+        bad_helper_hash[16] = "g".repeat(64);
+        let mut uppercase_helper_hash = base.clone();
+        uppercase_helper_hash[16] = "B".repeat(64);
+        let mut short_helper_hash = base.clone();
+        short_helper_hash[16] = "b".repeat(63);
+        let mut duplicate_helper_flag = base.clone();
+        duplicate_helper_flag[15] = "--browser-entry-helper".into();
         let mut bad_path = base.clone();
         bad_path[4] = format!("{ROOT}/results/../scratch/admission.json");
         let mut nul_path = base.clone();
         nul_path[4] = format!("{ROOT}/results/owner\0.json");
-        for argv in [bad_outer, bad_family, bad_hash, bad_path, nul_path] {
+        for argv in [
+            bad_outer,
+            bad_family,
+            bad_hash,
+            bad_helper_path,
+            helper_outside_data,
+            helper_traversal,
+            helper_noncanonical,
+            bad_helper_hash,
+            uppercase_helper_hash,
+            short_helper_hash,
+            duplicate_helper_flag,
+            bad_path,
+            nul_path,
+        ] {
             assert!(bind("debian", &label, &argv).is_err());
         }
     }

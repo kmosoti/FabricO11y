@@ -1,5 +1,6 @@
 """Production adapters reject mixed modes and preserve registered storage."""
 import argparse
+import hashlib
 import os
 from pathlib import Path
 import tempfile
@@ -47,6 +48,8 @@ class ProductionAccessTests(unittest.TestCase):
             validate_options(parser.parse_args(['--production-server-cpus', '4-5']))
         args = parser.parse_args(['--production-access', '--deb-receipt', '/synthetic/deb',
             '--rpm-receipt', '/synthetic/rpm', '--production-out', '/synthetic/out',
+            '--browser-entry-helper', '/synthetic/helper',
+            '--browser-entry-helper-sha256', 'a' * 64,
             '--production-server-cpus', '4-5'])
         validate_options(args)
         self.assertEqual(server_placement(args, soak=False), '4-5')
@@ -58,9 +61,13 @@ class ProductionAccessTests(unittest.TestCase):
             (root / 'helpers').mkdir()
             for name in ('spindle_sim', 'server_dump', 'spool_dump'):
                 (root / 'helpers' / name).write_bytes(b'synthetic immutable helper')
+            entry_helper = root / 'xtask-browser-enter-exec'
+            entry_helper.write_bytes(b'synthetic pinned browser entry helper')
+            entry_helper.chmod(0o700)
             args = argparse.Namespace(production_access=True, deb_receipt=root / 'deb',
                 rpm_receipt=root / 'rpm', production_out=root / 'out',
-                production_server_cpus='4-5')
+                production_server_cpus='4-5', browser_entry_helper=entry_helper,
+                browser_entry_helper_sha256=hashlib.sha256(entry_helper.read_bytes()).hexdigest())
             observed = []
             def fixture(instance, *paths, **placement):
                 observed.append((paths, placement))
@@ -69,7 +76,10 @@ class ProductionAccessTests(unittest.TestCase):
             with patch('release_runtime.CandidateFixture.__init__', new=fixture), \
                     patch('production_access.subprocess.check_output', return_value=b'0 synthetic\n'):
                 adapter = ProductionAccess(args, root / 'raw', soak=False)
-            self.assertEqual(observed[0][1], {'server_cpus': '4-5', 'supervisor_cpus': '2-3'})
+            self.assertEqual(observed[0][1], {
+                'server_cpus': '4-5', 'supervisor_cpus': '2-3',
+                'browser_entry_helper': entry_helper,
+                'browser_entry_helper_sha256': args.browser_entry_helper_sha256})
             self.assertEqual(adapter.receipt['adapter_cpu_placement'], {
                 'server': [4, 5], 'workers': [2, 3], 'soak': False, 'policy_commit': '414fb29'})
 
@@ -78,12 +88,19 @@ class ProductionAccessTests(unittest.TestCase):
         options(parser)
         validate_options(parser.parse_args([]))
         complete = ['--production-access', '--deb-receipt', '/synthetic/deb',
-                    '--rpm-receipt', '/synthetic/rpm', '--production-out', '/synthetic/out']
+                    '--rpm-receipt', '/synthetic/rpm', '--production-out', '/synthetic/out',
+                    '--browser-entry-helper', '/synthetic/helper',
+                    '--browser-entry-helper-sha256', 'a' * 64]
         validate_options(parser.parse_args(complete))
         for args in (complete[1:], ['--production-access'], complete[:-2],
                      ['--deb-receipt', '/synthetic/deb']):
             with self.assertRaises(ValueError):
                 validate_options(parser.parse_args(args))
+        for partial in (['--browser-entry-helper', '/synthetic/helper'],
+                        ['--browser-entry-helper-sha256', 'a' * 64]):
+            with self.assertRaisesRegex(ValueError, 'both exact native browser entry'):
+                validate_options(parser.parse_args(['--production-access', '--deb-receipt', '/synthetic/deb',
+                    '--rpm-receipt', '/synthetic/rpm', '--production-out', '/synthetic/out', *partial]))
 
     def test_storage_adapter_restores_original_defaults_and_soak_file_size(self):
         with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as work:

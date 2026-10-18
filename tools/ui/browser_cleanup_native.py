@@ -1,5 +1,6 @@
 """Finite real-kernel cleanup controls; no browser or product acceptance claim."""
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -63,7 +64,18 @@ def wait_for(predicate, seconds=5):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--browser-entry-helper', type=Path, required=True)
+    parser.add_argument('--browser-entry-helper-sha256', required=True)
     args = parser.parse_args()
+    if (not args.browser_entry_helper.is_absolute()
+            or args.browser_entry_helper.is_symlink()
+            or not args.browser_entry_helper.is_file()
+            or not os.access(args.browser_entry_helper, os.X_OK)
+            or len(args.browser_entry_helper_sha256) != 64
+            or any(char not in '0123456789abcdef' for char in args.browser_entry_helper_sha256)
+            or hashlib.sha256(args.browser_entry_helper.read_bytes()).hexdigest()
+                != args.browser_entry_helper_sha256):
+        raise ValueError('exact pinned native browser entry helper required')
     limits = browser.require_limits()
     subprocess.run(['systemctl', '--user', 'set-property', '--runtime', limits.name,
         'MemoryHigh=3500000000', 'MemoryMax=4000000000', 'MemorySwapMax=0',
@@ -83,7 +95,9 @@ def main():
             script = cell / 'child.py'; script.write_text(CHILD)
             log = (out / (mode + '.log')).open('x'); logs.append(log)
             proc = browser.browser_group_launch(parent, bindings, mode,
-                [sys.executable, '-B', str(script), str(cell), 'normal' if mode == 'foreign' else mode], log, dict(os.environ))
+                [sys.executable, '-B', str(script), str(cell), 'normal' if mode == 'foreign' else mode],
+                log, dict(os.environ), entry_helper=args.browser_entry_helper,
+                entry_helper_sha256=args.browser_entry_helper_sha256)
             leaders.append((proc, os.pidfd_open(proc.pid), observed(proc.pid)['start_ticks']))
             bound = bindings[-1]['group']
             row = dict(case=mode, bound_pids=[p['pid'] for p in bound['members']],

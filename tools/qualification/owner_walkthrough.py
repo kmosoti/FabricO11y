@@ -38,6 +38,18 @@ def sha(path):
     return Q.digest(Path(path), 'sha256')
 
 
+def require_admitted_browser_entry_helper(plan, helper, helper_sha256):
+    record = plan.get('inputs', {}).get('browser_entry_helper')
+    require(type(record) is dict
+            and type(record.get('path')) is str
+            and Path(record['path']).is_absolute()
+            and type(record.get('sha256')) is str
+            and re.fullmatch('[0-9a-f]{64}', record['sha256']) is not None
+            and record['path'] == str(helper)
+            and record['sha256'] == helper_sha256,
+            'native browser entry helper differs from admitted owner plan')
+
+
 def artifact(path, expected):
     path = Path(path)
     path.resolve(strict=True).relative_to(Q.DATA.resolve(strict=True))
@@ -110,14 +122,19 @@ class Prose:
 
 
 class Walkthrough:
-    def __init__(self, plan, artifacts, fixture, guides, root, out, server_family):
+    def __init__(self, plan, artifacts, fixture, guides, root, out, server_family,
+                 browser_entry_helper, browser_entry_helper_sha256):
         self.plan, self.artifacts, self.fixture, self.guides = plan, artifacts, fixture, guides
         self.root, self.out = root, out
+        self.browser_entry_helper = browser_entry_helper
+        self.browser_entry_helper_sha256 = browser_entry_helper_sha256
         self.commands = Commands(out / 'protected-transcript')
         self.record = {'classification': 'incomplete native owner walkthrough', 'exit': 2,
             'binding': {key: plan[key] for key in ('original_head', 'epoch', 'source_commit', 'guide_commit', 'harness_commit')},
             'signals': {}, 'owner_enrollments': [], 'native_older': fixture['native_older'], 'events': []}
         self.record['binding'].update(deb_sha256=plan['package_sha256']['debian'], rpm_sha256=plan['package_sha256']['fedora'])
+        self.record['binding'].update(browser_entry_helper=str(browser_entry_helper),
+                                      browser_entry_helper_sha256=browser_entry_helper_sha256)
         self.expected_binding = dict(self.record['binding'])
         self.key = root / 'id_ed25519'
         self.bridge = self.budget = None
@@ -487,7 +504,9 @@ printf 'server_url=https://telemetry.example.com:7443\nserver_ca=/etc/fabrico11y
         try:
             instance.__init__(origin, leaf, work, out, browser_group=self.budget['path'],
                 browser_parent=self.budget, browser_deadline=self.overall_end,
-                backend='firefox', trusted_ca=ca, private_dns=origin.split('/')[2].split(':')[0])
+                backend='firefox', trusted_ca=ca, private_dns=origin.split('/')[2].split(':')[0],
+                browser_entry_helper=self.browser_entry_helper,
+                browser_entry_helper_sha256=self.browser_entry_helper_sha256)
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as failure:
             error = type(failure).__name__
         if wrong_san or untrusted:
@@ -727,7 +746,16 @@ def main():
     parser.add_argument('--outer-admission', type=Path, required=True)
     parser.add_argument('--run-id', required=True)
     parser.add_argument('--server-family', choices=('debian', 'fedora'), required=True)
+    parser.add_argument('--browser-entry-helper', type=Path, required=True)
+    parser.add_argument('--browser-entry-helper-sha256', required=True)
     args = parser.parse_args()
+    require(args.browser_entry_helper.is_absolute()
+            and not args.browser_entry_helper.is_symlink()
+            and args.browser_entry_helper.is_file()
+            and os.access(args.browser_entry_helper, os.X_OK)
+            and re.fullmatch('[0-9a-f]{64}', args.browser_entry_helper_sha256)
+            and sha(args.browser_entry_helper) == args.browser_entry_helper_sha256,
+            'exact pinned native browser entry helper required')
     require(re.fullmatch('[a-z0-9][a-z0-9-]{0,79}', args.run_id), 'unique safe run identity required')
     require(re.fullmatch('[0-9a-f]{64}', args.admission_sha256), 'exact preregistered admission digest required')
     def interrupted(signum, frame):
@@ -736,9 +764,6 @@ def main():
     Q.require_storage()
     limits = Q.require_containment()
     service = Path('/sys/fs/cgroup') / limits['cgroup'].lstrip('/')
-    Q.run(['systemctl', '--user', 'set-property', '--runtime', service.name, 'CPUQuota=400%', 'TasksMax=4096'], timeout=15)
-    require((service / 'cpu.max').read_text().strip() == '400000 100000'
-            and (service / 'pids.max').read_text().strip() == '4096', 'actual host CPU/task enforcement missing')
     parent = json.loads(args.outer_admission.read_text())
     require(args.outer_admission.resolve().parent == Q.DATA / 'results/service-opening-candidate'
             and parent['state'] == 'running' and parent['reserved_bytes'] >= RESERVATION
@@ -747,6 +772,13 @@ def main():
             and shutil.disk_usage(Q.DATA).free >= RESERVATION,
             'strict complete namespace census and full pair reservation required')
     plan, artifacts, fixture, guides = admit(args.admission, args.admission_sha256)
+    require_admitted_browser_entry_helper(
+        plan, args.browser_entry_helper, args.browser_entry_helper_sha256)
+    Q.run(['systemctl', '--user', 'set-property', '--runtime', service.name,
+           'CPUQuota=400%', 'TasksMax=4096'], timeout=15)
+    require((service / 'cpu.max').read_text().strip() == '400000 100000'
+            and (service / 'pids.max').read_text().strip() == '4096',
+            'actual host CPU/task enforcement missing')
     for family in ('debian', 'fedora'): image(family)
     previous_boot_ids = set()
     if plan.get('previous_pair'):
@@ -776,7 +808,8 @@ def main():
             1024**3, 850 * 1024**2, 512, 2)
         budget = browser.browser_hold_directory(budget_path)
         budget['exclusive'] = True
-        walk = Walkthrough(plan, artifacts, fixture, guides, root, out, args.server_family)
+        walk = Walkthrough(plan, artifacts, fixture, guides, root, out, args.server_family,
+                           args.browser_entry_helper, args.browser_entry_helper_sha256)
         walk.budget = budget
         walk.previous_boot_ids = previous_boot_ids
         walk.record['admission_sha256'] = args.admission_sha256

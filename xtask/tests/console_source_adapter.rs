@@ -657,3 +657,207 @@ if failures:
         String::from_utf8_lossy(&output.stderr)
     );
 }
+
+fn security_registration_wrapper(live: &Path) -> String {
+    let extract = r#"
+import ast, pathlib, sys
+tree = ast.parse(pathlib.Path(sys.argv[1]).read_text())
+matches = [node.args[0].value for node in ast.walk(tree)
+           if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+           and node.func.id == 'js' and node.args
+           and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str)
+           and 'window.fetch=async(...args)=>' in node.args[0].value
+           and 'window.fixtureCompletedRegistration=null' in node.args[0].value]
+assert len(matches) == 1, f'expected one security registration wrapper, got {len(matches)}'
+sys.stdout.write(matches[0])
+"#;
+    let output = Command::new("python3")
+        .args(["-B", "-c", extract, live.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout).unwrap()
+}
+
+#[test]
+fn security_registration_capture_source_clones_request_body_and_forwards_original_arguments() {
+    let live = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("tools/ui/live_browser_check.py");
+    let wrapper = security_registration_wrapper(&live);
+    assert!(wrapper.contains("window.fetch=async(...args)=>"));
+    assert!(wrapper.contains("const inspectionInput=input instanceof Request?input.clone():input"));
+    assert!(wrapper.contains("const inspected=new Request(inspectionInput,args[1])"));
+    assert!(
+        wrapper.find("const inspectionInput=").unwrap() < wrapper.find("const inspected=").unwrap(),
+        "clone Request input before constructing the effective inspection request"
+    );
+    assert!(wrapper.contains("await inspected.clone().json()"));
+    assert!(wrapper.contains("return original(...args)"));
+    assert!(!wrapper.contains("JSON.parse(args[1].body)"));
+}
+
+#[test]
+#[ignore = "requires the pinned DATA Bun runtime; the coordinator runs this effect fixture explicitly"]
+fn security_registration_capture_effect_preserves_request_and_init_inputs() {
+    let live = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("tools/ui/live_browser_check.py");
+    let wrapper = security_registration_wrapper(&live);
+    let fixture = fixture();
+    let wrapper_path = fixture.root.join("security-registration-wrapper.js");
+    let runner_path = fixture.root.join("security-registration-wrapper-test.mjs");
+    fs::write(&wrapper_path, wrapper).unwrap();
+    let runner = r#"
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const wrapper = readFileSync(Bun.argv[2], 'utf8');
+// Minimized defect from the frozen 73cccefc harness: its Request-only capture
+// dereferenced args[1].body and threw before fetch dispatch.
+const defectiveWrapper = `const original=window.fetch;window.fixtureCompletedRegistration=null;
+window.fetch=(...args)=>{const p=new URL(typeof args[0]==='string'?args[0]:args[0].url,location.href).pathname;
+if(p==='/v1/console/auth/register/finish' && !window.fixtureCompletedRegistration)
+  window.fixtureCompletedRegistration=JSON.parse(args[1].body);
+return original(...args)}`;
+const endpoint = 'https://console.invalid/v1/console/auth/register/finish';
+const noInit = Symbol('no-init-argument');
+
+async function callWith(source, input, init = noInit) {
+  const forwarded = [];
+  const bodyUsedAtDispatch = [];
+  globalThis.location = { href: 'https://console.invalid/' };
+  globalThis.window = {
+    fixtureCompletedRegistration: null,
+    fetch: (...args) => {
+      forwarded.push(args);
+      bodyUsedAtDispatch.push(args[0] instanceof Request ? args[0].bodyUsed : null);
+      return Promise.resolve(new Response(null, { status: 204 }));
+    },
+  };
+  new Function(source)();
+  let error = null;
+  try {
+    if (init === noInit) await window.fetch(input);
+    else await window.fetch(input, init);
+  } catch (caught) {
+    error = caught;
+  }
+  return { error, forwarded, captured: window.fixtureCompletedRegistration, bodyUsedAtDispatch };
+}
+
+const defectiveRequest = new Request(endpoint, {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"id":"old"}',
+});
+const rejectedOldRequest = await callWith(defectiveWrapper, defectiveRequest);
+assert.equal(rejectedOldRequest.error?.name, 'TypeError');
+assert.equal(rejectedOldRequest.forwarded.length, 0, 'the original defect must fail before fetch dispatch');
+const defectiveControlPayload = { id: 'url-init-old-control' };
+const defectiveControlInit = {
+  method: 'POST', headers: { 'content-type': 'application/json' },
+  body: JSON.stringify(defectiveControlPayload),
+};
+const oldControl = await callWith(defectiveWrapper, endpoint, defectiveControlInit);
+assert.equal(oldControl.error, null);
+assert.equal(oldControl.forwarded.length, 1);
+assert.deepEqual(oldControl.captured, defectiveControlPayload);
+
+const requestPayload = { id: 'request-input', nested: { value: 1 } };
+const requestBody = JSON.stringify(requestPayload);
+const request = new Request(endpoint, {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: requestBody,
+});
+const requestResult = await callWith(wrapper, request);
+assert.equal(requestResult.error, null, String(requestResult.error));
+assert.deepEqual(requestResult.captured, requestPayload);
+assert.equal(requestResult.forwarded.length, 1);
+assert.equal(requestResult.forwarded[0].length, 1);
+assert.strictEqual(requestResult.forwarded[0][0], request, 'forward the original Request object');
+assert.deepEqual(requestResult.bodyUsedAtDispatch, [false], 'original Request body remains readable at dispatch');
+assert.equal(await request.clone().text(), requestBody, 'inspection must not consume the original Request body');
+
+const urlPayload = { id: 'url-plus-init' };
+const urlInit = {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(urlPayload),
+};
+const urlResult = await callWith(wrapper, endpoint, urlInit);
+assert.equal(urlResult.error, null, String(urlResult.error));
+assert.deepEqual(urlResult.captured, urlPayload);
+assert.equal(urlResult.forwarded.length, 1);
+assert.equal(urlResult.forwarded[0].length, 2);
+assert.strictEqual(urlResult.forwarded[0][0], endpoint);
+assert.strictEqual(urlResult.forwarded[0][1], urlInit, 'forward the original init object');
+
+const originalPayload = { id: 'request-original-body' };
+const overridePayload = { id: 'request-init-body-override' };
+const overriddenRequest = new Request(endpoint, {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(originalPayload),
+});
+const overrideInit = { body: JSON.stringify(overridePayload) };
+const overrideResult = await callWith(wrapper, overriddenRequest, overrideInit);
+assert.equal(overrideResult.error, null, String(overrideResult.error));
+assert.deepEqual(overrideResult.captured, overridePayload);
+assert.equal(overrideResult.forwarded.length, 1);
+assert.equal(overrideResult.forwarded[0].length, 2);
+assert.strictEqual(overrideResult.forwarded[0][0], overriddenRequest);
+assert.strictEqual(overrideResult.forwarded[0][1], overrideInit);
+assert.deepEqual(overrideResult.bodyUsedAtDispatch, [false], 'overridden original Request body remains readable at dispatch');
+assert.equal(await overriddenRequest.clone().text(), JSON.stringify(originalPayload));
+
+const malformed = new Request(endpoint, {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: 'not-json',
+});
+const malformedResult = await callWith(wrapper, malformed);
+assert.equal(malformedResult.error?.name, 'SyntaxError', 'capture parsing errors must remain visible');
+assert.equal(malformedResult.forwarded.length, 0, 'capture errors must not be hidden by dispatch');
+"#;
+    fs::write(&runner_path, runner).unwrap();
+    let bun = PathBuf::from(
+        std::env::var_os("FABRIC_STORAGE_ROOT").expect("DATA storage root for pinned Bun"),
+    )
+    .join("tools/bun-1.4.0/bun");
+    assert!(
+        bun.is_file(),
+        "pinned Bun runtime is missing: {}",
+        bun.display()
+    );
+    let expected_sha256 = std::env::var("FABRIC_BUN_SHA256")
+        .expect("admitted FABRIC_BUN_SHA256 pin for the Bun effect test");
+    assert!(
+        expected_sha256.len() == 64
+            && expected_sha256
+                .bytes()
+                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+        "FABRIC_BUN_SHA256 must be 64 lowercase hexadecimal characters"
+    );
+    let bun_bytes = fs::read(&bun).expect("read the admitted DATA Bun executable");
+    assert_eq!(
+        xtask::sha256_hex(&bun_bytes),
+        expected_sha256,
+        "DATA Bun executable differs from its independently admitted SHA-256"
+    );
+    let version = Command::new(&bun).arg("--version").output().unwrap();
+    assert!(
+        version.status.success(),
+        "{}",
+        String::from_utf8_lossy(&version.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "1.4.0");
+    let output = Command::new(&bun)
+        .arg(&runner_path)
+        .arg(&wrapper_path)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}

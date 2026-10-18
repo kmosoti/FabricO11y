@@ -53,6 +53,45 @@ results grant no exact-package browser acceptance credit; raw measurements and
 failure history are in the
 [canonical results record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01).
 
+## R3 supervisor caller pin
+
+The current R3 admission carries the native entry helper as an explicit path
+and SHA-256 input. `soak_r3.measure` passes that pair through
+`ProductionAccess`, `CandidateFixture`, and `ConsoleBridge`; the existing
+`BrowserSupervisor` command forwards it to `live_browser_check.browser_group_launch`,
+which verifies the helper identity before launch and retains it in the child
+binding. There is no PATH search or Python-helper fallback on this R3 path. The
+frozen `5220e27` S1 snapshot used the older matching launch signature and is
+not reinterpreted as having the current caller mismatch. The current source
+controls and real supervisor-helper run remain pending; this wiring alone is
+not browser or soak acceptance.
+
+## Current-main release caller pin
+
+The current-main `release_main`, `release_query`, and `release_stress` commands
+now require an explicit browser-entry helper path and SHA-256 and pass both to
+`CandidateFixture`. The production outage adapter exposes the same pair through
+its existing options and validates the executable file and digest before
+constructing the fixture. The shared candidate fixture repeats the pin check
+and snapshots the same helper through its existing immutable-binary path. The
+Rust-hosted source controls include execution of the actual call expressions,
+CLI partial-pair refusals, and a bounded temporary-file `ProductionAccess`
+composition seam; these controls were added after a targeted run observed the
+old direct caller's missing-keyword `TypeError`. Verification remains pending.
+No behavior in frozen #43/#46 runtimes changes, and these controls establish
+harness input wiring only, not native launch or browser acceptance.
+
+## Qualification adapter test gate
+
+The Rust integration test `xtask/tests/qualification_adapters.rs` invokes the
+eleven existing Python qualification unittest modules from `tools/qualification`
+with a fixed `python3 -B -m unittest -v` argument list. It inherits the child's
+output and propagates its exit status, so the workspace test gate cannot silently
+skip the legacy controls. One existing sparse-file control exercises a logical
+5 GiB boundary; the contained test job needs at least 6 GiB of DATA scratch for
+the Python fixtures, plus the launcher's separate build allowance. This gate
+checks finite adapter regressions only, not native or browser acceptance.
+
 ## Native BiDi viewport effect
 
 The [viewport calibration](../experiments/formal/browser-supervisor-protocol.md#native-webdriver-bidi-viewport-calibration)
@@ -74,6 +113,39 @@ observed Firefox 157 `Set Window Rect` mismatch only. Firefox sessions also set
 for its explicit WebDriver accept; the capability does not accept the prompt.
 The independent Firefox comparison observed the same geometry with Bun and the Rust primitive, but
 neither that probe nor the source controls grant browser acceptance. The [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01#native-bidi-viewport-and-confirmation-controls) retain actual geometry, confirmation and cleanup observations.
+
+## Browser security request capture
+
+The opt-in `--security-probes` browser check captures the completed registration
+payload in private browser memory for the existing replay assertions. An
+actual-source, no-network Bun diagnostic of frozen harness `73cccefc` found its
+old observer threw before dispatch for `fetch(Request)` without init, while a
+URL-plus-init control dispatched. The candidate wrapper's pinned-Bun effect
+control passed Request-only capture, URL-plus-init, Request-plus-init body
+override, and original Request-body readability at source SHA `667337d4`. A
+blank Chrome probe found that constructing the inspection request from the
+original `Request` consumed its body before forwarding. The clone-first
+correction was exercised in a later blank Chrome run at source SHA
+`3e588bbb5361722116a2f5fe07ca46d30efb0816bc0dd21be91a569201967af9`: six cases
+and 16 predicates passed, including `bodyUsed == false` when the original
+Request reached the fetch stub. The stub's subsequent body consumption is not
+a wrapper invariant. Two intervening attempts were setup failures only: one
+used stale operands and one had a truncated extracted script; neither gives a
+behavior verdict. The final run returned DELETE 200, stopped both process
+groups with empty kernels and reaped children, recorded the Bun client exit 0
+and intentional ChromeDriver SIGTERM (-15), and removed scratch. The pinned-Bun
+check and these browser effects are diagnostics, not product authentication or
+browser acceptance. The Chrome06 terminal is
+`/run/media/kmosoti/data/FabricO11y/results/chrome-fetch-browser-effect-01/terminal-06.json`
+(SHA-256 `7a6341b31d3f26634000a2783ff01aea3b26748e1ee9440a5eb6e3fa14bc283c`).
+The hosted workflow retains the ordinary positive Chrome command and artifact
+at `ci-live-browser`, and runs a separate positive command with
+`--security-probes` into `ci-live-browser-security`; the API-cache negative
+command and grader remain separate and unchanged. The earlier hosted positive
+result recorded 96 security checks, so it does not cover the restored ordinary
+command. Earlier normal-mode coverage remains historical, and the result for
+this three-command split is pending. See the
+[security-probe criteria](../experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement).
 
 ## Console source provenance
 

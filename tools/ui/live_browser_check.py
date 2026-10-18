@@ -1313,9 +1313,12 @@ self.addEventListener("fetch",event=>{
                 raise AssertionError('real browser did not produce both exact AbortSignal cancellation witnesses')
             if args.security_probes:
                 js('''const original=window.fetch;window.fixtureCompletedRegistration=null;
-                  window.fetch=(...args)=>{const p=new URL(typeof args[0]==='string'?args[0]:args[0].url,location.href).pathname;
-                  if(p==='/v1/console/auth/register/finish' && !window.fixtureCompletedRegistration)
-                    window.fixtureCompletedRegistration=JSON.parse(args[1].body);
+                  window.fetch=async(...args)=>{const input=args[0];const p=new URL(typeof input==='string'?input:input.url,location.href).pathname;
+                  if(p==='/v1/console/auth/register/finish' && !window.fixtureCompletedRegistration){
+                    const inspectionInput=input instanceof Request?input.clone():input;
+                    const inspected=new Request(inspectionInput,args[1]);
+                    window.fixtureCompletedRegistration=await inspected.clone().json();
+                  }
                   return original(...args)}''')
             click('Connect to server')
             wait(lambda: js('return document.body.textContent.includes("Sign in with a passkey") && !document.body.textContent.includes("Working…")'), 'live sign-in locked view')
