@@ -25,6 +25,12 @@ It exercises real deletion, not a simulated successful scan. Its independent
 size helper is only valid for its no-symlink fixture; do not silently reuse it
 as an oracle for directory-symlink classification.
 
+The classification baseline subsequently ran at clean `2ab563b`: all three
+totals matched the declared fixture, original source remained pinned and owned
+scratch was removed. Its report is
+`results/native-storage-census-reference-01/baseline-report.json`. This observation
+admits the native implementation experiment, not caller adoption.
+
 Before native implementation, use a small Rust experiment driver to invoke the
 unchanged pinned Python source with exactly one documented literal-root
 substitution into owned DATA scratch. Build a compact independently sized fixture
@@ -44,6 +50,18 @@ no global optimality claim. Treat errors produced while advancing a directory
 iterator as errors, not just errors constructing it. Never follow a directory
 symlink; explicitly preserve the reference's directory-symlink classification.
 No GPU, new dependency, generic filesystem abstraction or core change is needed.
+
+Use a depth-first stack of owned directory handles and iterators. Open child
+entries relative to the held parent with Linux O_PATH/O_NOFOLLOW; inspect the
+opened object rather than following a raced pathname. A directory iterator may
+be opened through the held handle's `/proc/self/fd` alias. Retain its anchor until
+that frame is finished; report errors using the original logical path for retry
+classification. This requires O(depth) live directory handles and fails closed
+on descriptor exhaustion. It is not an atomic snapshot or protection against a
+privileged adversary. The read-only target lookup used solely to classify a
+symlink as directory/non-directory preserves Python's error-to-nondirectory
+behavior; errors enumerating or inspecting the actual census entries remain
+fatal except the precisely admitted cleanup ENOENT.
 
 Retry only ENOENT under the existing runner-controls category or the one exact
 scratch root derived by the caller from pinned run/admission identities. Reject
