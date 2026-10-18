@@ -263,15 +263,16 @@ without changing its failed workflow outcome.
 
 Prospective geometry-only harness amendment, 2026-10-18. The classic WebDriver
 `Set Window Rect` request for 390 by 844 CSS pixels produced an actual 500 pixel
-`innerWidth` in the owned Firefox 157 fixture. In the same one-top-level-context
-fixture, the independent Bun native-WebSocket reference used
+`innerWidth` in the owned Firefox 157 fixture. In the observed fixture, the
+independent Bun native-WebSocket reference used
 `browsingContext.getTree` with `maxDepth: 0`, confirmed the classic window handle
-equalled the unique root BiDi context id, and used
+equalled the one matching root BiDi context id, and used
 `browsingContext.setViewport` with a 390 by 844 viewport. JavaScript then read
 `innerWidth === 390` at DPR 1, both before and during CSS `zoom: 2`; the existing
 18px control remained 18px. `viewport: null` followed by the classic desktop
-restore returned the measured viewport to 1440 by 1100. Twelve successful BiDi
-reply shapes were observed with no unsolicited events in this finite run. The
+restore returned the outer rectangle to 1440 by 1100 and JavaScript `innerWidth`
+to 1440 (`innerHeight` was 1014). Twelve successful BiDi reply shapes were
+observed with no unsolicited events in this finite run. The
 raw actual run is `DATA/results/firefox-viewport-calibration-01/actual-terminal-01.json`,
 SHA-256 `a0738f4c191ed298d2ff9f7a9e36e9ab7f21b967913ab821bfa02472b28292f3`;
 its state records actual exit 0 and stopped cleanup 0 at source
@@ -285,9 +286,11 @@ restore. The legacy caller supplies its already observed WebSocket URL and
 current Classic window handle. It may connect only to a literal `127.0.0.1` or
 `[::1]` address with an explicit port and bounded driver session path; DNS,
 `wss`, user information, query and fragment are refused. Before the viewport
-command, `browsingContext.getTree(maxDepth: 0)` must return exactly one unique
-top-level context equal to that supplied handle. A mismatch or ambiguous tree
-fails closed; the primitive must not select an arbitrary context.
+command, `browsingContext.getTree(maxDepth: 0)` must return at most 32 root
+contexts with unique ids and exactly one id equal to the supplied handle. A
+missing match, duplicate id or malformed tree fails closed; the primitive must
+not select an arbitrary context. Other uniquely identified root contexts are
+allowed.
 
 The primitive uses pinned synchronous Tungstenite 0.30.0 with the handshake
 feature only, through an absolute-deadline socket adapter. One monotonic deadline
@@ -297,17 +300,18 @@ Upgrade protections: its handshake rejects after 65,536 input bytes or 512 read
 packets, uses 4 KiB reads, and limits parsed headers to 124. Because the byte
 check follows each read and appending, allow one further read chunk and allocator
 capacity when describing this bound. The upgraded connection additionally has
-a cumulative 2 MiB input budget, at most 32 events, 64 KiB frame/message bounds,
-and small explicit WebSocket buffers. Each command has one request id. Accept
-only its matching success reply, with the command's expected result shape and no
-error; malformed, unexpected or over-bound traffic fails closed. The client
-closes after that response, so it makes no claim about later duplicate traffic.
+a cumulative 2 MiB input budget, at most 32 received messages, 64 KiB
+frame/message bounds, and small explicit WebSocket buffers. Unsolicited BiDi
+events are rejected. Each command has one request id. Accept only its matching
+success reply, with the command's expected result shape and no error; malformed,
+unexpected or over-bound traffic fails closed. The client closes after that
+response, so it makes no claim about later duplicate traffic.
 
 The Rust command's bounded acknowledgement reports command/context and exit
 metadata only; it does not claim the browser's actual viewport was verified.
 The later Python caller must independently read `innerWidth` through classic
 WebDriver and require exactly 390 before applying the existing 18px, 200% CSS
 zoom and negative-overflow predicates. It must call the restore mode in a
-`finally` path, then restore the original classic desktop rectangle. The Bun
-reference remains an independent diagnostic and is not replaced by the Rust
-mock server or command.
+`finally` path while preserving the original failure before cleanup, then restore
+the original classic desktop rectangle. The Bun reference remains an independent
+diagnostic and is not replaced by the Rust mock server or command.
