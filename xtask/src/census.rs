@@ -970,7 +970,7 @@ mod owner_binding_tests {
         ]
     }
 
-    fn bind(run_id: &str, family: &str, label: &str, argv: &[String]) -> Result<PathBuf, String> {
+    fn bind(family: &str, label: &str, argv: &[String]) -> Result<PathBuf, String> {
         let admission = format!(
             "{ROOT}/results/owner-walkthrough-replacement-01/admission-{family}.json"
         );
@@ -986,7 +986,7 @@ mod owner_binding_tests {
             let label = format!("owner-{run_id}");
             let argv = command(run_id, family);
             assert_eq!(
-                bind(run_id, family, &label, &argv).unwrap(),
+                bind(family, &label, &argv).unwrap(),
                 PathBuf::from(format!("{ROOT}/scratch/owner-walkthrough-{run_id}"))
             );
         }
@@ -1011,7 +1011,7 @@ mod owner_binding_tests {
         extra.extend(["--force".into(), "yes".into()]);
         cases.push(extra);
         for argv in cases {
-            assert!(bind("replacement-debian-server-01", "debian", label, &argv).is_err());
+            assert!(bind("debian", label, &argv).is_err());
         }
     }
 
@@ -1055,7 +1055,7 @@ mod owner_binding_tests {
         let mut nul_path = base.clone();
         nul_path[4] = format!("{ROOT}/results/owner\0.json");
         for argv in [bad_outer, bad_family, bad_hash, bad_path, nul_path] {
-            assert!(bind(run_id, "debian", &label, &argv).is_err());
+            assert!(bind("debian", &label, &argv).is_err());
         }
     }
 
