@@ -10,6 +10,8 @@ class SupervisedSmoke(unittest.TestCase):
         self.fd, other = os.pipe()
         self.addCleanup(os.close, other)
         self.held = {'fd': self.fd, 'path': '/owned/browser'}
+        self.entry_helper = Path('/owned/xtask-browser-enter-exec')
+        self.entry_helper_sha256 = 'a' * 64
         self.bridge = SimpleNamespace(receipt={}, close=Mock())
         p = patch.object(smoke.cgroups, 'subgroup', return_value=(Path('/owned/browser'), {'memory.max':str(1024**3)}))
         self.subgroup = p.start(); self.addCleanup(p.stop)
@@ -20,7 +22,8 @@ class SupervisedSmoke(unittest.TestCase):
 
     def context(self):
         return smoke.supervised_bridge('https://localhost:1', Path('/cert'), Path('/work'),
-                                       Path('/out'), Path('/owned'), 300.0)
+                                       Path('/out'), Path('/owned'), 300.0,
+                                       self.entry_helper, self.entry_helper_sha256)
 
     def test_budget_and_borrowed_descriptor_lifetime(self):
         def construct(*args, **kwargs):
@@ -28,6 +31,8 @@ class SupervisedSmoke(unittest.TestCase):
             self.assertTrue(kwargs['browser_parent']['exclusive'])
             self.assertEqual(kwargs['browser_deadline'], 300.0)
             self.assertEqual(kwargs['browser_group'], Path('/owned/browser'))
+            self.assertEqual(kwargs['browser_entry_helper'], self.entry_helper)
+            self.assertEqual(kwargs['browser_entry_helper_sha256'], self.entry_helper_sha256)
             return self.bridge
         with patch.object(smoke, 'ConsoleBridge', side_effect=construct):
             with self.context() as bridge:
