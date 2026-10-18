@@ -85,11 +85,59 @@ for field in ('browser_entry_helper', 'browser_entry_helper_sha256'):
 }
 
 #[test]
+fn release_command_parsers_reject_a_partial_helper_pair() {
+    let root = root();
+    let script = r#"
+import contextlib, io, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+sys.path.insert(0, str(root / 'tools/qualification'))
+import release_main, release_query, release_stress
+seed = '0xA11FA001'
+cases = [
+    (release_main, ['--deb-receipt', 'deb', '--rpm-receipt', 'rpm', '--out', 'out',
+                    '--tier', '10', '--seed', seed]),
+    (release_query, ['--deb-receipt', 'deb', '--rpm-receipt', 'rpm', '--out', 'out',
+                     '--seed', seed, '--mode', 'segment']),
+    (release_stress, ['--deb-receipt', 'deb', '--rpm-receipt', 'rpm', '--out', 'out',
+                      '--seed', seed]),
+]
+for module, required_args in cases:
+    for partial in (['--browser-entry-helper', '/owned/helper'],
+                    ['--browser-entry-helper-sha256', 'a' * 64]):
+        sys.argv = [module.__file__, *required_args, *partial]
+        stderr = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(stderr):
+                module.main()
+        except SystemExit as error:
+            assert error.code == 2, (module.__file__, error.code)
+        else:
+            raise AssertionError('partial helper pair reached a release caller')
+        missing_name = ('--browser-entry-helper-sha256'
+                        if partial[0] == '--browser-entry-helper'
+                        else '--browser-entry-helper')
+        assert missing_name in stderr.getvalue(), (module.__file__, stderr.getvalue())
+"#;
+    let output = Command::new("python3")
+        .args(["-B", "-c", script])
+        .arg(root)
+        .output()
+        .expect("Python 3 is needed to check release CLI admission");
+    assert!(
+        output.status.success(),
+        "release parser accepted or misreported a partial helper pin (exit {:?})\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn non_soak_production_access_requires_and_forwards_the_explicit_pin() {
     let root = root();
     let source = root.join("tools/qualification/production_access.py");
     let script = r#"
-import hashlib, importlib.util, os, pathlib, subprocess, sys, tempfile, types
+import argparse, hashlib, importlib.util, os, pathlib, subprocess, sys, tempfile, types
 source = pathlib.Path(sys.argv[1])
 
 def digest(path):
@@ -126,6 +174,18 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as name:
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     module.subprocess.check_output = lambda *args, **kwargs: b'0 storage\n'
+    parser = argparse.ArgumentParser()
+    module.options(parser)
+    for partial in (['--browser-entry-helper', '/owned/helper'],
+                    ['--browser-entry-helper-sha256', 'a' * 64]):
+        args = parser.parse_args(['--production-access', '--deb-receipt', 'deb',
+            '--rpm-receipt', 'rpm', '--production-out', 'out', *partial])
+        try:
+            module.validate_options(args)
+        except ValueError as error:
+            assert 'helper' in str(error), str(error)
+        else:
+            raise AssertionError('production CLI accepted a partial helper pair')
     helper = scratch / 'xtask-browser-enter-exec'
     helper.write_bytes(b'pinned artifact')
     helper.chmod(0o700)
