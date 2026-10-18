@@ -29,6 +29,28 @@ The [architecture review skill](../../.agents/skills/architecture-review/SKILL.m
 routes unresolved design decisions to focused experiments and documentation work.
 Existing Python product oracles stay independent; no MCP server is required.
 
+## Console source provenance
+
+The [registered correction](../experiments/formal/console-provenance-protocol.md)
+keeps frozen product source separate from executing harness source. A caller pins
+the product checkout commit and build-receipt digest independently. The proposed
+Rust join reuses the bounded artifact reader for that receipt and every source,
+checks tracked paths and clean Git identity, then rechecks file identities.
+The receipt's own source path grants no authority. Default development staging
+still compares against its current checkout; packaged-mode adoption needs a
+separate explicit binding and controls. Implementation controls and measured
+results remain pending; this join grants no package or browser acceptance.
+
+```mermaid
+flowchart LR
+    Caller[Caller commit and receipt pins] --> Product[Frozen product source]
+    Caller --> Receipt[Console build receipt]
+    Product --> Join[Native full-byte source join]
+    Receipt --> Join
+    Harness[Separately pinned harness] --> Stage[Exact asset staging]
+    Join --> Stage
+```
+
 ## Native verification receipts
 
 `xtask verify-receipts` reuses the descriptor-owned artifact reader to join the
