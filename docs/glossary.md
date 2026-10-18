@@ -77,6 +77,7 @@ A credential's type alone decides its role; there are no per-resource grants. Th
 | Trust-boundary change | A change to the product contract, an oracle, a negative-control expectation, a formal invariant, a registered protocol or verification policy; made in its own commit. |
 | Verification receipt | The JSON record `cargo xtask checks` writes per check; unsigned, so it proves structure, not execution. |
 | Evidence preflight | A bounded read-only join of pinned artifacts, dependencies and stopped receipts; it grants no acceptance and cannot discover omitted required cases ([boundary](architecture/engineering-evidence.md)). |
+| Structural cutoff | A fixed committed prefix consistent with supplied pause, inspection, stop and exact-byte ACK observations. It does not authenticate those observations or replace the independent custody oracle ([boundary](architecture/engineering-evidence.md#structural-lifecycle-cutoff)). |
 | Evidence states | Implemented, Tested, Measured, Qualified, Not run, Interrupted, Failed, Inconclusive ([qualification](QUALIFICATION.md#evidence-states)). |
 | Milestone | A stable engineering objective with a `milestone/<capability>` branch ([roadmap](ROADMAP.md)). Release maturity is a tag, not a milestone. |
 

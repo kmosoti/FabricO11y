@@ -396,3 +396,120 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
         self.assertEqual(raw, b'literal source\n')
         self.assertEqual(observed, dict(uuid=bytes(range(1, 17)).hex(), subvolume_id=257))
         self.assertEqual(requests, [0x8400941f, 0xd0009412])
+
+
+class GuestObservationControls(literal.NativeFixture, unittest.TestCase):
+    def observation_guest(self):
+        guest = native.Guest.__new__(native.Guest)
+        guest.output = self.root / 'guest-output'
+        guest.output.mkdir(mode=0o700)
+        guest.commands = []
+        guest.process_observations = []
+        guest.deadline = 10.0
+        guest.config = dict(binding=dict(run_id='literal-observation'), node_sha256='a' * 64)
+        return guest
+
+    def run_command_with_clock(self, guest, argv, returncode, stdout, *, check=True):
+        result = type('Completed', (), dict(returncode=returncode, stdout=stdout, stderr=''))()
+        with patch.object(native.time, 'monotonic', side_effect=(1.0, 2.0, 2.25)), \
+                patch.object(native.time, 'monotonic_ns', side_effect=(1000, 1250)), \
+                patch.object(native.time, 'time_ns', side_effect=(10100, 10200)), \
+                patch.object(native.subprocess, 'run', return_value=result):
+            return guest.command(argv, check=check)
+
+    def test_command_records_real_bounds_and_only_successful_inspect_stdout_artifact(self):
+        guest = self.observation_guest()
+        query = self.run_command_with_clock(guest, ['fabricctl', 'admin', 'query'], 0, '{"rows":[]}', check=True)
+        failed = self.run_command_with_clock(guest, ['fabricctl', 'inspect', '/etc/fabrico11y/node.conf'],
+                                             2, '', check=False)
+        inspect = self.run_command_with_clock(guest, ['fabricctl', 'inspect', '/etc/fabrico11y/node.conf'],
+                                              0, 'next_sequence=4\nacked_through=3\n')
+
+        for record in (query, failed, inspect):
+            self.assertEqual((record['started_ns'], record['finished_ns']), (10100, 10200))
+            self.assertEqual(record['elapsed_ns'], 250)
+            self.assertAlmostEqual(record['elapsed_seconds'], 0.25)
+        self.assertNotIn('stdout_artifact', query)
+        self.assertNotIn('stdout_artifact', failed)
+        expected = b'next_sequence=4\nacked_through=3\n'
+        leaf = 'command-0003-stdout.txt'
+        artifact = guest.output / leaf
+        self.assertEqual(artifact.read_bytes(), expected)
+        self.assertEqual(stat.S_IMODE(artifact.stat().st_mode), 0o600)
+        self.assertEqual(inspect['stdout'], expected.decode('utf-8'))
+        self.assertEqual(inspect['stdout_artifact'], dict(path=leaf, sha256=native.sha(expected),
+            encoding='utf-8-from-subprocess-text'))
+        saved = json.loads((guest.output / 'commands.json').read_text())
+        self.assertEqual(saved[-1], inspect)
+        self.assertEqual(sorted(path.name for path in guest.output.glob('*.txt')), [leaf])
+
+    def test_process_appends_bounded_raw_proc_observation_without_changing_return_shape(self):
+        guest = self.observation_guest()
+        pid = 123
+        invocation = 'b' * 32
+        control_group = '/system.slice/system-fabrico11y.slice/' + native.UNITS[1]
+        fields = ['S'] + ['0'] * 18 + ['17']
+        proc_stat = str(pid) + ' (fabric-node) ' + ' '.join(fields) + '\n'
+        status = 'Uid:\t1000\t1000\t1000\t1000\nGid:\t1001\t1001\t1001\t1001\n'
+        cgroup = '0::' + control_group + '\n'
+        paths = {
+            '/proc/sys/kernel/random/boot_id': '00000000-0000-4000-8000-000000000001\n',
+            '/proc/123/stat': proc_stat,
+            '/proc/123/status': status,
+            '/proc/123/cgroup': cgroup,
+        }
+
+        class ProcPath:
+            def __init__(self, value): self.value = str(value)
+            def __truediv__(self, leaf): return ProcPath(self.value + '/' + str(leaf))
+            def __str__(self): return self.value
+            def read_text(self): return paths[self.value]
+
+        real_path = Path
+        def selected_path(value):
+            return ProcPath(value) if str(value).startswith('/proc') else real_path(value)
+
+        show = dict(stdout=f'MainPID={pid}\nControlGroup={control_group}\nInvocationID={invocation}\n',
+                    stderr='', exit=0)
+        def command(_guest, argv, check=True):
+            if argv[0] == 'systemctl':
+                return show
+            return dict(stdout='a' * 64 + '  /proc/123/exe\n', stderr='', exit=0)
+
+        identity = type('Identity', (), dict(pw_uid=1000, pw_gid=1001))()
+        with patch.object(native, 'Path', side_effect=selected_path), \
+                patch.object(native.Guest, 'command', new=command), \
+                patch.object(native.pwd, 'getpwnam', return_value=identity), \
+                patch.object(native.os, 'sysconf', return_value=100), \
+                patch.object(native.time, 'time_ns', side_effect=(1000, 2000, 3000, 4000, 5000, 6000)), \
+                patch.object(native.time, 'clock_gettime_ns', return_value=500):
+            process = guest.process()
+            repeated = guest.process()
+
+        self.assertEqual(process['proc_stat'], proc_stat)
+        self.assertEqual(process['status'], status)
+        self.assertEqual(process['show'], show)
+        self.assertEqual(process['calibration'], dict(realtime_ns=2000, boottime_ns=500,
+            clock_ticks=100, start_ticks=17))
+        self.assertEqual(repeated['pid'], process['pid'])
+        self.assertNotIn('cgroup', process)  # Existing caller record shape remains stable.
+        saved = json.loads((guest.output / 'process-observations.json').read_text())
+        self.assertEqual(len(saved), 2)
+        self.assertEqual((saved[0]['started_ns'], saved[0]['finished_ns']), (1000, 3000))
+        self.assertEqual(saved[0]['proc_stat'], proc_stat)
+        self.assertEqual(saved[0]['status'], status)
+        self.assertEqual(saved[0]['cgroup'], cgroup)
+        self.assertEqual(saved[0]['show'], show)
+        self.assertEqual(saved[0]['calibration'], process['calibration'])
+        for key, value in process.items():
+            self.assertEqual(saved[0][key], value)
+        self.assertEqual(saved[0]['unit'], native.UNITS[1])
+        self.assertEqual(saved[0]['boot_id'], '00000000-0000-4000-8000-000000000001')
+        self.assertEqual(saved[0]['exe_sha256'], 'a' * 64)
+        self.assertEqual((saved[1]['started_ns'], saved[1]['finished_ns']), (4000, 6000))
+        for key, value in repeated.items():
+            self.assertEqual(saved[1][key], value)
+        self.assertEqual(saved[1]['unit'], native.UNITS[1])
+        self.assertEqual(saved[1]['boot_id'], '00000000-0000-4000-8000-000000000001')
+        self.assertEqual(saved[1]['exe_sha256'], 'a' * 64)
+        self.assertEqual(saved[1]['cgroup'], cgroup)

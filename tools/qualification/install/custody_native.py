@@ -43,6 +43,7 @@ class Guest:
     def __init__(self, config, phase):
         witness.require(os.geteuid() == 0 and Path('/run/cloud-init').is_dir(), 'disposable guest root required')
         self.config, self.phase, self.commands = config, phase, []
+        self.process_observations = []
         self.started = time.monotonic()
         self.deadline = float(os.environ['FABRIC_NATIVE_PHASE_DEADLINE'])
         witness.require(config['fixture_paths'] == [SOURCE] and config['spool_root'] == str(ROOT)
@@ -68,8 +69,25 @@ class Guest:
         remaining = self.deadline - time.monotonic()
         witness.require(remaining > 0, 'native phase deadline')
         started = time.monotonic()
+        started_ns = time.time_ns()
+        started_mono_ns = time.monotonic_ns()
         result = subprocess.run(argv, capture_output=True, text=True, timeout=min(30, remaining))
-        record = dict(argv=argv, exit=result.returncode, stdout=result.stdout, stderr=result.stderr, elapsed_seconds=time.monotonic()-started)
+        finished_mono_ns = time.monotonic_ns()
+        finished_ns = time.time_ns()
+        elapsed_ns = finished_mono_ns - started_mono_ns
+        record = dict(argv=argv, exit=result.returncode, stdout=result.stdout, stderr=result.stderr,
+                      started_ns=started_ns, finished_ns=finished_ns, elapsed_ns=elapsed_ns,
+                      elapsed_seconds=time.monotonic()-started)
+        if argv[:2] == ['fabricctl', 'inspect'] and result.returncode == 0:
+            # Pin the exact captured text record; subprocess(text=True) may normalize newlines.
+            stdout_bytes = result.stdout.encode('utf-8')
+            leaf = 'command-' + str(len(self.commands) + 1).zfill(4) + '-stdout.txt'
+            artifact = self.output / leaf
+            with artifact.open('xb') as stream:
+                stream.write(stdout_bytes)
+            os.chmod(artifact, 0o600)
+            record['stdout_artifact'] = dict(path=leaf, sha256=sha(stdout_bytes),
+                                             encoding='utf-8-from-subprocess-text')
         self.commands.append(record)
         self.save('commands.json', self.commands)
         witness.require(not check or result.returncode == 0, 'observer command failed: ' + argv[0])
@@ -209,10 +227,12 @@ class Guest:
         raise ValueError('query page ceiling')
 
     def process(self):
+        observation_started_ns = time.time_ns()
         show = self.command(['systemctl', 'show', UNITS[1], '-p', 'MainPID', '-p', 'ControlGroup', '-p', 'InvocationID'])
         values = dict(line.split('=', 1) for line in show['stdout'].splitlines())
         pid = int(values['MainPID']); proc = Path('/proc') / str(pid)
         info = (proc / 'stat').read_text(); uid = (proc / 'status').read_text()
+        cgroup = (proc / 'cgroup').read_text()
         now, uptime, ticks = time.time_ns(), time.clock_gettime_ns(time.CLOCK_BOOTTIME), os.sysconf('SC_CLK_TCK')
         start_ticks = int(info.rsplit(')', 1)[1].split()[19])
         start_ns = max(0, now - uptime + start_ticks * 1000000000 // ticks - 1000000000)
@@ -220,13 +240,22 @@ class Guest:
         witness.require(executable == self.config['node_sha256'] and pid > 0
             and re.fullmatch('[0-9a-f]{32}', values['InvocationID']) and values['InvocationID'] != '0' * 32
             and values['ControlGroup'] == '/system.slice/system-fabrico11y.slice/' + UNITS[1]
-            and (proc / 'cgroup').read_text().strip() == '0::' + values['ControlGroup']
+            and cgroup.strip() == '0::' + values['ControlGroup']
             and all(int(value) == pwd.getpwnam('fabricolly').pw_uid for value in re.search(r'^Uid:\s+(.+)$', uid, re.M)[1].split())
             and all(int(value) == pwd.getpwnam('fabricolly').pw_gid for value in re.search(r'^Gid:\s+(.+)$', uid, re.M)[1].split()),
             'candidate executable/service identity')
-        return dict(**self.config['binding'], unit=UNITS[1], pid=pid, boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
-                    start_ns=start_ns, end_ns=0, proc_stat=info, status=uid, exe_sha256=executable, show=show, invocation_id=values['InvocationID'],
-                    calibration=dict(realtime_ns=now, boottime_ns=uptime, clock_ticks=ticks, start_ticks=start_ticks))
+        calibration = dict(realtime_ns=now, boottime_ns=uptime, clock_ticks=ticks,
+                           start_ticks=start_ticks)
+        process = dict(**self.config['binding'], unit=UNITS[1], pid=pid,
+                       boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
+                       start_ns=start_ns, end_ns=0, proc_stat=info, status=uid,
+                       exe_sha256=executable, show=show, invocation_id=values['InvocationID'],
+                       calibration=calibration)
+        observation_finished_ns = time.time_ns()
+        self.process_observations.append(dict(process, started_ns=observation_started_ns,
+            finished_ns=observation_finished_ns, cgroup=cgroup))
+        self.save('process-observations.json', self.process_observations)
+        return process
 
     def finish(self):
         files = {path.name: dict(sha256=sha(path.read_bytes()), stat=witness.identity(path.lstat()))

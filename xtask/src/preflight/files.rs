@@ -13,6 +13,7 @@ use std::path::Path;
 const CHUNK: usize = 1024 * 1024;
 const FILE_LIMIT: u64 = 8 * 1024 * 1024 * 1024;
 const TOTAL_LIMIT: u64 = 32 * 1024 * 1024 * 1024;
+const RAW_LIMIT: u64 = JSON_LIMIT as u64;
 type Identity = (u64, u64, u64, i64, i64, i64, i64);
 
 /// Artifact admission is separate from reading, so the exact limits are testable.
@@ -82,16 +83,25 @@ struct Record {
     identity: Identity,
     digest: String,
     json: Option<Value>,
+    raw: Option<Vec<u8>>,
 }
 
-/// Invocation-local digest/identity cache. Declare JSON consumers before reading;
-/// upgrading a package to JSON later would require an impermissible second read.
+#[derive(Clone, Copy)]
+enum Retention {
+    Digest,
+    Json,
+    Raw,
+}
+
+/// Invocation-local digest/identity cache. Declare body consumers before reading;
+/// upgrading a package to JSON or raw bytes later would require an impermissible second read.
 pub struct ArtifactStore {
     root: String,
     directory: File,
     records: BTreeMap<String, Record>,
     total_bytes: u64,
     json_total: u64,
+    raw_total: u64,
     json_budget: u64,
     bytes_hashed: u64,
 }
@@ -101,7 +111,7 @@ impl ArtifactStore {
         Self::with_json_budget(root, JSON_TOTAL_LIMIT)
     }
 
-    /// Divide the existing aggregate JSON budget across independent roots.
+    /// Divide the existing aggregate JSON/raw materialization budget across independent roots.
     /// A caller may tighten the ceiling, never raise it.
     pub fn with_json_budget(root: &Path, json_budget: u64) -> Result<Self, String> {
         require(
@@ -116,6 +126,7 @@ impl ArtifactStore {
             records: BTreeMap::new(),
             total_bytes: 0,
             json_total: 0,
+            raw_total: 0,
             json_budget,
             bytes_hashed: 0,
         })
@@ -142,7 +153,7 @@ impl ArtifactStore {
         Ok(identity(&info))
     }
 
-    pub(super) fn plan(&mut self, path: &str, expected: &str) -> Result<Value, String> {
+    pub(crate) fn plan(&mut self, path: &str, expected: &str) -> Result<Value, String> {
         self.read(path, expected, true)?;
         self.records
             .get_mut(path)
@@ -152,33 +163,59 @@ impl ArtifactStore {
 
     pub fn read(&mut self, path: &str, expected: &str, keep_json: bool) -> Result<(), String> {
         require(hex(expected, 64), "invalid SHA-256")?;
-        self.read_inner(path, Some(expected), keep_json)
+        self.read_inner(
+            path,
+            Some(expected),
+            if keep_json {
+                Retention::Json
+            } else {
+                Retention::Digest
+            },
+        )
     }
 
     /// Observe a current JSON file without an external digest pin. This is not
     /// evidence admission: callers must establish its source/receipt authority.
     /// Reading, hashing, bounds and identity rechecks are identical to `read`.
     pub fn observe_json(&mut self, path: &str) -> Result<&Value, String> {
-        self.read_inner(path, None, true)?;
+        self.read_inner(path, None, Retention::Json)?;
         self.json(path)
+    }
+
+    /// Retain a small raw body through the same pinned, descriptor-owned read pass.
+    /// The returned slice borrows the invocation-local cache; no second open is performed.
+    pub fn read_bytes(&mut self, path: &str, expected: &str) -> Result<&[u8], String> {
+        require(hex(expected, 64), "invalid SHA-256")?;
+        self.read_inner(path, Some(expected), Retention::Raw)?;
+        self.records
+            .get(path)
+            .and_then(|record| record.raw.as_deref())
+            .ok_or_else(|| "raw bytes were not retained".to_owned())
     }
 
     fn read_inner(
         &mut self,
         path: &str,
         expected: Option<&str>,
-        keep_json: bool,
+        retention: Retention,
     ) -> Result<(), String> {
         parts(path)?;
-        if let Some(record) = self.records.get_mut(path) {
+        if let Some(record) = self.records.get(path) {
             require(
                 expected.is_none_or(|pin| record.digest == pin),
                 "conflicting path hash",
             )?;
-            require(
-                !keep_json || record.json.is_some(),
-                "JSON payload was not retained",
-            )?;
+            match retention {
+                Retention::Digest => {}
+                Retention::Json => require(record.json.is_some(), "JSON payload was not retained")?,
+                Retention::Raw => {
+                    let raw = record.raw.as_ref().ok_or("raw bytes were not retained")?;
+                    require(
+                        raw.len() as u64 <= RAW_LIMIT,
+                        "cached raw body exceeds 4 MiB",
+                    )?;
+                }
+            }
             return Ok(());
         }
         let (parent, name) = self.parent(path)?;
@@ -195,11 +232,17 @@ impl ArtifactStore {
             "artifact replaced before read",
         )?;
         admitted_bytes(self.total_bytes, info.len())?;
-        if keep_json {
-            self.admit_json(info.len())?;
+        match retention {
+            Retention::Digest => {}
+            Retention::Json => self.admit_json(info.len())?,
+            Retention::Raw => self.admit_raw(info.len())?,
         }
         let mut digest = crate::digest::Sha256::new();
-        let mut payload = Vec::new();
+        let mut payload = if matches!(retention, Retention::Digest) {
+            Vec::new()
+        } else {
+            Vec::with_capacity(info.len() as usize)
+        };
         let mut buffer = vec![0; CHUNK];
         let mut size = 0;
         while size < info.len() {
@@ -215,8 +258,12 @@ impl ArtifactStore {
             admitted_bytes(self.total_bytes, size)?;
             digest.update(&buffer[..count]);
             self.bytes_hashed += count as u64;
-            if keep_json {
-                self.admit_json(size)?;
+            match retention {
+                Retention::Digest => {}
+                Retention::Json => self.admit_json(size)?,
+                Retention::Raw => self.admit_raw(size)?,
+            }
+            if !matches!(retention, Retention::Digest) {
                 payload.extend_from_slice(&buffer[..count]);
             }
         }
@@ -237,13 +284,19 @@ impl ArtifactStore {
             expected.is_none_or(|pin| actual == pin),
             "artifact hash mismatch",
         )?;
-        let json = if keep_json {
-            Some(strict_json(&payload)?)
-        } else {
-            None
+        let (json, raw) = match retention {
+            Retention::Digest => (None, None),
+            Retention::Json => (Some(strict_json(&payload)?), None),
+            Retention::Raw => (None, Some(payload)),
         };
-        if keep_json {
-            self.json_total += size;
+        match retention {
+            Retention::Digest => {}
+            Retention::Json => self.json_total += size,
+            Retention::Raw => self.raw_total += size,
+        }
+        if !matches!(retention, Retention::Digest) {
+            // Both counters are independently observable; each retained body is charged once.
+            debug_assert!(self.json_total + self.raw_total <= self.json_budget);
         }
         self.total_bytes = admitted_bytes(self.total_bytes, size)?;
         self.records.insert(
@@ -252,6 +305,7 @@ impl ArtifactStore {
                 identity: before,
                 digest: actual,
                 json,
+                raw,
             },
         );
         Ok(())
@@ -259,9 +313,29 @@ impl ArtifactStore {
 
     fn admit_json(&self, size: u64) -> Result<(), String> {
         require(size <= JSON_LIMIT as u64, "JSON exceeds 4 MiB")?;
+        let message = if self.raw_total == 0 {
+            "retained JSON exceeds 64 MiB"
+        } else {
+            "retained JSON and raw bodies exceed configured budget"
+        };
+        self.admit_materialized(size, message)
+    }
+
+    fn admit_raw(&self, size: u64) -> Result<(), String> {
+        require(size <= RAW_LIMIT, "raw body exceeds 4 MiB")?;
+        self.admit_materialized(
+            size,
+            "retained JSON and raw bodies exceed configured budget",
+        )
+    }
+
+    fn admit_materialized(&self, size: u64, message: &str) -> Result<(), String> {
         require(
-            self.json_total + size <= self.json_budget,
-            "retained JSON exceeds 64 MiB",
+            self.json_total
+                .checked_add(self.raw_total)
+                .and_then(|total| total.checked_add(size))
+                .is_some_and(|total| total <= self.json_budget),
+            message,
         )
     }
 
@@ -324,6 +398,256 @@ fn after_read(count: usize) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn read_bytes_retains_exact_non_json_body_and_reuses_the_verified_cache() {
+        let scratch = std::env::var_os("FABRIC_SCRATCH_ROOT").expect("contained DATA scratch");
+        let root = Path::new(&scratch).join(format!("raw-body-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let body = [0xff, 0x00, b'n', b'o', b't', b' ', b'j', b's', b'o', b'n'];
+        std::fs::write(root.join("body"), body).unwrap();
+        let pin = crate::sha256_hex(&body);
+        let mut store = ArtifactStore::new(&root).unwrap();
+
+        assert_eq!(store.read_bytes("body", &pin).unwrap(), body.as_slice());
+        assert_eq!(store.bytes_hashed(), body.len() as u64);
+        assert_eq!(store.json_bytes(), 0);
+        assert!(store.json("body").is_err(), "raw mode must not parse JSON");
+        let hashed_once = store.bytes_hashed();
+        assert!(
+            store.read("body", &pin, true).is_err(),
+            "raw cache cannot upgrade to JSON"
+        );
+        assert_eq!(
+            store.bytes_hashed(),
+            hashed_once,
+            "JSON upgrade must not reopen"
+        );
+        assert_eq!(store.read_bytes("body", &pin).unwrap(), body.as_slice());
+        assert_eq!(
+            store.bytes_hashed(),
+            hashed_once,
+            "cache hit must not reread"
+        );
+        assert_eq!(
+            store.total_bytes,
+            body.len() as u64,
+            "cache hit must not recharge"
+        );
+        assert!(
+            store
+                .read_bytes("body", &crate::sha256_hex(b"wrong"))
+                .is_err()
+        );
+        assert_eq!(
+            store.bytes_hashed(),
+            hashed_once,
+            "conflicting pin must not reopen"
+        );
+        store.recheck().unwrap();
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn read_bytes_rejects_wrong_sha_without_caching_a_body() {
+        let scratch = std::env::var_os("FABRIC_SCRATCH_ROOT").expect("contained DATA scratch");
+        let root = Path::new(&scratch).join(format!("raw-wrong-pin-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("body"), b"verified bytes").unwrap();
+        let mut store = ArtifactStore::new(&root).unwrap();
+
+        assert!(
+            store
+                .read_bytes("body", &crate::sha256_hex(b"wrong"))
+                .is_err()
+        );
+        assert!(store.digest("body").is_none());
+        assert_eq!(store.json_bytes(), 0);
+        assert_eq!(
+            store.total_bytes, 0,
+            "a failed hash must not charge the admitted total"
+        );
+        assert_eq!(store.bytes_hashed(), b"verified bytes".len() as u64);
+        assert_eq!(store.raw_total, 0);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn raw_file_and_caller_budget_limits_reject_before_body_materialization() {
+        let scratch = std::env::var_os("FABRIC_SCRATCH_ROOT").expect("contained DATA scratch");
+        let root = Path::new(&scratch).join(format!("raw-limits-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("small"), b"123").unwrap();
+        let sparse = std::fs::File::create(root.join("large")).unwrap();
+        sparse.set_len(RAW_LIMIT + 1).unwrap();
+        let mut smaller = ArtifactStore::with_json_budget(&root, 2).unwrap();
+
+        assert!(
+            smaller
+                .read_bytes("small", &crate::sha256_hex(b"123"))
+                .is_err()
+        );
+        assert_eq!(
+            smaller.bytes_hashed(),
+            0,
+            "caller-smaller aggregate rejects before reading"
+        );
+        let mut default_budget = ArtifactStore::new(&root).unwrap();
+        assert!(
+            default_budget
+                .read_bytes("large", &crate::sha256_hex(b"unused"))
+                .is_err()
+        );
+        assert_eq!(
+            default_budget.bytes_hashed(),
+            0,
+            "per-body oversize rejects before reading"
+        );
+        assert!(default_budget.digest("large").is_none());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn raw_and_json_bodies_share_the_caller_selected_materialization_budget() {
+        let scratch = std::env::var_os("FABRIC_SCRATCH_ROOT").expect("contained DATA scratch");
+        let root = Path::new(&scratch).join(format!("raw-json-budget-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("json"), b"{}").unwrap();
+        std::fs::write(root.join("raw"), b"x").unwrap();
+        std::fs::write(root.join("overflow"), b"y").unwrap();
+        let mut store = ArtifactStore::with_json_budget(&root, 3).unwrap();
+
+        assert_eq!(store.observe_json("json").unwrap(), &serde_json::json!({}));
+        assert_eq!(store.json_bytes(), 2);
+        assert_eq!(
+            store.read_bytes("raw", &crate::sha256_hex(b"x")).unwrap(),
+            b"x"
+        );
+        assert_eq!(
+            store.json_bytes(),
+            2,
+            "raw bytes do not change the JSON counter"
+        );
+        let hashed_once = store.bytes_hashed();
+        assert!(
+            store
+                .read_bytes("overflow", &crate::sha256_hex(b"y"))
+                .is_err()
+        );
+        assert_eq!(
+            store.bytes_hashed(),
+            hashed_once,
+            "shared-budget refusal is pre-read"
+        );
+        assert!(store.digest("overflow").is_none());
+
+        let mut raw_first = ArtifactStore::with_json_budget(&root, 3).unwrap();
+        assert_eq!(
+            raw_first
+                .read_bytes("raw", &crate::sha256_hex(b"x"))
+                .unwrap(),
+            b"x"
+        );
+        assert_eq!(
+            raw_first.observe_json("json").unwrap(),
+            &serde_json::json!({})
+        );
+        assert_eq!(raw_first.json_bytes(), 2);
+        let hashed_once = raw_first.bytes_hashed();
+        assert!(
+            raw_first
+                .read_bytes("overflow", &crate::sha256_hex(b"y"))
+                .is_err()
+        );
+        assert_eq!(
+            raw_first.bytes_hashed(),
+            hashed_once,
+            "reverse-order budget refusal is pre-read"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn digest_only_cache_cannot_be_upgraded_to_raw_retention() {
+        let scratch = std::env::var_os("FABRIC_SCRATCH_ROOT").expect("contained DATA scratch");
+        let root = Path::new(&scratch).join(format!("raw-no-upgrade-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("body"), b"body").unwrap();
+        let pin = crate::sha256_hex(b"body");
+        let mut store = ArtifactStore::new(&root).unwrap();
+
+        store.read("body", &pin, false).unwrap();
+        let hashed_once = store.bytes_hashed();
+        assert!(store.read_bytes("body", &pin).is_err());
+        assert_eq!(
+            store.bytes_hashed(),
+            hashed_once,
+            "body request must not reopen"
+        );
+        assert_eq!(store.json_bytes(), 0);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn raw_read_rejects_mutation_and_replacement_during_the_same_pass() {
+        let scratch = std::env::var_os("FABRIC_SCRATCH_ROOT").expect("contained DATA scratch");
+        let root = Path::new(&scratch).join(format!("raw-read-race-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        for replace in [false, true] {
+            let path = root.join("body");
+            std::fs::write(&path, b"original").unwrap();
+            let pin = crate::sha256_hex(b"original");
+            let mut store = ArtifactStore::new(&root).unwrap();
+            READ_HOOK.with(|hook| {
+                *hook.borrow_mut() = Some(Box::new({
+                    let path = path.clone();
+                    move |count| {
+                        if count == 0 {
+                            if replace {
+                                let next = path.with_extension("replacement");
+                                std::fs::write(&next, b"original").unwrap();
+                                std::fs::rename(next, &path).unwrap();
+                            } else {
+                                std::fs::write(&path, b"modified").unwrap();
+                            }
+                        }
+                    }
+                }));
+            });
+            let result = store.read_bytes("body", &pin);
+            READ_HOOK.with(|hook| *hook.borrow_mut() = None);
+            assert!(result.unwrap_err().contains("changed during read"));
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn recheck_detects_mutation_and_replacement_after_raw_read() {
+        let scratch = std::env::var_os("FABRIC_SCRATCH_ROOT").expect("contained DATA scratch");
+        let root = Path::new(&scratch).join(format!("raw-recheck-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        for replace in [false, true] {
+            let path = root.join("body");
+            std::fs::write(&path, b"original").unwrap();
+            let pin = crate::sha256_hex(b"original");
+            let mut store = ArtifactStore::new(&root).unwrap();
+            assert_eq!(store.read_bytes("body", &pin).unwrap(), &b"original"[..]);
+            if replace {
+                let next = path.with_extension("replacement");
+                std::fs::write(&next, b"original").unwrap();
+                std::fs::rename(next, &path).unwrap();
+            } else {
+                std::fs::write(&path, b"modified").unwrap();
+            }
+            assert!(
+                store
+                    .recheck()
+                    .unwrap_err()
+                    .contains("artifact changed after read")
+            );
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
 
     #[test]
     fn observed_json_keeps_budget_hash_and_identity_guards() {

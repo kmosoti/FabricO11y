@@ -29,6 +29,35 @@ The [architecture review skill](../../.agents/skills/architecture-review/SKILL.m
 routes unresolved design decisions to focused experiments and documentation work.
 Existing Python product oracles stay independent; no MCP server is required.
 
+## Structural lifecycle cutoff
+
+`xtask custody-cutoff` composes bounded inspection text, a typed pause/drain/stop
+transition and an ordered exact-byte ACK join. It reads pinned inspection bytes
+through the existing artifact store; parsing never reopens an admitted path.
+Raw and JSON bodies share its aggregate budget. The decoder borrows its node
+identity and uses fixed field slots. The ACK join requires ordered inputs and
+uses constant auxiliary state, checking sender/window context in a lazy pass.
+
+```mermaid
+flowchart LR
+    Plan[Pinned normalized plan] --> Bytes[Owned artifact bytes]
+    Bytes --> Inspect[Typed inspection]
+    Inspect --> Cutoff[Pause drain stop transition]
+    Plan --> Join[Ordered source and ACK join]
+    Cutoff --> Result[Structural cutoff]
+    Join --> Result
+    Result --> Recheck[Recheck input identities]
+```
+
+Command intervals remain intervals. Journal emission times are separate inputs;
+local stdout supplies none. The result cannot attest a producer, capture
+completeness or process stop. Raw native binding and the independent Python
+custody oracle remain mandatory. Guest capture records real command bounds,
+pinned inspection text and process observations without deciding cutoff policy.
+The [adapter contract](../experiments/formal/native-cutoff-adapter-protocol.md)
+and [primitive protocol](../experiments/formal/primitive-composition-protocol.md)
+separate finite controls from native caller adoption and alpha acceptance.
+
 ## Native browser subgroup entry
 
 The [registered supervisor correction](../experiments/formal/browser-supervisor-protocol.md)

@@ -1,5 +1,14 @@
 # Current project state
 
+The verification engineering round adds a read-only Rust structural cutoff
+helper built from bounded borrowed inspection decoding, a typed lifecycle
+transition and an ordered exact-byte ACK join. Native capture now retains actual
+command intervals, pinned inspection text and process observations. The
+[adapter boundary](architecture/engineering-evidence.md#structural-lifecycle-cutoff)
+keeps raw journal binding and independent Python custody oracles separate.
+Native caller adoption and complete required checks remain pending; this work
+grants no package acceptance credit and alpha acceptance remains owner-paused.
+
 Engineering tooling now includes an experimental Rust `xtask verify-receipts`
 command, sharing bounded descriptor-owned artifact reads with evidence preflight.
 The [architecture boundary](architecture/engineering-evidence.md#native-verification-receipts)
