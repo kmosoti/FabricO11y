@@ -29,6 +29,16 @@ const WEIGHTS: [(&str, u64); 7] = [
     ("ui-palette", 42),
 ];
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Mode { Serial, Fifo, Weighted }
+
+impl Mode {
+    fn name(self) -> &'static str {
+        match self { Self::Serial => "serial", Self::Fifo => "fifo", Self::Weighted => "weighted" }
+    }
+    fn workers(self) -> usize { if self == Self::Serial { 1 } else { 2 } }
+}
+
 fn root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -129,14 +139,15 @@ fn read_row(
 fn execute(
     out: &Path,
     ids: &[String],
-    workers: usize,
+    mode: Mode,
     label: &str,
     registry: &Path,
 ) -> Result<(Vec<ResultRow>, u128, usize), String> {
+    let workers = mode.workers();
     if !(1..=2).contains(&workers) || ids.is_empty() {
         return Err("one or two workers and a nonempty inventory required".into());
     }
-    let dispatch = if label.contains("weighted") {
+    let dispatch = if mode == Mode::Weighted {
         let weights = if ids.iter().any(|id| id == "injected-exit-7") {
             let real_id = ids.iter().find(|id| id.as_str() != "injected-exit-7")
                 .ok_or("weighted control missing real check")?;
@@ -191,8 +202,8 @@ fn execute(
         let (send, receive) = std::sync::mpsc::channel();
         for _ in 0..workers {
             let send = send.clone();
-            let (cursor, active, peak, current, expected, source) =
-                (&cursor, &active, &peak, &current, &expected, &source);
+            let (dispatch, cursor, active, peak, current, expected, source) =
+                (&dispatch, &cursor, &active, &peak, &current, &expected, &source);
             scope.spawn(move || {
                 while let Some(id) = dispatch.get(cursor.fetch_add(1, Ordering::Relaxed)) {
                     let result = (|| {
@@ -312,16 +323,17 @@ fn parent(out: &Path) -> Result<(), String> {
     let registry = root().join("xtask/checks.json");
     let ids: Vec<String> = IDS.iter().map(|s| (*s).to_owned()).collect();
     controls(out, &registry)?;
-    let modes = ["serial", "fifo", "weighted"];
+    let modes = [Mode::Serial, Mode::Fifo, Mode::Weighted];
     let mut warmups = BTreeMap::new();
     for mode in modes {
-        let (rows, elapsed, peak) = execute(out, &ids, mode_workers(mode), &format!("warmup-{mode}"), &registry)?;
-        if !all_pass(&rows) { return Err(format!("warmup {mode} had a failed registered check")); }
-        warmups.insert(mode, json!({"wall_ms": elapsed, "active_worker_peak": peak,
+        let name = mode.name();
+        let (rows, elapsed, peak) = execute(out, &ids, mode, &format!("warmup-{name}"), &registry)?;
+        if !all_pass(&rows) { return Err(format!("warmup {name} had a failed registered check")); }
+        warmups.insert(name, json!({"wall_ms": elapsed, "active_worker_peak": peak,
             "inventory": inventory(&rows), "per_check_ms": durations(&rows)}));
     }
     let reference = warmups["serial"]["inventory"].clone();
-    if modes.iter().any(|mode| warmups[*mode]["inventory"] != reference) {
+    if modes.iter().any(|mode| warmups[mode.name()]["inventory"] != reference) {
         return Err("warmup modes differ in semantic inventory".into());
     }
     let mut triples = Vec::new();
@@ -330,13 +342,14 @@ fn parent(out: &Path) -> Result<(), String> {
         let mut observations = BTreeMap::new();
         for offset in 0..3 {
             let mode = modes[(repetition + offset) % 3];
-            let (rows, elapsed, peak) = execute(out, &ids, mode_workers(mode),
-                &format!("rep-{repetition}-{mode}"), &registry)?;
+            let name = mode.name();
+            let (rows, elapsed, peak) = execute(out, &ids, mode,
+                &format!("rep-{repetition}-{name}"), &registry)?;
             if !all_pass(&rows) || inventory(&rows) != reference {
-                return Err(format!("repetition {repetition} mode {mode} failed or differed"));
+                return Err(format!("repetition {repetition} mode {name} failed or differed"));
             }
-            order.push(mode);
-            observations.insert(mode, json!({"wall_ms": elapsed, "active_worker_peak": peak,
+            order.push(name);
+            observations.insert(name, json!({"wall_ms": elapsed, "active_worker_peak": peak,
                 "inventory": inventory(&rows), "per_check_ms": durations(&rows)}));
         }
         triples.push(json!({"repetition": repetition, "order": order, "modes": observations}));
@@ -349,7 +362,7 @@ fn parent(out: &Path) -> Result<(), String> {
             "state": "completed", "checks": ids, "inventory": reference,
             "warmups": warmups, "triples": triples,
             "weights_ms": WEIGHTS.iter().map(|(id, weight)| (*id, *weight)).collect::<BTreeMap<_, _>>(),
-            "mode_worker_limits": {"serial": 1, "fifo": 2, "weighted": 2},
+            "mode_worker_limits": {"serial": Mode::Serial.workers(), "fifo": Mode::Fifo.workers(), "weighted": Mode::Weighted.workers()},
             "weighted_dispatch_order": weighted_order(&ids, &WEIGHTS)?,
             "weighted_model_two_worker_lower_bound_ms": partition_bound,
             "model_partition_ms": {"worker_a": ["telemetry-cli"], "worker_b": [
@@ -398,12 +411,13 @@ fn controls(out: &Path, registry: &Path) -> Result<(), String> {
         serde_json::to_vec(&fake).map_err(|e| e.to_string())?,
     )
     .map_err(|e| e.to_string())?;
-    for (mode, workers) in [("serial", 1), ("fifo", 2), ("weighted", 2)] {
-        let label = format!("control-{mode}");
+    for mode in [Mode::Serial, Mode::Fifo, Mode::Weighted] {
+        let name = mode.name();
+        let label = format!("control-{name}");
         let (rows, _, _) = execute(
             out,
             &[IDS[0].into(), "injected-exit-7".into()],
-            workers,
+            mode,
             &label,
             &fake_path,
         )?;
@@ -427,7 +441,7 @@ fn controls(out: &Path, registry: &Path) -> Result<(), String> {
         let pristine_log = fs::read(source.join("receipts").join(format!("{}.log", IDS[0])))
             .map_err(|e| e.to_string())?;
         for defect in ["missing", "stale-source", "modified-log", "running-marker"] {
-            let dest = out.join("evidence-controls").join(mode).join(defect);
+            let dest = out.join("evidence-controls").join(name).join(defect);
             let receipts = dest.join("receipts");
             fs::create_dir_all(&receipts).map_err(|e| e.to_string())?;
             let rp = receipts.join(format!("{}.json", IDS[0]));
@@ -452,18 +466,15 @@ fn controls(out: &Path, registry: &Path) -> Result<(), String> {
                 .map(|arg| arg.as_str().map(str::to_owned).ok_or("invalid argument"))
                 .collect::<Result<_, _>>()?;
             if read_row(&Job { id: IDS[0].into(), receipts }, success_status(), &command, &git_head()?).is_ok() {
-                return Err(format!("{mode} collector accepted {defect} evidence"));
+                return Err(format!("{name} collector accepted {defect} evidence"));
             }
         }
     }
     Ok(())
 }
 
-fn mode_workers(mode: &str) -> usize {
-    if mode == "serial" { 1 } else { 2 }
-}
-
 fn weighted_order(ids: &[String], weights: &[(&str, u64)]) -> Result<Vec<String>, String> {
+    if ids.len() > IDS.len() { return Err("weighted selection exceeds frozen seven-job set".into()); }
     let mut table = BTreeMap::new();
     for (id, weight) in weights {
         if *weight == 0 || table.insert(*id, *weight).is_some() {
@@ -482,12 +493,15 @@ fn weighted_order(ids: &[String], weights: &[(&str, u64)]) -> Result<Vec<String>
 }
 
 fn exhaustive_partition_bound(weights: &[(&str, u64)]) -> Result<u64, String> {
-    if weights.is_empty() || weights.len() >= usize::BITS as usize { return Err("unsupported partition size".into()); }
+    if weights.len() != IDS.len() { return Err("partition bound is defined for exactly seven frozen jobs".into()); }
+    let frozen_ids: Vec<String> = IDS.iter().map(|id| (*id).to_owned()).collect();
+    weighted_order(&frozen_ids, weights)?;
     let mut minimum = u64::MAX;
     for assignment in 0..(1usize << weights.len()) {
         let (mut left, mut right) = (0u64, 0u64);
         for (index, (_, weight)) in weights.iter().enumerate() {
-            if assignment & (1 << index) == 0 { left += weight; } else { right += weight; }
+            let total = if assignment & (1 << index) == 0 { &mut left } else { &mut right };
+            *total = total.checked_add(*weight).ok_or("partition duration overflow")?;
         }
         minimum = minimum.min(left.max(right));
     }
@@ -502,9 +516,22 @@ mod scheduling_tests {
     fn weights_are_exact_positive_and_permutation_independent() {
         let original: Vec<String> = IDS.iter().map(|id| (*id).to_owned()).collect();
         let forward = weighted_order(&original, &WEIGHTS).unwrap();
-        let mut reversed = original.clone();
-        reversed.reverse();
-        assert_eq!(weighted_order(&reversed, &WEIGHTS).unwrap(), forward);
+        fn permutations(items: &mut [String], at: usize, expected: &[String], count: &mut usize) {
+            if at == items.len() {
+                assert_eq!(weighted_order(items, &WEIGHTS).unwrap(), expected);
+                *count += 1;
+                return;
+            }
+            for index in at..items.len() {
+                items.swap(at, index);
+                permutations(items, at + 1, expected, count);
+                items.swap(at, index);
+            }
+        }
+        let mut permuted = original.clone();
+        let mut count = 0;
+        permutations(&mut permuted, 0, &forward, &mut count);
+        assert_eq!(count, 5040);
         assert_eq!(forward.first().map(String::as_str), Some("telemetry-cli"));
         assert_eq!(forward.iter().collect::<std::collections::BTreeSet<_>>().len(), IDS.len());
         assert!(weighted_order(&original[..6], &WEIGHTS).is_err());
@@ -526,6 +553,10 @@ mod scheduling_tests {
     fn exhaustive_two_worker_bound_matches_registered_model() {
         assert_eq!(WEIGHTS.iter().map(|(_, weight)| weight).sum::<u64>(), 4031);
         assert_eq!(exhaustive_partition_bound(&WEIGHTS).unwrap(), 2241);
+        assert!(exhaustive_partition_bound(&WEIGHTS[..6]).is_err());
+        let mut overflow = WEIGHTS;
+        overflow[0].1 = u64::MAX;
+        assert!(exhaustive_partition_bound(&overflow).is_err());
     }
 }
 
