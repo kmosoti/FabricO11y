@@ -270,6 +270,15 @@ the admitted owner plan. The caller checks that equality and the actual file
 identity before effectful host limit or browser setup. A caller-supplied pair
 does not replace the admission's expected pin.
 
+`CandidateFixture` verifies the explicit caller path and digest before fixture
+effects, then copies the helper into a fresh `work/native-browser-entry/`
+directory, verifies the copied bytes, and sets the executable to owner-read/
+owner-execute mode. It launches `ConsoleBridge` with this owned snapshot, not
+with the mutable caller path. The receipt records caller and snapshot paths and
+digests; the snapshot joins `immutable_inputs` so closeout refuses if it
+changed. Replacing the caller path after the copy therefore cannot change the
+bytes the browser launch uses.
+
 ## Production health-wait scope correction
 
 Prospective harness regression, 2026-10-18. The retained Chrome #45 baseline
