@@ -78,7 +78,11 @@ fn parse(arguments: &[String]) -> Result<Options, String> {
         return Err("invalid context handle".into());
     }
     let _ = endpoint(&ws_url)?;
-    Ok(Options { ws_url, context, mode })
+    Ok(Options {
+        ws_url,
+        context,
+        mode,
+    })
 }
 
 fn endpoint(input: &str) -> Result<Endpoint, String> {
@@ -159,7 +163,10 @@ impl BoundedStream {
 impl Read for BoundedStream {
     fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
         if self.input_bytes >= MAX_INPUT_BYTES {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "BiDi input byte limit"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "BiDi input byte limit",
+            ));
         }
         self.configure_read()?;
         let remaining = MAX_INPUT_BYTES - self.input_bytes;
@@ -402,8 +409,16 @@ mod tests {
 
     #[test]
     fn endpoint_admits_only_literal_loopback_session_urls() {
-        assert_eq!(endpoint("ws://127.0.0.1:4444/session/abc123").unwrap().address, "127.0.0.1:4444".parse().unwrap());
-        assert_eq!(endpoint("ws://[::1]:4444/session/abc123").unwrap().address, "[::1]:4444".parse().unwrap());
+        assert_eq!(
+            endpoint("ws://127.0.0.1:4444/session/abc123")
+                .unwrap()
+                .address,
+            "127.0.0.1:4444".parse().unwrap()
+        );
+        assert_eq!(
+            endpoint("ws://[::1]:4444/session/abc123").unwrap().address,
+            "[::1]:4444".parse().unwrap()
+        );
         for bad in [
             "wss://127.0.0.1:4444/session/a",
             "ws://localhost:4444/session/a",
@@ -423,17 +438,47 @@ mod tests {
     fn parser_rejects_duplicate_unknown_and_unbounded_inputs() {
         let mut duplicate = vec!["--mode".into(), "restore".into()];
         duplicate.extend_from_slice(&[
-            "--ws-url".into(), "ws://127.0.0.1:4/session/a".into(),
-            "--context".into(), "ctx".into(), "--mode".into(), "narrow".into(),
+            "--ws-url".into(),
+            "ws://127.0.0.1:4/session/a".into(),
+            "--context".into(),
+            "ctx".into(),
+            "--mode".into(),
+            "narrow".into(),
         ]);
         assert!(parse(&duplicate).is_err());
-        assert!(parse(&["--ws-url".into(), "x".into(), "--context".into(), "c".into(), "--bad".into(), "v".into()]).is_err());
-        assert!(parse(&["--ws-url".into(), "ws://127.0.0.1:4/session/a".into(), "--context".into(), "ctx".into(), "--mode".into(), "anything".into()]).is_err());
-        assert!(parse(&[
-            "--ws-url".into(), "ws://127.0.0.1:4/session/a".into(),
-            "--context".into(), "x".repeat(MAX_CONTEXT + 1),
-            "--mode".into(), "narrow".into(),
-        ]).is_err());
+        assert!(
+            parse(&[
+                "--ws-url".into(),
+                "x".into(),
+                "--context".into(),
+                "c".into(),
+                "--bad".into(),
+                "v".into()
+            ])
+            .is_err()
+        );
+        assert!(
+            parse(&[
+                "--ws-url".into(),
+                "ws://127.0.0.1:4/session/a".into(),
+                "--context".into(),
+                "ctx".into(),
+                "--mode".into(),
+                "anything".into()
+            ])
+            .is_err()
+        );
+        assert!(
+            parse(&[
+                "--ws-url".into(),
+                "ws://127.0.0.1:4/session/a".into(),
+                "--context".into(),
+                "x".repeat(MAX_CONTEXT + 1),
+                "--mode".into(),
+                "narrow".into(),
+            ])
+            .is_err()
+        );
     }
 
     #[test]
@@ -443,28 +488,63 @@ mod tests {
             {"context": "other-window", "parent": null}
         ]});
         assert!(matching_contexts(&valid, "window-1").is_ok());
-        assert!(matching_contexts(&json!({"contexts": [{"context":"other", "parent":null}]}), "window-1").is_err());
-        assert!(matching_contexts(&json!({"contexts": [
-            {"context":"window-1", "parent":null}, {"context":"window-1", "parent":null}
-        ]}), "window-1").is_err());
+        assert!(
+            matching_contexts(
+                &json!({"contexts": [{"context":"other", "parent":null}]}),
+                "window-1"
+            )
+            .is_err()
+        );
+        assert!(
+            matching_contexts(
+                &json!({"contexts": [
+                    {"context":"window-1", "parent":null}, {"context":"window-1", "parent":null}
+                ]}),
+                "window-1"
+            )
+            .is_err()
+        );
         let too_many = json!({"contexts": (0..33).map(|i| json!({"context": format!("ctx-{i}"), "parent": null})).collect::<Vec<_>>()});
         assert!(matching_contexts(&too_many, "ctx-0").is_err());
     }
 
     #[test]
     fn reply_checker_rejects_representative_wrong_id_and_wrong_shape_defects() {
-        let valid = Message::Text(json!({"type":"success", "id":2, "result":{}}).to_string().into());
-        assert_eq!(validate_reply(valid, 2, "browsingContext.setViewport").unwrap(), json!({}));
+        let valid = Message::Text(
+            json!({"type":"success", "id":2, "result":{}})
+                .to_string()
+                .into(),
+        );
+        assert_eq!(
+            validate_reply(valid, 2, "browsingContext.setViewport").unwrap(),
+            json!({})
+        );
         for defect in [
             json!({"type":"success", "id":1, "result":{}}),
             json!({"type":"error", "id":2, "error":"unknown error", "message":"bad"}),
             json!({"type":"success", "id":2, "result":{"unexpected":true}}),
             json!({"type":"success", "id":2}),
         ] {
-            assert!(validate_reply(Message::Text(defect.to_string().into()), 2, "browsingContext.setViewport").is_err());
+            assert!(
+                validate_reply(
+                    Message::Text(defect.to_string().into()),
+                    2,
+                    "browsingContext.setViewport"
+                )
+                .is_err()
+            );
         }
-        assert!(validate_reply(Message::Binary(vec![1, 2, 3].into()), 2, "browsingContext.setViewport").is_err());
-        assert!(validate_reply(Message::Text("{".into()), 2, "browsingContext.setViewport").is_err());
+        assert!(
+            validate_reply(
+                Message::Binary(vec![1, 2, 3].into()),
+                2,
+                "browsingContext.setViewport"
+            )
+            .is_err()
+        );
+        assert!(
+            validate_reply(Message::Text("{".into()), 2, "browsingContext.setViewport").is_err()
+        );
     }
 
     #[test]
@@ -473,7 +553,9 @@ mod tests {
         assert_eq!(options("restore").mode, Mode::Restore);
     }
 
-    fn serve(handler: impl FnOnce(WebSocket<TcpStream>) + Send + 'static) -> (String, thread::JoinHandle<()>) {
+    fn serve(
+        handler: impl FnOnce(WebSocket<TcpStream>) + Send + 'static,
+    ) -> (String, thread::JoinHandle<()>) {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let url = format!("ws://{address}/session/mock-session");
@@ -494,11 +576,15 @@ mod tests {
     }
 
     fn tree_reply(id: u64) -> Message {
-        Message::Text(json!({
-            "type": "success",
-            "id": id,
-            "result": {"contexts": [{"context": "window-1", "parent": null}]}
-        }).to_string().into())
+        Message::Text(
+            json!({
+                "type": "success",
+                "id": id,
+                "result": {"contexts": [{"context": "window-1", "parent": null}]}
+            })
+            .to_string()
+            .into(),
+        )
     }
 
     #[test]
@@ -510,11 +596,20 @@ mod tests {
             socket.send(tree_reply(1)).unwrap();
             let viewport = read_command(&mut socket, "browsingContext.setViewport");
             assert_eq!(viewport["id"], 2);
-            assert_eq!(viewport["params"], json!({
-                "context": "window-1",
-                "viewport": {"width": 390, "height": 844}
-            }));
-            socket.send(Message::Text(json!({"type":"success", "id":2, "result":{}}).to_string().into())).unwrap();
+            assert_eq!(
+                viewport["params"],
+                json!({
+                    "context": "window-1",
+                    "viewport": {"width": 390, "height": 844}
+                })
+            );
+            socket
+                .send(Message::Text(
+                    json!({"type":"success", "id":2, "result":{}})
+                        .to_string()
+                        .into(),
+                ))
+                .unwrap();
         });
         let mut configured = options("narrow");
         configured.ws_url = url;
@@ -531,7 +626,13 @@ mod tests {
             socket.send(tree_reply(1)).unwrap();
             let viewport = read_command(&mut socket, "browsingContext.setViewport");
             assert_eq!(viewport["params"]["viewport"], Value::Null);
-            socket.send(Message::Text(json!({"type":"success", "id":2, "result":{}}).to_string().into())).unwrap();
+            socket
+                .send(Message::Text(
+                    json!({"type":"success", "id":2, "result":{}})
+                        .to_string()
+                        .into(),
+                ))
+                .unwrap();
         });
         let mut configured = options("restore");
         configured.ws_url = url;
@@ -552,7 +653,13 @@ mod tests {
 
         let (url, worker) = serve(|mut socket| {
             let _ = read_command(&mut socket, "browsingContext.getTree");
-            socket.send(Message::Text(json!({"type":"event", "method":"log.entryAdded", "params":{}}).to_string().into())).unwrap();
+            socket
+                .send(Message::Text(
+                    json!({"type":"event", "method":"log.entryAdded", "params":{}})
+                        .to_string()
+                        .into(),
+                ))
+                .unwrap();
         });
         let mut configured = options("narrow");
         configured.ws_url = url;
