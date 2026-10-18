@@ -63,6 +63,35 @@ caller-pinned receipt and commit. Keep default staging unchanged and all existin
 asset, PNG, 8 MiB, inventory and extracted-package byte joins. Register its exact
 adapter controls before execution; no acceptance runs during the owner pause.
 
+### Explicit packaged-browser adapter controls
+
+The browser CLI may take exactly five additional operands as an all-or-nothing
+tuple: `--product-source-root`, `--product-source-commit`,
+`--console-receipt-sha256`, `--console-source-helper` and
+`--console-source-helper-sha256`. Require `--packaged-console`; no environment
+variable or receipt path may select this mode. The existing `--build` selects
+the build root. Pin these operands in caller argv before any later acceptance.
+Keep the two-argument development stager and packaging constructor unchanged.
+
+Snapshot the hash-pinned helper into owned disk scratch before invoking it by
+absolute path, with no shell, a finite deadline and bounded output. Require its
+successful report to join the exact root, commit, build root and receipt digest.
+Recheck the receipt's digest before interpreting it and before staging output;
+stage source and asset bytes under the existing checks. Record both product
+provenance and the independently recorded harness identity in the browser result.
+The helper report is not a reusable unpinned admission certificate.
+
+Rust-driven adapter controls must cover: explicit pinned product success from a
+different harness; default stale-development refusal; incomplete tuple and mode
+without extracted package refusal; wrong helper hash, root, commit or receipt
+pin; a receipt changed after helper verification; forged helper report identity;
+receipt `source` or environment-only override granting no authority; and changed,
+missing, unlisted or symlinked assets plus time-bearing PNG and 8 MiB refusal
+after a valid source join. Require rejection before staging output or launching
+a browser. Invoke the real production adapter with injected fixture effects,
+not a second implementation of its decision. These are harness controls, not
+browser acceptance. Preserve the legacy asset controls as well.
+
 ## Measurement and stopping rule
 
 Use seven alternating warm pairs on identical 17-source canonical console
