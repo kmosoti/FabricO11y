@@ -219,14 +219,12 @@ fn client(endpoint: &Endpoint, deadline: Instant) -> Result<WebSocket<BoundedStr
             .parse()
             .map_err(|_| "invalid loopback host header")?,
     );
-    let config = WebSocketConfig {
-        read_buffer_size: 8 * 1024,
-        write_buffer_size: 4 * 1024,
-        max_write_buffer_size: 64 * 1024,
-        max_message_size: Some(MAX_FRAME_BYTES),
-        max_frame_size: Some(MAX_FRAME_BYTES),
-        ..WebSocketConfig::default()
-    };
+    let config = WebSocketConfig::default()
+        .read_buffer_size(8 * 1024)
+        .write_buffer_size(4 * 1024)
+        .max_write_buffer_size(64 * 1024)
+        .max_message_size(Some(MAX_FRAME_BYTES))
+        .max_frame_size(Some(MAX_FRAME_BYTES));
     let (socket, _) = tungstenite::client::client_with_config(request, stream, Some(config))
         .map_err(|error| format!("WebSocket upgrade failed: {error}"))?;
     if Instant::now() >= deadline {
