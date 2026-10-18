@@ -5,6 +5,8 @@ pub mod cutoff;
 mod inspection;
 #[cfg(test)]
 mod kernel_controls;
+/// Captured metadata projection; it does not authenticate native observations.
+pub mod projection;
 
 use crate::preflight::ArtifactStore;
 use cutoff::*;
@@ -189,7 +191,7 @@ fn trace(plan: &Value, files: &mut ArtifactStore) -> Result<Vec<PrefixEvent>, St
 pub fn verify_plan(root: &Path, path: &str, pin: &str, candidate: &str) -> Result<Value, String> {
     hex::<20>(candidate)?;
     let mut files = ArtifactStore::new(root)?;
-    let plan = files.plan(path, pin)?;
+    let plan = projection::normalize(files.plan(path, pin)?, candidate)?;
     keys(
         &plan,
         &[

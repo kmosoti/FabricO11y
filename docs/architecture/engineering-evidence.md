@@ -34,7 +34,12 @@ Existing Python product oracles stay independent; no MCP server is required.
 `xtask custody-cutoff` composes bounded inspection text, a typed pause/drain/stop
 transition and an ordered exact-byte ACK join. It reads pinned inspection bytes
 through the existing artifact store; parsing never reopens an admitted path.
-Raw and JSON bodies share its aggregate budget. The decoder borrows its node
+Raw and JSON bodies share its aggregate budget. Version1 accepts direct normalized
+observations; version2 projects captured command/process/journal metadata in Rust
+through the same owned reader and cutoff checker. The projection validates
+ordered streams without sorting and keeps fixed lifecycle selection state;
+only final trace/ACK/source output collections grow with input. It does not
+retain parallel interval or index vectors. The decoder borrows its node
 identity and uses fixed field slots. The ACK join requires ordered inputs and
 uses constant auxiliary state, checking sender/window context in a lazy pass.
 

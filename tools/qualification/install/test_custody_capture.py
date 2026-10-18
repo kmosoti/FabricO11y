@@ -516,6 +516,7 @@ class GuestObservationControls(literal.NativeFixture, unittest.TestCase):
 
 
 class RawSenderControls(unittest.TestCase):
+    """Origin: raw-sender-red-01 missed twelve Batch/config field substitutions."""
     process=dict(pid=42,unit='fabrico11y-node.service',invocation_id='1'*32,
         status='Uid: 1000 1000 1000 1000\nGid: 1000 1000 1000 1000\n')
     event=dict(_PID='42',_SYSTEMD_UNIT='fabrico11y-node.service',_EXE='/usr/bin/fabric-node',
@@ -539,4 +540,3 @@ class RawSenderControls(unittest.TestCase):
                     event=dict(self.event,MESSAGE=message);event[key]=bad
                     with self.assertRaisesRegex(ValueError,'raw journal sender mismatch'):
                         native.observed_events(json.dumps(event),self.process)
-
