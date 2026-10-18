@@ -32,6 +32,13 @@ The superseded Python aid is removed; independent product oracles are unchanged.
 Its [contract](experiments/formal/engineering-evidence-protocol.md) and
 [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-engineering-evidence-results-01)
 preserve the distinction between structural consistency and acceptance.
+The [two-runner verification pilot](experiments/formal/verification-shards-protocol.md)
+completed both shards at `a606ecc`, but its first hosted aggregation refused
+workspace paths outside mounted DATA storage. The corrected workflow places
+artifact download, collection and final validation on explicit DATA paths;
+collector confinement and the independent Python validator are unchanged.
+The [failed run](https://github.com/kmosoti/FabricO11y/actions/runs/39090541570)
+is retained; hosted retry and canonical checks remain required before merge.
 No current deployment profile is qualified or release tag published.
 
 ## Implemented
