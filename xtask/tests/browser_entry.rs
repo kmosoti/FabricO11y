@@ -315,6 +315,7 @@ fn actual_parent_seam_binds_before_releasing_native_short_child() {
     let report: serde_json::Value = serde_json::from_slice(&result.stdout).expect("fixture JSON");
     assert_eq!(report["state"], "complete");
     assert_eq!(report["positive_exit"], 0);
+    println!("Linux composition report: {}", String::from_utf8_lossy(&result.stdout));
     for key in [
         "wrong_placement_rejected",
         "binding_before_release_guard",
