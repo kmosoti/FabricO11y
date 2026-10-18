@@ -78,6 +78,37 @@ reaping. Ordinary bridge callers select no fault point.
 This registration does not change product authentication, package bytes,
 session expiry rules, polling continuity, R3 deadlines or acceptance gates.
 
+## Production health-wait scope correction
+
+Prospective harness regression, 2026-10-18. The retained Chrome #45 baseline
+`results/replacement-tls-01-browser-chrome-baseline/browser.json` has SHA-256
+`ab6439c87bb0cb35d8c4792d7e768d656c5642254c262604e26cf863441820c1`, exit 1,
+154 recorded checks, and `NameError: name 'healthy' is not defined` after the
+offline owner-recovery command. Its outer resource record is
+`evidence/fabric-work-e82276d87ea2492e8ad596f8c6a0d9f0/.resource-command.json`
+and reports exit 1. Preserve this failed baseline as partial evidence, not
+acceptance. The production source at the failure remains unchanged.
+
+The smallest correction moves the existing production TLS health predicate to
+`main` scope and gives it an explicit process argument. Keep its dead-process
+refusal, CA-backed opener, one-second request timeout, HTTP-200 predicate and
+`OSError`/`URLError` refusal behavior. The initial server wait and the offline
+recovery and shell-lifecycle restart waits must each close over the current
+`server` process in `wait(lambda: healthy(server), label)` while retaining their
+existing labels and 25-second default wait deadline. Do not capture the initial
+process for a later restart.
+
+Before changing the source, a Rust integration test must parse the actual Python
+AST, extract the actual main-scoped helper and the three actual wait expressions,
+and invoke those expressions using a stable fake TLS opener, fake process and
+immediate fake wait. It uses no network, browser, server or fixture. Against the
+current source, evaluating the actual restart wait must produce the observed
+`NameError`; after the correction, require HTTP 200 true, non-200 and
+`URLError` false, a dead process raising before any request, and both restart
+waits probing the replacement process. This regression does not change product
+behavior, acceptance criteria or independent browser/security oracles. A passing
+source control does not repair or relabel the retained Chrome #45 result.
+
 ## Shared production fixture consumer mapping
 
 Prospective integration correction, 2026-10-15: CandidateFixture must select the

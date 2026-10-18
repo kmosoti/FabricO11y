@@ -5,9 +5,29 @@ command, sharing bounded descriptor-owned artifact reads with evidence preflight
 The [architecture boundary](architecture/engineering-evidence.md#native-verification-receipts)
 and [strict representation policy](formal/verification-receipt-contract.md)
 describe its limits. Local complete-profile and independent refusal controls ran
-at `7fc4723`; current-head hosted adoption remains pending. Synthetic verifier
-fixtures do not credit product acceptance. Alpha
-acceptance is paused by the owner during verification engineering.
+at `7fc4723`; PR #80 merged as `06ccc0c` after complete hosted verification of
+merge candidate `c129013`. Synthetic verifier fixtures do not credit product
+acceptance. Alpha acceptance resumed after the
+finite verification engineering and native census binding controls completed;
+remaining exact-package trials retain their original gates.
+
+The experimental Rust storage census now has finite classification and cleanup
+race controls plus a measured warm metadata comparison. Its
+[architecture and limits](architecture/engineering-evidence.md#native-storage-census)
+separate these checks from caller adoption and native owner acceptance. A real
+shared-target wrong-executable failure is retained; the corrective production
+build and comparison used a fresh DATA target. The pinned owner census bridge
+completed both original command-template namespace controls and six refusals;
+these controls did not execute the actual owner walkthrough.
+
+[Main/query acceptance #42](https://github.com/kmosoti/FabricO11y/issues/42)
+closed after six main and four query trials, 800 independent query answers and
+stopped positive/forged-binding/canonical closeout. The interrupted segment attempt
+remains preserved. The first exact-package Chrome baseline then stopped on an
+undefined readiness predicate after offline owner recovery. The
+[registered regression](experiments/formal/browser-supervisor-protocol.md)
+reproduced that NameError before the scoped helper correction; repaired source
+verification and a fresh actual browser retry remain required.
 
 Replacement product `e078ba23` is packaged reproducibly as minimized source
 `28bcdf7` ([#40](https://github.com/kmosoti/FabricO11y/issues/40)). Fresh Debian03

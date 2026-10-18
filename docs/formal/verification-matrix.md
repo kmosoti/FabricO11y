@@ -4,6 +4,22 @@ A map from each product claim to its implementation, checks and remaining limits
 
 Specification sources: **PC** = [product contract](../PRODUCT-CONTRACT.md), **ADR-n** = [decisions](../decisions/README.md), **RH** = [retained history](../architecture/retained-history.md), **DO**/**QO** = [delivery](../../tools/qualification/DELIVERY_ORACLE.md)/[query](../../tools/qualification/QUERY_ORACLE.md) oracle specifications.
 
+## Engineering census evidence
+
+The read-only [native census](../architecture/engineering-evidence.md#native-storage-census)
+is admission tooling, outside the product invariant IDs below. Its registered
+[protocol](../experiments/formal/native-storage-census-protocol.md) requires exact
+reference accounting, full-attempt reset, narrow cleanup identity and fail-closed
+errors. The [revision-bound record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-storage-census-results-01)
+contains six passing focused controls at `9e3b6e0`, the caught partial-counter
+mutant and an isolated corrective build/comparison at `10540df`. Later owner
+binding has separate source controls at `56b37cf` and namespace integration of
+its pinned executable: two original command-template positives, four native
+parser refusals and two adapter metadata refusals. Those templates resolve only
+a pure fixture digest and do not authorize VM execution. Neither these controls nor metadata
+timings establish owner-walkthrough or product qualification; the independent
+Python product oracles and original acceptance gates remain mandatory.
+
 ## Identity and operator console
 
 These are new release obligations, not inherited CTRL/HIST passes. Detailed

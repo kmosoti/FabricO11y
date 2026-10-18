@@ -544,6 +544,15 @@ def main():
             time.sleep(.1)
         raise AssertionError('timeout: ' + label)
 
+    def healthy(process):
+        if process.poll() is not None:
+            raise RuntimeError('server exited; inspect server.log')
+        try:
+            with urllib.request.urlopen(origin + '/v1/health', context=context, timeout=1) as response:
+                return response.status == 200
+        except (OSError, urllib.error.URLError):
+            return False
+
     def check(condition, label):
         if not condition:
             raise AssertionError(label)
@@ -850,15 +859,7 @@ self.addEventListener("fetch",event=>{
             server = launch(label+'server', [str(args.server.resolve()), 'serve', str(fixture_config)], controlled=expiry)
             context = ssl.create_default_context(cafile=str(work / 'ca.pem'))
             tls_opener=urllib.request.build_opener(urllib.request.HTTPSHandler(context=context),NoRedirect())
-            def healthy():
-                if server.poll() is not None:
-                    raise RuntimeError('server exited; inspect server.log')
-                try:
-                    with urllib.request.urlopen(origin + '/v1/health', context=context, timeout=1) as response:
-                        return response.status == 200
-                except (OSError, urllib.error.URLError):
-                    return False
-            wait(healthy, 'production TLS server')
+            wait(lambda:healthy(server), 'production TLS server')
             build_receipt=json.loads((build/'build.json').read_text())
             served_assets=[]
             for name,identity in build_receipt['assets'].items():
@@ -1575,7 +1576,7 @@ self.addEventListener("fetch",event=>{
             (out/'owner-recovery.log').write_text(recovery.stdout+recovery.stderr)
             check(recovery.returncode==0,'actual offline owner recovery command succeeds after server stop')
             server=launch('server-recovered',[str(args.server.resolve()),'serve',str(config)])
-            wait(healthy,'production server reopened after owner recovery')
+            wait(lambda:healthy(server),'production server reopened after owner recovery')
             expect(bearer_api(recovery_credential,'/v1/console/nodes'),401,'sign in required','offline recovery invalidates previously issued reader token')
             recovery_credential=None
             wd('/url',{'url':'about:blank'});wd('/url',{'url':origin+'/console/'})
@@ -1608,7 +1609,7 @@ self.addEventListener("fetch",event=>{
                 asset_manifest['service-worker.js']={'bytes':len(content),'sha256':hashlib.sha256(content).hexdigest()}
                 manifest_path.write_text(json.dumps(asset_manifest)+'\n')
                 server=launch('server-lifecycle-'+str(len(processes)),[str(args.server.resolve()),'serve',str(config)])
-                wait(healthy,'restarted production TLS server')
+                wait(lambda:healthy(server),'restarted production TLS server')
             def worker_state():
                 return async_js('const done=arguments[arguments.length-1];navigator.serviceWorker.getRegistration().then(async r=>done({active:r?.active?.state,waiting:r?.waiting?.state,caches:await caches.keys()}))')
             def request_update():

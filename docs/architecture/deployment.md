@@ -53,6 +53,15 @@ guide's call sequence. Native execution remains subject to the
 source controls alone establish no deployment acceptance. This is qualification
 tooling outside the runtime boundaries shown above.
 
+The browser fixture's readiness predicate receives the current process explicitly
+at initial startup, offline owner recovery and shell restart. The shared helper
+retains TLS health polling, dead-process refusal and the existing bounded wait.
+This avoids both an unavailable nested function and a stale initial process
+handle; it does not replace the subsequent browser/recovery assertions. Its
+[regression protocol](../experiments/formal/browser-supervisor-protocol.md)
+preserves the original failed packaged run and distinguishes source checks from
+a fresh native retry.
+
 The [signed browser security fixture](../experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement)
 exports only a newly created virtual authenticator key into protected, owned
 scratch. It signs and independently verifies malformed-origin/RP/UV assertions
