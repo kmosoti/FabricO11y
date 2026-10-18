@@ -67,6 +67,34 @@ post-read identity change, plus the existing artifact/JSON tests. These finite
 controls do not establish raw producer authenticity. The first consumer is the
 current native-cutoff capture adapter; no general storage abstraction is added.
 
+## Separate byte coverage from sender binding
+
+The real local capture supplies exact ACK fields but no per-ACK emission time.
+Native journals supply those times and sender fields. Investigate extracting
+the ordered sequence/digest/cursor coverage kernel from the context-bound join.
+Its result must explicitly establish byte coverage only, never sender identity
+or a custody verdict. Preserve the separate native binding checks and the
+unchanged independent Python witness. Do not invent timestamps, sort inputs,
+silently permit disorder, allocate a second ACK vector, or weaken any refusal.
+
+Run all existing finite controls, plus direct byte-only wrong-digest, missing,
+cursor and ordering controls and context-bound sender/window refusals. A separate
+binding pass is allowed if it retains linear work and constant auxiliary state;
+record its cost rather than assuming the composition is free. Multiple-invalid
+inputs may report a different first refusal after separation, but every such
+input must remain refused. No acceptance case's named cause is changed here.
+
+Before adoption, compare the context-bound wrapper with the prior prototype05
+using the same immutable fixtures, seed, Rust 1.99.0, edition2021, opt3, codegen1,
+overflow/debug assertions enabled, debug0 and existing 0/10/1000/100000 rows.
+Compile both before timing. Use three alternating old/new pairs under one
+contained job; preserve each existing three-sample warm benchmark output.
+Compare median stream time at100000 and operation counts, excluding input build
+and compilation. A wrapper regression exceeding50% rejects this implementation
+pending refinement. Timer-scale cases do not support speed claims. This is a
+screen on the observed host, not an optimality proof or an end-to-end service
+benchmark. Actual caller adaptation remains a separate gate.
+
 ## Resources and completion
 
 All jobs use the existing resource launcher and DATA scratch, with fresh strict
