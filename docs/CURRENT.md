@@ -9,10 +9,10 @@ removal and startup failures remain preserved in their protocols and raw records
 
 The native simulator-publication and browser-continuity prerequisites have finite
 certificates. [S1-03](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-r3-s1-native-headroom-run-03)
-completed70seconds of actual offered work and stopped headroom grading. This is
-not the required7,200-second FULL soak. Main/query, pressure/cross-family/outage,
+completed 70 seconds of actual offered work and stopped headroom grading. This is
+not the required 7,200-second FULL soak. Main/query, pressure/cross-family/outage,
 exact-package browser/PWA and fresh-owner acceptance remain tracked by
-[#33](https://github.com/kmosoti/FabricO11y/issues/33). Public Orca51.1 environment
+[#33](https://github.com/kmosoti/FabricO11y/issues/33). Public Orca 51.1 environment
 controls do not substitute for actual console announcements; key-format and
 controlled-time checks still need both engines and exact package/ELF bindings.
 

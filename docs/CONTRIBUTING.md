@@ -168,7 +168,7 @@ python3 tools/resource_group.py -- cargo xtask evidence-preflight \
 ```
 
 See the [schema, limits and controls](experiments/formal/engineering-evidence-protocol.md).
-Exit0 matches listed structure,3 retains pending work,2 refuses invalid input.
+Exit 0 matches listed structure, 3 retains pending work, 2 refuses invalid input.
 It never executes a plan or grants acceptance. Rust workspace tests retain its
 controls; finite measurements use `cargo run --release -p xtask --locked --example
 preflight_measure`, also through the launcher with registered data-drive storage.

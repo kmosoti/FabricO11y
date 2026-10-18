@@ -83,7 +83,6 @@ struct Record {
     identity: Identity,
     digest: String,
     json: Option<Value>,
-    counted: bool,
 }
 
 /// Invocation-local digest/identity cache. Declare JSON consumers before reading;
@@ -92,7 +91,7 @@ pub struct ArtifactStore {
     root: String,
     directory: File,
     records: BTreeMap<String, Record>,
-    artifact_total: u64,
+    total_bytes: u64,
     json_total: u64,
     bytes_hashed: u64,
 }
@@ -105,7 +104,7 @@ impl ArtifactStore {
             root,
             directory,
             records: BTreeMap::new(),
-            artifact_total: 0,
+            total_bytes: 0,
             json_total: 0,
             bytes_hashed: 0,
         })
@@ -132,24 +131,19 @@ impl ArtifactStore {
         Ok(identity(&info))
     }
 
-    pub fn read(&mut self, path: &str, expected: &str, keep_json: bool) -> Result<(), String> {
-        self.read_inner(path, expected, keep_json, true)
-    }
-
     pub(super) fn plan(&mut self, path: &str, expected: &str) -> Result<Value, String> {
-        self.read_inner(path, expected, true, false)?;
+        self.read(path, expected, true)?;
         self.records
             .get_mut(path)
             .and_then(|record| record.json.take())
             .ok_or_else(|| "plan JSON not retained".to_owned())
     }
 
-    fn read_inner(
+    pub fn read(
         &mut self,
         path: &str,
         expected: &str,
         keep_json: bool,
-        artifact: bool,
     ) -> Result<(), String> {
         parts(path)?;
         require(hex(expected, 64), "invalid SHA-256")?;
@@ -159,10 +153,6 @@ impl ArtifactStore {
                 !keep_json || record.json.is_some(),
                 "JSON payload was not retained",
             )?;
-            if artifact && !record.counted {
-                self.artifact_total = admitted_bytes(self.artifact_total, record.identity.2)?;
-                record.counted = true;
-            }
             return Ok(());
         }
         let (parent, name) = self.parent(path)?;
@@ -178,7 +168,7 @@ impl ArtifactStore {
             before == self.path_identity(path)?,
             "artifact replaced before read",
         )?;
-        admitted_bytes(if artifact { self.artifact_total } else { 0 }, info.len())?;
+        admitted_bytes(self.total_bytes, info.len())?;
         if keep_json {
             self.admit_json(info.len())?;
         }
@@ -186,21 +176,29 @@ impl ArtifactStore {
         let mut payload = Vec::new();
         let mut buffer = vec![0; CHUNK];
         let mut size = 0;
-        loop {
-            let count = io(descriptor.read(&mut buffer))?;
+        while size < info.len() {
+            let remaining = info.len() - size;
+            let limit = remaining.min(CHUNK as u64) as usize;
+            let count = io(descriptor.read(&mut buffer[..limit]))?;
             #[cfg(test)]
             after_read(count);
             if count == 0 {
                 break;
             }
             size += count as u64;
-            admitted_bytes(if artifact { self.artifact_total } else { 0 }, size)?;
+            admitted_bytes(self.total_bytes, size)?;
             digest.update(&buffer[..count]);
             self.bytes_hashed += count as u64;
             if keep_json {
                 self.admit_json(size)?;
                 payload.extend_from_slice(&buffer[..count]);
             }
+        }
+        // Preserve a deterministic completion seam for tests at the extent
+        // boundary without issuing another read that could consume appended data.
+        #[cfg(test)]
+        if size == info.len() {
+            after_read(0);
         }
         require(
             before == identity(&io(descriptor.metadata())?)
@@ -218,16 +216,13 @@ impl ArtifactStore {
         if keep_json {
             self.json_total += size;
         }
-        if artifact {
-            self.artifact_total = admitted_bytes(self.artifact_total, size)?;
-        }
+        self.total_bytes = admitted_bytes(self.total_bytes, size)?;
         self.records.insert(
             path.to_owned(),
             Record {
                 identity: before,
                 digest: actual,
                 json,
-                counted: artifact,
             },
         );
         Ok(())
@@ -274,8 +269,8 @@ impl ArtifactStore {
     }
 }
 
-// A thread-local unit-test seam, absent from production builds. It runs after a
-// real descriptor read so a fixture can deterministically mutate/replace at EOF.
+// A thread-local unit-test seam, absent from production builds. Positive counts
+// follow real descriptor reads; zero marks EOF or completion of the admitted extent.
 #[cfg(test)]
 thread_local! {
     static READ_HOOK: std::cell::RefCell<Option<Box<dyn FnMut(usize)>>> =
@@ -307,9 +302,9 @@ mod tests {
         std::fs::write(root.join("other.json"), b"{}").unwrap();
         let pin = crate::sha256_hex(b"{}");
         let mut store = ArtifactStore::new(&root).unwrap();
-        store.artifact_total = TOTAL_LIMIT - 2;
+        store.total_bytes = TOTAL_LIMIT - 2;
         store.plan("plan.json", &pin).unwrap();
-        assert_eq!(store.artifact_total, TOTAL_LIMIT);
+        assert_eq!(store.total_bytes, TOTAL_LIMIT);
         assert!(store.read("other.json", &pin, false).is_err());
         assert_eq!(store.bytes_hashed(), 2);
         std::fs::remove_dir_all(root).unwrap();

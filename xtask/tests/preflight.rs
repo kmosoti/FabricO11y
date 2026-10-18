@@ -519,3 +519,46 @@ fn directory_and_fifo_reads_are_refused_without_blocking() {
     assert!(store.read("fifo", &"0".repeat(64), false).is_err());
     assert_eq!(store.bytes_hashed(), 0);
 }
+
+#[test]
+fn native_cli_reports_matched_pending_and_invalid() {
+    fn invoke(fixture: &Fixture, plan_sha256: &str, candidate: &str) -> (i32, Value) {
+        let output = std::process::Command::new(env!("CARGO_BIN_EXE_xtask"))
+            .args([
+                "evidence-preflight",
+                "--root",
+                fixture.root.to_str().unwrap(),
+                "--plan",
+                "plan.json",
+                "--plan-sha256",
+                plan_sha256,
+                "--candidate",
+                candidate,
+            ])
+            .env("FABRIC_STORAGE_ROOT", &fixture.root)
+            .output()
+            .unwrap();
+        let stdout: Value = serde_json::from_slice(&output.stdout).unwrap();
+        (output.status.code().unwrap(), stdout)
+    }
+
+    let mut fixture = Fixture::new();
+    let plan_sha256 = fixture.publish();
+    let (code, output) = invoke(&fixture, &plan_sha256, CANDIDATE);
+    assert_eq!(code, 0);
+    assert_eq!(output["status"], "matched");
+
+    fixture.plan["jobs"][0]["evidence"] = Value::Null;
+    let pending_sha256 = fixture.save_plan();
+    let (code, output) = invoke(&fixture, &pending_sha256, CANDIDATE);
+    assert_eq!(code, 3);
+    assert_eq!(output["status"], "pending");
+
+    let (code, output) = invoke(
+        &fixture,
+        &pending_sha256,
+        "cccccccccccccccccccccccccccccccccccccccc",
+    );
+    assert_eq!(code, 2);
+    assert_eq!(output["status"], "invalid");
+}
