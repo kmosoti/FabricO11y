@@ -138,7 +138,13 @@ check and these browser effects are diagnostics, not product authentication or
 browser acceptance. The Chrome06 terminal is
 `/run/media/kmosoti/data/FabricO11y/results/chrome-fetch-browser-effect-01/terminal-06.json`
 (SHA-256 `7a6341b31d3f26634000a2783ff01aea3b26748e1ee9440a5eb6e3fa14bc283c`).
-The flag is required only on the positive Chrome CI invocation. See the
+The hosted workflow retains the ordinary positive Chrome command and artifact
+at `ci-live-browser`, and runs a separate positive command with
+`--security-probes` into `ci-live-browser-security`; the API-cache negative
+command and grader remain separate and unchanged. The earlier hosted positive
+result recorded 96 security checks, so it does not cover the restored ordinary
+command. Earlier normal-mode coverage remains historical, and the result for
+this three-command split is pending. See the
 [security-probe criteria](../experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement).
 
 ## Console source provenance
