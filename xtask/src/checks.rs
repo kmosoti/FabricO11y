@@ -524,7 +524,7 @@ mod shard_workflow_contract {
             ("missing-validator", "tools/ci/verify_receipts.py --profile extended", "tools/ci/verify_receipts.py --profile fast"),
             ("producer-status", "if [ \"$SHARD_RESULT\" != success ]; then", "if [ \"$SHARD_RESULT\" = success ]; then"),
             ("aggregate-needs", "    needs: shards\n", "    needs: other\n"),
-            ("aggregate-always", "always() &&", "success() &&"),
+            ("aggregate-always", "    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}", "    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}"),
             ("aggregate-validator-removed", "      - name: Verify complete extended receipts at this revision\n", "      - name: Verify changed receipts at this revision\n"),
         ];
         for (name, from, to) in mutations {

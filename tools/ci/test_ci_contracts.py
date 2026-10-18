@@ -256,16 +256,48 @@ class ReceiptTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
-    def test_extended_workflow_uses_two_shards_and_original_runner(self):
-        workflow = (ROOT / '.github/workflows/verification.yml').read_text()
-        self.assertIn('checks=(semantic-mutants)', workflow)
-        self.assertIn(
-            'checks=(delivery-faults tla-delivery tla-transport trace-model cargo-mutants kani-core fuzz-smoke dependency-policy coverage-report)',
-            workflow)
+    def assert_two_shard_contract(self, workflow):
+        arrays = re.findall(r'^\s+checks=\(([^)]*)\)\s*$', workflow, re.MULTILINE)
+        self.assertEqual(arrays, [
+            'semantic-mutants',
+            'delivery-faults tla-delivery tla-transport trace-model cargo-mutants kani-core fuzz-smoke dependency-policy coverage-report',
+        ])
+        self.assertEqual(sum(line.strip() == 'max-parallel: 2' for line in workflow.splitlines()), 1)
+        self.assertEqual(sum(line.strip() == 'fail-fast: false' for line in workflow.splitlines()), 1)
         self.assertIn(
             'python3 -B tools/resource_group.py -- cargo xtask checks --only "$check" --receipts "$SHARD_RECEIPTS"',
             workflow)
-        self.assertIn('verify_receipts.py --profile extended', workflow)
+        aggregate = workflow.split('\n  extended:\n', 1)[1]
+        header, body = aggregate.split('    steps:\n', 1)
+        self.assertIn('needs: shards', [line.strip() for line in header.splitlines()])
+        self.assertIn(
+            "if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}",
+            [line.strip() for line in header.splitlines()])
+        self.assertIn('name: pilot-receipts-${{ matrix.shard }}', workflow)
+        self.assertIn('pattern: pilot-receipts-*', body)
+        self.assertIn('merge-multiple: false', body)
+        self.assertIn('cargo run --locked -p xtask --example merge_verification_receipts', body)
+        self.assertIn('python3 -B tools/resource_group.py -- python3 -B tools/ci/verify_receipts.py --profile extended', body)
+        self.assertIn('if [ "$SHARD_RESULT" != success ]; then', body)
+
+    def test_extended_workflow_uses_two_shards_and_original_runner(self):
+        workflow = (ROOT / '.github/workflows/verification.yml').read_text()
+        self.assert_two_shard_contract(workflow)
+
+    def test_shard_contract_rejects_broken_aggregate_and_worker_bound(self):
+        workflow = (ROOT / '.github/workflows/verification.yml').read_text()
+        mutations = (
+            ('max-parallel: 2', 'max-parallel: 20'),
+            ('    needs: shards\n', '    needs: other\n'),
+            ("    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}",
+             "    if: ${{ success() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}"),
+            ('tools/ci/verify_receipts.py --profile extended', 'tools/ci/verify_receipts.py --profile fast'),
+        )
+        for before, after in mutations:
+            with self.subTest(mutation=before):
+                self.assertIn(before, workflow)
+                with self.assertRaises(AssertionError):
+                    self.assert_two_shard_contract(workflow.replace(before, after, 1))
 
     def test_extended_workflow_runs_when_ready_not_for_drafts(self):
         workflow = (ROOT / '.github/workflows/verification.yml').read_text()
