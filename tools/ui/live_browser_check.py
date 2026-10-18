@@ -1166,7 +1166,7 @@ self.addEventListener("fetch",event=>{
                 for p in (ROOT/'tools/ui/browser_migration.py',ROOT/'tools/ui/migration_contract.py')})
             migration_prepared = browser_migration.prepare(args,work,out,origin,config,admin,launch,stop_migration,wait,pace_api,receipt)
         def start_owner(label):
-            nonlocal session,endpoint,context,tls_opener
+            nonlocal session,endpoint,context,tls_opener,viewport_websocket_url
             fixture=work/label if label else work
             if label:fixture.mkdir(mode=0o700)
             fixture_config=fixture/'server.conf'

@@ -99,7 +99,7 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
     url = 'ws://127.0.0.1:4444/session/fixture'
     handle = 'fixture-context'
 
-    def runner(acknowledgement, exit_code=0, mode='narrow'):
+    def runner(acknowledgement, exit_code=0, mode='narrow', endpoint=url):
         reports = (acknowledgement if isinstance(acknowledgement, dict)
                    and set(acknowledgement) <= {'narrow', 'restore'}
                    else {mode: acknowledgement})
@@ -110,7 +110,7 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
             attempts[0] += 1
             expected_label = 'browser-bidi-viewport-' + str(attempts[0]) + '-' + launched_mode
             assert launched_label == expected_label
-            assert argv == [str(helper), 'browser-bidi-viewport', '--ws-url', url,
+            assert argv == [str(helper), 'browser-bidi-viewport', '--ws-url', endpoint,
                             '--context', handle, '--mode', launched_mode]
             assert kwargs == {'entry_helper': helper, 'entry_helper_sha256': 'a' * 64}
             assert environment == {'PATH': '/usr/bin:/bin'}
@@ -129,7 +129,7 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
         namespace = {
             'args': type('Args', (), {'browser':'firefox','browser_entry_helper':helper,
                                       'browser_entry_helper_sha256':'a' * 64})(),
-            'viewport_websocket_url':url, 'logs':logs, 'out':scratch,
+            'viewport_websocket_url':endpoint, 'logs':logs, 'out':scratch,
             'group_parent':object(), 'owned_groups':bindings,
             'deadline':time.monotonic() + 20, 'processes':processes,
             'browser_group_launch':launch,
@@ -158,6 +158,94 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
 
     valid = {'command':'browsingContext.setViewport','context':handle,'mode':'narrow',
              'result':{},'received_messages':2,'actual_viewport_verified':False}
+    owner = next(node for node in ast.walk(main)
+                 if isinstance(node, ast.FunctionDef) and node.name == 'start_owner')
+    owner_nonlocal = next(node for node in owner.body if isinstance(node, ast.Nonlocal))
+    assert 'viewport_websocket_url' in owner_nonlocal.names
+    capabilities = next(node for node in owner.body
+                        if isinstance(node, ast.Assign)
+                        and any(isinstance(target, ast.Name) and target.id == 'firefox_capabilities'
+                                for target in node.targets))
+    websocket_enabled = next(node for node in owner.body
+                             if isinstance(node, ast.Assign)
+                             and any(isinstance(target, ast.Subscript)
+                                     and isinstance(target.value, ast.Name)
+                                     and target.value.id == 'firefox_capabilities'
+                                     and isinstance(target.slice, ast.Constant)
+                                     and target.slice.value == 'webSocketUrl'
+                                     for target in node.targets))
+    info_assignment = next(node for node in owner.body
+                           if isinstance(node, ast.Assign)
+                           and any(isinstance(target, ast.Name) and target.id == 'info'
+                                   for target in node.targets))
+    session_assignment = next(node for node in owner.body
+                              if isinstance(node, ast.Assign)
+                              and any(isinstance(target, ast.Name) and target.id == 'session'
+                                      for target in node.targets))
+    endpoint_publication = next(node for node in owner.body
+                                if isinstance(node, ast.If)
+                                and any(isinstance(child, ast.Assign)
+                                        and any(isinstance(target, ast.Name)
+                                                and target.id == 'viewport_websocket_url'
+                                                for target in child.targets)
+                                        for child in ast.walk(node)))
+    selected = {id(node) for node in (capabilities, websocket_enabled, info_assignment,
+                                      session_assignment, endpoint_publication)}
+
+    def capability_scope(include_binding):
+        binding = copy.deepcopy(owner_nonlocal)
+        if not include_binding:
+            binding.names.remove('viewport_websocket_url')
+        selected_body = [binding] + [copy.deepcopy(node) for node in owner.body
+                                     if id(node) in selected]
+        actual_start_owner = ast.FunctionDef(name='start_owner',
+            args=copy.deepcopy(owner.args), body=selected_body, decorator_list=[])
+        reader = ast.Lambda(args=ast.arguments(posonlyargs=[], args=[], vararg=None,
+            kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
+            body=ast.Name(id='viewport_websocket_url', ctx=ast.Load()))
+        factory = ast.FunctionDef(name='_bind_actual_start_owner_scope',
+            args=ast.arguments(posonlyargs=[], args=[], vararg=None, kwonlyargs=[],
+                               kw_defaults=[], kwarg=None, defaults=[]),
+            body=[ast.Assign(targets=[ast.Name(id=name, ctx=ast.Store())],
+                             value=ast.Constant(value=None))
+                  for name in ('session','endpoint','context','tls_opener','viewport_websocket_url')]
+                 + [actual_start_owner,
+                    ast.Return(value=ast.Tuple(elts=[ast.Name(id='start_owner', ctx=ast.Load()),
+                                                     reader], ctx=ast.Load()))],
+            decorator_list=[])
+        module = ast.Module(body=[factory], type_ignores=[])
+        ast.fix_missing_locations(module)
+        scope = {
+            'args':type('Args', (), {'browser':'firefox'})(),
+            'fixture':scratch,
+            'call':lambda method, route, body: (
+                {'sessionId':'fixture-session',
+                 'capabilities':{'webSocketUrl':url,'browserVersion':'157'}}
+                if method == 'POST' and route == '/session'
+                and body['capabilities']['alwaysMatch']['webSocketUrl'] is True
+                else (_ for _ in ()).throw(AssertionError('Firefox webSocketUrl capability was not requested'))),
+        }
+        exec(compile(module, str(path), 'exec'), scope)
+        actual_start_owner, read_url = scope['_bind_actual_start_owner_scope']()
+        actual_start_owner('')
+        return read_url()
+
+    published_url = capability_scope(True)
+    assert published_url == url, 'actual nested start_owner did not publish the returned Firefox BiDi URL'
+    namespace, processes, stopped, _ = runner(valid, endpoint=published_url)
+    assert namespace['run_viewport']('narrow', handle) == valid
+    assert len(processes) == len(stopped) == 1
+    omitted_url = capability_scope(False)
+    assert omitted_url is None, 'nonlocal defect unexpectedly updated the outer URL cell'
+    namespace, processes, stopped, _ = runner(valid, endpoint=omitted_url)
+    try:
+        namespace['run_viewport']('narrow', handle)
+    except ValueError as error:
+        assert 'endpoint or classic window context is missing' in str(error)
+    else:
+        raise AssertionError('viewport helper accepted an endpoint hidden by missing nonlocal binding')
+    assert processes == stopped == [], 'missing endpoint launched a helper'
+
     namespace, processes, stopped, labels = runner({'narrow':valid,
         'restore':{'command':'browsingContext.setViewport','context':handle,'mode':'restore',
                    'result':{},'received_messages':2,'actual_viewport_verified':False}})
