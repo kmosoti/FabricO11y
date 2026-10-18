@@ -3,6 +3,7 @@
 //! not merely that a command exited non-zero.
 
 pub mod checks;
+pub mod census;
 mod digest;
 pub mod evidence;
 pub mod layers;
