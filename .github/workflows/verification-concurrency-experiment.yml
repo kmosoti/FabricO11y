@@ -34,12 +34,14 @@ jobs:
       - name: Prepare disk storage and enforced cgroups
         run: bash tools/ci/prepare-resource-host.sh
       - name: Check CI scheduling and receipt contracts
+        id: contained
         run: python3 -B tools/resource_group.py -- python3 -B tools/ci/test_ci_contracts.py
       - name: Mark contained setup start
         run: |
           mkdir -p target/verification/pilot-host
           date +%s%N > target/verification/pilot-host/setup-start-epoch-ns.txt
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        id: toolchain
         with:
           toolchain: 1.99.0
           components: rustfmt, clippy
@@ -96,7 +98,7 @@ jobs:
         id: tools
         run: python3 -B tools/resource_group.py -- python3 -B tools/ci/kani_canary.py
       - name: Record runner and cache facts
-        if: ${{ always() && steps.tools.outcome == 'success' }}
+        if: ${{ always() && steps.contained.outcome == 'success' }}
         run: |
           mkdir -p target/verification/pilot-host
           {
@@ -111,7 +113,7 @@ jobs:
             df -h
           } > target/verification/pilot-host/host.txt
       - name: Run assigned original checks and retain later outcomes
-        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        if: ${{ always() && !cancelled() && steps.contained.outcome == 'success' && steps.toolchain.outcome == 'success' }}
         env:
           SHARD: ${{ matrix.shard }}
         run: |
