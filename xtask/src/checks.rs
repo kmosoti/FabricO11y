@@ -8,6 +8,7 @@
 //! record's structure, not that the command ran.
 
 use crate::sha256_hex;
+use crate::digest::{Sha256, hex as digest_hex};
 use serde_json::{Value, json};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -763,8 +764,7 @@ fn ordinary_digest(source: &Path) -> Result<String, String> {
     if !opened.is_file() || identity(&opened) != identity(&before) {
         return Err(format!("source artifact changed before digest: {}", source.display()));
     }
-    let mut bytes = Vec::with_capacity(opened.len() as usize);
-    input.read_to_end(&mut bytes).map_err(|error| error.to_string())?;
+    let digest = stream_extent(&mut input, opened.len(), None)?;
     let after_path = std::fs::symlink_metadata(source).map_err(|error| error.to_string())?;
     if bytes.len() as u64 != opened.len()
         || identity(&input.metadata().map_err(|error| error.to_string())?) != identity(&opened)
@@ -772,7 +772,35 @@ fn ordinary_digest(source: &Path) -> Result<String, String> {
     {
         return Err(format!("source artifact changed during digest: {}", source.display()));
     }
-    Ok(sha256_hex(&bytes))
+    Ok(digest)
+}
+
+fn stream_extent(
+    input: &mut std::fs::File,
+    extent: u64,
+    mut output: Option<&mut std::fs::File>,
+) -> Result<String, String> {
+    const CHUNK: usize = 64 * 1024;
+    let mut buffer = [0u8; CHUNK];
+    let mut remaining = extent;
+    let mut digest = Sha256::new();
+    while remaining > 0 {
+        let limit = usize::try_from(remaining.min(CHUNK as u64)).map_err(|error| error.to_string())?;
+        let count = input.read(&mut buffer[..limit]).map_err(|error| error.to_string())?;
+        if count == 0 {
+            return Err("source artifact was truncated during bounded read".into());
+        }
+        digest.update(&buffer[..count]);
+        if let Some(writer) = output.as_deref_mut() {
+            writer.write_all(&buffer[..count]).map_err(|error| error.to_string())?;
+        }
+        remaining -= count as u64;
+    }
+    let mut extra = [0u8; 1];
+    if input.read(&mut extra).map_err(|error| error.to_string())? != 0 {
+        return Err("source artifact grew during bounded read".into());
+    }
+    Ok(digest_hex(&digest.finish()))
 }
 
 fn copy_ordinary_new(source: &Path, destination: &Path, expected_digest: &str) -> Result<(), String> {
@@ -798,16 +826,10 @@ fn copy_ordinary_new(source: &Path, destination: &Path, expected_digest: &str) -
         .create_new(true)
         .open(destination)
         .map_err(|error| format!("exclusive publication failed for {}: {error}", destination.display()))?;
-    let mut bytes = Vec::with_capacity(opened.len() as usize);
-    input.read_to_end(&mut bytes).map_err(|error| error.to_string())?;
-    if bytes.len() as u64 != opened.len() {
-        return Err(format!("source artifact length changed during copy: {}", source.display()));
-    }
-    let digest = sha256_hex(&bytes);
+    let digest = stream_extent(&mut input, opened.len(), Some(&mut output))?;
     if digest != expected_digest {
         return Err(format!("source artifact changed after verification: {}", source.display()));
     }
-    output.write_all(&bytes).map_err(|error| error.to_string())?;
     output.sync_all().map_err(|error| error.to_string())?;
     let after_path = std::fs::symlink_metadata(source).map_err(|error| error.to_string())?;
     if identity(&input.metadata().map_err(|error| error.to_string())?) != identity(&opened)
@@ -815,8 +837,7 @@ fn copy_ordinary_new(source: &Path, destination: &Path, expected_digest: &str) -
     {
         return Err(format!("source artifact changed during copy: {}", source.display()));
     }
-    let destination_bytes = std::fs::read(destination).map_err(|error| error.to_string())?;
-    if sha256_hex(&destination_bytes) != digest {
+    if ordinary_digest(destination)? != digest {
         return Err(format!("published artifact digest mismatch: {}", destination.display()));
     }
     Ok(())
