@@ -82,6 +82,7 @@ fn mutate_case(name: &str, receipts: &Path, id: &str) -> Result<bool, String> {
     let receipt = receipts.join(format!("{id}.json"));
     let log = receipts.join(format!("{id}.log"));
     match name {
+        "positive" => {},
         "missing-receipt" => fs::remove_file(receipt).map_err(|e| e.to_string())?,
         "missing-log" => fs::remove_file(log).map_err(|e| e.to_string())?,
         "symlink-receipt" => {
@@ -155,7 +156,7 @@ fn run_case(root: &Path, script: &Path, out: &Path, name: &str, commit: &str) ->
     let expected_status = if probe { None } else if name == "positive" { Some(0) } else { Some(1) };
     let expectation_match = expected_status.is_none_or(|expected| output.status.code() == Some(expected));
     Ok(json!({
-        "name": name, "synthetic": true, "command_executed": false,
+        "name": name, "synthetic": true, "registered_check_executed": false,
         "check_ids": ids, "argv": argv, "exit_code": output.status.code(),
         "success": output.status.success(), "wall_ns": elapsed_ns,
         "expected": match expected_status { Some(0) => "validator acceptance", Some(1) => "validator rejection", _ => "observed separately" },
@@ -191,18 +192,25 @@ fn main() -> Result<(), String> {
     ];
     let mut results = Vec::new();
     for name in cases { results.push(run_case(&root, &script, &out, name, &commit)?); }
+    let source_unchanged = git(&root, &["rev-parse", "HEAD"])? == commit
+        && git(&root, &["status", "--porcelain"])?.is_empty();
+    let mismatches: Vec<_> = results.iter().filter(|r| r["expectation_match"] == false).map(|r| r["name"].clone()).collect();
+    let controls_match = mismatches.is_empty();
     let record = json!({
         "mode": "baseline-reference-only", "synthetic_receipts": true,
         "source_commit": commit, "source_worktree_dirty": false,
         "registry_sha256": xtask::sha256_hex(&fs::read(&registry).map_err(|e| e.to_string())?),
-        "python_verifier": script, "driver_sha256": xtask::sha256_hex(&fs::read(&driver).map_err(|e| e.to_string())?),
+        "python_verifier": script, "python_verifier_sha256": xtask::sha256_hex(&fs::read(&script).map_err(|e| e.to_string())?),
+        "driver_sha256": xtask::sha256_hex(&fs::read(&driver).map_err(|e| e.to_string())?),
+        "source_unchanged_at_end": source_unchanged,
         "outer_resource_receipt_directory": root.join("target/resource-containment/runs"),
         "outer_launcher_writes_its_stop_receipt_after_this_process_exits": true,
-        "expectation_mismatches": results.iter().filter(|r| r["expectation_match"] == false).map(|r| r["name"].clone()).collect::<Vec<_>>(),
+        "expectation_mismatches": mismatches,
         "results": results,
         "interpretation": "Synthetic structural evidence only; never evidence that registered commands ran. Probe outcomes are observations, not assumed failures."
     });
     write_json_new(&out.join("baseline.json"), &record)?;
     println!("synthetic Python baseline recorded at {}", out.join("baseline.json").display());
+    if !controls_match || !source_unchanged { return Err("baseline controls or final source identity mismatch; evidence retained".into()); }
     Ok(())
 }
