@@ -104,6 +104,25 @@ whichever is earlier; preserve existing owned-group stop/reaping on failure.
 Source controls must check this actual callback wiring and deadline. Existing
 native ownership controls remain required; no new process supervisor is admitted.
 
+### Bound legacy adapter materialization
+
+Prospective correction after source review: explicit product mode must read at
+most 4 MiB plus one byte of `build.json` before parsing or invoking the helper.
+Reject overflow before either effect. The native reader's ceiling alone cannot
+bound an earlier Python `read_bytes` allocation. Default development receipt
+loading stays unchanged.
+
+Enforce the existing 8 MiB aggregate asset budget before materializing assets.
+Require nonnegative integer byte counts (booleans are not counts), canonical
+SHA-256 strings and a total within that existing budget. Read each asset with
+its declared extent plus one growth byte and retain the exact size/digest/PNG
+checks. This tightens representation and allocation admission; it never raises
+the budget or changes a product package. Keep it in its own reasoned change.
+Add controls for an oversized receipt with no helper invocation, oversized asset
+declarations, malformed byte counts, and a physically oversized/sparse asset
+whose small declared extent must cause bounded refusal before destination
+creation. Preserve the earlier adapter fixture failures and their corrections.
+
 ## Measurement and stopping rule
 
 Use seven alternating warm pairs on identical 17-source canonical console
