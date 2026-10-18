@@ -829,7 +829,7 @@ fn run_baseline(
     ];
     let mut results = Vec::new();
     for name in cases {
-        results.push(run_case(&root, &script, &out, name, &commit)?);
+        results.push(run_case(root, script, out, name, commit)?);
     }
     let source_unchanged = git(root, &["rev-parse", "HEAD"])? == commit
         && git(root, &["status", "--porcelain"])?.is_empty();
@@ -842,9 +842,9 @@ fn run_baseline(
     let record = json!({
         "mode": "baseline-reference-only", "synthetic_receipts": true,
         "source_commit": commit, "source_worktree_dirty": false,
-        "registry_sha256": xtask::sha256_hex(&fs::read(&registry).map_err(|e| e.to_string())?),
-        "python_verifier": script, "python_verifier_sha256": xtask::sha256_hex(&fs::read(&script).map_err(|e| e.to_string())?),
-        "driver_sha256": xtask::sha256_hex(&fs::read(&driver).map_err(|e| e.to_string())?),
+        "registry_sha256": xtask::sha256_hex(&fs::read(registry).map_err(|e| e.to_string())?),
+        "python_verifier": script, "python_verifier_sha256": xtask::sha256_hex(&fs::read(script).map_err(|e| e.to_string())?),
+        "driver_sha256": xtask::sha256_hex(&fs::read(driver).map_err(|e| e.to_string())?),
         "source_unchanged_at_end": source_unchanged,
         "outer_resource_receipt_directory": root.join("target/resource-containment/runs"),
         "outer_launcher_writes_its_stop_receipt_after_this_process_exits": true,
