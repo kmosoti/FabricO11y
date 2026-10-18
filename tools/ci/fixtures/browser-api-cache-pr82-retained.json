@@ -1,0 +1,47 @@
+{
+  "exit": 1,
+  "checks": [
+    "actual browser matches reviewed version",
+    "two real virtual-authenticator passkeys enrolled"
+  ],
+  "injected_api_cache_defect": true,
+  "error": "worker caches only public shell paths",
+  "own_children_empty": true,
+  "process_exits": {
+    "server": 0,
+    "webdriver": -15,
+    "edge": 0,
+    "canary-b": 0
+  },
+  "group_stops": [
+    {
+      "pid": 14685,
+      "start_ticks": 74283,
+      "kernel_empty": true,
+      "children_reaped": true,
+      "stop_error": null
+    },
+    {
+      "pid": 14695,
+      "start_ticks": 74309,
+      "kernel_empty": true,
+      "children_reaped": true,
+      "stop_error": null
+    },
+    {
+      "pid": 14870,
+      "start_ticks": 75732,
+      "kernel_empty": true,
+      "children_reaped": true,
+      "stop_error": null
+    },
+    {
+      "pid": 14880,
+      "start_ticks": 75842,
+      "kernel_empty": true,
+      "children_reaped": true,
+      "stop_error": null
+    }
+  ],
+  "cleanup": "failure evidence retained in owned fixture storage; process groups stopped and bound children reaped"
+}

@@ -1,7 +1,6 @@
 """Test CI evidence failures and exact extended-profile scheduling coverage."""
 from __future__ import annotations
 
-from collections import Counter
 import hashlib
 import json
 import os
@@ -257,23 +256,112 @@ class ReceiptTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
-    def test_extended_workflow_schedules_each_registered_check_exactly_once(self):
-        registry = json.loads((ROOT / 'xtask/checks.json').read_text())
-        expected = [check['id'] for check in selected_checks(registry, 'extended')]
+    @staticmethod
+    def browser_entry_contract(workflow):
+        fixture = (
+            'python3 -B tools/resource_group.py --delegate -- '
+            'cargo test --locked -p xtask --test browser_entry '
+            'actual_parent_seam_binds_before_releasing_native_short_child '
+            '-- --ignored --exact --nocapture')
+        pin = 'FABRIC_BROWSER_ENTRY_HELPER_SHA256=$(sha256sum "$helper" | cut -d \' \' -f1)'
+        helper_pair = (
+            '--browser-entry-helper "$FABRIC_BROWSER_ENTRY_HELPER" '
+            '--browser-entry-helper-sha256 "$FABRIC_BROWSER_ENTRY_HELPER_SHA256"')
+        security_flag = '--security-probes'
+        browser_calls = [line for line in workflow.splitlines() if 'live_browser_check.py' in line]
+        normal_positive = next((line for line in browser_calls if line.endswith('--out $FABRIC_STORAGE_ROOT/results/ci-live-browser')), '')
+        security_positive = next((line for line in browser_calls if '--out $FABRIC_STORAGE_ROOT/results/ci-live-browser-security' in line), '')
+        api_cache_negative = next((line for line in browser_calls if '--inject-api-cache-defect' in line), '')
+        fixture_at = workflow.find(fixture)
+        build_at = workflow.find('name: Build native authenticated browser fixture')
+        pin_at = workflow.find(pin)
+        first_browser_at = workflow.find('live_browser_check.py')
+        return (
+            '  fast-checks:' in workflow
+            and fixture_at >= 0
+            and build_at >= 0
+            and build_at < fixture_at < pin_at < first_browser_at
+            and 'helper="$FABRIC_STORAGE_ROOT/cargo/debug/xtask"' in workflow
+            and 'test -x "$helper"' in workflow
+            and 'FABRIC_BROWSER_ENTRY_HELPER=$helper' in workflow
+            and len(browser_calls) == 3
+            and all(helper_pair in line for line in browser_calls)
+            and normal_positive
+            and security_positive
+            and api_cache_negative
+            and security_flag not in normal_positive
+            and security_flag in security_positive
+            and '--inject-api-cache-defect' not in normal_positive
+            and '--inject-api-cache-defect' not in security_positive
+            and security_flag not in api_cache_negative
+            and api_cache_negative.endswith(
+                '--out $FABRIC_STORAGE_ROOT/results/ci-live-browser-defect --inject-api-cache-defect')
+            and 'results/ci-live-browser-security/' in workflow
+            and 'check-browser-defect.py "$defect_status" $FABRIC_STORAGE_ROOT/results/ci-live-browser-defect/browser.json' in workflow
+            and 'name: Check actual passkeys and scoped native HTTPS console in Chrome' in workflow
+            and 'name: Check the positive Chrome security probes' in workflow
+            and 'name: Require the exact API-cache negative-control failure' in workflow)
+
+    def test_hosted_browser_entry_helper_is_required_with_negative_controls(self):
+        workflow = (ROOT / '.github/workflows/rust.yml').read_text()
+        self.assertTrue(self.browser_entry_contract(workflow), 'hosted native browser entry contract drifted')
+        fixture = (
+            'python3 -B tools/resource_group.py --delegate -- '
+            'cargo test --locked -p xtask --test browser_entry '
+            'actual_parent_seam_binds_before_releasing_native_short_child '
+            '-- --ignored --exact --nocapture')
+        helper_pair = (
+            '--browser-entry-helper "$FABRIC_BROWSER_ENTRY_HELPER" '
+            '--browser-entry-helper-sha256 "$FABRIC_BROWSER_ENTRY_HELPER_SHA256"')
+        security_flag = '--security-probes'
+        browser_calls = [line for line in workflow.splitlines() if 'live_browser_check.py' in line]
+        normal_positive = next((line for line in browser_calls if line.endswith('--out $FABRIC_STORAGE_ROOT/results/ci-live-browser')), '')
+        security_positive = next((line for line in browser_calls if '--out $FABRIC_STORAGE_ROOT/results/ci-live-browser-security' in line), '')
+        api_cache_negative = next((line for line in browser_calls if '--inject-api-cache-defect' in line), '')
+        missing_launcher = workflow.replace(fixture, '', 1)
+        omitted_native_control = workflow.replace(helper_pair, '', 1)
+        omitted_normal_positive = workflow.replace(normal_positive, '', 1)
+        omitted_security_positive = workflow.replace(security_positive, '', 1)
+        omitted_security_probe = workflow.replace(f' {security_flag}', '', 1)
+        security_probe_on_normal = workflow.replace(
+            normal_positive, normal_positive.replace(' --out ', f' {security_flag} --out '), 1)
+        security_probe_on_negative = workflow.replace(
+            api_cache_negative, api_cache_negative.replace('--inject-api-cache-defect', f'{security_flag} --inject-api-cache-defect'), 1)
+        self.assertNotEqual(missing_launcher, workflow)
+        self.assertNotEqual(omitted_native_control, workflow)
+        self.assertNotEqual(omitted_normal_positive, workflow)
+        self.assertNotEqual(omitted_security_positive, workflow)
+        self.assertNotEqual(omitted_security_probe, workflow)
+        self.assertNotEqual(security_probe_on_normal, workflow)
+        self.assertNotEqual(security_probe_on_negative, workflow)
+        self.assertFalse(self.browser_entry_contract(missing_launcher), 'missing Linux launcher was accepted')
+        self.assertFalse(self.browser_entry_contract(omitted_native_control), 'omitted helper pair was accepted')
+        self.assertFalse(self.browser_entry_contract(omitted_normal_positive), 'omitted normal positive browser check was accepted')
+        self.assertFalse(self.browser_entry_contract(omitted_security_positive), 'omitted security positive browser check was accepted')
+        self.assertFalse(self.browser_entry_contract(omitted_security_probe), 'missing positive security probes were accepted')
+        self.assertFalse(self.browser_entry_contract(security_probe_on_normal), 'security probes were moved onto normal positive browser check')
+        self.assertFalse(self.browser_entry_contract(security_probe_on_negative), 'security probes were added to the API-cache negative control')
+
+    def test_extended_workflow_uses_two_shards_and_original_runner(self):
         workflow = (ROOT / '.github/workflows/verification.yml').read_text()
-        scheduled = re.findall(
-            r'^\s+run: python3 -B tools/resource_group\.py -- cargo xtask checks --only ([a-z0-9-]+)\s*$',
-            workflow, re.MULTILINE)
-        self.assertEqual(Counter(scheduled), Counter(expected))
+        self.assertIn('checks=(semantic-mutants)', workflow)
+        self.assertIn(
+            'checks=(delivery-faults tla-delivery tla-transport trace-model cargo-mutants kani-core fuzz-smoke dependency-policy coverage-report)',
+            workflow)
+        self.assertIn(
+            'python3 -B tools/resource_group.py -- cargo xtask checks --only "$check" --receipts "$SHARD_RECEIPTS"',
+            workflow)
         self.assertIn('verify_receipts.py --profile extended', workflow)
 
     def test_extended_workflow_runs_when_ready_not_for_drafts(self):
         workflow = (ROOT / '.github/workflows/verification.yml').read_text()
         self.assertRegex(workflow, r'(?m)^  pull_request:\n    types: \[[^\]]*\bready_for_review\b')
         self.assertRegex(workflow, r'(?m)^  merge_group:')
+        self.assertRegex(workflow, r'(?m)^  schedule:')
+        self.assertRegex(workflow, r'(?m)^  workflow_dispatch:')
         self.assertRegex(
             workflow,
-            r"(?m)^  extended:\n    if: github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.draft == false$")
+            r"(?m)^  extended:\n    needs: shards\n    if: \$\{\{ always\(\) && \(github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.draft == false\) \}\}$")
 
     def test_fast_duplicate_removals_still_have_registry_owners(self):
         registry = json.loads((ROOT / 'xtask/checks.json').read_text())

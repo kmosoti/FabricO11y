@@ -1,0 +1,38 @@
+{
+  "fixture": "retained-query-visible-gap-summary",
+  "origin": {
+    "raw_result": "/run/media/kmosoti/data/FabricO11y/results/replacement-tls-01-chrome-response-positive/browser.json",
+    "raw_result_sha256": "742c3be811392c5fcfb12e507d4577d6ce1f4cd2849d04059c92b9690da5db82",
+    "frozen_product_source_commit": "e078ba23b543126011a2136dd1f7e98ca65370eb",
+    "response_grader": "tools/ui/browser_responses.py",
+    "response_grader_sha256": "c02b2dd6107bd50f327630dcc503e04c4dd747c1d6284fcca14e31fdda513375"
+  },
+  "inputs": {
+    "incomplete_without_gap": {
+      "complete": false,
+      "gaps": [],
+      "unavailable": []
+    },
+    "incomplete_with_explicit_gap": {
+      "complete": false,
+      "gaps": [
+        {
+          "reason": "diagnostic UI response fixture"
+        }
+      ],
+      "unavailable": []
+    }
+  },
+  "expected_visible_summary": {
+    "coverage_text_for_both": "Incomplete coverage — review the evidence",
+    "incomplete_without_gap_suffix": "0 reported gaps · 0 unavailable sources",
+    "incomplete_with_explicit_gap_suffix": "1 reported gaps · 0 unavailable sources"
+  },
+  "historical_frozen_product_summary": "200 observations · Incomplete coverage — review the evidence",
+  "existing_response_grader": {
+    "case": "gap",
+    "required_substring": "1 reported gaps",
+    "expected_outcome_changed": false
+  },
+  "verification_state": "Source regression input only; current-source correction has not yet been built or checked. The frozen product and raw failed result remain unchanged."
+}

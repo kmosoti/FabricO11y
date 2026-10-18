@@ -336,3 +336,28 @@ remove it from every snapshot/raw tree or coherently replace paused=false with
 true; recompute metadata, raw/member/manifest/transfer hashes. Both copies must
 refuse at `native applied configuration` while the complete baseline passes.
 No missing byte may be justified by a matching fabricated inventory.
+
+## Initial listener readiness refusal counterexample
+
+The actual `replacement-rpm-life-03` first drain query exited2 with exactly
+`fabricctl: transport: io: Connection refused` immediately after successful
+unit start and process observation. The old query helper raised before its
+registered40-second readiness loop could retry. Preserve its overall2 and
+incomplete stopped transfer; the raw command origin is retained in
+[the literal fixture](fixtures/installation-readiness-refusal.json).
+
+Prospectively allow retry only when the first query command has the exact
+registered logs-query argv, exit2, empty stdout and that exact stderr. Retain
+every command attempt. A partial page, another failure, malformed response or
+missing named row cannot become readiness evidence. Use one original absolute
+40-second deadline, bounded also by the phase deadline minus40 seconds; cap
+command timeouts at that same deadline and never renew it. A successful complete
+query must still return the unread literal; final stopped-phase full answers,
+all raw-row conservation, ACK/process joins and independent oracles are unchanged.
+
+Register controls for transient refusal then actual query success, perpetual
+refusal deadline, unrelated nontransport refusal and failed query carrying
+answer bytes. The valid transient case must fail on the old implementation as
+an assertion mismatch, not a missing-API error. Test both drain/reboot paths;
+no other query caller receives transport retry. Source mechanism tests do not
+qualify either package or relabel failed Fedora03.

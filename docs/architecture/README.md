@@ -5,6 +5,7 @@ Current product views use the [evidence states](../QUALIFICATION.md#evidence-sta
 | Area | View | Scope and status |
 | --- | --- | --- |
 | Runtime and boundaries | [System](system.md) | Runtime components, crate layers and dependency rule. |
+| Engineering evidence | [Read-only composition](engineering-evidence.md) | Bounded artifact, dependency and stopped-receipt joins; structural aid, never qualification. |
 | Collection | [Spindle](spindle.md) | Host collection, Spool custody, gaps and bounds. |
 | Delivery | [Delivery](delivery.md) | ACK rule, delivery kernel and layer split. |
 | Control | [Central control](control-plane.md) | Enrollment, desired/applied configuration, pause, resume and revoke. |

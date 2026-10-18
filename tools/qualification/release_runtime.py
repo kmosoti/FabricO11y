@@ -145,10 +145,33 @@ def fixture_browser_deadline(explicit, entered):
     return entered + runtime
 
 
+def snapshot_browser_entry_helper(caller_path, expected_sha256, work):
+    directory = Path(work) / 'native-browser-entry'
+    directory.mkdir(mode=0o700)
+    target = directory / 'xtask-browser-enter-exec'
+    shutil.copyfile(caller_path, target)
+    target.chmod(0o500)
+    if target.is_symlink() or not target.is_file() or digest(target) != expected_sha256:
+        raise RuntimeError('native browser entry helper snapshot differs from its explicit pin')
+    return target
+
+
 class CandidateFixture:
     def __init__(self, deb_receipt, rpm_receipt, out, *, mode='segment',
-                 server_cpus='0-1',supervisor_cpus='2-3', browser_deadline=None):
+                 server_cpus='0-1',supervisor_cpus='2-3', browser_deadline=None,
+                 browser_entry_helper=None, browser_entry_helper_sha256=None):
         browser_deadline = fixture_browser_deadline(browser_deadline, time.monotonic())
+        if (browser_entry_helper is None) != (browser_entry_helper_sha256 is None):
+            raise ValueError('native browser entry helper path and hash must be supplied together')
+        if browser_entry_helper is None:
+            raise ValueError('native browser entry helper path and hash are required')
+        browser_entry_helper = Path(browser_entry_helper)
+        if (not browser_entry_helper.is_absolute() or browser_entry_helper.is_symlink()
+                or not browser_entry_helper.is_file() or not os.access(browser_entry_helper, os.X_OK)
+                or not isinstance(browser_entry_helper_sha256, str)
+                or re.fullmatch('[0-9a-f]{64}', browser_entry_helper_sha256) is None
+                or digest(browser_entry_helper) != browser_entry_helper_sha256):
+            raise ValueError('native browser entry helper differs from its explicit pin')
         # Every shared consumer uses the supervised lifecycle. Import before
         # the source census so cleanup is frozen alongside the live adapter.
         import browser_supervisor  # noqa: F401
@@ -233,8 +256,18 @@ class CandidateFixture:
             for source in self.artifacts['helpers'].iterdir():
                 if source.is_file() and not source.is_symlink():
                     shutil.copy2(source, self.helpers / source.name)
+            self.browser_entry_helper = snapshot_browser_entry_helper(
+                browser_entry_helper, browser_entry_helper_sha256, self.work)
+            self.browser_entry_helper_dir = self.browser_entry_helper.parent
+            self.browser_entry_helper_binding = {
+                'caller_path': str(browser_entry_helper),
+                'caller_sha256': browser_entry_helper_sha256,
+                'snapshot_path': str(self.browser_entry_helper.relative_to(self.work)),
+                'snapshot_sha256': digest(self.browser_entry_helper)}
+            self.receipt['native_browser_entry_helper'] = dict(self.browser_entry_helper_binding)
             self.input_hashes = {str(p.relative_to(self.work)): digest(p)
-                                for directory in [self.bins, self.console, self.helpers]
+                                for directory in [self.bins, self.console, self.helpers,
+                                                  self.browser_entry_helper_dir]
                                 for p in directory.rglob('*') if p.is_file()}
             self._certificates()
             port = free_port()
@@ -253,7 +286,9 @@ class CandidateFixture:
             from live_browser_check import browser_hold_directory
             held_browser = browser_hold_directory(self.browser_group)
             held_browser['exclusive'] = True  # This constructor just created this empty budget.
-            browser_options = {'browser_parent': held_browser, 'browser_deadline': browser_deadline}
+            browser_options = {'browser_parent': held_browser, 'browser_deadline': browser_deadline,
+                'browser_entry_helper': self.browser_entry_helper,
+                'browser_entry_helper_sha256': browser_entry_helper_sha256}
             try:
                 self.bridge = ConsoleBridge(self.origin, self.work / 'server.pem', self.work / 'browser',
                                             self.out / 'browser', browser_group=self.browser_group, **browser_options)
@@ -420,6 +455,14 @@ class CandidateFixture:
         if hasattr(self, 'input_hashes'):
             unchanged = all((self.work / name).is_file() and digest(self.work / name) == expected
                             for name, expected in self.input_hashes.items())
+            binding = getattr(self, 'browser_entry_helper_binding', None)
+            if binding is None:
+                unchanged = False
+            else:
+                snapshot_path = binding['snapshot_path']
+                unchanged = (unchanged
+                             and self.receipt.get('native_browser_entry_helper') == binding
+                             and self.input_hashes.get(snapshot_path) == binding['snapshot_sha256'])
             self.receipt['immutable_inputs'] = unchanged
             cleanup = cleanup and unchanged
         if hasattr(self, 'harness_hashes'):

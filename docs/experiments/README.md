@@ -1,5 +1,35 @@
 # Experiments
 
+The [console provenance protocol](formal/console-provenance-protocol.md) registers
+the frozen-product/newer-harness source distinction and bounded Rust controls.
+Alpha acceptance remains owner-paused while this engineering work proceeds.
+The [finite controls and warm measurements](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01)
+retain failed fixtures, deliberate mutants and the two composition regressions;
+actual packaged-browser acceptance remains separate.
+
+The [Rust receipt-verifier migration](formal/verification-receipts-protocol.md)
+registers baseline controls, differential verification and standalone benchmarks.
+It does not replace required CI checks or credit synthetic fixtures as execution.
+
+The [native provider measurements and concrete defect control](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-receipt-provider-results-01)
+retain slower variants and exact source identities. The
+[scheduling experiment](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-scheduling-results-01)
+measured only its seven unchanged lightweight checks. The
+[production dispatch policy](../formal/verification-dispatch-policy.md) requires
+separate integration evidence before adoption; neither result resumes acceptance.
+
+The [two-runner verification pilot](formal/verification-shards-protocol.md)
+registers a comparison with the serial extended workflow. Its
+[revision-bound measurements](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-shards-results-01)
+retain the differing CPU/cache conditions and increased aggregate runner time.
+Canonical workflow adoption requires its own current-source checks.
+
+The [engineering evidence protocol](formal/engineering-evidence-protocol.md) registers
+bounded artifact/dependency/receipt composition controls and matched finite costs.
+The [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-engineering-evidence-results-01)
+retain exact source, controls and trade-offs. This tooling supplies structural
+consistency only, with no release acceptance.
+
 Native custody reader source controls: [registered protocol](formal/installation-native-custody-protocol.md), [revision-bound red and correction](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-custody-native-reader-source-results-01/0364b1c). Native guest acceptance remains pending.
 
 Research, experiment reports and observations belong in the
@@ -111,3 +141,9 @@ The learning path covers the delivery model, log and measurement ([learning path
 - [Simulator accounting source controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-simulator-accounting-source-results-01) and [separate helper preparation](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-simulator-helper-preparation-results-01): source controls and canonical native red; no rebuilt-helper or acceptance result.
 
 The [fourth-checkpoint custody source record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-custody-fourth-checkpoint-source-results-01) retains the original missing-API red and the later 70-method correction; native guest acceptance remains separate.
+
+The [native storage census protocol](formal/native-storage-census-protocol.md)
+and [results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-storage-census-results-01)
+retain the independent classification baseline, partial-counter mutant, shared
+Cargo target identity failure and corrected isolated comparison. Warm metadata
+measurements do not establish whole-drive speed or owner-walkthrough acceptance.

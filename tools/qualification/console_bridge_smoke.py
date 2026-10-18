@@ -26,14 +26,17 @@ from live_browser_check import browser_hold_directory
 
 
 @contextmanager
-def supervised_bridge(origin, certificate, work, out, parent, deadline):
+def supervised_bridge(origin, certificate, work, out, parent, deadline, *,
+                      browser_entry_helper, browser_entry_helper_sha256):
     """Own the same bounded browser lifecycle as campaign callers."""
     budget, limits = cgroups.subgroup(parent, 'browser', 1024**3, 850*1024**2, 512, 2)
     held = browser_hold_directory(budget)
     held['exclusive'] = True  # subgroup() exclusively created this empty budget.
     try:
         bridge = ConsoleBridge(origin, certificate, work, out, browser_group=budget,
-                               browser_parent=held, browser_deadline=deadline)
+                               browser_parent=held, browser_deadline=deadline,
+                               browser_entry_helper=browser_entry_helper,
+                               browser_entry_helper_sha256=browser_entry_helper_sha256)
     finally:
         os.close(held['fd'])
     bridge.receipt['smoke_browser_budget'] = {'path': str(budget), 'limits': limits}
@@ -49,8 +52,19 @@ def main():
     parser.add_argument("--build", type=Path, required=True)
     parser.add_argument("--bin-dir", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--browser-entry-helper", type=Path, required=True)
+    parser.add_argument("--browser-entry-helper-sha256", required=True)
     parser.add_argument("--poll-seconds", type=int, default=12)
     args = parser.parse_args()
+    if (not args.browser_entry_helper.is_absolute()
+            or args.browser_entry_helper.is_symlink()
+            or not args.browser_entry_helper.is_file()
+            or not os.access(args.browser_entry_helper, os.X_OK)
+            or len(args.browser_entry_helper_sha256) != 64
+            or any(char not in '0123456789abcdef' for char in args.browser_entry_helper_sha256)
+            or hashlib.sha256(args.browser_entry_helper.read_bytes()).hexdigest()
+                != args.browser_entry_helper_sha256):
+        raise ValueError('exact pinned native browser entry helper required')
     if not 12 <= args.poll_seconds <= 600:
         raise ValueError('finite polling smoke must be 12–600 seconds')
     group = require_limits()
@@ -130,7 +144,9 @@ def main():
         (work / "server.conf").write_text(f"listen=127.0.0.1:{port}\ntls_cert={work}/server.pem\ntls_key={work}/server.key\nstate_dir={work}/state\nadmin_token_file={admin}\nconsole_dir={work}/console\naccess_origin={origin}\naccess_rp_id=localhost\njournal_bytes=8388608\njournal_file_bytes=1048576\nself_spindle_ca={work}/ca.pem\n")
         server = launch_server()
         with supervised_bridge(origin, work / "server.pem", work / "browser", out / "bridge",
-                               parent, time.monotonic() + args.poll_seconds + 180) as bridge:
+                               parent, time.monotonic() + args.poll_seconds + 180,
+                               browser_entry_helper=args.browser_entry_helper,
+                               browser_entry_helper_sha256=args.browser_entry_helper_sha256) as bridge:
             view = bridge.bootstrap_owner(work / "state/access/access-bootstrap.secret")
             check(view["role"] == "owner" and not (work / "state/access/access-bootstrap.secret").exists(), "real passkey owner consumed bootstrap")
             status, enrolled = bridge.request("/v1/console/nodes", "POST", {"name": "campaign-source", "metric_interval_s": 15})

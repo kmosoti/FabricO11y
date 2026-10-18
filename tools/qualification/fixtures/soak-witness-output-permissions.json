@@ -1,0 +1,16 @@
+{
+  "origin": "Actual second replacement-candidate R3 S1, stopped 2026-10-16T05:53:44Z; no native exposure began",
+  "source_revision": "2255fb572d10f56a58aac8413bc8eb8b559cd54c",
+  "helper_sha256": "5d0555dfc38cd001d0ecca0f488d309eb0be02cdf0cf295b3e07cbb3c79eee24",
+  "raw_output": "/run/media/kmosoti/data/FabricO11y/scratch/r3-s1-replacement-tls-02/sim",
+  "output_mode": "0755",
+  "output_uid": 1000,
+  "output_gid": 1000,
+  "helper_stderr": "spindle_sim: witness parent must be canonical, owned and private\n",
+  "failure_sha256": "fb97bd630d47bd3afca6c192f353f6cf6eb96fbbbdf9655a1bf0e1a010c18262",
+  "trace_sha256": "62a3057496325caca185067b5d1f3cf6a8368778af7d901ae162565208ea49d9",
+  "outer_receipt_sha256": "bebedbb831b3e06282384b279bf62cad0f83537517d231e94783f5b2e0e86199",
+  "exit": 2,
+  "stop_confirmed": true,
+  "contract": "Caller creates a fresh owned canonical directory with mode 0700 before native launch; existing outputs are never reused or chmod-repaired. The helper's independent guard remains unchanged."
+}

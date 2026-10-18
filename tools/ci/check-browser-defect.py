@@ -8,10 +8,12 @@ from resource_group import require_limits
 
 
 def cleaned(receipt):
-    """Require the current kernel-empty/reaped receipt, not a stale prose label."""
+    """Require an admitted fixture disposition and its structured stop evidence."""
     groups = receipt.get('group_stops')
     exits = receipt.get('process_exits')
-    if (receipt.get('cleanup') != 'owned fixtures removed; process groups stopped and bound children reaped'
+    if (receipt.get('cleanup') not in (
+                'owned fixtures removed; process groups stopped and bound children reaped',
+                'failure evidence retained in owned fixture storage; process groups stopped and bound children reaped')
             or receipt.get('cleanup_error') is not None
             or receipt.get('own_children_empty') is not True
             or not isinstance(groups, list) or not groups

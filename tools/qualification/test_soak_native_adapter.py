@@ -7,10 +7,56 @@ from types import SimpleNamespace
 import unittest
 from unittest import mock
 
-from soak_r3 import launch_native, simulator_command, validate_native_checkpoint
+from soak_r3 import launch_native, prepare_simulator_output, simulator_command, validate_native_checkpoint
 
 
 class NativeAdapterControls(unittest.TestCase):
+    def test_actual_default_umask_failure_gets_exclusive_private_output(self):
+        failure = json.loads((Path(__file__).parent / 'fixtures/soak-witness-output-permissions.json').read_text())
+        self.assertEqual(failure['output_mode'], '0755')
+        self.assertEqual(failure['helper_stderr'],
+                         'spindle_sim: witness parent must be canonical, owned and private\n')
+        for mask in (0o022, 0o077):
+            with self.subTest(umask=mask), tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+                raw = Path(directory).resolve()
+                previous = os.umask(mask)
+                try:
+                    prepare_simulator_output(raw)
+                finally:
+                    os.umask(previous)
+                info = (raw / 'sim').stat()
+                self.assertEqual(info.st_mode & 0o7777, 0o700)
+                self.assertEqual(info.st_uid, os.geteuid())
+                with self.assertRaises(FileExistsError):
+                    prepare_simulator_output(raw)
+
+    def test_output_never_repairs_existing_or_symlinked_destinations(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            raw = Path(directory).resolve()
+            target = raw / 'target'
+            target.mkdir(mode=0o755)
+            (raw / 'sim').symlink_to(target, target_is_directory=True)
+            with self.assertRaises(FileExistsError):
+                prepare_simulator_output(raw)
+            self.assertEqual(target.stat().st_mode & 0o777, 0o755)
+            alias = raw / 'alias'
+            alias.symlink_to(target, target_is_directory=True)
+            with self.assertRaisesRegex(ValueError, 'canonical simulator output parent required'):
+                prepare_simulator_output(alias)
+            self.assertFalse((target / 'sim').exists())
+
+    def test_restrictive_umask_fails_closed_without_chmod_repair(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
+            raw = Path(directory).resolve()
+            previous = os.umask(0o777)
+            try:
+                with self.assertRaisesRegex(ValueError, 'private owned simulator output required'):
+                    prepare_simulator_output(raw)
+            finally:
+                os.umask(previous)
+            self.assertEqual((raw / 'sim').stat().st_mode & 0o7777, 0)
+            (raw / 'sim').rmdir()
+
     def test_actual_failed_command_is_repaired_without_changing_workload(self):
         failure = json.loads((Path(__file__).parent / 'fixtures/soak-witness-output-boundary.json').read_text())
         original = failure['command']

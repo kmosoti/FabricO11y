@@ -8,6 +8,7 @@ import os
 import re
 from pathlib import Path
 import secrets
+import select
 import shutil
 import signal
 import socket
@@ -58,6 +59,50 @@ def browser_pid(pid):
 def browser_pidfd(fd):
     return int(next(line.split(':', 1)[1] for line in
         (Path('/proc/self/fdinfo') / str(fd)).read_text().splitlines() if line.startswith('Pid:')))
+
+
+def browser_provisional_cleanup(parent, record):
+    group, proc = record['group'], record.get('process')
+    if proc is None:
+        return
+    browser_directory(parent); browser_directory(group)
+    browser_group_check(group['exclusive'] is True and group['path'].parent == parent['path'], 'ownership')
+    pidfd = group.get('pidfd')
+    if pidfd is not None and proc.poll() is None:
+        browser_group_check(browser_pidfd(pidfd) == proc.pid
+            and browser_pid(proc.pid)[0] == group['start_ticks'], 'identity')
+        try:
+            signal.pidfd_send_signal(pidfd, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    try:
+        proc.wait(timeout=min(5, max(0, parent['deadline_monotonic_ns'] / 1e9 - time.monotonic())))
+    except subprocess.TimeoutExpired as error:
+        if group.get('fd') is None:
+            record['cleanup_error'] = 'provisional child did not stop and group descriptor is absent'
+            raise RuntimeError('browser-provisional-stop') from error
+        kill_fd = os.open('cgroup.kill', os.O_WRONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                          dir_fd=group['fd'])
+        try:
+            if os.write(kill_fd, b'1') != 1:
+                raise RuntimeError('browser-provisional-cgroup-kill')
+        finally:
+            os.close(kill_fd)
+        try:
+            proc.wait(timeout=min(5, max(0, parent['deadline_monotonic_ns'] / 1e9 - time.monotonic())))
+        except subprocess.TimeoutExpired as cleanup_error:
+            record['cleanup_error'] = 'owned provisional cgroup did not stop within its bound'
+            raise RuntimeError('browser-provisional-stop') from cleanup_error
+    if (Path('/proc') / str(proc.pid)).exists():
+        browser_group_check(pidfd is not None and browser_pidfd(pidfd) == -1, 'identity')
+    browser_directory(group)
+    browser_group_check('populated 0' in (group['path'] / 'cgroup.events').read_text().splitlines(), 'stop')
+    record['children_reaped'] = proc.returncode is not None and not (Path('/proc') / str(proc.pid)).exists()
+    browser_group_check(record['children_reaped'], 'reap')
+    if pidfd is not None:
+        os.close(pidfd); group['pidfd'] = None
+    os.close(group['fd']); group['fd'] = None
+    record['state'] = 'cleaned'
 
 
 def browser_members(group):
@@ -204,7 +249,8 @@ def begin_browser_domain(limits, deadline):
         and values['memory.swap.max'] == '0' and values['cpu.max'] == '200000 100000'
         and values['pids.max'] == '512', 'limits')
     parent = browser_hold_directory(limits)
-    parent.update(deadline_monotonic_ns=int(deadline * 1e9), namespaces=browser_namespaces())
+    parent.update(deadline_monotonic_ns=int(deadline * 1e9), namespaces=browser_namespaces(),
+                  browser_launch_attempts=0)
     try:
         browser_group_check(libc.prctl(37, ctypes.byref(previous), 0, 0, 0) == 0
             and libc.prctl(36, 1, 0, 0, 0) == 0, 'subreaper')
@@ -220,39 +266,108 @@ def begin_browser_domain(limits, deadline):
         raise
 
 
-def browser_group_launch(parent, bindings, label, command, log, environment, *, clock=None):
+def browser_group_launch(parent, bindings, label, command, log, environment, *, entry_helper,
+                         entry_helper_sha256, clock=None):
     browser_directory(parent)
     browser_group_check(browser_namespaces() == parent['namespaces'], 'namespace')
-    path, _ = cgroups.subgroup(parent['path'], 'browser-' + str(len(bindings)), 4000000000, 3500000000, 512, 2)
+    attempt = parent['browser_launch_attempts']
+    browser_group_check(isinstance(attempt, int) and not isinstance(attempt, bool) and attempt >= 0,
+                        'launch-counter')
+    parent['browser_launch_attempts'] = attempt + 1
+    path, _ = cgroups.subgroup(parent['path'], 'browser-' + str(attempt),
+                               4000000000, 3500000000, 512, 2)
     group = browser_hold_directory(path)
     group['exclusive'] = True
-    helper = ROOT / 'tools/bench/labs/completion/enter_group.py'
-    arguments=[sys.executable, '-B', str(helper), str(path), *command]
+    browser_group_check(entry_helper.is_absolute() and entry_helper.is_file()
+        and hashlib.sha256(entry_helper.read_bytes()).hexdigest() == entry_helper_sha256, 'entry-helper')
+    target = list(command)
+    inherited_fds = []
     inherited={}
     if clock is not None:
         browser_group_check(not any(key in environment for key in ('LD_PRELOAD','LD_AUDIT','FABRIC_CLOCK_FD')), 'clock-environment')
         helper=ROOT/'tools/ui/session_clock_exec.py'
-        arguments=[sys.executable,'-B',str(helper),str(path),str(clock[0]),str(clock[1]),*command]
-        inherited['pass_fds']=(clock[1],)
-    proc = subprocess.Popen(arguments, stdout=log, stderr=subprocess.STDOUT,
-        start_new_session=True, env=environment, **inherited)
-    group.update(process=proc, pid=proc.pid, pidfd=os.pidfd_open(proc.pid), start_ticks=browser_pid(proc.pid)[0])
-    until = min(time.monotonic() + 5, parent['deadline_monotonic_ns'] / 1e9)
+        target=[sys.executable,'-B',str(helper),str(path),str(clock[0]),str(clock[1]),*command]
+        inherited_fds.append(clock[1])
+    ready_read, ready_write = os.pipe()
+    release_read, release_write = os.pipe()
+    handshake_deadline = min(time.monotonic() + 5, parent['deadline_monotonic_ns'] / 1e9)
+    group.update(process=None, pid=None, pidfd=None, start_ticks=None)
+    record = {'parent': parent, 'group': group, 'state': 'starting', 'process': None}
+    parent.setdefault('provisional_children', []).append(record)
+    proc = None
+    binding = None
+    transferred = False
     try:
+        arguments=[str(entry_helper),'browser-enter-exec','--group',str(path),
+            '--ready-fd',str(ready_write),'--release-fd',str(release_read),
+            '--timeout-ms','5000','--',*target]
+        inherited_fds.extend((ready_write, release_read))
+        inherited['pass_fds']=tuple(inherited_fds)
+        proc = subprocess.Popen(arguments, stdout=log, stderr=subprocess.STDOUT,
+            start_new_session=True, env=environment, **inherited)
+        os.close(ready_write); ready_write = None
+        os.close(release_read); release_read = None
+        group.update(process=proc, pid=proc.pid)
+        record['process'] = proc
+        group['pidfd'] = os.pidfd_open(proc.pid)
+        group['start_ticks'] = browser_pid(proc.pid)[0]
+        record['state'] = 'spawned'
+        poller = select.poll()
+        poller.register(ready_read, select.POLLIN | select.POLLHUP | select.POLLERR)
+        ready = bytearray()
         while True:
-            placement = cgroups.ROOT / next(line[3:] for line in
-                (Path('/proc') / str(proc.pid) / 'cgroup').read_text().splitlines() if line.startswith('0::')).lstrip('/')
-            if placement == path: break
-            browser_group_check(proc.poll() is None and time.monotonic() < until, 'placement')
-            time.sleep(.01)
+            remaining = handshake_deadline - time.monotonic()
+            browser_group_check(remaining > 0, 'entry-ready-deadline')
+            remaining_ms = max(1, int(remaining * 1000 + 0.999))
+            events = poller.poll(remaining_ms)
+            browser_group_check(bool(events) and time.monotonic() < handshake_deadline, 'entry-ready-deadline')
+            browser_group_check(events[0][1] & select.POLLERR == 0, 'entry-ready-pipe-error')
+            chunk = os.read(ready_read, 2)
+            if not chunk:
+                browser_group_check(bytes(ready) == b'R', 'entry-ready-framing')
+                break
+            ready.extend(chunk)
+            browser_group_check(bytes(ready) == b'R', 'entry-ready-framing')
+        record['ready_monotonic_ns'] = time.monotonic_ns()
+        record['entry_helper_sha256'] = entry_helper_sha256
+        browser_group_check(proc.poll() is None and browser_pidfd(group['pidfd']) == proc.pid
+            and browser_pid(proc.pid)[0] == group['start_ticks'], 'identity')
+        placement = cgroups.ROOT / next(line[3:] for line in
+            (Path('/proc') / str(proc.pid) / 'cgroup').read_text().splitlines()
+            if line.startswith('0::')).lstrip('/')
+        browser_group_check(placement == path, 'placement')
+        browser_group_check(time.monotonic() < handshake_deadline, 'entry-ready-deadline')
         binding = bind_browser_group(parent, group, proc)
         binding['group']['label'] = label
         bindings.append(binding)
+        record['state'] = 'bound'
+        transferred = True
+        record['release_monotonic_ns'] = time.monotonic_ns()
+        browser_group_check(time.monotonic() < handshake_deadline, 'entry-release-deadline')
+        binding['group']['entry_helper_sha256'] = entry_helper_sha256
+        binding['group']['entry_elapsed_ns'] = record['release_monotonic_ns'] - record['ready_monotonic_ns']
+        if os.write(release_write, b'G') != 1:
+            raise RuntimeError('browser-entry-release')
+        os.close(release_write); release_write = None
+        record['state'] = 'released'
         return proc
     except BaseException:
-        # Unbound children remain confined by the outer launcher; no PID fallback.
-        os.close(group['pidfd']); os.close(group['fd'])
+        if release_write is not None:
+            os.close(release_write); release_write = None
+        if not transferred and proc is not None:
+            try:
+                browser_provisional_cleanup(parent, record)
+            except BaseException as cleanup_error:
+                record['cleanup_error'] = str(cleanup_error)
+        elif not transferred:
+            os.close(group['fd']); group['fd'] = None
+            record['state'] = 'cleaned'
         raise
+    finally:
+        for descriptor in (ready_read, ready_write, release_read, release_write):
+            if descriptor is not None:
+                try: os.close(descriptor)
+                except OSError: pass
 
 
 def browser_reap_domain(parent, bindings):
@@ -289,6 +404,13 @@ def browser_reap_domain(parent, bindings):
         if observed is None: time.sleep(.01)
 
 
+def browser_cleanup_provisionals(parent):
+    for record in reversed(parent.get('provisional_children', [])):
+        if record['state'] in ('bound', 'released', 'cleaned'):
+            continue
+        browser_provisional_cleanup(parent, record)
+
+
 def end_browser_domain(parent, bindings):
     if 'previous_subreaper' not in parent: return  # Synthetic source fixtures own their subreaper.
     import ctypes
@@ -298,6 +420,9 @@ def end_browser_domain(parent, bindings):
     for binding in bindings:
         group = binding['group']; descriptors.update((group['fd'], group['pidfd']))
         descriptors.update(row['pidfd'] for row in group['members'])
+    for record in parent.get('provisional_children', []):
+        group = record['group']
+        descriptors.update(fd for fd in (group.get('fd'), group.get('pidfd')) if fd is not None)
     for descriptor in descriptors: os.close(descriptor)
 
 
@@ -398,12 +523,40 @@ def free_port():
         return sock.getsockname()[1]
 
 
+def validate_product_source_options(args, parser):
+    values = (args.product_source_root, args.product_source_commit,
+              args.console_receipt_sha256, args.console_source_helper,
+              args.console_source_helper_sha256)
+    if not any(value is not None for value in values):
+        return False
+    if not all(value is not None for value in values):
+        parser.error('explicit console product source requires the complete five-operand tuple')
+    if args.packaged_console is None:
+        parser.error('explicit console product source requires --packaged-console')
+    if not args.product_source_root.is_absolute() or not args.console_source_helper.is_absolute():
+        parser.error('explicit console source root and helper must be absolute paths')
+    if not re.fullmatch('[a-f0-9]{40}', args.product_source_commit):
+        parser.error('explicit console product commit must be a full lowercase SHA-1')
+    if not re.fullmatch('[a-f0-9]{64}', args.console_receipt_sha256):
+        parser.error('explicit console receipt pin must be a full lowercase SHA-256')
+    if not re.fullmatch('[a-f0-9]{64}', args.console_source_helper_sha256):
+        parser.error('explicit console helper pin must be a full lowercase SHA-256')
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build', type=Path, required=True)
     parser.add_argument('--server', type=Path, required=True)
     parser.add_argument('--spindle', type=Path, required=True)
     parser.add_argument('--packaged-console',type=Path,help='use extracted package assets after cross-checking the frozen build')
+    parser.add_argument('--product-source-root', type=Path)
+    parser.add_argument('--product-source-commit')
+    parser.add_argument('--console-receipt-sha256')
+    parser.add_argument('--console-source-helper', type=Path)
+    parser.add_argument('--console-source-helper-sha256')
+    parser.add_argument('--browser-entry-helper', type=Path)
+    parser.add_argument('--browser-entry-helper-sha256')
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--inject-rejection-defect',choices=('error','status'))
     parser.add_argument('--inject-api-cache-defect', action='store_true')
@@ -435,6 +588,12 @@ def main():
     parser.add_argument('--suppress-announcement',action='store_true',help='negative control: disable the original status live region')
     parser.add_argument('--security-key-probe',action='store_true',help='isolated actual virtual credential export/DER/signature admission')
     args = parser.parse_args()
+    if args.browser_entry_helper is None or args.browser_entry_helper_sha256 is None:
+        parser.error('explicit pinned native browser entry helper pair required')
+    if not args.browser_entry_helper.is_absolute() or not re.fullmatch(
+            '[a-f0-9]{64}', args.browser_entry_helper_sha256):
+        parser.error('browser entry helper path must be absolute and pin must be a full lowercase SHA-256')
+    product_source_enabled = validate_product_source_options(args, parser)
     if args.security_key_probe and any((getattr(args,'announcement_probes',False),getattr(args,'suppress_announcement',False),
             args.migration,args.fabricctl,args.security_probes,args.session_expiry_helper,
             args.session_expiry_admission,args.ui_responses,args.role_matrix,args.poll_seconds,args.pressure,
@@ -475,9 +634,13 @@ def main():
     build = args.build.resolve()
     if not out.is_relative_to(DATA / 'results') or out.exists() or not build.is_relative_to(DATA / 'results'):
         raise SystemExit('fresh owned data-drive result directories required')
-    for binary in (args.server, args.spindle, *([args.fabricctl] if args.migration else [])):
+    for binary in (args.server, args.spindle, args.browser_entry_helper,
+                   *([args.fabricctl] if args.migration else []),
+                   *([args.console_source_helper] if product_source_enabled else [])):
         if not binary.resolve().is_relative_to(DATA) or not binary.is_file():
             raise SystemExit('project binaries must be existing data-drive artifacts')
+    if hashlib.sha256(args.browser_entry_helper.read_bytes()).hexdigest() != args.browser_entry_helper_sha256:
+        raise SystemExit('browser entry helper differs from caller pin')
     out.mkdir()
     work = Path(os.environ['FABRIC_SCRATCH_ROOT']) / 'live-console-browser'
     work.mkdir(mode=0o700)
@@ -487,17 +650,25 @@ def main():
                'enforced_limits':{key:(limits/key).read_text().strip() for key in ('memory.max','memory.high','memory.swap.max','cpu.max','pids.max')},
                'scope': 'finite virtual CTAP2 desktop/narrow browser integration; not hardware/mobile/installed-app qualification',
                'tls_scope': 'exact fixture leaf SPKI trusted by this isolated browser only; Spindle trusts fixture CA',
+               'console_product_source': None,
                'injected_api_cache_defect': args.inject_api_cache_defect,
                'injected_role_defect': args.inject_role_defect,
                'injected_nonresident_enrollment': args.inject_nonresident_enrollment,
                'injected_rejection_defect':args.inject_rejection_defect,
                'source_sha256': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                                  for p in (Path(__file__), ROLE_FIXTURE, ROOT / 'tools/ui/fixture_cadence.py', ROOT / 'tools/ui/browser_producer.py', ROOT / 'tools/packaging/stage_console.py')},
-               'binaries': {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in (args.server, args.spindle, *([args.fabricctl] if args.migration else []))},
+               'binaries': {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in
+                   (args.server, args.spindle, args.browser_entry_helper,
+                    *([args.fabricctl] if args.migration else []),
+                    *([args.console_source_helper] if product_source_enabled else []))},
                'browser_download': json.loads((TOOLS / 'download.json').read_text()) if args.browser=='chrome' else json.loads((DATA/'tools/ui/geckodriver.json').read_text())}
     processes = []
     logs = []
     session = None
+    viewport_websocket_url = None
+    viewport_context_handle = None
+    viewport_restore_required = False
+    viewport_helper_attempt = 0
     driver_port = free_port()
     endpoint = f'http://127.0.0.1:{driver_port}'
     server_port = free_port()
@@ -544,6 +715,15 @@ def main():
             time.sleep(.1)
         raise AssertionError('timeout: ' + label)
 
+    def healthy(process):
+        if process.poll() is not None:
+            raise RuntimeError('server exited; inspect server.log')
+        try:
+            with urllib.request.urlopen(origin + '/v1/health', context=context, timeout=1) as response:
+                return response.status == 200
+        except (OSError, urllib.error.URLError):
+            return False
+
     def check(condition, label):
         if not condition:
             raise AssertionError(label)
@@ -568,6 +748,63 @@ def main():
 
     def js(script, *values):
         return wd('/execute/sync', {'script': script, 'args': values})
+
+    def run_viewport(mode, context_handle):
+        nonlocal viewport_helper_attempt
+        if args.browser != 'firefox' or mode not in ('narrow', 'restore'):
+            raise ValueError('BiDi viewport adapter is Firefox-only and mode-bounded')
+        if not isinstance(viewport_websocket_url, str) or not context_handle:
+            raise ValueError('Firefox BiDi endpoint or classic window context is missing')
+        viewport_helper_attempt += 1
+        label = 'browser-bidi-viewport-' + str(viewport_helper_attempt) + '-' + mode
+        command = [str(args.browser_entry_helper), 'browser-bidi-viewport',
+                   '--ws-url', viewport_websocket_url, '--context', context_handle,
+                   '--mode', mode]
+        helper_log = (out / (label + '.log')).open('w+b')
+        logs.append(helper_log)
+        helper_environment = {'PATH': '/usr/bin:/bin'}
+        helper = browser_group_launch(group_parent, owned_groups, label, command,
+            helper_log, helper_environment, entry_helper=args.browser_entry_helper,
+            entry_helper_sha256=args.browser_entry_helper_sha256)
+        processes.append((label, helper))
+        binding = owned_groups[-1]
+        helper_timeout = min(5, max(0, deadline - time.monotonic()))
+        try:
+            exit_code = helper.wait(timeout=helper_timeout)
+        except subprocess.TimeoutExpired as error:
+            stop_browser_groups(group_parent, [binding])
+            raise ValueError('BiDi viewport helper exceeded browser fixture deadline') from error
+        stop_browser_groups(group_parent, [binding])
+        helper_log.flush()
+        helper_size = helper_log.tell()
+        helper_log.seek(0)
+        output = helper_log.read(64 * 1024 + 1)
+        if helper_size > 64 * 1024 or len(output) > 64 * 1024:
+            raise ValueError('BiDi viewport helper report exceeds 64 KiB read bound')
+        if (binding['group'].get('kernel_empty') is not True
+                or binding['group'].get('children_reaped') is not True):
+            raise ValueError('BiDi viewport helper group did not stop cleanly')
+        if exit_code != 0:
+            raise ValueError('BiDi viewport helper exited unsuccessfully')
+        try:
+            acknowledgement = json.loads(output)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError('BiDi viewport helper report is not valid JSON') from error
+        expected = {'command': 'browsingContext.setViewport', 'context': context_handle,
+                    'mode': mode, 'result': {}, 'received_messages': 2,
+                    'actual_viewport_verified': False}
+        if (not isinstance(acknowledgement, dict)
+                or set(acknowledgement) != set(expected)
+                or acknowledgement != expected
+                or type(acknowledgement.get('received_messages')) is not int
+                or type(acknowledgement.get('actual_viewport_verified')) is not bool):
+            raise ValueError('BiDi viewport helper acknowledgement did not match request')
+        return acknowledgement
+
+    def verify_viewport_geometry(actual, baseline):
+        check(isinstance(actual,dict) and actual.get('width')==390
+              and actual.get('height')==844 and actual.get('dpr')==baseline.get('dpr'),
+              'Firefox BiDi viewport has actual 390 by 844 CSS pixels at unchanged DPR')
 
     def async_js(script, *values):
         return wd('/execute/async', {'script': script, 'args': values})
@@ -594,12 +831,32 @@ def main():
         dispatch_timeout(deadline,storage_violation,35)
 
     def capture_api_metadata():
+        import math
         receipt['actual_api_headers']=js('return window.fixtureApiHeaders')
-        check(bool(receipt['actual_api_headers']) and not js('return window.fixtureApiHeadersTruncated') and all(item['cache_control']=='no-store' and item['csp'] and item['coop']=='same-origin' and item['corp']=='same-origin' for item in receipt['actual_api_headers']),'actual authentication and API responses carry no-store CSP COOP and CORP')
+        rows=receipt['actual_api_headers']
+        check(isinstance(rows,list) and len(rows)<=512 and not js('return window.fixtureApiHeadersTruncated'),'browser API ledger is a complete bounded list')
+        responses=[]
+        cancellations=[]
+        finite=lambda value: type(value) in (int,float) and math.isfinite(value)
+        for item in rows:
+            check(isinstance(item,dict),'browser API ledger entries are objects')
+            if item.get('state')=='response':
+                check(type(item.get('status')) is int,'browser API response has an integer HTTP status')
+                responses.append(item)
+                continue
+            started=item.get('started_ms')
+            finished=item.get('finished_ms')
+            observed=item.get('signal_abort_observed_ms')
+            witnessed_abort=(item.get('state')=='rejected' and item.get('path')=='/v1/console/query' and item.get('method')=='POST' and item.get('error_stage')=='fetch' and item.get('error_name')=='AbortError' and item.get('status') is None and item.get('signal_aborted_at_rejection') is True and finite(started) and finite(observed) and finite(finished) and started<=observed<=finished)
+            check(witnessed_abort,'only a witnessed protected-query AbortSignal cancellation has no HTTP response')
+            cancellations.append(item)
+        receipt['actual_api_cancellations']=cancellations
+        check(bool(responses),'browser API ledger contains an actual HTTP response')
+        check(all(item.get('cache_control')=='no-store' and item.get('csp') and item.get('coop')=='same-origin' and item.get('corp')=='same-origin' for item in responses),'actual HTTP responses carry no-store CSP COOP and CORP')
 
     def verify_binary_identity():
         receipt['native_input_hashes_after']={name:hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in receipt['binaries']}
-        receipt['native_snapshot_hashes_after']={role:hashlib.sha256(getattr(args,role).read_bytes()).hexdigest() for role in ('server','spindle', *(['fabricctl'] if args.migration else []))}
+        receipt['native_snapshot_hashes_after']={role:hashlib.sha256(getattr(args,role).read_bytes()).hexdigest() for role in receipt['immutable_binary_snapshots']}
         check(receipt['native_input_hashes_after']==receipt['binaries'],'native input artifact identities remain unchanged throughout run')
         check(all(receipt['native_snapshot_hashes_after'][role]==identity['sha256'] for role,identity in receipt['immutable_binary_snapshots'].items()),'all fixture launches retain immutable candidate binary bytes')
 
@@ -721,7 +978,9 @@ def main():
         if controlled:
             from session_clock import SessionClock
             def spawn(argv,env,fd,helper,log):
-                return browser_group_launch(group_parent,owned_groups,label,argv,log,env,clock=(helper,fd))
+                return browser_group_launch(group_parent,owned_groups,label,argv,log,env,
+                    entry_helper=args.browser_entry_helper,
+                    entry_helper_sha256=args.browser_entry_helper_sha256,clock=(helper,fd))
             clock=SessionClock(args.server,args.session_expiry_helper,out/f'{label}.log',deadline,
                 server_argv=command,server_launch=spawn)
             clock_targets[label]=clock;proc=clock.process
@@ -730,7 +989,9 @@ def main():
                 announcements=browser_announcements.Runtime(work,out,args,deadline)
                 command=announcements.command(command)
             log = (out / f'{label}.log').open('w');logs.append(log)
-            proc = browser_group_launch(group_parent, owned_groups, label, command, log, environment)
+            proc = browser_group_launch(group_parent, owned_groups, label, command, log, environment,
+                entry_helper=args.browser_entry_helper,
+                entry_helper_sha256=args.browser_entry_helper_sha256)
             if label=='webdriver' and announcements is not None:announcements.process=proc
         processes.append((label, proc))
         return proc
@@ -740,7 +1001,9 @@ def main():
     try:
         artifact_dir=work/'binaries';artifact_dir.mkdir(mode=0o700)
         snapshots={}
-        for role in ('server','spindle', *(['fabricctl'] if args.migration else [])):
+        for role in ('server','spindle', *(['fabricctl'] if args.migration else []),
+                     *(['console_source_helper'] if product_source_enabled else []),
+                     'browser_entry_helper'):
             source=getattr(args,role)
             destination=artifact_dir/role
             shutil.copyfile(source,destination)
@@ -751,6 +1014,14 @@ def main():
             snapshots[role]={'source':str(source),'sha256':identity,'bytes':destination.stat().st_size}
             setattr(args,role,destination)
         receipt['immutable_binary_snapshots']=snapshots
+        receipt['browser_entry_helper'] = {
+            'caller_path': str(args.browser_entry_helper),
+            'caller_sha256': args.browser_entry_helper_sha256,
+            'snapshot_path': str(artifact_dir / 'browser_entry_helper'),
+            'snapshot_sha256': snapshots['browser_entry_helper']['sha256']}
+        args.browser_entry_helper = artifact_dir / 'browser_entry_helper'
+        if product_source_enabled:
+            args.console_source_helper = artifact_dir / 'console_source_helper'
         if expiry:
             from session_clock import digest
             helper=args.session_expiry_helper.resolve();admission=args.session_expiry_admission.resolve();package=args.package.resolve()
@@ -762,7 +1033,71 @@ def main():
             receipt['session_expiry_inputs']={'candidate_commit':args.candidate_commit,'package_sha256':digest(package),
                 'package_path':str(package),'helper_sha256':digest(helper),'native_admission':str(admission),'native_admission_sha256':digest(admission)}
         check(semantic_rejection((403,{'error':'access denied'}),403,'access denied') and not semantic_rejection((429,{'error':'access denied'}),403,'access denied') and not semantic_rejection((403,{'error':'wrong error'}),403,'access denied'),'semantic rejection grader rejects wrong status and wrong error negative controls')
-        stage(build, work / 'console')
+        if product_source_enabled:
+            console_source_evidence = {}
+            receipt['console_product_source'] = {
+                'source_root': str(args.product_source_root.resolve()),
+                'source_commit': args.product_source_commit,
+                'build_root': str(build),
+                'receipt_sha256': args.console_receipt_sha256,
+                'helper': snapshots['console_source_helper']['source'],
+                'helper_sha256': args.console_source_helper_sha256,
+                'harness_source_sha256': receipt['source_sha256'],
+                'claim': 'caller-pinned product source and build receipt identity join; no acceptance credit'}
+            try:
+                def verify_console_source(snapshot, source_root, source_commit, build_root, receipt_pin):
+                    argv = [str(snapshot), 'console-source', '--source-root', str(source_root),
+                            '--source-commit', source_commit, '--build-root', str(build_root),
+                            '--receipt-sha256', receipt_pin]
+                    helper_log_path = out / 'console-source-helper.log'
+                    helper_log = helper_log_path.open('w+b')
+                    logs.append(helper_log)
+                    helper_environment = {'PATH': '/usr/bin:/bin', 'FABRIC_STORAGE_ROOT': str(DATA),
+                                          'FABRIC_SCRATCH_ROOT': str(Path(os.environ['FABRIC_SCRATCH_ROOT']).resolve())}
+                    helper = browser_group_launch(group_parent, owned_groups,
+                        'console-source-verifier', argv, helper_log, helper_environment,
+                        entry_helper=args.browser_entry_helper,
+                        entry_helper_sha256=args.browser_entry_helper_sha256)
+                    processes.append(('console-source-verifier', helper))
+                    binding = owned_groups[-1]
+                    helper_timeout = min(90, max(0, deadline - time.monotonic()))
+                    try:
+                        exit_code = helper.wait(timeout=helper_timeout)
+                    except subprocess.TimeoutExpired as error:
+                        stop_browser_groups(group_parent, [binding])
+                        raise ValueError('console source helper exceeded browser fixture deadline') from error
+                    stop_browser_groups(group_parent, [binding])
+                    helper_log.flush()
+                    helper_size = helper_log.tell()
+                    helper_log.seek(0)
+                    output = helper_log.read(64 * 1024 + 1)
+                    console_source_evidence.update({'helper_log': str(helper_log_path),
+                        'helper_log_read_sha256': hashlib.sha256(output).hexdigest(),
+                        'helper_log_bytes': helper_size,
+                        'helper_process_group_stopped': binding['group'].get('kernel_empty') is True
+                            and binding['group'].get('children_reaped') is True})
+                    if helper_size > 64 * 1024 or len(output) > 64 * 1024:
+                        raise ValueError('console source helper report exceeds 64 KiB read bound')
+                    if not console_source_evidence['helper_process_group_stopped']:
+                        raise ValueError('console source helper group did not stop cleanly')
+                    if exit_code != 0:
+                        return None, exit_code, len(output), 0
+                    try:
+                        report = json.loads(output)
+                    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                        raise ValueError('console source helper returned invalid JSON') from error
+                    return report, exit_code, len(output), 0
+
+                stage(build, work / 'console',
+                      product_source=(args.product_source_root.resolve(), args.product_source_commit,
+                                      args.console_receipt_sha256, artifact_dir / 'console_source_helper',
+                                      args.console_source_helper_sha256),
+                      helper_runner=verify_console_source,
+                      evidence=console_source_evidence)
+            finally:
+                receipt['console_product_source']['verification'] = console_source_evidence
+        else:
+            stage(build, work / 'console')
         if args.packaged_console:
             packaged=args.packaged_console.resolve()
             if not packaged.is_relative_to(DATA) or not packaged.is_dir():
@@ -831,7 +1166,7 @@ self.addEventListener("fetch",event=>{
                 for p in (ROOT/'tools/ui/browser_migration.py',ROOT/'tools/ui/migration_contract.py')})
             migration_prepared = browser_migration.prepare(args,work,out,origin,config,admin,launch,stop_migration,wait,pace_api,receipt)
         def start_owner(label):
-            nonlocal session,endpoint,context,tls_opener
+            nonlocal session,endpoint,context,tls_opener,viewport_websocket_url
             fixture=work/label if label else work
             if label:fixture.mkdir(mode=0o700)
             fixture_config=fixture/'server.conf'
@@ -850,15 +1185,7 @@ self.addEventListener("fetch",event=>{
             server = launch(label+'server', [str(args.server.resolve()), 'serve', str(fixture_config)], controlled=expiry)
             context = ssl.create_default_context(cafile=str(work / 'ca.pem'))
             tls_opener=urllib.request.build_opener(urllib.request.HTTPSHandler(context=context),NoRedirect())
-            def healthy():
-                if server.poll() is not None:
-                    raise RuntimeError('server exited; inspect server.log')
-                try:
-                    with urllib.request.urlopen(origin + '/v1/health', context=context, timeout=1) as response:
-                        return response.status == 200
-                except (OSError, urllib.error.URLError):
-                    return False
-            wait(healthy, 'production TLS server')
+            wait(lambda:healthy(server), 'production TLS server')
             build_receipt=json.loads((build/'build.json').read_text())
             served_assets=[]
             for name,identity in build_receipt['assets'].items():
@@ -913,11 +1240,17 @@ self.addEventListener("fetch",event=>{
                 'prefs':{'security.enterprise_roots.enabled':False,
                          'security.webauth.webauthn_enable_softtoken':True,
                          'security.webauth.webauthn_enable_usbtoken':False}}}
+            firefox_capabilities['unhandledPromptBehavior']={'confirm':'ignore'}
+            firefox_capabilities['webSocketUrl'] = True
             if args.announcement_probes:
                 firefox_capabilities['moz:firefoxOptions']['args'].remove('-headless')
                 firefox_capabilities['moz:firefoxOptions']['prefs']['accessibility.force_disabled']=0
             info = call('POST','/session',{'capabilities':{'alwaysMatch':firefox_capabilities if args.browser=='firefox' else chrome_capabilities}})
             session = info['sessionId']
+            if args.browser == 'firefox':
+                viewport_websocket_url = info['capabilities'].get('webSocketUrl')
+                if not isinstance(viewport_websocket_url, str):
+                    raise ValueError('Firefox did not return the requested BiDi WebSocket URL')
             receipt['browser_version_actual'] = info['capabilities']['browserVersion']
             check(receipt['browser_version_actual'] == receipt['browser_version_expected'], 'actual browser matches reviewed version')
             if args.browser=='firefox':
@@ -952,16 +1285,40 @@ self.addEventListener("fetch",event=>{
               window.fixturePace=(dispatch)=>{const slot=window.fixturePaceQueue.then(async()=>{let delay;while((delay=interval-(performance.now()-window.fixtureLastDispatch))>0)await new Promise(resolve=>setTimeout(resolve,delay));const started=performance.now();window.fixtureLastDispatch=started;return {response:dispatch?.(started)}});window.fixturePaceQueue=slot.then(()=>{},()=>{});return slot};
               window.fetch=async(...args)=>{const url=typeof args[0]==="string"?args[0]:args[0].url;const path=new URL(url,location.href).pathname;
                 if(!path.startsWith('/v1/'))return original(...args);const paced=!window.fixtureUnpacedBurst;
-                const dispatch=async(started_ms)=>{const entry={path,method:args[1]?.method||args[0]?.method||'GET',started_ms,paced,status:null};
+                const dispatch=async(started_ms)=>{const entry={path,method:args[1]?.method||args[0]?.method||'GET',started_ms,paced,status:null,state:'pending'};
                 if(window.fixtureApiHeaders.length>=512)window.fixtureApiHeadersTruncated=true;else window.fixtureApiHeaders.push(entry);
-                try{const response=await original(...args);Object.assign(entry,{status:response.status,retry_after:response.headers.get('retry-after'),cache_control:response.headers.get('cache-control'),csp:response.headers.get('content-security-policy'),coop:response.headers.get('cross-origin-opener-policy'),corp:response.headers.get('cross-origin-resource-policy')});return response}
-                finally{entry.finished_ms=performance.now()}};
+                const signal=args[1]?.signal!==undefined?args[1].signal:args[0]?.signal||null;
+                const abortedAtDispatch=!!signal?.aborted;entry.signal_aborted_at_dispatch=abortedAtDispatch;
+                const observeAbort=()=>{entry.signal_abort_observed_ms=performance.now()};
+                if(abortedAtDispatch)entry.signal_abort_observed_ms=performance.now();else if(signal)signal.addEventListener('abort',observeAbort,{once:true});
+                try{let response;try{response=await original(...args)}catch(error){entry.state='rejected';entry.error_stage='fetch';entry.error_name=String(error?.name||'Error').slice(0,80);entry.error_message=String(error?.message||error).slice(0,256);entry.signal_aborted_at_rejection=!!signal?.aborted;throw error}
+                  try{Object.assign(entry,{status:response.status,retry_after:response.headers.get('retry-after'),cache_control:response.headers.get('cache-control'),csp:response.headers.get('content-security-policy'),coop:response.headers.get('cross-origin-opener-policy'),corp:response.headers.get('cross-origin-resource-policy')});entry.state='response';return response}
+                  catch(error){entry.state='rejected';entry.error_stage='metadata';entry.error_name=String(error?.name||'Error').slice(0,80);entry.error_message=String(error?.message||error).slice(0,256);entry.signal_aborted_at_rejection=!!signal?.aborted;throw error}}
+                finally{if(signal)signal.removeEventListener('abort',observeAbort);entry.finished_ms=performance.now()}};
                 return paced?(await window.fixturePace(dispatch)).response:dispatch(performance.now())}''',cadence.interval*1000)
+            transport_controls=async_js('''const done=arguments[arguments.length-1];(async()=>{
+              const endpoint=new URL('/v1/console/query',location.href).href;
+              const matches=(row,preaborted)=>!!row&&row.path==='/v1/console/query'&&row.method==='POST'&&row.state==='rejected'&&row.error_stage==='fetch'&&row.error_name==='AbortError'&&row.status===null&&row.signal_aborted_at_rejection===true&&row.signal_aborted_at_dispatch===preaborted&&Number.isFinite(row.started_ms)&&Number.isFinite(row.signal_abort_observed_ms)&&Number.isFinite(row.finished_ms)&&row.started_ms<=row.signal_abort_observed_ms&&row.signal_abort_observed_ms<=row.finished_ms;
+              const beforeRequest=window.fixtureApiHeaders.length;const beforeController=new AbortController();beforeController.abort();let beforeError=null;
+              try{await window.fetch(new Request(endpoint,{method:'POST',headers:{'content-type':'application/json','x-fabric-client-version':'1'},body:'{}',signal:beforeController.signal}))}catch(error){beforeError=error}
+              const beforeRow=window.fixtureApiHeaders[beforeRequest];const beforeOk=window.fixtureApiHeaders.length===beforeRequest+1&&beforeError?.name==='AbortError'&&matches(beforeRow,true);
+              const inFlightIndex=window.fixtureApiHeaders.length;const inFlightController=new AbortController();const originalPace=window.fixturePace;let inFlightError=null;
+              window.fixturePace=dispatch=>originalPace(started=>{const pending=dispatch(started);inFlightController.abort();return pending});
+              try{await window.fetch(endpoint,{method:'POST',headers:{'content-type':'application/json','x-fabric-client-version':'1'},body:'{}',signal:inFlightController.signal})}catch(error){inFlightError=error}finally{window.fixturePace=originalPace}
+              const inFlightRow=window.fixtureApiHeaders[inFlightIndex];const inFlightOk=window.fixtureApiHeaders.length===inFlightIndex+1&&inFlightError?.name==='AbortError'&&matches(inFlightRow,false);
+              return {preaborted:{accepted:beforeOk,row:beforeRow},inflight:{accepted:inFlightOk,row:inFlightRow}};
+            })().then(done).catch(error=>done({error:String(error)}));''')
+            receipt['transport_cancellation_controls']=transport_controls
+            if not isinstance(transport_controls,dict) or not transport_controls.get('preaborted',{}).get('accepted') or not transport_controls.get('inflight',{}).get('accepted'):
+                raise AssertionError('real browser did not produce both exact AbortSignal cancellation witnesses')
             if args.security_probes:
                 js('''const original=window.fetch;window.fixtureCompletedRegistration=null;
-                  window.fetch=(...args)=>{const p=new URL(typeof args[0]==='string'?args[0]:args[0].url,location.href).pathname;
-                  if(p==='/v1/console/auth/register/finish' && !window.fixtureCompletedRegistration)
-                    window.fixtureCompletedRegistration=JSON.parse(args[1].body);
+                  window.fetch=async(...args)=>{const input=args[0];const p=new URL(typeof input==='string'?input:input.url,location.href).pathname;
+                  if(p==='/v1/console/auth/register/finish' && !window.fixtureCompletedRegistration){
+                    const inspectionInput=input instanceof Request?input.clone():input;
+                    const inspected=new Request(inspectionInput,args[1]);
+                    window.fixtureCompletedRegistration=await inspected.clone().json();
+                  }
                   return original(...args)}''')
             click('Connect to server')
             wait(lambda: js('return document.body.textContent.includes("Sign in with a passkey") && !document.body.textContent.includes("Working…")'), 'live sign-in locked view')
@@ -1310,7 +1667,16 @@ self.addEventListener("fetch",event=>{
         check(js('return !!document.querySelector("[role=status][aria-live=polite]") && document.querySelector("[role=alert]")?.textContent.includes("Filter exceeds 4096 UTF-8 bytes")'),'actual invalid filter error and request status have announcement roles')
         field('Body substring (case-sensitive)','');click('Run query')
         wait(lambda:js('return document.querySelectorAll(".results tbody tr").length>0'),'valid query restores readable table after announced validation error')
-        wd('/window/rect', {'width':390,'height':844})
+        if args.browser == 'firefox':
+            viewport_context_handle = wd('/window', method='GET')
+            viewport_baseline = js('return {width:innerWidth,height:innerHeight,dpr:devicePixelRatio}')
+            viewport_restore_required = True
+            wd('/window/rect', {'width':390,'height':844})
+            run_viewport('narrow', viewport_context_handle)
+            viewport_actual = js('return {width:innerWidth,height:innerHeight,dpr:devicePixelRatio}')
+            verify_viewport_geometry(viewport_actual, viewport_baseline)
+        else:
+            wd('/window/rect', {'width':390,'height':844})
         check(js('return document.documentElement.scrollWidth <= window.innerWidth + 2'), 'narrow viewport has no document overflow')
         (out/'narrow.png').write_bytes(base64.b64decode(wd('/screenshot', method='GET')))
         js('document.documentElement.style.zoom="200%"')
@@ -1330,7 +1696,15 @@ self.addEventListener("fetch",event=>{
             js("window.fixtureNextAction.style.cssText=window.fixtureNextStyle;delete window.fixtureNextAction;delete window.fixtureNextStyle;")
         check(js('return document.documentElement.scrollWidth <= innerWidth + 2'),'pagination negative control restores coherent responsive layout')
         js('document.documentElement.style.zoom=""')
-        wd('/window/rect', {'width':1440,'height':1100})
+        if args.browser == 'firefox':
+            run_viewport('restore', viewport_context_handle)
+            wd('/window/rect', {'width':1440,'height':1100})
+            desktop_geometry = js('return {width:innerWidth,height:innerHeight}')
+            check(isinstance(desktop_geometry,dict) and desktop_geometry.get('width')==1440,
+                  'desktop classic restore retains 1440 CSS pixels of inner width')
+            viewport_restore_required = False
+        else:
+            wd('/window/rect', {'width':1440,'height':1100})
         code, _ = api('/v1/console/query', 'POST', {'kind':'rate','name':'test','from_ns':1,'to_ns':2})
         expect((code,_),400,'unbounded rate queries are unavailable in the console','rate endpoint is unavailable in the console')
         cache_keys = async_js('const done=arguments[arguments.length-1];caches.keys().then(async keys=>done((await Promise.all(keys.map(async key=>(await(await caches.open(key)).keys()).map(r=>new URL(r.url).pathname)))).flat()))')
@@ -1575,7 +1949,7 @@ self.addEventListener("fetch",event=>{
             (out/'owner-recovery.log').write_text(recovery.stdout+recovery.stderr)
             check(recovery.returncode==0,'actual offline owner recovery command succeeds after server stop')
             server=launch('server-recovered',[str(args.server.resolve()),'serve',str(config)])
-            wait(healthy,'production server reopened after owner recovery')
+            wait(lambda:healthy(server),'production server reopened after owner recovery')
             expect(bearer_api(recovery_credential,'/v1/console/nodes'),401,'sign in required','offline recovery invalidates previously issued reader token')
             recovery_credential=None
             wd('/url',{'url':'about:blank'});wd('/url',{'url':origin+'/console/'})
@@ -1608,7 +1982,7 @@ self.addEventListener("fetch",event=>{
                 asset_manifest['service-worker.js']={'bytes':len(content),'sha256':hashlib.sha256(content).hexdigest()}
                 manifest_path.write_text(json.dumps(asset_manifest)+'\n')
                 server=launch('server-lifecycle-'+str(len(processes)),[str(args.server.resolve()),'serve',str(config)])
-                wait(healthy,'restarted production TLS server')
+                wait(lambda:healthy(server),'restarted production TLS server')
             def worker_state():
                 return async_js('const done=arguments[arguments.length-1];navigator.serviceWorker.getRegistration().then(async r=>done({active:r?.active?.state,waiting:r?.waiting?.state,caches:await caches.keys()}))')
             def request_update():
@@ -1664,6 +2038,7 @@ self.addEventListener("fetch",event=>{
         receipt['exit'] = 0
     except BaseException as error:
         receipt['error'] = str(error)
+        receipt['fixture_failed'] = True
         if session:
             try:
                 receipt['actual_api_headers']=js('return window.fixtureApiHeaders||[]')
@@ -1687,16 +2062,29 @@ self.addEventListener("fetch",event=>{
                 pass
         raise
     finally:
+        cleanup_error = None
+        if session and viewport_restore_required:
+            try:
+                run_viewport('restore', viewport_context_handle)
+                wd('/window/rect', {'width':1440,'height':1100})
+                desktop_geometry = js('return {width:innerWidth,height:innerHeight}')
+                if not isinstance(desktop_geometry,dict) or desktop_geometry.get('width') != 1440:
+                    raise ValueError('desktop classic restore did not reach 1440 CSS pixels')
+                viewport_restore_required = False
+                receipt['failure_viewport_restore'] = {'inner_width':desktop_geometry['width']}
+            except BaseException as error:
+                cleanup_error = error
+                receipt['viewport_restore_error'] = str(error)
         if session:
             try:
                 call('DELETE', '/session/' + session)
             except BaseException:
                 pass
-        cleanup_error = None
         if announcements is not None:
             try:announcements.close()
-            except BaseException as error:cleanup_error=error
+            except BaseException as error:cleanup_error=cleanup_error or error
         try:
+            browser_cleanup_provisionals(group_parent)
             stop_browser_groups(group_parent, owned_groups)
             browser_reap_domain(group_parent, owned_groups)
             end_browser_domain(group_parent, owned_groups)
@@ -1720,10 +2108,16 @@ self.addEventListener("fetch",event=>{
             receipt['reader_namespaces'] = group_parent.get('namespaces')
             receipt['process_exits'] = {label: proc.returncode for label, proc in processes}
             receipt['group_stops'] = [{key: binding['group'].get(key) for key in
-                ('pid', 'start_ticks', 'kernel_empty', 'children_reaped', 'late_reaped', 'stop_error')} for binding in owned_groups]
-            if cleanup_error is None:
+                ('pid', 'start_ticks', 'entry_helper_sha256', 'entry_elapsed_ns',
+                 'kernel_empty', 'children_reaped', 'late_reaped', 'stop_error')} for binding in owned_groups]
+            receipt['provisional_children'] = [{key: record.get(key) for key in
+                ('state', 'cleanup_error', 'children_reaped')} for record in
+                group_parent.get('provisional_children', [])]
+            if cleanup_error is None and receipt.get('exit') == 0:
                 shutil.rmtree(work)
                 receipt['cleanup'] = 'owned fixtures removed; process groups stopped and bound children reaped'
+            elif cleanup_error is None:
+                receipt['cleanup'] = 'failure evidence retained in owned fixture storage; process groups stopped and bound children reaped'
             else:
                 receipt['cleanup_error'] = str(cleanup_error)
                 receipt['exit'] = 1

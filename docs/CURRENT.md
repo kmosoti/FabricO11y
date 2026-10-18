@@ -1,89 +1,106 @@
 # Current project state
 
-Replacement native Debian02 at c14092e completed acceptance0, actual upgrade/
-reboot and all four custody checkpoints with host transfer admission, but its
-overall run exited2 when the removal shell rejected removed-unit LSBstatus4.
-The failed VM/raw records remain retained. The
-[registered removal observer correction](experiments/formal/installation-release-protocol.md#removed-unit-observation-correction)
-adds independently observed unit states, original process inventory and empty
-project cgroups, shared by baseline/lifecycle callers and regraded by the VM host.
-Source checks and fresh native03 execution remain pending; no package acceptance
-or filesystem-integrity claim follows from the earlier partial custody success.
+Engineering tooling now includes an experimental Rust `xtask verify-receipts`
+command, sharing bounded descriptor-owned artifact reads with evidence preflight.
+The [architecture boundary](architecture/engineering-evidence.md#native-verification-receipts)
+and [strict representation policy](formal/verification-receipt-contract.md)
+describe its limits. Local complete-profile and independent refusal controls ran
+at `7fc4723`; PR #80 merged as `06ccc0c` after complete hosted verification of
+merge candidate `c129013`. Synthetic verifier fixtures do not credit product
+acceptance. Alpha acceptance is owner-paused for verification engineering.
+The [console provenance correction](experiments/formal/console-provenance-protocol.md)
+separates frozen product source from newer harness source; its controls and
+warm measurements are recorded in the
+[finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01).
+At `76d9f2b`, focused Rust/legacy adapter, packaging, UI and cleanup checks and
+Clippy exited 0, including the unchanged snapshot-inventory and copy-race
+regressions after their recorded RED results. Full required checks gate adoption.
+Remaining exact-package trials retain their
+original gates, including actual two-hour soak exposure.
 
-The first replacement native installation cell failed after guest acceptance0:
-its custody reader omitted the original `applied-config.json` sidecar. The
-[registered counterexample and controls](experiments/formal/installation-native-custody-protocol.md#applied-configuration-counterexample-and-raw-failure-preservation)
-now cover strict typed/private metadata validation, unchanged configuration in
-the finite installation lifecycle, and original raw export before parser refusal.
-At `3b485bee`, all 63 focused custody source tests exited 0 after registered
-source counterexamples, including rehashed missing/forged profile admission,
-exposed the earlier failures. Restarted native acceptance remains pending. Retained checksum-bypassed disk diagnostics supply no
-filesystem-integrity or native-acceptance result. Package bytes remain unchanged.
+The experimental Rust storage census now has finite classification and cleanup
+race controls plus a measured warm metadata comparison. Its
+[architecture and limits](architecture/engineering-evidence.md#native-storage-census)
+separate these checks from caller adoption and native owner acceptance. A real
+shared-target wrong-executable failure is retained; the corrective production
+build and comparison used a fresh DATA target. The pinned owner census bridge
+completed both original command-template namespace controls and six refusals;
+these controls did not execute the actual owner walkthrough.
 
-Hosted CI controller setup now explicitly requests CPU/I/O/memory/task delegation
-and checks actual availability/readback. Original PR72 startup and receipt-grading
-failures are retained; corrected local controls and required hosted fast, security
-and extended checks completed before its merge as `76d3da6`. This harness-only
-correction changed no packaged candidate bytes.
+[Main/query acceptance #42](https://github.com/kmosoti/FabricO11y/issues/42)
+closed after six main and four query trials, 800 independent query answers and
+stopped positive/forged-binding/canonical closeout. The interrupted segment attempt
+remains preserved. The first exact-package Chrome baseline then stopped on an
+undefined readiness predicate after offline owner recovery. The
+[registered regression](experiments/formal/browser-supervisor-protocol.md)
+reproduced that NameError before the scoped helper correction merged in PR #81.
+The retry stopped before browser launch on the frozen console/newer harness
+Cargo.lock join. The native provenance correction has finite source controls;
+a fresh actual browser retry remains required after the engineering pause. A
+native entry/release barrier now precedes legacy browser child binding. Its
+Linux composition fixture and real-browser transport-state diagnostic completed
+at harness source `7508a989`; the native release-ordering controls and two
+AbortSignal cancellation witnesses were observed, with actual HTTP responses
+still subject to the original header checks. This finite harness evidence grants
+no exact-package browser/PWA acceptance credit. The
+[canonical finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01)
+retain the raw trial records and limits.
 
-The separate virtual-key admission caller reuses actual candidate registration,
-login/export and unchanged OpenSSL DER parsing, then independently verifies the
-original browser assertion. At `a08dca14`, 37 source tests and all three
-documentation checks exited 0; the original synthetic-fixture failure is retained.
-Per-engine native key-format executions remain pending. Baseline resident/RP booleans alone do not admit a key format.
+Replacement product `e078ba23` is packaged reproducibly as minimized source
+`28bcdf7` ([#40](https://github.com/kmosoti/FabricO11y/issues/40)). Fresh Debian03
+and Fedora04 baseline/lifecycle cells completed with all four custody checkpoints
+and confirmed cleanup; registered controls and stopped closeout completed
+[#41](https://github.com/kmosoti/FabricO11y/issues/41). Earlier custody,
+removal and startup failures remain preserved in their protocols and raw records.
 
+Retained-query status now appends visible gap and unavailable-source counts while
+preserving the existing coverage wording and exact evidence disclosure. The
+deterministic incomplete-versus-gap input is preserved in the
+[gap-summary fixture](experiments/formal/fixtures/query-gap-summary-regression.json).
+This source change has not yet been built or checked; the frozen product remains
+unchanged, so a new product build and browser rerun are required before it can
+affect packaged behavior.
 
-The private [announcement environment probe](experiments/formal/browser-announcement-protocol.md)
-now observes AT-SPI and the real Orca/Speech Dispatcher/espeak path using public
-text, private buses/settings and file/null audio output. Private-environment
-source controls passed, while the original headless/headful failures remain
-recorded. The signed, isolated Orca 51.1 positive remains unrun. These source
-results supply no actual console announcement, acoustic or accessibility-conformance result.
+The native simulator-publication and browser-continuity prerequisites have finite
+certificates. [S1-03](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-r3-s1-native-headroom-run-03)
+completed 70 seconds of actual offered work and stopped headroom grading. This is
+not the required 7,200-second FULL soak. Main/query, pressure/cross-family/outage,
+exact-package browser/PWA and fresh-owner acceptance remain tracked by
+[#33](https://github.com/kmosoti/FabricO11y/issues/33). Public Orca 51.1 environment
+controls do not substitute for actual console announcements; key-format and
+controlled-time checks still need both engines and exact package/ELF bindings.
 
-The separate actual-console announcement caller is implemented with an owned
-interactive display/AT subtree, real status/alert speech joins, keyboard actions
-and a finite desktop/narrow target inventory. It preserves the original browser
-deadline and shared cleanup. At `2815dfa6`, all 52 affected source tests and
-all three documentation checks exited 0. Exact-package native cells remain
-unrun; the public Orca 51.1 environment positive remains a prerequisite.
-
-The controlled-time browser expiry caller now has a server-only native clock
-adapter and complete serialized request-window joins. At `479b356`, 17 focused
-source controls exited0 with confirmed containment cleanup. The additive timing
-ABI subsequently passed 16 native refusal controls and 24 actual Rust-accessor/
-kernel-monotonic bindings with a retained, hash-bound clock helper. Actual-server
-clock binding and the exact 32 AB/C browser observations still need replacement
-package execution; source/probe checks do not supply package or browser acceptance. The expiry cell retains one240-second deadline
-and stops/reaps AB before creating the independent C fixture.
-
-The separate signed browser security cell is implemented for virtual fixture
-keys, completed-ceremony replay, cookie replacement and real reader expiry.
-Its [registered controls](experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement)
-and the separate [UI response diagnostics](experiments/formal/console-access-protocol.md#prospective-ui-response-handling-supplement)
-are implemented. At `b211398`, 32 affected source tests and all three documentation
-checks exited 0 through separately contained runs, with stops confirmed. The first
-combined run remains interrupted: its strict storage census raced launcher scratch
-cleanup even though the inner checks exited 0. Native signed-key and diagnostic UI
-cells have not run; exact-package browser acceptance remains open.
-
-The standalone console bridge smoke now selects the owned browser supervisor,
-with a fresh held1GiB browser budget, finite deadline and bounded close. Failed
-scratch is retained. Focused ownership controls and the actual replacement
-candidate smoke remain required; this caller change supplies no acceptance.
+The [Rust evidence preflight](architecture/engineering-evidence.md) is a read-only
+consistency aid. At `6ac6932`, four library controls, twelve integration controls
+and the registered native paired experiment exited 0 with confirmed stops.
+The superseded Python aid is removed; independent product oracles are unchanged.
+Its [contract](experiments/formal/engineering-evidence-protocol.md) and
+[finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-engineering-evidence-results-01)
+preserve the distinction between structural consistency and acceptance.
+The [two-runner verification pilot](experiments/formal/verification-shards-protocol.md)
+completed both shards and the independent final validators at the same tested
+source `faf148ec`. Its finite wall time was 41.98% lower while combined runner time was
+10.32% higher. The workers had different CPU, cache and setup conditions, so
+this observation does not establish a universal speedup. The first aggregation
+failure remains preserved; the corrected DATA-backed collector and unchanged
+Python validator are recorded in the
+[completed paired-shards results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-shards-results-01).
+The original [failed aggregation](https://github.com/kmosoti/FabricO11y/actions/runs/39090541570)
+is retained alongside the corrected result.
+Canonical workflow adoption preserves all ten registered extended commands and
+their final current-source validation. Its current-head hosted check remains
+required before merge.
+No current deployment profile is qualified or release tag published.
 
 ## Implemented
 
 FabricO11y collects, durably forwards, retains and queries Linux telemetry. It is
 usable for bounded development trials; no current deployment profile is qualified
 and no release tag has been produced.
-The prospective [R3 runtime integration](experiments/benchmarks/soak-runtime-protocol.md)
-adds a separate two-hour measurement path, native UI event capture and stopped
-checkpoint/separate grading. Its live native trace and supervised browser
-bindings now have finite native publication/identity and 60-second UI-continuity
-certificates, including a real owner refresh. The first S1 attempt failed before
-any exposure because its begin path violated the helper output boundary. The
-path repair passed all 63 soak source tests at `2255fb57`; fresh S1, headroom and
-full stopped grading remain required. No new soak acceptance is claimed.
+The [R3 runtime integration](experiments/benchmarks/soak-runtime-protocol.md)
+separates actual offered exposure, native UI continuity, a stopped raw checkpoint
+and independent grading. S1-03 supplies finite measured headroom; FULL admission,
+true two-hour exposure and stopped final grading remain required.
 The separately registered [lifecycle guardian amendment](experiments/benchmarks/soak-guardian-protocol.md)
 separates empty workload accounting, aggregate accounting before guardian exit,
 and independent whole-service stop. Finite guardian controls establish that
@@ -129,8 +146,8 @@ Known limits and open checks:
   7,200 seconds of actual offered work, nine registered cohorts, measured
   non-exposure headroom and a stopped raw checkpoint before separate grading.
   The observation checks, guarded rename, held workload accounting and preservation
-  mount guards have finite source and native evidence. Live S1/FULL integration,
-  actual S1 headroom, full admission and stopped grading remain pending. The
+  mount guards have finite source and native evidence. S1-03 supplies actual finite headroom; FULL admission, exposure and stopped
+  grading remain pending. The
   [patched helper/native publication](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-patched-simulator-native-publication-results-01)
   and [finite UI continuity](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-browser-continuity-mechanism-results-01)
   capability evidence does not qualify a soak;
@@ -146,8 +163,11 @@ Known limits and open checks:
 - The [stopped-custody upgrade witness](experiments/formal/installation-release-protocol.md#prospective-stopped-custody-upgrade-witness) registers independent framing/Cursor and exact pending/unread-source conservation controls. Its raw snapshot/conservation adapter is implemented; verification and native integration remain pending. No new package lifecycle outcome is recorded.
 - The [native custody reader](experiments/formal/installation-native-custody-protocol.md) admits full diagnostic roots and checks append/rotation, fixture paths, common protobuf containers and raw query conservation. Its [60 source controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-custody-native-reader-source-results-01/0364b1c) ran at `30ef218`. The [producer/caller](experiments/formal/installation-native-custody-caller-card.md) now implements stopped installed-root capture, complete raw/source archives, independent process/unit/cgroup observations, candidate ACK windows, immutable owner transfer admission and four lifecycle checkpoints. All 70 source controls ran at `5d6ea844` with exit 0 and no skips ([source record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-custody-fourth-checkpoint-source-results-01)); fresh native acceptance remains incomplete after the retained first replacement capture failure. No new package lifecycle acceptance is claimed.
 - The browser checks added for the role matrix (`live_browser_check`, bridge smoke, packaged console) are CI-only and have no recorded result.
+- The Rust workspace test gate contains a fixed child invocation for the 11 existing Python qualification adapter modules. Those modules passed 89 tests directly at `24ff5b8` (DATA terminal `/run/media/kmosoti/data/FabricO11y/results/release-browser-entry-01/existing-python-terminal-01.json`). The Rust wrapper test then ran at `f5b63d23e55681e9e257ef888185cb83559bf16c`, exited 0, and invoked the same 89 tests; its terminal is `/run/media/kmosoti/data/FabricO11y/results/service-opening-candidate/release-browser-entry-final-python-wrapper-01.json` (SHA-256 `e9078f70ac5c27e1978a2d279680597ef0ed6cfb1ed344c813017a52e687f830`). The sparse logical-size control needs at least 6 GiB of DATA scratch, plus separate compiler allowance. See the [gate contract](architecture/engineering-evidence.md#qualification-adapter-test-gate).
+- The existing [signed browser security supplement](experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement) depends on capturing the completed registration request. A no-network Bun diagnostic of frozen harness `73cccefc` observed its old wrapper throw before dispatch for `fetch(Request)` without init; URL-plus-init dispatched. The candidate passed pinned-Bun Request-only capture, URL-plus-init, Request-plus-init override, and original-body-readability controls at source SHA `667337d4`. Chrome03 then showed that constructing the inspection request from the original `Request` consumed its body before forwarding. The clone-first correction passed Chrome06's six cases and 16 predicates at source SHA `3e588bbb5361722116a2f5fe07ca46d30efb0816bc0dd21be91a569201967af9`; the original Request was still unused at fetch dispatch. Chrome04 used stale operands and Chrome05 used a truncated extracted script; both were setup failures with no candidate behavior verdict. Chrome06 returned DELETE 200, reaped both groups with empty kernels, recorded Bun exit 0 and intentional ChromeDriver SIGTERM (-15), and removed scratch. These finite harness/API diagnostics do not establish product authentication or browser acceptance. The [captured browser evidence](architecture/engineering-evidence.md#browser-security-request-capture) records the terminal and cleanup details. The exact-source Rust control passed at `24ff5b8`. The hosted workflow preserves the ordinary positive Chrome command/artifact at `ci-live-browser`, adds a separate positive `--security-probes` command/artifact at `ci-live-browser-security`, and keeps the API-cache negative unchanged. Its earlier hosted positive result recorded 96 security checks and does not cover the restored ordinary command; earlier normal-mode coverage remains historical, and the result for this split is pending.
 - The [serial session-state and cleanup controls](experiments/formal/console-session-clock-protocol.md#two-serial-state-fixtures-and-browser-cleanup-registration) retain [actual registration failures](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-session-fixture-registration-red-results-01): four missing-checker assertions and five finalizer defects. The explicit AB/C checker has [source evidence](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-session-source-results-01) with unchanged session semantics. The [delegated ownership registration](experiments/formal/console-session-clock-protocol.md#delegated-browser-launch-ownership-amendment) separates cleanup from native monotonic request binding and browser acceptance, which remain pending. Both fresh states share one 240-second deadline. The [owned cleanup source repair](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-owned-cleanup-source-results-01) executes all 13 controls without skips at `336949e`; cgroup behavior is modeled. Native launch ownership and later-fork reaping are now integrated. At `0152363`, the [native cleanup controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-native-cleanup-results-01) exited 0 for all 13 source controls and four real-kernel cases, with confirmed stop; this does not establish browser acceptance.
-- The [R3 browser supervisor](experiments/formal/browser-supervisor-protocol.md) preserves the 1 GiB browser budget while isolating its child wait domain. Its seven native lifecycle/ancestor controls and exact-revision source/documentation follow-up ran at d6bb252, as recorded in the [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-supervisor-results-01). Supervisor failure requires whole-campaign stop/reaping; the native session request binding and browser acceptance remain pending.
+- The [R3 browser supervisor](experiments/formal/browser-supervisor-protocol.md) preserves the 1 GiB browser budget while isolating its child wait domain. Its seven native lifecycle/ancestor controls and exact-revision source/documentation follow-up ran at d6bb252, as recorded in the [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-browser-supervisor-results-01). Current R3 source carries the admitted native helper path and SHA-256 through `ProductionAccess`, `CandidateFixture`, `ConsoleBridge`, and `BrowserSupervisor` to the shared launch call. CandidateFixture snapshots the verified helper into its owned scratch tree, records the full caller/snapshot binding and passes the snapshot to ConsoleBridge. Closeout now requires that receipt record to match the constructor-bound binding and the snapshot path/hash in the immutable input map. The targeted source regression observed the missing-keyword `TypeError` at the real `supervise` call; native supervisor fixture controls remain separately tracked. The frozen `5220e27` source used its earlier matching launch signature and remains unchanged. Current-main release commands, non-soak `ProductionAccess`, bridge smoke, native cleanup fixture, Firefox trust fixture and owner walkthrough require and forward the explicit helper pair. The owner walkthrough checks that pair against its admission and records it; the native storage census binds the exact owner command's canonical DATA helper path and lowercase SHA-256 without reading the file. The shared caller defect RED is preserved, and owner-census RED observed the old 13-argument guard rejecting the new exact command. The final source controls, helper snapshot mutation controls and existing lifecycle suites are pending. Frozen #43/#46 snapshots remain unchanged. Native R3 caller/helper verification, hosted checks, native session request binding and browser acceptance remain pending. A prior existing R3 prerequisite unit failed because helper admission preempted its missing-certificate condition; the fixture now supplies a matching owned helper so that test reaches its intended certificate refusal, pending rerun.
+- Firefox now requests its driver-returned BiDi URL and uses the bounded Rust `xtask browser-bidi-viewport` command, launched through the existing hash-pinned entry helper, to set 390 by 844 CSS pixels. The caller checks actual classic-JavaScript geometry and DPR; the protocol ACK itself is not geometry evidence. The focused adapter tests, scoped Clippy, 18 bridge controls and 74 UI controls passed. On the final packaged diagnostic, the positive run exited 0 with 344 checks and clean process groups; it observed 390 by 844 at CSS zoom 200%, detected the injected overflow, restored desktop geometry and cleaned its fixture. The registered cache-negative exited 1 after 78 checks for the intended worker-cache cause, and the unchanged grader exited 0. Earlier packaged attempts retain the missing-endpoint and default-confirm failures; a separate controlled probe isolated the Firefox-only `unhandledPromptBehavior: {"confirm":"ignore"}` requirement. These finite engineering diagnostics do not claim browser/package acceptance. The [native viewport and confirmation results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01#native-bidi-viewport-and-confirmation-controls) preserve the revision-bound controls and failures.
 - In cloud containers the `xtask` tests `check_logs` (needs the launcher) and `evidence` (needs full git history) fail, and `tests/control.rs` fails under umask 022; these are environmental.
 
 The [simulator accounting source controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-simulator-accounting-source-results-01) execute 33 methods without skips; the sealed helper produced the registered missing-begin native red after four actual ACKs. A separate opt-in helper compiled successfully. Its [eight finite native witness diagnostics](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-simulator-native-controls-results-01/dc17be3) exited 0 at `6bd5250`, with confirmed stops; full source/build admission checked all 463 frozen compilation inputs. The [initial-thread syscall observer](experiments/benchmarks/simulator-native-trace-protocol.md), ten literal parser controls and eight native publication/fault controls are registered but unrun. Seven Rust tests, atomic publication certification and full exposure remain pending. Frozen package/helper bytes are unchanged.
@@ -249,6 +269,11 @@ adapters remain [proposed use cases](research/application-use-cases.md).
 
 ## Resource envelope
 
+The R3 soak caller creates the simulator output directory exclusively with mode
+0700 before fixture setup. Its native witness still independently requires a
+canonical private owned parent; existing outputs are refused. This harness
+precondition supplies no exposure or endurance acceptance.
+
 All builds, tests and experiments use the [resource launcher](CONTRIBUTING.md#resource-containment)
 and its storage root `FABRIC_STORAGE_ROOT`. The laboratory ceiling is the smaller of
 20 GiB and 75% of RAM with no swap; the server experiment cap is 4 GB and the total
@@ -267,3 +292,13 @@ No owner-walkthrough/package acceptance follows from these mechanism controls. S
 - Native installation custody admission now targets the completed TLS replacement e078ba2 (canonical package source28bcdf7), preserving historical8fb evidence. The metadata-only same-code fixture constructor02 completed with exact payload/metadata comparisons. Four-cell native acceptance remains incomplete: the first Debian attempt reached guest acceptance exit 0, then lifecycle grading refused an unexpected or failed Spool input before the custody snapshot (outer exit 2). The stopped failure is retained under [#41](https://github.com/kmosoti/FabricO11y/issues/41); see the [replacement binding](experiments/formal/installation-native-custody-caller-card.md#replacement-tls-candidate-binding-prospective-revision-6).
 
 - The guest-placement loader now resolves the installation custody helper from its own repository paths, including dynamic imports without an install PYTHONPATH. The isolated production-shaped counterexample failed with custody_native ModuleNotFoundError on0eed764 (direct QEMU CLI help succeeded). At `525373dc`, all three production CLI help commands passed with ambient `PYTHONPATH` removed, and the isolated loader test passed (exit 0); the [red and green record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-guest-loader-import-counterexample-results-01) retains exact commands and stopped receipts. No guest/package acceptance follows from importability.
+
+The replacement Debian native03 full lifecycle actually exited0 with independent
+four-phase custody and removal admission. Fedora03 initial acceptance exited0,
+but its first post-start drain query saw connection-refused and the old readiness
+loop aborted before its40-second bound. Preserve the overall2/incomplete transfer
+and original stopped guest. The separately registered initial-listener correction
+retries only that exact first-query refusal under the same absolute deadline;
+all raw attempts, partial-page/other-error refusal, late-success deadline and
+final full-row/ACK gates remain required. Focused source/native checks are pending;
+no complete replacement #41 qualification is claimed.

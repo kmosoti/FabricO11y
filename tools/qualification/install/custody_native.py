@@ -243,6 +243,31 @@ def unpack(value):
     return [unpack(item) for item in value] if isinstance(value, list) else value
 
 
+def wait_readiness(guest, deadline):
+    original = guest.deadline
+    guest.deadline = min(original, deadline)
+    expected = ['fabricctl', 'admin', '/root/accept/admin.conf', 'query', json.dumps(
+        dict(kind='logs', node='spindle-1', from_ns=0, to_ns=9223372036854775807, limit=1000))]
+    try:
+        while True:
+            witness.require(time.monotonic() < guest.deadline, 'native drain deadline')
+            count = len(guest.commands)
+            try:
+                rows = guest.query('readiness')
+            except ValueError:
+                attempts = guest.commands[count:]
+                if not (len(attempts) == 1 and attempts[0]['argv'] == expected and attempts[0]['exit'] == 2
+                    and attempts[0]['stdout'] == '' and attempts[0]['stderr'] == 'fabricctl: transport: io: Connection refused\n'):
+                    raise
+                rows = []
+            witness.require(time.monotonic() < guest.deadline, 'native drain deadline')
+            if any(row['body'] == UNREAD and row['attributes'].get('log.file.path') == SOURCE for row in rows):
+                return
+            time.sleep(min(1, guest.deadline - time.monotonic()))
+    finally:
+        guest.deadline = original
+
+
 def guest_main(config, phase):
     guest = Guest(config, phase)
     try:
@@ -272,12 +297,7 @@ def guest_main(config, phase):
             process = guest.process()
             # Stop collection first, then drain the fixed committed prefix during normal stop.
             deadline = min(guest.deadline - 40, time.monotonic() + 40)
-            while True:
-                rows = guest.query('readiness')
-                if any(row['body'] == UNREAD and row['attributes'].get('log.file.path') == SOURCE for row in rows):
-                    break
-                witness.require(time.monotonic() < deadline, 'native drain deadline')
-                time.sleep(1)
+            wait_readiness(guest, deadline)
             current = guest.process()
             witness.require(current['pid'] == process['pid'] and current['invocation_id'] == process['invocation_id'] and current['proc_stat'].rsplit(')', 1)[1].split()[19]
                 == process['proc_stat'].rsplit(')', 1)[1].split()[19], 'candidate process changed before stop')

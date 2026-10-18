@@ -495,6 +495,8 @@ def main():
     parser.add_argument('--smoke',action='store_true')
     parser.add_argument('--server-cpus',default='0-1')
     parser.add_argument('--worker-cpus',default='2-3')
+    parser.add_argument('--browser-entry-helper',type=Path,required=True)
+    parser.add_argument('--browser-entry-helper-sha256',required=True)
     args=parser.parse_args()
     if args.seed not in SEEDS or (args.mode=='journal' and args.seed!=SEEDS[0]):
         parser.error('unregistered fixed-query cell')
@@ -502,7 +504,9 @@ def main():
     summary={'classification':'disposable query smoke' if args.smoke else 'registered fixed-query cell',
              'seed':args.seed,'mode':args.mode,'passed':False}
     with CandidateFixture(args.deb_receipt,args.rpm_receipt,args.out,mode=args.mode,
-                          server_cpus=args.server_cpus,supervisor_cpus=args.worker_cpus) as f:
+                          server_cpus=args.server_cpus,supervisor_cpus=args.worker_cpus,
+                          browser_entry_helper=args.browser_entry_helper,
+                          browser_entry_helper_sha256=args.browser_entry_helper_sha256) as f:
         try:
             with ResourceSampler(f) as meter:
                 perform(f,args,summary,meter)
