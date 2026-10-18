@@ -60,3 +60,20 @@ Required full checks and measured matched integration runs precede enabling this
 path in CI. Policy, implementation and workflow adoption are separate reasoned
 commits. This does not change product durability, certify arbitrary code, resume
 alpha acceptance or authorize a release/tag.
+
+## Conditional hosted fast-profile adoption
+
+After the required current-source integration controls complete, the hosted fast
+job may select the opt-in two-worker path. Keep the complete fast registry and
+every original command. Use an explicit fresh receipt directory on the prepared
+disk-backed DATA root; preserve its full artifacts. Keep heavy checks serial and
+the original enforced resource launcher and caps. This changes scheduling only,
+not check ownership, test counts or expected outcomes.
+
+Require native complete-profile receipt validation, selecting the measured
+optional OpenSSL provider explicitly, followed by the unchanged independent
+Python validator over exactly the same receipt directory. Both must exit zero;
+neither substitutes for executed checks. Ordinary xtask defaults remain portable.
+Extended-profile scheduling and validation remain unchanged in this adoption.
+Enabling the workflow is a separate implementation commit after local controls;
+current-head hosted results remain required before merge.
