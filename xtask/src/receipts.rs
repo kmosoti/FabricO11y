@@ -98,10 +98,9 @@ pub fn verify(root: &Path, profile: &str, commit: &str, receipts: &Path) -> Resu
     require(root.is_absolute() && receipts.is_absolute(), "absolute source and receipt roots required")?;
 
     let mut source = ArtifactStore::new(root)?;
-    let registry = source.observe_json("xtask/checks.json")?.clone();
+    let mut checks = registry_checks(source.observe_json("xtask/checks.json")?, profile)?;
     let remaining_json = (64 * 1024 * 1024u64).checked_sub(source.json_bytes())
         .ok_or("registry exceeds retained JSON budget")?;
-    let mut checks = registry_checks(&registry, profile)?;
     let mut evidence = ArtifactStore::with_json_budget(receipts, remaining_json)?;
 
     let marker_directory_before = directory_identity(receipts)?;
@@ -116,14 +115,12 @@ pub fn verify(root: &Path, profile: &str, commit: &str, receipts: &Path) -> Resu
     let mut results = Vec::with_capacity(checks.len());
     for check in &mut checks {
         let receipt_path = format!("{}.json", check.id);
-        let receipt = evidence.observe_json(&receipt_path)?.clone();
-        let digest = evidence.digest(&receipt_path).ok_or("receipt digest not cached")?.to_owned();
-        evidence.read(&receipt_path, &digest, false)?;
-        check.duration_ms = validate_receipt(&receipt, check, profile, commit)?;
+        let receipt = evidence.observe_json(&receipt_path)?;
+        check.duration_ms = validate_receipt(receipt, check, profile, commit)?;
 
         let log_path = format!("{}.log", check.id);
-        let pin = receipt.get("output_sha256").and_then(Value::as_str).ok_or("output SHA-256 missing")?;
-        evidence.read(&log_path, pin, false)?;
+        let pin = receipt.get("output_sha256").and_then(Value::as_str).ok_or("output SHA-256 missing")?.to_owned();
+        evidence.read(&log_path, &pin, false)?;
         total = total.checked_add(check.duration_ms).ok_or("total check duration overflow")?;
         results.push(json!({"check_id": check.id.clone(), "duration_ms": check.duration_ms}));
     }
@@ -153,9 +150,12 @@ mod tests {
     static NEXT: AtomicU64 = AtomicU64::new(0);
 
     struct Fixture { base: std::path::PathBuf, root: std::path::PathBuf, receipts: std::path::PathBuf }
-    impl Drop for Fixture { fn drop(&mut self) { let _ = fs::remove_dir_all(&self.base); } }
+    impl Drop for Fixture { fn drop(&mut self) {
+        if std::thread::panicking() { eprintln!("failed receipt fixture retained: {}", self.base.display()); }
+        else { let _ = fs::remove_dir_all(&self.base); }
+    } }
 
-    fn fixture() -> Fixture {
+    fn new_fixture() -> Fixture {
         let scratch = std::path::PathBuf::from(std::env::var_os("FABRIC_SCRATCH_ROOT").expect("DATA scratch"));
         let base = scratch.join(format!("receipt-unit-{}-{}", std::process::id(), NEXT.fetch_add(1, Ordering::Relaxed)));
         fs::create_dir(&base).unwrap();
@@ -192,7 +192,7 @@ mod tests {
 
     #[test]
     fn complete_synthetic_receipt_set_passes_with_python_shape() {
-        let fixture = fixture();
+        let fixture = new_fixture();
         let report = verify_fixture(&fixture).unwrap();
         assert_eq!(report["status"], "passed");
         assert_eq!(report["check_count"], 2);
@@ -203,25 +203,25 @@ mod tests {
 
     #[test]
     fn common_missing_stale_dirty_and_marker_controls_fail_closed() {
-        let fixture = fixture();
+        let fixture = new_fixture();
         fs::remove_file(fixture.receipts.join("extended-one.json")).unwrap();
         assert!(verify_fixture(&fixture).is_err());
 
-        let fixture = fixture();
+        let fixture = new_fixture();
         let path = fixture.receipts.join("extended-one.json");
         let mut receipt: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         receipt["candidate_commit"] = json!("b".repeat(40));
         fs::write(&path, serde_json::to_vec(&receipt).unwrap()).unwrap();
         assert!(verify_fixture(&fixture).is_err());
 
-        let fixture = fixture();
+        let fixture = new_fixture();
         let path = fixture.receipts.join("extended-one.json");
         let mut receipt: Value = serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
         receipt["worktree_dirty"] = json!(true);
         fs::write(&path, serde_json::to_vec(&receipt).unwrap()).unwrap();
         assert!(verify_fixture(&fixture).is_err());
 
-        let fixture = fixture();
+        let fixture = new_fixture();
         std::os::unix::fs::symlink(fixture.base.join("does-not-exist"), fixture.receipts.join("current-check.json")).unwrap();
         assert!(verify_fixture(&fixture).is_err());
     }
@@ -234,7 +234,7 @@ mod tests {
             ("\"receipt_version\":1", "\"receipt_version\":1.0"),
             ("\"worktree_dirty\":false", "\"worktree_dirty\":0"),
         ] {
-            let fixture = fixture();
+            let fixture = new_fixture();
             let path = fixture.receipts.join("extended-one.json");
             let raw = fs::read_to_string(&path).unwrap();
             let changed = raw.replacen(from, to, 1);
