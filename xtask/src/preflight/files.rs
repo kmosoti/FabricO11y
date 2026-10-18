@@ -313,6 +313,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn observed_json_keeps_budget_hash_and_identity_guards() {
+        let scratch = std::env::var_os("FABRIC_SCRATCH_ROOT").expect("contained DATA scratch");
+        let root = Path::new(&scratch).join(format!("observed-json-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        for name in ["one.json", "two.json"] { std::fs::write(root.join(name), b"{}").unwrap(); }
+        assert!(ArtifactStore::with_json_budget(&root, 0).is_err());
+        assert!(ArtifactStore::with_json_budget(&root, JSON_TOTAL_LIMIT + 1).is_err());
+        let mut store = ArtifactStore::with_json_budget(&root, 2).unwrap();
+        assert_eq!(store.observe_json("one.json").unwrap(), &serde_json::json!({}));
+        let pin = crate::sha256_hex(b"{}");
+        store.read("one.json", &pin, true).unwrap();
+        assert_eq!((store.bytes_hashed(), store.json_bytes()), (2, 2));
+        assert!(store.read("one.json", &"0".repeat(64), true).is_err());
+        assert!(store.observe_json("two.json").is_err());
+        assert_eq!(store.bytes_hashed(), 2);
+        store.recheck().unwrap();
+        std::fs::write(root.join("one.json"), b"{\"changed\":true}").unwrap();
+        assert!(store.recheck().is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn plan_bytes_share_total_budget() {
         // Origin: the Rust contract's explicit total-read budget includes the
         // plan. The inherited Python path excluded it; exercise that boundary
