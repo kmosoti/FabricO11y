@@ -54,3 +54,24 @@ measured binaries; its optional feature and dependency were removed.
 Known vectors and cross-provider chunk-boundary tests check equal bytes; this
 changes no file admission, byte budget, product dependency or core policy. An
 unsigned receipt still cannot prove that its declared command actually ran.
+
+## Opt-in verification dispatch
+
+`checks --profile fast --light-workers 2 --receipts NEW_DIR` keeps heavy checks
+serial and dispatches only seven frozen lightweight command vectors through a
+two-worker queue. Descending measured duration orders that queue; canonical ID
+breaks ties. All other checks retain their registry order. Registry drift fails
+closed, and the ordinary no-flag path stays serial. The
+[dispatch policy](../formal/verification-dispatch-policy.md) defines the cohort
+and required adoption controls.
+
+One source/tool context and bounded revision snapshots serve the entire run.
+Each check owns staging logs, receipts and scratch. The whole profile retains a
+canonical running marker while workers finish, including after another failure.
+Passed staged evidence is assembled and hashed before complete native validation;
+exclusive publication checks those pinned bytes again. Artifact copying uses a
+64 KiB buffer, an exact initial extent and a one-byte growth probe. Failure leaves
+the marker and evidence; successful cleanup precedes marker removal. This bounds
+copy scratch independently of log length, while retaining full-byte verification.
+The unchanged Python receipt validator remains an independent cross-check before
+adoption. This integration is implemented but has not yet completed its gates.

@@ -1244,6 +1244,31 @@ mod light_worker_tests {
 
     static NEXT: AtomicU64 = AtomicU64::new(0);
 
+    #[test]
+    fn stream_extent_rejects_short_and_long_inputs_and_preserves_bytes() {
+        let scratch = Scratch::new("stream-extent");
+        let source = scratch.0.join("source");
+        let destination = scratch.0.join("destination");
+        std::fs::write(&source, b"abc").unwrap();
+        for extent in [0, 2, 4] {
+            let mut input = std::fs::File::open(&source).unwrap();
+            assert!(stream_extent(&mut input, extent, None).is_err());
+        }
+        let mut input = std::fs::File::open(&source).unwrap();
+        let mut output = std::fs::File::create(&destination).unwrap();
+        assert_eq!(
+            stream_extent(&mut input, 3, Some(&mut output)).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+        assert_eq!(std::fs::read(&destination).unwrap(), b"abc");
+        let empty = scratch.0.join("empty");
+        std::fs::write(&empty, []).unwrap();
+        assert_eq!(
+            stream_extent(&mut std::fs::File::open(empty).unwrap(), 0, None).unwrap(),
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
+    }
+
     struct Scratch(PathBuf);
 
     impl Scratch {
