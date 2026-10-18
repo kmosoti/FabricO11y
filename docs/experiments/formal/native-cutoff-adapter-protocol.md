@@ -112,3 +112,11 @@ Compile both first, then three alternating pairs with three samples each of
 100 projections; compare medians at4000. A regression above50% rejects the
 refinement pending investigation. Report source-derived auxiliary bounds
 separately from measured timing; neither is allocator bytes or native latency.
+
+The native raw-journal adapter must apply its existing executable, service,
+InvocationID, cgroup, UID and GID joins to every recognized Batch and configuration
+record used by the projection, as it already does for delivery. Before that
+strengthening, mutate each trusted sender field independently for Batch,
+configuration and delivery records. Preserve the preimplementation refusals and
+misses; after correction run these controls and the existing native modules.
+Keep the event output schema and independent Python byte/query joins unchanged.
