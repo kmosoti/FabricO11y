@@ -342,7 +342,9 @@ def host_admission(owner_path, source_root, storage, package, source_commit, run
     fixed = {debdir / 'receipt.json': '89ce427d82a0065ca71e033aa696708e85c338d063d4a75cf4e4ba263f53fe72',
              rpmdir / 'receipt.json': '106b834855851b604d708228493192305327ff8236de3add9f4cf25c1c830919',
              storage / 'results/candidate-build-query-gap-01/candidate-admission.json':
-             '9c83d196a5ccf85e00d3e9becc79032f3fd57d7aab64a396690803bef841aa5a'}
+             '9c83d196a5ccf85e00d3e9becc79032f3fd57d7aab64a396690803bef841aa5a',
+             storage / 'results/candidate-build-query-gap-01/package-inspection.json':
+             'ad3c597a10d9841548165c47ddd7d504095db94063223e1f93a73a0d887d30b8'}
     for path, expected in fixed.items(): witness.require(sha(path.read_bytes()) == expected, 'owner package/admission receipt mismatch')
     deb, rpm = (json.loads((directory / 'receipt.json').read_text()) for directory in (debdir, rpmdir))
     frozen, canonical = 'b1e5874fbf9c6feb611d98ed40386ac44a703fe1', '43150dbd5cff9e0bdb0082997e796978c659d8af'
