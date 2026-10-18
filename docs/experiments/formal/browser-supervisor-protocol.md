@@ -315,3 +315,27 @@ zoom and negative-overflow predicates. It must call the restore mode in a
 `finally` path while preserving the original failure before cleanup, then restore
 the original classic desktop rectangle. The Bun reference remains an independent
 diagnostic and is not replaced by the Rust mock server or command.
+
+## Preserve explicit confirmation in Firefox BiDi sessions
+
+Prospective protocol amendment, 2026-10-18. Requesting Firefox's BiDi
+`webSocketUrl` changed the observed handling of the fixture's JavaScript confirm
+after reader revocation. In the same owned browser fixture, the classic session
+presented the confirm and the existing explicit WebDriver accept received HTTP
+200. With BiDi enabled and the default prompt policy, the prompt was already
+closed, no alert was present, and the accept request received HTTP 404. Setting
+the Firefox capability
+`unhandledPromptBehavior: {"confirm":"ignore"}` retained the same prompt and
+the explicit accept again received HTTP 200. The diagnostic completed with
+exit 0 and stopped cleanup 0; its raw record is
+`DATA/results/firefox-prompt-lifecycle-diagnostic-01/actual-browser.json`,
+SHA-256 `4fa3de6fcd0f3c1131c506268131128979097981e3ef813d63d8fca710cd2f6e`.
+
+Every Firefox BiDi fixture session must set that exact confirm policy. The
+caller still performs the existing explicit `/alert/accept` action and checks
+the same revocation outcome; `ignore` preserves the dialog for that action and
+does not accept or dismiss it. This policy applies only to the Firefox
+capabilities and makes no claim about other drivers. It preserves the original
+dialog lifecycle predicate while attaching BiDi; changing the policy to
+`accept`, omitting it, or weakening the existing revocation check is outside
+this protocol.
