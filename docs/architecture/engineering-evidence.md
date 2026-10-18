@@ -53,6 +53,19 @@ results grant no exact-package browser acceptance credit; raw measurements and
 failure history are in the
 [canonical results record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01).
 
+## R3 supervisor caller pin
+
+The current R3 admission carries the native entry helper as an explicit path
+and SHA-256 input. `soak_r3.measure` passes that pair through
+`ProductionAccess`, `CandidateFixture`, and `ConsoleBridge`; the existing
+`BrowserSupervisor` command forwards it to `live_browser_check.browser_group_launch`,
+which verifies the helper identity before launch and retains it in the child
+binding. There is no PATH search or Python-helper fallback on this R3 path. The
+frozen `5220e27` S1 snapshot used the older matching launch signature and is
+not reinterpreted as having the current caller mismatch. The current source
+controls and real supervisor-helper run remain pending; this wiring alone is
+not browser or soak acceptance.
+
 ## Native BiDi viewport effect
 
 The [viewport calibration](../experiments/formal/browser-supervisor-protocol.md#native-webdriver-bidi-viewport-calibration)
