@@ -49,7 +49,8 @@ privileged concurrent writer.
 
 The optional `verification-sha-openssl` feature selects an existing locked crypto
 provider behind a concrete incremental digest adapter. Otherwise RustCrypto is
-used. If both experimental crypto features are enabled, OpenSSL takes precedence.
+used. The rejected assembly experiment remains archived with its protocol and
+measured binaries; its optional feature and dependency were removed.
 Known vectors and cross-provider chunk-boundary tests check equal bytes; this
 changes no file admission, byte budget, product dependency or core policy. An
 unsigned receipt still cannot prove that its declared command actually ran.
