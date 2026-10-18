@@ -28,3 +28,11 @@ crate uses existing locked dependencies; no product/core boundary changes.
 The [architecture review skill](../../.agents/skills/architecture-review/SKILL.md)
 routes unresolved design decisions to focused experiments and documentation work.
 Existing Python product oracles stay independent; no MCP server is required.
+
+Hosted extended verification runs the registered checks in two serial shards:
+`semantic-mutants` and the other nine extended IDs. The required `extended` job
+joins their disjoint receipts and invokes the independent Python completeness
+validator on the same source revision. This scheduling reduces elapsed time in
+one completed hosted comparison while increasing aggregate runner time under
+different CPU, cache and setup conditions; it does not alter check commands or
+product acceptance criteria. See the [finite pilot record](../experiments/formal/verification-shards-protocol.md).
