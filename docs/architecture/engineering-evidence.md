@@ -41,8 +41,9 @@ required CI adoption is a separate step.
 
 JSON is bounded per document and across the composition. Logs are streamed with
 one complete digest per admitted artifact, then identities are rechecked. For N
-checks and B admitted bytes, input traversal requires O(B + N) work; reporting
-the stable duration ordering adds O(N log N). The byte-reading lower bound is
+checks and B admitted bytes, full-byte I/O requires Theta(B) work; metadata/JSON
+indexing has additional collection-dependent costs. Reporting the stable duration
+ordering adds O(N log N). The byte-reading lower bound is
 Omega(B): sampled hashing cannot establish the same integrity contract. Metadata
 rechecks are not an immutable filesystem snapshot or protection against a
 privileged concurrent writer.

@@ -4,6 +4,13 @@ The [Rust receipt-verifier migration](formal/verification-receipts-protocol.md)
 registers baseline controls, differential verification and standalone benchmarks.
 It does not replace required CI checks or credit synthetic fixtures as execution.
 
+The [native provider measurements and concrete defect control](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-receipt-provider-results-01)
+retain slower variants and exact source identities. The
+[scheduling experiment](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-scheduling-results-01)
+measured only its seven unchanged lightweight checks. The
+[production dispatch policy](../formal/verification-dispatch-policy.md) requires
+separate integration evidence before adoption; neither result resumes acceptance.
+
 The [engineering evidence protocol](formal/engineering-evidence-protocol.md) registers
 bounded artifact/dependency/receipt composition controls and matched finite costs.
 The [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-engineering-evidence-results-01)

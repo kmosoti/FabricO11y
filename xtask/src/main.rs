@@ -377,56 +377,14 @@ mod light_worker_cli_tests {
     #[test]
     fn light_workers_is_explicit_and_strictly_bounded() {
         assert!(valid().unwrap());
-        assert!(
-            light_workers_request("fast", 0, 0, false, 1, Some("2"), 1)
-                .is_err()
-        );
-        assert!(
-            !light_workers_request("fast", 1, 0, false, 0, None, 0).unwrap()
-        );
-        assert!(
-            light_workers_request(
-                "extended",
-                1,
-                0,
-                false,
-                1,
-                Some("2"),
-                1
-            )
-            .is_err()
-        );
-        assert!(
-            light_workers_request(
-                "fast",
-                1,
-                1,
-                false,
-                1,
-                Some("2"),
-                1
-            )
-            .is_err()
-        );
-        assert!(
-            light_workers_request("fast", 2, 0, false, 1, Some("2"), 1)
-                .is_err()
-        );
-        assert!(
-            light_workers_request("fast", 1, 0, false, 0, Some("2"), 1)
-                .is_err()
-        );
-        assert!(
-            light_workers_request("fast", 1, 0, true, 1, Some("2"), 1)
-                .is_err()
-        );
-        assert!(
-            light_workers_request("fast", 1, 0, false, 2, Some("2"), 1)
-                .is_err()
-        );
-        assert!(
-            light_workers_request("fast", 1, 0, false, 1, Some("3"), 1)
-                .is_err()
-        );
+        assert!(light_workers_request("fast", 0, 0, false, 1, Some("2"), 1).is_err());
+        assert!(!light_workers_request("fast", 1, 0, false, 0, None, 0).unwrap());
+        assert!(light_workers_request("extended", 1, 0, false, 1, Some("2"), 1).is_err());
+        assert!(light_workers_request("fast", 1, 1, false, 1, Some("2"), 1).is_err());
+        assert!(light_workers_request("fast", 2, 0, false, 1, Some("2"), 1).is_err());
+        assert!(light_workers_request("fast", 1, 0, false, 0, Some("2"), 1).is_err());
+        assert!(light_workers_request("fast", 1, 0, true, 1, Some("2"), 1).is_err());
+        assert!(light_workers_request("fast", 1, 0, false, 2, Some("2"), 1).is_err());
+        assert!(light_workers_request("fast", 1, 0, false, 1, Some("3"), 1).is_err());
     }
 }
