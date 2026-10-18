@@ -28,3 +28,28 @@ crate uses existing locked dependencies; no product/core boundary changes.
 The [architecture review skill](../../.agents/skills/architecture-review/SKILL.md)
 routes unresolved design decisions to focused experiments and documentation work.
 Existing Python product oracles stay independent; no MCP server is required.
+
+## Native verification receipts
+
+`xtask verify-receipts` reuses the descriptor-owned artifact reader to join the
+current registry, complete selected receipt inventory and each log digest. Its
+[representation contract](../formal/verification-receipt-contract.md) deliberately
+rejects duplicate JSON keys and numeric/boolean aliases. Git identity is checked
+before and after validation; missing, failed or running checks cannot count as
+a complete profile. This command is implemented for experimental comparison;
+required CI adoption is a separate step.
+
+JSON is bounded per document and across the composition. Logs are streamed with
+one complete digest per admitted artifact, then identities are rechecked. For N
+checks and B admitted bytes, input traversal requires O(B + N) work; reporting
+the stable duration ordering adds O(N log N). The byte-reading lower bound is
+Omega(B): sampled hashing cannot establish the same integrity contract. Metadata
+rechecks are not an immutable filesystem snapshot or protection against a
+privileged concurrent writer.
+
+The optional `verification-sha-openssl` feature selects an existing locked crypto
+provider behind a concrete incremental digest adapter. Otherwise RustCrypto is
+used. If both experimental crypto features are enabled, OpenSSL takes precedence.
+Known vectors and cross-provider chunk-boundary tests check equal bytes; this
+changes no file admission, byte budget, product dependency or core policy. An
+unsigned receipt still cannot prove that its declared command actually ran.

@@ -1,5 +1,13 @@
 # Current project state
 
+Engineering tooling now includes an experimental Rust `xtask verify-receipts`
+command, sharing bounded descriptor-owned artifact reads with evidence preflight.
+The [architecture boundary](architecture/engineering-evidence.md#native-verification-receipts)
+and [strict representation policy](formal/verification-receipt-contract.md)
+describe its limits. Required CI adoption and complete integration checks remain
+pending; synthetic verifier fixtures do not credit product acceptance. Alpha
+acceptance is paused by the owner during verification engineering.
+
 Replacement product `e078ba23` is packaged reproducibly as minimized source
 `28bcdf7` ([#40](https://github.com/kmosoti/FabricO11y/issues/40)). Fresh Debian03
 and Fedora04 baseline/lifecycle cells completed with all four custody checkpoints
