@@ -543,22 +543,22 @@ mod tests {
         assert!(
             validate_reply(Message::Text("{".into()), 2, "browsingContext.setViewport").is_err()
         );
-        assert!(validate_reply(
-            Message::Text(
-                r#"{"type":"success","type":"success","id":2,"result":{}}"#.into()
-            ),
-            2,
-            "browsingContext.setViewport"
-        )
-        .is_err());
-        assert!(validate_reply(
-            Message::Text(
-                r#"{"type":"success","id":2,"result":{},"result":{}}"#.into()
-            ),
-            2,
-            "browsingContext.setViewport"
-        )
-        .is_err());
+        assert!(
+            validate_reply(
+                Message::Text(r#"{"type":"success","type":"success","id":2,"result":{}}"#.into()),
+                2,
+                "browsingContext.setViewport"
+            )
+            .is_err()
+        );
+        assert!(
+            validate_reply(
+                Message::Text(r#"{"type":"success","id":2,"result":{},"result":{}}"#.into()),
+                2,
+                "browsingContext.setViewport"
+            )
+            .is_err()
+        );
     }
 
     #[test]
