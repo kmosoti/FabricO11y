@@ -398,12 +398,38 @@ def free_port():
         return sock.getsockname()[1]
 
 
+def validate_product_source_options(args, parser):
+    values = (args.product_source_root, args.product_source_commit,
+              args.console_receipt_sha256, args.console_source_helper,
+              args.console_source_helper_sha256)
+    if not any(value is not None for value in values):
+        return False
+    if not all(value is not None for value in values):
+        parser.error('explicit console product source requires the complete five-operand tuple')
+    if args.packaged_console is None:
+        parser.error('explicit console product source requires --packaged-console')
+    if not args.product_source_root.is_absolute() or not args.console_source_helper.is_absolute():
+        parser.error('explicit console source root and helper must be absolute paths')
+    if not re.fullmatch('[a-f0-9]{40}', args.product_source_commit):
+        parser.error('explicit console product commit must be a full lowercase SHA-1')
+    if not re.fullmatch('[a-f0-9]{64}', args.console_receipt_sha256):
+        parser.error('explicit console receipt pin must be a full lowercase SHA-256')
+    if not re.fullmatch('[a-f0-9]{64}', args.console_source_helper_sha256):
+        parser.error('explicit console helper pin must be a full lowercase SHA-256')
+    return True
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--build', type=Path, required=True)
     parser.add_argument('--server', type=Path, required=True)
     parser.add_argument('--spindle', type=Path, required=True)
     parser.add_argument('--packaged-console',type=Path,help='use extracted package assets after cross-checking the frozen build')
+    parser.add_argument('--product-source-root', type=Path)
+    parser.add_argument('--product-source-commit')
+    parser.add_argument('--console-receipt-sha256')
+    parser.add_argument('--console-source-helper', type=Path)
+    parser.add_argument('--console-source-helper-sha256')
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--inject-rejection-defect',choices=('error','status'))
     parser.add_argument('--inject-api-cache-defect', action='store_true')
@@ -435,6 +461,7 @@ def main():
     parser.add_argument('--suppress-announcement',action='store_true',help='negative control: disable the original status live region')
     parser.add_argument('--security-key-probe',action='store_true',help='isolated actual virtual credential export/DER/signature admission')
     args = parser.parse_args()
+    product_source_enabled = validate_product_source_options(args, parser)
     if args.security_key_probe and any((getattr(args,'announcement_probes',False),getattr(args,'suppress_announcement',False),
             args.migration,args.fabricctl,args.security_probes,args.session_expiry_helper,
             args.session_expiry_admission,args.ui_responses,args.role_matrix,args.poll_seconds,args.pressure,
@@ -475,7 +502,8 @@ def main():
     build = args.build.resolve()
     if not out.is_relative_to(DATA / 'results') or out.exists() or not build.is_relative_to(DATA / 'results'):
         raise SystemExit('fresh owned data-drive result directories required')
-    for binary in (args.server, args.spindle, *([args.fabricctl] if args.migration else [])):
+    for binary in (args.server, args.spindle, *([args.fabricctl] if args.migration else []),
+                   *([args.console_source_helper] if product_source_enabled else [])):
         if not binary.resolve().is_relative_to(DATA) or not binary.is_file():
             raise SystemExit('project binaries must be existing data-drive artifacts')
     out.mkdir()
@@ -487,13 +515,16 @@ def main():
                'enforced_limits':{key:(limits/key).read_text().strip() for key in ('memory.max','memory.high','memory.swap.max','cpu.max','pids.max')},
                'scope': 'finite virtual CTAP2 desktop/narrow browser integration; not hardware/mobile/installed-app qualification',
                'tls_scope': 'exact fixture leaf SPKI trusted by this isolated browser only; Spindle trusts fixture CA',
+               'console_product_source': None,
                'injected_api_cache_defect': args.inject_api_cache_defect,
                'injected_role_defect': args.inject_role_defect,
                'injected_nonresident_enrollment': args.inject_nonresident_enrollment,
                'injected_rejection_defect':args.inject_rejection_defect,
                'source_sha256': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                                  for p in (Path(__file__), ROLE_FIXTURE, ROOT / 'tools/ui/fixture_cadence.py', ROOT / 'tools/ui/browser_producer.py', ROOT / 'tools/packaging/stage_console.py')},
-               'binaries': {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in (args.server, args.spindle, *([args.fabricctl] if args.migration else []))},
+               'binaries': {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in
+                   (args.server, args.spindle, *([args.fabricctl] if args.migration else []),
+                    *([args.console_source_helper] if product_source_enabled else []))},
                'browser_download': json.loads((TOOLS / 'download.json').read_text()) if args.browser=='chrome' else json.loads((DATA/'tools/ui/geckodriver.json').read_text())}
     processes = []
     logs = []
@@ -749,7 +780,8 @@ def main():
     try:
         artifact_dir=work/'binaries';artifact_dir.mkdir(mode=0o700)
         snapshots={}
-        for role in ('server','spindle', *(['fabricctl'] if args.migration else [])):
+        for role in ('server','spindle', *(['fabricctl'] if args.migration else []),
+                     *(['console_source_helper'] if product_source_enabled else [])):
             source=getattr(args,role)
             destination=artifact_dir/role
             shutil.copyfile(source,destination)
@@ -760,6 +792,8 @@ def main():
             snapshots[role]={'source':str(source),'sha256':identity,'bytes':destination.stat().st_size}
             setattr(args,role,destination)
         receipt['immutable_binary_snapshots']=snapshots
+        if product_source_enabled:
+            args.console_source_helper = artifact_dir / 'console_source_helper'
         if expiry:
             from session_clock import digest
             helper=args.session_expiry_helper.resolve();admission=args.session_expiry_admission.resolve();package=args.package.resolve()
@@ -771,7 +805,68 @@ def main():
             receipt['session_expiry_inputs']={'candidate_commit':args.candidate_commit,'package_sha256':digest(package),
                 'package_path':str(package),'helper_sha256':digest(helper),'native_admission':str(admission),'native_admission_sha256':digest(admission)}
         check(semantic_rejection((403,{'error':'access denied'}),403,'access denied') and not semantic_rejection((429,{'error':'access denied'}),403,'access denied') and not semantic_rejection((403,{'error':'wrong error'}),403,'access denied'),'semantic rejection grader rejects wrong status and wrong error negative controls')
-        stage(build, work / 'console')
+        if product_source_enabled:
+            console_source_evidence = {}
+            receipt['console_product_source'] = {
+                'source_root': str(args.product_source_root.resolve()),
+                'source_commit': args.product_source_commit,
+                'build_root': str(build),
+                'receipt_sha256': args.console_receipt_sha256,
+                'helper': snapshots['console_source_helper']['source'],
+                'helper_sha256': args.console_source_helper_sha256,
+                'harness_source_sha256': receipt['source_sha256'],
+                'claim': 'caller-pinned product source and build receipt identity join; no acceptance credit'}
+            try:
+                def verify_console_source(snapshot, source_root, source_commit, build_root, receipt_pin):
+                    argv = [str(snapshot), 'console-source', '--source-root', str(source_root),
+                            '--source-commit', source_commit, '--build-root', str(build_root),
+                            '--receipt-sha256', receipt_pin]
+                    helper_log_path = out / 'console-source-helper.log'
+                    helper_log = helper_log_path.open('w+b')
+                    logs.append(helper_log)
+                    helper_environment = {'PATH': '/usr/bin:/bin', 'FABRIC_STORAGE_ROOT': str(DATA),
+                                          'FABRIC_SCRATCH_ROOT': str(Path(os.environ['FABRIC_SCRATCH_ROOT']).resolve())}
+                    helper = browser_group_launch(group_parent, owned_groups,
+                        'console-source-verifier', argv, helper_log, helper_environment)
+                    binding = owned_groups[-1]
+                    helper_timeout = min(90, max(0, deadline - time.monotonic()))
+                    try:
+                        exit_code = helper.wait(timeout=helper_timeout)
+                    except subprocess.TimeoutExpired as error:
+                        stop_browser_groups(group_parent, [binding])
+                        raise ValueError('console source helper exceeded browser fixture deadline') from error
+                    stop_browser_groups(group_parent, [binding])
+                    helper_log.flush()
+                    helper_size = helper_log.tell()
+                    helper_log.seek(0)
+                    output = helper_log.read(64 * 1024 + 1)
+                    console_source_evidence.update({'helper_log': str(helper_log_path),
+                        'helper_log_read_sha256': hashlib.sha256(output).hexdigest(),
+                        'helper_log_bytes': helper_size,
+                        'helper_process_group_stopped': binding['group'].get('kernel_empty') is True
+                            and binding['group'].get('children_reaped') is True})
+                    if helper_size > 64 * 1024 or len(output) > 64 * 1024:
+                        raise ValueError('console source helper report exceeds 64 KiB read bound')
+                    if not console_source_evidence['helper_process_group_stopped']:
+                        raise ValueError('console source helper group did not stop cleanly')
+                    if exit_code != 0:
+                        return None, exit_code, len(output), 0
+                    try:
+                        report = json.loads(output)
+                    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+                        raise ValueError('console source helper returned invalid JSON') from error
+                    return report, exit_code, len(output), 0
+
+                stage(build, work / 'console',
+                      product_source=(args.product_source_root.resolve(), args.product_source_commit,
+                                      args.console_receipt_sha256, artifact_dir / 'console_source_helper',
+                                      args.console_source_helper_sha256),
+                      helper_runner=verify_console_source,
+                      evidence=console_source_evidence)
+            finally:
+                receipt['console_product_source']['verification'] = console_source_evidence
+        else:
+            stage(build, work / 'console')
         if args.packaged_console:
             packaged=args.packaged_console.resolve()
             if not packaged.is_relative_to(DATA) or not packaged.is_dir():
@@ -1665,6 +1760,7 @@ self.addEventListener("fetch",event=>{
         receipt['exit'] = 0
     except BaseException as error:
         receipt['error'] = str(error)
+        receipt['fixture_failed'] = True
         if session:
             try:
                 receipt['actual_api_headers']=js('return window.fixtureApiHeaders||[]')
@@ -1722,9 +1818,11 @@ self.addEventListener("fetch",event=>{
             receipt['process_exits'] = {label: proc.returncode for label, proc in processes}
             receipt['group_stops'] = [{key: binding['group'].get(key) for key in
                 ('pid', 'start_ticks', 'kernel_empty', 'children_reaped', 'late_reaped', 'stop_error')} for binding in owned_groups]
-            if cleanup_error is None:
+            if cleanup_error is None and receipt.get('exit') == 0:
                 shutil.rmtree(work)
                 receipt['cleanup'] = 'owned fixtures removed; process groups stopped and bound children reaped'
+            elif cleanup_error is None:
+                receipt['cleanup'] = 'failure evidence retained in owned fixture storage; process groups stopped and bound children reaped'
             else:
                 receipt['cleanup_error'] = str(cleanup_error)
                 receipt['exit'] = 1
