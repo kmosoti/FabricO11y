@@ -766,8 +766,7 @@ fn ordinary_digest(source: &Path) -> Result<String, String> {
     }
     let digest = stream_extent(&mut input, opened.len(), None)?;
     let after_path = std::fs::symlink_metadata(source).map_err(|error| error.to_string())?;
-    if bytes.len() as u64 != opened.len()
-        || identity(&input.metadata().map_err(|error| error.to_string())?) != identity(&opened)
+    if identity(&input.metadata().map_err(|error| error.to_string())?) != identity(&opened)
         || identity(&after_path) != identity(&opened)
     {
         return Err(format!("source artifact changed during digest: {}", source.display()));
