@@ -11,6 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const HELPER_REL: &str = "results/tls-dependency-update/census-owned-retry.py";
 const HELPER_SHA: &str = "d044822178a2d64305ea496d9df324021ff2514b6185975dece133caa45137a7";
 const OLD_ROOT: &[u8] = b"root='/run/media/kmosoti/data/FabricO11y'";
+type FileIdentity = (u64, u64, u64, i64, i64, i64, i64);
 
 fn git(root: &Path, args: &[&str]) -> Result<String, String> {
     let output = Command::new("timeout")
@@ -50,7 +51,7 @@ fn report(out: &Path, value: &Value) -> Result<(), String> {
     write_new(&out.join("baseline-report.json"), &bytes)
 }
 
-fn file_identity(metadata: &fs::Metadata) -> (u64, u64, u64, i64, i64, i64, i64) {
+fn file_identity(metadata: &fs::Metadata) -> FileIdentity {
     (
         metadata.dev(),
         metadata.ino(),
@@ -62,7 +63,7 @@ fn file_identity(metadata: &fs::Metadata) -> (u64, u64, u64, i64, i64, i64, i64)
     )
 }
 
-fn read_helper(path: &Path) -> Result<(Vec<u8>, (u64, u64, u64, i64, i64, i64, i64)), String> {
+fn read_helper(path: &Path) -> Result<(Vec<u8>, FileIdentity), String> {
     let before = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
     if !before.is_file() || before.file_type().is_symlink() || before.len() > 65_536 {
         return Err("pinned helper must be an ordinary file no larger than 64 KiB".into());
@@ -104,7 +105,7 @@ fn fixture(work: &Path) -> Result<(PathBuf, Value), String> {
     sparse.set_len(65_537).map_err(|e| e.to_string())?;
     fs::create_dir(case.join("nested")).map_err(|e| e.to_string())?;
     fs::write(case.join("nested/payload"), b"1234567890123").map_err(|e| e.to_string())?;
-    fs::write(&outside.join("payload"), b"1234567890").map_err(|e| e.to_string())?;
+    fs::write(outside.join("payload"), b"1234567890").map_err(|e| e.to_string())?;
     symlink("regular", case.join("file-link")).map_err(|e| e.to_string())?;
     symlink("directory", case.join("dir-link")).map_err(|e| e.to_string())?;
     symlink("absent", case.join("dangling-link")).map_err(|e| e.to_string())?;
