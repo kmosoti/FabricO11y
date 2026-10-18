@@ -162,10 +162,15 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as name:
     runtime.cpu_pair = lambda value: {0, 1} if value == '0-1' else {4, 5}
     class CandidateFixture:
         def __init__(self, *paths, server_cpus, supervisor_cpus,
-                     browser_entry_helper, browser_entry_helper_sha256):
+                     browser_entry_helper, browser_entry_helper_sha256,
+                     browser_deadline=None):
             observed.append((paths, server_cpus, supervisor_cpus,
-                             browser_entry_helper, browser_entry_helper_sha256))
-            self.work, self.bins, self.helpers = work, bins, helpers
+                             browser_entry_helper, browser_entry_helper_sha256,
+                             browser_deadline))
+            self.work = work / ('work-' + str(len(observed)))
+            self.work.mkdir()
+            self.bins = self.work / 'bins'; self.bins.mkdir()
+            self.helpers = helpers
             self.input_hashes, self.receipt = {}, {}
     runtime.CandidateFixture = CandidateFixture
     runtime.WorkloadReader = type('WorkloadReader', (), {})
@@ -194,9 +199,11 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as name:
         deb_receipt=scratch / 'deb', rpm_receipt=scratch / 'rpm',
         production_out=scratch / 'out', production_server_cpus='0-1',
         browser_entry_helper=helper, browser_entry_helper_sha256=pin)
-    module.ProductionAccess(args, scratch / 'raw', soak=False)
-    assert len(observed) == 1, observed
-    assert observed[0][3:] == (helper, pin), observed
+    for soak, deadline in ((False, None), (True, 25)):
+        args.r3_browser_deadline = deadline
+        module.ProductionAccess(args, scratch / 'raw', soak=soak)
+        assert len(observed) == (2 if soak else 1), observed
+        assert observed[-1][3:] == (helper, pin, deadline), observed
 
     # Missing or altered identity refuses before CandidateFixture's effect seam.
     for changed in (None, '0' * 64):

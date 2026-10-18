@@ -88,9 +88,18 @@ measure = next(node for node in soak_tree.body
 measure_args = next(call for call in calls(measure, 'SimpleNamespace'))
 assert {'browser_entry_helper', 'browser_entry_helper_sha256'} <= keyword_names(measure_args)
 production_init = method(production_tree, 'ProductionAccess', '__init__')
-assert any(isinstance(call.func, ast.Attribute) and call.func.attr == 'update'
-           and {'browser_entry_helper', 'browser_entry_helper_sha256'} <= keyword_names(call)
-           for call in calls(production_init, 'update'))
+assert any(isinstance(node, ast.FunctionDef)
+           and node.name == 'browser_entry_options' for node in production_tree.body)
+assert any(isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+           and node.func.id == 'browser_entry_options' for node in ast.walk(production_init))
+base_calls = [call for call in calls(production_init, '__init__')
+              if isinstance(call.func, ast.Attribute)
+              and isinstance(call.func.value, ast.Call)
+              and isinstance(call.func.value.func, ast.Name)
+              and call.func.value.func.id == 'super']
+assert base_calls and any(item.arg is None and isinstance(item.value, ast.Name)
+                          and item.value.id == 'browser_options'
+                          for item in base_calls[0].keywords)
 candidate_init = method(runtime_tree, 'CandidateFixture', '__init__')
 assert {'browser_entry_helper', 'browser_entry_helper_sha256'} <= {
     arg.arg for arg in candidate_init.args.kwonlyargs}
