@@ -666,6 +666,7 @@ matches = [node.args[0].value for node in ast.walk(tree)
            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
            and node.func.id == 'js' and node.args
            and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str)
+           and 'window.fetch=async(...args)=>' in node.args[0].value
            and 'window.fixtureCompletedRegistration=null' in node.args[0].value]
 assert len(matches) == 1, f'expected one security registration wrapper, got {len(matches)}'
 sys.stdout.write(matches[0])
