@@ -249,7 +249,8 @@ def begin_browser_domain(limits, deadline):
         and values['memory.swap.max'] == '0' and values['cpu.max'] == '200000 100000'
         and values['pids.max'] == '512', 'limits')
     parent = browser_hold_directory(limits)
-    parent.update(deadline_monotonic_ns=int(deadline * 1e9), namespaces=browser_namespaces())
+    parent.update(deadline_monotonic_ns=int(deadline * 1e9), namespaces=browser_namespaces(),
+                  browser_launch_attempts=0)
     try:
         browser_group_check(libc.prctl(37, ctypes.byref(previous), 0, 0, 0) == 0
             and libc.prctl(36, 1, 0, 0, 0) == 0, 'subreaper')
@@ -269,7 +270,12 @@ def browser_group_launch(parent, bindings, label, command, log, environment, *, 
                          entry_helper_sha256, clock=None):
     browser_directory(parent)
     browser_group_check(browser_namespaces() == parent['namespaces'], 'namespace')
-    path, _ = cgroups.subgroup(parent['path'], 'browser-' + str(len(bindings)), 4000000000, 3500000000, 512, 2)
+    attempt = parent['browser_launch_attempts']
+    browser_group_check(isinstance(attempt, int) and not isinstance(attempt, bool) and attempt >= 0,
+                        'launch-counter')
+    parent['browser_launch_attempts'] = attempt + 1
+    path, _ = cgroups.subgroup(parent['path'], 'browser-' + str(attempt),
+                               4000000000, 3500000000, 512, 2)
     group = browser_hold_directory(path)
     group['exclusive'] = True
     browser_group_check(entry_helper.is_absolute() and entry_helper.is_file()

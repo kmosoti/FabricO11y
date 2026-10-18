@@ -269,6 +269,10 @@ os.close(cleanup_writer)
 cleanup_log = cleanup_record.pop('log')
 cleanup_log.close()
 
+attempted_paths = [str(record['group']['path']) for record in parent['provisional_children']]
+assert len(attempted_paths) == len(set(attempted_paths)), attempted_paths
+assert parent['browser_launch_attempts'] == 3, parent['browser_launch_attempts']
+
 module.browser_reap_domain(parent, bindings)
 module.end_browser_domain(parent, bindings)
 domain_closed = True
@@ -278,6 +282,7 @@ print(json.dumps({'state':'complete','positive_exit':0,'positive_elapsed_ns':pos
     'positive_peak_cgroup_bytes':positive_peak,
     'peak_child_rss_kib':resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,
     'binding_before_release_guard':True,'append_after_release_rejected':True,
+    'attempted_subgroup_paths_unique':True,
     'wrong_placement_rejected':True,'release_eof_rejected':True,
     'release_timeout_rejected':True,'timeout_cleanup_fallback':True,
     'foreign_child_rejected':True,
@@ -314,6 +319,7 @@ fn actual_parent_seam_binds_before_releasing_native_short_child() {
         "wrong_placement_rejected",
         "binding_before_release_guard",
         "append_after_release_rejected",
+        "attempted_subgroup_paths_unique",
         "release_eof_rejected",
         "release_timeout_rejected",
         "timeout_cleanup_fallback",

@@ -36,11 +36,12 @@ adds a native `xtask browser-enter-exec` prefix to the legacy browser harness.
 The caller pins and snapshots the helper explicitly. The helper enters its
 canonical cgroup-v2 subgroup, checks its `/proc` placement, publishes `R` and
 waits for `G`; each private pipe frame requires its byte followed by EOF within
-the five-second monotonic deadline. The Python parent retains the exact
-`Popen`/pidfd/start identity, checks placement and existing membership, records
-the binding, and only then releases the target. Pre-binding cleanup uses that
-retained child identity and its owned subgroup. The session-clock wrapper stays
-the target when controlled time is selected.
+the five-second monotonic deadline. A per-domain launch-attempt counter gives
+each subgroup a unique name, including attempts that fail. The Python parent
+retains the exact `Popen`/pidfd/start identity, checks placement and existing
+membership, records the binding, and only then releases the target. Pre-binding
+cleanup uses that retained child identity and its owned subgroup. The
+session-clock wrapper stays the target when controlled time is selected.
 
 The implementation has not yet received its registered Linux composition run.
 The ignored integration fixture is separate from ordinary unit checks, and the
