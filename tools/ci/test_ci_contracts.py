@@ -267,6 +267,7 @@ class WorkflowTests(unittest.TestCase):
         helper_pair = (
             '--browser-entry-helper "$FABRIC_BROWSER_ENTRY_HELPER" '
             '--browser-entry-helper-sha256 "$FABRIC_BROWSER_ENTRY_HELPER_SHA256"')
+        security_flag = '--security-probes'
         browser_calls = [line for line in workflow.splitlines() if 'live_browser_check.py' in line]
         fixture_at = workflow.find(fixture)
         build_at = workflow.find('name: Build native authenticated browser fixture')
@@ -282,6 +283,8 @@ class WorkflowTests(unittest.TestCase):
             and 'FABRIC_BROWSER_ENTRY_HELPER=$helper' in workflow
             and len(browser_calls) == 2
             and all(helper_pair in line for line in browser_calls)
+            and security_flag in browser_calls[0]
+            and security_flag not in browser_calls[1]
             and '--inject-api-cache-defect' in browser_calls[1]
             and 'check-browser-defect.py "$defect_status"' in workflow
             and 'name: Check actual passkeys and scoped native HTTPS console in Chrome' in workflow
@@ -300,10 +303,17 @@ class WorkflowTests(unittest.TestCase):
             '--browser-entry-helper-sha256 "$FABRIC_BROWSER_ENTRY_HELPER_SHA256"')
         missing_launcher = workflow.replace(fixture, '', 1)
         omitted_native_control = workflow.replace(helper_pair, '', 1)
+        omitted_security_probe = workflow.replace(f' {security_flag}', '', 1)
+        security_probe_on_negative = workflow.replace(
+            '--inject-api-cache-defect', f'{security_flag} --inject-api-cache-defect', 1)
         self.assertNotEqual(missing_launcher, workflow)
         self.assertNotEqual(omitted_native_control, workflow)
+        self.assertNotEqual(omitted_security_probe, workflow)
+        self.assertNotEqual(security_probe_on_negative, workflow)
         self.assertFalse(self.browser_entry_contract(missing_launcher), 'missing Linux launcher was accepted')
         self.assertFalse(self.browser_entry_contract(omitted_native_control), 'omitted helper pair was accepted')
+        self.assertFalse(self.browser_entry_contract(omitted_security_probe), 'missing positive security probes were accepted')
+        self.assertFalse(self.browser_entry_contract(security_probe_on_negative), 'security probes were added to the API-cache negative control')
 
     def test_extended_workflow_uses_two_shards_and_original_runner(self):
         workflow = (ROOT / '.github/workflows/verification.yml').read_text()
