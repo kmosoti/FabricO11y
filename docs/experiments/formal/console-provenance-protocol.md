@@ -123,6 +123,42 @@ declarations, malformed byte counts, and a physically oversized/sparse asset
 whose small declared extent must cause bounded refusal before destination
 creation. Preserve the earlier adapter fixture failures and their corrections.
 
+### Browser fetch cancellation representation
+
+The browser console can abort an obsolete protected query before an HTTP
+response exists. The browser ledger must distinguish this transport outcome
+from an HTTP response whose security headers are missing. Preserve every raw
+ledger row. A row is a response only after `fetch()` resolves and its status and
+response metadata are captured. A row is a cancellation only when all of these
+conditions hold: path is exactly `/v1/console/query`; method is `POST`;
+`error_stage` is `fetch`; `error_name` is exactly `AbortError`; status is null;
+the same dispatch `AbortSignal` is aborted; and either its abort event was
+observed before the fetch rejection or that signal was already aborted when the
+dispatch began. Record the abort event time and the already-aborted-at-dispatch
+fact on that row. Retain the bounded error name and message. Do not infer why a
+user or component aborted it.
+
+List qualifying cancellations separately from responses, but preserve the
+complete raw ledger. They represent no HTTP response and receive no security
+header coverage or negative-control credit. Require at least one actual
+response and retain the existing no-truncation condition. Every response row
+must still have `cache-control: no-store`, a nonempty CSP, COOP exactly
+`same-origin`, and CORP exactly `same-origin`. Pending rows, metadata-extraction
+failures, rejected fetches without the exact same-signal abort witness, and
+cancellations on any other path or method remain failures. No general
+`AbortError` exclusion is allowed.
+
+Before changing the browser consumer, use Rust-driven controls against the
+actual production wrapper/consumer seam. Cover a valid response; each of the
+four missing and wrong response-header cases; a qualifying pre-aborted signal;
+a qualifying in-flight abort whose same-signal event precedes rejection; an
+abort-shaped rejection without that event; a copied cancellation row with its
+abort-event evidence removed; a non-query or non-POST abort; a pending row; a
+metadata extraction exception; and a ledger with cancellations but no actual
+responses. The missing-event copy must fail. Keep raw failures, do not weaken
+the existing HTTP-header predicates, and treat these as harness controls with
+no browser acceptance credit.
+
 ### Retained composition counterexamples
 
 Prospective controls after the finite `babd209` focused run: root inspection found
