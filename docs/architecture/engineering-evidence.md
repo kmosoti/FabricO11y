@@ -43,10 +43,15 @@ membership, records the binding, and only then releases the target. Pre-binding
 cleanup uses that retained child identity and its owned subgroup. The
 session-clock wrapper stays the target when controlled time is selected.
 
-The implementation has not yet received its registered Linux composition run.
-The ignored integration fixture is separate from ordinary unit checks, and the
-previous immediate-child entry failure remains preserved. These source changes
-grant no browser acceptance credit.
+The registered Linux fixture and a finite real-browser engineering probe ran at
+the pinned harness source `7508a989`. The browser ledger distinguishes received
+HTTP responses from witnessed pre-response query cancellations; every received
+response remains subject to the existing header checks. Native launches retained
+pinned helper identity, exact reaping and empty owned groups. The previous
+immediate-child entry failure remains preserved. These finite composition
+results grant no exact-package browser acceptance credit; raw measurements and
+failure history are in the
+[canonical results record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01).
 
 ## Console source provenance
 

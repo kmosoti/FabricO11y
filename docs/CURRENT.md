@@ -37,8 +37,14 @@ reproduced that NameError before the scoped helper correction merged in PR #81.
 The retry stopped before browser launch on the frozen console/newer harness
 Cargo.lock join. The native provenance correction has finite source controls;
 a fresh actual browser retry remains required after the engineering pause. A
-native entry/release barrier now precedes legacy browser child binding; its
-Linux composition fixture remains unrun and grants no acceptance credit.
+native entry/release barrier now precedes legacy browser child binding. Its
+Linux composition fixture and real-browser transport-state diagnostic completed
+at harness source `7508a989`; the native release-ordering controls and two
+AbortSignal cancellation witnesses were observed, with actual HTTP responses
+still subject to the original header checks. This finite harness evidence grants
+no exact-package browser/PWA acceptance credit. The
+[canonical finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01)
+retain the raw trial records and limits.
 
 Replacement product `e078ba23` is packaged reproducibly as minimized source
 `28bcdf7` ([#40](https://github.com/kmosoti/FabricO11y/issues/40)). Fresh Debian03
