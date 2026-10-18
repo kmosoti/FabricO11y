@@ -107,6 +107,16 @@ does not itself prove ownership; a caller must bind it to its admitted command.
 Missing roots and RAM-backed roots fail closed. The six-field JSON result retains
 the old accounting interface; product delivery/query/rate oracles are unchanged.
 
+The `--owner-binding` mode takes an independently declared owner label and
+admission path/digest plus the raw walkthrough argv. Its pure validator accepts
+the exact program and five unique known flag/value pairs, joins the run ID,
+label and outer-record path, and derives one scratch root. Unresolved digests,
+crossed identities, duplicate flags and prefix siblings are refused. This binds
+caller-supplied identities; it does not read or authorize admission content.
+The original walkthrough guards retain that responsibility. The external frozen
+driver adapter supplies these values and invokes the pinned executable in the
+original user namespace without changing storage thresholds or resource caps.
+
 The [finite comparison and counterexample record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-storage-census-results-01)
 contains classification, real deletion controls, an actual partial-counter mutant
 and a warm 20,000-path comparison. It also records a shared Cargo target returning
