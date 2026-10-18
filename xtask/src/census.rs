@@ -425,7 +425,7 @@ pub fn owner_scratch_from_argv(
     let supplied_admission = canonical_data_path(admission_path)?;
 
     const PROGRAM: [&str; 3] = ["python3", "-B", "tools/qualification/owner_walkthrough.py"];
-    if argv.len() != 13 || argv[..3].iter().map(String::as_str).ne(PROGRAM) {
+    if argv.len() != 17 || argv[..3].iter().map(String::as_str).ne(PROGRAM) {
         return Err("raw argv must be the exact owner walkthrough command".into());
     }
     let mut pairs = std::collections::BTreeMap::new();
@@ -438,6 +438,8 @@ pub fn owner_scratch_from_argv(
                 | "--outer-admission"
                 | "--run-id"
                 | "--server-family"
+                | "--browser-entry-helper"
+                | "--browser-entry-helper-sha256"
         ) || pairs.insert(flag.as_str(), pair[1].as_str()).is_some()
         {
             return Err("duplicate or unknown owner command flag".into());
@@ -458,6 +460,15 @@ pub fn owner_scratch_from_argv(
     }
     if !matches!(get("--server-family")?, "debian" | "fedora") {
         return Err("invalid owner server family".into());
+    }
+    let _helper = canonical_data_path(get("--browser-entry-helper")?)?;
+    let helper_sha256 = get("--browser-entry-helper-sha256")?;
+    if helper_sha256.len() != 64
+        || !helper_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("lowercase browser entry helper SHA-256 required".into());
     }
     let outer = canonical_data_path(get("--outer-admission")?)?;
     if outer != expected_outer {
@@ -1015,6 +1026,12 @@ mod owner_binding_tests {
         duplicate[11] = "--run-id".into();
         duplicate[12] = "debian".into();
         cases.push(duplicate);
+        let mut missing_helper_pair = base.clone();
+        missing_helper_pair.truncate(13);
+        cases.push(missing_helper_pair);
+        let mut partial_helper_pair = base.clone();
+        partial_helper_pair.truncate(15);
+        cases.push(partial_helper_pair);
         let mut extra = base.clone();
         extra.extend(["--force".into(), "yes".into()]);
         cases.push(extra);
