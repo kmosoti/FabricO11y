@@ -1,5 +1,9 @@
 # Experiments
 
+The [two-runner verification pilot](formal/verification-shards-protocol.md)
+registers a comparison with the unchanged serial extended workflow. It does not
+replace required CI evidence; measurements and adoption remain pending.
+
 The [engineering evidence protocol](formal/engineering-evidence-protocol.md) registers
 bounded artifact/dependency/receipt composition controls and matched finite costs.
 The [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-engineering-evidence-results-01)
