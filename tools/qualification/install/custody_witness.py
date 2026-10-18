@@ -18,6 +18,9 @@ MAX_BATCH = 1048576
 BINDING = ('run_id', 'candidate_frozen', 'candidate_package_sha256',
            'package_source_commit', 'harness_commit')
 UNITS = ('fabrico11y-server.service', 'fabrico11y-node.service')
+NATIVE_CONFIGURATION_LOGS = ('/var/log/fabric-accept/allowed.log',
+                               '/var/log/fabric-accept/denied.log')
+NATIVE_CONFIGURATION_INTERVAL_S = 15
 SCHEMAS = {
     'logs': {1: 'resource_logs'},
     'resource_logs': {1: 'resource', 2: 'scope_logs', 3: 'utf8'},
@@ -281,6 +284,7 @@ def applied_configuration(raw, info, service):
         require(type(value['logs']) is list and len(value['logs']) <= 16
             and all(type(path) is str and Path(path).is_absolute() and len(path.encode()) <= 240
                     for path in value['logs']), 'RemoteView log profile')
+        return value
     except (ValueError, TypeError, KeyError, UnicodeError) as error:
         raise ValueError('applied configuration: ' + str(error)) from error
 
@@ -402,7 +406,7 @@ def stopped_snapshot(root, stopped_receipt, archived_allowed_logs, *, fixture_pa
         os.close(fd)
 
 
-def conserve(before, after_install, after_drain, queries, candidate_ack_events, *, after_reboot=None, reboot_ack_events=()):
+def conserve(before, after_install, after_drain, queries, candidate_ack_events, *, after_reboot=None, reboot_ack_events=(), native_configuration_transition=False):
     paths = before.get('fixture_paths')
     selected = lambda row: paths is None or row['attributes'].get('log.file.path') in paths
     for snapshot in (after_install, after_drain):
@@ -411,9 +415,40 @@ def conserve(before, after_install, after_drain, queries, candidate_ack_events, 
                 'candidate/Strand/boot substitution')
     require(all(before[key] == after_install[key] for key in ('ack', 'files', 'sources', 'cursors', 'logs')),
             'stopped install changed retained custody')
-    require(all(snapshot['files'].get('applied-config.json') == before['files'].get('applied-config.json')
-        for snapshot in (after_drain,) + ((after_reboot,) if after_reboot is not None else ())),
-        'registered lifecycle applied configuration changed')
+    require(type(native_configuration_transition) is bool, 'native configuration transition scope must be boolean')
+    if native_configuration_transition:
+        require(after_reboot is not None, 'native configuration transition requires four stopped checkpoints')
+        native_fixture_paths = (NATIVE_CONFIGURATION_LOGS[0],)
+        require(paths == native_fixture_paths and all(snapshot.get('fixture_paths') == native_fixture_paths
+            for snapshot in (after_install, after_drain, after_reboot)), 'native configuration transition fixture path')
+        checkpoints = ((before, 1, False), (after_install, 1, False),
+                       (after_drain, 2, True), (after_reboot, 4, True))
+        metadata_profile = None
+        for snapshot, revision, paused in checkpoints:
+            raw = snapshot.get('applied_configuration')
+            entry = snapshot.get('files', {}).get('applied-config.json')
+            info = snapshot.get('file_observations', {}).get('applied-config.json')
+            require(type(raw) is bytes and type(entry) is dict and type(info) in (tuple, list)
+                and len(info) == 9 and all(type(value) is int for value in info)
+                and len(raw) <= 65536 and stat.S_ISREG(info[2]) and info[5] == 1 and info[6] == len(raw)
+                and stat.S_IMODE(info[2]) == 0o600
+                and hashlib.sha256(raw).hexdigest() == entry.get('sha256') and len(raw) == entry.get('size')
+                and (info[2], info[3], info[4]) == (entry.get('mode'), entry.get('uid'), entry.get('gid')),
+                'native applied configuration bytes/hash/metadata join mismatch')
+            # stopped_snapshot already independently validated service ownership against its receipt.
+            # Reparse the retained raw bytes here; do not trust a cached profile view.
+            value = applied_configuration(raw, info, {'uid': info[3], 'gid': info[4]})
+            expected = dict(revision=revision, paused=paused,
+                logs=list(NATIVE_CONFIGURATION_LOGS), metric_interval_s=NATIVE_CONFIGURATION_INTERVAL_S)
+            require(value == expected, 'native applied configuration profile transition mismatch')
+            current_metadata = (stat.S_IMODE(info[2]), info[3], info[4], info[5], stat.S_ISREG(info[2]))
+            require(metadata_profile is None or current_metadata == metadata_profile,
+                    'native applied configuration metadata changed across checkpoints')
+            metadata_profile = current_metadata
+    else:
+        require(all(snapshot['files'].get('applied-config.json') == before['files'].get('applied-config.json')
+            for snapshot in (after_drain,) + ((after_reboot,) if after_reboot is not None else ())),
+            'registered lifecycle applied configuration changed')
     pending = [source for source in before['sources'] if source['sequence'] > before['ack']]
     require(pending and after_drain['ack'] >= pending[-1]['sequence'], 'missing pending custody/drain ACK')
     require(all(log == after_drain['logs'].get(path) for path, log in before['logs'].items()

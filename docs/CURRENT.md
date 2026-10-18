@@ -11,6 +11,8 @@ integration tests and scoped Clippy passed. Raw native sender checks now cover
 Batch/configuration records as well as delivery; 74 affected native tests passed.
 All 20 fast checks and the documentation check passed at `02f5b6c`; native caller
 adoption remains pending.
+The independent native-profile experiment rejected a forged cached-view draft;
+the corrected raw-byte join and unchanged default path passed 82 affected controls.
 The [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-primitive-composition-results-01) retain measurements, counterexamples and the scratch cleanup correction.
 This work grants no package acceptance credit; alpha acceptance remains owner-paused.
 

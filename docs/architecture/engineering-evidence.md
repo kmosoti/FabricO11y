@@ -62,6 +62,11 @@ pinned inspection text and process observations without deciding cutoff policy.
 The native adapter applies its executable/service/InvocationID/cgroup/UID/GID
 join to recognized Batch, configuration and delivery journal records; filtering
 by PID alone does not establish that binding. The event output schema is unchanged.
+The independent conservation oracle has an explicit native transition mode:
+four stopped profiles are fixed at revision1/active, revision1/active,
+revision2/paused and revision4/paused. It reparses retained configuration bytes
+and joins their digest, size and original private file metadata; a cached parsed
+view cannot override those bytes. The default static-profile rule is unchanged.
 The [adapter contract](../experiments/formal/native-cutoff-adapter-protocol.md)
 and [primitive protocol](../experiments/formal/primitive-composition-protocol.md)
 separate finite controls from native caller adoption and alpha acceptance.
