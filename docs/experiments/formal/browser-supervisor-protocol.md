@@ -318,16 +318,19 @@ diagnostic and is not replaced by the Rust mock server or command.
 
 ## Preserve explicit confirmation in Firefox BiDi sessions
 
-Prospective protocol amendment, 2026-10-18. Requesting Firefox's BiDi
-`webSocketUrl` changed the observed handling of the fixture's JavaScript confirm
-after reader revocation. In the same owned browser fixture, the classic session
-presented the confirm and the existing explicit WebDriver accept received HTTP
-200. With BiDi enabled and the default prompt policy, the prompt was already
-closed, no alert was present, and the accept request received HTTP 404. Setting
-the Firefox capability
-`unhandledPromptBehavior: {"confirm":"ignore"}` retained the same prompt and
-the explicit accept again received HTTP 200. The diagnostic completed with
-exit 0 and stopped cleanup 0; its raw record is
+Prospective protocol amendment, 2026-10-18. The packaged Firefox diagnostic
+reached the point where a confirmation was requested for reader revocation,
+then the existing `POST /alert/accept` returned HTTP 404 because BiDi's default
+prompt policy had already closed the dialog. A separate controlled probe
+isolated prompt handling from that product action. In its classic session,
+`GET /alert/text` returned HTTP 200, explicit WebDriver accept returned HTTP
+200, and the prompt result was true. With BiDi and default handling, the alert
+text request returned HTTP 404 and the prompt result stayed false both before
+opening the BiDi WebSocket and after it closed. With the Firefox capability
+`unhandledPromptBehavior: {"confirm":"ignore"}`, alert text remained available
+and explicit accept returned HTTP 200 with a true prompt result before and after
+the WebSocket. The controlled probe completed with exit 0 and stopped cleanup
+0; its raw record is
 `DATA/results/firefox-prompt-lifecycle-diagnostic-01/actual-browser.json`,
 SHA-256 `4fa3de6fcd0f3c1131c506268131128979097981e3ef813d63d8fca710cd2f6e`.
 
