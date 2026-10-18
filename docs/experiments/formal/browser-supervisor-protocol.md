@@ -111,7 +111,11 @@ only the exact pinned helper, and immediately retains the Popen object, pidfd,
 start ticks and owned subgroup descriptor. After READY it verifies the same
 process identity, `/proc` placement and existing `cgroup.procs` membership using
 the unchanged identity and membership checks. It records the valid binding
-before writing RELEASE. Any failure before release retains the provisional
+before writing RELEASE. Subgroup names come from a per-domain monotonic launch
+attempt counter, incremented before each subgroup creation; a failed attempt
+consumes its name, so the next launch cannot collide with an earlier retained
+or cleaned subgroup. The domain launches serially and does not use a generic
+allocator or retry failed names. Any failure before release retains the provisional
 spawn record and may clean only that exact Popen/pidfd and newly owned subgroup;
 it never signals a raw PID or PGID, adopts/reaps an unknown child, weakens the
 foreign-child guard or releases an unbound child. There is no sleep or retry
