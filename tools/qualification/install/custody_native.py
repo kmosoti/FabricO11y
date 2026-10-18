@@ -337,15 +337,15 @@ def host_admission(owner_path, source_root, storage, package, source_commit, run
     paths = [source_root / 'tools/qualification/install' / name for name in names] + [source_root / 'tools/qualification/query_oracle.py']
     source_hashes = {str(path.relative_to(source_root)): sha(path.read_bytes()) for path in paths}
     witness.require(source_hashes == owner['source_hashes'], 'producer/helper source mismatch')
-    debdir = storage / 'results/installation-package-build/replacement-tls-01-deb-a'
-    rpmdir = storage / 'results/packages/replacement-tls-01-rpm-a'
-    fixed = {debdir / 'receipt.json': 'f2a06e16fd8f82e27517eee12a1d8176d052765ac2e75959a85f70cdaeb6fd85',
-             rpmdir / 'receipt.json': '4a2a800e8351ec8480359d0912f05d36682d27834c11c60bae87752961a5326a',
-             storage / 'results/candidate-build-replacement-tls-01/candidate-admission.json':
-             'bf27a2576bba8c32c7e27f9e434f27822c37aba60bbda387587723f2a1f36eb2'}
+    debdir = storage / 'results/installation-package-build/query-gap-01-deb-a'
+    rpmdir = storage / 'results/packages/query-gap-01-rpm-a'
+    fixed = {debdir / 'receipt.json': '89ce427d82a0065ca71e033aa696708e85c338d063d4a75cf4e4ba263f53fe72',
+             rpmdir / 'receipt.json': '106b834855851b604d708228493192305327ff8236de3add9f4cf25c1c830919',
+             storage / 'results/candidate-build-query-gap-01/candidate-admission.json':
+             '9c83d196a5ccf85e00d3e9becc79032f3fd57d7aab64a396690803bef841aa5a'}
     for path, expected in fixed.items(): witness.require(sha(path.read_bytes()) == expected, 'owner package/admission receipt mismatch')
     deb, rpm = (json.loads((directory / 'receipt.json').read_text()) for directory in (debdir, rpmdir))
-    frozen, canonical = 'e078ba23b543126011a2136dd1f7e98ca65370eb', '28bcdf7ac833ab634d3b130b85cb2a0aa47eb7a8'
+    frozen, canonical = 'b1e5874fbf9c6feb611d98ed40386ac44a703fe1', '43150dbd5cff9e0bdb0082997e796978c659d8af'
     witness.require(frozen == deb['source']['original_head'] and source_commit == deb['source_commit'] == canonical
         == rpm['source']['source_commit'] and rpm['source'] == deb['source'], 'candidate frozen/source mismatch')
     for receipt in (deb, rpm):
@@ -365,7 +365,7 @@ def host_admission(owner_path, source_root, storage, package, source_commit, run
         fixed[path] = expected_hash
     for path, expected_hash in ((debdir / 'provenance/source-manifest.json', deb['source']['manifest_sha256']),
         (debdir / 'provenance/frozen-source.bundle', deb['source']['source_bundle_sha256']),
-        (storage / 'results/console-replacement-tls-01-a/build.json', deb['console_receipt_sha256'])):
+        (storage / 'results/console-query-gap-01-a/build.json', deb['console_receipt_sha256'])):
         witness.require(sha(path.read_bytes()) == expected_hash, 'canonical source/console mismatch')
         fixed[path] = expected_hash
     return dict(binding=dict(run_id=run_id, candidate_frozen=frozen, candidate_package_sha256=expected['package_sha256'],
