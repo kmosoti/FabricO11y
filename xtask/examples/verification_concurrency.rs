@@ -52,7 +52,12 @@ struct ResultRow {
     inventory: Value,
 }
 
-fn read_row(job: &Job, status: std::process::ExitStatus, command: &[String], source: &Value) -> Result<ResultRow, String> {
+fn read_row(
+    job: &Job,
+    status: std::process::ExitStatus,
+    command: &[String],
+    source: &Value,
+) -> Result<ResultRow, String> {
     let receipt_path = job.receipts.join(format!("{}.json", job.id));
     let receipt: Value = serde_json::from_slice(
         &fs::read(&receipt_path).map_err(|e| format!("{}: {e}", receipt_path.display()))?,
@@ -72,7 +77,10 @@ fn read_row(job: &Job, status: std::process::ExitStatus, command: &[String], sou
         return Err(format!("{} log digest mismatch", job.id));
     }
     let process_code = status.code();
-    let command_code = receipt["exit_code"].as_i64().filter(|n| (0..=255).contains(n)).map(|n| n as i32);
+    let command_code = receipt["exit_code"]
+        .as_i64()
+        .filter(|n| (0..=255).contains(n))
+        .map(|n| n as i32);
     let expected_process_code = match receipt["result"].as_str() {
         Some("passed") if command_code == Some(0) => Some(0),
         Some("failed") if command_code.is_some_and(|code| code != 0) => Some(1),
@@ -101,12 +109,20 @@ fn read_row(job: &Job, status: std::process::ExitStatus, command: &[String], sou
     Ok(ResultRow {
         id: job.id.clone(),
         code: command_code,
-        elapsed_ms: receipt["duration_ms"].as_u64().ok_or("invalid check duration")? as u128,
+        elapsed_ms: receipt["duration_ms"]
+            .as_u64()
+            .ok_or("invalid check duration")? as u128,
         inventory,
     })
 }
 
-fn execute(out: &Path, ids: &[String], workers: usize, label: &str, registry: &Path) -> Result<(Vec<ResultRow>, u128, usize), String> {
+fn execute(
+    out: &Path,
+    ids: &[String],
+    workers: usize,
+    label: &str,
+    registry: &Path,
+) -> Result<(Vec<ResultRow>, u128, usize), String> {
     if !(1..=2).contains(&workers) || ids.is_empty() {
         return Err("one or two workers and a nonempty inventory required".into());
     }
@@ -115,19 +131,32 @@ fn execute(out: &Path, ids: &[String], workers: usize, label: &str, registry: &P
     let peak = AtomicUsize::new(0);
     let source = git_head()?;
     let current = std::env::current_exe().map_err(|e| e.to_string())?;
-    let registry_json: Value = serde_json::from_slice(&fs::read(registry).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
-    let entries = registry_json["checks"].as_array().ok_or("registry missing checks")?;
+    let registry_json: Value =
+        serde_json::from_slice(&fs::read(registry).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    let entries = registry_json["checks"]
+        .as_array()
+        .ok_or("registry missing checks")?;
     let mut expected = BTreeMap::<String, Vec<String>>::new();
     for entry in entries {
         let id = entry["id"].as_str().ok_or("check without id")?.to_owned();
-        let command = entry["command"].as_array().ok_or("check without command")?
-            .iter().map(|v| v.as_str().ok_or("non-string command item").map(str::to_owned)).collect::<Result<Vec<_>, _>>()?;
+        let command = entry["command"]
+            .as_array()
+            .ok_or("check without command")?
+            .iter()
+            .map(|v| {
+                v.as_str()
+                    .ok_or("non-string command item")
+                    .map(str::to_owned)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         if expected.insert(id, command).is_some() {
             return Err("duplicate registry ID".into());
         }
     }
     let mut unique = ids.to_vec();
-    unique.sort(); unique.dedup();
+    unique.sort();
+    unique.dedup();
     if unique.len() != ids.len() || ids.iter().any(|id| !expected.contains_key(id)) {
         return Err("missing or duplicate selected ID".into());
     }
@@ -138,50 +167,87 @@ fn execute(out: &Path, ids: &[String], workers: usize, label: &str, registry: &P
         let (send, receive) = std::sync::mpsc::channel();
         for _ in 0..workers {
             let send = send.clone();
-            let (cursor, active, peak, current, expected, source) = (&cursor, &active, &peak, &current, &expected, &source);
+            let (cursor, active, peak, current, expected, source) =
+                (&cursor, &active, &peak, &current, &expected, &source);
             scope.spawn(move || {
                 while let Some(id) = ids.get(cursor.fetch_add(1, Ordering::Relaxed)) {
                     let result = (|| {
-                    let base = out.join(label).join(id);
-                    let receipts = base.join("receipts");
-                    let scratch = PathBuf::from(std::env::var_os("FABRIC_SCRATCH_ROOT").ok_or("required launcher scratch root")?).join(label).join(id);
-                    let temp = scratch.join("tmp");
-                    for path in [&receipts, &scratch, &temp] {
-                        fs::create_dir_all(path).map_err(|e| format!("{}: {e}", path.display()))?;
-                    }
-                    let job = Job { id: id.clone(), receipts };
-                    let stdout = fs::File::create(base.join("stdout.log")).map_err(|e| e.to_string())?;
-                    let stderr = fs::File::create(base.join("stderr.log")).map_err(|e| e.to_string())?;
-                    let mut child = Command::new(current)
-                        .args(["--worker", id, registry.to_str().ok_or("registry path is not UTF-8")?, job.receipts.to_str().ok_or("receipt path is not UTF-8")?])
-                        .env("FABRIC_SCRATCH_ROOT", &scratch)
-                        .env("TMPDIR", &temp).env("TMP", &temp).env("TEMP", &temp)
-                        .stdout(Stdio::from(stdout)).stderr(Stdio::from(stderr)).spawn().map_err(|e| e.to_string())?;
-                    let now = active.fetch_add(1, Ordering::SeqCst) + 1;
-                    peak.fetch_max(now, Ordering::SeqCst);
-                    let status = match child.wait() {
-                        Ok(status) => Ok(status),
-                        Err(error) => { let _ = child.kill(); let _ = child.wait(); Err(error.to_string()) },
-                    };
-                    active.fetch_sub(1, Ordering::SeqCst);
-                    read_row(&job, status?, &expected[id], source)
+                        let base = out.join(label).join(id);
+                        let receipts = base.join("receipts");
+                        let scratch = PathBuf::from(
+                            std::env::var_os("FABRIC_SCRATCH_ROOT")
+                                .ok_or("required launcher scratch root")?,
+                        )
+                        .join(label)
+                        .join(id);
+                        let temp = scratch.join("tmp");
+                        for path in [&receipts, &scratch, &temp] {
+                            fs::create_dir_all(path)
+                                .map_err(|e| format!("{}: {e}", path.display()))?;
+                        }
+                        let job = Job {
+                            id: id.clone(),
+                            receipts,
+                        };
+                        let stdout =
+                            fs::File::create(base.join("stdout.log")).map_err(|e| e.to_string())?;
+                        let stderr =
+                            fs::File::create(base.join("stderr.log")).map_err(|e| e.to_string())?;
+                        let mut child = Command::new(current)
+                            .args([
+                                "--worker",
+                                id,
+                                registry.to_str().ok_or("registry path is not UTF-8")?,
+                                job.receipts.to_str().ok_or("receipt path is not UTF-8")?,
+                            ])
+                            .env("FABRIC_SCRATCH_ROOT", &scratch)
+                            .env("TMPDIR", &temp)
+                            .env("TMP", &temp)
+                            .env("TEMP", &temp)
+                            .stdout(Stdio::from(stdout))
+                            .stderr(Stdio::from(stderr))
+                            .spawn()
+                            .map_err(|e| e.to_string())?;
+                        let now = active.fetch_add(1, Ordering::SeqCst) + 1;
+                        peak.fetch_max(now, Ordering::SeqCst);
+                        let status = match child.wait() {
+                            Ok(status) => Ok(status),
+                            Err(error) => {
+                                let _ = child.kill();
+                                let _ = child.wait();
+                                Err(error.to_string())
+                            }
+                        };
+                        active.fetch_sub(1, Ordering::SeqCst);
+                        read_row(&job, status?, &expected[id], source)
                     })();
-                    if send.send(result).is_err() { break; }
+                    if send.send(result).is_err() {
+                        break;
+                    }
                 }
             });
         }
         drop(send);
         for result in receive {
-            match result { Ok(row) => rows.push(row), Err(error) => errors.push(error) }
+            match result {
+                Ok(row) => rows.push(row),
+                Err(error) => errors.push(error),
+            }
         }
         Ok(())
     })?;
-    if rows.len() != ids.len() { errors.push("incomplete result inventory".into()); }
+    if rows.len() != ids.len() {
+        errors.push("incomplete result inventory".into());
+    }
     if !errors.is_empty() {
         return Err(errors.join("; "));
     }
     rows.sort_by(|a, b| a.id.cmp(&b.id));
-    Ok((rows, start.elapsed().as_millis(), peak.load(Ordering::SeqCst)))
+    Ok((
+        rows,
+        start.elapsed().as_millis(),
+        peak.load(Ordering::SeqCst),
+    ))
 }
 
 fn main() {
@@ -206,8 +272,15 @@ fn main() {
 }
 
 fn parent(out: &Path) -> Result<(), String> {
-    let storage = fs::canonicalize(std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("explicit DATA root required")?).map_err(|e| e.to_string())?;
-    let parent = out.parent().ok_or("output parent required")?.canonicalize().map_err(|e| e.to_string())?;
+    let storage = fs::canonicalize(
+        std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("explicit DATA root required")?,
+    )
+    .map_err(|e| e.to_string())?;
+    let parent = out
+        .parent()
+        .ok_or("output parent required")?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
     if !out.is_absolute() || !parent.starts_with(storage) || out.file_name().is_none() {
         return Err("ordinary output under DATA required".into());
     }
@@ -232,67 +305,143 @@ fn parent(out: &Path) -> Result<(), String> {
             let (a, ta, pa) = execute(out, &ids, 1, &format!("pair-{pair}-one"), &registry)?;
             (a, ta, pa, b, tb, pb)
         };
-        if !all_pass(&a) || !all_pass(&b) || inventory(&a) != inventory(&b) || inventory(&a) != inventory(&one) {
-            return Err(format!("pair {pair} has a failed check or semantic inventory mismatch"));
+        if !all_pass(&a)
+            || !all_pass(&b)
+            || inventory(&a) != inventory(&b)
+            || inventory(&a) != inventory(&one)
+        {
+            return Err(format!(
+                "pair {pair} has a failed check or semantic inventory mismatch"
+            ));
         }
-        pairs.push(json!({"pair": pair, "one_worker_ms": ta, "two_worker_ms": tb,
+        pairs.push(
+            json!({"pair": pair, "one_worker_ms": ta, "two_worker_ms": tb,
             "one_peak": pa, "two_peak": pb,
-            "per_check_ms_one": durations(&a), "per_check_ms_two": durations(&b)}));
+            "per_check_ms_one": durations(&a), "per_check_ms_two": durations(&b)}),
+        );
     }
-    fs::write(out.join("summary.json"), serde_json::to_vec_pretty(&json!({
-        "state": "completed", "checks": ids, "inventory": inventory(&one), "pairs": pairs,
-        "claim": "observations only; not a performance conclusion"
-    })).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    fs::write(
+        out.join("summary.json"),
+        serde_json::to_vec_pretty(&json!({
+            "state": "completed", "checks": ids, "inventory": inventory(&one), "pairs": pairs,
+            "claim": "observations only; not a performance conclusion"
+        }))
+        .map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     Ok(())
 }
 
 fn git_head() -> Result<Value, String> {
-    let output = Command::new("git").args(["rev-parse", "HEAD"]).current_dir(root()).output().map_err(|e| e.to_string())?;
-    if !output.status.success() { return Err("git rev-parse failed".into()); }
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(root())
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err("git rev-parse failed".into());
+    }
     Ok(json!(String::from_utf8_lossy(&output.stdout).trim()))
 }
 
 fn controls(out: &Path, registry: &Path) -> Result<(), String> {
-    let original: Value = serde_json::from_slice(&fs::read(registry).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    let original: Value = serde_json::from_slice(&fs::read(registry).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
     let mut fake = original.clone();
-    let real = original["checks"].as_array().ok_or("missing checks")?.iter()
-        .find(|c| c["id"] == IDS[0]).ok_or("missing control real check")?.clone();
+    let real = original["checks"]
+        .as_array()
+        .ok_or("missing checks")?
+        .iter()
+        .find(|c| c["id"] == IDS[0])
+        .ok_or("missing control real check")?
+        .clone();
     fake["checks"] = json!([real, {
         "id":"injected-exit-7", "profile":"fast", "command":["sh","-c","exit 7"],
         "scope":"collector control", "expected":"exit 7", "unchecked":"control only"
     }]);
     let fake_path = out.join("control-registry.json");
-    fs::write(&fake_path, serde_json::to_vec(&fake).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+    fs::write(
+        &fake_path,
+        serde_json::to_vec(&fake).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
     for (label, workers) in [("control-one", 1), ("control-two", 2)] {
-        let (rows, _, _) = execute(out, &[IDS[0].into(), "injected-exit-7".into()], workers, label, &fake_path)?;
-        if rows.len() != 2 || all_pass(&rows)
-            || rows.iter().find(|r| r.id == IDS[0]).is_none_or(|r| r.code != Some(0))
-            || rows.iter().find(|r| r.id == "injected-exit-7").is_none_or(|r| r.code != Some(7)) {
+        let (rows, _, _) = execute(
+            out,
+            &[IDS[0].into(), "injected-exit-7".into()],
+            workers,
+            label,
+            &fake_path,
+        )?;
+        if rows.len() != 2
+            || all_pass(&rows)
+            || rows
+                .iter()
+                .find(|r| r.id == IDS[0])
+                .is_none_or(|r| r.code != Some(0))
+            || rows
+                .iter()
+                .find(|r| r.id == "injected-exit-7")
+                .is_none_or(|r| r.code != Some(7))
+        {
             return Err(format!("{label} did not retain both actual child outcomes"));
         }
     }
     // Exercise the collector's four evidence rejection paths using copied artifacts.
     let source = out.join("control-one").join(IDS[0]);
-    let pristine_receipt = fs::read(source.join("receipts").join(format!("{}.json", IDS[0]))).map_err(|e| e.to_string())?;
-    let pristine_log = fs::read(source.join("receipts").join(format!("{}.log", IDS[0]))).map_err(|e| e.to_string())?;
+    let pristine_receipt = fs::read(source.join("receipts").join(format!("{}.json", IDS[0])))
+        .map_err(|e| e.to_string())?;
+    let pristine_log = fs::read(source.join("receipts").join(format!("{}.log", IDS[0])))
+        .map_err(|e| e.to_string())?;
     for defect in ["missing", "stale-source", "modified-log", "running-marker"] {
         let dest = out.join("evidence-controls").join(defect);
         let receipts = dest.join("receipts");
         fs::create_dir_all(&receipts).map_err(|e| e.to_string())?;
         let rp = receipts.join(format!("{}.json", IDS[0]));
         fs::write(&rp, &pristine_receipt).map_err(|e| e.to_string())?;
-        fs::write(receipts.join(format!("{}.log", IDS[0])), &pristine_log).map_err(|e| e.to_string())?;
-        if defect == "missing" { fs::remove_file(&rp).map_err(|e| e.to_string())?; }
-        if defect == "stale-source" {
-            let mut v: Value = serde_json::from_slice(&pristine_receipt).map_err(|e| e.to_string())?;
-            v["candidate_commit"] = json!("stale");
-            fs::write(&rp, serde_json::to_vec(&v).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
+        fs::write(receipts.join(format!("{}.log", IDS[0])), &pristine_log)
+            .map_err(|e| e.to_string())?;
+        if defect == "missing" {
+            fs::remove_file(&rp).map_err(|e| e.to_string())?;
         }
-        if defect == "modified-log" { fs::write(receipts.join(format!("{}.log", IDS[0])), b"changed").map_err(|e| e.to_string())?; }
-        if defect == "running-marker" { fs::write(receipts.join("current-check.json"), b"{}").map_err(|e| e.to_string())?; }
-        let command: Vec<String> = original["checks"].as_array().ok_or("missing checks")?.iter().find(|c| c["id"] == IDS[0]).ok_or("missing check")?["command"].as_array().ok_or("missing command")?.iter().map(|arg| arg.as_str().map(str::to_owned).ok_or("invalid argument")).collect::<Result<_, _>>()?;
-        let rejected = read_row(&Job { id: IDS[0].into(), receipts }, success_status(), &command, &git_head()?).is_err();
-        if !rejected { return Err(format!("collector accepted {defect} evidence")); }
+        if defect == "stale-source" {
+            let mut v: Value =
+                serde_json::from_slice(&pristine_receipt).map_err(|e| e.to_string())?;
+            v["candidate_commit"] = json!("stale");
+            fs::write(&rp, serde_json::to_vec(&v).map_err(|e| e.to_string())?)
+                .map_err(|e| e.to_string())?;
+        }
+        if defect == "modified-log" {
+            fs::write(receipts.join(format!("{}.log", IDS[0])), b"changed")
+                .map_err(|e| e.to_string())?;
+        }
+        if defect == "running-marker" {
+            fs::write(receipts.join("current-check.json"), b"{}").map_err(|e| e.to_string())?;
+        }
+        let command: Vec<String> = original["checks"]
+            .as_array()
+            .ok_or("missing checks")?
+            .iter()
+            .find(|c| c["id"] == IDS[0])
+            .ok_or("missing check")?["command"]
+            .as_array()
+            .ok_or("missing command")?
+            .iter()
+            .map(|arg| arg.as_str().map(str::to_owned).ok_or("invalid argument"))
+            .collect::<Result<_, _>>()?;
+        let rejected = read_row(
+            &Job {
+                id: IDS[0].into(),
+                receipts,
+            },
+            success_status(),
+            &command,
+            &git_head()?,
+        )
+        .is_err();
+        if !rejected {
+            return Err(format!("collector accepted {defect} evidence"));
+        }
     }
     Ok(())
 }
@@ -304,7 +453,10 @@ fn success_status() -> std::process::ExitStatus {
 }
 
 fn all_pass(rows: &[ResultRow]) -> bool {
-    !rows.is_empty() && rows.iter().all(|r| r.code == Some(0) && r.inventory["result"] == "passed")
+    !rows.is_empty()
+        && rows
+            .iter()
+            .all(|r| r.code == Some(0) && r.inventory["result"] == "passed")
 }
 
 fn inventory(rows: &[ResultRow]) -> Value {
@@ -312,5 +464,9 @@ fn inventory(rows: &[ResultRow]) -> Value {
 }
 
 fn durations(rows: &[ResultRow]) -> Value {
-    json!(rows.iter().map(|r| (r.id.as_str(), r.elapsed_ms)).collect::<BTreeMap<_, _>>())
+    json!(
+        rows.iter()
+            .map(|r| (r.id.as_str(), r.elapsed_ms))
+            .collect::<BTreeMap<_, _>>()
+    )
 }
