@@ -45,6 +45,7 @@ def main():
     args = parser.parse_args()
     browser = supervisor.browser
     limits = browser.require_limits()
+    require = supervisor.require
     require(args.browser_entry_helper.is_absolute() and not args.browser_entry_helper.is_symlink()
             and args.browser_entry_helper.is_file() and os.access(args.browser_entry_helper, os.X_OK)
             and len(args.browser_entry_helper_sha256) == 64
@@ -53,7 +54,6 @@ def main():
                 == args.browser_entry_helper_sha256, 'fixture-entry-helper-pin')
     subprocess.run(['systemctl', '--user', 'set-property', '--runtime', limits.name,
                     'MemoryHigh=5G', 'MemoryMax=6G', 'MemorySwapMax=0', 'CPUQuota=200%', 'TasksMax=1536'], check=True, timeout=15)
-    require = supervisor.require
     require(not args.out.exists() and args.out.parent.resolve().is_relative_to(browser.DATA / 'results'), 'fixture-output')
     args.out.mkdir(mode=0o700)
     root = Path(tempfile.mkdtemp(prefix='browser-supervisor-native-', dir=os.environ['FABRIC_SCRATCH_ROOT']))

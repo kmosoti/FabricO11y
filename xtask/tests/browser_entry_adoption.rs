@@ -118,6 +118,15 @@ native_constructor_calls = [call for call in calls(native_fixture_tree, '__init_
 assert len(native_constructor_calls) == 2
 assert all({'browser_entry_helper', 'browser_entry_helper_sha256'} <= keyword_names(call)
            for call in native_constructor_calls)
+native_main = next(node for node in native_fixture_tree.body
+                   if isinstance(node, ast.FunctionDef) and node.name == 'main')
+require_binding_line = next(node.lineno for node in ast.walk(native_main)
+    if isinstance(node, ast.Assign) and any(isinstance(target, ast.Name) and target.id == 'require'
+        for target in node.targets) and isinstance(node.value, ast.Attribute)
+    and isinstance(node.value.value, ast.Name) and node.value.value.id == 'supervisor'
+    and node.value.attr == 'require')
+first_require_call_line = min(call.lineno for call in calls(native_main, 'require'))
+assert require_binding_line < first_require_call_line, 'fixture pin refusal calls require before binding it'
 
 # Keep the actual required keyword-only signature while replacing only the
 # launch body so this source control has no cgroup/process side effects.
