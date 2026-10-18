@@ -128,9 +128,7 @@ pub fn verify(root: &Path, profile: &str, commit: &str, receipts: &Path) -> Resu
         "receipt directory changed during verification")?;
     source.recheck()?;
     evidence.recheck()?;
-    results.sort_by(|left, right| {
-        right["duration_ms"].as_u64().cmp(&left["duration_ms"].as_u64())
-    });
+    results.sort_by_key(|row| std::cmp::Reverse(row["duration_ms"].as_u64()));
     Ok(json!({
         "candidate_commit": commit,
         "profile": profile,
