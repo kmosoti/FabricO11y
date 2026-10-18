@@ -18,9 +18,15 @@ fn receipt_git(root: &std::path::Path, arguments: &[&str]) -> Result<String, Str
         .output()
         .map_err(|error| format!("bounded Git query unavailable: {error}"))?;
     if !output.status.success() {
-        return Err(format!("Git query failed or timed out: {:?}: {}", output.status.code(), String::from_utf8_lossy(&output.stderr)));
+        return Err(format!(
+            "Git query failed or timed out: {:?}: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        ));
     }
-    String::from_utf8(output.stdout).map(|value| value.trim().to_owned()).map_err(|error| error.to_string())
+    String::from_utf8(output.stdout)
+        .map(|value| value.trim().to_owned())
+        .map_err(|error| error.to_string())
 }
 
 fn verify_receipts(root: &std::path::Path, arguments: Vec<String>) -> ExitCode {
@@ -33,43 +39,73 @@ fn verify_receipts(root: &std::path::Path, arguments: Vec<String>) -> ExitCode {
                 return Err(format!("unknown argument: {flag}"));
             }
             let value = arguments.next().ok_or("argument value required")?;
-            if flags.insert(flag, value).is_some() { return Err("duplicate argument".into()); }
+            if flags.insert(flag, value).is_some() {
+                return Err("duplicate argument".into());
+            }
         }
         let profile = flags.remove("--profile").ok_or("--profile required")?;
-        if !matches!(profile.as_str(), "fast" | "extended") { return Err("invalid profile".into()); }
-        let supplied = flags.remove("--receipts").map(PathBuf::from)
+        if !matches!(profile.as_str(), "fast" | "extended") {
+            return Err("invalid profile".into());
+        }
+        let supplied = flags
+            .remove("--receipts")
+            .map(PathBuf::from)
             .unwrap_or_else(|| root.join("target/verification/receipts"));
         // Resolve the Cargo target ancestor while leaving the selected root
         // itself for descriptor-relative O_NOFOLLOW admission.
-        let parent = supplied.parent().filter(|path| !path.as_os_str().is_empty())
+        let parent = supplied
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
             .unwrap_or_else(|| std::path::Path::new("."));
-        let receipts = parent.canonicalize().map_err(|error| error.to_string())?
+        let receipts = parent
+            .canonicalize()
+            .map_err(|error| error.to_string())?
             .join(supplied.file_name().ok_or("named receipt root required")?);
-        let storage = PathBuf::from(std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("explicit DATA storage required")?)
-            .canonicalize().map_err(|error| error.to_string())?;
-        if !receipts.starts_with(&storage) { return Err("receipts must be on the admitted DATA storage".into()); }
+        let storage = PathBuf::from(
+            std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("explicit DATA storage required")?,
+        )
+        .canonicalize()
+        .map_err(|error| error.to_string())?;
+        if !receipts.starts_with(&storage) {
+            return Err("receipts must be on the admitted DATA storage".into());
+        }
         Ok((profile, receipts))
     })();
     let (profile, receipts) = match setup {
         Ok(values) => values,
-        Err(error) => { eprintln!("receipt verification NOT RUN: {error}"); return ExitCode::from(2); }
+        Err(error) => {
+            eprintln!("receipt verification NOT RUN: {error}");
+            return ExitCode::from(2);
+        }
     };
     let result: Result<serde_json::Value, String> = (|| {
         let commit = receipt_git(root, &["rev-parse", "HEAD"])?;
-        if !receipt_git(root, &["status", "--porcelain"])?.is_empty() { return Err("candidate worktree changed".into()); }
+        if !receipt_git(root, &["status", "--porcelain"])?.is_empty() {
+            return Err("candidate worktree changed".into());
+        }
         let report = xtask::receipts::verify(root, &profile, &commit, &receipts)?;
         if receipt_git(root, &["rev-parse", "HEAD"])? != commit
-            || !receipt_git(root, &["status", "--porcelain"])?.is_empty() {
+            || !receipt_git(root, &["status", "--porcelain"])?.is_empty()
+        {
             return Err("candidate source changed during verification".into());
         }
         Ok(report)
     })();
     match result {
         Ok(report) => match serde_json::to_string_pretty(&report) {
-            Ok(report) => { println!("{report}"); ExitCode::SUCCESS }
-            Err(error) => { eprintln!("receipt verification FAILED: {error}"); ExitCode::from(1) }
+            Ok(report) => {
+                println!("{report}");
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("receipt verification FAILED: {error}");
+                ExitCode::from(1)
+            }
         },
-        Err(error) => { eprintln!("receipt verification FAILED: {error}"); ExitCode::from(1) }
+        Err(error) => {
+            eprintln!("receipt verification FAILED: {error}");
+            ExitCode::from(1)
+        }
     }
 }
 

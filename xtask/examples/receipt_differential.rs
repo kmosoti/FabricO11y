@@ -54,7 +54,10 @@ fn create_fixture_sized(
         .filter(|c| c.profile == "extended")
         .collect();
     if selected.len() != 10 {
-        return Err(format!("expected 10 extended checks, found {}", selected.len()));
+        return Err(format!(
+            "expected 10 extended checks, found {}",
+            selected.len()
+        ));
     }
     let mut ids = Vec::new();
     for check in selected {
@@ -62,7 +65,9 @@ fn create_fixture_sized(
         let log_name = format!("{id}.log");
         let log = if let Some(size) = log_size {
             let mut bytes = b"SYNTHETIC; command not executed\n".to_vec();
-            if size < bytes.len() { return Err("synthetic log size is smaller than its trust header".into()); }
+            if size < bytes.len() {
+                return Err("synthetic log size is smaller than its trust header".into());
+            }
             bytes.resize(size, b'x');
             bytes
         } else {
@@ -284,44 +289,80 @@ fn run_case(
 }
 
 fn command_argv(program: &Path, receipts: &Path) -> Vec<String> {
-    vec![program.display().to_string(), "verify-receipts".into(), "--profile".into(), "extended".into(),
-        "--receipts".into(), receipts.display().to_string()]
+    vec![
+        program.display().to_string(),
+        "verify-receipts".into(),
+        "--profile".into(),
+        "extended".into(),
+        "--receipts".into(),
+        receipts.display().to_string(),
+    ]
 }
 
 fn python_argv(script: &Path, receipts: &Path) -> Vec<String> {
     let mut argv = vec!["python3".into(), "-B".into(), script.display().to_string()];
-    argv.extend(["--profile".into(), "extended".into(), "--receipts".into(), receipts.display().to_string()]);
+    argv.extend([
+        "--profile".into(),
+        "extended".into(),
+        "--receipts".into(),
+        receipts.display().to_string(),
+    ]);
     argv
 }
 
-fn invoke(root: &Path, argv: &[String], evidence_dir: &Path, prefix: &str, timed: bool) -> Result<Value, String> {
+fn invoke(
+    root: &Path,
+    argv: &[String],
+    evidence_dir: &Path,
+    prefix: &str,
+    timed: bool,
+) -> Result<Value, String> {
     let stdout_path = evidence_dir.join(format!("{prefix}-stdout.bin"));
     let stderr_path = evidence_dir.join(format!("{prefix}-stderr.bin"));
     let time_path = evidence_dir.join(format!("{prefix}-time.txt"));
     let wrapped = if timed {
-        let mut wrapped = vec!["/usr/bin/time".to_owned(), "-f".to_owned(), "%U %S %M %x".to_owned(),
-            "-o".to_owned(), time_path.display().to_string()];
+        let mut wrapped = vec![
+            "/usr/bin/time".to_owned(),
+            "-f".to_owned(),
+            "%U %S %M %x".to_owned(),
+            "-o".to_owned(),
+            time_path.display().to_string(),
+        ];
         wrapped.extend(argv.iter().cloned());
         write_new(&time_path, b"")?;
         Some(wrapped)
-    } else { None };
+    } else {
+        None
+    };
     let started = Instant::now();
     let (actual_argv, output, launch_error) = if let Some(wrapped) = wrapped {
-        let result = Command::new(&wrapped[0]).args(&wrapped[1..]).current_dir(root).output();
+        let result = Command::new(&wrapped[0])
+            .args(&wrapped[1..])
+            .current_dir(root)
+            .output();
         match result {
             Ok(output) => (wrapped, Some(output), None),
             Err(error) => (wrapped, None, Some(error.to_string())),
         }
     } else {
-        let result = Command::new(&argv[0]).args(&argv[1..]).current_dir(root).output();
+        let result = Command::new(&argv[0])
+            .args(&argv[1..])
+            .current_dir(root)
+            .output();
         match result {
             Ok(output) => (argv.to_vec(), Some(output), None),
             Err(error) => (argv.to_vec(), None, Some(error.to_string())),
         }
     };
     let wall_ns = started.elapsed().as_nanos();
-    let stdout = output.as_ref().map(|run| run.stdout.as_slice()).unwrap_or_default();
-    let stderr = output.as_ref().map(|run| run.stderr.as_slice()).unwrap_or_default();
+    let stdout = output
+        .as_ref()
+        .map(|run| run.stdout.as_slice())
+        .unwrap_or_default();
+    let stderr = output
+        .as_ref()
+        .map(|run| run.stderr.as_slice())
+        .unwrap_or_default();
     write_new(&stdout_path, stdout)?;
     write_new(&stderr_path, stderr)?;
     let (time_raw, time_read_error) = if timed {
@@ -329,7 +370,9 @@ fn invoke(root: &Path, argv: &[String], evidence_dir: &Path, prefix: &str, timed
             Ok(raw) => (Some(raw), None),
             Err(error) => (None, Some(error.to_string())),
         }
-    } else { (None, None) };
+    } else {
+        (None, None)
+    };
     let metric: Option<Value> = time_raw.as_ref().and_then(|raw| {
         let fields: Vec<_> = raw.split_whitespace().collect();
         (fields.len() == 4).then(|| json!({
@@ -355,37 +398,67 @@ fn parse_stdout(path: &Path) -> Result<Value, String> {
 
 fn normalized_report(path: &Path) -> Result<Value, String> {
     let mut report = parse_stdout(path)?;
-    let object = report.as_object_mut().ok_or("validator success output is not an object")?;
+    let object = report
+        .as_object_mut()
+        .ok_or("validator success output is not an object")?;
     object.remove("limits");
     Ok(report)
 }
 
 fn run_differential_case(
-    root: &Path, out: &Path, binary: &Path, script: &Path, registry: &Path,
-    commit: &str, name: &str,
+    root: &Path,
+    out: &Path,
+    binary: &Path,
+    script: &Path,
+    registry: &Path,
+    commit: &str,
+    name: &str,
 ) -> Result<Value, String> {
     let case = out.join("differential").join(name);
     fs::create_dir_all(&case).map_err(|error| error.to_string())?;
     let receipts = case.join("receipts");
     let ids = create_fixture_sized(registry, &receipts, commit, Some(64))?;
     let probe = mutate_case(name, &receipts, &ids[0])?;
-    let python = invoke(root, &python_argv(script, &receipts), &case, "python", false)?;
-    let native = invoke(root, &command_argv(binary, &receipts), &case, "native", false)?;
+    let python = invoke(
+        root,
+        &python_argv(script, &receipts),
+        &case,
+        "python",
+        false,
+    )?;
+    let native = invoke(
+        root,
+        &command_argv(binary, &receipts),
+        &case,
+        "native",
+        false,
+    )?;
     let py_path = PathBuf::from(python["stdout"].as_str().ok_or("stdout path missing")?);
     let native_path = PathBuf::from(native["stdout"].as_str().ok_or("stdout path missing")?);
     let py_code = python["exit_code"].as_i64();
     let native_code = native["exit_code"].as_i64();
-    let expected_py = if probe || name == "positive" { Some(0) } else { Some(1) };
+    let expected_py = if probe || name == "positive" {
+        Some(0)
+    } else {
+        Some(1)
+    };
     let expected_native = if name == "positive" { Some(0) } else { Some(1) };
     let positive_match = if name == "positive" {
-        Some(match (normalized_report(&py_path), normalized_report(&native_path)) {
-            (Ok(py), Ok(native)) => py == native,
-            _ => false,
-        })
-    } else { None };
+        Some(
+            match (normalized_report(&py_path), normalized_report(&native_path)) {
+                (Ok(py), Ok(native)) => py == native,
+                _ => false,
+            },
+        )
+    } else {
+        None
+    };
     let expected_decisions = py_code == expected_py && native_code == expected_native;
-    let parity = if probe { py_code == Some(0) && native_code == Some(1) }
-        else { py_code == native_code };
+    let parity = if probe {
+        py_code == Some(0) && native_code == Some(1)
+    } else {
+        py_code == native_code
+    };
     Ok(json!({
         "name": name, "synthetic": true, "registered_check_executed": false,
         "check_ids": ids, "probe": probe, "python": python, "native": native,
@@ -398,19 +471,21 @@ fn run_differential_case(
 }
 
 fn validate_candidate_path(binary: &Path, storage: &Path) -> Result<PathBuf, String> {
-    if !binary.is_absolute() { return Err("candidate ELF path must be absolute".into()); }
+    if !binary.is_absolute() {
+        return Err("candidate ELF path must be absolute".into());
+    }
     let metadata = fs::symlink_metadata(binary).map_err(|error| error.to_string())?;
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         return Err("candidate ELF must be an ordinary non-symlink file".into());
     }
     let canonical = binary.canonicalize().map_err(|error| error.to_string())?;
-    if !canonical.starts_with(storage) { return Err("candidate ELF must be inside DATA storage".into()); }
+    if !canonical.starts_with(storage) {
+        return Err("candidate ELF must be inside DATA storage".into());
+    }
     Ok(canonical)
 }
 
-fn bench_trial(
-    root: &Path, out: &Path, prefix: &str, argv: &[String],
-) -> Result<Value, String> {
+fn bench_trial(root: &Path, out: &Path, prefix: &str, argv: &[String]) -> Result<Value, String> {
     fs::create_dir(out).map_err(|error| error.to_string())?;
     invoke(root, argv, out, prefix, true)
 }
@@ -425,9 +500,18 @@ fn reports_equal(left: &Value, right: &Value) -> bool {
 }
 
 fn run_benchmarks(
-    root: &Path, out: &Path, binary: &Path, script: &Path, registry: &Path, commit: &str,
+    root: &Path,
+    out: &Path,
+    binary: &Path,
+    script: &Path,
+    registry: &Path,
+    commit: &str,
 ) -> Result<Value, String> {
-    let corpora = [("64B", 64usize), ("64KiB", 64 * 1024), ("4MiB", 4 * 1024 * 1024)];
+    let corpora = [
+        ("64B", 64usize),
+        ("64KiB", 64 * 1024),
+        ("4MiB", 4 * 1024 * 1024),
+    ];
     fs::create_dir(out.join("benchmark")).map_err(|error| error.to_string())?;
     let mut results = Vec::new();
     for (name, size) in corpora {
@@ -440,7 +524,12 @@ fn run_benchmarks(
         let mut corpus_ok = true;
         let mut warmup = Vec::new();
         for (implementation, argv) in [("python", &python), ("native", &native)] {
-            let trial = bench_trial(root, &corpus.join(format!("warmup-{implementation}")), implementation, argv)?;
+            let trial = bench_trial(
+                root,
+                &corpus.join(format!("warmup-{implementation}")),
+                implementation,
+                argv,
+            )?;
             corpus_ok &= trial["exit_code"] == 0;
             warmup.push(json!({"implementation": implementation, "trial": trial}));
         }
@@ -448,11 +537,24 @@ fn run_benchmarks(
         let reference = warmup[0]["trial"].clone();
         let mut pairs = Vec::new();
         for repetition in 0..7 {
-            let order = if repetition % 2 == 0 { ["python", "native"] } else { ["native", "python"] };
+            let order = if repetition % 2 == 0 {
+                ["python", "native"]
+            } else {
+                ["native", "python"]
+            };
             let mut pair = serde_json::Map::new();
             for implementation in order {
-                let argv = if implementation == "python" { &python } else { &native };
-                let trial = bench_trial(root, &corpus.join(format!("rep-{repetition}-{implementation}")), implementation, argv)?;
+                let argv = if implementation == "python" {
+                    &python
+                } else {
+                    &native
+                };
+                let trial = bench_trial(
+                    root,
+                    &corpus.join(format!("rep-{repetition}-{implementation}")),
+                    implementation,
+                    argv,
+                )?;
                 corpus_ok &= trial["exit_code"] == 0;
                 corpus_ok &= reports_equal(&trial, &reference);
                 pair.insert(implementation.into(), trial);
@@ -471,27 +573,61 @@ fn run_benchmarks(
 }
 
 fn run_candidate(
-    root: &Path, out: &Path, binary_arg: &Path, registry: &Path, script: &Path, commit: &str,
+    root: &Path,
+    out: &Path,
+    binary_arg: &Path,
+    registry: &Path,
+    script: &Path,
+    commit: &str,
 ) -> Result<(), String> {
-    let storage = PathBuf::from(std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("FABRIC_STORAGE_ROOT required")?)
-        .canonicalize().map_err(|error| error.to_string())?;
+    let storage = PathBuf::from(
+        std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("FABRIC_STORAGE_ROOT required")?,
+    )
+    .canonicalize()
+    .map_err(|error| error.to_string())?;
     let binary = validate_candidate_path(binary_arg, &storage)?;
-    let binary_len = fs::metadata(&binary).map_err(|error| error.to_string())?.len();
+    let binary_len = fs::metadata(&binary)
+        .map_err(|error| error.to_string())?
+        .len();
     if binary_len > 64 * 1024 * 1024 {
-        return Err(format!("candidate ELF exceeds 64 MiB bound: {binary_len} bytes"));
+        return Err(format!(
+            "candidate ELF exceeds 64 MiB bound: {binary_len} bytes"
+        ));
     }
     let binary_bytes = fs::read(&binary).map_err(|error| error.to_string())?;
-    if !binary_bytes.starts_with(b"\x7fELF") { return Err("candidate file is not an ELF binary".into()); }
+    if !binary_bytes.starts_with(b"\x7fELF") {
+        return Err("candidate file is not an ELF binary".into());
+    }
     let binary_hash = xtask::sha256_hex(&binary_bytes);
     let python_hash = xtask::sha256_hex(&fs::read(script).map_err(|error| error.to_string())?);
     let registry_hash = xtask::sha256_hex(&fs::read(registry).map_err(|error| error.to_string())?);
     let out = out.canonicalize().map_err(|error| error.to_string())?;
     let cases = [
-        "positive", "missing-receipt", "missing-log", "symlink-receipt", "symlink-log",
-        "running-marker", "stale-commit", "dirty-flag", "wrong-command", "wrong-id",
-        "wrong-profile", "wrong-result", "wrong-log-name", "wrong-version", "nonzero-exit",
-        "bool-exit", "float-exit", "negative-duration", "bool-duration", "float-duration",
-        "modified-log", "duplicate-result-key", "bool-version-probe", "float-version-probe", "numeric-dirty-probe",
+        "positive",
+        "missing-receipt",
+        "missing-log",
+        "symlink-receipt",
+        "symlink-log",
+        "running-marker",
+        "stale-commit",
+        "dirty-flag",
+        "wrong-command",
+        "wrong-id",
+        "wrong-profile",
+        "wrong-result",
+        "wrong-log-name",
+        "wrong-version",
+        "nonzero-exit",
+        "bool-exit",
+        "float-exit",
+        "negative-duration",
+        "bool-duration",
+        "float-duration",
+        "modified-log",
+        "duplicate-result-key",
+        "bool-version-probe",
+        "float-version-probe",
+        "numeric-dirty-probe",
     ];
     let mut differential = Vec::new();
     let mut driver_errors = Vec::new();
@@ -504,34 +640,61 @@ fn run_candidate(
             }
         }
     }
-    let differential_ok = differential.len() == 25 && differential.iter().all(|case| case["accepted"] == true);
+    let differential_ok =
+        differential.len() == 25 && differential.iter().all(|case| case["accepted"] == true);
     let benchmark_result = if differential_ok {
         run_benchmarks(root, &out, &binary, script, registry, commit)
-    } else { Err("benchmark deferred because differential outcomes failed".into()) };
+    } else {
+        Err("benchmark deferred because differential outcomes failed".into())
+    };
     let (benchmarks, benchmark_error, benchmark_ok) = match benchmark_result {
         Ok(value) => {
-            let ok = value.as_array().is_some_and(|corpora| corpora.len() == 3 && corpora.iter().all(|c| c["decisions_and_reports_match"] == true));
+            let ok = value.as_array().is_some_and(|corpora| {
+                corpora.len() == 3
+                    && corpora
+                        .iter()
+                        .all(|c| c["decisions_and_reports_match"] == true)
+            });
             (value, Value::Null, ok)
         }
         Err(error) => (Value::Array(Vec::new()), json!(error), false),
     };
     let source_unchanged = git(root, &["rev-parse", "HEAD"]).ok().as_deref() == Some(commit)
         && git(root, &["status", "--porcelain"]).is_ok_and(|status| status.is_empty());
-    let binary_unchanged = fs::read(&binary).ok().is_some_and(|bytes| xtask::sha256_hex(&bytes) == binary_hash);
-    let verifier_inputs_unchanged = fs::read(script).ok().is_some_and(|bytes| xtask::sha256_hex(&bytes) == python_hash)
-        && fs::read(registry).ok().is_some_and(|bytes| xtask::sha256_hex(&bytes) == registry_hash);
-    let common_parity_cases: Vec<_> = differential.iter().filter(|case| case["probe"] != true)
-        .map(|case| json!({"name": case["name"], "parity": case["common_parity"]})).collect();
+    let binary_unchanged = fs::read(&binary)
+        .ok()
+        .is_some_and(|bytes| xtask::sha256_hex(&bytes) == binary_hash);
+    let verifier_inputs_unchanged = fs::read(script)
+        .ok()
+        .is_some_and(|bytes| xtask::sha256_hex(&bytes) == python_hash)
+        && fs::read(registry)
+            .ok()
+            .is_some_and(|bytes| xtask::sha256_hex(&bytes) == registry_hash);
+    let common_parity_cases: Vec<_> = differential
+        .iter()
+        .filter(|case| case["probe"] != true)
+        .map(|case| json!({"name": case["name"], "parity": case["common_parity"]}))
+        .collect();
     let strict_probe_cases: Vec<_> = differential.iter().filter(|case| case["probe"] == true)
         .map(|case| json!({"name": case["name"], "python_exit": case["python"]["exit_code"],
             "native_exit": case["native"]["exit_code"], "expected_python_exit": case["expected_python_exit"],
             "expected_native_exit": case["expected_native_exit"]})).collect();
-    let decision_mismatches: Vec<_> = differential.iter().filter(|case| case["expected_decisions"] != true)
-        .map(|case| case["name"].clone()).collect();
-    let positive_passed = differential.iter().find(|case| case["name"] == "positive")
-        .is_some_and(|case| case["python"]["exit_code"] == 0 && case["native"]["exit_code"] == 0
-            && case["normalized_positive_reports_match"] == true);
-    let modified_log_rejected = differential.iter().find(|case| case["name"] == "modified-log")
+    let decision_mismatches: Vec<_> = differential
+        .iter()
+        .filter(|case| case["expected_decisions"] != true)
+        .map(|case| case["name"].clone())
+        .collect();
+    let positive_passed = differential
+        .iter()
+        .find(|case| case["name"] == "positive")
+        .is_some_and(|case| {
+            case["python"]["exit_code"] == 0
+                && case["native"]["exit_code"] == 0
+                && case["normalized_positive_reports_match"] == true
+        });
+    let modified_log_rejected = differential
+        .iter()
+        .find(|case| case["name"] == "modified-log")
         .is_some_and(|case| case["python"]["exit_code"] == 1 && case["native"]["exit_code"] == 1);
     let driver_errors_empty = driver_errors.is_empty();
     let record = json!({
@@ -556,9 +719,21 @@ fn run_candidate(
         "interpretation": "Synthetic structural differential and bounded host measurements only; no command execution or performance generalization."
     });
     write_json_new(&out.join("candidate-report.json"), &record)?;
-    println!("candidate differential report: {}", out.join("candidate-report.json").display());
-    if !differential_ok || !benchmark_ok || !source_unchanged || !binary_unchanged || !verifier_inputs_unchanged || !driver_errors_empty {
-        return Err("candidate differential, benchmark, source or ELF invariant failed; evidence retained".into());
+    println!(
+        "candidate differential report: {}",
+        out.join("candidate-report.json").display()
+    );
+    if !differential_ok
+        || !benchmark_ok
+        || !source_unchanged
+        || !binary_unchanged
+        || !verifier_inputs_unchanged
+        || !driver_errors_empty
+    {
+        return Err(
+            "candidate differential, benchmark, source or ELF invariant failed; evidence retained"
+                .into(),
+        );
     }
     Ok(())
 }
@@ -566,10 +741,14 @@ fn run_candidate(
 fn main() -> Result<(), String> {
     let args: Vec<_> = std::env::args_os().skip(1).collect();
     let (candidate, out) = if args.first().is_some_and(|arg| arg == "--candidate") {
-        if args.len() != 3 { return Err("usage: receipt_differential --candidate ABS_ELF DATA_RESULTS_DIR".into()); }
+        if args.len() != 3 {
+            return Err("usage: receipt_differential --candidate ABS_ELF DATA_RESULTS_DIR".into());
+        }
         (Some(PathBuf::from(&args[1])), PathBuf::from(&args[2]))
     } else {
-        if args.len() != 1 { return Err("usage: receipt_differential DATA_RESULTS_DIR".into()); }
+        if args.len() != 1 {
+            return Err("usage: receipt_differential DATA_RESULTS_DIR".into());
+        }
         (None, PathBuf::from(&args[0]))
     };
     let storage = PathBuf::from(

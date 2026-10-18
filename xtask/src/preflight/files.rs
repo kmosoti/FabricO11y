@@ -105,7 +105,10 @@ impl ArtifactStore {
     /// Divide the existing aggregate JSON budget across independent roots.
     /// A caller may tighten the ceiling, never raise it.
     pub fn with_json_budget(root: &Path, json_budget: u64) -> Result<Self, String> {
-        require(json_budget > 0 && json_budget <= JSON_TOTAL_LIMIT, "invalid JSON budget")?;
+        require(
+            json_budget > 0 && json_budget <= JSON_TOTAL_LIMIT,
+            "invalid JSON budget",
+        )?;
         let root = root.to_str().ok_or("UTF-8 root required")?.to_owned();
         let directory = open_root(&root)?;
         Ok(Self {
@@ -161,10 +164,18 @@ impl ArtifactStore {
         self.json(path)
     }
 
-    fn read_inner(&mut self, path: &str, expected: Option<&str>, keep_json: bool) -> Result<(), String> {
+    fn read_inner(
+        &mut self,
+        path: &str,
+        expected: Option<&str>,
+        keep_json: bool,
+    ) -> Result<(), String> {
         parts(path)?;
         if let Some(record) = self.records.get_mut(path) {
-            require(expected.is_none_or(|pin| record.digest == pin), "conflicting path hash")?;
+            require(
+                expected.is_none_or(|pin| record.digest == pin),
+                "conflicting path hash",
+            )?;
             require(
                 !keep_json || record.json.is_some(),
                 "JSON payload was not retained",
@@ -223,7 +234,10 @@ impl ArtifactStore {
             "artifact changed during read",
         )?;
         let actual = format!("{:x}", digest.finalize());
-        require(expected.is_none_or(|pin| actual == pin), "artifact hash mismatch")?;
+        require(
+            expected.is_none_or(|pin| actual == pin),
+            "artifact hash mismatch",
+        )?;
         let json = if keep_json {
             Some(strict_json(&payload)?)
         } else {
@@ -317,11 +331,16 @@ mod tests {
         let scratch = std::env::var_os("FABRIC_SCRATCH_ROOT").expect("contained DATA scratch");
         let root = Path::new(&scratch).join(format!("observed-json-{}", std::process::id()));
         std::fs::create_dir(&root).unwrap();
-        for name in ["one.json", "two.json"] { std::fs::write(root.join(name), b"{}").unwrap(); }
+        for name in ["one.json", "two.json"] {
+            std::fs::write(root.join(name), b"{}").unwrap();
+        }
         assert!(ArtifactStore::with_json_budget(&root, 0).is_err());
         assert!(ArtifactStore::with_json_budget(&root, JSON_TOTAL_LIMIT + 1).is_err());
         let mut store = ArtifactStore::with_json_budget(&root, 2).unwrap();
-        assert_eq!(store.observe_json("one.json").unwrap(), &serde_json::json!({}));
+        assert_eq!(
+            store.observe_json("one.json").unwrap(),
+            &serde_json::json!({})
+        );
         let pin = crate::sha256_hex(b"{}");
         store.read("one.json", &pin, true).unwrap();
         assert_eq!((store.bytes_hashed(), store.json_bytes()), (2, 2));
