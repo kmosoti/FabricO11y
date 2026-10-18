@@ -1,5 +1,5 @@
-//! Baseline classification fixture for the pinned Python storage census.
-//! This is a finite semantic comparison, not a benchmark or acceptance gate.
+//! Baseline mode preserves the pinned Python classification observation; candidate mode
+//! adds a finite semantic comparison and registered metadata-cost benchmark, not an acceptance gate.
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
@@ -433,6 +433,53 @@ fn candidate_mode(args: &[std::ffi::OsString]) -> Result<(), String> {
         && classification_fields_equal
         && python_json.as_object().is_some_and(|value| value.len() == 6)
         && native_json.as_object().is_some_and(|value| value.len() == 6);
+
+    if !classification_ok {
+        let failed_source_after = source_state(&repo)?;
+        let failed_helper_after = read_helper(&helper);
+        let failed_helper_sha = failed_helper_after.as_ref().ok().map(|(bytes, _)| xtask::sha256_hex(bytes));
+        let failed_helper_unchanged = failed_helper_after.as_ref().is_ok_and(|(bytes, identity)| {
+            *identity == helper_identity && xtask::sha256_hex(bytes) == HELPER_SHA
+        });
+        let failed_candidate_after = bounded_candidate(&candidate);
+        let failed_candidate_sha = failed_candidate_after.as_ref().ok().map(|(sha, _)| sha.clone());
+        let failed_candidate_unchanged = failed_candidate_after.as_ref().is_ok_and(|(sha, identity)| {
+            *identity == candidate_identity && sha == &expected_candidate_sha
+        });
+        let failed_source_unchanged = source_before["commit"] == failed_source_after["commit"]
+            && failed_source_after["dirty"] == false;
+        let failure_record = json!({
+            "experiment":"native storage census candidate comparison",
+            "overall_status":"failed-semantic-comparison",
+            "benchmark_deferred":true,
+            "candidate":candidate,"candidate_sha256_before":candidate_sha,
+            "candidate_sha256_after":failed_candidate_sha,"candidate_unchanged":failed_candidate_unchanged,
+            "candidate_recheck_error":failed_candidate_after.as_ref().err(),
+            "helper":helper,"helper_sha256":HELPER_SHA,"helper_sha256_after":failed_helper_sha,
+            "helper_unchanged":failed_helper_unchanged,
+            "helper_recheck_error":failed_helper_after.as_ref().err(),
+            "source_before":source_before,"source_after":failed_source_after,
+            "source_unchanged":failed_source_unchanged,
+            "python_reference_transformed_sha256":classification_py_sha,
+            "root_substitution":"only the pinned Python helper's single literal root assignment was replaced",
+            "fixture_root":classification_root,"independent_manifest":manifest,
+            "expected_six_fields":classification_expected,
+            "python":{"argv":reference_argv,"exit_code":classification_python.status.code(),
+                "success":classification_python.status.success(),"stdout_file":"classification-python.stdout.bin",
+                "stderr_file":"classification-python.stderr.bin","stdout":python_json,
+                "stderr":String::from_utf8_lossy(&classification_python.stderr)},
+            "native":{"argv":native_argv,"exit_code":classification_native.status.code(),
+                "success":classification_native.status.success(),"stdout_file":"classification-native.stdout.bin",
+                "stderr_file":"classification-native.stderr.bin","stdout":native_json,
+                "stderr":String::from_utf8_lossy(&classification_native.stderr)},
+            "six_fields_equal_between_implementations":classification_fields_equal,
+            "all_six_fields_match_independent_manifest":false,
+            "cleanup":"fixture retained; see cleanup.json"
+        });
+        write_new(&out.join("candidate-report.json"), &serde_json::to_vec_pretty(&failure_record).map_err(|e| e.to_string())?)?;
+        write_new(&out.join("cleanup.json"), br#"{"outcome":"semantic comparison failed; benchmark not run and fixture retained"}"#)?;
+        return Err(format!("candidate semantic comparison failed; benchmark deferred and fixture retained at {}", work.display()));
+    }
 
     let perf_root = work.join("performance-corpus");
     fs::create_dir(&perf_root).map_err(|e| e.to_string())?;
