@@ -54,7 +54,14 @@ class ArchiveBounds(unittest.TestCase):
     def test_browser_entry_snapshot_is_independent_and_closeout_checks_its_bytes(self):
         with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as directory:
             root = Path(directory)
-            for label, mutate_snapshot in (('unchanged', False), ('changed', True)):
+            for label, mutation in (('unchanged', None),
+                                    ('snapshot_changed', 'snapshot'),
+                                    ('metadata_deleted', 'delete'),
+                                    ('binding_deleted', 'binding'),
+                                    ('metadata_caller_path_changed', 'caller_path'),
+                                    ('metadata_caller_hash_changed', 'caller_hash'),
+                                    ('metadata_path_changed', 'path'),
+                                    ('metadata_hash_changed', 'hash')):
                 case = root / label
                 case.mkdir()
                 caller = case / 'caller-helper'
@@ -72,12 +79,28 @@ class ArchiveBounds(unittest.TestCase):
                 relative = str(snapshot.relative_to(f.work))
                 f.closed, f.bridge, f.parent = False, None, case / 'parent'
                 f.groups, f.processes, f.logs = [], [], []
-                f.input_hashes, f.receipt = {relative: expected}, {'passed': False}
-                if mutate_snapshot:
+                binding = {'caller_path': str(caller), 'caller_sha256': expected,
+                           'snapshot_path': relative, 'snapshot_sha256': expected}
+                f.browser_entry_helper_binding = dict(binding)
+                f.input_hashes, f.receipt = {relative: expected}, {
+                    'passed': False, 'native_browser_entry_helper': dict(binding)}
+                if mutation == 'snapshot':
                     snapshot.chmod(0o600)
                     snapshot.write_bytes(b'mutated owned helper snapshot')
+                elif mutation == 'delete':
+                    del f.receipt['native_browser_entry_helper']
+                elif mutation == 'binding':
+                    del f.browser_entry_helper_binding
+                elif mutation == 'caller_path':
+                    f.receipt['native_browser_entry_helper']['caller_path'] = 'other/helper'
+                elif mutation == 'caller_hash':
+                    f.receipt['native_browser_entry_helper']['caller_sha256'] = '0' * 64
+                elif mutation == 'path':
+                    f.receipt['native_browser_entry_helper']['snapshot_path'] = 'other/path'
+                elif mutation == 'hash':
+                    f.receipt['native_browser_entry_helper']['snapshot_sha256'] = '0' * 64
                 with patch.object(runtime.cgroups, 'snapshot', return_value={}):
-                    if mutate_snapshot:
+                    if mutation is not None:
                         with self.assertRaisesRegex(RuntimeError, 'frozen input identity'):
                             f.close()
                         self.assertFalse(f.receipt['immutable_inputs'])

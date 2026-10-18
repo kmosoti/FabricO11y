@@ -259,11 +259,12 @@ class CandidateFixture:
             self.browser_entry_helper = snapshot_browser_entry_helper(
                 browser_entry_helper, browser_entry_helper_sha256, self.work)
             self.browser_entry_helper_dir = self.browser_entry_helper.parent
-            self.receipt['native_browser_entry_helper'] = {
+            self.browser_entry_helper_binding = {
                 'caller_path': str(browser_entry_helper),
                 'caller_sha256': browser_entry_helper_sha256,
                 'snapshot_path': str(self.browser_entry_helper.relative_to(self.work)),
                 'snapshot_sha256': digest(self.browser_entry_helper)}
+            self.receipt['native_browser_entry_helper'] = dict(self.browser_entry_helper_binding)
             self.input_hashes = {str(p.relative_to(self.work)): digest(p)
                                 for directory in [self.bins, self.console, self.helpers,
                                                   self.browser_entry_helper_dir]
@@ -454,6 +455,14 @@ class CandidateFixture:
         if hasattr(self, 'input_hashes'):
             unchanged = all((self.work / name).is_file() and digest(self.work / name) == expected
                             for name, expected in self.input_hashes.items())
+            binding = getattr(self, 'browser_entry_helper_binding', None)
+            if binding is None:
+                unchanged = False
+            else:
+                snapshot_path = binding['snapshot_path']
+                unchanged = (unchanged
+                             and self.receipt.get('native_browser_entry_helper') == binding
+                             and self.input_hashes.get(snapshot_path) == binding['snapshot_sha256'])
             self.receipt['immutable_inputs'] = unchanged
             cleanup = cleanup and unchanged
         if hasattr(self, 'harness_hashes'):
