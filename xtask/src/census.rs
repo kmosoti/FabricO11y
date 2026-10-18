@@ -357,6 +357,141 @@ fn parse_owned(root: &Path, args: Vec<String>) -> Result<Option<PathBuf>, String
     Ok(owned)
 }
 
+/// Bind the native retry exception to the exact frozen owner walkthrough command.
+/// This establishes caller-supplied identity only; walkthrough admission remains
+/// the responsibility of its independent guards.
+pub fn owner_scratch_from_argv(
+    root: &Path,
+    label: &str,
+    admission_path: &str,
+    admission_sha256: &str,
+    argv: &[String],
+) -> Result<PathBuf, String> {
+    const DATA_ROOT: &str = "/run/media/kmosoti/data/FabricO11y";
+    if root != Path::new(DATA_ROOT) {
+        return Err("owner census binding requires the exact DATA root".into());
+    }
+    let run_id = label
+        .strip_prefix("owner-")
+        .ok_or("owner label must be owner-RUN_ID")?;
+    if run_id.is_empty()
+        || run_id.len() > 80
+        || (!run_id.as_bytes()[0].is_ascii_lowercase()
+            && !run_id.as_bytes()[0].is_ascii_digit())
+        || !run_id
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    {
+        return Err("invalid owner run ID".into());
+    }
+    if admission_sha256.len() != 64
+        || !admission_sha256
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("resolved lowercase admission SHA-256 required".into());
+    }
+
+    let expected_outer = root
+        .join("results/service-opening-candidate")
+        .join(format!("{label}.json"));
+    let expected_scratch = root
+        .join("scratch")
+        .join(format!("owner-walkthrough-{run_id}"));
+    let canonical_data_path = |value: &str| -> Result<PathBuf, String> {
+        let path = PathBuf::from(value);
+        if !path.is_absolute() || path.to_str().is_none() {
+            return Err("owner admission paths must be absolute UTF-8 paths".into());
+        }
+        let text = path.to_str().expect("UTF-8 was checked");
+        if path.as_os_str().as_bytes().contains(&0)
+            || text.contains("//")
+            || text.contains("/./")
+            || text.contains("/../")
+            || text.ends_with("/.")
+            || text.ends_with("/..")
+            || text.ends_with('/')
+            || path.components().any(|part| {
+                matches!(part, std::path::Component::CurDir | std::path::Component::ParentDir)
+            })
+            || !path.starts_with(root)
+        {
+            return Err("owner admission path must be canonical and inside DATA".into());
+        }
+        Ok(path)
+    };
+    let supplied_admission = canonical_data_path(admission_path)?;
+
+    const PROGRAM: [&str; 3] = ["python3", "-B", "tools/qualification/owner_walkthrough.py"];
+    if argv.len() != 13 || argv[..3].iter().map(String::as_str).ne(PROGRAM) {
+        return Err("raw argv must be the exact owner walkthrough command".into());
+    }
+    let mut pairs = std::collections::BTreeMap::new();
+    for pair in argv[3..].chunks_exact(2) {
+        let flag = &pair[0];
+        if !matches!(
+            flag.as_str(),
+            "--admission"
+                | "--admission-sha256"
+                | "--outer-admission"
+                | "--run-id"
+                | "--server-family"
+        ) || pairs.insert(flag.as_str(), pair[1].as_str()).is_some()
+        {
+            return Err("duplicate or unknown owner command flag".into());
+        }
+    }
+    let get = |flag: &str| pairs.get(flag).copied().ok_or_else(|| format!("{flag} required"));
+    let argv_admission = canonical_data_path(get("--admission")?)?;
+    if argv_admission != supplied_admission || get("--admission-sha256")? != admission_sha256 {
+        return Err("caller-bound admission path/hash must match raw argv".into());
+    }
+    if get("--run-id")? != run_id {
+        return Err("owner label and command run ID differ".into());
+    }
+    if !matches!(get("--server-family")?, "debian" | "fedora") {
+        return Err("invalid owner server family".into());
+    }
+    let outer = canonical_data_path(get("--outer-admission")?)?;
+    if outer != expected_outer {
+        return Err("outer admission path must match the owner label record".into());
+    }
+    Ok(expected_scratch)
+}
+
+fn parse_owner_binding(args: Vec<String>) -> Result<(String, String, String, Vec<String>), String> {
+    let mut args = args.into_iter();
+    let mut label = None;
+    let mut admission = None;
+    let mut digest = None;
+    loop {
+        match args.next().as_deref() {
+            Some("--") => break,
+            Some("--owner-label") if label.is_none() => {
+                label = Some(args.next().ok_or("--owner-label value required")?);
+            }
+            Some("--admission") if admission.is_none() => {
+                admission = Some(args.next().ok_or("--admission value required")?);
+            }
+            Some("--admission-sha256") if digest.is_none() => {
+                digest = Some(args.next().ok_or("--admission-sha256 value required")?);
+            }
+            Some(flag) => return Err(format!("unknown or duplicate owner binding option: {flag}")),
+            None => return Err("-- followed by raw owner command argv required".into()),
+        }
+    }
+    let argv: Vec<String> = args.collect();
+    if argv.is_empty() {
+        return Err("raw owner command argv required".into());
+    }
+    Ok((
+        label.ok_or("--owner-label required")?,
+        admission.ok_or("--admission required")?,
+        digest.ok_or("--admission-sha256 required")?,
+        argv,
+    ))
+}
+
 fn require_disk_root(root: &Path) -> Result<(), String> {
     let anchor = open_absolute_directory(root).map_err(|error| error.to_string())?;
     let mut information = std::mem::MaybeUninit::<libc::statfs>::uninit();
@@ -389,7 +524,22 @@ pub fn cli(args: Vec<String>) -> ExitCode {
             return Err("FABRIC_STORAGE_ROOT must already be canonical".into());
         }
         require_disk_root(&root)?;
-        let owned = parse_owned(&root, args)?;
+        let owned = if args.first().is_some_and(|arg| arg == "--owner-binding") {
+            let (label, admission, digest, argv) = {
+                let mut remaining = args.into_iter();
+                let _mode = remaining.next();
+                parse_owner_binding(remaining.collect())?
+            };
+            Some(owner_scratch_from_argv(
+                &root,
+                &label,
+                &admission,
+                &digest,
+                &argv,
+            )?)
+        } else {
+            parse_owned(&root, args)?
+        };
         scan(&root, owned.as_deref()).map_err(|error| error.to_string())
     })();
     match result {
@@ -791,5 +941,138 @@ mod tests {
                 "{name}"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod owner_binding_tests {
+    use super::owner_scratch_from_argv;
+    use std::path::{Path, PathBuf};
+
+    const ROOT: &str = "/run/media/kmosoti/data/FabricO11y";
+    const HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+
+    fn command(run_id: &str, family: &str) -> Vec<String> {
+        vec![
+            "python3".into(),
+            "-B".into(),
+            "tools/qualification/owner_walkthrough.py".into(),
+            "--admission".into(),
+            format!("{ROOT}/results/owner-walkthrough-replacement-01/admission-{family}.json"),
+            "--admission-sha256".into(),
+            HASH.into(),
+            "--outer-admission".into(),
+            format!("{ROOT}/results/service-opening-candidate/owner-{run_id}.json"),
+            "--run-id".into(),
+            run_id.into(),
+            "--server-family".into(),
+            family.into(),
+        ]
+    }
+
+    fn bind(run_id: &str, family: &str, label: &str, argv: &[String]) -> Result<PathBuf, String> {
+        let admission = format!(
+            "{ROOT}/results/owner-walkthrough-replacement-01/admission-{family}.json"
+        );
+        owner_scratch_from_argv(Path::new(ROOT), label, &admission, HASH, argv)
+    }
+
+    #[test]
+    fn binds_both_original_walkthrough_command_templates() {
+        for (run_id, family) in [
+            ("replacement-debian-server-01", "debian"),
+            ("replacement-fedora-server-01", "fedora"),
+        ] {
+            let label = format!("owner-{run_id}");
+            let argv = command(run_id, family);
+            assert_eq!(
+                bind(run_id, family, &label, &argv).unwrap(),
+                PathBuf::from(format!("{ROOT}/scratch/owner-walkthrough-{run_id}"))
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_wrong_program_missing_duplicate_and_extra_flags() {
+        let base = command("replacement-debian-server-01", "debian");
+        let label = "owner-replacement-debian-server-01";
+        let mut cases = Vec::new();
+        let mut wrong = base.clone();
+        wrong[2] = "tools/qualification/other.py".into();
+        cases.push(wrong);
+        let mut missing = base.clone();
+        missing[9] = "--unused".into();
+        cases.push(missing);
+        let mut duplicate = base.clone();
+        duplicate[11] = "--run-id".into();
+        duplicate[12] = "debian".into();
+        cases.push(duplicate);
+        let mut extra = base.clone();
+        extra.extend(["--force".into(), "yes".into()]);
+        cases.push(extra);
+        for argv in cases {
+            assert!(bind("replacement-debian-server-01", "debian", label, &argv).is_err());
+        }
+    }
+
+    #[test]
+    fn rejects_bad_names_unresolved_hashes_and_crossed_identities() {
+        let cases = [
+            ("owner-", "replacement-debian-server-01", HASH),
+            ("owner--bad", "-bad", HASH),
+            ("owner-Replacement", "Replacement", HASH),
+            (
+                "owner-replacement-fedora-server-01",
+                "replacement-debian-server-01",
+                HASH,
+            ),
+            (
+                "owner-replacement-debian-server-01",
+                "replacement-debian-server-01",
+                "RESOLVE_FROM_EXCLUSIVE_FINAL_ADMISSION_SHA256",
+            ),
+        ];
+        for (label, run_id, digest) in cases {
+            let argv = command(run_id, "debian");
+            let admission = format!("{ROOT}/results/owner-walkthrough-replacement-01/admission-debian.json");
+            assert!(owner_scratch_from_argv(Path::new(ROOT), label, &admission, digest, &argv).is_err());
+        }
+    }
+
+    #[test]
+    fn rejects_other_programs_paths_hashes_and_prefix_sibling_records() {
+        let run_id = "replacement-debian-server-01";
+        let label = format!("owner-{run_id}");
+        let base = command(run_id, "debian");
+        let mut bad_outer = base.clone();
+        bad_outer[8] = format!("{ROOT}/results/service-opening-candidate/owner-{run_id}-sibling.json");
+        let mut bad_family = base.clone();
+        bad_family[12] = "ubuntu".into();
+        let mut bad_hash = base.clone();
+        bad_hash[6] = "A".repeat(64);
+        let mut bad_path = base.clone();
+        bad_path[4] = format!("{ROOT}/results/../scratch/admission.json");
+        let mut nul_path = base.clone();
+        nul_path[4] = format!("{ROOT}/results/owner\0.json");
+        for argv in [bad_outer, bad_family, bad_hash, bad_path, nul_path] {
+            assert!(bind(run_id, "debian", &label, &argv).is_err());
+        }
+    }
+
+    #[test]
+    fn rejects_caller_bound_pair_that_differs_from_raw_argv() {
+        let run_id = "replacement-debian-server-01";
+        let label = format!("owner-{run_id}");
+        let argv = command(run_id, "debian");
+        let wrong_path = format!("{ROOT}/results/owner-walkthrough-replacement-01/other.json");
+        assert!(owner_scratch_from_argv(Path::new(ROOT), &label, &wrong_path, HASH, &argv).is_err());
+        assert!(owner_scratch_from_argv(
+            Path::new(ROOT),
+            &label,
+            &format!("{ROOT}/results/owner-walkthrough-replacement-01/admission-debian.json"),
+            &"b".repeat(64),
+            &argv,
+        )
+        .is_err());
     }
 }

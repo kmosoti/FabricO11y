@@ -119,6 +119,7 @@ const USAGE: &str = "usage:
   cargo xtask cargo-mutants
   cargo xtask verify-receipts --profile fast|extended [--receipts DIR]
   cargo xtask storage-census [--owned-scratch ABS_PATH]
+  cargo xtask storage-census --owner-binding --owner-label LABEL --admission ABS_PATH --admission-sha256 HEX -- <owner walkthrough argv>
   cargo xtask evidence-preflight --root PATH --plan RELATIVE --plan-sha256 HEX --candidate REVISION";
 
 fn main() -> ExitCode {
