@@ -29,6 +29,24 @@ The [architecture review skill](../../.agents/skills/architecture-review/SKILL.m
 routes unresolved design decisions to focused experiments and documentation work.
 Existing Python product oracles stay independent; no MCP server is required.
 
+## Native browser subgroup entry
+
+The [registered supervisor correction](../experiments/formal/browser-supervisor-protocol.md)
+adds a native `xtask browser-enter-exec` prefix to the legacy browser harness.
+The caller pins and snapshots the helper explicitly. The helper enters its
+canonical cgroup-v2 subgroup, checks its `/proc` placement, publishes `R` and
+waits for `G`; each private pipe frame requires its byte followed by EOF within
+the five-second monotonic deadline. The Python parent retains the exact
+`Popen`/pidfd/start identity, checks placement and existing membership, records
+the binding, and only then releases the target. Pre-binding cleanup uses that
+retained child identity and its owned subgroup. The session-clock wrapper stays
+the target when controlled time is selected.
+
+The implementation has not yet received its registered Linux composition run.
+The ignored integration fixture is separate from ordinary unit checks, and the
+previous immediate-child entry failure remains preserved. These source changes
+grant no browser acceptance credit.
+
 ## Console source provenance
 
 The [registered correction](../experiments/formal/console-provenance-protocol.md)

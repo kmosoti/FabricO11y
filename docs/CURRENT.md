@@ -36,7 +36,9 @@ undefined readiness predicate after offline owner recovery. The
 reproduced that NameError before the scoped helper correction merged in PR #81.
 The retry stopped before browser launch on the frozen console/newer harness
 Cargo.lock join. The native provenance correction has finite source controls;
-a fresh actual browser retry remains required after the engineering pause.
+a fresh actual browser retry remains required after the engineering pause. A
+native entry/release barrier now precedes legacy browser child binding; its
+Linux composition fixture remains unrun and grants no acceptance credit.
 
 Replacement product `e078ba23` is packaged reproducibly as minimized source
 `28bcdf7` ([#40](https://github.com/kmosoti/FabricO11y/issues/40)). Fresh Debian03

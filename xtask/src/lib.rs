@@ -5,6 +5,7 @@
 pub mod census;
 pub mod checks;
 pub mod console_source;
+pub mod browser_enter;
 mod digest;
 pub mod evidence;
 pub mod layers;

@@ -8,6 +8,7 @@ import os
 import re
 from pathlib import Path
 import secrets
+import select
 import shutil
 import signal
 import socket
@@ -58,6 +59,50 @@ def browser_pid(pid):
 def browser_pidfd(fd):
     return int(next(line.split(':', 1)[1] for line in
         (Path('/proc/self/fdinfo') / str(fd)).read_text().splitlines() if line.startswith('Pid:')))
+
+
+def browser_provisional_cleanup(parent, record):
+    group, proc = record['group'], record.get('process')
+    if proc is None:
+        return
+    browser_directory(parent); browser_directory(group)
+    browser_group_check(group['exclusive'] is True and group['path'].parent == parent['path'], 'ownership')
+    descriptor = group.get('pidfd')
+    if descriptor is not None and proc.poll() is None:
+        browser_group_check(browser_pidfd(descriptor) == proc.pid
+            and browser_pid(proc.pid)[0] == group['start_ticks'], 'identity')
+        try:
+            signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+    try:
+        proc.wait(timeout=min(5, max(0, parent['deadline_monotonic_ns'] / 1e9 - time.monotonic())))
+    except subprocess.TimeoutExpired as error:
+        if group.get('fd') is None:
+            record['cleanup_error'] = 'provisional child did not stop and group descriptor is absent'
+            raise RuntimeError('browser-provisional-stop') from error
+        descriptor = os.open('cgroup.kill', os.O_WRONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                              dir_fd=group['fd'])
+        try:
+            if os.write(descriptor, b'1') != 1:
+                raise RuntimeError('browser-provisional-cgroup-kill')
+        finally:
+            os.close(descriptor)
+        try:
+            proc.wait(timeout=min(5, max(0, parent['deadline_monotonic_ns'] / 1e9 - time.monotonic())))
+        except subprocess.TimeoutExpired as cleanup_error:
+            record['cleanup_error'] = 'owned provisional cgroup did not stop within its bound'
+            raise RuntimeError('browser-provisional-stop') from cleanup_error
+    if (Path('/proc') / str(proc.pid)).exists():
+        browser_group_check(descriptor is not None and browser_pidfd(descriptor) == -1, 'identity')
+    browser_directory(group)
+    browser_group_check('populated 0' in (group['path'] / 'cgroup.events').read_text().splitlines(), 'stop')
+    record['children_reaped'] = proc.returncode is not None and not (Path('/proc') / str(proc.pid)).exists()
+    browser_group_check(record['children_reaped'], 'reap')
+    if descriptor is not None:
+        os.close(descriptor); group['pidfd'] = None
+    os.close(group['fd']); group['fd'] = None
+    record['state'] = 'cleaned'
 
 
 def browser_members(group):
@@ -220,39 +265,103 @@ def begin_browser_domain(limits, deadline):
         raise
 
 
-def browser_group_launch(parent, bindings, label, command, log, environment, *, clock=None):
+def browser_group_launch(parent, bindings, label, command, log, environment, *, entry_helper,
+                         entry_helper_sha256, clock=None):
     browser_directory(parent)
     browser_group_check(browser_namespaces() == parent['namespaces'], 'namespace')
     path, _ = cgroups.subgroup(parent['path'], 'browser-' + str(len(bindings)), 4000000000, 3500000000, 512, 2)
     group = browser_hold_directory(path)
     group['exclusive'] = True
-    helper = ROOT / 'tools/bench/labs/completion/enter_group.py'
-    arguments=[sys.executable, '-B', str(helper), str(path), *command]
+    browser_group_check(entry_helper.is_absolute() and entry_helper.is_file()
+        and hashlib.sha256(entry_helper.read_bytes()).hexdigest() == entry_helper_sha256, 'entry-helper')
+    target = list(command)
+    inherited_fds = []
     inherited={}
     if clock is not None:
         browser_group_check(not any(key in environment for key in ('LD_PRELOAD','LD_AUDIT','FABRIC_CLOCK_FD')), 'clock-environment')
         helper=ROOT/'tools/ui/session_clock_exec.py'
-        arguments=[sys.executable,'-B',str(helper),str(path),str(clock[0]),str(clock[1]),*command]
-        inherited['pass_fds']=(clock[1],)
-    proc = subprocess.Popen(arguments, stdout=log, stderr=subprocess.STDOUT,
-        start_new_session=True, env=environment, **inherited)
-    group.update(process=proc, pid=proc.pid, pidfd=os.pidfd_open(proc.pid), start_ticks=browser_pid(proc.pid)[0])
-    until = min(time.monotonic() + 5, parent['deadline_monotonic_ns'] / 1e9)
+        target=[sys.executable,'-B',str(helper),str(path),str(clock[0]),str(clock[1]),*command]
+        inherited_fds.append(clock[1])
+    ready_read, ready_write = os.pipe()
+    release_read, release_write = os.pipe()
+    handshake_deadline = min(time.monotonic() + 5, parent['deadline_monotonic_ns'] / 1e9)
+    group.update(process=None, pid=None, pidfd=None, start_ticks=None)
+    record = {'parent': parent, 'group': group, 'state': 'starting', 'process': None}
+    parent.setdefault('provisional_children', []).append(record)
+    proc = None
+    binding = None
+    transferred = False
     try:
+        arguments=[str(entry_helper),'browser-enter-exec','--group',str(path),
+            '--ready-fd',str(ready_write),'--release-fd',str(release_read),
+            '--timeout-ms','5000','--',*target]
+        inherited_fds.extend((ready_write, release_read))
+        inherited['pass_fds']=tuple(inherited_fds)
+        proc = subprocess.Popen(arguments, stdout=log, stderr=subprocess.STDOUT,
+            start_new_session=True, env=environment, **inherited)
+        os.close(ready_write); ready_write = None
+        os.close(release_read); release_read = None
+        group.update(process=proc, pid=proc.pid)
+        record['process'] = proc
+        group['pidfd'] = os.pidfd_open(proc.pid)
+        group['start_ticks'] = browser_pid(proc.pid)[0]
+        record['state'] = 'spawned'
+        poller = select.poll()
+        poller.register(ready_read, select.POLLIN | select.POLLHUP | select.POLLERR)
+        ready = bytearray()
         while True:
-            placement = cgroups.ROOT / next(line[3:] for line in
-                (Path('/proc') / str(proc.pid) / 'cgroup').read_text().splitlines() if line.startswith('0::')).lstrip('/')
-            if placement == path: break
-            browser_group_check(proc.poll() is None and time.monotonic() < until, 'placement')
-            time.sleep(.01)
+            remaining = handshake_deadline - time.monotonic()
+            browser_group_check(remaining > 0, 'entry-ready-deadline')
+            remaining_ms = max(1, int(remaining * 1000 + 0.999))
+            events = poller.poll(remaining_ms)
+            browser_group_check(bool(events) and time.monotonic() < handshake_deadline, 'entry-ready-deadline')
+            browser_group_check(events[0][1] & select.POLLERR == 0, 'entry-ready-pipe-error')
+            chunk = os.read(ready_read, 2)
+            if not chunk:
+                browser_group_check(bytes(ready) == b'R', 'entry-ready-framing')
+                break
+            ready.extend(chunk)
+            browser_group_check(bytes(ready) == b'R', 'entry-ready-framing')
+        record['ready_monotonic_ns'] = time.monotonic_ns()
+        record['entry_helper_sha256'] = entry_helper_sha256
+        browser_group_check(proc.poll() is None and browser_pidfd(group['pidfd']) == proc.pid
+            and browser_pid(proc.pid)[0] == group['start_ticks'], 'identity')
+        placement = cgroups.ROOT / next(line[3:] for line in
+            (Path('/proc') / str(proc.pid) / 'cgroup').read_text().splitlines()
+            if line.startswith('0::')).lstrip('/')
+        browser_group_check(placement == path, 'placement')
+        browser_group_check(time.monotonic() < handshake_deadline, 'entry-ready-deadline')
         binding = bind_browser_group(parent, group, proc)
         binding['group']['label'] = label
         bindings.append(binding)
+        record['state'] = 'bound'
+        transferred = True
+        record['release_monotonic_ns'] = time.monotonic_ns()
+        browser_group_check(time.monotonic() < handshake_deadline, 'entry-release-deadline')
+        binding['group']['entry_helper_sha256'] = entry_helper_sha256
+        binding['group']['entry_elapsed_ns'] = record['release_monotonic_ns'] - record['ready_monotonic_ns']
+        if os.write(release_write, b'G') != 1:
+            raise RuntimeError('browser-entry-release')
+        os.close(release_write); release_write = None
+        record['state'] = 'released'
         return proc
     except BaseException:
-        # Unbound children remain confined by the outer launcher; no PID fallback.
-        os.close(group['pidfd']); os.close(group['fd'])
+        if release_write is not None:
+            os.close(release_write); release_write = None
+        if not transferred and proc is not None:
+            try:
+                browser_provisional_cleanup(parent, record)
+            except BaseException as cleanup_error:
+                record['cleanup_error'] = str(cleanup_error)
+        elif not transferred:
+            os.close(group['fd']); group['fd'] = None
+            record['state'] = 'cleaned'
         raise
+    finally:
+        for descriptor in (ready_read, ready_write, release_read, release_write):
+            if descriptor is not None:
+                try: os.close(descriptor)
+                except OSError: pass
 
 
 def browser_reap_domain(parent, bindings):
@@ -289,6 +398,13 @@ def browser_reap_domain(parent, bindings):
         if observed is None: time.sleep(.01)
 
 
+def browser_cleanup_provisionals(parent):
+    for record in reversed(parent.get('provisional_children', [])):
+        if record['state'] in ('bound', 'released', 'cleaned'):
+            continue
+        browser_provisional_cleanup(parent, record)
+
+
 def end_browser_domain(parent, bindings):
     if 'previous_subreaper' not in parent: return  # Synthetic source fixtures own their subreaper.
     import ctypes
@@ -298,6 +414,9 @@ def end_browser_domain(parent, bindings):
     for binding in bindings:
         group = binding['group']; descriptors.update((group['fd'], group['pidfd']))
         descriptors.update(row['pidfd'] for row in group['members'])
+    for record in parent.get('provisional_children', []):
+        group = record['group']
+        descriptors.update(fd for fd in (group.get('fd'), group.get('pidfd')) if fd is not None)
     for descriptor in descriptors: os.close(descriptor)
 
 
@@ -430,6 +549,8 @@ def main():
     parser.add_argument('--console-receipt-sha256')
     parser.add_argument('--console-source-helper', type=Path)
     parser.add_argument('--console-source-helper-sha256')
+    parser.add_argument('--browser-entry-helper', type=Path)
+    parser.add_argument('--browser-entry-helper-sha256')
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--inject-rejection-defect',choices=('error','status'))
     parser.add_argument('--inject-api-cache-defect', action='store_true')
@@ -461,6 +582,11 @@ def main():
     parser.add_argument('--suppress-announcement',action='store_true',help='negative control: disable the original status live region')
     parser.add_argument('--security-key-probe',action='store_true',help='isolated actual virtual credential export/DER/signature admission')
     args = parser.parse_args()
+    if args.browser_entry_helper is None or args.browser_entry_helper_sha256 is None:
+        parser.error('explicit pinned native browser entry helper pair required')
+    if not args.browser_entry_helper.is_absolute() or not re.fullmatch(
+            '[a-f0-9]{64}', args.browser_entry_helper_sha256):
+        parser.error('browser entry helper path must be absolute and pin must be a full lowercase SHA-256')
     product_source_enabled = validate_product_source_options(args, parser)
     if args.security_key_probe and any((getattr(args,'announcement_probes',False),getattr(args,'suppress_announcement',False),
             args.migration,args.fabricctl,args.security_probes,args.session_expiry_helper,
@@ -502,10 +628,13 @@ def main():
     build = args.build.resolve()
     if not out.is_relative_to(DATA / 'results') or out.exists() or not build.is_relative_to(DATA / 'results'):
         raise SystemExit('fresh owned data-drive result directories required')
-    for binary in (args.server, args.spindle, *([args.fabricctl] if args.migration else []),
+    for binary in (args.server, args.spindle, args.browser_entry_helper,
+                   *([args.fabricctl] if args.migration else []),
                    *([args.console_source_helper] if product_source_enabled else [])):
         if not binary.resolve().is_relative_to(DATA) or not binary.is_file():
             raise SystemExit('project binaries must be existing data-drive artifacts')
+    if hashlib.sha256(args.browser_entry_helper.read_bytes()).hexdigest() != args.browser_entry_helper_sha256:
+        raise SystemExit('browser entry helper differs from caller pin')
     out.mkdir()
     work = Path(os.environ['FABRIC_SCRATCH_ROOT']) / 'live-console-browser'
     work.mkdir(mode=0o700)
@@ -523,7 +652,8 @@ def main():
                'source_sha256': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
                                  for p in (Path(__file__), ROLE_FIXTURE, ROOT / 'tools/ui/fixture_cadence.py', ROOT / 'tools/ui/browser_producer.py', ROOT / 'tools/packaging/stage_console.py')},
                'binaries': {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in
-                   (args.server, args.spindle, *([args.fabricctl] if args.migration else []),
+                   (args.server, args.spindle, args.browser_entry_helper,
+                    *([args.fabricctl] if args.migration else []),
                     *([args.console_source_helper] if product_source_enabled else []))},
                'browser_download': json.loads((TOOLS / 'download.json').read_text()) if args.browser=='chrome' else json.loads((DATA/'tools/ui/geckodriver.json').read_text())}
     processes = []
@@ -781,7 +911,9 @@ def main():
         if controlled:
             from session_clock import SessionClock
             def spawn(argv,env,fd,helper,log):
-                return browser_group_launch(group_parent,owned_groups,label,argv,log,env,clock=(helper,fd))
+                return browser_group_launch(group_parent,owned_groups,label,argv,log,env,
+                    entry_helper=args.browser_entry_helper,
+                    entry_helper_sha256=args.browser_entry_helper_sha256,clock=(helper,fd))
             clock=SessionClock(args.server,args.session_expiry_helper,out/f'{label}.log',deadline,
                 server_argv=command,server_launch=spawn)
             clock_targets[label]=clock;proc=clock.process
@@ -790,7 +922,9 @@ def main():
                 announcements=browser_announcements.Runtime(work,out,args,deadline)
                 command=announcements.command(command)
             log = (out / f'{label}.log').open('w');logs.append(log)
-            proc = browser_group_launch(group_parent, owned_groups, label, command, log, environment)
+            proc = browser_group_launch(group_parent, owned_groups, label, command, log, environment,
+                entry_helper=args.browser_entry_helper,
+                entry_helper_sha256=args.browser_entry_helper_sha256)
             if label=='webdriver' and announcements is not None:announcements.process=proc
         processes.append((label, proc))
         return proc
@@ -801,7 +935,8 @@ def main():
         artifact_dir=work/'binaries';artifact_dir.mkdir(mode=0o700)
         snapshots={}
         for role in ('server','spindle', *(['fabricctl'] if args.migration else []),
-                     *(['console_source_helper'] if product_source_enabled else [])):
+                     *(['console_source_helper'] if product_source_enabled else []),
+                     'browser_entry_helper'):
             source=getattr(args,role)
             destination=artifact_dir/role
             shutil.copyfile(source,destination)
@@ -812,6 +947,12 @@ def main():
             snapshots[role]={'source':str(source),'sha256':identity,'bytes':destination.stat().st_size}
             setattr(args,role,destination)
         receipt['immutable_binary_snapshots']=snapshots
+        receipt['browser_entry_helper'] = {
+            'caller_path': str(args.browser_entry_helper),
+            'caller_sha256': args.browser_entry_helper_sha256,
+            'snapshot_path': str(artifact_dir / 'browser_entry_helper'),
+            'snapshot_sha256': snapshots['browser_entry_helper']['sha256']}
+        args.browser_entry_helper = artifact_dir / 'browser_entry_helper'
         if product_source_enabled:
             args.console_source_helper = artifact_dir / 'console_source_helper'
         if expiry:
@@ -847,7 +988,9 @@ def main():
                     helper_environment = {'PATH': '/usr/bin:/bin', 'FABRIC_STORAGE_ROOT': str(DATA),
                                           'FABRIC_SCRATCH_ROOT': str(Path(os.environ['FABRIC_SCRATCH_ROOT']).resolve())}
                     helper = browser_group_launch(group_parent, owned_groups,
-                        'console-source-verifier', argv, helper_log, helper_environment)
+                        'console-source-verifier', argv, helper_log, helper_environment,
+                        entry_helper=args.browser_entry_helper,
+                        entry_helper_sha256=args.browser_entry_helper_sha256)
                     binding = owned_groups[-1]
                     helper_timeout = min(90, max(0, deadline - time.monotonic()))
                     try:
@@ -1835,6 +1978,7 @@ self.addEventListener("fetch",event=>{
             try:announcements.close()
             except BaseException as error:cleanup_error=error
         try:
+            browser_cleanup_provisionals(group_parent)
             stop_browser_groups(group_parent, owned_groups)
             browser_reap_domain(group_parent, owned_groups)
             end_browser_domain(group_parent, owned_groups)
@@ -1858,7 +2002,11 @@ self.addEventListener("fetch",event=>{
             receipt['reader_namespaces'] = group_parent.get('namespaces')
             receipt['process_exits'] = {label: proc.returncode for label, proc in processes}
             receipt['group_stops'] = [{key: binding['group'].get(key) for key in
-                ('pid', 'start_ticks', 'kernel_empty', 'children_reaped', 'late_reaped', 'stop_error')} for binding in owned_groups]
+                ('pid', 'start_ticks', 'entry_helper_sha256', 'entry_elapsed_ns',
+                 'kernel_empty', 'children_reaped', 'late_reaped', 'stop_error')} for binding in owned_groups]
+            receipt['provisional_children'] = [{key: record.get(key) for key in
+                ('state', 'cleanup_error', 'children_reaped')} for record in
+                group_parent.get('provisional_children', [])]
             if cleanup_error is None and receipt.get('exit') == 0:
                 shutil.rmtree(work)
                 receipt['cleanup'] = 'owned fixtures removed; process groups stopped and bound children reaped'
