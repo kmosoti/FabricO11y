@@ -573,9 +573,26 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let url = format!("ws://{address}/session/mock-session");
+        listener.set_nonblocking(true).unwrap();
         let worker = thread::spawn(move || {
-            let (stream, _) = listener.accept().unwrap();
-            handler(tungstenite::accept(stream).unwrap());
+            let accept_deadline = Instant::now() + Duration::from_secs(2);
+            let stream = loop {
+                match listener.accept() {
+                    Ok((stream, _)) => break stream,
+                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        if Instant::now() >= accept_deadline {
+                            return;
+                        }
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(_) => return,
+                }
+            };
+            let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
+            let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
+            if let Ok(socket) = tungstenite::accept(stream) {
+                handler(socket);
+            }
         });
         (url, worker)
     }
