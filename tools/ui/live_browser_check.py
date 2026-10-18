@@ -67,12 +67,12 @@ def browser_provisional_cleanup(parent, record):
         return
     browser_directory(parent); browser_directory(group)
     browser_group_check(group['exclusive'] is True and group['path'].parent == parent['path'], 'ownership')
-    descriptor = group.get('pidfd')
-    if descriptor is not None and proc.poll() is None:
-        browser_group_check(browser_pidfd(descriptor) == proc.pid
+    pidfd = group.get('pidfd')
+    if pidfd is not None and proc.poll() is None:
+        browser_group_check(browser_pidfd(pidfd) == proc.pid
             and browser_pid(proc.pid)[0] == group['start_ticks'], 'identity')
         try:
-            signal.pidfd_send_signal(descriptor, signal.SIGKILL)
+            signal.pidfd_send_signal(pidfd, signal.SIGKILL)
         except ProcessLookupError:
             pass
     try:
@@ -81,26 +81,26 @@ def browser_provisional_cleanup(parent, record):
         if group.get('fd') is None:
             record['cleanup_error'] = 'provisional child did not stop and group descriptor is absent'
             raise RuntimeError('browser-provisional-stop') from error
-        descriptor = os.open('cgroup.kill', os.O_WRONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
-                              dir_fd=group['fd'])
+        kill_fd = os.open('cgroup.kill', os.O_WRONLY | os.O_NOFOLLOW | os.O_CLOEXEC,
+                          dir_fd=group['fd'])
         try:
-            if os.write(descriptor, b'1') != 1:
+            if os.write(kill_fd, b'1') != 1:
                 raise RuntimeError('browser-provisional-cgroup-kill')
         finally:
-            os.close(descriptor)
+            os.close(kill_fd)
         try:
             proc.wait(timeout=min(5, max(0, parent['deadline_monotonic_ns'] / 1e9 - time.monotonic())))
         except subprocess.TimeoutExpired as cleanup_error:
             record['cleanup_error'] = 'owned provisional cgroup did not stop within its bound'
             raise RuntimeError('browser-provisional-stop') from cleanup_error
     if (Path('/proc') / str(proc.pid)).exists():
-        browser_group_check(descriptor is not None and browser_pidfd(descriptor) == -1, 'identity')
+        browser_group_check(pidfd is not None and browser_pidfd(pidfd) == -1, 'identity')
     browser_directory(group)
     browser_group_check('populated 0' in (group['path'] / 'cgroup.events').read_text().splitlines(), 'stop')
     record['children_reaped'] = proc.returncode is not None and not (Path('/proc') / str(proc.pid)).exists()
     browser_group_check(record['children_reaped'], 'reap')
-    if descriptor is not None:
-        os.close(descriptor); group['pidfd'] = None
+    if pidfd is not None:
+        os.close(pidfd); group['pidfd'] = None
     os.close(group['fd']); group['fd'] = None
     record['state'] = 'cleaned'
 

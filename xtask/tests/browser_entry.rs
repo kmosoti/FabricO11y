@@ -12,6 +12,16 @@ spec.loader.exec_module(module)
 helper = pathlib.Path(os.environ['FABRIC_BROWSER_ENTRY_HELPER'])
 helper_sha = hashlib.sha256(helper.read_bytes()).hexdigest()
 limits = module.require_limits()
+subprocess.run(['systemctl', '--user', 'set-property', '--runtime', limits.name,
+                'MemoryHigh=3500000000', 'MemoryMax=4000000000', 'MemorySwapMax=0',
+                'CPUQuota=200%', 'TasksMax=512'], check=True, capture_output=True)
+outer_limits = {key: (limits / key).read_text().strip() for key in
+                ('memory.max', 'memory.high', 'memory.swap.max', 'cpu.max', 'pids.max')}
+assert 3999995904 <= int(outer_limits['memory.max']) <= 4000000000, outer_limits
+assert 0 < int(outer_limits['memory.high']) <= 3500000000, outer_limits
+assert outer_limits['memory.swap.max'] == '0', outer_limits
+assert outer_limits['cpu.max'] == '200000 100000', outer_limits
+assert outer_limits['pids.max'] == '512', outer_limits
 scratch = pathlib.Path(os.environ['FABRIC_SCRATCH_ROOT'])
 fixture = scratch / ('browser-entry-' + secrets.token_hex(8))
 fixture.mkdir(mode=0o700)
@@ -103,7 +113,8 @@ finally:
 
 parent = module.begin_browser_domain(limits, time.monotonic() + 45)
 bindings = []
-started = time.monotonic_ns()
+total_started = time.monotonic_ns()
+positive_started = time.monotonic_ns()
 with (fixture / 'positive.log').open('wb') as log:
     proc = module.browser_group_launch(parent, bindings, 'immediate-true',
         ['/usr/bin/true'], log, os.environ.copy(), entry_helper=helper,
@@ -115,6 +126,7 @@ with (fixture / 'positive.log').open('wb') as log:
 module.stop_browser_groups(parent, bindings)
 assert bindings[0]['group']['kernel_empty'] and bindings[0]['group']['children_reaped']
 positive_peak = int((bindings[0]['group']['path'] / 'memory.peak').read_text())
+positive_elapsed = time.monotonic_ns() - positive_started
 
 # Alter only the child group argv while running the actual parent launch seam.
 wrong_path, wrong = subgroup(parent, name + '-wrong')
@@ -166,8 +178,9 @@ assert_stopped(timeout_path, timeout_record); log.close(); timeout_record.pop('l
 module.browser_reap_domain(parent, bindings)
 module.end_browser_domain(parent, bindings)
 domain_closed = True
-elapsed = time.monotonic_ns() - started
-print(json.dumps({'state':'complete','positive_exit':0,'positive_elapsed_ns':elapsed,
+total_elapsed = time.monotonic_ns() - total_started
+print(json.dumps({'state':'complete','positive_exit':0,'positive_elapsed_ns':positive_elapsed,
+    'total_fixture_elapsed_ns':total_elapsed,
     'positive_peak_cgroup_bytes':positive_peak,
     'peak_child_rss_kib':resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,
     'wrong_placement_rejected':True,'release_eof_rejected':True,
@@ -181,9 +194,11 @@ shutil.rmtree(fixture)
 #[test]
 #[ignore = "requires explicit DATA-backed resource_group admission and delegated cgroup v2"]
 fn actual_parent_seam_binds_before_releasing_native_short_child() {
-    let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let root = manifest_dir
         .parent()
-        .expect("workspace root");
+        .expect("workspace root")
+        .to_path_buf();
     let helper = env!("CARGO_BIN_EXE_xtask");
     let result = Command::new("python3")
         .arg("-c")
