@@ -1,5 +1,11 @@
 # Experiments
 
+Bounded verification scheduling: [FIFO protocol](formal/verification-concurrency-protocol.md),
+[weighted follow-up](formal/verification-scheduling-protocol.md) and
+[finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-scheduling-results-01).
+Seven unchanged lightweight checks had matching semantic inventories and retained
+failure controls; this is not full-CI or deployment qualification.
+
 The [engineering evidence protocol](formal/engineering-evidence-protocol.md) registers
 bounded artifact/dependency/receipt composition controls and matched finite costs.
 The [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-engineering-evidence-results-01)
