@@ -3480,6 +3480,7 @@ name = "xtask"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "openssl",
  "serde",
  "serde_json",
  "sha2",
