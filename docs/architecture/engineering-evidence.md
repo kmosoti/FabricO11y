@@ -103,6 +103,21 @@ for its explicit WebDriver accept; the capability does not accept the prompt.
 The independent Firefox comparison observed the same geometry with Bun and the Rust primitive, but
 neither that probe nor the source controls grant browser acceptance. The [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01#native-bidi-viewport-and-confirmation-controls) retain actual geometry, confirmation and cleanup observations.
 
+## Browser security request capture
+
+The opt-in `--security-probes` browser check captures the completed registration
+payload in private browser memory for the existing replay assertions. An
+actual-source, no-network Bun diagnostic found that the prototype observer threw
+before dispatch for `fetch(Request)` without an init argument, while the URL plus
+init control dispatched and captured the payload. The candidate correction is
+to clone a `Request` input before constructing the inspection request, read that
+clone, then forward the original fetch arguments unchanged. It remains held
+pending a blank Chrome body/forwarding probe; Bun alone does not establish Chrome
+behavior. The flag is required only on the positive Chrome CI invocation. This
+is harness instrumentation evidence, not product authentication or browser
+acceptance. See the
+[security-probe criteria](../experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement).
+
 ## Console source provenance
 
 The [registered correction](../experiments/formal/console-provenance-protocol.md)
