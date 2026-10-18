@@ -134,6 +134,8 @@ exact child identity and cleanup state. The parent fixture must not require a
 browser runtime in Rust unit tests; focused unit controls cover framing,
 descriptor direction/distinctness and timeout parsing, while this one Linux
 fixture establishes actual cgroup placement and parent/helper composition.
+Record each cell's actual elapsed time, peak RSS and cleanup state as bounded
+composition diagnostics, without ranking against an unbarriered launch.
 Preserve all failures and raw logs. These controls establish the entry protocol
 only; they give no browser, package, product or release acceptance credit.
 
