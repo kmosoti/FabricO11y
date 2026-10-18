@@ -232,3 +232,29 @@ Reject absent/false observations, duplicate bindings and the historical prose
 alone. Do not change the injected defect or its expected assertion. Test the
 observed hosted receipt and representative corruptions before rerunning CI.
 A corrected offline grade does not relabel the original failed workflow green.
+
+## Failed-run evidence retention disposition
+
+Trust-boundary amendment, 2026-10-18. Hosted receipt
+`results/console-source-full-gates-01/pr82-third-fast-negative-browser-01.json`
+has SHA-256
+`b12ff444cac0d4f083f0d9d1b411485cbba781d38930b97fd391dacf7e392e37`. It records
+the unchanged API-cache defect and prerequisites, with complete process stops,
+but its cleanup disposition retains failed-run evidence in owned fixture
+storage. The grader's prior exact cleanup string represented fixture removal and
+therefore refused this valid retained-evidence receipt.
+
+The browser defect graders admit exactly these two cleanup disposition values:
+
+- `owned fixtures removed; process groups stopped and bound children reaped`
+- `failure evidence retained in owned fixture storage; process groups stopped and bound children reaped`
+
+The first records successful fixture removal; the second records intentional
+failure-evidence retention. Either value still requires the existing cleanup
+evidence: nonempty unique positive PID/start-tick bindings; every group
+kernel-empty and children-reaped; no stop or cleanup error; a complete process
+exit map with one exact integer exit per stopped group; and own-child ECHILD
+confirmation. The exact defect name, exit status, injected-defect flag and
+prerequisite checks remain unchanged. Every other cleanup label, including the
+historical prose alone, remains invalid. Preserve and regress the hosted receipt
+without changing its failed workflow outcome.
