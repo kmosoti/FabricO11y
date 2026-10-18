@@ -3,7 +3,7 @@
 use serde_json::{Value, json};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -34,6 +34,33 @@ fn write_new(path: &Path, bytes: &[u8]) -> Result<(), String> {
 fn report(out: &Path, value: &Value) -> Result<(), String> {
     let bytes = serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?;
     write_new(&out.join("baseline-report.json"), &bytes)
+}
+
+fn file_identity(metadata: &fs::Metadata) -> (u64, u64, u64, i64, i64, i64, i64) {
+    (metadata.dev(), metadata.ino(), metadata.len(), metadata.mtime(), metadata.mtime_nsec(), metadata.ctime(), metadata.ctime_nsec())
+}
+
+fn read_helper(path: &Path) -> Result<(Vec<u8>, (u64, u64, u64, i64, i64, i64, i64)), String> {
+    let before = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    if !before.is_file() || before.file_type().is_symlink() || before.len() > 65_536 {
+        return Err("pinned helper must be an ordinary file no larger than 64 KiB".into());
+    }
+    let mut file = OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path).map_err(|e| e.to_string())?;
+    let opened = file.metadata().map_err(|e| e.to_string())?;
+    let identity = file_identity(&before);
+    if !opened.is_file() || file_identity(&opened) != identity {
+        return Err("pinned helper changed before read".into());
+    }
+    let mut bytes = Vec::new();
+    Read::take(&mut file, 65_537).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    let after = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    if bytes.len() as u64 != opened.len()
+        || file_identity(&file.metadata().map_err(|e| e.to_string())?) != identity
+        || file_identity(&after) != identity {
+        return Err("pinned helper changed while read".into());
+    }
+    Ok((bytes, identity))
 }
 
 fn fixture(work: &Path) -> Result<(PathBuf, Value), String> {
@@ -95,13 +122,8 @@ fn main() -> Result<(), String> {
     let before = source_state(&repo)?;
     if before["dirty"] != false { return Err("project source must be clean".into()); }
     let helper = storage.join(HELPER_REL);
-    let metadata = fs::symlink_metadata(&helper).map_err(|e| e.to_string())?;
-    if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 65_536 {
-        return Err("pinned helper must be an ordinary file no larger than 64 KiB".into());
-    }
-    let mut source = Vec::new();
-    File::open(&helper).map_err(|e| e.to_string())?.take(65_537).read_to_end(&mut source).map_err(|e| e.to_string())?;
-    if source.len() as u64 != metadata.len() || xtask::sha256_hex(&source) != HELPER_SHA {
+    let (source, helper_identity) = read_helper(&helper)?;
+    if xtask::sha256_hex(&source) != HELPER_SHA {
         return Err("pinned helper size or SHA-256 mismatch".into());
     }
     if source.windows(OLD_ROOT.len()).filter(|part| *part == OLD_ROOT).count() != 1 {
@@ -132,7 +154,12 @@ fn main() -> Result<(), String> {
         && observed["path_count"] == expected["path_count"];
     let after = source_state(&repo)?;
     let source_unchanged = before["commit"] == after["commit"] && after["dirty"] == false;
-    let mut record = json!({
+    let helper_after = read_helper(&helper);
+    let helper_recheck_error = helper_after.as_ref().err().cloned();
+    let helper_unchanged = helper_after.as_ref().is_ok_and(|(bytes, identity)| {
+        *identity == helper_identity && xtask::sha256_hex(bytes) == HELPER_SHA
+    });
+    let record = json!({
         "experiment":"native-storage-census baseline",
         "helper":helper,"helper_sha256":HELPER_SHA,"helper_bytes":source.len(),
         "root_substitution":"exactly one literal root assignment; original helper bytes otherwise unchanged",
@@ -140,13 +167,21 @@ fn main() -> Result<(), String> {
         "argv":argv,"exit_code":output.status.code(),"success":output.status.success(),
         "stdout_file":"stdout.bin","stderr_file":"stderr.bin","stdout":String::from_utf8_lossy(&output.stdout),"stderr":String::from_utf8_lossy(&output.stderr),
         "fixture_root":root,"manifest":manifest,"observed":observed,"totals_match":matched,"source_unchanged":source_unchanged,
-        "source_before":before,"source_after":after,"cleanup":"fixture retained pending report"
+        "helper_unchanged":helper_unchanged,"helper_recheck_error":helper_recheck_error,
+        "source_before":before,"source_after":after,"cleanup":"pending; see cleanup.json"
     });
     report(&out, &record)?;
-    if !matched || !source_unchanged { return Err(format!("baseline validation failed; fixture retained at {}", work.display())); }
-    fs::remove_dir_all(&work).map_err(|e| format!("baseline passed but fixture cleanup failed at {}: {e}", work.display()))?;
-    record["cleanup"] = json!("owned fixture removed after report was retained");
-    fs::write(out.join("baseline-report.json"), serde_json::to_vec_pretty(&record).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())?;
+    if !matched || !source_unchanged || !helper_unchanged {
+        write_new(&out.join("cleanup.json"), br#"{"outcome":"fixture retained because validation failed"}"#)?;
+        return Err(format!("baseline validation failed; fixture retained at {}", work.display()));
+    }
+    let cleanup = match fs::remove_dir_all(&work) {
+        Ok(()) => json!({"outcome":"owned fixture removed after report was retained"}),
+        Err(error) => json!({"outcome":"cleanup failed; fixture retained","error":error.to_string(),"fixture":work}),
+    };
+    write_new(&out.join("cleanup.json"), &serde_json::to_vec_pretty(&cleanup).map_err(|e| e.to_string())?)?;
+    if cleanup["outcome"] != "owned fixture removed after report was retained" {
+        return Err("baseline passed but owned fixture cleanup failed; see cleanup.json".into());
+    }
     Ok(())
 }
