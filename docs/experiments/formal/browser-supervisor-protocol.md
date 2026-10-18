@@ -134,8 +134,9 @@ policy change is part of this amendment.
 
 Prospective R3 harness amendment, 2026-10-18. The exact frozen S1-03/full
 caller snapshot at `5220e27` predates the `browser_group_launch` signature that
-requires the pinned native entry helper. Its `BrowserSupervisor.main()` still
-calls that function without `entry_helper` and `entry_helper_sha256`. The
+requires the pinned native entry helper. Its module-level
+`browser_supervisor.supervise(args)` still calls that function without
+`entry_helper` and `entry_helper_sha256`. The
 reachable caller chain is `soak_r3.measure` → `ProductionAccess` →
 `CandidateFixture` → `ConsoleBridge` → `BrowserSupervisor` →
 `browser_group_launch`; the R3 full admission must therefore supply the helper
@@ -150,7 +151,7 @@ schedule.
 
 Before source correction, a Rust-hosted source regression extracts the actual
 `browser_group_launch` keyword-only signature and actual call expression from
-`BrowserSupervisor.main()`. It executes that call shape against a signature-
+`browser_supervisor.supervise(args)`. It executes that call shape against a signature-
 preserving stub, requiring the explicit helper path and exact digest; the
 current missing-keyword call must fail in the test body with the specific
 Python `TypeError`, not a compile or import failure. A separate omitted-helper
