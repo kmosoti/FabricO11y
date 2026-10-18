@@ -53,6 +53,16 @@ and confirmed cleanup; registered controls and stopped closeout completed
 [#41](https://github.com/kmosoti/FabricO11y/issues/41). Earlier custody,
 removal and startup failures remain preserved in their protocols and raw records.
 
+A packaged Chrome response diagnostic exposed that the frozen `e078ba23` Explore
+summary labeled both incomplete and explicit-gap responses only as incomplete,
+even though the exact response details retained the `gaps` field. Current query
+status now appends visible gap and unavailable-source counts while preserving the
+existing coverage wording. The originating failed diagnostic and source change
+are recorded in the [gap-summary finding](experiments/formal/query-gap-summary-findings.md).
+This source change has not yet been built or checked; the frozen package remains
+unchanged, so a new product build and browser rerun are required before it can
+affect packaged behavior.
+
 The native simulator-publication and browser-continuity prerequisites have finite
 certificates. [S1-03](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-r3-s1-native-headroom-run-03)
 completed 70 seconds of actual offered work and stopped headroom grading. This is
