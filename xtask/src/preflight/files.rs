@@ -267,9 +267,11 @@ impl ArtifactStore {
 // A thread-local unit-test seam, absent from production builds. Positive counts
 // follow real descriptor reads; zero marks EOF or completion of the admitted extent.
 #[cfg(test)]
+type ReadHook = std::cell::RefCell<Option<Box<dyn FnMut(usize)>>>;
+
+#[cfg(test)]
 thread_local! {
-    static READ_HOOK: std::cell::RefCell<Option<Box<dyn FnMut(usize)>>> =
-        std::cell::RefCell::new(None);
+    static READ_HOOK: ReadHook = std::cell::RefCell::new(None);
 }
 
 #[cfg(test)]
