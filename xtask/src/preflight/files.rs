@@ -344,4 +344,38 @@ mod tests {
         }
         std::fs::remove_dir_all(root).unwrap();
     }
+
+    #[test]
+    fn growing_file_stays_within_admitted_extent() {
+        let scratch = std::env::var_os("FABRIC_SCRATCH_ROOT").expect("launcher scratch");
+        let root = Path::new(&scratch).join(format!("preflight-growing-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("artifact");
+        std::fs::write(&path, b"original").unwrap();
+        let expected = crate::sha256_hex(b"original");
+        let mut store = ArtifactStore::new(&root).unwrap();
+        READ_HOOK.with(|hook| {
+            *hook.borrow_mut() = Some(Box::new({
+                let path = path.clone();
+                let mut appended = false;
+                move |count| {
+                    if count > 0 && !appended {
+                        let mut file = std::fs::OpenOptions::new()
+                            .append(true)
+                            .open(&path)
+                            .unwrap();
+                        std::io::Write::write_all(&mut file, b"extra").unwrap();
+                        appended = true;
+                    }
+                }
+            }));
+        });
+        let result = store.read("artifact", &expected, false);
+        READ_HOOK.with(|hook| *hook.borrow_mut() = None);
+        assert!(result
+            .unwrap_err()
+            .contains("artifact changed during read"));
+        assert!(store.bytes_hashed() <= 8);
+        std::fs::remove_dir_all(root).unwrap();
+    }
 }
