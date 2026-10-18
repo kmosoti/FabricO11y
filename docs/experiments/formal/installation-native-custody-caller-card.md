@@ -230,6 +230,46 @@ exclusive `results/owner-fixture-constructor-02`; its output must be independent
 validated before #46 consumes it. Existing native #41 predecessor packages,
 images, positive cells, missing-pending/live-writer refusals, source controls,
 resource/storage/deadline limits and cleanup gates remain mandatory.
+## Query-gap candidate identity, prospective revision 7
+
+Reason: the repaired query-gap candidate is the next product candidate after
+the replacement TLS candidate above. Its fresh build and inspection produced a
+new exact source/package tuple. The first new #41 attempt (run 38792) exited 2
+before VM creation because the frozen568 host admission still pinned the e078 /
+28bc tuple above. That refusal is retained and gives no native installation
+result. This amendment changes only the candidate identity checked by host
+admission; it does not change guest observations, lifecycle assertions,
+producer-refusal expectations, resource limits or independent oracles.
+
+| DATA-relative immutable input | SHA-256 |
+| --- | --- |
+| `results/candidate-build-query-gap-01/candidate-admission.json` | `9c83d196a5ccf85e00d3e9becc79032f3fd57d7aab64a396690803bef841aa5a` |
+| `results/candidate-build-query-gap-01/package-inspection.json` | `ad3c597a10d9841548165c47ddd7d504095db94063223e1f93a73a0d887d30b8` |
+| `results/installation-package-build/query-gap-01-deb-a/receipt.json` | `89ce427d82a0065ca71e033aa696708e85c338d063d4a75cf4e4ba263f53fe72` |
+| Canonical DEB named by that receipt | `c15fd73bc41fef2ef300e5a729bd3640fa703fe777e76027df6821d3733b3fc8` |
+| `results/packages/query-gap-01-rpm-a/receipt.json` | `106b834855851b604d708228493192305327ff8236de3add9f4cf25c1c830919` |
+| Canonical RPM named by that receipt | `83ed7db60e81381f70d0547181899fd3860f22a6821a07b0080e9ad25dd06231` |
+| `results/console-query-gap-01-a/build.json` | `22158473cc73d399318131a24442155332a45438dc6edb0e3b81e1a8a4001856` |
+
+The package receipts bind frozen product commit
+`b1e5874fbf9c6feb611d98ed40386ac44a703fe1`, canonical package source commit
+`43150dbd5cff9e0bdb0082997e796978c659d8af`, and source epoch `1792340646`.
+The existing host admission must still require the DEB and RPM to agree on the
+complete source record, verify each receipt's package bytes, and join the
+candidate admission, helper manifest/binaries, source manifest/bundle and
+console receipt. The new candidate's fresh #41 positive, mutation and producer
+refusal cells, including their exact runtime/source bindings, remain required
+before any dependent #42 work; the build and inspection alone are not #41
+acceptance. The original runtime568 and runtime366 trees remain immutable
+historical inputs. New candidate descendants retain their respective source
+bases: an A commit from runtime568 supplies Debian03 and the six mutation
+cells, while merge M brings current main into A and retains runtime366's
+Fedora04 and two refusal-cell behavior. Each descendant has its own owner
+source hashes. The unchanged `origin/main` ancestry requirement means these
+new source pins are admissible only after ordinary PR merge; the original 568
+and 366 revisions remain historical and cannot be reused for this candidate.
+All earlier candidate receipts remain unchanged.
+
 ## Applied configuration and failure-export ceiling amendment
 
 The replacement Debian native counterexample in the native custody protocol

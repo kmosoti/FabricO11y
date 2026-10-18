@@ -423,8 +423,11 @@ Read a complete stopped raw tree before projecting its fixture rows; compare the
 original payload hash with the candidate sender's journal ACK. Distinguish an
 archived byte copy, original descriptor/stat identity, and a live writer's custody.
 Explain why startup diagnostics need a separate reboot checkpoint and why its
-later evidence cannot justify an earlier query answer. The new harness remains
-unverified until its registered source checks and genuine native cells execute.
+later evidence cannot justify an earlier query answer. Query-gap candidate
+admission now pins the complete DEB/RPM source and receipt tuple while retaining
+the original runtime variants and merge-ancestry check. The focused literal
+refusal controls and fresh native cells remain unverified until they execute on
+the merged source.
 
 The [native census](architecture/engineering-evidence.md#native-storage-census)
 connects Rust ownership to filesystem effects: keep directory descriptors alive,
