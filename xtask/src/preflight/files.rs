@@ -140,10 +140,22 @@ impl ArtifactStore {
     }
 
     pub fn read(&mut self, path: &str, expected: &str, keep_json: bool) -> Result<(), String> {
-        parts(path)?;
         require(hex(expected, 64), "invalid SHA-256")?;
+        self.read_inner(path, Some(expected), keep_json)
+    }
+
+    /// Observe a current JSON file without an external digest pin. This is not
+    /// evidence admission: callers must establish its source/receipt authority.
+    /// Reading, hashing, bounds and identity rechecks are identical to `read`.
+    pub fn observe_json(&mut self, path: &str) -> Result<&Value, String> {
+        self.read_inner(path, None, true)?;
+        self.json(path)
+    }
+
+    fn read_inner(&mut self, path: &str, expected: Option<&str>, keep_json: bool) -> Result<(), String> {
+        parts(path)?;
         if let Some(record) = self.records.get_mut(path) {
-            require(record.digest == expected, "conflicting path hash")?;
+            require(expected.is_none_or(|pin| record.digest == pin), "conflicting path hash")?;
             require(
                 !keep_json || record.json.is_some(),
                 "JSON payload was not retained",
@@ -202,7 +214,7 @@ impl ArtifactStore {
             "artifact changed during read",
         )?;
         let actual = format!("{:x}", digest.finalize());
-        require(actual == expected, "artifact hash mismatch")?;
+        require(expected.is_none_or(|pin| actual == pin), "artifact hash mismatch")?;
         let json = if keep_json {
             Some(strict_json(&payload)?)
         } else {

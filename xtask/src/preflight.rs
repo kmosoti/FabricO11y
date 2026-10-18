@@ -310,7 +310,7 @@ pub fn verify_plan(
 }
 
 /// Check the actual native cgroup, independent of claimed receipt fields.
-fn require_limits() -> Result<(), String> {
+pub fn require_limits() -> Result<(), String> {
     let membership = io(std::fs::read_to_string("/proc/self/cgroup"))?;
     let relative = membership
         .lines()
