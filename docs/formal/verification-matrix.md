@@ -12,8 +12,11 @@ is admission tooling, outside the product invariant IDs below. Its registered
 reference accounting, full-attempt reset, narrow cleanup identity and fail-closed
 errors. The [revision-bound record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-storage-census-results-01)
 contains six passing focused controls at `9e3b6e0`, the caught partial-counter
-mutant and an isolated corrective build/comparison at `10540df`. Later caller
-binding is not covered by those receipts. Neither these controls nor metadata
+mutant and an isolated corrective build/comparison at `10540df`. Later owner
+binding has separate source controls at `56b37cf` and namespace integration of
+its pinned executable: two original command-template positives, four native
+parser refusals and two adapter metadata refusals. Those templates resolve only
+a pure fixture digest and do not authorize VM execution. Neither these controls nor metadata
 timings establish owner-walkthrough or product qualification; the independent
 Python product oracles and original acceptance gates remain mandatory.
 
