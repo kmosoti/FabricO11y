@@ -121,3 +121,25 @@ file-unlink reset assertion must fail (36 bytes instead of 32 after restoration)
 while the other five controls retain their outcomes. Expect test process 101,
 not a compile/setup error. Preserve source, logs, stop and failure fixture; never
 merge this defect. This checks one concrete composite failure, not every defect.
+
+## Source/cache join correction before continuation
+
+After the mutant ran, the production-source rerun at `102bdfc` executed a cached
+mutant test binary from the shared target. The source was unchanged; Cargo did
+not compile, the embedded path named `storage-census-mutant`, and the same named
+36-versus-32 assertion failed. Preserve that actual 101 as an invalid source/
+artifact join, not a production regression. The retained test ELF SHA-256 is
+`de251eded7ac465a50eb63b56d0371a8e886abf01c9bb81b73e3ff2534bdd9c8`;
+`results/storage-census-comparison-01/actual-cache-failure-01.json` records origin.
+
+Before continuation, give production and mutant variants distinct, explicit
+DATA build targets inside the original resource launcher command, using
+`env CARGO_TARGET_DIR=ABS_DATA_VARIANT_TARGET`. The launcher itself and all caps
+remain unchanged; an outer environment setting is insufficient because the
+launcher assigns its default target. Keep download caches shared. Pin each
+target to its worktree/source and inspect compiler activity plus resulting
+artifact identity. Rerun the affected production controls in a new empty target;
+only then build/archive the native executable and comparison driver together.
+Do not erase the offending cache or claim the failed run passed. This correction
+does not by itself invalidate unrelated historical artifacts or refreeze product
+packages; those retain their own source/provenance and actual acceptance bounds.
