@@ -1081,14 +1081,28 @@ mod owner_binding_tests {
         bad_hash[6] = "A".repeat(64);
         let mut bad_helper_path = base.clone();
         bad_helper_path[14] = "relative-helper".into();
+        let mut helper_outside_data = base.clone();
+        helper_outside_data[14] = "/tmp/xtask-browser-enter-exec".into();
+        let mut helper_traversal = base.clone();
+        helper_traversal[14] = format!("{ROOT}/results/../scratch/helper");
+        let mut helper_noncanonical = base.clone();
+        helper_noncanonical[14] = format!("{ROOT}/results//helper");
         let mut bad_helper_hash = base.clone();
-        bad_helper_hash[16] = "B".repeat(64);
+        bad_helper_hash[16] = "g".repeat(64);
+        let mut uppercase_helper_hash = base.clone();
+        uppercase_helper_hash[16] = "B".repeat(64);
+        let mut short_helper_hash = base.clone();
+        short_helper_hash[16] = "b".repeat(63);
+        let mut duplicate_helper_flag = base.clone();
+        duplicate_helper_flag[15] = "--browser-entry-helper".into();
         let mut bad_path = base.clone();
         bad_path[4] = format!("{ROOT}/results/../scratch/admission.json");
         let mut nul_path = base.clone();
         nul_path[4] = format!("{ROOT}/results/owner\0.json");
         for argv in [bad_outer, bad_family, bad_hash, bad_helper_path,
-                     bad_helper_hash, bad_path, nul_path] {
+                     helper_outside_data, helper_traversal, helper_noncanonical,
+                     bad_helper_hash, uppercase_helper_hash, short_helper_hash,
+                     duplicate_helper_flag, bad_path, nul_path] {
             assert!(bind("debian", &label, &argv).is_err());
         }
     }
