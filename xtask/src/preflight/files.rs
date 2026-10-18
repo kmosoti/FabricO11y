@@ -296,6 +296,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn plan_bytes_share_total_budget() {
+        // Origin: the Rust contract's explicit total-read budget includes the
+        // plan. The inherited Python path excluded it; exercise that boundary
+        // with a seeded counter, without allocating or reading 32 GiB.
+        let scratch = std::env::var_os("FABRIC_SCRATCH_ROOT").expect("data scratch");
+        let root = Path::new(&scratch).join(format!("plan-budget-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("plan.json"), b"{}").unwrap();
+        std::fs::write(root.join("other.json"), b"{}").unwrap();
+        let pin = crate::sha256_hex(b"{}");
+        let mut store = ArtifactStore::new(&root).unwrap();
+        store.artifact_total = TOTAL_LIMIT - 2;
+        store.plan("plan.json", &pin).unwrap();
+        assert_eq!(store.artifact_total, TOTAL_LIMIT);
+        assert!(store.read("other.json", &pin, false).is_err());
+        assert_eq!(store.bytes_hashed(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn during_read_replacement_and_mutation_are_refused() {
         let scratch = std::env::var_os("FABRIC_SCRATCH_ROOT").expect("launcher scratch");
         let root = Path::new(&scratch).join(format!("preflight-race-{}", std::process::id()));
