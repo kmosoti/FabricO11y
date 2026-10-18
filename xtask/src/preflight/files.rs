@@ -2,7 +2,6 @@
 use super::json::{JSON_LIMIT, JSON_TOTAL_LIMIT};
 use super::{hex, io, require, strict_json};
 use serde_json::Value;
-use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::ffi::CString;
 use std::fs::{File, Metadata};
@@ -199,7 +198,7 @@ impl ArtifactStore {
         if keep_json {
             self.admit_json(info.len())?;
         }
-        let mut digest = Sha256::new();
+        let mut digest = crate::digest::Sha256::new();
         let mut payload = Vec::new();
         let mut buffer = vec![0; CHUNK];
         let mut size = 0;
@@ -233,7 +232,7 @@ impl ArtifactStore {
                 && size == info.len(),
             "artifact changed during read",
         )?;
-        let actual = format!("{:x}", digest.finalize());
+        let actual = crate::digest::hex(&digest.finish());
         require(
             expected.is_none_or(|pin| actual == pin),
             "artifact hash mismatch",
