@@ -120,14 +120,25 @@ The opt-in `--security-probes` browser check captures the completed registration
 payload in private browser memory for the existing replay assertions. An
 actual-source, no-network Bun diagnostic of frozen harness `73cccefc` found its
 old observer threw before dispatch for `fetch(Request)` without init, while a
-URL-plus-init control dispatched. The current candidate wrapper's pinned-Bun
-effect control passed Request-only capture, URL-plus-init, Request-plus-init
-body override, and original Request-body readability at source SHA
-`667337d4`; both controls remain diagnostics, not Chrome evidence. A blank Chrome
-body/forwarding probe is still pending before deciding whether to clone a
-Request before constructing the inspection request. The flag is required only
-on the positive Chrome CI invocation. This is harness instrumentation evidence,
-not product authentication or browser acceptance. See the
+URL-plus-init control dispatched. The candidate wrapper's pinned-Bun effect
+control passed Request-only capture, URL-plus-init, Request-plus-init body
+override, and original Request-body readability at source SHA `667337d4`. A
+blank Chrome probe found that constructing the inspection request from the
+original `Request` consumed its body before forwarding. The clone-first
+correction was exercised in a later blank Chrome run at source SHA
+`3e588bbb5361722116a2f5fe07ca46d30efb0816bc0dd21be91a569201967af9`: six cases
+and 16 predicates passed, including `bodyUsed == false` when the original
+Request reached the fetch stub. The stub's subsequent body consumption is not
+a wrapper invariant. Two intervening attempts were setup failures only: one
+used stale operands and one had a truncated extracted script; neither gives a
+behavior verdict. The final run returned DELETE 200, stopped both process
+groups with empty kernels and reaped children, recorded the Bun client exit 0
+and intentional ChromeDriver SIGTERM (-15), and removed scratch. The pinned-Bun
+check and these browser effects are diagnostics, not product authentication or
+browser acceptance. The Chrome06 terminal is
+`/run/media/kmosoti/data/FabricO11y/results/chrome-fetch-browser-effect-01/terminal-06.json`
+(SHA-256 `7a6341b31d3f26634000a2783ff01aea3b26748e1ee9440a5eb6e3fa14bc283c`).
+The flag is required only on the positive Chrome CI invocation. See the
 [security-probe criteria](../experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement).
 
 ## Console source provenance
