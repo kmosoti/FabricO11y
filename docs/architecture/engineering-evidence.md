@@ -33,13 +33,29 @@ Existing Python product oracles stay independent; no MCP server is required.
 
 The [registered correction](../experiments/formal/console-provenance-protocol.md)
 keeps frozen product source separate from executing harness source. A caller pins
-the product checkout commit and build-receipt digest independently. The proposed
-Rust join reuses the bounded artifact reader for that receipt and every source,
+the product checkout commit and build-receipt digest independently. The Rust
+`xtask console-source` join reuses the bounded reader for that receipt and every source,
 checks tracked paths and clean Git identity, then rechecks file identities.
 The receipt's own source path grants no authority. Default development staging
-still compares against its current checkout; packaged-mode adoption needs a
-separate explicit binding and controls. Implementation controls and measured
-results remain pending; this join grants no package or browser acceptance.
+still compares against its current checkout. Packaged mode takes five explicit
+source/receipt/helper operands and executes the hash-pinned helper through the
+existing immutable snapshots and owned browser process boundary, within 90 seconds
+and the original fixture deadline. A capped log read serves the known helper's
+bounded report; it does not bound arbitrary programs' disk output.
+
+The legacy adapter caps explicit-mode receipts before parsing and admits at most
+8 MiB of assets before reading payloads. An invocation-owned map retains verified
+asset bodies; publication writes those bytes without reopening mutable inputs.
+This trades bounded retained memory for one source-read pass and closes the
+exercised verification/copy race. Final identity checks cover every recorded
+snapshot role, including the verifier helper.
+
+At `76d9f2b`, nine primitive, eight adapter and one readiness controls, existing
+packaging/UI/cleanup suites and Clippy exited 0. The skipped-hash mutant, missing
+helper inventory and copy-race RED results remain preserved. These finite controls
+and the [warm source-hashing measurements](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01)
+grant no package or browser acceptance. Full required checks and actual packaged
+browser execution remain separate gates.
 
 ```mermaid
 flowchart LR

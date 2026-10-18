@@ -3,6 +3,9 @@
 The [console provenance protocol](formal/console-provenance-protocol.md) registers
 the frozen-product/newer-harness source distinction and bounded Rust controls.
 Alpha acceptance remains owner-paused while this engineering work proceeds.
+The [finite controls and warm measurements](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-console-source-provenance-results-01)
+retain failed fixtures, deliberate mutants and the two composition regressions;
+actual packaged-browser acceptance remains separate.
 
 The [Rust receipt-verifier migration](formal/verification-receipts-protocol.md)
 registers baseline controls, differential verification and standalone benchmarks.
