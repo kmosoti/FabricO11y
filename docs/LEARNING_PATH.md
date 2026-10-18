@@ -233,7 +233,9 @@ work. Original journal bytes and the independent query oracle remain the
 authority for received rows; the caller's transcript cannot authenticate itself.
 The owner browser also receives an explicit hash-pinned native entry helper:
 the admitted plan, caller receipt and raw census command must carry the same
-path and digest before a browser child can start.
+path and digest before a browser child can start. CandidateFixture copies that
+verified executable into its owned scratch tree and checks the copied bytes at
+closeout, so later replacement of the caller's path cannot redirect launch.
 
 For each new component, answer these in plain language before coding:
 

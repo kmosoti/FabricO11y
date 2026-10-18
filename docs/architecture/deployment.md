@@ -58,8 +58,12 @@ walkthrough callers pass the same explicitly admitted native browser-entry
 helper path and SHA-256 into the shared browser launch boundary. The owner
 walkthrough binds the pair to its admission and receipt; the native storage
 census checks its exact command shape and canonical DATA path without opening
-the helper. These harness controls do not alter browser predicates or establish
-acceptance, and their final source verification remains pending.
+the helper. CandidateFixture copies the verified helper into a fresh owned
+scratch directory, passes that immutable snapshot to ConsoleBridge, and includes
+its digest in receipt and closeout checks. Replacing the original caller path
+after snapshotting does not change the binary selected for launch. These harness
+controls do not alter browser predicates or establish acceptance, and their
+final source verification remains pending.
 
 The browser fixture's readiness predicate receives the current process explicitly
 at initial startup, offline owner recovery and shell restart. The shared helper
