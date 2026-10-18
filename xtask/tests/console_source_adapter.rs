@@ -693,9 +693,10 @@ fn security_registration_capture_source_clones_request_body_and_forwards_origina
     assert!(wrapper.contains("window.fetch=async(...args)=>"));
     assert!(wrapper.contains("const inspectionInput=input instanceof Request?input.clone():input"));
     assert!(wrapper.contains("const inspected=new Request(inspectionInput,args[1])"));
-    assert!(wrapper.find("const inspectionInput=").unwrap()
-        < wrapper.find("const inspected=").unwrap(),
-        "clone Request input before constructing the effective inspection request");
+    assert!(
+        wrapper.find("const inspectionInput=").unwrap() < wrapper.find("const inspected=").unwrap(),
+        "clone Request input before constructing the effective inspection request"
+    );
     assert!(wrapper.contains("await inspected.clone().json()"));
     assert!(wrapper.contains("return original(...args)"));
     assert!(!wrapper.contains("JSON.parse(args[1].body)"));
@@ -821,7 +822,11 @@ assert.equal(malformedResult.forwarded.length, 0, 'capture errors must not be hi
         std::env::var_os("FABRIC_STORAGE_ROOT").expect("DATA storage root for pinned Bun"),
     )
     .join("tools/bun-1.4.0/bun");
-    assert!(bun.is_file(), "pinned Bun runtime is missing: {}", bun.display());
+    assert!(
+        bun.is_file(),
+        "pinned Bun runtime is missing: {}",
+        bun.display()
+    );
     let expected_sha256 = std::env::var("FABRIC_BUN_SHA256")
         .expect("admitted FABRIC_BUN_SHA256 pin for the Bun effect test");
     assert!(
@@ -838,7 +843,11 @@ assert.equal(malformedResult.forwarded.length, 0, 'capture errors must not be hi
         "DATA Bun executable differs from its independently admitted SHA-256"
     );
     let version = Command::new(&bun).arg("--version").output().unwrap();
-    assert!(version.status.success(), "{}", String::from_utf8_lossy(&version.stderr));
+    assert!(
+        version.status.success(),
+        "{}",
+        String::from_utf8_lossy(&version.stderr)
+    );
     assert_eq!(String::from_utf8_lossy(&version.stdout).trim(), "1.4.0");
     let output = Command::new(&bun)
         .arg(&runner_path)

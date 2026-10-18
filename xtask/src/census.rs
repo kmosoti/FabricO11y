@@ -965,7 +965,8 @@ mod owner_binding_tests {
 
     const ROOT: &str = "/run/media/kmosoti/data/FabricO11y";
     const HASH: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-    const HELPER: &str = "/run/media/kmosoti/data/FabricO11y/results/native-artifacts-01/xtask-browser-enter-exec";
+    const HELPER: &str =
+        "/run/media/kmosoti/data/FabricO11y/results/native-artifacts-01/xtask-browser-enter-exec";
     const HELPER_HASH: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
     fn command(run_id: &str, family: &str) -> Vec<String> {
@@ -1099,10 +1100,21 @@ mod owner_binding_tests {
         bad_path[4] = format!("{ROOT}/results/../scratch/admission.json");
         let mut nul_path = base.clone();
         nul_path[4] = format!("{ROOT}/results/owner\0.json");
-        for argv in [bad_outer, bad_family, bad_hash, bad_helper_path,
-                     helper_outside_data, helper_traversal, helper_noncanonical,
-                     bad_helper_hash, uppercase_helper_hash, short_helper_hash,
-                     duplicate_helper_flag, bad_path, nul_path] {
+        for argv in [
+            bad_outer,
+            bad_family,
+            bad_hash,
+            bad_helper_path,
+            helper_outside_data,
+            helper_traversal,
+            helper_noncanonical,
+            bad_helper_hash,
+            uppercase_helper_hash,
+            short_helper_hash,
+            duplicate_helper_flag,
+            bad_path,
+            nul_path,
+        ] {
             assert!(bind("debian", &label, &argv).is_err());
         }
     }
