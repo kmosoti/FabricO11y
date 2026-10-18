@@ -8,6 +8,13 @@ describe its limits. Required CI adoption and complete integration checks remain
 pending; synthetic verifier fixtures do not credit product acceptance. Alpha
 acceptance is paused by the owner during verification engineering.
 
+The experimental Rust storage census now has finite classification and cleanup
+race controls plus a measured warm metadata comparison. Its
+[architecture and limits](architecture/engineering-evidence.md#native-storage-census)
+separate these checks from caller adoption and native owner acceptance. A real
+shared-target wrong-executable failure is retained; the corrective production
+build and comparison used a fresh DATA target. Acceptance remains paused.
+
 Replacement product `e078ba23` is packaged reproducibly as minimized source
 `28bcdf7` ([#40](https://github.com/kmosoti/FabricO11y/issues/40)). Fresh Debian03
 and Fedora04 baseline/lifecycle cells completed with all four custody checkpoints

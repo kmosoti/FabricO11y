@@ -128,3 +128,9 @@ The learning path covers the delivery model, log and measurement ([learning path
 - [Simulator accounting source controls](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-simulator-accounting-source-results-01) and [separate helper preparation](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-simulator-helper-preparation-results-01): source controls and canonical native red; no rebuilt-helper or acceptance result.
 
 The [fourth-checkpoint custody source record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-custody-fourth-checkpoint-source-results-01) retains the original missing-API red and the later 70-method correction; native guest acceptance remains separate.
+
+The [native storage census protocol](formal/native-storage-census-protocol.md)
+and [results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-storage-census-results-01)
+retain the independent classification baseline, partial-counter mutant, shared
+Cargo target identity failure and corrected isolated comparison. Warm metadata
+measurements do not establish whole-drive speed or owner-walkthrough acceptance.

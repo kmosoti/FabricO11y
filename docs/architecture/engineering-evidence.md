@@ -76,3 +76,30 @@ the marker and evidence; successful cleanup precedes marker removal. This bounds
 copy scratch independently of log length, while retaining full-byte verification.
 The unchanged Python receipt validator remains an independent cross-check before
 adoption. This integration is implemented but has not yet completed its gates.
+
+## Native storage census
+
+`xtask storage-census` counts the complete explicit `FABRIC_STORAGE_ROOT` without
+following directory symlinks. Owned directory descriptors anchor an iterative
+depth-first traversal; each child is opened relative to its parent before its
+metadata is counted. A checked accumulator commits all counters together. A
+per-attempt accumulator prevents an interrupted walk from leaking partial totals
+into a retry. Descriptor and iterator storage grows with active directory depth,
+not the total number of files; complete accounting still requires visiting each
+entry. Filesystem changes can prevent a consistent snapshot.
+
+The [registered protocol](../experiments/formal/native-storage-census-protocol.md)
+preserves hardlink-per-path and logical sparse-file accounting, ten attempts,
+250 ms retry spacing and fatal permission/I/O errors. Only ENOENT in explicitly
+recognized cleanup paths permits a full restart. An exact owned scratch argument
+does not itself prove ownership; a caller must bind it to its admitted command.
+Missing roots and RAM-backed roots fail closed. The six-field JSON result retains
+the old accounting interface; product delivery/query/rate oracles are unchanged.
+
+The [finite comparison and counterexample record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-storage-census-results-01)
+contains classification, real deletion controls, an actual partial-counter mutant
+and a warm 20,000-path comparison. It also records a shared Cargo target returning
+a mutant executable for a clean production worktree. Worktree/variant verification
+therefore uses a distinct DATA target passed inside the resource launcher command;
+source cleanliness alone is insufficient to identify a reused executable. Caller
+adoption and fresh owner acceptance remain separate requirements.
