@@ -260,9 +260,15 @@ candidate admission, helper manifest/binaries, source manifest/bundle and
 console receipt. The new candidate's fresh #41 positive, mutation and producer
 refusal cells, including their exact runtime/source bindings, remain required
 before any dependent #42 work; the build and inspection alone are not #41
-acceptance. Preserve runtime568 for Debian03 and six mutation cells, and
-runtime366 for Fedora04 and the two refusal cells. Their historical source
-versions and all earlier candidate receipts remain unchanged.
+acceptance. The original runtime568 and runtime366 trees remain immutable
+historical inputs. New candidate descendants retain their respective source
+bases: an A commit from runtime568 supplies Debian03 and the six mutation
+cells, while merge M brings current main into A and retains runtime366's
+Fedora04 and two refusal-cell behavior. Each descendant has its own owner
+source hashes. The unchanged `origin/main` ancestry requirement means these
+new source pins are admissible only after ordinary PR merge; the original 568
+and 366 revisions remain historical and cannot be reused for this candidate.
+All earlier candidate receipts remain unchanged.
 
 ## Applied configuration and failure-export ceiling amendment
 
