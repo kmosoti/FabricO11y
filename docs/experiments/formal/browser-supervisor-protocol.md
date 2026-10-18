@@ -133,11 +133,14 @@ policy change is part of this amendment.
 ## R3 caller adoption of the native entry helper
 
 Prospective R3 harness amendment, 2026-10-18. The exact frozen S1-03/full
-caller snapshot at `5220e27` predates the `browser_group_launch` signature that
-requires the pinned native entry helper. Its module-level
-`browser_supervisor.supervise(args)` still calls that function without
-`entry_helper` and `entry_helper_sha256`. The
-reachable caller chain is `soak_r3.measure` → `ProductionAccess` →
+caller snapshot at `5220e27` uses the older, internally consistent
+`browser_group_launch(..., *, clock=None)` API; it predates the native-entry
+migration and is not asserted to have this mismatch. Current source at
+`73cccef` inherits the same module-level
+`browser_supervisor.supervise(args)` call shape, while the shared
+`browser_group_launch` API now requires the pinned native entry helper. That
+current caller therefore needs the helper path and digest.
+The reachable current R3 caller chain is `soak_r3.measure` → `ProductionAccess` →
 `CandidateFixture` → `ConsoleBridge` → `BrowserSupervisor` →
 `browser_group_launch`; the R3 full admission must therefore supply the helper
 as an explicit immutable input and pass its path and SHA-256 through every
@@ -149,7 +152,8 @@ RELEASE protocol above. This caller adoption changes no browser geometry,
 BiDi command, confirmation handling, UI oracle, native simulator or workload
 schedule.
 
-Before source correction, a Rust-hosted source regression extracts the actual
+Before current-source correction, a Rust-hosted source regression extracts the
+actual
 `browser_group_launch` keyword-only signature and actual call expression from
 `browser_supervisor.supervise(args)`. It executes that call shape against a signature-
 preserving stub, requiring the explicit helper path and exact digest; the
