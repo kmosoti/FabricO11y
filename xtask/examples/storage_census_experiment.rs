@@ -1,12 +1,13 @@
 //! Baseline classification fixture for the pinned Python storage census.
 //! This is a finite semantic comparison, not a benchmark or acceptance gate.
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Write};
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt, symlink};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 const HELPER_REL: &str = "results/tls-dependency-update/census-owned-retry.py";
 const HELPER_SHA: &str = "d044822178a2d64305ea496d9df324021ff2514b6185975dece133caa45137a7";
@@ -137,7 +138,7 @@ fn fixture(work: &Path) -> Result<(PathBuf, Value), String> {
     Ok((case, manifest))
 }
 
-fn main() -> Result<(), String> {
+fn baseline_mode() -> Result<(), String> {
     let mut args = std::env::args_os().skip(1);
     let out_arg = args
         .next()
@@ -276,4 +277,255 @@ fn main() -> Result<(), String> {
         return Err("baseline passed but owned fixture cleanup failed; see cleanup.json".into());
     }
     Ok(())
+}
+
+const MAX_CANDIDATE_BYTES: u64 = 64 * 1024 * 1024;
+
+fn bounded_candidate(path: &Path) -> Result<(String, FileIdentity), String> {
+    if !path.is_absolute() { return Err("candidate ELF path must be absolute".into()); }
+    let before = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    if !before.is_file() || before.file_type().is_symlink() || before.len() > MAX_CANDIDATE_BYTES {
+        return Err("candidate must be an ordinary ELF file no larger than 64 MiB".into());
+    }
+    let mut file = OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(path).map_err(|e| e.to_string())?;
+    let opened = file.metadata().map_err(|e| e.to_string())?;
+    let identity = file_identity(&before);
+    if !opened.is_file() || file_identity(&opened) != identity || opened.len() > MAX_CANDIDATE_BYTES {
+        return Err("candidate changed before hashing".into());
+    }
+    let mut hash = Sha256::new();
+    let mut total = 0u64;
+    let mut buffer = [0u8; 64 * 1024];
+    let mut prefix = Vec::with_capacity(4);
+    loop {
+        let count = file.read(&mut buffer).map_err(|e| e.to_string())?;
+        if count == 0 { break; }
+        if prefix.len() < 4 { prefix.extend_from_slice(&buffer[..count.min(4 - prefix.len())]); }
+        total = total.checked_add(count as u64).ok_or("candidate size overflow")?;
+        if total > MAX_CANDIDATE_BYTES { return Err("candidate grew beyond 64 MiB while hashing".into()); }
+        hash.update(&buffer[..count]);
+    }
+    let after_fd = file.metadata().map_err(|e| e.to_string())?;
+    let after_path = fs::symlink_metadata(path).map_err(|e| e.to_string())?;
+    if total != opened.len() || file_identity(&after_fd) != identity || file_identity(&after_path) != identity {
+        return Err("candidate changed while hashing".into());
+    }
+    if prefix.as_slice() != b"\x7fELF" { return Err("candidate file is not an ELF executable".into()); }
+    let digest = hash.finalize();
+    let hex = digest.iter().map(|byte| format!("{byte:02x}")).collect::<String>();
+    Ok((hex, identity))
+}
+
+fn transformed_helper(source: &[u8], root: &Path, out: &Path, label: &str) -> Result<(PathBuf, String), String> {
+    if source.windows(OLD_ROOT.len()).filter(|part| *part == OLD_ROOT).count() != 1 {
+        return Err("expected exactly one literal DATA root assignment".into());
+    }
+    let replacement = format!("root={}", serde_json::to_string(&root.to_string_lossy()).map_err(|e| e.to_string())?);
+    let at = source.windows(OLD_ROOT.len()).position(|part| *part == OLD_ROOT).ok_or("root assignment disappeared")?;
+    let mut bytes = Vec::with_capacity(source.len() + replacement.len());
+    bytes.extend_from_slice(&source[..at]);
+    bytes.extend_from_slice(replacement.as_bytes());
+    bytes.extend_from_slice(&source[at + OLD_ROOT.len()..]);
+    let path = out.join(format!("{label}.py"));
+    write_new(&path, &bytes)?;
+    Ok((path, xtask::sha256_hex(&bytes)))
+}
+
+fn six_fields(value: &Value) -> Option<Value> {
+    Some(json!({
+        "data_bytes": value.get("data_bytes")?.as_u64()?,
+        "regular_path_bytes": value.get("regular_path_bytes")?.as_u64()?,
+        "path_count": value.get("path_count")?.as_u64()?,
+        "uid": value.get("uid")?.as_u64()?,
+        "gid": value.get("gid")?.as_u64()?,
+        "attempt": value.get("attempt")?.as_u64()?
+    }))
+}
+
+fn timed_run(label: &str, argv: &[String], storage_root: &Path, out: &Path) -> Result<Value, String> {
+    fs::create_dir(out).map_err(|e| e.to_string())?;
+    let time_path = out.join("gnu-time.txt");
+    let start = Instant::now();
+    let output = Command::new("/usr/bin/time")
+        .args(["-f", "%e %U %S %M %x", "-o"])
+        .arg(&time_path)
+        .arg("--")
+        .args(argv)
+        .env("FABRIC_STORAGE_ROOT", storage_root)
+        .output()
+        .map_err(|e| e.to_string())?;
+    let wall_ns = start.elapsed().as_nanos();
+    write_new(&out.join("stdout.bin"), &output.stdout)?;
+    write_new(&out.join("stderr.bin"), &output.stderr)?;
+    let timing = fs::read_to_string(&time_path).map_err(|e| e.to_string())?;
+    let observed: Value = serde_json::from_slice(&output.stdout).unwrap_or(Value::Null);
+    Ok(json!({
+        "label":label,"argv":argv,"exit_code":output.status.code(),"success":output.status.success(),
+        "wall_ns_including_time_wrapper":wall_ns,"gnu_time_raw":timing.trim(),
+        "stdout_file":out.join("stdout.bin"),"stderr_file":out.join("stderr.bin"),
+        "stdout":String::from_utf8_lossy(&output.stdout),"stderr":String::from_utf8_lossy(&output.stderr),
+        "observed":observed,"fields":six_fields(&observed)
+    }))
+}
+
+fn expected_fields(data: u64, regular: u64, count: u64) -> Value {
+    json!({"data_bytes":data,"regular_path_bytes":regular,"path_count":count,
+        "uid":unsafe { libc::getuid() },"gid":unsafe { libc::getgid() },"attempt":1})
+}
+
+fn candidate_mode(args: &[std::ffi::OsString]) -> Result<(), String> {
+    if args.len() != 6 || args[0].to_str() != Some("--candidate") || args[2].to_str() != Some("--candidate-sha256") || args[4].to_str() != Some("--out") {
+        return Err("usage: storage_census_experiment --candidate ABS_ELF --candidate-sha256 HEX --out FRESH_DATA_DIR".into());
+    }
+    let candidate_arg = PathBuf::from(&args[1]);
+    let expected_candidate_sha = args[3].to_str().ok_or("candidate SHA must be UTF-8")?.to_ascii_lowercase();
+    if expected_candidate_sha.len() != 64 || !expected_candidate_sha.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("candidate SHA-256 must be 64 hexadecimal characters".into());
+    }
+    let storage = PathBuf::from(std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("FABRIC_STORAGE_ROOT required")?)
+        .canonicalize().map_err(|e| e.to_string())?;
+    let scratch = PathBuf::from(std::env::var_os("FABRIC_SCRATCH_ROOT").ok_or("FABRIC_SCRATCH_ROOT required")?)
+        .canonicalize().map_err(|e| e.to_string())?;
+    if !scratch.starts_with(&storage) { return Err("scratch must be under DATA".into()); }
+    let output_arg = PathBuf::from(&args[5]);
+    if !output_arg.is_absolute() { return Err("--out must be absolute".into()); }
+    let output_parent = output_arg.parent().ok_or("output parent required")?.canonicalize().map_err(|e| e.to_string())?;
+    if !output_parent.starts_with(&storage) { return Err("output parent must be under DATA".into()); }
+    let out = output_parent.join(output_arg.file_name().ok_or("output name required")?);
+    fs::create_dir(&out).map_err(|e| format!("fresh output directory required: {e}"))?;
+
+    if !candidate_arg.is_absolute() { return Err("candidate ELF path must be absolute".into()); }
+    let candidate_parent = candidate_arg.parent().ok_or("candidate parent required")?.canonicalize().map_err(|e| e.to_string())?;
+    if !candidate_parent.starts_with(&storage) { return Err("candidate ELF must be archived under DATA".into()); }
+    let candidate = candidate_parent.join(candidate_arg.file_name().ok_or("candidate filename required")?);
+    let candidate_meta = fs::symlink_metadata(&candidate).map_err(|e| e.to_string())?;
+    if candidate_meta.mode() & 0o111 == 0 { return Err("candidate ELF must be executable".into()); }
+    let (candidate_sha, candidate_identity) = bounded_candidate(&candidate)?;
+    if candidate_sha != expected_candidate_sha { return Err("candidate SHA-256 does not match required pin".into()); }
+
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().ok_or("repository root missing")?.to_path_buf();
+    let source_before = source_state(&repo)?;
+    if source_before["dirty"] != false { return Err("project source must be clean".into()); }
+    let helper = storage.join(HELPER_REL);
+    let (helper_bytes, helper_identity) = read_helper(&helper)?;
+    if xtask::sha256_hex(&helper_bytes) != HELPER_SHA { return Err("pinned helper hash mismatch".into()); }
+
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map_err(|e| e.to_string())?.as_nanos();
+    let work = scratch.join(format!("runner-controls-census_{}_{}", std::process::id(), nanos));
+    fs::create_dir(&work).map_err(|e| e.to_string())?;
+    let (classification_root, manifest) = fixture(&work)?;
+    let (classification_py, classification_py_sha) = transformed_helper(&helper_bytes, &classification_root, &out, "classification-reference")?;
+    let reference_argv = vec!["python3".to_owned(), "-B".to_owned(), classification_py.display().to_string()];
+    let native_argv = vec![candidate.display().to_string(), "storage-census".to_owned()];
+    let classification_python = Command::new(&reference_argv[0]).args(&reference_argv[1..]).output().map_err(|e| e.to_string())?;
+    write_new(&out.join("classification-python.stdout.bin"), &classification_python.stdout)?;
+    write_new(&out.join("classification-python.stderr.bin"), &classification_python.stderr)?;
+    let python_json: Value = serde_json::from_slice(&classification_python.stdout).unwrap_or(Value::Null);
+    let classification_native = Command::new(&native_argv[0]).arg(&native_argv[1]).env("FABRIC_STORAGE_ROOT", &classification_root).output().map_err(|e| e.to_string())?;
+    write_new(&out.join("classification-native.stdout.bin"), &classification_native.stdout)?;
+    write_new(&out.join("classification-native.stderr.bin"), &classification_native.stderr)?;
+    let native_json: Value = serde_json::from_slice(&classification_native.stdout).unwrap_or(Value::Null);
+    let classification_expected = expected_fields(65_596, 65_564, 8);
+    let classification_fields_equal = six_fields(&python_json) == six_fields(&native_json);
+    let classification_ok = classification_python.status.success() && classification_native.status.success()
+        && six_fields(&python_json).as_ref() == Some(&classification_expected)
+        && six_fields(&native_json).as_ref() == Some(&classification_expected)
+        && classification_fields_equal
+        && python_json.as_object().is_some_and(|value| value.len() == 6)
+        && native_json.as_object().is_some_and(|value| value.len() == 6);
+
+    let perf_root = work.join("performance-corpus");
+    fs::create_dir(&perf_root).map_err(|e| e.to_string())?;
+    for directory in 0..10 {
+        let dir = perf_root.join(format!("dir-{directory:02}"));
+        fs::create_dir(&dir).map_err(|e| e.to_string())?;
+        for file in 0..2_000 {
+            fs::write(dir.join(format!("file-{file:04}")), [b'x'; 64]).map_err(|e| e.to_string())?;
+        }
+    }
+    let (perf_py, perf_py_sha) = transformed_helper(&helper_bytes, &perf_root, &out, "performance-reference")?;
+    let perf_python_argv = vec!["python3".to_owned(), "-B".to_owned(), perf_py.display().to_string()];
+    let expected_perf = expected_fields(1_280_000, 1_280_000, 20_000);
+    let measurements = out.join("measurements");
+    fs::create_dir(&measurements).map_err(|e| e.to_string())?;
+    let warmup_python = timed_run("warmup-python", &perf_python_argv, &perf_root, &measurements.join("warmup-python"))?;
+    let warmup_native = timed_run("warmup-native", &native_argv, &perf_root, &measurements.join("warmup-native"))?;
+    let mut pairs = Vec::new();
+    for pair in 0..7 {
+        let python_label = format!("pair-{:02}-python", pair + 1);
+        let native_label = format!("pair-{:02}-native", pair + 1);
+        let python_first = pair % 2 == 0;
+        let (python, native) = if python_first {
+            (timed_run(&python_label, &perf_python_argv, &perf_root, &measurements.join(&python_label))?,
+             timed_run(&native_label, &native_argv, &perf_root, &measurements.join(&native_label))?)
+        } else {
+            let native = timed_run(&native_label, &native_argv, &perf_root, &measurements.join(&native_label))?;
+            let python = timed_run(&python_label, &perf_python_argv, &perf_root, &measurements.join(&python_label))?;
+            (python, native)
+        };
+        pairs.push(json!({"pair":pair+1,"order":if python_first {"python,native"} else {"native,python"},"python":python,"native":native}));
+    }
+    let perf_ok = std::iter::once(&warmup_python).chain(std::iter::once(&warmup_native)).chain(pairs.iter().flat_map(|pair| [&pair["python"], &pair["native"]]))
+        .all(|run| run["success"] == true && run["fields"] == expected_perf);
+
+    let hardware = Command::new("lscpu").output().map_err(|e| e.to_string())?;
+    write_new(&out.join("lscpu.stdout.txt"), &hardware.stdout)?;
+    write_new(&out.join("lscpu.stderr.txt"), &hardware.stderr)?;
+    let filesystem = Command::new("df").args(["-T", perf_root.to_str().ok_or("fixture path must be UTF-8")?]).output().map_err(|e| e.to_string())?;
+    write_new(&out.join("filesystem.stdout.txt"), &filesystem.stdout)?;
+    write_new(&out.join("filesystem.stderr.txt"), &filesystem.stderr)?;
+    let source_after = source_state(&repo)?;
+    let helper_after = read_helper(&helper);
+    let helper_unchanged = helper_after.as_ref().is_ok_and(|(bytes, identity)| *identity == helper_identity && xtask::sha256_hex(bytes) == HELPER_SHA);
+    let candidate_after = bounded_candidate(&candidate);
+    let candidate_after_sha = candidate_after.as_ref().ok().map(|(sha, _)| sha.clone());
+    let candidate_unchanged = candidate_after.as_ref().is_ok_and(|(sha, identity)| *identity == candidate_identity && sha == &expected_candidate_sha);
+    let helper_after_sha = helper_after.as_ref().ok().map(|(bytes, _)| xtask::sha256_hex(bytes));
+    let source_unchanged = source_before["commit"] == source_after["commit"] && source_after["dirty"] == false;
+    let measurements_ok = hardware.status.success() && filesystem.status.success();
+    let overall = classification_ok && perf_ok && source_unchanged && helper_unchanged && candidate_unchanged && measurements_ok;
+    let record = json!({
+        "experiment":"native storage census candidate comparison and finite benchmark",
+        "candidate":candidate,"candidate_sha256_before":candidate_sha,"candidate_sha256_after":candidate_after_sha,"candidate_unchanged":candidate_unchanged,
+        "candidate_recheck_error":candidate_after.as_ref().err(),"helper":helper,"helper_sha256":HELPER_SHA,
+        "helper_sha256_after":helper_after_sha,"helper_unchanged":helper_unchanged,"helper_recheck_error":helper_after.as_ref().err(),
+        "source_before":source_before,"source_after":source_after,"source_unchanged":source_unchanged,
+        "python_reference_sha256":HELPER_SHA,"classification_reference_transformed_sha256":classification_py_sha,
+        "performance_reference_transformed_sha256":perf_py_sha,
+        "root_substitution":"exactly one literal root assignment in the pinned Python helper; all other bytes preserved",
+        "classification":{"fixture_root":classification_root,"manifest":manifest,"expected":classification_expected,
+            "python":{"argv":reference_argv,"exit_code":classification_python.status.code(),"success":classification_python.status.success(),"stdout":python_json,"stderr":String::from_utf8_lossy(&classification_python.stderr)},
+            "native":{"argv":native_argv,"exit_code":classification_native.status.code(),"success":classification_native.status.success(),"stdout":native_json,"stderr":String::from_utf8_lossy(&classification_native.stderr)},
+            "six_fields_equal_between_implementations":classification_fields_equal,"all_six_fields_match_independent_manifest":classification_ok},
+        "performance":{"fixture_root":perf_root,"directories":10,"files_per_directory":2000,"file_bytes":64,"expected":expected_perf,
+            "warm_cache":"one warmup per implementation, then seven alternating-order pairs",
+            "warmup_python":warmup_python,"warmup_native":warmup_native,"pairs":pairs,"all_runs_match_expected":perf_ok,
+            "hardware_stdout_file":"lscpu.stdout.txt","filesystem_stdout_file":"filesystem.stdout.txt"},
+        "timing_boundary":"external GNU time wraps each Python/native census process; harness wall_ns includes the time wrapper; fixture creation and result parsing excluded",
+        "overall_status":if overall {"passed-under-registered-corpus"} else {"failed"},
+        "cleanup":"pending; see cleanup.json"
+    });
+    write_new(&out.join("candidate-report.json"), &serde_json::to_vec_pretty(&record).map_err(|e| e.to_string())?)?;
+    if !overall {
+        write_new(&out.join("cleanup.json"), br#"{"outcome":"validation failed; fixture retained"}"#)?;
+        return Err(format!("candidate comparison failed; source fixture retained at {}", work.display()));
+    }
+    let cleanup = match fs::remove_dir_all(&work) {
+        Ok(()) => json!({"outcome":"owned fixtures removed after immutable report was retained"}),
+        Err(error) => json!({"outcome":"cleanup failed; fixtures retained","error":error.to_string(),"fixture":work})
+    };
+    write_new(&out.join("cleanup.json"), &serde_json::to_vec_pretty(&cleanup).map_err(|e| e.to_string())?)?;
+    if cleanup["outcome"] != "owned fixtures removed after immutable report was retained" {
+        return Err("candidate passed checks but fixture cleanup failed; see cleanup.json".into());
+    }
+    Ok(())
+}
+
+fn main() -> Result<(), String> {
+    let args = std::env::args_os().skip(1).collect::<Vec<_>>();
+    if args.first().is_some_and(|arg| arg == "--candidate") {
+        candidate_mode(&args)
+    } else {
+        baseline_mode()
+    }
 }
