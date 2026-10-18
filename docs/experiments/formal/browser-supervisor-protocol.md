@@ -244,6 +244,18 @@ placement, browser correctness, package qualification or release acceptance.
 The exact frozen #43 and #46 runtimes remain bound to their original source
 snapshots and are not changed by this current-main amendment.
 
+The same current-main adoption covers the remaining direct supervised callers:
+`console_bridge_smoke.supervised_bridge`,
+`browser_cleanup_native.main`, `console_firefox_trust.main`, and
+`Walkthrough.browser` in the owner walkthrough. Each must receive the helper
+path and SHA-256 through explicit CLI inputs and pass them to its existing
+`ConsoleBridge` or `browser_group_launch` call. The owner walkthrough records
+the exact pair in its run binding; its separately pinned package, guide and
+harness inputs are unchanged. Pin validation occurs before the caller creates
+or launches a browser child. Existing descriptor, native cleanup, TLS expected
+error and owner interaction checks remain unchanged. These are harness
+composition fixes; they do not change any oracle or acceptance outcome.
+
 ## Production health-wait scope correction
 
 Prospective harness regression, 2026-10-18. The retained Chrome #45 baseline
