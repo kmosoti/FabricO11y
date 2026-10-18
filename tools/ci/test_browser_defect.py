@@ -63,14 +63,16 @@ class BrowserDefectTests(unittest.TestCase):
                     self.assertFalse(checker.detected(1, {**good, field:value}))
 
     def test_nonresident_control_also_requires_structured_cleanup(self):
-        receipt = {**self.removed, 'injected_nonresident_enrollment':True,
-                   'error':'owner enrollment stores actual resident credentials for the fixture RP',
-                   'checks':['first owner consumed protected one-time bootstrap',
-                             'server enrollment requires resident credentials and user verification'],
-                   'resident_credential_witnesses':[{'count':1,'credentials':[{'resident':False,'rp':'localhost'}]}]}
-        self.assertTrue(checker.detected(1, receipt, 'nonresident-enrollment'))
-        receipt['own_children_empty'] = False
-        self.assertFalse(checker.detected(1, receipt, 'nonresident-enrollment'))
+        for disposition, good in zip(('removed', 'retained'), self.good_receipts):
+            receipt = {**good, 'injected_nonresident_enrollment':True,
+                       'error':'owner enrollment stores actual resident credentials for the fixture RP',
+                       'checks':['first owner consumed protected one-time bootstrap',
+                                 'server enrollment requires resident credentials and user verification'],
+                       'resident_credential_witnesses':[{'count':1,'credentials':[{'resident':False,'rp':'localhost'}]}]}
+            with self.subTest(disposition=disposition):
+                self.assertTrue(checker.detected(1, receipt, 'nonresident-enrollment'))
+                receipt['own_children_empty'] = False
+                self.assertFalse(checker.detected(1, receipt, 'nonresident-enrollment'))
 
 
 if __name__ == '__main__':
