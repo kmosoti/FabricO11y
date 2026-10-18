@@ -23,7 +23,8 @@ class SupervisedSmoke(unittest.TestCase):
     def context(self):
         return smoke.supervised_bridge('https://localhost:1', Path('/cert'), Path('/work'),
                                        Path('/out'), Path('/owned'), 300.0,
-                                       self.entry_helper, self.entry_helper_sha256)
+                                       browser_entry_helper=self.entry_helper,
+                                       browser_entry_helper_sha256=self.entry_helper_sha256)
 
     def test_budget_and_borrowed_descriptor_lifetime(self):
         def construct(*args, **kwargs):

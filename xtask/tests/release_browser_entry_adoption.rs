@@ -292,6 +292,65 @@ for module, required_args in cases:
 }
 
 #[test]
+fn owner_browser_helper_matches_the_independent_admission_pin() {
+    let root = root();
+    let script = r#"
+import ast, pathlib, re, sys
+source = pathlib.Path(sys.argv[1])
+tree = ast.parse(source.read_text())
+function = next(node for node in tree.body
+                if isinstance(node, ast.FunctionDef)
+                and node.name == 'require_admitted_browser_entry_helper')
+main = next(node for node in tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == 'main')
+calls = [(node.lineno, node.func.id) for node in ast.walk(main)
+         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)]
+pin_line = min(line for line, name in calls
+               if name == 'require_admitted_browser_entry_helper')
+systemctl_line = min(node.lineno for node in ast.walk(main)
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+    and node.func.attr == 'run'
+    and any(isinstance(child, ast.Constant) and child.value == 'systemctl'
+            for child in ast.walk(node)))
+assert pin_line < systemctl_line, 'admission pin mismatch must refuse before host-limit effects'
+
+module = ast.Module(body=[function], type_ignores=[])
+ast.fix_missing_locations(module)
+def require(condition, message):
+    if not condition: raise ValueError(message)
+namespace = {'Path': pathlib.Path, 're': re, 'require': require}
+exec(compile(module, str(source), 'exec'), namespace)
+check = namespace['require_admitted_browser_entry_helper']
+helper = pathlib.Path('/owned/xtask-browser-enter-exec')
+pin = 'a' * 64
+plan = {'inputs': {'browser_entry_helper': {'path': str(helper), 'sha256': pin}}}
+check(plan, helper, pin)
+for record in (
+    {'path': '/owned/other-helper', 'sha256': pin},
+    {'path': str(helper), 'sha256': 'b' * 64},
+):
+    try: check({'inputs': {'browser_entry_helper': record}}, helper, pin)
+    except ValueError: pass
+    else: raise AssertionError('owner helper mismatch was accepted')
+try: check({'inputs': {}}, helper, pin)
+except ValueError: pass
+else: raise AssertionError('owner plan without an admitted helper was accepted')
+"#;
+    let output = Command::new("python3")
+        .args(["-B", "-c", script])
+        .arg(root.join("tools/qualification/owner_walkthrough.py"))
+        .output()
+        .expect("Python 3 is needed to execute the owner admission pin check");
+    assert!(
+        output.status.success(),
+        "owner helper pin did not match/refuse the admission exactly (exit {:?})\nstdout:\n{}\nstderr:\n{}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
 fn non_soak_production_access_requires_and_forwards_the_explicit_pin() {
     let root = root();
     let source = root.join("tools/qualification/production_access.py");

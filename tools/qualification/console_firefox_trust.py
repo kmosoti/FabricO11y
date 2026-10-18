@@ -6,6 +6,7 @@ import http.server
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import signal
 import ssl
@@ -44,7 +45,16 @@ def main():
     parser.add_argument('--out', type=Path, required=True)
     parser.add_argument('--pins', type=Path, required=True)
     parser.add_argument('--pins-sha256', required=True)
+    parser.add_argument('--browser-entry-helper', type=Path, required=True)
+    parser.add_argument('--browser-entry-helper-sha256', required=True)
     args = parser.parse_args()
+    if (not args.browser_entry_helper.is_absolute()
+            or args.browser_entry_helper.is_symlink()
+            or not args.browser_entry_helper.is_file()
+            or not os.access(args.browser_entry_helper, os.X_OK)
+            or re.fullmatch('[0-9a-f]{64}', args.browser_entry_helper_sha256) is None
+            or sha(args.browser_entry_helper) != args.browser_entry_helper_sha256):
+        raise ValueError('exact pinned native browser entry helper required')
     browser = browser_supervisor.browser
     limits = browser.require_limits()
     require = browser_supervisor.require
@@ -114,7 +124,9 @@ def main():
         try:
             instance.__init__(origin, root / 'server.pem', root / 'profile-work', args.out / 'bridge', browser_group=budget['path'],
                 browser_parent=budget, browser_deadline=end, backend='firefox',
-                trusted_ca=root / ('decoy.pem' if args.case == 'untrusted-ca' else 'ca.pem'), private_dns=hostname)
+                trusted_ca=root / ('decoy.pem' if args.case == 'untrusted-ca' else 'ca.pem'), private_dns=hostname,
+                browser_entry_helper=args.browser_entry_helper,
+                browser_entry_helper_sha256=args.browser_entry_helper_sha256)
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as failure:
             error = type(failure).__name__ + ': ' + str(failure)
         if args.case == 'trusted':
