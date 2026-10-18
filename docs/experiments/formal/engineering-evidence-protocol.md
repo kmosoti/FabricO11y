@@ -76,6 +76,13 @@ These checks detect exercised races, not privileged hostile writers or dishonest
 producers. Indexed adjacency/indegrees and ordered ready selection require
 O((V+E)logV) time/O(V+E) state; no speculative generic orchestration framework.
 
+Before changing the file-reader mechanism, inject a real append after its first
+descriptor read of an eight-byte fixture. It must refuse the changed file and
+consume no bytes beyond the extent admitted by the initial metadata. Record the
+old implementation's actual counter before introducing a bounded-read loop;
+repeat the same fixture afterward. This distinguishes final identity rejection
+from bounded I/O while a file grows. Whole-composition tests remain required.
+
 ## Verification and finite experiment
 
 Retain literal positives and repinned negative fixtures for candidate/hash/source,
