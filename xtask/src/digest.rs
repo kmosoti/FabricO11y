@@ -99,8 +99,8 @@ mod tests {
                     candidate.update(chunk);
                 }
                 assert_eq!(
-                    candidate.finish().as_slice(),
-                    expected.as_slice(),
+                    &candidate.finish()[..],
+                    &expected[..],
                     "size={size} chunk_size={chunk_size}"
                 );
             }
