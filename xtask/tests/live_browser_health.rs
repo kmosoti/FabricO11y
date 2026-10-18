@@ -105,6 +105,25 @@ url, kwargs = opener.requests[-1]
 assert url == 'https://fixture.invalid/v1/health'
 assert kwargs == {'context': context, 'timeout': 1}
 
+opener.mode = 200
+ambient_dead = Process(code=17)
+explicit_alive = Process()
+namespace['server'] = ambient_dead
+assert namespace['healthy'](explicit_alive) is True
+assert explicit_alive.poll_calls == 1 and ambient_dead.poll_calls == 0
+ambient_alive = Process()
+explicit_dead = Process(code=17)
+namespace['server'] = ambient_alive
+before = len(opener.requests)
+try:
+    namespace['healthy'](explicit_dead)
+except RuntimeError as error:
+    assert str(error) == 'server exited; inspect server.log', str(error)
+else:
+    raise AssertionError('explicitly dead process was accepted')
+assert explicit_dead.poll_calls == 1 and ambient_alive.poll_calls == 0
+assert len(opener.requests) == before, 'explicitly dead process must fail before a health request'
+
 for mode in (503, urllib.error.URLError('connection refused')):
     opener.mode = mode
     before = len(opener.requests)
