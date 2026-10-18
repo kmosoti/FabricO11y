@@ -634,8 +634,29 @@ def main():
         dispatch_timeout(deadline,storage_violation,35)
 
     def capture_api_metadata():
+        import math
         receipt['actual_api_headers']=js('return window.fixtureApiHeaders')
-        check(bool(receipt['actual_api_headers']) and not js('return window.fixtureApiHeadersTruncated') and all(item['cache_control']=='no-store' and item['csp'] and item['coop']=='same-origin' and item['corp']=='same-origin' for item in receipt['actual_api_headers']),'actual authentication and API responses carry no-store CSP COOP and CORP')
+        rows=receipt['actual_api_headers']
+        check(isinstance(rows,list) and not js('return window.fixtureApiHeadersTruncated'),'browser API ledger is a complete bounded list')
+        responses=[]
+        cancellations=[]
+        for item in rows:
+            check(isinstance(item,dict),'browser API ledger entries are objects')
+            if item.get('state')=='response':
+                check(type(item.get('status')) is int,'browser API response has an integer HTTP status')
+                responses.append(item)
+                continue
+            started=item.get('started_ms')
+            finished=item.get('finished_ms')
+            observed=item.get('signal_abort_observed_ms')
+            aborted_at_dispatch=item.get('signal_aborted_at_dispatch') is True
+            finite=lambda value: type(value) in (int,float) and math.isfinite(value)
+            witnessed_abort=(item.get('state')=='rejected' and item.get('path')=='/v1/console/query' and item.get('method')=='POST' and item.get('error_stage')=='fetch' and item.get('error_name')=='AbortError' and item.get('status') is None and item.get('signal_aborted_at_rejection') is True and finite(started) and finite(observed) and finite(finished) and started<=observed<=finished and (aborted_at_dispatch or observed>=started))
+            check(witnessed_abort,'only a witnessed protected-query AbortSignal cancellation has no HTTP response')
+            cancellations.append(item)
+        receipt['actual_api_cancellations']=cancellations
+        check(bool(responses),'browser API ledger contains an actual HTTP response')
+        check(all(item.get('cache_control')=='no-store' and item.get('csp') and item.get('coop')=='same-origin' and item.get('corp')=='same-origin' for item in responses),'actual HTTP responses carry no-store CSP COOP and CORP')
 
     def verify_binary_identity():
         receipt['native_input_hashes_after']={name:hashlib.sha256(Path(name).read_bytes()).hexdigest() for name in receipt['binaries']}
@@ -1051,10 +1072,13 @@ self.addEventListener("fetch",event=>{
                 const dispatch=async(started_ms)=>{const entry={path,method:args[1]?.method||args[0]?.method||'GET',started_ms,paced,status:null,state:'pending'};
                 if(window.fixtureApiHeaders.length>=512)window.fixtureApiHeadersTruncated=true;else window.fixtureApiHeaders.push(entry);
                 const signal=args[1]?.signal!==undefined?args[1].signal:args[0]?.signal||null;
+                const abortedAtDispatch=!!signal?.aborted;entry.signal_aborted_at_dispatch=abortedAtDispatch;
+                const observeAbort=()=>{entry.signal_abort_observed_ms=performance.now()};
+                if(abortedAtDispatch)entry.signal_abort_observed_ms=performance.now();else if(signal)signal.addEventListener('abort',observeAbort,{once:true});
                 try{let response;try{response=await original(...args)}catch(error){entry.state='rejected';entry.error_stage='fetch';entry.error_name=String(error?.name||'Error').slice(0,80);entry.error_message=String(error?.message||error).slice(0,256);entry.signal_aborted_at_rejection=!!signal?.aborted;throw error}
                   try{Object.assign(entry,{status:response.status,retry_after:response.headers.get('retry-after'),cache_control:response.headers.get('cache-control'),csp:response.headers.get('content-security-policy'),coop:response.headers.get('cross-origin-opener-policy'),corp:response.headers.get('cross-origin-resource-policy')});entry.state='response';return response}
                   catch(error){entry.state='rejected';entry.error_stage='metadata';entry.error_name=String(error?.name||'Error').slice(0,80);entry.error_message=String(error?.message||error).slice(0,256);entry.signal_aborted_at_rejection=!!signal?.aborted;throw error}}
-                finally{entry.finished_ms=performance.now()}};
+                finally{if(signal)signal.removeEventListener('abort',observeAbort);entry.finished_ms=performance.now()}};
                 return paced?(await window.fixturePace(dispatch)).response:dispatch(performance.now())}''',cadence.interval*1000)
             if args.security_probes:
                 js('''const original=window.fetch;window.fixtureCompletedRegistration=null;
