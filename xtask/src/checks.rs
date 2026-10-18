@@ -584,7 +584,7 @@ fn validate_light_output(storage: &Path, receipts: &Path) -> Result<PathBuf, Str
     }
     let name = receipts
         .file_name()
-        .filter(|name| name != "." && name != "..")
+        .filter(|name| *name != "." && *name != "..")
         .ok_or("named receipt directory required")?;
     let parent = receipts
         .parent()
