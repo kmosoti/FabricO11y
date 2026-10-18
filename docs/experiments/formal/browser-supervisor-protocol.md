@@ -217,6 +217,33 @@ hosted harness-verification policy change only: it adds no acceptance result,
 changes no package, browser oracle, negative cause or required registry check,
 and does not qualify a product or release.
 
+## Current-main release caller adoption
+
+Prospective harness protocol amendment, 2026-10-18. The native-entry migration
+changed the shared `browser_group_launch` contract to require the existing
+hash-pinned `xtask browser-enter-exec` artifact. The current-main release
+callers `release_main.run`, `release_query.main` and `release_stress.main`
+construct `CandidateFixture` directly, while the production outage adapter
+constructs it through `ProductionAccess(..., soak=False)`. These call paths
+must each receive an explicit helper path and SHA-256 and pass that same pair
+into the existing `CandidateFixture` validation and immutable snapshot path.
+For `ProductionAccess`, both values are explicit command inputs when
+production access is selected, including the non-soak outage path. Each direct
+release command likewise requires both inputs. A missing, partial, malformed,
+non-executable, symlinked or digest-mismatched pair refuses before fixture
+construction or browser launch. There is no PATH lookup, ambient environment
+selection, default helper, Python entry fallback or runtime build. The R3
+admission path remains separately bound to its existing pinned inputs.
+
+The regression must execute the actual caller shape through a signature-
+preserving fixture seam and show that the admitted pair reaches
+`CandidateFixture`; a missing or altered pair must be rejected before any
+browser child starts. A source-presence check alone is insufficient. These
+caller controls establish harness wiring only: they do not establish native
+placement, browser correctness, package qualification or release acceptance.
+The exact frozen #43 and #46 runtimes remain bound to their original source
+snapshots and are not changed by this current-main amendment.
+
 ## Production health-wait scope correction
 
 Prospective harness regression, 2026-10-18. The retained Chrome #45 baseline
