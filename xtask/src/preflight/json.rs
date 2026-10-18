@@ -37,7 +37,8 @@ impl<'de> Visitor<'de> for Strict {
     }
 
     fn visit_f64<E: de::Error>(self, value: f64) -> Result<Value, E> {
-        Number::from_f64(value).map(Value::Number)
+        Number::from_f64(value)
+            .map(Value::Number)
             .ok_or_else(|| E::custom("non-finite JSON number"))
     }
 
@@ -84,7 +85,9 @@ pub fn strict_json(raw: &[u8]) -> Result<Value, String> {
     super::require(raw.len() <= JSON_LIMIT, "JSON size exceeds 4 MiB")?;
     let text = std::str::from_utf8(raw).map_err(|error| error.to_string())?;
     let mut decoder = serde_json::Deserializer::from_str(text);
-    let value = Strict(0).deserialize(&mut decoder).map_err(|error| error.to_string())?;
+    let value = Strict(0)
+        .deserialize(&mut decoder)
+        .map_err(|error| error.to_string())?;
     decoder.end().map_err(|error| error.to_string())?;
     super::require(value.is_object(), "JSON root must be an object")?;
     Ok(value)

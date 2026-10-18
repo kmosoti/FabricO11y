@@ -25,20 +25,30 @@ pub fn ordered_jobs(jobs: &[Value]) -> Result<Vec<String>, String> {
     let mut indegrees = vec![0; nodes.len()];
     let mut edges = 0;
     for (position, (_, job)) in nodes.iter().enumerate() {
-        let needs = job.get("needs").and_then(Value::as_array).ok_or("needs list")?;
+        let needs = job
+            .get("needs")
+            .and_then(Value::as_array)
+            .ok_or("needs list")?;
         edges += needs.len();
         require(edges <= EDGE_LIMIT, "edge count")?;
         let mut seen = HashSet::with_capacity(needs.len());
         for parent in needs {
             let parent = parent.as_str().ok_or("dependency id")?;
             let parent = *index.get(parent).ok_or("unknown dependency")?;
-            require(parent != position && seen.insert(parent), "self/duplicate dependency")?;
+            require(
+                parent != position && seen.insert(parent),
+                "self/duplicate dependency",
+            )?;
             children[parent].push(position);
         }
         indegrees[position] = needs.len();
     }
-    let mut ready: BinaryHeap<_> = indegrees.iter().enumerate()
-        .filter(|(_, count)| **count == 0).map(|(index, _)| Reverse(index)).collect();
+    let mut ready: BinaryHeap<_> = indegrees
+        .iter()
+        .enumerate()
+        .filter(|(_, count)| **count == 0)
+        .map(|(index, _)| Reverse(index))
+        .collect();
     let mut output = Vec::with_capacity(nodes.len());
     while let Some(Reverse(position)) = ready.pop() {
         output.push(nodes[position].0.to_owned());

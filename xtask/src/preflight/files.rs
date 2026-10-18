@@ -1,6 +1,6 @@
 //! Linux descriptor-relative lookup. No payload is reopened to decode JSON.
-use super::{hex, io, require, strict_json};
 use super::json::{JSON_LIMIT, JSON_TOTAL_LIMIT};
+use super::{hex, io, require, strict_json};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -19,22 +19,35 @@ type Identity = (u64, u64, u64, i64, i64, i64, i64);
 /// Artifact admission is separate from reading, so the exact limits are testable.
 pub fn admitted_bytes(total: u64, size: u64) -> Result<u64, String> {
     require(size <= FILE_LIMIT, "artifact exceeds 8 GiB")?;
-    total.checked_add(size).filter(|sum| *sum <= TOTAL_LIMIT)
+    total
+        .checked_add(size)
+        .filter(|sum| *sum <= TOTAL_LIMIT)
         .ok_or_else(|| "artifact total exceeds 32 GiB".to_owned())
 }
 
 pub(super) fn parts(path: &str) -> Result<Vec<&str>, String> {
-    require(!path.is_empty() && !path.starts_with('/') && !path.contains('\0'),
-            "relative POSIX path required")?;
+    require(
+        !path.is_empty() && !path.starts_with('/') && !path.contains('\0'),
+        "relative POSIX path required",
+    )?;
     let parts: Vec<_> = path.split('/').collect();
-    require(parts.iter().all(|part| !matches!(*part, "" | "." | "..")),
-            "noncanonical path")?;
+    require(
+        parts.iter().all(|part| !matches!(*part, "" | "." | "..")),
+        "noncanonical path",
+    )?;
     Ok(parts)
 }
 
 fn identity(info: &Metadata) -> Identity {
-    (info.dev(), info.ino(), info.len(), info.mtime(), info.mtime_nsec(),
-     info.ctime(), info.ctime_nsec())
+    (
+        info.dev(),
+        info.ino(),
+        info.len(),
+        info.mtime(),
+        info.mtime_nsec(),
+        info.ctime(),
+        info.ctime_nsec(),
+    )
 }
 
 /// The only unsafe boundary: `name` is NUL-terminated and openat returns a fresh
@@ -56,8 +69,11 @@ fn open_root(root: &str) -> Result<File, String> {
     let mut directory = open_at(libc::AT_FDCWD, "/", libc::O_RDONLY | libc::O_DIRECTORY)?;
     if root != "/" {
         for part in parts(&root[1..])? {
-            directory = open_at(directory.as_raw_fd(), part,
-                                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW)?;
+            directory = open_at(
+                directory.as_raw_fd(),
+                part,
+                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW,
+            )?;
         }
     }
     Ok(directory)
@@ -85,16 +101,25 @@ impl ArtifactStore {
     pub fn new(root: &Path) -> Result<Self, String> {
         let root = root.to_str().ok_or("UTF-8 root required")?.to_owned();
         let directory = open_root(&root)?;
-        Ok(Self { root, directory, records: BTreeMap::new(), artifact_total: 0,
-                  json_total: 0, bytes_hashed: 0 })
+        Ok(Self {
+            root,
+            directory,
+            records: BTreeMap::new(),
+            artifact_total: 0,
+            json_total: 0,
+            bytes_hashed: 0,
+        })
     }
 
     fn parent<'a>(&self, path: &'a str) -> Result<(File, &'a str), String> {
         let parts = parts(path)?;
         let mut directory = io(self.directory.try_clone())?;
         for part in &parts[..parts.len() - 1] {
-            directory = open_at(directory.as_raw_fd(), part,
-                                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW)?;
+            directory = open_at(
+                directory.as_raw_fd(),
+                part,
+                libc::O_RDONLY | libc::O_DIRECTORY | libc::O_NOFOLLOW,
+            )?;
         }
         Ok((directory, parts[parts.len() - 1]))
     }
@@ -113,17 +138,27 @@ impl ArtifactStore {
 
     pub(super) fn plan(&mut self, path: &str, expected: &str) -> Result<Value, String> {
         self.read_inner(path, expected, true, false)?;
-        self.records.get_mut(path).and_then(|record| record.json.take())
+        self.records
+            .get_mut(path)
+            .and_then(|record| record.json.take())
             .ok_or_else(|| "plan JSON not retained".to_owned())
     }
 
-    fn read_inner(&mut self, path: &str, expected: &str, keep_json: bool,
-                  artifact: bool) -> Result<(), String> {
+    fn read_inner(
+        &mut self,
+        path: &str,
+        expected: &str,
+        keep_json: bool,
+        artifact: bool,
+    ) -> Result<(), String> {
         parts(path)?;
         require(hex(expected, 64), "invalid SHA-256")?;
         if let Some(record) = self.records.get_mut(path) {
             require(record.digest == expected, "conflicting path hash")?;
-            require(!keep_json || record.json.is_some(), "JSON payload was not retained")?;
+            require(
+                !keep_json || record.json.is_some(),
+                "JSON payload was not retained",
+            )?;
             if artifact && !record.counted {
                 self.artifact_total = admitted_bytes(self.artifact_total, record.identity.2)?;
                 record.counted = true;
@@ -131,12 +166,18 @@ impl ArtifactStore {
             return Ok(());
         }
         let (parent, name) = self.parent(path)?;
-        let mut descriptor = open_at(parent.as_raw_fd(), name,
-                                    libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK)?;
+        let mut descriptor = open_at(
+            parent.as_raw_fd(),
+            name,
+            libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK,
+        )?;
         let info = io(descriptor.metadata())?;
         require(info.is_file(), "artifact is not regular")?;
         let before = identity(&info);
-        require(before == self.path_identity(path)?, "artifact replaced before read")?;
+        require(
+            before == self.path_identity(path)?,
+            "artifact replaced before read",
+        )?;
         admitted_bytes(if artifact { self.artifact_total } else { 0 }, info.len())?;
         if keep_json {
             self.admit_json(info.len())?;
@@ -161,26 +202,43 @@ impl ArtifactStore {
                 payload.extend_from_slice(&buffer[..count]);
             }
         }
-        require(before == identity(&io(descriptor.metadata())?) &&
-                before == self.path_identity(path)? && size == info.len(),
-                "artifact changed during read")?;
+        require(
+            before == identity(&io(descriptor.metadata())?)
+                && before == self.path_identity(path)?
+                && size == info.len(),
+            "artifact changed during read",
+        )?;
         let actual = format!("{:x}", digest.finalize());
         require(actual == expected, "artifact hash mismatch")?;
-        let json = if keep_json { Some(strict_json(&payload)?) } else { None };
+        let json = if keep_json {
+            Some(strict_json(&payload)?)
+        } else {
+            None
+        };
         if keep_json {
             self.json_total += size;
         }
         if artifact {
             self.artifact_total = admitted_bytes(self.artifact_total, size)?;
         }
-        self.records.insert(path.to_owned(), Record { identity: before,
-                            digest: actual, json, counted: artifact });
+        self.records.insert(
+            path.to_owned(),
+            Record {
+                identity: before,
+                digest: actual,
+                json,
+                counted: artifact,
+            },
+        );
         Ok(())
     }
 
     fn admit_json(&self, size: u64) -> Result<(), String> {
         require(size <= JSON_LIMIT as u64, "JSON exceeds 4 MiB")?;
-        require(self.json_total + size <= JSON_TOTAL_LIMIT, "retained JSON exceeds 64 MiB")
+        require(
+            self.json_total + size <= JSON_TOTAL_LIMIT,
+            "retained JSON exceeds 64 MiB",
+        )
     }
 
     pub fn digest(&self, path: &str) -> Option<&str> {
@@ -192,7 +250,9 @@ impl ArtifactStore {
     }
 
     pub(super) fn json(&self, path: &str) -> Result<&Value, String> {
-        self.records.get(path).and_then(|record| record.json.as_ref())
+        self.records
+            .get(path)
+            .and_then(|record| record.json.as_ref())
             .ok_or_else(|| "receipt JSON not retained".to_owned())
     }
 
@@ -200,10 +260,15 @@ impl ArtifactStore {
     pub fn recheck(&self) -> Result<(), String> {
         let original = io(self.directory.metadata())?;
         let current = io(open_root(&self.root)?.metadata())?;
-        require((original.dev(), original.ino()) == (current.dev(), current.ino()),
-                "root replaced")?;
+        require(
+            (original.dev(), original.ino()) == (current.dev(), current.ino()),
+            "root replaced",
+        )?;
         for (path, record) in &self.records {
-            require(self.path_identity(path)? == record.identity, "artifact changed after read")?;
+            require(
+                self.path_identity(path)? == record.identity,
+                "artifact changed after read",
+            )?;
         }
         Ok(())
     }
