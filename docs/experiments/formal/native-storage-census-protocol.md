@@ -93,3 +93,31 @@ Archive commands, hashes, exits, stops, resources and cleanup. Publish measured
 results in the research wiki. Policy/binding changes, implementation and caller
 adoption are separate commits. Full native acceptance still requires a newly
 admitted actual run; source controls cannot repair an interrupted result.
+
+## Prospective candidate comparison and reset mutant
+
+After the six focused controls completed at `9e3b6e0`, extend the Rust experiment
+driver with an explicit archived native executable and mandatory SHA-256 pin.
+Keep baseline mode and its original records. Invoke the prebuilt CLI with
+`FABRIC_STORAGE_ROOT` set to the canonical owned fixture, under the original
+outer launcher. Never time Cargo builds. Require all six native output fields
+to agree with the unchanged Python reference, including UID/GID and attempt 1;
+also require the independently declared totals from the classification fixture.
+
+For a registered metadata-cost workload, create ten directories containing 2,000
+regular 64-byte files each: 20,000 paths and 1,280,000 logical/regular bytes.
+Keep output files outside this immutable fixture. Use one warmup per program and
+seven alternating-order pairs. Measure subprocess wall time and GNU time CPU/RSS;
+parse and compare complete output outside the clock. Record hardware, filesystem,
+warm-cache conditions and source/reference/executable pins before and after.
+Report only this finite corpus; no whole-pipeline or universal speedup claim.
+Mismatch or identity failure prevents performance adoption and retains fixtures.
+
+In a separate clean mutant worktree, change `scan_once` to receive its counter by
+mutable reference and move its initialization before the retry loop. Keep all
+other traversal and retry conditions intact. This deliberately retains the
+failed scan's partial counters. Run the six focused controls: the real-second-
+file-unlink reset assertion must fail (36 bytes instead of 32 after restoration),
+while the other five controls retain their outcomes. Expect test process 101,
+not a compile/setup error. Preserve source, logs, stop and failure fixture; never
+merge this defect. This checks one concrete composite failure, not every defect.
