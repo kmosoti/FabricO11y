@@ -77,10 +77,9 @@ details on narrow screens instead of shrinking data labels.
 - Separate **no matching records**, **no samples**, **explicit gap**,
   **partial answer**, **stale observation** and **query failure**. Do not collapse
   these into one empty state or generic green/red badge.
-- The live retained-query status keeps its complete/incomplete coverage wording
-  and reports the response's gap and unavailable-source counts alongside it.
-  Exact response evidence remains available in the disclosure; a gap is visible
-  in the summary even when the answer is also incomplete.
+- In retained-query results, surface gap and unavailable-source counts alongside
+  coverage and preserve exact response evidence in the disclosure. An explicit
+  gap must remain distinguishable when the answer is also incomplete.
 - Name producer, unit, sampling window, reset and unavailable/stale behavior.
   Keep accepted batches, committed records, projected rows, bytes, backlog and
   acknowledged custody distinct. Render only API-supported metrics/actions.

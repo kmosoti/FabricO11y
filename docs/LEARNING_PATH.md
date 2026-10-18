@@ -412,9 +412,10 @@ Their [separate protocol](experiments/formal/console-access-protocol.md#prospect
 requires the actual browser abort signal and elapsed deadline for timeout, and
 never treats an injected HTTP status as evidence that the server emitted it. The
 retained-query summary keeps its coverage label and adds visible gap and
-unavailable-source counts; the original packaged Chrome gap-case failure and
-the source correction are recorded in the
-[gap-summary finding](experiments/formal/query-gap-summary-findings.md).
+unavailable-source counts. The deterministic incomplete-versus-gap response
+input is preserved in the
+[gap-summary fixture](experiments/formal/fixtures/query-gap-summary-regression.json);
+the packaged result summary belongs with research results.
 
 The [native custody checkpoint exercise](experiments/formal/installation-native-custody-caller-card.md)
 connects the Rust Spool's durable ACK ownership to independent system observations.
