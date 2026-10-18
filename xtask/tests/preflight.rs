@@ -294,3 +294,45 @@ fn documented_child_fields_do_not_assign_meaning_to_extra_outer_metadata() {
     f.resource["command_receipt"]["revision"]=json!(HARNESS);assert!(f.verify().is_ok());
     f.resource["command_receipt"]["revision"]=json!(CANDIDATE);assert!(f.verify().is_err());
 }
+
+#[test]
+fn missing_fields_unknown_keys_and_duplicate_artifacts_are_not_silently_accepted() {
+    for key in ["state","command","harness_revision","exit","launcher_exit",
+        "source_status_before","source_status_after","resource_receipts"] {
+        let mut f=Fixture::new();f.wrapper.as_object_mut().unwrap().remove(key);
+        assert!(f.verify().is_err(),"missing wrapper {key}");
+    }
+    for key in ["unit","command","cgroup","state","exit"] {
+        let mut f=Fixture::new();f.resource["command_receipt"].as_object_mut().unwrap().remove(key);
+        assert!(f.verify().is_err(),"missing child {key}");
+    }
+    for pointer in ["/jobs/0","/jobs/0/evidence","/artifacts/0"] {
+        let mut f=Fixture::new();f.plan.pointer_mut(pointer).unwrap()["typo"]=json!(true);
+        assert!(f.verify().is_err(),"unknown key {pointer}");
+    }
+    for duplicate_id in [false,true] {
+        let mut f=Fixture::new();f.publish();let mut extra=f.plan["artifacts"][0].clone();
+        if !duplicate_id {extra["id"]=json!("another");}
+        f.plan["artifacts"].as_array_mut().unwrap().push(extra);
+        let pin=f.save_plan();assert!(verify_plan(&f.root,"plan.json",&pin,CANDIDATE).is_err());
+    }
+    for bad_id in ["Upper".to_owned(),"a".repeat(81)] {
+        let mut f=Fixture::new();f.plan["jobs"][0]["id"]=json!(bad_id);assert!(f.verify().is_err());
+    }
+    for nonobject in [Value::Null,json!([])] {
+        let mut f=Fixture::new();f.resource=nonobject;assert!(f.verify().is_err());
+    }
+}
+
+#[test]
+fn directory_and_fifo_reads_are_refused_without_blocking() {
+    let f=Fixture::new();fs::create_dir(f.root.join("directory")).unwrap();
+    let mut store=ArtifactStore::new(&f.root).unwrap();
+    assert!(store.read("directory",&"0".repeat(64),false).is_err());
+    let name=std::ffi::CString::new(f.root.join("fifo").as_os_str().as_encoded_bytes()).unwrap();
+    // SAFETY: this creates only an owned test FIFO at a live NUL-terminated
+    // pathname, with owner-only permissions; no file descriptor is borrowed.
+    assert_eq!(unsafe{libc::mkfifo(name.as_ptr(),0o600)},0);
+    assert!(store.read("fifo",&"0".repeat(64),false).is_err());
+    assert_eq!(store.bytes_hashed(),0);
+}
