@@ -13,6 +13,9 @@ reference. Preserve the Python delivery, query and rate product oracles. Keep
 production CI adoption and any verification policy adjustment in separate
 reasoned commits after evidence; neither timing nor language choice is a gate.
 
+The subsequent [representation policy](../../formal/verification-receipt-contract.md)
+records four baseline-observed ambiguities and prospective strict rejection.
+
 Reuse the existing bounded strict JSON decoder and descriptor-relative artifact
 reader where their contracts fit. A receipt check must require the current clean
 Git identity, original registry profile and commands, complete receipts, no
