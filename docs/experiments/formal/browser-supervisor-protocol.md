@@ -154,6 +154,21 @@ composition diagnostics, without ranking against an unbarriered launch.
 Preserve all failures and raw logs. These controls establish the entry protocol
 only; they give no browser, package, product or release acceptance credit.
 
+## Hosted CI helper binding adoption
+
+The `fast-checks` hosted job must exercise the ignored Linux entry fixture after
+building workspace binaries, then compute the caller's SHA-256 for the current
+`$FABRIC_STORAGE_ROOT/cargo/debug/xtask` artifact. Both existing Chrome
+`live_browser_check.py` invocations—the positive passkey/HTTPS check and the
+exact API-cache negative—receive that explicit helper path and digest. The
+fixture runs through the delegated resource launcher; it retains its release
+ordering, placement, cleanup, and metric output. CI contract tests reject a
+missing fixture launch or either missing helper pair while preserving the
+existing positive and exact-negative commands and required job names. This is a
+hosted harness-verification policy change only: it adds no acceptance result,
+changes no package, browser oracle, negative cause or required registry check,
+and does not qualify a product or release.
+
 ## Production health-wait scope correction
 
 Prospective harness regression, 2026-10-18. The retained Chrome #45 baseline
