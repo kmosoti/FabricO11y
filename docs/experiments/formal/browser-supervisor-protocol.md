@@ -78,6 +78,65 @@ reaping. Ordinary bridge callers select no fault point.
 This registration does not change product authentication, package bytes,
 session expiry rules, polling continuity, R3 deadlines or acceptance gates.
 
+## Native browser child entry handshake
+
+Prospective harness protocol amendment, 2026-10-18. The retained engineering
+probe 04 stopped before browser launch: native helper work completed, then
+`browser_group_launch` failed while binding the child identity and the existing
+cleanup reported an unregistered child. Preserve that failure and its raw
+diagnostic; it is not browser or acceptance evidence.
+
+The entry path will use a bounded `xtask browser-enter-exec` command from an
+explicitly caller-pinned immutable helper binary. The helper receives the exact
+owned cgroup-v2 directory, one private READY write descriptor, one private
+RELEASE read descriptor and an absolute target argv. It must admit a canonical
+cgroup-v2 directory and open `cgroup.procs` without following symlinks, move
+itself into that group and verify its own `/proc` cgroup placement before
+writing the single READY byte. It then waits for the single RELEASE byte using a
+monotonic deadline no longer than five seconds. EOF, malformed or extra framing,
+wrong placement and deadline expiry are failures and never exec the target. The
+helper requires distinct inherited control FDs greater than 2 with the correct
+directions and closes both before target exec. It preserves target argv,
+environment, standard streams and unrelated explicitly inherited descriptors.
+The existing session-clock wrapper remains the target when controlled time is
+selected, so its current environment and clock descriptor behavior is unchanged.
+
+The parent creates the subgroup exclusively and the private pipes, launches
+only the exact pinned helper, and immediately retains the Popen object, pidfd,
+start ticks and owned subgroup descriptor. After READY it verifies the same
+process identity, `/proc` placement and existing `cgroup.procs` membership using
+the unchanged identity and membership checks. It records the valid binding
+before writing RELEASE. Any failure before release retains the provisional
+spawn record and may clean only that exact Popen/pidfd and newly owned subgroup;
+it never signals a raw PID or PGID, adopts/reaps an unknown child, weakens the
+foreign-child guard or releases an unbound child. There is no sleep or retry
+substitute for the handshake. Existing process, namespace, cgroup and deadline
+guards remain mandatory.
+
+The helper path and SHA-256 are explicit browser inputs, copied and rechecked
+through the existing immutable-binary snapshot path before any group launch.
+The browser receipt records the caller path, pin, snapshot path and snapshot
+digest. It may be the same xtask binary as the console-source helper only when
+the independently supplied path and digest match exactly. No PATH lookup,
+runtime compilation, helper self-reported pin, product-package change or CI
+policy change is part of this amendment.
+
+Before the correction is admitted, one finite Linux integration fixture must
+invoke the actual parent launch seam and native helper under the existing owned
+cgroup resource boundary. Its positive uses immediate `/bin/true`: READY must
+precede parent validation; exact identity and target membership must be present
+before RELEASE; then exit, exact leader reap, empty subgroup and clean outer
+stop are required. Named controls cover wrong placement into a separately owned
+sibling subgroup (no RELEASE and cleanup of only retained identities), READY
+followed by release-pipe EOF, bounded RELEASE timeout, and the existing
+foreign-child rejection. Each control records whether the target exec occurred,
+exact child identity and cleanup state. The parent fixture must not require a
+browser runtime in Rust unit tests; focused unit controls cover framing,
+descriptor direction/distinctness and timeout parsing, while this one Linux
+fixture establishes actual cgroup placement and parent/helper composition.
+Preserve all failures and raw logs. These controls establish the entry protocol
+only; they give no browser, package, product or release acceptance credit.
+
 ## Production health-wait scope correction
 
 Prospective harness regression, 2026-10-18. The retained Chrome #45 baseline
