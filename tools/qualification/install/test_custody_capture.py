@@ -233,6 +233,94 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'clean harness source|producer/helper source'):
                     native.host_admission(owner, source_root, self.root, self.root / 'package.deb', 'a' * 40, 'literal', 'debian')
 
+    def candidate_admission_fixture(self, name, mutation):
+        """Build coherent temporary owner inputs; mutate one actual admission join."""
+        storage = self.root / name
+        debdir = storage / 'results/installation-package-build/query-gap-01-deb-a'
+        rpmdir = storage / 'results/packages/query-gap-01-rpm-a'
+        admission = storage / 'results/candidate-build-query-gap-01/candidate-admission.json'
+        console = storage / 'results/console-query-gap-01-a/build.json'
+        source_root = self.root / (name + '-source')
+        (source_root / 'tools/qualification/install').mkdir(parents=True)
+        for filename in ('custody_native.py', 'custody_witness.py', 'lifecycle.sh', 'run-qemu.py', 'acceptance.sh', 'removal_observer.py'):
+            (source_root / 'tools/qualification/install' / filename).write_text(filename)
+        (source_root / 'tools/qualification/query_oracle.py').write_text('literal oracle')
+        source_hashes = {str(path.relative_to(source_root)): native.sha(path.read_bytes())
+            for path in [*(source_root / 'tools/qualification/install' / filename for filename in
+                ('custody_native.py', 'custody_witness.py', 'lifecycle.sh', 'run-qemu.py', 'acceptance.sh', 'removal_observer.py')),
+                source_root / 'tools/qualification/query_oracle.py']}
+        manifest_bytes, bundle_bytes, console_bytes = b'literal source manifest', b'literal source bundle', b'literal console receipt'
+        source = dict(original_head='b1e5874fbf9c6feb611d98ed40386ac44a703fe1',
+            source_commit='43150dbd5cff9e0bdb0082997e796978c659d8af',
+            manifest_sha256=native.sha(manifest_bytes), source_bundle_sha256=native.sha(bundle_bytes))
+        if mutation == 'candidate-source':
+            source['original_head'] = 'e078ba23b543126011a2136dd1f7e98ca65370eb'
+        helperdir = debdir / 'qualification-helpers'
+        helperdir.mkdir(parents=True)
+        helper_files = {}
+        for filename in ('spool_dump', 'server_dump', 'spindle_sim'):
+            payload = ('literal ' + filename).encode()
+            (helperdir / filename).write_bytes(payload)
+            helper_files[filename] = native.sha(payload)
+        manifest = dict(source=source, files=helper_files)
+        (helperdir / 'manifest.json').write_text(json.dumps(manifest, sort_keys=True))
+        (debdir / 'provenance').mkdir()
+        (debdir / 'provenance/source-manifest.json').write_bytes(manifest_bytes)
+        (debdir / 'provenance/frozen-source.bundle').write_bytes(bundle_bytes)
+        console.parent.mkdir(parents=True)
+        console.write_bytes(console_bytes)
+        admission.parent.mkdir(parents=True)
+        admission.write_bytes(b'literal candidate admission')
+        debpkg = debdir / 'candidate.deb'; debpkg.write_bytes(b'literal deb package')
+        rpmpkg = rpmdir / 'candidate.rpm'; rpmpkg.parent.mkdir(parents=True); rpmpkg.write_bytes(b'literal rpm package')
+        common = dict(source=source, qualification_helpers=manifest)
+        deb = dict(common, package=str(debpkg), package_sha256=native.sha(debpkg.read_bytes()),
+            source_commit='43150dbd5cff9e0bdb0082997e796978c659d8af',
+            console_receipt_sha256=native.sha(console_bytes))
+        rpm = dict(common, package=str(rpmpkg), package_sha256=native.sha(rpmpkg.read_bytes()),
+            payload_identity={'usr/bin/fabric-node': {'sha256': 'd' * 64}})
+        deb_receipt, rpm_receipt = debdir / 'receipt.json', rpmdir / 'receipt.json'
+        deb_receipt.write_text(json.dumps(deb, sort_keys=True)); rpm_receipt.write_text(json.dumps(rpm, sort_keys=True))
+        fixed_fixture_digests = {
+            deb_receipt.read_bytes(): '89ce427d82a0065ca71e033aa696708e85c338d063d4a75cf4e4ba263f53fe72',
+            rpm_receipt.read_bytes(): '106b834855851b604d708228493192305327ff8236de3add9f4cf25c1c830919',
+            admission.read_bytes(): '9c83d196a5ccf85e00d3e9becc79032f3fd57d7aab64a396690803bef841aa5a',
+        }
+        if mutation == 'admission': admission.write_bytes(b'changed candidate admission')
+        elif mutation == 'receipt': deb_receipt.write_bytes(deb_receipt.read_bytes() + b'changed')
+        elif mutation == 'package': debpkg.write_bytes(b'changed package bytes')
+        elif mutation == 'helper': (helperdir / 'spool_dump').write_bytes(b'changed helper bytes')
+        owner = self.root / (name + '-owner.json')
+        owner.write_text(json.dumps(dict(harness_commit='a' * 40, source_hashes=source_hashes)))
+        return storage, owner, source_root, debpkg, fixed_fixture_digests
+
+    def test_candidate_identity_and_receipt_mismatch_controls(self):
+        # Git is stubbed only to isolate the actual host_admission tuple checks;
+        # this is not evidence that a pre-merge source passes ancestry admission.
+        cases = (('admission', 'owner package/admission receipt mismatch'),
+                 ('receipt', 'owner package/admission receipt mismatch'),
+                 ('candidate-source', 'candidate frozen/source mismatch'),
+                 ('source-argument', 'candidate frozen/source mismatch'),
+                 ('package', 'canonical package mismatch'),
+                 ('helper', 'canonical helper binary mismatch'),
+                 ('package-argument', 'noncanonical candidate path'))
+        for mutation, error in cases:
+            with self.subTest(mutation=mutation):
+                storage, owner, source_root, package, fixed_fixture_digests = self.candidate_admission_fixture('candidate-' + mutation, mutation)
+                def git_output(argv, **kwargs):
+                    if argv[-2:] == ['status', '--porcelain']: return ''
+                    return 'a' * 40
+                def fixture_sha(raw):
+                    return fixed_fixture_digests.get(raw, hashlib.sha256(raw).hexdigest())
+                requested_package = storage / 'not-the-canonical-package' if mutation == 'package-argument' else package
+                requested_source = 'c' * 40 if mutation == 'source-argument' else '43150dbd5cff9e0bdb0082997e796978c659d8af'
+                with patch.object(native, 'sha', side_effect=fixture_sha), \
+                     patch.object(native.subprocess, 'check_output', side_effect=git_output), \
+                     patch.object(native.subprocess, 'run'):
+                    with self.assertRaisesRegex(ValueError, error):
+                        native.host_admission(owner, source_root, storage, requested_package,
+                            requested_source, 'literal', 'debian')
+
 
     def test_btrfs_reboot_device_is_separate_from_immutable_credential_metadata(self):
         for changed_namespace in (False, True):
