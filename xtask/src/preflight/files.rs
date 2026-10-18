@@ -139,12 +139,7 @@ impl ArtifactStore {
             .ok_or_else(|| "plan JSON not retained".to_owned())
     }
 
-    pub fn read(
-        &mut self,
-        path: &str,
-        expected: &str,
-        keep_json: bool,
-    ) -> Result<(), String> {
+    pub fn read(&mut self, path: &str, expected: &str, keep_json: bool) -> Result<(), String> {
         parts(path)?;
         require(hex(expected, 64), "invalid SHA-256")?;
         if let Some(record) = self.records.get_mut(path) {
@@ -367,9 +362,7 @@ mod tests {
         });
         let result = store.read("artifact", &expected, false);
         READ_HOOK.with(|hook| *hook.borrow_mut() = None);
-        assert!(result
-            .unwrap_err()
-            .contains("artifact changed during read"));
+        assert!(result.unwrap_err().contains("artifact changed during read"));
         assert!(store.bytes_hashed() <= 8);
         std::fs::remove_dir_all(root).unwrap();
     }
