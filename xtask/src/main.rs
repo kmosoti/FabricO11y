@@ -37,8 +37,14 @@ fn verify_receipts(root: &std::path::Path, arguments: Vec<String>) -> ExitCode {
         }
         let profile = flags.remove("--profile").ok_or("--profile required")?;
         if !matches!(profile.as_str(), "fast" | "extended") { return Err("invalid profile".into()); }
-        let receipts = flags.remove("--receipts").map(PathBuf::from)
-            .unwrap_or_else(|| root.join("target/verification/receipts")).canonicalize().map_err(|error| error.to_string())?;
+        let supplied = flags.remove("--receipts").map(PathBuf::from)
+            .unwrap_or_else(|| root.join("target/verification/receipts"));
+        // Resolve the Cargo target ancestor while leaving the selected root
+        // itself for descriptor-relative O_NOFOLLOW admission.
+        let parent = supplied.parent().filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| std::path::Path::new("."));
+        let receipts = parent.canonicalize().map_err(|error| error.to_string())?
+            .join(supplied.file_name().ok_or("named receipt root required")?);
         let storage = PathBuf::from(std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("explicit DATA storage required")?)
             .canonicalize().map_err(|error| error.to_string())?;
         if !receipts.starts_with(&storage) { return Err("receipts must be on the admitted DATA storage".into()); }

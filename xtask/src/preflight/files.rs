@@ -93,11 +93,19 @@ pub struct ArtifactStore {
     records: BTreeMap<String, Record>,
     total_bytes: u64,
     json_total: u64,
+    json_budget: u64,
     bytes_hashed: u64,
 }
 
 impl ArtifactStore {
     pub fn new(root: &Path) -> Result<Self, String> {
+        Self::with_json_budget(root, JSON_TOTAL_LIMIT)
+    }
+
+    /// Divide the existing aggregate JSON budget across independent roots.
+    /// A caller may tighten the ceiling, never raise it.
+    pub fn with_json_budget(root: &Path, json_budget: u64) -> Result<Self, String> {
+        require(json_budget > 0 && json_budget <= JSON_TOTAL_LIMIT, "invalid JSON budget")?;
         let root = root.to_str().ok_or("UTF-8 root required")?.to_owned();
         let directory = open_root(&root)?;
         Ok(Self {
@@ -106,6 +114,7 @@ impl ArtifactStore {
             records: BTreeMap::new(),
             total_bytes: 0,
             json_total: 0,
+            json_budget,
             bytes_hashed: 0,
         })
     }
@@ -238,7 +247,7 @@ impl ArtifactStore {
     fn admit_json(&self, size: u64) -> Result<(), String> {
         require(size <= JSON_LIMIT as u64, "JSON exceeds 4 MiB")?;
         require(
-            self.json_total + size <= JSON_TOTAL_LIMIT,
+            self.json_total + size <= self.json_budget,
             "retained JSON exceeds 64 MiB",
         )
     }
@@ -249,6 +258,10 @@ impl ArtifactStore {
 
     pub fn bytes_hashed(&self) -> u64 {
         self.bytes_hashed
+    }
+
+    pub fn json_bytes(&self) -> u64 {
+        self.json_total
     }
 
     pub(super) fn json(&self, path: &str) -> Result<&Value, String> {
