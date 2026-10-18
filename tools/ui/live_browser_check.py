@@ -1240,6 +1240,7 @@ self.addEventListener("fetch",event=>{
                 'prefs':{'security.enterprise_roots.enabled':False,
                          'security.webauth.webauthn_enable_softtoken':True,
                          'security.webauth.webauthn_enable_usbtoken':False}}}
+            firefox_capabilities['unhandledPromptBehavior']={'confirm':'ignore'}
             firefox_capabilities['webSocketUrl'] = True
             if args.announcement_probes:
                 firefox_capabilities['moz:firefoxOptions']['args'].remove('-headless')

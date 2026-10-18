@@ -174,6 +174,14 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
                                      and isinstance(target.slice, ast.Constant)
                                      and target.slice.value == 'webSocketUrl'
                                      for target in node.targets))
+    prompt_policy = next(node for node in owner.body
+                         if isinstance(node, ast.Assign)
+                         and any(isinstance(target, ast.Subscript)
+                                 and isinstance(target.value, ast.Name)
+                                 and target.value.id == 'firefox_capabilities'
+                                 and isinstance(target.slice, ast.Constant)
+                                 and target.slice.value == 'unhandledPromptBehavior'
+                                 for target in node.targets))
     info_assignment = next(node for node in owner.body
                            if isinstance(node, ast.Assign)
                            and any(isinstance(target, ast.Name) and target.id == 'info'
@@ -189,15 +197,24 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
                                                 and target.id == 'viewport_websocket_url'
                                                 for target in child.targets)
                                         for child in ast.walk(node)))
-    selected = {id(node) for node in (capabilities, websocket_enabled, info_assignment,
+    selected = {id(node) for node in (capabilities, websocket_enabled, prompt_policy, info_assignment,
                                       session_assignment, endpoint_publication)}
 
-    def capability_scope(include_binding):
+    def capability_scope(include_binding, policy_variant='exact'):
         binding = copy.deepcopy(owner_nonlocal)
         if not include_binding:
             binding.names.remove('viewport_websocket_url')
-        selected_body = [binding] + [copy.deepcopy(node) for node in owner.body
-                                     if id(node) in selected]
+        selected_body = [binding]
+        for node in owner.body:
+            if id(node) not in selected:
+                continue
+            if node is prompt_policy and policy_variant == 'missing':
+                continue
+            copied = copy.deepcopy(node)
+            if node is prompt_policy and policy_variant == 'accept':
+                copied.value = ast.Dict(keys=[ast.Constant(value='confirm')],
+                                        values=[ast.Constant(value='accept')])
+            selected_body.append(copied)
         actual_start_owner = ast.FunctionDef(name='start_owner',
             args=copy.deepcopy(owner.args), body=selected_body, decorator_list=[])
         reader = ast.Lambda(args=ast.arguments(posonlyargs=[], args=[], vararg=None,
@@ -223,7 +240,8 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
                  'capabilities':{'webSocketUrl':url,'browserVersion':'157'}}
                 if method == 'POST' and route == '/session'
                 and body['capabilities']['alwaysMatch']['webSocketUrl'] is True
-                else (_ for _ in ()).throw(AssertionError('Firefox webSocketUrl capability was not requested'))),
+                and body['capabilities']['alwaysMatch'].get('unhandledPromptBehavior') == {'confirm':'ignore'}
+                else (_ for _ in ()).throw(AssertionError('Firefox viewport and explicit-confirm capabilities were not requested'))),
         }
         exec(compile(module, str(path), 'exec'), scope)
         actual_start_owner, read_url = scope['_bind_actual_start_owner_scope']()
@@ -245,6 +263,13 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
     else:
         raise AssertionError('viewport helper accepted an endpoint hidden by missing nonlocal binding')
     assert processes == stopped == [], 'missing endpoint launched a helper'
+    for mutant in ('missing', 'accept'):
+        try:
+            capability_scope(True, mutant)
+        except AssertionError:
+            pass
+        else:
+            raise AssertionError('Firefox session accepted prompt policy mutant: ' + mutant)
 
     namespace, processes, stopped, labels = runner({'narrow':valid,
         'restore':{'command':'browsingContext.setViewport','context':handle,'mode':'restore',
@@ -307,7 +332,11 @@ with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as scrat
 # helper, preserve the acceptance predicate, and restore before DELETE after
 # failure evidence has been captured.
 assert "firefox_capabilities['webSocketUrl'] = True" in text
+assert "firefox_capabilities['unhandledPromptBehavior']={'confirm':'ignore'}" in text
 assert "chrome_capabilities['webSocketUrl']" not in text
+assert "chrome_capabilities['unhandledPromptBehavior']" not in text
+assert "wd('/alert/accept',{})" in text
+assert "click('revoke sessions record');wd('/alert/accept',{})" in text
 run_node = functions['run_viewport']
 calls = [node for node in ast.walk(run_node) if isinstance(node, ast.Call)]
 assert any(isinstance(node.func, ast.Name) and node.func.id == 'browser_group_launch' for node in calls)
