@@ -1,7 +1,7 @@
 use std::process::Command;
 
 const LINUX_FIXTURE: &str = r#"
-import atexit, hashlib, importlib.util, json, os, pathlib, resource, secrets, signal, sys, time, subprocess
+import atexit, hashlib, importlib.util, json, os, pathlib, resource, secrets, signal, sys, time, subprocess, types
 root = pathlib.Path(os.environ['FABRIC_REPO_ROOT'])
 sys.path.insert(0, str(root / 'tools/ui'))
 script = root / 'tools/ui/live_browser_check.py'
@@ -115,18 +115,79 @@ parent = module.begin_browser_domain(limits, time.monotonic() + 45)
 bindings = []
 total_started = time.monotonic_ns()
 positive_started = time.monotonic_ns()
-with (fixture / 'positive.log').open('wb') as log:
-    proc = module.browser_group_launch(parent, bindings, 'immediate-true',
-        ['/usr/bin/true'], log, os.environ.copy(), entry_helper=helper,
-        entry_helper_sha256=helper_sha)
-    assert len(bindings) == 1 and proc is bindings[0]['group']['process']
-    binding = bindings[0]
-    assert binding['group'].get('entry_helper_sha256') == helper_sha
-    assert proc.wait(timeout=5) == 0
+real_write = module.os.write
+release_guard_calls = 0
+def verify_binding_before_release(fd, data):
+    global release_guard_calls
+    if data == b'G':
+        release_guard_calls += 1
+        assert len(bindings) == 1, 'binding must be recorded before RELEASE'
+        bound_group = bindings[0]['group']
+        bound_proc = bound_group['process']
+        assert bound_proc.poll() is None, 'bound leader must still be live at RELEASE'
+        assert module.browser_pidfd(bound_group['pidfd']) == bound_proc.pid
+        assert module.browser_pid(bound_proc.pid)[0] == bound_group['start_ticks']
+        members = {int(pid) for pid in (bound_group['path'] / 'cgroup.procs').read_text().split()}
+        assert bound_proc.pid in members, 'bound leader must be in target cgroup at RELEASE'
+    return real_write(fd, data)
+module.os.write = verify_binding_before_release
+try:
+    with (fixture / 'positive.log').open('wb') as log:
+        proc = module.browser_group_launch(parent, bindings, 'immediate-true',
+            ['/usr/bin/true'], log, os.environ.copy(), entry_helper=helper,
+            entry_helper_sha256=helper_sha)
+finally:
+    module.os.write = real_write
+assert release_guard_calls == 1, release_guard_calls
+assert len(bindings) == 1 and proc is bindings[0]['group']['process']
+binding = bindings[0]
+assert binding['group'].get('entry_helper_sha256') == helper_sha
+assert proc.wait(timeout=5) == 0
 module.stop_browser_groups(parent, bindings)
 assert bindings[0]['group']['kernel_empty'] and bindings[0]['group']['children_reaped']
 positive_peak = int((bindings[0]['group']['path'] / 'memory.peak').read_text())
 positive_elapsed = time.monotonic_ns() - positive_started
+
+# Move publication after RELEASE in a copied runtime source; the release guard
+# must reject the exact ordering defect and the actual parent seam must reap it.
+source = script.read_text()
+early_publish = "        bindings.append(binding)\n        record['state'] = 'bound'\n        transferred = True\n"
+late_publish = "        record['state'] = 'bound'\n"
+assert source.count(early_publish) == 1
+source = source.replace(early_publish, late_publish, 1)
+release_close = "        os.close(release_write); release_write = None\n        record['state'] = 'released'\n"
+late_close = "        os.close(release_write); release_write = None\n        bindings.append(binding)\n        transferred = True\n        record['state'] = 'released'\n"
+assert source.count(release_close) == 1
+source = source.replace(release_close, late_close, 1)
+mutant = types.ModuleType('live_browser_check_append_after_release')
+mutant.__file__ = str(script)
+exec(compile(source, str(script), 'exec'), mutant.__dict__)
+mutant_bindings = []
+mutant_marker = fixture / 'append-after-release-target-executed'
+mutant_release_calls = 0
+mutant_write = mutant.os.write
+def reject_unbound_release(fd, data):
+    global mutant_release_calls
+    if data == b'G':
+        mutant_release_calls += 1
+        assert not mutant_bindings, 'append-after-release mutation exposed an unbound release'
+        raise AssertionError('release-before-binding')
+    return mutant_write(fd, data)
+mutant.os.write = reject_unbound_release
+try:
+    with (fixture / 'append-after-release.log').open('wb') as log:
+        try:
+            mutant.browser_group_launch(parent, mutant_bindings, 'append-after-release',
+                ['/usr/bin/touch', str(mutant_marker)], log, os.environ.copy(),
+                entry_helper=helper, entry_helper_sha256=helper_sha)
+            raise AssertionError('append-after-release mutation was accepted')
+        except AssertionError as error:
+            assert str(error) == 'release-before-binding', str(error)
+finally:
+    mutant.os.write = mutant_write
+mutant_record = parent['provisional_children'][-1]
+assert mutant_release_calls == 1 and mutant_record['state'] == 'cleaned'
+assert mutant_record.get('children_reaped') is True and not mutant_marker.exists()
 
 # Alter only the child group argv while running the actual parent launch seam.
 wrong_path, wrong = subgroup(parent, name + '-wrong')
@@ -175,6 +236,43 @@ assert proc.wait(timeout=2) != 0
 os.close(release_w); timeout_record.pop('release_writer', None)
 assert_stopped(timeout_path, timeout_record); log.close(); timeout_record.pop('log', None)
 
+# Force the bounded Popen wait fallback after verifying that the real pidfd
+# signal targets this exact waiting leader; the second wait remains genuine.
+cleanup_path, _ = module.cgroups.subgroup(parent['path'], name + '-timeout-cleanup',
+                                          128*1024*1024, 64*1024*1024, 16, 1)
+cleanup_record = launch_raw(cleanup_path, 5000, 'timeout-cleanup')
+cleanup_proc = cleanup_record['process']
+real_wait = cleanup_proc.wait
+wait_calls = 0
+real_pidfd_signal = module.signal.pidfd_send_signal
+signal_calls = 0
+def exact_pidfd_signal(fd, sig, *args, **kwargs):
+    global signal_calls
+    assert sig == module.signal.SIGKILL
+    assert module.browser_pidfd(fd) == cleanup_proc.pid
+    signal_calls += 1
+    return real_pidfd_signal(fd, sig, *args, **kwargs)
+def timeout_wait_once(timeout=None):
+    global wait_calls
+    wait_calls += 1
+    if wait_calls == 1:
+        raise subprocess.TimeoutExpired(cleanup_proc.args, timeout)
+    return real_wait(timeout=timeout)
+module.signal.pidfd_send_signal = exact_pidfd_signal
+cleanup_proc.wait = timeout_wait_once
+try:
+    module.browser_provisional_cleanup(parent, cleanup_record)
+finally:
+    module.signal.pidfd_send_signal = real_pidfd_signal
+    cleanup_proc.wait = real_wait
+assert signal_calls == 1 and wait_calls == 2
+assert cleanup_record['state'] == 'cleaned' and cleanup_record.get('children_reaped') is True
+assert empty(cleanup_path)
+cleanup_writer = cleanup_record.pop('release_writer')
+os.close(cleanup_writer)
+cleanup_log = cleanup_record.pop('log')
+cleanup_log.close()
+
 module.browser_reap_domain(parent, bindings)
 module.end_browser_domain(parent, bindings)
 domain_closed = True
@@ -183,8 +281,10 @@ print(json.dumps({'state':'complete','positive_exit':0,'positive_elapsed_ns':pos
     'total_fixture_elapsed_ns':total_elapsed,
     'positive_peak_cgroup_bytes':positive_peak,
     'peak_child_rss_kib':resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,
+    'binding_before_release_guard':True,'append_after_release_rejected':True,
     'wrong_placement_rejected':True,'release_eof_rejected':True,
-    'release_timeout_rejected':True,'foreign_child_rejected':True,
+    'release_timeout_rejected':True,'timeout_cleanup_fallback':True,
+    'foreign_child_rejected':True,
     'own_children_empty':parent.get('own_children_empty') is True}))
 import shutil
 shutil.rmtree(fixture)
@@ -219,8 +319,11 @@ fn actual_parent_seam_binds_before_releasing_native_short_child() {
     assert_eq!(report["positive_exit"], 0);
     for key in [
         "wrong_placement_rejected",
+        "binding_before_release_guard",
+        "append_after_release_rejected",
         "release_eof_rejected",
         "release_timeout_rejected",
+        "timeout_cleanup_fallback",
         "foreign_child_rejected",
         "own_children_empty",
     ] {
