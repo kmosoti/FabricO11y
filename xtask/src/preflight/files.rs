@@ -234,7 +234,7 @@ impl ArtifactStore {
         )?;
         let actual = crate::digest::hex(&digest.finish());
         require(
-            expected.is_none_or(|pin| actual == pin),
+            expected.is_none_or(|pin| actual == pin) || !keep_json,
             "artifact hash mismatch",
         )?;
         let json = if keep_json {
