@@ -1079,6 +1079,21 @@ self.addEventListener("fetch",event=>{
                   catch(error){entry.state='rejected';entry.error_stage='metadata';entry.error_name=String(error?.name||'Error').slice(0,80);entry.error_message=String(error?.message||error).slice(0,256);entry.signal_aborted_at_rejection=!!signal?.aborted;throw error}}
                 finally{if(signal)signal.removeEventListener('abort',observeAbort);entry.finished_ms=performance.now()}};
                 return paced?(await window.fixturePace(dispatch)).response:dispatch(performance.now())}''',cadence.interval*1000)
+            transport_controls=async_js('''const done=arguments[arguments.length-1];(async()=>{
+              const endpoint=new URL('/v1/console/query',location.href).href;
+              const matches=(row,preaborted)=>!!row&&row.path==='/v1/console/query'&&row.method==='POST'&&row.state==='rejected'&&row.error_stage==='fetch'&&row.error_name==='AbortError'&&row.status===null&&row.signal_aborted_at_rejection===true&&row.signal_aborted_at_dispatch===preaborted&&Number.isFinite(row.started_ms)&&Number.isFinite(row.signal_abort_observed_ms)&&Number.isFinite(row.finished_ms)&&row.started_ms<=row.signal_abort_observed_ms&&row.signal_abort_observed_ms<=row.finished_ms;
+              const beforeRequest=window.fixtureApiHeaders.length;const beforeController=new AbortController();beforeController.abort();let beforeError=null;
+              try{await window.fetch(new Request(endpoint,{method:'POST',headers:{'content-type':'application/json','x-fabric-client-version':'1'},body:'{}',signal:beforeController.signal}))}catch(error){beforeError=error}
+              const beforeRow=window.fixtureApiHeaders[beforeRequest];const beforeOk=window.fixtureApiHeaders.length===beforeRequest+1&&beforeError?.name==='AbortError'&&matches(beforeRow,true);
+              const inFlightIndex=window.fixtureApiHeaders.length;const inFlightController=new AbortController();const originalPace=window.fixturePace;let inFlightError=null;
+              window.fixturePace=dispatch=>originalPace(started=>{const pending=dispatch(started);inFlightController.abort();return pending});
+              try{await window.fetch(endpoint,{method:'POST',headers:{'content-type':'application/json','x-fabric-client-version':'1'},body:'{}',signal:inFlightController.signal})}catch(error){inFlightError=error}finally{window.fixturePace=originalPace}
+              const inFlightRow=window.fixtureApiHeaders[inFlightIndex];const inFlightOk=window.fixtureApiHeaders.length===inFlightIndex+1&&inFlightError?.name==='AbortError'&&matches(inFlightRow,false);
+              return {preaborted:{accepted:beforeOk,row:beforeRow},inflight:{accepted:inFlightOk,row:inFlightRow}};
+            })().then(done).catch(error=>done({error:String(error)}));''')
+            receipt['transport_cancellation_controls']=transport_controls
+            if not isinstance(transport_controls,dict) or not transport_controls.get('preaborted',{}).get('accepted') or not transport_controls.get('inflight',{}).get('accepted'):
+                raise AssertionError('real browser did not produce both exact AbortSignal cancellation witnesses')
             if args.security_probes:
                 js('''const original=window.fetch;window.fixtureCompletedRegistration=null;
                   window.fetch=(...args)=>{const p=new URL(typeof args[0]==='string'?args[0]:args[0].url,location.href).pathname;
