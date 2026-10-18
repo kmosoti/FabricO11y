@@ -6,6 +6,9 @@ description = "Repository checks: architecture layers, core purity, check regist
 publish = false
 license = "Apache-2.0"
 
+[features]
+verification-sha-asm = ["sha2/asm"]
+
 [dependencies]
 libc = "=0.2.189"
 serde = "=1.0.228"
