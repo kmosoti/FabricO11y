@@ -997,6 +997,7 @@ def main():
                         'console-source-verifier', argv, helper_log, helper_environment,
                         entry_helper=args.browser_entry_helper,
                         entry_helper_sha256=args.browser_entry_helper_sha256)
+                    processes.append(('console-source-verifier', helper))
                     binding = owned_groups[-1]
                     helper_timeout = min(90, max(0, deadline - time.monotonic()))
                     try:
