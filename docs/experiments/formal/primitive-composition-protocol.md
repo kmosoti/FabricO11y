@@ -46,6 +46,27 @@ I/O only when explicitly named. Keep unfavorable and failed results. Prefer
 linear streaming joins when ordering is established; otherwise charge the cost
 of sorting or indexing instead of assuming ordered input.
 
+## Bounded raw input primitive
+
+The actual capture adapter needs raw child-output bytes. The existing artifact
+store verifies such files but retains only JSON bodies. Reopening a verified
+path to parse its content is excluded: the bytes parsed must be the bytes read
+and hashed through the owned descriptor. Investigate one explicit pinned-byte
+retention mode in the existing store, rather than another file reader.
+
+Keep digest-only streaming, existing JSON behavior, no-follow component lookup,
+hash pins and all metadata rechecks. Materialized raw bodies use the existing
+4 MiB per-input bound and share the existing 64 MiB aggregate materialization
+budget with JSON (or a caller's smaller budget). They do not gain an additional
+budget. Repeated references charge once; incompatible pins and a request for a
+body not originally retained fail closed without reopening it.
+
+Before integration run new-mode controls for exact body/hash, non-JSON content,
+wrong hash, oversize input, conflicting cache use, replacement/write race and
+post-read identity change, plus the existing artifact/JSON tests. These finite
+controls do not establish raw producer authenticity. The first consumer is the
+current native-cutoff capture adapter; no general storage abstraction is added.
+
 ## Resources and completion
 
 All jobs use the existing resource launcher and DATA scratch, with fresh strict
