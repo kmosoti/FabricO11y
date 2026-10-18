@@ -391,6 +391,8 @@ use tungstenite::client::IntoClientRequest;
 mod tests {
     use super::*;
     use std::net::TcpListener;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
 
     fn options(mode: &str) -> Options {
@@ -767,9 +769,13 @@ mod tests {
     fn absolute_deadline_covers_slowly_dribbled_upgrade_response() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
+        let handshake_finished = Arc::new(AtomicBool::new(false));
+        let server_finished = Arc::clone(&handshake_finished);
         let worker = thread::spawn(move || {
             if let Ok((stream, _)) = listener.accept() {
-                let _ = tungstenite::accept(DribbleUpgrade(stream));
+                if tungstenite::accept(DribbleUpgrade(stream)).is_ok() {
+                    server_finished.store(true, Ordering::Release);
+                }
             }
         });
         let mut configured = options("narrow");
@@ -777,6 +783,10 @@ mod tests {
         let started = Instant::now();
         assert!(run_with_timeout(configured, Duration::from_millis(120)).is_err());
         assert!(started.elapsed() < Duration::from_millis(700));
+        assert!(
+            !handshake_finished.load(Ordering::Acquire),
+            "deadline must expire while the server is still dribbling the Upgrade response"
+        );
         worker.join().unwrap();
     }
 
