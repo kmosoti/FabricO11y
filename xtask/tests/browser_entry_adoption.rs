@@ -127,6 +127,36 @@ require_binding_line = next(node.lineno for node in ast.walk(native_main)
     and node.value.attr == 'require')
 first_require_call_line = min(call.lineno for call in calls(native_main, 'require'))
 assert require_binding_line < first_require_call_line, 'fixture pin refusal calls require before binding it'
+events = []
+class Parser:
+    def add_argument(self, *args, **kwargs): pass
+    def parse_args(self):
+        return types.SimpleNamespace(out=pathlib.Path('/unused/out'),
+            browser_entry_helper=pathlib.Path('relative/helper'),
+            browser_entry_helper_sha256='a' * 64)
+class Argparse:
+    ArgumentParser = lambda *args, **kwargs: Parser()
+def fixture_require(value, reason):
+    events.append(('refuse', reason))
+    if not value:
+        raise RuntimeError('browser-supervisor-' + reason)
+def no_subprocess(*args, **kwargs):
+    raise AssertionError('invalid helper reached subprocess/cgroup setup')
+fixture_module = ast.Module(body=[copy.deepcopy(native_main)], type_ignores=[])
+ast.fix_missing_locations(fixture_module)
+fixture_namespace = {'argparse': Argparse,
+    'supervisor': types.SimpleNamespace(browser=types.SimpleNamespace(
+        require_limits=lambda: events.append(('limits', None)) or types.SimpleNamespace(name='unused')),
+        require=fixture_require),
+    'subprocess': types.SimpleNamespace(run=no_subprocess)}
+exec(compile(fixture_module, str(native_fixture_path), 'exec'), fixture_namespace)
+try:
+    fixture_namespace['main']()
+except RuntimeError as error:
+    assert str(error) == 'browser-supervisor-fixture-entry-helper-pin', error
+else:
+    raise AssertionError('invalid helper pin did not refuse at fixture entry')
+assert events == [('limits', None), ('refuse', 'fixture-entry-helper-pin')], events
 
 # Keep the actual required keyword-only signature while replacing only the
 # launch body so this source control has no cgroup/process side effects.
