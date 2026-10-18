@@ -1,0 +1,223 @@
+name: Verification sharding experiment
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/verification-concurrency-experiment.yml"
+      - "xtask/examples/merge_verification_receipts.rs"
+      - "docs/experiments/formal/verification-shards-protocol.md"
+
+concurrency:
+  group: verification-shards-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  shards:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - shard: semantic
+          - shard: remaining
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - name: Prepare disk storage and enforced cgroups
+        run: bash tools/ci/prepare-resource-host.sh
+      - name: Check CI scheduling and receipt contracts
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/test_ci_contracts.py
+      - name: Mark contained setup start
+        run: |
+          mkdir -p target/verification/pilot-host
+          date +%s%N > target/verification/pilot-host/setup-start-epoch-ns.txt
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: 1.99.0
+          components: rustfmt, clippy
+      - name: Check formatting before expensive setup
+        run: python3 -B tools/resource_group.py -- cargo fmt --all --check
+      - name: Check contained toolchain and explicit self-update policy
+        run: |
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/test_rust_preflight.py
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/rust_preflight.py
+      - name: Resolve mounted Cargo target for cache
+        id: cache-path
+        run: |
+          target=$(realpath -m --relative-to="$GITHUB_WORKSPACE" "$FABRIC_STORAGE_ROOT/cargo")
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency and pinned-tool cache
+        id: cache
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: hosted-extended-v1
+          workspaces: . -> ${{ steps.cache-path.outputs.target }}
+          cache-workspace-crates: 'false'
+          cache-on-failure: 'false'
+          save-if: 'false'
+      - name: Install native crypto prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libssl-dev
+      - uses: actions/setup-java@cf277c60eb25467037889841efdb72551f06f6c3 # v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Fetch the pinned TLA+ tools
+        run: |
+          mkdir -p target/tools
+          curl -fsSL -o target/tools/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.1/tla2tools.jar
+          echo "d532ba31aafe17afba1130f92410d9257454ff7393d1eb2fe032f0c07f352da5  target/tools/tla2tools.jar" | sha256sum --check
+      - name: Install cargo-mutants
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-mutants 27.1.0
+      - name: Install cargo-deny and cargo-llvm-cov
+        run: |
+          rustup component add llvm-tools-preview
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-deny 0.20.2
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-llvm-cov 0.9.1
+      - name: Install cargo-fuzz and the pinned nightly
+        run: |
+          rustup toolchain install nightly-2026-10-11 --profile minimal
+          ln -sfn nightly-2026-10-11-x86_64-unknown-linux-gnu "$RUSTUP_HOME/toolchains/nightly-x86_64-unknown-linux-gnu"
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-fuzz 0.13.2
+      - name: Install Kani
+        run: |
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py kani-verifier 0.68.0
+          python3 -B tools/resource_group.py -- cargo kani setup
+      - name: Verify Kani positive and semantic negative controls
+        id: tools
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/kani_canary.py
+      - name: Record runner and cache facts
+        if: ${{ always() && steps.tools.outcome == 'success' }}
+        run: |
+          mkdir -p target/verification/pilot-host
+          {
+            date -u +%FT%TZ
+            echo "runner=$RUNNER_OS/$RUNNER_ARCH"
+            echo "shard=${{ matrix.shard }}"
+            echo "cache_outcome=${{ steps.cache.outcome }}"
+            echo "cache_exact_hit=${{ steps.cache.outputs.cache-hit }}"
+            date +%s%N > target/verification/pilot-host/setup-complete-epoch-ns.txt
+            lscpu
+            free -h
+            df -h
+          } > target/verification/pilot-host/host.txt
+      - name: Run assigned original checks and retain later outcomes
+        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          set +e
+          failures=0
+          date +%s%N > target/verification/pilot-host/checks-start-epoch-ns.txt
+          if [ "$SHARD" = semantic ]; then
+            checks=(semantic-mutants)
+          else
+            checks=(delivery-faults tla-delivery tla-transport trace-model cargo-mutants kani-core fuzz-smoke dependency-policy coverage-report)
+          fi
+          for check in "${checks[@]}"; do
+            python3 -B tools/resource_group.py -- cargo xtask checks --only "$check"
+            result=$?
+            if [ "$result" -ne 0 ]; then
+              echo "$check exited $result"
+              failures=1
+            fi
+          done
+          date +%s%N > target/verification/pilot-host/checks-end-epoch-ns.txt
+          exit "$failures"
+      - name: Keep shard receipts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pilot-receipts-${{ matrix.shard }}
+          path: target/verification/receipts/
+          if-no-files-found: warn
+      - name: Keep runner and resource containment facts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pilot-resources-${{ matrix.shard }}
+          path: |
+            target/verification/pilot-host/
+            target/resource-containment/runs/
+            ${{ env.FABRIC_STORAGE_ROOT }}/results/ci-tool-install/
+          if-no-files-found: warn
+
+  aggregate:
+    needs: shards
+    if: ${{ always() && github.event.pull_request.draft == false }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - name: Prepare disk storage and enforced cgroups
+        run: bash tools/ci/prepare-resource-host.sh
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: 1.99.0
+          components: rustfmt, clippy
+      - name: Check contained toolchain before resolving DATA target
+        run: |
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/test_rust_preflight.py
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/rust_preflight.py
+      - name: Resolve mounted Cargo target for cache
+        id: cache-path
+        run: |
+          target=$(realpath -m --relative-to="$GITHUB_WORKSPACE" "$FABRIC_STORAGE_ROOT/cargo")
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency cache without saving pilot data
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: hosted-extended-v1
+          workspaces: . -> ${{ steps.cache-path.outputs.target }}
+          cache-workspace-crates: 'false'
+          cache-on-failure: 'false'
+          save-if: 'false'
+      - name: Download both receipt shards
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: pilot-receipts-*
+          path: target/verification/pilot-shards
+          merge-multiple: false
+      - name: Require both named receipt directories
+        run: |
+          mkdir -p target/verification
+          printf '%s\n' "${{ needs.shards.result }}" > target/verification/pilot-shard-result.txt
+          test -d target/verification/pilot-shards/pilot-receipts-semantic
+          test -d target/verification/pilot-shards/pilot-receipts-remaining
+      - name: Merge exact shard evidence without overwrites
+        env:
+          SHARD_RESULT: ${{ needs.shards.result }}
+        run: python3 -B tools/resource_group.py -- cargo run --locked -p xtask --example merge_verification_receipts -- --shard-result "$SHARD_RESULT" target/verification/pilot-shards target/verification/pilot-combined
+      - name: Verify complete extended receipts at this revision
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/verify_receipts.py --profile extended --receipts target/verification/pilot-combined
+      - name: Keep aggregate evidence and runner facts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pilot-aggregate-evidence
+          path: |
+            target/verification/pilot-shards/
+            target/verification/pilot-combined/
+            target/verification/pilot-shard-result.txt
+            target/resource-containment/runs/
+          if-no-files-found: warn
+      - name: Require both matrix shards to have succeeded
+        if: always()
+        env:
+          SHARD_RESULT: ${{ needs.shards.result }}
+        run: |
+          if [ "$SHARD_RESULT" != success ]; then
+            echo "shard matrix result was $SHARD_RESULT"
+            exit 1
+          fi
