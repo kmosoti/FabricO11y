@@ -8,12 +8,20 @@ fn r3_browser_supervisor_passes_the_pinned_native_entry_helper() {
         .unwrap()
         .to_path_buf();
     let script = r#"
-import ast, copy, pathlib, sys, types
+import ast, copy, pathlib, re, sys, types
 root = pathlib.Path(sys.argv[1])
 supervisor_path = root / 'tools/ui/browser_supervisor.py'
 browser_path = root / 'tools/ui/live_browser_check.py'
+soak_path = root / 'tools/qualification/soak_r3.py'
+production_path = root / 'tools/qualification/production_access.py'
+runtime_path = root / 'tools/qualification/release_runtime.py'
+bridge_path = root / 'tools/qualification/console_bridge.py'
 supervisor_tree = ast.parse(supervisor_path.read_text())
 browser_tree = ast.parse(browser_path.read_text())
+soak_tree = ast.parse(soak_path.read_text())
+production_tree = ast.parse(production_path.read_text())
+runtime_tree = ast.parse(runtime_path.read_text())
+bridge_tree = ast.parse(bridge_path.read_text())
 supervise = next(node for node in supervisor_tree.body
                  if isinstance(node, ast.FunctionDef) and node.name == 'supervise')
 launch_call = next(node for node in ast.walk(supervise)
@@ -29,6 +37,79 @@ required = [arg.arg for arg, default in zip(
     browser_launch.args.kwonlyargs, browser_launch.args.kw_defaults)
     if default is None]
 assert required == ['entry_helper', 'entry_helper_sha256'], required
+
+def method(tree, class_name, method_name):
+    owner = next(node for node in tree.body
+                 if isinstance(node, ast.ClassDef) and node.name == class_name)
+    return next(node for node in owner.body
+                if isinstance(node, ast.FunctionDef) and node.name == method_name)
+
+def calls(node, name):
+    return [item for item in ast.walk(node) if isinstance(item, ast.Call)
+            and ((isinstance(item.func, ast.Name) and item.func.id == name)
+                 or (isinstance(item.func, ast.Attribute) and item.func.attr == name))]
+
+def keyword_names(call):
+    return {item.arg for item in call.keywords if item.arg is not None}
+
+# Admission and each existing composition edge must carry the same explicit
+# path/hash pair; no ambient lookup or alternative launch route is accepted.
+admit = next(node for node in soak_tree.body
+             if isinstance(node, ast.FunctionDef) and node.name == 'admission')
+assert any(isinstance(item, ast.Call) and isinstance(item.func, ast.Name)
+           and item.func.id == 'pinned_browser_entry_helper' for item in ast.walk(admit))
+pin_helper = next(node for node in soak_tree.body
+                  if isinstance(node, ast.FunctionDef) and node.name == 'pinned_browser_entry_helper')
+require_fn = next(node for node in soak_tree.body
+                  if isinstance(node, ast.FunctionDef) and node.name == 'require')
+module = ast.Module(body=[require_fn, pin_helper], type_ignores=[])
+ast.fix_missing_locations(module)
+pin_namespace = {'Path': pathlib.Path, 're': re}
+exec(compile(module, str(soak_path), 'exec'), pin_namespace)
+valid_pin = {'inputs': {'browser_entry_helper': {
+    'path': '/owned/xtask-browser-enter', 'sha256': 'a' * 64}}}
+assert pin_namespace['pinned_browser_entry_helper'](valid_pin) == (
+    pathlib.Path('/owned/xtask-browser-enter'), 'a' * 64)
+for invalid in ({'inputs': {}}, {'inputs': {'browser_entry_helper': {
+        'path': 'relative/helper', 'sha256': 'a' * 64}}},
+        {'inputs': {'browser_entry_helper': {
+        'path': '/owned/helper', 'sha256': 'A' * 64}}}):
+    try:
+        pin_namespace['pinned_browser_entry_helper'](invalid)
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('missing or malformed native entry helper pin was accepted')
+
+measure = next(node for node in soak_tree.body
+               if isinstance(node, ast.FunctionDef) and node.name == 'measure')
+measure_args = next(call for call in calls(measure, 'SimpleNamespace'))
+assert {'browser_entry_helper', 'browser_entry_helper_sha256'} <= keyword_names(measure_args)
+production_init = method(production_tree, 'ProductionAccess', '__init__')
+assert any(isinstance(call.func, ast.Attribute) and call.func.attr == 'update'
+           and {'browser_entry_helper', 'browser_entry_helper_sha256'} <= keyword_names(call)
+           for call in calls(production_init, 'update'))
+candidate_init = method(runtime_tree, 'CandidateFixture', '__init__')
+assert {'browser_entry_helper', 'browser_entry_helper_sha256'} <= {
+    arg.arg for arg in candidate_init.args.kwonlyargs}
+console_calls = calls(candidate_init, 'ConsoleBridge')
+option_dicts = [item for item in ast.walk(candidate_init) if isinstance(item, ast.Dict)
+                and {'browser_entry_helper', 'browser_entry_helper_sha256'} <= {
+                    key.value for key in item.keys if isinstance(key, ast.Constant)}]
+assert console_calls and option_dicts
+assert any(any(item.arg is None and isinstance(item.value, ast.Name)
+               and item.value.id == 'browser_options' for item in call.keywords)
+           for call in console_calls)
+bridge_init = method(bridge_tree, 'ConsoleBridge', '__init__')
+supervisor_calls = calls(bridge_init, 'BrowserSupervisor')
+assert supervisor_calls and {'browser_entry_helper', 'browser_entry_helper_sha256'} <= keyword_names(supervisor_calls[0])
+browser_supervisor_init = method(supervisor_tree, 'BrowserSupervisor', '__init__')
+assert {'browser_entry_helper', 'browser_entry_helper_sha256'} <= {
+    arg.arg for arg in browser_supervisor_init.args.kwonlyargs}
+entry_flags = {item.value for item in ast.walk(browser_supervisor_init)
+               if isinstance(item, ast.Constant) and isinstance(item.value, str)}
+assert {'--browser-entry-helper', '--browser-entry-helper-sha256'} <= entry_flags
+assert {'entry_helper', 'entry_helper_sha256'} <= keyword_names(launch_call)
 
 # Keep the actual required keyword-only signature while replacing only the
 # launch body so this source control has no cgroup/process side effects.
@@ -56,6 +137,14 @@ result = namespace['_invoke_actual_supervisor_launch'](
     browser, object(), [], args, object(), types.SimpleNamespace(environ={}))
 assert result['entry_helper'] == helper, result
 assert result['entry_helper_sha256'] == helper_sha, result
+try:
+    namespace['_invoke_actual_supervisor_launch'](
+        browser, object(), [], types.SimpleNamespace(command=['/owned/geckodriver']),
+        object(), types.SimpleNamespace(environ={}))
+except AttributeError as error:
+    assert 'browser_entry_helper' in str(error), error
+else:
+    raise AssertionError('supervisor caller accepted absent helper identity')
 
 # Representative append-after-release style omission: removing both exact
 # helper keywords from a copied call must remain rejected by the real signature.

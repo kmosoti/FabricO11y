@@ -43,11 +43,22 @@ class ProductionAccess(CandidateFixture):
         placement = server_placement(args, soak=soak)
         self.raw_root = Path(raw_root)
         self.soak = soak
+        browser_options = ({'browser_deadline': args.r3_browser_deadline}
+                           if getattr(args, 'r3_browser_deadline', None) is not None else {})
+        if soak:
+            helper = getattr(args, 'browser_entry_helper', None)
+            helper_sha256 = getattr(args, 'browser_entry_helper_sha256', None)
+            if (not isinstance(helper, Path) or not helper.is_absolute() or helper.is_symlink()
+                    or not helper.is_file() or not os.access(helper, os.X_OK)
+                    or not isinstance(helper_sha256, str)
+                    or re.fullmatch('[0-9a-f]{64}', helper_sha256) is None
+                    or digest(helper) != helper_sha256):
+                raise ValueError('R3 requires the exact pinned native browser entry helper')
+            browser_options.update(browser_entry_helper=helper,
+                                   browser_entry_helper_sha256=helper_sha256)
         allocated = int(subprocess.check_output(['du', '-s', '-B1', str(STORAGE)]).split()[0])
         if allocated + 5 * 1024**3 > 95_000_000_000:
             raise RuntimeError('5 GiB reservation exceeds 95 GB admission stop')
-        browser_options = ({'browser_deadline': args.r3_browser_deadline}
-                           if getattr(args, 'r3_browser_deadline', None) is not None else {})
         super().__init__(args.deb_receipt, args.rpm_receipt, args.production_out,
                          server_cpus=placement, supervisor_cpus='2-3', **browser_options)
         # Match the original bin/examples layout using immutable verified copies.
