@@ -258,3 +258,87 @@ confirmation. The exact defect name, exit status, injected-defect flag and
 prerequisite checks remain unchanged. Every other cleanup label, including the
 historical prose alone, remains invalid. Preserve and regress the hosted receipt
 without changing its failed workflow outcome.
+
+## Native WebDriver BiDi viewport calibration
+
+Prospective geometry-only harness amendment, 2026-10-18. The classic WebDriver
+`Set Window Rect` request for 390 by 844 CSS pixels produced an actual 500 pixel
+`innerWidth` in the owned Firefox 157 fixture. In the observed fixture, the
+independent Bun native-WebSocket reference used
+`browsingContext.getTree` with `maxDepth: 0`, confirmed the classic window handle
+equalled the one matching root BiDi context id, and used
+`browsingContext.setViewport` with a 390 by 844 viewport. JavaScript then read
+`innerWidth === 390` at DPR 1, both before and during CSS `zoom: 2`; the existing
+18px control remained 18px. `viewport: null` followed by the classic desktop
+restore returned the outer rectangle to 1440 by 1100 and JavaScript `innerWidth`
+to 1440 (`innerHeight` was 1014). Twelve successful BiDi reply shapes were
+observed with no unsolicited events in this finite run. The
+raw actual run is `DATA/results/firefox-viewport-calibration-01/actual-terminal-01.json`,
+SHA-256 `a0738f4c191ed298d2ff9f7a9e36e9ab7f21b967913ab821bfa02472b28292f3`;
+its state records actual exit 0 and stopped cleanup 0 at source
+`1ff56e6b79a03dc6ca7ef50498af988db95dd5e3`. This is one observed Firefox
+geometry calibration, not product/browser acceptance or evidence for other
+drivers.
+
+The prospective native primitive is one narrow, existing-`xtask` command for
+`browsingContext.setViewport`, with modes 390 by 844 and `viewport: null` for
+restore. The legacy caller supplies its already observed WebSocket URL and
+current Classic window handle. It may connect only to a literal `127.0.0.1` or
+`[::1]` address with an explicit port and bounded driver session path; DNS,
+`wss`, user information, query and fragment are refused. Before the viewport
+command, `browsingContext.getTree(maxDepth: 0)` must return at most 32 root
+contexts with unique ids and exactly one id equal to the supplied handle. A
+missing match, duplicate id or malformed tree fails closed; the primitive must
+not select an arbitrary context. Other uniquely identified root contexts are
+allowed.
+
+The primitive uses pinned synchronous Tungstenite 0.30.0 with the handshake
+feature only, through an absolute-deadline socket adapter. One monotonic deadline
+of at most five seconds covers connect, HTTP Upgrade, both BiDi commands and
+their replies; per-read timeouts must not restart it. Preserve Tungstenite's
+Upgrade protections: its handshake rejects after 65,536 input bytes or 512 read
+packets, uses 4 KiB reads, and limits parsed headers to 124. Because the byte
+check follows each read and appending, allow one further read chunk and allocator
+capacity when describing this bound. The upgraded connection additionally has
+a cumulative 2 MiB input budget, at most 32 received messages, 64 KiB
+frame/message bounds, and small explicit WebSocket buffers. Unsolicited BiDi
+events are rejected. Each command has one request id. Accept only its matching
+success reply, with the command's expected result shape and no error; malformed,
+unexpected or over-bound traffic fails closed. The client closes after that
+response, so it makes no claim about later duplicate traffic.
+
+The Rust command's bounded acknowledgement reports command/context and exit
+metadata only; it does not claim the browser's actual viewport was verified.
+The later Python caller must independently read `innerWidth` through classic
+WebDriver and require exactly 390 before applying the existing 18px, 200% CSS
+zoom and negative-overflow predicates. It must call the restore mode in a
+`finally` path while preserving the original failure before cleanup, then restore
+the original classic desktop rectangle. The Bun reference remains an independent
+diagnostic and is not replaced by the Rust mock server or command.
+
+## Preserve explicit confirmation in Firefox BiDi sessions
+
+Prospective protocol amendment, 2026-10-18. The packaged Firefox diagnostic
+reached the point where a confirmation was requested for reader revocation,
+then the existing `POST /alert/accept` returned HTTP 404 because BiDi's default
+prompt policy had already closed the dialog. A separate controlled probe
+isolated prompt handling from that product action. In its classic session,
+`GET /alert/text` returned HTTP 200, explicit WebDriver accept returned HTTP
+200, and the prompt result was true. With BiDi and default handling, the alert
+text request returned HTTP 404 and the prompt result stayed false both before
+opening the BiDi WebSocket and after it closed. With the Firefox capability
+`unhandledPromptBehavior: {"confirm":"ignore"}`, alert text remained available
+and explicit accept returned HTTP 200 with a true prompt result before and after
+the WebSocket. The controlled probe completed with exit 0 and stopped cleanup
+0; its raw record is
+`DATA/results/firefox-prompt-lifecycle-diagnostic-01/actual-browser.json`,
+SHA-256 `4fa3de6fcd0f3c1131c506268131128979097981e3ef813d63d8fca710cd2f6e`.
+
+Every Firefox BiDi fixture session must set that exact confirm policy. The
+caller still performs the existing explicit `/alert/accept` action and checks
+the same revocation outcome; `ignore` preserves the dialog for that action and
+does not accept or dismiss it. This policy applies only to the Firefox
+capabilities and makes no claim about other drivers. It preserves the original
+dialog lifecycle predicate while attaching BiDi; changing the policy to
+`accept`, omitting it, or weakening the existing revocation check is outside
+this protocol.

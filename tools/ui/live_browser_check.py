@@ -665,6 +665,10 @@ def main():
     processes = []
     logs = []
     session = None
+    viewport_websocket_url = None
+    viewport_context_handle = None
+    viewport_restore_required = False
+    viewport_helper_attempt = 0
     driver_port = free_port()
     endpoint = f'http://127.0.0.1:{driver_port}'
     server_port = free_port()
@@ -744,6 +748,63 @@ def main():
 
     def js(script, *values):
         return wd('/execute/sync', {'script': script, 'args': values})
+
+    def run_viewport(mode, context_handle):
+        nonlocal viewport_helper_attempt
+        if args.browser != 'firefox' or mode not in ('narrow', 'restore'):
+            raise ValueError('BiDi viewport adapter is Firefox-only and mode-bounded')
+        if not isinstance(viewport_websocket_url, str) or not context_handle:
+            raise ValueError('Firefox BiDi endpoint or classic window context is missing')
+        viewport_helper_attempt += 1
+        label = 'browser-bidi-viewport-' + str(viewport_helper_attempt) + '-' + mode
+        command = [str(args.browser_entry_helper), 'browser-bidi-viewport',
+                   '--ws-url', viewport_websocket_url, '--context', context_handle,
+                   '--mode', mode]
+        helper_log = (out / (label + '.log')).open('w+b')
+        logs.append(helper_log)
+        helper_environment = {'PATH': '/usr/bin:/bin'}
+        helper = browser_group_launch(group_parent, owned_groups, label, command,
+            helper_log, helper_environment, entry_helper=args.browser_entry_helper,
+            entry_helper_sha256=args.browser_entry_helper_sha256)
+        processes.append((label, helper))
+        binding = owned_groups[-1]
+        helper_timeout = min(5, max(0, deadline - time.monotonic()))
+        try:
+            exit_code = helper.wait(timeout=helper_timeout)
+        except subprocess.TimeoutExpired as error:
+            stop_browser_groups(group_parent, [binding])
+            raise ValueError('BiDi viewport helper exceeded browser fixture deadline') from error
+        stop_browser_groups(group_parent, [binding])
+        helper_log.flush()
+        helper_size = helper_log.tell()
+        helper_log.seek(0)
+        output = helper_log.read(64 * 1024 + 1)
+        if helper_size > 64 * 1024 or len(output) > 64 * 1024:
+            raise ValueError('BiDi viewport helper report exceeds 64 KiB read bound')
+        if (binding['group'].get('kernel_empty') is not True
+                or binding['group'].get('children_reaped') is not True):
+            raise ValueError('BiDi viewport helper group did not stop cleanly')
+        if exit_code != 0:
+            raise ValueError('BiDi viewport helper exited unsuccessfully')
+        try:
+            acknowledgement = json.loads(output)
+        except (UnicodeDecodeError, json.JSONDecodeError) as error:
+            raise ValueError('BiDi viewport helper report is not valid JSON') from error
+        expected = {'command': 'browsingContext.setViewport', 'context': context_handle,
+                    'mode': mode, 'result': {}, 'received_messages': 2,
+                    'actual_viewport_verified': False}
+        if (not isinstance(acknowledgement, dict)
+                or set(acknowledgement) != set(expected)
+                or acknowledgement != expected
+                or type(acknowledgement.get('received_messages')) is not int
+                or type(acknowledgement.get('actual_viewport_verified')) is not bool):
+            raise ValueError('BiDi viewport helper acknowledgement did not match request')
+        return acknowledgement
+
+    def verify_viewport_geometry(actual, baseline):
+        check(isinstance(actual,dict) and actual.get('width')==390
+              and actual.get('height')==844 and actual.get('dpr')==baseline.get('dpr'),
+              'Firefox BiDi viewport has actual 390 by 844 CSS pixels at unchanged DPR')
 
     def async_js(script, *values):
         return wd('/execute/async', {'script': script, 'args': values})
@@ -997,6 +1058,7 @@ def main():
                         'console-source-verifier', argv, helper_log, helper_environment,
                         entry_helper=args.browser_entry_helper,
                         entry_helper_sha256=args.browser_entry_helper_sha256)
+                    processes.append(('console-source-verifier', helper))
                     binding = owned_groups[-1]
                     helper_timeout = min(90, max(0, deadline - time.monotonic()))
                     try:
@@ -1104,7 +1166,7 @@ self.addEventListener("fetch",event=>{
                 for p in (ROOT/'tools/ui/browser_migration.py',ROOT/'tools/ui/migration_contract.py')})
             migration_prepared = browser_migration.prepare(args,work,out,origin,config,admin,launch,stop_migration,wait,pace_api,receipt)
         def start_owner(label):
-            nonlocal session,endpoint,context,tls_opener
+            nonlocal session,endpoint,context,tls_opener,viewport_websocket_url
             fixture=work/label if label else work
             if label:fixture.mkdir(mode=0o700)
             fixture_config=fixture/'server.conf'
@@ -1178,11 +1240,17 @@ self.addEventListener("fetch",event=>{
                 'prefs':{'security.enterprise_roots.enabled':False,
                          'security.webauth.webauthn_enable_softtoken':True,
                          'security.webauth.webauthn_enable_usbtoken':False}}}
+            firefox_capabilities['unhandledPromptBehavior']={'confirm':'ignore'}
+            firefox_capabilities['webSocketUrl'] = True
             if args.announcement_probes:
                 firefox_capabilities['moz:firefoxOptions']['args'].remove('-headless')
                 firefox_capabilities['moz:firefoxOptions']['prefs']['accessibility.force_disabled']=0
             info = call('POST','/session',{'capabilities':{'alwaysMatch':firefox_capabilities if args.browser=='firefox' else chrome_capabilities}})
             session = info['sessionId']
+            if args.browser == 'firefox':
+                viewport_websocket_url = info['capabilities'].get('webSocketUrl')
+                if not isinstance(viewport_websocket_url, str):
+                    raise ValueError('Firefox did not return the requested BiDi WebSocket URL')
             receipt['browser_version_actual'] = info['capabilities']['browserVersion']
             check(receipt['browser_version_actual'] == receipt['browser_version_expected'], 'actual browser matches reviewed version')
             if args.browser=='firefox':
@@ -1596,7 +1664,16 @@ self.addEventListener("fetch",event=>{
         check(js('return !!document.querySelector("[role=status][aria-live=polite]") && document.querySelector("[role=alert]")?.textContent.includes("Filter exceeds 4096 UTF-8 bytes")'),'actual invalid filter error and request status have announcement roles')
         field('Body substring (case-sensitive)','');click('Run query')
         wait(lambda:js('return document.querySelectorAll(".results tbody tr").length>0'),'valid query restores readable table after announced validation error')
-        wd('/window/rect', {'width':390,'height':844})
+        if args.browser == 'firefox':
+            viewport_context_handle = wd('/window', method='GET')
+            viewport_baseline = js('return {width:innerWidth,height:innerHeight,dpr:devicePixelRatio}')
+            viewport_restore_required = True
+            wd('/window/rect', {'width':390,'height':844})
+            run_viewport('narrow', viewport_context_handle)
+            viewport_actual = js('return {width:innerWidth,height:innerHeight,dpr:devicePixelRatio}')
+            verify_viewport_geometry(viewport_actual, viewport_baseline)
+        else:
+            wd('/window/rect', {'width':390,'height':844})
         check(js('return document.documentElement.scrollWidth <= window.innerWidth + 2'), 'narrow viewport has no document overflow')
         (out/'narrow.png').write_bytes(base64.b64decode(wd('/screenshot', method='GET')))
         js('document.documentElement.style.zoom="200%"')
@@ -1616,7 +1693,15 @@ self.addEventListener("fetch",event=>{
             js("window.fixtureNextAction.style.cssText=window.fixtureNextStyle;delete window.fixtureNextAction;delete window.fixtureNextStyle;")
         check(js('return document.documentElement.scrollWidth <= innerWidth + 2'),'pagination negative control restores coherent responsive layout')
         js('document.documentElement.style.zoom=""')
-        wd('/window/rect', {'width':1440,'height':1100})
+        if args.browser == 'firefox':
+            run_viewport('restore', viewport_context_handle)
+            wd('/window/rect', {'width':1440,'height':1100})
+            desktop_geometry = js('return {width:innerWidth,height:innerHeight}')
+            check(isinstance(desktop_geometry,dict) and desktop_geometry.get('width')==1440,
+                  'desktop classic restore retains 1440 CSS pixels of inner width')
+            viewport_restore_required = False
+        else:
+            wd('/window/rect', {'width':1440,'height':1100})
         code, _ = api('/v1/console/query', 'POST', {'kind':'rate','name':'test','from_ns':1,'to_ns':2})
         expect((code,_),400,'unbounded rate queries are unavailable in the console','rate endpoint is unavailable in the console')
         cache_keys = async_js('const done=arguments[arguments.length-1];caches.keys().then(async keys=>done((await Promise.all(keys.map(async key=>(await(await caches.open(key)).keys()).map(r=>new URL(r.url).pathname)))).flat()))')
@@ -1974,15 +2059,27 @@ self.addEventListener("fetch",event=>{
                 pass
         raise
     finally:
+        cleanup_error = None
+        if session and viewport_restore_required:
+            try:
+                run_viewport('restore', viewport_context_handle)
+                wd('/window/rect', {'width':1440,'height':1100})
+                desktop_geometry = js('return {width:innerWidth,height:innerHeight}')
+                if not isinstance(desktop_geometry,dict) or desktop_geometry.get('width') != 1440:
+                    raise ValueError('desktop classic restore did not reach 1440 CSS pixels')
+                viewport_restore_required = False
+                receipt['failure_viewport_restore'] = {'inner_width':desktop_geometry['width']}
+            except BaseException as error:
+                cleanup_error = error
+                receipt['viewport_restore_error'] = str(error)
         if session:
             try:
                 call('DELETE', '/session/' + session)
             except BaseException:
                 pass
-        cleanup_error = None
         if announcements is not None:
             try:announcements.close()
-            except BaseException as error:cleanup_error=error
+            except BaseException as error:cleanup_error=cleanup_error or error
         try:
             browser_cleanup_provisionals(group_parent)
             stop_browser_groups(group_parent, owned_groups)
