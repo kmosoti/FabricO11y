@@ -75,4 +75,5 @@ exclusive publication checks those pinned bytes again. Artifact copying uses a
 the marker and evidence; successful cleanup precedes marker removal. This bounds
 copy scratch independently of log length, while retaining full-byte verification.
 The unchanged Python receipt validator remains an independent cross-check before
-adoption. This integration is implemented but has not yet completed its gates.
+adoption. Local integration receipts bind source `7fc4723`; current-head hosted
+checks still gate workflow adoption.
