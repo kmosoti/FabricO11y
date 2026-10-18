@@ -239,6 +239,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
         debdir = storage / 'results/installation-package-build/query-gap-01-deb-a'
         rpmdir = storage / 'results/packages/query-gap-01-rpm-a'
         admission = storage / 'results/candidate-build-query-gap-01/candidate-admission.json'
+        inspection = storage / 'results/candidate-build-query-gap-01/package-inspection.json'
         console = storage / 'results/console-query-gap-01-a/build.json'
         source_root = self.root / (name + '-source')
         (source_root / 'tools/qualification/install').mkdir(parents=True)
@@ -250,6 +251,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                 ('custody_native.py', 'custody_witness.py', 'lifecycle.sh', 'run-qemu.py', 'acceptance.sh', 'removal_observer.py')),
                 source_root / 'tools/qualification/query_oracle.py']}
         manifest_bytes, bundle_bytes, console_bytes = b'literal source manifest', b'literal source bundle', b'literal console receipt'
+        inspection_bytes = b'literal package inspection'
         source = dict(original_head='b1e5874fbf9c6feb611d98ed40386ac44a703fe1',
             source_commit='43150dbd5cff9e0bdb0082997e796978c659d8af',
             manifest_sha256=native.sha(manifest_bytes), source_bundle_sha256=native.sha(bundle_bytes))
@@ -271,6 +273,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
         console.write_bytes(console_bytes)
         admission.parent.mkdir(parents=True)
         admission.write_bytes(b'literal candidate admission')
+        inspection.write_bytes(inspection_bytes)
         debpkg = debdir / 'candidate.deb'; debpkg.write_bytes(b'literal deb package')
         rpmpkg = rpmdir / 'candidate.rpm'; rpmpkg.parent.mkdir(parents=True); rpmpkg.write_bytes(b'literal rpm package')
         common = dict(source=source, qualification_helpers=manifest)
@@ -285,11 +288,14 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
             deb_receipt.read_bytes(): '89ce427d82a0065ca71e033aa696708e85c338d063d4a75cf4e4ba263f53fe72',
             rpm_receipt.read_bytes(): '106b834855851b604d708228493192305327ff8236de3add9f4cf25c1c830919',
             admission.read_bytes(): '9c83d196a5ccf85e00d3e9becc79032f3fd57d7aab64a396690803bef841aa5a',
+            inspection_bytes: 'ad3c597a10d9841548165c47ddd7d504095db94063223e1f93a73a0d887d30b8',
         }
         if mutation == 'admission': admission.write_bytes(b'changed candidate admission')
         elif mutation == 'receipt': deb_receipt.write_bytes(deb_receipt.read_bytes() + b'changed')
         elif mutation == 'package': debpkg.write_bytes(b'changed package bytes')
         elif mutation == 'helper': (helperdir / 'spool_dump').write_bytes(b'changed helper bytes')
+        elif mutation == 'inspection-missing': inspection.unlink()
+        elif mutation == 'inspection-tampered': inspection.write_bytes(inspection_bytes + b' changed')
         owner = self.root / (name + '-owner.json')
         owner.write_text(json.dumps(dict(harness_commit='a' * 40, source_hashes=source_hashes)))
         return storage, owner, source_root, debpkg, fixed_fixture_digests
@@ -320,6 +326,32 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, error):
                         native.host_admission(owner, source_root, storage, requested_package,
                             requested_source, 'literal', 'debian')
+
+    def test_package_inspection_is_required_and_hash_pinned(self):
+        # The real preboot package inspection is fixed at
+        # results/candidate-build-query-gap-01/package-inspection.json
+        # (SHA-256 ad3c597a10d9841548165c47ddd7d504095db94063223e1f93a73a0d887d30b8).
+        # Both absence and byte substitution must fail before candidate use.
+        for mutation in ('inspection-missing', 'inspection-tampered'):
+            with self.subTest(mutation=mutation):
+                storage, owner, source_root, package, fixed_fixture_digests = self.candidate_admission_fixture(
+                    'candidate-' + mutation, mutation)
+                def git_output(argv, **kwargs):
+                    if argv[-2:] == ['status', '--porcelain']: return ''
+                    return 'a' * 40
+                def fixture_sha(raw):
+                    return fixed_fixture_digests.get(raw, hashlib.sha256(raw).hexdigest())
+                with patch.object(native, 'sha', side_effect=fixture_sha), \
+                     patch.object(native.subprocess, 'check_output', side_effect=git_output), \
+                     patch.object(native.subprocess, 'run'):
+                    if mutation == 'inspection-missing':
+                        with self.assertRaises(FileNotFoundError):
+                            native.host_admission(owner, source_root, storage, package,
+                                '43150dbd5cff9e0bdb0082997e796978c659d8af', 'literal', 'debian')
+                    else:
+                        with self.assertRaisesRegex(ValueError, 'owner package/admission receipt mismatch'):
+                            native.host_admission(owner, source_root, storage, package,
+                                '43150dbd5cff9e0bdb0082997e796978c659d8af', 'literal', 'debian')
 
 
     def test_btrfs_reboot_device_is_separate_from_immutable_credential_metadata(self):
