@@ -87,3 +87,40 @@ validator on the same source revision. This scheduling reduces elapsed time in
 one completed hosted comparison while increasing aggregate runner time under
 different CPU, cache and setup conditions; it does not alter check commands or
 product acceptance criteria. See the [finite pilot record](../experiments/formal/verification-shards-protocol.md).
+
+## Native storage census
+
+`xtask storage-census` counts the complete explicit `FABRIC_STORAGE_ROOT` without
+following directory symlinks. Owned directory descriptors anchor an iterative
+depth-first traversal; each child is opened relative to its parent before its
+metadata is counted. A checked accumulator commits all counters together. A
+per-attempt accumulator prevents an interrupted walk from leaking partial totals
+into a retry. Descriptor and iterator storage grows with active directory depth,
+not the total number of files; complete accounting still requires visiting each
+entry. Filesystem changes can prevent a consistent snapshot.
+
+The [registered protocol](../experiments/formal/native-storage-census-protocol.md)
+preserves hardlink-per-path and logical sparse-file accounting, ten attempts,
+250 ms retry spacing and fatal permission/I/O errors. Only ENOENT in explicitly
+recognized cleanup paths permits a full restart. An exact owned scratch argument
+does not itself prove ownership; a caller must bind it to its admitted command.
+Missing roots and RAM-backed roots fail closed. The six-field JSON result retains
+the old accounting interface; product delivery/query/rate oracles are unchanged.
+
+The `--owner-binding` mode takes an independently declared owner label and
+admission path/digest plus the raw walkthrough argv. Its pure validator accepts
+the exact program and five unique known flag/value pairs, joins the run ID,
+label and outer-record path, and derives one scratch root. Unresolved digests,
+crossed identities, duplicate flags and prefix siblings are refused. This binds
+caller-supplied identities; it does not read or authorize admission content.
+The original walkthrough guards retain that responsibility. The external frozen
+driver adapter supplies these values and invokes the pinned executable in the
+original user namespace without changing storage thresholds or resource caps.
+
+The [finite comparison and counterexample record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-storage-census-results-01)
+contains classification, real deletion controls, an actual partial-counter mutant
+and a warm 20,000-path comparison. It also records a shared Cargo target returning
+a mutant executable for a clean production worktree. Worktree/variant verification
+therefore uses a distinct DATA target passed inside the resource launcher command;
+source cleanliness alone is insufficient to identify a reused executable. Caller
+adoption and fresh owner acceptance remain separate requirements.

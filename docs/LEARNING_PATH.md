@@ -411,3 +411,13 @@ archived byte copy, original descriptor/stat identity, and a live writer's custo
 Explain why startup diagnostics need a separate reboot checkpoint and why its
 later evidence cannot justify an earlier query answer. The new harness remains
 unverified until its registered source checks and genuine native cells execute.
+
+The [native census](architecture/engineering-evidence.md#native-storage-census)
+connects Rust ownership to filesystem effects: keep directory descriptors alive,
+open children relative to their parents and commit checked counters atomically.
+A fresh accumulator on every retry is essential; the retained partial-counter
+mutant produces 36 bytes where the restored fixture contains 32. Explain why
+descriptor anchoring and bounded retries still do not create an atomic snapshot,
+and why a clean source tree cannot authenticate a cached executable from another
+worktree. Independent reference output and isolated build targets address
+different failure modes.
