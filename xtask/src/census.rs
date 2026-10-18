@@ -224,6 +224,22 @@ fn parse_owned(root: &Path, args: Vec<String>) -> Result<Option<PathBuf>, String
     Ok(owned)
 }
 
+fn require_disk_root(root: &Path) -> Result<(), String> {
+    let anchor = open_absolute_directory(root).map_err(|error| error.to_string())?;
+    let mut information = std::mem::MaybeUninit::<libc::statfs>::uninit();
+    // SAFETY: the live descriptor is owned here and the output allocation has
+    // exactly the layout expected by fstatfs. Read it only after success.
+    if unsafe { libc::fstatfs(anchor.as_raw_fd(), information.as_mut_ptr()) } != 0 {
+        return Err(io::Error::last_os_error().to_string());
+    }
+    // SAFETY: successful fstatfs initialized the output structure.
+    let information = unsafe { information.assume_init() };
+    if information.f_type == libc::TMPFS_MAGIC || information.f_type == libc::RAMFS_MAGIC {
+        return Err("census root must be disk-backed, not tmpfs or ramfs".into());
+    }
+    Ok(())
+}
+
 pub fn cli(args: Vec<String>) -> ExitCode {
     let result = (|| -> Result<ScanResult, String> {
         let configured = std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("explicit FABRIC_STORAGE_ROOT required")?;
@@ -232,12 +248,15 @@ pub fn cli(args: Vec<String>) -> ExitCode {
         if !metadata.is_dir() || metadata.file_type().is_symlink() { return Err("FABRIC_STORAGE_ROOT must be an existing ordinary directory".into()); }
         let root = configured.canonicalize().map_err(|error| error.to_string())?;
         if configured.as_os_str().as_bytes() != root.as_os_str().as_bytes() { return Err("FABRIC_STORAGE_ROOT must already be canonical".into()); }
+        require_disk_root(&root)?;
         let owned = parse_owned(&root, args)?;
         scan(&root, owned.as_deref()).map_err(|error| error.to_string())
     })();
     match result {
         Ok(result) => {
-            println!("{}", json!({"data_bytes":result.totals.data_bytes,"regular_path_bytes":result.totals.regular_path_bytes,"path_count":result.totals.path_count,"uid":unsafe { libc::getuid() },"gid":unsafe { libc::getgid() },"attempt":result.attempt}));
+            // SAFETY: these read-only identity calls take no pointer arguments.
+            let (uid, gid) = unsafe { (libc::getuid(), libc::getgid()) };
+            println!("{}", json!({"data_bytes":result.totals.data_bytes,"regular_path_bytes":result.totals.regular_path_bytes,"path_count":result.totals.path_count,"uid":uid,"gid":gid,"attempt":result.attempt}));
             ExitCode::SUCCESS
         }
         Err(error) => { eprintln!("storage census FAILED: {error}"); ExitCode::from(2) }
