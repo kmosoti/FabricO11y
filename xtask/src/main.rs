@@ -8,6 +8,65 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use xtask::metadata::Options;
 
+/// Match the reference Git query deadline using the already-required Linux
+/// coreutils tool. Failure or absence is an error, never an uncapped fallback.
+fn receipt_git(root: &std::path::Path, arguments: &[&str]) -> Result<String, String> {
+    let output = std::process::Command::new("timeout")
+        .args(["--signal=KILL", "10s", "git"])
+        .args(arguments)
+        .current_dir(root)
+        .output()
+        .map_err(|error| format!("bounded Git query unavailable: {error}"))?;
+    if !output.status.success() {
+        return Err(format!("Git query failed or timed out: {:?}: {}", output.status.code(), String::from_utf8_lossy(&output.stderr)));
+    }
+    String::from_utf8(output.stdout).map(|value| value.trim().to_owned()).map_err(|error| error.to_string())
+}
+
+fn verify_receipts(root: &std::path::Path, arguments: Vec<String>) -> ExitCode {
+    let setup = (|| -> Result<_, String> {
+        xtask::preflight::require_limits()?;
+        let mut flags = std::collections::BTreeMap::new();
+        let mut arguments = arguments.into_iter();
+        while let Some(flag) = arguments.next() {
+            if !matches!(flag.as_str(), "--profile" | "--receipts") {
+                return Err(format!("unknown argument: {flag}"));
+            }
+            let value = arguments.next().ok_or("argument value required")?;
+            if flags.insert(flag, value).is_some() { return Err("duplicate argument".into()); }
+        }
+        let profile = flags.remove("--profile").ok_or("--profile required")?;
+        if !matches!(profile.as_str(), "fast" | "extended") { return Err("invalid profile".into()); }
+        let receipts = flags.remove("--receipts").map(PathBuf::from)
+            .unwrap_or_else(|| root.join("target/verification/receipts")).canonicalize().map_err(|error| error.to_string())?;
+        let storage = PathBuf::from(std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("explicit DATA storage required")?)
+            .canonicalize().map_err(|error| error.to_string())?;
+        if !receipts.starts_with(&storage) { return Err("receipts must be on the admitted DATA storage".into()); }
+        Ok((profile, receipts))
+    })();
+    let (profile, receipts) = match setup {
+        Ok(values) => values,
+        Err(error) => { eprintln!("receipt verification NOT RUN: {error}"); return ExitCode::from(2); }
+    };
+    let result = (|| {
+        let commit = receipt_git(root, &["rev-parse", "HEAD"])?;
+        if !receipt_git(root, &["status", "--porcelain"])?.is_empty() { return Err("candidate worktree changed".into()); }
+        let report = xtask::receipts::verify(root, &profile, &commit, &receipts)?;
+        if receipt_git(root, &["rev-parse", "HEAD"])? != commit
+            || !receipt_git(root, &["status", "--porcelain"])?.is_empty() {
+            return Err("candidate source changed during verification".into());
+        }
+        Ok(report)
+    })();
+    match result {
+        Ok(report) => match serde_json::to_string_pretty(&report) {
+            Ok(report) => { println!("{report}"); ExitCode::SUCCESS }
+            Err(error) => { eprintln!("receipt verification FAILED: {error}"); ExitCode::from(1) }
+        },
+        Err(error) => { eprintln!("receipt verification FAILED: {error}"); ExitCode::from(1) }
+    }
+}
+
 const USAGE: &str = "usage:
   cargo xtask check-layers      [--manifest-path PATH] [--policy PATH] [--declared-only] [--offline]
   cargo xtask check-core-purity [--manifest-path PATH] [--policy PATH] [--declared-only] [--offline]
@@ -15,6 +74,7 @@ const USAGE: &str = "usage:
   cargo xtask mutants           [--only ID]
   cargo xtask check-counterexamples
   cargo xtask cargo-mutants
+  cargo xtask verify-receipts --profile fast|extended [--receipts DIR]
   cargo xtask evidence-preflight --root PATH --plan RELATIVE --plan-sha256 HEX --candidate REVISION";
 
 fn main() -> ExitCode {
@@ -30,6 +90,9 @@ fn main() -> ExitCode {
         .parent()
         .map(PathBuf::from)
         .unwrap_or_default();
+    if command == "verify-receipts" {
+        return verify_receipts(&root, args.collect());
+    }
     if command == "check-counterexamples" || command == "cargo-mutants" {
         let result = if command == "cargo-mutants" {
             xtask::evidence::cargo_mutants(&root, &root.join("xtask/cargo-mutants-equivalent.json"))
