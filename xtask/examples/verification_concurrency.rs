@@ -148,7 +148,7 @@ fn execute(
         return Err("one or two workers and a nonempty inventory required".into());
     }
     let dispatch = if mode == Mode::Weighted {
-        let weights = if ids.iter().any(|id| id == "injected-exit-7") {
+        if ids.iter().any(|id| id == "injected-exit-7") {
             let real_id = ids.iter().find(|id| id.as_str() != "injected-exit-7")
                 .ok_or("weighted control missing real check")?;
             let real_weight = WEIGHTS.iter().find(|entry| entry.0 == real_id.as_str())
