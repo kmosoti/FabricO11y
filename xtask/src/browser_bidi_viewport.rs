@@ -393,6 +393,31 @@ mod tests {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::thread;
 
+    fn accept_with_deadline(listener: &TcpListener) -> io::Result<TcpStream> {
+        listener.set_nonblocking(true)?;
+        let deadline = Instant::now() + Duration::from_secs(2);
+        loop {
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    stream.set_read_timeout(Some(Duration::from_secs(1)))?;
+                    stream.set_write_timeout(Some(Duration::from_secs(1)))?;
+                    return Ok(stream);
+                }
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    if Instant::now() >= deadline {
+                        return Err(io::Error::new(
+                            io::ErrorKind::TimedOut,
+                            "mock listener accept deadline",
+                        ));
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+                Err(error) => return Err(error),
+            }
+        }
+    }
+
     fn options(mode: &str) -> Options {
         parse(&[
             "--ws-url".into(),
@@ -573,23 +598,10 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let url = format!("ws://{address}/session/mock-session");
-        listener.set_nonblocking(true).unwrap();
         let worker = thread::spawn(move || {
-            let accept_deadline = Instant::now() + Duration::from_secs(2);
-            let stream = loop {
-                match listener.accept() {
-                    Ok((stream, _)) => break stream,
-                    Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
-                        if Instant::now() >= accept_deadline {
-                            return;
-                        }
-                        thread::sleep(Duration::from_millis(10));
-                    }
-                    Err(_) => return,
-                }
+            let Ok(stream) = accept_with_deadline(&listener) else {
+                return;
             };
-            let _ = stream.set_read_timeout(Some(Duration::from_secs(1)));
-            let _ = stream.set_write_timeout(Some(Duration::from_secs(1)));
             if let Ok(socket) = tungstenite::accept(stream) {
                 handler(socket);
             }
@@ -726,7 +738,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let worker = thread::spawn(move || {
-            let (_stream, _) = listener.accept().unwrap();
+            let _stream = accept_with_deadline(&listener).unwrap();
             thread::sleep(Duration::from_millis(100));
         });
         let mut configured = options("narrow");
@@ -770,7 +782,7 @@ mod tests {
         let handshake_finished = Arc::new(AtomicBool::new(false));
         let server_finished = Arc::clone(&handshake_finished);
         let worker = thread::spawn(move || {
-            let Ok((stream, _)) = listener.accept() else {
+            let Ok(stream) = accept_with_deadline(&listener) else {
                 return;
             };
             if tungstenite::accept(DribbleUpgrade(stream)).is_ok() {
@@ -794,7 +806,7 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let address = listener.local_addr().unwrap();
         let worker = thread::spawn(move || {
-            let (mut stream, _) = listener.accept().unwrap();
+            let mut stream = accept_with_deadline(&listener).unwrap();
             let bytes = vec![0x5a; MAX_INPUT_BYTES + 1];
             let _ = stream.write_all(&bytes);
         });
