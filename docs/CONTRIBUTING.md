@@ -158,20 +158,17 @@ Repository skills in `.agents/skills` are ordinary Markdown: [fabric-architectur
 
 ## Evidence preflight
 
-The [read-only CLI](../tools/engineering/evidence.py) checks a caller-frozen plan
-under the launcher's actual storage root. See its [schema and limits](experiments/formal/engineering-evidence-protocol.md).
-For example, with explicit owner-selected pins:
+Run the [Rust preflight](architecture/engineering-evidence.md) through the required
+launcher with an explicit root, relative plan path, SHA-256 and candidate:
 
 ```sh
-python3 tools/resource_group.py -- python3 -B tools/engineering/evidence.py \
+python3 tools/resource_group.py -- cargo xtask evidence-preflight \
   --root "$FABRIC_STORAGE_ROOT" --plan results/registered-plan.json \
   --plan-sha256 "$PLAN_SHA256" --candidate "$CANDIDATE_SHA"
 ```
 
-Exit 0 means all listed evidence structurally matches; exit 3 retains pending
-work; exit 2 refuses malformed or inconsistent input. The CLI never executes
-plan commands, rewrites the queue or grants acceptance. Reconcile required
-cases against their original protocols before freezing the inventory. Source
-controls run with `python3 -B -m unittest discover -s tools/engineering -p 'test_*.py'`;
-the registered finite comparison runs with `python3 -B tools/engineering/measure.py`.
-Both require the resource launcher and data-drive scratch like every validator.
+See the [schema, limits and controls](experiments/formal/engineering-evidence-protocol.md).
+Exit0 matches listed structure,3 retains pending work,2 refuses invalid input.
+It never executes a plan or grants acceptance. Rust workspace tests retain its
+controls; finite measurements use `cargo run --release -p xtask --locked --example
+preflight_measure`, also through the launcher with registered data-drive storage.

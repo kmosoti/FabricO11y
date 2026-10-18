@@ -1,42 +1,30 @@
 # Engineering evidence composition
 
-This development tool checks a frozen plan against retained files. It does not
-change the product runtime, execute jobs or replace registered acceptance graders.
-The [prospective contract](../experiments/formal/engineering-evidence-protocol.md)
-defines its schema, finite bounds, controls and measurements.
+The Rust `xtask evidence-preflight` command checks a caller-pinned inventory;
+it neither executes jobs nor replaces acceptance graders. The
+[contract](../experiments/formal/engineering-evidence-protocol.md) defines its
+schema, bounded inputs, controls and finite experiment.
 
 ```mermaid
 flowchart LR
-    Caller[Caller pins plan and candidate] --> Parse[Bounded strict JSON]
-    Parse --> Pins[Descriptor relative artifact reads]
-    Pins --> Graph[Indexed dependency graph]
-    Graph --> Join[Literal receipt joins]
-    Join --> Check[Recheck file identities]
-    Check --> Report[Structural status only]
+    Plan[Pinned plan and candidate] --> Files[Owned descriptors and strict JSON]
+    Files --> Graph[Indexed dependencies]
+    Graph --> Joins[Literal stopped-receipt joins]
+    Joins --> Recheck[Recheck identities and report structure]
 ```
 
-The file reader owns directory descriptors and refuses symlinks at each component.
-It streams hashes and keeps only small JSON payloads; a per-invocation artifact
-index avoids hashing the same input for each reference. Before/after identities
-and a final check detect tested replacement/write races. They cannot authenticate
-an untrusted producer or defeat a privileged writer with access to the process.
+`File` ownership keeps no-follow directory descriptors alive across component
+lookup. Streaming hashes and bounded JSON avoid retaining packages; one digest
+per invocation serves repeated references. Device/inode/size/mtime/ctime checks
+reject exercised replacement/write races, without authenticating hostile producers
+or privileged concurrent writers.
 
-The graph uses ID indexes, adjacency lists and indegrees. A min-heap selects the
-lexicographically first ready job without repeatedly rescanning all dependencies.
-The cost is O((V+E) log V) time and O(V+E) state under explicit input limits.
-Receipt composition compares literal commands, source revisions, expected exits,
-unit identities and whole-service stop records. Reusing a stopped service for
-two jobs is invalid. Pending dependencies remain visible rather than becoming
-implicit passes.
+Numeric adjacency/indegrees and a ready min-heap avoid rescanning dependencies.
+Literal argv/source/exit/unit/stop joins refuse copied service identities and
+unmet prerequisites. Bounds apply to the complete composition, not just output.
+An incomplete inventory cannot reveal omitted required cases. The tooling-layer
+crate uses existing locked dependencies; no product/core boundary changes.
 
-These are Python tool primitives. The analogous Rust ownership idea is holding
-a `File` for the object being examined rather than trusting a reusable pathname;
-the product's existing file ownership and independent semantic oracles are
-unchanged. Predictable finite behavior and measured costs matter more than an
-unmeasured optimization label. The inventory is caller-supplied: an omitted
-required acceptance cell must still be caught by reconciliation with its original
-protocol, not by this structural tool.
-
-Use the focused [architecture review skill](../../.agents/skills/architecture-review/SKILL.md)
-for unresolved design choices and the existing experiment/documentation skills for
-their respective work. No MCP server is required for these local commands.
+The [architecture review skill](../../.agents/skills/architecture-review/SKILL.md)
+routes unresolved design decisions to focused experiments and documentation work.
+Existing Python product oracles stay independent; no MCP server is required.
