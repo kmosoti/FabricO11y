@@ -301,6 +301,7 @@ class WorkflowTests(unittest.TestCase):
         helper_pair = (
             '--browser-entry-helper "$FABRIC_BROWSER_ENTRY_HELPER" '
             '--browser-entry-helper-sha256 "$FABRIC_BROWSER_ENTRY_HELPER_SHA256"')
+        security_flag = '--security-probes'
         missing_launcher = workflow.replace(fixture, '', 1)
         omitted_native_control = workflow.replace(helper_pair, '', 1)
         omitted_security_probe = workflow.replace(f' {security_flag}', '', 1)
