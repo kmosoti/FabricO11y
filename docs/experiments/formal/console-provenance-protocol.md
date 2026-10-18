@@ -92,6 +92,18 @@ a browser. Invoke the real production adapter with injected fixture effects,
 not a second implementation of its decision. These are harness controls, not
 browser acceptance. Preserve the legacy asset controls as well.
 
+Use the browser fixture's existing owned process-group/cgroup boundary for the
+helper effect, supplied to the stager as an explicit callback. Do not add a
+second Python selector/killpg supervisor. Retain the existing immutable binary
+snapshot mechanism where practical. The pinned Rust helper emits a bounded
+identity report and fixed diagnostics; its Git output is separately bounded and
+not forwarded. Read its owned log with a 64 KiB plus one-byte refusal probe. This
+is not a disk-output guarantee for arbitrary caller-selected programs. Bound
+the helper phase by 90 seconds and the fixture's original absolute deadline,
+whichever is earlier; preserve existing owned-group stop/reaping on failure.
+Source controls must check this actual callback wiring and deadline. Existing
+native ownership controls remain required; no new process supervisor is admitted.
+
 ## Measurement and stopping rule
 
 Use seven alternating warm pairs on identical 17-source canonical console
