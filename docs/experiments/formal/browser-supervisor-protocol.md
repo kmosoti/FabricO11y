@@ -256,6 +256,14 @@ or launches a browser child. Existing descriptor, native cleanup, TLS expected
 error and owner interaction checks remain unchanged. These are harness
 composition fixes; they do not change any oracle or acceptance outcome.
 
+The owner command is also checked by the native storage census through
+`owner_scratch_from_argv`. That raw-argv guard must admit exactly the added
+helper path and SHA-256 pair, retain its duplicate/unknown-option refusal, and
+continue to bind the walkthrough label, admission path/hash and outer-admission
+path. The owner caller validates the helper file and digest and records both
+values in its run binding. The census change does not grant a different scratch
+path or alter its cleanup evidence.
+
 ## Production health-wait scope correction
 
 Prospective harness regression, 2026-10-18. The retained Chrome #45 baseline
