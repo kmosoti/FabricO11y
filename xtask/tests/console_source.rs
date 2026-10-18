@@ -259,7 +259,6 @@ fn cli_rejects_duplicate_flags_before_touching_inputs() {
 #[test]
 fn wrong_commit_and_dirty_checkout_are_rejected_specifically() {
     let wrong = fixture();
-    let commit = product_commit(&wrong);
     let pin = receipt(&wrong, source_inventory(&wrong));
     expect_rejection(
         &wrong,
