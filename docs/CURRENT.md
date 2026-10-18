@@ -1,89 +1,39 @@
 # Current project state
 
-Replacement native Debian02 at c14092e completed acceptance0, actual upgrade/
-reboot and all four custody checkpoints with host transfer admission, but its
-overall run exited2 when the removal shell rejected removed-unit LSBstatus4.
-The failed VM/raw records remain retained. The
-[registered removal observer correction](experiments/formal/installation-release-protocol.md#removed-unit-observation-correction)
-adds independently observed unit states, original process inventory and empty
-project cgroups, shared by baseline/lifecycle callers and regraded by the VM host.
-Source checks and fresh native03 execution remain pending; no package acceptance
-or filesystem-integrity claim follows from the earlier partial custody success.
+Replacement product `e078ba23` is packaged reproducibly as minimized source
+`28bcdf7` ([#40](https://github.com/kmosoti/FabricO11y/issues/40)). Fresh Debian03
+and Fedora04 baseline/lifecycle cells completed with all four custody checkpoints
+and confirmed cleanup; registered controls and final installation closure remain
+tracked in [#41](https://github.com/kmosoti/FabricO11y/issues/41). Earlier custody,
+removal and startup failures remain preserved in their protocols and raw records.
 
-The first replacement native installation cell failed after guest acceptance0:
-its custody reader omitted the original `applied-config.json` sidecar. The
-[registered counterexample and controls](experiments/formal/installation-native-custody-protocol.md#applied-configuration-counterexample-and-raw-failure-preservation)
-now cover strict typed/private metadata validation, unchanged configuration in
-the finite installation lifecycle, and original raw export before parser refusal.
-At `3b485bee`, all 63 focused custody source tests exited 0 after registered
-source counterexamples, including rehashed missing/forged profile admission,
-exposed the earlier failures. Restarted native acceptance remains pending. Retained checksum-bypassed disk diagnostics supply no
-filesystem-integrity or native-acceptance result. Package bytes remain unchanged.
+The native simulator-publication and browser-continuity prerequisites have finite
+certificates. [S1-03](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-r3-s1-native-headroom-run-03)
+completed 70 seconds of actual offered work and stopped headroom grading. This is
+not the required 7,200-second FULL soak. Main/query, pressure/cross-family/outage,
+exact-package browser/PWA and fresh-owner acceptance remain tracked by
+[#33](https://github.com/kmosoti/FabricO11y/issues/33). Public Orca 51.1 environment
+controls do not substitute for actual console announcements; key-format and
+controlled-time checks still need both engines and exact package/ELF bindings.
 
-Hosted CI controller setup now explicitly requests CPU/I/O/memory/task delegation
-and checks actual availability/readback. Original PR72 startup and receipt-grading
-failures are retained; corrected local controls and required hosted fast, security
-and extended checks completed before its merge as `76d3da6`. This harness-only
-correction changed no packaged candidate bytes.
-
-The separate virtual-key admission caller reuses actual candidate registration,
-login/export and unchanged OpenSSL DER parsing, then independently verifies the
-original browser assertion. At `a08dca14`, 37 source tests and all three
-documentation checks exited 0; the original synthetic-fixture failure is retained.
-Per-engine native key-format executions remain pending. Baseline resident/RP booleans alone do not admit a key format.
-
-
-The private [announcement environment probe](experiments/formal/browser-announcement-protocol.md)
-now observes AT-SPI and the real Orca/Speech Dispatcher/espeak path using public
-text, private buses/settings and file/null audio output. Private-environment
-source controls passed, while the original headless/headful failures remain
-recorded. The signed, isolated Orca 51.1 positive remains unrun. These source
-results supply no actual console announcement, acoustic or accessibility-conformance result.
-
-The separate actual-console announcement caller is implemented with an owned
-interactive display/AT subtree, real status/alert speech joins, keyboard actions
-and a finite desktop/narrow target inventory. It preserves the original browser
-deadline and shared cleanup. At `2815dfa6`, all 52 affected source tests and
-all three documentation checks exited 0. Exact-package native cells remain
-unrun; the public Orca 51.1 environment positive remains a prerequisite.
-
-The controlled-time browser expiry caller now has a server-only native clock
-adapter and complete serialized request-window joins. At `479b356`, 17 focused
-source controls exited0 with confirmed containment cleanup. The additive timing
-ABI subsequently passed 16 native refusal controls and 24 actual Rust-accessor/
-kernel-monotonic bindings with a retained, hash-bound clock helper. Actual-server
-clock binding and the exact 32 AB/C browser observations still need replacement
-package execution; source/probe checks do not supply package or browser acceptance. The expiry cell retains one240-second deadline
-and stops/reaps AB before creating the independent C fixture.
-
-The separate signed browser security cell is implemented for virtual fixture
-keys, completed-ceremony replay, cookie replacement and real reader expiry.
-Its [registered controls](experiments/formal/console-access-protocol.md#prospective-signed-browser-security-supplement)
-and the separate [UI response diagnostics](experiments/formal/console-access-protocol.md#prospective-ui-response-handling-supplement)
-are implemented. At `b211398`, 32 affected source tests and all three documentation
-checks exited 0 through separately contained runs, with stops confirmed. The first
-combined run remains interrupted: its strict storage census raced launcher scratch
-cleanup even though the inner checks exited 0. Native signed-key and diagnostic UI
-cells have not run; exact-package browser acceptance remains open.
-
-The standalone console bridge smoke now selects the owned browser supervisor,
-with a fresh held1GiB browser budget, finite deadline and bounded close. Failed
-scratch is retained. Focused ownership controls and the actual replacement
-candidate smoke remain required; this caller change supplies no acceptance.
+The [Rust evidence preflight](architecture/engineering-evidence.md) is a read-only
+consistency aid. At `6ac6932`, four library controls, twelve integration controls
+and the registered native paired experiment exited 0 with confirmed stops.
+The superseded Python aid is removed; independent product oracles are unchanged.
+Its [contract](experiments/formal/engineering-evidence-protocol.md) and
+[finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-engineering-evidence-results-01)
+preserve the distinction between structural consistency and acceptance.
+No current deployment profile is qualified or release tag published.
 
 ## Implemented
 
 FabricO11y collects, durably forwards, retains and queries Linux telemetry. It is
 usable for bounded development trials; no current deployment profile is qualified
 and no release tag has been produced.
-The prospective [R3 runtime integration](experiments/benchmarks/soak-runtime-protocol.md)
-adds a separate two-hour measurement path, native UI event capture and stopped
-checkpoint/separate grading. Its live native trace and supervised browser
-bindings now have finite native publication/identity and 60-second UI-continuity
-certificates, including a real owner refresh. The first S1 attempt failed before
-any exposure because its begin path violated the helper output boundary. The
-path repair passed all 63 soak source tests at `2255fb57`; fresh S1, headroom and
-full stopped grading remain required. No new soak acceptance is claimed.
+The [R3 runtime integration](experiments/benchmarks/soak-runtime-protocol.md)
+separates actual offered exposure, native UI continuity, a stopped raw checkpoint
+and independent grading. S1-03 supplies finite measured headroom; FULL admission,
+true two-hour exposure and stopped final grading remain required.
 The separately registered [lifecycle guardian amendment](experiments/benchmarks/soak-guardian-protocol.md)
 separates empty workload accounting, aggregate accounting before guardian exit,
 and independent whole-service stop. Finite guardian controls establish that
@@ -129,8 +79,8 @@ Known limits and open checks:
   7,200 seconds of actual offered work, nine registered cohorts, measured
   non-exposure headroom and a stopped raw checkpoint before separate grading.
   The observation checks, guarded rename, held workload accounting and preservation
-  mount guards have finite source and native evidence. Live S1/FULL integration,
-  actual S1 headroom, full admission and stopped grading remain pending. The
+  mount guards have finite source and native evidence. S1-03 supplies actual finite headroom; FULL admission, exposure and stopped
+  grading remain pending. The
   [patched helper/native publication](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-patched-simulator-native-publication-results-01)
   and [finite UI continuity](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-native-browser-continuity-mechanism-results-01)
   capability evidence does not qualify a soak;

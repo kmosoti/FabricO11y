@@ -2,6 +2,7 @@
 //!
 //! Exit status: 0 passed, 1 violations found, 2 the check could not run.
 //! A check that could not run is reported as such and never as a pass.
+//! `evidence-preflight` instead uses 0 matched, 3 pending and 2 invalid.
 
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -13,7 +14,8 @@ const USAGE: &str = "usage:
   cargo xtask checks            [--profile fast|qualification] [--only ID] [--receipts DIR]
   cargo xtask mutants           [--only ID]
   cargo xtask check-counterexamples
-  cargo xtask cargo-mutants";
+  cargo xtask cargo-mutants
+  cargo xtask evidence-preflight --root PATH --plan RELATIVE --plan-sha256 HEX --candidate REVISION";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);
@@ -21,6 +23,9 @@ fn main() -> ExitCode {
         eprintln!("{USAGE}");
         return ExitCode::from(2);
     };
+    if command == "evidence-preflight" {
+        return ExitCode::from(xtask::preflight::cli(args.collect()));
+    }
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .map(PathBuf::from)

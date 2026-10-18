@@ -7,6 +7,7 @@ pub mod evidence;
 pub mod layers;
 pub mod metadata;
 pub mod mutants;
+pub mod preflight;
 pub mod purity;
 
 use serde_json::Value;
