@@ -9,10 +9,12 @@
 
 use crate::sha256_hex;
 use serde_json::{Value, json};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::os::unix::fs::MetadataExt;
+use std::os::unix::fs::OpenOptionsExt;
+use std::collections::HashMap;
 use std::sync::{Mutex, atomic::{AtomicUsize, Ordering}};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
@@ -242,6 +244,8 @@ pub struct Context {
     pub commit: String,
     pub dirty: bool,
     pub toolchain: Value,
+    bounded_metadata: bool,
+    bounded_revisions: HashMap<Vec<String>, String>,
 }
 
 impl Context {
@@ -256,7 +260,37 @@ impl Context {
                 "python3": capture(root, "python3", &["--version"]),
                 "bun": capture(root, "bun", &["--version"]),
             }),
+            bounded_metadata: false,
+            bounded_revisions: HashMap::new(),
         }
+    }
+
+    fn new_bounded(root: &Path, checks: &[Check]) -> Result<Self, String> {
+        let mut bounded_revisions = HashMap::new();
+        for check in checks {
+            for key in ["specification", "oracles"] {
+                let files: Vec<String> = check.raw.get(key).and_then(Value::as_array)
+                    .map(|array| array.iter().filter_map(Value::as_str).map(str::to_owned).collect())
+                    .unwrap_or_default();
+                if !bounded_revisions.contains_key(&files) {
+                    let value = bounded_revision_of(root, &files).unwrap_or_else(|_| "unavailable".into());
+                    bounded_revisions.insert(files, value);
+                }
+            }
+        }
+        Ok(Self {
+            root: root.to_path_buf(),
+            commit: bounded_capture(root, "git", &["rev-parse", "HEAD"] )?,
+            dirty: !bounded_capture(root, "git", &["status", "--porcelain"] )?.is_empty(),
+            toolchain: json!({
+                "rustc": bounded_capture_or_unavailable(root, "rustc", &["-V"]),
+                "cargo": bounded_capture_or_unavailable(root, "cargo", &["-V"]),
+                "python3": bounded_capture_or_unavailable(root, "python3", &["--version"]),
+                "bun": bounded_capture_or_unavailable(root, "bun", &["--version"]),
+            }),
+            bounded_metadata: true,
+            bounded_revisions,
+        })
     }
 }
 
@@ -275,14 +309,19 @@ pub fn receipt(context: &Context, check: &Check, outcome: &Outcome, elapsed_ms: 
             })
             .unwrap_or_default()
     };
+    let revision = |key: &str| {
+        let paths = files(key);
+        if context.bounded_metadata { context.bounded_revisions.get(&paths).cloned().unwrap_or_else(|| "unavailable".into()) }
+        else { revision_of(&context.root, &paths) }
+    };
     json!({
         "receipt_version": 1,
         "check_id": check.id,
         "property_ids": field("contracts"),
         "candidate_commit": context.commit,
         "worktree_dirty": context.dirty,
-        "specification_revision": revision_of(&context.root, &files("specification")),
-        "oracle_revision": revision_of(&context.root, &files("oracles")),
+        "specification_revision": revision("specification"),
+        "oracle_revision": revision("oracles"),
         "toolchain": context.toolchain,
         "command": check.command,
         "profile": check.profile,
@@ -298,6 +337,30 @@ pub fn receipt(context: &Context, check: &Check, outcome: &Outcome, elapsed_ms: 
         "unchecked_behavior": field("unchecked"),
         "trust": "written by cargo xtask checks; unsigned; proves structure, not execution",
     })
+}
+
+fn bounded_capture_or_unavailable(root: &Path, program: &str, arguments: &[&str]) -> String {
+    bounded_capture(root, program, arguments).unwrap_or_else(|_| "unavailable".into())
+}
+
+fn bounded_capture(root: &Path, program: &str, arguments: &[&str]) -> Result<String, String> {
+    let output = Command::new("timeout")
+        .args(["--signal=KILL", "10s", program])
+        .args(arguments)
+        .current_dir(root)
+        .output()
+        .map_err(|error| format!("bounded metadata command unavailable ({program}): {error}"))?;
+    if !output.status.success() {
+        return Err(format!("bounded metadata command failed ({program}): {:?}: {}", output.status.code(), String::from_utf8_lossy(&output.stderr)));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+}
+
+fn bounded_revision_of(root: &Path, files: &[String]) -> Result<String, String> {
+    if files.is_empty() { return Ok("none".into()); }
+    let mut arguments = vec!["log", "-1", "--format=%H", "--"];
+    arguments.extend(files.iter().map(String::as_str));
+    bounded_capture(root, "git", &arguments)
 }
 
 fn write_record(path: &Path, value: &Value) -> Result<(), String> {
@@ -685,12 +748,44 @@ fn create_batch_marker(receipts: &Path, context: &Context, checks: &[Check]) -> 
     Ok(marker)
 }
 
-fn copy_ordinary_new(source: &Path, destination: &Path) -> Result<(), String> {
+fn ordinary_digest(source: &Path) -> Result<String, String> {
+    let before = std::fs::symlink_metadata(source).map_err(|error| error.to_string())?;
+    if !before.is_file() || before.file_type().is_symlink() || before.len() > 64 * 1024 * 1024 {
+        return Err(format!("source artifact is not an ordinary bounded file: {}", source.display()));
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    let mut input = options.open(source).map_err(|error| error.to_string())?;
+    let opened = input.metadata().map_err(|error| error.to_string())?;
+    let identity = |metadata: &std::fs::Metadata| {
+        (metadata.dev(), metadata.ino(), metadata.len(), metadata.mtime(), metadata.mtime_nsec(), metadata.ctime(), metadata.ctime_nsec())
+    };
+    if !opened.is_file() || identity(&opened) != identity(&before) {
+        return Err(format!("source artifact changed before digest: {}", source.display()));
+    }
+    let mut bytes = Vec::with_capacity(opened.len() as usize);
+    input.read_to_end(&mut bytes).map_err(|error| error.to_string())?;
+    let after_path = std::fs::symlink_metadata(source).map_err(|error| error.to_string())?;
+    if bytes.len() as u64 != opened.len()
+        || identity(&input.metadata().map_err(|error| error.to_string())?) != identity(&opened)
+        || identity(&after_path) != identity(&opened)
+    {
+        return Err(format!("source artifact changed during digest: {}", source.display()));
+    }
+    Ok(sha256_hex(&bytes))
+}
+
+fn copy_ordinary_new(source: &Path, destination: &Path, expected_digest: &str) -> Result<(), String> {
     let before = std::fs::symlink_metadata(source).map_err(|error| error.to_string())?;
     if !before.is_file() || before.file_type().is_symlink() {
         return Err(format!("source artifact is not an ordinary file: {}", source.display()));
     }
-    let mut input = std::fs::File::open(source).map_err(|error| error.to_string())?;
+    if before.len() > 64 * 1024 * 1024 {
+        return Err(format!("source artifact exceeds verifier limit: {}", source.display()));
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    let mut input = options.open(source).map_err(|error| error.to_string())?;
     let opened = input.metadata().map_err(|error| error.to_string())?;
     let identity = |metadata: &std::fs::Metadata| {
         (metadata.dev(), metadata.ino(), metadata.len(), metadata.mtime(), metadata.mtime_nsec(), metadata.ctime(), metadata.ctime_nsec())
@@ -703,10 +798,26 @@ fn copy_ordinary_new(source: &Path, destination: &Path) -> Result<(), String> {
         .create_new(true)
         .open(destination)
         .map_err(|error| format!("exclusive publication failed for {}: {error}", destination.display()))?;
-    let copied = std::io::copy(&mut input, &mut output).map_err(|error| error.to_string())?;
+    let mut bytes = Vec::with_capacity(opened.len() as usize);
+    input.read_to_end(&mut bytes).map_err(|error| error.to_string())?;
+    if bytes.len() as u64 != opened.len() {
+        return Err(format!("source artifact length changed during copy: {}", source.display()));
+    }
+    let digest = sha256_hex(&bytes);
+    if digest != expected_digest {
+        return Err(format!("source artifact changed after verification: {}", source.display()));
+    }
+    output.write_all(&bytes).map_err(|error| error.to_string())?;
     output.sync_all().map_err(|error| error.to_string())?;
-    if copied != opened.len() || identity(&input.metadata().map_err(|error| error.to_string())?) != identity(&opened) {
+    let after_path = std::fs::symlink_metadata(source).map_err(|error| error.to_string())?;
+    if identity(&input.metadata().map_err(|error| error.to_string())?) != identity(&opened)
+        || identity(&after_path) != identity(&opened)
+    {
         return Err(format!("source artifact changed during copy: {}", source.display()));
+    }
+    let destination_bytes = std::fs::read(destination).map_err(|error| error.to_string())?;
+    if sha256_hex(&destination_bytes) != digest {
+        return Err(format!("published artifact digest mismatch: {}", destination.display()));
     }
     Ok(())
 }
@@ -736,7 +847,7 @@ pub fn run_with_light_workers(
         return Err("fast registry contains a noncanonical receipt ID".into());
     }
     let cohort = ordered_light_cohort(&selected)?;
-    let context = Context::new(root);
+    let context = Context::new_bounded(root, &selected)?;
     if context.commit != commit || context.dirty {
         return Err("source changed while initializing check context".into());
     }
@@ -817,7 +928,10 @@ pub fn run_with_light_workers(
     for check in &selected {
         let stage = stage_root.join(&check.id);
         for name in [format!("{}.stdout.partial.log", check.id), format!("{}.stderr.partial.log", check.id), format!("{}.log", check.id), format!("{}.json", check.id)] {
-            copy_ordinary_new(&stage.join(&name), &assembled.join(&name))
+            let source = stage.join(&name);
+            let digest = ordinary_digest(&source)
+                .map_err(|error| format!("assembly digest failed; marker retained: {error}"))?;
+            copy_ordinary_new(&source, &assembled.join(&name), &digest)
                 .map_err(|error| format!("assembly failed; marker retained: {error}"))?;
         }
     }
@@ -834,7 +948,10 @@ pub fn run_with_light_workers(
         .map_err(|error| format!("source changed during native receipt validation: {error}"))?;
     for check in &selected {
         for name in [format!("{}.stdout.partial.log", check.id), format!("{}.stderr.partial.log", check.id), format!("{}.log", check.id), format!("{}.json", check.id)] {
-            copy_ordinary_new(&assembled.join(&name), &receipts.join(&name))
+            let source = assembled.join(&name);
+            let digest = ordinary_digest(&source)
+                .map_err(|error| format!("publication digest failed; marker retained: {error}"))?;
+            copy_ordinary_new(&source, &receipts.join(&name), &digest)
                 .map_err(|error| format!("canonical publication failed; marker retained: {error}"))?;
         }
     }
@@ -961,6 +1078,8 @@ mod light_worker_tests {
             commit: "a".repeat(40),
             dirty: false,
             toolchain: json!({}),
+            bounded_metadata: false,
+            bounded_revisions: HashMap::new(),
         };
         let (results, peak, dispatch_errors) = dispatch_light_cohort(&root, &context, &checks, &stage);
         assert!(dispatch_errors.is_empty(), "{dispatch_errors:?}");
@@ -996,15 +1115,23 @@ mod light_worker_tests {
             commit: "a".repeat(40),
             dirty: false,
             toolchain: json!({}),
+            bounded_metadata: false,
+            bounded_revisions: HashMap::new(),
         };
         let marker = create_batch_marker(&destination, &context, &[check]).unwrap();
         #[cfg(unix)]
         std::os::unix::fs::symlink(source.join("sample.log"), source.join("linked.log")).unwrap();
-        assert!(copy_ordinary_new(&source.join("sample.log"), &destination.join("sample.log")).is_ok());
+        let digest = ordinary_digest(&source.join("sample.log")).unwrap();
+        assert!(copy_ordinary_new(&source.join("sample.log"), &destination.join("sample.log"), &digest).is_ok());
+        assert!(copy_ordinary_new(&source.join("sample.log"), &destination.join("sample.log"), &digest).is_err(), "publication must be exclusive");
         #[cfg(unix)]
         {
-            assert!(copy_ordinary_new(&source.join("linked.log"), &destination.join("linked.log")).is_err());
+            assert!(copy_ordinary_new(&source.join("linked.log"), &destination.join("linked.log"), &digest).is_err());
             assert!(!destination.join("linked.log").exists());
+            let fifo = source.join("fifo.log");
+            let status = std::process::Command::new("mkfifo").arg(&fifo).status().unwrap();
+            assert!(status.success());
+            assert!(ordinary_digest(&fifo).is_err(), "FIFO must be rejected without blocking");
             assert!(marker.is_file(), "failed publication must retain the running marker");
         }
     }

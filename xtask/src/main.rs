@@ -379,7 +379,8 @@ mod light_worker_cli_tests {
     #[test]
     fn light_workers_is_explicit_and_strictly_bounded() {
         assert!(valid().unwrap());
-        assert!(!light_workers_request("checks", "fast", None, 0, 0, true, false, 1, Some("2"), 1).unwrap());
+        assert!(light_workers_request("checks", "fast", None, 0, 0, true, false, 1, Some("2"), 1).is_err());
+        assert!(!light_workers_request("checks", "fast", None, 1, 0, false, false, 0, None, 0).unwrap());
         assert!(light_workers_request("checks", "extended", None, 1, 0, true, false, 1, Some("2"), 1).is_err());
         assert!(light_workers_request("checks", "fast", Some("fmt"), 1, 1, true, false, 1, Some("2"), 1).is_err());
         assert!(light_workers_request("checks", "fast", None, 2, 0, true, false, 1, Some("2"), 1).is_err());
