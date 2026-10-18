@@ -12,6 +12,8 @@ use std::time::Duration;
 
 const ATTEMPTS: u8 = 10;
 const DELAY: Duration = Duration::from_millis(250);
+// Linux UAPI linux/magic.h; libc exposes TMPFS_MAGIC but not RAMFS_MAGIC.
+const RAMFS_MAGIC: libc::c_long = 0x8584_58f6;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Totals {
@@ -365,7 +367,7 @@ fn require_disk_root(root: &Path) -> Result<(), String> {
     }
     // SAFETY: successful fstatfs initialized the output structure.
     let information = unsafe { information.assume_init() };
-    if information.f_type == libc::TMPFS_MAGIC || information.f_type == libc::RAMFS_MAGIC {
+    if information.f_type == libc::TMPFS_MAGIC || information.f_type == RAMFS_MAGIC {
         return Err("census root must be disk-backed, not tmpfs or ramfs".into());
     }
     Ok(())
