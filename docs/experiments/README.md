@@ -11,6 +11,12 @@ measured only its seven unchanged lightweight checks. The
 [production dispatch policy](../formal/verification-dispatch-policy.md) requires
 separate integration evidence before adoption; neither result resumes acceptance.
 
+The [two-runner verification pilot](formal/verification-shards-protocol.md)
+registers a comparison with the serial extended workflow. Its
+[revision-bound measurements](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-shards-results-01)
+retain the differing CPU/cache conditions and increased aggregate runner time.
+Canonical workflow adoption requires its own current-source checks.
+
 The [engineering evidence protocol](formal/engineering-evidence-protocol.md) registers
 bounded artifact/dependency/receipt composition controls and matched finite costs.
 The [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-engineering-evidence-results-01)

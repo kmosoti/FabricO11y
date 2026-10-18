@@ -74,9 +74,11 @@ jobs:
       - name: Install dependency checker
         run: python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-deny 0.20.2
       - name: Run fast registry
-        run: python3 -B tools/resource_group.py -- cargo xtask checks --profile fast
+        run: python3 -B tools/resource_group.py -- cargo xtask checks --profile fast --light-workers 2 --receipts "$FABRIC_STORAGE_ROOT/results/ci-fast-receipts"
       - name: Verify complete current-revision fast evidence
-        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/verify_receipts.py --profile fast
+        run: python3 -B tools/resource_group.py -- cargo run --locked -p xtask --features verification-sha-openssl -- verify-receipts --profile fast --receipts "$FABRIC_STORAGE_ROOT/results/ci-fast-receipts"
+      - name: Independently verify the same fast receipts
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/verify_receipts.py --profile fast --receipts "$FABRIC_STORAGE_ROOT/results/ci-fast-receipts"
       - name: Check whole workspace dependency policy including WASM
         run: python3 -B tools/resource_group.py -- cargo deny --locked --workspace check
       # wasm-check, ui-palette and package-contracts are already in the fast registry.
@@ -111,7 +113,7 @@ jobs:
         with:
           name: verification-receipts
           path: |
-            target/verification/receipts/
+            ${{ env.FABRIC_STORAGE_ROOT }}/results/ci-fast-receipts/
             target/resource-containment/runs/
             ${{ env.FABRIC_STORAGE_ROOT }}/results/ci-console/build.json
             ${{ env.FABRIC_STORAGE_ROOT }}/results/ci-browser/

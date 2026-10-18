@@ -4,8 +4,9 @@ Engineering tooling now includes an experimental Rust `xtask verify-receipts`
 command, sharing bounded descriptor-owned artifact reads with evidence preflight.
 The [architecture boundary](architecture/engineering-evidence.md#native-verification-receipts)
 and [strict representation policy](formal/verification-receipt-contract.md)
-describe its limits. Required CI adoption and complete integration checks remain
-pending; synthetic verifier fixtures do not credit product acceptance. Alpha
+describe its limits. Local complete-profile and independent refusal controls ran
+at `7fc4723`; current-head hosted adoption remains pending. Synthetic verifier
+fixtures do not credit product acceptance. Alpha
 acceptance is paused by the owner during verification engineering.
 
 The experimental Rust storage census now has finite classification and cleanup
@@ -38,6 +39,19 @@ The superseded Python aid is removed; independent product oracles are unchanged.
 Its [contract](experiments/formal/engineering-evidence-protocol.md) and
 [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-engineering-evidence-results-01)
 preserve the distinction between structural consistency and acceptance.
+The [two-runner verification pilot](experiments/formal/verification-shards-protocol.md)
+completed both shards and the independent final validators at the same tested
+source `faf148ec`. Its finite wall time was 41.98% lower while combined runner time was
+10.32% higher. The workers had different CPU, cache and setup conditions, so
+this observation does not establish a universal speedup. The first aggregation
+failure remains preserved; the corrected DATA-backed collector and unchanged
+Python validator are recorded in the
+[completed paired-shards results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-shards-results-01).
+The original [failed aggregation](https://github.com/kmosoti/FabricO11y/actions/runs/39090541570)
+is retained alongside the corrected result.
+Canonical workflow adoption preserves all ten registered extended commands and
+their final current-source validation. Its current-head hosted check remains
+required before merge.
 No current deployment profile is qualified or release tag published.
 
 ## Implemented

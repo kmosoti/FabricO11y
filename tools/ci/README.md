@@ -39,15 +39,23 @@ packaging checks are not repeated as separate later steps. Default-feature and
 all-feature test executions remain distinct; no equivalence is assumed merely
 because their crate names overlap. The focused security tests remain enabled.
 
-Extended verification exposes all ten existing registry checks as separate
-sequential steps on one runner. Tools and compiled dependencies are reused;
-there is no ten-runner cold-build fan-out. Each command uses the existing
-30-minute containment deadline, while the overall job remains capped at 120
-minutes. Later independent checks can run after a check fails, but a failed
-step still fails the job. Missing, interrupted or failed check receipts make
-the final completeness check fail. The per-profile test verifies that every
-extended check is scheduled exactly once, so a new registry entry cannot be
-silently omitted.
+Extended verification uses two hosted matrix workers: one runs only
+`semantic-mutants`, and the other runs the remaining nine extended IDs in their
+original order. Each worker runs its assigned checks serially through the
+existing 30-minute containment launcher; matrix fail-fast is disabled and the
+overall jobs remain capped at 120 minutes. A required `extended` job runs even
+when producers fail, collects exact disjoint shard receipts into DATA-backed
+storage, checks producer success and invokes the unchanged Python complete
+profile validator at the current source revision. Missing, stale, interrupted,
+failed or altered check evidence cannot pass the aggregate. The Rust scheduling
+guard and workspace unit controls check exact ID ownership, worker bounds,
+launcher, aggregation and representative mutations.
+
+The completed pilot reduced wall time by 41.98% and increased combined runner
+time by 10.32%. Worker CPUs, cache hits and setup differed, so these figures
+describe that hosted comparison only; they do not promise a universal latency
+or cost reduction. The old serial job is not run a second time as an experimental
+workflow; the separate sharding experiment remains available by manual dispatch.
 
 ## Pinned actions and toolchains
 

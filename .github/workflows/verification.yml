@@ -1,6 +1,5 @@
 name: Extended verification
 
-# Keep every registered extended check. See tools/ci/README.md for scheduling.
 on:
   schedule:
     - cron: "17 4 * * 1"
@@ -24,7 +23,6 @@ on:
       - "Cargo.lock"
       - ".github/workflows/verification.yml"
 
-# Superseded PR revisions are not useful merge evidence. Do not cancel other workflows.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -33,24 +31,37 @@ permissions:
   contents: read
 
 jobs:
-  extended:
+  shards:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        include:
+          - shard: semantic
+          - shard: remaining
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
-          # Required: counterexample records refer to historical fix commits.
+          ref: ${{ github.sha }}
           fetch-depth: 0
       - name: Prepare disk storage and enforced cgroups
         run: bash tools/ci/prepare-resource-host.sh
       - name: Check CI scheduling and receipt contracts
+        id: contained
         run: python3 -B tools/resource_group.py -- python3 -B tools/ci/test_ci_contracts.py
+      - name: Mark contained setup start
+        run: |
+          mkdir -p target/verification/pilot-host
+          date +%s%N > target/verification/pilot-host/setup-start-epoch-ns.txt
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        id: toolchain
         with:
           toolchain: 1.99.0
           components: rustfmt, clippy
-      - name: Fail early on formatting before proof-tool installation
+      - name: Check formatting before expensive setup
         run: python3 -B tools/resource_group.py -- cargo fmt --all --check
       - name: Check contained toolchain and explicit self-update policy
         run: |
@@ -62,13 +73,14 @@ jobs:
           target=$(realpath -m --relative-to="$GITHUB_WORKSPACE" "$FABRIC_STORAGE_ROOT/cargo")
           echo "target=$target" >> "$GITHUB_OUTPUT"
       - name: Restore dependency and pinned-tool cache
+        id: cache
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           shared-key: hosted-extended-v1
           workspaces: . -> ${{ steps.cache-path.outputs.target }}
           cache-workspace-crates: 'false'
           cache-on-failure: 'false'
-          save-if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+          save-if: ${{ matrix.shard == 'semantic' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
       - name: Install native crypto prerequisites
         run: |
           sudo apt-get update
@@ -91,7 +103,6 @@ jobs:
           python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-llvm-cov 0.9.1
       - name: Install cargo-fuzz and the pinned nightly
         run: |
-          # fuzz/smoke.sh runs `cargo +nightly`; make that name the dated toolchain.
           rustup toolchain install nightly-2026-10-11 --profile minimal
           ln -sfn nightly-2026-10-11-x86_64-unknown-linux-gnu "$RUSTUP_HOME/toolchains/nightly-x86_64-unknown-linux-gnu"
           python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-fuzz 0.13.2
@@ -102,49 +113,136 @@ jobs:
       - name: Verify Kani positive and semantic negative controls
         id: tools
         run: python3 -B tools/resource_group.py -- python3 -B tools/ci/kani_canary.py
-      # Each check gets the existing bounded launcher; the overall 120-minute
-      # job cap stays unchanged. A failed check does not hide independent results.
-      - name: Semantic negative controls
-        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
-        run: python3 -B tools/resource_group.py -- cargo xtask checks --only semantic-mutants
-      - name: Delivery process faults and trace evidence
-        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
-        run: python3 -B tools/resource_group.py -- cargo xtask checks --only delivery-faults
-      - name: Delivery model checks
-        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
-        run: python3 -B tools/resource_group.py -- cargo xtask checks --only tla-delivery
-      - name: Transport model checks
-        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
-        run: python3 -B tools/resource_group.py -- cargo xtask checks --only tla-transport
-      - name: Trace checker regression tests
-        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
-        run: python3 -B tools/resource_group.py -- cargo xtask checks --only trace-model
-      - name: Mutation testing
-        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
-        run: python3 -B tools/resource_group.py -- cargo xtask checks --only cargo-mutants
-      - name: Core bounded proofs
-        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
-        run: python3 -B tools/resource_group.py -- cargo xtask checks --only kani-core
-      - name: Time-boxed fuzzing
-        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
-        run: python3 -B tools/resource_group.py -- cargo xtask checks --only fuzz-smoke
-      - name: Current dependency advisories and policy
-        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
-        run: python3 -B tools/resource_group.py -- cargo xtask checks --only dependency-policy
-      - name: Workspace coverage report
-        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
-        run: python3 -B tools/resource_group.py -- cargo xtask checks --only coverage-report
-      - name: Require every extended receipt from this revision
-        if: ${{ !cancelled() && steps.tools.outcome == 'success' }}
-        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/verify_receipts.py --profile extended
-      - name: Keep the verification receipts and full check output
+      - name: Record runner and cache facts
+        if: ${{ always() && steps.contained.outcome == 'success' }}
+        run: |
+          mkdir -p target/verification/pilot-host
+          {
+            date -u +%FT%TZ
+            echo "runner=$RUNNER_OS/$RUNNER_ARCH"
+            echo "shard=${{ matrix.shard }}"
+            echo "cache_outcome=${{ steps.cache.outcome }}"
+            echo "cache_exact_hit=${{ steps.cache.outputs.cache-hit }}"
+            date +%s%N > target/verification/pilot-host/setup-complete-epoch-ns.txt
+            lscpu
+            free -h
+            df -h
+          } > target/verification/pilot-host/host.txt
+      - name: Run assigned original checks and retain later outcomes
+        if: ${{ always() && !cancelled() && steps.contained.outcome == 'success' && steps.toolchain.outcome == 'success' }}
+        env:
+          SHARD: ${{ matrix.shard }}
+          SHARD_RECEIPTS: ${{ env.FABRIC_STORAGE_ROOT }}/results/verification-producer/${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}
+        run: |
+          set +e
+          failures=0
+          mkdir -p "$FABRIC_STORAGE_ROOT/results/verification-producer"
+          if ! mkdir "$SHARD_RECEIPTS"; then
+            echo "receipt destination already exists or cannot be created: $SHARD_RECEIPTS"
+            exit 1
+          fi
+          date +%s%N > target/verification/pilot-host/checks-start-epoch-ns.txt
+          if [ "$SHARD" = semantic ]; then
+            checks=(semantic-mutants)
+          else
+            checks=(delivery-faults tla-delivery tla-transport trace-model cargo-mutants kani-core fuzz-smoke dependency-policy coverage-report)
+          fi
+          for check in "${checks[@]}"; do
+            python3 -B tools/resource_group.py -- cargo xtask checks --only "$check" --receipts "$SHARD_RECEIPTS"
+            result=$?
+            if [ "$result" -ne 0 ]; then
+              echo "$check exited $result"
+              failures=1
+            fi
+          done
+          date +%s%N > target/verification/pilot-host/checks-end-epoch-ns.txt
+          exit "$failures"
+      - name: Keep shard receipts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: extended-verification-receipts
+          name: pilot-receipts-${{ matrix.shard }}
+          path: ${{ env.FABRIC_STORAGE_ROOT }}/results/verification-producer/${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.shard }}/
+          if-no-files-found: warn
+      - name: Keep runner and resource containment facts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pilot-resources-${{ matrix.shard }}
           path: |
-            target/verification/receipts/
-            target/cargo-mutants/
+            target/verification/pilot-host/
             target/resource-containment/runs/
             ${{ env.FABRIC_STORAGE_ROOT }}/results/ci-tool-install/
           if-no-files-found: warn
+
+  extended:
+    needs: shards
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Prepare disk storage and enforced cgroups
+        run: bash tools/ci/prepare-resource-host.sh
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: 1.99.0
+          components: rustfmt, clippy
+      - name: Check contained toolchain before resolving DATA target
+        run: |
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/test_rust_preflight.py
+          python3 -B tools/resource_group.py -- python3 -B tools/ci/rust_preflight.py
+      - name: Resolve mounted Cargo target for cache
+        id: cache-path
+        run: |
+          target=$(realpath -m --relative-to="$GITHUB_WORKSPACE" "$FABRIC_STORAGE_ROOT/cargo")
+          echo "target=$target" >> "$GITHUB_OUTPUT"
+      - name: Restore dependency cache without saving pilot data
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: hosted-extended-v1
+          workspaces: . -> ${{ steps.cache-path.outputs.target }}
+          cache-workspace-crates: 'false'
+          cache-on-failure: 'false'
+          save-if: 'false'
+      - name: Download both receipt shards
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: pilot-receipts-*
+          path: ${{ env.FABRIC_STORAGE_ROOT }}/results/verification-pilot/shards
+          merge-multiple: false
+      - name: Require both named receipt directories
+        run: |
+          mkdir -p "$FABRIC_STORAGE_ROOT/results/verification-pilot"
+          printf '%s\n' "${{ needs.shards.result }}" > "$FABRIC_STORAGE_ROOT/results/verification-pilot/shard-result.txt"
+          test -d "$FABRIC_STORAGE_ROOT/results/verification-pilot/shards/pilot-receipts-semantic"
+          test -d "$FABRIC_STORAGE_ROOT/results/verification-pilot/shards/pilot-receipts-remaining"
+      - name: Merge exact shard evidence without overwrites
+        env:
+          SHARD_RESULT: ${{ needs.shards.result }}
+        run: python3 -B tools/resource_group.py -- cargo run --locked -p xtask --example merge_verification_receipts -- --shard-result "$SHARD_RESULT" "$FABRIC_STORAGE_ROOT/results/verification-pilot/shards" "$FABRIC_STORAGE_ROOT/results/verification-pilot/combined"
+      - name: Verify complete extended receipts at this revision
+        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/verify_receipts.py --profile extended --receipts "$FABRIC_STORAGE_ROOT/results/verification-pilot/combined"
+      - name: Keep aggregate evidence and runner facts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pilot-aggregate-evidence
+          path: |
+            ${{ env.FABRIC_STORAGE_ROOT }}/results/verification-pilot/shards/
+            ${{ env.FABRIC_STORAGE_ROOT }}/results/verification-pilot/combined/
+            ${{ env.FABRIC_STORAGE_ROOT }}/results/verification-pilot/shard-result.txt
+            target/resource-containment/runs/
+          if-no-files-found: warn
+      - name: Require both matrix shards to have succeeded
+        if: always()
+        env:
+          SHARD_RESULT: ${{ needs.shards.result }}
+        run: |
+          if [ "$SHARD_RESULT" != success ]; then
+            echo "shard matrix result was $SHARD_RESULT"
+            exit 1
+          fi

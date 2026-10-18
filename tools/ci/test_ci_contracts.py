@@ -1,7 +1,6 @@
 """Test CI evidence failures and exact extended-profile scheduling coverage."""
 from __future__ import annotations
 
-from collections import Counter
 import hashlib
 import json
 import os
@@ -257,23 +256,26 @@ class ReceiptTests(unittest.TestCase):
 
 
 class WorkflowTests(unittest.TestCase):
-    def test_extended_workflow_schedules_each_registered_check_exactly_once(self):
-        registry = json.loads((ROOT / 'xtask/checks.json').read_text())
-        expected = [check['id'] for check in selected_checks(registry, 'extended')]
+    def test_extended_workflow_uses_two_shards_and_original_runner(self):
         workflow = (ROOT / '.github/workflows/verification.yml').read_text()
-        scheduled = re.findall(
-            r'^\s+run: python3 -B tools/resource_group\.py -- cargo xtask checks --only ([a-z0-9-]+)\s*$',
-            workflow, re.MULTILINE)
-        self.assertEqual(Counter(scheduled), Counter(expected))
+        self.assertIn('checks=(semantic-mutants)', workflow)
+        self.assertIn(
+            'checks=(delivery-faults tla-delivery tla-transport trace-model cargo-mutants kani-core fuzz-smoke dependency-policy coverage-report)',
+            workflow)
+        self.assertIn(
+            'python3 -B tools/resource_group.py -- cargo xtask checks --only "$check" --receipts "$SHARD_RECEIPTS"',
+            workflow)
         self.assertIn('verify_receipts.py --profile extended', workflow)
 
     def test_extended_workflow_runs_when_ready_not_for_drafts(self):
         workflow = (ROOT / '.github/workflows/verification.yml').read_text()
         self.assertRegex(workflow, r'(?m)^  pull_request:\n    types: \[[^\]]*\bready_for_review\b')
         self.assertRegex(workflow, r'(?m)^  merge_group:')
+        self.assertRegex(workflow, r'(?m)^  schedule:')
+        self.assertRegex(workflow, r'(?m)^  workflow_dispatch:')
         self.assertRegex(
             workflow,
-            r"(?m)^  extended:\n    if: github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.draft == false$")
+            r"(?m)^  extended:\n    needs: shards\n    if: \$\{\{ always\(\) && \(github\.event_name != 'pull_request' \|\| github\.event\.pull_request\.draft == false\) \}\}$")
 
     def test_fast_duplicate_removals_still_have_registry_owners(self):
         registry = json.loads((ROOT / 'xtask/checks.json').read_text())

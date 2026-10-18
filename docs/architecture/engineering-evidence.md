@@ -75,7 +75,18 @@ exclusive publication checks those pinned bytes again. Artifact copying uses a
 the marker and evidence; successful cleanup precedes marker removal. This bounds
 copy scratch independently of log length, while retaining full-byte verification.
 The unchanged Python receipt validator remains an independent cross-check before
-adoption. This integration is implemented but has not yet completed its gates.
+adoption. Local integration receipts bind source `7fc4723`; current-head hosted
+checks still gate workflow adoption.
+
+## Hosted extended verification
+
+Hosted extended verification runs the registered checks in two serial shards:
+`semantic-mutants` and the other nine extended IDs. The required `extended` job
+joins their disjoint receipts and invokes the independent Python completeness
+validator on the same source revision. This scheduling reduces elapsed time in
+one completed hosted comparison while increasing aggregate runner time under
+different CPU, cache and setup conditions; it does not alter check commands or
+product acceptance criteria. See the [finite pilot record](../experiments/formal/verification-shards-protocol.md).
 
 ## Native storage census
 
