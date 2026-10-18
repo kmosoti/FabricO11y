@@ -9,8 +9,8 @@ keeps raw journal binding and independent Python custody oracles separate.
 Captured-metadata projection now composes inside that Rust helper; eight
 integration tests and scoped Clippy passed. Raw native sender checks now cover
 Batch/configuration records as well as delivery; 74 affected native tests passed.
-All 20 fast checks passed at the earlier `979f0d3`; the successor complete profile
-and native caller adoption remain pending.
+All 20 fast checks and the documentation check passed at `02f5b6c`; native caller
+adoption remains pending.
 The [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-primitive-composition-results-01) retain measurements, counterexamples and the scratch cleanup correction.
 This work grants no package acceptance credit; alpha acceptance remains owner-paused.
 
