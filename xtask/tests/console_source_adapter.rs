@@ -147,6 +147,7 @@ shutil.copyfile(helper, snapshot); snapshot.chmod(0o700)
 def run_helper(snapshot, source_root, source_commit, build_root, receipt_pin):
     command = [str(snapshot), 'console-source', '--source-root', str(source_root),
         '--source-commit', source_commit, '--build-root', str(build_root), '--receipt-sha256', receipt_pin]
+    (pathlib.Path(output).parent / 'helper-invoked').write_text('started')
     result = subprocess.run(command, stdin=subprocess.DEVNULL, capture_output=True, timeout=90, check=False)
     report = json.loads(result.stdout) if result.returncode == 0 else None
     if result.returncode == 0:
@@ -158,7 +159,9 @@ def run_helper(snapshot, source_root, source_commit, build_root, receipt_pin):
 if mutation == 'wrong-root': root = str(pathlib.Path(root) / 'missing-product')
 if mutation == 'wrong-commit': commit = '0' * 40
 if mutation == 'wrong-pin': pin = '0' * 64
-if mutation.startswith('asset-') or mutation == 'png-time':
+if mutation == 'oversized-receipt':
+    (pathlib.Path(build) / 'build.json').write_bytes(b' ' * (4 * 1024 * 1024 + 1))
+if mutation.startswith('asset-') or mutation in ('png-time', 'declared-budget', 'malformed-size', 'sparse-asset'):
     build_path = pathlib.Path(build); dist = build_path / 'dist'
     body_path = dist / 'index.html'
     receipt_path = build_path / 'build.json'
@@ -177,8 +180,16 @@ if mutation.startswith('asset-') or mutation == 'png-time':
         large = b'x' * (8 * 1024 * 1024 + 1)
         (dist / 'large.wasm').write_bytes(large)
         document['assets']['large.wasm'] = {'bytes': len(large), 'sha256': hashlib.sha256(large).hexdigest()}
-    receipt_path.write_text(json.dumps(document))
-    pin = hashlib.sha256(receipt_path.read_bytes()).hexdigest()
+    elif mutation == 'declared-budget':
+        document['assets']['large.wasm'] = {'bytes': 8 * 1024 * 1024 + 1, 'sha256': '0' * 64}
+    elif mutation == 'malformed-size':
+        document['assets']['index.html']['bytes'] = True
+    elif mutation == 'sparse-asset':
+        import os
+        os.truncate(body_path, 64 * 1024 * 1024)
+    if mutation != 'sparse-asset':
+        receipt_path.write_text(json.dumps(document))
+        pin = hashlib.sha256(receipt_path.read_bytes()).hexdigest()
 module.stage(pathlib.Path(build), pathlib.Path(output),
     product_source=(pathlib.Path(root), commit, pin, snapshot, helper_pin),
     helper_runner=run_helper, evidence=evidence)
@@ -296,6 +307,20 @@ fn production_adapter_rejects_wrong_helper_pin_forged_report_and_receipt_race() 
 }
 
 #[test]
+fn production_adapter_bounds_explicit_receipt_before_helper_invocation() {
+    let f = fixture();
+    let native = helper();
+    let native_pin = xtask::sha256_hex(&fs::read(&native).unwrap());
+    let output = f.root.join("oversized-receipt");
+    let rejected = python_stage(&f, &output, &native, &native_pin, "oversized-receipt");
+    let diagnostic = String::from_utf8_lossy(&rejected.stderr);
+    assert!(!rejected.status.success(), "{diagnostic}");
+    assert!(diagnostic.contains("console build receipt exceeds 4 MiB bound"), "{diagnostic}");
+    assert!(!f.root.join("helper-invoked").exists(), "oversized receipt invoked the helper");
+    assert!(!output.exists());
+}
+
+#[test]
 fn production_adapter_checks_asset_failures_only_after_pinned_source_join() {
     for (mutation, expected) in [
         ("asset-changed", "asset differs from console build receipt"),
@@ -310,6 +335,9 @@ fn production_adapter_checks_asset_failures_only_after_pinned_source_join() {
         ("asset-symlink", "unsafe asset path"),
         ("png-time", "console icon carries time or text metadata"),
         ("asset-budget", "console exceeds 8 MiB budget"),
+        ("declared-budget", "console exceeds 8 MiB budget"),
+        ("malformed-size", "asset byte count must be a nonnegative integer"),
+        ("sparse-asset", "asset differs from console build receipt"),
     ] {
         let f = fixture();
         let native = helper();

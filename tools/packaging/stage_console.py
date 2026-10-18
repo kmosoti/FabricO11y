@@ -13,6 +13,8 @@ from resource_group import require_limits
 
 
 ROOT = Path(__file__).resolve().parents[2]
+RECEIPT_LIMIT = 4 * 1024 * 1024
+CONSOLE_LIMIT = 8 * 1024 * 1024
 
 
 PNG_SIGNATURE = b'\x89PNG\r\n\x1a\n'
@@ -40,6 +42,14 @@ def _sha256(path):
         for chunk in iter(lambda: source.read(1024 * 1024), b''):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _receipt_digest(path):
+    with path.open('rb') as source:
+        body = source.read(RECEIPT_LIMIT + 1)
+    if len(body) > RECEIPT_LIMIT:
+        return None
+    return hashlib.sha256(body).hexdigest()
 
 
 def _verify_product_source(build, receipt_bytes, product_source, helper_runner, evidence):
@@ -74,7 +84,7 @@ def _verify_product_source(build, receipt_bytes, product_source, helper_runner, 
                      'helper_stderr_bytes': stderr_bytes, 'helper_report': report})
     if exit_code != 0:
         raise ValueError('console source helper failed')
-    if _sha256(receipt_path) != receipt_sha256:
+    if _receipt_digest(receipt_path) != receipt_sha256:
         raise ValueError('console build receipt changed after source verification')
     exact = {'status': 'matched', 'source_root': str(source_root),
              'source_commit': source_commit, 'build_root': str(build),
@@ -97,15 +107,20 @@ def stage(build, destination, *, product_source=None, helper_runner=None, eviden
     build = Path(build)
     destination = Path(destination)
     receipt_path = build / 'build.json'
-    receipt_bytes = receipt_path.read_bytes()
     if product_source is not None:
         if not isinstance(product_source, tuple) or len(product_source) != 5:
             raise ValueError('explicit console product source tuple required')
         receipt_pin = product_source[2]
         if not isinstance(receipt_pin, str) or not re.fullmatch(r'[a-f0-9]{64}', receipt_pin):
             raise ValueError('explicit console receipt SHA-256 pin required')
+        with receipt_path.open('rb') as source:
+            receipt_bytes = source.read(RECEIPT_LIMIT + 1)
+        if len(receipt_bytes) > RECEIPT_LIMIT:
+            raise ValueError('console build receipt exceeds 4 MiB bound')
         if hashlib.sha256(receipt_bytes).hexdigest() != receipt_pin:
             raise ValueError('console build receipt differs from caller pin')
+    else:
+        receipt_bytes = receipt_path.read_bytes()
     receipt = json.loads(receipt_bytes)
     if receipt.get('exit') != 0 or not isinstance(receipt.get('assets'), dict):
         raise ValueError('successful console build receipt required')
@@ -124,24 +139,39 @@ def stage(build, destination, *, product_source=None, helper_runner=None, eviden
             raise ValueError('explicit product source verification requires owned helper effects and evidence')
         _verify_product_source(build, receipt_bytes, product_source, helper_runner, evidence)
     assets = receipt['assets']
+    if not all(isinstance(name, str) for name in assets):
+        raise ValueError('asset names must be strings')
     if not {'index.html', 'service-worker.js', 'manifest.webmanifest', 'icon-192.png', 'icon-512.png'} <= assets.keys():
         raise ValueError('complete PWA assets required')
     if not any(name.endswith('.wasm') for name in assets):
         raise ValueError('compiled WASM required')
+    total_bytes = 0
+    for name, identity in assets.items():
+        if (Path(name).is_absolute() or name in ('.', '..') or Path(name).name != name
+                or not isinstance(identity, dict)):
+            raise ValueError('unsafe asset declaration')
+        size = identity.get('bytes')
+        digest = identity.get('sha256')
+        if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+            raise ValueError('asset byte count must be a nonnegative integer: ' + name)
+        if not isinstance(digest, str) or not re.fullmatch(r'[a-f0-9]{64}', digest):
+            raise ValueError('asset SHA-256 must be canonical: ' + name)
+        total_bytes += size
+    if total_bytes > CONSOLE_LIMIT:
+        raise ValueError('console exceeds 8 MiB budget')
     if set(p.name for p in (build / 'dist').iterdir()) != assets.keys():
         raise ValueError('asset inventory differs from build receipt')
     for name, identity in assets.items():
         source = build / 'dist' / name
         if Path(name).name != name or source.is_symlink() or not source.is_file():
             raise ValueError('unsafe asset path')
-        body = source.read_bytes()
+        with source.open('rb') as stream:
+            body = stream.read(identity['bytes'] + 1)
         if len(body) != identity['bytes'] or hashlib.sha256(body).hexdigest() != identity['sha256']:
             raise ValueError('asset differs from console build receipt: ' + name)
         if name.endswith('.png'):
             require_timeless_png(name, body)
-    if sum(identity['bytes'] for identity in assets.values()) > 8 * 1024 * 1024:
-        raise ValueError('console exceeds 8 MiB budget')
-    if product_source is not None and _sha256(receipt_path) != product_source[2]:
+    if product_source is not None and _receipt_digest(receipt_path) != product_source[2]:
         raise ValueError('console build receipt changed before staging')
     destination.mkdir(parents=True, exist_ok=False)
     for name in assets:
