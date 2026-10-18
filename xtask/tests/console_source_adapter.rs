@@ -551,3 +551,105 @@ fn staging_writes_the_asset_bytes_verified_before_destination_creation() {
         String::from_utf8_lossy(&staged.stderr)
     );
 }
+
+#[test]
+fn browser_fetch_ledger_consumer_separates_http_responses_from_witnessed_query_cancellation() {
+    let live = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .join("tools/ui/live_browser_check.py");
+    let script = r#"
+import ast, pathlib, sys
+tree = ast.parse(pathlib.Path(sys.argv[1]).read_text())
+consumer = next(node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef) and node.name == 'capture_api_metadata')
+wrapper = next(node for node in ast.walk(tree) if isinstance(node, ast.Call)
+               and isinstance(node.func, ast.Name) and node.func.id == 'js'
+               and node.args and isinstance(node.args[0], ast.Constant)
+               and isinstance(node.args[0].value, str)
+               and 'window.fixtureApiHeaders=[]' in node.args[0].value)
+wrapper_js = wrapper.args[0].value
+for marker in ("state:'pending'", "entry.state='response'", "entry.state='rejected'",
+               "error_stage='fetch'", "error_stage='metadata'", "signal_aborted_at_rejection",
+               "signal_aborted_at_dispatch", "signal_abort_observed_ms",
+               "addEventListener('abort'", "removeEventListener('abort'"):
+    assert marker in wrapper_js, 'production wrapper diagnostic is missing ' + marker
+
+namespace = {'receipt': {}, 'js': None, 'check': None}
+exec(compile(ast.Module(body=[consumer], type_ignores=[]), 'live_browser_check.py', 'exec'), namespace)
+capture = namespace['capture_api_metadata']
+headers = {'cache_control': 'no-store', 'csp': "default-src 'none'", 'coop': 'same-origin', 'corp': 'same-origin'}
+def response(**changes):
+    row = {'path':'/v1/console/query','method':'POST','status':200,'state':'response',
+           'started_ms':10.0,'finished_ms':11.0, **headers}
+    row.update(changes); return row
+def cancellation(**changes):
+    row = {'path':'/v1/console/query','method':'POST','status':None,'state':'rejected',
+           'error_stage':'fetch','error_name':'AbortError','error_message':'aborted',
+           'signal_aborted_at_dispatch':False,'signal_abort_observed_ms':10.5,
+           'signal_aborted_at_rejection':True,'started_ms':10.0,'finished_ms':11.0}
+    row.update(changes); return row
+
+def run(name, rows, truncated=False):
+    checks=[]; receipt={}
+    namespace['receipt']=receipt
+    namespace['js']=lambda expression: rows if 'fixtureApiHeaders' in expression and 'Truncated' not in expression else truncated
+    namespace['check']=lambda condition, label: checks.append(label) if condition else (_ for _ in ()).throw(AssertionError(label))
+    try:
+        capture(); ok=True; error=''
+    except BaseException as caught:
+        ok=False; error=type(caught).__name__+': '+str(caught)
+    return ok, error, receipt, checks
+
+failures=[]
+ok,error,receipt,_=run('valid response',[response()])
+if not ok: failures.append('valid response rejected: '+error)
+for key,value in [('cache_control','private'),('csp',''),('coop','unsafe-none'),('corp','cross-origin')]:
+    ok,error,_,_=run('wrong '+key,[response(**{key:value})])
+    if ok: failures.append('wrong '+key+' accepted')
+for key in ('cache_control','csp','coop','corp'):
+    row=response(); del row[key]
+    ok,error,_,_=run('missing '+key,[row])
+    if ok: failures.append('missing '+key+' accepted')
+
+valid_abort=cancellation()
+ok,error,receipt,_=run('same-signal cancellation',[response(),valid_abort])
+if not ok: failures.append('witnessed query cancellation rejected: '+error)
+else:
+    if receipt.get('actual_api_headers') != [response(),valid_abort]: failures.append('raw ledger was not retained')
+    if receipt.get('actual_api_cancellations') != [valid_abort]: failures.append('cancellation was not separately recorded')
+
+invalid_rows = [
+    ('missing abort observation',cancellation(signal_abort_observed_ms=None)),
+    ('abort observed before dispatch',cancellation(signal_abort_observed_ms=9.0)),
+    ('signal not aborted at rejection',cancellation(signal_aborted_at_rejection=False)),
+    ('abort observed after completion',cancellation(signal_abort_observed_ms=12.0)),
+    ('non-finite abort observation',cancellation(signal_abort_observed_ms=float('nan'))),
+    ('non-abort rejection',cancellation(error_name='TypeError')),
+    ('non-null response status on rejection',cancellation(status=0)),
+    ('non-query path',cancellation(path='/v1/console/status')),
+    ('non-POST method',cancellation(method='GET')),
+    ('metadata exception',cancellation(error_stage='metadata', **headers)),
+    ('pending row',response(state='pending')),
+    ('non-integer response status',response(status='200')),
+    ('cancellation-only ledger',None),
+]
+for name,row in invalid_rows:
+    rows=[] if row is None else [row]
+    ok,error,_,_=run(name,rows)
+    if ok: failures.append(name+' accepted')
+if run('pre-aborted signal',[response(),cancellation(signal_aborted_at_dispatch=True,signal_abort_observed_ms=10.0)])[0] is False:
+    failures.append('pre-aborted same-signal cancellation rejected')
+if run('truncated response ledger',[response()],truncated=True)[0]: failures.append('truncated ledger accepted')
+if failures:
+    raise AssertionError('\n'.join(failures))
+"#;
+    let output = Command::new("python3")
+        .args(["-B", "-c", script, live.to_str().unwrap()])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
