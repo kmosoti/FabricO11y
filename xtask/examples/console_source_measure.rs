@@ -10,11 +10,12 @@ use xtask::preflight::{ArtifactStore, strict_json};
 const REFERENCE: &str = r#"
 import hashlib,json,sys
 from pathlib import Path
-root=Path(sys.argv[1]);sources=json.loads(Path(sys.argv[2]).read_text())['source_sha256']
+root=Path(sys.argv[1]);sources=json.loads(Path(sys.argv[2]).read_text())['source_sha256'];total=0
 for name,identity in sources.items():
-    if hashlib.sha256((root/name).read_bytes()).hexdigest()!=identity:
+    body=(root/name).read_bytes();total+=len(body)
+    if hashlib.sha256(body).hexdigest()!=identity:
         raise ValueError('console was built from different source: '+name)
-print(json.dumps({'files':len(sources),'bytes':sum((root/n).stat().st_size for n in sources)}))
+print(json.dumps({'files':len(sources),'bytes':total}))
 "#;
 
 fn native_hash(root: &Path, receipt: &Path) -> Result<Value, String> {
@@ -29,9 +30,13 @@ fn native_hash(root: &Path, receipt: &Path) -> Result<Value, String> {
 }
 
 fn run(command: &mut Command, timing: &Path) -> Result<Value, String> {
+    let argv: Vec<_> = std::iter::once(command.get_program()).chain(command.get_args())
+        .map(|argument| argument.to_string_lossy().into_owned()).collect();
     let start = Instant::now();
     let output = command.output().map_err(|e| e.to_string())?;
     let elapsed = start.elapsed().as_nanos();
+    fs::write(timing.with_extension("stdout"), &output.stdout).map_err(|e| e.to_string())?;
+    fs::write(timing.with_extension("stderr"), &output.stderr).map_err(|e| e.to_string())?;
     if !output.status.success() {
         return Err(format!(
             "command {:?}: {}",
@@ -46,8 +51,9 @@ fn run(command: &mut Command, timing: &Path) -> Result<Value, String> {
         return Err("GNU time observation".into());
     }
     Ok(
-        json!({"actual_exit":0,"wall_ns":elapsed.to_string(),"user_seconds":fields[0],
-        "system_seconds":fields[1],"peak_rss_kib":fields[2],"output":observation}),
+        json!({"actual_exit":output.status.code(),"argv":argv,"wall_ns":elapsed.to_string(),"user_seconds":fields[0],
+        "system_seconds":fields[1],"peak_rss_kib":fields[2],"output":observation,
+        "raw_stdout":String::from_utf8_lossy(&output.stdout),"raw_stderr":String::from_utf8_lossy(&output.stderr),"raw_time":time}),
     )
 }
 
@@ -60,10 +66,11 @@ fn timed(program: &Path, timing: &Path) -> Command {
     command
 }
 
-fn pairs(root: &Path, receipt: &Path, scratch: &Path) -> Result<Value, String> {
+fn pairs(root: &Path, receipt: &Path, scratch: &Path, expected_count: u64) -> Result<Value, String> {
     // The reference is the exact legacy source-hash loop, not a substitute
     // for Git identity or the complete asset stager.
     let expected = native_hash(root, receipt)?;
+    if expected["files"] != expected_count { return Err("registered source count differs".into()); }
     let executable = std::env::current_exe().map_err(|e| e.to_string())?;
     let mut observations = Vec::new();
     for pair in 0..7 {
@@ -72,7 +79,7 @@ fn pairs(root: &Path, receipt: &Path, scratch: &Path) -> Result<Value, String> {
         } else {
             ["rust", "python"]
         } {
-            let timing = scratch.join(format!("{pair}-{kind}.time"));
+            let timing = scratch.join(format!("{expected_count}-{pair}-{kind}.time"));
             let mut command = if kind == "python" {
                 let mut command = timed(Path::new("/usr/bin/python3"), &timing);
                 command.args(["-B", "-c", REFERENCE]).arg(root).arg(receipt);
@@ -114,9 +121,9 @@ fn execute() -> Result<(), String> {
         );
         return Ok(());
     }
-    if arguments.len() != 3 {
+    if arguments.len() != 5 {
         return Err(
-            "usage: console_source_measure PRODUCT_ROOT BUILD_RECEIPT NEW_OUTPUT_DIR".into(),
+            "usage: console_source_measure PRODUCT_ROOT BUILD_RECEIPT SOURCE_COMMIT NATIVE_HELPER NEW_OUTPUT_DIR".into(),
         );
     }
     let root = PathBuf::from(&arguments[0])
@@ -125,7 +132,9 @@ fn execute() -> Result<(), String> {
     let receipt = PathBuf::from(&arguments[1])
         .canonicalize()
         .map_err(|e| e.to_string())?;
-    let out = PathBuf::from(&arguments[2]);
+    let commit = arguments[2].to_str().ok_or("UTF-8 source commit")?;
+    let helper = PathBuf::from(&arguments[3]).canonicalize().map_err(|e|e.to_string())?;
+    let out = PathBuf::from(&arguments[4]);
     let data = PathBuf::from(std::env::var_os("FABRIC_STORAGE_ROOT").ok_or("DATA required")?)
         .canonicalize()
         .map_err(|e| e.to_string())?;
@@ -140,6 +149,7 @@ fn execute() -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     if !root.starts_with(&data)
         || !receipt.starts_with(&data)
+        || !helper.starts_with(&data)
         || !parent.starts_with(&data)
         || !scratch.starts_with(&data)
     {
@@ -148,7 +158,24 @@ fn execute() -> Result<(), String> {
     fs::create_dir(&out).map_err(|e| e.to_string())?;
     fs::create_dir(&scratch).map_err(|e| e.to_string())?;
     let result = (|| {
-        let canonical = pairs(&root, &receipt, &scratch)?;
+        let canonical = pairs(&root, &receipt, &scratch, 17)?;
+        let receipt_pin = xtask::sha256_hex(&fs::read(&receipt).map_err(|e|e.to_string())?);
+        let mut complete_cli = Vec::new();
+        for index in 0..7 {
+            let timing = scratch.join(format!("complete-cli-{index}.time"));
+            let mut command = timed(&helper, &timing);
+            command.args(["console-source", "--source-root"]).arg(&root)
+                .args(["--source-commit", commit, "--build-root"]).arg(receipt.parent().ok_or("receipt parent")?)
+                .args(["--receipt-sha256", &receipt_pin]);
+            let observation = run(&mut command, &timing)?;
+            if observation["output"]["source_commit"] != commit
+                || observation["output"]["receipt_sha256"] != receipt_pin
+                || observation["output"]["source_count"] != 17
+                || observation["output"]["source_bytes_hashed"] != canonical["expected"]["bytes"] {
+                return Err("complete CLI identity/accounting differs".into());
+            }
+            complete_cli.push(observation);
+        }
         let fixture = scratch.join("fixture");
         fs::create_dir(&fixture).map_err(|e| e.to_string())?;
         let mut sources = serde_json::Map::new();
@@ -160,12 +187,13 @@ fn execute() -> Result<(), String> {
         }
         let fixture_receipt = scratch.join("fixture.json");
         write_new(&fixture_receipt, &json!({"source_sha256":sources}))?;
-        let synthetic = pairs(&fixture, &fixture_receipt, &scratch)?;
+        let synthetic = pairs(&fixture, &fixture_receipt, &scratch, 512)?;
         write_new(
             &out.join("measurement.json"),
-            &json!({"canonical":canonical,"synthetic":synthetic,
-            "source_root":root,"receipt":receipt,"receipt_sha256":xtask::sha256_hex(&fs::read(&receipt).map_err(|e|e.to_string())?),
-            "limits":"hash-loop equivalence on regular fixtures; native Git/provenance join measured separately; no acceptance credit"}),
+            &json!({"canonical":canonical,"synthetic":synthetic,"complete_cli_canonical":complete_cli,
+            "source_root":root,"source_commit":commit,"receipt":receipt,"receipt_sha256":receipt_pin,
+            "helper":helper,"helper_sha256":xtask::sha256_hex(&fs::read(&helper).map_err(|e|e.to_string())?),
+            "limits":"hash-loop equivalence on regular fixtures; separate canonical CLI includes Git and is not a speed comparison; no acceptance credit"}),
         )
     })();
     if result.is_ok() {
