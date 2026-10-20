@@ -647,6 +647,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
             ('malformed', b'#!/bin/sh\nprintf "not-json\\n"\nexit 0\n', 'Expecting value'),
             ('duplicate', output('{"status":"invalid","status":"structural-cutoff","candidate":"' + candidate + '"}'), 'duplicate Rust report key'),
             ('nonfinite', output('{"status":"structural-cutoff","candidate":"' + candidate + '","value":NaN}'), 'nonfinite Rust report number'),
+            ('overflow-exponent', output('{"status":"structural-cutoff","candidate":"' + candidate + '","value":1e999}'), 'nonfinite Rust report number'),
             ('wrong-candidate', output('{"status":"structural-cutoff","candidate":"' + '0' * 40 + '"}'), 'Rust capture report mismatch'),
             ('oversized', b'#!/bin/sh\ndd if=/dev/zero bs=65537 count=1 2>/dev/null\n', 'Rust capture verifier refused'))
         for suffix, payload, message in cases:
