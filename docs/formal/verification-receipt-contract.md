@@ -1,7 +1,7 @@
 # Verification receipt representation
 
-This is a prospective validation policy for the Rust receipt verifier, not a
-claim that it is implemented or that historical receipts were revalidated.
+This is the validation policy for the Rust receipt verifier, not a claim that
+historical receipts were revalidated.
 The owner authorized tooling/verifier migration and stronger quality controls.
 The Python verifier is retained as historical reference evidence, not as a
 maintained runtime dependency. Its source at immutable Git commit

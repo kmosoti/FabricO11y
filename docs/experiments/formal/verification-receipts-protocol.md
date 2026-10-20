@@ -88,5 +88,7 @@ host conditions are part of the reported bounds. Keep all failed trials.
 
 Use the existing resource launcher, original enforced caps, fresh DATA reserve
 and serial heavy-job scheduler. No GPU implementation, weakened checks, release
-or tag. Adopt only after relevant checks, independent differential controls and
-source/artifact identity checks pass; otherwise retain the reference path.
+or tag. Adoption uses the registered historical differential evidence together
+with current contract-fixture controls, representative-defect rejection and
+source/artifact identity checks. All current checks must pass; historical
+results cannot substitute for a current-source refusal control.
