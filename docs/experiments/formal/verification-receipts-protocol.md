@@ -7,11 +7,29 @@ execute or qualify the alpha acceptance campaign.
 
 ## Contract and primitives
 
-First exercise the unchanged Python receipt validator on explicitly synthetic
-fixtures. Then implement `cargo xtask verify-receipts` and compare it with that
-reference. Preserve the Python delivery, query and rate product oracles. Keep
-production CI adoption and any verification policy adjustment in separate
-reasoned commits after evidence; neither timing nor language choice is a gate.
+The historical migration exercised the Python receipt validator on explicitly
+synthetic fixtures and compared it with `cargo xtask verify-receipts`. Preserve
+the Python delivery, query and rate product oracles. The receipt verifier is a
+structural checker, not a product oracle: after its independent expected
+outcomes are recorded in
+[`xtask/tests/fixtures/receipt_contract_cases.json`](../../../xtask/tests/fixtures/receipt_contract_cases.json),
+the Rust CLI is the maintained runtime validator. The fixture is maintained
+from the accepted contract below; it must not be generated from either
+implementation. Production CI adoption remains separate from this policy
+decision and requires its own implementation and workflow evidence.
+
+The historical Python implementation used by the differential is preserved by
+the immutable Git object at commit
+[`f001175ff4006e2f95294458ce36f4f089d3be7d`](https://github.com/kmosoti/FabricO11y/tree/f001175ff4006e2f95294458ce36f4f089d3be7d)
+(`tools/ci/verify_receipts.py`, SHA-256
+`912ede91d27277bb0e45a337d1266ec1ea191b1029a536ca9f1266ced3559a23`). Historical
+baseline and differential result directories remain the evidence for the
+observed Python outcomes. Reproduction of the old Python-vs-Rust benchmark
+requires an isolated worktree at that immutable source revision and the
+historical experiment command; deleting the script from the maintained branch
+must not be described as preserving an immediately runnable current-tree
+benchmark. New checks use the contract fixture and the Rust CLI, not a copied
+Python verifier.
 
 The subsequent [representation policy](../../formal/verification-receipt-contract.md)
 records four baseline-observed ambiguities and prospective strict rejection.
@@ -42,9 +60,10 @@ Exercise a complete positive set and individual missing receipt/log, symlink
 receipt/log, running marker, stale commit, dirty source flag, wrong command/ID/
 profile/result/log name/version, nonzero or boolean/float exit, negative or
 boolean/float duration and modified log controls. Baseline mismatch is evidence,
-not permission to silently change expected behavior. Probe duplicate keys and
-boolean/numeric aliases separately: stricter candidate rejection requires an
-explicit policy explanation and cannot be reported as exact legacy parity.
+not permission to silently change expected behavior. The contract fixture
+records the four baseline-observed legacy acceptances as deliberate Rust
+refusals under the accepted representation policy. They are not exact legacy
+parity and must not be counted as ordinary shared negative controls.
 Nonregular and mutation-during-read controls apply to the candidate's file
 primitive; do not hang the old reader on a FIFO to demonstrate a known hazard.
 
@@ -55,9 +74,12 @@ Run every common control through both binaries and preserve disagreements.
 Inject at least one representative checker defect and require rejection by the
 independent corpus. Preserve meaningful failures and minimized regressions.
 
-Benchmark standalone release Rust versus the unchanged Python CLI, including
-process startup and all identity/registry/log validation. Compilation is outside
-measurement but its command and exit remain recorded. Use all extended IDs,
+The registered historical differential benchmark compared standalone release
+Rust with the Python CLI identified above, including process startup and all
+identity/registry/log validation. Reproduction must use an isolated worktree at
+that immutable source commit; the maintained branch no longer promises a live
+Python benchmark implementation. Compilation is outside measurement but its
+command and exit remain recorded. Use all extended IDs,
 synthetic logs of 64 bytes, 64 KiB and 4 MiB per ID, one warmup per implementation
 and corpus, and seven alternating paired repetitions. Compare decisions and
 normalized inventories before reporting timing. Record wall time, CPU and peak

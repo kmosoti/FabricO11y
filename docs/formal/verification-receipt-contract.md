@@ -3,7 +3,15 @@
 This is a prospective validation policy for the Rust receipt verifier, not a
 claim that it is implemented or that historical receipts were revalidated.
 The owner authorized tooling/verifier migration and stronger quality controls.
-The original Python verifier remains unchanged as an independent reference.
+The Python verifier is retained as historical reference evidence, not as a
+maintained runtime dependency. Its source at immutable Git commit
+[`f001175ff4006e2f95294458ce36f4f089d3be7d`](https://github.com/kmosoti/FabricO11y/tree/f001175ff4006e2f95294458ce36f4f089d3be7d)
+has SHA-256 `912ede91d27277bb0e45a337d1266ec1ea191b1029a536ca9f1266ced3559a23`.
+The independent expected outcomes for the maintained Rust CLI live in
+[`xtask/tests/fixtures/receipt_contract_cases.json`](../../xtask/tests/fixtures/receipt_contract_cases.json);
+the fixture is authored from this contract, not copied or generated from either
+validator. Historical Python-vs-Rust reports remain historical evidence and
+are not current-source acceptance evidence.
 
 The baseline at clean source `fa5fc02acdffcefcf9dff424b9297d20ee5c8899`
 completed with command/outer exit 0 and confirmed stop. Its synthetic-fixture
@@ -37,8 +45,11 @@ the commands described by the synthetic receipts.
   never a successful profile. Read budgets and arithmetic fail closed.
 
 Rejecting the four observed representations deliberately strengthens the legacy
-reader. It prevents interpretation from depending on key order or language
-equality coercions. The current Rust receipt writer already emits integer
+reader. The historical Python baseline accepted duplicate result keys,
+boolean versions, floating-point versions, and numeric dirty-state aliases;
+the maintained fixture expects the Rust checker to reject each one under this
+explicit policy. It prevents interpretation from depending on key order or
+language equality coercions. The current Rust receipt writer already emits integer
 versions and boolean dirty state. No expected negative outcome, product oracle,
 required check, proof bound, timing exposure or acceptance condition is relaxed.
 
