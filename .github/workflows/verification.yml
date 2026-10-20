@@ -95,20 +95,20 @@ jobs:
           curl -fsSL -o target/tools/tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v1.7.1/tla2tools.jar
           echo "d532ba31aafe17afba1130f92410d9257454ff7393d1eb2fe032f0c07f352da5  target/tools/tla2tools.jar" | sha256sum --check
       - name: Install cargo-mutants
-        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-mutants 27.1.0
+        run: python3 -B tools/resource_group.py -- cargo xtask install-tool cargo-mutants 27.1.0
       - name: Install cargo-deny and cargo-llvm-cov
         run: |
           rustup component add llvm-tools-preview
-          python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-deny 0.20.2
-          python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-llvm-cov 0.9.1
+          python3 -B tools/resource_group.py -- cargo xtask install-tool cargo-deny 0.20.2
+          python3 -B tools/resource_group.py -- cargo xtask install-tool cargo-llvm-cov 0.9.1
       - name: Install cargo-fuzz and the pinned nightly
         run: |
           rustup toolchain install nightly-2026-10-11 --profile minimal
           ln -sfn nightly-2026-10-11-x86_64-unknown-linux-gnu "$RUSTUP_HOME/toolchains/nightly-x86_64-unknown-linux-gnu"
-          python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py cargo-fuzz 0.13.2
+          python3 -B tools/resource_group.py -- cargo xtask install-tool cargo-fuzz 0.13.2
       - name: Install Kani
         run: |
-          python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py kani-verifier 0.68.0
+          python3 -B tools/resource_group.py -- cargo xtask install-tool kani-verifier 0.68.0
           python3 -B tools/resource_group.py -- cargo kani setup
       - name: Verify Kani positive and semantic negative controls
         id: tools
