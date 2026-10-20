@@ -55,6 +55,6 @@
     {"id":"invalid-registry-command","profile":"extended","mutation":"set-command-argument-to-number-in-source-fixture","exit_code":1,"basis":"registry commands contain only string arguments"},
     {"id":"invalid-registry-id","profile":"extended","mutation":"set-id-to-noncanonical-path","exit_code":1,"basis":"registry check IDs use the bounded lowercase identifier grammar"},
     {"id":"duplicate-registry-id","profile":"extended","mutation":"duplicate-selected-registry-id-in-source-fixture","exit_code":1,"basis":"registry check IDs are unique"},
-    {"id":"empty-profile","profile":"qualification","mutation":"select-profile-with-no-checks-in-source-fixture","exit_code":1,"basis":"selected profile must contain at least one registered check"}
+    {"id":"empty-profile","profile":"extended","mutation":"select-supported-profile-with-no-checks-in-source-fixture","exit_code":1,"basis":"a supported selected profile must contain at least one registered check"}
   ]
 }
