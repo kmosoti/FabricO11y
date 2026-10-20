@@ -23,6 +23,52 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
     def setUp(self):
         super().setUp()
         self.module = literal.adapter()
+        self._cutoff_pin = None
+        self._cutoff_results = []
+        self._standalone_helpers = []
+
+    def tearDown(self):
+        # Keep the complete invocation bundle and Rust stdout/stderr when a
+        # testcase fails; those files are the evidence needed to diagnose it.
+        if getattr(self._outcome, 'success', False):
+            import shutil
+            for result, helper in self._cutoff_results:
+                shutil.rmtree(result, ignore_errors=True)
+                Path(helper['path']).unlink(missing_ok=True)
+            for helper in self._standalone_helpers:
+                Path(helper['path']).unlink(missing_ok=True)
+        elif self._cutoff_results:
+            print('preserved custody cutoff diagnostics: ' + ', '.join(str(row[0]) for row in self._cutoff_results))
+        super().tearDown()
+
+    def cutoff_pin(self):
+        if self._cutoff_pin is None:
+            self._cutoff_pin = self.pinned_helper(Path(os.environ['FABRIC_STORAGE_ROOT']),
+                suffix='fixture-' + str(os.getpid()) + '-' + str(id(self)))
+        return self._cutoff_pin
+
+    def admit_transfer(self, bundle, admission, expected_sha):
+        storage = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
+        pin = self.cutoff_pin()
+        admission['cutoff_helper'] = pin
+        result = storage / 'results' / f'custody-capture-{os.getpid()}-{id(self)}-{time.monotonic_ns()}'
+        result.mkdir(mode=0o700)
+        archived = result / 'native-bundle.tar'
+        import shutil
+        shutil.copyfile(bundle, archived)
+        self._cutoff_results.append((result, pin))
+        return native.admit_transfer(archived, admission, expected_sha,
+            cutoff_helper=pin, result_dir=result, data_root=storage, deadline=time.monotonic() + 60)
+
+    def reset_fixture(self):
+        import shutil
+        for result, helper in self._cutoff_results:
+            shutil.rmtree(result, ignore_errors=True)
+            Path(helper['path']).unlink(missing_ok=True)
+        for helper in self._standalone_helpers:
+            Path(helper['path']).unlink(missing_ok=True)
+        self.temp.cleanup()
+        self.setUp()
 
     reboot_chain = literal.RebootRawControls.reboot_chain
 
@@ -121,6 +167,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
             files[phase + '/' + name + '-raw.tar'] = stream.getvalue()
         files['reboot/conservation.json'] = dict(status='accepted', required_checkpoints=4)
         admission = dict(binding=BINDING, node_sha256='a' * 64, boot_before=boots['literal-boot-a'])
+        self.captured_metadata(files)
         return files, admission
 
     @staticmethod
@@ -149,7 +196,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
     def test_literal_complete_bundle_is_admitted(self):
         files, admission = self.fixture_files()
         bundle = self.bundle(files)
-        self.assertEqual(native.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()))['phases'],
+        self.assertEqual(self.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()))['phases'],
                          ['drain', 'installed', 'prepare', 'reboot'])
 
     def test_coherently_rehashed_missing_or_forged_configuration_is_refused(self):
@@ -180,8 +227,8 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                     files[rawkey]=stream.getvalue()
                 bundle=self.bundle(files)  # Recomputes every manifest and transfer hash.
                 with self.assertRaisesRegex(ValueError,'native applied configuration'):
-                    native.admit_transfer(bundle,admission,native.sha(bundle.read_bytes()))
-            self.temp.cleanup(); self.setUp()
+                    self.admit_transfer(bundle,admission,native.sha(bundle.read_bytes()))
+            self.reset_fixture()
 
     def test_transfer_digest_path_and_ownership_refusals(self):
         files, admission = self.fixture_files()
@@ -190,7 +237,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                 bundle = self.bundle(files, owner=55 if variant == 'owner' else 0, unsafe=variant == 'path')
                 expected = '0' * 64 if variant == 'digest' else native.sha(bundle.read_bytes())
                 with self.assertRaisesRegex(ValueError, 'transfer digest|transfer path/ownership'):
-                    native.admit_transfer(bundle, admission, expected)
+                    self.admit_transfer(bundle, admission, expected)
 
     def test_bound_copy_controls_refuse_at_named_boundary(self):
         for variant, message in (('binding', 'binding'), ('live-ps', 'stopped observations'),
@@ -226,11 +273,12 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                 elif variant == 'snapshot-root': files['prepare/before-receipt.json']['spool_root'] = '/var/lib/filtered'
                 bundle = self.bundle(files)
                 with self.assertRaisesRegex(ValueError, message):
-                    native.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()))
-            self.temp.cleanup(); self.setUp()
+                    self.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()))
+            self.reset_fixture()
 
     def test_source_freeze_refuses_dirty_or_replaced_source_before_package_access(self):
-        owner = self.root / 'owner.json'; owner.write_text(json.dumps(dict(harness_commit='a' * 40, source_hashes={})))
+        owner = self.root / 'owner.json'; owner.write_text(json.dumps(dict(harness_commit='a' * 40,
+            source_hashes={}, cutoff_helper=self.pinned_helper(self.root, suffix='source-freeze'))))
         source_root = Path(native.__file__).resolve().parents[3]
         for dirty in (True, False):
             with self.subTest(dirty=dirty), patch.object(native.subprocess, 'check_output', side_effect=lambda argv, **kwargs:
@@ -303,7 +351,8 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
         elif mutation == 'inspection-missing': inspection.unlink()
         elif mutation == 'inspection-tampered': inspection.write_bytes(inspection_bytes + b' changed')
         owner = self.root / (name + '-owner.json')
-        owner.write_text(json.dumps(dict(harness_commit='a' * 40, source_hashes=source_hashes)))
+        owner.write_text(json.dumps(dict(harness_commit='a' * 40, source_hashes=source_hashes,
+            cutoff_helper=self.pinned_helper(storage, suffix=name))))
         return storage, owner, source_root, debpkg, fixed_fixture_digests
 
     def test_candidate_identity_and_receipt_mismatch_controls(self):
@@ -374,10 +423,10 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                 bundle = self.bundle(files)
                 if changed_namespace:
                     with self.assertRaisesRegex(ValueError, 'credential metadata/hash drift'):
-                        native.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()))
+                        self.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()))
                 else:
-                    native.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()))
-            self.temp.cleanup(); self.setUp()
+                    self.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()))
+            self.reset_fixture()
 
     def test_btrfs_uapi_buffers_use_literal_kernel_layout(self):
         source = self.root / 'source'; source.write_bytes(b'literal source\n')
@@ -409,11 +458,13 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
         expected = hashlib.sha256(raw).hexdigest()
         if payload is None:
             self.assertEqual(expected, os.environ['FABRIC_CUSTODY_CUTOFF_HELPER_SHA256'])
-        target = storage / 'results' / f'custody-caller-helper-{os.getpid()}-{suffix}'
+        target = storage / 'results' / f'custody-caller-helper-{os.getpid()}-{id(self)}-{suffix}'
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(raw)
         target.chmod(0o500)
-        return dict(path=str(target), sha256=expected)
+        pin = dict(path=str(target), sha256=expected)
+        self._standalone_helpers.append(pin)
+        return pin
 
     def captured_metadata(self, files):
         fixture = json.loads((Path(__file__).resolve().parents[3] /
@@ -476,6 +527,9 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
 
     def run_native_cutoff(self, files, admission, helper, result, bundle):
         admission['cutoff_helper'] = helper
+        import shutil
+        shutil.copyfile(bundle, result / 'native-bundle.tar')
+        self._cutoff_results.append((result, helper))
         return native.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()),
             cutoff_helper=helper, result_dir=result, data_root=Path(os.environ['FABRIC_STORAGE_ROOT']),
             deadline=time.monotonic() + 60)
@@ -483,62 +537,51 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
     def test_native_caller_runs_actual_rust_helper_after_independent_admission(self):
         storage = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
         helper = self.pinned_helper(storage)
-        result = storage / 'results' / f'custody-cutoff-positive-{os.getpid()}'
+        result = storage / 'results' / f'custody-cutoff-positive-{os.getpid()}-{time.monotonic_ns()}'
         result.mkdir(mode=0o700)
-        try:
-            files, admission = self.fixture_files()
-            self.captured_metadata(files)
-            bundle = self.bundle(files)
-            observed = self.run_native_cutoff(files, admission, helper, result, bundle)
-            self.assertEqual([item['state'] for item in observed['cutoff_outcomes']], ['completed', 'completed'])
-            self.assertTrue(all(item['bundle_sha256'] == observed['bundle_sha256']
-                and item['result']['status'] == 'structural-cutoff' for item in observed['cutoff_outcomes']))
-            self.assertFalse((result / 'custody-cutoff-inputs').exists())
-            self.assertTrue((result / 'custody-cutoff-drain.json').is_file())
-            self.assertTrue((result / 'custody-cutoff-reboot.json').is_file())
-        finally:
-            import shutil
-            shutil.rmtree(result)
-            Path(helper['path']).unlink(missing_ok=True)
+        files, admission = self.fixture_files()
+        bundle = self.bundle(files)
+        observed = self.run_native_cutoff(files, admission, helper, result, bundle)
+        self.assertEqual([item['state'] for item in observed['cutoff_outcomes']], ['completed', 'completed'])
+        self.assertTrue(all(item['bundle_sha256'] == observed['bundle_sha256']
+            and item['result']['status'] == 'structural-cutoff' for item in observed['cutoff_outcomes']))
+        self.assertFalse((result / 'custody-cutoff-inputs').exists())
+        self.assertTrue((result / 'custody-cutoff-drain.json').is_file())
+        self.assertTrue((result / 'custody-cutoff-reboot.json').is_file())
 
     def test_native_caller_retains_body_substitution_failure(self):
         storage = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
         helper = self.pinned_helper(storage)
-        result = storage / 'results' / f'custody-cutoff-body-{os.getpid()}'
+        result = storage / 'results' / f'custody-cutoff-body-{os.getpid()}-{time.monotonic_ns()}'
         result.mkdir(mode=0o700)
-        try:
-            files, admission = self.fixture_files()
-            self.captured_metadata(files)
-            files['drain/inspection-1.txt'] = b'substituted captured inspection'
-            bundle = self.bundle(files)
-            with self.assertRaisesRegex(ValueError, 'inspection archive/stdout mismatch'):
-                self.run_native_cutoff(files, admission, helper, result, bundle)
-            self.assertTrue((result / 'custody-cutoff-failure.json').is_file())
-            self.assertTrue((result / 'custody-cutoff-drain.json').is_file())
-            self.assertTrue((result / 'custody-cutoff-inputs' / 'drain').is_dir())
-        finally:
-            import shutil
-            shutil.rmtree(result)
-            Path(helper['path']).unlink(missing_ok=True)
+        files, admission = self.fixture_files()
+        files['drain/inspection-1.txt'] = b'substituted captured inspection'
+        bundle = self.bundle(files)
+        with self.assertRaisesRegex(ValueError, 'inspection archive/stdout mismatch'):
+            self.run_native_cutoff(files, admission, helper, result, bundle)
+        self.assertTrue((result / 'custody-cutoff-failure.json').is_file())
+        # Python rejects the archive/body join before launching the Rust phase.
+        self.assertFalse((result / 'custody-cutoff-drain.json').exists())
+        self.assertTrue((result / 'custody-cutoff-inputs' / 'drain').is_dir())
+        self.assertEqual(hashlib.sha256((result / 'custody-cutoff-inputs' / 'drain' / 'inspection-1.txt').read_bytes()).hexdigest(),
+            hashlib.sha256(b'substituted captured inspection').hexdigest())
 
     def test_native_caller_requires_the_frozen_helper_pair(self):
         storage = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
         files, admission = self.fixture_files()
         bundle = self.bundle(files)
-        result = storage / 'results' / f'custody-cutoff-pin-{os.getpid()}'
+        result = storage / 'results' / f'custody-cutoff-pin-{os.getpid()}-{time.monotonic_ns()}'
         result.mkdir(mode=0o700)
-        try:
-            for pin in (None, dict(path=str(result / 'missing'), sha256='0' * 64)):
-                with self.subTest(pin=pin), self.assertRaisesRegex(ValueError, 'frozen cutoff invocation'):
-                    native.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()),
-                        cutoff_helper=pin, result_dir=result, data_root=storage, deadline=time.monotonic() + 60)
-        finally:
-            import shutil
-            shutil.rmtree(result)
+        helper = self.cutoff_pin()
+        self._cutoff_results.append((result, helper))
+        for pin in (None, dict(path=str(result / 'missing'), sha256='0' * 64)):
+            with self.subTest(pin=pin), self.assertRaisesRegex(ValueError, 'frozen cutoff invocation'):
+                native.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()),
+                    cutoff_helper=pin, result_dir=result, data_root=storage, deadline=time.monotonic() + 60)
 
     def test_cutoff_pin_rejects_fifo_without_blocking(self):
         storage = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
-        fifo = storage / 'results' / f'custody-cutoff-fifo-{os.getpid()}'
+        fifo = storage / 'results' / f'custody-cutoff-fifo-{os.getpid()}-{time.monotonic_ns()}'
         os.mkfifo(fifo, 0o500)
         owner = self.root / 'fifo-owner.json'
         owner.write_text(json.dumps({'cutoff_helper': dict(path=str(fifo), sha256='0' * 64)}))
@@ -553,33 +596,24 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
         helper = self.pinned_helper(storage, suffix='wrong-pin')
         owner = self.root / 'wrong-helper-owner.json'
         owner.write_text(json.dumps({'cutoff_helper': dict(path=helper['path'], sha256='0' * 64)}))
-        try:
-            with self.assertRaisesRegex(ValueError, 'cutoff executable changed or digest mismatch'):
-                native.host_admission(owner, self.root, storage, self.root / 'package', 'a' * 40, 'literal', 'debian')
-        finally:
-            Path(helper['path']).unlink(missing_ok=True)
+        with self.assertRaisesRegex(ValueError, 'cutoff executable changed or digest mismatch'):
+            native.host_admission(owner, self.root, storage, self.root / 'package', 'a' * 40, 'literal', 'debian')
 
     def test_cutoff_failure_reports_nonzero_and_malformed_pinned_helpers(self):
         storage = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
         files, admission = self.fixture_files()
-        self.captured_metadata(files)
         bundle = self.bundle(files)
         cases = (('nonzero', b'#!/bin/sh\nprintf "{}\\n"\nexit 7\n', 'Rust capture verifier refused'),
             ('malformed', b'#!/bin/sh\nprintf "not-json\\n"\nexit 0\n', 'Expecting value'))
         for suffix, payload, message in cases:
             helper = self.pinned_helper(storage, payload=payload, suffix=suffix)
-            result = storage / 'results' / f'custody-cutoff-{suffix}-{os.getpid()}'
+            result = storage / 'results' / f'custody-cutoff-{suffix}-{os.getpid()}-{time.monotonic_ns()}'
             result.mkdir(mode=0o700)
-            try:
-                with self.subTest(helper=suffix), self.assertRaisesRegex(ValueError, message):
-                    self.run_native_cutoff(files, admission, helper, result, bundle)
-                self.assertTrue((result / 'custody-cutoff-failure.json').is_file())
-                self.assertTrue((result / 'custody-cutoff-drain.json').is_file())
-                self.assertTrue((result / 'custody-cutoff-drain.stdout').is_file())
-            finally:
-                import shutil
-                shutil.rmtree(result)
-                Path(helper['path']).unlink(missing_ok=True)
+            with self.subTest(helper=suffix), self.assertRaisesRegex(ValueError, message):
+                self.run_native_cutoff(files, admission, helper, result, bundle)
+            self.assertTrue((result / 'custody-cutoff-failure.json').is_file())
+            self.assertTrue((result / 'custody-cutoff-drain.json').is_file())
+            self.assertTrue((result / 'custody-cutoff-drain.stdout').is_file())
 
 
 class GuestObservationControls(literal.NativeFixture, unittest.TestCase):
