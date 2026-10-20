@@ -189,7 +189,9 @@ fn main() {
         )
     })();
     match result {
-        Ok(count) => println!("collected {count} checks; run the separate complete-profile verifier"),
+        Ok(count) => {
+            println!("collected {count} checks; run the separate complete-profile verifier")
+        }
         Err(error) => {
             eprintln!("shard collection failed: {error}");
             std::process::exit(1);
@@ -236,7 +238,11 @@ mod tests {
         )
         .unwrap();
         fs::create_dir_all(root.join("source/xtask")).unwrap();
-        fs::copy(root.join("registry.json"), root.join("source/xtask/checks.json")).unwrap();
+        fs::copy(
+            root.join("registry.json"),
+            root.join("source/xtask/checks.json"),
+        )
+        .unwrap();
         root
     }
 
@@ -267,8 +273,12 @@ mod tests {
         let report = rust_final_validation(&root).unwrap();
         assert_eq!(report["status"], "passed");
         assert_eq!(report["check_count"], 2);
-        let mut ids: Vec<_> = report["checks_by_duration"].as_array().unwrap().iter()
-            .map(|row| row["check_id"].as_str().unwrap()).collect();
+        let mut ids: Vec<_> = report["checks_by_duration"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["check_id"].as_str().unwrap())
+            .collect();
         ids.sort_unstable();
         assert_eq!(ids, ["other-check", "semantic-mutants"]);
         assert!(
@@ -331,7 +341,10 @@ mod tests {
                 fs::write(directory.join("other-check.log"), b"changed").unwrap();
             }
             assert_eq!(collect(&root, "success").unwrap(), 2);
-            assert!(rust_final_validation(&root).is_err(), "Rust verifier accepted {defect}");
+            assert!(
+                rust_final_validation(&root).is_err(),
+                "Rust verifier accepted {defect}"
+            );
             fs::remove_dir_all(root).unwrap();
         }
     }
