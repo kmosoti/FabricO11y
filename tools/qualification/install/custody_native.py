@@ -4,6 +4,7 @@ import hashlib
 import fcntl
 import struct
 import json
+import math
 import os
 from pathlib import Path
 import pwd
@@ -538,8 +539,12 @@ def captured_cutoffs(archive, files, snapshots, admission, pin, result_dir, data
                 return result
             def nonfinite(value):
                 raise ValueError('nonfinite Rust report number: ' + value)
+            def finite_float(value):
+                number = float(value)
+                witness.require(math.isfinite(number), 'nonfinite Rust report number: ' + value)
+                return number
             result = json.loads(prefix.with_suffix('.stdout').read_bytes(),
-                object_pairs_hook=unique, parse_constant=nonfinite)
+                object_pairs_hook=unique, parse_constant=nonfinite, parse_float=finite_float)
             witness.require(isinstance(result, dict) and result.get('status') == 'structural-cutoff'
                 and result.get('candidate') == manifest['candidate'], 'Rust capture report mismatch')
             report.update(state='completed', result=result); outcomes.append(report)
