@@ -4,11 +4,16 @@ CI tool installation now has one pinned Rust entrypoint, `cargo xtask
 install-tool`; the Python `tools/resource_group.py` remains the required outer
 containment launcher. It enforces a fixed 1500-second deadline and 2 GiB DATA
 headroom floor, uses inherited `CARGO_HOME` and an owned private target, and
-retains logs/receipts while cleaning the target. Controls-03 recorded 48 unit
-and 9 integration tests passing, but its outer command exited 101 at Clippy
-(`items_after_test_module`); format-lint-01 later exited 0. Full fast migration
-verification remains pending. No actual package install or performance result
-is claimed. See the [installer boundary](architecture/engineering-evidence.md#pinned-ci-tool-install).
+retains logs/receipts while cleaning the target. At `6144147`, the combined
+migration run exited 0: 48 library tests, 9 installer tests, 3 receipt CLI tests,
+5 collector composition tests, 14 retained Python CI checks and Clippy.
+Injected removal of the duplicate-ID guard and target-identity checks each
+reached the intended failing assertion; restored source passed its controls.
+Earlier compile/lint and fixture failures remain in the
+[execution record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-rust-ci-tooling-migration-results-01),
+which also records the complete fast-profile result and its source revision.
+No actual package install or performance result is claimed. See the
+[installer boundary](architecture/engineering-evidence.md#pinned-ci-tool-install).
 
 Engineering tooling now includes an experimental Rust `xtask verify-receipts`
 command, sharing bounded descriptor-owned artifact reads with evidence preflight.
