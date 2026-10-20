@@ -8,6 +8,7 @@ from pathlib import Path
 import stat
 import struct
 import tarfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -401,6 +402,184 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
         self.assertEqual(raw, b'literal source\n')
         self.assertEqual(observed, dict(uuid=bytes(range(1, 17)).hex(), subvolume_id=257))
         self.assertEqual(requests, [0x8400941f, 0xd0009412])
+
+    def pinned_helper(self, storage, *, payload=None, suffix='actual'):
+        source = Path(os.environ['FABRIC_CUSTODY_CUTOFF_HELPER'])
+        raw = source.read_bytes() if payload is None else payload
+        expected = hashlib.sha256(raw).hexdigest()
+        if payload is None:
+            self.assertEqual(expected, os.environ['FABRIC_CUSTODY_CUTOFF_HELPER_SHA256'])
+        target = storage / 'results' / f'custody-caller-helper-{os.getpid()}-{suffix}'
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(raw)
+        target.chmod(0o500)
+        return dict(path=str(target), sha256=expected)
+
+    def captured_metadata(self, files):
+        fixture = json.loads((Path(__file__).resolve().parents[3] /
+            'docs/experiments/formal/fixtures/native-cutoff-projection-input.json').read_text())
+        inspection = (Path(__file__).resolve().parents[3] /
+            'docs/experiments/formal/fixtures/native-inspect-success.txt').read_bytes()
+        for phase, prior_phase in (('drain', 'installed'), ('reboot', 'drain')):
+            snap_name = phase + '/' + phase + '-snapshot.json'
+            snapshot = native.unpack(files[snap_name])
+            process = snapshot['candidate_process']
+            process['calibration'] = dict(realtime_ns=400, boottime_ns=350,
+                clock_ticks=100, start_ticks=10)
+            process['start_ns'], process['end_ns'] = 1, 1000000
+            current = copy.deepcopy(fixture)
+            current.pop('classification', None)
+            current['phase'] = phase
+            current['candidate'] = BINDING['candidate_frozen']
+            current['relative_phase_root'] = 'phase/' + phase
+            revision = 2 if phase == 'drain' else 4
+            current['observed_events'][1]['message'] = f'config revision={revision} paused=true interval_s=15'
+            artifact_index = 0
+            for command in current['commands']:
+                command['started_ns'] *= 1000
+                command['finished_ns'] *= 1000
+                if 'stdout_artifact' in command:
+                    artifact_index += 1
+                    command['stdout_artifact']['path'] = f'inspection-{artifact_index}.txt'
+                    files[phase + '/' + command['stdout_artifact']['path']] = inspection
+            for sample in current['process_observations']:
+                sample['started_ns'] *= 1000
+                sample['finished_ns'] *= 1000
+                sample.update(unit=process['unit'], pid=process['pid'], boot_id=process['boot_id'],
+                    invocation_id=process['invocation_id'], exe_sha256=process['exe_sha256'])
+                sample['calibration']['start_ticks'] = 10
+            prior_snapshot = 'installed/installed-snapshot.json' if prior_phase == 'installed' else 'drain/drain-snapshot.json'
+            prior_ack = native.unpack(files[prior_snapshot])['ack']
+            events = [dict(unit=process['unit'], pid=process['pid'], boot_id=process['boot_id'],
+                at_ns=50000, message='batch=4 metrics=1 logs=1 gaps=0 spool_bytes=1 log_backlog_bytes=0 acked_through=3'),
+                dict(unit=process['unit'], pid=process['pid'], boot_id=process['boot_id'], at_ns=150000,
+                    message=current['observed_events'][1]['message'])]
+            event_time = 232000
+            for source in snapshot['sources']:
+                if source['sequence'] > prior_ack:
+                    events.append(dict(unit=process['unit'], pid=process['pid'], boot_id=process['boot_id'],
+                        at_ns=event_time, message=f"delivery sequence={source['sequence']} sha256={source['sha256']} "
+                            f"status=ack committed_through={source['sequence']} elapsed_us=10"))
+                    event_time += 1000
+            current['observed_events'] = events
+            files[phase + '/commands.json'] = json.dumps(current['commands']).encode()
+            files[phase + '/process-observations.json'] = json.dumps(current['process_observations']).encode()
+            files[phase + '/ack-events.json'] = events
+            files[snap_name] = native.packed(snapshot)
+            journal = [dict(MESSAGE=event['message'], _PID=str(process['pid']),
+                _BOOT_ID=process['boot_id'].replace('-', ''), _SYSTEMD_UNIT=process['unit'],
+                _SYSTEMD_INVOCATION_ID=process['invocation_id'], __MONOTONIC_TIMESTAMP='123456',
+                _SYSTEMD_CGROUP='/system.slice/system-fabrico11y.slice/' + process['unit'],
+                _EXE='/usr/bin/fabric-node', _UID=str(os.getuid()), _GID=str(os.getgid()),
+                __REALTIME_TIMESTAMP=str(event['at_ns'] // 1000)) for event in events]
+            files[phase + '/journal.jsonl'] = ''.join(json.dumps(row) + '\n' for row in journal).encode()
+
+    def run_native_cutoff(self, files, admission, helper, result, bundle):
+        admission['cutoff_helper'] = helper
+        return native.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()),
+            cutoff_helper=helper, result_dir=result, data_root=Path(os.environ['FABRIC_STORAGE_ROOT']),
+            deadline=time.monotonic() + 60)
+
+    def test_native_caller_runs_actual_rust_helper_after_independent_admission(self):
+        storage = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
+        helper = self.pinned_helper(storage)
+        result = storage / 'results' / f'custody-cutoff-positive-{os.getpid()}'
+        result.mkdir(mode=0o700)
+        try:
+            files, admission = self.fixture_files()
+            self.captured_metadata(files)
+            bundle = self.bundle(files)
+            observed = self.run_native_cutoff(files, admission, helper, result, bundle)
+            self.assertEqual([item['state'] for item in observed['cutoff_outcomes']], ['completed', 'completed'])
+            self.assertTrue(all(item['bundle_sha256'] == observed['bundle_sha256']
+                and item['result']['status'] == 'structural-cutoff' for item in observed['cutoff_outcomes']))
+            self.assertFalse((result / 'custody-cutoff-inputs').exists())
+            self.assertTrue((result / 'custody-cutoff-drain.json').is_file())
+            self.assertTrue((result / 'custody-cutoff-reboot.json').is_file())
+        finally:
+            import shutil
+            shutil.rmtree(result)
+            Path(helper['path']).unlink(missing_ok=True)
+
+    def test_native_caller_retains_body_substitution_failure(self):
+        storage = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
+        helper = self.pinned_helper(storage)
+        result = storage / 'results' / f'custody-cutoff-body-{os.getpid()}'
+        result.mkdir(mode=0o700)
+        try:
+            files, admission = self.fixture_files()
+            self.captured_metadata(files)
+            files['drain/inspection-1.txt'] = b'substituted captured inspection'
+            bundle = self.bundle(files)
+            with self.assertRaisesRegex(ValueError, 'inspection archive/stdout mismatch'):
+                self.run_native_cutoff(files, admission, helper, result, bundle)
+            self.assertTrue((result / 'custody-cutoff-failure.json').is_file())
+            self.assertTrue((result / 'custody-cutoff-drain.json').is_file())
+            self.assertTrue((result / 'custody-cutoff-inputs' / 'drain').is_dir())
+        finally:
+            import shutil
+            shutil.rmtree(result)
+            Path(helper['path']).unlink(missing_ok=True)
+
+    def test_native_caller_requires_the_frozen_helper_pair(self):
+        storage = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
+        files, admission = self.fixture_files()
+        bundle = self.bundle(files)
+        result = storage / 'results' / f'custody-cutoff-pin-{os.getpid()}'
+        result.mkdir(mode=0o700)
+        try:
+            for pin in (None, dict(path=str(result / 'missing'), sha256='0' * 64)):
+                with self.subTest(pin=pin), self.assertRaisesRegex(ValueError, 'frozen cutoff invocation'):
+                    native.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()),
+                        cutoff_helper=pin, result_dir=result, data_root=storage, deadline=time.monotonic() + 60)
+        finally:
+            import shutil
+            shutil.rmtree(result)
+
+    def test_cutoff_pin_rejects_fifo_without_blocking(self):
+        storage = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
+        fifo = storage / 'results' / f'custody-cutoff-fifo-{os.getpid()}'
+        os.mkfifo(fifo, 0o500)
+        owner = self.root / 'fifo-owner.json'
+        owner.write_text(json.dumps({'cutoff_helper': dict(path=str(fifo), sha256='0' * 64)}))
+        try:
+            with self.assertRaisesRegex(ValueError, 'unsafe cutoff executable'):
+                native.host_admission(owner, self.root, storage, self.root / 'package', 'a' * 40, 'literal', 'debian')
+        finally:
+            fifo.unlink(missing_ok=True)
+
+    def test_host_admission_rejects_cutoff_helper_digest_mismatch(self):
+        storage = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
+        helper = self.pinned_helper(storage, suffix='wrong-pin')
+        owner = self.root / 'wrong-helper-owner.json'
+        owner.write_text(json.dumps({'cutoff_helper': dict(path=helper['path'], sha256='0' * 64)}))
+        try:
+            with self.assertRaisesRegex(ValueError, 'cutoff executable changed or digest mismatch'):
+                native.host_admission(owner, self.root, storage, self.root / 'package', 'a' * 40, 'literal', 'debian')
+        finally:
+            Path(helper['path']).unlink(missing_ok=True)
+
+    def test_cutoff_failure_reports_nonzero_and_malformed_pinned_helpers(self):
+        storage = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
+        files, admission = self.fixture_files()
+        self.captured_metadata(files)
+        bundle = self.bundle(files)
+        cases = (('nonzero', b'#!/bin/sh\nprintf "{}\\n"\nexit 7\n', 'Rust capture verifier refused'),
+            ('malformed', b'#!/bin/sh\nprintf "not-json\\n"\nexit 0\n', 'Expecting value'))
+        for suffix, payload, message in cases:
+            helper = self.pinned_helper(storage, payload=payload, suffix=suffix)
+            result = storage / 'results' / f'custody-cutoff-{suffix}-{os.getpid()}'
+            result.mkdir(mode=0o700)
+            try:
+                with self.subTest(helper=suffix), self.assertRaisesRegex(ValueError, message):
+                    self.run_native_cutoff(files, admission, helper, result, bundle)
+                self.assertTrue((result / 'custody-cutoff-failure.json').is_file())
+                self.assertTrue((result / 'custody-cutoff-drain.json').is_file())
+                self.assertTrue((result / 'custody-cutoff-drain.stdout').is_file())
+            finally:
+                import shutil
+                shutil.rmtree(result)
+                Path(helper['path']).unlink(missing_ok=True)
 
 
 class GuestObservationControls(literal.NativeFixture, unittest.TestCase):
