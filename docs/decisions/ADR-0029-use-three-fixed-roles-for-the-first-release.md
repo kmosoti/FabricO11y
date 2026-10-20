@@ -6,7 +6,8 @@ Accepted on 2026-10-11 by the owner (issue #49). Partially supersedes
 [ADR-0027](ADR-0027-ship-a-scoped-passkey-pwa-console.md): its scoped human,
 workload and delegated access is replaced by the roles below. Its passkey
 sign-in, bounded sessions, shell-only PWA, offline owner recovery and separate
-Spindle credential stand. Implementation and candidate acceptance are pending.
+Spindle credential stand. The implementation is present in the current source;
+candidate/package acceptance remains pending.
 
 ## Context
 

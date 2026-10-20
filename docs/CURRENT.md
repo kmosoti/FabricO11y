@@ -1,20 +1,6 @@
 # Current project state
 
-The verification engineering round adds a read-only Rust structural cutoff
-helper built from bounded borrowed inspection decoding, a typed lifecycle
-transition and an ordered exact-byte ACK join. Native capture now retains actual
-command intervals, pinned inspection text and process observations. The
-[adapter boundary](architecture/engineering-evidence.md#structural-lifecycle-cutoff)
-keeps raw journal binding and independent Python custody oracles separate.
-Captured-metadata projection now composes inside that Rust helper; eight
-integration tests and scoped Clippy passed. Raw native sender checks now cover
-Batch/configuration records as well as delivery; 74 affected native tests passed.
-All 20 fast checks and the documentation check passed at `02f5b6c`; native caller
-adoption remains pending.
-The independent native-profile experiment rejected a forged cached-view draft;
-the corrected raw-byte join and unchanged default path passed 82 affected controls.
-The [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-primitive-composition-results-01) retain measurements, counterexamples and the scratch cleanup correction.
-This work grants no package acceptance credit; alpha acceptance remains owner-paused.
+Alpha and package acceptance remain owner-paused under [issue #59](https://github.com/kmosoti/FabricO11y/issues/59). Verification-engineering continuation is authorized and tracked in [PR #102](https://github.com/kmosoti/FabricO11y/pull/102); its provenance pins are product source `b1e5874`, frozen package source `43150db`, `origin/main` baseline `f001175`, and engineering source `31cf809`. These pins describe the current work only: they do not resume acceptance or claim a future check outcome.
 
 Owner stop checkpoint (2026-10-18): the native producer now applies pause2,
 waits for a stable acknowledged prefix, captures the independent stopped state
