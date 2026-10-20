@@ -26,11 +26,12 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
         self._cutoff_pin = None
         self._cutoff_results = []
         self._standalone_helpers = []
+        self._preserve_cutoff_diagnostics = False
 
     def tearDown(self):
         # Keep the complete invocation bundle and Rust stdout/stderr when a
         # testcase fails; those files are the evidence needed to diagnose it.
-        if getattr(self._outcome, 'success', False):
+        if getattr(self._outcome, 'success', False) and not self._preserve_cutoff_diagnostics:
             import shutil
             for result, helper in self._cutoff_results:
                 shutil.rmtree(result, ignore_errors=True)
@@ -47,7 +48,19 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                 suffix='fixture-' + str(os.getpid()) + '-' + str(id(self)))
         return self._cutoff_pin
 
-    def admit_transfer(self, bundle, admission, expected_sha):
+    def show_cutoff_diagnostics(self, result):
+        self._preserve_cutoff_diagnostics = True
+        print('preserved custody cutoff diagnostics: ' + str(result))
+        for phase in ('drain', 'reboot'):
+            for suffix in ('.stdout', '.stderr'):
+                path = result / ('custody-cutoff-' + phase + suffix)
+                if path.is_file():
+                    with path.open('rb') as stream:
+                        body = stream.read(8193)
+                    print(f'--- {path.name} (first 8192 bytes) ---')
+                    print(body[:8192].decode('utf-8', 'replace'))
+
+    def admit_transfer(self, bundle, admission, expected_sha, *, preserve_on_error=False):
         storage = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
         pin = self.cutoff_pin()
         admission['cutoff_helper'] = pin
@@ -57,8 +70,13 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
         import shutil
         shutil.copyfile(bundle, archived)
         self._cutoff_results.append((result, pin))
-        return native.admit_transfer(archived, admission, expected_sha,
-            cutoff_helper=pin, result_dir=result, data_root=storage, deadline=time.monotonic() + 60)
+        try:
+            return native.admit_transfer(archived, admission, expected_sha,
+                cutoff_helper=pin, result_dir=result, data_root=storage, deadline=time.monotonic() + 60)
+        except BaseException:
+            if preserve_on_error:
+                self.show_cutoff_diagnostics(result)
+            raise
 
     def reset_fixture(self):
         import shutil
@@ -196,7 +214,8 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
     def test_literal_complete_bundle_is_admitted(self):
         files, admission = self.fixture_files()
         bundle = self.bundle(files)
-        self.assertEqual(self.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()))['phases'],
+        self.assertEqual(self.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()),
+            preserve_on_error=True)['phases'],
                          ['drain', 'installed', 'prepare', 'reboot'])
 
     def test_coherently_rehashed_missing_or_forged_configuration_is_refused(self):
@@ -425,7 +444,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'credential metadata/hash drift'):
                         self.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()))
                 else:
-                    self.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()))
+                    self.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()), preserve_on_error=True)
             self.reset_fixture()
 
     def test_btrfs_uapi_buffers_use_literal_kernel_layout(self):
@@ -525,14 +544,19 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                 __REALTIME_TIMESTAMP=str(event['at_ns'] // 1000)) for event in events]
             files[phase + '/journal.jsonl'] = ''.join(json.dumps(row) + '\n' for row in journal).encode()
 
-    def run_native_cutoff(self, files, admission, helper, result, bundle):
+    def run_native_cutoff(self, files, admission, helper, result, bundle, *, preserve_on_error=False):
         admission['cutoff_helper'] = helper
         import shutil
         shutil.copyfile(bundle, result / 'native-bundle.tar')
         self._cutoff_results.append((result, helper))
-        return native.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()),
-            cutoff_helper=helper, result_dir=result, data_root=Path(os.environ['FABRIC_STORAGE_ROOT']),
-            deadline=time.monotonic() + 60)
+        try:
+            return native.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()),
+                cutoff_helper=helper, result_dir=result, data_root=Path(os.environ['FABRIC_STORAGE_ROOT']),
+                deadline=time.monotonic() + 60)
+        except BaseException:
+            if preserve_on_error:
+                self.show_cutoff_diagnostics(result)
+            raise
 
     def test_native_caller_runs_actual_rust_helper_after_independent_admission(self):
         storage = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
@@ -541,7 +565,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
         result.mkdir(mode=0o700)
         files, admission = self.fixture_files()
         bundle = self.bundle(files)
-        observed = self.run_native_cutoff(files, admission, helper, result, bundle)
+        observed = self.run_native_cutoff(files, admission, helper, result, bundle, preserve_on_error=True)
         self.assertEqual([item['state'] for item in observed['cutoff_outcomes']], ['completed', 'completed'])
         self.assertTrue(all(item['bundle_sha256'] == observed['bundle_sha256']
             and item['result']['status'] == 'structural-cutoff' for item in observed['cutoff_outcomes']))
