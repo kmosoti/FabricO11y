@@ -7,7 +7,7 @@ use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::OpenOptionsExt;
-use std::os::unix::process::ExitStatusExt;
+use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -153,22 +153,56 @@ fn run_cargo(
     let stderr = log
         .try_clone()
         .map_err(|error| format!("cannot duplicate install log: {error}"))?;
-    let timeout_arg = format!("{}.{:03}s", timeout.as_secs(), timeout.subsec_millis());
     let started = Instant::now();
-    let status = Command::new("timeout")
-        .args(["--signal=KILL", timeout_arg.as_str()])
-        .arg(cargo)
+    let mut child = Command::new(cargo)
         .args(arguments)
         .stdout(Stdio::from(log))
         .stderr(Stdio::from(stderr))
-        .status()
-        .map_err(|error| format!("bounded Cargo invocation unavailable: {error}"))?;
-    if started.elapsed() >= timeout
-        && (status.code() == Some(137) || status.signal() == Some(libc::SIGKILL))
-    {
-        Ok(CommandResult::TimedOut)
-    } else {
-        Ok(CommandResult::Exited(status.code().unwrap_or(1)))
+        .process_group(0)
+        .spawn()
+        .map_err(|error| format!("Cargo invocation unavailable: {error}"))?;
+    loop {
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|error| format!("cannot observe Cargo process: {error}"))?
+        {
+            return Ok(CommandResult::Exited(
+                status
+                    .code()
+                    .or_else(|| status.signal().map(|signal| -signal))
+                    .unwrap_or(1),
+            ));
+        }
+        if started.elapsed() >= timeout {
+            let process_group = i32::try_from(child.id())
+                .map_err(|_| "Cargo process ID exceeds platform range")?;
+            // SAFETY: the child was placed in a new process group whose ID is its PID.
+            let killed = unsafe { libc::kill(-process_group, libc::SIGKILL) };
+            if killed != 0 {
+                let error = std::io::Error::last_os_error();
+                if error.raw_os_error() != Some(libc::ESRCH) {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(format!("cannot stop timed-out Cargo process group: {error}"));
+                }
+                if let Some(status) = child
+                    .try_wait()
+                    .map_err(|error| format!("cannot observe Cargo process: {error}"))?
+                {
+                    return Ok(CommandResult::Exited(
+                        status
+                            .code()
+                            .or_else(|| status.signal().map(|signal| -signal))
+                            .unwrap_or(1),
+                    ));
+                }
+            }
+            child
+                .wait()
+                .map_err(|error| format!("cannot reap timed-out Cargo process: {error}"))?;
+            return Ok(CommandResult::TimedOut);
+        }
+        std::thread::sleep(Duration::from_millis(25));
     }
 }
 
@@ -218,7 +252,7 @@ fn install_at(
     timeout: Duration,
 ) -> Result<(), InstallError> {
     let before = disk_usage(&storage).map_err(InstallError::not_run)?;
-    require_disk_headroom(before.free).map_err(InstallError::not_run)?;
+    require_disk_headroom(before.2).map_err(InstallError::not_run)?;
 
     let output = storage.join("results/ci-tool-install");
     fs::create_dir_all(&output).map_err(|error| {
@@ -282,19 +316,30 @@ fn install_at(
         .filter(|error| error.kind() != std::io::ErrorKind::NotFound)
         .map(|error| format!("cannot remove Cargo target {}: {error}", target_path.display()));
     receipt["cleanup_absent"] = json!(cleanup_error.is_none() && !target_path.exists());
-    let disk_after = disk_usage(&storage).map_err(InstallError::failed)?;
-    receipt["disk_after"] = json!({"total":disk_after.0,"used":disk_after.1,"free":disk_after.2});
-
-    let operation = match (operation, cleanup_error) {
-        (Err(error), _) => Err(error),
-        (Ok(()), Some(error)) => Err(error),
-        (Ok(()), None) => Ok(()),
+    let disk_after_error = match disk_usage(storage) {
+        Ok(disk_after) => {
+            receipt["disk_after"] = json!({"total":disk_after.0,"used":disk_after.1,"free":disk_after.2});
+            None
+        }
+        Err(error) => {
+            receipt["disk_after"] = Value::Null;
+            Some(format!("cannot inspect DATA storage after install: {error}"))
+        }
     };
-    if let Err(error) = &operation {
+
+    let mut failure = match (operation, cleanup_error) {
+        (Err(error), Some(cleanup)) => Some(format!("{error}; {cleanup}")),
+        (Err(error), None) | (Ok(()), Some(error)) => Some(error),
+        (Ok(()), None) => None,
+    };
+    if let Some(error) = disk_after_error {
+        failure = Some(failure.map_or_else(|| error.clone(), |prior| format!("{prior}; {error}")));
+    }
+    if let Some(error) = &failure {
         receipt["error"] = json!(error);
     }
     write_receipt(&receipt_path, &receipt).map_err(InstallError::failed)?;
-    operation.map_err(InstallError::failed)
+    failure.map_or(Ok(()), |error| Err(InstallError::failed(error)))
 }
 
 /// `cargo xtask install-tool <crate> <version>`.
