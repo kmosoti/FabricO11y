@@ -4,14 +4,14 @@
   "expected_outcomes_are_independent_of_implementation": true,
   "retired_python_test_mapping": {
     "LiveCandidateTests.test_clean_live_candidate_identity_is_accepted": ["positive-fast", "positive-extended"],
-    "LiveCandidateTests.test_input_changes_after_receipts_are_rejected": ["dirty-checkout", "stale-commit", "dirty-flag"],
+    "LiveCandidateTests.test_input_changes_after_receipts_are_rejected": ["dirty-checkout"],
     "ReceiptTests.test_complete_evidence_is_accepted": ["positive-extended"],
     "ReceiptTests.test_missing_receipt_is_not_success": ["missing-receipt"],
     "ReceiptTests.test_missing_or_tampered_log_is_not_success": ["missing-log", "modified-log"],
-    "ReceiptTests.test_failure_and_incomplete_cannot_be_relabelled_by_wrapper": ["wrong-result", "nonzero-exit", "null-exit"],
+    "ReceiptTests.test_failure_and_incomplete_cannot_be_relabelled_by_wrapper": ["wrong-result", "nonzero-exit", "nonzero-exit-three", "null-exit", "unavailable-result"],
     "ReceiptTests.test_stale_dirty_or_different_command_receipt_is_rejected": ["stale-commit", "dirty-flag", "wrong-command", "wrong-profile"],
     "ReceiptTests.test_running_marker_overrides_an_old_success": ["running-marker", "dangling-marker-symlink"],
-    "ReceiptTests.test_invalid_or_duplicate_ids_and_empty_profile_are_refused": ["invalid-registry-command", "duplicate-registry-id", "empty-profile"],
+    "ReceiptTests.test_invalid_or_duplicate_ids_and_empty_profile_are_refused": ["invalid-registry-command", "invalid-registry-id", "duplicate-registry-id", "empty-profile"],
     "ReceiptTests.test_symlinked_evidence_is_refused": ["symlink-receipt", "symlink-log"]
   },
   "cases": [
@@ -34,6 +34,8 @@
     {"id":"wrong-log-name","profile":"extended","mutation":"change-output-log-name","exit_code":1,"basis":"receipt log name is the canonical check-id leaf"},
     {"id":"wrong-version","profile":"extended","mutation":"set-receipt-version-two","exit_code":1,"basis":"only receipt version one is accepted"},
     {"id":"nonzero-exit","profile":"extended","mutation":"set-exit-code-one","exit_code":1,"basis":"successful evidence requires exact integer exit code zero"},
+    {"id":"nonzero-exit-three","profile":"extended","mutation":"set-exit-code-three","exit_code":1,"basis":"incomplete code three cannot be reclassified as a complete pass"},
+    {"id":"unavailable-result","profile":"extended","mutation":"set-result-environment-unavailable-with-null-exit","exit_code":1,"basis":"unavailable evidence is not a successful receipt"},
     {"id":"null-exit","profile":"extended","mutation":"set-exit-code-null","exit_code":1,"basis":"successful evidence requires exact integer exit code zero"},
     {"id":"boolean-exit","profile":"extended","mutation":"set-exit-code-false","exit_code":1,"basis":"JSON booleans are not integer exit statuses"},
     {"id":"float-exit","profile":"extended","mutation":"set-exit-code-zero-float","exit_code":1,"basis":"JSON floating-point values are not integer exit statuses"},
@@ -51,6 +53,7 @@
     {"id":"aggregate-budget","profile":"fast","mutation":"pad-twenty-valid-receipts-past-64mib-json-budget","exit_code":1,"basis":"aggregate retained JSON budget fails closed; twenty individually bounded fast receipts can exceed the 64 MiB aggregate cap"},
     {"id":"duration-sum-overflow","profile":"fast","mutation":"set-durations-to-u64-max-and-one","exit_code":1,"basis":"total duration arithmetic fails closed on overflow"},
     {"id":"invalid-registry-command","profile":"extended","mutation":"set-command-argument-to-number-in-source-fixture","exit_code":1,"basis":"registry commands contain only string arguments"},
+    {"id":"invalid-registry-id","profile":"extended","mutation":"set-id-to-noncanonical-path","exit_code":1,"basis":"registry check IDs use the bounded lowercase identifier grammar"},
     {"id":"duplicate-registry-id","profile":"extended","mutation":"duplicate-selected-registry-id-in-source-fixture","exit_code":1,"basis":"registry check IDs are unique"},
     {"id":"empty-profile","profile":"qualification","mutation":"select-profile-with-no-checks-in-source-fixture","exit_code":1,"basis":"selected profile must contain at least one registered check"}
   ]
