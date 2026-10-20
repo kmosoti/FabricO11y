@@ -202,7 +202,7 @@ jobs:
           SHARD_RESULT: ${{ needs.shards.result }}
         run: python3 -B tools/resource_group.py -- cargo run --locked -p xtask --example merge_verification_receipts -- --shard-result "$SHARD_RESULT" "$FABRIC_STORAGE_ROOT/results/verification-pilot/shards" "$FABRIC_STORAGE_ROOT/results/verification-pilot/combined"
       - name: Verify complete extended receipts at this revision
-        run: python3 -B tools/resource_group.py -- python3 -B tools/ci/verify_receipts.py --profile extended --receipts "$FABRIC_STORAGE_ROOT/results/verification-pilot/combined"
+        run: python3 -B tools/resource_group.py -- cargo xtask verify-receipts --profile extended --receipts "$FABRIC_STORAGE_ROOT/results/verification-pilot/combined"
       - name: Keep aggregate evidence and runner facts
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

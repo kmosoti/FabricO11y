@@ -89,17 +89,21 @@ Its [contract](experiments/formal/engineering-evidence-protocol.md) and
 preserve the distinction between structural consistency and acceptance.
 The [two-runner verification pilot](experiments/formal/verification-shards-protocol.md)
 completed both shards and the independent final validators at the same tested
-source `faf148ec`. Its finite wall time was 41.98% lower while combined runner time was
+source `faf148ec`. That historical run used the Python receipt validator. Its
+finite wall time was 41.98% lower while combined runner time was
 10.32% higher. The workers had different CPU, cache and setup conditions, so
 this observation does not establish a universal speedup. The first aggregation
 failure remains preserved; the corrected DATA-backed collector and unchanged
-Python validator are recorded in the
+historical Python validator are recorded in the
 [completed paired-shards results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-shards-results-01).
 The original [failed aggregation](https://github.com/kmosoti/FabricO11y/actions/runs/39090541570)
 is retained alongside the corrected result.
-Canonical workflow adoption preserves all ten registered extended commands and
-their final current-source validation. Its current-head hosted check remains
-required before merge.
+Current workflow adoption replaces the Python final-validator invocation with
+the Rust `cargo xtask verify-receipts` command. The exact checked-in contract
+fixture supplies expected decisions; the historical Python baseline and
+differential remain historical evidence only. Preserve all ten registered
+extended commands and their final current-source validation. Its current-head
+hosted check remains required before merge.
 No current deployment profile is qualified or release tag published.
 
 ## Implemented
