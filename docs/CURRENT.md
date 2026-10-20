@@ -5,8 +5,13 @@ Hosted browser defect receipts now have a Rust grader,
 dispositions and the registered API-cache/enrollment assertions. Its
 [adoption protocol](experiments/formal/browser-supervisor-protocol.md#rust-defect-receipt-grader-adoption)
 explicitly distinguishes stricter JSON/type admission from legacy parity.
-The existing workspace test gate runs the CLI controls. Verification of this
-change is pending; no new hosted browser or product acceptance is claimed.
+The existing workspace test gate runs the CLI controls. At `1d9b633`, all
+20 fast checks, same-source Rust receipt verification and the three
+documentation commands exited 0. Six focused CLI test functions, ten retained
+Python CI tests and the deliberately broken cleanup-proof guard were checked;
+the original source was restored and passed. Earlier diagnostic/lint failures
+remain in the [migration record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-rust-ci-tooling-migration-results-01#browser-defect-grader-continuation).
+No new hosted browser or product acceptance is claimed for this grader.
 
 CI tool installation now has one pinned Rust entrypoint, `cargo xtask
 install-tool`; the Python `tools/resource_group.py` remains the required outer
