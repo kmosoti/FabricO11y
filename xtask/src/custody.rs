@@ -2,6 +2,7 @@
 //! authenticity and the independent custody oracle remain separate obligations.
 /// Pure cutoff/coverage primitives; finite controls do not attest their inputs.
 pub mod cutoff;
+mod capture;
 mod inspection;
 #[cfg(test)]
 mod kernel_controls;
@@ -192,6 +193,15 @@ pub fn verify_plan(root: &Path, path: &str, pin: &str, candidate: &str) -> Resul
     hex::<20>(candidate)?;
     let mut files = ArtifactStore::new(root)?;
     let plan = projection::normalize(files.plan(path, pin)?, candidate)?;
+    verify_value(&mut files, plan, candidate)
+}
+
+fn verify_value(
+    files: &mut ArtifactStore,
+    plan: Value,
+    candidate: &str,
+) -> Result<Value, String> {
+    hex::<20>(candidate)?;
     keys(
         &plan,
         &[
@@ -259,7 +269,7 @@ pub fn verify_plan(root: &Path, path: &str, pin: &str, candidate: &str) -> Resul
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    let trace = trace(&plan, &mut files)?;
+    let trace = trace(&plan, files)?;
     let verified = verify_quiescent_prefix_composite(
         &trace,
         incarnation,
@@ -283,25 +293,52 @@ pub fn cli(arguments: Vec<String>) -> u8 {
             require(
                 matches!(
                     flag.as_str(),
-                    "--root" | "--plan" | "--plan-sha256" | "--candidate"
+                    "--root" | "--plan" | "--plan-sha256" | "--capture-manifest"
+                        | "--manifest-sha256" | "--candidate"
                 ),
                 "unknown argument",
             )?;
             let value = arguments.next().ok_or("missing argument value")?;
             require(flags.insert(flag, value).is_none(), "duplicate argument")?;
         }
-        require(flags.len() == 4, "root/plan/plan-sha256/candidate required")?;
+        let plan_mode = flags.contains_key("--plan") || flags.contains_key("--plan-sha256");
+        let capture_mode =
+            flags.contains_key("--capture-manifest") || flags.contains_key("--manifest-sha256");
+        require(!(plan_mode && capture_mode), "plan and capture modes cannot be mixed")?;
+        require(flags.len() == 4, "exactly one custody-cutoff input mode required")?;
+        require(
+            flags.contains_key("--root") && flags.contains_key("--candidate"),
+            "root and candidate required",
+        )?;
+        require(
+            (plan_mode
+                && flags.contains_key("--plan")
+                && flags.contains_key("--plan-sha256"))
+                || (capture_mode
+                    && flags.contains_key("--capture-manifest")
+                    && flags.contains_key("--manifest-sha256")),
+            "plan path/pin or capture manifest path/pin required",
+        )?;
         crate::preflight::require_limits()?;
         require(
             std::env::var("FABRIC_STORAGE_ROOT").as_deref() == Ok(flags["--root"].as_str()),
             "root differs from launcher DATA",
         )?;
-        verify_plan(
-            Path::new(&flags["--root"]),
-            &flags["--plan"],
-            &flags["--plan-sha256"],
-            &flags["--candidate"],
-        )
+        if plan_mode {
+            verify_plan(
+                Path::new(&flags["--root"]),
+                &flags["--plan"],
+                &flags["--plan-sha256"],
+                &flags["--candidate"],
+            )
+        } else {
+            capture::verify_capture(
+                Path::new(&flags["--root"]),
+                &flags["--capture-manifest"],
+                &flags["--manifest-sha256"],
+                &flags["--candidate"],
+            )
+        }
     })();
     match result {
         Ok(output) => {
