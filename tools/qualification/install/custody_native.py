@@ -4,10 +4,13 @@ import hashlib
 import fcntl
 import struct
 import json
+import math
 import os
 from pathlib import Path
 import pwd
 import re
+import resource
+import shutil
 import stat
 import subprocess
 import sys
@@ -26,6 +29,10 @@ PENDING = 'accept-upgrade-pending-literal'
 UNREAD = 'accept-upgrade-unread-literal'
 NATIVE_PROFILE = dict(revision=1, paused=False, logs=[SOURCE, '/var/log/fabric-accept/denied.log'],
                       metric_interval_s=15)
+def expected_profile(phase):
+    revision = {'prepare': 1, 'before': 1, 'installed': 1, 'drain': 2, 'reboot': 4}[phase]
+    return dict(NATIVE_PROFILE, revision=revision, paused=phase in ('drain', 'reboot'))
+
 sha = lambda raw: hashlib.sha256(raw).hexdigest()
 
 
@@ -43,6 +50,7 @@ class Guest:
     def __init__(self, config, phase):
         witness.require(os.geteuid() == 0 and Path('/run/cloud-init').is_dir(), 'disposable guest root required')
         self.config, self.phase, self.commands = config, phase, []
+        self.process_observations = []
         self.started = time.monotonic()
         self.deadline = float(os.environ['FABRIC_NATIVE_PHASE_DEADLINE'])
         witness.require(config['fixture_paths'] == [SOURCE] and config['spool_root'] == str(ROOT)
@@ -68,12 +76,78 @@ class Guest:
         remaining = self.deadline - time.monotonic()
         witness.require(remaining > 0, 'native phase deadline')
         started = time.monotonic()
+        started_ns = time.time_ns()
+        started_mono_ns = time.monotonic_ns()
         result = subprocess.run(argv, capture_output=True, text=True, timeout=min(30, remaining))
-        record = dict(argv=argv, exit=result.returncode, stdout=result.stdout, stderr=result.stderr, elapsed_seconds=time.monotonic()-started)
+        finished_mono_ns = time.monotonic_ns()
+        finished_ns = time.time_ns()
+        elapsed_ns = finished_mono_ns - started_mono_ns
+        record = dict(argv=argv, exit=result.returncode, stdout=result.stdout, stderr=result.stderr,
+                      started_ns=started_ns, finished_ns=finished_ns, elapsed_ns=elapsed_ns,
+                      elapsed_seconds=time.monotonic()-started)
+        if argv[:2] == ['fabricctl', 'inspect'] and result.returncode == 0:
+            # Pin the exact captured text record; subprocess(text=True) may normalize newlines.
+            stdout_bytes = result.stdout.encode('utf-8')
+            leaf = 'command-' + str(len(self.commands) + 1).zfill(4) + '-stdout.txt'
+            artifact = self.output / leaf
+            with artifact.open('xb') as stream:
+                stream.write(stdout_bytes)
+            os.chmod(artifact, 0o600)
+            record['stdout_artifact'] = dict(path=leaf, sha256=sha(stdout_bytes),
+                                             encoding='utf-8-from-subprocess-text')
         self.commands.append(record)
         self.save('commands.json', self.commands)
         witness.require(not check or result.returncode == 0, 'observer command failed: ' + argv[0])
         return record
+
+    def transition(self, revision, paused, *, require_applied, issue=True):
+        if issue:
+            action = 'pause' if paused else 'resume'
+            self.command(['fabricctl', 'admin', '/root/accept/admin.conf', 'node', action, 'spindle-1'])
+        deadline = min(self.deadline, time.monotonic() + 30)
+        status = 'paused' if paused else 'active'
+        while time.monotonic() < deadline:
+            record = self.command(['fabricctl', 'admin', '/root/accept/admin.conf', 'node', 'list'])
+            rows = json.loads(record['stdout'])['nodes']
+            matches = [row for row in rows if row.get('name') == 'spindle-1']
+            witness.require(len(matches) == 1, 'native control inventory identity')
+            row = matches[0]
+            witness.require(all(type(row[key]) is int for key in
+                ('desired_revision', 'applied_revision', 'metric_interval_s')),
+                'native control integer fields')
+            witness.require(row['desired_revision'] == revision and row['status'] == status
+                and row['config_error'] is None and row['logs'] == NATIVE_PROFILE['logs']
+                and row['metric_interval_s'] == NATIVE_PROFILE['metric_interval_s'],
+                            'native desired profile transition')
+            if not require_applied or row['applied_revision'] == revision:
+                return row
+            time.sleep(min(.25, deadline - time.monotonic()))
+        witness.require(False, 'native applied profile deadline')
+
+    def drain_prefix(self, minimum=-1, *, exact=None):
+        deadline = min(self.deadline, time.monotonic() + 40)
+        previous = None
+        while time.monotonic() < deadline:
+            record = self.command(['fabricctl', 'inspect', '/etc/fabrico11y/node.conf'], check=False)
+            if record['exit']:
+                witness.require(any(record['stderr'].endswith(message) for message in (
+                    'log rotated during inspection; retry\n', 'log append or rotation in progress; retry inspection\n',
+                    'log append completed during inspection; retry\n', 'log failure recorded during inspection; retry\n',
+                    'sealed log reclaimed during inspection; retry\n', 'log rotated or reclaimed during inspection; retry\n',
+                    'log append in progress or recovery required; retry inspection\n')),
+                    'native spool inspection failed')
+                time.sleep(min(.25, deadline - time.monotonic()))
+                continue
+            values = dict(field.split('=', 1) for field in record['stdout'].split())
+            witness.require(values['recovery_required'] == 'false'
+                and values['interrupted_append'] == 'false', 'native spool requires recovery')
+            highwater = int(values['next_sequence']) - 1
+            matches = highwater == exact if exact is not None else highwater > minimum
+            if matches and highwater == previous and int(values['acked_through']) >= highwater:
+                return highwater
+            previous = highwater
+            time.sleep(min(.25, deadline - time.monotonic()))
+        witness.require(False, 'native fixed-prefix ACK deadline')
 
     def observe_stop(self):
         account = self.command(['getent', 'passwd', 'fabricolly'])['stdout']
@@ -173,7 +247,7 @@ class Guest:
             archive.add(ROOT, arcname='spool', recursive=True)
         snapshot = witness.stopped_snapshot(ROOT, receipt, sources, fixture_paths=(SOURCE,))
         witness.require(snapshot['applied_configuration'] is not None and json.loads(snapshot['applied_configuration'])
-            == NATIVE_PROFILE,
+            == expected_profile(name),
             'registered native applied configuration missing or changed')
         self.save(name + '-snapshot.json', snapshot)
         self.save(name + '-receipt.json', receipt)
@@ -209,10 +283,12 @@ class Guest:
         raise ValueError('query page ceiling')
 
     def process(self):
+        observation_started_ns = time.time_ns()
         show = self.command(['systemctl', 'show', UNITS[1], '-p', 'MainPID', '-p', 'ControlGroup', '-p', 'InvocationID'])
         values = dict(line.split('=', 1) for line in show['stdout'].splitlines())
         pid = int(values['MainPID']); proc = Path('/proc') / str(pid)
         info = (proc / 'stat').read_text(); uid = (proc / 'status').read_text()
+        cgroup = (proc / 'cgroup').read_text()
         now, uptime, ticks = time.time_ns(), time.clock_gettime_ns(time.CLOCK_BOOTTIME), os.sysconf('SC_CLK_TCK')
         start_ticks = int(info.rsplit(')', 1)[1].split()[19])
         start_ns = max(0, now - uptime + start_ticks * 1000000000 // ticks - 1000000000)
@@ -220,13 +296,22 @@ class Guest:
         witness.require(executable == self.config['node_sha256'] and pid > 0
             and re.fullmatch('[0-9a-f]{32}', values['InvocationID']) and values['InvocationID'] != '0' * 32
             and values['ControlGroup'] == '/system.slice/system-fabrico11y.slice/' + UNITS[1]
-            and (proc / 'cgroup').read_text().strip() == '0::' + values['ControlGroup']
+            and cgroup.strip() == '0::' + values['ControlGroup']
             and all(int(value) == pwd.getpwnam('fabricolly').pw_uid for value in re.search(r'^Uid:\s+(.+)$', uid, re.M)[1].split())
             and all(int(value) == pwd.getpwnam('fabricolly').pw_gid for value in re.search(r'^Gid:\s+(.+)$', uid, re.M)[1].split()),
             'candidate executable/service identity')
-        return dict(**self.config['binding'], unit=UNITS[1], pid=pid, boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
-                    start_ns=start_ns, end_ns=0, proc_stat=info, status=uid, exe_sha256=executable, show=show, invocation_id=values['InvocationID'],
-                    calibration=dict(realtime_ns=now, boottime_ns=uptime, clock_ticks=ticks, start_ticks=start_ticks))
+        calibration = dict(realtime_ns=now, boottime_ns=uptime, clock_ticks=ticks,
+                           start_ticks=start_ticks)
+        process = dict(**self.config['binding'], unit=UNITS[1], pid=pid,
+                       boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
+                       start_ns=start_ns, end_ns=0, proc_stat=info, status=uid,
+                       exe_sha256=executable, show=show, invocation_id=values['InvocationID'],
+                       calibration=calibration)
+        observation_finished_ns = time.time_ns()
+        self.process_observations.append(dict(process, started_ns=observation_started_ns,
+            finished_ns=observation_finished_ns, cgroup=cgroup))
+        self.save('process-observations.json', self.process_observations)
+        return process
 
     def finish(self):
         files = {path.name: dict(sha256=sha(path.read_bytes()), stat=witness.identity(path.lstat()))
@@ -295,9 +380,26 @@ def guest_main(config, phase):
             if phase == 'drain':
                 guest.command(['systemctl', 'start', *UNITS])
             process = guest.process()
-            # Stop collection first, then drain the fixed committed prefix during normal stop.
+            # Readiness precedes the explicit pause and fixed-prefix drain.
             deadline = min(guest.deadline - 40, time.monotonic() + 40)
             wait_readiness(guest, deadline)
+            current = guest.process()
+            witness.require(current['pid'] == process['pid'] and current['invocation_id'] == process['invocation_id'] and current['proc_stat'].rsplit(')', 1)[1].split()[19]
+                == process['proc_stat'].rsplit(')', 1)[1].split()[19], 'candidate process changed before quiesce')
+            if phase == 'reboot':
+                prior = unpack(json.loads((guest.base / 'drain' / 'drain-snapshot.json').read_text()))
+                prior_ack = prior['ack']
+                guest.transition(3, False, require_applied=True, issue=False)
+                # This active-revision prefix is only a lower bound; a commit may race pause application.
+                guest.drain_prefix(prior_ack)
+            current = guest.process()
+            witness.require(current['pid'] == process['pid'] and current['invocation_id'] == process['invocation_id']
+                and current['proc_stat'].rsplit(')', 1)[1].split()[19]
+                == process['proc_stat'].rsplit(')', 1)[1].split()[19], 'candidate process changed before quiesce')
+            revision = 2 if phase == 'drain' else 4
+            guest.transition(revision, True, require_applied=True)
+            # The applied_revision response confirms pause application; the journal marker is checked later.
+            guest.drain_prefix()
             current = guest.process()
             witness.require(current['pid'] == process['pid'] and current['invocation_id'] == process['invocation_id'] and current['proc_stat'].rsplit(')', 1)[1].split()[19]
                 == process['proc_stat'].rsplit(')', 1)[1].split()[19], 'candidate process changed before stop')
@@ -311,6 +413,11 @@ def guest_main(config, phase):
             guest.save('ack-events.json', events)
             guest.command(['systemctl', 'stop', UNITS[0]])
             snapshot = guest.capture(phase, process)
+            # Inspect the stopped cutoff before restarting the server or changing the node profile.
+            guest.command(['fabricctl', 'inspect', '/etc/fabrico11y/node.conf'])
+            guest.command(['systemctl', 'start', UNITS[0]])
+            # Resume exactly once while the node remains stopped.
+            guest.transition(3 if phase == 'drain' else 5, False, require_applied=False)
             if phase == 'reboot':
                 read = lambda phase, name: unpack(json.loads((guest.base / phase / name).read_text()))
                 before, installed, drain = (read(phase, name + '-snapshot.json') for phase, name in
@@ -319,9 +426,10 @@ def guest_main(config, phase):
                 witness.conserve(before, installed, drain, dict(before=read('prepare', 'baseline.json'),
                     after_drain=read('drain', 'rows.json'), after_reboot=rows, pending_body=PENDING, unread_body=UNREAD,
                     boot_before=before['boot_id'], boot_after=snapshot['boot_id']), read('drain', 'ack-events.json'),
-                    after_reboot=snapshot, reboot_ack_events=events)
+                    after_reboot=snapshot, reboot_ack_events=events, native_configuration_transition=True)
                 guest.save('conservation.json', dict(status='accepted', required_checkpoints=4))
-            guest.command(['systemctl', 'start', *(UNITS if phase == 'reboot' else (UNITS[0],))])
+            if phase == 'reboot':
+                guest.command(['systemctl', 'start', UNITS[1]])
         else:
             raise ValueError('unknown native phase')
     except Exception as error:
@@ -335,7 +443,7 @@ def observed_events(raw, process):
     events = []
     for event in map(json.loads, raw.splitlines()):
         if event.get('_PID') != str(process['pid']): continue
-        if event.get('MESSAGE', '').startswith('delivery sequence='):
+        if event.get('MESSAGE', '').startswith(('delivery sequence=', 'batch=', 'config revision=')):
             witness.require(event.get('_SYSTEMD_UNIT') == process['unit'] and event.get('_EXE') == '/usr/bin/fabric-node'
                 and event.get('_SYSTEMD_INVOCATION_ID') == process['invocation_id']
                 and event.get('_SYSTEMD_CGROUP') == '/system.slice/system-fabrico11y.slice/' + process['unit']
@@ -347,9 +455,115 @@ def observed_events(raw, process):
     return events
 
 
+def pinned_cutoff(pin, data):
+    """Read the explicitly admitted executable; no search or runtime compilation."""
+    witness.require(isinstance(pin, dict) and set(pin) == {'path', 'sha256'}
+        and isinstance(pin['path'], str) and isinstance(pin['sha256'], str)
+        and re.fullmatch('[0-9a-f]{64}', pin['sha256']), 'cutoff helper pin required')
+    path = Path(pin['path'])
+    witness.require(path.is_absolute() and path.resolve(strict=True) == path
+        and path.is_relative_to(data / 'results'), 'cutoff helper outside DATA results')
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC), 'rb') as stream:
+        before = os.fstat(stream.fileno())
+        witness.require(stat.S_ISREG(before.st_mode) and before.st_uid == os.getuid()
+            and before.st_nlink == 1 and before.st_mode & 0o111 and before.st_size <= 64 * 1024**2,
+            'unsafe cutoff executable')
+        raw = stream.read(before.st_size + 1)
+        witness.require(len(raw) == before.st_size and sha(raw) == pin['sha256']
+            and witness.identity(before) == witness.identity(os.fstat(stream.fileno()))
+            == witness.identity(path.lstat()), 'cutoff executable changed or digest mismatch')
+    return raw
+
+
+def captured_cutoffs(archive, files, snapshots, admission, pin, result_dir, data, deadline, bundle_sha256):
+    """Transport original admitted members; all projection/cutoff decisions are Rust."""
+    data, result_dir = Path(data), Path(result_dir)
+    witness.require(str(data) == os.environ['FABRIC_STORAGE_ROOT']
+        and result_dir.resolve(strict=True) == result_dir and result_dir.is_relative_to(data / 'results')
+        and result_dir.stat().st_uid == os.getuid() and stat.S_IMODE(result_dir.stat().st_mode) == 0o700,
+        'cutoff result/root mismatch')
+    base = result_dir / 'custody-cutoff-inputs'
+    base.mkdir(mode=0o700)  # Exclusive: never clean a directory inherited from another attempt.
+    identity = (base.stat().st_dev, base.stat().st_ino)
+    def create(path, mode=0o600):
+        return os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, mode), 'wb')
+    def write(path, raw, mode=0o600):
+        with create(path, mode) as stream:
+            stream.write(raw)
+    raw = pinned_cutoff(pin, data)
+    executable = base / 'helper'
+    write(executable, raw, 0o500)
+    witness.require(sha(executable.read_bytes()) == pin['sha256'], 'helper snapshot mismatch')
+    outcomes, total = [], 0
+    for phase, prior in (('drain', 'installed'), ('reboot', 'drain')):
+        directory = base / phase; directory.mkdir(mode=0o700)
+        def member(leaf, limit):
+            nonlocal total
+            witness.require(isinstance(leaf, str) and re.fullmatch('[A-Za-z0-9][A-Za-z0-9._-]{0,127}', leaf), 'unsafe capture leaf')
+            source = files[phase + '/' + leaf]
+            witness.require(source['item'].size <= limit and total + source['item'].size <= 64 * 1024**2, 'capture input bound')
+            body = archive.extractfile(source['item']).read(limit + 1)
+            witness.require(len(body) == source['item'].size and sha(body) == source['sha256'], 'capture member changed')
+            total += len(body); write(directory / leaf, body)
+            return dict(path=str((directory / leaf).relative_to(data)), sha256=sha(body))
+        manifest = dict(version=1, candidate=admission['binding']['candidate_frozen'], phase=phase,
+            prior_ack=snapshots[prior]['ack'], relative_phase_root=str(directory.relative_to(data)))
+        for key, leaf in (('commands', 'commands.json'), ('observed_events', 'ack-events.json'),
+                ('process_observations', 'process-observations.json'), ('stopped_snapshot', phase + '-snapshot.json')):
+            manifest[key] = member(leaf, 4 * 1024**2)
+        for command in json.loads((directory / 'commands.json').read_bytes()):
+            if 'stdout_artifact' in command:
+                artifact = command['stdout_artifact']; copied = member(artifact['path'], 4096)
+                witness.require(copied['sha256'] == artifact['sha256'], 'inspection archive/stdout mismatch')
+        plan = (json.dumps(manifest, separators=(',', ':')) + '\n').encode()
+        write(directory / 'manifest.json', plan)
+        report = dict(phase=phase, candidate=manifest['candidate'], helper=pin, manifest_sha256=sha(plan),
+            bundle_sha256=bundle_sha256, input_root=str(directory), state='started')
+        prefix = result_dir / ('custody-cutoff-' + phase)
+        def limits(): resource.setrlimit(resource.RLIMIT_FSIZE, (65536, 65536))
+        try:
+            remaining = min(60, deadline - time.monotonic())
+            witness.require(remaining > 0, 'cutoff invocation deadline')
+            with create(prefix.with_suffix('.stdout')) as out, create(prefix.with_suffix('.stderr')) as err:
+                proc = subprocess.run([str(executable), 'custody-cutoff', '--root', str(data),
+                    '--capture-manifest', str((directory / 'manifest.json').relative_to(data)),
+                    '--manifest-sha256', sha(plan), '--candidate', manifest['candidate']],
+                    stdout=out, stderr=err, timeout=remaining, preexec_fn=limits, check=False)
+            report['exit'] = proc.returncode
+            witness.require(proc.returncode == 0, 'Rust capture verifier refused')
+            def unique(items):
+                result = {}
+                for key, value in items:
+                    witness.require(key not in result, 'duplicate Rust report key')
+                    result[key] = value
+                return result
+            def nonfinite(value):
+                raise ValueError('nonfinite Rust report number: ' + value)
+            def finite_float(value):
+                number = float(value)
+                witness.require(math.isfinite(number), 'nonfinite Rust report number: ' + value)
+                return number
+            result = json.loads(prefix.with_suffix('.stdout').read_bytes(),
+                object_pairs_hook=unique, parse_constant=nonfinite, parse_float=finite_float)
+            witness.require(isinstance(result, dict) and result.get('status') == 'structural-cutoff'
+                and result.get('candidate') == manifest['candidate'], 'Rust capture report mismatch')
+            report.update(state='completed', result=result); outcomes.append(report)
+        except BaseException as error:
+            report.update(state='failed', error=type(error).__name__, message=str(error))
+            raise
+        finally:
+            write(prefix.with_suffix('.json'), (json.dumps(report, sort_keys=True) + '\n').encode())
+    witness.require(base.resolve(strict=True) == base and (base.stat().st_dev, base.stat().st_ino) == identity,
+        'cutoff scratch ownership changed')
+    shutil.rmtree(base)
+    return outcomes
+
+
 # Host admission freezes owner inputs before boot and rechecks them at transfer.
 def host_admission(owner_path, source_root, storage, package, source_commit, run_id, family):
     owner = json.loads(owner_path.read_text())
+    cutoff_pin = owner.get('cutoff_helper')
+    pinned_cutoff(cutoff_pin, storage)
     git = lambda *args: subprocess.check_output(['git', '-C', str(source_root), *args], text=True).strip()
     witness.require(not git('status', '--porcelain') and git('rev-parse', 'HEAD') == owner['harness_commit'], 'clean harness source mismatch')
     subprocess.run(['git', '-C', str(source_root), 'merge-base', '--is-ancestor', owner['harness_commit'], 'origin/main'], check=True)
@@ -365,6 +579,7 @@ def host_admission(owner_path, source_root, storage, package, source_commit, run
              '9c83d196a5ccf85e00d3e9becc79032f3fd57d7aab64a396690803bef841aa5a',
              storage / 'results/candidate-build-query-gap-01/package-inspection.json':
              'ad3c597a10d9841548165c47ddd7d504095db94063223e1f93a73a0d887d30b8'}
+    fixed[Path(cutoff_pin['path'])] = cutoff_pin['sha256']
     for path, expected in fixed.items(): witness.require(sha(path.read_bytes()) == expected, 'owner package/admission receipt mismatch')
     deb, rpm = (json.loads((directory / 'receipt.json').read_text()) for directory in (debdir, rpmdir))
     frozen, canonical = 'b1e5874fbf9c6feb611d98ed40386ac44a703fe1', '43150dbd5cff9e0bdb0082997e796978c659d8af'
@@ -392,12 +607,15 @@ def host_admission(owner_path, source_root, storage, package, source_commit, run
         fixed[path] = expected_hash
     return dict(binding=dict(run_id=run_id, candidate_frozen=frozen, candidate_package_sha256=expected['package_sha256'],
         package_source_commit=canonical, harness_commit=owner['harness_commit']), source_hashes=source_hashes,
-        owner_sha256=sha(owner_path.read_bytes()), inputs={str(path): value for path, value in fixed.items()},
+        cutoff_helper=cutoff_pin, owner_sha256=sha(owner_path.read_bytes()), inputs={str(path): value for path, value in fixed.items()},
         node_sha256=rpm['payload_identity']['usr/bin/fabric-node']['sha256'], fixture_paths=[SOURCE], spool_root=str(ROOT))
 
 
-def admit_transfer(bundle, admission, guest_sha256, *, control=None):
+def admit_transfer(bundle, admission, guest_sha256, *, control=None, cutoff_helper=None, result_dir=None, data_root=None, deadline=None):
     """Inspect the labelled archive; never substitute an extracted root for guest input."""
+    if not control:
+        witness.require(isinstance(cutoff_helper, dict) and cutoff_helper == admission.get('cutoff_helper')
+            and result_dir is not None and data_root is not None and deadline is not None, 'frozen cutoff invocation required')
     witness.require(bundle.stat().st_size <= 1024**3, 'native transfer overhead exceeded')
     witness.require(sha(bundle.read_bytes()) == guest_sha256, 'guest/host transfer digest mismatch')
     expected_phases = {'prepare'} if control else {'prepare', 'installed', 'drain', 'reboot'}
@@ -461,7 +679,7 @@ def admit_transfer(bundle, admission, guest_sha256, *, control=None):
                         if relative == 'applied-config.json':
                             witness.applied_configuration(content, info, receipt['service_identity'])
                             witness.require(content == snapshot.get('applied_configuration')
-                                and json.loads(content) == NATIVE_PROFILE, 'native applied configuration profile mismatch')
+                                and json.loads(content) == expected_profile(phase), 'native applied configuration profile mismatch')
                         if relative.endswith('.faj'): raw_files[relative] = content
             payloads = []
             for filename in sorted(name for name in raw_files if name.startswith('sealed-')) + ['batches.faj']:
@@ -507,6 +725,7 @@ def admit_transfer(bundle, admission, guest_sha256, *, control=None):
                 witness.require(observed['active']['exit'] == 3 and observed['show']['exit'] == 0
                     and values['MainPID'] == '0' and values['ActiveState'] in ('inactive', 'failed')
                     and not any(value.strip() for value in observed['members'].values()), 'unconfirmed native stop')
+        cutoff_outcomes = []
         if not control:
             witness.require(read('reboot/conservation.json') == dict(status='accepted', required_checkpoints=4), 'native conservation absent')
             def query_rows(phase, prefix):
@@ -518,7 +737,7 @@ def admit_transfer(bundle, admission, guest_sha256, *, control=None):
                 dict(before=query_rows('prepare', 'before'), after_drain=query_rows('drain', 'after_drain'),
                     after_reboot=query_rows('reboot', 'after_reboot'), pending_body=PENDING, unread_body=UNREAD,
                     boot_before=snapshots['prepare']['boot_id'], boot_after=snapshots['reboot']['boot_id']),
-                read('drain/ack-events.json'), after_reboot=snapshots['reboot'], reboot_ack_events=read('reboot/ack-events.json'))
+                read('drain/ack-events.json'), after_reboot=snapshots['reboot'], reboot_ack_events=read('reboot/ack-events.json'), native_configuration_transition=True)
             credentials = [read(phase + '/' + ('before' if phase == 'prepare' else phase) + '-credential.json') for phase in ('prepare', 'installed', 'drain', 'reboot')]
             witness.require(credentials[0] == credentials[1] == credentials[2], 'credential metadata/hash drift')
             for path, observed in credentials[3]['files'].items():
@@ -526,7 +745,18 @@ def admit_transfer(bundle, admission, guest_sha256, *, control=None):
                 if observed['btrfs_identity'] is not None and observed['btrfs_identity'] == prior['btrfs_identity']:
                     observed['stat'][0] = prior['stat'][0]  # Comparison copy only; original record remains retained.
             witness.require(credentials[3] == credentials[0], 'credential metadata/hash drift')
-    return dict(bundle_sha256=sha(bundle.read_bytes()), bytes=bundle.stat().st_size, phases=sorted(expected_phases))
+            try:
+                cutoff_outcomes = captured_cutoffs(archive, files, snapshots, admission, cutoff_helper,
+                    result_dir, data_root, deadline, guest_sha256)
+            except BaseException as error:
+                report = dict(state='failed', bundle_sha256=guest_sha256, helper=cutoff_helper,
+                    error=type(error).__name__, message=str(error))
+                path = Path(result_dir) / 'custody-cutoff-failure.json'
+                with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'w') as stream:
+                    json.dump(report, stream)
+                raise
+    return dict(bundle_sha256=sha(bundle.read_bytes()), bytes=bundle.stat().st_size,
+        phases=sorted(expected_phases), cutoff_outcomes=cutoff_outcomes)
 
 
 if __name__ == '__main__':

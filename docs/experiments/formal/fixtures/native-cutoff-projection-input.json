@@ -1,0 +1,174 @@
+{
+  "classification": "SYNTHETIC CONTROL INPUT; second-inspection digest corrected to exact captured fixture bytes; not a guest capture, timestamp observation, or acceptance evidence",
+  "phase": "drain",
+  "prior_ack": 0,
+  "candidate": "0123456789abcdef0123456789abcdef01234567",
+  "relative_phase_root": "phase/drain",
+  "process_observations": [
+    {
+      "started_ns": 10,
+      "finished_ns": 20,
+      "start_ns": 4,
+      "end_ns": 0,
+      "unit": "fabrico11y-node.service",
+      "pid": 42,
+      "boot_id": "00112233-4455-6677-8899-aabbccddeeff",
+      "invocation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "exe_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "calibration": {
+        "realtime_ns": 100,
+        "boottime_ns": 50,
+        "clock_ticks": 100,
+        "start_ticks": 10
+      }
+    },
+    {
+      "started_ns": 205,
+      "finished_ns": 210,
+      "start_ns": 7,
+      "end_ns": 0,
+      "unit": "fabrico11y-node.service",
+      "pid": 42,
+      "boot_id": "00112233-4455-6677-8899-aabbccddeeff",
+      "invocation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "exe_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "calibration": {
+        "realtime_ns": 300,
+        "boottime_ns": 250,
+        "clock_ticks": 100,
+        "start_ticks": 10
+      }
+    }
+  ],
+  "commands": [
+    {
+      "argv": [
+        "fabricctl",
+        "admin",
+        "/root/accept/admin.conf",
+        "node",
+        "pause",
+        "spindle-1"
+      ],
+      "exit": 0,
+      "started_ns": 100,
+      "finished_ns": 200
+    },
+    {
+      "argv": [
+        "fabricctl",
+        "inspect",
+        "/etc/fabrico11y/node.conf"
+      ],
+      "exit": 0,
+      "started_ns": 220,
+      "finished_ns": 221,
+      "stdout_artifact": {
+        "path": "inspection.txt",
+        "sha256": "d803830890265d0267d19e815eca19541d5c4be46062159d40c4b806699b9157",
+        "encoding": "utf-8-from-subprocess-text"
+      }
+    },
+    {
+      "argv": [
+        "fabricctl",
+        "inspect",
+        "/etc/fabrico11y/node.conf"
+      ],
+      "exit": 0,
+      "started_ns": 230,
+      "finished_ns": 231,
+      "stdout_artifact": {
+        "path": "inspection.txt",
+        "sha256": "d803830890265d0267d19e815eca19541d5c4be46062159d40c4b806699b9157",
+        "encoding": "utf-8-from-subprocess-text"
+      }
+    },
+    {
+      "argv": [
+        "systemctl",
+        "stop",
+        "fabrico11y-node.service"
+      ],
+      "exit": 0,
+      "started_ns": 240,
+      "finished_ns": 250
+    },
+    {
+      "argv": [
+        "fabricctl",
+        "inspect",
+        "/etc/fabrico11y/node.conf"
+      ],
+      "exit": 0,
+      "started_ns": 260,
+      "finished_ns": 261,
+      "stdout_artifact": {
+        "path": "inspection.txt",
+        "sha256": "d803830890265d0267d19e815eca19541d5c4be46062159d40c4b806699b9157",
+        "encoding": "utf-8-from-subprocess-text"
+      }
+    },
+    {
+      "argv": [
+        "fabricctl",
+        "admin",
+        "/root/accept/admin.conf",
+        "node",
+        "resume",
+        "spindle-1"
+      ],
+      "exit": 0,
+      "started_ns": 270,
+      "finished_ns": 280
+    }
+  ],
+  "observed_events": [
+    {
+      "unit": "fabrico11y-node.service",
+      "pid": 42,
+      "boot_id": "00112233-4455-6677-8899-aabbccddeeff",
+      "at_ns": 50,
+      "message": "batch=1 metrics=47 logs=4 gaps=0 spool_bytes=5666 log_backlog_bytes=0 acked_through=1"
+    },
+    {
+      "unit": "fabrico11y-node.service",
+      "pid": 42,
+      "boot_id": "00112233-4455-6677-8899-aabbccddeeff",
+      "at_ns": 150,
+      "message": "config revision=2 paused=true interval_s=15"
+    },
+    {
+      "unit": "fabrico11y-node.service",
+      "pid": 42,
+      "boot_id": "00112233-4455-6677-8899-aabbccddeeff",
+      "at_ns": 232,
+      "message": "delivery sequence=1 sha256=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa status=ack committed_through=1 elapsed_us=10"
+    }
+  ],
+  "stopped_snapshot": {
+    "node_id": "5e97d1a36ba9e6f6b8a1ed085fac10b7",
+    "generation": 1,
+    "sources": [
+      {
+        "sequence": 1,
+        "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    ],
+    "candidate_process": {
+      "unit": "fabrico11y-node.service",
+      "pid": 42,
+      "boot_id": "00112233-4455-6677-8899-aabbccddeeff",
+      "start_ns": 5,
+      "end_ns": 285,
+      "invocation_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "exe_sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "calibration": {
+        "realtime_ns": 400,
+        "boottime_ns": 350,
+        "clock_ticks": 100,
+        "start_ticks": 10
+      }
+    }
+  }
+}

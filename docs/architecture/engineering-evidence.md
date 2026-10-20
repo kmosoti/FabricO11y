@@ -29,6 +29,65 @@ The [architecture review skill](../../.agents/skills/architecture-review/SKILL.m
 routes unresolved design decisions to focused experiments and documentation work.
 Existing Python product oracles stay independent; no MCP server is required.
 
+## Structural lifecycle cutoff
+
+`xtask custody-cutoff` composes bounded inspection text, a typed pause/drain/stop
+transition and an ordered exact-byte ACK join. It reads pinned inspection bytes
+through the existing artifact store; parsing never reopens an admitted path.
+Raw and JSON bodies share its aggregate budget. Version1 accepts direct normalized
+observations; version2 projects captured command/process/journal metadata in Rust
+through the same owned reader and cutoff checker. The projection validates
+ordered streams without sorting and keeps fixed lifecycle selection state;
+only final trace/ACK/source output collections grow with input. It does not
+retain parallel interval or index vectors. The decoder borrows its node
+identity and uses fixed field slots. The ACK join requires ordered inputs and
+uses constant auxiliary state, checking sender/window context in a lazy pass.
+Capture-manifest mode reads digest-pinned original JSON members through Rust's
+owned artifact reader, constructs the existing version2 input and reuses that
+projection and cutoff path. Each JSON member is capped at 4 MiB, inspection text
+at 4,096 bytes and aggregate retained input at 64 MiB. The direct version1 plan
+interface remains supported.
+
+```mermaid
+flowchart LR
+    Capture[Pinned manifest and original JSON] --> Reader[Rust manifest reader]
+    Reader --> V2[Existing version2 projection]
+    V1[Direct version1 plan] --> Plan[Normalized plan]
+    V2 --> Plan
+    Plan --> Inspect[Typed inspection]
+    Inspect --> Cutoff[Pause drain stop transition]
+    Plan --> Join[Ordered source and ACK join]
+    Cutoff --> Result[Structural cutoff]
+    Join --> Result
+    Result --> Recheck[Recheck input identities]
+```
+
+Command intervals remain intervals. Journal emission times are separate inputs;
+local stdout supplies none. The result cannot attest a producer, capture
+completeness or process stop. Raw native binding and the independent Python
+custody oracle remain mandatory. Guest capture records real command bounds,
+pinned inspection text and process observations without deciding cutoff policy.
+The native adapter applies its executable/service/InvocationID/cgroup/UID/GID
+join to recognized Batch, configuration and delivery journal records; filtering
+by PID alone does not establish that binding. The event output schema is unchanged.
+The independent conservation oracle has an explicit native transition mode:
+four stopped profiles are fixed at revision1/active, revision1/active,
+revision2/paused and revision4/paused. It reparses retained configuration bytes
+and joins their digest, size and original private file metadata; a cached parsed
+view cannot override those bytes. The default static-profile rule is unchanged.
+The guest effect adapter now requests the registered pause before observing a
+stable acknowledged prefix, records a stopped inspection, and requests resume
+while collection remains stopped. Reboot repeats the distinct revision sequence.
+These operational waits do not replace the Rust cutoff or independent raw joins;
+the host Python transport and independent Python archive/custody oracle remain
+until an independently validated migration exists. Rust capture-reader controls
+are finite engineering evidence only. Caller integration validation and the clean
+merged-harness requirement remain; no matching native capture or acceptance exists.
+The [adapter contract](../experiments/formal/native-cutoff-adapter-protocol.md)
+and [primitive protocol](../experiments/formal/primitive-composition-protocol.md)
+separate finite controls from native caller adoption and alpha acceptance.
+The [finite composition results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-primitive-composition-results-01) retain the measured variants and counterexamples.
+
 ## Native browser subgroup entry
 
 The [registered supervisor correction](../experiments/formal/browser-supervisor-protocol.md)

@@ -202,6 +202,16 @@ These are operating-profile claims; none has recorded target-profile qualificati
 | QUAL-INSTALL | Installation behavior | running-installation acceptance | [Exact installation run 03](../experiments/formal/installation-release-run-03.md), frozen `a5dbda7a`: four fresh Debian/Fedora baseline and upgrade/reboot/removal cells passed; all six named package controls detected; companion absence and separate stopped-disk cleanup recorded. Historical [legacy-cgroup run 01](../experiments/formal/installation-acceptance-run-01.md) remains inconclusive | Tested on these exact packages; not deployment qualification |
 | QUAL-H | Harness correctness | runner limits, rate oracle | Existing suites plus [console-command admission](../experiments/formal/console-command-admission-run-01.md): initial native HTTP 429 preserved, independent legacy schedule rejected, 50 targeted controls and native successor smoke exited 0. [Console provenance controls](../experiments/formal/console-provenance-protocol.md) at `76d9f2b`: nine primitive, eight adapter and one readiness controls plus legacy suites exited 0; skipped-hash, snapshot-inventory and copy-race failures remain preserved. At `7508a989`, native browser entry composition and a finite real-browser transport diagnostic exercised release ordering and witnessed query cancellation; cancellations receive no HTTP-header credit, while every received response retains all original header checks. The workflow binds both browser calls to the caller-pinned native helper. [R3 exposure controls](../experiments/benchmarks/soak-protocol-r3.md) retain their own execution requirements | Finite harness evidence; current acceptance remains tracked by [#33](https://github.com/kmosoti/FabricO11y/issues/33), with no browser or soak credit from these source controls |
 
+For `QUAL-H`, the [pinned custody caller](../experiments/formal/native-cutoff-adapter-protocol.md)
+adds finite original-JSON transport and Rust cutoff controls. The complete adapter
+suite at `75a4bba` ran 147 tests with exit 0, including the actual helper behind
+independent raw archive and custody checks. This does not authenticate a native
+guest or satisfy `QUAL-INSTALL`; a matching native capture remains pending.
+The full 20-check fast profile and documentation checks exited 0 at `c033613`.
+The helper-output overflow regression first reproduced an accepted `1e999`
+number before that revision's finite-float correction; its records are linked
+from the [continuation](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-primitive-composition-results-01).
+
 ## Server self-observation (ADR-0026)
 
 The [fresh-owner guide protocol](../experiments/formal/owner-walkthrough-protocol.md)
