@@ -171,6 +171,7 @@ impl ArtifactStore {
             } else {
                 Retention::Digest
             },
+            RAW_LIMIT,
         )
     }
 
@@ -178,15 +179,26 @@ impl ArtifactStore {
     /// evidence admission: callers must establish its source/receipt authority.
     /// Reading, hashing, bounds and identity rechecks are identical to `read`.
     pub fn observe_json(&mut self, path: &str) -> Result<&Value, String> {
-        self.read_inner(path, None, Retention::Json)?;
+        self.read_inner(path, None, Retention::Json, RAW_LIMIT)?;
         self.json(path)
     }
 
     /// Retain a small raw body through the same pinned, descriptor-owned read pass.
     /// The returned slice borrows the invocation-local cache; no second open is performed.
     pub fn read_bytes(&mut self, path: &str, expected: &str) -> Result<&[u8], String> {
+        self.read_bytes_limit(path, expected, RAW_LIMIT as usize)
+    }
+
+    /// Retain a pinned raw body with a descriptor-size ceiling before allocation.
+    pub fn read_bytes_limit(
+        &mut self,
+        path: &str,
+        expected: &str,
+        limit: usize,
+    ) -> Result<&[u8], String> {
         require(hex(expected, 64), "invalid SHA-256")?;
-        self.read_inner(path, Some(expected), Retention::Raw)?;
+        require(limit as u64 <= RAW_LIMIT, "raw body limit exceeds 4 MiB")?;
+        self.read_inner(path, Some(expected), Retention::Raw, limit as u64)?;
         self.records
             .get(path)
             .and_then(|record| record.raw.as_deref())
@@ -198,6 +210,7 @@ impl ArtifactStore {
         path: &str,
         expected: Option<&str>,
         retention: Retention,
+        raw_limit: u64,
     ) -> Result<(), String> {
         parts(path)?;
         if let Some(record) = self.records.get(path) {
@@ -211,8 +224,8 @@ impl ArtifactStore {
                 Retention::Raw => {
                     let raw = record.raw.as_ref().ok_or("raw bytes were not retained")?;
                     require(
-                        raw.len() as u64 <= RAW_LIMIT,
-                        "cached raw body exceeds 4 MiB",
+                        raw.len() as u64 <= raw_limit,
+                        "cached raw body exceeds caller limit",
                     )?;
                 }
             }
@@ -235,7 +248,10 @@ impl ArtifactStore {
         match retention {
             Retention::Digest => {}
             Retention::Json => self.admit_json(info.len())?,
-            Retention::Raw => self.admit_raw(info.len())?,
+            Retention::Raw => {
+                require(info.len() <= raw_limit, "raw body exceeds caller limit")?;
+                self.admit_raw(info.len())?;
+            }
         }
         let mut digest = crate::digest::Sha256::new();
         let mut payload = if matches!(retention, Retention::Digest) {
@@ -480,6 +496,8 @@ mod tests {
         std::fs::write(root.join("small"), b"123").unwrap();
         let sparse = std::fs::File::create(root.join("large")).unwrap();
         sparse.set_len(RAW_LIMIT + 1).unwrap();
+        let capture = std::fs::File::create(root.join("capture-large")).unwrap();
+        capture.set_len(4097).unwrap();
         let mut smaller = ArtifactStore::with_json_budget(&root, 2).unwrap();
 
         assert!(
@@ -504,6 +522,13 @@ mod tests {
             "per-body oversize rejects before reading"
         );
         assert!(default_budget.digest("large").is_none());
+        let mut capture_reader = ArtifactStore::new(&root).unwrap();
+        assert!(capture_reader
+            .read_bytes_limit("capture-large", &crate::sha256_hex(b"unused"), 4096)
+            .is_err());
+        assert_eq!(capture_reader.bytes_hashed(), 0, "capture limit rejects before reading");
+        assert_eq!(capture_reader.total_bytes, 0, "capture limit rejects before charging bytes");
+        assert!(capture_reader.digest("capture-large").is_none());
         std::fs::remove_dir_all(root).unwrap();
     }
 

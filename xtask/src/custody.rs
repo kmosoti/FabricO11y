@@ -157,13 +157,13 @@ fn trace(
                 )?;
                 keys(&value["input"], &["path", "sha256"])?;
                 let at_ns = command_interval(value, &mut previous_finish)?;
-                let bytes = files.read_bytes(
-                    text(&value["input"], "path")?,
-                    text(&value["input"], "sha256")?,
-                )?;
-                if let Some(limit) = inspection_limit {
-                    require(bytes.len() <= limit, "inspection body exceeds capture bound")?;
-                }
+                let path = text(&value["input"], "path")?;
+                let pin = text(&value["input"], "sha256")?;
+                let bytes = if let Some(limit) = inspection_limit {
+                    files.read_bytes_limit(path, pin, limit)?
+                } else {
+                    files.read_bytes(path, pin)?
+                };
                 let raw = std::str::from_utf8(bytes).map_err(|_| "inspection UTF-8 required")?;
                 let parsed = inspection::parse_inspection(raw)
                     .map_err(|error| format!("inspection: {error:?}"))?;
