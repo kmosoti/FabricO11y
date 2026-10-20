@@ -1691,7 +1691,9 @@ mod shard_workflow_contract {
             validator_step,
             "run: python3 -B tools/resource_group.py -- cargo xtask verify-receipts --profile extended --receipts \"$FABRIC_STORAGE_ROOT/results/verification-pilot/combined\"",
         ) {
-            return Err("aggregate must invoke the contained Rust complete-profile verifier".into());
+            return Err(
+                "aggregate must invoke the contained Rust complete-profile verifier".into(),
+            );
         }
         let status_step = aggregate_body
             .split_once("      - name: Require both matrix shards to have succeeded\n")
