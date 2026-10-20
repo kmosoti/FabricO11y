@@ -59,6 +59,19 @@ workflow; the separate sharding experiment remains available by manual dispatch.
 
 ## Pinned actions and toolchains
 
+### Pinned CI tool installation
+
+Use `cargo xtask install-tool <crate> <version>` for the pinned Cargo tool
+install path. It preserves inherited `CARGO_HOME`, requires at least 2 GiB
+available DATA space, gives Cargo a private owned target, and applies a fixed
+1500-second deadline. Timeout cleanup kills the process group and reaps Cargo;
+the target is removed and a failed log/receipt retained for review. Outputs live
+under `$FABRIC_STORAGE_ROOT/results/ci-tool-install/` as `<crate>.log` and
+`<crate>.json`. Invoke this command through the still-required outer
+`python3 tools/resource_group.py -- ...` launcher. These controls do not claim
+that a package was installed or establish performance. See the
+[registered protocol](../../docs/experiments/formal/rust-tool-installer-protocol.md).
+
 Every `uses:` reference names a full commit SHA with its tag in a trailing
 comment, so a moved or re-tagged upstream ref cannot change a job silently.
 Resolve a replacement with `git ls-remote https://github.com/OWNER/REPO

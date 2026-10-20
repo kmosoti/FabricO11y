@@ -29,6 +29,18 @@ The [architecture review skill](../../.agents/skills/architecture-review/SKILL.m
 routes unresolved design decisions to focused experiments and documentation work.
 Existing Python product oracles stay independent; no MCP server is required.
 
+## Pinned CI tool install
+
+`cargo xtask install-tool <crate> <version>` is the effectful Rust boundary for
+one explicitly pinned Cargo installation. It inherits `CARGO_HOME`, requires
+2 GiB available DATA headroom, and assigns Cargo a private target under owned
+scratch. A fixed 1500-second timeout kills the process group and reaps Cargo;
+cleanup removes the target while retaining the log and JSON receipt under
+`$FABRIC_STORAGE_ROOT/results/ci-tool-install/`. The Python resource-group
+launcher remains mandatory outside this command. Registered controls have not
+performed an actual install or completed full fast migration verification; see
+the [installer protocol](../experiments/formal/rust-tool-installer-protocol.md).
+
 ## Native browser subgroup entry
 
 The [registered supervisor correction](../experiments/formal/browser-supervisor-protocol.md)

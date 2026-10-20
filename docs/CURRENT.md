@@ -1,5 +1,15 @@
 # Current project state
 
+CI tool installation now has one pinned Rust entrypoint, `cargo xtask
+install-tool`; the Python `tools/resource_group.py` remains the required outer
+containment launcher. It enforces a fixed 1500-second deadline and 2 GiB DATA
+headroom floor, uses inherited `CARGO_HOME` and an owned private target, and
+retains logs/receipts while cleaning the target. Controls-03 recorded 48 unit
+and 9 integration tests passing, but its outer command exited 101 at Clippy
+(`items_after_test_module`); format-lint-01 later exited 0. Full fast migration
+verification remains pending. No actual package install or performance result
+is claimed. See the [installer boundary](architecture/engineering-evidence.md#pinned-ci-tool-install).
+
 Engineering tooling now includes an experimental Rust `xtask verify-receipts`
 command, sharing bounded descriptor-owned artifact reads with evidence preflight.
 The [architecture boundary](architecture/engineering-evidence.md#native-verification-receipts)
