@@ -150,6 +150,24 @@ Rules for these tools:
 
 ## Skills and hooks
 
+For delegated work, use the [task-card brief](../.agents/skills/fabric-delegation/SKILL.md).
+Give each worker a name, one concrete goal, owned paths, a source revision,
+a line budget and a verification route. The coordinator owns integration and
+serializes resource-contained checks; workers report edits separately from
+executed evidence. Cap concurrency at the runtime's available slots.
+
+Before assigning implementation, check live upstream and the actual affected
+source. A local branch name or an old handoff is not a current-state pin.
+When a signature changes, inventory every caller and fixture before accepting
+the worker's patch. Run the complete affected suite so old negative controls
+still reach their intended refusal boundary. Preserve unexpected output before
+test cleanup, and use that evidence to choose the next correction.
+
+Review work in batches, with explicit findings and executable follow-up.
+Encourage candid uncertainty and counterexamples; do not reward confident
+completion claims. A reviewer's agreement or encouraging wording does not
+establish correctness or demonstrate an accuracy improvement.
+
 Repository skills in `.agents/skills` are ordinary Markdown: [fabric-architecture](../.agents/skills/fabric-architecture/SKILL.md), [fabric-lesson](../.agents/skills/fabric-lesson/SKILL.md) [fabric-experiment](../.agents/skills/fabric-experiment/SKILL.md) and [architecture-review](../.agents/skills/architecture-review/SKILL.md). [.codex/hooks.json](../.codex/hooks.json) runs [read-only handlers](../.codex/hooks/run.py): `SessionStart` supplies a bounded copy of `CURRENT.md`. The Bun documentation `Stop` hook is disabled by owner direction during experimentation; the checker remains available manually. Hooks need runtime trust in Codex (`/hooks`). The same configuration holds silent [agent-telemetry](../tools/telemetry/README.md) observers that write under ignored `.local/`; validate them with `python3 -B tools/telemetry/test_contract.py` and `python3 -B tools/telemetry/test_cli.py`.
 
 ## Editor tools
