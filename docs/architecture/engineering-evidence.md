@@ -88,6 +88,19 @@ The [adapter contract](../experiments/formal/native-cutoff-adapter-protocol.md)
 and [primitive protocol](../experiments/formal/primitive-composition-protocol.md)
 separate finite controls from native caller adoption and alpha acceptance.
 The [finite composition results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-primitive-composition-results-01) retain the measured variants and counterexamples.
+
+The host transport drains stdout and stderr concurrently in bounded chunks,
+retaining at most 65,536 bytes per stream and refusing overflow. This bound
+belongs to the protocol streams: a global file-size limit would also truncate
+LLVM profiles and other legitimate helper files. Pins, private output files,
+strict JSON admission and the independent archive/custody joins still apply.
+Each invocation has a maximum 60-second deadline within the caller's remaining
+budget. Timeout or overflow stops the helper group, with at most two seconds
+of subsequent pipe draining. Normal completion observes the leader with
+`waitid(WNOWAIT)`, stops its group while the leader's PID remains reserved, then
+reaps it and records its actual exit. Kernel-level wait completion still depends
+on the mandatory outer resource group; this is not a sandbox for an untrusted
+executable that deliberately escapes its process group.
 ## Pinned CI tool install
 
 `cargo xtask install-tool <crate> <version>` is the effectful Rust boundary for

@@ -29,6 +29,16 @@ the [execution record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-for
 keeps commands, failures, source identities and resource receipts.
 The host Python transport and independent
 Python archive/custody oracle remain pending independently validated migration.
+Combined engineering verification in [PR #105](https://github.com/kmosoti/FabricO11y/pull/105)
+found a coverage failure at `a2b39fc`: the host transport's global file-size limit
+killed three instrumented Rust helpers with `SIGXFSZ` while they flushed LLVM
+profiles. The correction bounds each protocol stream independently, retains
+actual exit status, and stops the helper group before reaping its leader.
+Independent side-file and quiet-descendant controls reject the former transport.
+The instrumented adapter suite ran 155 tests with exit 0 on the corrected
+working tree, and LLVM merged its profiles successfully; this focused result
+does not replace final combined verification. Commands, patch identity and
+failure evidence are retained under `results/rust-engineering-integration-01/`.
 Native caller wiring is implemented. A real native capture requires a clean
 harness revision present in `origin/main` and the existing pinned owner/helper
 admission; no matching capture or acceptance has run. The

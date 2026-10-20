@@ -5,8 +5,11 @@ import io
 import json
 import os
 from pathlib import Path
+import shlex
+import signal
 import stat
 import struct
+import subprocess
 import tarfile
 import time
 import unittest
@@ -557,7 +560,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                 __REALTIME_TIMESTAMP=str(event['at_ns'] // 1000)) for event in events]
             files[phase + '/journal.jsonl'] = ''.join(json.dumps(row) + '\n' for row in journal).encode()
 
-    def run_native_cutoff(self, files, admission, helper, result, bundle, *, preserve_on_error=False):
+    def run_native_cutoff(self, files, admission, helper, result, bundle, *, preserve_on_error=False, timeout_seconds=60):
         admission['cutoff_helper'] = helper
         import shutil
         shutil.copyfile(bundle, result / 'native-bundle.tar')
@@ -565,7 +568,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
         try:
             return native.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()),
                 cutoff_helper=helper, result_dir=result, data_root=Path(os.environ['FABRIC_STORAGE_ROOT']),
-                deadline=time.monotonic() + 60)
+                deadline=time.monotonic() + timeout_seconds)
         except BaseException:
             if preserve_on_error:
                 self.show_cutoff_diagnostics(result)
@@ -662,6 +665,157 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
             self.assertLessEqual((result / 'custody-cutoff-drain.stdout').stat().st_size, 65536)
             for path in result.glob('custody-cutoff-*.*'):
                 self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
+
+
+    def cutoff_transport_fixture(self):
+        storage = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
+        files, admission = self.fixture_files()
+        bundle = self.bundle(files)
+        candidate = BINDING['candidate_frozen']
+        valid = (json.dumps(dict(status='structural-cutoff', candidate=candidate),
+            separators=(',', ':')) + '\n').encode()
+        return storage, files, admission, bundle, valid
+
+    def cutoff_transport_run(self, storage, files, admission, bundle, name, script, *, timeout_seconds=60):
+        helper = self.pinned_helper(storage, payload=script, suffix=name)
+        result = storage / 'results' / f'custody-cutoff-transport-{name}-{os.getpid()}-{time.monotonic_ns()}'
+        result.mkdir(mode=0o700)
+        return helper, result, self.run_native_cutoff(files, admission, helper, result, bundle,
+            timeout_seconds=timeout_seconds)
+
+    def test_cutoff_stdout_valid_json_at_exact_limit_is_accepted(self):
+        storage, files, admission, bundle, valid = self.cutoff_transport_fixture()
+        padding = 65536 - len(valid)
+        script = ("#!/bin/sh\nprintf '%s' " + shlex.quote(valid.decode()) + "\n"
+            + "head -c " + str(padding) + " /dev/zero | tr '\\000' ' '\n").encode()
+        _, result, outcomes = self.cutoff_transport_run(storage, files, admission, bundle,
+            'stdout-exact-limit', script)
+        self.assertEqual([row['state'] for row in outcomes['cutoff_outcomes']], ['completed', 'completed'])
+        self.assertTrue(all((result / f'custody-cutoff-{phase}.stdout').stat().st_size == 65536
+            for phase in ('drain', 'reboot')))
+
+    def test_cutoff_stdout_one_byte_over_limit_is_refused(self):
+        storage, files, admission, bundle, valid = self.cutoff_transport_fixture()
+        padding = 65537 - len(valid)
+        script = ("#!/bin/sh\nprintf '%s' " + shlex.quote(valid.decode()) + "\n"
+            + "head -c " + str(padding) + " /dev/zero | tr '\\000' ' '\n").encode()
+        helper = self.pinned_helper(storage, payload=script, suffix='stdout-over-limit')
+        result = storage / 'results' / f'custody-cutoff-transport-over-{os.getpid()}-{time.monotonic_ns()}'
+        result.mkdir(mode=0o700)
+        with self.assertRaisesRegex(ValueError, 'Rust capture verifier refused'):
+            self.run_native_cutoff(files, admission, helper, result, bundle)
+        self.assertLessEqual((result / 'custody-cutoff-drain.stdout').stat().st_size, 65536)
+
+    def test_cutoff_stderr_over_limit_with_valid_stdout_is_refused(self):
+        storage, files, admission, bundle, valid = self.cutoff_transport_fixture()
+        script = ("#!/bin/sh\nprintf '%s' " + shlex.quote(valid.decode()) + "\n"
+            + "head -c 65537 /dev/zero | tr '\\000' e >&2\n").encode()
+        helper = self.pinned_helper(storage, payload=script, suffix='stderr-over-limit')
+        result = storage / 'results' / f'custody-cutoff-transport-stderr-{os.getpid()}-{time.monotonic_ns()}'
+        result.mkdir(mode=0o700)
+        with self.assertRaisesRegex(ValueError, 'Rust capture verifier refused'):
+            self.run_native_cutoff(files, admission, helper, result, bundle)
+        self.assertEqual((result / 'custody-cutoff-drain.stdout').read_bytes(), valid)
+        self.assertLessEqual((result / 'custody-cutoff-drain.stderr').stat().st_size, 65536)
+
+    def test_cutoff_concurrent_stdout_stderr_growth_is_bounded_without_deadlock(self):
+        storage, files, admission, bundle, valid = self.cutoff_transport_fixture()
+        script = ("#!/bin/sh\nprintf '%s' " + shlex.quote(valid.decode()) + "\n"
+            + "(head -c 1048576 /dev/zero | tr '\\000' x) &\n"
+            + "(head -c 1048576 /dev/zero | tr '\\000' e >&2) &\nwait\n").encode()
+        helper = self.pinned_helper(storage, payload=script, suffix='both-streams-grow')
+        result = storage / 'results' / f'custody-cutoff-transport-both-{os.getpid()}-{time.monotonic_ns()}'
+        result.mkdir(mode=0o700)
+        with self.assertRaisesRegex(ValueError, 'Rust capture verifier refused'):
+            self.run_native_cutoff(files, admission, helper, result, bundle, timeout_seconds=5)
+        self.assertLessEqual((result / 'custody-cutoff-drain.stdout').stat().st_size, 65536)
+        self.assertLessEqual((result / 'custody-cutoff-drain.stderr').stat().st_size, 65536)
+
+    def test_cutoff_valid_json_with_nonzero_helper_exit_is_refused(self):
+        storage, files, admission, bundle, valid = self.cutoff_transport_fixture()
+        script = ("#!/bin/sh\nprintf '%s' " + shlex.quote(valid.decode()) + "\nexit 7\n").encode()
+        helper = self.pinned_helper(storage, payload=script, suffix='valid-json-nonzero')
+        result = storage / 'results' / f'custody-cutoff-transport-exit-{os.getpid()}-{time.monotonic_ns()}'
+        result.mkdir(mode=0o700)
+        with self.assertRaisesRegex(ValueError, 'Rust capture verifier refused'):
+            self.run_native_cutoff(files, admission, helper, result, bundle)
+        report = json.loads((result / 'custody-cutoff-drain.json').read_bytes())
+        self.assertEqual(report['exit'], 7)
+        self.assertEqual((result / 'custody-cutoff-drain.stdout').read_bytes(), valid)
+
+    def test_cutoff_timeout_retains_streams_and_reaps_helper(self):
+        storage, files, admission, bundle, valid = self.cutoff_transport_fixture()
+        pid_path = self.root / 'cutoff-timeout.pid'
+        script = ("#!/bin/sh\nprintf '%s' " + shlex.quote(valid.decode())
+            + "\nprintf 'timeout-diagnostic' >&2\nprintf '%s\\n' \"$$\" > "
+            + shlex.quote(str(pid_path)) + "\nexec sleep 30\n").encode()
+        helper = self.pinned_helper(storage, payload=script, suffix='timeout')
+        result = storage / 'results' / f'custody-cutoff-transport-timeout-{os.getpid()}-{time.monotonic_ns()}'
+        result.mkdir(mode=0o700)
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.run_native_cutoff(files, admission, helper, result, bundle, timeout_seconds=3)
+        self.assertEqual((result / 'custody-cutoff-drain.stdout').read_bytes(), valid)
+        self.assertIn(b'timeout-diagnostic', (result / 'custody-cutoff-drain.stderr').read_bytes())
+        report = json.loads((result / 'custody-cutoff-drain.json').read_bytes())
+        self.assertEqual(report['state'], 'failed')
+        self.assertEqual(report['error'], 'TimeoutExpired')
+        with self.assertRaises(ProcessLookupError):
+            os.kill(int(pid_path.read_text()), 0)
+
+    def test_cutoff_quiet_descendant_is_cleaned_after_parent_exits(self):
+        storage, files, admission, bundle, valid = self.cutoff_transport_fixture()
+        pid_path = self.root / 'cutoff-quiet-child.pid'
+        script = ("#!/bin/sh\ncase \"$5\" in */drain/manifest.json) sleep 30 </dev/null >/dev/null 2>&1 & cat /proc/\"$!\"/stat > "
+            + shlex.quote(str(pid_path)) + " ;; esac\nprintf '%s' " + shlex.quote(valid.decode()) + "\n").encode()
+        try:
+            _, result, outcomes = self.cutoff_transport_run(storage, files, admission, bundle,
+                'quiet-descendant', script)
+            self.assertEqual([row['state'] for row in outcomes['cutoff_outcomes']], ['completed', 'completed'])
+            self.assertTrue(all(row['exit'] == 0 for row in outcomes['cutoff_outcomes']))
+            child_pid = int(pid_path.read_text().split()[0])
+            proc_stat = Path(f'/proc/{child_pid}/stat')
+            until = time.monotonic() + 1
+            while True:
+                try:
+                    state = proc_stat.read_text().split()[2]
+                except FileNotFoundError:
+                    break
+                if state == 'Z':
+                    break
+                self.assertLess(time.monotonic(), until,
+                    f'quiet helper descendant remains live: pid={child_pid}')
+                time.sleep(0.01)
+        finally:
+            # Bind cleanup to the original start time and an open pidfd. A
+            # successful invocation may already have reaped this descendant.
+            if pid_path.exists():
+                original = pid_path.read_text().split()
+                child_pid = int(original[0])
+                try:
+                    pidfd = os.pidfd_open(child_pid)
+                except ProcessLookupError:
+                    pidfd = None
+                if pidfd is not None:
+                    try:
+                        current = Path(f'/proc/{child_pid}/stat').read_text().split()
+                        if current[21] == original[21] and current[2] != 'Z':
+                            signal.pidfd_send_signal(pidfd, signal.SIGKILL)
+                    except (FileNotFoundError, ProcessLookupError):
+                        pass
+                    finally:
+                        os.close(pidfd)
+
+    def test_cutoff_large_independent_side_file_does_not_limit_valid_stdout(self):
+        storage, files, admission, bundle, valid = self.cutoff_transport_fixture()
+        result = storage / 'results' / f'custody-cutoff-transport-side-{os.getpid()}-{time.monotonic_ns()}'
+        result.mkdir(mode=0o700)
+        side_file = result / 'independent-side-output.bin'
+        script = ("#!/bin/sh\nset -e\ndd if=/dev/zero of=" + shlex.quote(str(side_file))
+            + " bs=65537 count=1 2>/dev/null\nprintf '%s' " + shlex.quote(valid.decode()) + "\n").encode()
+        helper = self.pinned_helper(storage, payload=script, suffix='side-file-over-limit')
+        outcomes = self.run_native_cutoff(files, admission, helper, result, bundle)
+        self.assertEqual([row['state'] for row in outcomes['cutoff_outcomes']], ['completed', 'completed'])
+        self.assertEqual(side_file.stat().st_size, 65537)
 
 
 class GuestObservationControls(literal.NativeFixture, unittest.TestCase):

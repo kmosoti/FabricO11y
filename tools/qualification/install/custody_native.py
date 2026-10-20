@@ -9,8 +9,9 @@ import os
 from pathlib import Path
 import pwd
 import re
-import resource
+import selectors
 import shutil
+import signal
 import stat
 import subprocess
 import sys
@@ -520,17 +521,93 @@ def captured_cutoffs(archive, files, snapshots, admission, pin, result_dir, data
         report = dict(phase=phase, candidate=manifest['candidate'], helper=pin, manifest_sha256=sha(plan),
             bundle_sha256=bundle_sha256, input_root=str(directory), state='started')
         prefix = result_dir / ('custody-cutoff-' + phase)
-        def limits(): resource.setrlimit(resource.RLIMIT_FSIZE, (65536, 65536))
         try:
             remaining = min(60, deadline - time.monotonic())
             witness.require(remaining > 0, 'cutoff invocation deadline')
+            command = [str(executable), 'custody-cutoff', '--root', str(data),
+                '--capture-manifest', str((directory / 'manifest.json').relative_to(data)),
+                '--manifest-sha256', sha(plan), '--candidate', manifest['candidate']]
+            cutoff = time.monotonic() + remaining
+            output_limit = 65536
             with create(prefix.with_suffix('.stdout')) as out, create(prefix.with_suffix('.stderr')) as err:
-                proc = subprocess.run([str(executable), 'custody-cutoff', '--root', str(data),
-                    '--capture-manifest', str((directory / 'manifest.json').relative_to(data)),
-                    '--manifest-sha256', sha(plan), '--candidate', manifest['candidate']],
-                    stdout=out, stderr=err, timeout=remaining, preexec_fn=limits, check=False)
-            report['exit'] = proc.returncode
-            witness.require(proc.returncode == 0, 'Rust capture verifier refused')
+                proc = subprocess.Popen(command, stdin=subprocess.DEVNULL,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+                selector = None
+                sinks = {'stdout': out, 'stderr': err}
+                sizes = {'stdout': 0, 'stderr': 0}
+                overflow = False
+                timed_out = False
+                stop_at = None
+                def stop_group():
+                    try:
+                        os.killpg(proc.pid, signal.SIGKILL)
+                    except ProcessLookupError:
+                        pass
+                try:
+                    selector = selectors.DefaultSelector()
+                    for name, pipe in (('stdout', proc.stdout), ('stderr', proc.stderr)):
+                        os.set_blocking(pipe.fileno(), False)
+                        selector.register(pipe, selectors.EVENT_READ, name)
+                    while selector.get_map():
+                        now = time.monotonic()
+                        if stop_at is None and now >= cutoff:
+                            timed_out = True
+                            stop_at = now + 2
+                            stop_group()
+                        elif stop_at is not None and now >= stop_at:
+                            break
+                        wait = (cutoff - now) if stop_at is None else (stop_at - now)
+                        for key, _ in selector.select(max(0.0, min(wait, 0.25))):
+                            try:
+                                chunk = os.read(key.fd, 8192)
+                            except BlockingIOError:
+                                continue
+                            if not chunk:
+                                selector.unregister(key.fileobj)
+                                key.fileobj.close()
+                                continue
+                            name = key.data
+                            room = output_limit - sizes[name]
+                            if room > 0:
+                                kept = chunk[:room]
+                                sinks[name].write(kept)
+                                sizes[name] += len(kept)
+                            if len(chunk) > max(room, 0):
+                                overflow = True
+                                if stop_at is None:
+                                    stop_at = time.monotonic() + 2
+                                    stop_group()
+                    if selector.get_map():
+                        for key in list(selector.get_map().values()):
+                            selector.unregister(key.fileobj)
+                            key.fileobj.close()
+                    while not timed_out and not overflow:
+                        now = time.monotonic()
+                        if now >= cutoff:
+                            timed_out = True
+                            break
+                        observed = os.waitid(os.P_PID, proc.pid,
+                            os.WEXITED | os.WNOHANG | os.WNOWAIT)
+                        if observed is not None and observed.si_pid:
+                            break
+                        time.sleep(min(0.01, cutoff - now))
+                finally:
+                    if selector is not None:
+                        selector.close()
+                    for pipe in (proc.stdout, proc.stderr):
+                        if not pipe.closed:
+                            pipe.close()
+                    # The leader remains unreaped through this signal, so its PID/PGID
+                    # cannot be reused before descendants in the original group are stopped.
+                    stop_group()
+                    proc.wait()
+                    report['exit'] = proc.returncode
+                    report['stdout_bytes'] = sizes['stdout']
+                    report['stderr_bytes'] = sizes['stderr']
+                    report['output_overflow'] = overflow
+            if timed_out:
+                raise subprocess.TimeoutExpired(command, remaining)
+            witness.require(not overflow and proc.returncode == 0, 'Rust capture verifier refused')
             def unique(items):
                 result = {}
                 for key, value in items:
