@@ -166,3 +166,49 @@ noninteger/duplicate JSON, byte/digest/metadata substitution and a forged cached
 view accompanying coherently altered raw bytes. Preserve both the failed
 baseline and the retained Fedora missing116-ACK refusal. These are engineering
 controls, not a new acceptance run or reinterpretation of a historical receipt.
+
+## Pinned native caller integration
+
+This continuation implements the existing host bridge; alpha acceptance remains
+owner-paused. The producer at `31cf809` already implements pause2/4, fixed-prefix
+drain, stopped inspection and resume3/5. The earlier DATA draft's missing-lifecycle
+statement is historical and must not drive another producer rewrite.
+
+The owner admission adds the exact `cutoff_helper` record `{path, sha256}`. Its
+path is a canonical, owned regular executable under the admitted DATA `results`
+root; its lowercase SHA-256 pins the bytes. Freeze that pair and the bridge source
+in the existing admission inventory and recheck them before transfer. Preserve
+the clean-source and merged-ancestor requirements. No fallback helper search,
+runtime build, or acceptance admission bypass is provided.
+
+After independently admitting the original archive, transport its captured
+metadata to the existing version2 interface in drain/reboot order, using the
+installed/drain prior ACK respectively. Join each inspection member to both the
+archive manifest and captured stdout digest. Do not synthesize observations or
+reimplement the Rust projection in Python. Preserve the raw journal, process,
+package, source, query and Python conservation checks independently.
+
+Copy the helper from a no-follow checked descriptor into exclusively created
+private invocation scratch; verify its digest and source identity again. Keep
+plan and body files private and exclusive. Existing input limits remain4MiB per
+plan,4096 bytes per inspection and64MiB aggregate input. Invoke the snapshot
+directly with a timeout of at most60 seconds, additionally capped by the caller's
+remaining deadline, and at most65536 bytes on each stdout/stderr stream. Require
+exit0, unique-key JSON, structural-cutoff status and the exact candidate. Retain
+the helper identity, plan digest, raw output, exit and parsed report; preserve
+failure scratch. Remove only owned scratch after both phases and independent
+conservation succeed. A successful helper is not native authenticity evidence.
+
+The workspace adapter gate must invoke the affected installation controls with
+the actual compiled helper path and digest, retaining the existing parent-module
+checks. Exercise valid drain/reboot, missing or changed helper, archive/body
+substitution, missing exact ACK, invalid output and failure retention. Reproduce
+the original Fedora missing116-ACK refusal from the immutable stopped bundle
+under a fresh receipt. Never rewrite its historical result.
+
+Final source checks include the affected Rust/Python controls, full fast profile
+and documentation checks. An actual native capture requires separately pinned
+prospective admission. The ordinary native caller still requires a merged
+harness; an unmerged implementation cannot obtain a qualification receipt.
+No package rebuild, release acceptance, merge, tag or publication is admitted by
+this engineering continuation.
