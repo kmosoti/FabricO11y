@@ -29,15 +29,18 @@ Upload each shard's complete receipt directory separately. A bounded Rust
 collector must require both named shard directories, disjoint exact registered
 ID sets, no running markers, ordinary receipt/log files and exclusive output
 creation. It copies bytes into one new DATA-backed directory without overwrites.
-The original independent Python `verify_receipts.py --profile extended` then
-checks the combined evidence at the actual clean source revision.
+The required Rust `cargo xtask verify-receipts --profile extended` then checks
+the combined evidence at the actual clean source revision. The collector test
+that calls the same Rust verifier is only a composition check; independent
+receipt acceptance and refusal outcomes are maintained in the contract-owned
+[receipt fixture](../../../xtask/tests/fixtures/receipt_contract_cases.json).
 
 The aggregate job must run after failed/canceled shards and explicitly fail if
 either shard failed, was skipped, was canceled or is absent. It must not turn a
 skipped aggregate into success. Before publication, exercise missing/duplicate
 IDs, incomplete markers, symlinks, reused output, stale source and changed logs;
-preserve the existing independent validator's negative controls. This is an
-experimental collector, not a new product oracle or acceptance gate.
+preserve the contract fixture's negative outcomes. This is an experimental
+collector, not a new product oracle or acceptance gate.
 
 ## Measurement and decision
 

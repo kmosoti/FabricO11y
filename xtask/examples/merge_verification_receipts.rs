@@ -1,5 +1,5 @@
-//! Experimental byte-preserving shard collector. The unchanged independent
-//! Python validator, run afterward, decides receipt integrity/completeness.
+//! Experimental byte-preserving shard collector. A separate final-profile
+//! verification step checks receipt integrity and completeness.
 use std::collections::BTreeSet;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read};
@@ -190,7 +190,7 @@ fn main() {
     })();
     match result {
         Ok(count) => {
-            println!("collected {count} checks; independent final validation still required")
+            println!("collected {count} checks; run the separate complete-profile verifier")
         }
         Err(error) => {
             eprintln!("shard collection failed: {error}");
@@ -237,6 +237,12 @@ mod tests {
             serde_json::to_vec(&json!({"checks":entries})).unwrap(),
         )
         .unwrap();
+        fs::create_dir_all(root.join("source/xtask")).unwrap();
+        fs::copy(
+            root.join("registry.json"),
+            root.join("source/xtask/checks.json"),
+        )
+        .unwrap();
         root
     }
 
@@ -249,26 +255,32 @@ mod tests {
         )
     }
 
-    fn independent(root: &Path) -> bool {
-        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        let script = "import json,sys; from pathlib import Path; sys.path.insert(0,sys.argv[1]); import verify_receipts; verify_receipts.verify(json.loads(Path(sys.argv[2]).read_text()),'extended',sys.argv[3],Path(sys.argv[4]))";
-        std::process::Command::new("python3")
-            .args(["-B", "-c", script])
-            .arg(workspace.join("tools/ci"))
-            .arg(root.join("registry.json"))
-            .arg(COMMIT)
-            .arg(root.join("combined"))
-            .output()
-            .unwrap()
-            .status
-            .success()
+    // This is a composition check, not an independent oracle: it verifies the
+    // collector's output using the production Rust receipt verifier.
+    fn rust_final_validation(root: &Path) -> Result<serde_json::Value, String> {
+        xtask::receipts::verify(
+            &root.join("source"),
+            "extended",
+            COMMIT,
+            &root.join("combined"),
+        )
     }
 
     #[test]
-    fn complete_bytes_reach_unchanged_independent_validator() {
+    fn complete_bytes_reach_separate_rust_final_verifier() {
         let root = fixture();
         assert_eq!(collect(&root, "success").unwrap(), 2);
-        assert!(independent(&root));
+        let report = rust_final_validation(&root).unwrap();
+        assert_eq!(report["status"], "passed");
+        assert_eq!(report["check_count"], 2);
+        let mut ids: Vec<_> = report["checks_by_duration"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|row| row["check_id"].as_str().unwrap())
+            .collect();
+        ids.sort_unstable();
+        assert_eq!(ids, ["other-check", "semantic-mutants"]);
         assert!(
             collect(&root, "success").is_err(),
             "must not overwrite old output"
@@ -329,7 +341,10 @@ mod tests {
                 fs::write(directory.join("other-check.log"), b"changed").unwrap();
             }
             assert_eq!(collect(&root, "success").unwrap(), 2);
-            assert!(!independent(&root), "independent gate accepted {defect}");
+            assert!(
+                rust_final_validation(&root).is_err(),
+                "Rust verifier accepted {defect}"
+            );
             fs::remove_dir_all(root).unwrap();
         }
     }

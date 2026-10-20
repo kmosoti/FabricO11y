@@ -42,7 +42,8 @@ exclusive creation and no overwrite. Preserve failed/incomplete artifacts and
 markers; never reuse historical receipts. Remove the canonical marker only after
 successful publication. Before returning success, validate the complete selected
 fast inventory with the native verifier and recheck current clean source. The
-unchanged independent Python receipt verifier remains a final cross-check.
+contract-owned fixture supplies independent expected outcomes for synthetic
+receipt refusals; Python remains only in historical differential evidence.
 No partial subset, suppressed child error or canceled batch can become success.
 
 ## Required controls before adoption
@@ -51,7 +52,8 @@ Test exact-once IDs, worker bound, deterministic weights/ties, command drift,
 invalid flags, fresh-output enforcement, stable source, and status precedence.
 Inject actual exit-7 and spawn/termination failures, require other independent
 jobs to finish, and retain incomplete markers. Check missing/altered receipts,
-changed logs and wrong-source evidence with the independent reference. Exercise
+changed logs and wrong-source evidence against the fixture-owned expected
+outcomes and the native verifier. Exercise
 the final integration against the full unmodified fast registry; compare complete
 semantic inventories before interpreting performance. Preserve every failed
 attempt and actual launcher stop. Prototype timing is not integration timing.
@@ -71,9 +73,13 @@ the original enforced resource launcher and caps. This changes scheduling only,
 not check ownership, test counts or expected outcomes.
 
 Require native complete-profile receipt validation, selecting the measured
-optional OpenSSL provider explicitly, followed by the unchanged independent
-Python validator over exactly the same receipt directory. Both must exit zero;
-neither substitutes for executed checks. Ordinary xtask defaults remain portable.
-Extended-profile scheduling and validation remain unchanged in this adoption.
-Enabling the workflow is a separate implementation commit after local controls;
-current-head hosted results remain required before merge.
+optional OpenSSL provider explicitly. The accepted receipt contract fixture
+supplies independently maintained expected decisions for the Rust verifier;
+the historical Python implementation is not a second maintained runtime
+validator. The Rust verifier checks the exact receipt directory used by the
+completed fast set; the fixture independently records decisions for synthetic
+controls and does not itself validate production receipts. Neither substitutes
+for executed checks. Ordinary xtask defaults remain portable. Extended-profile scheduling
+and validation remain unchanged in this adoption. Workflow adoption is a
+separate implementation commit after local controls; current-head hosted
+results remain required before merge.

@@ -38,11 +38,41 @@ earlier archived Rust helper and source bundle are under
 `results/native-cutoff-adapter-01/artifacts-02f5b6c/`. That earlier private compiler
 target and its documentation dependencies were removed after archiving.
 
-Engineering tooling now includes an experimental Rust `xtask verify-receipts`
+Hosted browser defect receipts now have a Rust grader,
+`cargo xtask check-browser-defect`, preserving both historical cleanup
+dispositions and the registered API-cache/enrollment assertions. Its
+[adoption protocol](experiments/formal/browser-supervisor-protocol.md#rust-defect-receipt-grader-adoption)
+explicitly distinguishes stricter JSON/type admission from legacy parity.
+The existing workspace test gate runs the CLI controls. At `1d9b633`, all
+20 fast checks, same-source Rust receipt verification and the three
+documentation commands exited 0. Six focused CLI test functions, ten retained
+Python CI tests and the deliberately broken cleanup-proof guard were checked;
+the original source was restored and passed. Earlier diagnostic/lint failures
+remain in the [migration record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-rust-ci-tooling-migration-results-01#browser-defect-grader-continuation).
+No new hosted browser or product acceptance is claimed for this grader.
+
+CI tool installation now has one pinned Rust entrypoint, `cargo xtask
+install-tool`; the Python `tools/resource_group.py` remains the required outer
+containment launcher. It enforces a fixed 1500-second deadline and 2 GiB DATA
+headroom floor, uses inherited `CARGO_HOME` and an owned private target, and
+retains logs/receipts while cleaning the target. At `6144147`, the combined
+migration run exited 0: 48 library tests, 9 installer tests, 3 receipt CLI tests,
+5 collector composition tests, 14 retained Python CI checks and Clippy.
+Injected removal of the duplicate-ID guard and target-identity checks each
+reached the intended failing assertion; restored source passed its controls.
+Earlier compile/lint and fixture failures remain in the
+[execution record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-rust-ci-tooling-migration-results-01),
+which also records the complete fast-profile result and its source revision.
+No actual package install or performance result is claimed. See the
+[installer boundary](architecture/engineering-evidence.md#pinned-ci-tool-install).
+
+Engineering tooling now uses the Rust `xtask verify-receipts`
 command, sharing bounded descriptor-owned artifact reads with evidence preflight.
 The [architecture boundary](architecture/engineering-evidence.md#native-verification-receipts)
 and [strict representation policy](formal/verification-receipt-contract.md)
-describe its limits. Local complete-profile and independent refusal controls ran
+describe its limits. The CI workflows have adopted this command; the original
+Python comparator remains reproducible from immutable history. Local
+complete-profile and independent refusal controls ran
 at `7fc4723`; PR #80 merged as `06ccc0c` after complete hosted verification of
 merge candidate `c129013`. Synthetic verifier fixtures do not credit product
 acceptance. Alpha acceptance is owner-paused for verification engineering.
@@ -117,17 +147,21 @@ Its [contract](experiments/formal/engineering-evidence-protocol.md) and
 preserve the distinction between structural consistency and acceptance.
 The [two-runner verification pilot](experiments/formal/verification-shards-protocol.md)
 completed both shards and the independent final validators at the same tested
-source `faf148ec`. Its finite wall time was 41.98% lower while combined runner time was
+source `faf148ec`. That historical run used the Python receipt validator. Its
+finite wall time was 41.98% lower while combined runner time was
 10.32% higher. The workers had different CPU, cache and setup conditions, so
 this observation does not establish a universal speedup. The first aggregation
 failure remains preserved; the corrected DATA-backed collector and unchanged
-Python validator are recorded in the
+historical Python validator are recorded in the
 [completed paired-shards results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-shards-results-01).
 The original [failed aggregation](https://github.com/kmosoti/FabricO11y/actions/runs/39090541570)
 is retained alongside the corrected result.
-Canonical workflow adoption preserves all ten registered extended commands and
-their final current-source validation. Its current-head hosted check remains
-required before merge.
+Current workflow adoption replaces the Python final-validator invocation with
+the Rust `cargo xtask verify-receipts` command. The exact checked-in contract
+fixture supplies expected decisions; the historical Python baseline and
+differential remain historical evidence only. Preserve all ten registered
+extended commands and their final current-source validation. Its current-head
+hosted check remains required before merge.
 No current deployment profile is qualified or release tag published.
 
 ## Implemented

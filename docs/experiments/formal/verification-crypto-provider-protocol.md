@@ -1,5 +1,11 @@
 # Verification crypto-provider discrimination
 
+Historical reproduction of the Python reference and differential driver uses
+the immutable source worktree documented by the
+[receipt-verification protocol](verification-receipts-protocol.md#contract-and-primitives).
+The maintained branch intentionally removes those runtime files; use a
+separate historical checkout for the procedure below.
+
 Register before implementation/builds. The previous ablation at clean source
 `fd4870db817b611e303cbbb6413a98adaf796f92` preserved all 25 decisions in both
 variants. Assembly/default native medians on ten 4 MiB logs were

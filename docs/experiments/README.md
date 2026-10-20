@@ -14,6 +14,13 @@ The [Rust receipt-verifier migration](formal/verification-receipts-protocol.md)
 registers baseline controls, differential verification and standalone benchmarks.
 It does not replace required CI checks or credit synthetic fixtures as execution.
 
+The [Rust CI tool installer](formal/rust-tool-installer-protocol.md) and receipt
+validator adoption replace two Python entrypoints while retaining containment,
+registered profile membership and historical differential evidence. Their
+[migration results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-rust-ci-tooling-migration-results-01)
+record fixture controls, deliberate defects and current-source checks; no real
+tool install or product acceptance is inferred.
+
 The [native provider measurements and concrete defect control](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-receipt-provider-results-01)
 retain slower variants and exact source identities. The
 [scheduling experiment](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-scheduling-results-01)

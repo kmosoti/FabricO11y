@@ -3,6 +3,7 @@
 //! not merely that a command exited non-zero.
 
 pub mod browser_bidi_viewport;
+pub mod browser_defect;
 pub mod browser_enter;
 pub mod census;
 pub mod checks;
@@ -16,6 +17,7 @@ pub mod mutants;
 pub mod preflight;
 pub mod purity;
 pub mod receipts;
+pub mod tool_install;
 
 use serde_json::Value;
 use std::fmt;

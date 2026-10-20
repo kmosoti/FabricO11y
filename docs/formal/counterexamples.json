@@ -117,8 +117,8 @@
       "seed_or_trace": "freeze a real Git fixture, then change a tracked input or add an untracked input after the recorded identity; final validation must reject both",
       "contract": "ARCH-1",
       "reproducer": {
-        "file": "tools/ci/test_ci_contracts.py",
-        "test": "test_input_changes_after_receipts_are_rejected"
+        "file": "xtask/tests/receipt_cli.rs",
+        "test": "cli_rejects_a_real_dirty_git_checkout"
       },
       "fix_commit": "229f704"
     },
