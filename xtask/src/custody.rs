@@ -102,7 +102,11 @@ fn command_interval(value: &Value, previous_finish: &mut u64) -> Result<u64, Str
 }
 
 /// Read exactly the pinned inspection bytes, not a reopened path or copied counters.
-fn trace(plan: &Value, files: &mut ArtifactStore) -> Result<Vec<PrefixEvent>, String> {
+fn trace(
+    plan: &Value,
+    files: &mut ArtifactStore,
+    inspection_limit: Option<usize>,
+) -> Result<Vec<PrefixEvent>, String> {
     let mut output = Vec::new();
     let mut previous_finish = 0;
     let node = text(plan, "node_id")?;
@@ -157,6 +161,9 @@ fn trace(plan: &Value, files: &mut ArtifactStore) -> Result<Vec<PrefixEvent>, St
                     text(&value["input"], "path")?,
                     text(&value["input"], "sha256")?,
                 )?;
+                if let Some(limit) = inspection_limit {
+                    require(bytes.len() <= limit, "inspection body exceeds capture bound")?;
+                }
                 let raw = std::str::from_utf8(bytes).map_err(|_| "inspection UTF-8 required")?;
                 let parsed = inspection::parse_inspection(raw)
                     .map_err(|error| format!("inspection: {error:?}"))?;
@@ -193,13 +200,14 @@ pub fn verify_plan(root: &Path, path: &str, pin: &str, candidate: &str) -> Resul
     hex::<20>(candidate)?;
     let mut files = ArtifactStore::new(root)?;
     let plan = projection::normalize(files.plan(path, pin)?, candidate)?;
-    verify_value(&mut files, plan, candidate)
+    verify_value(&mut files, plan, candidate, None)
 }
 
 fn verify_value(
     files: &mut ArtifactStore,
     plan: Value,
     candidate: &str,
+    inspection_limit: Option<usize>,
 ) -> Result<Value, String> {
     hex::<20>(candidate)?;
     keys(
@@ -269,7 +277,7 @@ fn verify_value(
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
-    let trace = trace(&plan, files)?;
+    let trace = trace(&plan, files, inspection_limit)?;
     let verified = verify_quiescent_prefix_composite(
         &trace,
         incarnation,

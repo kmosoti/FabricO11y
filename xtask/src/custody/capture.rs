@@ -40,31 +40,6 @@ fn read_member(
     files.plan(path, text(record, "sha256")?)
 }
 
-fn pin_inspection_bodies(
-    commands: &[Value],
-    files: &mut ArtifactStore,
-    root: &str,
-) -> Result<(), String> {
-    for command in commands {
-        let Some(artifact) = command.get("stdout_artifact") else {
-            continue;
-        };
-        keys(artifact, &["path", "sha256", "encoding"])?;
-        require(
-            text(artifact, "encoding")? == "utf-8-from-subprocess-text",
-            "inspection encoding mismatch",
-        )?;
-        let relative = text(artifact, "path")?;
-        require(canonical(relative), "noncanonical inspection path")?;
-        let path = format!("{root}/{relative}");
-        let pin = text(artifact, "sha256")?;
-        require(digest(pin), "inspection SHA-256 required")?;
-        let body = files.read_bytes(&path, pin)?;
-        require(body.len() <= 4096, "inspection body exceeds 4096 bytes")?;
-    }
-    Ok(())
-}
-
 pub(super) fn verify_capture(
     root: &Path,
     manifest_path: &str,
@@ -122,20 +97,14 @@ pub(super) fn verify_capture(
     require(events.len() <= MAX_EVENTS, "journal event count exceeds bound")?;
     let samples = samples.as_array().ok_or("process observations array required")?;
     require(samples.len() <= MAX_SAMPLES, "process sample count exceeds bound")?;
-    keys(
-        &snapshot,
-        &["node_id", "generation", "sources", "candidate_process"],
-    )?;
     let sources = array(&snapshot, "sources", MAX_SOURCES)?;
     let mut selected_sources = Vec::with_capacity(sources.len());
     for source in sources {
-        keys(source, &["sequence", "sha256"])?;
         selected_sources.push(json!({
             "sequence": number(source, "sequence")?,
             "sha256": text(source, "sha256")?
         }));
     }
-    pin_inspection_bodies(commands, &mut files, phase_root)?;
     let v2 = json!({
         "version": 2,
         "candidate": candidate,
@@ -153,5 +122,5 @@ pub(super) fn verify_capture(
         }
     });
     let plan = super::projection::normalize(v2, candidate)?;
-    super::verify_value(&mut files, plan, candidate)
+    super::verify_value(&mut files, plan, candidate, Some(4096))
 }
