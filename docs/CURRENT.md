@@ -19,15 +19,22 @@ capture, projection and cutoff controls ran 16 tests with exit 0 at `681fcc5`; t
 receipt is `results/service-query-query-gap-01/custody-capture-controls-01.json`.
 The complete adapter invocation at `75a4bba` ran 147 tests with exit 0, including
 the actual Rust helper after independent archive/custody admission. The immutable
-Fedora stopped-bundle replay still rejects its missing exact-byte ACK. These are
-not a full fast-profile result. The host Python transport and independent
+Fedora stopped-bundle replay still rejects its missing exact-byte ACK.
+The complete 20-check fast profile and all three documentation commands ran
+with exit 0 at `c033613` in `custody-caller-fast-profile-02`. That revision fixes
+the review-discovered `1e999` helper-report overflow; the preceding regression
+run reproduced its erroneous acceptance. The helper and incremental source
+bundle are retained in `results/coordination-custody-integration-01/artifacts-c033613/`;
+the [execution record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-primitive-composition-results-01)
+keeps commands, failures, source identities and resource receipts.
+The host Python transport and independent
 Python archive/custody oracle remain pending independently validated migration.
 Native caller wiring is implemented, but the clean merged-harness requirement
 blocks a real native capture; no matching capture or acceptance has run. The
 earlier DATA-only draft and its failures remain historical evidence. Do not resume
 alpha acceptance or rebuild frozen product packages for these harness changes.
 The persistent queue is `results/primitive-composition-01/queue.json`; the
-archived Rust helper and source bundle are under
+earlier archived Rust helper and source bundle are under
 `results/native-cutoff-adapter-01/artifacts-02f5b6c/`. That earlier private compiler
 target and its documentation dependencies were removed after archiving.
 

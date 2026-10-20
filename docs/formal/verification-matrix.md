@@ -207,6 +207,10 @@ adds finite original-JSON transport and Rust cutoff controls. The complete adapt
 suite at `75a4bba` ran 147 tests with exit 0, including the actual helper behind
 independent raw archive and custody checks. This does not authenticate a native
 guest or satisfy `QUAL-INSTALL`; a matching native capture remains pending.
+The full 20-check fast profile and documentation checks exited 0 at `c033613`.
+The helper-output overflow regression first reproduced an accepted `1e999`
+number before that revision's finite-float correction; its records are linked
+from the [continuation](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-primitive-composition-results-01).
 
 ## Server self-observation (ADR-0026)
 
