@@ -369,6 +369,44 @@ prerequisite checks remain unchanged. Every other cleanup label, including the
 historical prose alone, remains invalid. Preserve and regress the hosted receipt
 without changing its failed workflow outcome.
 
+## Rust defect receipt grader adoption
+
+Prospective trust-boundary amendment, 2026-10-20. The owner requested removal
+of Python where validated Rust replacements preserve the registered behavior.
+Replace the hosted receipt grader with
+`cargo xtask check-browser-defect STATUS PATH [--kind api-cache|nonresident-enrollment]`.
+The two observed API-cache receipt fixtures remain byte-identical. Neither the
+injected defect nor its required assertion, prerequisites, cleanup dispositions
+or stop evidence changes. Omitted and null cleanup/stop errors remain equivalent;
+extra diagnostic fields and negative integer process exits remain permitted.
+
+Receipt admission is intentionally stricter than the former Python reader:
+one regular, nonsymlink file; at most 4 MiB of unique-key, finite UTF-8 JSON;
+an object root and maximum container depth 32; signed 64-bit integer status,
+exit, witness-count, PID, start-tick and process-exit values; literal boolean
+observations and credential residency; and an array of strings for `checks`.
+Read the admitted descriptor once and recheck its identity before grading.
+Python's numeric equality aliases (`true`/`1.0` for exit or count and `0`/`0.0`
+for false residency), string/object membership in `checks`, duplicate keys,
+and unbounded input are not compatibility promises. Rejecting those
+representations is a prospective tightening, not exact legacy equivalence.
+CLI integer spellings such as `+1` and `01` remain accepted within the integer
+range. A grading success prints `registered KIND defect detected` and exits 0;
+a mismatched or invalid receipt exits 1; argument or containment setup failure
+exits 2. Every nonzero status remains a failed workflow step.
+
+Before retiring the Python grader and its dedicated tests, exercise the actual
+Rust CLI against both observed receipts, every old cleanup/prerequisite refusal,
+the enrollment witness, the prospective strictness cases, and a deliberately
+broken cleanup guard. Keep the original Python source and its observed alias
+behavior reproducible at `220849fe0d08fc37c9f4386af7a795c028b6ecbf`.
+The normal, nonignored Rust integration target runs through the existing
+workspace `test` entry in the fast registry; no additional registry entry is
+needed. Update the hosted invocation and its static CI contract together.
+Offline grading does not establish a new Chrome run or change a historical
+workflow outcome. The existing live injected-browser step remains required
+for hosted end-to-end evidence; alpha acceptance remains owner-paused.
+
 ## Native WebDriver BiDi viewport calibration
 
 Prospective geometry-only harness amendment, 2026-10-18. The classic WebDriver

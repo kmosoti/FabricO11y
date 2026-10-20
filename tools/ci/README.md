@@ -45,8 +45,8 @@ original order. Each worker runs its assigned checks serially through the
 existing 30-minute containment launcher; matrix fail-fast is disabled and the
 overall jobs remain capped at 120 minutes. A required `extended` job runs even
 when producers fail, collects exact disjoint shard receipts into DATA-backed
-storage, checks producer success and invokes the unchanged Python complete
-profile validator at the current source revision. Missing, stale, interrupted,
+storage, checks producer success and invokes `cargo xtask verify-receipts`
+against the current source revision. Missing, stale, interrupted,
 failed or altered check evidence cannot pass the aggregate. The Rust scheduling
 guard and workspace unit controls check exact ID ownership, worker bounds,
 launcher, aggregation and representative mutations.
@@ -58,6 +58,19 @@ or cost reduction. The old serial job is not run a second time as an experimenta
 workflow; the separate sharding experiment remains available by manual dispatch.
 
 ## Pinned actions and toolchains
+
+### Pinned CI tool installation
+
+Use `cargo xtask install-tool <crate> <version>` for the pinned Cargo tool
+install path. It preserves inherited `CARGO_HOME`, requires at least 2 GiB
+available DATA space, gives Cargo a private owned target, and applies a fixed
+1500-second deadline. Timeout cleanup kills the process group and reaps Cargo;
+the target is removed and a failed log/receipt retained for review. Outputs live
+under `$FABRIC_STORAGE_ROOT/results/ci-tool-install/` as `<crate>.log` and
+`<crate>.json`. Invoke this command through the still-required outer
+`python3 tools/resource_group.py -- ...` launcher. These controls do not claim
+that a package was installed or establish performance. See the
+[registered protocol](../../docs/experiments/formal/rust-tool-installer-protocol.md).
 
 Every `uses:` reference names a full commit SHA with its tag in a trailing
 comment, so a moved or re-tagged upstream ref cannot change a job silently.
@@ -167,14 +180,17 @@ repeated pages can accumulate. Original positive assertions and the complete
 mutation/equivalence set remain. The scoped procedure is registered in the
 [verifier protocol](../../docs/experiments/formal/verifier-boundedness-protocol.md).
 
-`verify_receipts.py` requires every selected registry check, the checked-out
-commit, unchanged worktree, exact command/profile, exit zero, passed status and
-matching log digest. It rejects missing, stale, interrupted, failed or altered
-evidence. Final validation also requires the live worktree to be clean, so a
-last check cannot modify inputs after recording its pre-check dirty flag.
-The checker validates receipt integrity and coverage, not the semantic
-adequacy or independent trust of an unsigned receipt. Raw logs may contain test
-fixture diagnostics and must be treated as code-originated output.
+`cargo xtask verify-receipts` requires every selected registry check, the
+checked-out commit, unchanged worktree, exact command/profile, exit zero, passed
+status and matching log digest. It rejects missing, stale, interrupted, failed
+or altered evidence. Final validation also requires the live worktree to be
+clean, so a last check cannot modify inputs after recording its pre-check dirty
+flag. The checker validates receipt integrity and coverage, not the semantic
+adequacy or independent trust of an unsigned receipt. Its separately authored
+acceptance and refusal outcomes are in
+[`xtask/tests/fixtures/receipt_contract_cases.json`](../../xtask/tests/fixtures/receipt_contract_cases.json).
+Raw logs may contain test fixture diagnostics and must be treated as
+code-originated output.
 
 Run the CI contract tests through the existing containment launcher:
 

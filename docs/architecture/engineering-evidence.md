@@ -29,6 +29,90 @@ The [architecture review skill](../../.agents/skills/architecture-review/SKILL.m
 routes unresolved design decisions to focused experiments and documentation work.
 Existing Python product oracles stay independent; no MCP server is required.
 
+## Structural lifecycle cutoff
+
+`xtask custody-cutoff` composes bounded inspection text, a typed pause/drain/stop
+transition and an ordered exact-byte ACK join. It reads pinned inspection bytes
+through the existing artifact store; parsing never reopens an admitted path.
+Raw and JSON bodies share its aggregate budget. Version1 accepts direct normalized
+observations; version2 projects captured command/process/journal metadata in Rust
+through the same owned reader and cutoff checker. The projection validates
+ordered streams without sorting and keeps fixed lifecycle selection state;
+only final trace/ACK/source output collections grow with input. It does not
+retain parallel interval or index vectors. The decoder borrows its node
+identity and uses fixed field slots. The ACK join requires ordered inputs and
+uses constant auxiliary state, checking sender/window context in a lazy pass.
+Capture-manifest mode reads digest-pinned original JSON members through Rust's
+owned artifact reader, constructs the existing version2 input and reuses that
+projection and cutoff path. Each JSON member is capped at 4 MiB, inspection text
+at 4,096 bytes and aggregate retained input at 64 MiB. The direct version1 plan
+interface remains supported.
+
+```mermaid
+flowchart LR
+    Capture[Pinned manifest and original JSON] --> Reader[Rust manifest reader]
+    Reader --> V2[Existing version2 projection]
+    V1[Direct version1 plan] --> Plan[Normalized plan]
+    V2 --> Plan
+    Plan --> Inspect[Typed inspection]
+    Inspect --> Cutoff[Pause drain stop transition]
+    Plan --> Join[Ordered source and ACK join]
+    Cutoff --> Result[Structural cutoff]
+    Join --> Result
+    Result --> Recheck[Recheck input identities]
+```
+
+Command intervals remain intervals. Journal emission times are separate inputs;
+local stdout supplies none. The result cannot attest a producer, capture
+completeness or process stop. Raw native binding and the independent Python
+custody oracle remain mandatory. Guest capture records real command bounds,
+pinned inspection text and process observations without deciding cutoff policy.
+The native adapter applies its executable/service/InvocationID/cgroup/UID/GID
+join to recognized Batch, configuration and delivery journal records; filtering
+by PID alone does not establish that binding. The event output schema is unchanged.
+The independent conservation oracle has an explicit native transition mode:
+four stopped profiles are fixed at revision1/active, revision1/active,
+revision2/paused and revision4/paused. It reparses retained configuration bytes
+and joins their digest, size and original private file metadata; a cached parsed
+view cannot override those bytes. The default static-profile rule is unchanged.
+The guest effect adapter now requests the registered pause before observing a
+stable acknowledged prefix, records a stopped inspection, and requests resume
+while collection remains stopped. Reboot repeats the distinct revision sequence.
+These operational waits do not replace the Rust cutoff or independent raw joins;
+the host Python transport and independent Python archive/custody oracle remain
+until an independently validated migration exists. Rust capture-reader controls
+are finite engineering evidence only. Native execution requires a clean harness
+revision present in `origin/main` and the existing pinned owner/helper admission;
+no matching native capture or acceptance exists.
+The [adapter contract](../experiments/formal/native-cutoff-adapter-protocol.md)
+and [primitive protocol](../experiments/formal/primitive-composition-protocol.md)
+separate finite controls from native caller adoption and alpha acceptance.
+The [finite composition results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-primitive-composition-results-01) retain the measured variants and counterexamples.
+
+The host transport drains stdout and stderr concurrently in bounded chunks,
+retaining at most 65,536 bytes per stream and refusing overflow. This bound
+belongs to the protocol streams: a global file-size limit would also truncate
+LLVM profiles and other legitimate helper files. Pins, private output files,
+strict JSON admission and the independent archive/custody joins still apply.
+Each invocation has a maximum 60-second deadline within the caller's remaining
+budget. Timeout or overflow stops the helper group, with at most two seconds
+of subsequent pipe draining. Normal completion observes the leader with
+`waitid(WNOWAIT)`, stops its group while the leader's PID remains reserved, then
+reaps it and records its actual exit. Kernel-level wait completion still depends
+on the mandatory outer resource group; this is not a sandbox for an untrusted
+executable that deliberately escapes its process group.
+## Pinned CI tool install
+
+`cargo xtask install-tool <crate> <version>` is the effectful Rust boundary for
+one explicitly pinned Cargo installation. It inherits `CARGO_HOME`, requires
+2 GiB available DATA headroom, and assigns Cargo a private target under owned
+scratch. A fixed 1500-second timeout kills the process group and reaps Cargo;
+cleanup removes the target while retaining the log and JSON receipt under
+`$FABRIC_STORAGE_ROOT/results/ci-tool-install/`. The Python resource-group
+launcher remains mandatory outside this command. Registered controls and full fast migration verification ran at the revisions
+recorded in the [execution record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-rust-ci-tooling-migration-results-01). No actual install is claimed by those local controls; see
+the [installer protocol](../experiments/formal/rust-tool-installer-protocol.md).
+
 ## Native browser subgroup entry
 
 The [registered supervisor correction](../experiments/formal/browser-supervisor-protocol.md)
@@ -192,8 +276,10 @@ current registry, complete selected receipt inventory and each log digest. Its
 [representation contract](../formal/verification-receipt-contract.md) deliberately
 rejects duplicate JSON keys and numeric/boolean aliases. Git identity is checked
 before and after validation; missing, failed or running checks cannot count as
-a complete profile. This command is implemented for experimental comparison;
-required CI adoption is a separate step.
+a complete profile. CI now uses this command for final-profile validation.
+The historical Python comparator remains reproducible from immutable
+`f001175`; current Rust collector validation is a composition check, not an
+independent oracle.
 
 JSON is bounded per document and across the composition. Logs are streamed with
 one complete digest per admitted artifact, then identities are rechecked. For N
@@ -230,19 +316,41 @@ exclusive publication checks those pinned bytes again. Artifact copying uses a
 64 KiB buffer, an exact initial extent and a one-byte growth probe. Failure leaves
 the marker and evidence; successful cleanup precedes marker removal. This bounds
 copy scratch independently of log length, while retaining full-byte verification.
-The unchanged Python receipt validator remains an independent cross-check before
-adoption. Local integration receipts bind source `7fc4723`; current-head hosted
-checks still gate workflow adoption.
+The Python receipt validator supplied the historical independent cross-check.
+Current CI uses the Rust verifier and the separately authored contract fixture;
+that shared implementation does not supply an independent cross-check.
+Local integration receipts at `7fc4723` remain tied to that historical source.
 
 ## Hosted extended verification
 
 Hosted extended verification runs the registered checks in two serial shards:
 `semantic-mutants` and the other nine extended IDs. The required `extended` job
-joins their disjoint receipts and invokes the independent Python completeness
-validator on the same source revision. This scheduling reduces elapsed time in
+joins their disjoint receipts and invokes the Rust completeness validator
+on the same source revision. This scheduling reduces elapsed time in
 one completed hosted comparison while increasing aggregate runner time under
 different CPU, cache and setup conditions; it does not alter check commands or
 product acceptance criteria. See the [finite pilot record](../experiments/formal/verification-shards-protocol.md).
+
+## Browser defect receipt grading
+
+`xtask check-browser-defect` admits one descriptor-owned, bounded JSON receipt
+and checks the exact API-cache or nonresident-enrollment failure plus its
+prerequisites and structured cleanup evidence. A `BTreeSet` rejects duplicate
+PID/start-tick pairs in O(log N) per group; all groups must be empty and reaped.
+It preserves both fixture-removal and failure-evidence-retention dispositions.
+The [adoption contract](../experiments/formal/browser-supervisor-protocol.md#rust-defect-receipt-grader-adoption)
+records the stricter representation rules and the unchanged historical inputs.
+This read-only grader does not launch a browser or establish native cleanup;
+it checks the supplied observations. The existing hosted injected-defect step
+remains the source of end-to-end evidence.
+
+```mermaid
+flowchart LR
+    Receipt[Observed browser receipt] --> Admission[Bounded descriptor and strict JSON]
+    Admission --> Defect[Exact defect and prerequisite checks]
+    Defect --> Cleanup[Unique process identities and complete stop observations]
+    Cleanup --> Grade[Registered defect detected or refusal]
+```
 
 ## Native storage census
 

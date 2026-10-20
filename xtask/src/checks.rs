@@ -1689,9 +1689,11 @@ mod shard_workflow_contract {
             .ok_or("complete-profile validator step missing")?;
         if !has_line(
             validator_step,
-            "run: python3 -B tools/resource_group.py -- python3 -B tools/ci/verify_receipts.py --profile extended --receipts \"$FABRIC_STORAGE_ROOT/results/verification-pilot/combined\"",
+            "run: python3 -B tools/resource_group.py -- cargo xtask verify-receipts --profile extended --receipts \"$FABRIC_STORAGE_ROOT/results/verification-pilot/combined\"",
         ) {
-            return Err("aggregate must invoke the unchanged complete-profile validator".into());
+            return Err(
+                "aggregate must invoke the contained Rust complete-profile verifier".into(),
+            );
         }
         let status_step = aggregate_body
             .split_once("      - name: Require both matrix shards to have succeeded\n")
@@ -1735,8 +1737,18 @@ mod shard_workflow_contract {
             ("fail-fast", "fail-fast: false", "fail-fast: true"),
             (
                 "missing-validator",
-                "tools/ci/verify_receipts.py --profile extended",
-                "tools/ci/verify_receipts.py --profile fast",
+                "cargo xtask verify-receipts --profile extended",
+                "cargo xtask verify-receipts --profile fast",
+            ),
+            (
+                "uncontained-validator",
+                "run: python3 -B tools/resource_group.py -- cargo xtask verify-receipts",
+                "run: cargo xtask verify-receipts",
+            ),
+            (
+                "wrong-validator-data-root",
+                "cargo xtask verify-receipts --profile extended --receipts \"$FABRIC_STORAGE_ROOT/results/verification-pilot/combined\"",
+                "cargo xtask verify-receipts --profile extended --receipts \"$FABRIC_STORAGE_ROOT/results/verification-pilot/other\"",
             ),
             (
                 "producer-status",

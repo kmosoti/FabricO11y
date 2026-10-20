@@ -1,10 +1,89 @@
 # Current project state
 
-Engineering tooling now includes an experimental Rust `xtask verify-receipts`
+Alpha and package acceptance remain owner-paused under [issue #59](https://github.com/kmosoti/FabricO11y/issues/59). Verification-engineering continuation is authorized and tracked in [PR #102](https://github.com/kmosoti/FabricO11y/pull/102); its provenance pins remain product source `b1e5874`, frozen package source `43150db`, `origin/main` baseline `f001175`, and engineering profile anchor `31cf809`. The Rust capture reader is at `681fcc5`, with native caller wiring at `bf1efa9`. These pins do not resume acceptance or claim a future check outcome.
+
+Owner stop checkpoint (2026-10-18): the native producer now applies pause2,
+waits for a stable acknowledged prefix, captures the independent stopped state
+and final inspection, then requests resume3 while the node remains stopped.
+The distinct reboot uses active3/pause4/resume5. Effect controls exercise the
+actual guest lifecycle; they do not establish native journal authenticity.
+The independent profile change is isolated in commit `d81c26b`; its default
+static-profile path and source/ACK/query rules remain intact. The rejected
+cached-view draft, setup failure, causal refusals and corrected controls remain
+on the data drive. The 20 fast checks at `02f5b6c` predate this caller integration
+and are not a full-profile result for the current branch.
+
+The Rust capture reader now admits a pinned manifest and original JSON members,
+then composes the existing version2 projection and cutoff verifier. Focused Rust
+capture, projection and cutoff controls ran 16 tests with exit 0 at `681fcc5`; the
+receipt is `results/service-query-query-gap-01/custody-capture-controls-01.json`.
+The complete adapter invocation at `75a4bba` ran 147 tests with exit 0, including
+the actual Rust helper after independent archive/custody admission. The immutable
+Fedora stopped-bundle replay still rejects its missing exact-byte ACK.
+The complete 20-check fast profile and all three documentation commands ran
+with exit 0 at `c033613` in `custody-caller-fast-profile-02`. That revision fixes
+the review-discovered `1e999` helper-report overflow; the preceding regression
+run reproduced its erroneous acceptance. The helper and incremental source
+bundle are retained in `results/coordination-custody-integration-01/artifacts-c033613/`;
+the [execution record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-primitive-composition-results-01)
+keeps commands, failures, source identities and resource receipts.
+The host Python transport and independent
+Python archive/custody oracle remain pending independently validated migration.
+Combined engineering verification in [PR #105](https://github.com/kmosoti/FabricO11y/pull/105)
+found a coverage failure at `a2b39fc`: the host transport's global file-size limit
+killed three instrumented Rust helpers with `SIGXFSZ` while they flushed LLVM
+profiles. The correction bounds each protocol stream independently, retains
+actual exit status, and stops the helper group before reaping its leader.
+Independent side-file and quiet-descendant controls reject the former transport.
+The instrumented adapter suite ran 155 tests with exit 0 on the corrected
+working tree, and LLVM merged its profiles successfully; this focused result
+does not replace final combined verification. Commands, patch identity and
+failure evidence are retained under `results/rust-engineering-integration-01/`.
+Native caller wiring is implemented. A real native capture requires a clean
+harness revision present in `origin/main` and the existing pinned owner/helper
+admission; no matching capture or acceptance has run. The
+earlier DATA-only draft and its failures remain historical evidence. Do not resume
+alpha acceptance or rebuild frozen product packages for these harness changes.
+The persistent queue is `results/primitive-composition-01/queue.json`; the
+earlier archived Rust helper and source bundle are under
+`results/native-cutoff-adapter-01/artifacts-02f5b6c/`. That earlier private compiler
+target and its documentation dependencies were removed after archiving.
+
+Hosted browser defect receipts now have a Rust grader,
+`cargo xtask check-browser-defect`, preserving both historical cleanup
+dispositions and the registered API-cache/enrollment assertions. Its
+[adoption protocol](experiments/formal/browser-supervisor-protocol.md#rust-defect-receipt-grader-adoption)
+explicitly distinguishes stricter JSON/type admission from legacy parity.
+The existing workspace test gate runs the CLI controls. At `1d9b633`, all
+20 fast checks, same-source Rust receipt verification and the three
+documentation commands exited 0. Six focused CLI test functions, ten retained
+Python CI tests and the deliberately broken cleanup-proof guard were checked;
+the original source was restored and passed. Earlier diagnostic/lint failures
+remain in the [migration record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-rust-ci-tooling-migration-results-01#browser-defect-grader-continuation).
+No new hosted browser or product acceptance is claimed for this grader.
+
+CI tool installation now has one pinned Rust entrypoint, `cargo xtask
+install-tool`; the Python `tools/resource_group.py` remains the required outer
+containment launcher. It enforces a fixed 1500-second deadline and 2 GiB DATA
+headroom floor, uses inherited `CARGO_HOME` and an owned private target, and
+retains logs/receipts while cleaning the target. At `6144147`, the combined
+migration run exited 0: 48 library tests, 9 installer tests, 3 receipt CLI tests,
+5 collector composition tests, 14 retained Python CI checks and Clippy.
+Injected removal of the duplicate-ID guard and target-identity checks each
+reached the intended failing assertion; restored source passed its controls.
+Earlier compile/lint and fixture failures remain in the
+[execution record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-rust-ci-tooling-migration-results-01),
+which also records the complete fast-profile result and its source revision.
+No actual package install or performance result is claimed. See the
+[installer boundary](architecture/engineering-evidence.md#pinned-ci-tool-install).
+
+Engineering tooling now uses the Rust `xtask verify-receipts`
 command, sharing bounded descriptor-owned artifact reads with evidence preflight.
 The [architecture boundary](architecture/engineering-evidence.md#native-verification-receipts)
 and [strict representation policy](formal/verification-receipt-contract.md)
-describe its limits. Local complete-profile and independent refusal controls ran
+describe its limits. The CI workflows have adopted this command; the original
+Python comparator remains reproducible from immutable history. Local
+complete-profile and independent refusal controls ran
 at `7fc4723`; PR #80 merged as `06ccc0c` after complete hosted verification of
 merge candidate `c129013`. Synthetic verifier fixtures do not credit product
 acceptance. Alpha acceptance is owner-paused for verification engineering.
@@ -79,17 +158,21 @@ Its [contract](experiments/formal/engineering-evidence-protocol.md) and
 preserve the distinction between structural consistency and acceptance.
 The [two-runner verification pilot](experiments/formal/verification-shards-protocol.md)
 completed both shards and the independent final validators at the same tested
-source `faf148ec`. Its finite wall time was 41.98% lower while combined runner time was
+source `faf148ec`. That historical run used the Python receipt validator. Its
+finite wall time was 41.98% lower while combined runner time was
 10.32% higher. The workers had different CPU, cache and setup conditions, so
 this observation does not establish a universal speedup. The first aggregation
 failure remains preserved; the corrected DATA-backed collector and unchanged
-Python validator are recorded in the
+historical Python validator are recorded in the
 [completed paired-shards results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-verification-shards-results-01).
 The original [failed aggregation](https://github.com/kmosoti/FabricO11y/actions/runs/39090541570)
 is retained alongside the corrected result.
-Canonical workflow adoption preserves all ten registered extended commands and
-their final current-source validation. Its current-head hosted check remains
-required before merge.
+Current workflow adoption replaces the Python final-validator invocation with
+the Rust `cargo xtask verify-receipts` command. The exact checked-in contract
+fixture supplies expected decisions; the historical Python baseline and
+differential remain historical evidence only. Preserve all ten registered
+extended commands and their final current-source validation. Its current-head
+hosted check remains required before merge.
 No current deployment profile is qualified or release tag published.
 
 ## Implemented

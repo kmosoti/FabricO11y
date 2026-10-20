@@ -1,0 +1,1 @@
+node_id=5e97d1a36ba9e6f6b8a1ed085fac10b7 generation=1 batches=1 metric_points=47 log_records=4 gaps=0 otlp_payload_bytes=5373 committed_bytes=5666 file_bytes=5666 coverage_unknown=false recovery_required=false interrupted_append=false next_sequence=2 acked_through=1 log_backlog_bytes=0

@@ -19,8 +19,10 @@ after an independent check fails when containment and toolchain are proven.
 Retain a required final job named `extended`. It must run after both workers,
 including failure, download exactly the two named artifact sets to explicit
 disk-backed DATA paths, and use the existing exact/disjoint Rust collector.
-Require the unchanged Python complete-profile validator at the tested current
-source, followed by successful producer statuses. Missing, stale, duplicated,
+Require `cargo xtask verify-receipts --profile extended` at the tested current
+source, followed by successful producer statuses. Expected acceptance and
+refusal decisions are owned by the separate receipt contract fixture, not by a
+second implementation. Missing, stale, duplicated,
 failed or incomplete evidence is nonpass; neither successful shard alone closes
 the gate. Preserve raw artifacts on failure and never overwrite old receipts.
 

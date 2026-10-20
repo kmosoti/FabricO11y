@@ -3,6 +3,30 @@
   "description": "Counterexamples kept as deterministic regression fixtures. `cargo xtask check-counterexamples` requires each reproducer test to exist in its file and each fix commit to exist. Removing an entry is a trust-boundary change.",
   "counterexamples": [
     {
+      "origin": "PR105 hosted extended run39459967688 coverage-report failure at a2b39fc; independent local reproduction and reviewed correction",
+      "seed_or_trace": "Actual instrumented helpers exited -25/SIGXFSZ with 65536-byte LLVM profiles. New side-file and quiet-child controls both fail against extracted a2b39fc transport. Corrected working tree passes all155 adapter tests and llvm-profdata merge in rust-integration-coverage-fix-03, exit0 and confirmed stop; log SHA256 8768231d8bc593fc50748dc69edbbe25ee914ccb4959218cae3b0b6af0ebce29. Initial missing-helper environment setup failure is retained separately.",
+      "fix_commit": "5ce46803549a00d1d08a206cbc6252e0020383e2",
+      "id": "CX-CUSTODY-HELPER-STREAM-BOUND",
+      "defect": "RLIMIT_FSIZE applied the 65536-byte protocol output limit to all helper files, killing an otherwise successful Rust helper while LLVM flushed its coverage profile",
+      "contract": "Native cutoff adapter: bound stdout and stderr separately, preserve valid helper side effects and actual exit status, retain strict report admission",
+      "reproducer": {
+        "file": "tools/qualification/install/test_custody_capture.py",
+        "test": "test_cutoff_large_independent_side_file_does_not_limit_valid_stdout"
+      }
+    },
+    {
+      "origin": "PR105 hosted extended run39459967688 coverage-report failure at a2b39fc; independent local reproduction and reviewed correction",
+      "seed_or_trace": "Actual instrumented helpers exited -25/SIGXFSZ with 65536-byte LLVM profiles. New side-file and quiet-child controls both fail against extracted a2b39fc transport. Corrected working tree passes all155 adapter tests and llvm-profdata merge in rust-integration-coverage-fix-03, exit0 and confirmed stop; log SHA256 8768231d8bc593fc50748dc69edbbe25ee914ccb4959218cae3b0b6af0ebce29. Initial missing-helper environment setup failure is retained separately.",
+      "fix_commit": "5ce46803549a00d1d08a206cbc6252e0020383e2",
+      "id": "CX-CUSTODY-HELPER-DESCENDANT-CLEANUP",
+      "defect": "A helper that emitted valid JSON and exited0 could leave a same-group child alive after that child closed its protocol streams",
+      "contract": "Owned helper effects are stopped before invocation completion; original leader exit status is retained and process-group identity is protected until cleanup",
+      "reproducer": {
+        "file": "tools/qualification/install/test_custody_capture.py",
+        "test": "test_cutoff_quiet_descendant_is_cleaned_after_parent_exits"
+      }
+    },
+    {
       "id": "CX-INSTALLATION-BASELINE-AUDIT-READ",
       "origin": "PR review C-aud-10 S1; prospective control commit 42e45f5d7ce75fbb5494e898467c75a721c4cd09",
       "defect": "Baseline Fedora F3 treated grep exit 2 on unreadable required audit evidence as a clean audit and printed PASS",
@@ -117,8 +141,8 @@
       "seed_or_trace": "freeze a real Git fixture, then change a tracked input or add an untracked input after the recorded identity; final validation must reject both",
       "contract": "ARCH-1",
       "reproducer": {
-        "file": "tools/ci/test_ci_contracts.py",
-        "test": "test_input_changes_after_receipts_are_rejected"
+        "file": "xtask/tests/receipt_cli.rs",
+        "test": "cli_rejects_a_real_dirty_git_checkout"
       },
       "fix_commit": "229f704"
     },
