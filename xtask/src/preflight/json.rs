@@ -82,6 +82,13 @@ impl<'de> Visitor<'de> for Strict {
 
 /// Decode exactly one UTF-8 JSON object, at most 4 MiB and depth 32.
 pub fn strict_json(raw: &[u8]) -> Result<Value, String> {
+    let value = strict_json_value(raw)?;
+    super::require(value.is_object(), "JSON root must be an object")?;
+    Ok(value)
+}
+
+/// Decode exactly one bounded UTF-8 JSON value with unique object keys.
+pub fn strict_json_value(raw: &[u8]) -> Result<Value, String> {
     super::require(raw.len() <= JSON_LIMIT, "JSON size exceeds 4 MiB")?;
     let text = std::str::from_utf8(raw).map_err(|error| error.to_string())?;
     let mut decoder = serde_json::Deserializer::from_str(text);
@@ -89,6 +96,25 @@ pub fn strict_json(raw: &[u8]) -> Result<Value, String> {
         .deserialize(&mut decoder)
         .map_err(|error| error.to_string())?;
     decoder.end().map_err(|error| error.to_string())?;
-    super::require(value.is_object(), "JSON root must be an object")?;
     Ok(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strict_json_keeps_object_root_requirement() {
+        assert!(strict_json(b"[]").is_err());
+        assert!(strict_json(b"{\"ok\":true}").is_ok());
+    }
+
+    #[test]
+    fn strict_json_value_accepts_arrays_and_rejects_nested_duplicate_keys() {
+        assert_eq!(
+            strict_json_value(b"[{\"ok\":true}]").unwrap(),
+            serde_json::json!([{"ok": true}])
+        );
+        assert!(strict_json_value(b"[{\"nested\":{\"x\":1,\"x\":2}}]").is_err());
+    }
 }

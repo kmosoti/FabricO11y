@@ -37,7 +37,8 @@ fn read_member(
     require(canonical(path) && path.starts_with(&prefix), "capture member outside phase root")?;
     require(digest(text(record, "sha256")?), "capture member SHA-256 required")?;
     require(paths.insert(path.to_owned()), "capture member path reused")?;
-    files.plan(path, text(record, "sha256")?)
+    let raw = files.read_bytes(path, text(record, "sha256")?)?;
+    crate::preflight::strict_json_value(raw)
 }
 
 pub(super) fn verify_capture(

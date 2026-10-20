@@ -6,7 +6,7 @@ mod json;
 
 pub use files::{ArtifactStore, admitted_bytes};
 pub use graph::ordered_jobs;
-pub use json::strict_json;
+pub use json::{strict_json, strict_json_value};
 
 use serde_json::{Map, Value, json};
 use std::collections::{BTreeMap, HashMap, HashSet};
