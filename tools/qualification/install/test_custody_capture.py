@@ -282,8 +282,11 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                 elif variant == 'query-drop': files['reboot/after_reboot-query-1-page-0.json']['rows'].pop()
                 elif variant == 'query-duplicate': files['reboot/after_reboot-query-1-page-0.json']['rows'].append(copy.deepcopy(files['reboot/after_reboot-query-1-page-0.json']['rows'][-1]))
                 elif variant == 'ack-hash':
-                    event = files['reboot/ack-events.json'][0]
-                    original = event['message']; event['message'] = original.replace(original.split('sha256=')[1][:64], '0' * 64)
+                    event = next(event for event in files['reboot/ack-events.json']
+                        if event['message'].startswith('delivery sequence='))
+                    original = event['message']
+                    digest = original.split('sha256=', 1)[1].split(' ', 1)[0]
+                    event['message'] = original.replace(digest, '0' * 64)
                     files['reboot/journal.jsonl'] = files['reboot/journal.jsonl'].replace(original.encode(), event['message'].encode())
                 elif variant == 'journal-incarnation':
                     files['reboot/journal.jsonl'] = files['reboot/journal.jsonl'].replace(('2' * 32).encode(), ('f' * 32).encode())
@@ -488,8 +491,6 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
     def captured_metadata(self, files):
         fixture = json.loads((Path(__file__).resolve().parents[3] /
             'docs/experiments/formal/fixtures/native-cutoff-projection-input.json').read_text())
-        inspection = (Path(__file__).resolve().parents[3] /
-            'docs/experiments/formal/fixtures/native-inspect-success.txt').read_bytes()
         for phase, prior_phase in (('drain', 'installed'), ('reboot', 'drain')):
             snap_name = phase + '/' + phase + '-snapshot.json'
             snapshot = native.unpack(files[snap_name])
@@ -504,13 +505,26 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
             current['relative_phase_root'] = 'phase/' + phase
             revision = 2 if phase == 'drain' else 4
             current['observed_events'][1]['message'] = f'config revision={revision} paused=true interval_s=15'
+            prior_snapshot = 'installed/installed-snapshot.json' if prior_phase == 'installed' else 'drain/drain-snapshot.json'
+            prior_ack = native.unpack(files[prior_snapshot])['ack']
             artifact_index = 0
             for command in current['commands']:
                 command['started_ns'] *= 1000
                 command['finished_ns'] *= 1000
                 if 'stdout_artifact' in command:
                     artifact_index += 1
+                    # Synthetic stopped-inspection bytes bind this literal
+                    # node/generation and the actual phase ACK prefix. The
+                    # unrelated native-inspect-success artifact stays intact.
+                    observed_ack = prior_ack if artifact_index == 1 else snapshot['sources'][-1]['sequence']
+                    inspection = (
+                        f'node_id={NODE.hex()} generation=1 batches={len(snapshot["sources"])} '
+                        f'metric_points=0 log_records=0 gaps=0 otlp_payload_bytes=0 committed_bytes=0 '
+                        f'file_bytes=0 coverage_unknown=false recovery_required=false interrupted_append=false '
+                        f'next_sequence={snapshot["sources"][-1]["sequence"] + 1} '
+                        f'acked_through={observed_ack} log_backlog_bytes=0\n').encode()
                     command['stdout_artifact']['path'] = f'inspection-{artifact_index}.txt'
+                    command['stdout_artifact']['sha256'] = native.sha(inspection)
                     files[phase + '/' + command['stdout_artifact']['path']] = inspection
             for sample in current['process_observations']:
                 sample['started_ns'] *= 1000
@@ -518,13 +532,11 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                 sample.update(unit=process['unit'], pid=process['pid'], boot_id=process['boot_id'],
                     invocation_id=process['invocation_id'], exe_sha256=process['exe_sha256'])
                 sample['calibration']['start_ticks'] = 10
-            prior_snapshot = 'installed/installed-snapshot.json' if prior_phase == 'installed' else 'drain/drain-snapshot.json'
-            prior_ack = native.unpack(files[prior_snapshot])['ack']
             events = [dict(unit=process['unit'], pid=process['pid'], boot_id=process['boot_id'],
                 at_ns=50000, message='batch=4 metrics=1 logs=1 gaps=0 spool_bytes=1 log_backlog_bytes=0 acked_through=3'),
                 dict(unit=process['unit'], pid=process['pid'], boot_id=process['boot_id'], at_ns=150000,
                     message=current['observed_events'][1]['message'])]
-            event_time = 232000
+            event_time = 222000
             for source in snapshot['sources']:
                 if source['sequence'] > prior_ack:
                     events.append(dict(unit=process['unit'], pid=process['pid'], boot_id=process['boot_id'],
