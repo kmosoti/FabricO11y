@@ -8,6 +8,8 @@ import os
 from pathlib import Path
 import pwd
 import re
+import resource
+import shutil
 import stat
 import subprocess
 import sys
@@ -452,9 +454,111 @@ def observed_events(raw, process):
     return events
 
 
+def pinned_cutoff(pin, data):
+    """Read the explicitly admitted executable; no search or runtime compilation."""
+    witness.require(isinstance(pin, dict) and set(pin) == {'path', 'sha256'}
+        and isinstance(pin['path'], str) and isinstance(pin['sha256'], str)
+        and re.fullmatch('[0-9a-f]{64}', pin['sha256']), 'cutoff helper pin required')
+    path = Path(pin['path'])
+    witness.require(path.is_absolute() and path.resolve(strict=True) == path
+        and path.is_relative_to(data / 'results'), 'cutoff helper outside DATA results')
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC), 'rb') as stream:
+        before = os.fstat(stream.fileno())
+        witness.require(stat.S_ISREG(before.st_mode) and before.st_uid == os.getuid()
+            and before.st_nlink == 1 and before.st_mode & 0o111 and before.st_size <= 64 * 1024**2,
+            'unsafe cutoff executable')
+        raw = stream.read(before.st_size + 1)
+        witness.require(len(raw) == before.st_size and sha(raw) == pin['sha256']
+            and witness.identity(before) == witness.identity(os.fstat(stream.fileno()))
+            == witness.identity(path.lstat()), 'cutoff executable changed or digest mismatch')
+    return raw
+
+
+def captured_cutoffs(archive, files, snapshots, admission, pin, result_dir, data, deadline, bundle_sha256):
+    """Transport original admitted members; all projection/cutoff decisions are Rust."""
+    data, result_dir = Path(data), Path(result_dir)
+    witness.require(str(data) == os.environ['FABRIC_STORAGE_ROOT']
+        and result_dir.resolve(strict=True) == result_dir and result_dir.is_relative_to(data / 'results')
+        and result_dir.stat().st_uid == os.getuid() and stat.S_IMODE(result_dir.stat().st_mode) == 0o700,
+        'cutoff result/root mismatch')
+    base = result_dir / 'custody-cutoff-inputs'
+    base.mkdir(mode=0o700)  # Exclusive: never clean a directory inherited from another attempt.
+    identity = (base.stat().st_dev, base.stat().st_ino)
+    def create(path, mode=0o600):
+        return os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | os.O_CLOEXEC, mode), 'wb')
+    def write(path, raw, mode=0o600):
+        with create(path, mode) as stream:
+            stream.write(raw)
+    raw = pinned_cutoff(pin, data)
+    executable = base / 'helper'
+    write(executable, raw, 0o500)
+    witness.require(sha(executable.read_bytes()) == pin['sha256'], 'helper snapshot mismatch')
+    outcomes, total = [], 0
+    for phase, prior in (('drain', 'installed'), ('reboot', 'drain')):
+        directory = base / phase; directory.mkdir(mode=0o700)
+        def member(leaf, limit):
+            nonlocal total
+            witness.require(isinstance(leaf, str) and re.fullmatch('[A-Za-z0-9][A-Za-z0-9._-]{0,127}', leaf), 'unsafe capture leaf')
+            source = files[phase + '/' + leaf]
+            witness.require(source['item'].size <= limit and total + source['item'].size <= 64 * 1024**2, 'capture input bound')
+            body = archive.extractfile(source['item']).read(limit + 1)
+            witness.require(len(body) == source['item'].size and sha(body) == source['sha256'], 'capture member changed')
+            total += len(body); write(directory / leaf, body)
+            return dict(path=str((directory / leaf).relative_to(data)), sha256=sha(body))
+        manifest = dict(version=1, candidate=admission['binding']['candidate_frozen'], phase=phase,
+            prior_ack=snapshots[prior]['ack'], relative_phase_root=str(directory.relative_to(data)))
+        for key, leaf in (('commands', 'commands.json'), ('observed_events', 'ack-events.json'),
+                ('process_observations', 'process-observations.json'), ('stopped_snapshot', phase + '-snapshot.json')):
+            manifest[key] = member(leaf, 4 * 1024**2)
+        for command in json.loads((directory / 'commands.json').read_bytes()):
+            if 'stdout_artifact' in command:
+                artifact = command['stdout_artifact']; copied = member(artifact['path'], 4096)
+                witness.require(copied['sha256'] == artifact['sha256'], 'inspection archive/stdout mismatch')
+        plan = (json.dumps(manifest, separators=(',', ':')) + '\n').encode()
+        write(directory / 'manifest.json', plan)
+        report = dict(phase=phase, candidate=manifest['candidate'], helper=pin, manifest_sha256=sha(plan),
+            bundle_sha256=bundle_sha256, input_root=str(directory), state='started')
+        prefix = result_dir / ('custody-cutoff-' + phase)
+        def limits(): resource.setrlimit(resource.RLIMIT_FSIZE, (65536, 65536))
+        try:
+            remaining = min(60, deadline - time.monotonic())
+            witness.require(remaining > 0, 'cutoff invocation deadline')
+            with create(prefix.with_suffix('.stdout')) as out, create(prefix.with_suffix('.stderr')) as err:
+                proc = subprocess.run([str(executable), 'custody-cutoff', '--root', str(data),
+                    '--capture-manifest', str((directory / 'manifest.json').relative_to(data)),
+                    '--manifest-sha256', sha(plan), '--candidate', manifest['candidate']],
+                    stdout=out, stderr=err, timeout=remaining, preexec_fn=limits, check=False)
+            report['exit'] = proc.returncode
+            witness.require(proc.returncode == 0, 'Rust capture verifier refused')
+            def unique(items):
+                result = {}
+                for key, value in items:
+                    witness.require(key not in result, 'duplicate Rust report key')
+                    result[key] = value
+                return result
+            def nonfinite(value):
+                raise ValueError('nonfinite Rust report number: ' + value)
+            result = json.loads(prefix.with_suffix('.stdout').read_bytes(),
+                object_pairs_hook=unique, parse_constant=nonfinite)
+            witness.require(isinstance(result, dict) and result.get('status') == 'structural-cutoff'
+                and result.get('candidate') == manifest['candidate'], 'Rust capture report mismatch')
+            report.update(state='completed', result=result); outcomes.append(report)
+        except BaseException as error:
+            report.update(state='failed', error=type(error).__name__, message=str(error))
+            raise
+        finally:
+            write(prefix.with_suffix('.json'), (json.dumps(report, sort_keys=True) + '\n').encode())
+    witness.require(base.resolve(strict=True) == base and (base.stat().st_dev, base.stat().st_ino) == identity,
+        'cutoff scratch ownership changed')
+    shutil.rmtree(base)
+    return outcomes
+
+
 # Host admission freezes owner inputs before boot and rechecks them at transfer.
 def host_admission(owner_path, source_root, storage, package, source_commit, run_id, family):
     owner = json.loads(owner_path.read_text())
+    cutoff_pin = owner.get('cutoff_helper')
+    pinned_cutoff(cutoff_pin, storage)
     git = lambda *args: subprocess.check_output(['git', '-C', str(source_root), *args], text=True).strip()
     witness.require(not git('status', '--porcelain') and git('rev-parse', 'HEAD') == owner['harness_commit'], 'clean harness source mismatch')
     subprocess.run(['git', '-C', str(source_root), 'merge-base', '--is-ancestor', owner['harness_commit'], 'origin/main'], check=True)
@@ -470,6 +574,7 @@ def host_admission(owner_path, source_root, storage, package, source_commit, run
              '9c83d196a5ccf85e00d3e9becc79032f3fd57d7aab64a396690803bef841aa5a',
              storage / 'results/candidate-build-query-gap-01/package-inspection.json':
              'ad3c597a10d9841548165c47ddd7d504095db94063223e1f93a73a0d887d30b8'}
+    fixed[Path(cutoff_pin['path'])] = cutoff_pin['sha256']
     for path, expected in fixed.items(): witness.require(sha(path.read_bytes()) == expected, 'owner package/admission receipt mismatch')
     deb, rpm = (json.loads((directory / 'receipt.json').read_text()) for directory in (debdir, rpmdir))
     frozen, canonical = 'b1e5874fbf9c6feb611d98ed40386ac44a703fe1', '43150dbd5cff9e0bdb0082997e796978c659d8af'
@@ -497,12 +602,15 @@ def host_admission(owner_path, source_root, storage, package, source_commit, run
         fixed[path] = expected_hash
     return dict(binding=dict(run_id=run_id, candidate_frozen=frozen, candidate_package_sha256=expected['package_sha256'],
         package_source_commit=canonical, harness_commit=owner['harness_commit']), source_hashes=source_hashes,
-        owner_sha256=sha(owner_path.read_bytes()), inputs={str(path): value for path, value in fixed.items()},
+        cutoff_helper=cutoff_pin, owner_sha256=sha(owner_path.read_bytes()), inputs={str(path): value for path, value in fixed.items()},
         node_sha256=rpm['payload_identity']['usr/bin/fabric-node']['sha256'], fixture_paths=[SOURCE], spool_root=str(ROOT))
 
 
-def admit_transfer(bundle, admission, guest_sha256, *, control=None):
+def admit_transfer(bundle, admission, guest_sha256, *, control=None, cutoff_helper=None, result_dir=None, data_root=None, deadline=None):
     """Inspect the labelled archive; never substitute an extracted root for guest input."""
+    if not control:
+        witness.require(isinstance(cutoff_helper, dict) and cutoff_helper == admission.get('cutoff_helper')
+            and result_dir is not None and data_root is not None and deadline is not None, 'frozen cutoff invocation required')
     witness.require(bundle.stat().st_size <= 1024**3, 'native transfer overhead exceeded')
     witness.require(sha(bundle.read_bytes()) == guest_sha256, 'guest/host transfer digest mismatch')
     expected_phases = {'prepare'} if control else {'prepare', 'installed', 'drain', 'reboot'}
@@ -612,6 +720,7 @@ def admit_transfer(bundle, admission, guest_sha256, *, control=None):
                 witness.require(observed['active']['exit'] == 3 and observed['show']['exit'] == 0
                     and values['MainPID'] == '0' and values['ActiveState'] in ('inactive', 'failed')
                     and not any(value.strip() for value in observed['members'].values()), 'unconfirmed native stop')
+        cutoff_outcomes = []
         if not control:
             witness.require(read('reboot/conservation.json') == dict(status='accepted', required_checkpoints=4), 'native conservation absent')
             def query_rows(phase, prefix):
@@ -631,7 +740,18 @@ def admit_transfer(bundle, admission, guest_sha256, *, control=None):
                 if observed['btrfs_identity'] is not None and observed['btrfs_identity'] == prior['btrfs_identity']:
                     observed['stat'][0] = prior['stat'][0]  # Comparison copy only; original record remains retained.
             witness.require(credentials[3] == credentials[0], 'credential metadata/hash drift')
-    return dict(bundle_sha256=sha(bundle.read_bytes()), bytes=bundle.stat().st_size, phases=sorted(expected_phases))
+            try:
+                cutoff_outcomes = captured_cutoffs(archive, files, snapshots, admission, cutoff_helper,
+                    result_dir, data_root, deadline, guest_sha256)
+            except BaseException as error:
+                report = dict(state='failed', bundle_sha256=guest_sha256, helper=cutoff_helper,
+                    error=type(error).__name__, message=str(error))
+                path = Path(result_dir) / 'custody-cutoff-failure.json'
+                with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600), 'w') as stream:
+                    json.dump(report, stream)
+                raise
+    return dict(bundle_sha256=sha(bundle.read_bytes()), bytes=bundle.stat().st_size,
+        phases=sorted(expected_phases), cutoff_outcomes=cutoff_outcomes)
 
 
 if __name__ == '__main__':

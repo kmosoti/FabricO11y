@@ -124,7 +124,8 @@ const USAGE: &str = "usage:
   cargo xtask storage-census [--owned-scratch ABS_PATH]
   cargo xtask storage-census --owner-binding --owner-label LABEL --admission ABS_PATH --admission-sha256 HEX -- <owner walkthrough argv>
   cargo xtask evidence-preflight --root PATH --plan RELATIVE --plan-sha256 HEX --candidate REVISION
-  cargo xtask custody-cutoff --root DATA --plan RELATIVE --plan-sha256 HEX --candidate REVISION";
+  cargo xtask custody-cutoff --root DATA --plan RELATIVE --plan-sha256 HEX --candidate REVISION
+  cargo xtask custody-cutoff --root DATA --capture-manifest RELATIVE --manifest-sha256 HEX --candidate REVISION";
 
 fn main() -> ExitCode {
     let mut args = std::env::args().skip(1);

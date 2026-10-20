@@ -602,7 +602,8 @@ sha256sum export.tar
                 current = custody_native.host_admission(args.native_custody_owner, Path(__file__).resolve().parents[3], DATA, deb, args.source_commit, args.run_id, args.family)
                 if current != native_frozen or digest(previous, 'sha256') != owner['predecessor_sha256']:
                     raise RuntimeError('native owner/source/package changed before admission')
-                native_transfer = custody_native.admit_transfer(bundle, native_config, expected_digest, control=args.native_custody_control)
+                native_transfer = custody_native.admit_transfer(bundle, native_config, expected_digest, control=args.native_custody_control,
+                    cutoff_helper=native_frozen['cutoff_helper'], result_dir=result_dir, data_root=DATA, deadline=OUTER_DEADLINE)
                 if time.monotonic() > OUTER_DEADLINE: raise RuntimeError('outer deadline during native admission')
                 if args.native_custody_control and guest_acceptance_exit == 0 and error and error.startswith('RuntimeError: lifecycle phase upgrade failed:'):
                     rc, error = 0, None
