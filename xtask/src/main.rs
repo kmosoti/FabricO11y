@@ -122,6 +122,7 @@ const USAGE: &str = "usage:
   cargo xtask console-source --source-root ABS --source-commit HEX40 --build-root ABS --receipt-sha256 HEX64
   cargo xtask browser-enter-exec --group ABS --ready-fd FD --release-fd FD --timeout-ms 1..5000 -- ABS_TARGET [ARG...]
   cargo xtask browser-bidi-viewport --ws-url ws://127.0.0.1:PORT/session/ID|ws://[::1]:PORT/session/ID --context HANDLE --mode narrow|restore
+  cargo xtask check-browser-defect STATUS PATH [--kind api-cache|nonresident-enrollment]
   cargo xtask storage-census [--owned-scratch ABS_PATH]
   cargo xtask storage-census --owner-binding --owner-label LABEL --admission ABS_PATH --admission-sha256 HEX -- <owner walkthrough argv>
   cargo xtask evidence-preflight --root PATH --plan RELATIVE --plan-sha256 HEX --candidate REVISION";
@@ -150,6 +151,9 @@ fn main() -> ExitCode {
     }
     if command == "browser-bidi-viewport" {
         return ExitCode::from(xtask::browser_bidi_viewport::cli(args.collect()));
+    }
+    if command == "check-browser-defect" {
+        return xtask::browser_defect::cli(args.collect());
     }
     if command == "verify-receipts" {
         return verify_receipts(&root, args.collect());

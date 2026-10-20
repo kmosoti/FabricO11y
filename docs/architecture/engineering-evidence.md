@@ -204,8 +204,10 @@ current registry, complete selected receipt inventory and each log digest. Its
 [representation contract](../formal/verification-receipt-contract.md) deliberately
 rejects duplicate JSON keys and numeric/boolean aliases. Git identity is checked
 before and after validation; missing, failed or running checks cannot count as
-a complete profile. This command is implemented for experimental comparison;
-required CI adoption is a separate step.
+a complete profile. CI now uses this command for final-profile validation.
+The historical Python comparator remains reproducible from immutable
+`f001175`; current Rust collector validation is a composition check, not an
+independent oracle.
 
 JSON is bounded per document and across the composition. Logs are streamed with
 one complete digest per admitted artifact, then identities are rechecked. For N
@@ -242,19 +244,41 @@ exclusive publication checks those pinned bytes again. Artifact copying uses a
 64 KiB buffer, an exact initial extent and a one-byte growth probe. Failure leaves
 the marker and evidence; successful cleanup precedes marker removal. This bounds
 copy scratch independently of log length, while retaining full-byte verification.
-The unchanged Python receipt validator remains an independent cross-check before
-adoption. Local integration receipts bind source `7fc4723`; current-head hosted
-checks still gate workflow adoption.
+The Python receipt validator supplied the historical independent cross-check.
+Current CI uses the Rust verifier and the separately authored contract fixture;
+that shared implementation does not supply an independent cross-check.
+Local integration receipts at `7fc4723` remain tied to that historical source.
 
 ## Hosted extended verification
 
 Hosted extended verification runs the registered checks in two serial shards:
 `semantic-mutants` and the other nine extended IDs. The required `extended` job
-joins their disjoint receipts and invokes the independent Python completeness
-validator on the same source revision. This scheduling reduces elapsed time in
+joins their disjoint receipts and invokes the Rust completeness validator
+on the same source revision. This scheduling reduces elapsed time in
 one completed hosted comparison while increasing aggregate runner time under
 different CPU, cache and setup conditions; it does not alter check commands or
 product acceptance criteria. See the [finite pilot record](../experiments/formal/verification-shards-protocol.md).
+
+## Browser defect receipt grading
+
+`xtask check-browser-defect` admits one descriptor-owned, bounded JSON receipt
+and checks the exact API-cache or nonresident-enrollment failure plus its
+prerequisites and structured cleanup evidence. A `BTreeSet` rejects duplicate
+PID/start-tick pairs in O(log N) per group; all groups must be empty and reaped.
+It preserves both fixture-removal and failure-evidence-retention dispositions.
+The [adoption contract](../experiments/formal/browser-supervisor-protocol.md#rust-defect-receipt-grader-adoption)
+records the stricter representation rules and the unchanged historical inputs.
+This read-only grader does not launch a browser or establish native cleanup;
+it checks the supplied observations. The existing hosted injected-defect step
+remains the source of end-to-end evidence.
+
+```mermaid
+flowchart LR
+    Receipt[Observed browser receipt] --> Admission[Bounded descriptor and strict JSON]
+    Admission --> Defect[Exact defect and prerequisite checks]
+    Defect --> Cleanup[Unique process identities and complete stop observations]
+    Cleanup --> Grade[Registered defect detected or refusal]
+```
 
 ## Native storage census
 

@@ -104,7 +104,7 @@ build and registered acceptance expectations stay unchanged.
 defect by weakening the browser's resident-key request, with required UV retained.
 The unmodified server response and actual stored nonresident credential must
 be observed before the resident-inventory assertion fails. Grade that receipt
-with `tools/ci/check-browser-defect.py 1 PATH --kind nonresident-enrollment`.
+with `python3 tools/resource_group.py -- cargo xtask check-browser-defect 1 PATH --kind nonresident-enrollment`.
 An enrollment timeout or setup failure does not satisfy this control.
 
 `--inject-rejection-defect error` replaces one witnessed permission rejection's

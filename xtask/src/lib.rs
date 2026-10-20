@@ -3,6 +3,7 @@
 //! not merely that a command exited non-zero.
 
 pub mod browser_bidi_viewport;
+pub mod browser_defect;
 pub mod browser_enter;
 pub mod census;
 pub mod checks;

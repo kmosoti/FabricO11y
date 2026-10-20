@@ -1,5 +1,13 @@
 # Current project state
 
+Hosted browser defect receipts now have a Rust grader,
+`cargo xtask check-browser-defect`, preserving both historical cleanup
+dispositions and the registered API-cache/enrollment assertions. Its
+[adoption protocol](experiments/formal/browser-supervisor-protocol.md#rust-defect-receipt-grader-adoption)
+explicitly distinguishes stricter JSON/type admission from legacy parity.
+The existing workspace test gate runs the CLI controls. Verification of this
+change is pending; no new hosted browser or product acceptance is claimed.
+
 CI tool installation now has one pinned Rust entrypoint, `cargo xtask
 install-tool`; the Python `tools/resource_group.py` remains the required outer
 containment launcher. It enforces a fixed 1500-second deadline and 2 GiB DATA
@@ -15,11 +23,13 @@ which also records the complete fast-profile result and its source revision.
 No actual package install or performance result is claimed. See the
 [installer boundary](architecture/engineering-evidence.md#pinned-ci-tool-install).
 
-Engineering tooling now includes an experimental Rust `xtask verify-receipts`
+Engineering tooling now uses the Rust `xtask verify-receipts`
 command, sharing bounded descriptor-owned artifact reads with evidence preflight.
 The [architecture boundary](architecture/engineering-evidence.md#native-verification-receipts)
 and [strict representation policy](formal/verification-receipt-contract.md)
-describe its limits. Local complete-profile and independent refusal controls ran
+describe its limits. The CI workflows have adopted this command; the original
+Python comparator remains reproducible from immutable history. Local
+complete-profile and independent refusal controls ran
 at `7fc4723`; PR #80 merged as `06ccc0c` after complete hosted verification of
 merge candidate `c129013`. Synthetic verifier fixtures do not credit product
 acceptance. Alpha acceptance is owner-paused for verification engineering.

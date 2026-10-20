@@ -20,7 +20,6 @@ import fixture_cadence
 from fixture_cadence import FixtureCadence
 sys.path.insert(0, str(ROOT / 'tools/qualification'))
 from check_delivery_fault_control import detected
-from test_browser_defect import BrowserDefectTests  # Include the hosted counterexample in this gate.
 
 
 class DeliveryControlTests(unittest.TestCase):
@@ -185,7 +184,7 @@ class WorkflowTests(unittest.TestCase):
             and api_cache_negative.endswith(
                 '--out $FABRIC_STORAGE_ROOT/results/ci-live-browser-defect --inject-api-cache-defect')
             and 'results/ci-live-browser-security/' in workflow
-            and 'check-browser-defect.py "$defect_status" $FABRIC_STORAGE_ROOT/results/ci-live-browser-defect/browser.json' in workflow
+            and 'cargo xtask check-browser-defect "$defect_status" $FABRIC_STORAGE_ROOT/results/ci-live-browser-defect/browser.json' in workflow
             and 'name: Check actual passkeys and scoped native HTTPS console in Chrome' in workflow
             and 'name: Check the positive Chrome security probes' in workflow
             and 'name: Require the exact API-cache negative-control failure' in workflow)
