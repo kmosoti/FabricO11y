@@ -15,6 +15,7 @@ pub mod mutants;
 pub mod preflight;
 pub mod purity;
 pub mod receipts;
+pub mod tool_install;
 
 use serde_json::Value;
 use std::fmt;

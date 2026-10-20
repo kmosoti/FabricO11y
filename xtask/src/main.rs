@@ -117,6 +117,7 @@ const USAGE: &str = "usage:
   cargo xtask mutants           [--only ID]
   cargo xtask check-counterexamples
   cargo xtask cargo-mutants
+  cargo xtask install-tool <crate> <version>
   cargo xtask verify-receipts --profile fast|extended [--receipts DIR]
   cargo xtask console-source --source-root ABS --source-commit HEX40 --build-root ABS --receipt-sha256 HEX64
   cargo xtask browser-enter-exec --group ABS --ready-fd FD --release-fd FD --timeout-ms 1..5000 -- ABS_TARGET [ARG...]
@@ -152,6 +153,9 @@ fn main() -> ExitCode {
     }
     if command == "verify-receipts" {
         return verify_receipts(&root, args.collect());
+    }
+    if command == "install-tool" {
+        return ExitCode::from(xtask::tool_install::cli(args.collect()));
     }
     if command == "check-counterexamples" || command == "cargo-mutants" {
         let result = if command == "cargo-mutants" {
