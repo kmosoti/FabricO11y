@@ -1,8 +1,8 @@
 //! Structural cutoff checks on caller-normalized observations. Raw producer
 //! authenticity and the independent custody oracle remain separate obligations.
+mod capture;
 /// Pure cutoff/coverage primitives; finite controls do not attest their inputs.
 pub mod cutoff;
-mod capture;
 mod inspection;
 #[cfg(test)]
 mod kernel_controls;
@@ -301,8 +301,12 @@ pub fn cli(arguments: Vec<String>) -> u8 {
             require(
                 matches!(
                     flag.as_str(),
-                    "--root" | "--plan" | "--plan-sha256" | "--capture-manifest"
-                        | "--manifest-sha256" | "--candidate"
+                    "--root"
+                        | "--plan"
+                        | "--plan-sha256"
+                        | "--capture-manifest"
+                        | "--manifest-sha256"
+                        | "--candidate"
                 ),
                 "unknown argument",
             )?;
@@ -312,16 +316,20 @@ pub fn cli(arguments: Vec<String>) -> u8 {
         let plan_mode = flags.contains_key("--plan") || flags.contains_key("--plan-sha256");
         let capture_mode =
             flags.contains_key("--capture-manifest") || flags.contains_key("--manifest-sha256");
-        require(!(plan_mode && capture_mode), "plan and capture modes cannot be mixed")?;
-        require(flags.len() == 4, "exactly one custody-cutoff input mode required")?;
+        require(
+            !(plan_mode && capture_mode),
+            "plan and capture modes cannot be mixed",
+        )?;
+        require(
+            flags.len() == 4,
+            "exactly one custody-cutoff input mode required",
+        )?;
         require(
             flags.contains_key("--root") && flags.contains_key("--candidate"),
             "root and candidate required",
         )?;
         require(
-            (plan_mode
-                && flags.contains_key("--plan")
-                && flags.contains_key("--plan-sha256"))
+            (plan_mode && flags.contains_key("--plan") && flags.contains_key("--plan-sha256"))
                 || (capture_mode
                     && flags.contains_key("--capture-manifest")
                     && flags.contains_key("--manifest-sha256")),

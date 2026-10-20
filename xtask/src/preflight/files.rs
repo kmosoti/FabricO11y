@@ -523,11 +523,20 @@ mod tests {
         );
         assert!(default_budget.digest("large").is_none());
         let mut capture_reader = ArtifactStore::new(&root).unwrap();
-        assert!(capture_reader
-            .read_bytes_limit("capture-large", &crate::sha256_hex(b"unused"), 4096)
-            .is_err());
-        assert_eq!(capture_reader.bytes_hashed(), 0, "capture limit rejects before reading");
-        assert_eq!(capture_reader.total_bytes, 0, "capture limit rejects before charging bytes");
+        assert!(
+            capture_reader
+                .read_bytes_limit("capture-large", &crate::sha256_hex(b"unused"), 4096)
+                .is_err()
+        );
+        assert_eq!(
+            capture_reader.bytes_hashed(),
+            0,
+            "capture limit rejects before reading"
+        );
+        assert_eq!(
+            capture_reader.total_bytes, 0,
+            "capture limit rejects before charging bytes"
+        );
         assert!(capture_reader.digest("capture-large").is_none());
         std::fs::remove_dir_all(root).unwrap();
     }

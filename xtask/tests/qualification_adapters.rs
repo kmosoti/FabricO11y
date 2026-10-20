@@ -8,7 +8,8 @@ fn qualification_and_native_custody_adapters_run_with_the_built_helper() {
         .unwrap()
         .join("tools/qualification");
     let helper = PathBuf::from(env!("CARGO_BIN_EXE_xtask"));
-    let helper_sha = xtask::sha256_hex(&std::fs::read(&helper).expect("read actual xtask executable"));
+    let helper_sha =
+        xtask::sha256_hex(&std::fs::read(&helper).expect("read actual xtask executable"));
     let status = Command::new("python3")
         .args([
             "-B",

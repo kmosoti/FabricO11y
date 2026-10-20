@@ -34,8 +34,14 @@ fn read_member(
     keys(record, &["path", "sha256"])?;
     let path = text(record, "path")?;
     let prefix = format!("{root}/");
-    require(canonical(path) && path.starts_with(&prefix), "capture member outside phase root")?;
-    require(digest(text(record, "sha256")?), "capture member SHA-256 required")?;
+    require(
+        canonical(path) && path.starts_with(&prefix),
+        "capture member outside phase root",
+    )?;
+    require(
+        digest(text(record, "sha256")?),
+        "capture member SHA-256 required",
+    )?;
     require(paths.insert(path.to_owned()), "capture member path reused")?;
     let raw = files.read_bytes(path, text(record, "sha256")?)?;
     crate::preflight::strict_json_value(raw)
@@ -48,7 +54,10 @@ pub(super) fn verify_capture(
     candidate: &str,
 ) -> Result<Value, String> {
     super::hex::<20>(candidate)?;
-    require(canonical(manifest_path), "canonical capture manifest path required")?;
+    require(
+        canonical(manifest_path),
+        "canonical capture manifest path required",
+    )?;
     require(digest(manifest_sha256), "capture manifest SHA-256 required")?;
     let mut files = ArtifactStore::new(root)?;
     let manifest = files.plan(manifest_path, manifest_sha256)?;
@@ -66,8 +75,14 @@ pub(super) fn verify_capture(
             "stopped_snapshot",
         ],
     )?;
-    require(number(&manifest, "version")? == 1, "capture manifest version")?;
-    require(text(&manifest, "candidate")? == candidate, "capture candidate mismatch")?;
+    require(
+        number(&manifest, "version")? == 1,
+        "capture manifest version",
+    )?;
+    require(
+        text(&manifest, "candidate")? == candidate,
+        "capture candidate mismatch",
+    )?;
     require(
         text(&manifest, "phase")? == "drain" || text(&manifest, "phase")? == "reboot",
         "capture phase required",
@@ -79,7 +94,12 @@ pub(super) fn verify_capture(
     let mut paths = BTreeSet::new();
     paths.insert(manifest_path.to_owned());
     let commands = read_member(&mut files, phase_root, &manifest["commands"], &mut paths)?;
-    let events = read_member(&mut files, phase_root, &manifest["observed_events"], &mut paths)?;
+    let events = read_member(
+        &mut files,
+        phase_root,
+        &manifest["observed_events"],
+        &mut paths,
+    )?;
     let samples = read_member(
         &mut files,
         phase_root,
@@ -93,11 +113,22 @@ pub(super) fn verify_capture(
         &mut paths,
     )?;
     let commands = commands.as_array().ok_or("commands array required")?;
-    require(commands.len() <= MAX_COMMANDS, "command count exceeds bound")?;
+    require(
+        commands.len() <= MAX_COMMANDS,
+        "command count exceeds bound",
+    )?;
     let events = events.as_array().ok_or("observed events array required")?;
-    require(events.len() <= MAX_EVENTS, "journal event count exceeds bound")?;
-    let samples = samples.as_array().ok_or("process observations array required")?;
-    require(samples.len() <= MAX_SAMPLES, "process sample count exceeds bound")?;
+    require(
+        events.len() <= MAX_EVENTS,
+        "journal event count exceeds bound",
+    )?;
+    let samples = samples
+        .as_array()
+        .ok_or("process observations array required")?;
+    require(
+        samples.len() <= MAX_SAMPLES,
+        "process sample count exceeds bound",
+    )?;
     let sources = array(&snapshot, "sources", MAX_SOURCES)?;
     let mut selected_sources = Vec::with_capacity(sources.len());
     for source in sources {

@@ -17,9 +17,12 @@ The Rust capture reader now admits a pinned manifest and original JSON members,
 then composes the existing version2 projection and cutoff verifier. Focused Rust
 capture, projection and cutoff controls ran 16 tests with exit 0 at `681fcc5`; the
 receipt is `results/service-query-query-gap-01/custody-capture-controls-01.json`.
-This is not a full fast-profile result. The host Python transport and independent
-Python archive/custody oracle remain until an independently validated migration.
-Native caller integration is underway, but the clean merged-harness requirement
+The complete adapter invocation at `75a4bba` ran 147 tests with exit 0, including
+the actual Rust helper after independent archive/custody admission. The immutable
+Fedora stopped-bundle replay still rejects its missing exact-byte ACK. These are
+not a full fast-profile result. The host Python transport and independent
+Python archive/custody oracle remain pending independently validated migration.
+Native caller wiring is implemented, but the clean merged-harness requirement
 blocks a real native capture; no matching capture or acceptance has run. The
 earlier DATA-only draft and its failures remain historical evidence. Do not resume
 alpha acceptance or rebuild frozen product packages for these harness changes.

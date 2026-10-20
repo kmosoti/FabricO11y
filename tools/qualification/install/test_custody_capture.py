@@ -45,7 +45,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
     def cutoff_pin(self):
         if self._cutoff_pin is None:
             self._cutoff_pin = self.pinned_helper(Path(os.environ['FABRIC_STORAGE_ROOT']),
-                suffix='fixture-' + str(os.getpid()) + '-' + str(id(self)))
+                suffix='fixture-' + str(os.getpid()) + '-' + str(time.monotonic_ns()))
         return self._cutoff_pin
 
     def show_cutoff_diagnostics(self, result):
@@ -80,9 +80,10 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
 
     def reset_fixture(self):
         import shutil
-        for result, helper in self._cutoff_results:
-            shutil.rmtree(result, ignore_errors=True)
-            Path(helper['path']).unlink(missing_ok=True)
+        if not self._preserve_cutoff_diagnostics:
+            for result, helper in self._cutoff_results:
+                shutil.rmtree(result, ignore_errors=True)
+                Path(helper['path']).unlink(missing_ok=True)
         for helper in self._standalone_helpers:
             Path(helper['path']).unlink(missing_ok=True)
         self.temp.cleanup()
@@ -639,8 +640,15 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
         storage = Path(os.environ['FABRIC_STORAGE_ROOT']).resolve()
         files, admission = self.fixture_files()
         bundle = self.bundle(files)
+        candidate = BINDING['candidate_frozen']
+        def output(raw):
+            return ("#!/bin/sh\nprintf '%s\\n' '" + raw + "'\n").encode()
         cases = (('nonzero', b'#!/bin/sh\nprintf "{}\\n"\nexit 7\n', 'Rust capture verifier refused'),
-            ('malformed', b'#!/bin/sh\nprintf "not-json\\n"\nexit 0\n', 'Expecting value'))
+            ('malformed', b'#!/bin/sh\nprintf "not-json\\n"\nexit 0\n', 'Expecting value'),
+            ('duplicate', output('{"status":"invalid","status":"structural-cutoff","candidate":"' + candidate + '"}'), 'duplicate Rust report key'),
+            ('nonfinite', output('{"status":"structural-cutoff","candidate":"' + candidate + '","value":NaN}'), 'nonfinite Rust report number'),
+            ('wrong-candidate', output('{"status":"structural-cutoff","candidate":"' + '0' * 40 + '"}'), 'Rust capture report mismatch'),
+            ('oversized', b'#!/bin/sh\ndd if=/dev/zero bs=65537 count=1 2>/dev/null\n', 'Rust capture verifier refused'))
         for suffix, payload, message in cases:
             helper = self.pinned_helper(storage, payload=payload, suffix=suffix)
             result = storage / 'results' / f'custody-cutoff-{suffix}-{os.getpid()}-{time.monotonic_ns()}'
@@ -650,6 +658,9 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
             self.assertTrue((result / 'custody-cutoff-failure.json').is_file())
             self.assertTrue((result / 'custody-cutoff-drain.json').is_file())
             self.assertTrue((result / 'custody-cutoff-drain.stdout').is_file())
+            self.assertLessEqual((result / 'custody-cutoff-drain.stdout').stat().st_size, 65536)
+            for path in result.glob('custody-cutoff-*.*'):
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o600)
 
 
 class GuestObservationControls(literal.NativeFixture, unittest.TestCase):
