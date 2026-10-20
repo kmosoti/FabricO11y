@@ -3,6 +3,11 @@
 Registered after the first complete native receipt experiment and before
 dependency resolution, accelerated builds or measurements. Alpha acceptance
 remains paused. The current scalar result stays preserved and is not relabeled.
+The historical receipt driver and Python CLI referenced here are available in
+the immutable source worktree documented by the
+[receipt-verification protocol](verification-receipts-protocol.md#contract-and-primitives).
+Reproduce this procedure only from that separate historical checkout; the
+maintained branch intentionally retires those runtime files.
 
 ## Observation and hypothesis
 

@@ -1,5 +1,11 @@
 # Receipt hash-comparison negative control
 
+The Python reference and differential driver used by this historical control
+are preserved in the immutable source worktree documented by the
+[receipt-verification protocol](verification-receipts-protocol.md#contract-and-primitives).
+Reproduction uses that separate checkout; the maintained branch intentionally
+retires both runtime files.
+
 Register before the isolated mutant build. Starting from the measured native
 receipt verifier, create a separate, clean DATA worktree. Change only the final
 ArtifactStore digest comparison to accept a non-JSON artifact even when its
