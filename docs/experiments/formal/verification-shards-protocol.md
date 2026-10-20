@@ -33,7 +33,7 @@ The required Rust `cargo xtask verify-receipts --profile extended` then checks
 the combined evidence at the actual clean source revision. The collector test
 that calls the same Rust verifier is only a composition check; independent
 receipt acceptance and refusal outcomes are maintained in the contract-owned
-[receipt fixture](../../xtask/tests/fixtures/receipt_contract_cases.json).
+[receipt fixture](../../../xtask/tests/fixtures/receipt_contract_cases.json).
 
 The aggregate job must run after failed/canceled shards and explicitly fail if
 either shard failed, was skipped, was canceled or is absent. It must not turn a
