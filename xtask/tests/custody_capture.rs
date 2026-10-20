@@ -34,6 +34,13 @@ impl Fixture {
         if phase == "reboot" {
             capture["observed_events"][1]["message"] = json!("config revision=4 paused=true interval_s=15");
         }
+        // Model the native archive's full observation shape. The Rust reader must
+        // select the four snapshot fields and the two source identity fields.
+        capture["stopped_snapshot"]["ack"] = json!(1);
+        capture["stopped_snapshot"]["files"] = json!({"identity": {"sha256": "c".repeat(64)}});
+        capture["stopped_snapshot"]["diagnostics"] = json!({"spindle.log": {"sha256": "d".repeat(64)}});
+        capture["stopped_snapshot"]["sources"][0]["payload"] = json!({"raw": "retained"});
+        capture["stopped_snapshot"]["sources"][0]["rows"] = json!([{"body": "captured row"}]);
         let inspection_path = phase_root.join("inspection.txt");
         fs::write(&inspection_path, INSPECT).expect("write literal inspection bytes");
         let manifest = json!({
