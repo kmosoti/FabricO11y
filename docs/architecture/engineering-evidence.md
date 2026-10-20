@@ -42,11 +42,19 @@ only final trace/ACK/source output collections grow with input. It does not
 retain parallel interval or index vectors. The decoder borrows its node
 identity and uses fixed field slots. The ACK join requires ordered inputs and
 uses constant auxiliary state, checking sender/window context in a lazy pass.
+Capture-manifest mode reads digest-pinned original JSON members through Rust's
+owned artifact reader, constructs the existing version2 input and reuses that
+projection and cutoff path. Each JSON member is capped at 4 MiB, inspection text
+at 4,096 bytes and aggregate retained input at 64 MiB. The direct version1 plan
+interface remains supported.
 
 ```mermaid
 flowchart LR
-    Plan[Pinned normalized plan] --> Bytes[Owned artifact bytes]
-    Bytes --> Inspect[Typed inspection]
+    Capture[Pinned manifest and original JSON] --> Reader[Rust manifest reader]
+    Reader --> V2[Existing version2 projection]
+    V1[Direct version1 plan] --> Plan[Normalized plan]
+    V2 --> Plan
+    Plan --> Inspect[Typed inspection]
     Inspect --> Cutoff[Pause drain stop transition]
     Plan --> Join[Ordered source and ACK join]
     Cutoff --> Result[Structural cutoff]
@@ -71,7 +79,10 @@ The guest effect adapter now requests the registered pause before observing a
 stable acknowledged prefix, records a stopped inspection, and requests resume
 while collection remains stopped. Reboot repeats the distinct revision sequence.
 These operational waits do not replace the Rust cutoff or independent raw joins;
-host helper adoption and an actual matching native capture remain pending.
+the host Python transport and independent Python archive/custody oracle remain
+until an independently validated migration exists. Rust capture-reader controls
+are finite engineering evidence only. Caller integration validation and the clean
+merged-harness requirement remain; no matching native capture or acceptance exists.
 The [adapter contract](../experiments/formal/native-cutoff-adapter-protocol.md)
 and [primitive protocol](../experiments/formal/primitive-composition-protocol.md)
 separate finite controls from native caller adoption and alpha acceptance.

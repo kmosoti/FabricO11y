@@ -1,6 +1,6 @@
 # Current project state
 
-Alpha and package acceptance remain owner-paused under [issue #59](https://github.com/kmosoti/FabricO11y/issues/59). Verification-engineering continuation is authorized and tracked in [PR #102](https://github.com/kmosoti/FabricO11y/pull/102); its provenance pins are product source `b1e5874`, frozen package source `43150db`, `origin/main` baseline `f001175`, and engineering source `31cf809`. These pins describe the current work only: they do not resume acceptance or claim a future check outcome.
+Alpha and package acceptance remain owner-paused under [issue #59](https://github.com/kmosoti/FabricO11y/issues/59). Verification-engineering continuation is authorized and tracked in [PR #102](https://github.com/kmosoti/FabricO11y/pull/102); its provenance pins remain product source `b1e5874`, frozen package source `43150db`, `origin/main` baseline `f001175`, and engineering profile anchor `31cf809`. The caller-integration source is `681fcc5`. These pins do not resume acceptance or claim a future check outcome.
 
 Owner stop checkpoint (2026-10-18): the native producer now applies pause2,
 waits for a stable acknowledged prefix, captures the independent stopped state
@@ -10,22 +10,23 @@ actual guest lifecycle; they do not establish native journal authenticity.
 The independent profile change is isolated in commit `d81c26b`; its default
 static-profile path and source/ACK/query rules remain intact. The rejected
 cached-view draft, setup failure, causal refusals and corrected controls remain
-on the data drive. Full fast verification belongs to `02f5b6c`, not these later
-Python changes; rerun it after the remaining caller integration.
+on the data drive. The 20 fast checks at `02f5b6c` predate this caller integration
+and are not a full-profile result for `681fcc5`.
 
-Resume with the explicitly pinned native caller bridge: transport actual captured
-metadata into Rust version2, join inspection members to the admitted archive,
-retain helper results and failures, and clean only owned scratch after success.
-The bridge draft is DATA-only and unverified. Then replay the historical Fedora
-missing116-ACK refusal unchanged, run affected controls and the full fast profile,
-and register an engineering-only native capture before executing it. No matching
-native capture has run yet. Do not resume alpha acceptance or rebuild frozen
-product packages merely for these harness changes. The persistent engineering
-queue is `results/primitive-composition-01/queue.json` on the mounted data drive;
-the archived Rust helper and source bundle are under
+The Rust capture reader now admits a pinned manifest and original JSON members,
+then composes the existing version2 projection and cutoff verifier. Focused Rust
+capture, projection and cutoff controls ran 16 tests with exit 0 at `681fcc5`; the
+receipt is `results/service-query-query-gap-01/custody-capture-controls-01.json`.
+This is not a full fast-profile result. The host Python transport and independent
+Python archive/custody oracle remain until an independently validated migration.
+Native caller integration is underway, but the clean merged-harness requirement
+blocks a real native capture; no matching capture or acceptance has run. The
+earlier DATA-only draft and its failures remain historical evidence. Do not resume
+alpha acceptance or rebuild frozen product packages for these harness changes.
+The persistent queue is `results/primitive-composition-01/queue.json`; the
+archived Rust helper and source bundle are under
 `results/native-cutoff-adapter-01/artifacts-02f5b6c/`. The private compiler target
-and temporary documentation dependencies were removed after archiving; meaningful
-failures and frozen package evidence remain retained.
+and temporary documentation dependencies were removed after archiving.
 
 Engineering tooling now includes an experimental Rust `xtask verify-receipts`
 command, sharing bounded descriptor-owned artifact reads with evidence preflight.
