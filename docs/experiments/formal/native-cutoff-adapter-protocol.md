@@ -212,3 +212,39 @@ prospective admission. The ordinary native caller still requires a merged
 harness; an unmerged implementation cannot obtain a qualification receipt.
 No package rebuild, release acceptance, merge, tag or publication is admitted by
 this engineering continuation.
+
+## Rust-first capture transport amendment
+
+Owner steering on2026-10-20 selects Rust for the capture bridge. The earlier
+Python policy-module draft is rejected and retained only as development evidence.
+Keep the existing Python raw archive reader and independent custody oracle until
+an independently validated replacement exists; they must not acquire another
+projection or cutoff decision. Existing guest lifecycle code is unchanged.
+
+Add an explicit transport mode to `custody-cutoff`:
+`--root DATA --capture-manifest RELATIVE --manifest-sha256 HEX --candidate HEX40`.
+It is mutually exclusive with the existing `--plan/--plan-sha256` interface.
+The strict version1 manifest has exactly `version`, `candidate`, `phase`,
+`prior_ack`, `relative_phase_root`, `commands`, `observed_events`,
+`process_observations`, and `stopped_snapshot`. The last four entries are exact
+`{path, sha256}` references to the original admitted captured JSON files beneath
+the phase root. The Rust owned artifact reader checks pins and file identity;
+each JSON input is at most4MiB and total retained input at most64MiB. Existing
+array limits and4096-byte inspection-body limits remain. Unknown keys, mixed
+interfaces, noncanonical paths and a mismatched candidate refuse.
+
+Rust selects the source sequence/digest and candidate-process fields from the
+original snapshot, constructs the existing version2 value and uses the existing
+projection and cutoff verifier. The existing version1/2 primitive interface and
+its checks remain supported. No tar parser, new dependency or product format is
+introduced. Original commands and inspection bytes are neither reconstructed nor
+retimestamped. Independent archive and raw journal checks still establish the
+native bindings; structural verification does not replace them.
+
+The existing host reader performs only transport of already admitted members
+and explicit invocation of the pinned helper. Test the actual compiled Rust CLI
+with both phases, original fixtures, wrong pins/candidate/body, missing exact ACK,
+invalid paths, malformed metadata, ordering and bounds. No mocked successful
+helper can satisfy the positive integration check. Report the necessary remaining
+Python consumer explicitly; repository-wide removal must preserve independently
+specified semantics and every registered verifier obligation.
