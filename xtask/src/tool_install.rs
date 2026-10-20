@@ -6,7 +6,7 @@ use std::ffi::{CString, OsStr};
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::Write;
 use std::os::unix::ffi::OsStrExt;
-use std::os::unix::fs::OpenOptionsExt;
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
 use std::os::unix::process::{CommandExt, ExitStatusExt};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -83,7 +83,7 @@ fn valid_version(value: &str) -> bool {
             .all(|component| !component.is_empty() && component.bytes().all(|b| b.is_ascii_digit()))
 }
 
-fn disk_usage(path: &Path) -> Result<DiskUsage, String> {
+fn disk_usage(path: &Path) -> Result<(u64, u64, u64), String> {
     let path = CString::new(path.as_os_str().as_bytes())
         .map_err(|_| "DATA storage path contains a NUL byte")?;
     let mut value = std::mem::MaybeUninit::<libc::statvfs>::uninit();
@@ -97,19 +97,18 @@ fn disk_usage(path: &Path) -> Result<DiskUsage, String> {
     }
     // SAFETY: statvfs returned success and initialized the output value.
     let value = unsafe { value.assume_init() };
-    let block_size = u64::try_from(value.f_frsize)
-        .map_err(|_| "invalid DATA filesystem fragment size")?;
-    let total = u64::try_from(value.f_blocks)
-        .ok()
-        .and_then(|blocks| blocks.checked_mul(block_size))
+    let block_size = value.f_frsize;
+    let total = value
+        .f_blocks
+        .checked_mul(block_size)
         .ok_or("DATA filesystem total size overflow")?;
-    let free_blocks = u64::try_from(value.f_bavail)
-        .ok()
-        .and_then(|blocks| blocks.checked_mul(block_size))
+    let free_blocks = value
+        .f_bavail
+        .checked_mul(block_size)
         .ok_or("DATA filesystem available size overflow")?;
-    let free_all_blocks = u64::try_from(value.f_bfree)
-        .ok()
-        .and_then(|blocks| blocks.checked_mul(block_size))
+    let free_all_blocks = value
+        .f_bfree
+        .checked_mul(block_size)
         .ok_or("DATA filesystem free size overflow")?;
     Ok((total, total.saturating_sub(free_all_blocks), free_blocks))
 }
@@ -174,8 +173,8 @@ fn run_cargo(
             ));
         }
         if started.elapsed() >= timeout {
-            let process_group = i32::try_from(child.id())
-                .map_err(|_| "Cargo process ID exceeds platform range")?;
+            let process_group =
+                i32::try_from(child.id()).map_err(|_| "Cargo process ID exceeds platform range")?;
             // SAFETY: the child was placed in a new process group whose ID is its PID.
             let killed = unsafe { libc::kill(-process_group, libc::SIGKILL) };
             if killed != 0 {
@@ -183,7 +182,9 @@ fn run_cargo(
                 if error.raw_os_error() != Some(libc::ESRCH) {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Err(format!("cannot stop timed-out Cargo process group: {error}"));
+                    return Err(format!(
+                        "cannot stop timed-out Cargo process group: {error}"
+                    ));
                 }
                 if let Some(status) = child
                     .try_wait()
@@ -224,7 +225,9 @@ fn write_receipt(path: &Path, receipt: &Value) -> Result<(), String> {
 
 fn install(crate_name: &str, version: &str) -> Result<(), InstallError> {
     if !valid_crate(crate_name) {
-        return Err(InstallError::not_run("crate name must be an ASCII Cargo name"));
+        return Err(InstallError::not_run(
+            "crate name must be an ASCII Cargo name",
+        ));
     }
     if !valid_version(version) {
         return Err(InstallError::not_run(
@@ -251,7 +254,7 @@ fn install_at(
     cargo: &OsStr,
     timeout: Duration,
 ) -> Result<(), InstallError> {
-    let before = disk_usage(&storage).map_err(InstallError::not_run)?;
+    let before = disk_usage(storage).map_err(InstallError::not_run)?;
     require_disk_headroom(before.2).map_err(InstallError::not_run)?;
 
     let output = storage.join("results/ci-tool-install");
@@ -261,13 +264,16 @@ fn install_at(
     let output = output.canonicalize().map_err(|error| {
         InstallError::not_run(format!("cannot resolve CI tool receipt directory: {error}"))
     })?;
-    if !output.starts_with(&storage) {
+    if !output.starts_with(storage) {
         return Err(InstallError::not_run(
             "CI tool receipt directory must remain under DATA storage",
         ));
     }
 
-    let target_path = scratch_target(&scratch_root).map_err(InstallError::not_run)?;
+    let target_path = scratch_target(scratch_root).map_err(InstallError::not_run)?;
+    let target_identity = fs::symlink_metadata(&target_path).map_err(|error| {
+        InstallError::not_run(format!("cannot observe owned Cargo target: {error}"))
+    })?;
     let log_path = output.join(format!("{crate_name}.log"));
     let receipt_path = output.join(format!("{crate_name}.json"));
     let command = vec![
@@ -311,19 +317,40 @@ fn install_at(
         },
     };
 
-    let cleanup_error = fs::remove_dir_all(&target_path)
+    let cleanup = match fs::symlink_metadata(&target_path) {
+        Ok(current)
+            if current.is_dir()
+                && current.dev() == target_identity.dev()
+                && current.ino() == target_identity.ino() =>
+        {
+            fs::remove_dir_all(&target_path)
+        }
+        Ok(_) => Err(std::io::Error::other(
+            "Cargo target identity changed; retained",
+        )),
+        Err(error) => Err(error),
+    };
+    let cleanup_error = cleanup
         .err()
         .filter(|error| error.kind() != std::io::ErrorKind::NotFound)
-        .map(|error| format!("cannot remove Cargo target {}: {error}", target_path.display()));
+        .map(|error| {
+            format!(
+                "cannot remove Cargo target {}: {error}",
+                target_path.display()
+            )
+        });
     receipt["cleanup_absent"] = json!(cleanup_error.is_none() && !target_path.exists());
     let disk_after_error = match disk_usage(storage) {
         Ok(disk_after) => {
-            receipt["disk_after"] = json!({"total":disk_after.0,"used":disk_after.1,"free":disk_after.2});
+            receipt["disk_after"] =
+                json!({"total":disk_after.0,"used":disk_after.1,"free":disk_after.2});
             None
         }
         Err(error) => {
             receipt["disk_after"] = Value::Null;
-            Some(format!("cannot inspect DATA storage after install: {error}"))
+            Some(format!(
+                "cannot inspect DATA storage after install: {error}"
+            ))
         }
     };
 

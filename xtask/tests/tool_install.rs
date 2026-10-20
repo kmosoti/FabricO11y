@@ -86,7 +86,10 @@ impl Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         if std::thread::panicking() {
-            eprintln!("failed tool installer fixture retained: {}", self.root.display());
+            eprintln!(
+                "failed tool installer fixture retained: {}",
+                self.root.display()
+            );
         } else {
             fs::remove_dir_all(&self.root).expect("remove installer fixture");
         }
@@ -97,7 +100,11 @@ impl Drop for Fixture {
 fn success_preserves_cargo_argv_log_receipt_and_scratch_cleanup() {
     let fixture = Fixture::new();
     let output = fixture.invoke("cargo-deny", "0.20.2", "0");
-    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     let receipt = fixture.receipt("cargo-deny");
     let target = PathBuf::from(receipt["target"].as_str().expect("target path"));
@@ -145,7 +152,9 @@ fn success_preserves_cargo_argv_log_receipt_and_scratch_cleanup() {
     assert!(receipt["disk_after"]["used"].is_u64());
     assert!(receipt["disk_after"]["free"].is_u64());
     assert_eq!(
-        fs::read_to_string(fixture.root.join("fake-cargo-home.txt")).unwrap().trim(),
+        fs::read_to_string(fixture.root.join("fake-cargo-home.txt"))
+            .unwrap()
+            .trim(),
         fixture.root.join("cargo-home").to_str().unwrap()
     );
 }
@@ -168,6 +177,59 @@ fn cargo_failure_keeps_log_and_failure_receipt_after_cleanup() {
             .join("results/ci-tool-install/cargo-fuzz.log")
             .is_file()
     );
+}
+
+#[test]
+fn cargo_signal_is_preserved_in_the_failure_receipt() {
+    let fixture = Fixture::new();
+    fs::write(fixture.fake_bin.join("cargo"), "#!/bin/sh\nkill -TERM $$\n").unwrap();
+    let output = fixture.invoke("cargo-deny", "0.20.2", "0");
+    assert!(!output.status.success());
+    let receipt = fixture.receipt("cargo-deny");
+    assert_eq!(receipt["exit"], -15);
+    assert_eq!(receipt["cleanup_absent"], true);
+    assert!(receipt["error"].is_string());
+}
+
+#[test]
+fn replaced_target_is_retained_instead_of_removed() {
+    let fixture = Fixture::new();
+    fs::write(
+        fixture.fake_bin.join("cargo"),
+        "#!/bin/sh\nmv \"$7\" \"$7.original\"\nmkdir \"$7\"\nprintf keep > \"$7/sentinel\"\n",
+    )
+    .unwrap();
+    assert!(!fixture.invoke("cargo-deny", "0.20.2", "0").status.success());
+    let receipt = fixture.receipt("cargo-deny");
+    assert_eq!(receipt["exit"], 0);
+    assert_eq!(receipt["cleanup_absent"], false);
+    assert!(
+        receipt["error"]
+            .as_str()
+            .unwrap()
+            .contains("identity changed")
+    );
+    let target = Path::new(receipt["target"].as_str().unwrap());
+    assert_eq!(fs::read(target.join("sentinel")).unwrap(), b"keep");
+}
+
+#[test]
+fn missing_data_roots_refuse_before_starting_cargo() {
+    for variable in ["FABRIC_STORAGE_ROOT", "FABRIC_SCRATCH_ROOT"] {
+        let fixture = Fixture::new();
+        let output = Command::new(env!("CARGO_BIN_EXE_xtask"))
+            .args(["install-tool", "cargo-deny", "0.20.2"])
+            .env("PATH", &fixture.fake_bin)
+            .env("FABRIC_STORAGE_ROOT", &fixture.storage)
+            .env("FABRIC_SCRATCH_ROOT", &fixture.scratch)
+            .env_remove(variable)
+            .output()
+            .unwrap();
+        assert!(!output.status.success());
+        assert!(String::from_utf8_lossy(&output.stderr).contains(variable));
+        assert!(!fixture.root.join("fake-args.txt").exists());
+        assert!(!fixture.storage.join("results/ci-tool-install").exists());
+    }
 }
 
 #[test]
@@ -229,17 +291,45 @@ fn required_workflow_pins_and_resource_launcher_are_present() {
         ("verification.yml", "cargo-llvm-cov", "0.9.1"),
         ("verification.yml", "cargo-fuzz", "0.13.2"),
         ("verification.yml", "kani-verifier", "0.68.0"),
-        ("verification-concurrency-experiment.yml", "cargo-deny", "0.20.2"),
-        ("verification-concurrency-experiment.yml", "cargo-mutants", "27.1.0"),
-        ("verification-concurrency-experiment.yml", "cargo-llvm-cov", "0.9.1"),
-        ("verification-concurrency-experiment.yml", "cargo-fuzz", "0.13.2"),
-        ("verification-concurrency-experiment.yml", "kani-verifier", "0.68.0"),
+        (
+            "verification-concurrency-experiment.yml",
+            "cargo-deny",
+            "0.20.2",
+        ),
+        (
+            "verification-concurrency-experiment.yml",
+            "cargo-mutants",
+            "27.1.0",
+        ),
+        (
+            "verification-concurrency-experiment.yml",
+            "cargo-llvm-cov",
+            "0.9.1",
+        ),
+        (
+            "verification-concurrency-experiment.yml",
+            "cargo-fuzz",
+            "0.13.2",
+        ),
+        (
+            "verification-concurrency-experiment.yml",
+            "kani-verifier",
+            "0.68.0",
+        ),
     ];
     for (workflow, crate_name, version) in calls {
         let source = fs::read_to_string(root.join(".github/workflows").join(workflow)).unwrap();
-        let old = format!("python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py {crate_name} {version}");
-        let new = format!("python3 -B tools/resource_group.py -- cargo xtask install-tool {crate_name} {version}");
-        assert_ne!(source.contains(&old), source.contains(&new), "{workflow}: {crate_name}");
+        let old = format!(
+            "python3 -B tools/resource_group.py -- python3 -B tools/ci/install-cargo-tool.py {crate_name} {version}"
+        );
+        let new = format!(
+            "python3 -B tools/resource_group.py -- cargo xtask install-tool {crate_name} {version}"
+        );
+        assert_ne!(
+            source.contains(&old),
+            source.contains(&new),
+            "{workflow}: {crate_name}"
+        );
         assert!(source.contains("${{ env.FABRIC_STORAGE_ROOT }}/results/ci-tool-install/"));
     }
 }

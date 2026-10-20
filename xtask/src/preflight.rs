@@ -323,6 +323,10 @@ pub fn require_limits() -> Result<(), String> {
         files::parts(&relative[1..])?;
         Path::new("/sys/fs/cgroup").join(&relative[1..])
     };
+    require_cgroup_limits(&cgroup)
+}
+
+fn require_cgroup_limits(cgroup: &Path) -> Result<(), String> {
     let memory = io(std::fs::read_to_string(cgroup.join("memory.max")))?;
     let swap = io(std::fs::read_to_string(cgroup.join("memory.swap.max")))?;
     let memory: u64 = memory
@@ -376,5 +380,34 @@ pub fn cli(arguments: Vec<String>) -> u8 {
             println!("{}", json!({"status": "invalid", "error": error}));
             2
         }
+    }
+}
+
+#[cfg(test)]
+mod containment_controls {
+    #[test]
+    fn missing_unbounded_and_unsafe_limits_refuse() {
+        let root = std::path::PathBuf::from(std::env::var_os("FABRIC_SCRATCH_ROOT").unwrap())
+            .join(format!("installer-limit-controls-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        assert!(super::require_cgroup_limits(&root).is_err());
+        for (memory, swap) in [
+            ("max", "0"),
+            ("0", "0"),
+            ("21474836481", "0"),
+            ("21474836480", "1"),
+            ("21474836480", "max"),
+        ] {
+            std::fs::write(root.join("memory.max"), memory).unwrap();
+            std::fs::write(root.join("memory.swap.max"), swap).unwrap();
+            assert!(
+                super::require_cgroup_limits(&root).is_err(),
+                "{memory}/{swap}"
+            );
+        }
+        std::fs::write(root.join("memory.max"), "21474836480\n").unwrap();
+        std::fs::write(root.join("memory.swap.max"), "0\n").unwrap();
+        super::require_cgroup_limits(&root).unwrap();
+        std::fs::remove_dir_all(root).unwrap();
     }
 }
