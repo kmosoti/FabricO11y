@@ -61,5 +61,8 @@ they detect observable changes, not every possible metadata-restoring attack.
 They do not create an immutable filesystem snapshot or protect a compromised
 host. The digest attests the admitted bytes actually read. Existing mutation
 and replacement controls remain required and must keep their expected refusals.
-Production adoption requires the registered differential/failure experiments
-and relevant source checks; a policy document is not their result.
+Current production adoption requires the fixture-driven Rust CLI controls, the
+representative defect canary, and relevant source/workflow checks to run. The
+historical Python differential remains evidence for its recorded revisions,
+not a required current-tree runtime or current-source acceptance result. A
+policy document is not evidence that those checks ran.
