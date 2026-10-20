@@ -81,8 +81,9 @@ while collection remains stopped. Reboot repeats the distinct revision sequence.
 These operational waits do not replace the Rust cutoff or independent raw joins;
 the host Python transport and independent Python archive/custody oracle remain
 until an independently validated migration exists. Rust capture-reader controls
-are finite engineering evidence only. Caller integration validation and the clean
-merged-harness requirement remain; no matching native capture or acceptance exists.
+are finite engineering evidence only. Native execution requires a clean harness
+revision present in `origin/main` and the existing pinned owner/helper admission;
+no matching native capture or acceptance exists.
 The [adapter contract](../experiments/formal/native-cutoff-adapter-protocol.md)
 and [primitive protocol](../experiments/formal/primitive-composition-protocol.md)
 separate finite controls from native caller adoption and alpha acceptance.

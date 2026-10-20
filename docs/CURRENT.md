@@ -29,8 +29,9 @@ the [execution record](https://github.com/kmosoti/FabricO11y/wiki/Experiment-for
 keeps commands, failures, source identities and resource receipts.
 The host Python transport and independent
 Python archive/custody oracle remain pending independently validated migration.
-Native caller wiring is implemented, but the clean merged-harness requirement
-blocks a real native capture; no matching capture or acceptance has run. The
+Native caller wiring is implemented. A real native capture requires a clean
+harness revision present in `origin/main` and the existing pinned owner/helper
+admission; no matching capture or acceptance has run. The
 earlier DATA-only draft and its failures remain historical evidence. Do not resume
 alpha acceptance or rebuild frozen product packages for these harness changes.
 The persistent queue is `results/primitive-composition-01/queue.json`; the
