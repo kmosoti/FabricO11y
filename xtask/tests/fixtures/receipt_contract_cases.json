@@ -25,13 +25,13 @@
     {"id":"boolean-duration","profile":"extended","mutation":"set-duration-true","exit_code":1,"basis":"JSON booleans are not integer durations"},
     {"id":"float-duration","profile":"extended","mutation":"set-duration-fraction","exit_code":1,"basis":"JSON floating-point values are not integer durations"},
     {"id":"modified-log","profile":"extended","mutation":"change-log-bytes-without-updating-digest","exit_code":1,"basis":"actual output-log bytes must match the receipt digest"},
-    {"id":"duplicate-required-key","profile":"extended","mutation":"duplicate-receipt-version-key","exit_code":1,"basis":"JSON object keys are unique under the accepted representation policy","policy_difference_from_legacy_python":true},
+    {"id":"duplicate-result-key","profile":"extended","mutation":"duplicate-result-failed-then-passed","exit_code":1,"basis":"JSON object keys are unique under the accepted representation policy","policy_difference_from_legacy_python":true},
     {"id":"boolean-version","profile":"extended","mutation":"set-receipt-version-true","exit_code":1,"basis":"receipt version is the JSON integer one","policy_difference_from_legacy_python":true},
     {"id":"float-version","profile":"extended","mutation":"set-receipt-version-one-float","exit_code":1,"basis":"receipt version is the JSON integer one","policy_difference_from_legacy_python":true},
     {"id":"numeric-dirty-alias","profile":"extended","mutation":"set-worktree-dirty-zero","exit_code":1,"basis":"worktree_dirty is the JSON boolean false","policy_difference_from_legacy_python":true},
     {"id":"nonregular-receipt","profile":"extended","mutation":"replace-receipt-with-directory","exit_code":1,"basis":"receipt leaves must be ordinary files"},
     {"id":"nonregular-log","profile":"extended","mutation":"replace-log-with-directory","exit_code":1,"basis":"log leaves must be ordinary files"},
     {"id":"oversized-receipt","profile":"extended","mutation":"exceed-per-file-json-bound","exit_code":1,"basis":"receipt parsing uses the registered bounded artifact reader"},
-    {"id":"aggregate-budget","profile":"extended","mutation":"exceed-aggregate-retained-json-budget","exit_code":1,"basis":"aggregate retained JSON budget fails closed"}
+    {"id":"aggregate-budget","profile":"fast","mutation":"pad-twenty-valid-receipts-past-64mib-json-budget","exit_code":1,"basis":"aggregate retained JSON budget fails closed; twenty individually bounded fast receipts can exceed the 64 MiB aggregate cap"}
   ]
 }
