@@ -1,0 +1,123 @@
+# Authoring scaffold only. It MUST be rejected by execution admission as-is.
+# M01 specifies the accepted schema; M02 implements and independently verifies it.
+# Replace every UNBOUND value, expand protected file inventories, bind all five
+# stages and their commands, and register budgets before an implementation attempt.
+schema_version = 1
+kind = "mission_authoring_template"
+execution_admitted = false
+
+[mission]
+id = "UNBOUND"
+mission_type = "COMPOSITE_WIRE"
+target_release = "v0.1.0-alpha.2"
+state = "Backlog"
+depends_on = []
+max_assertion_failed_attempts = 3
+max_infrastructure_retries = 1
+
+[architecture]
+semantic_effect_layer = "UNBOUND"
+composition_depth = 1
+component_id = "UNBOUND"
+provided_ports = []
+required_ports = []
+accepted_policy_revision = "UNBOUND"
+require_no_std = true
+allow_alloc = false
+forbid_unsafe = true
+allow_dynamic_dispatch = false
+approved_collections = []
+
+[context]
+objective = "UNBOUND"
+initial_state = "UNBOUND"
+base_commit = "UNBOUND"
+base_tree = "UNBOUND"
+contract_revision = "UNBOUND"
+mutable_paths = []
+# Globs must be expanded to a canonical finite inventory before admission.
+# A protected artifact with a missing digest is a refusal, not an optional check.
+protected_inventory_path = "UNBOUND"
+protected_inventory_sha256 = "UNBOUND"
+negative_control_inventory = "UNBOUND"
+reference_implementation = "UNBOUND"
+
+[isolation]
+worktree_owner = "trusted_coordinator"
+worktree_root = "UNBOUND"
+write_lease = "UNBOUND"
+trusted_oracle_root = "UNBOUND"
+trusted_receipt_root = "UNBOUND"
+network_policy = "deny_except_admitted_fixtures"
+worker_has_repository_publish_credentials = false
+owner_checkout_reset_allowed = false
+preserve_failure_before_cleanup = true
+
+[resources]
+# Real numeric ceilings are set in the admitted manifest. Empty/unbound
+# values in this scaffold intentionally cannot produce an executable mission.
+containment_profile = "UNBOUND"
+storage_root = "UNBOUND"
+budget_record = "UNBOUND"
+budget_record_sha256 = "UNBOUND"
+wall_deadline_record = "UNBOUND"
+work_completion_owner = "UNBOUND"
+
+[performance]
+protocol_revision = "UNBOUND"
+baseline_receipt = "UNBOUND"
+primary_metric = "UNBOUND"
+budget_manifest = "UNBOUND"
+budget_manifest_sha256 = "UNBOUND"
+# Never inherit the upload's illustrative 2% limit without registration.
+zero_allocation_operation = "UNBOUND"
+preparation_boundary = "UNBOUND"
+requires_native_measurement = true
+
+[[assertions]]
+stage = 1
+name = "type_lint_attributes"
+required = true
+commands = []
+expected_receipt = "UNBOUND"
+
+[[assertions]]
+stage = 2
+name = "resolved_architecture_dependencies"
+required = true
+commands = []
+expected_receipt = "UNBOUND"
+
+[[assertions]]
+stage = 3
+name = "independent_functional_properties"
+required = true
+commands = []
+expected_receipt = "UNBOUND"
+
+[[assertions]]
+stage = 4
+name = "applicable_ub_aliasing_and_native_lifecycle"
+required = true
+commands = []
+# Applicable Miri/native commands and any prospective alternatives are
+# resolved before admission. An unsupported mandatory command blocks closure.
+expected_receipt = "UNBOUND"
+
+[[assertions]]
+stage = 5
+name = "allocation_instruction_and_native_cost"
+required = true
+commands = []
+expected_receipt = "UNBOUND"
+
+[completion]
+verified_postimage_required = true
+all_required_receipts_required = true
+confirmed_process_stop_required = true
+cleanup_or_preservation_receipt_required = true
+worker_may_mark_closed = false
+worker_may_write_trusted_receipts = false
+changelog_fragment = ".changelog/alpha.2/UNBOUND.md"
+fragment_publisher = "trusted_coordinator_after_verification"
+release_publication_authorized = false
