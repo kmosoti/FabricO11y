@@ -52,6 +52,7 @@ fn qualification_and_native_custody_adapters_run_with_the_built_helper() {
         "test_populations.py",
         "test_grade.py",
         "test_visibility_observer.py",
+        "test_outage.py",
     ] {
         let status = Command::new("python3")
             .args([

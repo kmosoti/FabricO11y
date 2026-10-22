@@ -184,6 +184,13 @@ states registered by the [monitor diagnostic](cross-monitor-lifetime-protocol.md
 for success, failure and unloaded controls. Keep the source/end ledgers and all
 independent oracles as additional requirements, and stop retained owned units
 during cleanup after preserving completion evidence.
+
+The full interruption is measured from the completed rule-installation bracket
+to the start of rule removal, in the same admitted edge boot. Rule construction
+time cannot consume the sixty-second hold. Require a conservative duration
+lower bound of at least sixty seconds as well as nonzero firewall counters;
+an absent, shorter or cross-boot interval fails. A deterministic delayed-rule
+control must reject the former schedule that subtracted installation cost.
 Retain the original one-second samples and first/last means as diagnostics.
 The original rule above remains the revision-1 specification; no earlier result
 is regraded and no historical fleet, outage or soak rule changes.
