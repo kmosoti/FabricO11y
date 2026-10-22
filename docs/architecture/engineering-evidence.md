@@ -414,3 +414,21 @@ matching guest identities and stopped receipts on both hosts. Guest correlation
 retains the full management round-trip bracket; clocks from different hosts
 are not treated as one monotonic timeline. Finite adapter controls do not credit
 an unrun cross-host workload or any release gate.
+
+A failed or interrupted worker can still have confirmed process shutdown. The
+remote adapter records those states separately: acceptance requires the original
+nested command receipt, matching unit/argv/exits, guest identity and completion;
+cleanup can additionally use an independent observation of the exact owned
+cgroup being empty or removed. A missing original receipt never becomes a
+successful workload through that cleanup proof. The
+[retained bootstrap fixture](../experiments/formal/fixtures/remote-bootstrap-stop.json)
+records the first actual nonzero worker exit with a confirmed stopped group.
+
+Guest readiness still requires cloud-init exit zero and an empty swap table.
+The disposable provisioner defers hostname setup to its final stage using
+[cloud-init's documented preserve option](https://docs.cloud-init.io/en/latest/reference/yaml_examples/set_hostname.html).
+It stops and masks only the Fedora guest's zram units before swapoff, using
+[systemctl mask with --now](https://www.freedesktop.org/software/systemd/man/256/systemctl.html),
+so a late queued swap activation cannot undo the intended fixture setup.
+Degraded completion refuses immediately and retains its status output. These
+steps change no execution-host swap, firewall or live service configuration.

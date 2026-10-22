@@ -13,8 +13,9 @@ populations, `clearing-v2`, independent stopped-journal snapshot selection and
 unchanged custody/query oracles with named negative controls. Missing source
 bytes, clocks, ACKs or visibility observations fail admission.
 
-The first actual two-guest execution remains pending. No cross-family cell has
-run or passed; contained unit controls do not establish end-to-end acceptance.
+The first actual split bootstrap failed before Fabric offers; no cross-family
+workload has passed. Its cloud-init/zram and shutdown-evidence failures remain
+retained. Contained unit controls do not establish end-to-end acceptance.
 
 ## G15 edge placement
 
