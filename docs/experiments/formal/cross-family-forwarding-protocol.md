@@ -173,6 +173,17 @@ The observer must finish before grading. It adds observations without removing
 the original query work. Representative controls must expose the original
 short-deadline, grouped-bracket and out-of-order-witness defects. Run the fresh
 full smoke under the unchanged split limits before placement admission.
+
+Retain the producer and outage units with `RemainAfterExit=yes` too. Completion
+requires the actual loaded, active/exited unit, original exit code/status,
+successful result and matching guest boot. A default inactive status from an
+unloaded unit is not an original command receipt. Save the full status at each
+completion probe; running units may continue only within the existing deadline.
+Failed, absent or unfinished units refuse the cell. Reuse the literal manager
+states registered by the [monitor diagnostic](cross-monitor-lifetime-protocol.md)
+for success, failure and unloaded controls. Keep the source/end ledgers and all
+independent oracles as additional requirements, and stop retained owned units
+during cleanup after preserving completion evidence.
 Retain the original one-second samples and first/last means as diagnostics.
 The original rule above remains the revision-1 specification; no earlier result
 is regraded and no historical fleet, outage or soak rule changes.
