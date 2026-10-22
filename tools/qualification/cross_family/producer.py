@@ -67,6 +67,8 @@ class TraceSender:
                     self.journal.append({'type': 'trace_uncertain', 'tick': tick, 'before_ns': before,
                         'after_ns': time.monotonic_ns(), 'status': getattr(error, 'code', None),
                         'error': str(error)[:500]})
+                    if isinstance(error, urllib.error.HTTPError):
+                        error.close()
         except BaseException as error:
             self.failures.append(f'trace transport worker failed: {error}')
 
@@ -163,7 +165,6 @@ def main():
     journal = Journal(root / 'offers.jsonl')
     controlled = Journal(root / 'controlled-custody.jsonl')
     pending = queue.Queue(maxsize=32)
-    stop_at = time.monotonic() + SECONDS + GUARD_SECONDS + 120
     context = ssl.create_default_context(cafile=config['ca'])
     token = Path(config['token_file']).read_text().strip()
     failures = []
@@ -171,6 +172,7 @@ def main():
     offered_sequences = []
     began_mono = time.monotonic_ns()
     began_wall = time.time_ns()
+    stop_at = began_mono / 1e9 + SECONDS + GUARD_SECONDS + 120
     journal.append({'type': 'begin', 'boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
                     'monotonic_ns': began_mono, 'unix_ns': began_wall, 'seconds': SECONDS,
                     'guard_seconds': GUARD_SECONDS, 'elapsed_seconds': SECONDS + GUARD_SECONDS})

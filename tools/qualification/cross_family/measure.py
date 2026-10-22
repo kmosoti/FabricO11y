@@ -5,6 +5,7 @@ from pathlib import Path
 import re
 import os
 import threading
+import urllib.error
 import time
 
 NATIVE_METRICS = (
@@ -75,6 +76,8 @@ class VisibilityObserver:
         except BaseException as error:
             self.error = {'type': type(error).__name__, 'error': str(error),
                           'status': getattr(error, 'code', None)}
+            if isinstance(error, urllib.error.HTTPError):
+                error.close()
 
     def finish(self, cancel=False):
         if cancel:

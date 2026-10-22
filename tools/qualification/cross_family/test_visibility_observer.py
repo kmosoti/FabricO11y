@@ -1,5 +1,6 @@
 """Controls for the retained smoke's grouped-bracket and blocked-loop defects."""
 import json
+import io
 from pathlib import Path
 import tempfile
 import threading
@@ -50,14 +51,16 @@ class ObserverControls(unittest.TestCase):
 
     def test_original_http_failure_cannot_be_completed_observation(self):
         with tempfile.TemporaryDirectory() as directory:
+            response = io.BytesIO(b'original refusal body')
             def call(*args):
-                raise urllib.error.HTTPError('http://fixture', 503, 'injected refusal', {}, None)
+                raise urllib.error.HTTPError('http://fixture', 503, 'injected refusal', {}, response)
             observer = measure.VisibilityObserver(Guest('server'), Guest('edge'), call, Path(directory))
             observer.start({'monotonic_ns': 0})
             with self.assertRaisesRegex(RuntimeError, 'observer incomplete'):
                 observer.finish()
             self.assertFalse(observer.thread.is_alive())
             self.assertEqual(observer.error['status'], 503)
+            self.assertTrue(response.closed)
             self.assertFalse(observer.completed)
 
     def test_cancel_and_unstopped_worker_remain_distinct_from_completion(self):
