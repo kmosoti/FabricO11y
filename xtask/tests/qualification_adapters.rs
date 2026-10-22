@@ -27,6 +27,7 @@ fn qualification_and_native_custody_adapters_run_with_the_built_helper() {
             "test_owner_walkthrough",
             "test_owner_evidence",
             "test_owner_guide",
+            "test_storage_census",
             "test_custody_native",
             "test_custody_capture",
         ])
