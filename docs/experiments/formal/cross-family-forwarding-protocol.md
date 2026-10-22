@@ -128,6 +128,51 @@ do not promote the failed run by retrospective grading.
 New cross-family cells explicitly select
 [backlog revision 2](service-backlog-protocol-r2.md): full interval-union clearing
 within 5 seconds and positive empty time in each measured 5-second window.
+
+### Producer and observation repair after the retained split smoke
+
+Registered on 2026-10-22 before a fresh run. Diagnostic replay of failed
+`split-debian-fedora-smoke-06` is not acceptance. All 652 exports with HTTP 200
+are retained; 406 missing exports belong to uncertain attempts. The producer's
+80 ms HTTP timeout is shorter than the native loop's 100 ms idle wake. Its
+reconnections can consume the receiver's bounded connection permits. Preserve
+the original uncertainty, source bytes and command exit; do not lower the
+required 1950 exports or 5850 spans to the admitted subset.
+
+Keep exactly 390 logs, 1950 trace exports with three spans each, and thirteen
+32-point controlled metric Batches. Keep 15 seconds of warmup, 120 seconds of
+measured offered work and 60 seconds of offered work during data interruption.
+The existing producer may use eight HTTP workers, a 256-export queue and
+30-second request deadlines bounded by its final drain deadline. Record every
+offer before enqueue and every original admitted/uncertain outcome. Queue
+overflow or an unfinished worker is a failed producer, never permission to
+drop work, retry an uncertain export or change its identity. Keep all workload
+and independent delivery/query expectations.
+
+Insert a fixed five-second guard with no new offers after the measured interval
+and before the full sixty-second interruption. Subsequent offered coordinates
+shift by exactly five seconds: 195 seconds of actual offered work occupy 200
+elapsed seconds. This lets measured work use its existing five-second clearing
+allowance before the intentional fault; it does not enlarge any latency or
+clearing threshold. Preserve all late measured items and their actual ACKs.
+The interruption covers the full final sixty seconds of offered work. Retain
+the 120-second drain allowance after offers end and the outer resource limits.
+The sampler's 330-sample horizon and measured phase remain unchanged. This
+guard does not change any separately registered thirty-minute outage or soak.
+
+The original complete per-name visibility sweeps and fixed query snapshots
+remain. Add one bounded, independent observation loop during the existing
+15-to-145-second visibility interval. It reads logs, spans and all metric names
+for each native identity, plus controlled metrics, with the existing bounded
+query envelope and independent oracle. Bracket each answer in its own guest
+clock; retain errors, original statuses, all answers and completion. Queries
+with a stale or missing bracket still fail. Joining observation streams uses
+the earliest actually completed same-boot visibility witness, independently of
+serialization order; no returned row or failed oracle decision is discarded.
+The observer must finish before grading. It adds observations without removing
+the original query work. Representative controls must expose the original
+short-deadline, grouped-bracket and out-of-order-witness defects. Run the fresh
+full smoke under the unchanged split limits before placement admission.
 Retain the original one-second samples and first/last means as diagnostics.
 The original rule above remains the revision-1 specification; no earlier result
 is regraded and no historical fleet, outage or soak rule changes.
