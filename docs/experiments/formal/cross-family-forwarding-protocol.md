@@ -87,7 +87,7 @@ missing samples make the rule incomplete. End-of-drain backlog must be zero.
 
 ### Prospective timing-population clarification and backlog revision
 
-Registered before the first cross-family cell: report four distinct populations,
+Report five distinct populations for subsequent cells,
 without substituting one population's starting boundary for another's:
 
 | Population | Independently observable starting boundary |
@@ -96,6 +96,7 @@ without substituting one population's starting boundary for another's:
 | Controlled metrics | The independent producer's creation timestamp and exact Batch identity |
 | Native host metrics | Native collection-start timestamp; earlier physical counter changes are not measured |
 | Companion diagnostics | Native source acceptance before durable Spool append; diagnostic creation before collection is not measured |
+| Edge diagnostics | Native source acceptance before durable Spool append; diagnostic creation before collection is not measured |
 
 Apply ACK p99 ≤ 1 second and visibility p99 ≤ 5 seconds separately to each
 population using its stated boundary and conservative same-boot clock brackets.
@@ -104,6 +105,25 @@ latency. Pre-Spool diagnostic logging remains best-effort under the existing
 self-observation contract. Include every accepted companion Batch in custody,
 query, backlog, drain and resource accounting; this clarification excludes no
 accepted work or failed attempt. Missing required joins still fail admission.
+
+The edge-diagnostic population is registered on 2026-10-22 after disposable
+`split-debian-fedora-smoke-06` failed with `unexpected unregistered edge log
+source`. Its original exit 2, source bytes and shutdown receipts remain failed
+evidence. The retained edge Spool contains 390 offered logs and 36 diagnostics
+from `/var/lib/fabrico11y/node/spool/diagnostics/spindle.log`. The native CLI
+already opens that local diagnostic source; the four-population adapter had
+incorrectly required every edge log to use the offered file. The
+[counterexample](fixtures/cross-edge-diagnostics.json) pins this distinction.
+
+For the existing fixed edge configuration, admit only that exact diagnostic
+path in addition to `/var/log/fabric-cross/source.log`. Preserve offered-log
+offset/body joins, reject every other path, and grade diagnostics separately
+using their actual native acceptance/ACK brackets. Require a nonempty measured
+population and the same ACK/visibility limits. Include these rows in the
+unchanged custody, query, backlog, drain and resource accounting. Do not merge
+them into offered observations or call acceptance latency creation latency.
+Repeat the affected controls and a fresh full smoke before placement admission;
+do not promote the failed run by retrospective grading.
 
 New cross-family cells explicitly select
 [backlog revision 2](service-backlog-protocol-r2.md): full interval-union clearing

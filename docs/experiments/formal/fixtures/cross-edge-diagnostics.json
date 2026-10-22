@@ -1,0 +1,25 @@
+{
+  "origin": "split-debian-fedora-smoke-06 on aa1d0c1248066833df5da776cc74379f21e1e780",
+  "original_exit": 2,
+  "original_error": "unexpected unregistered edge log source",
+  "edge_spool_sha256": "c77ea292dfab5c10035a8a86b8fa5447c2d011ab5554441bb903594eb10252f9",
+  "offered_path": "/var/log/fabric-cross/source.log",
+  "offered_count": 390,
+  "diagnostic_path": "/var/lib/fabrico11y/node/spool/diagnostics/spindle.log",
+  "diagnostic_count": 36,
+  "diagnostic_example": {
+    "sequence": 1,
+    "attributes": {
+      "log.file.path": "/var/lib/fabrico11y/node/spool/diagnostics/spindle.log",
+      "log.file.device": "51",
+      "log.file.inode": "2489",
+      "log.file.offset.start": "0",
+      "log.file.offset.end": "70"
+    },
+    "body_sha256": "c95f4530aa607325cf7138f998f7c217c9606abb09e73879b42d9518b63a957a"
+  },
+  "expected_population": "edge_diagnostics",
+  "starting_boundary": "native source acceptance before durable Spool append",
+  "unknown_path_expected": "reject",
+  "acceptance_credit": false
+}
