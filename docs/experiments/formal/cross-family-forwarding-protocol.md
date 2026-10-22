@@ -142,7 +142,7 @@ required 1950 exports or 5850 spans to the admitted subset.
 Keep exactly 390 logs, 1950 trace exports with three spans each, and thirteen
 32-point controlled metric Batches. Keep 15 seconds of warmup, 120 seconds of
 measured offered work and 60 seconds of offered work during data interruption.
-The existing producer may use eight HTTP workers, a 256-export queue and
+The existing producer may use eight HTTP workers, a 1950-export queue and
 30-second request deadlines bounded by its final drain deadline. Record every
 offer before enqueue and every original admitted/uncertain outcome. Queue
 overflow or an unfinished worker is a failed producer, never permission to
@@ -170,7 +170,13 @@ with a stale or missing bracket still fail. Joining observation streams uses
 the earliest actually completed same-boot visibility witness, independently of
 serialization order; no returned row or failed oracle decision is discarded.
 The observer must finish before grading. It adds observations without removing
-the original query work. Representative controls must expose the original
+the original query work. Use the existing named metric query shapes: the legacy
+admin API requires a metric name and gains no wildcard or new public format.
+Up to eight HTTP calls may execute concurrently inside each fresh per-node
+clock envelope. Every returned answer retains that conservative guest-clock
+bracket; it is not an individual point estimate. Bound each sweep by the fixed
+nineteen native or one controlled query shapes, preserve every error and wait
+for all owned query workers before completion. Representative controls must expose the original
 short-deadline, grouped-bracket and out-of-order-witness defects. Run the fresh
 full smoke under the unchanged split limits before placement admission.
 
@@ -191,6 +197,23 @@ time cannot consume the sixty-second hold. Require a conservative duration
 lower bound of at least sixty seconds as well as nonzero firewall counters;
 an absent, shorter or cross-boot interval fails. A deterministic delayed-rule
 control must reject the former schedule that subtracted installation cost.
+
+The queue bound and named concurrent observations supersede the initial repair
+after failed `split-debian-fedora-smoke-07`. The observer's unsupported unnamed
+metric request correctly received HTTP 400. The retained producer exited 1
+after 294 overflows of its 256-entry queue during the outage; all 1656 admitted
+exports are retained. A disposable clone recovered the failure ledger while
+the original disk hash remained unchanged. The
+[counterexample](fixtures/cross-producer-overflow.json) pins these identities.
+The queue is now bounded by the entire fixed 1950-offer population so transport
+waiting cannot silently remove offered work during the sixty-second fault.
+The producer's 128 MiB cap, guest/host caps, all counts, deadlines and numerical
+gates remain fixed; budget admission still requires a fresh full smoke. Keep a
+representative 256-entry overflow control and reject an extra offer beyond the
+finite bound. Persist observer errors immediately, including original HTTP
+status, and reject incomplete observation rather than waiting to discover an
+unsupported query after the campaign. This registration changes no product API.
+
 Retain the original one-second samples and first/last means as diagnostics.
 The original rule above remains the revision-1 specification; no earlier result
 is regraded and no historical fleet, outage or soak rule changes.
