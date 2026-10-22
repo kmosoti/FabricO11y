@@ -60,7 +60,8 @@ def main():
     result = Q.DATA / 'results/cross-family' / args.run_id
     root.mkdir(exist_ok=False)
     result.mkdir(parents=True, exist_ok=False)
-    facts = {'run_id': args.run_id, 'classification': 'finite local two-OS VM transport/custody cell; migration provision fixture; not production access qualification',
+    placement = 'split-host' if args.edge_host else 'local'
+    facts = {'run_id': args.run_id, 'classification': f'finite {placement} two-OS VM transport/custody cell; migration provision fixture; not production access qualification',
              'server_family': args.server_family, 'edge_family': args.edge_family,
              'inputs': artifacts['identity'], 'storage_admission': admission, 'host_cgroup': limits,
              'exit': 2, 'gates': {}}
