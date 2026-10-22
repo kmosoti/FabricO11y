@@ -24,6 +24,11 @@ to apply.
 `rustls-pemfile` is separately addressed by upgrading axum-server to 0.8.0.
 Its [upstream changelog](https://docs.rs/crate/axum-server/0.8.0/source/CHANGELOG.md)
 records replacement by rustls-pki-types, rather than advisory suppression.
+The lockfile selects `rustls-webpki 0.103.16` to address
+[RUSTSEC-2026-0382](https://rustsec.org/advisories/RUSTSEC-2026-0382).
+The TLS provider and feature selections stay fixed. Packages built with the
+previous lockfile require replacement and fresh applicable release evidence;
+an updated source lockfile alone does not update those binaries.
 The [local UI patches](../vendor/README.md) replace unmaintained paste with
 the explicitly named pastey registry package.
 
