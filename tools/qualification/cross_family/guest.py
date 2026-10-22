@@ -25,9 +25,12 @@ def image(family):
 
 
 class Guest:
-    def __init__(self, role, family, root, results, key, memory_mib, data_port=None, *, network=None):
+    def __init__(self, role, family, root, results, key, memory_mib, data_port=None, *, network=None, acceleration='tcg'):
         if network not in (None, '192.0.2.0/24'):
             raise ValueError('only the registered walkthrough network may override usernet')
+        if acceleration not in ('tcg', 'kvm'):
+            raise ValueError('unregistered guest acceleration')
+        self.acceleration = acceleration
         self.role = role
         self.family = family
         self.root = root / role
@@ -77,7 +80,7 @@ class Guest:
             net += ',net=' + self.network
         if self.data_port is not None:
             net += f',hostfwd=tcp:127.0.0.1:{self.data_port}-:7443'
-        command = [Q.executable('qemu-system-x86_64'), '-accel', 'tcg,thread=multi', '-cpu', 'max', '-smp', '2', '-m', str(self.memory_mib),
+        command = [Q.executable('qemu-system-x86_64'), '-accel', 'kvm' if self.acceleration == 'kvm' else 'tcg,thread=multi', '-cpu', 'host' if self.acceleration == 'kvm' else 'max', '-smp', '2', '-m', str(self.memory_mib),
                    '-drive', f'file={disk},if=virtio,format=qcow2', '-drive', f'file={seed},media=cdrom,readonly=on',
                    '-netdev', net, '-device', 'virtio-net-pci,netdev=net0', '-display', 'none',
                    '-serial', f'file:{self.results / (self.role + "-serial.txt")}', '-monitor', 'none']

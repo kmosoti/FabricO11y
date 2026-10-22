@@ -388,3 +388,29 @@ a mutant executable for a clean production worktree. Worktree/variant verificati
 therefore uses a distinct DATA target passed inside the resource launcher command;
 source cleanliness alone is insufficient to identify a reused executable. Caller
 adoption and fresh owner acceptance remain separate requirements.
+
+## Split-host release guest
+
+The [registered placement](../experiments/formal/release-placement-protocol.md)
+keeps server/browser work on Blade and one KVM edge guest on G15. The existing
+`cross_family.Guest` still provisions the OS, installs packages, runs producers
+and reads clocks. `RemoteGuest` owns the SSH lifetime and loopback forwards;
+`remote_worker.py` owns the same Guest on G15. An SSH stdin disconnect stops the
+guest and retains a failure instead of manufacturing workload completion.
+
+The resource launcher has explicit `edge`, `source` and `split-server` profiles.
+It verifies actual payload cgroup memory/high/swap/CPU/task files before payload
+execution; each profile retains a 1800-second service deadline. G15 uses an
+explicit disk storage root and never inherits an assumed Olo job boundary.
+A privileged host setup action must run in an explicitly bounded system service:
+G15's sudo PAM session changes cgroups, so wrapping sudo in a user service does
+not establish containment for its child. The live Spindle and Olo are outside
+these fixture groups and retain their own services.
+
+Staged manifests bind input hashes independently of SSH transfer success.
+Native TLS and per-node credentials still authenticate Fabric delivery through
+the forwards. A successful cell requires original command/exit/unit joins,
+matching guest identities and stopped receipts on both hosts. Guest correlation
+retains the full management round-trip bracket; clocks from different hosts
+are not treated as one monotonic timeline. Finite adapter controls do not credit
+an unrun cross-host workload or any release gate.

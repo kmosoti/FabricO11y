@@ -14,6 +14,7 @@ import subprocess
 import time
 import urllib.request
 from guest import Guest, Q, image
+from remote import placement_options, validate_placement, edge_guest
 
 HERE = Path(__file__).resolve().parent
 
@@ -29,11 +30,13 @@ def main():
     parser.add_argument('--edge-family', choices=('debian', 'fedora'), required=True)
     parser.add_argument('--deb-receipt', type=Path, required=True)
     parser.add_argument('--rpm-receipt', type=Path, required=True)
+    placement_options(parser)
     args = parser.parse_args()
+    validate_placement(args)
     signal.signal(signal.SIGTERM, interrupted)
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,79}', args.run_id):
         raise ValueError('invalid run identity')
-    limits = Q.require_containment()
+    limits = Q.require_containment(split=bool(args.edge_host))
     # Candidate adapters validate receipts, exact source bundles, installed
     # payload equivalence and console identity before constructing a guest.
     from inputs import validate_inputs
@@ -59,7 +62,7 @@ def main():
     Q.run([Q.executable('ssh-keygen'), '-q', '-t', 'ed25519', '-N', '', '-f', str(key)], timeout=30)
     data_port = Q.free_port()
     server = Guest('server', args.server_family, root, result, key, 4096, data_port)
-    edge = Guest('edge', args.edge_family, root, result, key, 1536)
+    edge = edge_guest(args, args.edge_family, root, result, key, data_port)
     began = time.monotonic()
     try:
         server.start()

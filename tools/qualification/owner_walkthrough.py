@@ -28,6 +28,7 @@ from owner_guide import Guide
 from owner_evidence import require, grade_queries, grade_custody, completed
 import owner_observation
 from cross_family.guest import Guest, Q, image
+from cross_family.remote import placement_options, validate_placement, edge_guest
 from cross_family.inputs import validate_inputs
 
 ORIGIN = 'https://telemetry.example.com:7443'
@@ -123,7 +124,7 @@ class Prose:
 
 class Walkthrough:
     def __init__(self, plan, artifacts, fixture, guides, root, out, server_family,
-                 browser_entry_helper, browser_entry_helper_sha256):
+                 browser_entry_helper, browser_entry_helper_sha256, placement=None):
         self.plan, self.artifacts, self.fixture, self.guides = plan, artifacts, fixture, guides
         self.root, self.out = root, out
         self.browser_entry_helper = browser_entry_helper
@@ -139,8 +140,10 @@ class Walkthrough:
         self.key = root / 'id_ed25519'
         self.bridge = self.budget = None
         self.server = Guest('server', server_family, root, out, self.key, 4096, 7443, network='192.0.2.0/24')
-        self.edge = Guest('edge', 'fedora' if server_family == 'debian' else 'debian', root, out, self.key, 1536,
-                          network='192.0.2.0/24')
+        family = 'fedora' if server_family == 'debian' else 'debian'
+        self.edge = (edge_guest(placement, family, root, out, self.key, 7443, network='192.0.2.0/24')
+                     if placement is not None else
+                     Guest('edge', family, root, out, self.key, 1536, network='192.0.2.0/24'))
         self.queries = []
         self.query_stages = {}
         self.source_log = b'owner-walkthrough-original-log\n'
@@ -748,7 +751,9 @@ def main():
     parser.add_argument('--server-family', choices=('debian', 'fedora'), required=True)
     parser.add_argument('--browser-entry-helper', type=Path, required=True)
     parser.add_argument('--browser-entry-helper-sha256', required=True)
+    placement_options(parser)
     args = parser.parse_args()
+    validate_placement(args)
     require(args.browser_entry_helper.is_absolute()
             and not args.browser_entry_helper.is_symlink()
             and args.browser_entry_helper.is_file()
@@ -762,7 +767,7 @@ def main():
         raise InterruptedError('owner walkthrough interrupted by signal ' + str(signum))
     signal.signal(signal.SIGTERM, interrupted)
     Q.require_storage()
-    limits = Q.require_containment()
+    limits = Q.require_containment(split=bool(args.edge_host))
     service = Path('/sys/fs/cgroup') / limits['cgroup'].lstrip('/')
     parent = json.loads(args.outer_admission.read_text())
     require(args.outer_admission.resolve().parent == Q.DATA / 'results/service-opening-candidate'
@@ -774,10 +779,11 @@ def main():
     plan, artifacts, fixture, guides = admit(args.admission, args.admission_sha256)
     require_admitted_browser_entry_helper(
         plan, args.browser_entry_helper, args.browser_entry_helper_sha256)
+    task_max = 1536 if args.edge_host else 4096
     Q.run(['systemctl', '--user', 'set-property', '--runtime', service.name,
-           'CPUQuota=400%', 'TasksMax=4096'], timeout=15)
+           'CPUQuota=400%', 'TasksMax=' + str(task_max)], timeout=15)
     require((service / 'cpu.max').read_text().strip() == '400000 100000'
-            and (service / 'pids.max').read_text().strip() == '4096',
+            and (service / 'pids.max').read_text().strip() == str(task_max),
             'actual host CPU/task enforcement missing')
     for family in ('debian', 'fedora'): image(family)
     previous_boot_ids = set()
@@ -803,13 +809,14 @@ def main():
         # remains authoritative; all children inherit an explicit CPU/task cap.
         import live_browser_check as browser
         require(browser.cgroups.delegate() == service, 'owned launcher delegation differs')
-        browser.cgroups.set_limits(service / 'supervisor', 8 * 1024**3, 7 * 1024**3, 4096, 4)
+        browser.cgroups.set_limits(service / 'supervisor', (6 if args.edge_host else 8) * 1024**3,
+            (5 if args.edge_host else 7) * 1024**3, task_max, 4)
         budget_path, budget_limits = browser.cgroups.subgroup(service, 'owner-browser-budget',
             1024**3, 850 * 1024**2, 512, 2)
         budget = browser.browser_hold_directory(budget_path)
         budget['exclusive'] = True
         walk = Walkthrough(plan, artifacts, fixture, guides, root, out, args.server_family,
-                           args.browser_entry_helper, args.browser_entry_helper_sha256)
+                           args.browser_entry_helper, args.browser_entry_helper_sha256, placement=args)
         walk.budget = budget
         walk.previous_boot_ids = previous_boot_ids
         walk.record['admission_sha256'] = args.admission_sha256
