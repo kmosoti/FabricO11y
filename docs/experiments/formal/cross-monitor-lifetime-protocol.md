@@ -32,3 +32,6 @@ changes. A lifecycle repair must retain the monitor's original status until
 collection and reject failed/missing state. Rerun affected source controls and
 a fresh full split smoke on official images before placement admission. A
 diagnostic result cannot promote smoke04 to success.
+
+The [literal states](fixtures/cross-monitor-states.json) are the regression
+inputs for this mechanism; the diagnostic's full artifacts remain separate.
