@@ -24,7 +24,8 @@ verification and rejects the original defect. Fresh forwarding acceptance is
 still pending. Separately, hosted dependency policy rejects the frozen
 candidate's `rustls-webpki 0.103.15` under
 [RUSTSEC-2026-0382](https://rustsec.org/advisories/RUSTSEC-2026-0382).
-A minimally changed successor package candidate is required; historical
+A [minimally changed successor](experiments/formal/release-successor-inputs-protocol.md)
+package candidate is required; historical
 artifact and guest evidence retain their original identities.
 
 Alpha and package acceptance were owner-paused under [issue #59](https://github.com/kmosoti/FabricO11y/issues/59). Verification-engineering continuation is authorized and tracked in [PR #102](https://github.com/kmosoti/FabricO11y/pull/102); its provenance pins remain product source `b1e5874`, frozen package source `43150db`, `origin/main` baseline `f001175`, and engineering profile anchor `31cf809`. The Rust capture reader is at `681fcc5`, with native caller wiring at `bf1efa9`. These pins do not resume acceptance or claim a future check outcome.
