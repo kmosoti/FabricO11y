@@ -18,6 +18,16 @@ import remote_worker
 
 
 class RemoteControls(unittest.TestCase):
+    def test_stop_rechecks_evidence_instead_of_retaining_old_success(self):
+        with tempfile.TemporaryDirectory() as directory:
+            guest = object.__new__(remote.RemoteGuest)
+            guest.child = type('Exited', (), {'returncode': 0, 'poll': lambda self: 0})()
+            guest.unit, guest.tunnel, guest.messages = None, None, []
+            guest.remote_command, guest.results = ['worker'], Path(directory)
+            guest.completion_confirmed = guest.shutdown_confirmed = True
+            self.assertFalse(guest.stop())
+            self.assertFalse(guest.completion_confirmed)
+
     def test_wrong_guest_or_receipt_cannot_be_transport_success(self):
         response = dict(event='stopped', run_id='one', boot_id='boot-one', qemu_stopped=True, exit=0)
         receipt = dict(unit='unit-one', command=['worker', 'one'], exit=0, stop_confirmed=True,

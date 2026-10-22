@@ -197,6 +197,8 @@ class RemoteGuest(Guest):
     def stop(self):
         if self.child is None:
             return True
+        self.completion_confirmed = False
+        self.shutdown_confirmed = False
         errors = []
         value = None
         response = next((m for m in reversed(self.messages) if m.get('event') == 'stopped'), None)
