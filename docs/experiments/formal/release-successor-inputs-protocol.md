@@ -56,3 +56,22 @@ B1–B13 gates, installation cells, browsers, owner walkthroughs, service/recove
 campaigns and the full soak on one compatible successor. Existing workload
 durations, resource envelopes, independent oracles and negative controls remain
 unchanged under the [placement registration](release-placement-protocol.md).
+
+## Preserved live services during owned console cleanup
+
+The first successor marker preparation refused Blade's already-running Olo
+server and companion by process name. Preserve that refusal. The two processes
+are in Olo's distinct container; its only host binds are Olo's own state and
+configuration directories, outside DATA. They must remain running.
+
+The private console cleanup adapter may exclude only these independently pinned
+process identities after rechecking PID start time, cgroup/container identity,
+command/executable identity, container mounts and absence of owned-target paths
+in descriptors or mappings. Unavailable or changed identity refuses cleanup.
+Other server/guest/compiler processes remain refused, as does any other active
+project job. Keep the actual stopped console command/cgroup receipts, complete
+target inventories, exclusive ownership markers, hardlink and marker mutation
+controls, descriptor-safe deletion and output-hash checks. Exercise wrong PID,
+start time, cgroup and DATA-bind controls against the actual identity verifier.
+Retain the original failed adapter bytes and register the successor adapter hash
+before retrying marker preparation. No live service is stopped to satisfy idle.
