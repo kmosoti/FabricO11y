@@ -128,12 +128,21 @@ class Guest:
         else:
             raise RuntimeError(self.role + ' guest boot deadline exceeded')
         (self.results / (self.role + '-bootstrap.txt')).write_text('\n'.join(attempts))
-        facts = self.script('set -eu\n. /etc/os-release; echo os=$ID:$VERSION_ID; cat /proc/sys/kernel/random/boot_id; stat -fc %T /sys/fs/cgroup; cat /proc/swaps; test "$(wc -l < /proc/swaps)" = 1; getenforce 2>/dev/null || true\n').stdout
+        try:
+            facts = self.script('set -eu\n. /etc/os-release; echo os=$ID:$VERSION_ID; cat /proc/sys/kernel/random/boot_id; stat -fc %T /sys/fs/cgroup; cat /proc/swaps; test "$(wc -l < /proc/swaps)" = 1; getenforce 2>/dev/null || true\n').stdout
+        except subprocess.CalledProcessError as error:
+            (self.results / (self.role + '-guest.txt')).write_text((error.stdout or '') + (error.stderr or ''))
+            raise
+        (self.results / (self.role + '-guest.txt')).write_text(facts)
         expected = 'os=fedora:44' if self.family == 'fedora' else 'os=debian:13'
         if expected not in facts or 'cgroup2fs' not in facts or (self.family == 'fedora' and 'Enforcing' not in facts):
             raise RuntimeError(self.role + ' OS/cgroup/SELinux prerequsites unavailable')
         self.boot_id = facts.splitlines()[1]
-        (self.results / (self.role + '-guest.txt')).write_text(facts)
+        package_query = ("rpm -qa --qf '%{NAME} %{EPOCHNUM}:%{VERSION}-%{RELEASE}.%{ARCH}\\n'\n"
+                         if self.family == 'fedora' else
+                         "dpkg-query -W -f='${binary:Package} ${Version} ${Architecture}\\n'\n")
+        environment = self.script('set -eu\nuname -r\nsystemctl --version\nreadlink /proc/1/exe\n' + package_query)
+        (self.results / (self.role + '-environment.txt')).write_text(environment.stdout + environment.stderr)
 
     def install(self, package, helpers):
         self.copy(package, '/home/accept/package.' + ('rpm' if self.family == 'fedora' else 'deb'))
@@ -141,6 +150,9 @@ class Guest:
             self.copy(helpers / helper, '/home/accept/' + helper)
         install = 'rpm -Uvh /home/accept/package.rpm' if self.family == 'fedora' else 'dpkg -i /home/accept/package.deb'
         command = 'set -eu\n' + install + '\ninstall -d -m 0755 /root/cross\ninstall -m 0700 /home/accept/spool_dump /home/accept/server_dump /root/cross/\nsha256sum /usr/bin/fabric-server /usr/bin/fabric-node /usr/bin/fabricctl\n'
+        command += ("rpm -q --qf '%{NAME} %{EPOCHNUM}:%{VERSION}-%{RELEASE}.%{ARCH}\\n' fabrico11y\n"
+                    if self.family == 'fedora' else
+                    "dpkg-query -W -f='${binary:Package} ${Version} ${Architecture}\\n' fabrico11y\n")
         result = self.script(command, timeout=120)
         (self.results / (self.role + '-install.txt')).write_text(result.stdout + result.stderr)
 
