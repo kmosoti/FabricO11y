@@ -23,6 +23,17 @@ def interrupted(signum, frame):
     raise InterruptedError('cross-family manager interrupted by signal ' + str(signum))
 
 
+def fixture_tls(root):
+    # Match the documented CA recipe; Python's strict verifier requires CA usage.
+    for command in [
+        ['openssl', 'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-days', '2', '-subj', '/CN=cross-family-owned-ca', '-addext', 'keyUsage=critical,keyCertSign,cRLSign', '-keyout', str(root / 'ca.key'), '-out', str(root / 'ca.pem')],
+        ['openssl', 'req', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-subj', '/CN=cross-family-server', '-keyout', str(root / 'server.key'), '-out', str(root / 'server.csr')],
+    ]:
+        Q.run(command, timeout=30)
+    (root / 'san.ext').write_text('subjectAltName=IP:127.0.0.1,IP:10.0.2.2\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\n')
+    Q.run(['openssl', 'x509', '-req', '-in', str(root / 'server.csr'), '-CA', str(root / 'ca.pem'), '-CAkey', str(root / 'ca.key'), '-CAcreateserial', '-days', '2', '-extfile', str(root / 'san.ext'), '-out', str(root / 'server.pem')], timeout=30)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--run-id', required=True)
@@ -77,13 +88,7 @@ def main():
                               'host_query_destination': f'https://127.0.0.1:{data_port}'}
         for guest in (server, edge):
             guest.install(artifacts[guest.family], artifacts['helpers'])
-        for command in [
-            ['openssl', 'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-days', '2', '-subj', '/CN=cross-family-owned-ca', '-keyout', str(root / 'ca.key'), '-out', str(root / 'ca.pem')],
-            ['openssl', 'req', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-subj', '/CN=cross-family-server', '-keyout', str(root / 'server.key'), '-out', str(root / 'server.csr')],
-        ]:
-            Q.run(command, timeout=30)
-        (root / 'san.ext').write_text('subjectAltName=IP:127.0.0.1,IP:10.0.2.2\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\n')
-        Q.run(['openssl', 'x509', '-req', '-in', str(root / 'server.csr'), '-CA', str(root / 'ca.pem'), '-CAkey', str(root / 'ca.key'), '-CAcreateserial', '-days', '2', '-extfile', str(root / 'san.ext'), '-out', str(root / 'server.pem')], timeout=30)
+        fixture_tls(root)
         admin = hashlib.sha256(os.urandom(32)).hexdigest()
         (root / 'admin-token').write_text(admin + '\n')
         (root / 'admin-token').chmod(0o600)
@@ -122,9 +127,9 @@ systemctl enable --now fabrico11y-server
             try:
                 call('/v1/admin/nodes')
                 break
-            except OSError:
+            except OSError as error:
                 if time.monotonic() > deadline:
-                    raise RuntimeError('installed server did not start verified TLS')
+                    raise RuntimeError('installed server did not start verified TLS: ' + str(error)) from error
                 time.sleep(1)
         edge_token = call('/v1/admin/nodes', {'name': 'edge', 'logs': ['/var/log/fabric-cross/source.log'], 'metric_interval_s': 15})['token']
         metric_token = call('/v1/admin/nodes', {'name': 'controlled', 'metric_interval_s': 15})['token']

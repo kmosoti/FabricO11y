@@ -43,7 +43,11 @@ fn qualification_and_native_custody_adapters_run_with_the_built_helper() {
     );
     // Keep the fixed-host lifecycle/refusal controls in the ordinary workspace
     // gate. Other cross-family tests retain their registered placement scope.
-    for pattern in ["test_remote.py", "test_guest_readiness.py"] {
+    for pattern in [
+        "test_remote.py",
+        "test_guest_readiness.py",
+        "test_fixture_tls.py",
+    ] {
         let status = Command::new("python3")
             .args([
                 "-B",
