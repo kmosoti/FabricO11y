@@ -22,6 +22,61 @@ import urllib.request
 
 SEED = 0xA11FA001
 SECONDS = 195  # 15 warmup +120 measured +60 interruption; then drain.
+GUARD_SECONDS = 5
+
+
+def due_ns(begin, tick):
+    return begin + tick * 100_000_000 + (GUARD_SECONDS * 10**9 if tick >= 1350 else 0)
+
+
+class TraceSender:
+    """Bound transport waiting independently of the registered offer cadence."""
+    def __init__(self, journal, failures, deadline, url='http://127.0.0.1:4318/v1/traces'):
+        self.journal, self.failures, self.deadline, self.url = journal, failures, deadline, url
+        self.pending = queue.Queue(maxsize=256)
+        self.workers = [threading.Thread(target=self.run) for _ in range(8)]
+        for worker in self.workers:
+            worker.start()
+
+    def offer(self, tick, payload, before):
+        try:
+            self.pending.put_nowait((tick, payload, before))
+        except queue.Full:
+            self.failures.append('trace transport queue overflow')
+            self.journal.append({'type': 'trace_rejected', 'tick': tick, 'reason': 'producer queue full'})
+
+    def run(self):
+        try:
+            while True:
+                item = self.pending.get()
+                if item is None:
+                    return
+                tick, payload, before = item
+                try:
+                    remaining = self.deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise TimeoutError('trace transport drain deadline exhausted')
+                    request = urllib.request.Request(self.url, data=payload,
+                                                     headers={'content-type': 'application/x-protobuf'})
+                    with urllib.request.urlopen(request, timeout=min(30, remaining)) as response:
+                        body, status = response.read(), response.status
+                    self.journal.append({'type': 'trace_admitted', 'tick': tick, 'status': status,
+                        'before_ns': before, 'after_ns': time.monotonic_ns(),
+                        'response_base64': base64.b64encode(body).decode()})
+                except (OSError, urllib.error.URLError) as error:
+                    self.journal.append({'type': 'trace_uncertain', 'tick': tick, 'before_ns': before,
+                        'after_ns': time.monotonic_ns(), 'status': getattr(error, 'code', None),
+                        'error': str(error)[:500]})
+        except BaseException as error:
+            self.failures.append(f'trace transport worker failed: {error}')
+
+    def finish(self):
+        for _ in self.workers:
+            self.pending.put(None, timeout=max(.001, self.deadline - time.monotonic()))
+        for worker in self.workers:
+            worker.join(timeout=max(.001, self.deadline - time.monotonic()))
+        if any(worker.is_alive() for worker in self.workers):
+            raise RuntimeError('trace transport workers did not finish by deadline')
 
 
 def varint(n):
@@ -108,7 +163,7 @@ def main():
     journal = Journal(root / 'offers.jsonl')
     controlled = Journal(root / 'controlled-custody.jsonl')
     pending = queue.Queue(maxsize=32)
-    stop_at = time.monotonic() + SECONDS + 120
+    stop_at = time.monotonic() + SECONDS + GUARD_SECONDS + 120
     context = ssl.create_default_context(cafile=config['ca'])
     token = Path(config['token_file']).read_text().strip()
     failures = []
@@ -117,7 +172,8 @@ def main():
     began_mono = time.monotonic_ns()
     began_wall = time.time_ns()
     journal.append({'type': 'begin', 'boot_id': Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
-                    'monotonic_ns': began_mono, 'unix_ns': began_wall, 'seconds': SECONDS})
+                    'monotonic_ns': began_mono, 'unix_ns': began_wall, 'seconds': SECONDS,
+                    'guard_seconds': GUARD_SECONDS, 'elapsed_seconds': SECONDS + GUARD_SECONDS})
 
     def deliver():
         nonlocal acknowledged
@@ -163,11 +219,12 @@ def main():
 
     worker = threading.Thread(target=guarded_deliver)
     worker.start()
+    traces = TraceSender(journal, failures, stop_at)
     offset = 0
     try:
         with Path(config['log']).open('ab', buffering=0) as source:
             for tick in range(SECONDS * 10):
-                due = began_mono + tick * 100_000_000
+                due = due_ns(began_mono, tick)
                 time.sleep(max(0, (due - time.monotonic_ns()) / 1e9))
                 observed = time.time_ns()
                 if tick % 5 == 0:
@@ -195,21 +252,13 @@ def main():
                 before = time.monotonic_ns()
                 journal.append({'type': 'trace_offer', 'tick': tick, 'rows': rows, 'before_ns': before,
                                 'scheduled_monotonic_ns': due})
-                try:
-                    request = urllib.request.Request('http://127.0.0.1:4318/v1/traces', data=payload,
-                                                     headers={'content-type': 'application/x-protobuf'})
-                    with urllib.request.urlopen(request, timeout=0.08) as response:
-                        response_body = response.read()
-                        status = response.status
-                    journal.append({'type': 'trace_admitted', 'tick': tick, 'status': status,
-                                    'before_ns': before, 'after_ns': time.monotonic_ns(),
-                                    'response_base64': base64.b64encode(response_body).decode()})
-                except (OSError, urllib.error.URLError) as error:
-                    journal.append({'type': 'trace_uncertain', 'tick': tick, 'before_ns': before,
-                                    'after_ns': time.monotonic_ns(), 'error': str(error)[:500]})
+                traces.offer(tick, payload, before)
     finally:
-        pending.put(None)
-        worker.join(timeout=max(0.1, stop_at - time.monotonic()))
+        try:
+            traces.finish()
+        finally:
+            pending.put(None, timeout=max(.001, stop_at - time.monotonic()))
+            worker.join(timeout=max(0.1, stop_at - time.monotonic()))
     if worker.is_alive():
         raise SystemExit('controlled producer deadline exceeded')
     controlled.append({'type': 'node_state', 'node_id': config['node_id'], 'generation': 1,

@@ -22,6 +22,14 @@ def nearest_rank(values, quantile=.99):
     return ordered[math.ceil(quantile * len(ordered)) - 1]
 
 
+def remember_visibility(seen, key, finish):
+    prior = seen.get(key)
+    if prior is not None and prior['boot_id'] != finish['boot_id']:
+        raise ValueError('visibility witnesses belong to different guest boots')
+    if prior is None or finish['upper_ns'] < prior['upper_ns']:
+        seen[key] = finish
+
+
 def native_transcript(source, output):
     state = [row for row in source if row['type'] == 'node_state']
     if len(state) != 1:
@@ -148,8 +156,7 @@ def measure_and_grade(server, edge, call, config, result, data_port):
             key = row_key(body['kind'], row)
             if key not in rows:
                 raise ValueError('visible row has no independently retained source timing')
-            if key not in seen:
-                seen[key] = finish
+            remember_visibility(seen, key, finish)
     for population, values in populations.items():
         measured = [v for v in values if v['measured']]
         ack = [v['ack_duration']['upper_ns'] / 1e9 for v in measured]

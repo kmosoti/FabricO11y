@@ -7,6 +7,17 @@ import query_oracle
 
 
 class OracleControls(unittest.TestCase):
+    def test_visibility_uses_earliest_completed_same_boot_witness_in_any_order(self):
+        early = {'boot_id': 'a', 'lower_ns': 10, 'upper_ns': 20}
+        late = {'boot_id': 'a', 'lower_ns': 100, 'upper_ns': 110}
+        for entries in ((early, late), (late, early)):
+            seen = {}
+            for entry in entries:
+                grade.remember_visibility(seen, 'row', entry)
+            self.assertEqual(seen['row'], early)
+            with self.assertRaisesRegex(ValueError, 'different guest boots'):
+                grade.remember_visibility(seen, 'row', {**early, 'boot_id': 'b'})
+
     def source(self):
         identity = {'node_id': 'a' * 32, 'generation': 1, 'sequence': 1}
         body = base64.b64encode(producer.batch(identity['node_id'], 1, producer.metrics(1, 10, 20))).decode()

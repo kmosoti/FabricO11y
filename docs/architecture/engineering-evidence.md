@@ -454,3 +454,15 @@ The [population registration](../experiments/formal/cross-family-forwarding-prot
 applies the same ACK/visibility limits and retains every accepted row in custody,
 queries, backlog and resource accounting. No product codec or independent oracle
 changes at this boundary.
+
+Cross-family offers retain their original coordinates and counts. Eight bounded
+HTTP workers wait for native trace intake independently of the producer clock;
+overflow and unfinished workers fail the producer. A fixed five-second guard
+separates the measured phase from intentional interruption while preserving
+195 seconds of actual offered work and the full sixty-second outage workload.
+An independent bounded observer adds per-answer clock brackets without removing
+the original per-name reads or fixed queries. Grading checks every query with
+the independent oracle and joins each row to its earliest completed same-boot
+visibility witness. Worker errors and incomplete shutdown remain failures. The
+[repair registration](../experiments/formal/cross-family-forwarding-protocol.md#producer-and-observation-repair-after-the-retained-split-smoke)
+preserves the numerical limits and requires fresh full execution.

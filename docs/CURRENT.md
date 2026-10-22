@@ -43,6 +43,12 @@ file logs. The [separate population registration](experiments/formal/cross-famil
 keeps those diagnostics under the same timing gates with their actual source
 acceptance boundary. Unknown paths and changed offered bytes remain refused.
 Fresh controls and a full smoke are required; the failed run is not promoted.
+Diagnostic replay also found uncertain trace exports, grouped visibility
+brackets and measured work crossing the intentional fault. The
+[registered producer and sampling repair](experiments/formal/cross-family-forwarding-protocol.md#producer-and-observation-repair-after-the-retained-split-smoke)
+retains all offered records and thresholds, adds bounded transport/observation
+workers and separates the full outage workload with a fixed drain guard.
+Fresh execution remains required; replay is diagnostic evidence only.
 
 Alpha and package acceptance were owner-paused under [issue #59](https://github.com/kmosoti/FabricO11y/issues/59). Verification-engineering continuation is authorized and tracked in [PR #102](https://github.com/kmosoti/FabricO11y/pull/102); its provenance pins remain product source `b1e5874`, frozen package source `43150db`, `origin/main` baseline `f001175`, and engineering profile anchor `31cf809`. The Rust capture reader is at `681fcc5`, with native caller wiring at `bf1efa9`. These pins do not resume acceptance or claim a future check outcome.
 
