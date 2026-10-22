@@ -40,4 +40,28 @@ fn qualification_and_native_custody_adapters_run_with_the_built_helper() {
         "the existing Python qualification adapter modules failed (exit {:?})",
         status.code()
     );
+    // Keep the fixed-host lifecycle/refusal controls in the ordinary workspace
+    // gate. Other cross-family tests retain their registered placement scope.
+    for pattern in ["test_remote.py", "test_guest_readiness.py"] {
+        let status = Command::new("python3")
+            .args([
+                "-B",
+                "-m",
+                "unittest",
+                "discover",
+                "-v",
+                "-s",
+                "cross_family",
+                "-p",
+                pattern,
+            ])
+            .current_dir(&qualification)
+            .status()
+            .expect("python3 is required for remote Guest regression controls");
+        assert!(
+            status.success(),
+            "remote Guest controls {pattern} failed (exit {:?})",
+            status.code()
+        );
+    }
 }
