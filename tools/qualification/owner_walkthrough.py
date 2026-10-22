@@ -834,6 +834,10 @@ def main():
         errors = stop_owned(walk, budget)
         clean = not errors
         if walk is not None:
+            if args.edge_host:
+                walk.record['remote_completion_confirmed'] = walk.edge.completion_confirmed
+                if not walk.edge.completion_confirmed:
+                    rc = 2
             walk.record['cleanup_confirmed'] = clean
             walk.record['cleanup_errors'] = errors
             walk.record['query_evidence'] = 'protected-transcript'

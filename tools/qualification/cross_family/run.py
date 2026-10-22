@@ -208,6 +208,10 @@ systemd-run --unit=cross-monitor --property=MemoryMax=64M --property=MemorySwapM
                     facts[guest.role + '_diagnostic_error'] = str(error)
         cleanup = [guest.stop() for guest in (edge, server)]
         facts['process_cleanup_confirmed'] = all(cleanup)
+        if args.edge_host:
+            facts['remote_completion_confirmed'] = edge.completion_confirmed
+            if not edge.completion_confirmed:
+                facts['exit'] = 2
         if facts['exit'] == 0 and all(cleanup):
             shutil.rmtree(root)
         facts['scratch_removed'] = not root.exists()

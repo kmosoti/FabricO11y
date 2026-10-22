@@ -52,6 +52,7 @@ def edge_guest(args, family, root, results, key, data_port, *, network=None):
 
 def completed_remote(response, receipt, *, run_id, boot_id, unit, command, transport_exit):
     """Both lifecycle and original launcher receipt must describe the same job."""
+    child = receipt.get('command_receipt') if type(receipt) is dict else None
     return (type(response) is dict and type(receipt) is dict
             and response.get('event') == 'stopped' and response.get('run_id') == run_id
             and response.get('boot_id') == boot_id and response.get('qemu_stopped') is True
@@ -59,7 +60,16 @@ def completed_remote(response, receipt, *, run_id, boot_id, unit, command, trans
             and type(transport_exit) is int and transport_exit == 0
             and receipt.get('unit') == unit and receipt.get('command') == command
             and type(receipt.get('exit')) is int and receipt['exit'] == 0
-            and receipt.get('stop_confirmed') is True)
+            and receipt.get('stop_confirmed') is True
+            and type(child) is dict and child.get('unit') == unit
+            and child.get('command') == command and child.get('state') == 'completed'
+            and type(child.get('exit')) is int and child['exit'] == 0)
+
+
+def shutdown_remote(receipt, *, unit, command):
+    """A failed or incomplete command can still have confirmed whole-group shutdown."""
+    return (type(receipt) is dict and receipt.get('unit') == unit
+            and receipt.get('command') == command and receipt.get('stop_confirmed') is True)
 
 
 class RemoteGuest(Guest):
@@ -87,6 +97,9 @@ class RemoteGuest(Guest):
         self.messages = []
         self.remote_boot_id = None
         self.remote_command = None
+        self.remote_cgroup = None
+        self.completion_confirmed = False
+        self.shutdown_confirmed = False
 
     def message(self, deadline):
         while b'\n' not in self.buffer:
@@ -125,12 +138,19 @@ class RemoteGuest(Guest):
         self.command = remote_command(self.host, command)
         with (self.results / 'edge-remote-stderr.txt').open('wb') as errors:
             self.child = subprocess.Popen(self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=errors)
-        deadline = time.monotonic() + Q.BOOT_TIMEOUT_S
+        # Keep the guest's own deadline unchanged and allow its stopped receipt
+        # to arrive before declaring a transport timeout.
+        deadline = time.monotonic() + Q.BOOT_TIMEOUT_S + 30
         started = self.message(deadline)
         if (started.get('event') != 'started' or started.get('run_id') != self.run_id
                 or not re.fullmatch(r'fabric-work-[0-9a-f]{32}', started.get('unit', ''))):
             raise ValueError('wrong remote run/service identity')
         self.unit = started['unit']
+        group = Path(started.get('cgroup', ''))
+        if (not group.is_absolute() or not str(group).startswith('/sys/fs/cgroup/')
+                or '..' in group.parts or group.name != self.unit + '.service'):
+            raise ValueError('remote service did not supply its actual cgroup identity')
+        self.remote_cgroup = group
         ready = self.message(deadline)
         if (ready.get('event') != 'ready' or type(ready.get('port')) is not int
                 or not 1 <= ready['port'] <= 65535
@@ -175,43 +195,87 @@ class RemoteGuest(Guest):
             raise ValueError('remote staged copy lacks matching receipt')
 
     def stop(self):
-        stopped = False
-        response = None
+        if self.child is None:
+            return True
+        errors = []
+        value = None
+        response = next((m for m in reversed(self.messages) if m.get('event') == 'stopped'), None)
         try:
-            if self.child is not None and self.child.poll() is None:
-                self.child.stdin.write(b'{"action":"stop"}\n')
-                self.child.stdin.flush()
-                response = self.message(time.monotonic() + 30)
+            if self.child.poll() is None and response is None:
+                try:
+                    self.child.stdin.write(b'{"action":"stop"}\n')
+                    self.child.stdin.flush()
+                    response = self.message(time.monotonic() + 30)
+                except (OSError, ValueError, RuntimeError) as error:
+                    errors.append(str(error))
+            if response is not None and self.child.poll() is None:
                 self.child.wait(timeout=20)
+        except (OSError, subprocess.SubprocessError) as error:
+            errors.append(str(error))
+        finally:
+            if self.unit:
+                # This independent management connection also handles loss of
+                # the original SSH pipe. Never infer stop from transport exit.
+                try:
+                    stopped = Q.run(remote_command(self.host, ['systemctl', '--user', 'stop', self.unit]),
+                                    timeout=20, check=False)
+                    self.management_stop_exit = stopped.returncode
+                except (OSError, subprocess.SubprocessError) as error:
+                    errors.append(str(error))
+            if self.child.poll() is None:
+                try:
+                    self.child.stdin.close()
+                    self.child.wait(timeout=20)
+                except (OSError, subprocess.SubprocessError) as error:
+                    errors.append(str(error))
+                    self.child.terminate()
+                    try:
+                        self.child.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        self.child.kill()
+                        self.child.wait(timeout=10)
+        try:
             if self.unit:
                 receipt_path = self.source_root / 'target/resource-containment/runs' / (self.unit + '.json')
-                receipt = Q.run(remote_command(self.host, ['cat', receipt_path]), timeout=20)
-                (self.results / 'edge-resource-receipt.json').write_text(receipt.stdout)
-                value = json.loads(receipt.stdout)
-                stopped = completed_remote(response, value, run_id=self.run_id,
-                    boot_id=self.remote_boot_id, unit=self.unit, command=self.remote_command,
-                    transport_exit=self.child.returncode)
+                receipt = Q.run(remote_command(self.host, ['cat', receipt_path]), timeout=20, check=False)
+                if receipt.returncode == 0:
+                    (self.results / 'edge-resource-receipt.json').write_text(receipt.stdout)
+                    try:
+                        value = json.loads(receipt.stdout)
+                    except ValueError as error:
+                        errors.append('partial original resource receipt: ' + str(error))
+                    self.shutdown_confirmed = shutdown_remote(value, unit=self.unit, command=self.remote_command)
+                    self.completion_confirmed = completed_remote(response, value, run_id=self.run_id,
+                        boot_id=self.remote_boot_id, unit=self.unit, command=self.remote_command,
+                        transport_exit=self.child.returncode)
+                else:
+                    errors.append('original remote resource receipt unavailable: ' + receipt.stderr)
+                if self.remote_cgroup is not None:
+                    probe = ('import json,sys; from pathlib import Path; p=Path(sys.argv[1]); '
+                             'exists=p.exists(); events=(p/"cgroup.events").read_text() if exists else ""; '
+                             'print(json.dumps(dict(path=str(p),exists=exists,events=events,'
+                             'stopped=not exists or "populated 0" in events.splitlines())))')
+                    result = Q.run(remote_command(self.host, ['python3', '-B', '-c', probe, self.remote_cgroup]), timeout=20)
+                    kernel = json.loads(result.stdout)
+                    (self.results / 'edge-kernel-stop.json').write_text(json.dumps(kernel, indent=2) + '\n')
+                    if kernel.get('path') == str(self.remote_cgroup) and kernel.get('stopped') is True:
+                        self.shutdown_confirmed = True
                 Q.run(['scp', '-q', '-r', '-o', 'BatchMode=yes',
                        self.host + ':' + str(self.remote_results),
                        str(self.results / 'edge-remote-evidence')], timeout=60)
-        except (OSError, ValueError, subprocess.SubprocessError, RuntimeError):
-            stopped = False
+        except (OSError, ValueError, subprocess.SubprocessError, RuntimeError) as error:
+            errors.append(str(error))
+            self.completion_confirmed = False
         finally:
-            if self.child is not None and self.child.poll() is None:
-                self.child.stdin.close()
-                try:
-                    self.child.wait(timeout=20)
-                except subprocess.TimeoutExpired:
-                    self.child.terminate()
-                    self.child.wait(timeout=10)
-            if self.unit:
-                # An SSH transport exit cannot establish remote workload stop.
-                try:
-                    Q.run(remote_command(self.host, ['systemctl', '--user', 'stop', self.unit]),
-                          timeout=20, check=False)
-                except (OSError, subprocess.SubprocessError):
-                    stopped = False
             if self.tunnel is not None and self.tunnel.poll() is None:
                 self.tunnel.terminate()
-                self.tunnel.wait(timeout=10)
-        return stopped
+                try:
+                    self.tunnel.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    self.tunnel.kill()
+                    self.tunnel.wait(timeout=10)
+            (self.results / 'edge-shutdown.json').write_text(json.dumps(dict(
+                unit=self.unit, command=self.remote_command, transport_exit=self.child.returncode,
+                original_command_receipt=value, completion_confirmed=self.completion_confirmed,
+                shutdown_confirmed=self.shutdown_confirmed, errors=errors), indent=2) + '\n')
+        return self.shutdown_confirmed

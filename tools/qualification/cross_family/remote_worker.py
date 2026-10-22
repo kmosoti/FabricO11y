@@ -35,6 +35,7 @@ def main():
     group = require_limits()
     if os.environ.get('FABRIC_RESOURCE_JOB_PROFILE') != 'edge':
         raise ValueError('remote edge requires the exact registered edge profile')
+    emit('started', unit=group.name.removesuffix('.service'), cgroup=str(group), run_id=args.run_id)
     manifest = Q.DATA / 'inputs/release-inputs.json'
     if (manifest.is_symlink() or manifest.stat().st_size > 2 * 1024**2
             or Q.digest(manifest, 'sha256') != args.manifest_sha256):
@@ -59,7 +60,6 @@ def main():
         raise ValueError('fixture key is not private')
     guest = Guest('edge', args.family, root, results, key, 1536,
                   network=args.network, acceleration='kvm')
-    emit('started', unit=group.name.removesuffix('.service'), run_id=args.run_id)
     status = 1
     try:
         guest.start()

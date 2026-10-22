@@ -20,7 +20,8 @@ import remote_worker
 class RemoteControls(unittest.TestCase):
     def test_wrong_guest_or_receipt_cannot_be_transport_success(self):
         response = dict(event='stopped', run_id='one', boot_id='boot-one', qemu_stopped=True, exit=0)
-        receipt = dict(unit='unit-one', command=['worker', 'one'], exit=0, stop_confirmed=True)
+        receipt = dict(unit='unit-one', command=['worker', 'one'], exit=0, stop_confirmed=True,
+                       command_receipt=dict(unit='unit-one', command=['worker', 'one'], state='completed', exit=0))
         kwargs = dict(run_id='one', boot_id='boot-one', unit='unit-one', command=['worker', 'one'], transport_exit=0)
         self.assertTrue(remote.completed_remote(response, receipt, **kwargs))
         for field, value in [('boot_id', 'another-guest'), ('run_id', 'another-run'),
@@ -33,6 +34,21 @@ class RemoteControls(unittest.TestCase):
                 self.assertFalse(remote.completed_remote(response, {**receipt, field: value}, **kwargs))
         self.assertFalse(remote.completed_remote(response, None, **kwargs))
         self.assertFalse(remote.completed_remote(response, receipt, **{**kwargs, 'transport_exit': 255}))
+        for child in (None, {}, dict(receipt['command_receipt'], exit=False),
+                      dict(receipt['command_receipt'], state='started'),
+                      dict(receipt['command_receipt'], command=['other'])):
+            self.assertFalse(remote.completed_remote(response, {**receipt, 'command_receipt': child}, **kwargs))
+
+    def test_failed_bootstrap_has_shutdown_proof_without_completion(self):
+        path = Path(__file__).resolve().parents[3] / 'docs/experiments/formal/fixtures/remote-bootstrap-stop.json'
+        fixture = json.loads(path.read_text())
+        receipt, response = fixture['resource_receipt'], fixture['stopped_event']
+        self.assertTrue(remote.shutdown_remote(receipt, unit=receipt['unit'], command=receipt['command']))
+        self.assertFalse(remote.completed_remote(response, receipt, run_id=response['run_id'],
+            boot_id=response['boot_id'], unit=receipt['unit'], command=receipt['command'],
+            transport_exit=fixture['transport_exit']))
+        self.assertFalse(remote.shutdown_remote({**receipt, 'stop_confirmed': False},
+            unit=receipt['unit'], command=receipt['command']))
 
     def test_partial_placement_and_unbounded_controller_refuse(self):
         args = argparse.Namespace(edge_host='olo@olo-g15', edge_storage_root=None,
