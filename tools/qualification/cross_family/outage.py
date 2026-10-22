@@ -32,8 +32,10 @@ def main():
             run(['add', 'chain', 'inet', 'fabric_cross', 'output', '{ type filter hook output priority 0; policy accept; }'])
             run(['add', 'rule', 'inet', 'fabric_cross', 'output', 'ip', 'daddr', '10.0.2.2',
                  'tcp', 'dport', str(args.port), 'counter', 'drop'])
-            record('outage_start', before, time.monotonic_ns())
-            time.sleep(max(0, (args.begin_ns + 195 * 10**9 - time.monotonic_ns()) / 1e9))
+            installed_at = time.monotonic_ns()
+            record('outage_start', before, installed_at)
+            # Installation time cannot consume the registered full interruption.
+            time.sleep(max(0, (installed_at + 60 * 10**9 - time.monotonic_ns()) / 1e9))
             before = time.monotonic_ns()
             counters = json.loads(run(['-j', 'list', 'table', 'inet', 'fabric_cross']).stdout)
             run(['delete', 'table', 'inet', 'fabric_cross'])
