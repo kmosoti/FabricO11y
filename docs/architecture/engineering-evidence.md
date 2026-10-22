@@ -432,3 +432,16 @@ It stops and masks only the Fedora guest's zram units before swapoff, using
 so a late queued swap activation cannot undo the intended fixture setup.
 Degraded completion refuses immediately and retains its status output. These
 steps change no execution-host swap, firewall or live service configuration.
+
+The cross-family resource sampler keeps its original 330-sample horizon. Its
+transient unit uses `RemainAfterExit=yes` so a completed monitor stays observable
+while post-drain queries finish. The collector checks the actual unit state at
+arming and collection, accepting a healthy running monitor or a retained clean
+exit, and refusing missing or failed state even when a stop returns zero. If
+still running at collection, the sampler acknowledges a controlled SIGTERM,
+closes its output and exits cleanly; the collector records that original
+completion before stopping its retained unit. The
+[literal manager-state fixture](../experiments/formal/fixtures/cross-monitor-states.json)
+retains the independent failure controls. A script exception also preserves its
+original exit or timeout and output in an exclusive mode-0600 artifact; only the
+stdin hash is retained. Neither mechanism changes an oracle or sampling rule.

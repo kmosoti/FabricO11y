@@ -22,6 +22,56 @@ def json_lines(text):
     return [json.loads(line) for line in text.splitlines() if line.strip()]
 
 
+def require_monitor_health(text):
+    fields = {}
+    for line in text.splitlines():
+        key, separator, value = line.partition('=')
+        if not separator or key in fields:
+            raise ValueError('incomplete or duplicate resource monitor status')
+        fields[key] = value
+    expected = {'LoadState', 'ActiveState', 'SubState', 'Result', 'ExecMainCode',
+                'ExecMainStatus', 'RemainAfterExit'}
+    if (set(fields) != expected or fields['LoadState'] != 'loaded'
+            or fields['ActiveState'] != 'active' or fields['Result'] != 'success'
+            or fields['ExecMainStatus'] != '0' or fields['RemainAfterExit'] != 'yes'
+            or (fields['SubState'], fields['ExecMainCode']) not in (('running', '0'), ('exited', '1'))):
+        raise ValueError('resource monitor missing or failed before collection')
+    return fields
+
+
+def monitor_health(guest, result, phase):
+    command = ('systemctl show cross-monitor -p LoadState -p ActiveState -p SubState '
+               '-p Result -p ExecMainCode -p ExecMainStatus -p RemainAfterExit\n')
+    answer = guest.script(command, timeout=5, check=False)
+    (result / (guest.role + '-monitor-' + phase + '-status.json')).write_text(json.dumps(
+        {'exit': answer.returncode, 'stdout': answer.stdout, 'stderr': answer.stderr,
+         'boot_id': guest.boot_id}, indent=2) + '\n')
+    if answer.returncode != 0:
+        raise ValueError('resource monitor status command failed')
+    return require_monitor_health(answer.stdout)
+
+
+def finish_monitor(guest, result):
+    state = monitor_health(guest, result, 'collection')
+    if state['SubState'] == 'running':
+        signal = guest.script('systemctl kill --signal=SIGTERM cross-monitor\n', timeout=5, check=False)
+        (result / (guest.role + '-monitor-finish-request.json')).write_text(json.dumps(
+            {'exit': signal.returncode, 'stdout': signal.stdout, 'stderr': signal.stderr}, indent=2) + '\n')
+        # A natural clean exit can race the signal request. Only the retained
+        # original completion status can certify either outcome.
+        deadline = time.monotonic() + 5
+        attempt = 0
+        while state['SubState'] == 'running':
+            if time.monotonic() >= deadline:
+                raise RuntimeError('resource monitor did not finish after controlled stop')
+            time.sleep(.1)
+            attempt += 1
+            state = monitor_health(guest, result, 'finish-' + str(attempt))
+    if state['SubState'] != 'exited':
+        raise ValueError('resource monitor original completion unavailable')
+    return state
+
+
 def fetch(guest, path, result, name):
     text = guest.script('cat ' + path + '\n', timeout=30).stdout
     (result / name).write_text(text)
@@ -168,6 +218,7 @@ def collect(server, edge, call, config, result, data_port):
     outputs, sources, resources = {}, {}, {}
     for guest, service, node_config in ((edge, 'fabrico11y-node', '/etc/fabrico11y/node.conf'),
                                       (server, 'fabrico11y-server', '/var/lib/fabrico11y/server/self-spindle/node.conf')):
+        finish_monitor(guest, result)
         guest.script('systemctl stop cross-monitor ' + service + '\n', timeout=60)
         outputs[guest.role] = guest.script('journalctl --no-pager -o cat -u ' + service + '\n').stdout
         (result / (guest.role + '-timing.txt')).write_text(outputs[guest.role])

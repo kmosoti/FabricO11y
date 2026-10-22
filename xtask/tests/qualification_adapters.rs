@@ -47,6 +47,7 @@ fn qualification_and_native_custody_adapters_run_with_the_built_helper() {
         "test_remote.py",
         "test_guest_readiness.py",
         "test_fixture_tls.py",
+        "test_monitor_lifecycle.py",
     ] {
         let status = Command::new("python3")
             .args([

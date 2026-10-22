@@ -3,6 +3,7 @@
 import argparse
 import json
 from pathlib import Path
+import signal
 import time
 
 
@@ -45,11 +46,20 @@ def main():
     if '..' in Path(args.service_cgroup).parts or not args.service_cgroup.startswith('/'):
         raise ValueError('absolute actual service cgroup required')
     boot_id = Path('/proc/sys/kernel/random/boot_id').read_text().strip()
+    stopping = False
+    def request_stop(signum, frame):
+        nonlocal stopping
+        stopping = True
+    signal.signal(signal.SIGTERM, request_stop)
     began = time.monotonic_ns()
     with args.out.open('x') as output:
         for tick in range(330):
+            if stopping:
+                break
             due = began + tick * 1_000_000_000
             time.sleep(max(0, (due - time.monotonic_ns()) / 1e9))
+            if stopping:
+                break
             before = time.monotonic_ns()
             unix = time.time_ns()
             observation = sample(args.service_cgroup)

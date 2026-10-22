@@ -1,7 +1,10 @@
 """Owned two-OS placement primitives; imports no application implementation."""
 from __future__ import annotations
 import importlib.util
+import base64
+import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import time
@@ -46,7 +49,31 @@ class Guest:
         self.ssh = Q.ssh_base(self.port, key, self.root / 'known_hosts')
 
     def script(self, text, timeout=30, check=True):
-        return Q.run([*self.ssh, 'sudo', 'bash', '-s'], input_text=text, timeout=timeout, check=check)
+        try:
+            return Q.run([*self.ssh, 'sudo', 'bash', '-s'], input_text=text, timeout=timeout, check=check)
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            def output(value):
+                if isinstance(value, bytes):
+                    return {'encoding': 'base64', 'data': base64.b64encode(value).decode('ascii')}
+                return value or ''
+            evidence = {'command': error.cmd, 'stdin_sha256': hashlib.sha256(text.encode()).hexdigest(),
+                        'boot_id': getattr(self, 'boot_id', None),
+                        'exit': getattr(error, 'returncode', None),
+                        'timeout_s': getattr(error, 'timeout', None),
+                        'stdout': output(error.stdout), 'stderr': output(error.stderr)}
+            try:
+                number = 1
+                path = self.results / (self.role + '-command-failure-' + f'{number:04}.json')
+                while path.exists():
+                    number += 1
+                    path = self.results / (self.role + '-command-failure-' + f'{number:04}.json')
+                fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+                with os.fdopen(fd, 'w') as stream:
+                    json.dump(evidence, stream, indent=2)
+                    stream.write('\n')
+            except (OSError, TypeError, ValueError) as failure:
+                error.add_note('command failure evidence unavailable: ' + str(failure))
+            raise
 
     def copy(self, path, destination):
         # SSH argv has no local shell quoting. Destinations are fixed guest paths.

@@ -7,9 +7,8 @@ publication still requires final owner authorization. Historical pause and
 engineering records below retain their original scope. No new acceptance
 result is claimed by resumption.
 The split-host adapter is under verification in `milestone/release-execution`.
-It retains the candidate packages and extends the existing Guest lifecycle with
-a G15 KVM edge and owned SSH forwarding. Finite adapter checks do not establish
-that a native guest cell has run.
+It extends the existing Guest lifecycle with a G15 KVM edge and owned SSH
+forwarding. Finite adapter checks do not complete native acceptance.
 The first split bootstrap failed before Fabric offers: Fedora cloud-init
 reported degraded completion with hostname warnings, and zram activated after
 the fixture swapoff. Both original outer receipts confirm shutdown; the G15
@@ -25,13 +24,19 @@ still pending. Separately, hosted dependency policy rejects the frozen
 candidate's `rustls-webpki 0.103.15` under
 [RUSTSEC-2026-0382](https://rustsec.org/advisories/RUSTSEC-2026-0382).
 A [minimally changed successor](experiments/formal/release-successor-inputs-protocol.md)
-package candidate is required; historical
-artifact and guest evidence retain their original identities.
+package candidate was constructed; historical artifact and guest evidence retain
+their original identities.
 Successor product source `1eaf9ad` produced packaged snapshot `531e67c`.
 Independent console, Debian and RPM reproducibility, constructor refusal
 controls and artifact inspection completed with exit 0. Fresh installation,
 browser, service/recovery and soak acceptance remain open. The standalone fuzz
 lock now selects the same patched dependency; it does not alter those packages.
+The successor smoke reached offered work and its outage, then failed during
+resource extraction. The [monitor lifetime diagnostic](experiments/formal/cross-monitor-lifetime-protocol.md)
+retains the original 330 samples and literal manager states. The monitor's
+transient unit now retains its status until collection; failed or missing state
+is refused. Fresh split acceptance is still pending. Script failures preserve
+their original exit/timeout and output in private artifacts, with stdin hashed.
 
 Alpha and package acceptance were owner-paused under [issue #59](https://github.com/kmosoti/FabricO11y/issues/59). Verification-engineering continuation is authorized and tracked in [PR #102](https://github.com/kmosoti/FabricO11y/pull/102); its provenance pins remain product source `b1e5874`, frozen package source `43150db`, `origin/main` baseline `f001175`, and engineering profile anchor `31cf809`. The Rust capture reader is at `681fcc5`, with native caller wiring at `bf1efa9`. These pins do not resume acceptance or claim a future check outcome.
 
