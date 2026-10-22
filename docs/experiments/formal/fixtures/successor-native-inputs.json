@@ -1,0 +1,33 @@
+{
+  "scope": "Exact successor native input policy; not an acceptance result",
+  "product_source": "1eaf9ad17dd5507809cb5cca0964e6e84758648a",
+  "packaged_source": "531e67cbf678af483debab7ea0c0f7ecf6b79686",
+  "artifacts": {
+    "deb_receipt": {
+      "path": "results/installation-package-build/certificate-distrust-01-deb-a/receipt.json",
+      "sha256": "0b304acefd1dab014ae547f7c9767aba3dec05ff363a540e8b941b381b79627c"
+    },
+    "rpm_receipt": {
+      "path": "results/packages/certificate-distrust-01-rpm-a/receipt.json",
+      "sha256": "0d11fde82ce12a3de06da9f516a6f651ebaf1597aeaa990ec18fdd0c6bf28721"
+    },
+    "artifact_admission": {
+      "path": "results/candidate-build-certificate-distrust-01/artifact-admission.json",
+      "sha256": "ed4219351dbaceef6c143b93a1bea662d17f10053cc8da549fcd63465f00d4ec"
+    },
+    "package_inspection": {
+      "path": "results/candidate-build-certificate-distrust-01/package-inspection.json",
+      "sha256": "27b6ae8820d5a4c0f5f3c90a15e203faee19de8828d7882db85d8bcf7c261031"
+    }
+  },
+  "packages": {
+    "debian": {
+      "path": "results/installation-package-build/certificate-distrust-01-deb-a/fabrico11y_0.1.0~alpha.1_amd64.deb",
+      "sha256": "bc53cf133d32a3f1bec1de1474964e2f55e2ffe9d6827d1a43986a78a5f902c9"
+    },
+    "fedora": {
+      "path": "results/packages/certificate-distrust-01-rpm-a/fabrico11y-0.1.0-0.alpha.1.x86_64.rpm",
+      "sha256": "6b47d531807f8bddd135b5bc1b3e552b0a84a2fa22acb30b1324706efc02b23a"
+    }
+  }
+}

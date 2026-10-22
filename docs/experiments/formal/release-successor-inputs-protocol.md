@@ -75,3 +75,20 @@ controls, descriptor-safe deletion and output-hash checks. Exercise wrong PID,
 start time, cgroup and DATA-bind controls against the actual identity verifier.
 Retain the original failed adapter bytes and register the successor adapter hash
 before retrying marker preparation. No live service is stopped to satisfy idle.
+
+## Canonical native input tuple
+
+The [exact successor tuple](fixtures/successor-native-inputs.json) selects the
+actually constructed Debian/RPM receipts, artifact-admission record and package
+inspection by SHA-256. The native caller's fixed selectors and source fixtures
+are rebound to this tuple in this separate policy change. Keep all existing
+refusal outcomes and source/owner/helper/credential joins. The original
+`b1e5874`/`43150db` artifacts and partial trials remain historical evidence.
+
+Artifact admission records the nineteen successful construction commands
+(eighteen registered cells plus ownership-marker preparation) and their original
+stopped receipts. It authorizes registered testing and reports native acceptance
+as unrun and release acceptance as incomplete. The constructor's earlier owner
+authorization remains immutable and separate. Native execution still requires
+the clean merged-ancestor harness, exact owner tuple and all applicable source
+and placement prerequisites. None of these records is final publication approval.
