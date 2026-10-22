@@ -27,6 +27,11 @@ candidate's `rustls-webpki 0.103.15` under
 A [minimally changed successor](experiments/formal/release-successor-inputs-protocol.md)
 package candidate is required; historical
 artifact and guest evidence retain their original identities.
+Successor product source `1eaf9ad` produced packaged snapshot `531e67c`.
+Independent console, Debian and RPM reproducibility, constructor refusal
+controls and artifact inspection completed with exit 0. Fresh installation,
+browser, service/recovery and soak acceptance remain open. The standalone fuzz
+lock now selects the same patched dependency; it does not alter those packages.
 
 Alpha and package acceptance were owner-paused under [issue #59](https://github.com/kmosoti/FabricO11y/issues/59). Verification-engineering continuation is authorized and tracked in [PR #102](https://github.com/kmosoti/FabricO11y/pull/102); its provenance pins remain product source `b1e5874`, frozen package source `43150db`, `origin/main` baseline `f001175`, and engineering profile anchor `31cf809`. The Rust capture reader is at `681fcc5`, with native caller wiring at `bf1efa9`. These pins do not resume acceptance or claim a future check outcome.
 

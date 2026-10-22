@@ -29,6 +29,8 @@ The lockfile selects `rustls-webpki 0.103.16` to address
 The TLS provider and feature selections stay fixed. Packages built with the
 previous lockfile require replacement and fresh applicable release evidence;
 an updated source lockfile alone does not update those binaries.
+The standalone fuzz workspace pins the same patched webpki version in its own
+lockfile; its locked resolution and fuzz checks remain separate evidence.
 The [local UI patches](../vendor/README.md) replace unmaintained paste with
 the explicitly named pastey registry package.
 
