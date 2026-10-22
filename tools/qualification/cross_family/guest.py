@@ -59,12 +59,20 @@ class Guest:
 
     def start(self):
         config = Q.cloud_config(self.key.with_suffix('.pub').read_text(), self.role)
+        # Defer naming until the final stage rather than depending on an early
+        # hostname-service race in the pinned Fedora image. Readiness remains strict.
+        config = config.replace('#cloud-config\n', '#cloud-config\npreserve_hostname: true\n', 1)
         if self.family == 'fedora':
             config = config.replace('groups: [sudo]', 'groups: [wheel]')
             config = config.replace('  - procps\n', '  - procps-ng\n  - rpm\n  - audit\n  - policycoreutils\n')
             config = config.replace('enable, --now, ssh]', 'enable, --now, sshd]')
             config += '  - [systemctl, enable, --now, auditd]\n'
         config = config.replace('  - sudo\n', '  - sudo\n  - nftables\n')
+        config += '  - [hostnamectl, set-hostname, cross-' + self.role + ']\n'
+        if self.family == 'fedora':
+            # A queued zram swap activation can otherwise run after swapoff.
+            # Mask and stop the disposable guest's units, never the execution host's.
+            config += '  - [systemctl, mask, --now, dev-zram0.swap, systemd-zram-setup@zram0.service]\n'
         config += '  - [swapoff, -a]\n'
         (self.root / 'user-data').write_text(config)
         (self.root / 'meta-data').write_text('instance-id: cross-' + self.role + '\nlocal-hostname: cross-' + self.role + '\n')
@@ -97,7 +105,10 @@ class Guest:
             try:
                 result = Q.run([*self.ssh, 'sudo', 'cloud-init', 'status', '--long'],
                                timeout=min(15, deadline - time.monotonic()), check=False)
-                attempts.append(result.stdout + result.stderr)
+                attempts.append('exit=' + str(result.returncode) + '\n' + result.stdout + result.stderr)
+                (self.results / (self.role + '-bootstrap.txt')).write_text('\n'.join(attempts))
+                if 'status: done' in result.stdout and result.returncode != 0:
+                    raise RuntimeError(self.role + ' cloud-init completed unsuccessfully: ' + result.stdout)
                 if result.returncode == 0 and 'status: done' in result.stdout:
                     break
                 if 'status: error' in result.stdout:
