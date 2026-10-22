@@ -25,6 +25,33 @@ STORAGE = storage_root()
 RECEIPTS = Path(__file__).resolve().parents[1] / 'target/resource-containment/runs'
 DEFAULT_RUNTIME_SECONDS = 1800
 MAX_RUNTIME_SECONDS = 16000
+JOB_PROFILES = {
+    'edge': (1706, 2048, 200, 384),
+    'source': (3413, 4096, 400, 512),
+    'split-server': (5120, 6144, 400, 1536),
+}
+
+
+def job_profile(arguments):
+    """Explicit fixed release limits; no inherited service boundary assumption."""
+    if arguments[:1] != ['--job-profile']:
+        return None, arguments
+    if len(arguments) < 3 or arguments[1] not in JOB_PROFILES:
+        raise ValueError('unknown or incomplete release job profile')
+    return arguments[1], arguments[2:]
+
+
+def verify_job_profile(group, profile):
+    high, cap, cpu, tasks = JOB_PROFILES[profile]
+    expected = {'memory.high': high * 1024**2, 'memory.max': cap * 1024**2,
+                'memory.swap.max': 0, 'pids.max': tasks}
+    actual = {name: (group / name).read_text().strip() for name in expected}
+    if any(actual[name] != str(value) for name, value in expected.items()):
+        raise RuntimeError('release job memory/swap/task limits do not match: ' + str(actual))
+    quota, period = (group / 'cpu.max').read_text().split()
+    if quota == 'max' or int(period) <= 0 or int(quota) * 100 != cpu * int(period):
+        raise RuntimeError('release job CPU quota does not match')
+    return {**actual, 'cpu.max': quota + ' ' + period}
 
 
 def command_options(arguments):
@@ -86,6 +113,9 @@ def require_limits():
     swap = (group / 'memory.swap.max').read_text().strip()
     if memory == 'max' or not 0 < int(memory) <= MAX_BYTES or swap != '0':
         raise RuntimeError(f'unsafe cgroup limits: memory.max={memory}, swap.max={swap}')
+    profile = os.environ.get('FABRIC_RESOURCE_JOB_PROFILE')
+    if profile:
+        verify_job_profile(group, profile)
     print(f'resource group: {relative}; memory.max={memory}; swap.max={swap}',
           file=sys.stderr, flush=True)
     return group
@@ -166,7 +196,8 @@ def run_inside(arguments):
     # Cgroup charge includes descendants and can differ from summed process RSS.
     receipt['resource_observation'] = 'command_return_before_service_stop'
     receipt['resources'] = {}
-    for name in ('memory.peak', 'memory.events', 'cpu.stat'):
+    for name in ('memory.peak', 'memory.events', 'cpu.stat', 'memory.high',
+                 'memory.max', 'memory.swap.max', 'cpu.max', 'pids.max'):
         try:
             receipt['resources'][name] = (group / name).read_text().strip()
         except OSError:
@@ -188,6 +219,7 @@ def main():
     if arguments[:1] == ['--guardian']:
         from resource_guardian import run
         return run(arguments[1], Path(arguments[2]), arguments[3:])
+    profile, arguments = job_profile(arguments)
     observe_workload = arguments[:1] == ['--observe-workload-stop']
     if observe_workload:
         arguments = arguments[1:]
@@ -204,6 +236,13 @@ def main():
         raise ValueError('R3 final observation requires exact 7500 seconds and delegation')
     require_storage()
     high, cap = memory_limits()
+    if profile:
+        if observe_final or observe_workload or runtime != DEFAULT_RUNTIME_SECONDS:
+            raise ValueError('release job profiles require the registered 1800-second deadline')
+        high_mib, cap_mib, cpu, tasks = JOB_PROFILES[profile]
+        if cap_mib * 1024**2 > cap:
+            raise ValueError('release job profile exceeds host-scaled memory capacity')
+        high, cap = high_mib * 1024**2, cap_mib * 1024**2
     if observe_final or observe_workload:
         if cap < 6 * 1024**3:
             raise ValueError('R3 exact 6 GiB parent unavailable on this host')
@@ -224,6 +263,10 @@ def main():
     ]
     if delegated:
         command.append('--property=Delegate=yes')
+    if profile:
+        command += ['--property=CPUQuota=' + str(cpu) + '%',
+                    '--property=TasksMax=' + str(tasks),
+                    '--setenv=FABRIC_RESOURCE_JOB_PROFILE=' + profile]
     if observe_final:
         command.append('--property=RemainAfterExit=yes')
     if observe_final or observe_workload:
@@ -328,6 +371,7 @@ def main():
             'temporary_removed': not temporary.exists(),
             'retained_failure_evidence': None if retained is None else str(retained),
             'memory_high_bytes': high, 'memory_max_bytes': cap, 'swap_max_bytes': 0,
+            'job_profile': profile,
             'runtime_max_seconds': runtime,
             'delegated': delegated,
             **({'clock_identity': clock_identity,

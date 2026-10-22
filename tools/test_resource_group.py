@@ -12,6 +12,34 @@ GIB = 1024**3
 
 
 class Containment(unittest.TestCase):
+    def test_release_profile_rejects_each_unenforced_boundary(self):
+        with tempfile.TemporaryDirectory() as directory:
+            group = resource_group.Path(directory)
+            values = {'memory.high': str(1706 * 1024**2),
+                      'memory.max': str(2048 * 1024**2),
+                      'memory.swap.max': '0', 'pids.max': '384',
+                      'cpu.max': '200000 100000'}
+            for name, value in values.items():
+                (group / name).write_text(value)
+            resource_group.verify_job_profile(group, 'edge')
+            for name, wrong in [('memory.high', 'max'), ('memory.max', str(4 * GIB)),
+                                ('memory.swap.max', 'max'), ('pids.max', 'max'),
+                                ('cpu.max', 'max 100000'), ('cpu.max', '400000 100000')]:
+                with self.subTest(name=name, wrong=wrong):
+                    (group / name).write_text(wrong)
+                    with self.assertRaises(RuntimeError):
+                        resource_group.verify_job_profile(group, 'edge')
+                    (group / name).write_text(values[name])
+
+    def test_profile_is_explicit_and_finite(self):
+        self.assertEqual(resource_group.job_profile(['--', 'true']), (None, ['--', 'true']))
+        self.assertEqual(resource_group.job_profile(['--job-profile', 'edge', '--', 'true']),
+                         ('edge', ['--', 'true']))
+        for args in (['--job-profile'], ['--job-profile', 'edge'],
+                     ['--job-profile', 'unbounded', '--', 'true']):
+            with self.assertRaises(ValueError):
+                resource_group.job_profile(args)
+
     def disconnected_wrapper(self, stop_status):
         """CX: self-observation-fast-02 lost its bus; wrapper exited zero."""
         with tempfile.TemporaryDirectory() as directory:
