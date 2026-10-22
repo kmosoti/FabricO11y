@@ -113,15 +113,17 @@ def require_monitor_health(text):
     return fields
 
 
-def monitor_health(guest, result, phase):
-    command = ('systemctl show cross-monitor -p LoadState -p ActiveState -p SubState '
+def monitor_health(guest, result, phase, unit='cross-monitor'):
+    if unit not in ('cross-monitor', 'cross-producer', 'cross-outage'):
+        raise ValueError('unregistered fixture unit')
+    command = ('systemctl show ' + unit + ' -p LoadState -p ActiveState -p SubState '
                '-p Result -p ExecMainCode -p ExecMainStatus -p RemainAfterExit\n')
     answer = guest.script(command, timeout=5, check=False)
-    (result / (guest.role + '-monitor-' + phase + '-status.json')).write_text(json.dumps(
+    (result / (guest.role + '-' + unit.removeprefix('cross-') + '-' + phase + '-status.json')).write_text(json.dumps(
         {'exit': answer.returncode, 'stdout': answer.stdout, 'stderr': answer.stderr,
          'boot_id': guest.boot_id}, indent=2) + '\n')
     if answer.returncode != 0:
-        raise ValueError('resource monitor status command failed')
+        raise ValueError(unit + ' original status command failed')
     return require_monitor_health(answer.stdout)
 
 
@@ -219,12 +221,13 @@ def collect_original(server, edge, call, config, result, data_port, observer):
         raise ValueError('producer boot identity or registered duration differs')
     observer.start(begin)
     began, wall = begin['monotonic_ns'], begin['unix_ns']
-    edge.script(f'systemd-run --unit=cross-outage --property=MemoryMax=64M --property=MemorySwapMax=0 --property=TasksMax=16 /usr/bin/python3 -B /root/cross/outage.py --begin-ns {began + 5*10**9} --port {data_port} --out /root/cross/outage.jsonl\n', timeout=30)
+    edge.script(f'systemd-run --unit=cross-outage --property=RemainAfterExit=yes --property=MemoryMax=64M --property=MemorySwapMax=0 --property=TasksMax=16 /usr/bin/python3 -B /root/cross/outage.py --begin-ns {began + 5*10**9} --port {data_port} --out /root/cross/outage.jsonl\n', timeout=30)
     queries, correlations, phases = [], [], []
     cut = wall + 100 * 1_000_000_000
     outage = removed = prequery = changed = False
     applied = None
     desired_revision = None
+    outage_checks = producer_checks = 0
     end_deadline = time.monotonic() + 335
     while time.monotonic() < end_deadline:
         probe_edge = edge.correlation()
@@ -255,8 +258,9 @@ def collect_original(server, edge, call, config, result, data_port, observer):
         if not outage and elapsed >= 140:
             outage = True
         if not removed and elapsed >= 200:
-            witness = edge.script('systemctl show cross-outage.service -p ActiveState -p ExecMainStatus\n', timeout=15).stdout
-            if 'ActiveState=inactive' not in witness or 'ExecMainStatus=0' not in witness:
+            outage_checks += 1
+            witness = monitor_health(edge, result, 'completion-' + str(outage_checks), unit='cross-outage')
+            if witness['SubState'] != 'exited':
                 time.sleep(.2)
                 continue
             phases.extend(fetch(edge, '/root/cross/outage.jsonl', result, 'outage.jsonl'))
@@ -286,11 +290,12 @@ def collect_original(server, edge, call, config, result, data_port, observer):
                 for body, answer in answers:
                     queries.append({'query': body, 'answer': answer, 'before': before, 'after': after})
         if removed:
-            producer = edge.script('systemctl show cross-producer.service -p ActiveState -p ExecMainStatus\n', timeout=15).stdout
+            producer_checks += 1
+            producer = monitor_health(edge, result, 'drain-' + str(producer_checks), unit='cross-producer')
             views = {'edge': inspect(edge, '/etc/fabrico11y/node.conf'),
                      'self': inspect(server, '/var/lib/fabrico11y/server/self-spindle/node.conf')}
             phases.append({'type': 'drain', 'edge_clock': edge.correlation(), 'producer': producer, 'views': views})
-            if 'ActiveState=inactive' in producer and 'ExecMainStatus=0' in producer and all(
+            if producer['SubState'] == 'exited' and all(
                     int(v['acked_through']) == int(v['next_sequence']) - 1 for v in views.values()):
                 break
             if elapsed > 320:

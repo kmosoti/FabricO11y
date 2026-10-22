@@ -49,6 +49,9 @@ brackets and measured work crossing the intentional fault. The
 retains all offered records and thresholds, adds bounded transport/observation
 workers and separates the full outage workload with a fixed drain guard.
 Fresh execution remains required; replay is diagnostic evidence only.
+Producer and outage units now retain their original completion status too;
+the collector refuses unloaded/default or failed states even when the status
+command succeeds. Fresh controls and the full split smoke remain required.
 
 Alpha and package acceptance were owner-paused under [issue #59](https://github.com/kmosoti/FabricO11y/issues/59). Verification-engineering continuation is authorized and tracked in [PR #102](https://github.com/kmosoti/FabricO11y/pull/102); its provenance pins remain product source `b1e5874`, frozen package source `43150db`, `origin/main` baseline `f001175`, and engineering profile anchor `31cf809`. The Rust capture reader is at `681fcc5`, with native caller wiring at `bf1efa9`. These pins do not resume acceptance or claim a future check outcome.
 

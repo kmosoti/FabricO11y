@@ -466,3 +466,7 @@ the independent oracle and joins each row to its earliest completed same-boot
 visibility witness. Worker errors and incomplete shutdown remain failures. The
 [repair registration](../experiments/formal/cross-family-forwarding-protocol.md#producer-and-observation-repair-after-the-retained-split-smoke)
 preserves the numerical limits and requires fresh full execution.
+Producer and outage transient units also retain their original completion
+state. The collector preserves each probe and requires loaded active/exited
+success before accepting completion, independently of a successful status
+transport or the source/end ledgers. Missing and failed states remain refused.

@@ -198,7 +198,7 @@ test -n "$group"
 systemd-run --unit=cross-monitor --property=RemainAfterExit=yes --property=MemoryMax=64M --property=MemorySwapMax=0 --property=TasksMax=16 /usr/bin/python3 -B /root/cross/monitor.py --service-cgroup "$group" --out /root/cross/resources.jsonl
 ''', timeout=30)
             monitor_health(guest, result, 'start')
-        edge.script('systemd-run --unit=cross-producer --property=MemoryMax=128M --property=MemorySwapMax=0 --property=TasksMax=32 /usr/bin/python3 -B /root/cross/producer.py --config /root/cross/producer.json\n', timeout=30)
+        edge.script('systemd-run --unit=cross-producer --property=RemainAfterExit=yes --property=MemoryMax=128M --property=MemorySwapMax=0 --property=TasksMax=32 /usr/bin/python3 -B /root/cross/producer.py --config /root/cross/producer.json\n', timeout=30)
         # Grading uses all populations; unjoined clocks or missing evidence are
         # incomplete gates. No omitted gate can be promoted to a successful cell.
         from grade import measure_and_grade

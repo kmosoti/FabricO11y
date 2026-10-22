@@ -18,6 +18,29 @@ FIXTURE = Path(__file__).resolve().parents[3] / 'docs/experiments/formal/fixture
 
 
 class MonitorState(unittest.TestCase):
+    def test_producer_and_outage_require_original_retained_unit_status(self):
+        controls = json.loads(FIXTURE.read_text())['controls']
+        for unit in ('cross-producer', 'cross-outage'):
+            for kind in ('retained', 'ordinary', 'failed'):
+                status = controls[kind]['status']
+                commands = []
+                def script(command, **kwargs):
+                    commands.append(command)
+                    return subprocess.CompletedProcess(command, 0, status, '')
+                value = type('FixtureGuest', (), {'role': 'edge', 'boot_id': 'fixture-boot'})()
+                value.script = script
+                with tempfile.TemporaryDirectory() as name:
+                    root = Path(name)
+                    if kind == 'retained':
+                        self.assertEqual(measure.monitor_health(value, root, kind, unit)['SubState'], 'exited')
+                    else:
+                        with self.assertRaises(ValueError):
+                            measure.monitor_health(value, root, kind, unit)
+                    saved = json.loads((root/('edge-'+unit.removeprefix('cross-')+'-'+kind+'-status.json')).read_text())
+                    self.assertEqual(saved['stdout'], status)
+                    self.assertEqual(saved['exit'], 0)  # Transport succeeds even for a failed/unloaded body.
+                    self.assertIn('systemctl show '+unit+' ', commands[0])
+
     def test_actual_retained_success_accepts_and_failed_or_unloaded_states_refuse(self):
         controls = json.loads(FIXTURE.read_text())['controls']
         self.assertEqual(measure.require_monitor_health(controls['retained']['status'])['ExecMainStatus'], '0')
