@@ -168,6 +168,7 @@ def measure_and_grade(server, edge, call, config, result, data_port):
                         'missing_visibility_keys': missing, 'samples': values,
                         'boundary': {'offered_edge': 'producer creation', 'controlled_metrics': 'producer creation',
                                      'native_host_metrics': 'native collection start',
+                                     'edge_diagnostics': 'native source acceptance; earlier creation unmeasured',
                                      'companion_diagnostics': 'native source acceptance; earlier creation unmeasured'}[population]}
     for role, entries in batches.items():
         start, end = window(observation['begin'], observation['correlations'], 'edge' if role == 'controlled' else role)

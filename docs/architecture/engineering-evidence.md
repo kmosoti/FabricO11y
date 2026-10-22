@@ -445,3 +445,12 @@ completion before stopping its retained unit. The
 retains the independent failure controls. A script exception also preserves its
 original exit or timeout and output in an exclusive mode-0600 artifact; only the
 stdin hash is retained. Neither mechanism changes an oracle or sampling rule.
+
+The timing adapter distinguishes the registered offered edge log from the
+native Spindle's exact diagnostic path. Offered rows retain their independent
+offset/body/creation joins; edge diagnostics form a separate population using
+the actual native source-acceptance bracket. Unknown log paths still refuse.
+The [population registration](../experiments/formal/cross-family-forwarding-protocol.md#prospective-timing-population-clarification-and-backlog-revision)
+applies the same ACK/visibility limits and retains every accepted row in custody,
+queries, backlog and resource accounting. No product codec or independent oracle
+changes at this boundary.

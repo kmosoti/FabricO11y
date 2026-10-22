@@ -1,4 +1,4 @@
-"""Source-bound four-population timing and full accepted Batch intervals."""
+"""Source-bound timing populations and full accepted Batch intervals."""
 import base64
 import hashlib
 import re
@@ -8,6 +8,20 @@ import timing
 import query_oracle
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import release_timing
+
+
+def edge_log_start(row, source_path, offers, acceptance, boot):
+    if source_path != '/var/log/fabric-cross/source.log':
+        raise ValueError('unregistered offered edge source')
+    path = row['attributes'].get('log.file.path')
+    if path == source_path:
+        offer = offers[int(row['attributes']['log.file.offset.start'])]
+        if offer['body'] != row['body']:
+            raise ValueError('exact offered log bytes changed')
+        return timing.interval(boot, offer['before_ns'], offer['after_ns']), 'offered_edge'
+    if path == '/var/lib/fabrico11y/node/spool/diagnostics/spindle.log':
+        return acceptance, 'edge_diagnostics'
+    raise ValueError('unexpected unregistered edge log source')
 
 
 def row_key(kind, row):
@@ -97,7 +111,8 @@ def samples(observation, server_boot, edge_boot, source_path):
     metric_acks = {o['sequence']: o for o in offers if o['type'] == 'metric_ack'}
     controls = [s for s in observation['controlled'] if s['type'] == 'source']
     rows, batches = {}, {'edge': [], 'server': [], 'controlled': []}
-    populations = {'offered_edge': [], 'controlled_metrics': [], 'native_host_metrics': [], 'companion_diagnostics': []}
+    populations = {'offered_edge': [], 'controlled_metrics': [], 'native_host_metrics': [],
+                   'companion_diagnostics': [], 'edge_diagnostics': []}
     def add(kind, row, start, ack, population, role):
         key = row_key(kind, row)
         if key in rows:
@@ -119,13 +134,7 @@ def samples(observation, server_boot, edge_boot, source_path):
             starts = []
             for row in record.log_rows:
                 if role == 'edge':
-                    if row['attributes'].get('log.file.path') != source_path:
-                        raise ValueError('unexpected unregistered edge log source')
-                    offer = logs[int(row['attributes']['log.file.offset.start'])]
-                    if offer['body'] != row['body']:
-                        raise ValueError('exact offered log bytes changed')
-                    start = timing.interval(boot, offer['before_ns'], offer['after_ns'])
-                    population = 'offered_edge'
+                    start, population = edge_log_start(row, source_path, logs, events['acceptance'], boot)
                 else:
                     start, population = events['acceptance'], 'companion_diagnostics'
                 starts.append(start)
