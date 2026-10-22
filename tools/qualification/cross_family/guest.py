@@ -128,7 +128,7 @@ class Guest:
         else:
             raise RuntimeError(self.role + ' guest boot deadline exceeded')
         (self.results / (self.role + '-bootstrap.txt')).write_text('\n'.join(attempts))
-        facts = self.script('. /etc/os-release; echo os=$ID:$VERSION_ID; cat /proc/sys/kernel/random/boot_id; stat -fc %T /sys/fs/cgroup; cat /proc/swaps; test "$(wc -l < /proc/swaps)" = 1; getenforce 2>/dev/null || true\n').stdout
+        facts = self.script('set -eu\n. /etc/os-release; echo os=$ID:$VERSION_ID; cat /proc/sys/kernel/random/boot_id; stat -fc %T /sys/fs/cgroup; cat /proc/swaps; test "$(wc -l < /proc/swaps)" = 1; getenforce 2>/dev/null || true\n').stdout
         expected = 'os=fedora:44' if self.family == 'fedora' else 'os=debian:13'
         if expected not in facts or 'cgroup2fs' not in facts or (self.family == 'fedora' and 'Enforcing' not in facts):
             raise RuntimeError(self.role + ' OS/cgroup/SELinux prerequsites unavailable')
