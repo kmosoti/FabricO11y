@@ -74,3 +74,19 @@ The full [cross-family protocol](cross-family-forwarding-protocol.md),
 [owner walkthrough](owner-walkthrough-protocol.md),
 [installation protocol](installation-release-protocol.md) and release gates
 remain applicable. No pass is recorded by this registration.
+
+## Source-verification namespace retries
+
+The actual `release-final-fast-04` run was interrupted when a workspace test
+removed `scratch/storage-2448052-0` while the observer traversed it. Preserve that
+interruption and its original stopped receipt; it is not a failed product test
+or a successful full-profile run.
+
+For source verification, the existing namespace census may restart complete
+scans after `ENOENT` for up to 18 seconds inside the existing 25-second observer
+timeout. Every restart resets all totals. Only an error-free complete traversal
+returns an observation; permission and other I/O errors still fail immediately.
+No path is omitted to manufacture a result. The 95 GB stop, 100 GB budget,
+per-host counts and per-job reservations remain unchanged. Namespace sampling
+is not an atomic filesystem snapshot; reservations remain necessary. This
+operational retry repair changes no product oracle or measured workload.
