@@ -54,6 +54,16 @@ def verify_job_profile(group, profile):
     return {**actual, 'cpu.max': quota + ' ' + period}
 
 
+def verify_job_deadline(group):
+    scope = [] if os.geteuid() == 0 else ['--user']
+    actual = subprocess.check_output(
+        ['systemctl', *scope, 'show', group.name, '--property=RuntimeMaxUSec', '--value'],
+        text=True, timeout=10).strip()
+    if actual != '30min':
+        raise RuntimeError('release job deadline is not the registered 1800 seconds: ' + actual)
+    return actual
+
+
 def command_options(arguments):
     """Explicit finite extension for owner-scoped long experiments only."""
     arguments = list(arguments)
@@ -116,6 +126,7 @@ def require_limits():
     profile = os.environ.get('FABRIC_RESOURCE_JOB_PROFILE')
     if profile:
         verify_job_profile(group, profile)
+        verify_job_deadline(group)
     print(f'resource group: {relative}; memory.max={memory}; swap.max={swap}',
           file=sys.stderr, flush=True)
     return group

@@ -12,6 +12,15 @@ GIB = 1024**3
 
 
 class Containment(unittest.TestCase):
+    def test_release_deadline_refuses_unbounded_or_changed_service(self):
+        group = resource_group.Path('/sys/fs/cgroup/fabric-work-test.service')
+        for value in ('infinity', '', '1h', '1min'):
+            with self.subTest(value=value), patch.object(resource_group.subprocess, 'check_output', return_value=value):
+                with self.assertRaises(RuntimeError):
+                    resource_group.verify_job_deadline(group)
+        with patch.object(resource_group.subprocess, 'check_output', return_value='30min\n'):
+            self.assertEqual(resource_group.verify_job_deadline(group), '30min')
+
     def test_release_profile_rejects_each_unenforced_boundary(self):
         with tempfile.TemporaryDirectory() as directory:
             group = resource_group.Path(directory)
