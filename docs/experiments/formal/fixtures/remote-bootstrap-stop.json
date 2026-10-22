@@ -91,5 +91,12 @@
       "none"
     ]
   },
-  "transport_exit": 1
+  "transport_exit": 1,
+  "violated_contract": "Worker success and confirmed owned-process shutdown are separate outcomes; preserve original nonzero exits and still report supported shutdown proof.",
+  "fix_commits": [
+    "b245d82",
+    "74bffad",
+    "5fd9805"
+  ],
+  "reproducer": "FABRIC_STORAGE_ROOT=/run/media/kmosoti/data/FabricO11y python3 -B tools/resource_group.py -- python3 -B -m unittest discover -s tools/qualification/cross_family -p test_remote.py"
 }

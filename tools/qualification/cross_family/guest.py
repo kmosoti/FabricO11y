@@ -60,7 +60,7 @@ class Guest:
     def start(self):
         config = Q.cloud_config(self.key.with_suffix('.pub').read_text(), self.role)
         # Defer naming until the final stage rather than depending on an early
-        # hostname-service race in the pinned Fedora image. Readiness remains strict.
+        # hostname setup in the pinned Fedora image. Readiness remains strict.
         config = config.replace('#cloud-config\n', '#cloud-config\npreserve_hostname: true\n', 1)
         if self.family == 'fedora':
             config = config.replace('groups: [sudo]', 'groups: [wheel]')
