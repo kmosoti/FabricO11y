@@ -75,7 +75,9 @@ class Guest:
             config += '  - [systemctl, mask, --now, dev-zram0.swap, systemd-zram-setup@zram0.service]\n'
         config += '  - [swapoff, -a]\n'
         (self.root / 'user-data').write_text(config)
-        (self.root / 'meta-data').write_text('instance-id: cross-' + self.role + '\nlocal-hostname: cross-' + self.role + '\n')
+        # No early metadata hostname: cloud-init can process it before userdata's
+        # preserve_hostname option is available. The final-stage command names it.
+        (self.root / 'meta-data').write_text('instance-id: cross-' + self.role + '\n')
         seed = self.root / 'seed.iso'
         Q.run([Q.executable('genisoimage'), '-quiet', '-output', str(seed), '-volid', 'cidata', '-joliet', '-rock', str(self.root / 'user-data'), str(self.root / 'meta-data')], timeout=30)
         disk = self.root / 'guest.qcow2'
@@ -108,6 +110,13 @@ class Guest:
                 attempts.append('exit=' + str(result.returncode) + '\n' + result.stdout + result.stderr)
                 (self.results / (self.role + '-bootstrap.txt')).write_text('\n'.join(attempts))
                 if 'status: done' in result.stdout and result.returncode != 0:
+                    try:
+                        diagnostic = self.script('tail -n 200 /var/log/cloud-init.log\ncat /proc/swaps\n',
+                                                 timeout=10, check=False)
+                        (self.results / (self.role + '-bootstrap-diagnostic.txt')).write_text(
+                            diagnostic.stdout + diagnostic.stderr)
+                    except (OSError, subprocess.SubprocessError) as error:
+                        (self.results / (self.role + '-bootstrap-diagnostic.txt')).write_text(str(error))
                     raise RuntimeError(self.role + ' cloud-init completed unsuccessfully: ' + result.stdout)
                 if result.returncode == 0 and 'status: done' in result.stdout:
                     break
