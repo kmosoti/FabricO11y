@@ -42,12 +42,16 @@ fn qualification_and_native_custody_adapters_run_with_the_built_helper() {
         status.code()
     );
     // Keep the fixed-host lifecycle/refusal controls in the ordinary workspace
-    // gate. Other cross-family tests retain their registered placement scope.
+    // gate, together with producer, sampling and unchanged oracle controls.
     for pattern in [
         "test_remote.py",
         "test_guest_readiness.py",
         "test_fixture_tls.py",
         "test_monitor_lifecycle.py",
+        "test_producer.py",
+        "test_populations.py",
+        "test_grade.py",
+        "test_visibility_observer.py",
     ] {
         let status = Command::new("python3")
             .args([
