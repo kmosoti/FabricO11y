@@ -92,6 +92,69 @@ class MonitorState(unittest.TestCase):
             measure.finish_monitor(value, Path(name))
 
 
+class DrainInspection(unittest.TestCase):
+    def probe(self, root, code=0, stdout='', stderr=''):
+        return type('FixtureGuest', (), {'role': 'edge', 'boot_id': 'fixture-boot',
+            'script': lambda self, command, **kwargs:
+                subprocess.CompletedProcess(command, code, stdout, stderr)})()
+
+    def test_actual_busy_fixture_is_not_snapshot_and_original_attempt_is_retained(self):
+        fixture = json.loads((FIXTURE.parent / 'cross-inspection-retry.json').read_text())
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            value = self.probe(root, fixture['exit'], fixture['stdout'], fixture['stderr'])
+            for attempt in range(1, 4):
+                self.assertIsNone(measure.inspect(value, '/fixture.conf', root, attempt))
+                record = json.loads((root / f'edge-drain-inspection-{attempt}.json').read_text())
+                self.assertEqual(record['exit'], 1)
+                self.assertEqual(record['stderr'], fixture['stderr'])
+                self.assertEqual(record['boot_id'], 'fixture-boot')
+
+    def test_permanent_contention_consumes_existing_drain_deadline(self):
+        begin = {'boot_id': 'fixture-boot', 'seconds': 195, 'guard_seconds': 5,
+                 'elapsed_seconds': 200, 'monotonic_ns': 0, 'unix_ns': 0}
+        class BusyGuest:
+            boot_id = 'fixture-boot'
+            ticks = 141
+            def correlation(self):
+                self.ticks += 60
+                return {'monotonic_before_ns': self.ticks*10**9, 'unix_ns': 0}
+            def script(self, command, **kwargs):
+                return subprocess.CompletedProcess(command, 0, json.dumps(begin), '')
+        class Observer:
+            def start(self, begin):
+                pass
+        def call(path, *args):
+            return {'revision': 1} if path.endswith('/config') else {'nodes': [
+                {'name': 'edge', 'applied_revision': 1, 'config_error': None}]}
+        with tempfile.TemporaryDirectory() as name, \
+                patch.object(measure, 'monitor_health', return_value={'SubState': 'exited'}), \
+                patch.object(measure, 'fixed_queries', return_value=[]), \
+                patch.object(measure, 'fetch', return_value=[]), \
+                patch.object(measure, 'inspect', return_value=None) as inspect, \
+                patch.object(measure.time, 'sleep'):
+            with self.assertRaisesRegex(RuntimeError, 'registered native/control drain deadline'):
+                measure.collect_original(BusyGuest(), BusyGuest(), call, {'log': '/fixture'},
+                                         Path(name), 7443, Observer())
+            self.assertEqual(inspect.call_count, 2)
+
+    def test_only_exact_retry_diagnostics_with_original_exit_one_are_retried(self):
+        with tempfile.TemporaryDirectory() as name:
+            root = Path(name)
+            for text in measure.INSPECTION_RETRIES:
+                self.assertIsNone(measure.inspect(self.probe(root, 1, '', 'fabricctl: '+text+'\n'),
+                                                 '/fixture.conf', root, 1))
+            for code, stdout, stderr in ((2, '', 'fabricctl: '+text+'\n'),
+                    (1, 'partial', 'fabricctl: '+text+'\n'), (1, '', 'unknown failure\n'),
+                    (0, 'recovery_required=true interrupted_append=false next_sequence=3 acked_through=2', ''),
+                    (0, 'recovery_required=false interrupted_append=true next_sequence=3 acked_through=2', ''),
+                    (0, 'recovery_required=false interrupted_append=false', '')):
+                with self.assertRaises((ValueError, KeyError)):
+                    measure.inspect(self.probe(root, code, stdout, stderr), '/fixture.conf', root, 1)
+            good = 'recovery_required=false interrupted_append=false next_sequence=3 acked_through=2'
+            self.assertEqual(measure.inspect(self.probe(root, 0, good), '/fixture.conf', root, 1)['acked_through'], '2')
+
+
 class ScriptFailureEvidence(unittest.TestCase):
     def make_guest(self, root):
         value = object.__new__(guest.Guest)

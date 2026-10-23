@@ -220,9 +220,34 @@ def fetch(guest, path, result, name):
     return json_lines(text)
 
 
-def inspect(guest, config):
-    text = guest.script('/usr/bin/fabricctl inspect ' + config + '\n', timeout=30).stdout
-    return dict(p.split('=', 1) for p in text.split())
+INSPECTION_RETRIES = (
+    'log rotated during inspection; retry',
+    'log append or rotation in progress; retry inspection',
+    'log append completed during inspection; retry',
+    'log failure recorded during inspection; retry',
+    'sealed log reclaimed during inspection; retry',
+    'log rotated or reclaimed during inspection; retry',
+    'log append in progress or recovery required; retry inspection',
+)
+
+
+def inspect(guest, config, result, attempt):
+    answer = guest.script('/usr/bin/fabricctl inspect ' + config + '\n', timeout=5, check=False)
+    record = {'exit': answer.returncode, 'stdout': answer.stdout,
+              'stderr': answer.stderr, 'boot_id': guest.boot_id, 'config': config}
+    (result / f'{guest.role}-drain-inspection-{attempt}.json').write_text(json.dumps(record, indent=2)+'\n')
+    if answer.returncode:
+        if (answer.returncode == 1 and not answer.stdout
+                and answer.stderr in ('fabricctl: ' + text + '\n' for text in INSPECTION_RETRIES)):
+            return None
+        raise ValueError('native drain inspection failed: ' + str(record))
+    values = dict(p.split('=', 1) for p in answer.stdout.split())
+    if values.get('recovery_required') != 'false' or values.get('interrupted_append') != 'false':
+        raise ValueError('native drain snapshot requires recovery')
+    # Require the successful snapshot fields even when the other guest is busy.
+    int(values['acked_through'])
+    int(values['next_sequence'])
+    return values
 
 
 def pages(call, body):
@@ -354,12 +379,14 @@ def collect_original(server, edge, call, config, result, data_port, observer):
                 for body, answer in answers:
                     queries.append({'query': body, 'answer': answer, 'before': before, 'after': after})
         if removed:
+            if elapsed > 320:
+                raise RuntimeError('registered native/control drain deadline exceeded')
             producer_checks += 1
             producer = monitor_health(edge, result, 'drain-' + str(producer_checks), unit='cross-producer')
-            views = {'edge': inspect(edge, '/etc/fabrico11y/node.conf'),
-                     'self': inspect(server, '/var/lib/fabrico11y/server/self-spindle/node.conf')}
+            views = {'edge': inspect(edge, '/etc/fabrico11y/node.conf', result, producer_checks),
+                     'self': inspect(server, '/var/lib/fabrico11y/server/self-spindle/node.conf', result, producer_checks)}
             phases.append({'type': 'drain', 'edge_clock': edge.correlation(), 'producer': producer, 'views': views})
-            if producer['SubState'] == 'exited' and all(
+            if producer['SubState'] == 'exited' and all(v is not None and
                     int(v['acked_through']) == int(v['next_sequence']) - 1 for v in views.values()):
                 break
             if elapsed > 320:
