@@ -1,5 +1,4 @@
 """Native fixture-only lock counterexample; never product/session acceptance."""
-import hashlib
 import json
 import os
 from pathlib import Path
@@ -69,10 +68,13 @@ int main(void) {
 class NativeContention(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.helper = Path(os.environ['FABRIC_SESSION_CLOCK_HELPER'])
-        assert cls.helper.is_absolute() and cls.helper.is_file() and not cls.helper.is_symlink()
         cls.directory = tempfile.TemporaryDirectory(prefix='session-clock-contention-', dir=os.environ['FABRIC_SCRATCH_ROOT'])
         cls.root = Path(cls.directory.name)
+        selected = os.environ.get('FABRIC_SESSION_CLOCK_HELPER')
+        cls.helper = Path(selected) if selected else cls.root/'current-clock.so'
+        if not selected:
+            subprocess.run(['/usr/bin/gcc','-shared','-fPIC','-pthread','-O2','-Wall','-Wextra','-Werror','-o',str(cls.helper),str(Path(__file__).with_name('session_clock.c')),'-ldl'],check=True,timeout=30)
+        assert cls.helper.is_absolute() and cls.helper.is_file() and not cls.helper.is_symlink()
         for name, body in (('delay', DELAY), ('probe', PROBE)):
             source = cls.root/(name+'.c'); source.write_text(body)
             command = ['/usr/bin/gcc', '-O2', '-Wall', '-Wextra', '-Werror', '-pthread']

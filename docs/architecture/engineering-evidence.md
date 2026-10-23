@@ -127,6 +127,15 @@ membership, records the binding, and only then releases the target. Pre-binding
 cleanup uses that retained child identity and its owned subgroup. The
 session-clock wrapper stays the target when controlled time is selected.
 
+The fixture-only session-clock helper serializes native clock observations with
+a 100 ms unshifted CLOCK_MONOTONIC mutex deadline. Scheduling contention is not
+a reason to terminate immediately after a fixed yield count. A timed-out or
+failed acquisition still permanently refuses; it never supplies ordinary time
+as expiry evidence. The [registered native contention controls](../experiments/formal/console-session-clock-protocol.md#native-lock-contention-counterexample)
+exercise both a short held call and a genuine stall. This synchronization is
+outside the product packages; real server binding and both fresh browser expiry
+cells remain separate requirements.
+
 The registered Linux fixture and a finite real-browser engineering probe ran at
 the pinned harness source `7508a989`. The browser ledger distinguishes received
 HTTP responses from witnessed pre-response query cancellations; every received
