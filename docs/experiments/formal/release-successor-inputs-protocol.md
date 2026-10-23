@@ -215,3 +215,17 @@ is interrupted evidence, not cursor acceptance. No further cadence rows are
 admitted. Preserve all ten completed cadence installation cases and their raw
 receipts; none is relabeled as successor acceptance. The final publication
 decision remains reserved for the owner after the completed release bundle.
+
+## Constructed Tokio I/O-safety native tuple
+
+The selected [exact native tuple](fixtures/successor-native-inputs.json) pins
+product `e4d51bd2c5a68eb9a333155c912770d2b006ba3d` and packaged snapshot
+`62b44589769d2871fb10c775d11e32460fbdff0e`. All eighteen constructor cells and additional
+ownership-marker preparation have original exits 0 and confirmed stops, with
+matching independent console/DEB/RPM outputs and completed package inspection.
+Artifact-admission SHA-256 is `709d819c0acbc934821941d0bc5ddd6e59913af36369ef280dc4145c9124f239`.
+This separate policy commit changes only exact input selectors and their literal
+fixtures. All refusal expectations and source/helper/owner joins remain fixed.
+The preceding candidate and failed smoke remain historical evidence. Fresh
+native, browser, service/recovery and full-soak gates remain required; this
+selection does not authorize publication.
