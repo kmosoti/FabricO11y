@@ -1,0 +1,82 @@
+{
+  "classification": "Retained failed native reboot; controller2 and guest baseline0, not acceptance",
+  "run_id": "spindle-cadence-deb-life-03-fresh-03-restart-03",
+  "bundle_sha256": "00a6806154a3b3308b3c4a4882e0f3adca1e4525907289f5ddd2480d3e471052",
+  "prior_ack": 111,
+  "observations": [
+    {
+      "started_ns": 1792739274732226570,
+      "finished_ns": 1792739274788656545,
+      "elapsed_ns": 56423494,
+      "exit": 0,
+      "stderr": "",
+      "fields": {
+        "node_id": "a9963f34450773af5450453ed8d65ac5",
+        "generation": "1",
+        "batches": "125",
+        "metric_points": "350",
+        "log_records": "39",
+        "gaps": "126",
+        "otlp_payload_bytes": "41220",
+        "committed_bytes": "76232",
+        "file_bytes": "76232",
+        "coverage_unknown": "false",
+        "recovery_required": "false",
+        "interrupted_append": "false",
+        "next_sequence": "126",
+        "acked_through": "124",
+        "log_backlog_bytes": "23"
+      }
+    },
+    {
+      "started_ns": 1792739275046091618,
+      "finished_ns": 1792739275068738713,
+      "elapsed_ns": 22638806,
+      "exit": 0,
+      "stderr": "",
+      "fields": {
+        "node_id": "a9963f34450773af5450453ed8d65ac5",
+        "generation": "1",
+        "batches": "126",
+        "metric_points": "350",
+        "log_records": "39",
+        "gaps": "127",
+        "otlp_payload_bytes": "41220",
+        "committed_bytes": "76512",
+        "file_bytes": "76512",
+        "coverage_unknown": "false",
+        "recovery_required": "false",
+        "interrupted_append": "false",
+        "next_sequence": "127",
+        "acked_through": "126",
+        "log_backlog_bytes": "23"
+      }
+    },
+    {
+      "started_ns": 1792739314496156764,
+      "finished_ns": 1792739314542051307,
+      "elapsed_ns": 45884604,
+      "exit": 0,
+      "stderr": "",
+      "fields": {
+        "node_id": "a9963f34450773af5450453ed8d65ac5",
+        "generation": "1",
+        "batches": "284",
+        "metric_points": "455",
+        "log_records": "42",
+        "gaps": "285",
+        "otlp_payload_bytes": "51005",
+        "committed_bytes": "130712",
+        "file_bytes": "130712",
+        "coverage_unknown": "false",
+        "recovery_required": "false",
+        "interrupted_append": "false",
+        "next_sequence": "285",
+        "acked_through": "283",
+        "log_backlog_bytes": "23"
+      }
+    }
+  ],
+  "successful_inspections": 121,
+  "equal_adjacent_highwater": 0
+}
