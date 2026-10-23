@@ -145,9 +145,11 @@ def observe(path):
             if value.type.startswith('document:'):row['document_attributes']=source.queryDocument().getAttributes()
             append(path,row)
             if value.type=='document:load-complete':snapshot_documents(source,path)
+            elif value.type=='object:state-changed:focused' and value.detail1==1:
+                snapshot_documents(source.getApplication(),path)
         except (NotImplementedError,AttributeError):pass
     pyatspi.Registry.registerEventListener(event,'object:text-changed','object:property-change',
-        'object:children-changed','object:announcement','document:load-complete')
+        'object:children-changed','object:announcement','document:load-complete','object:state-changed:focused')
     require(pyatspi.Registry.getDesktopCount()>0 and pyatspi.Registry.getDesktop(0) is not None,
         'announcement-at-desktop')
     snapshot_documents(pyatspi.Registry.getDesktop(0),path)
