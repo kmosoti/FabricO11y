@@ -1,5 +1,26 @@
 # Private assistive-technology environment and announcements
 
+## Late document registration counterexample
+
+Registered before correction, 2026-10-23. At `57383c4`, the unmerged packaged
+announcement diagnostic retained real reader focus speech, then refused
+`announcement-document-identity`. Its initial desktop snapshot contained no
+document rows. Later actual `document:load-complete` events independently
+identified the console URL and browser PID77. Preserve the stopped failed
+diagnostic; neither focus speech alone nor an unbound event grants acceptance.
+
+Register `test_announcement_document_lifecycle.py`: an initially empty desktop
+later registers a real document-load source. The observer must separately query
+that AT document's identity after the load, preserving the actual event and
+emitting the existing identity-only snapshot with empty text. A nondocument
+event must not create a document snapshot. Keep the original snapshot traversal
+bounds and PID/DocURL matching; no event may be relabeled as a snapshot or vice
+versa. Snapshots still cannot substitute for actual live-region presentation
+events, SSIP225 speech and PCM growth. Keep setup-secret clearance, stream
+bounds, deadlines, cleanup and every existing refusal unchanged. Run the source
+counterexample before repair, affected controls after repair, then fresh positive
+and suppressed packaged announcement rows on the merged harness.
+
 ## Owned speech-daemon lifetime counterexample
 
 Registered before correction, 2026-10-23. Fresh packaged announcement row69 at
