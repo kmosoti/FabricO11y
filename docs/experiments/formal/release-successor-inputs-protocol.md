@@ -177,6 +177,51 @@ The preceding candidate and failed smoke remain historical evidence. Fresh
 native, browser, service/recovery and full-soak gates remain required; this
 selection does not authorize publication.
 
+## Validation-alert presentation successor
+
+Registered separately from implementation, 2026-10-23. Exact product
+`e4d51bd2c5a68eb9a333155c912770d2b006ba3d` and packaged snapshot
+`62b44589769d2871fb10c775d11e32460fbdff0e` reached real status announcements
+in `browser-fixture-diagnostics-04`, but its visible validation alert had no
+assertive AT metadata, matching utterance or PCM growth. The unchanged native
+oracle refused `announcement-synthesis`; original stopped failure and exact-inode
+custody remain private evidence. This product blocker permits the scoped
+successor under the owner's release instruction; it supplies no new acceptance.
+
+Use prefix `alert-presentation-01`. Implementation `669eba69f0c923b81d06a9af475798f5254b1d6c`
+changes production bytes only in `crates/fabric-ui/src/live.rs`, adding explicit
+assertive/atomic metadata to the existing conditional alert. No text, input limit,
+API, authorization, backend, dependency graph, wire or independent oracle changes
+are admitted. The added DOM prerequisite checks the existing invalid-filter action;
+it cannot replace real AT/speech/PCM evidence. The actual native counterexample
+and source metadata controls are registered in the [announcement protocol](browser-announcement-protocol.md#packaged-validation-alert-counterexample).
+
+Freeze the clean registration head before construction and record its full
+commit/tree, source epoch, source/lock hashes and exact minimal production diff
+in the private plan. Repeat affected source verification on that exact freeze;
+historical implementation-source results retain their original identity. Keep
+the prior Tokio source/dependency receipts as historical inputs, proving that
+both lockfiles and dependency manifests remain unchanged. Do not relabel them.
+
+Reuse the existing eighteen constructor cells and ownership-marker preparation,
+including all refusal controls, fresh independent A/B console/DEB/RPM outputs,
+exact console/package binding, source manifests/bundles, complete package
+inspection and explicit artifact admission. Preserve the registered Blade build
+limits, stricter isolated DEB-builder limits, no-swap/deadline and complete
+both-host storage census with the existing95GB stop/100GB ceiling. Stage new
+immutable packages/helpers/harness inputs before campaigns; reuse official guest
+images only after their original hashes are reverified. No G15 build or soak is
+admitted by this registration.
+
+Current E4 native/browser results remain historical. Require fresh affected
+exact-candidate native installation and70-row browser gates, both fresh owner
+directions, service/query/trace/forwarding/recovery campaigns and the full7200-second
+offered-work R3 soak before one compatible release ledger can close. New package
+inputs need a separate exact-tuple policy selection after their identities exist.
+The migration404/implemented401 conflict remains pending owner decision; this
+registration changes neither that checker nor any authorization behavior.
+Final publication still requires the owner's decision against the completed bundle.
+
 ## Tokio I/O-safety dependency successor
 
 Hosted workflow [39971819005](https://github.com/kmosoti/FabricO11y/actions/runs/39971819005),
