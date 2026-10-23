@@ -398,3 +398,23 @@ pause proof, and mutations of every proof/metadata/time boundary above. Repeat
 all affected native source controls and all ten fresh installation cells; do not
 relabel the original failed cell. Cross-host placement19 remains evidence of its
 unchanged lifecycle adapter; it does not supply installation acceptance.
+
+
+## Listener readiness after stopped capture
+
+The fresh Debian `spindle-cadence-deb-life-03-fresh-02-pause-02` captured its
+original paused drain snapshot, then the one-shot resume command exited2 with
+empty stdout and exactly `fabricctl: transport: io: Connection refused` after
+successful server service-start. Preserve that failed cell and the
+[literal command trace](fixtures/installation-restart-refusal.json).
+
+Prospectively reuse `wait_readiness` after the existing server-only restart in
+both drain and reboot, before issuing resume exactly once. The read-only exact
+logs query must recover the already ACKed unread sentinel. Use the same original
+absolute40-second readiness bound, capped by the remaining phase deadline minus
+40 seconds; do not retry the mutating resume command. Existing strict refusal,
+partial-page, wrong-answer and late-success controls remain unchanged. Register
+both real guest-main paths requiring the query between server-start and resume,
+a literal positive sequence that the old caller rejects, and perpetual refusal
+that stops before resume. No product/package, oracle expectation or resource
+limit changes follow; repeat affected source controls and fresh native cells.
