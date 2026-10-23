@@ -1,5 +1,33 @@
 # Disposable controlled-time session checks
 
+## Native lock-contention counterexample
+
+Registered before repair, 2026-10-23. Fresh Chrome expiry row 64 on product
+`e4d51bd` and harness `e283f88` stopped with server exit 78 and `FCLK-LOCK`.
+Its idle-before and idle-at responses matched the oracle; the subsequent browser
+lock check could not complete after the fixture helper terminated the server.
+Keep the original failed row and its stopped evidence; it supplies no expiry
+acceptance. The 63 earlier rows retain their actual source identities.
+
+Register `test_session_clock_contention.py` against the exact retained old
+helper before changing it. A separate test-only downstream clock interposer
+holds one native call for 50 ms while a second thread enters the unmodified
+helper. Both calls must finish with ordinary monotonic values and a complete
+contiguous ledger. A 250 ms held call must permanently refuse with `FCLK-LOCK`
+after a bounded monotonic wait. The controller checks an 80 ms lower witness
+and a 1 s upper process-observation bracket. This two-interposer fixture is a
+mechanism counterexample only, never actual-server binding or session evidence.
+
+Replace the scheduling-dependent 64-yield acquisition attempt with a 100 ms
+native CLOCK_MONOTONIC mutex deadline. A genuine acquisition timeout or error
+still permanently refuses. Preserve underlying return/errno, foreign-fork
+isolation, the sole interposed API, all frame/offset/ledger bounds and the
+unchanged session oracle. No product/package, browser 240 s, native 1 s evidence
+bracket, request, resource or expiry boundary is changed. Run the named red on
+the old helper, then unchanged controls on the repaired helper, the complete
+native admission and affected source regressions. Require fresh actual Chrome
+and Firefox expiry rows on the merged harness and newly admitted helper.
+
 Status: prospective; **not run**. Issue #45's C2/ACCESS-1 requires packaged
 idle and absolute session expiry. The existing native explicit-now test proves
 its scoped adapter semantics; it does not establish packaged browser behavior.
