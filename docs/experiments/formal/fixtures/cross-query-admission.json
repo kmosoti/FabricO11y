@@ -1,0 +1,16 @@
+{
+  "origin": "split-debian-fedora-smoke-08 on c6d4e77e410ddf79dc1b22148a48bd08ee34d090",
+  "original_controller_exit": 2,
+  "original_http_status": 503,
+  "original_error_artifact_sha256": "f70570f9dd3fd67af504432456c00665ce8804c31435b0166264bcf4ffe6a4c6",
+  "original_response_body_captured": false,
+  "source": "crates/fabric-server/src/http.rs",
+  "source_sha256": "623336d3ce844772c6e0654b17df999c134450e09b19e404d69bbfd78c021c54",
+  "legacy_query_admission_slots": 2,
+  "original_serial_reader_workers": 1,
+  "old_observer_workers": 8,
+  "successor_observer_workers": 1,
+  "eight_request_control": "reject overload; never convert 503 to success",
+  "successor_history_plan": "existing walk configuration; product defaults unchanged",
+  "acceptance_credit": false
+}

@@ -172,8 +172,9 @@ serialization order; no returned row or failed oracle decision is discarded.
 The observer must finish before grading. It adds observations without removing
 the original query work. Use the existing named metric query shapes: the legacy
 admin API requires a metric name and gains no wildcard or new public format.
-Up to eight HTTP calls may execute concurrently inside each fresh per-node
-clock envelope. Every returned answer retains that conservative guest-clock
+One observation HTTP call is active at a time alongside the original serial
+reader, respecting the existing two-query admission boundary. Every returned
+answer retains its fresh conservative per-node guest-clock
 bracket; it is not an individual point estimate. Bound each sweep by the fixed
 nineteen native or one controlled query shapes, preserve every error and wait
 for all owned query workers before completion. Representative controls must expose the original
@@ -213,6 +214,26 @@ representative 256-entry overflow control and reject an extra offer beyond the
 finite bound. Persist observer errors immediately, including original HTTP
 status, and reject incomplete observation rather than waiting to discover an
 unsupported query after the campaign. This registration changes no product API.
+
+The subsequent `split-debian-fedora-smoke-08` refused an observer HTTP 503.
+The product's legacy query endpoint has two admission permits; eight observer
+workers exceeded that unchanged capacity. Preserve the failed run and its
+[admission counterexample](fixtures/cross-query-admission.json). Reserve one
+query slot for the original serial reader and one for the observer, with no
+automatic retry or rewritten response. Keep the eight-request overload case
+as a rejection control. Capture bounded original HTTP error bodies as well as
+status so later diagnoses need not infer refusal reasons from status alone.
+
+For subsequent transport/custody fixtures, explicitly set the existing
+`query_plan=walk` history option. This is the already implemented plan used by
+scoped console queries; the migration fixture no longer accidentally selects
+the legacy Scan default. It changes neither query semantics nor the product's
+defaults. Record this tested configuration in the cell receipt. All original
+query shapes, source populations, oracle/negative expectations, workload counts
+and per-host resource limits remain. No Scan result is relabeled as Walk, no
+performance improvement is claimed before measurement, and the separately
+registered main/query cells retain their own configurations. Repeat controls
+and the full budget smoke before split placement admission.
 
 Retain the original one-second samples and first/last means as diagnostics.
 The original rule above remains the revision-1 specification; no earlier result
