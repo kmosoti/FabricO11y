@@ -28,10 +28,6 @@ class FixtureTLS(unittest.TestCase):
             self.assertIn('CA cert does not include key usage extension', negative.stderr)
 
 
-if __name__ == '__main__':
-    unittest.main()
-
-
 class PersistentFixtureTLS(unittest.TestCase):
     def fixture(self):
         import contextlib
@@ -68,6 +64,14 @@ class PersistentFixtureTLS(unittest.TestCase):
                             status, raw = 403, b'{"error":"fixture refusal"}'
                         if self.path == '/oversized':
                             raw = b'x' * 128
+                        if self.path == '/partial':
+                            self.send_response(200)
+                            self.send_header('Content-Length', str(len(raw)+5))
+                            self.end_headers()
+                            self.wfile.write(raw)
+                            self.wfile.flush()
+                            self.close_connection = True
+                            return
                         self.send_response(status)
                         self.send_header('Content-Length', str(len(raw)))
                         self.end_headers()
@@ -152,6 +156,7 @@ class PersistentFixtureTLS(unittest.TestCase):
 
     def test_error_body_and_disconnect_remain_original_failures_without_retry(self):
         import urllib.error
+        import http.client
         with self.fixture() as (make, state, server, root):
             client = make()
             with self.assertRaises(urllib.error.HTTPError) as raised:
@@ -163,7 +168,15 @@ class PersistentFixtureTLS(unittest.TestCase):
                 client.call('/disconnect')
             self.assertEqual(sum(path == '/disconnect' for path, _, _ in state['requests']), 1)
             self.assertTrue(all(c.sock is None for c in client.connections))
+            with self.assertRaises(http.client.IncompleteRead):
+                client.call('/partial')
+            self.assertEqual(sum(path == '/partial' for path, _, _ in state['requests']), 1)
+            self.assertTrue(all(c.sock is None for c in client.connections))
             client.MAX_RESPONSE_BYTES = 64
             with self.assertRaisesRegex(ValueError, 'bounded allowance'):
                 client.call('/oversized')
             self.assertTrue(all(c.sock is None for c in client.connections))
+
+
+if __name__ == '__main__':
+    unittest.main()
