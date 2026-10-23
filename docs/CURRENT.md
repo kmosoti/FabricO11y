@@ -7,6 +7,19 @@ plan. Publication still requires the owner's final decision against the complete
 bundle. The single persistent execution queue is
 `results/release-execution/queue.json` on Blade's DATA drive.
 
+The `e4d51bd`/`62b4458` candidate now has an observed product release blocker.
+At harness `42bc301`, the actual announcement diagnostic retained successful
+status speech, but the displayed validation alert lacked assertive AT metadata
+and produced no speech/PCM growth. The unchanged native oracle refused
+`announcement-synthesis`; stopped failure custody is retained. The
+[separate alert registration](experiments/formal/browser-announcement-protocol.md#packaged-validation-alert-counterexample)
+records the literal counterexample and requires fresh affected gates for a
+successor candidate. The proposed product repair adds explicit assertive,
+atomic metadata to the existing conditional alert. Text, input limits, APIs,
+authorization and all independent oracles remain unchanged. Source checks,
+successor construction/admission and every affected exact-package gate remain
+pending; historical E4 passes cannot admit the successor.
+
 The current candidate's ten native installation cells completed at harness
 `e283f88`: both lifecycle positives, two producer refusals and six package
 mutations, with original controllers/grades/closeout exit 0 and confirmed
