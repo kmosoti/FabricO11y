@@ -40,7 +40,7 @@ The [finite results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-forma
 retain exact source, controls and trade-offs. This tooling supplies structural
 consistency only, with no release acceptance.
 
-Native custody reader source controls: [registered protocol](formal/installation-native-custody-protocol.md), [revision-bound red and correction](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-custody-native-reader-source-results-01/0364b1c). Native guest acceptance remains pending.
+Native custody reader source controls: [registered protocol](formal/installation-native-custody-protocol.md), [revision-bound red and correction](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-custody-native-reader-source-results-01/0364b1c). Current exact-package native acceptance completed ten fresh cells; see the [cadence installation checkpoint](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-cadence-results-01/42e7da25ec0db4993b5f8c335b82da3dcf0a2441). Other release gates remain open.
 
 Research, experiment reports and observations belong in the
 [research wiki](https://github.com/kmosoti/FabricO11y/wiki). This index connects
