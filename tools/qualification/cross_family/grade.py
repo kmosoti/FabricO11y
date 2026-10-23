@@ -22,6 +22,30 @@ def nearest_rank(values, quantile=.99):
     return ordered[math.ceil(quantile * len(ordered)) - 1]
 
 
+def remember_visibility(seen, key, finish):
+    prior = seen.get(key)
+    if prior is not None and prior['boot_id'] != finish['boot_id']:
+        raise ValueError('visibility witnesses belong to different guest boots')
+    if prior is None or finish['upper_ns'] < prior['upper_ns']:
+        seen[key] = finish
+
+
+def outage_grade(phases, boot):
+    starts = [p for p in phases if p['type'] == 'outage_start']
+    ends = [p for p in phases if p['type'] == 'outage_end']
+    counters = [item['counter'] for p in ends for item in p['firewall_counters']['nftables']
+                if 'rule' in item for item in item['rule'].get('expr', []) if 'counter' in item]
+    clocks = len(starts) == len(ends) == 1 and bool(boot) and all(
+        p.get('boot_id') == boot and type(p.get('before_ns')) is int
+        and type(p.get('after_ns')) is int and 0 <= p['before_ns'] <= p['after_ns']
+        for p in starts + ends)
+    duration = (ends[0]['before_ns'] - starts[0]['after_ns']) / 1e9 if clocks else None
+    return {'passed': duration is not None and duration >= 60
+            and any(c['packets'] > 0 and c['bytes'] > 0 for c in counters),
+            'duration_lower_s': duration, 'counters': counters,
+            'phases': [p for p in phases if p['type'].startswith('outage_')]}
+
+
 def native_transcript(source, output):
     state = [row for row in source if row['type'] == 'node_state']
     if len(state) != 1:
@@ -98,6 +122,13 @@ def measure_and_grade(server, edge, call, config, result, data_port):
     import timing
     from snapshot import select
     observation = collect(server, edge, call, config, result, data_port)
+    # Raw clocks are complete. Offline oracle work must not consume the capture
+    # helpers' unchanged guest-unit deadlines, or hide their original statuses.
+    clock_stops = {guest.role: guest.stop_clock_channel() for guest in (edge, server)}
+    (result / 'clock-completion-checkpoint.json').write_text(json.dumps(
+        dict(before_independent_grading=True, stopped=clock_stops), indent=2)+'\n')
+    if set(clock_stops) != {'edge','server'} or not all(clock_stops.values()):
+        raise RuntimeError('original guest clock completion required before independent grading')
     gates = {}
     ends = [o for o in observation['offers'] if o['type']=='end']
     logs = [o for o in observation['offers'] if o['type']=='log']
@@ -148,8 +179,7 @@ def measure_and_grade(server, edge, call, config, result, data_port):
             key = row_key(body['kind'], row)
             if key not in rows:
                 raise ValueError('visible row has no independently retained source timing')
-            if key not in seen:
-                seen[key] = finish
+            remember_visibility(seen, key, finish)
     for population, values in populations.items():
         measured = [v for v in values if v['measured']]
         ack = [v['ack_duration']['upper_ns'] / 1e9 for v in measured]
@@ -168,6 +198,7 @@ def measure_and_grade(server, edge, call, config, result, data_port):
                         'missing_visibility_keys': missing, 'samples': values,
                         'boundary': {'offered_edge': 'producer creation', 'controlled_metrics': 'producer creation',
                                      'native_host_metrics': 'native collection start',
+                                     'edge_diagnostics': 'native source acceptance; earlier creation unmeasured',
                                      'companion_diagnostics': 'native source acceptance; earlier creation unmeasured'}[population]}
     for role, entries in batches.items():
         start, end = window(observation['begin'], observation['correlations'], 'edge' if role == 'controlled' else role)
@@ -212,11 +243,7 @@ def measure_and_grade(server, edge, call, config, result, data_port):
     if len(updates) == len(applied) == 1:
         delay = (applied[0]['clock']['monotonic_after_ns']-updates[0]['before']['monotonic_before_ns'])/1e9
     gates['configuration'] = {'passed': delay is not None and 0 <= delay <= 30, 'apply_upper_s': delay}
-    drops = [p for p in phases if p['type']=='outage_end']
-    counters = [item['counter'] for p in drops for item in p['firewall_counters']['nftables']
-                if 'rule' in item for item in item['rule'].get('expr', []) if 'counter' in item]
-    gates['data_outage'] = {'passed': len(drops)==1 and any(c['packets']>0 and c['bytes']>0 for c in counters),
-                            'counters': counters, 'phases': [p for p in phases if p['type'].startswith('outage_')]}
+    gates['data_outage'] = outage_grade(phases, edge.boot_id)
     drains = [p for p in phases if p['type']=='drain']
     gates['drain'] = {'passed': bool(drains) and all(int(v['acked_through'])==int(v['next_sequence'])-1
                                                    for v in drains[-1]['views'].values()), 'last': drains[-1] if drains else None}

@@ -1,0 +1,16 @@
+{
+  "origin": "split-debian-fedora-smoke-14/edge-timing.txt",
+  "original_stdout_sha256": "bc58c49e121e665b30bc042343e05efccddbc779c7d12aa49b095700ccba0d05",
+  "original_loss_marker": "timing dropped_events=790",
+  "original_capacity": 256,
+  "minimal_trace_commits": 129,
+  "events_per_trace_commit": 2,
+  "registered_exports": 1950,
+  "prospective_capacity": 16384,
+  "maximum_event_array_bytes": 2097152,
+  "overflow_remains_failure": true,
+  "integration_collection_calls": 5476,
+  "integration_events_per_call": 3,
+  "integration_expected_retained": 16384,
+  "integration_expected_dropped": 44
+}

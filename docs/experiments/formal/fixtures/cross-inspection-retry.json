@@ -1,0 +1,9 @@
+{
+  "origin": "split-debian-fedora-smoke-09/edge-command-failure-0001.json",
+  "exit": 1,
+  "stdout": "",
+  "stderr": "fabricctl: log append in progress or recovery required; retry inspection\n",
+  "retry_is_snapshot": false,
+  "drain_deadline_seconds": 320,
+  "collector_deadline_seconds": 335
+}

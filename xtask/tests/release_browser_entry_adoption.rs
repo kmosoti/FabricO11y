@@ -359,7 +359,8 @@ with tempfile.TemporaryDirectory() as temporary:
     args = types.SimpleNamespace(browser_entry_helper=executable,
         browser_entry_helper_sha256=actual_sha, run_id='test-run',
         admission_sha256='c' * 64, outer_admission=outer,
-        admission=pathlib.Path('/owned/data/admission.json'), server_family='debian')
+        admission=pathlib.Path('/owned/data/admission.json'), server_family='debian',
+        edge_host=None, edge_storage_root=None, edge_source_root=None, edge_input_manifest=None)
     class Parser:
         def __init__(self, *args, **kwargs): pass
         def add_argument(self, *args, **kwargs): pass
@@ -368,7 +369,9 @@ with tempfile.TemporaryDirectory() as temporary:
     class Guard:
         DATA = data
         def require_storage(self): pass
-        def require_containment(self): return {'cgroup': 'user.slice/fake'}
+        def require_containment(self, *, split=False):
+            assert not split, 'default placement must retain the local containment path'
+            return {'cgroup': 'user.slice/fake'}
         def run(self, argv, **kwargs): effects.append(argv)
     namespace = {'argparse': types.SimpleNamespace(ArgumentParser=Parser),
         '__doc__': 'owner test', 'Path': pathlib.Path, 're': re, 'os': __import__('os'),
@@ -379,6 +382,15 @@ with tempfile.TemporaryDirectory() as temporary:
         'sha': lambda path: hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest(),
         'admit': lambda path, digest: ({'inputs': {'browser_entry_helper':
             {'path': str(helper), 'sha256': pin}}}, {}, {}, {})}
+    # Execute the real placement admission functions used by the main prefix.
+    # Keep the independent helper-pin mismatch and zero-effect assertions below.
+    placement_path = source.parent / 'cross_family/remote.py'
+    placement_tree = ast.parse(placement_path.read_text())
+    placement_module = ast.Module(body=[node for node in placement_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name in
+        ('placement_options', 'validate_placement')], type_ignores=[])
+    ast.fix_missing_locations(placement_module)
+    exec(compile(placement_module, str(placement_path), 'exec'), namespace)
     exec(compile(main_module, str(source), 'exec'), namespace)
     try: namespace['main']()
     except ValueError as error:

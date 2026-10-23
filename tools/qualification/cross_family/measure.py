@@ -3,6 +3,10 @@ import json
 import base64
 from pathlib import Path
 import re
+import os
+import threading
+import urllib.error
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
 NATIVE_METRICS = (
@@ -16,10 +20,210 @@ NATIVE_METRICS = (
     'fabric.spindle.unacked.batches', 'fabric.spindle.log.backlog.bytes',
 )
 SELF_LABEL = 'fabric-server-self'
+OBSERVER_HTTP_WORKERS = 1  # The original serial reader owns the other legacy query slot.
+
+
+def visibility_bodies(node, lower, upper):
+    bodies = []
+    if node != 'controlled':
+        bodies.extend({'kind': kind, 'node': node, 'from_ns': lower, 'to_ns': upper, 'limit': 1000}
+                      for kind in ('logs', 'spans'))
+    for name in (('cross.counter',) if node == 'controlled' else NATIVE_METRICS):
+        bodies.append({'kind': 'metrics', 'node': node, 'name': name,
+                       'from_ns': lower, 'to_ns': upper, 'limit': 1000})
+    return bodies
+
+
+class VisibilityObserver:
+    """Bound named queries inside conservative per-node guest-clock envelopes."""
+    def __init__(self, server, edge, call, result):
+        self.server, self.edge, self.call, self.result = server, edge, call, result
+        self.stop = threading.Event()
+        self.thread = None
+        self.queries = []
+        self.error = None
+        self.completed = False
+        self.output_bytes = 0
+        self.query_clock = threading.local()
+
+    def start(self, begin):
+        self.begin = begin
+        self.thread = threading.Thread(target=self.run)
+        self.thread.start()
+
+    @staticmethod
+    def error_value(error):
+        return {'type': type(error).__name__, 'error': str(error)[:500],
+                'status': getattr(error, 'code', None), 'exit': getattr(error, 'returncode', None)}
+
+    def fail(self, value):
+        self.stop.set()
+        if self.error is None:
+            self.error = value
+            try:
+                path = self.result / 'visibility-observer-error.json'
+                with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as output:
+                    json.dump(value, output, indent=2)
+                    output.write('\n')
+            except OSError as error:
+                self.error['evidence_error'] = str(error)
+
+    def keep(self, output, row):
+        raw = json.dumps(row) + '\n'
+        self.output_bytes += len(raw.encode())
+        if self.output_bytes > 64*1024**2:
+            raise ValueError('bounded visibility observation allowance exceeded')
+        output.write(raw)
+        output.flush()
+
+    def query(self, body):
+        if self.stop.is_set():
+            return {'query': body, 'cancelled': True}
+        try:
+            return {'query': body, 'answer': self.call('/v1/admin/query', body, 'POST')}
+        except BaseException as error:
+            value = self.error_value(error)
+            if isinstance(error, urllib.error.HTTPError):
+                try:
+                    response_body = error.read(8193)
+                    value['response_body_base64'] = base64.b64encode(response_body[:8192]).decode()
+                    value['response_body_truncated'] = len(response_body) > 8192
+                except Exception as capture_error:
+                    value['response_body_error'] = str(capture_error)[:500]
+                error.close()
+            return {'query': body, 'error': value}
+
+    def observed_query(self, guest, body, initial):
+        before = getattr(self.query_clock, 'after', None)
+        if (before is None or before['boot_id'] != initial['boot_id']
+                or before['monotonic_before_ns'] < initial['monotonic_before_ns']):
+            before = initial
+        body = {**body, 'from_ns': before['unix_ns']-10*10**9,
+                'to_ns': before['unix_ns']+10**9}
+        value = self.query(body)
+        after = guest.correlation()
+        if (before['boot_id'] != after['boot_id']
+                or before['monotonic_after_ns'] > after['monotonic_before_ns']):
+            raise ValueError('visibility response clock identity or order changed')
+        self.query_clock.after = after
+        return {**value, 'before': before, 'after': after,
+                'observer': 'bounded-named-response'}
+
+    def sweep(self, guest, node, output, pool):
+        before = guest.correlation()
+        bodies = visibility_bodies(node, before['unix_ns']-10*10**9, before['unix_ns']+10**9)
+        if len(bodies) > 19:
+            raise ValueError('unregistered visibility sweep size')
+        futures = [pool.submit(self.observed_query, guest, body, before) for body in bodies]
+        for future in as_completed(futures):
+            value = future.result()
+            if 'error' in value:
+                self.fail({**value['error'], 'query': value['query']})
+                self.keep(output, value)
+            elif value.get('cancelled'):
+                self.keep(output, value)
+            else:
+                self.keep(output, value)
+                self.queries.append(value)
+
+    def observe(self, output, pool):
+        while not self.stop.is_set():
+            probe = self.edge.correlation()
+            elapsed = (probe['monotonic_before_ns'] - self.begin['monotonic_ns']) / 1e9
+            if elapsed > 145:
+                self.completed = True
+                return
+            if elapsed < 15:
+                self.stop.wait(.2)
+                continue
+            for guest, node in ((self.edge, 'edge'), (self.server, SELF_LABEL), (self.edge, 'controlled')):
+                if self.stop.is_set():
+                    return
+                self.sweep(guest, node, output, pool)
+            self.stop.wait(.2)
+
+    def run(self):
+        path = self.result / 'visibility-observer.jsonl'
+        try:
+            with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as output, \
+                    ThreadPoolExecutor(max_workers=OBSERVER_HTTP_WORKERS) as pool:
+                try:
+                    self.observe(output, pool)
+                except BaseException as error:
+                    self.fail(self.error_value(error))
+        except BaseException as error:
+            self.fail(self.error_value(error))
+
+    def finish(self, cancel=False):
+        if cancel:
+            self.stop.set()
+        if self.thread is not None:
+            self.thread.join(timeout=50)
+        stopped = self.thread is None or not self.thread.is_alive()
+        value = {'completed': self.completed, 'cancelled': cancel, 'stopped': stopped,
+                 'error': self.error, 'queries': len(self.queries)}
+        (self.result / 'visibility-observer-completion.json').write_text(json.dumps(value, indent=2)+'\n')
+        if not stopped or self.error or (not cancel and not self.completed):
+            raise RuntimeError('independent visibility observer incomplete: ' + str(value))
 
 
 def json_lines(text):
     return [json.loads(line) for line in text.splitlines() if line.strip()]
+
+
+def require_monitor_health(text):
+    fields = {}
+    for line in text.splitlines():
+        key, separator, value = line.partition('=')
+        if not separator or key in fields:
+            raise ValueError('incomplete or duplicate resource monitor status')
+        fields[key] = value
+    expected = {'LoadState', 'ActiveState', 'SubState', 'Result', 'ExecMainCode',
+                'ExecMainStatus', 'RemainAfterExit'}
+    if (set(fields) != expected or fields['LoadState'] != 'loaded'
+            or fields['ActiveState'] != 'active' or fields['Result'] != 'success'
+            or fields['ExecMainStatus'] != '0' or fields['RemainAfterExit'] != 'yes'
+            or (fields['SubState'], fields['ExecMainCode']) not in (('running', '0'), ('exited', '1'))):
+        raise ValueError('resource monitor missing or failed before collection')
+    return fields
+
+
+def monitor_health(guest, result, phase, unit='cross-monitor'):
+    if unit not in ('cross-monitor', 'cross-producer', 'cross-outage'):
+        raise ValueError('unregistered fixture unit')
+    command = ('systemctl show ' + unit + ' -p LoadState -p ActiveState -p SubState '
+               '-p Result -p ExecMainCode -p ExecMainStatus -p RemainAfterExit\n')
+    answer = guest.script(command, timeout=5, check=False)
+    (result / (guest.role + '-' + unit.removeprefix('cross-') + '-' + phase + '-status.json')).write_text(json.dumps(
+        {'exit': answer.returncode, 'stdout': answer.stdout, 'stderr': answer.stderr,
+         'boot_id': guest.boot_id}, indent=2) + '\n')
+    if answer.returncode != 0:
+        raise ValueError(unit + ' original status command failed')
+    try:
+        return require_monitor_health(answer.stdout)
+    except ValueError as error:
+        raise ValueError(unit + ' original state invalid: ' + str(error)) from error
+
+
+def finish_monitor(guest, result):
+    state = monitor_health(guest, result, 'collection')
+    if state['SubState'] == 'running':
+        signal = guest.script('systemctl kill --signal=SIGTERM cross-monitor\n', timeout=5, check=False)
+        (result / (guest.role + '-monitor-finish-request.json')).write_text(json.dumps(
+            {'exit': signal.returncode, 'stdout': signal.stdout, 'stderr': signal.stderr}, indent=2) + '\n')
+        # A natural clean exit can race the signal request. Only the retained
+        # original completion status can certify either outcome.
+        deadline = time.monotonic() + 5
+        attempt = 0
+        while state['SubState'] == 'running':
+            if time.monotonic() >= deadline:
+                raise RuntimeError('resource monitor did not finish after controlled stop')
+            time.sleep(.1)
+            attempt += 1
+            state = monitor_health(guest, result, 'finish-' + str(attempt))
+    if state['SubState'] != 'exited':
+        raise ValueError('resource monitor original completion unavailable')
+    return state
 
 
 def fetch(guest, path, result, name):
@@ -28,9 +232,34 @@ def fetch(guest, path, result, name):
     return json_lines(text)
 
 
-def inspect(guest, config):
-    text = guest.script('/usr/bin/fabricctl inspect ' + config + '\n', timeout=30).stdout
-    return dict(p.split('=', 1) for p in text.split())
+INSPECTION_RETRIES = (
+    'log rotated during inspection; retry',
+    'log append or rotation in progress; retry inspection',
+    'log append completed during inspection; retry',
+    'log failure recorded during inspection; retry',
+    'sealed log reclaimed during inspection; retry',
+    'log rotated or reclaimed during inspection; retry',
+    'log append in progress or recovery required; retry inspection',
+)
+
+
+def inspect(guest, config, result, attempt):
+    answer = guest.script('/usr/bin/fabricctl inspect ' + config + '\n', timeout=5, check=False)
+    record = {'exit': answer.returncode, 'stdout': answer.stdout,
+              'stderr': answer.stderr, 'boot_id': guest.boot_id, 'config': config}
+    (result / f'{guest.role}-drain-inspection-{attempt}.json').write_text(json.dumps(record, indent=2)+'\n')
+    if answer.returncode:
+        if (answer.returncode == 1 and not answer.stdout
+                and answer.stderr in ('fabricctl: ' + text + '\n' for text in INSPECTION_RETRIES)):
+            return None
+        raise ValueError('native drain inspection failed: ' + str(record))
+    values = dict(p.split('=', 1) for p in answer.stdout.split())
+    if values.get('recovery_required') != 'false' or values.get('interrupted_append') != 'false':
+        raise ValueError('native drain snapshot requires recovery')
+    # Require the successful snapshot fields even when the other guest is busy.
+    int(values['acked_through'])
+    int(values['next_sequence'])
+    return values
 
 
 def pages(call, body):
@@ -65,6 +294,26 @@ def fixed_queries(call, lower, upper):
 
 
 def collect(server, edge, call, config, result, data_port):
+    observer = VisibilityObserver(server, edge, call, result)
+    try:
+        def observed_call(*args, **kwargs):
+            if observer.error is not None:
+                raise RuntimeError('independent visibility observer failed: ' + str(observer.error))
+            return call(*args, **kwargs)
+        observation = collect_original(server, edge, observed_call, config, result, data_port, observer)
+        observer.finish()
+    except BaseException as error:
+        try:
+            observer.finish(cancel=True)
+        except BaseException as cleanup_error:
+            error.add_note(str(cleanup_error))
+        raise
+    observation['queries'].extend(observer.queries)
+    (result / 'visibility.json').write_text(json.dumps(observation['queries']))
+    return observation
+
+
+def collect_original(server, edge, call, config, result, data_port, observer):
     deadline = time.monotonic() + 20
     while True:
         read = edge.script('test -s /root/cross/offers.jsonl && head -n 1 /root/cross/offers.jsonl\n', check=False)
@@ -74,16 +323,19 @@ def collect(server, edge, call, config, result, data_port):
         if time.monotonic() > deadline:
             raise RuntimeError('producer did not publish its beginning clock witness')
         time.sleep(.1)
-    if begin['boot_id'] != edge.boot_id or begin['seconds'] != 195:
+    if (begin['boot_id'] != edge.boot_id or begin['seconds'] != 195
+            or begin.get('guard_seconds') != 5 or begin.get('elapsed_seconds') != 200):
         raise ValueError('producer boot identity or registered duration differs')
+    observer.start(begin)
     began, wall = begin['monotonic_ns'], begin['unix_ns']
-    edge.script(f'systemd-run --unit=cross-outage --property=MemoryMax=64M --property=MemorySwapMax=0 --property=TasksMax=16 /usr/bin/python3 -B /root/cross/outage.py --begin-ns {began} --port {data_port} --out /root/cross/outage.jsonl\n', timeout=30)
+    edge.script(f'systemd-run --unit=cross-outage --property=RemainAfterExit=yes --property=MemoryMax=64M --property=MemorySwapMax=0 --property=TasksMax=16 /usr/bin/python3 -B /root/cross/outage.py --begin-ns {began + 5*10**9} --port {data_port} --out /root/cross/outage.jsonl\n', timeout=30)
     queries, correlations, phases = [], [], []
     cut = wall + 100 * 1_000_000_000
     outage = removed = prequery = changed = False
     applied = None
     desired_revision = None
-    end_deadline = time.monotonic() + 330
+    outage_checks = producer_checks = 0
+    end_deadline = time.monotonic() + 335
     while time.monotonic() < end_deadline:
         probe_edge = edge.correlation()
         probe_server = server.correlation()
@@ -110,11 +362,12 @@ def collect(server, edge, call, config, result, data_port):
             snapshots = fixed_queries(call, wall + 15 * 1_000_000_000, cut)
             (result / 'queries-before-outage.json').write_text(json.dumps(snapshots))
             prequery = True
-        if not outage and elapsed >= 135:
+        if not outage and elapsed >= 140:
             outage = True
-        if not removed and elapsed >= 195:
-            witness = edge.script('systemctl show cross-outage.service -p ActiveState -p ExecMainStatus\n', timeout=15).stdout
-            if 'ActiveState=inactive' not in witness or 'ExecMainStatus=0' not in witness:
+        if not removed and elapsed >= 200:
+            outage_checks += 1
+            witness = monitor_health(edge, result, 'completion-' + str(outage_checks), unit='cross-outage')
+            if witness['SubState'] != 'exited':
                 time.sleep(.2)
                 continue
             phases.extend(fetch(edge, '/root/cross/outage.jsonl', result, 'outage.jsonl'))
@@ -127,13 +380,7 @@ def collect(server, edge, call, config, result, data_port):
             for node in ('edge', SELF_LABEL, 'controlled'):
                 node_wall = probe_server['unix_ns'] if node == SELF_LABEL else probe_edge['unix_ns']
                 lower, upper = node_wall - 10*10**9, node_wall + 10**9
-                bodies = []
-                if node != 'controlled':
-                    bodies.extend({'kind': k, 'node': node, 'from_ns': lower, 'to_ns': upper, 'limit': 1000}
-                                  for k in ('logs', 'spans'))
-                for name in (('cross.counter',) if node == 'controlled' else NATIVE_METRICS):
-                    bodies.append({'kind': 'metrics', 'node': node, 'name': name,
-                                   'from_ns': lower, 'to_ns': upper, 'limit': 1000})
+                bodies = visibility_bodies(node, lower, upper)
                 before = edge.correlation() if node != SELF_LABEL else server.correlation()
                 answers = []
                 for body in bodies:
@@ -144,21 +391,24 @@ def collect(server, edge, call, config, result, data_port):
                 for body, answer in answers:
                     queries.append({'query': body, 'answer': answer, 'before': before, 'after': after})
         if removed:
-            producer = edge.script('systemctl show cross-producer.service -p ActiveState -p ExecMainStatus\n', timeout=15).stdout
-            views = {'edge': inspect(edge, '/etc/fabrico11y/node.conf'),
-                     'self': inspect(server, '/var/lib/fabrico11y/server/self-spindle/node.conf')}
+            if elapsed > 320:
+                raise RuntimeError('registered native/control drain deadline exceeded')
+            producer_checks += 1
+            producer = monitor_health(edge, result, 'drain-' + str(producer_checks), unit='cross-producer')
+            views = {'edge': inspect(edge, '/etc/fabrico11y/node.conf', result, producer_checks),
+                     'self': inspect(server, '/var/lib/fabrico11y/server/self-spindle/node.conf', result, producer_checks)}
             phases.append({'type': 'drain', 'edge_clock': edge.correlation(), 'producer': producer, 'views': views})
-            if 'ActiveState=inactive' in producer and 'ExecMainStatus=0' in producer and all(
+            if producer['SubState'] == 'exited' and all(v is not None and
                     int(v['acked_through']) == int(v['next_sequence']) - 1 for v in views.values()):
                 break
-            if elapsed > 315:
+            if elapsed > 320:
                 raise RuntimeError('registered native/control drain deadline exceeded')
         time.sleep(.2)
     else:
         raise RuntimeError('finite measurement deadline exceeded')
     if not all((outage, removed, prequery, changed)):
         raise ValueError('registered phase missing')
-    (result / 'visibility.json').write_text(json.dumps(queries))
+    (result / 'visibility-original.json').write_text(json.dumps(queries))
     (result / 'clock-correlations.json').write_text(json.dumps(correlations))
     (result / 'phases.json').write_text(json.dumps(phases))
     offers = fetch(edge, '/root/cross/offers.jsonl', result, 'offers.jsonl')
@@ -168,6 +418,7 @@ def collect(server, edge, call, config, result, data_port):
     outputs, sources, resources = {}, {}, {}
     for guest, service, node_config in ((edge, 'fabrico11y-node', '/etc/fabrico11y/node.conf'),
                                       (server, 'fabrico11y-server', '/var/lib/fabrico11y/server/self-spindle/node.conf')):
+        finish_monitor(guest, result)
         guest.script('systemctl stop cross-monitor ' + service + '\n', timeout=60)
         outputs[guest.role] = guest.script('journalctl --no-pager -o cat -u ' + service + '\n').stdout
         (result / (guest.role + '-timing.txt')).write_text(outputs[guest.role])

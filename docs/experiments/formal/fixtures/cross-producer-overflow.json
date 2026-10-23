@@ -1,0 +1,18 @@
+{
+  "origin": "split-debian-fedora-smoke-07 on 7c23467edb41ee7588f60ea51d2255ce1d2d773e",
+  "original_producer_exit": 1,
+  "observer_http_status": 400,
+  "observer_defect": "legacy Query::Metrics requires name:String; unnamed query is invalid",
+  "original_queue_capacity": 256,
+  "offered_exports": 1950,
+  "admitted_exports": 1656,
+  "queue_rejections": 294,
+  "first_rejected_tick": 1632,
+  "last_rejected_tick": 1949,
+  "admitted_missing": 0,
+  "original_offers_sha256": "18cbb8b917833181c13288c59df32db6dd58b0f06a6465a0d7cd10618862e103",
+  "backing_sha256_before_and_after_clone": "58030c9bb4b42404d9a18fd5a4ed4291516304fbcca5f099cf9d7dda758aee7c",
+  "diagnostic_original_resource_receipt_sha256": "6a1a6426c4f7b2b5ddd8951141bf5d27b52fe27829ff74f1ed432321ee61f7d5",
+  "successor_queue_bound": "fixed total offered_exports; existing 128 MiB producer cap unchanged",
+  "acceptance_credit": false
+}

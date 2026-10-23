@@ -1,6 +1,121 @@
 # Current project state
 
-Alpha and package acceptance remain owner-paused under [issue #59](https://github.com/kmosoti/FabricO11y/issues/59). Verification-engineering continuation is authorized and tracked in [PR #102](https://github.com/kmosoti/FabricO11y/pull/102); its provenance pins remain product source `b1e5874`, frozen package source `43150db`, `origin/main` baseline `f001175`, and engineering profile anchor `31cf809`. The Rust capture reader is at `681fcc5`, with native caller wiring at `bf1efa9`. These pins do not resume acceptance or claim a future check outcome.
+The owner lifted the alpha/package acceptance pause on 2026-10-22 for the
+[Blade/G15 release placement](experiments/formal/release-placement-protocol.md).
+The persistent execution queue is `results/release-execution/queue.json` on Blade;
+publication still requires final owner authorization. Historical pause and
+engineering records below retain their original scope. No new acceptance
+result is claimed by resumption.
+The split-host adapter is under verification in `milestone/release-execution`.
+It extends the existing Guest lifecycle with a G15 KVM edge and owned SSH
+forwarding. Finite adapter checks do not complete native acceptance.
+The first split bootstrap failed before Fabric offers: Fedora cloud-init
+reported degraded completion with hostname warnings, and zram activated after
+the fixture swapoff. Both original outer receipts confirm shutdown; the G15
+peak was below its 2 GiB cap with zero OOM events. The
+[retained receipt fixture](experiments/formal/fixtures/remote-bootstrap-stop.json)
+keeps the cleanup/completion distinction. Provisioning and shutdown repairs
+require a fresh smoke; no forwarding result is credited.
+The next smoke reached exact package installation on both guests, then strict
+TLS verification refused the fixture CA's missing key-usage extension. The
+fixture now follows the documented CA recipe; its regression requires strict
+verification and rejects the original defect. Fresh forwarding acceptance is
+still pending. Separately, hosted dependency policy rejects the frozen
+candidate's `rustls-webpki 0.103.15` under
+[RUSTSEC-2026-0382](https://rustsec.org/advisories/RUSTSEC-2026-0382).
+A [minimally changed successor](experiments/formal/release-successor-inputs-protocol.md)
+package candidate was constructed; historical artifact and guest evidence retain
+their original identities.
+Successor product source `1eaf9ad` produced packaged snapshot `531e67c`.
+Independent console, Debian and RPM reproducibility, constructor refusal
+controls and artifact inspection completed with exit 0. Fresh installation,
+browser, service/recovery and soak acceptance remain open. The standalone fuzz
+lock now selects the same patched dependency; it does not alter those packages.
+The full timing-capture smoke retained all events and completed all 19 gate
+records, but file-log ACK latency, visibility upper bounds and edge source-debt
+clearing failed. The [cadence/observation registration](experiments/formal/spindle-cadence-protocol.md)
+keeps those failures. Shorter idle log/trace polling and per-response query
+observations require fresh controls and another compatible package successor;
+no timing or backlog threshold is relaxed.
+The timing-capture successor is now constructed: product `aaca52d`, packaged
+snapshot `c0cc668`. All eighteen constructor cells plus marker preparation exited
+0 with confirmed stops; console/DEB/RPM A/B outputs reproduced and inspection
+completed. Its tuple was selected for fresh testing. Hosted fast at `1fde8f0` retained an old integration
+capacity expectation and a test-code Clippy failure; the harness expectations
+were corrected without changing the frozen production code. Fresh fast checks
+and every package acceptance gate remain open.
+The cadence successor is also constructed: product `108945d`, packaged snapshot
+`1cb0c185`, with all nineteen constructor commands exiting 0, confirmed stops,
+matching console/DEB/RPM outputs and inspection. Its
+[exact tuple](experiments/formal/fixtures/successor-native-inputs.json) is selected
+for testing. Fresh split smoke 16 passed custody, query correctness, offered ACK,
+all backlog, resource, configuration, outage and drain gates, but all five
+timing gates failed visibility. Both host shutdowns were confirmed. Stopped
+diagnosis found named observation intervals around 25–26 seconds, exceeding the
+query window. The registered management clock-channel repair keeps these
+packages and requires fresh controls and a full new cell; runtime acceptance
+remains open.
+Split smoke 18 completed all nineteen product gates with zero censored visibility
+observations, but exited 2 on clock-channel cleanup after offline grading.
+Both guests stopped; final clock command receipts were incomplete, so the cell
+is not accepted. The registered repair closes clock capture before grading and
+preserves original statuses through broken-pipe cleanup. Keep the constructed
+`108945d` / `1cb0c185` candidate and repeat the complete affected cell.
+The subsequent two-worker full split smoke completed producer, outage and drain,
+then refused 790 dropped edge timing events. The
+[bounded timing repair](experiments/formal/spindle-timing-capture-protocol.md)
+raises only the opt-in event queue to 16,384 while retaining exact overflow
+reporting. The old 256-event queue reproduced loss in 129 real Spool commits
+at `af7942c` (test exit 101). Repair verification, a new package successor and
+fresh acceptance are pending; the `1eaf9ad` artifacts retain their identities.
+The successor smoke reached offered work and its outage, then failed during
+resource extraction. The [monitor lifetime diagnostic](experiments/formal/cross-monitor-lifetime-protocol.md)
+retains the original 330 samples and literal manager states. The monitor's
+transient unit now retains its status until collection; failed or missing state
+is refused. Fresh split acceptance is still pending. Script failures preserve
+their original exit/timeout and output in private artifacts, with stdin hashed.
+The next full smoke retained clean monitor completions, then failed on native
+edge diagnostics that the timing adapter had incorrectly treated as offered
+file logs. The [separate population registration](experiments/formal/cross-family-forwarding-protocol.md#prospective-timing-population-clarification-and-backlog-revision)
+keeps those diagnostics under the same timing gates with their actual source
+acceptance boundary. Unknown paths and changed offered bytes remain refused.
+Fresh controls and a full smoke are required; the failed run is not promoted.
+Diagnostic replay also found uncertain trace exports, grouped visibility
+brackets and measured work crossing the intentional fault. The
+[registered producer and sampling repair](experiments/formal/cross-family-forwarding-protocol.md#producer-and-observation-repair-after-the-retained-split-smoke)
+retains all offered records and thresholds, adds bounded transport/observation
+workers and separates the full outage workload with a fixed drain guard.
+Fresh execution remains required; replay is diagnostic evidence only.
+Producer and outage units now retain their original completion status too;
+the collector refuses unloaded/default or failed states even when the status
+command succeeds. Fresh controls and the full split smoke remain required.
+The next smoke correctly refused an original producer exit 1 and preserved an
+observer HTTP 400. Its stopped-image diagnostic recovered 294 queue-overflow
+rejections and no missing admitted exports. The
+[bounded successor](experiments/formal/cross-family-forwarding-protocol.md#producer-and-observation-repair-after-the-retained-split-smoke)
+buffers the fixed full offer population inside the unchanged producer cap and
+reuses existing named queries in bounded concurrent clock envelopes. Observer
+errors persist immediately and stop further collection. Fresh execution is
+still required; no failed smoke or diagnostic is acceptance.
+The following smoke correctly refused observer HTTP 503 at the legacy
+endpoint's existing two-query admission boundary. The
+[prospective configuration](experiments/formal/cross-family-forwarding-protocol.md#producer-and-observation-repair-after-the-retained-split-smoke)
+reserves one slot for each reader and explicitly selects the already available
+Walk history plan. Product admission, defaults and query semantics are unchanged;
+the eight-request overload case remains a rejection control. Fresh full
+execution remains required.
+The next split smoke retained a concurrent-append inspection refusal with both
+hosts stopped. Drain sampling now records exact retryable inspection attempts
+within the original deadline; contention cannot count as a drained snapshot.
+Fresh split acceptance remains pending. A later full smoke refused four
+dropped edge timing events after successful producer/outage completion. The
+registered next attempt uses one asynchronous trace transport worker, retaining
+all 1950 offers and the existing deadlines. That attempt failed its original
+320-second producer deadline. The prospectively registered two-worker transport
+retains both earlier failures and all gate expectations; fresh acceptance remains
+unverified.
+
+Alpha and package acceptance were owner-paused under [issue #59](https://github.com/kmosoti/FabricO11y/issues/59). Verification-engineering continuation is authorized and tracked in [PR #102](https://github.com/kmosoti/FabricO11y/pull/102); its provenance pins remain product source `b1e5874`, frozen package source `43150db`, `origin/main` baseline `f001175`, and engineering profile anchor `31cf809`. The Rust capture reader is at `681fcc5`, with native caller wiring at `bf1efa9`. These pins do not resume acceptance or claim a future check outcome.
 
 Owner stop checkpoint (2026-10-18): the native producer now applies pause2,
 waits for a stable acknowledged prefix, captures the independent stopped state

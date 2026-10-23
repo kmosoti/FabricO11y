@@ -35,6 +35,8 @@ const LOG_LINE_OVERHEAD: usize = 256;
 /// Room kept in every Batch for the resource, the cursors and the gaps.
 const BATCH_RESERVE: usize = 96 * 1024;
 const SPOOL_RESERVE: u64 = 4096;
+/// Opt-in operational evidence; overflow remains explicit and never blocks commit.
+const TIMING_EVENT_CAPACITY: usize = 16_384;
 
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
@@ -646,7 +648,7 @@ impl Spindle {
         let Some(stamp) = stamp else {
             return;
         };
-        if self.timing_events.len() == 256 {
+        if self.timing_events.len() == TIMING_EVENT_CAPACITY {
             self.timing_dropped = self.timing_dropped.saturating_add(1);
             return;
         }

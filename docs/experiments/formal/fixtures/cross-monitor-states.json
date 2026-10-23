@@ -1,0 +1,31 @@
+{
+  "origin": {
+    "diagnostic": "monitor-lifetime-diagnostic-01",
+    "diagnostic_receipt_sha256": "0a22865616a91137dae2922e310488dfdf0ca5a56ceac73ffc56515297fa6a23",
+    "harness": "38cacd6edb8aba5440be1f774b4ce60f8bedaef5",
+    "classification": "Stopped-image diagnostic; not acceptance",
+    "original_samples": {
+      "count": 330,
+      "first_tick": 0,
+      "last_tick": 329,
+      "boot_ids": [
+        "8bea9597-fce2-4484-ac62-509ce1343f15"
+      ]
+    },
+    "backing_sha256": "a60c1f16c3d315e933ebf5abc1b9edfb067a52f8b5e9dabff50353ddef5cb108"
+  },
+  "controls": {
+    "ordinary": {
+      "status": "LoadState=not-found\nActiveState=inactive\nSubState=dead\nRemainAfterExit=no\nResult=success\nExecMainCode=0\nExecMainStatus=0\n",
+      "stop_exit": 5
+    },
+    "retained": {
+      "status": "LoadState=loaded\nActiveState=active\nSubState=exited\nRemainAfterExit=yes\nResult=success\nExecMainCode=1\nExecMainStatus=0\n",
+      "stop_exit": 0
+    },
+    "failed": {
+      "status": "LoadState=loaded\nActiveState=failed\nSubState=failed\nRemainAfterExit=yes\nResult=exit-code\nExecMainCode=1\nExecMainStatus=1\n",
+      "stop_exit": 0
+    }
+  }
+}

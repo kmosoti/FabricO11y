@@ -30,6 +30,20 @@ This project is deliberately split into short stages. Finish one stage, run it, 
 
 Read [current project state](CURRENT.md) for what actually exists and [system architecture](architecture/system.md) for its boundaries. Stages 1–3 and 5 describe the original FOL2 demonstration, which now lives in the research archive. Stage 4 is a checked target model, Stage 6 has its first measured baseline, and Stage 7 remains planned work.
 
+The node loop uses `Duration::min` to clamp an idle wait by both its remaining
+deadline and the input polling budget. A zero deadline requests no sleep; a
+positive deadline stays positive. The [cadence controls](experiments/formal/spindle-cadence-protocol.md)
+check these finite scheduling properties, while guest campaigns still measure
+real latency and resource use.
+
+The Spindle's opt-in timing capture illustrates bounded auxiliary state:
+`VecDeque<TimingEvent>` preserves FIFO order up to a fixed capacity, and a
+separate counter makes overflow visible. Taking events resets that counter;
+it never changes the Spool or ACK cursor. The
+[finite capture protocol](experiments/formal/spindle-timing-capture-protocol.md)
+uses real commits, a full event population and an exact overflow control.
+The array bound and measured process RSS are distinct obligations.
+
 ## Stages 1–3 and 5 — The FOL2 demonstration (archived)
 
 The first stages described one observation with distinct ID and time types, made repeatable input with a seeded generator, buffered it with explicit backpressure (a full buffer returns the owned event to the caller), and preserved ownership on disk with a framed, checksummed local log. That demonstration, its tests and its [walkthrough](https://github.com/kmosoti/FabricO11y-research/blob/main/docs/architecture/fol2-demo.md) are preserved in the [research archive](https://github.com/kmosoti/FabricO11y-research) at their original paths: the [event model](https://github.com/kmosoti/FabricO11y-research/blob/main/src/lib.rs), [generator](https://github.com/kmosoti/FabricO11y-research/blob/main/src/generator.rs), [buffer](https://github.com/kmosoti/FabricO11y-research/blob/main/src/buffer.rs) and [event log](https://github.com/kmosoti/FabricO11y-research/blob/main/src/log.rs). This repository no longer builds or runs them.

@@ -10,10 +10,20 @@ static STOP: AtomicBool = AtomicBool::new(false);
 const MIN_BACKOFF: Duration = Duration::from_millis(250);
 const MAX_BACKOFF: Duration = Duration::from_secs(5);
 /// How often `run` reads configured logs between metric samples.
-const LOG_POLL: Duration = Duration::from_secs(1);
+const LOG_POLL: Duration = Duration::from_millis(250);
+const TRACE_IDLE_POLL: Duration = Duration::from_millis(10);
+const OTHER_IDLE_POLL: Duration = Duration::from_millis(100);
 /// How often `run` asks the server for configuration (ADR-0014).
 const CONFIG_POLL: Duration = Duration::from_secs(5);
 const DIAGNOSTIC_POLL: Duration = Duration::from_secs(15);
+
+fn idle_wait(remaining: Duration, traces_enabled: bool) -> Duration {
+    remaining.min(if traces_enabled {
+        TRACE_IDLE_POLL
+    } else {
+        OTHER_IDLE_POLL
+    })
+}
 
 struct Diagnostics {
     log: OperationalLog,
@@ -239,9 +249,8 @@ fn main() -> ExitCode {
                     last_config_error = poll.error;
                 }
             }
-            // Metrics on their interval boundary; logs every LOG_POLL so a
-            // line is committed and sent within about a second. Nothing is
-            // collected while the server has paused this node.
+            // Metrics keep their configured interval; idle logs use LOG_POLL.
+            // Nothing is collected while the server has paused this node.
             let cycle = if node.paused() {
                 None
             } else if now >= next_metrics {
@@ -353,7 +362,7 @@ fn main() -> ExitCode {
                 let now = Instant::now();
                 let wake = retry_at.min(deadline);
                 if wake > now {
-                    std::thread::sleep((wake - now).min(Duration::from_millis(100)));
+                    std::thread::sleep(idle_wait(wake - now, traces.is_some()));
                 }
             }
             if STOP.load(Ordering::SeqCst) {
@@ -375,5 +384,42 @@ fn main() -> ExitCode {
             eprintln!("fabric-node: {error}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod cadence_tests {
+    use super::*;
+
+    #[test]
+    fn requested_idle_wait_respects_deadline_and_trace_poll_budget() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!(
+            "../../docs/experiments/formal/fixtures/spindle-cadence-regression.json"
+        ))
+        .unwrap();
+        let trace = Duration::from_nanos(fixture["new_trace_idle_wait_ns"].as_u64().unwrap());
+        let other = Duration::from_nanos(fixture["other_idle_wait_ns"].as_u64().unwrap());
+        assert_eq!(
+            LOG_POLL.as_nanos(),
+            fixture["new_log_poll_ns"].as_u64().unwrap() as u128
+        );
+        for remaining_ms in 0..=1000 {
+            let remaining = Duration::from_millis(remaining_ms);
+            for enabled in [false, true] {
+                let wait = idle_wait(remaining, enabled);
+                assert!(wait <= remaining);
+                assert!(wait <= if enabled { trace } else { other });
+                assert_eq!(wait.is_zero(), remaining.is_zero());
+            }
+        }
+        assert_eq!(
+            idle_wait(Duration::from_nanos(1), true),
+            Duration::from_nanos(1)
+        );
+        assert_eq!(idle_wait(Duration::from_secs(1), false), other);
+        assert_eq!(idle_wait(Duration::from_secs(1), true), trace);
+        // The actual old idle cap cannot satisfy this trace polling budget.
+        let old = Duration::from_nanos(fixture["old_trace_idle_wait_ns"].as_u64().unwrap());
+        assert!(Duration::from_secs(1).min(old) > trace);
     }
 }

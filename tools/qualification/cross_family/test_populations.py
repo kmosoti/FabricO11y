@@ -1,11 +1,52 @@
 import base64
 import hashlib
+import json
 from pathlib import Path
 import sys
 import unittest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import populations
 import producer
+
+
+class EdgeLogPopulation(unittest.TestCase):
+    def setUp(self):
+        path = Path(__file__).resolve().parents[3] / 'docs/experiments/formal/fixtures/cross-edge-diagnostics.json'
+        self.fixture = json.loads(path.read_text())
+        self.row = {'attributes': dict(self.fixture['diagnostic_example']['attributes'])}
+        self.acceptance = {'boot_id': 'edge-boot', 'lower_ns': 110, 'upper_ns': 112}
+
+    def classify(self, row, offers=None, source=None):
+        return populations.edge_log_start(row, source or self.fixture['offered_path'],
+                                          offers or {}, self.acceptance, 'edge-boot')
+
+    def test_retained_native_diagnostic_uses_its_acceptance_boundary(self):
+        start, population = self.classify(self.row)
+        self.assertIs(start, self.acceptance)
+        self.assertEqual(population, self.fixture['expected_population'])
+
+    def test_unknown_missing_and_similar_paths_remain_refused(self):
+        for path in (None, '/var/log/other.log', self.fixture['diagnostic_path'] + '.1',
+                     self.fixture['diagnostic_path'] + '/extra'):
+            row = {'attributes': {'log.file.path': path}}
+            with self.subTest(path=path), self.assertRaisesRegex(ValueError, 'unexpected unregistered'):
+                self.classify(row)
+
+    def test_offered_body_and_offset_join_remain_required(self):
+        row = {'attributes': {'log.file.path': self.fixture['offered_path'],
+                              'log.file.offset.start': '17'}, 'body': 'original'}
+        offers = {17: {'body': 'original', 'before_ns': 10, 'after_ns': 12}}
+        start, population = self.classify(row, offers)
+        self.assertEqual(population, 'offered_edge')
+        self.assertEqual((start['lower_ns'], start['upper_ns']), (10, 12))
+        with self.assertRaisesRegex(ValueError, 'exact offered log bytes changed'):
+            self.classify({**row, 'body': 'changed'}, offers)
+        with self.assertRaises(KeyError):
+            self.classify(row, {18: offers[17]})
+
+    def test_diagnostic_path_cannot_replace_the_registered_offered_path(self):
+        with self.assertRaisesRegex(ValueError, 'unregistered offered edge source'):
+            self.classify(self.row, source=self.fixture['diagnostic_path'])
 
 
 class NativePopulation(unittest.TestCase):

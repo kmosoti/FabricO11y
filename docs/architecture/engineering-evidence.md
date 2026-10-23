@@ -388,3 +388,97 @@ a mutant executable for a clean production worktree. Worktree/variant verificati
 therefore uses a distinct DATA target passed inside the resource launcher command;
 source cleanliness alone is insufficient to identify a reused executable. Caller
 adoption and fresh owner acceptance remain separate requirements.
+
+## Split-host release guest
+
+The [registered placement](../experiments/formal/release-placement-protocol.md)
+keeps server/browser work on Blade and one KVM edge guest on G15. The existing
+`cross_family.Guest` still provisions the OS, installs packages, runs producers
+and reads clocks. `RemoteGuest` owns the SSH lifetime and loopback forwards;
+`remote_worker.py` owns the same Guest on G15. An SSH stdin disconnect stops the
+guest and retains a failure instead of manufacturing workload completion.
+
+The resource launcher has explicit `edge`, `source` and `split-server` profiles.
+It verifies actual payload cgroup memory/high/swap/CPU/task files before payload
+execution; each profile retains a 1800-second service deadline. G15 uses an
+explicit disk storage root and never inherits an assumed Olo job boundary.
+A privileged host setup action must run in an explicitly bounded system service:
+G15's sudo PAM session changes cgroups, so wrapping sudo in a user service does
+not establish containment for its child. The live Spindle and Olo are outside
+these fixture groups and retain their own services.
+
+Staged manifests bind input hashes independently of SSH transfer success.
+Native TLS and per-node credentials still authenticate Fabric delivery through
+the forwards. A successful cell requires original command/exit/unit joins,
+matching guest identities and stopped receipts on both hosts. Guest correlation
+retains the full management round-trip bracket; clocks from different hosts
+are not treated as one monotonic timeline. Finite adapter controls do not credit
+an unrun cross-host workload or any release gate.
+
+A failed or interrupted worker can still have confirmed process shutdown. The
+remote adapter records those states separately: acceptance requires the original
+nested command receipt, matching unit/argv/exits, guest identity and completion;
+cleanup can additionally use an independent observation of the exact owned
+cgroup being empty or removed. A missing original receipt never becomes a
+successful workload through that cleanup proof. The
+[retained bootstrap fixture](../experiments/formal/fixtures/remote-bootstrap-stop.json)
+records the first actual nonzero worker exit with a confirmed stopped group.
+
+Guest readiness still requires cloud-init exit zero and an empty swap table.
+The disposable provisioner defers hostname setup to its final stage using
+[cloud-init's documented preserve option](https://docs.cloud-init.io/en/latest/reference/yaml_examples/set_hostname.html).
+It stops and masks only the Fedora guest's zram units before swapoff, using
+[systemctl mask with --now](https://www.freedesktop.org/software/systemd/man/256/systemctl.html),
+so a late queued swap activation cannot undo the intended fixture setup.
+Degraded completion refuses immediately and retains its status output. These
+steps change no execution-host swap, firewall or live service configuration.
+
+The cross-family resource sampler keeps its original 330-sample horizon. Its
+transient unit uses `RemainAfterExit=yes` so a completed monitor stays observable
+while post-drain queries finish. The collector checks the actual unit state at
+arming and collection, accepting a healthy running monitor or a retained clean
+exit, and refusing missing or failed state even when a stop returns zero. If
+still running at collection, the sampler acknowledges a controlled SIGTERM,
+closes its output and exits cleanly; the collector records that original
+completion before stopping its retained unit. The
+[literal manager-state fixture](../experiments/formal/fixtures/cross-monitor-states.json)
+retains the independent failure controls. A script exception also preserves its
+original exit or timeout and output in an exclusive mode-0600 artifact; only the
+stdin hash is retained. Neither mechanism changes an oracle or sampling rule.
+
+The timing adapter distinguishes the registered offered edge log from the
+native Spindle's exact diagnostic path. Offered rows retain their independent
+offset/body/creation joins; edge diagnostics form a separate population using
+the actual native source-acceptance bracket. Unknown log paths still refuse.
+The [population registration](../experiments/formal/cross-family-forwarding-protocol.md#prospective-timing-population-clarification-and-backlog-revision)
+applies the same ACK/visibility limits and retains every accepted row in custody,
+queries, backlog and resource accounting. No product codec or independent oracle
+changes at this boundary.
+
+Cross-family offers retain their original coordinates and counts. Two bounded
+HTTP workers wait for native trace intake independently of the producer clock;
+overflow and unfinished workers fail the producer. A fixed five-second guard
+separates the measured phase from intentional interruption while preserving
+195 seconds of actual offered work and the full sixty-second outage workload.
+An independent bounded observer adds per-answer clock brackets without removing
+the original per-name reads or fixed queries. Grading checks every query with
+the independent oracle and joins each row to its earliest completed same-boot
+visibility witness. Worker errors and incomplete shutdown remain failures. The
+[repair registration](../experiments/formal/cross-family-forwarding-protocol.md#producer-and-observation-repair-after-the-retained-split-smoke)
+preserves the numerical limits and requires fresh full execution.
+Producer and outage transient units also retain their original completion
+state. The collector preserves each probe and requires loaded active/exited
+success before accepting completion, independently of a successful status
+transport or the source/end ledgers. Missing and failed states remain refused.
+The producer's queue is bounded by the fixed total offer population, within its
+unchanged 128 MiB service cap. This preserves the full fault workload when
+transport stalls. The observer reuses the collector's existing named query
+shapes; the product's metrics API still requires a name. One observer request
+runs alongside the original serial reader, respecting the legacy endpoint's
+two existing query permits, inside a fresh conservative per-node clock envelope. All
+answers retain that envelope, every error is preserved immediately, and owned
+query workers finish before the observer can complete. The original serial
+query work remains; no metric wildcard API or clock point estimate is added.
+The fixture explicitly records its existing Walk history configuration; this
+does not change product defaults or the independent query oracle. Bounded HTTP
+error bodies preserve refusal details together with original status.

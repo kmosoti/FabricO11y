@@ -1,0 +1,13 @@
+{
+  "origin": "split-debian-fedora-smoke-13/edge-producer-drain-52-status.json",
+  "original_producer_exit": 1,
+  "original_error": "trace transport workers did not finish by deadline",
+  "observed_service_runtime_seconds": 320.687,
+  "previous_trace_http_workers": 1,
+  "prospective_trace_http_workers": 2,
+  "offered_exports": 1950,
+  "offered_spans": 5850,
+  "queue_capacity": 1950,
+  "drain_deadline_seconds": 320,
+  "timing_loss_counterexample": "cross-timing-burst.json"
+}

@@ -86,7 +86,7 @@ def changed_boot(ssh: list[str]) -> subprocess.CompletedProcess[str]:
                timeout=15, check=False)
 
 
-def require_containment() -> dict[str, str]:
+def require_containment(*, split=False) -> dict[str, str]:
     if not os.environ.get('FABRIC_RESOURCE_RUNTIME_SECONDS'):
         raise RuntimeError('invoke through python3 tools/resource_group.py --')
     rel = next((line[3:] for line in Path('/proc/self/cgroup').read_text().splitlines()
@@ -95,10 +95,16 @@ def require_containment() -> dict[str, str]:
         raise RuntimeError('host command is not in cgroup v2')
     group = Path('/sys/fs/cgroup') / rel.lstrip('/')
     # Owner-admitted VM envelope: leaves room for bounded root/browser peers.
-    run(['systemctl', '--user', 'set-property', '--runtime', group.name,
-         'MemoryHigh=7G', 'MemoryMax=8G'], timeout=30)
-    if (group / 'memory.max').read_text().strip() != str(8 * 1024**3) or (group / 'memory.high').read_text().strip() != str(7 * 1024**3):
-        raise RuntimeError('VM 8 GiB maximum / 7 GiB high not enforced')
+    high, cap = (5, 6) if split else (7, 8)
+    if split:
+        from resource_group import require_limits
+        if os.environ.get('FABRIC_RESOURCE_JOB_PROFILE') != 'split-server' or require_limits() != group:
+            raise RuntimeError('split guest placement lacks the registered actual service limits')
+    else:
+        run(['systemctl', '--user', 'set-property', '--runtime', group.name,
+             'MemoryHigh=7G', 'MemoryMax=8G'], timeout=30)
+    if (group / 'memory.max').read_text().strip() != str(cap * 1024**3) or (group / 'memory.high').read_text().strip() != str(high * 1024**3):
+        raise RuntimeError('registered guest memory limits not enforced')
     memory = (group / 'memory.max').read_text().strip()
     swap = (group / 'memory.swap.max').read_text().strip()
     if memory == 'max' or int(memory) > MEMORY_LIMIT_BYTES or swap != '0':

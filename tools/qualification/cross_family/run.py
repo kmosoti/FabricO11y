@@ -3,6 +3,8 @@
 from __future__ import annotations
 import argparse
 import hashlib
+import http.client
+import io
 import json
 import os
 from pathlib import Path
@@ -12,14 +14,90 @@ import signal
 import ssl
 import subprocess
 import time
+import threading
+import urllib.error
 import urllib.request
 from guest import Guest, Q, image
+from remote import placement_options, validate_placement, edge_guest
+from measure import monitor_health, OBSERVER_HTTP_WORKERS
+from producer import SECONDS, GUARD_SECONDS, TRACE_QUEUE_CAPACITY, TRACE_HTTP_WORKERS
 
 HERE = Path(__file__).resolve().parent
 
 
 def interrupted(signum, frame):
     raise InterruptedError('cross-family manager interrupted by signal ' + str(signum))
+
+
+class FixtureHTTPS:
+    """Two owned, strictly verified per-thread fixture connections; no retries."""
+    MAX_RESPONSE_BYTES = 16 * 1024**2
+
+    def __init__(self, port, context, token, host='127.0.0.1'):
+        if context.verify_mode != ssl.CERT_REQUIRED or not context.check_hostname:
+            raise ValueError('strict fixture TLS verification required')
+        if host not in ('127.0.0.1', 'localhost') or type(port) is not int or not 0 < port < 65536:
+            raise ValueError('owned loopback fixture authority required')
+        self.port, self.host, self.context, self.token = port, host, context, token
+        self.local, self.lock = threading.local(), threading.Lock()
+        self.connections, self.closed, self.close_errors = [], False, []
+
+    def call(self, route, body=None, method=None):
+        if not isinstance(route, str) or not route.startswith('/') or route.startswith('//'):
+            raise ValueError('relative fixture route required')
+        with self.lock:
+            if self.closed:
+                raise ValueError('fixture client already closed')
+            connection = getattr(self.local, 'connection', None)
+            if connection is None:
+                if len(self.connections) >= 2:
+                    raise ValueError('fixture connection budget exceeded')
+                connection = http.client.HTTPSConnection(self.host, self.port,
+                                                        context=self.context, timeout=15)
+                self.local.connection = connection
+                self.connections.append(connection)
+        try:
+            data = None if body is None else json.dumps(body).encode()
+            connection.request(method or ('GET' if body is None else 'POST'), route, body=data,
+                headers={'authorization': 'Bearer ' + self.token, 'content-type': 'application/json'})
+            response = connection.getresponse()
+            try:
+                raw = response.read(self.MAX_RESPONSE_BYTES + 1)
+                if len(raw) <= self.MAX_RESPONSE_BYTES and response.length not in (None, 0):
+                    raise http.client.IncompleteRead(raw, response.length)
+                status, reason, headers = response.status, response.reason, response.headers
+            finally:
+                response.close()
+            if len(raw) > self.MAX_RESPONSE_BYTES:
+                raise ValueError('fixture response exceeds bounded allowance')
+            if not 200 <= status < 300:
+                raise urllib.error.HTTPError(f'https://{self.host}:{self.port}{route}',
+                                             status, reason, headers, io.BytesIO(raw))
+            return json.loads(raw)
+        except BaseException:
+            connection.close()
+            raise
+
+    def close(self):
+        with self.lock:
+            self.closed = True
+            for connection in self.connections:
+                try:
+                    connection.close()
+                except OSError as error:
+                    self.close_errors.append(str(error)[:500])
+            return not self.close_errors and all(c.sock is None for c in self.connections)
+
+
+def fixture_tls(root):
+    # Match the documented CA recipe; Python's strict verifier requires CA usage.
+    for command in [
+        ['openssl', 'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-days', '2', '-subj', '/CN=cross-family-owned-ca', '-addext', 'keyUsage=critical,keyCertSign,cRLSign', '-keyout', str(root / 'ca.key'), '-out', str(root / 'ca.pem')],
+        ['openssl', 'req', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-subj', '/CN=cross-family-server', '-keyout', str(root / 'server.key'), '-out', str(root / 'server.csr')],
+    ]:
+        Q.run(command, timeout=30)
+    (root / 'san.ext').write_text('subjectAltName=IP:127.0.0.1,IP:10.0.2.2\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\n')
+    Q.run(['openssl', 'x509', '-req', '-in', str(root / 'server.csr'), '-CA', str(root / 'ca.pem'), '-CAkey', str(root / 'ca.key'), '-CAcreateserial', '-days', '2', '-extfile', str(root / 'san.ext'), '-out', str(root / 'server.pem')], timeout=30)
 
 
 def main():
@@ -29,11 +107,13 @@ def main():
     parser.add_argument('--edge-family', choices=('debian', 'fedora'), required=True)
     parser.add_argument('--deb-receipt', type=Path, required=True)
     parser.add_argument('--rpm-receipt', type=Path, required=True)
+    placement_options(parser)
     args = parser.parse_args()
+    validate_placement(args)
     signal.signal(signal.SIGTERM, interrupted)
     if not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,79}', args.run_id):
         raise ValueError('invalid run identity')
-    limits = Q.require_containment()
+    limits = Q.require_containment(split=bool(args.edge_host))
     # Candidate adapters validate receipts, exact source bundles, installed
     # payload equivalence and console identity before constructing a guest.
     from inputs import validate_inputs
@@ -46,10 +126,15 @@ def main():
     result = Q.DATA / 'results/cross-family' / args.run_id
     root.mkdir(exist_ok=False)
     result.mkdir(parents=True, exist_ok=False)
-    facts = {'run_id': args.run_id, 'classification': 'finite local two-OS VM transport/custody cell; migration provision fixture; not production access qualification',
+    placement = 'split-host' if args.edge_host else 'local'
+    facts = {'run_id': args.run_id, 'classification': f'finite {placement} two-OS VM transport/custody cell; migration provision fixture; not production access qualification',
              'server_family': args.server_family, 'edge_family': args.edge_family,
              'inputs': artifacts['identity'], 'storage_admission': admission, 'host_cgroup': limits,
              'exit': 2, 'gates': {}}
+    facts['fixture_configuration'] = {'query_plan': 'walk', 'legacy_query_admission_slots': 2,
+        'original_query_workers': 1, 'observer_http_workers': OBSERVER_HTTP_WORKERS,
+        'trace_http_workers': TRACE_HTTP_WORKERS, 'trace_queue_capacity': TRACE_QUEUE_CAPACITY,
+        'offered_seconds': SECONDS, 'guard_seconds': GUARD_SECONDS}
     adapter_hashes = {}
     for source in sorted(HERE.glob('*.py')):
         adapter_hashes[source.name] = hashlib.sha256(source.read_bytes()).hexdigest()
@@ -59,8 +144,9 @@ def main():
     Q.run([Q.executable('ssh-keygen'), '-q', '-t', 'ed25519', '-N', '', '-f', str(key)], timeout=30)
     data_port = Q.free_port()
     server = Guest('server', args.server_family, root, result, key, 4096, data_port)
-    edge = Guest('edge', args.edge_family, root, result, key, 1536)
+    edge = edge_guest(args, args.edge_family, root, result, key, data_port)
     began = time.monotonic()
+    client = None
     try:
         server.start()
         edge.start()
@@ -74,13 +160,7 @@ def main():
                               'host_query_destination': f'https://127.0.0.1:{data_port}'}
         for guest in (server, edge):
             guest.install(artifacts[guest.family], artifacts['helpers'])
-        for command in [
-            ['openssl', 'req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-days', '2', '-subj', '/CN=cross-family-owned-ca', '-keyout', str(root / 'ca.key'), '-out', str(root / 'ca.pem')],
-            ['openssl', 'req', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-subj', '/CN=cross-family-server', '-keyout', str(root / 'server.key'), '-out', str(root / 'server.csr')],
-        ]:
-            Q.run(command, timeout=30)
-        (root / 'san.ext').write_text('subjectAltName=IP:127.0.0.1,IP:10.0.2.2\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\n')
-        Q.run(['openssl', 'x509', '-req', '-in', str(root / 'server.csr'), '-CA', str(root / 'ca.pem'), '-CAkey', str(root / 'ca.key'), '-CAcreateserial', '-days', '2', '-extfile', str(root / 'san.ext'), '-out', str(root / 'server.pem')], timeout=30)
+        fixture_tls(root)
         admin = hashlib.sha256(os.urandom(32)).hexdigest()
         (root / 'admin-token').write_text(admin + '\n')
         (root / 'admin-token').chmod(0o600)
@@ -99,6 +179,7 @@ journal_bytes=1073741824
 journal_file_bytes=16777216
 retention_s=86400
 retention_bytes=100000000000
+query_plan=walk
 self_spindle_ca=/etc/fabrico11y/ca.pem
 EOF
 mkdir -p /etc/systemd/system/fabrico11y-server.service.d
@@ -108,20 +189,16 @@ systemctl daemon-reload
 systemctl enable --now fabrico11y-server
 ''', timeout=60)
         context = ssl.create_default_context(cafile=str(root / 'ca.pem'))
-        base = f'https://127.0.0.1:{data_port}'
-        def call(route, body=None, method=None):
-            request = urllib.request.Request(base + route, data=None if body is None else json.dumps(body).encode(),
-                        method=method, headers={'authorization': 'Bearer ' + admin, 'content-type': 'application/json'})
-            with urllib.request.urlopen(request, context=context, timeout=15) as response:
-                return json.loads(response.read())
+        client = FixtureHTTPS(data_port, context, admin)
+        call = client.call
         deadline = time.monotonic() + 60
         while True:
             try:
                 call('/v1/admin/nodes')
                 break
-            except OSError:
+            except OSError as error:
                 if time.monotonic() > deadline:
-                    raise RuntimeError('installed server did not start verified TLS')
+                    raise RuntimeError('installed server did not start verified TLS: ' + str(error)) from error
                 time.sleep(1)
         edge_token = call('/v1/admin/nodes', {'name': 'edge', 'logs': ['/var/log/fabric-cross/source.log'], 'metric_interval_s': 15})['token']
         metric_token = call('/v1/admin/nodes', {'name': 'controlled', 'metric_interval_s': 15})['token']
@@ -185,17 +262,37 @@ PY
             guest.script(f'''set -eu
 group=$(systemctl show --property=ControlGroup --value {service})
 test -n "$group"
-systemd-run --unit=cross-monitor --property=MemoryMax=64M --property=MemorySwapMax=0 --property=TasksMax=16 /usr/bin/python3 -B /root/cross/monitor.py --service-cgroup "$group" --out /root/cross/resources.jsonl
+systemd-run --unit=cross-monitor --property=RemainAfterExit=yes --property=MemoryMax=64M --property=MemorySwapMax=0 --property=TasksMax=16 /usr/bin/python3 -B /root/cross/monitor.py --service-cgroup "$group" --out /root/cross/resources.jsonl
 ''', timeout=30)
-        edge.script('systemd-run --unit=cross-producer --property=MemoryMax=128M --property=MemorySwapMax=0 --property=TasksMax=32 /usr/bin/python3 -B /root/cross/producer.py --config /root/cross/producer.json\n', timeout=30)
+            monitor_health(guest, result, 'start')
+        for guest in (server, edge):
+            guest.start_clock_channel()
+        edge.script('systemd-run --unit=cross-producer --property=RemainAfterExit=yes --property=MemoryMax=128M --property=MemorySwapMax=0 --property=TasksMax=32 /usr/bin/python3 -B /root/cross/producer.py --config /root/cross/producer.json\n', timeout=30)
         # Grading uses all populations; unjoined clocks or missing evidence are
         # incomplete gates. No omitted gate can be promoted to a successful cell.
         from grade import measure_and_grade
         facts['gates'] = measure_and_grade(server, edge, call, config, result, data_port)
         facts['exit'] = 0 if facts['gates'] and all(g['passed'] for g in facts['gates'].values()) else 1
-    except (OSError, ValueError, RuntimeError, KeyError, IndexError, TypeError, subprocess.SubprocessError) as error:
+    except (OSError, EOFError, ValueError, RuntimeError, KeyError, IndexError, TypeError,
+            http.client.HTTPException, subprocess.SubprocessError) as error:
         facts['error'] = f'{type(error).__name__}: {error}'
     finally:
+        facts['clock_channel_cleanup_confirmed'] = True
+        for guest in (edge, server):
+            try:
+                stopped = guest.stop_clock_channel()
+            except Exception as error:
+                stopped = False
+                facts[guest.role + '_clock_cleanup_error'] = type(error).__name__ + ': ' + str(error)
+            if not stopped:
+                facts['clock_channel_cleanup_confirmed'] = False
+                facts['exit'] = 2
+        if client is not None:
+            facts['fixture_connection_cleanup_confirmed'] = client.close()
+            facts['fixture_http_connections'] = len(client.connections)
+            facts['fixture_http_close_errors'] = client.close_errors
+            if not facts['fixture_connection_cleanup_confirmed']:
+                facts['exit'] = 2
         for guest in (edge, server):
             if guest.child is not None and guest.child.poll() is None:
                 try:
@@ -205,6 +302,10 @@ systemd-run --unit=cross-monitor --property=MemoryMax=64M --property=MemorySwapM
                     facts[guest.role + '_diagnostic_error'] = str(error)
         cleanup = [guest.stop() for guest in (edge, server)]
         facts['process_cleanup_confirmed'] = all(cleanup)
+        if args.edge_host:
+            facts['remote_completion_confirmed'] = edge.completion_confirmed
+            if not edge.completion_confirmed:
+                facts['exit'] = 2
         if facts['exit'] == 0 and all(cleanup):
             shutil.rmtree(root)
         facts['scratch_removed'] = not root.exists()

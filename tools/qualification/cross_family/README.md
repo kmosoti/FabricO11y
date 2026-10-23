@@ -8,10 +8,45 @@ admission check.
 
 The producer's exact metric population, trace identities and log entropy have
 executable checks against the unchanged query oracle. The manager implements
-guest-local interruption timing, resource sampling, the four registered latency
+guest-local interruption timing, resource sampling, the five registered latency
 populations, `clearing-v2`, independent stopped-journal snapshot selection and
 unchanged custody/query oracles with named negative controls. Missing source
 bytes, clocks, ACKs or visibility observations fail admission.
 
-The first actual two-guest execution remains pending. No cross-family cell has
-run or passed; contained unit controls do not establish end-to-end acceptance.
+The first actual split bootstrap failed before Fabric offers; no cross-family
+workload has passed. Its cloud-init/zram and shutdown-evidence failures remain
+retained. Contained unit controls do not establish end-to-end acceptance.
+
+## G15 edge placement
+
+The [placement amendment](../../../docs/experiments/formal/release-placement-protocol.md)
+registers the split budgets. Both this manager and `owner_walkthrough.py` accept
+`--edge-host olo@olo-g15 --edge-storage-root /home/olo/.local/share/fabrico11y-release`
+with `--edge-source-root` naming the staged clean harness and
+`--edge-input-manifest` naming its local pinned manifest. Invoke the Blade manager
+through `resource_group.py --job-profile split-server`; the remote worker uses
+the `edge` profile. Partial placement arguments refuse.
+
+The remote worker verifies `inputs/release-inputs.json` against the supplied
+digest and every inventoried file before boot. Manifest `files` map paths relative
+to the remote storage root to SHA-256; `objects` map staged package/helper SHA-256
+to their relative paths. These immutable objects transfer once. Fresh per-cell
+credentials and configs use the ordinary management forward. The worker has only
+bounded staged-copy and stop requests; it reuses Guest provisioning and does not
+contain another producer, oracle or lifecycle checker. Archive its result files
+and original launcher receipt before cleaning its owned scratch.
+
+The [clock sampling registration](../../../docs/experiments/formal/spindle-cadence-protocol.md#persistent-management-clock-sampling)
+keeps one owned management SSH channel per guest during the workload. A raw
+systemd PTY avoids the retained enforcing-Fedora refusal to pass SSH pipe
+descriptors through D-Bus; echo and newline translation are disabled before
+the first frame. The
+`clock_channel.py` helper takes fresh guest clocks for each sequenced request,
+verifies the named guest unit's resource limits before admission and retains its
+original command exit and stopped-unit check. Both local and remote guests use
+the same lifecycle methods. Query answers retain raw per-response brackets;
+clock-channel failure or incomplete cleanup fails the cell. Stop the channels
+and retain their original completion checkpoint after observation collection,
+before independent grading; keep final cleanup idempotent. Broken pipes must
+retain original process statuses and secondary cleanup errors. Pipe controls use an
+explicit fake kernel view and confer no guest-enforcement or runtime acceptance.

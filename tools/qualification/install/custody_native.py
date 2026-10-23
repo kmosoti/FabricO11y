@@ -648,18 +648,18 @@ def host_admission(owner_path, source_root, storage, package, source_commit, run
     paths = [source_root / 'tools/qualification/install' / name for name in names] + [source_root / 'tools/qualification/query_oracle.py']
     source_hashes = {str(path.relative_to(source_root)): sha(path.read_bytes()) for path in paths}
     witness.require(source_hashes == owner['source_hashes'], 'producer/helper source mismatch')
-    debdir = storage / 'results/installation-package-build/query-gap-01-deb-a'
-    rpmdir = storage / 'results/packages/query-gap-01-rpm-a'
-    fixed = {debdir / 'receipt.json': '89ce427d82a0065ca71e033aa696708e85c338d063d4a75cf4e4ba263f53fe72',
-             rpmdir / 'receipt.json': '106b834855851b604d708228493192305327ff8236de3add9f4cf25c1c830919',
-             storage / 'results/candidate-build-query-gap-01/candidate-admission.json':
-             '9c83d196a5ccf85e00d3e9becc79032f3fd57d7aab64a396690803bef841aa5a',
-             storage / 'results/candidate-build-query-gap-01/package-inspection.json':
-             'ad3c597a10d9841548165c47ddd7d504095db94063223e1f93a73a0d887d30b8'}
+    debdir = storage / 'results/installation-package-build/spindle-cadence-01-deb-a'
+    rpmdir = storage / 'results/packages/spindle-cadence-01-rpm-a'
+    fixed = {debdir / 'receipt.json': '84e667deae8479c7ad74ee8a25b923fe60a2043efaed4e3173f5a251b06065d7',
+             rpmdir / 'receipt.json': '830889e8706b09a84448131343ec0f16f2a2510de1bd271aeefc66f47da25f93',
+             storage / 'results/candidate-build-spindle-cadence-01/artifact-admission.json':
+             'c6817e9b550b5ff2def99a2912f15a5c04326080897f40eb3bc328d7acba491c',
+             storage / 'results/candidate-build-spindle-cadence-01/package-inspection.json':
+             '9058140f87a734344ff70e977abbeefb86a610e2ed8840289b5eda5e9c4e5d92'}
     fixed[Path(cutoff_pin['path'])] = cutoff_pin['sha256']
     for path, expected in fixed.items(): witness.require(sha(path.read_bytes()) == expected, 'owner package/admission receipt mismatch')
     deb, rpm = (json.loads((directory / 'receipt.json').read_text()) for directory in (debdir, rpmdir))
-    frozen, canonical = 'b1e5874fbf9c6feb611d98ed40386ac44a703fe1', '43150dbd5cff9e0bdb0082997e796978c659d8af'
+    frozen, canonical = '108945d298b37a4871a91f3d7e3f06eff84eb7dd', '1cb0c18570b0a5895a97732aafebb93f16fe4d90'
     witness.require(frozen == deb['source']['original_head'] and source_commit == deb['source_commit'] == canonical
         == rpm['source']['source_commit'] and rpm['source'] == deb['source'], 'candidate frozen/source mismatch')
     for receipt in (deb, rpm):
@@ -679,7 +679,7 @@ def host_admission(owner_path, source_root, storage, package, source_commit, run
         fixed[path] = expected_hash
     for path, expected_hash in ((debdir / 'provenance/source-manifest.json', deb['source']['manifest_sha256']),
         (debdir / 'provenance/frozen-source.bundle', deb['source']['source_bundle_sha256']),
-        (storage / 'results/console-query-gap-01-a/build.json', deb['console_receipt_sha256'])):
+        (storage / 'results/console-spindle-cadence-01-a/build.json', deb['console_receipt_sha256'])):
         witness.require(sha(path.read_bytes()) == expected_hash, 'canonical source/console mismatch')
         fixed[path] = expected_hash
     return dict(binding=dict(run_id=run_id, candidate_frozen=frozen, candidate_package_sha256=expected['package_sha256'],

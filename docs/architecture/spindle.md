@@ -49,6 +49,23 @@ Selected UTF-8 newline files produce OTLP LogRecords with observed time, source 
 
 **Traces** ([ADR-0025](../decisions/ADR-0025-carry-traces-as-a-third-signal.md)). With `traces_listen` set to a loopback address (for example `127.0.0.1:4318`), `fabric-node run` serves `POST /v1/traces` with `application/x-protobuf` bodies, the OTLP/HTTP export every OpenTelemetry SDK supports ([otlp.rs](../../src/spindle/otlp.rs)). A body must decode as an `ExportTraceServiceRequest` and be at most 1 MiB less 96 KiB, the room every Batch keeps for its log cursors. Accepted exports go to the main loop over a bounded queue; the loop concatenates waiting exports into one Batch (field 9, `traces`), appends it to the Spool with the committed log cursors carried forward, and only then answers each exporter `200`. A full Spool, a paused node or a failed append answers `503` and the exporter retries; a malformed body `400`, a wrong media type `415`, an oversized body `413`. A non-loopback address is refused when the config loads. The endpoint uses plain threads (at most 32 connections, 64 queued exports) and keep-alive connections; there is no async runtime in the Spindle. While the endpoint is on, delivery runs in 200 ms slices so an exporter waits at most about that long for its commit.
 
+Idle trace-listener waits request at most 10 ms; other idle waits request at
+most 100 ms, always clamped by the existing remaining deadline. Native metric
+intervals, delivery slices and backoff stay fixed. These scheduling budgets do
+not establish end-to-end latency under arbitrary load; the
+[cadence protocol](../experiments/formal/spindle-cadence-protocol.md) requires
+fresh package acceptance under the original CPU/RSS and latency gates.
+
+**Operational timing.** The existing `--timing-events` option retains at most
+16,384 FIFO events in the runtime before the CLI takes them. Allocation remains
+lazy; disabled timing adds no event buffer. An event array is bounded to 2 MiB
+by a structural test, and taking the events may temporarily hold a second array.
+Overflow increments an explicit dropped-event count instead of delaying commits.
+The [timing capture protocol](../experiments/formal/spindle-timing-capture-protocol.md)
+retains the recovery-burst counterexample and requires fresh package/resource
+acceptance. This auxiliary bound does not establish a process RSS bound or
+lossless capture for arbitrary streams.
+
 **Metering** ([meter.rs](../../src/spindle/meter.rs)). The Spindle counts what it commits, by signal (encoded bytes and records for logs, metrics and traces), and what the server acknowledges (Batches and bytes), and reports them with every metric cycle as its own metrics: `fabric.spindle.committed.bytes` and `fabric.spindle.committed.records` with a `signal` attribute, `fabric.spindle.delivered.batches`, `fabric.spindle.delivered.bytes` and `fabric.spindle.throttled.seconds` (cumulative from the process start, so a restart reads as a counter reset), and the gauges `fabric.spindle.spool.bytes`, `fabric.spindle.unacked.batches` and `fabric.spindle.log.backlog.bytes`. They are queried on the server like any metric. The optional `max_output_bytes_per_s` (at least 65,536) caps delivery with a token bucket whose burst is one second or one full Batch, whichever is larger: a Batch is delayed, never refused, and a wait longer than the current delivery slice ends the slice instead of spinning. On restart the Spool's replay skips these metrics; only host counters have history to restore.
 
 The prefix witness detects an ordinary same-inode replacement whose first witnessed bytes differ, including a truncate and regrow past the old offset. Identical witnessed prefixes, CRC32 collisions and changes outside the witnessed bytes can still be missed. Collection gaps report observed source failures, not a proof that the source never changed between observations.
