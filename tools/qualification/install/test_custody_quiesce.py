@@ -22,6 +22,7 @@ class Surface:
         self.applied = dict(self.desired)
         self.node_running = True
         self.server_running = True
+        self.server_ready = True
         self.highwater = 6
         self.acked = 6
         self.marker_ns = None
@@ -36,6 +37,8 @@ class Surface:
         if argv[:3] == ['fabricctl', 'admin', '/root/accept/admin.conf']:
             if argv[3:5] in (['node', 'pause'], ['node', 'resume']):
                 action = argv[4]
+                if action == 'resume' and not self.server_ready:
+                    raise ValueError('literal restart refusal: resume before listener readiness')
                 self.desired = self.profile(self.desired['revision'] + 1, action == 'pause')
                 if self.node_running:
                     self.applied = dict(self.desired)
@@ -64,6 +67,8 @@ class Surface:
             self.server_running = False
         elif argv == ['systemctl', 'start', native.UNITS[0]]:
             self.server_running = True
+            self.server_ready = False
+            self.restart_started = time.monotonic()
         elif argv == ['systemctl', 'start', native.UNITS[1]]:
             self.node_running = True
         elif argv == ['systemctl', 'stop', native.UNITS[1]]:
@@ -103,7 +108,11 @@ class QuiesceGuestMainControl(unittest.TestCase):
     def test_reboot_requires_active_revision_three_then_pause_four_and_resume_five(self):
         self.exercise('reboot')
 
-    def exercise(self, phase):
+    def test_restart_refusal_never_issues_resume_both_phases(self):
+        for phase in ('drain', 'reboot'):
+            with self.subTest(phase=phase): self.exercise(phase, restart_refusal=True)
+
+    def exercise(self, phase, *, restart_refusal=False):
         surface = Surface(phase)
         fixture = tempfile.TemporaryDirectory()
         self.addCleanup(fixture.cleanup)
@@ -137,6 +146,15 @@ class QuiesceGuestMainControl(unittest.TestCase):
                     calibration=dict(realtime_ns=1000, boottime_ns=500, clock_ticks=100, start_ticks=17))
 
             def query(self, name):
+                surface.records.append(dict(kind='readiness', server_running=surface.server_running))
+                if restart_refusal and not surface.server_ready:
+                    record = dict(argv=['fabricctl', 'admin', '/root/accept/admin.conf', 'query', json.dumps(
+                        dict(kind='logs', node='spindle-1', from_ns=0, to_ns=9223372036854775807, limit=1000))],
+                        exit=2, stdout='', stderr='fabricctl: transport: io: Connection refused\n')
+                    self.commands.append(record)
+                    surface.records.append(record)
+                    raise ValueError('observer command failed: fabricctl')
+                surface.server_ready = True
                 return [dict(body=native.UNREAD, attributes={'log.file.path': native.SOURCE})]
 
             def save(self, name, value):
@@ -164,8 +182,17 @@ class QuiesceGuestMainControl(unittest.TestCase):
                     fixture_paths=[native.SOURCE], boot_id='prior-boot', ack=5)))
             for prior, name in (('prepare', 'baseline.json'), ('drain', 'rows.json'), ('drain', 'ack-events.json')):
                 (base / prior / name).write_text('[]')
-        with patch.object(native, 'Guest', EffectGuest), patch.object(native.time, 'sleep', return_value=None), \
+        clock = [0.0]
+        def sleep(seconds): clock[0] += seconds
+        with patch.object(native, 'Guest', EffectGuest), patch.object(native.time, 'sleep', sleep), \
+                patch.object(native.time, 'monotonic', lambda: clock[0]), \
                 patch.object(native.witness, 'conserve') as conservation:
+            if restart_refusal:
+                with self.assertRaisesRegex(ValueError, 'native drain deadline'):
+                    native.guest_main(config, phase)
+                self.assertFalse(any(row.get('argv', [])[3:5] == ['node', 'resume'] for row in surface.records))
+                self.assertEqual(clock[0] - surface.restart_started, 40)
+                return
             native.guest_main(config, phase)
         if phase == 'reboot':
             self.assertTrue(conservation.call_args.kwargs['native_configuration_transition'])
@@ -196,6 +223,12 @@ class QuiesceGuestMainControl(unittest.TestCase):
         self.assertLess(capture_at, final_inspect_at)
         self.assertLess(final_inspect, server_start)
         self.assertLess(server_start, resume)
+        restart_at = next(i for i, row in enumerate(surface.records)
+                          if row.get('argv') == ['systemctl', 'start', native.UNITS[0]])
+        resume_at = next(i for i, row in enumerate(surface.records)
+                         if row.get('argv', [])[3:5] == ['node', 'resume'])
+        self.assertTrue(any(row.get('kind') == 'readiness' and row['server_running']
+                           for row in surface.records[restart_at + 1:resume_at]))
         self.assertTrue(surface.records[capture_at]['stop_observed'])
         self.assertTrue(surface.records[capture_at]['server_stopped'])
         self.assertEqual(surface.desired, Surface.profile(surface.pause_revision + 1, False))

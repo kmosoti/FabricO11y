@@ -1,0 +1,36 @@
+{
+  "bundle_sha256": "2f349baf6a126b8e8d2459a5e79f918641001053f966e11d63f9cf7964ab7539",
+  "failed_original_command": {
+    "argv": [
+      "fabricctl",
+      "admin",
+      "/root/accept/admin.conf",
+      "node",
+      "resume",
+      "spindle-1"
+    ],
+    "elapsed_ns": 23654897,
+    "elapsed_seconds": 0.023673790000032113,
+    "exit": 2,
+    "finished_ns": 1792738314901983233,
+    "started_ns": 1792738314878319879,
+    "stderr": "fabricctl: transport: io: Connection refused\n",
+    "stdout": ""
+  },
+  "preceding_server_start": {
+    "argv": [
+      "systemctl",
+      "start",
+      "fabrico11y-server.service"
+    ],
+    "elapsed_ns": 430493720,
+    "elapsed_seconds": 0.43051436999996895,
+    "exit": 0,
+    "finished_ns": 1792738314836872768,
+    "started_ns": 1792738314406370119,
+    "stderr": "",
+    "stdout": ""
+  },
+  "classification": "Retained Debian native lifecycle failure; original controller2, guest baseline0, both shutdown confirmed",
+  "run_id": "spindle-cadence-deb-life-03-fresh-02-pause-02"
+}

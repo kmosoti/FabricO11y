@@ -515,3 +515,14 @@ exited0 with confirmed outer shutdown. A literal positive case on the prior
 command/conservation controls atb33559f and fresh exact-package native cells
 remain subject to their own receipts; no complete installation or release
 acceptance is claimed by this harness repair.
+
+The next fresh Debian native cell captured its paused drain snapshot, then
+retained overall2 when the one-shot resume saw the exact connection-refused
+response after server service-start. Both guest/QEMU shutdowns were confirmed.
+The [registered restart observation](experiments/formal/installation-native-custody-protocol.md#listener-readiness-after-stopped-capture)
+reuses the same bounded read-only readiness query before issuing resume once.
+At916e812,127 native controls,74 cross-family controls and documentation checks
+exited0 with confirmed outer shutdown; the prior caller reproduced the literal
+resume-before-readiness refusal. The first source run's test clock-origin
+assertion failure is retained. Fresh native package acceptance remains pending;
+these mechanism checks do not qualify a package or relabel either failed cell.
