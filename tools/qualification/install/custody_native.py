@@ -424,6 +424,8 @@ def guest_main(config, phase):
             # Inspect the stopped cutoff before restarting the server or changing the node profile.
             guest.command(['fabricctl', 'inspect', '/etc/fabrico11y/node.conf'])
             guest.command(['systemctl', 'start', UNITS[0]])
+            # Confirm the restarted listener with the existing read-only oracle.
+            wait_readiness(guest, min(guest.deadline - 40, time.monotonic() + 40))
             # Resume exactly once while the node remains stopped.
             guest.transition(3 if phase == 'drain' else 5, False, require_applied=False)
             if phase == 'reboot':
