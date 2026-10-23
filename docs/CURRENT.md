@@ -500,3 +500,18 @@ retries only that exact first-query refusal under the same absolute deadline;
 all raw attempts, partial-page/other-error refusal, late-success deadline and
 final full-row/ACK gates remain required. Focused source/native checks are pending;
 no complete replacement #41 qualification is claimed.
+
+The cadence candidate108945d (package source1cb0c18) remains selected. Its first
+fresh Debian native lifecycle retained an overall exit2 after baseline guest
+acceptance0: stopped capture rejected the intentional `coverage-unknown` pause
+sidecar. The raw timestamp falls within the captured pause/application interval;
+this diagnostic does not convert that failed cell into acceptance. The
+[registered pause-marker witness](experiments/formal/installation-native-custody-protocol.md#prospective-native-pause-marker-witness)
+now joins private raw bytes, exact paused profile, boot and original commands;
+markers without that proof and staged/unsafe inputs remain refused. At24cc517,
+124 native source controls,74 cross-family controls and documentation checks
+exited0 with confirmed outer shutdown. A literal positive case on the prior
+8c1fef9 reader reproduced `unexpected or failed Spool input`. Additional original
+command/conservation controls atb33559f and fresh exact-package native cells
+remain subject to their own receipts; no complete installation or release
+acceptance is claimed by this harness repair.
