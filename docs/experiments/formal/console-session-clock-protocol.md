@@ -1,5 +1,37 @@
 # Disposable controlled-time session checks
 
+## Firefox sandbox isolation counterexample
+
+Registered before correction, 2026-10-23. Fresh Chrome row64 on merged
+`4dc0022` completed with original and independent grade exit0. Firefox row65
+stopped before session observations at the ordinary-descendant isolation guard;
+its original exit1 and confirmed stopped fixture remain failure evidence.
+Two separate ordinary installed-Firefox diagnostics, without the clock helper,
+observed `LD_PRELOAD=libmozsandbox.so`. The second observed the mapped library
+`/usr/lib64/firefox/libmozsandbox.so`, SHA256
+`0d57a6de9a796042a3532664c2f137c447784bb4b0d7da2478e918b748aaa96e`,
+owned by `firefox-157.0.1-1.fc44.x86_64`. This establishes a counterexample to
+rejecting every LD_PRELOAD value, not permission to preload the clock fixture
+into any ordinary process.
+
+Register `test_browser_expiry_isolation.py` with that exact observed environment,
+executable and mapped library. The old blanket predicate must reject the
+legitimate snapshot. Its successor may accept only that single Firefox sandbox
+preload, with the exact executable SHA256
+`0b59511d21ca9ce96411918ec9297e3e9f1255746cc6d4b8e0246e0b2177a8ad`,
+canonical mapped library path and library hash. Other preload values, duplicate
+keys, wrong browser/executable/hash, absent or changed mapping must refuse.
+No fixture helper mapping, FABRIC_CLOCK_FD key or target control socket is ever
+allowed, including when the legitimate sandbox library is also present.
+Record the actual inspected facts before applying the predicate so a refused
+observation remains diagnosable. Ordinary processes without preload keep the
+existing isolation requirements. Preserve the independent native isolation
+controls, ordinary browser Date bracket, all32 session observations, semantic
+locked view, deadlines, resources and expected browser outcomes. Run the source
+counterexample before repair, all affected controls after repair, then a fresh
+complete Firefox expiry row on the merged harness. No product/package change
+or expiry acceptance follows from the source controls or ordinary probes.
+
 ## Semantic locked-view counterexample
 
 Registered before correction, 2026-10-23. Disposable
