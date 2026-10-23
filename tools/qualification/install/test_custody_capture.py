@@ -347,11 +347,11 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
     def candidate_admission_fixture(self, name, mutation):
         """Build coherent temporary owner inputs; mutate one actual admission join."""
         storage = self.root / name
-        debdir = storage / 'results/installation-package-build/asyncfd-safety-01-deb-a'
-        rpmdir = storage / 'results/packages/asyncfd-safety-01-rpm-a'
-        admission = storage / 'results/candidate-build-asyncfd-safety-01/artifact-admission.json'
-        inspection = storage / 'results/candidate-build-asyncfd-safety-01/package-inspection.json'
-        console = storage / 'results/console-asyncfd-safety-01-a/build.json'
+        debdir = storage / 'results/installation-package-build/alert-presentation-01-deb-a'
+        rpmdir = storage / 'results/packages/alert-presentation-01-rpm-a'
+        admission = storage / 'results/candidate-build-alert-presentation-01/artifact-admission.json'
+        inspection = storage / 'results/candidate-build-alert-presentation-01/package-inspection.json'
+        console = storage / 'results/console-alert-presentation-01-a/build.json'
         source_root = self.root / (name + '-source')
         (source_root / 'tools/qualification/install').mkdir(parents=True)
         for filename in ('custody_native.py', 'custody_witness.py', 'lifecycle.sh', 'run-qemu.py', 'acceptance.sh', 'removal_observer.py'):
@@ -363,8 +363,8 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                 source_root / 'tools/qualification/query_oracle.py']}
         manifest_bytes, bundle_bytes, console_bytes = b'literal source manifest', b'literal source bundle', b'literal console receipt'
         inspection_bytes = b'literal package inspection'
-        source = dict(original_head='e4d51bd2c5a68eb9a333155c912770d2b006ba3d',
-            source_commit='62b44589769d2871fb10c775d11e32460fbdff0e',
+        source = dict(original_head='84a585d35cced26de170c4b34c0a05aab79fae3b',
+            source_commit='34591b7b1390852ad9984339a9fa102c8259d743',
             manifest_sha256=native.sha(manifest_bytes), source_bundle_sha256=native.sha(bundle_bytes))
         if mutation == 'candidate-source':
             source['original_head'] = 'e078ba23b543126011a2136dd1f7e98ca65370eb'
@@ -389,17 +389,17 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
         rpmpkg = rpmdir / 'candidate.rpm'; rpmpkg.parent.mkdir(parents=True); rpmpkg.write_bytes(b'literal rpm package')
         common = dict(source=source, qualification_helpers=manifest)
         deb = dict(common, package=str(debpkg), package_sha256=native.sha(debpkg.read_bytes()),
-            source_commit='62b44589769d2871fb10c775d11e32460fbdff0e',
+            source_commit='34591b7b1390852ad9984339a9fa102c8259d743',
             console_receipt_sha256=native.sha(console_bytes))
         rpm = dict(common, package=str(rpmpkg), package_sha256=native.sha(rpmpkg.read_bytes()),
             payload_identity={'usr/bin/fabric-node': {'sha256': 'd' * 64}})
         deb_receipt, rpm_receipt = debdir / 'receipt.json', rpmdir / 'receipt.json'
         deb_receipt.write_text(json.dumps(deb, sort_keys=True)); rpm_receipt.write_text(json.dumps(rpm, sort_keys=True))
         fixed_fixture_digests = {
-            deb_receipt.read_bytes(): 'ab72b3dff51d59a9daf8af896f1fe9a6e4ffa89635d5056c6131e992c3709d5a',
-            rpm_receipt.read_bytes(): 'd251a69dd6bc70fa7f73b49242f3682ac35368592cef2e2b71b3df5c8ff9e387',
-            admission.read_bytes(): '709d819c0acbc934821941d0bc5ddd6e59913af36369ef280dc4145c9124f239',
-            inspection_bytes: '066974b960164ab876d335e79305c7ccc9799a2b0c81d5ccc66997aa210efa7f',
+            deb_receipt.read_bytes(): 'a59914e9a0603092e95e00d9b4afa226be0e544313197f7b696733efb42c3ebc',
+            rpm_receipt.read_bytes(): '6f2ee5756c6a9387fbc425965906a0367e5da7e5a36346cd3dcecb261a085a34',
+            admission.read_bytes(): 'c05ce790d2466daab32c30edf2bf12f5b4da280c29951eff2fb893728e0ddf3c',
+            inspection_bytes: 'ba69f8858aeb41104a782b3fa3bcaafbb191f6d7ecf4d4c3b564bf91a57877f8',
         }
         if mutation == 'admission': admission.write_bytes(b'changed candidate admission')
         elif mutation == 'receipt': deb_receipt.write_bytes(deb_receipt.read_bytes() + b'changed')
@@ -431,7 +431,7 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                 def fixture_sha(raw):
                     return fixed_fixture_digests.get(raw, hashlib.sha256(raw).hexdigest())
                 requested_package = storage / 'not-the-canonical-package' if mutation == 'package-argument' else package
-                requested_source = 'c' * 40 if mutation == 'source-argument' else '62b44589769d2871fb10c775d11e32460fbdff0e'
+                requested_source = 'c' * 40 if mutation == 'source-argument' else '34591b7b1390852ad9984339a9fa102c8259d743'
                 with patch.object(native, 'sha', side_effect=fixture_sha), \
                      patch.object(native.subprocess, 'check_output', side_effect=git_output), \
                      patch.object(native.subprocess, 'run'):
@@ -441,8 +441,8 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
 
     def test_package_inspection_is_required_and_hash_pinned(self):
         # The real preboot package inspection is fixed at
-        # results/candidate-build-asyncfd-safety-01/package-inspection.json
-        # (SHA-256 066974b960164ab876d335e79305c7ccc9799a2b0c81d5ccc66997aa210efa7f).
+        # results/candidate-build-alert-presentation-01/package-inspection.json
+        # (SHA-256 ba69f8858aeb41104a782b3fa3bcaafbb191f6d7ecf4d4c3b564bf91a57877f8).
         # Both absence and byte substitution must fail before candidate use.
         for mutation in ('inspection-missing', 'inspection-tampered'):
             with self.subTest(mutation=mutation):
@@ -459,11 +459,11 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                     if mutation == 'inspection-missing':
                         with self.assertRaises(FileNotFoundError):
                             native.host_admission(owner, source_root, storage, package,
-                                '62b44589769d2871fb10c775d11e32460fbdff0e', 'literal', 'debian')
+                                '34591b7b1390852ad9984339a9fa102c8259d743', 'literal', 'debian')
                     else:
                         with self.assertRaisesRegex(ValueError, 'owner package/admission receipt mismatch'):
                             native.host_admission(owner, source_root, storage, package,
-                                '62b44589769d2871fb10c775d11e32460fbdff0e', 'literal', 'debian')
+                                '34591b7b1390852ad9984339a9fa102c8259d743', 'literal', 'debian')
 
 
     def test_btrfs_reboot_device_is_separate_from_immutable_credential_metadata(self):

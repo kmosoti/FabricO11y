@@ -317,3 +317,15 @@ failure and all historical controls remain mandatory.
 Measured readiness implementation adds26 and removes6 producer lines, net20:
 238 to258, within265; caller465/470 and reader547/550 unchanged. The whole local
 helper and replacement call site are included, with no compressed exclusions.
+
+## Validation-alert candidate selection
+
+The active exact inputs are product freeze
+`84a585d35cced26de170c4b34c0a05aab79fae3b` and packaged snapshot
+`34591b7b1390852ad9984339a9fa102c8259d743`, selected separately in the
+[successor input protocol](release-successor-inputs-protocol.md#validation-alert-exact-input-selection).
+The preceding E4 ten-cell results remain historical. Reuse this caller's
+unchanged lifecycle, native cutoff, independent custody/credential oracles,
+mutation/refusal membership and Blade6GiB installation guest placement, with
+fresh owner/source/hash joins and fresh exact-package evidence. This input
+selection grants no installation or release acceptance.

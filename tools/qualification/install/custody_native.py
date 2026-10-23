@@ -665,18 +665,18 @@ def host_admission(owner_path, source_root, storage, package, source_commit, run
     paths = [source_root / 'tools/qualification/install' / name for name in names] + [source_root / 'tools/qualification/query_oracle.py']
     source_hashes = {str(path.relative_to(source_root)): sha(path.read_bytes()) for path in paths}
     witness.require(source_hashes == owner['source_hashes'], 'producer/helper source mismatch')
-    debdir = storage / 'results/installation-package-build/asyncfd-safety-01-deb-a'
-    rpmdir = storage / 'results/packages/asyncfd-safety-01-rpm-a'
-    fixed = {debdir / 'receipt.json': 'ab72b3dff51d59a9daf8af896f1fe9a6e4ffa89635d5056c6131e992c3709d5a',
-             rpmdir / 'receipt.json': 'd251a69dd6bc70fa7f73b49242f3682ac35368592cef2e2b71b3df5c8ff9e387',
-             storage / 'results/candidate-build-asyncfd-safety-01/artifact-admission.json':
-             '709d819c0acbc934821941d0bc5ddd6e59913af36369ef280dc4145c9124f239',
-             storage / 'results/candidate-build-asyncfd-safety-01/package-inspection.json':
-             '066974b960164ab876d335e79305c7ccc9799a2b0c81d5ccc66997aa210efa7f'}
+    debdir = storage / 'results/installation-package-build/alert-presentation-01-deb-a'
+    rpmdir = storage / 'results/packages/alert-presentation-01-rpm-a'
+    fixed = {debdir / 'receipt.json': 'a59914e9a0603092e95e00d9b4afa226be0e544313197f7b696733efb42c3ebc',
+             rpmdir / 'receipt.json': '6f2ee5756c6a9387fbc425965906a0367e5da7e5a36346cd3dcecb261a085a34',
+             storage / 'results/candidate-build-alert-presentation-01/artifact-admission.json':
+             'c05ce790d2466daab32c30edf2bf12f5b4da280c29951eff2fb893728e0ddf3c',
+             storage / 'results/candidate-build-alert-presentation-01/package-inspection.json':
+             'ba69f8858aeb41104a782b3fa3bcaafbb191f6d7ecf4d4c3b564bf91a57877f8'}
     fixed[Path(cutoff_pin['path'])] = cutoff_pin['sha256']
     for path, expected in fixed.items(): witness.require(sha(path.read_bytes()) == expected, 'owner package/admission receipt mismatch')
     deb, rpm = (json.loads((directory / 'receipt.json').read_text()) for directory in (debdir, rpmdir))
-    frozen, canonical = 'e4d51bd2c5a68eb9a333155c912770d2b006ba3d', '62b44589769d2871fb10c775d11e32460fbdff0e'
+    frozen, canonical = '84a585d35cced26de170c4b34c0a05aab79fae3b', '34591b7b1390852ad9984339a9fa102c8259d743'
     witness.require(frozen == deb['source']['original_head'] and source_commit == deb['source_commit'] == canonical
         == rpm['source']['source_commit'] and rpm['source'] == deb['source'], 'candidate frozen/source mismatch')
     for receipt in (deb, rpm):
@@ -696,7 +696,7 @@ def host_admission(owner_path, source_root, storage, package, source_commit, run
         fixed[path] = expected_hash
     for path, expected_hash in ((debdir / 'provenance/source-manifest.json', deb['source']['manifest_sha256']),
         (debdir / 'provenance/frozen-source.bundle', deb['source']['source_bundle_sha256']),
-        (storage / 'results/console-asyncfd-safety-01-a/build.json', deb['console_receipt_sha256'])):
+        (storage / 'results/console-alert-presentation-01-a/build.json', deb['console_receipt_sha256'])):
         witness.require(sha(path.read_bytes()) == expected_hash, 'canonical source/console mismatch')
         fixed[path] = expected_hash
     return dict(binding=dict(run_id=run_id, candidate_frozen=frozen, candidate_package_sha256=expected['package_sha256'],
