@@ -60,8 +60,8 @@ diagnostic; neither focus speech alone nor an unbound event grants acceptance.
 Register `test_announcement_document_lifecycle.py`: an initially empty desktop
 later registers a real document-load source. The observer must separately query
 that AT document's identity after the load, preserving the actual event and
-emitting the existing identity-only snapshot with empty text. A nondocument
-event must not create a document snapshot. Keep the original snapshot traversal
+emitting the existing identity-only snapshot with empty text. An unrelated
+nondocument property event must not create a document snapshot. Keep the original snapshot traversal
 bounds and PID/DocURL matching; no event may be relabeled as a snapshot or vice
 versa. Snapshots still cannot substitute for actual live-region presentation
 events, SSIP225 speech and PCM growth. Keep setup-secret clearance, stream
