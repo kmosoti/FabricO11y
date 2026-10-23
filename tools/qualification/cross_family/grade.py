@@ -122,6 +122,13 @@ def measure_and_grade(server, edge, call, config, result, data_port):
     import timing
     from snapshot import select
     observation = collect(server, edge, call, config, result, data_port)
+    # Raw clocks are complete. Offline oracle work must not consume the capture
+    # helpers' unchanged guest-unit deadlines, or hide their original statuses.
+    clock_stops = {guest.role: guest.stop_clock_channel() for guest in (edge, server)}
+    (result / 'clock-completion-checkpoint.json').write_text(json.dumps(
+        dict(before_independent_grading=True, stopped=clock_stops), indent=2)+'\n')
+    if set(clock_stops) != {'edge','server'} or not all(clock_stops.values()):
+        raise RuntimeError('original guest clock completion required before independent grading')
     gates = {}
     ends = [o for o in observation['offers'] if o['type']=='end']
     logs = [o for o in observation['offers'] if o['type']=='log']

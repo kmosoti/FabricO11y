@@ -45,5 +45,8 @@ the first frame. The
 verifies the named guest unit's resource limits before admission and retains its
 original command exit and stopped-unit check. Both local and remote guests use
 the same lifecycle methods. Query answers retain raw per-response brackets;
-clock-channel failure or incomplete cleanup fails the cell. Pipe controls use an
+clock-channel failure or incomplete cleanup fails the cell. Stop the channels
+and retain their original completion checkpoint after observation collection,
+before independent grading; keep final cleanup idempotent. Broken pipes must
+retain original process statuses and secondary cleanup errors. Pipe controls use an
 explicit fake kernel view and confer no guest-enforcement or runtime acceptance.

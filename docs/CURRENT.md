@@ -55,6 +55,12 @@ diagnosis found named observation intervals around 25–26 seconds, exceeding th
 query window. The registered management clock-channel repair keeps these
 packages and requires fresh controls and a full new cell; runtime acceptance
 remains open.
+Split smoke 18 completed all nineteen product gates with zero censored visibility
+observations, but exited 2 on clock-channel cleanup after offline grading.
+Both guests stopped; final clock command receipts were incomplete, so the cell
+is not accepted. The registered repair closes clock capture before grading and
+preserves original statuses through broken-pipe cleanup. Keep the constructed
+`108945d` / `1cb0c185` candidate and repeat the complete affected cell.
 The subsequent two-worker full split smoke completed producer, outage and drain,
 then refused 790 dropped edge timing events. The
 [bounded timing repair](experiments/formal/spindle-timing-capture-protocol.md)
