@@ -80,6 +80,29 @@ class NativeConfigurationLifecycleControls(NativeFixture, unittest.TestCase):
         self.module.conserve(*chain, after_reboot=reboot, reboot_ack_events=events,
                              native_configuration_transition=True)
 
+    def test_pause_marker_conservation_reparses_raw_proof(self):
+        import copy
+        import os
+        import stat
+        from test_custody_pause import proof
+        chain, reboot, events = self.transition_chain()
+        drained = chain[2]
+        raw = b'115\n'
+        info = (1, 2, stat.S_IFREG | 0o600, os.geteuid(), os.getegid(), 1, len(raw), 0, 0)
+        drained['coverage_pause'] = dict(raw=raw, observation=proof())
+        drained['file_observations']['coverage-unknown'] = info
+        drained['files']['coverage-unknown'] = dict(sha256=hashlib.sha256(raw).hexdigest(),
+            size=len(raw), mode=info[2], uid=info[3], gid=info[4])
+        self.conserve_transition(chain, reboot, events)
+        original = copy.deepcopy(drained['coverage_pause'])
+        for mutation in ('bytes', 'proof', 'missing'):
+            drained['coverage_pause'] = copy.deepcopy(original)
+            if mutation == 'bytes': drained['coverage_pause']['raw'] = b'116\n'
+            elif mutation == 'proof': drained['coverage_pause']['observation']['request']['exit'] = 1
+            else: drained['coverage_pause'] = None
+            with self.subTest(mutation=mutation), self.assertRaisesRegex(ValueError, 'native pause marker'):
+                self.conserve_transition(chain, reboot, events)
+
     def test_exact_native_four_checkpoint_transition_is_accepted(self):
         chain, reboot, events = self.transition_chain()
         self.conserve_transition(chain, reboot, events)
