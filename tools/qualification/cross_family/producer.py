@@ -24,7 +24,7 @@ SEED = 0xA11FA001
 SECONDS = 195  # 15 warmup +120 measured +60 interruption; then drain.
 GUARD_SECONDS = 5
 TRACE_QUEUE_CAPACITY = SECONDS * 10
-TRACE_HTTP_WORKERS = 1
+TRACE_HTTP_WORKERS = 2
 
 
 def due_ns(begin, tick):

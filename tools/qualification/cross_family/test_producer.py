@@ -33,12 +33,15 @@ class ProducerTests(unittest.TestCase):
         self.assertEqual(sum(tick % 150 == 0 for tick in range(len(times))), 13)
         self.assertEqual(sum(t >= 140000000000 for t in times), 600)
 
-    def test_serial_transport_does_not_block_or_discard_full_registered_offers(self):
-        fixture = json.loads((HERE.parents[2] / 'docs/experiments/formal/fixtures/cross-timing-burst.json').read_text())
+    def test_two_transport_workers_do_not_block_or_discard_full_registered_offers(self):
+        fixture_root = HERE.parents[2] / 'docs/experiments/formal/fixtures'
+        fixture = json.loads((fixture_root / 'cross-trace-concurrency.json').read_text())
+        loss = json.loads((fixture_root / fixture['timing_loss_counterexample']).read_text())
         import timing
-        with self.assertRaisesRegex(ValueError, fixture['refusal']):
-            timing.events(fixture['loss_marker'], 'original-boot')
-        entered, release = threading.Event(), threading.Event()
+        with self.assertRaisesRegex(ValueError, loss['refusal']):
+            timing.events(loss['loss_marker'], 'original-boot')
+        entered, release, lock = threading.Event(), threading.Event(), threading.Lock()
+        active = 0
         class Response:
             status = 200
             def __enter__(self):
@@ -48,7 +51,11 @@ class ProducerTests(unittest.TestCase):
             def read(self):
                 return b'{}'
         def blocked(*args, **kwargs):
-            entered.set()
+            nonlocal active
+            with lock:
+                active += 1
+                if active == 2:
+                    entered.set()
             if not release.wait(5):
                 raise TimeoutError('test transport not released')
             return Response()
@@ -57,18 +64,19 @@ class ProducerTests(unittest.TestCase):
             sender = P.TraceSender(journal, failures, time.monotonic()+10)
             try:
                 self.assertEqual(len(sender.workers), fixture['prospective_trace_http_workers'])
-                sender.offer(0, b'original', 0)
-                self.assertTrue(entered.wait(2))
-                for tick in range(1, fixture['offered_exports']):
+                for tick in range(2):
                     sender.offer(tick, b'original', tick)
-                self.assertEqual(sender.pending.qsize(), 1949)
+                self.assertTrue(entered.wait(2))
+                for tick in range(2, fixture['offered_exports']):
+                    sender.offer(tick, b'original', tick)
+                self.assertEqual(sender.pending.qsize(), 1948)
                 self.assertFalse(failures)
             finally:
                 release.set()
                 sender.finish()
                 journal.stream.close()
             rows = [json.loads(line) for line in (Path(name)/'offers.jsonl').read_text().splitlines()]
-            self.assertEqual([r['tick'] for r in rows], list(range(1950)))
+            self.assertEqual(sorted(r['tick'] for r in rows), list(range(1950)))
             self.assertTrue(all(r['type']=='trace_admitted' for r in rows))
             self.assertFalse(failures)
             self.assertFalse(any(t.is_alive() for t in sender.workers))
@@ -101,7 +109,7 @@ class ProducerTests(unittest.TestCase):
                 journal = P.Journal(path)
                 failures = []
                 sender = P.TraceSender(journal, failures, time.monotonic()+5, url)
-                self.assertEqual((len(sender.workers), sender.pending.maxsize), (1, 1950))
+                self.assertEqual((len(sender.workers), sender.pending.maxsize), (2, 1950))
                 for tick in range(16):
                     sender.offer(tick, b'original', time.monotonic_ns())
                 sender.finish()
