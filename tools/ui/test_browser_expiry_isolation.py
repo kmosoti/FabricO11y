@@ -15,6 +15,7 @@ def witness(snapshot, browser='firefox'):
     if hasattr(browser_expiry,'ordinary_isolation'):
         return browser_expiry.ordinary_isolation(snapshot,browser)
     assert "item.startswith((b'LD_PRELOAD=',b'FABRIC_CLOCK_FD='))" in inspect.getsource(browser_expiry.run_expiry)
+    if not all(key in snapshot for key in ACTUAL):return False
     return (snapshot['helper_mapped'] is False and snapshot['control_fd_present'] is False
         and not snapshot['preload_environment'] and not snapshot['control_env_names'])
 
@@ -43,7 +44,6 @@ class OrdinaryIsolation(unittest.TestCase):
         for key in ('helper_mapped','control_fd_present','control_env_names','preload_environment'):
             bad=copy.deepcopy(ACTUAL);del bad[key]
             with self.subTest(key=key):
-                if hasattr(browser_expiry,'ordinary_isolation'):self.assertFalse(witness(bad))
-                else:self.assertRaises(KeyError,witness,bad)
+                self.assertFalse(witness(bad))
 
 if __name__=='__main__':unittest.main()
