@@ -17,7 +17,6 @@ const OTHER_IDLE_POLL: Duration = Duration::from_millis(100);
 const CONFIG_POLL: Duration = Duration::from_secs(5);
 const DIAGNOSTIC_POLL: Duration = Duration::from_secs(15);
 
-
 fn idle_wait(remaining: Duration, traces_enabled: bool) -> Duration {
     remaining.min(if traces_enabled {
         TRACE_IDLE_POLL
@@ -388,7 +387,6 @@ fn main() -> ExitCode {
     }
 }
 
-
 #[cfg(test)]
 mod cadence_tests {
     use super::*;
@@ -401,7 +399,10 @@ mod cadence_tests {
         .unwrap();
         let trace = Duration::from_nanos(fixture["new_trace_idle_wait_ns"].as_u64().unwrap());
         let other = Duration::from_nanos(fixture["other_idle_wait_ns"].as_u64().unwrap());
-        assert_eq!(LOG_POLL.as_nanos(), fixture["new_log_poll_ns"].as_u64().unwrap() as u128);
+        assert_eq!(
+            LOG_POLL.as_nanos(),
+            fixture["new_log_poll_ns"].as_u64().unwrap() as u128
+        );
         for remaining_ms in 0..=1000 {
             let remaining = Duration::from_millis(remaining_ms);
             for enabled in [false, true] {
@@ -411,7 +412,10 @@ mod cadence_tests {
                 assert_eq!(wait.is_zero(), remaining.is_zero());
             }
         }
-        assert_eq!(idle_wait(Duration::from_nanos(1), true), Duration::from_nanos(1));
+        assert_eq!(
+            idle_wait(Duration::from_nanos(1), true),
+            Duration::from_nanos(1)
+        );
         assert_eq!(idle_wait(Duration::from_secs(1), false), other);
         assert_eq!(idle_wait(Duration::from_secs(1), true), trace);
         // The actual old idle cap cannot satisfy this trace polling budget.
