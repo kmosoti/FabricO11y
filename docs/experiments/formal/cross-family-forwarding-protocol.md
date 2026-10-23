@@ -297,3 +297,19 @@ the existing drain allowance or fail. No uncertain export is retried, omitted or
 relabeled successful. Preserve zero-loss timing reconstruction and all original
 custody, query, latency, backlog, resource and outage gates. Fresh full execution
 is required; the single worker's ability to finish is an unverified hypothesis.
+
+### Two trace transport workers after the retained serial failure
+
+The one-worker hypothesis failed in `split-debian-fedora-smoke-13`: the original
+producer exited 1 with `trace transport workers did not finish by deadline`
+after its unchanged 320-second allowance. Both host shutdowns were confirmed.
+Do not credit that stopped failure or extend its deadline.
+
+Prospectively use two asynchronous trace HTTP workers. This changes only bounded
+transport concurrency between the observed eight-worker timing-loss burst and
+one-worker completion failure. Keep all offer coordinates/counts, the 1950-entry
+queue, no uncertain retries, full outage, existing deadlines and every numerical
+and independent-oracle gate. Controls must block both workers while all 1950
+original offers can still be queued, then account for all outcomes and joins.
+The hypothesis that two workers satisfy all gates requires fresh full execution;
+no interpolation of earlier runs is evidence for it.
