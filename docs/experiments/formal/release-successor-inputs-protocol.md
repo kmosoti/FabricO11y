@@ -176,3 +176,42 @@ fixtures. All refusal expectations and source/helper/owner joins remain fixed.
 The preceding candidate and failed smoke remain historical evidence. Fresh
 native, browser, service/recovery and full-soak gates remain required; this
 selection does not authorize publication.
+
+## Tokio I/O-safety dependency successor
+
+Hosted workflow [39971819005](https://github.com/kmosoti/FabricO11y/actions/runs/39971819005),
+job `120476195168`, rejected Tokio `1.53.1` in its whole-workspace dependency
+check with exit 1. Its preceding fast registry and receipt verification completed,
+but the workflow failed and its browser jobs were skipped. The preserved raw job
+log has SHA-256 `09766f64e94c2a9ed3c97d15a735884f8870d07b07e24beb66d99225a7cfc8f3`.
+[RUSTSEC-2026-0386](https://rustsec.org/advisories/RUSTSEC-2026-0386.html)
+marks this version unsound; its same-minor patched range starts at `1.53.3`.
+This failed required gate blocks release of the cadence candidate. It does not
+establish an exploitable path through Fabric's actual use of Tokio.
+
+Register the smallest same-minor dependency successor, prefix `asyncfd-safety-01`:
+pin server Tokio to `1.53.3` and align both root and standalone fuzz lockfiles.
+Preserve features, product semantics, native cadence, resource limits, independent
+oracles and refusal expectations. Do not add an advisory ignore or broaden the
+dependency policy. Verify the actual resolved graphs and rerun the dependency,
+fast, extended/security, documentation and affected regression checks with the
+registered toolchain and containment. Any additional lockfile change needs an
+explicit dependency reason rather than an incidental broad update.
+
+The owner-authorized blocker-successor construction uses the existing eighteen
+constructor cells, ownership preparation, independent A/B comparisons, package
+inspection and immutable provenance. Select a new native tuple only in a later
+separate policy commit after successful artifact admission. Rebuild the console
+as well because its source identity includes the root lockfile. All exact-package
+installation, browser, walkthrough, service/recovery and full-soak gates must run
+fresh for the resulting compatible candidate; historical cadence results remain
+attached to `108945d` / `1cb0c18`.
+
+The fresh cadence browser stage and Chrome baseline completed with original
+exits 0. The baseline recorded 367 checks and nine stopped/reaped groups. The
+following cursor cell was deliberately stopped after the dependency blocker was
+identified: original exit 2, confirmed outer stop, retained fixture evidence. It
+is interrupted evidence, not cursor acceptance. No further cadence rows are
+admitted. Preserve all ten completed cadence installation cases and their raw
+receipts; none is relabeled as successor acceptance. The final publication
+decision remains reserved for the owner after the completed release bundle.
