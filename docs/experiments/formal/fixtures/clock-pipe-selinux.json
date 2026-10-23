@@ -1,0 +1,20 @@
+{
+  "origin": "clock-edge-startup-diagnostic-01",
+  "failed_cell": "split-debian-fedora-smoke-17",
+  "guest_family": "fedora-44",
+  "systemd": "259.5-1.fc44.x86_64",
+  "dbus_broker": "37-8.fc44.x86_64",
+  "selinux_policy_targeted": "43.3-1.fc44.noarch",
+  "enforcing": true,
+  "same_limits_exit": {"plain": 0, "pipe": 1, "pty": 0},
+  "denied_source": "system_u:system_r:system_dbusd_t:s0-s0:c0.c1023",
+  "denied_target": "system_u:system_r:sshd_session_t:s0-s0:c0.c1023",
+  "class": "fifo_file",
+  "permission": "read",
+  "memory_max_bytes": 33554432,
+  "swap_max_bytes": 0,
+  "cpu_max": "25000 100000",
+  "tasks_max": 8,
+  "deadline_seconds": 600,
+  "acceptance_credit": false
+}

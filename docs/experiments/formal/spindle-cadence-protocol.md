@@ -106,3 +106,25 @@ failures. Start and stop through the existing guest interface, including the
 remote subclass; do not introduce another runner or alter the data outage path.
 Repeat affected lifecycle/observer/TLS controls and a fresh full split cell.
 This is a prospective harness repair, not new acceptance or publication approval.
+
+### Enforcing Fedora startup counterexample
+
+Split smoke 17 stopped before producer offers: Debian's helper verified its
+limits and stopped with original exit 0, while Fedora's `systemd-run --pipe`
+failed before unit creation. Both guests stopped; this is not acceptance.
+Disposable edge diagnostic `clock-edge-startup-diagnostic-01` completed with
+original controller exit 0 and confirmed remote shutdown. With identical limits,
+plain and PTY `/usr/bin/true` units exited 0, while the pipe variant exited 1.
+The guest journal records an enforcing SELinux AVC denying `system_dbusd_t`
+read access to an `sshd_session_t` pipe. The tested guest packages were
+`systemd-259.5-1.fc44.x86_64`, `dbus-broker-37-8.fc44.x86_64` and
+`selinux-policy-targeted-43.3-1.fc44.noarch`.
+
+Use the existing owned SSH channel with a systemd PTY instead of passing SSH
+pipe descriptors through D-Bus. Put the helper's PTY into raw mode before the
+first frame, disabling echo and newline translation. Keep every resource,
+deadline, boot/sequence/order check, raw timestamp and original exit/cleanup
+requirement above. Keep SELinux enforcing and retain the pipe refusal. Require
+a real PTY framing/echo/clean-exit control, repeat the disposable edge diagnostic
+with original helper exit 0 and stopped-unit confirmation, then repeat the full
+split cell. No release or placement gate is relaxed by this transport repair.
