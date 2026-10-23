@@ -602,6 +602,7 @@ def main():
             args.inject_security_defect,args.inject_ui_response_defect)):
         parser.error('security key admission requires its own finite cell')
     import browser_announcements
+    from browser_alert import assertive_filter_error
     browser_announcements.validate_mode(args,parser)
     if args.inject_ui_response_defect and not args.ui_responses:parser.error('UI response defect requires its own cell')
     if args.ui_responses and (args.migration or args.session_expiry_helper or args.security_probes or args.role_matrix or args.poll_seconds or args.pressure or args.expired_cursor_probe or args.shell_lifecycle or args.recovery):parser.error('UI responses use a separate finite cell')
@@ -656,7 +657,7 @@ def main():
                'injected_nonresident_enrollment': args.inject_nonresident_enrollment,
                'injected_rejection_defect':args.inject_rejection_defect,
                'source_sha256': {str(p.relative_to(ROOT)): hashlib.sha256(p.read_bytes()).hexdigest()
-                                 for p in (Path(__file__), ROLE_FIXTURE, ROOT / 'tools/ui/fixture_cadence.py', ROOT / 'tools/ui/browser_producer.py', ROOT / 'tools/packaging/stage_console.py')},
+                                 for p in (Path(__file__), ROLE_FIXTURE, ROOT / 'tools/ui/fixture_cadence.py', ROOT / 'tools/ui/browser_producer.py', ROOT / 'tools/ui/browser_alert.py', ROOT / 'tools/packaging/stage_console.py')},
                'binaries': {str(p): hashlib.sha256(p.read_bytes()).hexdigest() for p in
                    (args.server, args.spindle, args.browser_entry_helper,
                     *([args.fabricctl] if args.migration else []),
@@ -1664,7 +1665,10 @@ self.addEventListener("fetch",event=>{
         check(js('return document.activeElement.classList.contains("skip-link")'),'keyboard Tab reaches visible skip link')
         check(js('return document.activeElement.getBoundingClientRect().top>=0'),'focused skip link visible')
         field('Body substring (case-sensitive)','x'*4097)
-        check(js('return !!document.querySelector("[role=status][aria-live=polite]") && document.querySelector("[role=alert]")?.textContent.includes("Filter exceeds 4096 UTF-8 bytes")'),'actual invalid filter error and request status have announcement roles')
+        alert=js('''const e=document.querySelector('.live-connection [role=alert]');return e?{
+          role:e.getAttribute('role'),live:e.getAttribute('aria-live'),atomic:e.getAttribute('aria-atomic'),text:e.textContent}:null;''')
+        receipt['filter_error_alert']=alert
+        check(js('return !!document.querySelector("[role=status][aria-live=polite]")') and assertive_filter_error(alert),'actual invalid filter error and request status have announcement roles')
         field('Body substring (case-sensitive)','');click('Run query')
         wait(lambda:js('return document.querySelectorAll(".results tbody tr").length>0'),'valid query restores readable table after announced validation error')
         if args.browser == 'firefox':

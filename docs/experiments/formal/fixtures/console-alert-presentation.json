@@ -1,0 +1,15 @@
+{
+  "origin": "browser-fixture-diagnostics-04/cells/69, validation action after successful real status speech",
+  "product_source": "e4d51bd2c5a68eb9a333155c912770d2b006ba3d",
+  "package_source": "62b44589769d2871fb10c775d11e32460fbdff0e",
+  "harness_source": "42bc3015f132059fb276a2d83946894566b0e366",
+  "contract": "A validation alert must expose assertive live metadata and produce actual AT, speech and synthesis evidence",
+  "text": "Filter exceeds 4096 UTF-8 bytes. Edit it before querying.",
+  "observed_dom": {"role": "alert", "live": null, "focus_elsewhere": true},
+  "observed_at_attributes": ["class:query-help", "xml-roles:alert", "tag:p", "display:block"],
+  "pcm_before_bytes": 533582,
+  "pcm_after_bytes": 533582,
+  "matching_speech_rows": 0,
+  "original_failure": "announcement-synthesis",
+  "proposed_fix": "Explicit aria-live=assertive and aria-atomic=true on the existing conditional alert; unchanged independent native oracle"
+}

@@ -1043,7 +1043,7 @@ mod browser {
                     logout(state);
                 }>"Sign out"</button></div></div>
                 <p role="status" aria-live="polite">{move || state.with(|s| if s.busy { "Working…".into() } else if let Some(session) = &s.session { format!("{} · {}", session.display_name, session.role) } else { "Sign in to view your telemetry.".into() })}</p>
-                <Show when=move || state.with(|s| !s.error.is_empty())><p class="query-help" role="alert">{move || state.with(|s| s.error.clone())}</p></Show>
+                <Show when=move || state.with(|s| !s.error.is_empty())><p class="query-help" role="alert" aria-live="assertive" aria-atomic="true">{move || state.with(|s| s.error.clone())}</p></Show>
             </section>
             <details class="card" data-testid="live-access-help"><summary>"Recovery and installation help"</summary>
                 <p>"Use a trusted HTTPS origin. If your browser offers installation, use its Install or Add to Home Screen menu. Availability depends on the browser and device; installation does not provide offline authenticated telemetry."</p>

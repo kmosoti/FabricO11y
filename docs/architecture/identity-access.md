@@ -163,6 +163,15 @@ epoch, which discards sessions and reader tokens, so an old backup never resurre
 
 ## Evidence
 
+The console's existing validation alert declares assertive, atomic live-region
+metadata when it appears. A role alone did not establish presentation in the
+retained exact-package assistive diagnostic: the visible filter error had no
+assertive AT metadata, matching speech or PCM growth. The [registered alert
+counterexample](../experiments/formal/browser-announcement-protocol.md#packaged-validation-alert-counterexample)
+keeps the independent native oracle unchanged. Actual DOM metadata is now also
+checked during the ordinary invalid-filter browser action; source/DOM checks
+cannot establish real assistive presentation or successor-package acceptance.
+
 The private [announcement environment probe](../experiments/formal/browser-announcement-protocol.md)
 separates DOM live-region prerequisites, actual AT-SPI events, accepted Orca speech
 and selected-backend synthesis. Its public-text environment probe is implemented;

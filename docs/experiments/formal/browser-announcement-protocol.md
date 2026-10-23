@@ -1,5 +1,31 @@
 # Private assistive-technology environment and announcements
 
+## Packaged validation-alert counterexample
+
+Registered before correction, 2026-10-23. Exact product `e4d51bd`, package
+snapshot `62b4458`, harness `42bc301`, diagnostic04 retained real status speech
+and PCM growth. Its validation alert was visible and had `role=alert`, but its
+AT attributes lacked assertive live metadata; the action produced no matching
+speech and no PCM growth. The unchanged alert oracle refused
+`announcement-synthesis`. Preserve this release blocker and stopped custody.
+
+The literal [counterexample](fixtures/console-alert-presentation.json) records
+the action and missing metadata. Add a cheap actual-DOM assertion to the existing
+invalid-filter browser action: its alert must retain the expected text and have
+explicit `role=alert`, `aria-live=assertive` and `aria-atomic=true`. This supplements
+the existing status-role assertion; it does not replace actual AT events, accepted
+speech or synthesis. `test_browser_alert.py` must reject the old role-only state,
+missing/changed fields and a different error while accepting the literal valid
+metadata. Source controls do not establish native presentation.
+
+Make the existing conditional validation alert explicitly assertive and atomic;
+keep the original absent-before-error baseline, text, input limits and behavior.
+No API, authorization, telemetry or session change is permitted. This product
+fix requires a successor package candidate and fresh affected gates. Keep the
+independent alert/event/speech/PCM oracle and suppressed-announcement expectations
+unchanged. A successful source/DOM check cannot admit the successor before its
+real packaged positive and suppressed controls complete.
+
 ## Late document registration counterexample
 
 Registered before correction, 2026-10-23. At `57383c4`, the unmerged packaged
