@@ -289,6 +289,49 @@ def applied_configuration(raw, info, service):
         raise ValueError('applied configuration: ' + str(error)) from error
 
 
+def pause_marker(raw, info, service, configuration, observation, boot_id):
+    """Join original pause commands to a private pending collection-gap sidecar."""
+    try:
+        require(type(raw) is bytes and re.fullmatch(rb'[1-9][0-9]{0,19}\n', raw)
+            and int(raw) <= U64 and stat.S_ISREG(info[2]) and info[5] == 1
+            and info[6] == len(raw) and stat.S_IMODE(info[2]) == 0o600
+            and (info[3], info[4]) == (service['uid'], service['gid']), 'marker bytes/metadata')
+        require(type(observation) is dict and set(observation) == {'boot_id', 'request', 'confirmation'}
+            and observation['boot_id'] == boot_id, 'pause boot/proof')
+        request, confirmation = observation['request'], observation['confirmation']
+        prefix = ['fabricctl', 'admin', '/root/accept/admin.conf', 'node']
+        require(request['argv'] == prefix + ['pause', 'spindle-1']
+            and confirmation['argv'] == prefix + ['list'], 'pause command identity')
+        for record in (request, confirmation):
+            require(type(record['exit']) is int and record['exit'] == 0
+                and type(record['stdout']) is str and type(record['stderr']) is str
+                and all(type(record[key]) is int and record[key] > 0
+                    for key in ('started_ns', 'finished_ns', 'elapsed_ns'))
+                and record['started_ns'] <= record['finished_ns']
+                and record['elapsed_ns'] <= 30_000_000_000, 'pause command completion')
+        start, finish = request['started_ns'], confirmation['finished_ns']
+        require(request['finished_ns'] <= confirmation['started_ns']
+            and 0 < finish - start <= 30_000_000_000 and start <= int(raw) <= finish,
+            'pause marker outside application interval')
+        rows = json.loads(confirmation['stdout'])['nodes']
+        matches = [row for row in rows if row.get('name') == 'spindle-1']
+        require(len(matches) == 1, 'pause inventory identity')
+        row = matches[0]
+        revision = configuration['revision']
+        require(type(revision) is int and revision in (2, 4)
+            and configuration == dict(revision=revision, paused=True,
+                logs=list(NATIVE_CONFIGURATION_LOGS), metric_interval_s=NATIVE_CONFIGURATION_INTERVAL_S)
+            and all(type(row[key]) is int for key in
+                ('desired_revision', 'applied_revision', 'metric_interval_s'))
+            and row['desired_revision'] == row['applied_revision'] == revision
+            and row['status'] == 'paused' and row['config_error'] is None
+            and row['logs'] == configuration['logs']
+            and row['metric_interval_s'] == configuration['metric_interval_s'], 'pause applied profile')
+        return dict(raw=raw, observation=copy.deepcopy(observation))
+    except (ValueError, TypeError, KeyError, AttributeError, IndexError) as error:
+        raise ValueError('native pause marker: ' + str(error)) from error
+
+
 def stopped_snapshot(root, stopped_receipt, archived_allowed_logs, *, fixture_paths=None):
     root = owned(root)
     receipt = copy.deepcopy(stopped_receipt)
@@ -320,6 +363,8 @@ def stopped_snapshot(root, stopped_receipt, archived_allowed_logs, *, fixture_pa
         require({'identity', 'writer.lock', 'batches.faj'} <= set(names), 'missing Spool input')
         diagnostics, observed = diagnostic_inventory(root, receipt.get('service_identity', {})) if fixture_paths else ({}, {})
         require(all(name in ('identity', 'acked', 'writer.lock', 'batches.faj') or (fixture_paths and name in ('diagnostics', 'applied-config.json'))
+            or (fixture_paths == (NATIVE_CONFIGURATION_LOGS[0],) and name == 'coverage-unknown'
+                and receipt.get('pause_observation') is not None)
             or re.fullmatch(r'sealed-[0-9]{20}\.faj', name) for name in names), 'unexpected or failed Spool input')
         files, raw_files = {'diagnostics/' + name: value for name, value in diagnostics.items()}, {}
         require(sum((root / name).lstat().st_size for name in names if name.endswith('.faj')) <= cap - 4096,
@@ -334,6 +379,13 @@ def stopped_snapshot(root, stopped_receipt, archived_allowed_logs, *, fixture_pa
             raw_files[name], observed[name] = raw, info
             files[name] = dict(sha256=hashlib.sha256(raw).hexdigest(), size=len(raw),
                               mode=info[2], uid=info[3], gid=info[4])
+        coverage_pause = None
+        if receipt.get('pause_observation') is not None:
+            require('coverage-unknown' in raw_files, 'native pause marker absent')
+        if 'coverage-unknown' in raw_files:
+            coverage_pause = pause_marker(raw_files['coverage-unknown'], observed['coverage-unknown'],
+                receipt['service_identity'], json.loads(raw_files['applied-config.json']),
+                receipt.get('pause_observation'), receipt['boot_id'])
         ident = raw_files['identity']
         require(len(ident) == 28 and ident[:4] == b'FAI1', 'invalid identity sidecar')
         node, generation = ident[4:20], struct.unpack('<Q', ident[20:])[0]
@@ -399,7 +451,7 @@ def stopped_snapshot(root, stopped_receipt, archived_allowed_logs, *, fixture_pa
         return dict(binding=binding, boot_id=receipt['boot_id'], node_id=node.hex(), generation=generation,
             ack=ack, files=files, file_observations=observed, sources=sources, cursors=cursors,
             logs=logs, log_observations=log_observations, candidate_process=receipt.get('candidate_process'),
-            fixture_paths=fixture_paths, diagnostics=diagnostics, applied_configuration=raw_files.get('applied-config.json'))
+            fixture_paths=fixture_paths, diagnostics=diagnostics, coverage_pause=coverage_pause, applied_configuration=raw_files.get('applied-config.json'))
     except (OSError, KeyError, TypeError) as error:
         raise ValueError(str(error)) from error
     finally:
@@ -441,6 +493,19 @@ def conserve(before, after_install, after_drain, queries, candidate_ack_events, 
             expected = dict(revision=revision, paused=paused,
                 logs=list(NATIVE_CONFIGURATION_LOGS), metric_interval_s=NATIVE_CONFIGURATION_INTERVAL_S)
             require(value == expected, 'native applied configuration profile transition mismatch')
+            marker = snapshot.get('coverage_pause')
+            marker_entry = snapshot['files'].get('coverage-unknown')
+            require((marker is None) == (marker_entry is None), 'native pause marker inventory join')
+            if marker is not None:
+                require(paused, 'native pause marker before pause')
+                marker_info = snapshot['file_observations']['coverage-unknown']
+                require(hashlib.sha256(marker['raw']).hexdigest() == marker_entry['sha256']
+                    and len(marker['raw']) == marker_entry['size']
+                    and (marker_info[2], marker_info[3], marker_info[4])
+                        == (marker_entry['mode'], marker_entry['uid'], marker_entry['gid']),
+                    'native pause marker raw inventory join')
+                pause_marker(marker['raw'], marker_info, {'uid': info[3], 'gid': info[4]},
+                    value, marker['observation'], snapshot['boot_id'])
             current_metadata = (stat.S_IMODE(info[2]), info[3], info[4], info[5], stat.S_ISREG(info[2]))
             require(metadata_profile is None or current_metadata == metadata_profile,
                     'native applied configuration metadata changed across checkpoints')

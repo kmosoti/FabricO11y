@@ -102,10 +102,11 @@ class Guest:
         return record
 
     def transition(self, revision, paused, *, require_applied, issue=True):
+        deadline = min(self.deadline, time.monotonic() + 30)
+        request = None
         if issue:
             action = 'pause' if paused else 'resume'
-            self.command(['fabricctl', 'admin', '/root/accept/admin.conf', 'node', action, 'spindle-1'])
-        deadline = min(self.deadline, time.monotonic() + 30)
+            request = self.command(['fabricctl', 'admin', '/root/accept/admin.conf', 'node', action, 'spindle-1'])
         status = 'paused' if paused else 'active'
         while time.monotonic() < deadline:
             record = self.command(['fabricctl', 'admin', '/root/accept/admin.conf', 'node', 'list'])
@@ -121,6 +122,10 @@ class Guest:
                 and row['metric_interval_s'] == NATIVE_PROFILE['metric_interval_s'],
                             'native desired profile transition')
             if not require_applied or row['applied_revision'] == revision:
+                if issue and paused and require_applied:
+                    witness.require(time.monotonic() <= deadline, 'native applied profile deadline')
+                    self.pause_observation = dict(boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
+                                                  request=request, confirmation=record)
                 return row
             time.sleep(min(.25, deadline - time.monotonic()))
         witness.require(False, 'native applied profile deadline')
@@ -243,6 +248,8 @@ class Guest:
             sources[path] = dict(archive_path=str(archive), device=before[0], inode=before[1],
                                  original_stat=before, sha256=sha(raw), btrfs_identity=stable)
         receipt['candidate_process'] = process
+        if name in ('drain', 'reboot'):
+            receipt['pause_observation'] = self.pause_observation
         receipt['root_stat'] = witness.identity(ROOT.lstat())
         with tarfile.open(self.output / (name + '-raw.tar'), 'x') as archive:
             archive.add(ROOT, arcname='spool', recursive=True)
@@ -757,6 +764,17 @@ def admit_transfer(bundle, admission, guest_sha256, *, control=None, cutoff_help
                             witness.applied_configuration(content, info, receipt['service_identity'])
                             witness.require(content == snapshot.get('applied_configuration')
                                 and json.loads(content) == expected_profile(phase), 'native applied configuration profile mismatch')
+                        if relative == 'coverage-unknown':
+                            marker = snapshot.get('coverage_pause')
+                            witness.require(marker is not None and content == marker['raw']
+                                and marker['observation'] == receipt.get('pause_observation'), 'native pause marker raw join')
+                            commands = read(phase + '/commands.json')
+                            proof = marker['observation']
+                            witness.require(proof['request'] in commands and proof['confirmation'] in commands
+                                and commands.index(proof['request']) < commands.index(proof['confirmation']),
+                                'native pause marker original command join')
+                            witness.pause_marker(content, info, receipt['service_identity'],
+                                json.loads(snapshot['applied_configuration']), proof, receipt['boot_id'])
                         if relative.endswith('.faj'): raw_files[relative] = content
             payloads = []
             for filename in sorted(name for name in raw_files if name.startswith('sealed-')) + ['batches.faj']:
