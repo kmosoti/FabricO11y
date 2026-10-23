@@ -130,9 +130,11 @@ class Guest:
             time.sleep(min(.25, deadline - time.monotonic()))
         witness.require(False, 'native applied profile deadline')
 
-    def drain_prefix(self, minimum=-1, *, exact=None):
+    def drain_prefix(self, minimum=-1, *, exact=None, active_prefix=False):
+        witness.require(type(active_prefix) is bool and not (active_prefix and exact is not None),
+                        'invalid active prefix scope')
         deadline = min(self.deadline, time.monotonic() + 40)
-        previous = None
+        previous, target = None, None
         while time.monotonic() < deadline:
             record = self.command(['fabricctl', 'inspect', '/etc/fabrico11y/node.conf'], check=False)
             if record['exit']:
@@ -149,7 +151,12 @@ class Guest:
                 and values['interrupted_append'] == 'false', 'native spool requires recovery')
             highwater = int(values['next_sequence']) - 1
             matches = highwater == exact if exact is not None else highwater > minimum
-            if matches and highwater == previous and int(values['acked_through']) >= highwater:
+            if active_prefix:
+                if target is None and highwater > minimum:
+                    target = highwater
+                if target is not None and int(values['acked_through']) >= target:
+                    return target
+            elif matches and highwater == previous and int(values['acked_through']) >= highwater:
                 return highwater
             previous = highwater
             time.sleep(min(.25, deadline - time.monotonic()))
@@ -399,7 +406,7 @@ def guest_main(config, phase):
                 prior_ack = prior['ack']
                 guest.transition(3, False, require_applied=True, issue=False)
                 # This active-revision prefix is only a lower bound; a commit may race pause application.
-                guest.drain_prefix(prior_ack)
+                guest.drain_prefix(prior_ack, active_prefix=True)
             current = guest.process()
             witness.require(current['pid'] == process['pid'] and current['invocation_id'] == process['invocation_id']
                 and current['proc_stat'].rsplit(')', 1)[1].split()[19]
