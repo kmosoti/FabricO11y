@@ -329,3 +329,94 @@ fn ownership_encoding_finite_pairs() {
         }
     }
 }
+
+
+fn timing_burst_fixture() -> serde_json::Value {
+    serde_json::from_str(include_str!(
+        "../../docs/experiments/formal/fixtures/spindle-timing-burst.json"
+    ))
+    .unwrap()
+}
+
+#[test]
+fn timing_real_spool_burst_keeps_every_event_and_durable_prefix() {
+    let fixture = timing_burst_fixture();
+    let count = fixture["minimal_trace_commits"].as_u64().unwrap();
+    let scratch = Scratch::new();
+    let mut node = scratch.spindle(64 * 1024 * 1024, true);
+    // Timing remains absent until explicitly enabled, while commits still work.
+    for sequence in 1..=count {
+        assert_eq!(node.commit_traces(&[b"\x0a\x00"]).unwrap(), sequence);
+    }
+    let (disabled, dropped) = node.take_timing_events();
+    assert!(disabled.is_empty());
+    assert_eq!(dropped, 0);
+    node.enable_timing_events();
+    for sequence in count + 1..=2 * count {
+        assert_eq!(node.commit_traces(&[b"\x0a\x00"]).unwrap(), sequence);
+    }
+    let prefix = node.journal.next_sequence();
+    let acked = node.acked_through();
+    let (events, dropped) = node.take_timing_events();
+    assert_eq!(dropped, 0, "retained 256-event recovery counterexample");
+    assert_eq!(events.len(), 2 * count as usize);
+    for (index, pair) in events.chunks_exact(2).enumerate() {
+        let sequence = count + 1 + index as u64;
+        assert_eq!((pair[0].sequence, pair[1].sequence), (sequence, sequence));
+        assert_eq!(pair[0].stage, "traces_accepted");
+        assert_eq!(pair[1].stage, "spool_committed");
+        assert_eq!(pair[0].node_id, pair[1].node_id);
+        assert_eq!(pair[0].generation, pair[1].generation);
+    }
+    assert_eq!(node.journal.next_sequence(), prefix);
+    assert_eq!(node.acked_through(), acked);
+    assert_eq!(node.commit_traces(&[b"\x0a\x00"]).unwrap(), prefix);
+}
+
+#[test]
+fn timing_registered_finite_population_is_preserved_in_fifo_order() {
+    let fixture = timing_burst_fixture();
+    let count = fixture["registered_exports"].as_u64().unwrap();
+    let scratch = Scratch::new();
+    let mut node = scratch.spindle(64 * 1024 * 1024, true);
+    node.enable_timing_events();
+    let stages = ["traces_accepted", "spool_committed", "send_started", "answer_received"];
+    for sequence in 1..=count {
+        for stage in stages {
+            node.timing(sequence, stage, node.timing_sample());
+        }
+    }
+    let (events, dropped) = node.take_timing_events();
+    assert_eq!(dropped, 0);
+    assert_eq!(events.len(), 4 * count as usize);
+    for (index, event) in events.iter().enumerate() {
+        assert_eq!(event.sequence, 1 + index as u64 / 4);
+        assert_eq!(event.stage, stages[index % 4]);
+    }
+    // The finite capture control itself does not create telemetry or ACKs.
+    assert_eq!(node.journal.next_sequence(), 1);
+    assert_eq!(node.acked_through(), 0);
+}
+
+#[test]
+fn timing_overflow_reports_exact_loss_and_take_resets_it_without_unbounding_memory() {
+    let fixture = timing_burst_fixture();
+    assert!(TIMING_EVENT_CAPACITY * std::mem::size_of::<TimingEvent>()
+        <= fixture["maximum_event_array_bytes"].as_u64().unwrap() as usize);
+    let scratch = Scratch::new();
+    let mut node = scratch.spindle(64 * 1024 * 1024, true);
+    node.enable_timing_events();
+    for sequence in 0..TIMING_EVENT_CAPACITY + 3 {
+        node.timing(sequence as u64, "capture_control", node.timing_sample());
+    }
+    assert_eq!(node.timing_events.len(), TIMING_EVENT_CAPACITY);
+    let (events, dropped) = node.take_timing_events();
+    assert_eq!(events.len(), TIMING_EVENT_CAPACITY);
+    assert_eq!(dropped, 3);
+    assert!(events.iter().enumerate().all(|(index, event)| event.sequence == index as u64));
+    let (events, dropped) = node.take_timing_events();
+    assert!(events.is_empty());
+    assert_eq!(dropped, 0);
+    assert_eq!(node.journal.next_sequence(), 1);
+    assert_eq!(node.acked_through(), 0);
+}
