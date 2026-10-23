@@ -538,3 +538,16 @@ unchanged. At0fb48fd,132 native controls,74 cross-family controls and documentat
 checks exited0 with confirmed outer shutdown. The prior caller reproduced the
 fixed-prefix deadline on the advancing-stream control. Fresh native installation
 cells remain pending for the unchanged108945d/1cb0c18 packages.
+
+The fourth fresh Debian cell completed all four stopped guest checkpoints and
+removal observation, then host admission retained overall2 because whole-record
+credential equality included the fixture's expected enrollment revision/status
+changes. Credential file metadata/hashes and Spool node ID were unchanged. The
+[registered identity join](experiments/formal/installation-native-custody-protocol.md#credential-identity-across-the-registered-profile-transitions)
+validates exact1/active,1/active,2/paused,4/paused states before comparing copies;
+all other fields remain immutable. At7d8c848,135 native controls,74 cross-family
+controls and documentation checks exited0 with confirmed shutdown. The complete
+retained bundle reproduced the old reader's credential refusal and exited0
+through repaired host admission and both unchanged pinned Rust cutoff invocations.
+That offline replay does not relabel the failed live cell or satisfy fresh native
+acceptance. The selected108945d/1cb0c18 packages remain unchanged.

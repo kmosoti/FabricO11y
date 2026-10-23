@@ -418,3 +418,31 @@ both real guest-main paths requiring the query between server-start and resume,
 a literal positive sequence that the old caller rejects, and perpetual refusal
 that stops before resume. No product/package, oracle expectation or resource
 limit changes follow; repeat affected source controls and fresh native cells.
+
+## Credential identity across the registered profile transitions
+
+The retained `spindle-cadence-deb-life-03-fresh-04-active-04` completed all four
+stopped guest checkpoints and removal observation, then host admission exited2
+at `credential metadata/hash drift`. The stopped bundle's credential files,
+metadata, hashes and node ID are identical across checkpoints. Only enrollment
+revision/status changes as already required:1/active,1/active,2/paused,4/paused.
+The old whole-record comparison mistakenly treated that intended control state
+as immutable credential identity. Preserve the original failed receipt.
+
+Prospectively compare copies of those records. Require the exact enrollment
+schema, `spindle-1`, unchanged desired logs/interval, positive integer enrollment
+time, token hash shape and those exact typed revision/status states. Normalize
+only revision/status in comparison copies after validation. Every other original
+field remains equal, including complete credential-file stats/hashes, enrollment
+time/token hash and actual Spool node ID. Retain the existing narrowly registered
+Btrfs device-number comparison adjustment only for equal stable identities.
+Never rewrite raw records or accept an arbitrary status/revision transition.
+
+Register the real-shape positive checkpoint sequence and refusals for wrong
+revision/status, immutable enrollment/file/hash/node changes, missing fields and
+forged cached interpretations. Replace the source-only `literal-only` enrollment
+placeholder with the registered complete shape. Replay the complete retained
+stopped bundle through the repaired host admission and unchanged pinned Rust
+cutoff before spending another VM run. Label that replay as offline diagnostic
+only; the original controller2 remains failed. Repeat affected source controls
+and fresh native cells; product/package and independent oracles are unchanged.
