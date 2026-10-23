@@ -45,6 +45,7 @@ class Guest:
         self.network = network
         self.child = None
         self.boot_id = None
+        self.clock_channel = None
         self.root.mkdir(exist_ok=False)
         self.ssh = Q.ssh_base(self.port, key, self.root / 'known_hosts')
 
@@ -187,6 +188,8 @@ class Guest:
         return self.correlation()['monotonic_before_ns']
 
     def correlation(self):
+        if self.clock_channel is not None:
+            return self.clock_channel.correlation()
         before = time.monotonic_ns()
         result = Q.run([*self.ssh, 'python3', '-'], input_text='''import json,time
 from pathlib import Path
@@ -202,6 +205,18 @@ print(json.dumps({'boot_id':Path('/proc/sys/kernel/random/boot_id').read_text().
             raise ValueError('guest clock identity or sampling order changed')
         return {**value, 'host_request_before_ns': before, 'host_request_after_ns': after,
                 'ssh_roundtrip_ns': after - before}
+
+    def start_clock_channel(self):
+        if self.clock_channel is not None:
+            raise ValueError('clock channel already owned')
+        spec = importlib.util.spec_from_file_location('cross_clock_channel', Path(__file__).with_name('clock_channel.py'))
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        self.clock_channel = module.ClockChannel(self)
+        self.clock_channel.start()
+
+    def stop_clock_channel(self):
+        return self.clock_channel is None or self.clock_channel.close()
 
     def stop(self):
         if self.child is not None and self.child.poll() is None:

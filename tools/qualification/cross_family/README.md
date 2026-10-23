@@ -8,7 +8,7 @@ admission check.
 
 The producer's exact metric population, trace identities and log entropy have
 executable checks against the unchanged query oracle. The manager implements
-guest-local interruption timing, resource sampling, the four registered latency
+guest-local interruption timing, resource sampling, the five registered latency
 populations, `clearing-v2`, independent stopped-journal snapshot selection and
 unchanged custody/query oracles with named negative controls. Missing source
 bytes, clocks, ACKs or visibility observations fail admission.
@@ -35,3 +35,12 @@ credentials and configs use the ordinary management forward. The worker has only
 bounded staged-copy and stop requests; it reuses Guest provisioning and does not
 contain another producer, oracle or lifecycle checker. Archive its result files
 and original launcher receipt before cleaning its owned scratch.
+
+The [clock sampling registration](../../../docs/experiments/formal/spindle-cadence-protocol.md#persistent-management-clock-sampling)
+keeps one owned management SSH channel per guest during the workload. The
+`clock_channel.py` helper takes fresh guest clocks for each sequenced request,
+verifies the named guest unit's resource limits before admission and retains its
+original command exit and stopped-unit check. Both local and remote guests use
+the same lifecycle methods. Query answers retain raw per-response brackets;
+clock-channel failure or incomplete cleanup fails the cell. Pipe controls use an
+explicit fake kernel view and confer no guest-enforcement or runtime acceptance.

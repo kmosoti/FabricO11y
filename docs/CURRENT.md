@@ -40,11 +40,21 @@ no timing or backlog threshold is relaxed.
 The timing-capture successor is now constructed: product `aaca52d`, packaged
 snapshot `c0cc668`. All eighteen constructor cells plus marker preparation exited
 0 with confirmed stops; console/DEB/RPM A/B outputs reproduced and inspection
-completed. Its [exact tuple](experiments/formal/fixtures/successor-native-inputs.json)
-is selected for fresh testing. Hosted fast at `1fde8f0` retained an old integration
+completed. Its tuple was selected for fresh testing. Hosted fast at `1fde8f0` retained an old integration
 capacity expectation and a test-code Clippy failure; the harness expectations
 were corrected without changing the frozen production code. Fresh fast checks
 and every package acceptance gate remain open.
+The cadence successor is also constructed: product `108945d`, packaged snapshot
+`1cb0c185`, with all nineteen constructor commands exiting 0, confirmed stops,
+matching console/DEB/RPM outputs and inspection. Its
+[exact tuple](experiments/formal/fixtures/successor-native-inputs.json) is selected
+for testing. Fresh split smoke 16 passed custody, query correctness, offered ACK,
+all backlog, resource, configuration, outage and drain gates, but all five
+timing gates failed visibility. Both host shutdowns were confirmed. Stopped
+diagnosis found named observation intervals around 25–26 seconds, exceeding the
+query window. The registered management clock-channel repair keeps these
+packages and requires fresh controls and a full new cell; runtime acceptance
+remains open.
 The subsequent two-worker full split smoke completed producer, outage and drain,
 then refused 790 dropped edge timing events. The
 [bounded timing repair](experiments/formal/spindle-timing-capture-protocol.md)

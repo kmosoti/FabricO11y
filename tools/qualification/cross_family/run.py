@@ -265,6 +265,8 @@ test -n "$group"
 systemd-run --unit=cross-monitor --property=RemainAfterExit=yes --property=MemoryMax=64M --property=MemorySwapMax=0 --property=TasksMax=16 /usr/bin/python3 -B /root/cross/monitor.py --service-cgroup "$group" --out /root/cross/resources.jsonl
 ''', timeout=30)
             monitor_health(guest, result, 'start')
+        for guest in (server, edge):
+            guest.start_clock_channel()
         edge.script('systemd-run --unit=cross-producer --property=RemainAfterExit=yes --property=MemoryMax=128M --property=MemorySwapMax=0 --property=TasksMax=32 /usr/bin/python3 -B /root/cross/producer.py --config /root/cross/producer.json\n', timeout=30)
         # Grading uses all populations; unjoined clocks or missing evidence are
         # incomplete gates. No omitted gate can be promoted to a successful cell.
@@ -275,6 +277,16 @@ systemd-run --unit=cross-monitor --property=RemainAfterExit=yes --property=Memor
             http.client.HTTPException, subprocess.SubprocessError) as error:
         facts['error'] = f'{type(error).__name__}: {error}'
     finally:
+        facts['clock_channel_cleanup_confirmed'] = True
+        for guest in (edge, server):
+            try:
+                stopped = guest.stop_clock_channel()
+            except Exception as error:
+                stopped = False
+                facts[guest.role + '_clock_cleanup_error'] = type(error).__name__ + ': ' + str(error)
+            if not stopped:
+                facts['clock_channel_cleanup_confirmed'] = False
+                facts['exit'] = 2
         if client is not None:
             facts['fixture_connection_cleanup_confirmed'] = client.close()
             facts['fixture_http_connections'] = len(client.connections)
