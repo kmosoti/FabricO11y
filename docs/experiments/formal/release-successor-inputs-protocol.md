@@ -162,3 +162,17 @@ completion/shutdown receipts and inspection. Native tuple selection remains a
 separate policy commit after successful artifact admission. All affected package
 and service gates must be fresh, and final owner publication authorization remains
 required.
+
+## Constructed cadence native tuple
+
+The selected [exact native tuple](fixtures/successor-native-inputs.json) pins
+product `108945d298b37a4871a91f3d7e3f06eff84eb7dd` and packaged snapshot
+`1cb0c18570b0a5895a97732aafebb93f16fe4d90`. All eighteen constructor cells and additional
+ownership-marker preparation have original exits 0 and confirmed stops, with
+matching independent console/DEB/RPM outputs and completed package inspection.
+Artifact-admission SHA-256 is `c6817e9b550b5ff2def99a2912f15a5c04326080897f40eb3bc328d7acba491c`.
+This separate policy commit changes only exact input selectors and their literal
+fixtures. All refusal expectations and source/helper/owner joins remain fixed.
+The preceding candidate and failed smoke remain historical evidence. Fresh
+native, browser, service/recovery and full-soak gates remain required; this
+selection does not authorize publication.
