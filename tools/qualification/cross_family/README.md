@@ -37,7 +37,10 @@ contain another producer, oracle or lifecycle checker. Archive its result files
 and original launcher receipt before cleaning its owned scratch.
 
 The [clock sampling registration](../../../docs/experiments/formal/spindle-cadence-protocol.md#persistent-management-clock-sampling)
-keeps one owned management SSH channel per guest during the workload. The
+keeps one owned management SSH channel per guest during the workload. A raw
+systemd PTY avoids the retained enforcing-Fedora refusal to pass SSH pipe
+descriptors through D-Bus; echo and newline translation are disabled before
+the first frame. The
 `clock_channel.py` helper takes fresh guest clocks for each sequenced request,
 verifies the named guest unit's resource limits before admission and retains its
 original command exit and stopped-unit check. Both local and remote guests use

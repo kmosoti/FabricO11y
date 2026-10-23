@@ -14,6 +14,9 @@ MAX_REPLY = 4096
 WORKER = r'''
 import json,sys,time,subprocess
 from pathlib import Path
+if sys.stdin.isatty():
+ import tty
+ tty.setraw(sys.stdin.fileno())
 unit=sys.argv[1]
 group=Path('/proc/self/cgroup').read_text().strip().split(':',2)[2]
 assert group.endswith('/'+unit)
@@ -83,7 +86,7 @@ class ClockChannel:
         self.process.stdin.flush()
 
     def start(self):
-        payload = ['sudo', '-n', 'systemd-run', '--quiet', '--pipe', '--wait', '--collect',
+        payload = ['sudo', '-n', 'systemd-run', '--quiet', '--pty', '--wait', '--collect',
                    '--unit=' + self.unit, '--property=MemoryMax=32M', '--property=MemorySwapMax=0',
                    '--property=CPUQuota=25%', '--property=CPUQuotaPeriodSec=100ms',
                    '--property=TasksMax=8', '--property=RuntimeMaxSec=600',

@@ -1,6 +1,7 @@
 """Raw-clock protocol failures use actual pipes/process exits; no VM credit."""
 import json
 import os
+import pty
 from pathlib import Path
 import subprocess
 import sys
@@ -69,9 +70,33 @@ class ClockControls(unittest.TestCase):
         import shlex
         payload=shlex.split(self.command[-1])
         for value in ('--property=MemoryMax=32M','--property=MemorySwapMax=0','--property=CPUQuota=25%',
-                      '--property=TasksMax=8','--property=RuntimeMaxSec=600','--wait','--collect'):
+                      '--property=TasksMax=8','--property=RuntimeMaxSec=600','--wait','--collect','--pty'):
             self.assertIn(value,payload)
         self.assertEqual(payload[payload.index('-c')+1],C.WORKER)
+        self.assertNotIn('--pipe',payload)
+
+    def test_real_pty_is_raw_without_echo_or_newline_translation(self):
+        master,slave=pty.openpty()
+        process=subprocess.Popen([sys.executable,'-I','-u','-c',program()],stdin=slave,
+                                 stdout=slave,stderr=subprocess.PIPE)
+        os.close(slave)
+        try:
+            with os.fdopen(master,'rb',buffering=0) as stream:
+                channel=C.ClockChannel(self.guest)
+                channel.process=types.SimpleNamespace(stdout=stream)
+                self.assertEqual(channel.reply()['event'],'ready')
+                for sequence in range(1,4):
+                    os.write(stream.fileno(),(json.dumps(dict(action='sample',sequence=sequence))+'\n').encode())
+                    value=channel.reply()
+                    self.assertEqual(value['event'],'sample')  # an echoed request is never a sample
+                    self.assertEqual(value['sequence'],sequence)
+                os.write(stream.fileno(),b'{"action":"stop","sequence":4}\n')
+                self.assertEqual(channel.reply(),dict(event='stopped',sequence=4,samples=3))
+                self.assertEqual(process.wait(timeout=5),0)
+                self.assertEqual(process.stderr.read(),b'')
+        finally:
+            if process.poll() is None:process.kill();process.wait(timeout=5)
+            process.stderr.close()
 
     def test_wrong_startup_identity_and_each_enforced_limit_refused(self):
         variants=[program(boot='wrong'),program(runtime='infinity')]

@@ -273,7 +273,7 @@ systemd-run --unit=cross-monitor --property=RemainAfterExit=yes --property=Memor
         from grade import measure_and_grade
         facts['gates'] = measure_and_grade(server, edge, call, config, result, data_port)
         facts['exit'] = 0 if facts['gates'] and all(g['passed'] for g in facts['gates'].values()) else 1
-    except (OSError, ValueError, RuntimeError, KeyError, IndexError, TypeError,
+    except (OSError, EOFError, ValueError, RuntimeError, KeyError, IndexError, TypeError,
             http.client.HTTPException, subprocess.SubprocessError) as error:
         facts['error'] = f'{type(error).__name__}: {error}'
     finally:
