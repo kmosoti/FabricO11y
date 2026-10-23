@@ -152,6 +152,12 @@ tested Firefox executable and mapped sandbox-library hashes when its own
 observations are retained before the decision. The [registered counterexample](../experiments/formal/console-session-clock-protocol.md#firefox-sandbox-isolation-counterexample)
 separates Firefox's native sandbox setup from escape of the clock fixture.
 
+The migration producer retains the legacy discovery result, then derives a
+console-valid two-hour query window around its original canary timestamp for
+the owner, reader and access CLI. The [window correction registration](../experiments/formal/browser-migration-protocol.md#console-window-fixture-correction)
+keeps the independent exact-row, no-pagination and state-preservation grader
+unchanged. A refused or missing original timestamp cannot create a new canary.
+
 The registered Linux fixture and a finite real-browser engineering probe ran at
 the pinned harness source `7508a989`. The browser ledger distinguishes received
 HTTP responses from witnessed pre-response query cancellations; every received

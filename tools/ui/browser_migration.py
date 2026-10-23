@@ -8,6 +8,16 @@ import urllib.request
 from migration_contract import CANARY, grade, require
 
 
+def migration_query(row):
+    require(isinstance(row,dict) and row.get('node')=='migration-edge'
+        and row.get('body')==CANARY and type(row.get('observed_ns')) is int
+        and 0<=row['observed_ns']<2**64-1,'migration original timestamp unavailable')
+    timestamp=row['observed_ns']
+    return dict(kind='logs',node='migration-edge',contains=CANARY,limit=2,
+        from_ns=max(0,timestamp-3600_000_000_000),
+        to_ns=min(2**64-1,timestamp+3600_000_000_000))
+
+
 def manifest(root):
     result = {}
     for path in sorted(root.rglob('*')):
@@ -79,6 +89,8 @@ def prepare(args, work, out, origin, config, admin, launch, stop, wait, pace, re
     record['original'] = selected
     record['stopped_unchanged'] = manifest(state) == record['before']
     require(record['stopped_unchanged'], 'migration stopped state changed before ordinary serve')
+    query=migration_query(record['legacy']['rows'][0])
+    record['transition_query']=query.copy()
     return record, query, cli
 
 
