@@ -31,6 +31,13 @@ Independent console, Debian and RPM reproducibility, constructor refusal
 controls and artifact inspection completed with exit 0. Fresh installation,
 browser, service/recovery and soak acceptance remain open. The standalone fuzz
 lock now selects the same patched dependency; it does not alter those packages.
+The subsequent two-worker full split smoke completed producer, outage and drain,
+then refused 790 dropped edge timing events. The
+[bounded timing repair](experiments/formal/spindle-timing-capture-protocol.md)
+raises only the opt-in event queue to 16,384 while retaining exact overflow
+reporting. The old 256-event queue reproduced loss in 129 real Spool commits
+at `af7942c` (test exit 101). Repair verification, a new package successor and
+fresh acceptance are pending; the `1eaf9ad` artifacts retain their identities.
 The successor smoke reached offered work and its outage, then failed during
 resource extraction. The [monitor lifetime diagnostic](experiments/formal/cross-monitor-lifetime-protocol.md)
 retains the original 330 samples and literal manager states. The monitor's

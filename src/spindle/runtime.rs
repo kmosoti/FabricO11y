@@ -36,7 +36,7 @@ const LOG_LINE_OVERHEAD: usize = 256;
 const BATCH_RESERVE: usize = 96 * 1024;
 const SPOOL_RESERVE: u64 = 4096;
 /// Opt-in operational evidence; overflow remains explicit and never blocks commit.
-const TIMING_EVENT_CAPACITY: usize = 256;
+const TIMING_EVENT_CAPACITY: usize = 16_384;
 
 fn invalid(message: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
