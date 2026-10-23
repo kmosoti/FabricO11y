@@ -262,3 +262,18 @@ edge, producers, guests and outer cgroup; CPU time, I/O, live storage and peaks.
 TCG placement is a local OS/network acceptance measurement, not WAN or cloud
 deployment qualification. Stop/reap both guests, remove owned firewall rules,
 preserve failures/receipts and record cleanup before admitting the next cell.
+
+### Concurrent Spool inspection during drain
+
+Smoke `split-debian-fedora-smoke-09` stopped on original guest exit 1 with
+`fabricctl: log append in progress or recovery required; retry inspection`.
+The frame snapshot contract intentionally refuses a concurrent append rather
+than returning an inconsistent snapshot. The native installation observer already
+recognizes these finite retry diagnostics. Cross-family drain observation may
+retry only the seven exact frame inspection retry diagnostics, with exit 1 and
+empty stdout. Preserve each command's original status, stdout, stderr and guest
+identity. Other failures, malformed successful answers, recovery flags and missing
+ACKs remain failures. A retry is no successful snapshot and cannot establish
+drain. Keep the existing 320-second producer/drain and 335-second collector
+deadlines; retries consume those allowances. Controls must reject unknown errors,
+wrong exits, mixed output, permanent contention and recovery-required snapshots.
