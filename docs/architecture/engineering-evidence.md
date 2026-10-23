@@ -166,6 +166,13 @@ the owner, reader and access CLI. The [window correction registration](../experi
 keeps the independent exact-row, no-pagination and state-preservation grader
 unchanged. A refused or missing original timestamp cannot create a new canary.
 
+The private announcement environment sets Speech Dispatcher's `Timeout 0` in
+its disposable configuration so it remains available until the controller's
+bounded stop. The caller's deadline and real espeak-ng/ALSA/SSIP/AT-SPI checks
+remain mandatory. The [lifetime counterexample](../experiments/formal/browser-announcement-protocol.md#owned-speech-daemon-lifetime-counterexample)
+records the default idle exit before reader startup; neither a vanished daemon
+nor a failed observer cleanup can supply announcement acceptance.
+
 The registered Linux fixture and a finite real-browser engineering probe ran at
 the pinned harness source `7508a989`. The browser ledger distinguishes received
 HTTP responses from witnessed pre-response query cancellations; every received

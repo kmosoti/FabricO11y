@@ -46,6 +46,18 @@ The expiry caller now records each raw Date observation before checking it,
 with the same predicate, browser configuration and oracle. A fresh diagnostic
 and both merged acceptance rows remain required; no Firefox preference changed.
 
+Announcement row69 stopped before enrollment when its private speech daemon
+exited0 under the default idle timeout. The observer retained that persistent
+process failure and failed semantic cleanup; the original outer unit and owned
+groups still confirmed kernel shutdown/reaping. Exact-inode failure custody
+preserves those errors. A separate private native diagnostic reproduced the
+default exit after5.863 seconds and observed `Timeout 0` remain active for7.033
+seconds before explicit successful TERM. The [separate lifetime registration](experiments/formal/browser-announcement-protocol.md#owned-speech-daemon-lifetime-counterexample)
+now requires that explicit setting in the disposable speech configuration.
+Original caller deadlines, real backend/speech/event evidence and cleanup
+refusals remain unchanged. Source checks and both fresh announcement rows are
+still required; no host audio service or setting changed.
+
 Migration extraction row66 completed. Chrome migration row67 retained its
 original canary, then received HTTP400 for a reused all-u64 legacy query window
 that exceeds the console's documented24-hour limit. The stopped failure remains
