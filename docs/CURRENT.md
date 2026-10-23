@@ -526,3 +526,15 @@ exited0 with confirmed outer shutdown; the prior caller reproduced the literal
 resume-before-readiness refusal. The first source run's test clock-origin
 assertion failure is retained. Fresh native package acceptance remains pending;
 these mechanism checks do not qualify a package or relabel either failed cell.
+
+The third fresh Debian lifecycle reached distinct reboot and applied active3,
+but its pre-pause wait required adjacent equal high-water marks on an active
+stream. Retained inspections show new committed and ACKed Batches throughout;
+the failed controller2 is not a delivery-loss result or acceptance. The
+[registered active-prefix observation](experiments/formal/native-cutoff-adapter-protocol.md#active-reboot-prefix-before-pause)
+latches one new observed target and waits for its ACK at that single pre-pause
+call. The later paused stable-prefix drain and independent Rust cutoff are
+unchanged. At0fb48fd,132 native controls,74 cross-family controls and documentation
+checks exited0 with confirmed outer shutdown. The prior caller reproduced the
+fixed-prefix deadline on the advancing-stream control. Fresh native installation
+cells remain pending for the unchanged108945d/1cb0c18 packages.

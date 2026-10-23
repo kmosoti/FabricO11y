@@ -248,3 +248,30 @@ invalid paths, malformed metadata, ordering and bounds. No mocked successful
 helper can satisfy the positive integration check. Report the necessary remaining
 Python consumer explicitly; repository-wide removal must preserve independently
 specified semantics and every registered verifier obligation.
+
+
+## Active reboot prefix before pause
+
+The retained `spindle-cadence-deb-life-03-fresh-03-restart-03` reboot applied
+active revision3 and delivered new Batches, but its operational wait required
+identical adjacent high-water marks while collection was active. All121 successful
+inspections advanced;102 already ACKed the current high water. The40-second wait
+therefore failed despite progress. Preserve the original controller2, incomplete
+transfer and [literal inspections](fixtures/installation-active-prefix.json).
+
+Prospectively distinguish this existing active3/new-prefix observation from the
+subsequent paused fixed-prefix drain. At that single reboot call, latch the first
+successfully inspected high-water strictly above the prior stopped ACK, then
+require a successful inspection whose ACK covers that fixed observed target.
+Newer appends do not move the latched target. Keep the existing40-second/phase
+bounds, busy-error allowlist, raw commands, recovery/interrupted-append refusals,
+configuration/process identity joins and all source/query conservation checks.
+Reject nonboolean scope and combining active-prefix scope with an exact target.
+
+The pause2/4 drain stays unchanged: two identical observed high waters and ACK
+through that complete high water before stopping. Its independent Rust cutoff
+projection and negative controls stay unchanged. A source control must show an
+advancing active prefix succeeds on the new caller and fails on the old caller;
+stale ACK, no new commit, unrecovered state and moving paused prefix must fail.
+Repeat affected source checks and fresh native cells. This amendment changes no
+product/package, custody oracle, workload, deadline or resource limit.
