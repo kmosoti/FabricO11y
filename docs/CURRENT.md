@@ -31,6 +31,12 @@ Independent console, Debian and RPM reproducibility, constructor refusal
 controls and artifact inspection completed with exit 0. Fresh installation,
 browser, service/recovery and soak acceptance remain open. The standalone fuzz
 lock now selects the same patched dependency; it does not alter those packages.
+The full timing-capture smoke retained all events and completed all 19 gate
+records, but file-log ACK latency, visibility upper bounds and edge source-debt
+clearing failed. The [cadence/observation registration](experiments/formal/spindle-cadence-protocol.md)
+keeps those failures. Shorter idle log/trace polling and per-response query
+observations require fresh controls and another compatible package successor;
+no timing or backlog threshold is relaxed.
 The timing-capture successor is now constructed: product `aaca52d`, packaged
 snapshot `c0cc668`. All eighteen constructor cells plus marker preparation exited
 0 with confirmed stops; console/DEB/RPM A/B outputs reproduced and inspection

@@ -30,6 +30,12 @@ This project is deliberately split into short stages. Finish one stage, run it, 
 
 Read [current project state](CURRENT.md) for what actually exists and [system architecture](architecture/system.md) for its boundaries. Stages 1–3 and 5 describe the original FOL2 demonstration, which now lives in the research archive. Stage 4 is a checked target model, Stage 6 has its first measured baseline, and Stage 7 remains planned work.
 
+The node loop uses `Duration::min` to clamp an idle wait by both its remaining
+deadline and the input polling budget. A zero deadline requests no sleep; a
+positive deadline stays positive. The [cadence controls](experiments/formal/spindle-cadence-protocol.md)
+check these finite scheduling properties, while guest campaigns still measure
+real latency and resource use.
+
 The Spindle's opt-in timing capture illustrates bounded auxiliary state:
 `VecDeque<TimingEvent>` preserves FIFO order up to a fixed capacity, and a
 separate counter makes overflow visible. Taking events resets that counter;
