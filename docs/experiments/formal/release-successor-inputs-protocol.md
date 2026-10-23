@@ -274,3 +274,30 @@ fixtures. All refusal expectations and source/helper/owner joins remain fixed.
 The preceding candidate and failed smoke remain historical evidence. Fresh
 native, browser, service/recovery and full-soak gates remain required; this
 selection does not authorize publication.
+
+## Validation-alert exact input selection
+
+The registered `alert-presentation-01` constructor completed all18 original
+steps plus ownership-marker preparation with original exits0 and confirmed
+stops. Independent console/DEB/RPM outputs matched and package inspection
+completed. This is construction evidence only; no installation, browser or
+release acceptance is implied.
+
+Select product freeze `84a585d35cced26de170c4b34c0a05aab79fae3b` and packaged
+snapshot `34591b7b1390852ad9984339a9fa102c8259d743`. The canonical Debian package
+SHA256 is `5c40a5171ed2dffb6e6d6d7f387210d34997a651c15bbfb661b037f1b1ec84b3`;
+the RPM SHA256 is `a042e92eafd4d6126858e75d46e8a67fd0da7a843b35ceb4544058b8122897c0`.
+Their receipt hashes are respectively
+`a59914e9a0603092e95e00d9b4afa226be0e544313197f7b696733efb42c3ebc` and
+`6f2ee5756c6a9387fbc425965906a0367e5da7e5a36346cd3dcecb261a085a34`.
+Artifact-admission SHA256 is
+`c05ce790d2466daab32c30edf2bf12f5b4da280c29951eff2fb893728e0ddf3c`;
+package-inspection SHA256 is
+`ba69f8858aeb41104a782b3fa3bcaafbb191f6d7ecf4d4c3b564bf91a57877f8`.
+
+This separate policy commit changes only exact caller input selectors and
+matching literal source fixtures. Keep every source/helper/owner/ancestry join,
+refusal expectation, native oracle, resource and placement requirement.
+Prior E4 results remain historical; fresh affected exact-package gates and
+final owner publication authorization remain mandatory. The separately
+reported migration404/401 conflict remains unchanged and awaits owner decision.
