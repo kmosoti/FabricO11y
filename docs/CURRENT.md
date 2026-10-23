@@ -58,6 +58,17 @@ Original caller deadlines, real backend/speech/event evidence and cleanup
 refusals remain unchanged. Source checks and both fresh announcement rows are
 still required; no host audio service or setting changed.
 
+At `57383c4`, both unmerged expiry diagnostics and independent grades completed
+with exit0. The announcement diagnostic retained actual reader focus speech,
+then refused document identity: the initial AT desktop snapshot was empty,
+while later real document-load events identified the console URL and browser
+PID77. The [separate document lifecycle registration](experiments/formal/browser-announcement-protocol.md#late-document-registration-counterexample)
+captures that ordering. The observer now separately reads identity from the
+actual AT document after its load event, keeping the event unchanged and its
+snapshot text empty. Existing PID/URL, real-event/speech/PCM, secret-clearance
+and cleanup requirements remain unchanged. Source and fresh merged announcement
+acceptance remain pending; the stopped diagnostic is preserved.
+
 Migration extraction row66 completed. Chrome migration row67 retained its
 original canary, then received HTTP400 for a reused all-u64 legacy query window
 that exceeds the console's documented24-hour limit. The stopped failure remains

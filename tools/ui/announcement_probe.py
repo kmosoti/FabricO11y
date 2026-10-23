@@ -144,6 +144,7 @@ def observe(path):
                 role=source.getRoleName(),attributes=source.getAttributes(),text=(text or '')[:1024],monotonic_ns=time.monotonic_ns())
             if value.type.startswith('document:'):row['document_attributes']=source.queryDocument().getAttributes()
             append(path,row)
+            if value.type=='document:load-complete':snapshot_documents(source,path)
         except (NotImplementedError,AttributeError):pass
     pyatspi.Registry.registerEventListener(event,'object:text-changed','object:property-change',
         'object:children-changed','object:announcement','document:load-complete')

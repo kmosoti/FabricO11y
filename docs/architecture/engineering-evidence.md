@@ -173,6 +173,11 @@ remain mandatory. The [lifetime counterexample](../experiments/formal/browser-an
 records the default idle exit before reader startup; neither a vanished daemon
 nor a failed observer cleanup can supply announcement acceptance.
 
+After a real AT document-load event, the observer separately reads that
+document's identity through its AT interface. The [late-registration control](../experiments/formal/browser-announcement-protocol.md#late-document-registration-counterexample)
+covers an initially empty desktop. The unchanged event and metadata-only
+snapshot remain distinct; snapshots cannot supply presentation evidence.
+
 The registered Linux fixture and a finite real-browser engineering probe ran at
 the pinned harness source `7508a989`. The browser ledger distinguishes received
 HTTP responses from witnessed pre-response query cancellations; every received
