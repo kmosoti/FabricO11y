@@ -23,6 +23,7 @@ import urllib.request
 SEED = 0xA11FA001
 SECONDS = 195  # 15 warmup +120 measured +60 interruption; then drain.
 GUARD_SECONDS = 5
+TRACE_QUEUE_CAPACITY = SECONDS * 10
 
 
 def due_ns(begin, tick):
@@ -33,7 +34,7 @@ class TraceSender:
     """Bound transport waiting independently of the registered offer cadence."""
     def __init__(self, journal, failures, deadline, url='http://127.0.0.1:4318/v1/traces'):
         self.journal, self.failures, self.deadline, self.url = journal, failures, deadline, url
-        self.pending = queue.Queue(maxsize=256)
+        self.pending = queue.Queue(maxsize=TRACE_QUEUE_CAPACITY)
         self.workers = [threading.Thread(target=self.run) for _ in range(8)]
         for worker in self.workers:
             worker.start()

@@ -6,6 +6,7 @@ import re
 import os
 import threading
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 
 NATIVE_METRICS = (
@@ -21,8 +22,19 @@ NATIVE_METRICS = (
 SELF_LABEL = 'fabric-server-self'
 
 
+def visibility_bodies(node, lower, upper):
+    bodies = []
+    if node != 'controlled':
+        bodies.extend({'kind': kind, 'node': node, 'from_ns': lower, 'to_ns': upper, 'limit': 1000}
+                      for kind in ('logs', 'spans'))
+    for name in (('cross.counter',) if node == 'controlled' else NATIVE_METRICS):
+        bodies.append({'kind': 'metrics', 'node': node, 'name': name,
+                       'from_ns': lower, 'to_ns': upper, 'limit': 1000})
+    return bodies
+
+
 class VisibilityObserver:
-    """One owned observer; original per-name queries remain in the collector."""
+    """Bound named queries inside conservative per-node guest-clock envelopes."""
     def __init__(self, server, edge, call, result):
         self.server, self.edge, self.call, self.result = server, edge, call, result
         self.stop = threading.Event()
@@ -30,54 +42,98 @@ class VisibilityObserver:
         self.queries = []
         self.error = None
         self.completed = False
+        self.output_bytes = 0
 
     def start(self, begin):
         self.begin = begin
         self.thread = threading.Thread(target=self.run)
         self.thread.start()
 
-    def run(self):
-        size = 0
-        path = self.result / 'visibility-observer.jsonl'
+    @staticmethod
+    def error_value(error):
+        return {'type': type(error).__name__, 'error': str(error)[:500],
+                'status': getattr(error, 'code', None), 'exit': getattr(error, 'returncode', None)}
+
+    def fail(self, value):
+        self.stop.set()
+        if self.error is None:
+            self.error = value
+            try:
+                path = self.result / 'visibility-observer-error.json'
+                with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as output:
+                    json.dump(value, output, indent=2)
+                    output.write('\n')
+            except OSError as error:
+                self.error['evidence_error'] = str(error)
+
+    def keep(self, output, row):
+        raw = json.dumps(row) + '\n'
+        self.output_bytes += len(raw.encode())
+        if self.output_bytes > 64*1024**2:
+            raise ValueError('bounded visibility observation allowance exceeded')
+        output.write(raw)
+        output.flush()
+
+    def query(self, body):
+        if self.stop.is_set():
+            return {'query': body, 'cancelled': True}
         try:
-            with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as output:
-                while not self.stop.is_set():
-                    probe = self.edge.correlation()
-                    elapsed = (probe['monotonic_before_ns'] - self.begin['monotonic_ns']) / 1e9
-                    if elapsed > 145:
-                        self.completed = True
-                        break
-                    if elapsed < 15:
-                        self.stop.wait(.2)
-                        continue
-                    for guest, node, kinds in ((self.edge, 'edge', ('logs', 'spans', 'metrics')),
-                            (self.server, SELF_LABEL, ('logs', 'spans', 'metrics')),
-                            (self.edge, 'controlled', ('metrics',))):
-                        for kind in kinds:
-                            if self.stop.is_set():
-                                return
-                            before = guest.correlation()
-                            body = {'kind': kind, 'node': node, 'from_ns': before['unix_ns']-10*10**9,
-                                    'to_ns': before['unix_ns']+10**9, 'limit': 1000}
-                            if node == 'controlled':
-                                body['name'] = 'cross.counter'
-                            answer = self.call('/v1/admin/query', body, 'POST')
-                            after = guest.correlation()
-                            row = {'query': body, 'answer': answer, 'before': before, 'after': after,
-                                   'observer': 'independent-per-answer'}
-                            raw = json.dumps(row) + '\n'
-                            size += len(raw.encode())
-                            if size > 64*1024**2:
-                                raise ValueError('bounded visibility observation allowance exceeded')
-                            output.write(raw)
-                            output.flush()
-                            self.queries.append(row)
-                    self.stop.wait(.2)
+            return {'query': body, 'answer': self.call('/v1/admin/query', body, 'POST')}
         except BaseException as error:
-            self.error = {'type': type(error).__name__, 'error': str(error),
-                          'status': getattr(error, 'code', None)}
+            value = self.error_value(error)
             if isinstance(error, urllib.error.HTTPError):
                 error.close()
+            return {'query': body, 'error': value}
+
+    def sweep(self, guest, node, output, pool):
+        before = guest.correlation()
+        bodies = visibility_bodies(node, before['unix_ns']-10*10**9, before['unix_ns']+10**9)
+        if len(bodies) > 19:
+            raise ValueError('unregistered visibility sweep size')
+        futures = [pool.submit(self.query, body) for body in bodies]
+        answers = []
+        for future in as_completed(futures):
+            value = future.result()
+            if 'error' in value:
+                self.fail({**value['error'], 'query': value['query']})
+                self.keep(output, value)
+            elif value.get('cancelled'):
+                self.keep(output, value)
+            else:
+                answers.append(value)
+        after = guest.correlation()
+        for value in answers:
+            row = {**value, 'before': before, 'after': after, 'observer': 'bounded-named-sweep'}
+            self.keep(output, row)
+            self.queries.append(row)
+
+    def observe(self, output, pool):
+        while not self.stop.is_set():
+            probe = self.edge.correlation()
+            elapsed = (probe['monotonic_before_ns'] - self.begin['monotonic_ns']) / 1e9
+            if elapsed > 145:
+                self.completed = True
+                return
+            if elapsed < 15:
+                self.stop.wait(.2)
+                continue
+            for guest, node in ((self.edge, 'edge'), (self.server, SELF_LABEL), (self.edge, 'controlled')):
+                if self.stop.is_set():
+                    return
+                self.sweep(guest, node, output, pool)
+            self.stop.wait(.2)
+
+    def run(self):
+        path = self.result / 'visibility-observer.jsonl'
+        try:
+            with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as output, \
+                    ThreadPoolExecutor(max_workers=8) as pool:
+                try:
+                    self.observe(output, pool)
+                except BaseException as error:
+                    self.fail(self.error_value(error))
+        except BaseException as error:
+            self.fail(self.error_value(error))
 
     def finish(self, cancel=False):
         if cancel:
@@ -124,7 +180,10 @@ def monitor_health(guest, result, phase, unit='cross-monitor'):
          'boot_id': guest.boot_id}, indent=2) + '\n')
     if answer.returncode != 0:
         raise ValueError(unit + ' original status command failed')
-    return require_monitor_health(answer.stdout)
+    try:
+        return require_monitor_health(answer.stdout)
+    except ValueError as error:
+        raise ValueError(unit + ' original state invalid: ' + str(error)) from error
 
 
 def finish_monitor(guest, result):
@@ -193,7 +252,11 @@ def fixed_queries(call, lower, upper):
 def collect(server, edge, call, config, result, data_port):
     observer = VisibilityObserver(server, edge, call, result)
     try:
-        observation = collect_original(server, edge, call, config, result, data_port, observer)
+        def observed_call(*args, **kwargs):
+            if observer.error is not None:
+                raise RuntimeError('independent visibility observer failed: ' + str(observer.error))
+            return call(*args, **kwargs)
+        observation = collect_original(server, edge, observed_call, config, result, data_port, observer)
         observer.finish()
     except BaseException as error:
         try:
@@ -273,13 +336,7 @@ def collect_original(server, edge, call, config, result, data_port, observer):
             for node in ('edge', SELF_LABEL, 'controlled'):
                 node_wall = probe_server['unix_ns'] if node == SELF_LABEL else probe_edge['unix_ns']
                 lower, upper = node_wall - 10*10**9, node_wall + 10**9
-                bodies = []
-                if node != 'controlled':
-                    bodies.extend({'kind': k, 'node': node, 'from_ns': lower, 'to_ns': upper, 'limit': 1000}
-                                  for k in ('logs', 'spans'))
-                for name in (('cross.counter',) if node == 'controlled' else NATIVE_METRICS):
-                    bodies.append({'kind': 'metrics', 'node': node, 'name': name,
-                                   'from_ns': lower, 'to_ns': upper, 'limit': 1000})
+                bodies = visibility_bodies(node, lower, upper)
                 before = edge.correlation() if node != SELF_LABEL else server.correlation()
                 answers = []
                 for body in bodies:

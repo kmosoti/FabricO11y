@@ -470,3 +470,11 @@ Producer and outage transient units also retain their original completion
 state. The collector preserves each probe and requires loaded active/exited
 success before accepting completion, independently of a successful status
 transport or the source/end ledgers. Missing and failed states remain refused.
+The producer's queue is bounded by the fixed total offer population, within its
+unchanged 128 MiB service cap. This preserves the full fault workload when
+transport stalls. The observer reuses the collector's existing named query
+shapes; the product's metrics API still requires a name. Up to eight requests
+run concurrently inside a fresh conservative per-node clock envelope. All
+answers retain that envelope, every error is preserved immediately, and owned
+query workers finish before the observer can complete. The original serial
+query work remains; no metric wildcard API or clock point estimate is added.

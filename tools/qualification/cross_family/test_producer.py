@@ -61,7 +61,7 @@ class ProducerTests(unittest.TestCase):
                 journal = P.Journal(path)
                 failures = []
                 sender = P.TraceSender(journal, failures, time.monotonic()+5, url)
-                self.assertEqual((len(sender.workers), sender.pending.maxsize), (8, 256))
+                self.assertEqual((len(sender.workers), sender.pending.maxsize), (8, 1950))
                 for tick in range(16):
                     sender.offer(tick, b'original', time.monotonic_ns())
                 sender.finish()
@@ -94,6 +94,34 @@ class ProducerTests(unittest.TestCase):
                 self.assertTrue(any('injected worker defect' in error for error in failures))
                 self.assertFalse(any(t.is_alive() for t in pool.workers))
             journal.stream.close()
+
+    def test_original_capacity_rejects_retained_tick_but_full_offer_bound_remains_finite(self):
+        fixture = json.loads((HERE.parents[2]/'docs/experiments/formal/fixtures/cross-producer-overflow.json').read_text())
+        class Journal:
+            def __init__(self):
+                self.rows = []
+            def append(self, row):
+                self.rows.append(row)
+        sender = P.TraceSender.__new__(P.TraceSender)
+        sender.journal, sender.failures = Journal(), []
+        sender.pending = queue.Queue(maxsize=fixture['original_queue_capacity'])
+        for tick in range(1632-256, 1632):
+            sender.offer(tick, b'original', 1)
+        sender.offer(fixture['first_rejected_tick'], b'original', 2)
+        self.assertEqual(sender.journal.rows[0]['tick'], 1632)
+        self.assertEqual(sender.failures, ['trace transport queue overflow'])
+        sender.pending = queue.Queue(maxsize=P.TRACE_QUEUE_CAPACITY)
+        sender.failures.clear()
+        total_bytes = 0
+        for tick in range(fixture['offered_exports']):
+            payload, _ = P.trace(tick, 1000)
+            total_bytes += len(payload)
+            sender.offer(tick, payload, tick)
+        self.assertFalse(sender.failures)
+        self.assertEqual(sender.pending.qsize(), 1950)
+        self.assertLess(total_bytes, 8*1024**2)  # Payload bound, not a process-RSS claim.
+        sender.offer(1950, b'one extra offer', 1950)
+        self.assertEqual(sender.failures, ['trace transport queue overflow'])
 
     def test_exact_32_cumulative_monotonic_points(self):
         metric, = query_oracle.decode_metrics_request(P.metrics(3, 100, 200))

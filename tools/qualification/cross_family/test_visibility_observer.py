@@ -7,6 +7,9 @@ import threading
 import types
 import unittest
 import urllib.error
+import time
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import Mock, patch
 
 import measure
 
@@ -25,11 +28,13 @@ class Guest:
 
 
 class ObserverControls(unittest.TestCase):
-    def test_independent_thread_covers_all_signals_with_individual_brackets(self):
+    def test_independent_thread_covers_named_signals_inside_guest_clock_envelopes(self):
         with tempfile.TemporaryDirectory() as directory:
             out = Path(directory)
             calls = []
             def call(route, body, method):
+                if body['kind'] == 'metrics' and not isinstance(body.get('name'), str):
+                    raise urllib.error.HTTPError('http://fixture', 400, 'metric name required', {}, io.BytesIO())
                 calls.append((body['node'], body['kind'], body.get('name')))
                 return {'rows': []}
             observer = measure.VisibilityObserver(Guest('server'), Guest('edge'), call, out)
@@ -37,9 +42,10 @@ class ObserverControls(unittest.TestCase):
             observer.finish()
             self.assertFalse(observer.thread.is_alive())
             self.assertTrue(observer.completed)
-            self.assertEqual(set(calls), {('edge', k, None) for k in ('logs', 'spans', 'metrics')}
-                | {(measure.SELF_LABEL, k, None) for k in ('logs', 'spans', 'metrics')}
-                | {('controlled', 'metrics', 'cross.counter')})
+            expected = {(node, kind, None) for node in ('edge', measure.SELF_LABEL) for kind in ('logs', 'spans')}
+            expected |= {(node, 'metrics', name) for node in ('edge', measure.SELF_LABEL) for name in measure.NATIVE_METRICS}
+            expected.add(('controlled', 'metrics', 'cross.counter'))
+            self.assertEqual(set(calls), expected)
             for row in observer.queries:
                 self.assertEqual(row['after']['monotonic_after_ns'] - row['before']['monotonic_before_ns'], 10**9)
                 self.assertEqual(row['before']['boot_id'], row['after']['boot_id'])
@@ -62,6 +68,62 @@ class ObserverControls(unittest.TestCase):
             self.assertEqual(observer.error['status'], 503)
             self.assertTrue(response.closed)
             self.assertFalse(observer.completed)
+            error = json.loads((Path(directory)/'visibility-observer-error.json').read_text())
+            self.assertEqual(error['status'], 503)
+
+    def test_sweep_uses_bounded_concurrency_and_brackets_every_completed_answer(self):
+        active = peak = 0
+        lock, ready = threading.Lock(), threading.Event()
+        completions = []
+        class LiveGuest:
+            def correlation(self):
+                now = time.monotonic_ns()
+                return {'boot_id': 'test', 'monotonic_before_ns': now,
+                        'monotonic_after_ns': now, 'unix_ns': time.time_ns()}
+        def call(route, body, method):
+            nonlocal active, peak
+            began = time.monotonic_ns()
+            with lock:
+                active += 1
+                peak = max(peak, active)
+                if active == 8:
+                    ready.set()
+            try:
+                if not ready.wait(timeout=2):
+                    raise AssertionError('original serial sweep cannot release the eight-request barrier')
+                if body['kind'] == 'metrics' and not isinstance(body.get('name'), str):
+                    raise AssertionError('legacy API requires a metric name')
+                time.sleep(.01)
+                return {'rows': []}
+            finally:
+                with lock:
+                    active -= 1
+                    completions.append((began, time.monotonic_ns()))
+        with tempfile.TemporaryDirectory() as directory, ThreadPoolExecutor(max_workers=8) as pool:
+            observer = measure.VisibilityObserver(None, None, call, Path(directory))
+            output = io.StringIO()
+            observer.sweep(LiveGuest(), 'edge', output, pool)
+            self.assertEqual(peak, 8)
+            self.assertEqual(active, 0)
+            self.assertEqual(len(observer.queries), 19)
+            first = observer.queries[0]
+            self.assertTrue(all(first['before']['monotonic_before_ns'] <= start <= end
+                <= first['after']['monotonic_after_ns'] for start, end in completions))
+            self.assertTrue(all(row['before'] == first['before'] and row['after'] == first['after']
+                                for row in observer.queries))
+
+    def test_first_observer_error_is_persisted_and_refuses_next_original_request(self):
+        def original(server, edge, call, config, result, port, observer):
+            observer.fail({'type': 'HTTPError', 'error': 'original 400', 'status': 400})
+            call('/v1/admin/query', {}, 'POST')
+            return {'queries': []}
+        with tempfile.TemporaryDirectory() as directory, patch.object(measure, 'collect_original', side_effect=original):
+            client = Mock()
+            with self.assertRaisesRegex(RuntimeError, 'observer failed'):
+                measure.collect(None, None, client, {}, Path(directory), None)
+            client.assert_not_called()
+            saved = json.loads((Path(directory)/'visibility-observer-error.json').read_text())
+            self.assertEqual(saved['status'], 400)
 
     def test_cancel_and_unstopped_worker_remain_distinct_from_completion(self):
         with tempfile.TemporaryDirectory() as directory:
