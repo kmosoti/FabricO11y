@@ -1,5 +1,44 @@
 # Current project state
 
+## Active release acceptance
+
+The owner lifted the alpha/package acceptance pause for the scoped Blade/G15
+plan. Publication still requires the owner's final decision against the completed
+bundle. The single persistent execution queue is
+`results/release-execution/queue.json` on Blade's DATA drive.
+
+The selected product source is `108945d298b37a4871a91f3d7e3f06eff84eb7dd`, with
+packaged snapshot `1cb0c18570b0a5895a97732aafebb93f16fe4d90`. The exact packages are
+Debian `0.1.0~alpha.1` amd64 and RPM `0.1.0-0.alpha.1` x86_64. These are distinct
+registered source identities joined by the construction and payload manifests.
+
+The [native installation checkpoint](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-cadence-results-01/42e7da25ec0db4993b5f8c335b82da3dcf0a2441)
+completed all ten fresh cells at harness `dca07d1`: two positive Debian 13/Fedora 44
+lifecycles, two producer refusals and six named package mutations. Every original
+controller and independent grade exited 0 with confirmed QEMU shutdown and scratch
+removal; expected mutation guest exits remain 1. Four earlier failed live attempts
+remain failed. The cleanup negative control and original ten-cell closeout exited
+0. OS labels identify these tested environments, not general compatibility.
+
+Current fast and extended hosted workflows succeeded, and their original receipts
+were archived and verified at real CI merge `30360d8`, whose complete tree matches
+`dca07d1`. The focused security workflow was not triggered by the native/docs-only
+changes; earlier exact-product security evidence retains its original identity.
+The G15 placement smoke19 and seven real remote adapter controls also completed;
+that does not replace the four required full forwarding combinations. Fedora 45
+on G15 remains an execution host, with no installation acceptance credit.
+
+The 70-row browser matrix and supplements, two fresh owner walkthroughs, six main
+trials, four million-record query cells, trace fixture, four full forwarding
+combinations, three 30-minute outages, remaining fault/pressure controls and full
+7,200-second offered-work soak remain open. B1–B13 closure, release bundle,
+final cleanup and owner-authorized publication are not complete.
+
+## Retained release preparation history
+
+The following checkpoints retain their original revisions and outcomes. The active
+summary above supersedes their then-pending scheduling state.
+
 The owner lifted the alpha/package acceptance pause on 2026-10-22 for the
 [Blade/G15 release placement](experiments/formal/release-placement-protocol.md).
 The persistent execution queue is `results/release-execution/queue.json` on Blade;
