@@ -1,5 +1,36 @@
 # Disposable controlled-time session checks
 
+## Subsecond dispatch placement counterexample
+
+Registered before correction, 2026-10-23. The unmerged Firefox diagnostic at
+`b2630f3` completed all32 native session responses and its AB browser lock.
+Its C server then permanently refused with `FCLK-LEDGER` before the final
+browser401. The retained contiguous ledger has4781 rows and1,048,548 JSON
+bytes, so the next record would exceed the existing1MiB cap. This is a failed
+diagnostic, not acceptance. A prior Chrome C ledger had4779 rows and1,048,387
+bytes at successful shutdown, leaving little phase headroom.
+
+The producer's50–200ms fractional-second placement window forces almost every
+550ms-paced keepalive to wait until the following whole second. Register
+`test_browser_expiry_alignment.py` before correcting that unnecessary wait.
+A forward jump eligible at650ms must dispatch without another whole-second
+wait; early observations below50ms and late ones above700ms still wait.
+Adjacent target seconds retain the offset and wait in real time. Keep the
+same550ms pacer, all32 observations, frame/offset limits, exact session targets,
+240-second shared deadline, independent1-second native brackets and complete
+possible-call-set checks. Every actual native REALTIME interval must still be
+inside the request bracket and return exactly the requested second; a straddle
+or ambiguous call remains inconclusive. No clock record may be dropped,
+truncated, compressed away or removed from the independent oracle input.
+
+Allow producer placement at50–700ms of a native second. This is a scheduling
+choice, not an acceptance threshold: the unchanged oracle decides whether
+each resulting real call is valid. Preserve the1MiB ledger cap and its refusal,
+all native clock controls, resources, workload and product/package bytes.
+Run the source counterexample, affected regressions and fresh complete merged
+Chrome/Firefox expiry rows. Report actual ledger bytes and timings; no speedup
+or resource-fit claim follows from this prospective registration.
+
 ## Firefox sandbox isolation counterexample
 
 Registered before correction, 2026-10-23. Fresh Chrome row64 on merged
