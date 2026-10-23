@@ -69,3 +69,40 @@ widen the first name's already completed clock bracket. Keep actual eight-reques
 admission overload refusal and all prior observer failures. Repeat the affected
 controls and a full fresh cell with unchanged offer counts, outage, deadlines,
 backlog/latency gates and host budgets.
+
+## Persistent management clock sampling
+
+Fresh split smoke `split-debian-fedora-smoke-16`, product `108945d` / package
+snapshot `1cb0c185`, completed all 19 gate records and both shutdowns. ACK p99
+for offered records was 0.871386242 s; all three backlog gates passed, with
+edge maximum clearing busy period 1.954342350 s. Exact custody, queries,
+resources, configuration, outage and drain passed. All five timing gates still
+failed visibility, including censored observations. Keep this failed run intact.
+
+Stopped diagnostic `cadence-evidence-diagnostic-02` exited 0. The added observer
+completed only six sweeps: named-query polling intervals reached 26.070271098 s,
+while each refreshed query window covered about eleven seconds. Server query
+clock brackets had median width 0.877780026 s. Repeated SSH/Python startup for
+each raw guest-clock sample is a leading source of observation overhead. This
+diagnosis does not establish exact product visibility or regrade the failure.
+
+Keep the constructed packages and all current queries, raw clock fields,
+per-response brackets, independent oracles and numeric gates. Through the existing
+Guest lifecycle and its management forwarding, allow one owned persistent SSH
+clock channel per guest. A request must produce a fresh raw boot/monotonic/wall
+sample inside that guest; never derive guest time from host time. Serialize
+requests, match sequence numbers, and reject wrong boot, reordered clocks,
+malformed/oversized replies, disconnect and timeouts. Bound each channel to
+8,192 samples, 4 KiB per reply, 32 MiB memory, zero swap, one-quarter CPU,
+eight tasks and 600 seconds. Verify guest unit limits before exposing samples.
+These fixture processes remain inside the existing guest/host envelopes.
+
+Close the owned channels on every path. Require original SSH/systemd command
+exit status and confirmation that the named guest units have stopped; transport
+success alone is insufficient. Preserve failure stderr, startup/stop facts and
+sample counts. Exercise correct samples, wrong identity/sequence/order, partial
+reply, disconnect, deadline, sample/byte bounds, failed payload and cleanup
+failures. Start and stop through the existing guest interface, including the
+remote subclass; do not introduce another runner or alter the data outage path.
+Repeat affected lifecycle/observer/TLS controls and a fresh full split cell.
+This is a prospective harness repair, not new acceptance or publication approval.
