@@ -134,3 +134,31 @@ This separate policy update rebinds native caller selectors and their literal
 fixtures while retaining every existing admission refusal and source/helper join.
 Fresh native, browser, service/recovery and soak gates remain required. Earlier
 candidate artifacts and failed split trials retain their original identities.
+
+## Cadence successor construction
+
+The complete `aaca52d` / `c0cc668` split smoke retained timing events, exact
+custody, every offered record and all three query phases. It failed file-log
+ACK/source-debt timing and conservative visibility bounds. The
+[cadence registration](spindle-cadence-protocol.md) preserves the original
+failure, stopped-evidence diagnosis and unchanged numeric gates.
+
+Product freeze `108945d298b37a4871a91f3d7e3f06eff84eb7dd` requests 250 ms idle log
+polling and 10 ms trace-enabled idle waits, clamped by the old remaining deadline.
+Native metric intervals, delivery slices, backoff, wire/authentication and all
+resource caps remain fixed; the 16,384-event capture bound remains. Harness-only
+changes reuse bounded strictly verified HTTPS connections and retain a direct
+guest-clock witness after each query response. All ten source validation commands
+at that freeze exited 0, including node cadence, library/Spindle integration,
+Clippy, custody, 60 cross-family controls and documentation checks. This is not
+end-to-end latency acceptance.
+
+Use prefix `spindle-cadence-01` with the existing eighteen constructor cells and
+additional ownership-marker preparation. Pin the original failed smoke, diagnostic
+and source-check receipts in the new construction authorization. Keep historical
+`aaca52d` / `c0cc668` artifacts immutable. Require the same independent A/B
+reproducibility, negative controls, complete namespace accounting, original
+completion/shutdown receipts and inspection. Native tuple selection remains a
+separate policy commit after successful artifact admission. All affected package
+and service gates must be fresh, and final owner publication authorization remains
+required.
