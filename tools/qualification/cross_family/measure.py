@@ -44,6 +44,7 @@ class VisibilityObserver:
         self.error = None
         self.completed = False
         self.output_bytes = 0
+        self.query_clock = threading.local()
 
     def start(self, begin):
         self.begin = begin
@@ -92,13 +93,28 @@ class VisibilityObserver:
                 error.close()
             return {'query': body, 'error': value}
 
+    def observed_query(self, guest, body, initial):
+        before = getattr(self.query_clock, 'after', None)
+        if (before is None or before['boot_id'] != initial['boot_id']
+                or before['monotonic_before_ns'] < initial['monotonic_before_ns']):
+            before = initial
+        body = {**body, 'from_ns': before['unix_ns']-10*10**9,
+                'to_ns': before['unix_ns']+10**9}
+        value = self.query(body)
+        after = guest.correlation()
+        if (before['boot_id'] != after['boot_id']
+                or before['monotonic_after_ns'] > after['monotonic_before_ns']):
+            raise ValueError('visibility response clock identity or order changed')
+        self.query_clock.after = after
+        return {**value, 'before': before, 'after': after,
+                'observer': 'bounded-named-response'}
+
     def sweep(self, guest, node, output, pool):
         before = guest.correlation()
         bodies = visibility_bodies(node, before['unix_ns']-10*10**9, before['unix_ns']+10**9)
         if len(bodies) > 19:
             raise ValueError('unregistered visibility sweep size')
-        futures = [pool.submit(self.query, body) for body in bodies]
-        answers = []
+        futures = [pool.submit(self.observed_query, guest, body, before) for body in bodies]
         for future in as_completed(futures):
             value = future.result()
             if 'error' in value:
@@ -107,12 +123,8 @@ class VisibilityObserver:
             elif value.get('cancelled'):
                 self.keep(output, value)
             else:
-                answers.append(value)
-        after = guest.correlation()
-        for value in answers:
-            row = {**value, 'before': before, 'after': after, 'observer': 'bounded-named-sweep'}
-            self.keep(output, row)
-            self.queries.append(row)
+                self.keep(output, value)
+                self.queries.append(value)
 
     def observe(self, output, pool):
         while not self.stop.is_set():

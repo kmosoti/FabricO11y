@@ -103,7 +103,7 @@ class ObserverControls(unittest.TestCase):
                 finally:
                     with lock:
                         active -= 1
-                        completions.append((began, time.monotonic_ns()))
+                        completions.append(((body['kind'], body.get('name')), began, time.monotonic_ns()))
                     slots.release()
             with self.subTest(workers=workers), tempfile.TemporaryDirectory() as directory:
                 observer = measure.VisibilityObserver(None, None, call, Path(directory))
@@ -115,11 +115,14 @@ class ObserverControls(unittest.TestCase):
                 if workers == measure.OBSERVER_HTTP_WORKERS:
                     self.assertIsNone(observer.error)
                     self.assertEqual(len(observer.queries), 19)
-                    first = observer.queries[0]
-                    self.assertTrue(all(first['before']['monotonic_before_ns'] <= start <= end
-                        <= first['after']['monotonic_after_ns'] for start, end in completions))
-                    self.assertTrue(all(row['before'] == first['before'] and row['after'] == first['after']
-                                        for row in observer.queries))
+                    by_query = {key: (start, end) for key, start, end in completions}
+                    for row in observer.queries:
+                        key = (row['query']['kind'], row['query'].get('name'))
+                        start, end = by_query[key]
+                        self.assertLessEqual(row['before']['monotonic_before_ns'], start)
+                        self.assertLessEqual(end, row['after']['monotonic_after_ns'])
+                        self.assertEqual(row['query']['from_ns'], row['before']['unix_ns']-10*10**9)
+                    self.assertEqual(len({row['after']['monotonic_after_ns'] for row in observer.queries}), 19)
                 else:
                     self.assertEqual(observer.error['status'], 503)
                     self.assertEqual(base64.b64decode(observer.error['response_body_base64']),
@@ -128,6 +131,46 @@ class ObserverControls(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, 'observer incomplete'):
                         observer.finish()
                 slots.release()
+
+    def test_later_name_delay_does_not_widen_already_completed_answer(self):
+        class LiveGuest:
+            def correlation(self):
+                now = time.monotonic_ns()
+                return {'boot_id': 'test', 'monotonic_before_ns': now,
+                        'monotonic_after_ns': now, 'unix_ns': time.time_ns()}
+        blocked, release = threading.Event(), threading.Event()
+        calls = []
+        def call(route, body, method):
+            calls.append(body)
+            if len(calls) == 2:
+                blocked.set()
+                if not release.wait(3):
+                    raise TimeoutError('test did not release later name')
+            return {'rows': []}
+        with tempfile.TemporaryDirectory() as directory:
+            observer = measure.VisibilityObserver(None, None, call, Path(directory))
+            def run():
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    observer.sweep(LiveGuest(), 'edge', io.StringIO(), pool)
+            thread = threading.Thread(target=run)
+            thread.start()
+            try:
+                self.assertTrue(blocked.wait(2))
+                deadline = time.monotonic()+2
+                while not observer.queries and time.monotonic() < deadline:
+                    time.sleep(.001)
+                self.assertTrue(observer.queries, 'group-wide capture hides the first completed answer')
+                first = observer.queries[0]
+                original = dict(first['after'])
+                released_at = time.monotonic_ns()
+            finally:
+                release.set()
+                thread.join(timeout=3)
+            self.assertFalse(thread.is_alive())
+            self.assertEqual(first['after'], original)
+            self.assertLessEqual(first['after']['monotonic_after_ns'], released_at)
+            self.assertEqual(len(observer.queries), 19)
+            self.assertTrue(any(row['after']['monotonic_after_ns'] > released_at for row in observer.queries))
 
     def test_first_observer_error_is_persisted_and_refuses_next_original_request(self):
         def original(server, edge, call, config, result, port, observer):

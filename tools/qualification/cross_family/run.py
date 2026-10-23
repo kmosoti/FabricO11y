@@ -3,6 +3,8 @@
 from __future__ import annotations
 import argparse
 import hashlib
+import http.client
+import io
 import json
 import os
 from pathlib import Path
@@ -12,6 +14,8 @@ import signal
 import ssl
 import subprocess
 import time
+import threading
+import urllib.error
 import urllib.request
 from guest import Guest, Q, image
 from remote import placement_options, validate_placement, edge_guest
@@ -23,6 +27,64 @@ HERE = Path(__file__).resolve().parent
 
 def interrupted(signum, frame):
     raise InterruptedError('cross-family manager interrupted by signal ' + str(signum))
+
+
+class FixtureHTTPS:
+    """Two owned, strictly verified per-thread fixture connections; no retries."""
+    MAX_RESPONSE_BYTES = 16 * 1024**2
+
+    def __init__(self, port, context, token, host='127.0.0.1'):
+        if context.verify_mode != ssl.CERT_REQUIRED or not context.check_hostname:
+            raise ValueError('strict fixture TLS verification required')
+        if host not in ('127.0.0.1', 'localhost') or type(port) is not int or not 0 < port < 65536:
+            raise ValueError('owned loopback fixture authority required')
+        self.port, self.host, self.context, self.token = port, host, context, token
+        self.local, self.lock = threading.local(), threading.Lock()
+        self.connections, self.closed, self.close_errors = [], False, []
+
+    def call(self, route, body=None, method=None):
+        if not isinstance(route, str) or not route.startswith('/') or route.startswith('//'):
+            raise ValueError('relative fixture route required')
+        with self.lock:
+            if self.closed:
+                raise ValueError('fixture client already closed')
+            connection = getattr(self.local, 'connection', None)
+            if connection is None:
+                if len(self.connections) >= 2:
+                    raise ValueError('fixture connection budget exceeded')
+                connection = http.client.HTTPSConnection(self.host, self.port,
+                                                        context=self.context, timeout=15)
+                self.local.connection = connection
+                self.connections.append(connection)
+        try:
+            data = None if body is None else json.dumps(body).encode()
+            connection.request(method or ('GET' if body is None else 'POST'), route, body=data,
+                headers={'authorization': 'Bearer ' + self.token, 'content-type': 'application/json'})
+            response = connection.getresponse()
+            try:
+                raw = response.read(self.MAX_RESPONSE_BYTES + 1)
+                status, reason, headers = response.status, response.reason, response.headers
+            finally:
+                response.close()
+            if len(raw) > self.MAX_RESPONSE_BYTES:
+                raise ValueError('fixture response exceeds bounded allowance')
+            if not 200 <= status < 300:
+                raise urllib.error.HTTPError(f'https://{self.host}:{self.port}{route}',
+                                             status, reason, headers, io.BytesIO(raw))
+            return json.loads(raw)
+        except BaseException:
+            connection.close()
+            raise
+
+    def close(self):
+        with self.lock:
+            self.closed = True
+            for connection in self.connections:
+                try:
+                    connection.close()
+                except OSError as error:
+                    self.close_errors.append(str(error)[:500])
+            return not self.close_errors and all(c.sock is None for c in self.connections)
 
 
 def fixture_tls(root):
@@ -82,6 +144,7 @@ def main():
     server = Guest('server', args.server_family, root, result, key, 4096, data_port)
     edge = edge_guest(args, args.edge_family, root, result, key, data_port)
     began = time.monotonic()
+    client = None
     try:
         server.start()
         edge.start()
@@ -124,12 +187,8 @@ systemctl daemon-reload
 systemctl enable --now fabrico11y-server
 ''', timeout=60)
         context = ssl.create_default_context(cafile=str(root / 'ca.pem'))
-        base = f'https://127.0.0.1:{data_port}'
-        def call(route, body=None, method=None):
-            request = urllib.request.Request(base + route, data=None if body is None else json.dumps(body).encode(),
-                        method=method, headers={'authorization': 'Bearer ' + admin, 'content-type': 'application/json'})
-            with urllib.request.urlopen(request, context=context, timeout=15) as response:
-                return json.loads(response.read())
+        client = FixtureHTTPS(data_port, context, admin)
+        call = client.call
         deadline = time.monotonic() + 60
         while True:
             try:
@@ -213,6 +272,10 @@ systemd-run --unit=cross-monitor --property=RemainAfterExit=yes --property=Memor
     except (OSError, ValueError, RuntimeError, KeyError, IndexError, TypeError, subprocess.SubprocessError) as error:
         facts['error'] = f'{type(error).__name__}: {error}'
     finally:
+        if client is not None:
+            facts['fixture_connection_cleanup_confirmed'] = client.close()
+            facts['fixture_http_connections'] = len(client.connections)
+            facts['fixture_http_close_errors'] = client.close_errors
         for guest in (edge, server):
             if guest.child is not None and guest.child.poll() is None:
                 try:
