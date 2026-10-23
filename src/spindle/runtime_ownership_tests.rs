@@ -330,7 +330,6 @@ fn ownership_encoding_finite_pairs() {
     }
 }
 
-
 fn timing_burst_fixture() -> serde_json::Value {
     serde_json::from_str(include_str!(
         "../../docs/experiments/formal/fixtures/spindle-timing-burst.json"
@@ -380,7 +379,12 @@ fn timing_registered_finite_population_is_preserved_in_fifo_order() {
     let scratch = Scratch::new();
     let mut node = scratch.spindle(64 * 1024 * 1024, true);
     node.enable_timing_events();
-    let stages = ["traces_accepted", "spool_committed", "send_started", "answer_received"];
+    let stages = [
+        "traces_accepted",
+        "spool_committed",
+        "send_started",
+        "answer_received",
+    ];
     for sequence in 1..=count {
         for stage in stages {
             node.timing(sequence, stage, node.timing_sample());
@@ -401,8 +405,10 @@ fn timing_registered_finite_population_is_preserved_in_fifo_order() {
 #[test]
 fn timing_overflow_reports_exact_loss_and_take_resets_it_without_unbounding_memory() {
     let fixture = timing_burst_fixture();
-    assert!(TIMING_EVENT_CAPACITY * std::mem::size_of::<TimingEvent>()
-        <= fixture["maximum_event_array_bytes"].as_u64().unwrap() as usize);
+    assert!(
+        TIMING_EVENT_CAPACITY * std::mem::size_of::<TimingEvent>()
+            <= fixture["maximum_event_array_bytes"].as_u64().unwrap() as usize
+    );
     let scratch = Scratch::new();
     let mut node = scratch.spindle(64 * 1024 * 1024, true);
     node.enable_timing_events();
@@ -413,7 +419,12 @@ fn timing_overflow_reports_exact_loss_and_take_resets_it_without_unbounding_memo
     let (events, dropped) = node.take_timing_events();
     assert_eq!(events.len(), TIMING_EVENT_CAPACITY);
     assert_eq!(dropped, 3);
-    assert!(events.iter().enumerate().all(|(index, event)| event.sequence == index as u64));
+    assert!(
+        events
+            .iter()
+            .enumerate()
+            .all(|(index, event)| event.sequence == index as u64)
+    );
     let (events, dropped) = node.take_timing_events();
     assert!(events.is_empty());
     assert_eq!(dropped, 0);
