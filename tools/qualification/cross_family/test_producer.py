@@ -33,6 +33,46 @@ class ProducerTests(unittest.TestCase):
         self.assertEqual(sum(tick % 150 == 0 for tick in range(len(times))), 13)
         self.assertEqual(sum(t >= 140000000000 for t in times), 600)
 
+    def test_serial_transport_does_not_block_or_discard_full_registered_offers(self):
+        fixture = json.loads((HERE.parents[2] / 'docs/experiments/formal/fixtures/cross-timing-burst.json').read_text())
+        import timing
+        with self.assertRaisesRegex(ValueError, fixture['refusal']):
+            timing.events(fixture['loss_marker'], 'original-boot')
+        entered, release = threading.Event(), threading.Event()
+        class Response:
+            status = 200
+            def __enter__(self):
+                return self
+            def __exit__(self, *args):
+                pass
+            def read(self):
+                return b'{}'
+        def blocked(*args, **kwargs):
+            entered.set()
+            if not release.wait(5):
+                raise TimeoutError('test transport not released')
+            return Response()
+        with tempfile.TemporaryDirectory() as name, patch.object(P.urllib.request, 'urlopen', side_effect=blocked):
+            journal, failures = P.Journal(Path(name)/'offers.jsonl'), []
+            sender = P.TraceSender(journal, failures, time.monotonic()+10)
+            try:
+                self.assertEqual(len(sender.workers), fixture['prospective_trace_http_workers'])
+                sender.offer(0, b'original', 0)
+                self.assertTrue(entered.wait(2))
+                for tick in range(1, fixture['offered_exports']):
+                    sender.offer(tick, b'original', tick)
+                self.assertEqual(sender.pending.qsize(), 1949)
+                self.assertFalse(failures)
+            finally:
+                release.set()
+                sender.finish()
+                journal.stream.close()
+            rows = [json.loads(line) for line in (Path(name)/'offers.jsonl').read_text().splitlines()]
+            self.assertEqual([r['tick'] for r in rows], list(range(1950)))
+            self.assertTrue(all(r['type']=='trace_admitted' for r in rows))
+            self.assertFalse(failures)
+            self.assertFalse(any(t.is_alive() for t in sender.workers))
+
     def test_original_short_deadline_fails_but_bounded_sender_retains_all_outcomes(self):
         class Handler(http.server.BaseHTTPRequestHandler):
             def log_message(self, *args):
@@ -61,7 +101,7 @@ class ProducerTests(unittest.TestCase):
                 journal = P.Journal(path)
                 failures = []
                 sender = P.TraceSender(journal, failures, time.monotonic()+5, url)
-                self.assertEqual((len(sender.workers), sender.pending.maxsize), (8, 1950))
+                self.assertEqual((len(sender.workers), sender.pending.maxsize), (1, 1950))
                 for tick in range(16):
                     sender.offer(tick, b'original', time.monotonic_ns())
                 sender.finish()

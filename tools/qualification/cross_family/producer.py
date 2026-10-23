@@ -24,6 +24,7 @@ SEED = 0xA11FA001
 SECONDS = 195  # 15 warmup +120 measured +60 interruption; then drain.
 GUARD_SECONDS = 5
 TRACE_QUEUE_CAPACITY = SECONDS * 10
+TRACE_HTTP_WORKERS = 1
 
 
 def due_ns(begin, tick):
@@ -35,7 +36,7 @@ class TraceSender:
     def __init__(self, journal, failures, deadline, url='http://127.0.0.1:4318/v1/traces'):
         self.journal, self.failures, self.deadline, self.url = journal, failures, deadline, url
         self.pending = queue.Queue(maxsize=TRACE_QUEUE_CAPACITY)
-        self.workers = [threading.Thread(target=self.run) for _ in range(8)]
+        self.workers = [threading.Thread(target=self.run) for _ in range(TRACE_HTTP_WORKERS)]
         for worker in self.workers:
             worker.start()
 

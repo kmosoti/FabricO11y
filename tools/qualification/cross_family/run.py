@@ -16,7 +16,7 @@ import urllib.request
 from guest import Guest, Q, image
 from remote import placement_options, validate_placement, edge_guest
 from measure import monitor_health, OBSERVER_HTTP_WORKERS
-from producer import SECONDS, GUARD_SECONDS, TRACE_QUEUE_CAPACITY
+from producer import SECONDS, GUARD_SECONDS, TRACE_QUEUE_CAPACITY, TRACE_HTTP_WORKERS
 
 HERE = Path(__file__).resolve().parent
 
@@ -69,7 +69,7 @@ def main():
              'exit': 2, 'gates': {}}
     facts['fixture_configuration'] = {'query_plan': 'walk', 'legacy_query_admission_slots': 2,
         'original_query_workers': 1, 'observer_http_workers': OBSERVER_HTTP_WORKERS,
-        'trace_http_workers': 8, 'trace_queue_capacity': TRACE_QUEUE_CAPACITY,
+        'trace_http_workers': TRACE_HTTP_WORKERS, 'trace_queue_capacity': TRACE_QUEUE_CAPACITY,
         'offered_seconds': SECONDS, 'guard_seconds': GUARD_SECONDS}
     adapter_hashes = {}
     for source in sorted(HERE.glob('*.py')):
