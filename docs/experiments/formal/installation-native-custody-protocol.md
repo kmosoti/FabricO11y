@@ -361,3 +361,40 @@ answer bytes. The valid transient case must fail on the old implementation as
 an assertion mismatch, not a missing-API error. Test both drain/reboot paths;
 no other query caller receives transport retry. Source mechanism tests do not
 qualify either package or relabel failed Fedora03.
+
+
+## Prospective native pause-marker witness
+
+The retained `spindle-cadence-deb-life-03-fresh-01` stopped bundle rejected
+`coverage-unknown` after pause revision2. Its original exit2 remains failed.
+`Spindle::poll_config` intentionally creates this synced sidecar on pause; it
+also records failed collection, so its name alone is insufficient authority.
+Keep candidate108945d/package1cb0c18 and the existing workload and oracles.
+
+Before another native cell, extend only the private stopped-capture witness.
+Admit a marker solely for the exact native fixture with the original successful
+pause command and original successful applied node-list response, same boot,
+revision2 or4, exact paused log/interval profile and a positive decimal u64
+nanosecond timestamp plus newline. Require a single-link regular0600 file owned
+by the stopped service. Its timestamp must lie between the pause request start
+and applied-confirmation finish, an interval no longer than the existing30-second
+configuration bound. Preserve raw bytes, metadata, command records and hashes.
+Retain wall-clock and monotonic elapsed observations; this finite timestamp join
+assumes no guest wall-clock step during that transition and does not establish
+physical clock synchronization. Capture starts its30-second deadline before
+issuing the request, without renewing the bound.
+
+Default/legacy capture still refuses the marker. Missing proof, wrong boot,
+wrong command, failed command, missing/duplicate node, wrong revision/profile,
+malformed/out-of-window timestamp, unsafe metadata and staged `.tmp` files must
+refuse. Native before/installed checkpoints remain marker-free. Independent host
+admission must join proof to the original commands archive and raw tree; final
+conservation reparses raw marker/profile bytes and proof rather than a cached
+interpretation. Existing custody, ACK, reboot, stop, query and raw-tree checks
+remain mandatory. No delivery/query/rate oracle or product change is authorized.
+
+Register a literal pause marker rejected by the previous reader, a valid bounded
+pause proof, and mutations of every proof/metadata/time boundary above. Repeat
+all affected native source controls and all ten fresh installation cells; do not
+relabel the original failed cell. Cross-host placement19 remains evidence of its
+unchanged lifecycle adapter; it does not supply installation acceptance.
