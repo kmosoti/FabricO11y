@@ -253,6 +253,34 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
                     self.admit_transfer(bundle,admission,native.sha(bundle.read_bytes()))
             self.reset_fixture()
 
+    def test_pause_marker_requires_original_raw_command_join(self):
+        from test_custody_pause import proof
+        files, admission = self.fixture_files()
+        snapshot = native.unpack(files['drain/drain-snapshot.json'])
+        receipt = files['drain/drain-receipt.json']
+        observation = proof()
+        observation['boot_id'] = snapshot['boot_id']
+        raw = b'115\n'
+        info = (1, 2, stat.S_IFREG | 0o600, os.geteuid(), os.getegid(), 1, len(raw), 0, 0)
+        snapshot['coverage_pause'] = dict(raw=raw, observation=observation)
+        snapshot['file_observations']['coverage-unknown'] = info
+        snapshot['files']['coverage-unknown'] = dict(sha256=native.sha(raw), size=len(raw),
+            mode=info[2], uid=info[3], gid=info[4])
+        receipt['pause_observation'] = observation
+        files['drain/drain-snapshot.json'] = native.packed(snapshot)
+        key = 'drain/drain-raw.tar'
+        stream = io.BytesIO()
+        with tarfile.open(fileobj=io.BytesIO(files[key])) as old, tarfile.open(fileobj=stream, mode='w') as new:
+            for item in old.getmembers():
+                new.addfile(item, old.extractfile(item) if item.isfile() else None)
+            self.tar_member(new, 'spool/coverage-unknown', raw, info)
+        files[key] = stream.getvalue()
+        # Every outer hash is recomputed; a matching forged proof still cannot
+        # substitute for the original commands actually captured by the guest.
+        bundle = self.bundle(files)
+        with self.assertRaisesRegex(ValueError, 'native pause marker original command join'):
+            self.admit_transfer(bundle, admission, native.sha(bundle.read_bytes()))
+
     def test_transfer_digest_path_and_ownership_refusals(self):
         files, admission = self.fixture_files()
         for variant in ('digest', 'path', 'owner'):
