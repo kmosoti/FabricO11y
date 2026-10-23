@@ -27,6 +27,15 @@ dependencies and preserving a payload-log name collision. Hosted checks and
 fresh affected expiry rows remain required. Product source, package hashes,
 expiry boundaries and the independent session oracle are unchanged.
 
+The subsequent unmerged actual-server diagnostic retained a genuine browser401
+and the visible locked sign-in form with server exit0. It still failed because
+the observer required an unshipped `locked-screen` testid. The
+[separate semantic witness registration](experiments/formal/console-session-clock-protocol.md#semantic-locked-view-counterexample)
+retains that failure and its source counterexample. The observer now checks the
+actual visible locked form and absence of protected content, joined to one
+completed Check session401. This supplies no browser acceptance until fresh
+complete Chrome/Firefox expiry rows pass on the merged source.
+
 The selected product source is `e4d51bd2c5a68eb9a333155c912770d2b006ba3d`, with
 packaged snapshot `62b44589769d2871fb10c775d11e32460fbdff0e`. The exact packages are
 Debian `0.1.0~alpha.1` amd64 and RPM `0.1.0-0.alpha.1` x86_64. These are distinct

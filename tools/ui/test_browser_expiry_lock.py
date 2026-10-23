@@ -31,4 +31,16 @@ class LockedViewWitness(unittest.TestCase):
             bad=copy.deepcopy(ACTUAL_LOCKED);del bad[name]
             with self.subTest(name=name):self.assertFalse(witness(bad))
 
+    def test_only_one_completed_actual_session401_is_a_request_witness(self):
+        actual=dict(path='/v1/console/session',method='GET',status=401,
+            state='response',started_ms=9000.0,finished_ms=9524.5)
+        self.assertTrue(browser_expiry.denied_check_request([actual]))
+        cases=[[],[actual,actual]]
+        for key,value in [('path','/v1/console/logout'),('method','POST'),
+                ('status',403),('state','rejected'),('finished_ms',None),
+                ('finished_ms',float('nan')),('finished_ms',8999.0)]:
+            cases.append([dict(actual,**{key:value})])
+        for case in cases:
+            with self.subTest(case=case):self.assertFalse(browser_expiry.denied_check_request(case))
+
 if __name__=='__main__':unittest.main()

@@ -1,11 +1,32 @@
 """Exact controlled-time AB/C supplement; ordinary browser clocks stay unchanged."""
 import hashlib
+import math
 import os
 from pathlib import Path
 import time
 
 import session_clock_oracle as oracle
 from session_clock import freeze_images, kernel_time, process_binding
+
+
+def locked_view(snapshot):
+    expected = dict(title='Connect to FabricO11y', sign_in_visible=True,
+        principal_visible=True, sign_out_disabled=True, protected_results=False,
+        owner_visible=False)
+    return isinstance(snapshot, dict) and all(name in snapshot
+        and type(snapshot[name]) is type(value) and snapshot[name] == value
+        for name, value in expected.items())
+
+
+def denied_check_request(rows):
+    if not isinstance(rows, list) or len(rows) != 1 or not isinstance(rows[0], dict):
+        return False
+    row = rows[0]
+    return (row.get('path') == '/v1/console/session' and row.get('method') == 'GET'
+        and row.get('status') == 401 and row.get('state') == 'response'
+        and all(type(row.get(key)) in (int, float) and math.isfinite(row[key])
+                for key in ('started_ms', 'finished_ms'))
+        and 0 <= row['started_ms'] <= row['finished_ms'])
 
 
 def align(clock, second, deadline, pace):
@@ -116,8 +137,25 @@ def run_expiry(args,receipt,clocks,groups,parent,states,first_fixture,start_owne
         check(before//1000000<=browser<=after//1000000,'actual browser Date remains ordinary')
         receipt['session_expiry'].setdefault('browser_clocks',[]).append({'raw_before_ns':before,'date_ms':browser,'raw_after_ns':after})
         js('window.fetch=window.fixtureExpiryFetch;delete window.fixtureExpiryFetch')
+        check(js('return document.querySelector(".live-connection .connection-title")?.innerText.trim()==="Connected"'),
+            'actual browser is connected before denied Check session')
+        before=js('return window.fixtureApiHeaders.length')
         click('Check session')
-        wait(lambda:js('return !!document.querySelector("[data-testid=locked-screen]")'),'actual denied check locks browser')
+        def snapshot():
+            return js('''const connection=document.querySelector('.live-connection');
+              const visible=e=>!!e && e.getClientRects().length>0 && getComputedStyle(e).visibility!=='hidden';
+              const status=connection?.querySelector('[role=status]');
+              const principal=Array.from(document.querySelectorAll('label')).find(e=>e.textContent.trim().startsWith('Principal ID'))?.querySelector('input');
+              const signout=Array.from(connection?.querySelectorAll('button')||[]).find(e=>e.textContent.trim()==='Sign out');
+              return {title:connection?.querySelector('.connection-title')?.innerText.trim(),
+                sign_in_visible:visible(status)&&status.innerText.trim()==='Sign in to view your telemetry.',
+                principal_visible:visible(principal),sign_out_disabled:!!signout&&signout.disabled,
+                protected_results:!!document.querySelector('.results,.tail-terminal'),
+                owner_visible:document.body.textContent.includes('Browser fixture owner · owner')};''')
+        wait(lambda:locked_view(snapshot()),'actual denied check locks browser')
+        request_rows=js('return window.fixtureApiHeaders.slice(arguments[0])',before)
+        check(denied_check_request(request_rows),'actual Check session consumed one complete browser401')
+        receipt['session_expiry'].setdefault('locked_views',[]).append({'snapshot':snapshot(),'requests':request_rows})
         check(js('return !document.querySelector(".results") && !document.querySelector(".tail-terminal") && !document.body.textContent.includes("Browser fixture owner · owner")'),
             'actual session 401 clears protected browser views')
 

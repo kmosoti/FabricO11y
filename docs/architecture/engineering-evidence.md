@@ -136,6 +136,15 @@ exercise both a short held call and a genuine stall. This synchronization is
 outside the product packages; real server binding and both fresh browser expiry
 cells remain separate requirements.
 
+The controlled-time browser witness observes the shipped connection card's
+visible locked message/title, principal input and disabled sign-out, with no
+protected results or owner identity. It joins that state to one completed
+Check session401 in the actual browser request ledger. It does not depend on
+an unshipped `locked-screen` attribute. The [semantic counterexample](../experiments/formal/console-session-clock-protocol.md#semantic-locked-view-counterexample)
+retains the original false rejection and rejects partial/protected views and
+missing or unrelated request evidence. The independent32-row session oracle
+and all actual-server binding requirements are unchanged.
+
 The registered Linux fixture and a finite real-browser engineering probe ran at
 the pinned harness source `7508a989`. The browser ledger distinguishes received
 HTTP responses from witnessed pre-response query cancellations; every received
