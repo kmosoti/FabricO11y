@@ -8,5 +8,9 @@
   "registered_exports": 1950,
   "prospective_capacity": 16384,
   "maximum_event_array_bytes": 2097152,
-  "overflow_remains_failure": true
+  "overflow_remains_failure": true,
+  "integration_collection_calls": 5476,
+  "integration_events_per_call": 3,
+  "integration_expected_retained": 16384,
+  "integration_expected_dropped": 44
 }

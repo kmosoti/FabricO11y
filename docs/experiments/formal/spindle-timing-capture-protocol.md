@@ -39,3 +39,16 @@ and all affected release gates. Repeat a full disposable split smoke, retaining
 two trace workers and the unchanged offer clock, full outage, deadlines, oracles
 and numerical gates. No acceptance or losslessness claim follows before that run;
 a finite queue can still overflow on other workloads.
+
+## Existing integration overflow control at the new cap
+
+Hosted fast verification at `1fde8f0` exposed the existing
+`optional_timing_follows_durable_commit_and_is_bounded` integration test still
+pinning the historical 256-event cap. Its first assertions about disabled
+capture, three events per real collection and fresh Spool reopen stay fixed.
+Move its overflow input from 100 collections (300 events) to 5476 collections
+(16,428 events): require the new 16,384-event retained prefix and exactly the same
+44 dropped events. Preserve the empty second take. Do not replace the overflow
+control with a zero-loss assertion or suppress a warning. This is a harness
+expectation repair for the already registered bound; production freeze `aaca52d`
+remains unchanged. Rerun affected integration/library tests and full fast checks.

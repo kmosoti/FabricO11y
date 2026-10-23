@@ -1169,12 +1169,16 @@ fn optional_timing_follows_durable_commit_and_is_bounded() {
     );
     let mut node = Spindle::open_with_paths(cfg, host_paths(&scratch.0)).unwrap();
     node.enable_timing_events();
-    for _ in 0..100 {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../docs/experiments/formal/fixtures/spindle-timing-burst.json"
+    ))
+    .unwrap();
+    for _ in 0..fixture["integration_collection_calls"].as_u64().unwrap() {
         node.collect_once().unwrap();
     }
     let (events, dropped) = node.take_timing_events();
-    assert_eq!(events.len(), 256);
-    assert_eq!(dropped, 44);
+    assert_eq!(events.len(), fixture["integration_expected_retained"].as_u64().unwrap() as usize);
+    assert_eq!(dropped, fixture["integration_expected_dropped"].as_u64().unwrap());
     assert!(node.take_timing_events().0.is_empty());
 }
 
