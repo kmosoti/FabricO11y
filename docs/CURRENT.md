@@ -24,6 +24,17 @@ only that exact Firefox executable/library hash pair and records facts before
 refusal; the fixture helper, control keys/socket and every other preload remain
 forbidden. Source checks and fresh merged Firefox expiry remain required.
 
+The subsequent unmerged Firefox diagnostic completed all32 native responses
+and its AB browser lock. C then stopped with `FCLK-LEDGER` before its browser
+lock:4781 contiguous rows consumed1,048,548 bytes of the unchanged1MiB cap.
+The [separate dispatch placement registration](experiments/formal/console-session-clock-protocol.md#subsecond-dispatch-placement-counterexample)
+reproduced the unnecessary whole-second wait with the old alignment helper.
+The producer now admits50–700ms placement within a native second, preserving
+the550ms pacer, adjacent-boundary real waits, all32 observations and every
+native clock record. The independent exact-second/request-window oracle and
+all ledger/resource/deadline bounds remain unchanged. Source checks and both
+fresh merged expiry rows remain required; the failed diagnostic is retained.
+
 Migration extraction row66 completed. Chrome migration row67 retained its
 original canary, then received HTTP400 for a reused all-u64 legacy query window
 that exceeds the console's documented24-hour limit. The stopped failure remains

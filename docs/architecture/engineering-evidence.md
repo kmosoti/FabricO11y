@@ -152,6 +152,14 @@ tested Firefox executable and mapped sandbox-library hashes when its own
 observations are retained before the decision. The [registered counterexample](../experiments/formal/console-session-clock-protocol.md#firefox-sandbox-isolation-counterexample)
 separates Firefox's native sandbox setup from escape of the clock fixture.
 
+The expiry producer can place an already paced request50–700ms into a native
+second. Forward jumps avoid an unnecessary whole-second stall; adjacent expiry
+seconds still retain the offset and wait in real time. Every native clock call
+is retained under the original1MiB ledger cap, and the unchanged oracle checks
+all possible REALTIME calls against the request bracket and exact target
+second. The [placement counterexample](../experiments/formal/console-session-clock-protocol.md#subsecond-dispatch-placement-counterexample)
+records why a producer scheduling choice must not silently increase that cap.
+
 The migration producer retains the legacy discovery result, then derives a
 console-valid two-hour query window around its original canary timestamp for
 the owner, reader and access CLI. The [window correction registration](../experiments/formal/browser-migration-protocol.md#console-window-fixture-correction)

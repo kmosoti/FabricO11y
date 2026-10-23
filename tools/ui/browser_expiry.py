@@ -55,8 +55,8 @@ def align(clock, second, deadline, pace):
         raw=kernel_time();host,fraction=divmod(raw,1000000000)
         current=host+previous
         oracle.require(current<=second,'session-boundary-inconclusive')
-        if current==second and 50_000_000<=fraction<=200_000_000:return
-        if current<second-1 and 50_000_000<=fraction<=200_000_000:
+        if current==second and 50_000_000<=fraction<=700_000_000:return
+        if current<second-1 and 50_000_000<=fraction<=700_000_000:
             clock.advance(second-host);return
         time.sleep(.005)
 
