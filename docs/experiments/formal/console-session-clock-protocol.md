@@ -1,5 +1,55 @@
 # Disposable controlled-time session checks
 
+## Semantic locked-view counterexample
+
+Registered before correction, 2026-10-23. Disposable
+`clock-server-diagnostic-01` on the admitted repaired helper retained real idle
+responses200/401 and a subsequent browser session401. Its server stopped with
+exit0. The captured page displayed the locked sign-in form, but the harness
+waited for `[data-testid=locked-screen]`, absent from the shipped UI. Keep this
+failed diagnostic separately; neither it nor the earlier row64 is acceptance.
+
+`test_browser_expiry_lock.py` freezes that observed semantic state without the
+unshipped attribute. The old predicate must reproduce its false rejection and
+reject the converse testid-only protected/partial views after correction. Use
+the actual visible connection title, locked status message, principal input,
+disabled sign-out, and absence of protected results/owner identity. Missing
+observations cannot satisfy the witness. Require the actual Check session
+dispatch to complete with401 in the existing browser request ledger; an old
+locked screen is insufficient. Preserve the unchanged32 native session
+observations, exact denial error, ordinary browser clock and protected-view
+clearance checks. This repairs the observer, not product UI, expiry, API,
+authorization, workload or deadline. Run the source red, the same controls after
+repair and fresh complete Chrome/Firefox expiry rows before acceptance.
+
+## Native lock-contention counterexample
+
+Registered before repair, 2026-10-23. Fresh Chrome expiry row 64 on product
+`e4d51bd` and harness `e283f88` stopped with server exit 78 and `FCLK-LOCK`.
+Its idle-before and idle-at responses matched the oracle; the subsequent browser
+lock check could not complete after the fixture helper terminated the server.
+Keep the original failed row and its stopped evidence; it supplies no expiry
+acceptance. The 63 earlier rows retain their actual source identities.
+
+Register `test_session_clock_contention.py` against the exact retained old
+helper before changing it. A separate test-only downstream clock interposer
+holds one native call for 50 ms while a second thread enters the unmodified
+helper. Both calls must finish with ordinary monotonic values and a complete
+contiguous ledger. A 250 ms held call must permanently refuse with `FCLK-LOCK`
+after a bounded monotonic wait. The controller checks an 80 ms lower witness
+and a 1 s upper process-observation bracket. This two-interposer fixture is a
+mechanism counterexample only, never actual-server binding or session evidence.
+
+Replace the scheduling-dependent 64-yield acquisition attempt with a 100 ms
+native CLOCK_MONOTONIC mutex deadline. A genuine acquisition timeout or error
+still permanently refuses. Preserve underlying return/errno, foreign-fork
+isolation, the sole interposed API, all frame/offset/ledger bounds and the
+unchanged session oracle. No product/package, browser 240 s, native 1 s evidence
+bracket, request, resource or expiry boundary is changed. Run the named red on
+the old helper, then unchanged controls on the repaired helper, the complete
+native admission and affected source regressions. Require fresh actual Chrome
+and Firefox expiry rows on the merged harness and newly admitted helper.
+
 Status: prospective; **not run**. Issue #45's C2/ACCESS-1 requires packaged
 idle and absolute session expiry. The existing native explicit-now test proves
 its scoped adapter semantics; it does not establish packaged browser behavior.

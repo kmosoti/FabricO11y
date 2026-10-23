@@ -4,7 +4,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
-#include <sched.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -73,9 +72,16 @@ int clock_gettime(clockid_t id, struct timespec *result) {
         return status;
     }
     if (id != CLOCK_REALTIME && id != CLOCK_MONOTONIC && id != CLOCK_MONOTONIC_RAW) return underlying(id, result);
-    unsigned attempt;
-    for (attempt = 0; attempt < 64 && pthread_mutex_trylock(&mutex); ++attempt) sched_yield();
-    if (attempt == 64) fail("FCLK-LOCK");
+    int incoming_errno = errno;
+    struct timespec lock_deadline;
+    if (underlying(CLOCK_MONOTONIC, &lock_deadline)) fail("FCLK-MONOTONIC");
+    lock_deadline.tv_nsec += 100000000L;
+    if (lock_deadline.tv_nsec >= 1000000000L) {
+        lock_deadline.tv_nsec -= 1000000000L;
+        if (__builtin_add_overflow(lock_deadline.tv_sec, (time_t)1, &lock_deadline.tv_sec)) fail("FCLK-LOCK");
+    }
+    if (pthread_mutex_clocklock(&mutex, CLOCK_MONOTONIC, &lock_deadline)) fail("FCLK-LOCK");
+    errno = incoming_errno;
     if (id == CLOCK_REALTIME) receive(0);
     struct timespec before, after;
     if (underlying(CLOCK_MONOTONIC, &before)) fail("FCLK-MONOTONIC");

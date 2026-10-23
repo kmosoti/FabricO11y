@@ -7,6 +7,35 @@ plan. Publication still requires the owner's final decision against the complete
 bundle. The single persistent execution queue is
 `results/release-execution/queue.json` on Blade's DATA drive.
 
+The current candidate's ten native installation cells completed at harness
+`e283f88`: both lifecycle positives, two producer refusals and six package
+mutations, with original controllers/grades/closeout exit 0 and confirmed
+shutdown and scratch removal. Expected mutation guest exits remain 1. Its seven
+fresh remote adapter controls and disposable placement smoke20 also completed;
+the smoke supplies no full forwarding-cell credit.
+
+Fresh browser rows 1–63 met their registered outcomes on the exact candidate.
+Chrome session-expiry row64 failed: the fixture clock helper terminated its
+server with exit78/`FCLK-LOCK` after the two idle-boundary responses matched the
+oracle. The stopped failure remains preserved and grants no expiry acceptance.
+The [separate contention registration](experiments/formal/console-session-clock-protocol.md#native-lock-contention-counterexample)
+reproduced that refusal with the exact old helper. The replacement fixture-only
+100 ms monotonic acquisition completed both native contention controls and full
+native admission with exit0. All 76 UI source tests completed with exit0;
+documentation checks completed after installing the new worktree's locked
+dependencies and preserving a payload-log name collision. Hosted checks and
+fresh affected expiry rows remain required. Product source, package hashes,
+expiry boundaries and the independent session oracle are unchanged.
+
+The subsequent unmerged actual-server diagnostic retained a genuine browser401
+and the visible locked sign-in form with server exit0. It still failed because
+the observer required an unshipped `locked-screen` testid. The
+[separate semantic witness registration](experiments/formal/console-session-clock-protocol.md#semantic-locked-view-counterexample)
+retains that failure and its source counterexample. The observer now checks the
+actual visible locked form and absence of protected content, joined to one
+completed Check session401. This supplies no browser acceptance until fresh
+complete Chrome/Firefox expiry rows pass on the merged source.
+
 The selected product source is `e4d51bd2c5a68eb9a333155c912770d2b006ba3d`, with
 packaged snapshot `62b44589769d2871fb10c775d11e32460fbdff0e`. The exact packages are
 Debian `0.1.0~alpha.1` amd64 and RPM `0.1.0-0.alpha.1` x86_64. These are distinct
@@ -33,7 +62,9 @@ product freeze. Focused security recorded eleven Linux, eleven node and ten
 server tests, with original successful command and shutdown receipts. The expired
 download, missing-archive and receipt-publication-name failures remain failed;
 the separately named fresh readback completed with exit 0. PR #112 merged as
-`82ab3b1`. Native selector controls and fresh exact-package gates remain required.
+`82ab3b1`. The native selector's twenty fast and ten extended receipts were
+verified at CI merge `f7361ea`, matching `e283f88`; fresh native completion is
+recorded above. The remaining exact-package gates are still open.
 
 The historical cadence [native installation checkpoint](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-cadence-results-01/42e7da25ec0db4993b5f8c335b82da3dcf0a2441)
 completed all ten fresh cells at harness `dca07d1`: two positive Debian 13/Fedora 44
@@ -48,8 +79,8 @@ were archived and verified at real CI merge `30360d8`, whose complete tree match
 `dca07d1`. The focused security workflow was not triggered by the native/docs-only
 changes; earlier exact-product security evidence retains its original identity.
 The cadence G15 placement smoke19 and seven real remote adapter controls completed;
-the patched candidate needs fresh adapter/smoke evidence and all four full
-forwarding combinations. Fedora 45
+the selected candidate's fresh controls06 and placement smoke20 are recorded
+above. All four full forwarding combinations remain open. Fedora 45
 on G15 remains an execution host, with no installation acceptance credit.
 
 The 70-row browser matrix and supplements, two fresh owner walkthroughs, six main
