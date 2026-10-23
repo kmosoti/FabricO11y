@@ -190,7 +190,7 @@ This failed required gate blocks release of the cadence candidate. It does not
 establish an exploitable path through Fabric's actual use of Tokio.
 
 Register the smallest same-minor dependency successor, prefix `asyncfd-safety-01`:
-pin server Tokio to `1.53.3` and align both root and standalone fuzz lockfiles.
+pin server and simulator Tokio to `1.53.3` and align both root and standalone fuzz lockfiles.
 Preserve features, product semantics, native cadence, resource limits, independent
 oracles and refusal expectations. Do not add an advisory ignore or broaden the
 dependency policy. Verify the actual resolved graphs and rerun the dependency,
