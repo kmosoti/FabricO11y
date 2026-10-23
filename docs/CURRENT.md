@@ -14,6 +14,23 @@ shutdown and scratch removal. Expected mutation guest exits remain 1. Its seven
 fresh remote adapter controls and disposable placement smoke20 also completed;
 the smoke supplies no full forwarding-cell credit.
 
+The repaired Chrome expiry row64 at merged `4dc0022` completed with original
+and independent grade exit0. Firefox row65 refused ordinary descendant
+isolation before any expiry observations. Separate native Firefox diagnostics
+observed its own `libmozsandbox.so` preload and exact package-owned mapping.
+The [separate isolation registration](experiments/formal/console-session-clock-protocol.md#firefox-sandbox-isolation-counterexample)
+reproduced the old blanket-preload false rejection. The observer now permits
+only that exact Firefox executable/library hash pair and records facts before
+refusal; the fixture helper, control keys/socket and every other preload remain
+forbidden. Source checks and fresh merged Firefox expiry remain required.
+
+Migration extraction row66 completed. Chrome migration row67 retained its
+original canary, then received HTTP400 for a reused all-u64 legacy query window
+that exceeds the console's documented24-hour limit. The stopped failure remains
+preserved. Its [separate correction registration](experiments/formal/browser-migration-protocol.md#console-window-fixture-correction)
+keeps discovery and the full original row, deriving the transition query around
+that observed timestamp. Both fresh migration rows remain required.
+
 Fresh browser rows 1–63 met their registered outcomes on the exact candidate.
 Chrome session-expiry row64 failed: the fixture clock helper terminated its
 server with exit78/`FCLK-LOCK` after the two idle-boundary responses matched the

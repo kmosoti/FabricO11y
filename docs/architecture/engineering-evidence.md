@@ -145,6 +145,13 @@ retains the original false rejection and rejects partial/protected views and
 missing or unrelated request evidence. The independent32-row session oracle
 and all actual-server binding requirements are unchanged.
 
+Ordinary descendant isolation rejects the fixture helper mapping, control key
+and socket. The Firefox expiry observer additionally recognizes the exact
+tested Firefox executable and mapped sandbox-library hashes when its own
+`LD_PRELOAD=libmozsandbox.so` is present. Every other preload refuses; raw
+observations are retained before the decision. The [registered counterexample](../experiments/formal/console-session-clock-protocol.md#firefox-sandbox-isolation-counterexample)
+separates Firefox's native sandbox setup from escape of the clock fixture.
+
 The registered Linux fixture and a finite real-browser engineering probe ran at
 the pinned harness source `7508a989`. The browser ledger distinguishes received
 HTTP responses from witnessed pre-response query cancellations; every received
