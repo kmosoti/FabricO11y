@@ -1,5 +1,27 @@
 # Disposable controlled-time session checks
 
+## Semantic locked-view counterexample
+
+Registered before correction, 2026-10-23. Disposable
+`clock-server-diagnostic-01` on the admitted repaired helper retained real idle
+responses200/401 and a subsequent browser session401. Its server stopped with
+exit0. The captured page displayed the locked sign-in form, but the harness
+waited for `[data-testid=locked-screen]`, absent from the shipped UI. Keep this
+failed diagnostic separately; neither it nor the earlier row64 is acceptance.
+
+`test_browser_expiry_lock.py` freezes that observed semantic state without the
+unshipped attribute. The old predicate must reproduce its false rejection and
+reject the converse testid-only protected/partial views after correction. Use
+the actual visible connection title, locked status message, principal input,
+disabled sign-out, and absence of protected results/owner identity. Missing
+observations cannot satisfy the witness. Require the actual Check session
+dispatch to complete with401 in the existing browser request ledger; an old
+locked screen is insufficient. Preserve the unchanged32 native session
+observations, exact denial error, ordinary browser clock and protected-view
+clearance checks. This repairs the observer, not product UI, expiry, API,
+authorization, workload or deadline. Run the source red, the same controls after
+repair and fresh complete Chrome/Firefox expiry rows before acceptance.
+
 ## Native lock-contention counterexample
 
 Registered before repair, 2026-10-23. Fresh Chrome expiry row 64 on product
