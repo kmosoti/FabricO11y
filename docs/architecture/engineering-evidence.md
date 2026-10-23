@@ -145,6 +145,39 @@ retains the original false rejection and rejects partial/protected views and
 missing or unrelated request evidence. The independent32-row session oracle
 and all actual-server binding requirements are unchanged.
 
+Ordinary descendant isolation rejects the fixture helper mapping, control key
+and socket. The Firefox expiry observer additionally recognizes the exact
+tested Firefox executable and mapped sandbox-library hashes when its own
+`LD_PRELOAD=libmozsandbox.so` is present. Every other preload refuses; raw
+observations are retained before the decision. The [registered counterexample](../experiments/formal/console-session-clock-protocol.md#firefox-sandbox-isolation-counterexample)
+separates Firefox's native sandbox setup from escape of the clock fixture.
+
+The expiry producer can place an already paced request50–700ms into a native
+second. Forward jumps avoid an unnecessary whole-second stall; adjacent expiry
+seconds still retain the offset and wait in real time. Every native clock call
+is retained under the original1MiB ledger cap, and the unchanged oracle checks
+all possible REALTIME calls against the request bracket and exact target
+second. The [placement counterexample](../experiments/formal/console-session-clock-protocol.md#subsecond-dispatch-placement-counterexample)
+records why a producer scheduling choice must not silently increase that cap.
+
+The migration producer retains the legacy discovery result, then derives a
+console-valid two-hour query window around its original canary timestamp for
+the owner, reader and access CLI. The [window correction registration](../experiments/formal/browser-migration-protocol.md#console-window-fixture-correction)
+keeps the independent exact-row, no-pagination and state-preservation grader
+unchanged. A refused or missing original timestamp cannot create a new canary.
+
+The private announcement environment sets Speech Dispatcher's `Timeout 0` in
+its disposable configuration so it remains available until the controller's
+bounded stop. The caller's deadline and real espeak-ng/ALSA/SSIP/AT-SPI checks
+remain mandatory. The [lifetime counterexample](../experiments/formal/browser-announcement-protocol.md#owned-speech-daemon-lifetime-counterexample)
+records the default idle exit before reader startup; neither a vanished daemon
+nor a failed observer cleanup can supply announcement acceptance.
+
+After a real AT document-load event, the observer separately reads that
+document's identity through its AT interface. The [late-registration control](../experiments/formal/browser-announcement-protocol.md#late-document-registration-counterexample)
+covers an initially empty desktop. The unchanged event and metadata-only
+snapshot remain distinct; snapshots cannot supply presentation evidence.
+
 The registered Linux fixture and a finite real-browser engineering probe ran at
 the pinned harness source `7508a989`. The browser ledger distinguishes received
 HTTP responses from witnessed pre-response query cancellations; every received

@@ -14,6 +14,68 @@ shutdown and scratch removal. Expected mutation guest exits remain 1. Its seven
 fresh remote adapter controls and disposable placement smoke20 also completed;
 the smoke supplies no full forwarding-cell credit.
 
+The repaired Chrome expiry row64 at merged `4dc0022` completed with original
+and independent grade exit0. Firefox row65 refused ordinary descendant
+isolation before any expiry observations. Separate native Firefox diagnostics
+observed its own `libmozsandbox.so` preload and exact package-owned mapping.
+The [separate isolation registration](experiments/formal/console-session-clock-protocol.md#firefox-sandbox-isolation-counterexample)
+reproduced the old blanket-preload false rejection. The observer now permits
+only that exact Firefox executable/library hash pair and records facts before
+refusal; the fixture helper, control keys/socket and every other preload remain
+forbidden. Source checks and fresh merged Firefox expiry remain required.
+
+The subsequent unmerged Firefox diagnostic completed all32 native responses
+and its AB browser lock. C then stopped with `FCLK-LEDGER` before its browser
+lock:4781 contiguous rows consumed1,048,548 bytes of the unchanged1MiB cap.
+The [separate dispatch placement registration](experiments/formal/console-session-clock-protocol.md#subsecond-dispatch-placement-counterexample)
+reproduced the unnecessary whole-second wait with the old alignment helper.
+The producer now admits50–700ms placement within a native second, preserving
+the550ms pacer, adjacent-boundary real waits, all32 observations and every
+native clock record. The independent exact-second/request-window oracle and
+all ledger/resource/deadline bounds remain unchanged. Source checks and both
+fresh merged expiry rows remain required; the failed diagnostic is retained.
+
+At `c4b6b22`, unmerged Chrome expiry and its independent grade completed with
+exit0. Firefox completed all32 native observations within the ledger cap, then
+refused its C browser Date bracket; both servers stopped with exit0. The failed
+Date observation had been recorded only after the assertion, leaving its cause
+unresolved. Separate ordinary Firefox probes retained40 raw-kernel brackets
+under its default precision and40 with precision disabled; all80 contained
+the observed Date value. They do not reproduce or explain the failed bracket.
+The expiry caller now records each raw Date observation before checking it,
+with the same predicate, browser configuration and oracle. A fresh diagnostic
+and both merged acceptance rows remain required; no Firefox preference changed.
+
+Announcement row69 stopped before enrollment when its private speech daemon
+exited0 under the default idle timeout. The observer retained that persistent
+process failure and failed semantic cleanup; the original outer unit and owned
+groups still confirmed kernel shutdown/reaping. Exact-inode failure custody
+preserves those errors. A separate private native diagnostic reproduced the
+default exit after5.863 seconds and observed `Timeout 0` remain active for7.033
+seconds before explicit successful TERM. The [separate lifetime registration](experiments/formal/browser-announcement-protocol.md#owned-speech-daemon-lifetime-counterexample)
+now requires that explicit setting in the disposable speech configuration.
+Original caller deadlines, real backend/speech/event evidence and cleanup
+refusals remain unchanged. Source checks and both fresh announcement rows are
+still required; no host audio service or setting changed.
+
+At `57383c4`, both unmerged expiry diagnostics and independent grades completed
+with exit0. The announcement diagnostic retained actual reader focus speech,
+then refused document identity: the initial AT desktop snapshot was empty,
+while later real document-load events identified the console URL and browser
+PID77. The [separate document lifecycle registration](experiments/formal/browser-announcement-protocol.md#late-document-registration-counterexample)
+captures that ordering. The observer now separately reads identity from the
+actual AT document after its load event, keeping the event unchanged and its
+snapshot text empty. Existing PID/URL, real-event/speech/PCM, secret-clearance
+and cleanup requirements remain unchanged. Source and fresh merged announcement
+acceptance remain pending; the stopped diagnostic is preserved.
+
+Migration extraction row66 completed. Chrome migration row67 retained its
+original canary, then received HTTP400 for a reused all-u64 legacy query window
+that exceeds the console's documented24-hour limit. The stopped failure remains
+preserved. Its [separate correction registration](experiments/formal/browser-migration-protocol.md#console-window-fixture-correction)
+keeps discovery and the full original row, deriving the transition query around
+that observed timestamp. Both fresh migration rows remain required.
+
 Fresh browser rows 1–63 met their registered outcomes on the exact candidate.
 Chrome session-expiry row64 failed: the fixture clock helper terminated its
 server with exit78/`FCLK-LOCK` after the two idle-boundary responses matched the

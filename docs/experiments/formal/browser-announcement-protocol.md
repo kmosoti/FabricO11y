@@ -1,5 +1,54 @@
 # Private assistive-technology environment and announcements
 
+## Late document registration counterexample
+
+Registered before correction, 2026-10-23. At `57383c4`, the unmerged packaged
+announcement diagnostic retained real reader focus speech, then refused
+`announcement-document-identity`. Its initial desktop snapshot contained no
+document rows. Later actual `document:load-complete` events independently
+identified the console URL and browser PID77. Preserve the stopped failed
+diagnostic; neither focus speech alone nor an unbound event grants acceptance.
+
+Register `test_announcement_document_lifecycle.py`: an initially empty desktop
+later registers a real document-load source. The observer must separately query
+that AT document's identity after the load, preserving the actual event and
+emitting the existing identity-only snapshot with empty text. A nondocument
+event must not create a document snapshot. Keep the original snapshot traversal
+bounds and PID/DocURL matching; no event may be relabeled as a snapshot or vice
+versa. Snapshots still cannot substitute for actual live-region presentation
+events, SSIP225 speech and PCM growth. Keep setup-secret clearance, stream
+bounds, deadlines, cleanup and every existing refusal unchanged. Run the source
+counterexample before repair, affected controls after repair, then fresh positive
+and suppressed packaged announcement rows on the merged harness.
+
+## Owned speech-daemon lifetime counterexample
+
+Registered before correction, 2026-10-23. Fresh packaged announcement row69 at
+`4dc0022` stopped before owner enrollment. The private observer reported
+`announcement-process-exit:speech-dispatcher-process`; that daemon had exited0
+before controller stop. The observer then stopped the private driver/display,
+and the outer browser reported a Marionette transport failure and failed
+announcement cleanup. Keep every original failure and semantic cleanup error.
+The original resource receipt and owned subgroup observations confirm kernel
+shutdown and reaping; preserving those files does not grant acceptance.
+
+A separate private native lifecycle diagnostic with the exact installed speech
+daemon observed default idle exit0 after5.863 seconds. A configuration adding
+`Timeout 0` remained running after7.033 seconds, then stopped with exit0 on
+the controller's explicit TERM. No Orca, product or announcement acceptance
+follows from this diagnostic.
+
+Register `test_announcement_lifetime.py` before the producer correction. The
+old generated configuration must fail the requirement for exactly one explicit
+`Timeout 0` line. Preserve the same real espeak-ng module, ALSA file capture,
+log bounds and private directories. Disable only this daemon's internal idle
+exit in the disposable configuration: the original environment/caller deadline,
+resource limits, bounded stop/reap behavior and persistent-process exit refusal
+remain mandatory. No keepalive speech, fake utterance, dummy backend or bypass
+of successful SSIP225/PCM/AT-SPI evidence is allowed. Run the source counterexample,
+affected source controls and fresh positive/suppressed packaged announcement
+rows after merge. Host audio, display, service and settings remain untouched.
+
 Prospective prerequisite for issue45 C7/U5; **not run**. This environment probe
 uses only public fixed live-region text. It supplies no packaged-console or
 accessibility-conformance acceptance. Exact candidate actions must later reuse

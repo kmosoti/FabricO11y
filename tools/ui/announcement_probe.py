@@ -26,6 +26,13 @@ from announcement_oracle import check_announcement,require
 TEXT='Fabric public accessibility probe complete'
 
 
+def speech_configuration(logs):
+    return (f'LogLevel 2\nLogDir "{logs}"\n'
+        'AddModule "espeak-ng" "sd_espeak-ng" "espeak-ng.conf"\n'
+        'DefaultModule espeak-ng\nAudioOutputMethod "alsa"\n'
+        'AudioALSADevice "fabric_capture"\nTimeout 0\n')
+
+
 def append(path,row):
     raw=(json.dumps(row,separators=(',',':'))+'\n').encode()
     require(len(raw)<=4096 and (path.stat().st_size if path.exists() else 0)+len(raw)<=1048576,'announcement-stream-bound')
@@ -137,6 +144,7 @@ def observe(path):
                 role=source.getRoleName(),attributes=source.getAttributes(),text=(text or '')[:1024],monotonic_ns=time.monotonic_ns())
             if value.type.startswith('document:'):row['document_attributes']=source.queryDocument().getAttributes()
             append(path,row)
+            if value.type=='document:load-complete':snapshot_documents(source,path)
         except (NotImplementedError,AttributeError):pass
     pyatspi.Registry.registerEventListener(event,'object:text-changed','object:property-change',
         'object:children-changed','object:announcement','document:load-complete')
@@ -268,7 +276,7 @@ def inside(args):
         config=work/'speech';config.mkdir();(config/'modules').mkdir()
         speech_logs=out/'speech-logs';speech_logs.mkdir()
         shutil.copyfile('/etc/speech-dispatcher/modules/espeak-ng.conf',config/'modules/espeak-ng.conf')
-        (config/'speechd.conf').write_text(f'LogLevel 2\nLogDir "{speech_logs}"\nAddModule "espeak-ng" "sd_espeak-ng" "espeak-ng.conf"\nDefaultModule espeak-ng\nAudioOutputMethod "alsa"\nAudioALSADevice "fabric_capture"\n')
+        (config/'speechd.conf').write_text(speech_configuration(speech_logs))
         (work/'asound.conf').write_text(f'pcm.null {{ type null }}\npcm.fabric_capture {{ type file slave.pcm "null" file "{out}/speech.raw" format "raw" }}\n')
         launch('speech-dispatcher-process',['/usr/bin/speech-dispatcher','-s','-C',str(config),'-S',str(runtime/'speech.sock'),'-P',str(work/'speech.pid')])
         wait(lambda:(runtime/'speech.sock').exists())

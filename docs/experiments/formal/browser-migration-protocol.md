@@ -1,5 +1,32 @@
 # Packaged legacy administration migration supplement
 
+## Console-window fixture correction
+
+Registered before correction, 2026-10-23. Fresh exact-package Chrome row67 at
+`4dc0022` preserved its legacy canary and stopped state, then received HTTP400
+for the owner query. The harness reused its legacy discovery range
+`[0, 2**64-1)` for the console. The existing console implementation and
+operations guide limit those requests to24 hours. Preserve this failed row and
+its original stopped receipts; it is not migration acceptance.
+
+Keep the legacy discovery query and original canary unchanged. Once the single
+original row is observed, derive the transition query from that row's integer
+`observed_ns`, with3600 seconds on either side, clamped to the u64 domain.
+Require the exact canary body and node, a representable timestamp strictly
+below u64::MAX, a nonempty window containing the timestamp, the same node/body
+filters and row limit2. Use that same valid query for the owner, reader and
+packaged access CLI. The independent migration grader remains byte unchanged
+and still requires the entire original row and no next page for every result.
+No record may be dropped, rounded, reissued, edited or replaced.
+
+Register `test_browser_migration_window.py` before the producer correction:
+the old all-time query must fail the console-window assertion. The successor
+must include the original timestamp in a window no wider than24 hours and
+reject wrong canary/node, missing, noninteger, negative or unrepresentable
+timestamps. Run the unchanged migration mutation controls and affected source
+checks, then fresh complete Chrome and Firefox migration rows on the merged
+harness. No API, authorization, workload or product/package change is allowed.
+
 Prospective #45 supplement; no actual package result yet. Reason: native access
 store tests do not establish migration of actual immutable package state.
 

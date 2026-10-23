@@ -29,6 +29,23 @@ def denied_check_request(rows):
         and 0 <= row['started_ms'] <= row['finished_ms'])
 
 
+def ordinary_isolation(snapshot, browser):
+    if (not isinstance(snapshot, dict) or snapshot.get('helper_mapped') is not False
+            or snapshot.get('control_fd_present') is not False
+            or snapshot.get('control_env_names') != []
+            or not isinstance(snapshot.get('preload_environment'), list)):
+        return False
+    if not snapshot['preload_environment']:
+        return True
+    return (browser == 'firefox'
+        and snapshot['preload_environment'] == ['LD_PRELOAD=libmozsandbox.so']
+        and snapshot.get('executable') == '/usr/lib64/firefox/firefox'
+        and snapshot.get('executable_sha256') ==
+            '0b59511d21ca9ce96411918ec9297e3e9f1255746cc6d4b8e0246e0b2177a8ad'
+        and snapshot.get('sandbox_maps') == [dict(path='/usr/lib64/firefox/libmozsandbox.so',
+            sha256='0d57a6de9a796042a3532664c2f137c447784bb4b0d7da2478e918b748aaa96e')])
+
+
 def align(clock, second, deadline, pace):
     """Choose forward-only offsets; adjacent boundaries wait in real time."""
     pace()
@@ -38,8 +55,8 @@ def align(clock, second, deadline, pace):
         raw=kernel_time();host,fraction=divmod(raw,1000000000)
         current=host+previous
         oracle.require(current<=second,'session-boundary-inconclusive')
-        if current==second and 50_000_000<=fraction<=200_000_000:return
-        if current<second-1 and 50_000_000<=fraction<=200_000_000:
+        if current==second and 50_000_000<=fraction<=700_000_000:return
+        if current<second-1 and 50_000_000<=fraction<=700_000_000:
             clock.advance(second-host);return
         time.sleep(.005)
 
@@ -75,6 +92,7 @@ def run_expiry(args,receipt,clocks,groups,parent,states,first_fixture,start_owne
         fixtures[key]=fixture
         # Actual descendants must have neither helper mapping nor inherited control.
         isolated=[]
+        fixture['ordinary_descendants']=isolated
         for group in groups:
             if not group['group']['label'].startswith(key):continue
             browser_members(group['group'])
@@ -89,12 +107,19 @@ def run_expiry(args,receipt,clocks,groups,parent,states,first_fixture,start_owne
                 for fd in (proc/'fd').iterdir():
                     try:fd_present |= os.readlink(fd)==clock.socket_identity
                     except FileNotFoundError:pass
-                check(str(args.session_expiry_helper) not in maps and not any(
-                    item.startswith((b'LD_PRELOAD=',b'FABRIC_CLOCK_FD=')) for item in environment)
-                    and not fd_present,'actual ordinary descendant excludes clock helper, keys and channel')
-                isolated.append({'pid':pid,'start_ticks':member['start_ticks'],'executable':str((proc/'exe').resolve()),
-                    'helper_mapped':False,'control_env_names':[],'control_fd_present':False})
-        fixture['ordinary_descendants']=isolated
+                executable=str((proc/'exe').resolve())
+                preload=[os.fsdecode(item) for item in environment if item.startswith(b'LD_PRELOAD=')]
+                sandbox=sorted({line.split(maxsplit=5)[-1] for line in maps.splitlines()
+                    if len(line.split(maxsplit=5))==6 and line.split(maxsplit=5)[-1]=='/usr/lib64/firefox/libmozsandbox.so'})
+                observation={'pid':pid,'start_ticks':member['start_ticks'],'executable':executable,
+                    'helper_mapped':str(args.session_expiry_helper) in maps,
+                    'control_env_names':['FABRIC_CLOCK_FD' for item in environment if item.startswith(b'FABRIC_CLOCK_FD=')],
+                    'control_fd_present':fd_present,'preload_environment':preload,
+                    'sandbox_maps':[dict(path=path,sha256=hashlib.sha256(Path(path).read_bytes()).hexdigest()) for path in sandbox]}
+                if preload:observation['executable_sha256']=hashlib.sha256((proc/'exe').read_bytes()).hexdigest()
+                isolated.append(observation)
+                check(ordinary_isolation(observation,args.browser),
+                    'actual ordinary descendant excludes clock helper, keys and channel')
         return clock
 
     def quiet():
@@ -134,8 +159,8 @@ def run_expiry(args,receipt,clocks,groups,parent,states,first_fixture,start_owne
 
     def locked():
         before=kernel_time();browser=js('return Date.now()');after=kernel_time()
-        check(before//1000000<=browser<=after//1000000,'actual browser Date remains ordinary')
         receipt['session_expiry'].setdefault('browser_clocks',[]).append({'raw_before_ns':before,'date_ms':browser,'raw_after_ns':after})
+        check(before//1000000<=browser<=after//1000000,'actual browser Date remains ordinary')
         js('window.fetch=window.fixtureExpiryFetch;delete window.fixtureExpiryFetch')
         check(js('return document.querySelector(".live-connection .connection-title")?.innerText.trim()==="Connected"'),
             'actual browser is connected before denied Check session')
