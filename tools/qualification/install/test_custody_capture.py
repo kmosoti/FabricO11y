@@ -163,7 +163,10 @@ class CaptureAdmissionControls(literal.NativeFixture, unittest.TestCase):
             if rows is not None:
                 label = 'before' if phase == 'prepare' else 'after_' + phase
                 files[phase + '/' + label + '-query-1-page-0.json'] = dict(rows=rows, next_page=None)
-            files[phase + '/' + name + '-credential.json'] = dict(enrollment='literal-only',
+            files[phase + '/' + name + '-credential.json'] = dict(enrollment=dict(
+                desired=dict(logs=list(native.NATIVE_PROFILE['logs']), metric_interval_s=15),
+                enrolled_unix_s=1, name='spindle-1', revision=native.expected_profile(phase)['revision'],
+                status='paused' if native.expected_profile(phase)['paused'] else 'active', token_sha256='d'*64),
                 files={'/etc/fabrico11y/node-token': dict(stat=[7, 9, 0, 0, 0, 1, 32, 0, 0],
                     sha256='d' * 64, trimmed_sha256='d' * 64, btrfs_identity=None)})
             sources = {}

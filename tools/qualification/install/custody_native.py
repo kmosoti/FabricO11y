@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Qualification-only guest capture; original installed paths remain authority."""
 import hashlib
+import copy
 import fcntl
 import struct
 import json
@@ -704,6 +705,33 @@ def host_admission(owner_path, source_root, storage, package, source_commit, run
         node_sha256=rpm['payload_identity']['usr/bin/fabric-node']['sha256'], fixture_paths=[SOURCE], spool_root=str(ROOT))
 
 
+def credential_checkpoints(credentials):
+    """Compare immutable credential identity after exact fixture-state joins."""
+    message = 'credential metadata/hash drift'
+    try:
+        witness.require(type(credentials) is list and len(credentials) == 4, message)
+        rows = copy.deepcopy(credentials)
+        for row, revision, status in zip(rows, (1, 1, 2, 4), ('active', 'active', 'paused', 'paused')):
+            enrollment = row['enrollment']
+            witness.require(type(enrollment) is dict and set(enrollment) == {
+                'desired', 'enrolled_unix_s', 'name', 'revision', 'status', 'token_sha256'}
+                and type(enrollment['revision']) is int and enrollment['revision'] == revision
+                and enrollment['status'] == status and enrollment['name'] == 'spindle-1'
+                and type(enrollment['enrolled_unix_s']) is int and enrollment['enrolled_unix_s'] > 0
+                and type(enrollment['token_sha256']) is str
+                and re.fullmatch('[0-9a-f]{64}', enrollment['token_sha256'])
+                and enrollment['desired'] == dict(logs=NATIVE_PROFILE['logs'], metric_interval_s=15), message)
+            enrollment['revision'], enrollment['status'] = 1, 'active'
+        witness.require(rows[0] == rows[1] == rows[2], message)
+        for path, observed in rows[3]['files'].items():
+            prior = rows[0]['files'][path]
+            if observed['btrfs_identity'] is not None and observed['btrfs_identity'] == prior['btrfs_identity']:
+                observed['stat'][0] = prior['stat'][0]  # Comparison copies only.
+        witness.require(rows[3] == rows[0], message)
+    except (KeyError, TypeError, AttributeError, IndexError) as error:
+        raise ValueError(message) from error
+
+
 def admit_transfer(bundle, admission, guest_sha256, *, control=None, cutoff_helper=None, result_dir=None, data_root=None, deadline=None):
     """Inspect the labelled archive; never substitute an extracted root for guest input."""
     if not control:
@@ -843,12 +871,7 @@ def admit_transfer(bundle, admission, guest_sha256, *, control=None, cutoff_help
                     boot_before=snapshots['prepare']['boot_id'], boot_after=snapshots['reboot']['boot_id']),
                 read('drain/ack-events.json'), after_reboot=snapshots['reboot'], reboot_ack_events=read('reboot/ack-events.json'), native_configuration_transition=True)
             credentials = [read(phase + '/' + ('before' if phase == 'prepare' else phase) + '-credential.json') for phase in ('prepare', 'installed', 'drain', 'reboot')]
-            witness.require(credentials[0] == credentials[1] == credentials[2], 'credential metadata/hash drift')
-            for path, observed in credentials[3]['files'].items():
-                prior = credentials[0]['files'][path]
-                if observed['btrfs_identity'] is not None and observed['btrfs_identity'] == prior['btrfs_identity']:
-                    observed['stat'][0] = prior['stat'][0]  # Comparison copy only; original record remains retained.
-            witness.require(credentials[3] == credentials[0], 'credential metadata/hash drift')
+            credential_checkpoints(credentials)
             try:
                 cutoff_outcomes = captured_cutoffs(archive, files, snapshots, admission, cutoff_helper,
                     result_dir, data_root, deadline, guest_sha256)
