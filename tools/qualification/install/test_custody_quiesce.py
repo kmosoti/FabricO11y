@@ -68,6 +68,7 @@ class Surface:
         elif argv == ['systemctl', 'start', native.UNITS[0]]:
             self.server_running = True
             self.server_ready = False
+            self.restart_started = time.monotonic()
         elif argv == ['systemctl', 'start', native.UNITS[1]]:
             self.node_running = True
         elif argv == ['systemctl', 'stop', native.UNITS[1]]:
@@ -190,7 +191,7 @@ class QuiesceGuestMainControl(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'native drain deadline'):
                     native.guest_main(config, phase)
                 self.assertFalse(any(row.get('argv', [])[3:5] == ['node', 'resume'] for row in surface.records))
-                self.assertEqual(clock[0], 40)
+                self.assertEqual(clock[0] - surface.restart_started, 40)
                 return
             native.guest_main(config, phase)
         if phase == 'reboot':
