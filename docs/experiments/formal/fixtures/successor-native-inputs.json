@@ -1,33 +1,33 @@
 {
   "scope": "Exact successor native input policy; not an acceptance result",
-  "product_source": "108945d298b37a4871a91f3d7e3f06eff84eb7dd",
-  "packaged_source": "1cb0c18570b0a5895a97732aafebb93f16fe4d90",
+  "product_source": "e4d51bd2c5a68eb9a333155c912770d2b006ba3d",
+  "packaged_source": "62b44589769d2871fb10c775d11e32460fbdff0e",
   "artifacts": {
     "deb_receipt": {
-      "path": "results/installation-package-build/spindle-cadence-01-deb-a/receipt.json",
-      "sha256": "84e667deae8479c7ad74ee8a25b923fe60a2043efaed4e3173f5a251b06065d7"
+      "path": "results/installation-package-build/asyncfd-safety-01-deb-a/receipt.json",
+      "sha256": "ab72b3dff51d59a9daf8af896f1fe9a6e4ffa89635d5056c6131e992c3709d5a"
     },
     "rpm_receipt": {
-      "path": "results/packages/spindle-cadence-01-rpm-a/receipt.json",
-      "sha256": "830889e8706b09a84448131343ec0f16f2a2510de1bd271aeefc66f47da25f93"
+      "path": "results/packages/asyncfd-safety-01-rpm-a/receipt.json",
+      "sha256": "d251a69dd6bc70fa7f73b49242f3682ac35368592cef2e2b71b3df5c8ff9e387"
     },
     "artifact_admission": {
-      "path": "results/candidate-build-spindle-cadence-01/artifact-admission.json",
-      "sha256": "c6817e9b550b5ff2def99a2912f15a5c04326080897f40eb3bc328d7acba491c"
+      "path": "results/candidate-build-asyncfd-safety-01/artifact-admission.json",
+      "sha256": "709d819c0acbc934821941d0bc5ddd6e59913af36369ef280dc4145c9124f239"
     },
     "package_inspection": {
-      "path": "results/candidate-build-spindle-cadence-01/package-inspection.json",
-      "sha256": "9058140f87a734344ff70e977abbeefb86a610e2ed8840289b5eda5e9c4e5d92"
+      "path": "results/candidate-build-asyncfd-safety-01/package-inspection.json",
+      "sha256": "066974b960164ab876d335e79305c7ccc9799a2b0c81d5ccc66997aa210efa7f"
     }
   },
   "packages": {
     "debian": {
-      "path": "results/installation-package-build/spindle-cadence-01-deb-a/fabrico11y_0.1.0~alpha.1_amd64.deb",
-      "sha256": "2f2c93b6b237fff491c2b048fd3fa592991aed274c0431fdd9c4f12490651a9c"
+      "path": "results/installation-package-build/asyncfd-safety-01-deb-a/fabrico11y_0.1.0~alpha.1_amd64.deb",
+      "sha256": "65f82b9bfe8de51f4523406bb86d309d323dfbaea6d0495b700fc6cd96582d06"
     },
     "fedora": {
-      "path": "results/packages/spindle-cadence-01-rpm-a/fabrico11y-0.1.0-0.alpha.1.x86_64.rpm",
-      "sha256": "22529d95ed1e84053f7aa5841fa1b6643a83324c457321b7ee7405ee09561877"
+      "path": "results/packages/asyncfd-safety-01-rpm-a/fabrico11y-0.1.0-0.alpha.1.x86_64.rpm",
+      "sha256": "8846e2b9362e397bb245fea8d48799570a26c22ea2ddbfc277d771cab4ab180c"
     }
   }
 }
