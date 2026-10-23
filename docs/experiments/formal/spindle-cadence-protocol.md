@@ -128,3 +128,29 @@ requirement above. Keep SELinux enforcing and retain the pipe refusal. Require
 a real PTY framing/echo/clean-exit control, repeat the disposable edge diagnostic
 with original helper exit 0 and stopped-unit confirmation, then repeat the full
 split cell. No release or placement gate is relaxed by this transport repair.
+
+### Close clock capture before independent grading
+
+Smoke 18 completed all nineteen product gates, including every timing population
+with zero censored visibility observations. Offered ACK p99 was 0.312174908 s
+and visibility p99 was 1.037411486 s. The cell nevertheless exited 2: clock
+helpers remained open during verification of 7,254 observer answers, outliving
+their 600-second units. Final cleanup raised `BrokenPipeError` for both channels;
+their final original command statuses were not saved. Both guests and the remote
+worker stopped, but missing clock receipts prevent acceptance. Keep this failed
+cell; its product-gate subset cannot substitute for complete command custody.
+
+After all raw observations and restart queries are collected, stop both clock
+channels and write their completion checkpoint **before** independent grading.
+Keep the 600-second deadline and all workload, budget, observation and oracle
+requirements. Do not keep measurement helpers alive for offline grading. Refuse
+grading if either channel lacks original exit 0, its matching stop reply or
+confirmed unit shutdown. The manager's final cleanup remains idempotent.
+
+During failed cleanup, preserve the original process status even when flushing
+or closing its stdin raises a broken pipe. Attempt every owned pipe close and
+the guest-unit check, retain secondary errors and sample counts, and write the
+failure receipt. A cleanup exception cannot promote a failed command. Require
+expired/premature-exit and broken-pipe controls, positive checkpoint ordering and
+refusal before grading on a failed checkpoint. Repeat the full split cell on
+the unchanged constructed candidate; no deadline or numeric gate is increased.
