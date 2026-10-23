@@ -31,6 +31,14 @@ Independent console, Debian and RPM reproducibility, constructor refusal
 controls and artifact inspection completed with exit 0. Fresh installation,
 browser, service/recovery and soak acceptance remain open. The standalone fuzz
 lock now selects the same patched dependency; it does not alter those packages.
+The timing-capture successor is now constructed: product `aaca52d`, packaged
+snapshot `c0cc668`. All eighteen constructor cells plus marker preparation exited
+0 with confirmed stops; console/DEB/RPM A/B outputs reproduced and inspection
+completed. Its [exact tuple](experiments/formal/fixtures/successor-native-inputs.json)
+is selected for fresh testing. Hosted fast at `1fde8f0` retained an old integration
+capacity expectation and a test-code Clippy failure; the harness expectations
+were corrected without changing the frozen production code. Fresh fast checks
+and every package acceptance gate remain open.
 The subsequent two-worker full split smoke completed producer, outage and drain,
 then refused 790 dropped edge timing events. The
 [bounded timing repair](experiments/formal/spindle-timing-capture-protocol.md)

@@ -120,3 +120,17 @@ publication authorization. Select the resulting immutable package snapshot and
 hashes only after original constructor receipts and inspection succeed. Change
 the native caller's exact tuple and source fixtures in a later separate policy
 commit, then rerun every affected gate on that compatible successor.
+
+
+## Constructed timing capture native tuple
+
+The selected [exact native tuple](fixtures/successor-native-inputs.json) now pins
+product freeze `aaca52d` and packaged snapshot `c0cc668`. The original eighteen
+constructor cells and ownership-marker preparation completed with original exits
+0 and confirmed stops; console/DEB/RPM A/B reproducibility and package inspection
+completed. Artifact-admission SHA-256 is
+`ed282122b08e50d1662c5251f07924688d7f0bf2ea3f0abb2d5e89fbd90f950c`.
+This separate policy update rebinds native caller selectors and their literal
+fixtures while retaining every existing admission refusal and source/helper join.
+Fresh native, browser, service/recovery and soak gates remain required. Earlier
+candidate artifacts and failed split trials retain their original identities.

@@ -1,33 +1,33 @@
 {
   "scope": "Exact successor native input policy; not an acceptance result",
-  "product_source": "1eaf9ad17dd5507809cb5cca0964e6e84758648a",
-  "packaged_source": "531e67cbf678af483debab7ea0c0f7ecf6b79686",
+  "product_source": "aaca52d7fff179f2b3344dd05c9b79bc253644e9",
+  "packaged_source": "c0cc668380a6f51b8d4fd2629e4ac9b21dec0b4d",
   "artifacts": {
     "deb_receipt": {
-      "path": "results/installation-package-build/certificate-distrust-01-deb-a/receipt.json",
-      "sha256": "0b304acefd1dab014ae547f7c9767aba3dec05ff363a540e8b941b381b79627c"
+      "path": "results/installation-package-build/timing-capture-01-deb-a/receipt.json",
+      "sha256": "369b7f320ce5668376e2675be824f2cd5229453e7be4e87131c3168dc8d7b642"
     },
     "rpm_receipt": {
-      "path": "results/packages/certificate-distrust-01-rpm-a/receipt.json",
-      "sha256": "0d11fde82ce12a3de06da9f516a6f651ebaf1597aeaa990ec18fdd0c6bf28721"
+      "path": "results/packages/timing-capture-01-rpm-a/receipt.json",
+      "sha256": "8f7879fe8843220b2292513c08bd4143cbcc3492d6ab8748780c117501c721fd"
     },
     "artifact_admission": {
-      "path": "results/candidate-build-certificate-distrust-01/artifact-admission.json",
-      "sha256": "ed4219351dbaceef6c143b93a1bea662d17f10053cc8da549fcd63465f00d4ec"
+      "path": "results/candidate-build-timing-capture-01/artifact-admission.json",
+      "sha256": "ed282122b08e50d1662c5251f07924688d7f0bf2ea3f0abb2d5e89fbd90f950c"
     },
     "package_inspection": {
-      "path": "results/candidate-build-certificate-distrust-01/package-inspection.json",
-      "sha256": "27b6ae8820d5a4c0f5f3c90a15e203faee19de8828d7882db85d8bcf7c261031"
+      "path": "results/candidate-build-timing-capture-01/package-inspection.json",
+      "sha256": "92e2180132af06c69949ee38cc98866662e0c016e9366832559bb397fc56ae3d"
     }
   },
   "packages": {
     "debian": {
-      "path": "results/installation-package-build/certificate-distrust-01-deb-a/fabrico11y_0.1.0~alpha.1_amd64.deb",
-      "sha256": "bc53cf133d32a3f1bec1de1474964e2f55e2ffe9d6827d1a43986a78a5f902c9"
+      "path": "results/installation-package-build/timing-capture-01-deb-a/fabrico11y_0.1.0~alpha.1_amd64.deb",
+      "sha256": "7dba55dfd37565f6ae4ffdb8709e1a20096dce3415c15af7230e4a0c94c3d9b0"
     },
     "fedora": {
-      "path": "results/packages/certificate-distrust-01-rpm-a/fabrico11y-0.1.0-0.alpha.1.x86_64.rpm",
-      "sha256": "6b47d531807f8bddd135b5bc1b3e552b0a84a2fa22acb30b1324706efc02b23a"
+      "path": "results/packages/timing-capture-01-rpm-a/fabrico11y-0.1.0-0.alpha.1.x86_64.rpm",
+      "sha256": "ef0ed3141f7e47be173e8afe8e5b7160c7928e8c9354f275017eb9f370b34259"
     }
   }
 }
