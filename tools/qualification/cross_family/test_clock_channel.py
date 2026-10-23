@@ -178,6 +178,19 @@ class ClockControls(unittest.TestCase):
         self.assertEqual(channel.record['exit'],7)
         self.assertTrue(channel.record['stop_confirmed'])
 
+    def test_premature_exit_and_broken_pipe_keep_original_status_and_cleanup_receipt(self):
+        worker=C.WORKER.replace("started=time.monotonic();samples=0", "raise SystemExit(124)\nstarted=time.monotonic();samples=0")
+        channel=self.start(program(worker))
+        self.assertEqual(channel.process.wait(timeout=5),124)
+        self.assertFalse(channel.close())
+        record=json.loads(channel.path.read_text())
+        self.assertEqual(record['exit'],124)
+        self.assertTrue(record['stop_confirmed'])
+        self.assertEqual(record['samples'],0)
+        self.assertIn('BrokenPipeError',record['error'])
+        self.assertTrue(record['pipe_close_errors'])
+        self.assertFalse(channel.close())
+
     def test_missing_shutdown_confirmation_refuses_clean_payload(self):
         channel=self.start()
         self.guest.script=lambda *a,**k:subprocess.CompletedProcess(a,0,'LoadState=loaded\nActiveState=active\n','')

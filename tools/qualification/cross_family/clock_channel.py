@@ -139,8 +139,10 @@ class ClockChannel:
     def close(self, abort=False):
         with self.lock:
             if self.closed:
-                return self.record['stop_confirmed'] and self.record['exit'] == 0 and not self.record.get('error')
+                return self.completed()
             self.closed, self.active = True, False
+            self.record['close_started'] = True
+            self.save()
             try:
                 if abort:
                     raise RuntimeError('clock channel aborted before admission')
@@ -156,16 +158,23 @@ class ClockChannel:
                 self.record['error'] = type(error).__name__ + ': ' + str(error)
             finally:
                 if self.process is not None:
-                    if self.process.poll() is None:
-                        self.process.terminate()
+                    try:
+                        if self.process.poll() is None:
+                            self.process.terminate()
+                            try:
+                                self.process.wait(timeout=5)
+                            except subprocess.TimeoutExpired:
+                                self.process.kill()
+                                self.process.wait(timeout=5)
+                    except BaseException as error:
+                        self.record['process_cleanup_error'] = type(error).__name__ + ': ' + str(error)
+                    self.record['exit'] = self.process.poll()
+                    for name in ('stdin', 'stdout'):
                         try:
-                            self.process.wait(timeout=5)
-                        except subprocess.TimeoutExpired:
-                            self.process.kill()
-                            self.process.wait(timeout=5)
-                    self.record['exit'] = self.process.returncode
-                    self.process.stdin.close()
-                    self.process.stdout.close()
+                            getattr(self.process, name).close()
+                        except OSError as error:
+                            self.record.setdefault('pipe_close_errors', []).append(
+                                dict(pipe=name, error=type(error).__name__ + ': ' + str(error)))
                 try:
                     if self.record.get('error'):
                         stop = self.guest.script('systemctl stop '+self.unit+'\n', timeout=15, check=False)
@@ -177,4 +186,8 @@ class ClockChannel:
                 except BaseException as error:
                     self.record['unit_check_error'] = type(error).__name__ + ': ' + str(error)
                 self.save()
-            return self.record['stop_confirmed'] and self.record['exit'] == 0 and not self.record.get('error')
+            return self.completed()
+
+    def completed(self):
+        return (self.record['stop_confirmed'] and self.record['exit'] == 0
+                and not any(self.record.get(k) for k in ('error','pipe_close_errors','process_cleanup_error')))
