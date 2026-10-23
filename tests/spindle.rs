@@ -1177,8 +1177,14 @@ fn optional_timing_follows_durable_commit_and_is_bounded() {
         node.collect_once().unwrap();
     }
     let (events, dropped) = node.take_timing_events();
-    assert_eq!(events.len(), fixture["integration_expected_retained"].as_u64().unwrap() as usize);
-    assert_eq!(dropped, fixture["integration_expected_dropped"].as_u64().unwrap());
+    assert_eq!(
+        events.len(),
+        fixture["integration_expected_retained"].as_u64().unwrap() as usize
+    );
+    assert_eq!(
+        dropped,
+        fixture["integration_expected_dropped"].as_u64().unwrap()
+    );
     assert!(node.take_timing_events().0.is_empty());
 }
 

@@ -359,7 +359,7 @@ fn timing_real_spool_burst_keeps_every_event_and_durable_prefix() {
     let (events, dropped) = node.take_timing_events();
     assert_eq!(dropped, 0, "retained 256-event recovery counterexample");
     assert_eq!(events.len(), 2 * count as usize);
-    for (index, pair) in events.chunks_exact(2).enumerate() {
+    for (index, pair) in events.as_chunks::<2>().0.iter().enumerate() {
         let sequence = count + 1 + index as u64;
         assert_eq!((pair[0].sequence, pair[1].sequence), (sequence, sequence));
         assert_eq!(pair[0].stage, "traces_accepted");
