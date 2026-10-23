@@ -159,8 +159,8 @@ def run_expiry(args,receipt,clocks,groups,parent,states,first_fixture,start_owne
 
     def locked():
         before=kernel_time();browser=js('return Date.now()');after=kernel_time()
-        check(before//1000000<=browser<=after//1000000,'actual browser Date remains ordinary')
         receipt['session_expiry'].setdefault('browser_clocks',[]).append({'raw_before_ns':before,'date_ms':browser,'raw_after_ns':after})
+        check(before//1000000<=browser<=after//1000000,'actual browser Date remains ordinary')
         js('window.fetch=window.fixtureExpiryFetch;delete window.fixtureExpiryFetch')
         check(js('return document.querySelector(".live-connection .connection-title")?.innerText.trim()==="Connected"'),
             'actual browser is connected before denied Check session')

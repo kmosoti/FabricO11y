@@ -35,6 +35,17 @@ native clock record. The independent exact-second/request-window oracle and
 all ledger/resource/deadline bounds remain unchanged. Source checks and both
 fresh merged expiry rows remain required; the failed diagnostic is retained.
 
+At `c4b6b22`, unmerged Chrome expiry and its independent grade completed with
+exit0. Firefox completed all32 native observations within the ledger cap, then
+refused its C browser Date bracket; both servers stopped with exit0. The failed
+Date observation had been recorded only after the assertion, leaving its cause
+unresolved. Separate ordinary Firefox probes retained40 raw-kernel brackets
+under its default precision and40 with precision disabled; all80 contained
+the observed Date value. They do not reproduce or explain the failed bracket.
+The expiry caller now records each raw Date observation before checking it,
+with the same predicate, browser configuration and oracle. A fresh diagnostic
+and both merged acceptance rows remain required; no Firefox preference changed.
+
 Migration extraction row66 completed. Chrome migration row67 retained its
 original canary, then received HTTP400 for a reused all-u64 legacy query window
 that exceeds the console's documented24-hour limit. The stopped failure remains
