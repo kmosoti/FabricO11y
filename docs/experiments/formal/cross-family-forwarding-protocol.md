@@ -277,3 +277,23 @@ ACKs remain failures. A retry is no successful snapshot and cannot establish
 drain. Keep the existing 320-second producer/drain and 335-second collector
 deadlines; retries consume those allowances. Controls must reject unknown errors,
 wrong exits, mixed output, permanent contention and recovery-required snapshots.
+
+### Serial trace transport with independent offers
+
+Smoke `split-debian-fedora-smoke-11` completed the original producer and outage,
+then refused timing reconstruction on `timing dropped_events=4`. The original
+edge stdout retains the explicit loss marker; neither that run nor reconstructed
+or inferred timestamps can receive acceptance credit. The bounded product timing
+buffer is not a lossless streaming facility under every recovery burst.
+
+Prospectively use one trace HTTP worker in the existing asynchronous producer.
+The independent offer clock, all 1950 unique exports/5850 spans, 390 logs,
+thirteen controlled metric exports, queue capacity 1950, request deadline 30s,
+195 seconds of actual offered work, five-second guard and 320/335-second final
+deadlines remain unchanged. Every offer is recorded before queue admission.
+This limits simultaneous transport requests, not the offered workload. A blocked
+transport must still permit all 1950 offers; all queued work must complete within
+the existing drain allowance or fail. No uncertain export is retried, omitted or
+relabeled successful. Preserve zero-loss timing reconstruction and all original
+custody, query, latency, backlog, resource and outage gates. Fresh full execution
+is required; the single worker's ability to finish is an unverified hypothesis.

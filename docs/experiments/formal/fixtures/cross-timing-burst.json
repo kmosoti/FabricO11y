@@ -1,0 +1,14 @@
+{
+  "origin": "split-debian-fedora-smoke-11/edge-timing.txt",
+  "original_controller_exit": 2,
+  "refusal": "lost timing events: population is incomplete",
+  "loss_marker": "timing dropped_events=4",
+  "previous_trace_http_workers": 8,
+  "prospective_trace_http_workers": 1,
+  "offered_exports": 1950,
+  "offered_spans": 5850,
+  "queue_capacity": 1950,
+  "actual_offered_seconds": 195,
+  "guard_seconds": 5,
+  "drain_deadline_seconds": 320
+}
