@@ -60,6 +60,13 @@ buffers the fixed full offer population inside the unchanged producer cap and
 reuses existing named queries in bounded concurrent clock envelopes. Observer
 errors persist immediately and stop further collection. Fresh execution is
 still required; no failed smoke or diagnostic is acceptance.
+The following smoke correctly refused observer HTTP 503 at the legacy
+endpoint's existing two-query admission boundary. The
+[prospective configuration](experiments/formal/cross-family-forwarding-protocol.md#producer-and-observation-repair-after-the-retained-split-smoke)
+reserves one slot for each reader and explicitly selects the already available
+Walk history plan. Product admission, defaults and query semantics are unchanged;
+the eight-request overload case remains a rejection control. Fresh full
+execution remains required.
 
 Alpha and package acceptance were owner-paused under [issue #59](https://github.com/kmosoti/FabricO11y/issues/59). Verification-engineering continuation is authorized and tracked in [PR #102](https://github.com/kmosoti/FabricO11y/pull/102); its provenance pins remain product source `b1e5874`, frozen package source `43150db`, `origin/main` baseline `f001175`, and engineering profile anchor `31cf809`. The Rust capture reader is at `681fcc5`, with native caller wiring at `bf1efa9`. These pins do not resume acceptance or claim a future check outcome.
 

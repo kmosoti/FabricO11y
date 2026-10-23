@@ -1,5 +1,6 @@
 """Controls for the retained smoke's grouped-bracket and blocked-loop defects."""
 import json
+import base64
 import io
 from pathlib import Path
 import tempfile
@@ -71,46 +72,62 @@ class ObserverControls(unittest.TestCase):
             error = json.loads((Path(directory)/'visibility-observer-error.json').read_text())
             self.assertEqual(error['status'], 503)
 
-    def test_sweep_uses_bounded_concurrency_and_brackets_every_completed_answer(self):
-        active = peak = 0
-        lock, ready = threading.Lock(), threading.Event()
-        completions = []
+    def test_sweep_reserves_one_existing_query_slot_and_retains_eight_request_overload(self):
+        fixture = json.loads((Path(__file__).resolve().parents[3]/'docs/experiments/formal/fixtures/cross-query-admission.json').read_text())
         class LiveGuest:
             def correlation(self):
                 now = time.monotonic_ns()
                 return {'boot_id': 'test', 'monotonic_before_ns': now,
                         'monotonic_after_ns': now, 'unix_ns': time.time_ns()}
-        def call(route, body, method):
-            nonlocal active, peak
-            began = time.monotonic_ns()
-            with lock:
-                active += 1
-                peak = max(peak, active)
-                if active == 8:
-                    ready.set()
-            try:
-                if not ready.wait(timeout=2):
-                    raise AssertionError('original serial sweep cannot release the eight-request barrier')
-                if body['kind'] == 'metrics' and not isinstance(body.get('name'), str):
-                    raise AssertionError('legacy API requires a metric name')
-                time.sleep(.01)
-                return {'rows': []}
-            finally:
+        self.assertEqual(measure.OBSERVER_HTTP_WORKERS, fixture['successor_observer_workers'])
+        for workers in (measure.OBSERVER_HTTP_WORKERS, fixture['old_observer_workers']):
+            slots = threading.BoundedSemaphore(fixture['legacy_query_admission_slots'])
+            slots.acquire()  # The original serial reader is already in flight.
+            active = peak = 0
+            lock = threading.Lock()
+            completions = []
+            def call(route, body, method):
+                nonlocal active, peak
+                if not slots.acquire(blocking=False):
+                    raise urllib.error.HTTPError('http://fixture', 503, 'Service Unavailable', {},
+                        io.BytesIO(b'{"error":"query admission is full"}'))
+                began = time.monotonic_ns()
                 with lock:
-                    active -= 1
-                    completions.append((began, time.monotonic_ns()))
-        with tempfile.TemporaryDirectory() as directory, ThreadPoolExecutor(max_workers=8) as pool:
-            observer = measure.VisibilityObserver(None, None, call, Path(directory))
-            output = io.StringIO()
-            observer.sweep(LiveGuest(), 'edge', output, pool)
-            self.assertEqual(peak, 8)
-            self.assertEqual(active, 0)
-            self.assertEqual(len(observer.queries), 19)
-            first = observer.queries[0]
-            self.assertTrue(all(first['before']['monotonic_before_ns'] <= start <= end
-                <= first['after']['monotonic_after_ns'] for start, end in completions))
-            self.assertTrue(all(row['before'] == first['before'] and row['after'] == first['after']
-                                for row in observer.queries))
+                    active += 1
+                    peak = max(peak, active)
+                try:
+                    if body['kind'] == 'metrics' and not isinstance(body.get('name'), str):
+                        raise AssertionError('legacy API requires a metric name')
+                    time.sleep(.01)
+                    return {'rows': []}
+                finally:
+                    with lock:
+                        active -= 1
+                        completions.append((began, time.monotonic_ns()))
+                    slots.release()
+            with self.subTest(workers=workers), tempfile.TemporaryDirectory() as directory:
+                observer = measure.VisibilityObserver(None, None, call, Path(directory))
+                output = io.StringIO()
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    observer.sweep(LiveGuest(), 'edge', output, pool)
+                self.assertEqual(active, 0)
+                self.assertLessEqual(peak + fixture['original_serial_reader_workers'], fixture['legacy_query_admission_slots'])
+                if workers == measure.OBSERVER_HTTP_WORKERS:
+                    self.assertIsNone(observer.error)
+                    self.assertEqual(len(observer.queries), 19)
+                    first = observer.queries[0]
+                    self.assertTrue(all(first['before']['monotonic_before_ns'] <= start <= end
+                        <= first['after']['monotonic_after_ns'] for start, end in completions))
+                    self.assertTrue(all(row['before'] == first['before'] and row['after'] == first['after']
+                                        for row in observer.queries))
+                else:
+                    self.assertEqual(observer.error['status'], 503)
+                    self.assertEqual(base64.b64decode(observer.error['response_body_base64']),
+                                     b'{"error":"query admission is full"}')
+                    self.assertFalse(observer.error['response_body_truncated'])
+                    with self.assertRaisesRegex(RuntimeError, 'observer incomplete'):
+                        observer.finish()
+                slots.release()
 
     def test_first_observer_error_is_persisted_and_refuses_next_original_request(self):
         def original(server, edge, call, config, result, port, observer):

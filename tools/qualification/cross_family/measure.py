@@ -20,6 +20,7 @@ NATIVE_METRICS = (
     'fabric.spindle.unacked.batches', 'fabric.spindle.log.backlog.bytes',
 )
 SELF_LABEL = 'fabric-server-self'
+OBSERVER_HTTP_WORKERS = 1  # The original serial reader owns the other legacy query slot.
 
 
 def visibility_bodies(node, lower, upper):
@@ -82,6 +83,12 @@ class VisibilityObserver:
         except BaseException as error:
             value = self.error_value(error)
             if isinstance(error, urllib.error.HTTPError):
+                try:
+                    response_body = error.read(8193)
+                    value['response_body_base64'] = base64.b64encode(response_body[:8192]).decode()
+                    value['response_body_truncated'] = len(response_body) > 8192
+                except Exception as capture_error:
+                    value['response_body_error'] = str(capture_error)[:500]
                 error.close()
             return {'query': body, 'error': value}
 
@@ -127,7 +134,7 @@ class VisibilityObserver:
         path = self.result / 'visibility-observer.jsonl'
         try:
             with os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w') as output, \
-                    ThreadPoolExecutor(max_workers=8) as pool:
+                    ThreadPoolExecutor(max_workers=OBSERVER_HTTP_WORKERS) as pool:
                 try:
                     self.observe(output, pool)
                 except BaseException as error:

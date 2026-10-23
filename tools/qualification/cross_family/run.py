@@ -15,7 +15,8 @@ import time
 import urllib.request
 from guest import Guest, Q, image
 from remote import placement_options, validate_placement, edge_guest
-from measure import monitor_health
+from measure import monitor_health, OBSERVER_HTTP_WORKERS
+from producer import SECONDS, GUARD_SECONDS, TRACE_QUEUE_CAPACITY
 
 HERE = Path(__file__).resolve().parent
 
@@ -66,6 +67,10 @@ def main():
              'server_family': args.server_family, 'edge_family': args.edge_family,
              'inputs': artifacts['identity'], 'storage_admission': admission, 'host_cgroup': limits,
              'exit': 2, 'gates': {}}
+    facts['fixture_configuration'] = {'query_plan': 'walk', 'legacy_query_admission_slots': 2,
+        'original_query_workers': 1, 'observer_http_workers': OBSERVER_HTTP_WORKERS,
+        'trace_http_workers': 8, 'trace_queue_capacity': TRACE_QUEUE_CAPACITY,
+        'offered_seconds': SECONDS, 'guard_seconds': GUARD_SECONDS}
     adapter_hashes = {}
     for source in sorted(HERE.glob('*.py')):
         adapter_hashes[source.name] = hashlib.sha256(source.read_bytes()).hexdigest()
@@ -109,6 +114,7 @@ journal_bytes=1073741824
 journal_file_bytes=16777216
 retention_s=86400
 retention_bytes=100000000000
+query_plan=walk
 self_spindle_ca=/etc/fabrico11y/ca.pem
 EOF
 mkdir -p /etc/systemd/system/fabrico11y-server.service.d
