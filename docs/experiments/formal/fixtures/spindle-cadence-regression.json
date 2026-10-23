@@ -1,0 +1,16 @@
+{
+  "origin": "split-debian-fedora-smoke-15/gates.json",
+  "diagnostic": "cadence-evidence-diagnostic-01",
+  "measured_logs": 240,
+  "logs_ack_over_one_second": 48,
+  "log_ack_p99_upper_seconds": 1.22570409,
+  "span_ack_p99_upper_seconds": 0.631171364,
+  "old_log_poll_ns": 1000000000,
+  "new_log_poll_ns": 250000000,
+  "old_trace_idle_wait_ns": 100000000,
+  "new_trace_idle_wait_ns": 10000000,
+  "other_idle_wait_ns": 100000000,
+  "ack_limit_seconds": 1,
+  "visibility_limit_seconds": 5,
+  "backlog_busy_limit_seconds": 5
+}
