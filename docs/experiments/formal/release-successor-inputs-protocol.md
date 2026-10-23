@@ -92,3 +92,31 @@ as unrun and release acceptance as incomplete. The constructor's earlier owner
 authorization remains immutable and separate. Native execution still requires
 the clean merged-ancestor harness, exact owner tuple and all applicable source
 and placement prerequisites. None of these records is final publication approval.
+
+## Timing capture successor construction
+
+The stopped split smoke with two trace workers reported 790 lost timing events
+and therefore cannot complete the registered timing populations. The
+[separate repair registration](spindle-timing-capture-protocol.md) retains that
+failure, the real-Spool old-capacity counterexample and exact overflow controls.
+Product freeze `aaca52d7fff179f2b3344dd05c9b79bc253644e9` changes the private
+opt-in timing capacity to 16,384 and keeps the patched webpki dependency. The
+root library run at that revision exited 0: 62 passed, one existing encoding
+diagnostic remained ignored. That is source evidence, not package acceptance.
+
+Use the existing eighteen-cell constructor under prefix `timing-capture-01`,
+with independent console/DEB/RPM A/B outputs, negative controls and immutable
+provenance. Retain ownership-marker preparation as an additional recorded step.
+Rebind only source/path/hash/epoch identities and the specific preflight reason;
+keep actual cleanup/live-service checks, namespace accounting, all original
+completion receipts and reproducibility/inspection decisions. Preserve the
+`1eaf9ad`/`531e67c` packages and their failed trials as historical inputs.
+
+The owner's release instruction allows necessary release-blocker replacement.
+The new private construction authorization must pin this freeze, this policy
+commit, the original stopped timing failure and the red/green source receipts;
+it grants construction and testing only. It is not native acceptance or final
+publication authorization. Select the resulting immutable package snapshot and
+hashes only after original constructor receipts and inspection succeed. Change
+the native caller's exact tuple and source fixtures in a later separate policy
+commit, then rerun every affected gate on that compatible successor.
