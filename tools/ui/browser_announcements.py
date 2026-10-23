@@ -77,6 +77,8 @@ class Runtime:
             and self.ready['namespaces']['net']==parent['net'],'announcement-caller-namespaces')
         js('Array.from(document.querySelectorAll("button")).find(e=>e.textContent.trim()==="Check session").focus()')
         wait(lambda:self.heard('Check session'),'actual reader focus presentation',seconds=20)
+        wait(lambda:document_identity(read_rows(self.out/'events.jsonl'),pid,origin),
+            'actual AT document identity',seconds=20)
         documents=document_identity(read_rows(self.out/'events.jsonl'),pid,origin)
         require(documents,'announcement-document-identity')
         self.ready['documents']=documents

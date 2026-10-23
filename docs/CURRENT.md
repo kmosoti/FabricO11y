@@ -7,6 +7,20 @@ plan. Publication still requires the owner's final decision against the complete
 bundle. The single persistent execution queue is
 `results/release-execution/queue.json` on Blade's DATA drive.
 
+The alert successor `84a585d`/`34591b7` completed deterministic construction
+and artifact admission. Its product PR merged after native verification of
+the actual hosted fast and extended receipts. These are construction/source
+results; fresh exact-package acceptance remains pending. Its first engineering
+AT diagnostic stopped with `announcement-document-identity` after actual focus
+speech: all77 observed events were parent/name changes, with no document-load
+event. Exact-inode stopped custody is retained. The separately registered
+[loaded-document counterexample](experiments/formal/browser-announcement-protocol.md#already-loaded-document-counterexample)
+failed before correction. The observer now separately reads bounded AT identity
+after actual focus gain, and the caller waits for the unchanged PID/URL join.
+Focus loss and unrelated events do not trigger snapshots. Source checks and
+fresh actual AT diagnostics are pending; product bytes and announcement
+oracles remain unchanged.
+
 The `e4d51bd`/`62b4458` candidate now has an observed product release blocker.
 At harness `42bc301`, the actual announcement diagnostic retained successful
 status speech, but the displayed validation alert lacked assertive AT metadata

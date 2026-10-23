@@ -26,6 +26,28 @@ independent alert/event/speech/PCM oracle and suppressed-announcement expectatio
 unchanged. A successful source/DOM check cannot admit the successor before its
 real packaged positive and suppressed controls complete.
 
+## Already loaded document counterexample
+
+Registered before correction, 2026-10-23. The engineering AT diagnostic on
+product `84a585d` heard the actual Check session focus presentation but refused
+`announcement-document-identity`. Its77 recorded events contained only parent
+and name changes, with no document-load event. The initial desktop was empty;
+the document could already be loaded when observation began. Preserve the
+original exit1 and stopped fixture custody. This does not yet test the repaired
+validation alert and does not justify another product candidate.
+
+Extend the existing document lifecycle regression with an initially empty
+desktop and a later actual focused-state event from the browser application
+containing an already loaded document. Separately traverse that application's
+AT tree with the existing2048-node/five-second bounds and emit only the existing
+empty-text identity snapshot. Focus loss and unrelated property events must not
+trigger that traversal. Wait within the existing caller deadline for the exact
+browser PID/DocURL snapshot after actual focus speech. Keep every announcement
+event, SSIP225, PCM, negative outcome, stream limit and cleanup predicate. This
+is an identity observation trigger; focus speech or snapshots cannot replace
+live-region presentation evidence. Reproduce the source failure before repair,
+then rerun affected controls and fresh packaged positive/suppressed AT cells.
+
 ## Late document registration counterexample
 
 Registered before correction, 2026-10-23. At `57383c4`, the unmerged packaged
@@ -38,8 +60,8 @@ diagnostic; neither focus speech alone nor an unbound event grants acceptance.
 Register `test_announcement_document_lifecycle.py`: an initially empty desktop
 later registers a real document-load source. The observer must separately query
 that AT document's identity after the load, preserving the actual event and
-emitting the existing identity-only snapshot with empty text. A nondocument
-event must not create a document snapshot. Keep the original snapshot traversal
+emitting the existing identity-only snapshot with empty text. An unrelated
+nondocument property event must not create a document snapshot. Keep the original snapshot traversal
 bounds and PID/DocURL matching; no event may be relabeled as a snapshot or vice
 versa. Snapshots still cannot substitute for actual live-region presentation
 events, SSIP225 speech and PCM growth. Keep setup-secret clearance, stream
