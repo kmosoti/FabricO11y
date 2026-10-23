@@ -7,10 +7,20 @@ plan. Publication still requires the owner's final decision against the complete
 bundle. The single persistent execution queue is
 `results/release-execution/queue.json` on Blade's DATA drive.
 
-The selected product source is `108945d298b37a4871a91f3d7e3f06eff84eb7dd`, with
+The last constructed product source is `108945d298b37a4871a91f3d7e3f06eff84eb7dd`, with
 packaged snapshot `1cb0c18570b0a5895a97732aafebb93f16fe4d90`. The exact packages are
 Debian `0.1.0~alpha.1` amd64 and RPM `0.1.0-0.alpha.1` x86_64. These are distinct
 registered source identities joined by the construction and payload manifests.
+
+That candidate is blocked by the required whole-workspace dependency gate in
+[workflow 39971819005](https://github.com/kmosoti/FabricO11y/actions/runs/39971819005):
+Tokio `1.53.1` is rejected for RUSTSEC-2026-0386. The
+[registered dependency successor](experiments/formal/release-successor-inputs-protocol.md#tokio-io-safety-dependency-successor)
+pins server and simulator Tokio to `1.53.3` in both lockfiles. Exact resolution
+completed with exit 0 and confirmed containment shutdown; all other locked
+packages and Tokio dependency edges remain unchanged. Source verification,
+reproducible successor construction, new tuple selection and fresh affected
+acceptance remain pending. No advisory exception was added.
 
 The [native installation checkpoint](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-cadence-results-01/42e7da25ec0db4993b5f8c335b82da3dcf0a2441)
 completed all ten fresh cells at harness `dca07d1`: two positive Debian 13/Fedora 44
@@ -20,7 +30,7 @@ removal; expected mutation guest exits remain 1. Four earlier failed live attemp
 remain failed. The cleanup negative control and original ten-cell closeout exited
 0. OS labels identify these tested environments, not general compatibility.
 
-Current fast and extended hosted workflows succeeded, and their original receipts
+Fast and extended hosted workflows for `dca07d1` succeeded, and their original receipts
 were archived and verified at real CI merge `30360d8`, whose complete tree matches
 `dca07d1`. The focused security workflow was not triggered by the native/docs-only
 changes; earlier exact-product security evidence retains its original identity.
@@ -33,6 +43,11 @@ trials, four million-record query cells, trace fixture, four full forwarding
 combinations, three 30-minute outages, remaining fault/pressure controls and full
 7,200-second offered-work soak remain open. B1–B13 closure, release bundle,
 final cleanup and owner-authorized publication are not complete.
+The cadence browser stage and Chrome baseline completed with original exits 0;
+the baseline recorded 367 checks and nine stopped/reaped process groups. The next
+cursor row was deliberately interrupted after the dependency blocker was found
+(original exit 2, confirmed stop, retained evidence). Those outcomes retain their
+cadence identities; all successor rows must be fresh.
 
 ## Retained release preparation history
 

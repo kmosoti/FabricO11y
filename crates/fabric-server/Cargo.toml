@@ -31,7 +31,7 @@ sha2 = "=0.10.9"
 subtle = "=2.6.1"
 webauthn-rs = "=0.5.5"
 zstd = { version = "=0.14.0", default-features = false }
-tokio = { version = "=1.53.1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal"] }
+tokio = { version = "=1.53.3", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal"] }
 
 [dev-dependencies]
 tower = { version = "=0.5.3", features = ["util"] }
