@@ -1,5 +1,13 @@
 # Current project state
 
+The stopped `alert-owner-debian-fedora-03` walkthrough booted both guests and
+established the high-port SSH route, then installed the older Debian fixture and
+matched its canonical payload. Its observer incorrectly let the shell expand
+dpkg's `${Version}` format and exited 2. The caller now single-quotes that literal;
+an executable shell regression covers both native versions and families while
+still refusing a wrong installed version. The original failed outcome and raw
+output remain retained; fresh complete walkthroughs are still required.
+
 The stopped split-host owner attempt `alert-owner-debian-fedora-01` failed before
 installation: G15's enforcing SELinux denied the SSH listener on TCP 7443. A
 guest-free probe reproduced exit 255. The prospective
