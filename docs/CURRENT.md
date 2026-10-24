@@ -7,6 +7,19 @@ plan. Publication still requires the owner's final decision against the complete
 bundle. The single persistent execution queue is
 `results/release-execution/queue.json` on Blade's DATA drive.
 
+Current candidate `84a585d`/`34591b7` completed a fresh split-host placement
+smoke at harness `2547401`: original command exit0, all19 gates, independent
+admission exit0, confirmed shutdown and verified G15 scratch archival/removal.
+This supplies placement evidence, not the four forwarding-combination gates.
+The first fresh Debian installation lifecycle returned guest/launcher exit0
+with cleanup, but the outer controller stopped with exit2 when its legacy
+census encountered the launcher's normally removed scratch directory. This
+outer failure remains unaccepted. The separately registered
+[native census correction](experiments/formal/installation-release-protocol.md#native-controller-census-completion-race)
+adopts the existing bounded complete-scan retry and requires source controls
+plus a fresh native cell. Candidate bytes and all product/custody expectations
+remain unchanged.
+
 The alert successor `84a585d`/`34591b7` completed deterministic construction
 and artifact admission. Its product PR merged after native verification of
 the actual hosted fast and extended receipts. These are construction/source

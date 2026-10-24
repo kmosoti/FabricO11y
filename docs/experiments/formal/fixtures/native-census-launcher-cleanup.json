@@ -1,0 +1,22 @@
+{
+  "schema": "native-census-counterexample-v1",
+  "origin": "First fresh alert-presentation Debian lifecycle trial",
+  "product_source": "84a585d35cced26de170c4b34c0a05aab79fae3b",
+  "packaged_source": "34591b7b1390852ad9984339a9fa102c8259d743",
+  "outer_exit": 2,
+  "original_command_exit": 0,
+  "guest_acceptance_exit": 0,
+  "original_resource_exit": 0,
+  "stop_confirmed": true,
+  "guest_cleanup_confirmed": true,
+  "scratch_removed": true,
+  "missing_path": "/run/media/kmosoti/data/FabricO11y/scratch/work-djhzurve",
+  "resource_receipt_temporary": "/run/media/kmosoti/data/FabricO11y/scratch/work-djhzurve",
+  "temporary_removed": true,
+  "outer_sha256": "963380f336f3506de443dc93a999c5434351f828c2c03d55c045de6d193ca257",
+  "native_receipt_sha256": "2d5042af49d61ebeb5f9f01850394b8500d6d5b1f1b98b81723e7411a1f36403",
+  "resource_receipt_sha256": "1cf54da1c740cd30df18a91f3f86e2d5e6f7f1075d34a0c3b1261f46c80599de",
+  "legacy_census_sha256": "d044822178a2d64305ea496d9df324021ff2514b6185975dece133caa45137a7",
+  "existing_full_retry_census_sha256": "30486b89590be86fd47b4ee300786ada91677a02198eb0ad1217756ead93be80",
+  "disposition": "Interrupted outer trial remains failed and unaccepted; fresh cell required after separately registered complete-scan retry admission"
+}

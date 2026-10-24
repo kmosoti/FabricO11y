@@ -86,6 +86,37 @@ actual guest OS, systemd, kernel, PID1, cgroup controllers and SELinux mode.
 Fedora must remain enforcing; no permissive switch or broad allow policy is a
 workaround. An unavailable tool, image mismatch or unavailable gate is not a pass.
 
+## Native controller census completion race
+
+Registered before a fresh native retry, 2026-10-23. The
+[literal counterexample](fixtures/native-census-launcher-cleanup.json) records
+an original Debian guest lifecycle/launcher exit0 and confirmed cleanup, followed
+by an interrupted outer controller exit2. Its legacy census encountered the
+launcher's normally removed `scratch/work-djhzurve` directory. That census
+admits only a different test-directory prefix for retry. The failed outer
+receipt remains failed; the inner pass does not admit the cell.
+
+Native controllers shall reuse the existing
+`tools/qualification/storage_census.py` complete-scan implementation, pinned by
+its source hash. Every disappearance discards the entire partial count and
+restarts the whole strict namespace scan within its existing18-second horizon;
+the controller subprocess timeout remains25 seconds. No missing path is omitted
+from a successful result. Persistent disappearance, permission errors, other
+I/O errors, a noncanonical root or incomplete scans still refuse admission.
+Retain the rootless namespace traversal, complete Blade/G15 sum, per-cell disk
+reservation and95GB stop/100GB ceiling. No resource, guest, custody, negative
+control or product expectation changes.
+
+Before a new cell, replay the literal launcher-directory failure against the
+legacy scanner; require its refusal. Exercise the existing replacement with a
+partial traversal followed by a complete known-byte traversal, checking reset
+totals, and require persistent disappearance, permission and I/O refusals.
+Record the original scanner/module hashes and outcomes. Bind every fresh native
+controller to this separate policy commit and the exact replacement source hash.
+Rerun the interrupted cell with fresh guest state and original expectations;
+never relabel its earlier outer result. Other unrun native cells use the same
+admitted complete census before launching their payloads.
+
 ## CI host containment
 
 GitHub-hosted runner bootstrap binds disk-backed `/mnt` to the required data
