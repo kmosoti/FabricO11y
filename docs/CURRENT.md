@@ -23,24 +23,23 @@ capture replay, hosted fast/extended/security checks and a fresh affected Fedora
 lifecycle completed exit0. Its drain and reboot cutoff commands both returned0;
 the product/package candidate is unchanged.
 
-Fresh browser rows1–66 and positive announcement row69 completed their original
-registered outcomes and independent grades on this candidate. Migration row67
-failed its legacy-admin404 expectation against the existing401 denial; that
-checker decision remains unresolved, and row68 remains unrun. The suppressed
-announcement row70 exited1 at AT document identity, so its unchanged grader
-rejected the wrong cause. The [queryable-container counterexample](experiments/formal/browser-announcement-protocol.md#queryable-browser-chrome-container-counterexample)
-reproduced the traversal defect in source controls before repair. The snapshotter
-now traverses queryable browser containers to the actual web document, retaining
-the original bounds, empty-text snapshots and PID/URL checks. Source controls and hosted fast receipts completed exit0 for that traversal
-repair. Its fresh positive reached the document, but failed announcement-synthesis
-with actual assertive AT alert metadata and no target speech/PCM growth. Stopped
-custody is retained. A registered diagnostic focusing the actual filter input
-completed original0 with the exact alert utterance; it grants no acceptance
-credit and does not establish causality. The prospective
-[natural-input action correction](experiments/formal/browser-announcement-protocol.md#natural-filter-input-focus-for-fresh-acceptance)
-retains every oracle and requires fresh positive/suppressed rows. Product/package
-bytes remain unchanged. Two of six full main trials have completed original and
-independent receipt-join exit0; the remaining service campaign stays open.
+Browser rows1–66 and fresh announcement rows69/70 completed their registered
+outcomes and independent receipt joins on `84a585d`/`34591b7`. The traversal
+and natural-input-focus repairs retain all announcement oracles. The original
+migration row67 remains failed under its404 assumption; row68 remains unrun.
+Its explicit native TLS ledger records401/`use a console credential`. The owner
+approved the separately registered [exact denial correction](experiments/formal/browser-migration-protocol.md#ordinary-serve-legacy-admin-denial-prospective-correction)
+on2026-10-24. The literal source counterexample reproduced the old refusal before
+correction. The checker now requires native401 plus exact error body, and the
+producer records that actual error separately. All other canary, format1,
+state and prefix expectations remain. Source/hosted verification and both fresh
+exact-package migration cells remain pending; product authorization is unchanged.
+
+All six registered full main trials and all four million-record query cells
+completed original command and independent receipt-join exit0, with cleanup.
+Each query cell separately accounted for1000 traces/3000 spans and200 original
+oracle verdicts. Cross-family combinations, owner walkthroughs, prolonged outages,
+pressure controls, full R3 soak and release closeout remain open.
 
 Current candidate `84a585d`/`34591b7` completed a fresh split-host placement
 smoke at harness `2547401`: original command exit0, all19 gates, independent
