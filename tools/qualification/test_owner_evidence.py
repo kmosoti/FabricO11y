@@ -30,6 +30,12 @@ def fixture():
                           for name in ('fixture', 'restored', 'upgraded', 'fresh-candidate')},
               'native_older': {'debian': True, 'fedora': True}, 'upgrade_preserved': True,
               'owner_enrollments': [copy.deepcopy(enrollment) for _ in range(3)], 'cleanup_confirmed': True}
+    from owner_evidence import RESTORED_DIAGNOSTIC
+    for stage in ('restored', 'upgraded'):
+        record['signals'][stage].update(restored_gap_witness=dict(diagnostic=RESTORED_DIAGNOSTIC, source_prefix_preserved=True),
+                                        restored_gap_count=1)
+        for verdict in record['signals'][stage]['verdicts']:
+            verdict['independent_gap_evidence'] = []
     return record, binding
 
 
@@ -73,6 +79,14 @@ class OwnerEvidenceTests(unittest.TestCase):
             elif change == 'nonzero': record['phases'][2]['exit'] = 1
             else: record['cleanup_confirmed'] = False
             with self.assertRaises(ValueError): self.check(record, binding)
+
+    def test_missing_or_wrong_restoration_witness_cannot_complete(self):
+        for field, replacement in [('restored_gap_count', 0), ('restored_gap_count', 2),
+                                   ('restored_gap_witness', None), ('restored_gap_witness', {})]:
+            record, binding = fixture()
+            record['signals']['restored'][field] = replacement
+            with self.subTest(field=field, value=replacement), self.assertRaises(ValueError):
+                self.check(record, binding)
 
     def test_configuration_does_not_substitute_for_actual_uv_and_residency(self):
         for field in ('uv', 'up', 'rp_hash', 'resident'):

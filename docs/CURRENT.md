@@ -1,5 +1,15 @@
 # Current project state
 
+Owner run14 completed native recovery and the exact old-key403/access-denied
+control, then stopped when the zero-gap scoped adapter rejected a truthful
+restored diagnostic-log rotation gap. The documented move-aside/extract changed
+that file's inode while preserving its bytes. Both hosts stopped; the failed run
+receives no full owner credit. The owner-approved, separately registered adapter requires
+the exact native source transition and original gap, checks every returned
+redacted gap independently, and retains the unchanged query oracle for signal
+rows and metadata. Both complete fresh directions are still required;
+product/package behavior is unchanged and publication remains reserved.
+
 Fresh owner run13 timed out before its first bootstrap-secret read; both hosts
 confirmed shutdown and the failure remains retained. A short exact-package
 Firefox probe completed the original connection action normally, so the cause of

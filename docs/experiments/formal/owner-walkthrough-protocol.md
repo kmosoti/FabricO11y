@@ -401,3 +401,36 @@ with the retained device after offline recovery. Completeness checks require the
 native witness and exact denial as well as the old-owner-denied flag. Both full
 fresh-owner directions remain required; prior failures receive
 no retroactive credit.
+
+## Owner-approved restored-diagnostic gap observation
+
+The owner approved this correction and both fresh full reruns on2026-10-24.
+Publication remains a separate final owner decision. Run14's
+documented move-aside/extract restore changed the diagnostic log's inode while
+preserving its complete bytes. The Spindle truthfully committed one
+`log rotated; old tail unknown: /var/lib/fabrico11y/node/spool/diagnostics/spindle.log`
+gap. The registered zero-gap projection cannot grade that restored fixture.
+
+Keep zero gaps mandatory for fixture and fresh-candidate checkpoints. Only at
+restored/upgraded checkpoints, admit exactly one copy of that exact diagnostic
+gap in the complete recovered edge prefix, with unchanged node/generation and
+contiguous sequences. Require stopped before/after native source observations:
+the diagnostic device/inode pair changed and its restored bytes preserve the
+entire original prefix; the selected application log retains device/inode and
+its exact bytes. Missing proof, another gap text/path, duplicate gaps or changed
+application input fails. All original Spool/ACK custody checks remain unchanged.
+
+For each independently bounded query prefix, compare every returned gap entry
+on every page to the original committed gap's exact node, sequence, receive time
+and the console's fixed `collection coverage gap; signal-specific details unavailable`
+redaction. Do not derive expectations from answers. Then remove only the already
+validated gap metadata from oracle copies, and apply the existing zero-gap
+signal projection and unchanged query oracle to all rows, pagination, retained
+window, freshness, completeness and unavailable metadata. Original bytes and
+answers remain preserved; gap-only records must not widen signal retention.
+
+Controls reject missing/altered/extra gap answers, wrong source-identity proof,
+unrelated application gaps, pre-restore/fresh-candidate gaps, row mutations and
+scope/sequence defects. Preserve query pages before grading even on failure.
+Require fresh complete walkthroughs in both directions; neither
+run14 nor a journal-replay mechanism receives full owner acceptance credit.

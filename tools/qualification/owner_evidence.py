@@ -4,12 +4,13 @@ No application codec is imported. Existing snapshot and query oracles retain
 all of their framing, row, page, completeness and freshness checks.
 """
 import base64
+import copy
 import hashlib
 import json
 
 import query_oracle
 from cross_family.snapshot import decode
-from release_query import grade
+from release_query import grade, integer, message, varint
 import delivery_oracle
 import soak_companion
 
@@ -30,7 +31,73 @@ def verify_retained_resident_assertion(value, origin, rp_id):
             'retained native assertion lacks unchanged challenge/origin/RP/UP/UV evidence')
 
 
-def bounded_edge_records(records, proof):
+RESTORED_DIAGNOSTIC = '/var/lib/fabrico11y/node/spool/diagnostics/spindle.log'
+RESTORED_GAP = 'log rotated; old tail unknown: ' + RESTORED_DIAGNOSTIC
+SCOPED_GAP = 'collection coverage gap; signal-specific details unavailable'
+
+
+def restored_gap_witness(before, after):
+    def sources(rows):
+        result = {row['path']: row for row in rows}
+        require(len(result) == len(rows), 'duplicate native source observation')
+        return result
+    old, new = sources(before), sources(after)
+    for path in (RESTORED_DIAGNOSTIC, '/var/log/app.log'):
+        require(path in old and path in new, 'restored source witness missing')
+        a, b = old[path], new[path]
+        for row in (a, b):
+            require(all(type(row.get(key)) is int and row[key] >= 0 for key in ('device', 'inode')),
+                    'native source identity malformed')
+        left = base64.b64decode(a['bytes'], validate=True)
+        right = base64.b64decode(b['bytes'], validate=True)
+        identity_equal = (a['device'], a['inode']) == (b['device'], b['inode'])
+        if path == RESTORED_DIAGNOSTIC:
+            require(not identity_equal and left and right.startswith(left),
+                    'restored diagnostic identity/prefix witness differs')
+        else:
+            require(identity_equal and left == right, 'application source changed during restore')
+    return {'diagnostic': RESTORED_DIAGNOSTIC, 'source_prefix_preserved': True}
+
+
+def without_gaps(record):
+    parts = []
+    for number, entries in query_oracle.parse_fields(base64.b64decode(record['bytes'], validate=True)).items():
+        if number == 8:
+            continue
+        for wire, value in entries:
+            if wire == 0:
+                parts.append(integer(number, value))
+            elif wire == 2:
+                parts.append(message(number, value))
+            elif wire in (1, 5):
+                parts.append(varint(number * 8 + wire) + value)
+            else:
+                raise ValueError('unsupported original protobuf wire')
+    return {**record, 'bytes': base64.b64encode(b''.join(parts)).decode()}
+
+
+def grade_restored_prefix(records, query, pages):
+    expected = []
+    for record in records:
+        require(record['label'] == 'edge', 'restored projection contains foreign label')
+        batch = query_oracle.decode_batch(base64.b64decode(record['bytes'], validate=True))
+        require(all(gap == RESTORED_GAP for gap in batch['gaps']), 'unregistered restored gap')
+        if query['from_ns'] <= record['received_ns'] < query['to_ns']:
+            expected.extend(dict(node=record['label'], sequence=batch['sequence'],
+                                 receive_ns=record['received_ns'], gap=SCOPED_GAP)
+                            for _ in batch['gaps'])
+    require(len(expected) <= 1, 'duplicate restored gap')
+    def canonical(rows):
+        return sorted(json.dumps(row, sort_keys=True) for row in rows)
+    clean = copy.deepcopy(pages)
+    for page in clean:
+        require(canonical(page.get('gaps', [])) == canonical(expected), 'restored query gap evidence differs')
+        page['gaps'] = []
+    verdict = grade([without_gaps(record) for record in records], query, clean, {'edge'})
+    return {**verdict, 'independent_gap_evidence': expected}
+
+
+def bounded_edge_records(records, proof, *, restored_sources=None):
     before, after = proof['before'], proof['after']
     require(before['boot_id'] == after['boot_id'] and before['boot_id'], 'edge boot changed')
     require((before['node_id'], before['generation']) == (after['node_id'], after['generation']),
@@ -40,15 +107,20 @@ def bounded_edge_records(records, proof):
     lower, upper = before['acked_through'], after['next_sequence'] - 1
     require(type(lower) is int and type(upper) is int and 1 <= lower <= upper
             and upper - lower < 32, 'edge snapshot bounds unavailable or too wide')
-    selected = []
+    selected, gaps = [], []
     for record in records:
         if record['label'] != 'edge':
             continue
         batch = query_oracle.decode_batch(base64.b64decode(record['bytes'], validate=True))
         require((batch['node_id'].hex(), batch['generation']) == (before['node_id'], before['generation']),
                 'recovered edge identity differs from observed source')
-        require(not batch['gaps'], 'edge gap violates scoped zero-gap admission')
+        gaps.extend(batch['gaps'])
         selected.append((batch['sequence'], record))
+    if restored_sources is None:
+        require(not gaps, 'edge gap violates scoped zero-gap admission')
+    else:
+        restored_gap_witness(*restored_sources)
+        require(gaps == [RESTORED_GAP], 'restored edge requires its one exact diagnostic gap')
     require([sequence for sequence, _ in selected] == list(range(1, len(selected) + 1)),
             'independent recovered edge prefix missing or reordered')
     require(len(selected) >= lower, 'acknowledged edge prefix absent from recovery')
@@ -74,7 +146,7 @@ def grade_custody(spools, replay):
                                for observation in observations], 'wire_attempts_observed': False}
 
 
-def grade_queries(journals, replay, queries, source_log):
+def grade_queries(journals, replay, queries, source_log, *, restored_sources=None):
     require(isinstance(journals, list) and journals, 'complete original stopped journals required')
     names = [item['file'] for item in journals]
     require(len(names) == len(set(names)), 'duplicate original journal member')
@@ -89,11 +161,17 @@ def grade_queries(journals, replay, queries, source_log):
     seen = set()
     for query, pages, proof in queries:
         require(query.get('node') == 'edge', 'walkthrough query scope differs')
-        lower, upper, records = bounded_edge_records(replay, proof)
+        lower, upper, records = bounded_edge_records(replay, proof, restored_sources=restored_sources)
         attempts = []
         for prefix in range(lower, upper + 1):
-            verdict = grade([record for sequence, record in records if sequence <= prefix],
-                            query, pages, {'edge'})
+            selected = [record for sequence, record in records if sequence <= prefix]
+            if restored_sources is None:
+                verdict = grade(selected, query, pages, {'edge'})
+            else:
+                try:
+                    verdict = grade_restored_prefix(selected, query, pages)
+                except ValueError as error:
+                    verdict = {'passed': False, 'violations': [{'rule': 'RESTORED-GAP', 'detail': str(error)}]}
             attempts.append({'prefix': prefix, 'verdict': verdict})
             if verdict['passed']:
                 break
@@ -115,6 +193,8 @@ def grade_queries(journals, replay, queries, source_log):
         verdicts.append(verdict)
     require(seen == {'logs', 'metrics', 'spans'}, 'all three received edge signals required')
     return {'verdicts': verdicts, 'raw_groups': len(groups),
+            **({'restored_gap_witness': restored_gap_witness(*restored_sources), 'restored_gap_count': 1}
+               if restored_sources is not None else {}),
             'raw_sha256': {item['file']: hashlib.sha256(base64.b64decode(item['bytes'], validate=True)).hexdigest()
                            for item in journals}}
 
@@ -147,6 +227,12 @@ def completed(record, expected_binding, phase_names):
         require(value.get('raw_groups', 0) > 0 and len(value.get('verdicts', [])) >= 3
                 and all(item.get('passed') is True for item in value['verdicts']),
                 'restore/fresh candidate signal phase missing or invalid')
+        if stage in ('restored', 'upgraded'):
+            require(value.get('restored_gap_witness') ==
+                    {'diagnostic': RESTORED_DIAGNOSTIC, 'source_prefix_preserved': True}
+                    and value.get('restored_gap_count') == 1
+                    and all(type(item.get('independent_gap_evidence')) is list for item in value['verdicts']),
+                    'restored native gap witness or independently checked answers missing')
     require(record.get('native_older') == {'debian': True, 'fedora': True}
             and record.get('upgrade_preserved') is True, 'native same-code upgrade incomplete')
     for enrollment in record.get('owner_enrollments', []):
