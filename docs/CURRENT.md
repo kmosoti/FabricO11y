@@ -911,3 +911,14 @@ the existing decoy credential allowlist. The owner approved the one-use native
 resident selection fixture, which retains the real challenge/RP/UV and requires
 exact server403/access-denied evidence. Paired exact-package native controls and
 both fresh full reruns remain required; product authorization is unchanged.
+
+
+The reverse owner trial completed candidate installation but its first post-start
+browser request returned no HTTP status. A disposable overlay booted the retained
+Fedora disk and started the package; the final original restart was absent from
+its unflushed journal, so that trial's transport cause remains uncertain.
+The caller now observes the public console page over verified TLS after a
+`Type=exec` start, within the existing phase allocation, before testing the stale
+session exactly once. Certificate/HTTP failures remain terminal, and no login or
+authorization outcome is retried. Native mechanism controls and the fresh reverse
+walkthrough remain required; the earlier failed trial receives no credit.

@@ -10,6 +10,9 @@ class SessionSyncTests(unittest.TestCase):
         events = []
         walk = Walkthrough.__new__(Walkthrough)
         walk.record, walk.principal = {}, 'owner'
+        walk.server = object()
+        walk.commands = SimpleNamespace(remaining=lambda: 60)
+        walk.observed = lambda *args, **kw: events.append('verified-listener-ready')
         walk.bridge = SimpleNamespace(principal_id=principal,
             _request=lambda route: (status, {}),
             login=lambda: events.append('native-login'),
@@ -23,7 +26,7 @@ class SessionSyncTests(unittest.TestCase):
     def test_native_login_is_followed_by_real_pwa_refresh_before_completion(self):
         walk, events = self.walk()
         walk.restart_login()
-        self.assertEqual(events, ['native-login', 'observe-new-view', 'Check session',
+        self.assertEqual(events, ['verified-listener-ready', 'native-login', 'observe-new-view', 'Check session',
                                   'wait-pwa-response', 'record-fresh-login'])
         self.assertEqual(walk.record['stale_session_http'], 401)
 
