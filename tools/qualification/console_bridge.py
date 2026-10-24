@@ -460,8 +460,7 @@ class ConsoleBridge:
         if raw is not None and len(raw.encode()) > MAX_REQUEST:
             raise ValueError("campaign command exceeds 1 MiB")
         self._storage_check()
-        start = time.monotonic()
-        answer = self._js('''const [path,method,body,csrf,cap]=arguments;const done=arguments[arguments.length-1];
+        script = '''const [path,method,body,csrf,cap]=arguments;const done=arguments[arguments.length-1];
           const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),15000);
           (async()=>{try{const headers={'x-fabric-client-version':'1'};if(csrf)headers['x-fabric-csrf']=csrf;
           if(body!==null)headers['content-type']='application/json';
@@ -469,7 +468,13 @@ class ConsoleBridge:
           const reader=response.body.getReader();let size=0;const chunks=[];while(true){const part=await reader.read();if(part.done)break;size+=part.value.length;if(size>cap){controller.abort();throw Error('body bound');}chunks.push(part.value);}
           const bytes=new Uint8Array(size);let offset=0;for(const part of chunks){bytes.set(part,offset);offset+=part.length;}
           done({status:response.status,text:new TextDecoder('utf-8',{fatal:true}).decode(bytes)});
-          }catch(e){done({error:true});}finally{clearTimeout(timer);}})();''', path, method, raw, csrf, MAX_BODY, asynchronous=True)
+          }catch(e){done({error:true});}finally{clearTimeout(timer);}})();'''
+        # Gecko's WebDriver sandbox requires the Window receiver for fetch.
+        # Keep the measured Chrome script unchanged.
+        if self.backend == "firefox":
+            script = script.replace("await fetch(path,", "await window.fetch(path,", 1)
+        start = time.monotonic()
+        answer = self._js(script, path, method, raw, csrf, MAX_BODY, asynchronous=True)
         if answer.get("error"):
             observer = getattr(self, 'raw_observer', None)
             if observer is not None:

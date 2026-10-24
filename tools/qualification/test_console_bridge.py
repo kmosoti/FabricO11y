@@ -1,5 +1,6 @@
 """Campaign bridge boundary controls; browser/WebAuthn smoke is separate."""
 import os
+import hashlib
 from pathlib import Path
 import tempfile
 import threading
@@ -14,6 +15,25 @@ class BridgeBoundaryTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory(dir=os.environ["FABRIC_SCRATCH_ROOT"])
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
+
+    def test_firefox_fetch_receiver_and_chrome_script_identity(self):
+        # Baseline from 07c35b6: completed Chrome main/query campaign transport.
+        baseline_sha = "87f5cbc55f99cac433762ab048047278076524d6cb54efeb4de113e08093c708"
+        scripts = {}
+        for backend in ("chrome", "firefox"):
+            bridge = ConsoleBridge.__new__(ConsoleBridge)
+            bridge.backend, bridge.records = backend, []
+            with patch.object(bridge, '_storage_check'), patch.object(
+                    bridge, '_js', return_value={'status': 401, 'text': '{"error":"sign in required"}'}) as execute:
+                self.assertEqual(bridge._request('/v1/console/session'),
+                                 (401, {'error': 'sign in required'}))
+            scripts[backend] = execute.call_args.args[0]
+            self.assertEqual(execute.call_args.args[1:],
+                             ('/v1/console/session', 'GET', None, None, 8 * 1024**2))
+            self.assertEqual(execute.call_args.kwargs, {'asynchronous': True})
+        self.assertEqual(hashlib.sha256(scripts['chrome'].encode()).hexdigest(), baseline_sha)
+        self.assertEqual(scripts['firefox'], scripts['chrome'].replace(
+            'await fetch(path,', 'await window.fetch(path,', 1))
 
     def test_production_route_only_and_canonical_encoding(self):
         validate_route("/v1/console/query", "POST")
