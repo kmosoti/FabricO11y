@@ -418,7 +418,9 @@ const create=window.ownerOriginalCreate||(window.ownerOriginalCreate=navigator.c
                    '''sudo install -d -m 0700 -o accept -g accept /home/operator/.config/fabrico11y
 install -m 0600 /dev/stdin /home/operator/.config/fabrico11y/reader-token
 cp /usr/share/doc/fabrico11y/examples/access.conf.example /home/operator/.config/fabrico11y/access.conf
-''', document='docs/access-operations.md', stdin=token.encode() + b'\n', purpose='Create documented access.conf and protected owner-only reader token')
+sudo install -m 0644 /etc/fabrico11y/ca.pem /home/operator/.config/fabrico11y/ca.pem
+sed -i 's|^server_ca=.*|server_ca=/home/operator/.config/fabrico11y/ca.pem|' /home/operator/.config/fabrico11y/access.conf
+''', document='docs/access-operations.md', stdin=token.encode() + b'\n', purpose='Create documented access.conf, readable public CA and protected owner-only reader token')
         self.fence(self.edge, 'reader-tokens-and-read-only-clients', document='docs/access-operations.md')
         return token
 

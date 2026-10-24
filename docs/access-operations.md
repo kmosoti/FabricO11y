@@ -80,6 +80,12 @@ subsequent checks. Store a token in a regular file of mode 0600 that you own and
 outside the client config; a symlink, a hard-linked file or one readable by others is
 refused. Copy the [access client example](../packaging/etc/access.conf.example) and set
 its exact HTTPS origin, absolute CA path and absolute `reader_token_file`.
+The service directory `/etc/fabrico11y` is restricted to root and the service
+group. For an ordinary client, copy only the public CA certificate into the
+client directory: `sudo install -m 0644 /etc/fabrico11y/ca.pem /home/operator/.config/fabrico11y/ca.pem`.
+Set `server_ca=/home/operator/.config/fabrico11y/ca.pem` in the copied
+`access.conf`; keep the reader token mode 0600. Do not copy private keys or
+change the service directory permissions.
 
 ```sh
 A=/home/operator/.config/fabrico11y/access.conf
