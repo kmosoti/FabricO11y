@@ -145,6 +145,9 @@ def run(runtime,*,js,wd,click,field,nav,wait,principal,origin,browser_pid,receip
       if(p==='/v1/console/session')await new Promise(resolve=>setTimeout(resolve,1000));return r}''')
     try:runtime.window(js,wait,status,['Working…',owner],lambda:click('Check session'))
     finally:js('window.fetch=window.announcementFetch;delete window.announcementFetch')
+    # Focus the edited input; its focus speech cannot satisfy the exact alert oracle.
+    js('Array.from(document.querySelectorAll("label")).find(e=>e.textContent.trim().startsWith("Body substring (case-sensitive)")).querySelector("input").focus()')
+    require(js('return document.activeElement===Array.from(document.querySelectorAll("label")).find(e=>e.textContent.trim().startsWith("Body substring (case-sensitive)")).querySelector("input")'),'diagnostic-filter-focus')
     runtime.window(js,wait,'[role=alert]',['Filter exceeds 4096 UTF-8 bytes. Edit it before querying.'],
         lambda:field('Body substring (case-sensitive)','x'*4097),alert=True)
     field('Body substring (case-sensitive)','')
