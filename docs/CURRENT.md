@@ -850,3 +850,9 @@ contractual fifteen-minute query window instead of an invalid oversized range.
 The bootstrap-absence observer now runs with permission to traverse its service
 directory. Expected HTTP200/401 and actual credential denials remain unchanged;
 fresh complete walkthroughs are still required.
+
+A proposed owner-resource checker correction distinguishes unchanged configured
+slice limits from systemd effective limits capped by physical guest memory. It
+adds independent physical/ancestor witnesses and refusal controls; owner approval
+and both complete fresh walkthrough reruns are required before acceptance. The
+stopped edge trial remains failed, with no retroactive credit.

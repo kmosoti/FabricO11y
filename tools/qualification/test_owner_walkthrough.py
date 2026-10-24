@@ -44,13 +44,25 @@ class WalkthroughCallerTests(unittest.TestCase):
                 'EffectiveTasksMax': str(tasks)}, 'kernel': {'memory.high': str(high * 1024**2),
                 'memory.max': str(maximum * 1024**2), 'memory.swap.max': '0' if name == service else 'max',
                 'pids.max': str(tasks)}}
+        value['physical_memory_bytes'] = 1536 * 1024**2
+        value['ancestor_memory'] = {name: {'memory.high': 'max', 'memory.max': 'max'}
+                                    for name in ('/', '/system.slice')}
+        shared = value['units']['system-fabrico11y.slice']['properties']
+        shared['EffectiveMemoryHigh'] = shared['EffectiveMemoryMax'] = str(1536 * 1024**2)
         observation.verify(value, 'edge', 'literal-boot', active=True)
-        for defect in ('uid', 'capability', 'kernel', 'effective', 'companion'):
+        for defect in ('uid', 'capability', 'kernel', 'effective', 'companion',
+                       'missing-physical', 'wrong-physical', 'wrong-ancestor', 'wrong-slice-effective', 'slice-kernel', 'swap'):
             changed = copy.deepcopy(value)
             if defect == 'uid': changed['processes'][0]['uids'] = [0] * 4
             elif defect == 'capability': changed['processes'][0]['cap_eff'] = 1
             elif defect == 'kernel': changed['units'][service]['kernel']['memory.max'] = 'max'
             elif defect == 'effective': changed['units'][service]['properties']['EffectiveMemoryMax'] = 'infinity'
+            elif defect == 'missing-physical': del changed['physical_memory_bytes']
+            elif defect == 'wrong-physical': changed['physical_memory_bytes'] = 4096 * 1024**2
+            elif defect == 'wrong-ancestor': changed['ancestor_memory']['/']['memory.max'] = '1024'
+            elif defect == 'wrong-slice-effective': changed['units']['system-fabrico11y.slice']['properties']['EffectiveMemoryMax'] = str(3328 * 1024**2)
+            elif defect == 'slice-kernel': changed['units']['system-fabrico11y.slice']['kernel']['memory.max'] = 'max'
+            elif defect == 'swap': changed['units'][service]['kernel']['memory.swap.max'] = 'max'
             else: changed['processes'].append(copy.deepcopy(changed['processes'][0]))
             with self.subTest(defect=defect), self.assertRaises(ValueError):
                 observation.verify(changed, 'edge', 'literal-boot', active=True)

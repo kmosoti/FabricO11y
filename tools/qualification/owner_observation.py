@@ -6,6 +6,11 @@ NATIVE = r'''
 import json,os,pwd,subprocess
 from pathlib import Path
 account=pwd.getpwnam('fabricolly')
+physical_memory_bytes=os.sysconf('SC_PHYS_PAGES')*os.sysconf('SC_PAGE_SIZE')
+ancestor_memory={}
+for relative in ('/', '/system.slice'):
+ path=Path('/sys/fs/cgroup')/relative.lstrip('/')
+ ancestor_memory[relative]={name:(path/name).read_text().strip() for name in ('memory.high','memory.max')}
 units={}
 for unit in ('fabrico11y-server.service','fabrico11y-node.service','system-fabrico11y.slice'):
  text=subprocess.check_output(['systemctl','show',unit,'--property=ActiveState,MainPID,ControlGroup,User,Group,EffectiveMemoryHigh,EffectiveMemoryMax,EffectiveTasksMax'],text=True)
@@ -32,6 +37,7 @@ for path in sorted(Path('/proc').iterdir()):
  except (FileNotFoundError,ProcessLookupError):disappeared.append(int(path.name))
 print(json.dumps({'boot_id':Path('/proc/sys/kernel/random/boot_id').read_text().strip(),
  'account':{'uid':account.pw_uid,'gid':account.pw_gid,'shell':account.pw_shell},
+ 'physical_memory_bytes':physical_memory_bytes,'ancestor_memory':ancestor_memory,
  'units':units,'processes':processes,'disappeared_during_census':disappeared}))
 '''
 
@@ -55,6 +61,14 @@ def verify(value, role, boot_id, *, active):
     service = 'fabrico11y-' + ('server' if role == 'server' else 'node') + '.service'
     path = '/system.slice/system-fabrico11y.slice/' + service
     limits = (2560, 3072, 512) if role == 'server' else (128, 256, 128)
+    physical = value.get('physical_memory_bytes')
+    allocated = (4096 if role == 'server' else 1536) * 1024**2
+    require(type(physical) is int and limits[1] * 1024**2 < physical <= allocated,
+            'physical guest memory witness missing or outside registered role')
+    ancestors = value.get('ancestor_memory')
+    require(type(ancestors) is dict and set(ancestors) == {'/', '/system.slice'}
+            and all(row == {'memory.high': 'max', 'memory.max': 'max'}
+                    for row in ancestors.values()), 'unexpected guest ancestor memory limit')
     properties = units[service]['properties']
     require(properties['ActiveState'] == 'active' and int(properties['MainPID']) > 0
             and properties['User'] == properties['Group'] == 'fabricolly'
@@ -71,8 +85,8 @@ def verify(value, role, boot_id, *, active):
                 and row['cgroup'] == '0::' + path, 'native writer privilege or cgroup differs')
     for name, (high, maximum, tasks) in ((service, limits), ('system-fabrico11y.slice', (2816, 3328, 640))):
         row = units[name]
-        for key, expected_value in (('EffectiveMemoryHigh', high * 1024**2),
-                                    ('EffectiveMemoryMax', maximum * 1024**2), ('EffectiveTasksMax', tasks)):
+        for key, expected_value in (('EffectiveMemoryHigh', min(high * 1024**2, physical)),
+                                    ('EffectiveMemoryMax', min(maximum * 1024**2, physical)), ('EffectiveTasksMax', tasks)):
             require(row['properties'][key] == str(expected_value), 'effective guest limit differs')
         kernel_limits = [('memory.high', high * 1024**2), ('memory.max', maximum * 1024**2), ('pids.max', tasks)]
         if name == service:
