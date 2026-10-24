@@ -1,0 +1,22 @@
+{
+  "schema": "native-retry-projection-counterexample-v1",
+  "origin": "Fresh alert-presentation Fedora native lifecycle",
+  "product_source": "84a585d35cced26de170c4b34c0a05aab79fae3b",
+  "packaged_source": "34591b7b1390852ad9984339a9fa102c8259d743",
+  "guest_acceptance_exit": 0,
+  "outer_exit": 2,
+  "cutoff_exit": 2,
+  "cutoff_error": "ACK status grammar mismatch",
+  "event": {
+    "at_ns": 1792801861216994000,
+    "boot_id": "b109cccf-848a-4fcb-b3ba-91c5bb1699cb",
+    "message": "delivery sequence=89 sha256=142766f8dfc3a8add717e51346c726d435caa27d2f7ab40463b78c256eb9cd6e status=no_response elapsed_us=6946",
+    "pid": 4916,
+    "unit": "fabrico11y-node.service"
+  },
+  "raw_events_sha256": "db081d1eb0514799eb907265f923ff9d0a7ff06e2d03758c0f69731c8be0dff2",
+  "capture_manifest_sha256": "418599fc240684d91d95423a45f84653349088058c46274dcb748fa4f373bb08",
+  "native_receipt_sha256": "6ef52046659b8e7ba698115e0bb086917b67933245b2d46a8cb94ef7bf992726",
+  "original_helper_sha256": "083a4219c77efdcf78abe897814e7823bceeed1b610135973ab31fc8f1eb1aeb",
+  "disposition": "Unaccepted failed native cell retained; exact original capture replay is diagnostic only and fresh affected execution remains required"
+}

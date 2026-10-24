@@ -182,7 +182,7 @@ fn parse_batch(message: &str) -> Result<u64, String> {
     need(t.next().is_none(), "recognized batch has trailing tokens")?;
     Ok(sequence)
 }
-fn parse_ack(message: &str) -> Result<(u64, String, u64), String> {
+fn parse_delivery(message: &str) -> Result<Option<(u64, String, u64)>, String> {
     let mut t = message.split(' ');
     need(
         t.next() == Some("delivery"),
@@ -194,17 +194,17 @@ fn parse_ack(message: &str) -> Result<(u64, String, u64), String> {
         .and_then(|v| v.strip_prefix("sha256="))
         .ok_or("ACK digest grammar mismatch")?;
     need(lower_hex(digest, 64), "ACK digest grammar mismatch")?;
-    need(
-        t.next() == Some("status=ack"),
-        "ACK status grammar mismatch",
-    )?;
-    let through = next_decimal(&mut t, "committed_through=")?;
+    let through = match t.next() {
+        Some("status=ack") => Some(next_decimal(&mut t, "committed_through=")?),
+        Some("status=no_response" | "status=unavailable") => None,
+        _ => return Err("ACK status grammar mismatch".to_owned()),
+    };
     next_decimal(&mut t, "elapsed_us=")?;
     need(
         t.next().is_none(),
         "recognized delivery has trailing tokens",
     )?;
-    Ok((sequence, digest.to_owned(), through))
+    Ok(through.map(|through| (sequence, digest.to_owned(), through)))
 }
 
 /// Projects caller-normalized observations to the existing custody v1 shape.
@@ -266,10 +266,12 @@ pub fn project(input: Inputs<'_>) -> Result<Value, String> {
             parse_batch(message)?;
             bind_event(event, &who)?;
         } else if message.starts_with("delivery sequence=") {
-            let (sequence, digest, through) = parse_ack(message)?;
+            let ack = parse_delivery(message)?;
             bind_event(event, &who)?;
-            ack_events.push(json!({"unit":unit, "pid":pid, "boot":boot, "at_ns":at,
-                "sequence":sequence, "sha256":digest, "through":through}));
+            if let Some((sequence, digest, through)) = ack {
+                ack_events.push(json!({"unit":unit, "pid":pid, "boot":boot, "at_ns":at,
+                    "sequence":sequence, "sha256":digest, "through":through}));
+            }
         }
     }
     let marker_at = marker_at.ok_or("unique applied-configuration marker required")?;
