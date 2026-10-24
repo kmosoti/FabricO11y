@@ -403,6 +403,8 @@ const create=window.ownerOriginalCreate||(window.ownerOriginalCreate=navigator.c
         self.record['stale_session_http'] = self.bridge._request('/v1/console/session')[0]
         require(self.record['stale_session_http'] == 401, 'restored stale session was authorized')
         self.browser_observers()
+        # A bridge HTTP observation does not update the PWA's in-memory session.
+        self.bridge._js("const e=Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()==='Check session');if(e)e.click();")
         self.connect_owner_setup()
         secret = self.fence(self.server, 'configure-and-enroll-the-first-owner', document='docs/access-operations.md')
         raw = Path(secret['stdout']['path']).read_bytes().strip()
@@ -630,6 +632,14 @@ OBS
         require(status == 401, 'pre-restart browser session remained authorized')
         self.record['stale_session_http'] = status
         self.bridge.login()
+        # Native bridge login rotates the cookie/CSRF pair. Refresh the PWA
+        # through its real control before issuing a mutation from that view.
+        self.browser_observers()
+        self.click('Check session')
+        self.ui_wait("window.ownerPublicRequests.some(r=>r.route==='/v1/console/session'&&r.status===200) && Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()==='Check session')?.disabled===false")
+        view = self.bridge.session_view()
+        require(view['principal_id'] == self.principal and view['fresh_until_unix_s'] > int(time.time()),
+                'PWA restart login did not retain the fresh owner')
         self.event('actual-fresh-login', principal_id=self.bridge.principal_id)
 
     def execute(self):
@@ -748,9 +758,10 @@ OBS
         self.field('Existing Spindle name', 'edge')
         self.bridge._js('window.confirm=()=>true')
         self.click('revoke')
+        self.ui_wait("window.ownerPublicRequests.some(r=>r.route==='/v1/console/nodes/edge/revoke'&&r.status===200)")
         # Read-only authority probe from the actual edge, using protected stdin.
         probe = self.prose(self.edge, 'reader-tokens-and-spindle-controls', 'After revoking an edge, stop its',
-            "python3 -c 'import json,ssl,sys,urllib.request,urllib.error; t=sys.stdin.read().strip(); r=urllib.request.Request(\"https://telemetry.example.com:7443/v1/config\",headers={\"Authorization\":\"Bearer \"+t});\ntry: urllib.request.urlopen(r,context=ssl.create_default_context(cafile=\"/home/operator/.config/fabrico11y/ca.pem\"),timeout=5)\nexcept urllib.error.HTTPError as e: print(e.code)'\n",
+            "python3 -c 'import json,ssl,sys,urllib.request,urllib.error; t=sys.stdin.read().strip(); r=urllib.request.Request(\"https://telemetry.example.com:7443/v1/config\",headers={\"Authorization\":\"Bearer \"+t});\ntry:\n response=urllib.request.urlopen(r,context=ssl.create_default_context(cafile=\"/home/operator/.config/fabrico11y/ca.pem\"),timeout=5); print(response.status); response.close()\nexcept urllib.error.HTTPError as e: print(e.code)'\n",
             stdin=self.edge_token.encode(), purpose='Observe specifically unauthorized revoked primary edge over verified TLS')
         require(Path(probe['stdout']['path']).read_text().strip() == '401', 'revoked primary edge did not receive HTTP401')
         self.record['revoked_edge_http'] = 401
@@ -895,6 +906,15 @@ def main():
     except BaseException as error:
         if walk is not None:
             walk.record['failure'] = {'type': type(error).__name__, 'reason': str(error)}
+            if walk.bridge is not None:
+                try:
+                    public = walk.bridge._js('''return {ready:document.readyState,
+connect:!!document.querySelector('[data-testid=connect-server]'),
+setup:document.body.textContent.includes('First owner setup'),
+requests:(window.ownerPublicRequests||[]).slice(-64).map(r=>({route:r.route,status:r.status}))}''')
+                    private_write(out / 'protected-transcript/failure-public-ui.json', json.dumps(public).encode())
+                except BaseException as observation_error:
+                    walk.record['failure_ui_observation_error'] = type(observation_error).__name__
             walk.commands.failed = True
         else:
             setup_failure = {'exit': 2, 'type': type(error).__name__, 'reason': str(error)}

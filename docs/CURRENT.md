@@ -1,5 +1,15 @@
 # Current project state
 
+Owner run15 passed its original and restored custody/query checkpoints and
+upgraded both packages, then its revoked-edge probe did not receive401. Inspection
+found that restart login updated the browser cookie through the native bridge but
+left the PWA's in-memory CSRF state from before restart. The harness now uses its
+real Check session control and waits for completion before a PWA mutation; fresh
+setup also refreshes a previously connected view. The existing required401 denial
+is unchanged. Native paired stale-view and synchronized-view controls are required
+before another full direction. Failures now retain bounded public UI route/status
+observations before browser shutdown, without credentials or response bodies.
+
 Owner run14 completed native recovery and the exact old-key403/access-denied
 control, then stopped when the zero-gap scoped adapter rejected a truthful
 restored diagnostic-log rotation gap. The documented move-aside/extract changed
