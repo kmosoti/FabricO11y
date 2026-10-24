@@ -1,5 +1,13 @@
 # Current project state
 
+The stopped `alert-owner-debian-fedora-05` walkthrough completed both native
+installations and created its TLS material, then the guide's unprivileged
+certificate inspection could not traverse `/etc/fabrico11y`. Both guests stopped
+with original exit 2 retained. The guide now uses `sudo` for those two read-only
+OpenSSL commands, preserving the protected directory permissions. Both fresh
+walkthroughs must use the corrected pinned guide; no product/package change or
+completed owner-workflow claim follows from this documentation correction.
+
 The stopped `alert-owner-debian-fedora-03` walkthrough booted both guests and
 established the high-port SSH route, then installed the older Debian fixture and
 matched its canonical payload. Its observer incorrectly let the shell expand
