@@ -341,3 +341,31 @@ actual clean harness and merged-guide binding, fresh #41 prerequisite before
 walkthrough, resource/deadline limit and observation remains required. No actual
 construction or walkthrough is established by this registration. The matching
 native-installation binding is [revision6](installation-native-custody-caller-card.md#replacement-tls-candidate-binding-prospective-revision-6).
+
+## Effective-memory observation correction
+
+The owner approved this correction and both fresh reruns on2026-10-24.
+The stopped owner trial's1536MiB edge had the exact packaged node and slice
+kernel settings, but systemd reported the slice's effective memory ceiling at
+physical guest memory. The earlier exact comparison against the larger configured
+slice values was inapplicable to that registered guest size. See the upstream
+[systemd resource-control definition](https://freedesktop.org/software/systemd/man/latest/systemd.resource-control.html).
+
+Fresh observations must record physical memory from the guest kernel and both
+root and `system.slice` ancestor memory controls. At the real cgroup v2 root,
+record and require the documented absence of `memory.high` and `memory.max`;
+[these files exist on non-root cgroups](https://www.kernel.org/doc/html/v6.6/admin-guide/cgroup-v2.html).
+Require both `system.slice` controls to be `max`; an unexpected ancestor
+cap fails admission rather than changing the registered envelope. Physical memory
+must be positive, exceed the role's configured service maximum and not exceed its
+registered4096MiB server or1536MiB edge allocation. Compare each effective memory
+property to the minimum of its unchanged configured value and observed physical
+memory. Require exact kernel node128/256MiB, server2560/3072MiB and shared-slice
+2816/3328MiB high/max values, unchanged tasks, service swap0, privileges, writer
+inventory, boot identity and all original shutdown checks.
+
+Controls must reject missing/invalid physical observations, unexpected ancestor
+caps, a wrong effective value, raised/unbounded configured limits, swap, elevated
+privileges and extra writers. Old observations without this witness remain
+incomplete. Rerun both full fresh-owner directions after approval; this changes no
+product/package, guest RAM/vCPU allocation, host envelope or acceptance threshold.
