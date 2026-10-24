@@ -25,7 +25,7 @@ ROOT = HERE.parents[1]
 sys.path[:0] = [str(HERE), str(ROOT / 'tools'), str(ROOT / 'tools/ui')]
 from owner_commands import Commands, PHASES, private_write
 from owner_guide import Guide
-from owner_evidence import require, grade_queries, grade_custody, completed
+from owner_evidence import require, grade_queries, grade_custody, completed, verify_retained_resident_assertion
 import owner_observation
 from cross_family.guest import Guest, Q, image
 from cross_family.remote import placement_options, validate_placement, edge_guest
@@ -128,15 +128,6 @@ navigator.credentials.get=async options=>{
 };''')
 
 
-def verify_retained_resident_assertion(value, origin, rp_id):
-    require(type(value) is dict and not value.get('error')
-            and value.get('one_shot') is True and value.get('original_allowlist_count', 0) > 0
-            and value.get('rp_id') == rp_id and value.get('verification_unchanged') is True
-            and value.get('challenge_matches') is True and value.get('origin') == origin
-            and value.get('type') == 'webauthn.get'
-            and value.get('rp_hash') == hashlib.sha256(rp_id.encode()).hexdigest()
-            and value.get('up') is True and value.get('uv') is True,
-            'retained native assertion lacks unchanged challenge/origin/RP/UP/UV evidence')
 
 
 @dataclass(frozen=True)
@@ -382,7 +373,7 @@ OBS
 
     def browser_observers(self):
         self.bridge._js('''window.ownerPublicCeremonies=[];window.ownerPublicRequests=[];
-const originalFetch=window.ownerOriginalFetch||(window.ownerOriginalFetch=window.fetch.bind(window));window.fetch=async(...args)=>{const response=await originalFetch(...args);const route=new URL(typeof args[0]==='string'?args[0]:args[0].url,location.href).pathname;if(route.startsWith('/v1/console/'))window.ownerPublicRequests.push({route,status:response.status});if(window.ownerPublicRequests.length>4096)throw Error('observer bound');return response;};
+const originalFetch=window.ownerOriginalFetch||(window.ownerOriginalFetch=window.fetch.bind(window));window.fetch=async(...args)=>{const response=await originalFetch(...args);const route=new URL(typeof args[0]==='string'?args[0]:args[0].url,location.href).pathname;if(route.startsWith('/v1/console/')){const row={route,status:response.status};if(route==='/v1/console/auth/login/finish'&&response.status!==200){const text=await response.clone().text();if(text.length>4096)throw Error('denial observer bound');const body=JSON.parse(text);row.error=Object.keys(body).length===1&&typeof body.error==='string'?body.error:null;}window.ownerPublicRequests.push(row);}if(window.ownerPublicRequests.length>4096)throw Error('observer bound');return response;};
 const create=window.ownerOriginalCreate||(window.ownerOriginalCreate=navigator.credentials.create.bind(navigator.credentials));navigator.credentials.create=async options=>{const credential=await create(options);const data=new Uint8Array(credential.response.getAuthenticatorData());if(data.length<37)throw Error('authenticator data truncated');window.ownerPublicCeremonies.push({rp_hash:Array.from(data.slice(0,32),x=>x.toString(16).padStart(2,'0')).join(''),up:!!(data[32]&1),uv:!!(data[32]&4)});return credential;};''')
 
     def enroll_owner(self, stage):
@@ -706,9 +697,10 @@ OBS
             private_write(self.out / 'protected-transcript/retained-old-owner-refusal.json',
                           json.dumps(summary).encode())
         verify_retained_resident_assertion(summary['assertion'], ORIGIN, 'telemetry.example.com')
-        require(any(row == dict(route='/v1/console/auth/login/finish', status=401) for row in summary['requests']),
+        require(any(row == dict(route='/v1/console/auth/login/finish', status=403, error='access denied') for row in summary['requests']),
                 'old resident owner key did not receive actual server refusal')
         self.record['old_owner_assertion'] = summary['assertion']
+        self.record.update(old_owner_http=403, old_owner_error='access denied')
         self.record['old_owner_denied'] = True
         self.record['old_reader_http'] = self.reader_status(self.reader_token)
         require(self.record['old_reader_http'] == 401, 'restored old reader retained query authority')

@@ -866,6 +866,6 @@ complete owner directions still require fresh successful runs.
 The restored-owner trial completed its first independently graded stopped
 query/custody snapshot, then its old-key refusal observation was inapplicable to
 the existing decoy credential allowlist. A proposed one-use native resident
-selection fixture retains the real challenge/RP/UV and still requires actual
-server401. It needs paired exact-package native controls, owner approval and
+selection fixture retains the real challenge/RP/UV and requires proposed exact
+server403/access-denied evidence. It needs paired exact-package native controls, owner approval and
 both fresh full reruns; product authorization remains unchanged.

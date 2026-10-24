@@ -22,6 +22,10 @@ def fixture():
               'phases': [{'name': name, 'start_ns': i, 'end_ns': i + 1, 'deadline_ns': i + 2, 'exit': 0}
                          for i, (name, _) in enumerate(PHASES)],
               'revoked_edge_http': 401, 'old_owner_denied': True, 'stale_session_http': 401,
+              'old_owner_http': 403, 'old_owner_error': 'access denied',
+              'old_owner_assertion': dict(one_shot=True, original_allowlist_count=1, rp_id='telemetry.example.com',
+                  verification_unchanged=True, challenge_matches=True, origin='https://telemetry.example.com:7443',
+                  type='webauthn.get', rp_hash=hashlib.sha256(b'telemetry.example.com').hexdigest(), up=True, uv=True),
               'signals': {name: {'raw_groups': 1, 'verdicts': [{'passed': True}] * 3}
                           for name in ('fixture', 'restored', 'upgraded', 'fresh-candidate')},
               'native_older': {'debian': True, 'fedora': True}, 'upgrade_preserved': True,
@@ -51,6 +55,15 @@ class OwnerEvidenceTests(unittest.TestCase):
                 elif defect.startswith(('timeout-', 'connection-reset-')): record['revoked_edge_http'] = None
                 else: self.fail('unimplemented registered defect: ' + defect)
                 with self.assertRaises(ValueError): self.check(record, binding)
+
+    def test_old_owner_refusal_requires_exact_status_body_and_native_assertion(self):
+        for key, value in [('old_owner_http', 200), ('old_owner_http', 401), ('old_owner_http', 429),
+                           ('old_owner_http', 503), ('old_owner_error', 'different denial'),
+                           ('old_owner_assertion', None)]:
+            record, binding = fixture()
+            record[key] = value
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                self.check(record, binding)
 
     def test_phase_failure_and_omission_never_complete(self):
         for change in ('missing', 'late', 'nonzero', 'cleanup'):
