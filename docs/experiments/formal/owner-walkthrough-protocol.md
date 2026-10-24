@@ -370,9 +370,11 @@ privileges and extra writers. Old observations without this witness remain
 incomplete. Rerun both full fresh-owner directions after approval; this changes no
 product/package, guest RAM/vCPU allocation, host envelope or acceptance threshold.
 
-## Proposed retained-resident refusal producer
+## Owner-approved retained-resident refusal producer
 
-Owner approval is required before fresh acceptance with this fixture correction.
+The owner approved this fixture correction and both fresh full reruns on
+2026-10-24, then authorized execution of the remaining release plan. Publication
+remains a separate final owner decision.
 After offline recovery, the existing account-privacy cover returns decoy allowed
 credential IDs. A normal browser can refuse credential selection before sending
 login-finish. That local failure cannot satisfy an actual server-refusal check.
@@ -397,5 +399,5 @@ Before full reruns, a bounded exact-package mechanism must show this producer
 completing a valid native resident login with200, then exact403/access-denied
 with the retained device after offline recovery. Completeness checks require the
 native witness and exact denial as well as the old-owner-denied flag. Both full
-fresh-owner directions remain required after approval; prior failures receive
+fresh-owner directions remain required; prior failures receive
 no retroactive credit.
