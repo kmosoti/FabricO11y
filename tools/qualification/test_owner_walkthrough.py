@@ -95,6 +95,31 @@ class WalkthroughCallerTests(unittest.TestCase):
             with self.subTest(physical=physical), self.assertRaises(ValueError):
                 observation.verify(bad, 'server', 'literal-server-boot', active=True)
 
+    def test_active_and_stopped_observations_keep_distinct_exclusive_evidence(self):
+        # Origin: fresh owner11 reached received queries, then snapshot('fixture')
+        # reused the earlier active observation's protected filename.
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as temporary:
+            directory = Path(temporary)
+            walk = W.Walkthrough.__new__(W.Walkthrough)
+            walk.record = {}
+            guest = types.SimpleNamespace(role='server', boot_id='literal-boot')
+            def observed(actual, command, label):
+                self.assertIs(actual, guest)
+                path = directory / (label + '.json')
+                W.private_write(path, b'{"literal":"process observation"}')
+                return path.read_text()
+            walk.observed = observed
+            with patch.object(W.owner_observation, 'verify') as verify:
+                walk.processes(guest, 'fixture', active=True)
+                walk.processes(guest, 'fixture', active=False)
+            self.assertEqual(len(list(directory.iterdir())), 2)
+            self.assertEqual([row['active'] for row in walk.record['process_observations']], [True, False])
+            self.assertEqual([call.kwargs['active'] for call in verify.call_args_list], [True, False])
+            for path in directory.iterdir():
+                with self.assertRaises(FileExistsError):
+                    W.private_write(path, b'overwrite must remain forbidden')
+                self.assertEqual(path.read_bytes(), b'{"literal":"process observation"}')
+
     def test_cleanup_attempts_second_guest_after_first_raises(self):
         stopped = []
         def fail():
