@@ -402,9 +402,10 @@ native witness and exact denial as well as the old-owner-denied flag. Both full
 fresh-owner directions remain required; prior failures receive
 no retroactive credit.
 
-## Proposed restored-diagnostic gap observation
+## Owner-approved restored-diagnostic gap observation
 
-Owner approval is required before admission under this proposal. Run14's
+The owner approved this correction and both fresh full reruns on2026-10-24.
+Publication remains a separate final owner decision. Run14's
 documented move-aside/extract restore changed the diagnostic log's inode while
 preserving its complete bytes. The Spindle truthfully committed one
 `log rotated; old tail unknown: /var/lib/fabrico11y/node/spool/diagnostics/spindle.log`
@@ -431,5 +432,5 @@ answers remain preserved; gap-only records must not widen signal retention.
 Controls reject missing/altered/extra gap answers, wrong source-identity proof,
 unrelated application gaps, pre-restore/fresh-candidate gaps, row mutations and
 scope/sequence defects. Preserve query pages before grading even on failure.
-Require fresh complete walkthroughs in both directions after approval; neither
+Require fresh complete walkthroughs in both directions; neither
 run14 nor a journal-replay mechanism receives full owner acceptance credit.
