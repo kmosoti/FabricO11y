@@ -361,7 +361,23 @@ OBS
             if self.bridge._js('return (' + predicate + ')'): return
             self.commands.remaining()
             time.sleep(.1)
+        try:
+            observed = self.bridge._js('''return {ready:document.readyState,
+connect:!!document.querySelector('[data-testid=connect-server]'),
+setup:document.body.textContent.includes('First owner setup'),
+working:document.body.textContent.includes('Working…'),
+requests:(window.ownerPublicRequests||[]).slice(-64).map(r=>({route:r.route,status:r.status}))}''')
+            private_write(self.out / 'protected-transcript' / ('ui-timeout-' + str(time.monotonic_ns()) + '.json'),
+                          json.dumps(dict(predicate=predicate, observation=observed)).encode())
+        except BaseException as error:
+            self.record['ui_timeout_observation_error'] = type(error).__name__
         raise TimeoutError('documented browser action did not complete')
+
+    def connect_owner_setup(self):
+        # The static passkey helper can load before the WASM application mounts.
+        self.ui_wait("document.querySelector('[data-testid=connect-server]') || document.body.textContent.includes('First owner setup')")
+        self.bridge._js("const e=document.querySelector('[data-testid=connect-server]');if(e)e.click();")
+        self.ui_wait("document.body.textContent.includes('First owner setup')")
 
     def click(self, text):
         self.bridge._js('''const wanted=arguments[0];const e=Array.from(document.querySelectorAll('button,summary,.nav-item')).find(e=>e.matches('.nav-item')?e.textContent.includes(wanted):e.textContent.trim()===wanted);if(!e||e.disabled)throw Error('documented control unavailable');e.click();''', text)
@@ -380,8 +396,7 @@ const create=window.ownerOriginalCreate||(window.ownerOriginalCreate=navigator.c
         self.record['stale_session_http'] = self.bridge._request('/v1/console/session')[0]
         require(self.record['stale_session_http'] == 401, 'restored stale session was authorized')
         self.browser_observers()
-        self.bridge._js("const e=document.querySelector('[data-testid=connect-server]');if(e)e.click();")
-        self.ui_wait("document.body.textContent.includes('First owner setup')")
+        self.connect_owner_setup()
         secret = self.fence(self.server, 'configure-and-enroll-the-first-owner', document='docs/access-operations.md')
         raw = Path(secret['stdout']['path']).read_bytes().strip()
         require(re.fullmatch(b'[a-f0-9]{64}', raw), 'protected bootstrap output malformed')
