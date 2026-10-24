@@ -1,5 +1,17 @@
 # Current project state
 
+Fresh owner run13 timed out before its first bootstrap-secret read; both hosts
+confirmed shutdown and the failure remains retained. A short exact-package
+Firefox probe completed the original connection action normally, so the cause of
+that full-run timeout is unresolved. Inspection exposed a separate startup race:
+the static passkey helper may load before the WASM application's Connect control,
+and the former conditional click silently skipped a missing control. The owner
+harness now waits for that control or the already-open setup screen before its
+single click, within unchanged phase and action deadlines. Future timeouts retain
+bounded public readiness/request-status observations, excluding field values,
+response bodies and credentials. Delayed-control regression and native evidence
+are required before another full walkthrough; no failed run gains acceptance.
+
 The stopped `alert-owner-debian-fedora-06` run passed certificate inspection but
 its browser constructor had no TLS receipt. A guest-free counterexample located
 the resource check: the delegated controller had the required limits and its
