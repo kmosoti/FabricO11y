@@ -369,3 +369,25 @@ caps, a wrong effective value, raised/unbounded configured limits, swap, elevate
 privileges and extra writers. Old observations without this witness remain
 incomplete. Rerun both full fresh-owner directions after approval; this changes no
 product/package, guest RAM/vCPU allocation, host envelope or acceptance threshold.
+
+## Proposed retained-resident refusal producer
+
+Owner approval is required before fresh acceptance with this fixture correction.
+After offline recovery, the existing account-privacy cover returns decoy allowed
+credential IDs. A normal browser can therefore refuse credential selection before
+sending login-finish. That local failure cannot satisfy the required actual401.
+
+For this negative control only, arm one native `navigator.credentials.get` call
+to use resident selection by clearing only its browser-side allowlist. Preserve
+the actual server-issued challenge, RP, origin and verification options; restore
+the original get function before awaiting its result. Retain the same owned old
+resident device until the real login-finish returns401. Record actual UP/UV/RP,
+origin, challenge equality and bounded route/status summaries even on failure.
+No private key is exported/imported, no signature is synthesized, and no server
+response, product authorization or ordinary UI behavior changes. A local browser
+failure, timeout,403 or successful old-key login cannot pass this control.
+
+Before full reruns, a bounded exact-package mechanism must show the same producer
+completing a valid native resident login with200, then returning actual401 with
+the retained device after offline recovery. Both full fresh-owner directions
+remain required after approval; prior failures receive no retroactive credit.
