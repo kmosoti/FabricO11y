@@ -171,6 +171,7 @@ class Walkthrough:
                      Guest('edge', family, root, out, self.key, 1536, network='192.0.2.0/24'))
         self.queries = []
         self.query_stages = {}
+        self.source_stages = {}
         self.source_log = b'owner-walkthrough-original-log\n'
         self.previous_boot_ids = set()
 
@@ -302,12 +303,17 @@ OBS
             rows = [json.loads(line) for line in self.observed(guest,
                 '/root/owner-observers/spool_dump ' + config + '\n', stage + '-' + guest.role + '-original-spool').splitlines()]
             spools.append(rows)
-            self.capture_sources(guest, stage)
+            sources = self.capture_sources(guest, stage)
+            if guest.role == 'edge':
+                self.source_stages[stage] = sources
         self.record.setdefault('custody', {})[stage] = grade_custody(spools, replay)
+        private_write(self.out / 'protected-transcript' / (stage + '-queries.json'), json.dumps(self.queries).encode())
         for name, (start, end) in self.query_stages.items():
             if name not in self.record['signals']:
-                self.record['signals'][name] = grade_queries(journals, replay, self.queries[start:end], self.source_log)
-        private_write(self.out / 'protected-transcript' / (stage + '-queries.json'), json.dumps(self.queries).encode())
+                restored = ((self.source_stages['fixture'], self.source_stages[stage])
+                            if name in ('restored', 'upgraded') else None)
+                self.record['signals'][name] = grade_queries(journals, replay, self.queries[start:end],
+                                                            self.source_log, restored_sources=restored)
 
     def capture_sources(self, guest, stage):
         # Read only the selected log and diagnostic directories. Token, CA and
@@ -340,6 +346,7 @@ OBS
         self.record.setdefault('original_source_files', {})[stage + '-' + guest.role] = [
             dict(path=row['path'], device=row['device'], inode=row['inode'],
                  sha256=hashlib.sha256(base64.b64decode(row['bytes'], validate=True)).hexdigest()) for row in rows]
+        return rows
 
     def installed_payload(self, guest, candidate):
         expected = self.artifacts['identity']['payload_identity']
