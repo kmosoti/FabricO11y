@@ -1,6 +1,39 @@
 # Native cutoff adapter engineering contract
 
-Alpha acceptance is owner-paused. This is a harness implementation experiment,
+## Retry diagnostics carry no ACK credit
+
+Registered before correction, 2026-10-23. The
+[literal Fedora counterexample](fixtures/native-retry-projection.json) retains
+guest lifecycle exit0, then cutoff exit2 with `ACK status grammar mismatch`.
+The unchanged sender emitted a valid `status=no_response` attempt before a later
+successful ACK. The independent Python custody check completed before this
+structural projection refusal. The failed native cell remains unaccepted.
+
+The projector shall recognize the sender's existing retry diagnostic grammar:
+`delivery sequence=DECIMAL sha256=LOWERCASE_HEX64 status=no_response elapsed_us=DECIMAL`
+and the equivalent `status=unavailable` form. These rows bind to the same actual
+unit/PID/boot as other recognized sender events, remain in the original captured
+journal and grant zero ACK credit. They do not enter the normalized ACK list.
+Keep the exact successful-ACK grammar, cursor/sequence/digest checks, stable
+prefix, pause/stop windows, stopped capture, inspection health and native
+attestation requirements. Unknown statuses, malformed retry/ACK grammar and
+missing real ACKs still refuse. No diagnostic producer, product wire format,
+normalized plan format or independent Python oracle changes.
+
+Register source controls before implementation: valid retries plus a later
+real ACK reach the unchanged actual consumer; replacing the sole ACK with a
+retry cannot satisfy it. Reject unknown statuses, wrong digest syntax, extra
+committed-through/trailing fields, malformed elapsed values and wrong sender
+identity. Preserve every existing negative control and expected outcome. Replay
+the untouched actual captured manifest with old and repaired helpers, preserving
+their exact identities/statuses; this is diagnostic evidence only. Require fresh
+affected native execution with the repaired pinned helper after source/hosted
+verification and real merged ancestry. Unaffected package-mutation and prepare
+refusal cells retain their original commands and expectations.
+
+## Original engineering registration context
+
+Alpha acceptance was owner-paused at the original registration below. It described a harness implementation experiment,
 not a replacement installation protocol or an admitted qualification run.
 Use the [primitive protocol](primitive-composition-protocol.md) and its measured
 source/ACK join, cutoff reducer and inspection decoder before shared adoption.
