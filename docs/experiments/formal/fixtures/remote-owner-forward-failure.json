@@ -1,0 +1,13 @@
+{
+  "origin": "alert-owner-debian-fedora-01 and owner-forward-probe-01, 2026-10-24",
+  "contract": "An exited fixture tunnel must stop guest readiness promptly; preserve host SELinux and the native guest TLS endpoint.",
+  "original_transport_exit": 255,
+  "listener_port": 7443,
+  "stderr": "Error: remote port forwarding failed for listen port 7443",
+  "cause": "Enforcing sshd_session_t name_bind denial for unreserved_port_t TCP 7443",
+  "original_owner_outcome": "edge guest boot deadline exceeded; no product workflow executed",
+  "cleanup": "Both guests stopped; remote command completion confirmed; failure evidence retained",
+  "correction": "Check tunnel on every readiness retry; map the fixed guest endpoint through an owned high listener using guest-only DNAT.",
+  "regression": "tools/qualification/cross_family/test_forward_readiness.py",
+  "acceptance_credit": false
+}

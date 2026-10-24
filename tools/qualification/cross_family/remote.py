@@ -25,6 +25,18 @@ def remote_command(host, arguments):
             shlex.join(list(map(str, arguments)))]
 
 
+def owner_forward_script(port):
+    if type(port) is not int or not 32768 <= port <= 60999:
+        raise ValueError('owner forwarding requires an ephemeral high port')
+    return ('set -eu\n'
+            'nft add table ip fabric_fixture_forward\n'
+            'nft add chain ip fabric_fixture_forward output '
+            "'{ type nat hook output priority -100; policy accept; }'\n"
+            'nft add rule ip fabric_fixture_forward output '
+            'ip daddr 192.0.2.2 tcp dport 7443 dnat to 192.0.2.2:' + str(port) + '\n'
+            'nft list table ip fabric_fixture_forward\n')
+
+
 def placement_options(parser):
     parser.add_argument('--edge-host', choices=('olo@olo-g15',))
     parser.add_argument('--edge-storage-root', type=Path)
@@ -84,11 +96,17 @@ class RemoteGuest(Guest):
                 or not re.fullmatch(r'[0-9a-f]{64}', manifest_sha256)):
             raise ValueError('invalid pinned remote source/run')
         remote_command(host, ['true'])
+        if network is not None and data_port != 7443:
+            raise ValueError('walkthrough routing requires the documented port 7443')
         super().__init__('edge', family, root, results, key, 1536, network=network)
         self.host, self.storage_root, self.source_root = host, storage_root, source_root
         self.manifest_sha256, self.run_id = manifest_sha256, run_id
         self.manifest = json.loads(manifest.read_text())
         self.forward_data_port = data_port
+        # The walkthrough keeps guest TLS :7443. G15's enforcing sshd policy
+        # permits an ephemeral listener; only the disposable guest maps to it.
+        self.forward_listen_port = Q.free_port() if network else data_port
+        self.forward_rule = owner_forward_script(self.forward_listen_port) if network else None
         self.remote_root = storage_root / 'scratch' / ('remote-' + run_id)
         self.remote_results = storage_root / 'results' / ('remote-' + run_id)
         self.tunnel = None
@@ -159,7 +177,7 @@ class RemoteGuest(Guest):
         self.remote_boot_id = ready['boot_id']
         forwards = ['-N', '-o', 'ExitOnForwardFailure=yes',
                     '-L', f'127.0.0.1:{self.port}:127.0.0.1:{ready["port"]}',
-                    '-R', f'127.0.0.1:{self.forward_data_port}:127.0.0.1:{self.forward_data_port}']
+                    '-R', f'127.0.0.1:{self.forward_listen_port}:127.0.0.1:{self.forward_data_port}']
         tunnel_command = remote_command(self.host, [])[:-1]
         tunnel_command[-1:-1] = forwards
         with (self.results / 'edge-forward-stderr.txt').open('wb') as errors:
@@ -167,17 +185,27 @@ class RemoteGuest(Guest):
                                            stdout=subprocess.DEVNULL, stderr=errors)
         self.forward_command = tunnel_command
 
+    def check_boot_processes(self):
+        super().check_boot_processes()
+        if self.tunnel is None or self.tunnel.poll() is not None:
+            raise RuntimeError('owned data/management forward exited')
+
     def ready(self, *, deadline=None):
         super().ready(deadline=deadline)
         if self.boot_id != self.remote_boot_id:
             raise ValueError('forwarded guest boot identity differs from remote capture')
         if self.tunnel.poll() is not None:
             raise RuntimeError('owned data/management forward exited')
+        if self.forward_rule is not None:
+            mapped = self.script(self.forward_rule)
+            (self.results / 'edge-forward-rule.txt').write_text(mapped.stdout + mapped.stderr)
         (self.results / 'edge-placement.json').write_text(json.dumps(dict(
             host=self.host, storage_root=str(self.storage_root),
             source_root=str(self.source_root), manifest_sha256=self.manifest_sha256,
             worker_command=self.command, forward_command=self.forward_command,
-            boot_id=self.boot_id, clock=self.correlation()), indent=2) + '\n')
+            boot_id=self.boot_id, clock=self.correlation(),
+            data_destination_port=self.forward_data_port, data_listen_port=self.forward_listen_port,
+            guest_forward_rule=self.forward_rule), indent=2) + '\n')
 
     def copy(self, path, destination):
         # Immutable packages/helpers are staged once by content digest. Fresh

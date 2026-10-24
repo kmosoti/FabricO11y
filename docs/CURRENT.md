@@ -1,5 +1,14 @@
 # Current project state
 
+The stopped split-host owner attempt `alert-owner-debian-fedora-01` failed before
+installation: G15's enforcing SELinux denied the SSH listener on TCP 7443. A
+guest-free probe reproduced exit 255. The prospective
+[placement correction](experiments/formal/release-placement-protocol.md) keeps
+the guest TLS endpoint and maps it through an ephemeral high listener using only
+the disposable guest's network rules. Boot readiness now checks the owned tunnel
+on every retry. Fresh route smoke and both owner directions remain pending; the
+failed attempt receives no acceptance credit and host policy is unchanged.
+
 ## Active release acceptance
 
 The owner lifted the alpha/package acceptance pause for the scoped Blade/G15
