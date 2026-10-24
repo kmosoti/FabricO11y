@@ -389,7 +389,7 @@ const create=window.ownerOriginalCreate||(window.ownerOriginalCreate=navigator.c
         self.event('browser-owner-enrollment', stage=stage, principal_id=view['principal_id'],
                    public_flags=flags, resident_devices=devices)
         self.prose(self.server, 'server', 'On the first successful access-store initialization',
-                   'test ! -e /var/lib/fabrico11y/server/access/access-bootstrap.secret\n',
+                   'sudo test ! -e /var/lib/fabrico11y/server/access/access-bootstrap.secret\n',
                    document='docs/access-operations.md', purpose='Observe consumed bootstrap secret')
         return view['principal_id']
 
@@ -428,11 +428,11 @@ sed -i 's|^server_ca=.*|server_ca=/home/operator/.config/fabrico11y/ca.pem|' /ho
         # A real query permission is exercised, not an owner-only route that
         # would also refuse a perfectly valid read-only token.
         result = self.prose(self.edge, 'reader-tokens-and-read-only-clients', 'Copy the [access client example]',
-            "python3 -c 'import json,ssl,sys,urllib.request,urllib.error; token=sys.stdin.read().strip(); "
-            "body=json.dumps({\"kind\":\"logs\",\"node\":\"edge\",\"from_ns\":0,\"to_ns\":9223372036854775807,\"limit\":1}).encode(); "
+            "python3 -c 'import json,ssl,sys,time,urllib.request,urllib.error; token=sys.stdin.read().strip(); now=time.time_ns(); "
+            "body=json.dumps({\"kind\":\"logs\",\"node\":\"edge\",\"from_ns\":now-900*10**9,\"to_ns\":now,\"limit\":1}).encode(); "
             "request=urllib.request.Request(\"https://telemetry.example.com:7443/v1/console/query\",data=body,"
             "headers={\"Authorization\":\"Bearer \"+token,\"Content-Type\":\"application/json\",\"X-Fabric-Client-Version\":\"1\"});\n"
-            "try:\n response=urllib.request.urlopen(request,context=ssl.create_default_context(cafile=\"/etc/fabrico11y/ca.pem\"),timeout=5); print(response.status); response.close()\n"
+            "try:\n response=urllib.request.urlopen(request,context=ssl.create_default_context(cafile=\"/home/operator/.config/fabrico11y/ca.pem\"),timeout=5); print(response.status); response.close()\n"
             "except urllib.error.HTTPError as error: print(error.code)'\n",
             document='docs/access-operations.md', stdin=token.encode(),
             purpose='Observe actual read-only query authority before and after offline recovery')
@@ -693,7 +693,7 @@ OBS
         self.click('revoke')
         # Read-only authority probe from the actual edge, using protected stdin.
         probe = self.prose(self.edge, 'reader-tokens-and-spindle-controls', 'After revoking an edge, stop its',
-            "python3 -c 'import json,ssl,sys,urllib.request,urllib.error; t=sys.stdin.read().strip(); r=urllib.request.Request(\"https://telemetry.example.com:7443/v1/config\",headers={\"Authorization\":\"Bearer \"+t});\ntry: urllib.request.urlopen(r,context=ssl.create_default_context(cafile=\"/etc/fabrico11y/ca.pem\"),timeout=5)\nexcept urllib.error.HTTPError as e: print(e.code)'\n",
+            "python3 -c 'import json,ssl,sys,urllib.request,urllib.error; t=sys.stdin.read().strip(); r=urllib.request.Request(\"https://telemetry.example.com:7443/v1/config\",headers={\"Authorization\":\"Bearer \"+t});\ntry: urllib.request.urlopen(r,context=ssl.create_default_context(cafile=\"/home/operator/.config/fabrico11y/ca.pem\"),timeout=5)\nexcept urllib.error.HTTPError as e: print(e.code)'\n",
             stdin=self.edge_token.encode(), purpose='Observe specifically unauthorized revoked primary edge over verified TLS')
         require(Path(probe['stdout']['path']).read_text().strip() == '401', 'revoked primary edge did not receive HTTP401')
         self.record['revoked_edge_http'] = 401

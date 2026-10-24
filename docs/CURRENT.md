@@ -842,3 +842,11 @@ uses a separate readable public CA copy for that client, preserving protected
 service directories and owner-only tokens. The exact packaged CLI reproduced
 the old refusal and completed a verified-TLS fixture request with the readable
 CA; both complete guide directions remain pending.
+
+The next fresh guide run completed its ordinary CLI reads, then exposed a
+remaining harness-only probe using the protected service CA. Both unprivileged
+authority probes now use the client CA copy, and the reader probe uses the
+contractual fifteen-minute query window instead of an invalid oversized range.
+The bootstrap-absence observer now runs with permission to traverse its service
+directory. Expected HTTP200/401 and actual credential denials remain unchanged;
+fresh complete walkthroughs are still required.
