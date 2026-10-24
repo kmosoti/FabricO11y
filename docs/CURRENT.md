@@ -1,5 +1,15 @@
 # Current project state
 
+The Debian-server/Fedora-edge owner direction completed with original exit0,
+independent four-checkpoint custody/query grading0 and confirmed cleanup. The
+fresh reversed direction reached upgrade, then the remote worker rejected the
+Debian candidate filename's `~` under its existing fixed-destination guard. The
+worker's original exit1 and kernel-confirmed shutdown are retained; that direction
+failed. Debian edge staging now uses a safe disposable filename and matching
+checksum entry, without changing bytes, installed versions, guide fences or the
+remote guard. The accepted first direction takes neither changed branch; retain
+its exact evidence identity and rerun the affected reversed direction fresh.
+
 Owner run15 passed its original and restored custody/query checkpoints and
 upgraded both packages, then its revoked-edge probe did not receive401. Inspection
 found that restart login updated the browser cookie through the native bridge but
