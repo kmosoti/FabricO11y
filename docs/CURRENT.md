@@ -922,3 +922,16 @@ The caller now observes the public console page over verified TLS after a
 session exactly once. Certificate/HTTP failures remain terminal, and no login or
 authorization outcome is retried. Native mechanism controls and the fresh reverse
 walkthrough remain required; the earlier failed trial receives no credit.
+
+
+The first full pressure cell preserved exact18,000-Batch delivery and passed
+custody, management, UI and resource gates, but six authenticated malformed probes
+received503 instead of the required400/413. Their starts clustered around the
+simulator's whole-second submissions. Exact-package native saturation returned
+503 with all16 pre-body intake permits held and400 after release; unknown
+credentials remained401. The pressure caller now places all200 probes at
+half-second deadlines with a quarter-second phase, within the registered
+at-least0.2-second spacing and original180-second offered window. The existing
+post-round wait remains, with no refusal retry or changed acceptance outcome.
+Fresh smoke and all three full pressure cells remain required; the original
+failed cell is retained without acceptance credit.

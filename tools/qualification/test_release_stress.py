@@ -11,7 +11,7 @@ import urllib.error
 import unittest
 from unittest.mock import ANY, MagicMock, Mock, call, patch
 
-from release_stress import first_creation, missing_management_slots, perform, verify_offers
+from release_stress import first_creation, missing_management_slots, perform, rejection_deadline, verify_offers
 from release_main_source import simulator_batch
 from release_runtime import WorkloadReader
 from release_timing import NS
@@ -20,6 +20,20 @@ from workload import SEEDS
 
 
 class StressControls(unittest.TestCase):
+    def test_registered_rejection_rounds_fit_window_and_avoid_whole_second_submissions(self):
+        # Origin: alert-pressure-a11fa001-01:6 malformed probes reached
+        # pre-body intake503 near whole-second simulator bursts. Overload
+        # still fails; place all200 validation probes within the registered
+        # at-least0.2s spacing instead of crediting the unrelated refusal.
+        times = [rejection_deadline(50, n) for n in range(200)]
+        self.assertEqual((times[0], times[-1]), (50.25, 149.75))
+        self.assertTrue(all(b-a >= .2 for a, b in zip(times, times[1:])))
+        self.assertEqual({t % 1 for t in times}, {.25, .75})
+        self.assertEqual(sum(60 <= t < 80 for t in times), 40)
+        smoke = [rejection_deadline(2, n) for n in range(10)]
+        self.assertEqual((smoke[0], smoke[-1]), (2.25, 6.75))
+        self.assertEqual(sum(4 <= t < 6 for t in smoke), 4)
+
     def population(self):
         node = bytes(range(16))
         events = [{'e': 'created', 'id': 0, 'seq': s, 't': NS*s} for s in (1, 2)]

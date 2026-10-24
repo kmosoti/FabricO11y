@@ -87,6 +87,12 @@ def first_creation(path, stop):
     raise RuntimeError('original first creation unavailable before attack scheduling')
 
 
+def rejection_deadline(anchor, round_number):
+    # Registered spacing is at least0.2s. Select0.5s with a quarter-second
+    # phase, between the simulator's synchronous whole-second submissions.
+    return anchor + .25 + .5 * round_number
+
+
 def reject_probe(fixture, token, body):
     request = urllib.request.Request(fixture.origin + '/v1/batches', data=body,
         headers={'authorization': 'Bearer ' + token, 'content-type': 'application/x-protobuf'})
@@ -187,17 +193,21 @@ def perform(f, args, summary):
             attack_clock.update(original_first_creation=original, wall_ns=wall,
                                 monotonic_before_ns=before, monotonic_after_ns=after,
                                 scheduled_monotonic_ns=target)
-            stop.wait(max(0, (target-time.monotonic_ns())/NS))
+            stop.wait(max(0, rejection_deadline(target/NS, 0)-time.monotonic()))
         except Exception as error:
             failures.append('rejection scheduling: ' + repr(error))
             return
         for n in range(rounds):
+            scheduled = rejection_deadline(target/NS, n)
+            if stop.wait(max(0, scheduled-time.monotonic())):
+                break
             if stop.is_set():
                 break
             node = hashlib.sha256(f'rejection:{args.seed}:{n}'.encode()).digest()[:16]
             rejected.append(node.hex())
             body = batch_bytes(node, 1)
             row = {'round': n, 'node_id': node.hex(), 'elapsed_s': time.monotonic()-began,
+                   'scheduled_monotonic_s': scheduled,
                    'started_unix_ns': time.time_ns(), 'attempts': []}
             rejections.append(row)
             for name, token, payload in [
