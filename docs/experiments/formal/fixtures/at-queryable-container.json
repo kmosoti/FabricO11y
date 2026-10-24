@@ -1,0 +1,18 @@
+{
+  "origin": "Fresh announcement row70, original exit1 and grade exit1; no acceptance credit",
+  "product_source": "84a585d35cced26de170c4b34c0a05aab79fae3b",
+  "package_source": "34591b7b1390852ad9984339a9fa102c8259d743",
+  "harness_source": "25474019099251eb826d193c06102d2ef9fbf2fd",
+  "expected_failures": ["announcement-synthesis", "announcement-utterance"],
+  "observed_failure": "timeout: actual AT document identity",
+  "observed_snapshot": {
+    "type": "document:snapshot", "pid": 77, "role": "frame", "text": "",
+    "document_attributes": ["MimeType:application/xhtml+xml", "DocURL:chrome://browser/content/browser.xhtml"]
+  },
+  "snapshot_count": 1,
+  "focus_event_count": 1,
+  "events_sha256": "dc2743e6340049c0d558764927e6aa8ef47b2d7f7ff2338ffd78ef416644198d",
+  "browser_receipt_sha256": "75b1e3d9794ebfaef73fd40e3adee99142b6c2ccff6b2edbf0ffc7c92688d23b",
+  "outer_receipt_sha256": "cd93cd56334a973f992aa8ac29ca1ff079b38acca6c442e4f389244be507aec1",
+  "regression": "A document-queryable browser chrome frame contains the actual console web document; interface availability alone must not stop container traversal."
+}

@@ -26,6 +26,30 @@ independent alert/event/speech/PCM oracle and suppressed-announcement expectatio
 unchanged. A successful source/DOM check cannot admit the successor before its
 real packaged positive and suppressed controls complete.
 
+## Queryable browser-chrome container counterexample
+
+Registered before correction, 2026-10-23. On product `84a585d`, package snapshot
+`34591b7` and harness `2547401`, fresh positive row69 completed and graded exit0.
+The suppressed row70 instead exited1 at `timeout: actual AT document identity`;
+its unchanged grader rejected this wrong cause with exit1. Its actual focus event
+triggered a snapshot, but the only document read was Firefox's outer `frame` at
+`chrome://browser/content/browser.xhtml`. A queryable document interface on that
+container stopped traversal before the console's nested `document web` node.
+Keep this failed control and its stopped exact-inode custody; it has no negative
+control acceptance credit. The [literal fixture](fixtures/at-queryable-container.json)
+pins the captured identities and input hashes without publishing private state.
+
+Add a deterministic queryable-frame/nested-web-document regression before repair.
+Traverse queryable containers as well as non-document containers, preserving the
+existing2048-node/five-second limits. A discovered `document web` is the terminal
+identity observation: do not scrape its payload descendants to find its identity.
+Require a queryable container with too many children to fail the original bound.
+Keep empty-text snapshots, actual focus/load triggers, exact PID/DocURL matching,
+all event/speech/PCM oracles, deadlines and suppressed-control outcomes unchanged.
+After repair rerun the affected source controls and both fresh packaged positive
+and suppressed announcement rows. This is a harness repair; keep the package
+candidate and every accepted unaffected browser row unchanged.
+
 ## Already loaded document counterexample
 
 Registered before correction, 2026-10-23. The engineering AT diagnostic on

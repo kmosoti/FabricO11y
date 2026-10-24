@@ -93,4 +93,36 @@ class LateDocument(unittest.TestCase):
         self.assertEqual([row['type'] for row in rows],['object:property-change:accessible-name'])
         self.assertEqual(queries,[])
 
+class QueryableContainer(unittest.TestCase):
+    def tree(self,children=1):
+        app=SimpleNamespace(get_process_id=lambda:77)
+        class Web:
+            def queryDocument(self):return SimpleNamespace(getAttributes=lambda:['DocURL:https://localhost:55443/console/'])
+            def getApplication(self):return app
+            def getRoleName(self):return 'document web'
+            def getAttributes(self):return ['tag:body']
+            @property
+            def childCount(self):raise AssertionError('web payload is outside identity traversal')
+        class Frame:
+            childCount=children
+            def queryDocument(self):return SimpleNamespace(getAttributes=lambda:['DocURL:chrome://browser/content/browser.xhtml'])
+            def getApplication(self):return app
+            def getRoleName(self):return 'frame'
+            def getAttributes(self):return ['tag:window']
+            def __getitem__(self,index):return Web()
+        return Frame()
+
+    def test_queryable_frame_does_not_hide_nested_web_document(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as root:
+            path=Path(root)/'events.jsonl';probe.snapshot_documents(self.tree(),path);rows=probe.read_rows(path)
+        self.assertEqual([r['role'] for r in rows],['frame','document web'])
+        self.assertEqual(rows[1]['document_attributes'],['DocURL:https://localhost:55443/console/'])
+        self.assertEqual([r['pid'] for r in rows],[77,77])
+        self.assertTrue(all(r['type']=='document:snapshot' and r['text']=='' for r in rows))
+
+    def test_queryable_container_retains_original_child_bound(self):
+        with tempfile.TemporaryDirectory(dir=os.environ['FABRIC_SCRATCH_ROOT']) as root:
+            with self.assertRaisesRegex(ValueError,'announcement-document-snapshot-bound'):
+                probe.snapshot_documents(self.tree(2048),Path(root)/'events.jsonl')
+
 if __name__=='__main__':unittest.main()
