@@ -107,7 +107,7 @@ def admit(path, expected):
 
 def arm_retained_resident_assertion(bridge):
     """One adversarial credential-selection call; native signing stays unchanged."""
-    bridge._js('''window.ownerRetainedAssertion=null;
+    bridge._js(r'''window.ownerRetainedAssertion=null;
 const nativeGet=navigator.credentials.get.bind(navigator.credentials);
 navigator.credentials.get=async options=>{
  navigator.credentials.get=nativeGet;
