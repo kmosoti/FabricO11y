@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run an entire project command tree in a bounded systemd user service."""
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -56,8 +57,22 @@ def verify_job_profile(group, profile):
 
 def verify_job_deadline(group):
     scope = [] if os.geteuid() == 0 else ['--user']
+    unit = group
+    if group.name == 'supervisor':
+        unit = group.parent
+        if not re.fullmatch(r'fabric-work-[0-9a-f]{32}\.service', unit.name):
+            raise RuntimeError('delegated controller lacks its immediate owned launcher service')
+        expected = '/' + str(unit.relative_to(Path('/sys/fs/cgroup')))
+        actual_group = subprocess.check_output(
+            ['systemctl', *scope, 'show', unit.name, '--property=ControlGroup', '--value'],
+            text=True, timeout=10).strip()
+        kill_mode = subprocess.check_output(
+            ['systemctl', *scope, 'show', unit.name, '--property=KillMode', '--value'],
+            text=True, timeout=10).strip()
+        if actual_group != expected or kill_mode != 'control-group':
+            raise RuntimeError('delegated controller service ownership or whole-cgroup termination differs')
     actual = subprocess.check_output(
-        ['systemctl', *scope, 'show', group.name, '--property=RuntimeMaxUSec', '--value'],
+        ['systemctl', *scope, 'show', unit.name, '--property=RuntimeMaxUSec', '--value'],
         text=True, timeout=10).strip()
     if actual != '30min':
         raise RuntimeError('release job deadline is not the registered 1800 seconds: ' + actual)

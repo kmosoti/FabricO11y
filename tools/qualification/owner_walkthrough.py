@@ -511,10 +511,19 @@ printf 'server_url=https://telemetry.example.com:7443\nserver_ca=/etc/fabrico11y
                 browser_entry_helper=self.browser_entry_helper,
                 browser_entry_helper_sha256=self.browser_entry_helper_sha256)
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as failure:
-            error = type(failure).__name__
+            error = failure
+            path = self.out / ('browser-' + label + '-constructor-error.json')
+            private_write(path, json.dumps({'label': label, 'origin': origin,
+                'type': type(failure).__name__, 'message': str(failure)}).encode())
+            self.record.setdefault('browser_constructor_errors', []).append(
+                dict(path=str(path), sha256=hashlib.sha256(path.read_bytes()).hexdigest()))
         if wrong_san or untrusted:
             try:
-                receipt = json.loads((out / 'receipt.json').read_text())
+                receipt_path = out / 'receipt.json'
+                if not receipt_path.is_file():
+                    raise RuntimeError('candidate browser startup produced no TLS evidence: '
+                                       + str(error or 'no constructor refusal')) from error
+                receipt = json.loads(receipt_path.read_text())
                 diagnostic = receipt.get('tls_navigation_failure', {})
                 expected = 'SSL_ERROR_BAD_CERT_DOMAIN' if wrong_san else 'SEC_ERROR_UNKNOWN_ISSUER'
                 require(error is not None and diagnostic.get('uri', '').startswith('about:certerror')

@@ -31,6 +31,18 @@ CPU and task limits before the payload. Every project job uses
 `tools/resource_group.py`; a user-systemd service is its own boundary, never
 assumed to inherit Olo's cgroup. Fail closed if host-scaled capacity cannot fit
 the requested profile. The split maxima preserve the combined 8 GiB envelope.
+
+For the existing delegated `supervisor` controller, verify the registered
+memory/swap/CPU/task profile on that actual child cgroup. Its deadline belongs to
+the immediately enclosing owned `fabric-work-<uuid>.service`, not a separate
+systemd unit named `supervisor`. Require the service's reported ControlGroup to
+match that parent, KillMode to cover the whole cgroup, and RuntimeMaxUSec to be
+exactly 30 minutes. Reject foreign parents, mismatched ownership paths, changed
+deadlines and inadequate child limits. This changes no limit or duration.
+The guest-free `delegated-profile-deadline-counterexample-01` retained the prior
+false refusal: child limits matched, the actual service deadline was 30 minutes,
+but querying `supervisor` returned infinity. Preserve the stopped owner06 failure
+and its absent certificate-control evidence; no missing receipt is a TLS pass.
 Existing longer outage/R3 registrations and Blade-only limits remain unchanged.
 First run a disposable budget smoke; if it cannot fit, retain failure evidence
 and return affected cells to the original placement without shrinking work.

@@ -12,6 +12,42 @@ GIB = 1024**3
 
 
 class Containment(unittest.TestCase):
+    def test_delegated_controller_uses_its_verified_owning_service_deadline(self):
+        unit = 'fabric-work-' + 'a' * 32 + '.service'
+        parent = resource_group.Path('/sys/fs/cgroup/user.slice') / unit
+        group = parent / 'supervisor'
+        def observation(argv, **kwargs):
+            observed_unit = argv[argv.index('show') + 1]
+            if observed_unit == 'supervisor':
+                return 'infinity\n'
+            self.assertEqual(observed_unit, unit)
+            return {'--property=RuntimeMaxUSec': '30min\n',
+                    '--property=ControlGroup': '/user.slice/' + unit + '\n',
+                    '--property=KillMode': 'control-group\n'}[next(x for x in argv if x.startswith('--property='))]
+        with patch.object(resource_group.subprocess, 'check_output', side_effect=observation):
+            self.assertEqual(resource_group.verify_job_deadline(group), '30min')
+
+    def test_delegated_controller_refuses_foreign_or_changed_service_boundary(self):
+        unit = 'fabric-work-' + 'b' * 32 + '.service'
+        group = resource_group.Path('/sys/fs/cgroup/user.slice') / unit / 'supervisor'
+        original = {'--property=RuntimeMaxUSec': '30min\n',
+                    '--property=ControlGroup': '/user.slice/' + unit + '\n',
+                    '--property=KillMode': 'control-group\n'}
+        for field, wrong in [('--property=RuntimeMaxUSec', 'infinity'),
+                             ('--property=RuntimeMaxUSec', '1h'),
+                             ('--property=ControlGroup', '/foreign.slice/' + unit),
+                             ('--property=KillMode', 'process')]:
+            changed = dict(original, **{field: wrong})
+            with self.subTest(field=field, wrong=wrong), \
+                    patch.object(resource_group.subprocess, 'check_output', side_effect=lambda argv, **kw: changed[next(x for x in argv if x.startswith('--property='))]):
+                with self.assertRaises(RuntimeError):
+                    resource_group.verify_job_deadline(group)
+        foreign = resource_group.Path('/sys/fs/cgroup/user.slice/olo-runtime.service/supervisor')
+        with patch.object(resource_group.subprocess, 'check_output', return_value='30min\n') as command:
+            with self.assertRaises(RuntimeError):
+                resource_group.verify_job_deadline(foreign)
+        command.assert_not_called()
+
     def test_release_deadline_refuses_unbounded_or_changed_service(self):
         group = resource_group.Path('/sys/fs/cgroup/fabric-work-test.service')
         for value in ('infinity', '', '1h', '1min'):

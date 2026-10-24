@@ -1,5 +1,12 @@
 # Linux deployment
 
+Qualification's delegated controller verifies its own memory, swap, CPU and task
+limits, then binds its deadline to the immediately owning generated service and
+whole-cgroup termination. It does not query a separate `supervisor` service or
+inherit Olo's job boundary. The
+[placement protocol](../experiments/formal/release-placement-protocol.md) records
+this containment detail; packaged runtime behavior and limits are unchanged.
+
 Split-host qualification's owner fixture preserves its native guest TLS endpoint
 through a guest-only DNAT mapping to an owned ephemeral G15 SSH listener. The
 execution host's enforcing SELinux policy remains intact. The
