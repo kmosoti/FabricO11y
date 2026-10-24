@@ -72,3 +72,25 @@ dropped/duplicated canary row; master401 with wrong error/429/accepted200;
 format1 unrelated stderr/wrong exit; changed original prefix. Source checks are
 finite synthetic checker evidence, never package migration. Implement producer
 and two caller hooks separately from this protocol/oracle registration.
+
+## Ordinary-serve legacy-admin denial, prospective correction
+
+Owner authorized this correction on2026-10-24 before fresh successor migration
+measurements. The original exact-package Chrome row67 refused the old404 route-
+fallback assumption. Its independent explicit TLS request ledger records native
+401 with exact error `use a console credential`; console-query rejection remains
+401/`sign in required`. The [literal counterexample](fixtures/migration-admin-denial.json)
+pins product, package, harness and original receipt identity. Preserve that failed
+row and stopped custody; do not edit or relabel it as accepted.
+
+For prospective rows, supersede only the legacy-admin404 expectation above with
+401 and exact `use a console credential`. Capture the actual error alongside
+status. Reject404, accepted200,429, missing status and wrong, empty or missing
+error bodies. Retain exact canary answers, source/timestamp, complete pagination,
+old-master query refusal, format1 exact startup refusal and all unchanged-state
+and prefix requirements. No product route, authorization, response or wire change
+is permitted. Keep this oracle/policy correction separate from producer capture.
+
+Reproduce the old checker refusal using the observed literal before correcting it,
+then run all migration controls and fresh exact-package Chrome and Firefox rows.
+Source/proposal controls and the original failed row grant no new acceptance.

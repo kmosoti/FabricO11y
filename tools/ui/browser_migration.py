@@ -102,7 +102,9 @@ def finish(args, work, out, config, admin, prepared, api, bearer, launch, stop, 
     require(status == 200, 'migration owner query unavailable'); record['owner'] = answer
     status, answer = bearer(admin.read_text().strip(), '/v1/console/query', 'POST', query)
     record['master'] = (status, answer.get('error') if isinstance(answer,dict) else None)
-    record['admin_status'] = bearer(admin.read_text().strip(), '/v1/admin/nodes')[0]
+    status, answer = bearer(admin.read_text().strip(), '/v1/admin/nodes')
+    record['admin_status'] = status
+    record['admin_error'] = answer.get('error') if isinstance(answer,dict) else None
     status, reader = api('/v1/console/readers','POST',{'name':'Migration finite reader','ttl_s':600})
     require(status == 200, 'migration reader issuance failed')
     credential = reader['token']

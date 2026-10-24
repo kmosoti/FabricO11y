@@ -1,0 +1,27 @@
+{
+  "origin": "Exact-package original Chrome migration row67; original1 remains failed under404 policy",
+  "product_source": "84a585d35cced26de170c4b34c0a05aab79fae3b",
+  "package_snapshot": "34591b7b1390852ad9984339a9fa102c8259d743",
+  "harness_source": "25474019099251eb826d193c06102d2ef9fbf2fd",
+  "browser_receipt_sha256": "d6faae70ccb50703077d8149b32c1ebdd23f9d2d45e5c40896f6c0210a93bb3e",
+  "original_error": "migration exact old-master refusal",
+  "original_expected_admin_status": 404,
+  "observed": {
+    "master": [
+      401,
+      "sign in required"
+    ],
+    "admin_status": 401,
+    "admin_error": "use a console credential"
+  },
+  "actual_request": {
+    "role": null,
+    "method": "GET",
+    "path": "/v1/admin/nodes",
+    "started_ns": 894647852756776,
+    "status": 401,
+    "refusal": "use a console credential",
+    "finished_ns": 894647854628731
+  },
+  "scope": "Owner authorized401 plus exact denial body on2026-10-24; preserve all other migration expectations; fresh Chrome/Firefox execution required"
+}
