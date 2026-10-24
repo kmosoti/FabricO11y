@@ -96,8 +96,8 @@ edge. A browser certificate exception or a disabled TLS check is not a substitut
 Check the configured names and trust before enabling collection:
 
 ```sh
-openssl verify -CAfile /etc/fabrico11y/ca.pem /etc/fabrico11y/server.pem
-openssl x509 -in /etc/fabrico11y/server.pem -noout -ext subjectAltName
+sudo openssl verify -CAfile /etc/fabrico11y/ca.pem /etc/fabrico11y/server.pem
+sudo openssl x509 -in /etc/fabrico11y/server.pem -noout -ext subjectAltName
 ```
 
 Bind the central listener to an intended private/LAN/VPN address when possible.
