@@ -233,7 +233,7 @@ class Walkthrough:
 
     def processes(self, guest, stage, *, active):
         value = json.loads(self.observed(guest, "python3 - <<'OBS'\n" + owner_observation.NATIVE + '\nOBS\n',
-                                        stage + '-' + guest.role + '-processes'))
+                                        stage + '-' + guest.role + ('-active' if active else '-stopped') + '-processes'))
         owner_observation.verify(value, guest.role, guest.boot_id, active=active)
         self.record.setdefault('process_observations', []).append(dict(stage=stage, role=guest.role, active=active, value=value))
         return value
