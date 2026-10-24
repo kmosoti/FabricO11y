@@ -7,20 +7,32 @@ plan. Publication still requires the owner's final decision against the complete
 bundle. The single persistent execution queue is
 `results/release-execution/queue.json` on Blade's DATA drive.
 
-The fresh Debian lifecycle retry completed original/controller/grade exit0
-under the separately merged complete-census policy. Its cleanup refusal control
-also completed with the required inner failure. The fresh Fedora guest lifecycle
-then returned0, but native custody admission refused `ACK status grammar mismatch`
-for the sender's existing `status=no_response` diagnostic. Its interrupted
-admission and owned scratch remain retained, with no Fedora acceptance credit.
+The compatible ten-cell native installation closeout completed exit0 for
+`84a585d`/`34591b7`: two positive lifecycle cells, two producer refusals and six
+package mutations, with original exits, independent grades and owned cleanup.
+The earlier Fedora admission refused `ACK status grammar mismatch` for the
+sender's existing `status=no_response` diagnostic; that failed cell remains
+failed and its stopped fixture is preserved in a verified archive.
 The separately registered [retry projection correction](experiments/formal/native-cutoff-adapter-protocol.md#retry-diagnostics-carry-no-ack-credit)
 requires valid retry observations to bind to the real sender and grant no ACK
 credit. The new source counterexample reproduced the refusal before repair.
 The projector now recognizes only the existing no-response/unavailable retry
 grammars alongside the unchanged exact ACK grammar. Existing malformed-event,
-missing-ACK and native custody expectations remain. Source/hosted checks,
-untouched-capture replay and fresh affected native execution remain pending;
+missing-ACK and native custody expectations remain. Source controls, untouched
+capture replay, hosted fast/extended/security checks and a fresh affected Fedora
+lifecycle completed exit0. Its drain and reboot cutoff commands both returned0;
 the product/package candidate is unchanged.
+
+Fresh browser rows1–66 and positive announcement row69 completed their original
+registered outcomes and independent grades on this candidate. Migration row67
+failed its legacy-admin404 expectation against the existing401 denial; that
+checker decision remains unresolved, and row68 remains unrun. The suppressed
+announcement row70 exited1 at AT document identity, so its unchanged grader
+rejected the wrong cause. The [queryable-container counterexample](experiments/formal/browser-announcement-protocol.md#queryable-browser-chrome-container-counterexample)
+reproduced the traversal defect in source controls before repair. The snapshotter
+now traverses queryable browser containers to the actual web document, retaining
+the original bounds, empty-text snapshots and PID/URL checks. Affected source,
+hosted and fresh positive/suppressed announcement execution remain pending.
 
 Current candidate `84a585d`/`34591b7` completed a fresh split-host placement
 smoke at harness `2547401`: original command exit0, all19 gates, independent
