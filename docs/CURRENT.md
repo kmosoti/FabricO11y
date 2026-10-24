@@ -518,6 +518,10 @@ extended commands and their final current-source validation. Its current-head
 hosted check remains required before merge.
 No current deployment profile is qualified or release tag published.
 
+A focused-input announcement diagnostic is registered for the unresolved packaged
+validation-alert utterance failure. It grants no release acceptance credit; the
+current package remains unaccepted for that row.
+
 ## Implemented
 
 FabricO11y collects, durably forwards, retains and queries Linux telemetry. It is
