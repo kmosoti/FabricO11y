@@ -47,11 +47,12 @@ class WalkthroughCallerTests(unittest.TestCase):
         value['physical_memory_bytes'] = 1521577984
         value['ancestor_memory'] = {name: {'memory.high': 'max', 'memory.max': 'max'}
                                     for name in ('/', '/system.slice')}
+        value['ancestor_memory']['/'] = {'memory.high': None, 'memory.max': None}
         shared = value['units']['system-fabrico11y.slice']['properties']
         shared['EffectiveMemoryHigh'] = shared['EffectiveMemoryMax'] = str(1521577984)
         observation.verify(value, 'edge', 'literal-boot', active=True)
         for defect in ('uid', 'capability', 'kernel', 'effective', 'companion',
-                       'missing-physical', 'wrong-physical', 'wrong-ancestor', 'wrong-slice-effective', 'slice-kernel', 'swap'):
+                       'missing-physical', 'wrong-physical', 'wrong-ancestor', 'wrong-slice-effective', 'slice-kernel', 'swap', 'missing-parent-control'):
             changed = copy.deepcopy(value)
             if defect == 'uid': changed['processes'][0]['uids'] = [0] * 4
             elif defect == 'capability': changed['processes'][0]['cap_eff'] = 1
@@ -62,6 +63,7 @@ class WalkthroughCallerTests(unittest.TestCase):
             elif defect == 'wrong-ancestor': changed['ancestor_memory']['/']['memory.max'] = '1024'
             elif defect == 'wrong-slice-effective': changed['units']['system-fabrico11y.slice']['properties']['EffectiveMemoryMax'] = str(3328 * 1024**2)
             elif defect == 'slice-kernel': changed['units']['system-fabrico11y.slice']['kernel']['memory.max'] = 'max'
+            elif defect == 'missing-parent-control': changed['ancestor_memory']['/system.slice']['memory.max'] = None
             elif defect == 'swap': changed['units'][service]['kernel']['memory.swap.max'] = 'max'
             else: changed['processes'].append(copy.deepcopy(changed['processes'][0]))
             with self.subTest(defect=defect), self.assertRaises(ValueError):
@@ -75,6 +77,7 @@ class WalkthroughCallerTests(unittest.TestCase):
                      physical_memory_bytes=4096 * 1024**2,
                      ancestor_memory={name: {'memory.high': 'max', 'memory.max': 'max'}
                                       for name in ('/', '/system.slice')}, processes=[], units={})
+        value['ancestor_memory']['/'] = {'memory.high': None, 'memory.max': None}
         for pid, exe in ((123, '/usr/bin/fabric-server'), (124, '/usr/bin/fabric-node')):
             value['processes'].append(dict(pid=pid, start_ticks=456, uids=[991] * 4, gids=[991] * 4,
                                           cap_eff=0, no_new_privs=1, exe=exe, cgroup='0::' + path))

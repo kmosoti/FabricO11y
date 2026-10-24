@@ -10,7 +10,7 @@ physical_memory_bytes=os.sysconf('SC_PHYS_PAGES')*os.sysconf('SC_PAGE_SIZE')
 ancestor_memory={}
 for relative in ('/', '/system.slice'):
  path=Path('/sys/fs/cgroup')/relative.lstrip('/')
- ancestor_memory[relative]={name:(path/name).read_text().strip() for name in ('memory.high','memory.max')}
+ ancestor_memory[relative]={name:(None if relative=='/' and not (path/name).exists() else (path/name).read_text().strip()) for name in ('memory.high','memory.max')}
 units={}
 for unit in ('fabrico11y-server.service','fabrico11y-node.service','system-fabrico11y.slice'):
  text=subprocess.check_output(['systemctl','show',unit,'--property=ActiveState,MainPID,ControlGroup,User,Group,EffectiveMemoryHigh,EffectiveMemoryMax,EffectiveTasksMax'],text=True)
@@ -66,9 +66,9 @@ def verify(value, role, boot_id, *, active):
     require(type(physical) is int and limits[1] * 1024**2 < physical <= allocated,
             'physical guest memory witness missing or outside registered role')
     ancestors = value.get('ancestor_memory')
-    require(type(ancestors) is dict and set(ancestors) == {'/', '/system.slice'}
-            and all(row == {'memory.high': 'max', 'memory.max': 'max'}
-                    for row in ancestors.values()), 'unexpected guest ancestor memory limit')
+    require(ancestors == {'/': {'memory.high': None, 'memory.max': None},
+                          '/system.slice': {'memory.high': 'max', 'memory.max': 'max'}},
+            'unexpected guest ancestor memory limit')
     properties = units[service]['properties']
     require(properties['ActiveState'] == 'active' and int(properties['MainPID']) > 0
             and properties['User'] == properties['Group'] == 'fabricolly'
