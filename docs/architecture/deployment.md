@@ -1,5 +1,11 @@
 # Linux deployment
 
+Split-host qualification's owner fixture preserves its native guest TLS endpoint
+through a guest-only DNAT mapping to an owned ephemeral G15 SSH listener. The
+execution host's enforcing SELinux policy remains intact. The
+[placement protocol](../experiments/formal/release-placement-protocol.md) records
+this harness boundary; it changes no installed production service behavior.
+
 Status: accepted contract. The units, slice, sysusers file and Debian/RPM package tooling exist in [packaging/](../../packaging/). [Installation run 02](../experiments/formal/installation-acceptance-run-02.md) passed all seventeen checks and rejected three mutation controls in a Debian 13 unified-cgroup VM. Its result belongs to that package snapshot; the [release plan](../milestones/release-readiness.md) requires fresh acceptance of the deliverable. Historical [static checks](../experiments/formal/alpha-phase5-packaging-static.md) and the [inconclusive legacy-cgroup run](../experiments/formal/installation-acceptance-run-01.md) retain their outcomes. The [product contract](../PRODUCT-CONTRACT.md#linux-installation-contract) owns the installed defaults and acceptance gates. Exact frozen `a5dbda7a` packages subsequently passed fresh Debian 13/Fedora 44 baseline and upgrade/reboot/removal cells; all six named controls were detected ([installation run 03](../experiments/formal/installation-release-run-03.md)). These installation/migration fixtures use explicit legacy administration and do not establish authenticated-console or deployment qualification.
 
 Debian dependencies come from `dpkg-shlibdeps` plus `systemd (>= 249)`;

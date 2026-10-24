@@ -126,12 +126,15 @@ class Guest:
             self.child = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=stream)
         self.command = command
 
+    def check_boot_processes(self):
+        if self.child.poll() is not None:
+            raise RuntimeError(self.role + ' guest stopped during boot')
+
     def ready(self, *, deadline=None):
         deadline = deadline if deadline is not None else time.monotonic() + Q.BOOT_TIMEOUT_S
         attempts = []
         while time.monotonic() < deadline:
-            if self.child.poll() is not None:
-                raise RuntimeError(self.role + ' guest stopped during boot')
+            self.check_boot_processes()
             try:
                 result = Q.run([*self.ssh, 'sudo', 'cloud-init', 'status', '--long'],
                                timeout=min(15, deadline - time.monotonic()), check=False)

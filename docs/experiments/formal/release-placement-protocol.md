@@ -52,6 +52,24 @@ round-trip clock observations. Monotonic clocks are host-local; retain timing
 uncertainty rather than silently comparing different hosts' monotonic values.
 Outage controls interrupt only the fixture data forward; management stays up.
 
+For the owner walkthrough's fixed guest endpoint `telemetry.example.com:7443`,
+bind the G15 SSH data listener to an owned ephemeral high port. A disposable
+edge-guest OUTPUT DNAT rule maps only `192.0.2.2:7443` to that listener; the SSH
+destination remains Blade loopback port 7443. Record both ports and the exact
+guest rule. Preserve the guest TLS hostname, port, trust and credentials. Do not
+change execution-host SELinux policy, SSH configuration or firewall. Other
+cross-family cells retain their existing data path and outage control.
+
+This corrects the stopped `alert-owner-debian-fedora-01` fixture: its tunnel
+exited 255 and G15's journal recorded an enforcing `sshd_session_t` `name_bind`
+denial for `unreserved_port_t` TCP 7443. A three-second guest-free probe reproduced
+the denial. Retain both failures. Check tunnel liveness during each boot retry
+so a dead forward cannot consume the remaining boot allocation. Before fresh
+walkthrough acceptance, reject dead and subsequently disconnected tunnels in
+source controls and exercise the remapped route in a disposable smoke with
+unchanged TLS/authentication and delivery expectations. No previous failure
+becomes a pass and no phase allocation or resource limit changes.
+
 Count both hosts' images, overlays, evidence and caches against the existing
 100 GB project budget and 95 GB admission boundary, including reservations.
 Record per-host actual allocations and free disk before each admission. Never
