@@ -8,6 +8,14 @@ an executable shell regression covers both native versions and families while
 still refusing a wrong installed version. The original failed outcome and raw
 output remain retained; fresh complete walkthroughs are still required.
 
+On 2026-10-24 the owner approved the narrower
+[release boundary](milestones/release-readiness.md#owner-approved-alpha-release-boundary).
+Both fresh-owner walkthroughs, critical fault/security controls, bounded pressure,
+CI, bundle verification and cleanup remain required. Four full cross-family
+campaigns, three 30-minute outages and the full R3 soak are deferred to later
+deployment qualification; no deferred cell is passed and no deployment
+qualification is claimed. Final publication authorization remains reserved.
+
 The stopped split-host owner attempt `alert-owner-debian-fedora-01` failed before
 installation: G15's enforcing SELinux denied the SSH listener on TCP 7443. A
 guest-free probe reproduced exit 255. The prospective
