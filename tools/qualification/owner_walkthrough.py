@@ -25,7 +25,7 @@ ROOT = HERE.parents[1]
 sys.path[:0] = [str(HERE), str(ROOT / 'tools'), str(ROOT / 'tools/ui')]
 from owner_commands import Commands, PHASES, private_write
 from owner_guide import Guide
-from owner_evidence import require, grade_queries, grade_custody, completed
+from owner_evidence import require, grade_queries, grade_custody, completed, verify_retained_resident_assertion
 import owner_observation
 from cross_family.guest import Guest, Q, image
 from cross_family.remote import placement_options, validate_placement, edge_guest
@@ -103,6 +103,31 @@ def admit(path, expected):
         raw = subprocess.check_output(['git', 'show', plan['guide_commit'] + ':' + document], cwd=ROOT)
         guides[document] = Guide(document, raw, plan['guide_sha256'][document])
     return plan, artifacts, fixture, guides
+
+
+def arm_retained_resident_assertion(bridge):
+    """One adversarial credential-selection call; native signing stays unchanged."""
+    bridge._js(r'''window.ownerRetainedAssertion=null;
+const nativeGet=navigator.credentials.get.bind(navigator.credentials);
+navigator.credentials.get=async options=>{
+ navigator.credentials.get=nativeGet;
+ try {
+  const original=options.publicKey;
+  const challenge=btoa(String.fromCharCode(...new Uint8Array(original.challenge))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const selected={...options,publicKey:{...original,allowCredentials:[]}};
+  const credential=await nativeGet(selected);
+  const data=new Uint8Array(credential.response.authenticatorData);
+  if(data.length<37)throw Error('assertion data truncated');
+  const client=JSON.parse(new TextDecoder().decode(credential.response.clientDataJSON));
+  window.ownerRetainedAssertion={one_shot:true,original_allowlist_count:(original.allowCredentials||[]).length,
+   rp_id:original.rpId||location.hostname,verification_unchanged:selected.publicKey.userVerification===original.userVerification,
+   challenge_matches:client.challenge===challenge,origin:client.origin,type:client.type,
+   rp_hash:Array.from(data.slice(0,32),x=>x.toString(16).padStart(2,'0')).join(''),up:!!(data[32]&1),uv:!!(data[32]&4)};
+  return credential;
+ }catch(error){window.ownerRetainedAssertion={error:{name:String(error.name).slice(0,128),message:String(error.message).slice(0,1024)}};throw error;}
+};''')
+
+
 
 
 @dataclass(frozen=True)
@@ -348,7 +373,7 @@ OBS
 
     def browser_observers(self):
         self.bridge._js('''window.ownerPublicCeremonies=[];window.ownerPublicRequests=[];
-const originalFetch=window.ownerOriginalFetch||(window.ownerOriginalFetch=window.fetch.bind(window));window.fetch=async(...args)=>{const response=await originalFetch(...args);const route=new URL(typeof args[0]==='string'?args[0]:args[0].url,location.href).pathname;if(route.startsWith('/v1/console/'))window.ownerPublicRequests.push({route,status:response.status});if(window.ownerPublicRequests.length>4096)throw Error('observer bound');return response;};
+const originalFetch=window.ownerOriginalFetch||(window.ownerOriginalFetch=window.fetch.bind(window));window.fetch=async(...args)=>{const response=await originalFetch(...args);const route=new URL(typeof args[0]==='string'?args[0]:args[0].url,location.href).pathname;if(route.startsWith('/v1/console/')){const row={route,status:response.status};if(route==='/v1/console/auth/login/finish'&&response.status!==200){const text=await response.clone().text();if(text.length>4096)throw Error('denial observer bound');const body=JSON.parse(text);row.error=Object.keys(body).length===1&&typeof body.error==='string'?body.error:null;}window.ownerPublicRequests.push(row);}if(window.ownerPublicRequests.length>4096)throw Error('observer bound');return response;};
 const create=window.ownerOriginalCreate||(window.ownerOriginalCreate=navigator.credentials.create.bind(navigator.credentials));navigator.credentials.create=async options=>{const credential=await create(options);const data=new Uint8Array(credential.response.getAuthenticatorData());if(data.length<37)throw Error('authenticator data truncated');window.ownerPublicCeremonies.push({rp_hash:Array.from(data.slice(0,32),x=>x.toString(16).padStart(2,'0')).join(''),up:!!(data[32]&1),uv:!!(data[32]&4)});return credential;};''')
 
     def enroll_owner(self, stage):
@@ -662,10 +687,20 @@ OBS
         self.bridge._js("const e=Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()==='Check session');e.click();")
         self.ui_wait("document.body.textContent.includes('Sign in with a passkey')")
         self.field('Principal ID', self.principal)
-        self.click('Use passkey')
-        requests = self.bridge._js('return window.ownerPublicRequests')
-        require(any(row == dict(route='/v1/console/auth/login/finish', status=401) for row in requests),
+        arm_retained_resident_assertion(self.bridge)
+        summary = None
+        try:
+            self.click('Use passkey')
+            self.ui_wait("window.ownerRetainedAssertion?.error || window.ownerPublicRequests.some(r=>r.route==='/v1/console/auth/login/finish')")
+        finally:
+            summary = self.bridge._js('return {assertion:window.ownerRetainedAssertion,requests:window.ownerPublicRequests}')
+            private_write(self.out / 'protected-transcript/retained-old-owner-refusal.json',
+                          json.dumps(summary).encode())
+        verify_retained_resident_assertion(summary['assertion'], ORIGIN, 'telemetry.example.com')
+        require(any(row == dict(route='/v1/console/auth/login/finish', status=403, error='access denied') for row in summary['requests']),
                 'old resident owner key did not receive actual server refusal')
+        self.record['old_owner_assertion'] = summary['assertion']
+        self.record.update(old_owner_http=403, old_owner_error='access denied')
         self.record['old_owner_denied'] = True
         self.record['old_reader_http'] = self.reader_status(self.reader_token)
         require(self.record['old_reader_http'] == 401, 'restored old reader retained query authority')

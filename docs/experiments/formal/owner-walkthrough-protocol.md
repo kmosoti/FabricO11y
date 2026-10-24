@@ -369,3 +369,35 @@ caps, a wrong effective value, raised/unbounded configured limits, swap, elevate
 privileges and extra writers. Old observations without this witness remain
 incomplete. Rerun both full fresh-owner directions after approval; this changes no
 product/package, guest RAM/vCPU allocation, host envelope or acceptance threshold.
+
+## Owner-approved retained-resident refusal producer
+
+The owner approved this fixture correction and both fresh full reruns on
+2026-10-24, then authorized execution of the remaining release plan. Publication
+remains a separate final owner decision.
+After offline recovery, the existing account-privacy cover returns decoy allowed
+credential IDs. A normal browser can refuse credential selection before sending
+login-finish. That local failure cannot satisfy an actual server-refusal check.
+The paired exact-package probe observed a genuine old-key assertion rejected by
+login-finish with403; the existing backend maps passkey-verification denials to
+`403 {"error":"access denied"}`. The earlier401 expectation was inapplicable.
+
+For this negative control only, arm one native `navigator.credentials.get` call
+to use resident selection by clearing only its browser-side allowlist. Preserve
+the actual server-issued challenge, RP, origin and verification options; restore
+the original get function before awaiting its result. Retain the same owned old
+resident device until real login-finish returns403 with exactly `access denied`.
+Record actual UP/UV/RP, origin, challenge equality and bounded route/status/error
+summaries even on failure. Observe only denial error text, never successful
+credential-issuing response bodies. No private key is exported/imported, no
+signature is synthesized, and no server response, product authorization or
+ordinary UI behavior changes. Local failures, timeouts,401,429,503, a wrong body
+or successful old-key login cannot pass. Stale sessions, old readers and revoked
+edge credentials still require their original401 outcomes.
+
+Before full reruns, a bounded exact-package mechanism must show this producer
+completing a valid native resident login with200, then exact403/access-denied
+with the retained device after offline recovery. Completeness checks require the
+native witness and exact denial as well as the old-owner-denied flag. Both full
+fresh-owner directions remain required; prior failures receive
+no retroactive credit.

@@ -851,10 +851,10 @@ The bootstrap-absence observer now runs with permission to traverse its service
 directory. Expected HTTP200/401 and actual credential denials remain unchanged;
 fresh complete walkthroughs are still required.
 
-A proposed owner-resource checker correction distinguishes unchanged configured
+The owner-approved resource checker correction distinguishes unchanged configured
 slice limits from systemd effective limits capped by physical guest memory. It
-adds independent physical/ancestor witnesses and refusal controls; owner approval
-and both complete fresh walkthrough reruns are required before acceptance. The
+adds independent physical/ancestor witnesses and refusal controls; both complete
+fresh walkthrough reruns remain required before acceptance. The
 stopped edge trial remains failed, with no retroactive credit.
 
 The fresh owner trial passed effective guest-resource verification and received
@@ -862,3 +862,10 @@ its signal queries, then stopped at an evidence-filename collision between
 active and stopped observations of the same stage and role. Those two snapshots
 now have distinct names; exclusive evidence creation remains enforced. Both
 complete owner directions still require fresh successful runs.
+
+The restored-owner trial completed its first independently graded stopped
+query/custody snapshot, then its old-key refusal observation was inapplicable to
+the existing decoy credential allowlist. The owner approved the one-use native
+resident selection fixture, which retains the real challenge/RP/UV and requires
+exact server403/access-denied evidence. Paired exact-package native controls and
+both fresh full reruns remain required; product authorization is unchanged.

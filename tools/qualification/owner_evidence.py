@@ -19,6 +19,17 @@ def require(value, reason):
         raise ValueError(reason)
 
 
+def verify_retained_resident_assertion(value, origin, rp_id):
+    require(type(value) is dict and not value.get('error')
+            and value.get('one_shot') is True and value.get('original_allowlist_count', 0) > 0
+            and value.get('rp_id') == rp_id and value.get('verification_unchanged') is True
+            and value.get('challenge_matches') is True and value.get('origin') == origin
+            and value.get('type') == 'webauthn.get'
+            and value.get('rp_hash') == hashlib.sha256(rp_id.encode()).hexdigest()
+            and value.get('up') is True and value.get('uv') is True,
+            'retained native assertion lacks unchanged challenge/origin/RP/UP/UV evidence')
+
+
 def bounded_edge_records(records, proof):
     before, after = proof['before'], proof['after']
     require(before['boot_id'] == after['boot_id'] and before['boot_id'], 'edge boot changed')
@@ -127,6 +138,10 @@ def completed(record, expected_binding, phase_names):
     require(record.get('revoked_edge_http') == 401, 'revoked edge requires specific HTTP401')
     require(record.get('old_owner_denied') is True and record.get('stale_session_http') == 401,
             'old owner or stale session authority not denied')
+    require(record.get('old_owner_http') == 403 and record.get('old_owner_error') == 'access denied',
+            'old owner requires exact native403/access-denied evidence')
+    verify_retained_resident_assertion(record.get('old_owner_assertion'),
+                                      'https://telemetry.example.com:7443', 'telemetry.example.com')
     for stage in ('fixture', 'restored', 'upgraded', 'fresh-candidate'):
         value = record.get('signals', {}).get(stage, {})
         require(value.get('raw_groups', 0) > 0 and len(value.get('verdicts', [])) >= 3
