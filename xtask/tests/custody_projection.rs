@@ -172,13 +172,19 @@ fn retry_diagnostics_preserve_real_ack_and_never_supply_ack_credit() {
             "delivery sequence=1 sha256={} status={status} elapsed_us=10",
             "a".repeat(64)
         ));
-        value["observed_events"].as_array_mut().unwrap().insert(2, retry.clone());
+        value["observed_events"]
+            .as_array_mut()
+            .unwrap()
+            .insert(2, retry.clone());
         let plan = project_case(&value).expect("existing sender retry grammar");
         let result = consumer(&plan, &inspection_bytes()).expect("later actual ACK still required");
         assert_eq!(result["cutoff"], 1);
         value["observed_events"].as_array_mut().unwrap().pop();
         let plan = project_case(&value).expect("retry carries no ACK credit");
-        assert!(consumer(&plan, &inspection_bytes()).is_err(), "retry replaced real ACK");
+        assert!(
+            consumer(&plan, &inspection_bytes()).is_err(),
+            "retry replaced real ACK"
+        );
     }
 }
 
@@ -201,7 +207,8 @@ fn retry_diagnostic_grammar_and_sender_identity_remain_strict() {
         json!("delivery sequence=1 sha256=xyz status=no_response elapsed_us=10");
     assert!(project_case(&value).is_err(), "malformed retry digest");
     let mut value = input();
-    value["observed_events"][2]["message"] = json!(format!("{prefix}status=no_response elapsed_us=10"));
+    value["observed_events"][2]["message"] =
+        json!(format!("{prefix}status=no_response elapsed_us=10"));
     value["observed_events"][2]["pid"] = json!(999999);
     assert!(project_case(&value).is_err(), "retry sender must bind");
 }

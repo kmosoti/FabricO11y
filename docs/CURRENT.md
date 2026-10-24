@@ -7,6 +7,21 @@ plan. Publication still requires the owner's final decision against the complete
 bundle. The single persistent execution queue is
 `results/release-execution/queue.json` on Blade's DATA drive.
 
+The fresh Debian lifecycle retry completed original/controller/grade exit0
+under the separately merged complete-census policy. Its cleanup refusal control
+also completed with the required inner failure. The fresh Fedora guest lifecycle
+then returned0, but native custody admission refused `ACK status grammar mismatch`
+for the sender's existing `status=no_response` diagnostic. Its interrupted
+admission and owned scratch remain retained, with no Fedora acceptance credit.
+The separately registered [retry projection correction](experiments/formal/native-cutoff-adapter-protocol.md#retry-diagnostics-carry-no-ack-credit)
+requires valid retry observations to bind to the real sender and grant no ACK
+credit. The new source counterexample reproduced the refusal before repair.
+The projector now recognizes only the existing no-response/unavailable retry
+grammars alongside the unchanged exact ACK grammar. Existing malformed-event,
+missing-ACK and native custody expectations remain. Source/hosted checks,
+untouched-capture replay and fresh affected native execution remain pending;
+the product/package candidate is unchanged.
+
 Current candidate `84a585d`/`34591b7` completed a fresh split-host placement
 smoke at harness `2547401`: original command exit0, all19 gates, independent
 admission exit0, confirmed shutdown and verified G15 scratch archival/removal.
