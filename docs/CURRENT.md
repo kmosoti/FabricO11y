@@ -829,3 +829,9 @@ retained bundle reproduced the old reader's credential refusal and exited0
 through repaired host admission and both unchanged pinned Rust cutoff invocations.
 That offline replay does not relabel the failed live cell or satisfy fresh native
 acceptance. The selected108945d/1cb0c18 packages remain unchanged.
+
+The owner walkthrough Firefox transport failure was reproduced without guests: the
+WebDriver sandbox rejected unqualified `fetch` before any API request. The harness
+now supplies the Window receiver for Firefox; the Chrome request script is kept
+byte-identical to the completed main/query campaigns. Fresh native transport and
+owner acceptance remain required; this change grants no acceptance credit.
