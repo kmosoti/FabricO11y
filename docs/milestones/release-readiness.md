@@ -155,6 +155,30 @@ unchanged with this traffic. Do not retroactively call older UI-free runs passes
 Every required cell must pass individually. Do not average away a failed seed,
 pool unlike query latencies, or exclude rejected requests from load accounting.
 
+### Owner-approved alpha release boundary
+
+On 2026-10-24 the owner explicitly approved the narrower release scope: retain
+all completed exact-candidate evidence; finish both fresh-owner walkthroughs,
+critical fault/security controls, bounded pressure checks, CI and release-bundle
+verification; defer the four full cross-family campaigns, three 30-minute
+outages and full R3 soak to later deployment qualification. Final publication
+still requires separate owner authorization against the completed bundle.
+
+For `v0.1.0-alpha.1`, B6 retains its registered process-kill, scoped storage,
+full-Spool, rollover/retention, TLS/authentication and three bounded pressure
+cells, including their smoke and negative controls. Its four full cross-family
+cells and three long outages are explicitly deferred. B7 is explicitly deferred,
+not passed. Keep those protocols and their original durations and expectations
+unchanged for later qualification; neither a short smoke nor historical evidence
+from another candidate fills a deferred cell.
+
+The ledger and notes must identify these B6/B7 deferrals, the tested host/guest
+environments and their evidence identities, and the absence of deployment
+qualification, full-candidate sustained-operation and 30-minute-outage claims.
+Other release gates, oracle outcomes, numerical thresholds, containment and
+cleanup remain required. This amendment changes release admission scope, not
+the product contract or the outcomes of any executed or future control.
+
 | ID | Required evidence and pass condition |
 | --- | --- |
 | B1 — Artifact | Frozen source/build/configuration manifests; `.deb` and `.rpm` plus binary checksums and dependency floors; fresh install of each exact package on its pinned OS. |
@@ -162,8 +186,8 @@ pool unlike query latencies, or exclude rejected requests from load accounting.
 | B3 — Steady service | In each profile/seed: durable ACK p99 ≤ 1 s, observation-to-query p99 ≤ 5 s, healthy configuration apply ≤ 30 s, and no growing backlog. Register the backlog-window rule and sample counts before runs; report offered/admitted/committed/rejected/retried counts separately. |
 | B4 — Query | A fixed 1,000,000-record logs/metrics fixture, registered query kinds and unchanged Python oracle: p99 ≤ 2 s per query kind. Three seeds with Segments, one journal-only seed; both storage modes use identical declared contents. Add a separately graded trace fixture; do not infer trace latency from log queries. Freeze distributions, query order and repetitions in R0. |
 | B5 — Resources | Enforced cgroup limits; no OOM or unaccounted children; server RSS ≤ 2 GiB and real edge RSS ≤ 64 MiB on the registered source workload. Record server and companion separately and together, CPU, swap, I/O, live storage and cleanup. |
-| B6 — Recovery and pressure | Three real-edge outage trials: 30 minutes buffered and drain ≤ 10 minutes with exact delivery. All four remote cells pass their steady and reconnection checks. Required process-kill, scoped storage-failure, full-Spool, configured rollover/retention-boundary, TLS/auth rejection and 5× burst controls pass. Storage accounting includes every path and allowance fixed in R0; retained-window, old-page and restart answers match independent expectations. Burst latency is reported separately from steady gates. Each scenario has a bounded workload, exact expected outcome and clean termination. |
-| B7 — Sustained operation | Fresh companion-aware [R2 soak](../experiments/benchmarks/soak-protocol-r2.md) on candidate binaries: all ten original gates plus custody/containment and freeze checks. The short smoke's documented seal-only failure is never a full-soak pass. |
+| B6 — Recovery and pressure | Required process-kill, scoped storage-failure, full-Spool, configured rollover/retention-boundary, TLS/auth rejection and 5× burst controls pass. Storage accounting includes every path and allowance fixed in R0; retained-window, old-page and restart answers match independent expectations. Burst latency is reported separately from steady gates. Each scenario has a bounded workload, exact expected outcome and clean termination. The four full cross-family cells and three 30-minute outages are deferred under the owner-approved boundary above; record them as deferred, not passed. |
+| B7 — Sustained operation | Deferred under the owner-approved boundary above. The full companion-aware [R3 soak](../experiments/benchmarks/soak-protocol-r3.md) retains its original exposure, custody, containment and independent stopped-checkpoint grading requirements for later deployment qualification. No short or historical trial is a full-candidate soak pass. |
 | B8 — Installation | All 17 [installation checks](../experiments/formal/installation-acceptance-protocol.md) and the three existing mutation controls, including effective memory/task enforcement, pass on the exact `.deb` in the disposable Debian guest. The registered Fedora adapter preserves the same security/custody outcomes on the exact `.rpm`, adds SELinux enforcing checks, and tests both server/companion and standalone edge roles. Lifecycle additions below pass for both families. |
 | B9 — Repository and security | Required fast checks, manual documentation checks, dependency policy and affected invariant/fault/model regressions pass. Triage security findings; no known exploitable authentication bypass, credential exposure or blocker remains in the supported configuration. |
 | B10 — Operator workflow | Fresh central-and-remote-edge setup from the shipped guide reaches log, metric and trace queries without source edits on both families. Verify certificate trust/SANs, enrollment/revocation, firewall guidance, narrow log access, configurable storage, stop/restart, recovery, uninstall/data preservation and documented reset/compatibility policy. Ship known issues and bug/security reporting instructions. |
@@ -239,9 +263,9 @@ retain an incomplete result rather than truncating the required workload.
 | R2a | Implement passkey/bootstrap/recovery, sessions, reader tokens, durable audit and the single role guard. Replace the shared-master path through explicit local migration and read-only CLI tokens. Keep Spindle bytes/custody unchanged. | B11–B12 fixtures and negative controls pass; no bypass left on existing routes. |
 | R2b | Implement and verify UI algorithms, Leptos screens, status/control adapters, app-shell PWA and lifecycle. Demo fixtures must be explicitly labeled; they never fill integrated release gates. | Model properties and client failure controls pass; U1–U6 test harnesses ready and bounded. |
 | R2c | Implement 100 GB default and retention regressions; implement RPM/lifecycle support; package server, companion and UI; run fast/dependency checks and one smoke. | Exact packages and assets identified; packaging/storage/identity/UI failures resolved before expensive trials. |
-| R3 | Run six main profile trials and the fixed query matrix, the four remote cells, then recovery/rollover/pressure and the three outage trials. | Every B2–B6 cell passes with complete per-host resource/timing/custody evidence. |
-| R4 | Run full R2 soak and both families' installed-package/lifecycle acceptance with mutation controls and Fedora SELinux enforcing. | B7–B8 pass on the candidate; all child processes stopped and temporary fixtures cleaned. |
-| R5 | Complete B11–B13 on installed candidates and supported browsers; exercise fresh-owner HTTPS/passkey recovery and central/edge setup from the guide. Finalize compatibility/reset notes, known issues, checksums and evidence links. | B1–B13 ledger complete; zero open release blockers; hashes match; operator guidance is self-contained. |
+| R3 | Run six main profile trials, the fixed query matrix and required recovery/rollover/pressure controls. Retain the explicit cross-family and long-outage deferrals above. | Required B2–B6 cells pass with complete resource/timing/custody evidence; deferred cells receive no pass credit. |
+| R4 | Complete both families' installed-package/lifecycle acceptance with mutation controls and Fedora SELinux enforcing. Record the B7 deferral above. | B8 passes on the candidate; all child processes stopped and temporary fixtures cleaned; B7 remains deferred. |
+| R5 | Complete B11–B13 on installed candidates and tested browsers; exercise both fresh-owner HTTPS/passkey recovery and central/edge setups from the guide. Finalize compatibility/reset notes, known issues, checksums and evidence links. | B1–B13 ledger complete with explicit owner-approved deferrals; every remaining required gate passes, zero open release blockers, hashes match and guidance is self-contained. |
 | R6 | Publish the selected unused version tag and exact tested `.deb`/`.rpm` under explicit release authorization. | Downloaded artifact checksums verified; release notes and report links available. |
 
 The operator walkthrough should use fresh state and the guide alone; fixes to
@@ -282,7 +306,8 @@ service/recovery and package acceptance as applicable. Never combine incompatibl
 candidate results into a green ledger. Pure documentation edits need documentation
 and affected walkthrough checks, not a new unrelated performance campaign.
 
-The gate is finite: once B1–B13 pass, archive the evidence, clean owned scratch
-and prepare publication. New research or optimization ideas do not extend this
+The gate is finite: once every required gate passes and the owner-approved B6/B7
+deferrals are explicit in the ledger, archive evidence, clean owned scratch and
+prepare publication. New research or optimization ideas do not extend this
 release unless they resolve a defined blocker. Broader profile qualification
 continues separately without being relabeled as passed.
