@@ -1,5 +1,15 @@
 # Current project state
 
+The stopped `alert-owner-debian-fedora-06` run passed certificate inspection but
+its browser constructor had no TLS receipt. A guest-free counterexample located
+the resource check: the delegated controller had the required limits and its
+service had a 30-minute deadline, but the checker queried a unit named
+`supervisor` and saw infinity. Deadline verification now binds that immediate
+child to its matching owned service and whole-cgroup termination, while checking
+the child's actual profile unchanged. Browser constructor errors are retained
+before receipt inspection; absent evidence remains a failure. Fresh browser and
+complete owner acceptance are still required.
+
 The stopped `alert-owner-debian-fedora-05` walkthrough completed both native
 installations and created its TLS material, then the guide's unprivileged
 certificate inspection could not traverse `/etc/fabrico11y`. Both guests stopped
