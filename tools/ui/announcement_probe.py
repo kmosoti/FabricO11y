@@ -125,13 +125,15 @@ def snapshot_documents(desktop,path):
         require(count<2048 and time.monotonic()<deadline,'announcement-document-snapshot-bound')
         source=pending.pop();count+=1
         try:attributes=source.queryDocument().getAttributes()
-        except (NotImplementedError,AttributeError):
-            require(source.childCount<=2048-count,'announcement-document-snapshot-bound')
-            pending.extend(source[index] for index in range(source.childCount))
+        except (NotImplementedError,AttributeError):pass
         else:
+            role=source.getRoleName()
             append(path,dict(type='document:snapshot',pid=source.getApplication().get_process_id(),
-                role=source.getRoleName(),attributes=source.getAttributes(),document_attributes=attributes,
+                role=role,attributes=source.getAttributes(),document_attributes=attributes,
                 text='',monotonic_ns=time.monotonic_ns()))
+            if role=='document web':continue
+        require(source.childCount<=2048-count,'announcement-document-snapshot-bound')
+        pending.extend(source[index] for index in range(source.childCount))
 
 
 def observe(path):
