@@ -44,11 +44,11 @@ class WalkthroughCallerTests(unittest.TestCase):
                 'EffectiveTasksMax': str(tasks)}, 'kernel': {'memory.high': str(high * 1024**2),
                 'memory.max': str(maximum * 1024**2), 'memory.swap.max': '0' if name == service else 'max',
                 'pids.max': str(tasks)}}
-        value['physical_memory_bytes'] = 1536 * 1024**2
+        value['physical_memory_bytes'] = 1521577984
         value['ancestor_memory'] = {name: {'memory.high': 'max', 'memory.max': 'max'}
                                     for name in ('/', '/system.slice')}
         shared = value['units']['system-fabrico11y.slice']['properties']
-        shared['EffectiveMemoryHigh'] = shared['EffectiveMemoryMax'] = str(1536 * 1024**2)
+        shared['EffectiveMemoryHigh'] = shared['EffectiveMemoryMax'] = str(1521577984)
         observation.verify(value, 'edge', 'literal-boot', active=True)
         for defect in ('uid', 'capability', 'kernel', 'effective', 'companion',
                        'missing-physical', 'wrong-physical', 'wrong-ancestor', 'wrong-slice-effective', 'slice-kernel', 'swap'):
@@ -66,6 +66,31 @@ class WalkthroughCallerTests(unittest.TestCase):
             else: changed['processes'].append(copy.deepcopy(changed['processes'][0]))
             with self.subTest(defect=defect), self.assertRaises(ValueError):
                 observation.verify(changed, 'edge', 'literal-boot', active=True)
+
+    def test_server_effective_limits_remain_exact_above_the_slice_ceiling(self):
+        import owner_observation as observation
+        service = 'fabrico11y-server.service'
+        path = '/system.slice/system-fabrico11y.slice/' + service
+        value = dict(boot_id='literal-server-boot', account=dict(uid=991, gid=991, shell='/sbin/nologin'),
+                     physical_memory_bytes=4096 * 1024**2,
+                     ancestor_memory={name: {'memory.high': 'max', 'memory.max': 'max'}
+                                      for name in ('/', '/system.slice')}, processes=[], units={})
+        for pid, exe in ((123, '/usr/bin/fabric-server'), (124, '/usr/bin/fabric-node')):
+            value['processes'].append(dict(pid=pid, start_ticks=456, uids=[991] * 4, gids=[991] * 4,
+                                          cap_eff=0, no_new_privs=1, exe=exe, cgroup='0::' + path))
+        for name, high, maximum, tasks in ((service, 2560, 3072, 512),
+                                           ('system-fabrico11y.slice', 2816, 3328, 640)):
+            value['units'][name] = dict(properties=dict(ActiveState='active', MainPID='123',
+                User='fabricolly', Group='fabricolly', ControlGroup=path,
+                EffectiveMemoryHigh=str(high * 1024**2), EffectiveMemoryMax=str(maximum * 1024**2),
+                EffectiveTasksMax=str(tasks)), kernel={'memory.high': str(high * 1024**2),
+                'memory.max': str(maximum * 1024**2), 'memory.swap.max': '0', 'pids.max': str(tasks)})
+        self.assertIs(observation.verify(value, 'server', 'literal-server-boot', active=True), value)
+        for physical in (None, True, 0, -1, 3072 * 1024**2, 8192 * 1024**2):
+            bad = copy.deepcopy(value)
+            bad['physical_memory_bytes'] = physical
+            with self.subTest(physical=physical), self.assertRaises(ValueError):
+                observation.verify(bad, 'server', 'literal-server-boot', active=True)
 
     def test_cleanup_attempts_second_guest_after_first_raises(self):
         stopped = []
