@@ -31,8 +31,16 @@ announcement row70 exited1 at AT document identity, so its unchanged grader
 rejected the wrong cause. The [queryable-container counterexample](experiments/formal/browser-announcement-protocol.md#queryable-browser-chrome-container-counterexample)
 reproduced the traversal defect in source controls before repair. The snapshotter
 now traverses queryable browser containers to the actual web document, retaining
-the original bounds, empty-text snapshots and PID/URL checks. Affected source,
-hosted and fresh positive/suppressed announcement execution remain pending.
+the original bounds, empty-text snapshots and PID/URL checks. Source controls and hosted fast receipts completed exit0 for that traversal
+repair. Its fresh positive reached the document, but failed announcement-synthesis
+with actual assertive AT alert metadata and no target speech/PCM growth. Stopped
+custody is retained. A registered diagnostic focusing the actual filter input
+completed original0 with the exact alert utterance; it grants no acceptance
+credit and does not establish causality. The prospective
+[natural-input action correction](experiments/formal/browser-announcement-protocol.md#natural-filter-input-focus-for-fresh-acceptance)
+retains every oracle and requires fresh positive/suppressed rows. Product/package
+bytes remain unchanged. Two of six full main trials have completed original and
+independent receipt-join exit0; the remaining service campaign stays open.
 
 Current candidate `84a585d`/`34591b7` completed a fresh split-host placement
 smoke at harness `2547401`: original command exit0, all19 gates, independent
@@ -517,10 +525,6 @@ differential remain historical evidence only. Preserve all ten registered
 extended commands and their final current-source validation. Its current-head
 hosted check remains required before merge.
 No current deployment profile is qualified or release tag published.
-
-A focused-input announcement diagnostic is registered for the unresolved packaged
-validation-alert utterance failure. It grants no release acceptance credit; the
-current package remains unaccepted for that row.
 
 ## Implemented
 
