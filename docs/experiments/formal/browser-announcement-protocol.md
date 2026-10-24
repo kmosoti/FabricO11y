@@ -447,3 +447,25 @@ is accepted. A repeated missing utterance with actual input focus rejects focus
 alone as a sufficient repair. Preserve original failure and shutdown receipts.
 Any product repair requires a successor candidate and affected gate reruns. Any
 acceptance action change requires a separate policy commit and fresh controls.
+
+## Natural filter-input focus for fresh acceptance
+
+Prospective action correction after the [focused-input diagnostic](#focused-input-diagnostic).
+The [literal fixture](fixtures/at-filter-focus.json) binds the failed unfocused
+positive and the successful engineering comparison to exact packages and raw
+input hashes. This single comparison is not a causal or reliability claim.
+
+Before the existing invalid-filter action, focus the actual filter input and
+require it to be the DOM active element. Retain actual AT focus events. Keep the
+4097 ASCII bytes, conditional absent-before-error baseline, exact alert text,
+assertive metadata, eight-second observation, actual PID/URL join, SSIP225/message
+ID, selected backend, PCM growth, resources and original suppressed outcome.
+Never focus the status or alert to obtain its speech. Input focus speech does not
+count as the validation utterance; the exact unchanged alert oracle still decides.
+
+This changes the harness action to correspond to editing the field. It does not
+change the product or accept the diagnostic. Check source controls and hosted
+fast receipts, then rerun both affected fresh packaged announcement rows. Retain
+rows1–66 only while their product/package and affected harness inputs remain
+compatible. Any fresh missing utterance remains a failure and reopens the causal
+investigation; do not retry it until a discriminating explanation is recorded.

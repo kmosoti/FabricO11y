@@ -1,0 +1,34 @@
+{
+  "origin": "Fresh original positive failed announcement-synthesis; focused-input engineering diagnostic completed original0. Neither failure nor diagnostic grants acceptance.",
+  "product": "84a585d35cced26de170c4b34c0a05aab79fae3b",
+  "package_snapshot": "34591b7b1390852ad9984339a9fa102c8259d743",
+  "original_harness": "742a2ce0b0d2c5944e71fb417d8096cdc5dd5ee9",
+  "diagnostic_harness": "53b17ac536a854b5f7aa797583d85a95dc9cb8fa",
+  "filter_bytes": 4097,
+  "window_seconds": 8,
+  "before": {
+    "error": "announcement-synthesis",
+    "role": "alert",
+    "live": "assertive",
+    "pcm_before": 533582,
+    "pcm_after": 533582
+  },
+  "diagnostic": {
+    "error": null,
+    "pcm_before": 533582,
+    "pcm_after": 1347410,
+    "input_focus_event_observed": true,
+    "exact_alert_speech_observed": true
+  },
+  "input_hashes": {
+    "browser-container-observation-02/cells/69/browser.json": "716591a838669ad21f6646a20194c7fc21673caf9570816d81d6aad174fb89f8",
+    "browser-container-observation-02/cells/69/announcements/actions.jsonl": "5ed2138b7ac202a5e88eb16e6b63a102aea961e725fcffcbb87750aab85f25fb",
+    "browser-container-observation-02/cells/69/announcements/events.jsonl": "fb4ff79811e587497414808ff169e42a974cedbd171a9abef463ab6767385b53",
+    "browser-container-observation-02/cells/69/announcements/speech.jsonl": "22212f8d365325abf8d739042c5e3bae9f9c7af3b9cbb6469706f317a5257d43",
+    "browser-input-diagnostic-01/cell-02/browser.json": "d89dbce84d1d14f263286025bce427c37afcc509e5632c3b951101e6a8efbfc9",
+    "browser-input-diagnostic-01/cell-02/announcements/actions.jsonl": "c4a640f7ed38cfca6d7d8a8a6c24df3729ce85b2c7ef05d7b4b86c181ff2f06c",
+    "browser-input-diagnostic-01/cell-02/announcements/events.jsonl": "6fc5031290c3aa636aa7214798481456fab999cd79f5a8ba800ec1fcd35ee613",
+    "browser-input-diagnostic-01/cell-02/announcements/speech.jsonl": "a465bf891e6677329604acd784c975c2883ec39697764355d3a238fd57b63774"
+  },
+  "interpretation_limit": "Single comparison does not establish causality or reliability; natural input focus is an action-fidelity correction requiring fresh positive and suppressed acceptance."
+}
