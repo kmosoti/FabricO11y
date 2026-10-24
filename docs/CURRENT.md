@@ -1,5 +1,13 @@
 # Current project state
 
+The stopped `alert-owner-debian-fedora-03` walkthrough booted both guests and
+established the high-port SSH route, then installed the older Debian fixture and
+matched its canonical payload. Its observer incorrectly let the shell expand
+dpkg's `${Version}` format and exited 2. The caller now single-quotes that literal;
+an executable shell regression covers both native versions and families while
+still refusing a wrong installed version. The original failed outcome and raw
+output remain retained; fresh complete walkthroughs are still required.
+
 On 2026-10-24 the owner approved the narrower
 [release boundary](milestones/release-readiness.md#owner-approved-alpha-release-boundary).
 Both fresh-owner walkthroughs, critical fault/security controls, bounded pressure,

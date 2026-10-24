@@ -322,7 +322,7 @@ OBS
         observed = json.loads(self.observed(guest, command,
             'payload-' + guest.role + '-' + str(len(self.record['events']))))
         require(observed == expected, 'installed binaries/complete console differ from canonical payload')
-        version_command = 'dpkg-query -W -f="${Version}" fabrico11y' if guest.family == 'debian' else "rpm -q --qf '%{VERSION}-%{RELEASE}' fabrico11y"
+        version_command = "dpkg-query -W -f='${Version}' fabrico11y" if guest.family == 'debian' else "rpm -q --qf '%{VERSION}-%{RELEASE}' fabrico11y"
         version = self.observed(guest, version_command + '\n',
             'version-' + guest.role + '-' + str(len(self.record['events']))).strip()
         expected_version = ('0.1.0~alpha.' if guest.family == 'debian' else '0.1.0-0.alpha.') + ('1' if candidate else '0')
