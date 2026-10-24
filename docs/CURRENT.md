@@ -835,3 +835,10 @@ WebDriver sandbox rejected unqualified `fetch` before any API request. The harne
 now supplies the Window receiver for Firefox; the Chrome request script is kept
 byte-identical to the completed main/query campaigns. Fresh native transport and
 owner acceptance remain required; this change grants no acceptance credit.
+
+The fresh-owner trial enrolled the owner and connected its edge, then the
+unprivileged reader CLI refused the service-only CA path. The access guide now
+uses a separate readable public CA copy for that client, preserving protected
+service directories and owner-only tokens. The exact packaged CLI reproduced
+the old refusal and completed a verified-TLS fixture request with the readable
+CA; both complete guide directions remain pending.
