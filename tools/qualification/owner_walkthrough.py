@@ -105,6 +105,40 @@ def admit(path, expected):
     return plan, artifacts, fixture, guides
 
 
+def arm_retained_resident_assertion(bridge):
+    """One adversarial credential-selection call; native signing stays unchanged."""
+    bridge._js('''window.ownerRetainedAssertion=null;
+const nativeGet=navigator.credentials.get.bind(navigator.credentials);
+navigator.credentials.get=async options=>{
+ navigator.credentials.get=nativeGet;
+ try {
+  const original=options.publicKey;
+  const challenge=btoa(String.fromCharCode(...new Uint8Array(original.challenge))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  const selected={...options,publicKey:{...original,allowCredentials:[]}};
+  const credential=await nativeGet(selected);
+  const data=new Uint8Array(credential.response.authenticatorData);
+  if(data.length<37)throw Error('assertion data truncated');
+  const client=JSON.parse(new TextDecoder().decode(credential.response.clientDataJSON));
+  window.ownerRetainedAssertion={one_shot:true,original_allowlist_count:(original.allowCredentials||[]).length,
+   rp_id:original.rpId||location.hostname,verification_unchanged:selected.publicKey.userVerification===original.userVerification,
+   challenge_matches:client.challenge===challenge,origin:client.origin,type:client.type,
+   rp_hash:Array.from(data.slice(0,32),x=>x.toString(16).padStart(2,'0')).join(''),up:!!(data[32]&1),uv:!!(data[32]&4)};
+  return credential;
+ }catch(error){window.ownerRetainedAssertion={error:{name:String(error.name).slice(0,128),message:String(error.message).slice(0,1024)}};throw error;}
+};''')
+
+
+def verify_retained_resident_assertion(value, origin, rp_id):
+    require(type(value) is dict and not value.get('error')
+            and value.get('one_shot') is True and value.get('original_allowlist_count', 0) > 0
+            and value.get('rp_id') == rp_id and value.get('verification_unchanged') is True
+            and value.get('challenge_matches') is True and value.get('origin') == origin
+            and value.get('type') == 'webauthn.get'
+            and value.get('rp_hash') == hashlib.sha256(rp_id.encode()).hexdigest()
+            and value.get('up') is True and value.get('uv') is True,
+            'retained native assertion lacks unchanged challenge/origin/RP/UP/UV evidence')
+
+
 @dataclass(frozen=True)
 class Prose:
     document: str
@@ -662,10 +696,19 @@ OBS
         self.bridge._js("const e=Array.from(document.querySelectorAll('button')).find(e=>e.textContent.trim()==='Check session');e.click();")
         self.ui_wait("document.body.textContent.includes('Sign in with a passkey')")
         self.field('Principal ID', self.principal)
-        self.click('Use passkey')
-        requests = self.bridge._js('return window.ownerPublicRequests')
-        require(any(row == dict(route='/v1/console/auth/login/finish', status=401) for row in requests),
+        arm_retained_resident_assertion(self.bridge)
+        summary = None
+        try:
+            self.click('Use passkey')
+            self.ui_wait("window.ownerRetainedAssertion?.error || window.ownerPublicRequests.some(r=>r.route==='/v1/console/auth/login/finish')")
+        finally:
+            summary = self.bridge._js('return {assertion:window.ownerRetainedAssertion,requests:window.ownerPublicRequests}')
+            private_write(self.out / 'protected-transcript/retained-old-owner-refusal.json',
+                          json.dumps(summary).encode())
+        verify_retained_resident_assertion(summary['assertion'], ORIGIN, 'telemetry.example.com')
+        require(any(row == dict(route='/v1/console/auth/login/finish', status=401) for row in summary['requests']),
                 'old resident owner key did not receive actual server refusal')
+        self.record['old_owner_assertion'] = summary['assertion']
         self.record['old_owner_denied'] = True
         self.record['old_reader_http'] = self.reader_status(self.reader_token)
         require(self.record['old_reader_http'] == 401, 'restored old reader retained query authority')
