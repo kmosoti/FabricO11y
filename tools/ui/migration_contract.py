@@ -12,7 +12,8 @@ def grade(row):
     for name in ('legacy', 'owner', 'reader', 'cli'):
         require(row[name]['rows'] == expected and row[name]['next_page'] is None,
                 'migration exact complete canary: ' + name)
-    require(row['master'] == (401, 'sign in required') and row['admin_status'] == 404,
+    require(row['master'] == (401, 'sign in required') and row['admin_status'] == 401
+            and row.get('admin_error') == 'use a console credential',
             'migration exact old-master refusal')
     require(row['format_exit'] == 1 and FORMAT_ERROR in row['format_stderr'].splitlines(),
             'migration exact format1 refusal')
