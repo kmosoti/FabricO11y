@@ -35,6 +35,29 @@ ORIGIN = 'https://telemetry.example.com:7443'
 RESERVATION = 13_958_643_712
 
 
+RESTART_READINESS = """python3 - <<'READY'
+import json,ssl,time,urllib.error,urllib.request
+context=ssl.create_default_context(cafile='/etc/fabrico11y/ca.pem')
+started=time.monotonic();deadline=started+25;attempts=0
+while True:
+    remaining=deadline-time.monotonic()
+    if remaining<=0:raise TimeoutError('verified listener readiness deadline')
+    attempts+=1
+    try:
+        with urllib.request.urlopen('https://telemetry.example.com:7443/console/index.html',context=context,timeout=min(2,remaining)) as response:
+            if response.status!=200:raise RuntimeError('unexpected public console status')
+        break
+    except urllib.error.HTTPError:
+        raise
+    except urllib.error.URLError as error:
+        if not isinstance(error.reason,(ConnectionRefusedError,ConnectionResetError,TimeoutError,ssl.SSLEOFError)):
+            raise
+    time.sleep(min(.1,max(0,deadline-time.monotonic())))
+print(json.dumps({'verified_public_console':True,'attempts':attempts,'elapsed_s':time.monotonic()-started}))
+READY
+"""
+
+
 def sha(path):
     return Q.digest(Path(path), 'sha256')
 
@@ -634,6 +657,12 @@ OBS
                 self.fence(guest, 'upgrade-backup-and-removal', 0)
 
     def restart_login(self):
+        # Type=exec confirms execve, not application listener readiness. Observe
+        # the public page over verified TLS before testing the retained session.
+        # Never retry an authorization outcome or grant a replacement session.
+        self.observed(self.server, RESTART_READINESS,
+                      'restart-listener-' + str(len(self.record.get('events', []))),
+                      timeout=min(30, self.commands.remaining()))
         status, _ = self.bridge._request('/v1/console/session')
         require(status == 401, 'pre-restart browser session remained authorized')
         self.record['stale_session_http'] = status
