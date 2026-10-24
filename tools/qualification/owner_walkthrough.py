@@ -213,16 +213,22 @@ class Walkthrough:
 
     def install(self, guest, candidate):
         package = self.artifacts[guest.family] if candidate else Path(self.fixture['packages'][guest.family]['package'])
+        # The remote worker intentionally accepts only fixed safe basenames.
+        # Debian's canonical '~' stays in the release artifact/metadata; only
+        # the disposable edge's copied filename uses this existing namespace.
+        name = ('fabrico11y_' + ('candidate' if candidate else 'predecessor') + '.deb'
+                if guest.role == 'edge' and guest.family == 'debian' else package.name)
         for suffix in ('deb', 'rpm'):
             self.prose(guest, 'install', 'Download the `.deb` or `.rpm` and `SHA256SUMS`',
                        'rm -f ~/fabrico11y_*.' + suffix + ' ~/fabrico11y-*.' + suffix + '\n',
                        purpose='Remove only earlier staged package filenames so the guide wildcard selects exactly one artifact')
-        guest.copy(package, '/home/accept/' + package.name)
+        guest.copy(package, '/home/accept/' + name)
         sums = self.root / (guest.role + '-SHA256SUMS')
-        sums.write_text(sha(package) + '  ' + package.name + '\n')
+        sums.write_text(sha(package) + '  ' + name + '\n')
         guest.copy(sums, '/home/accept/SHA256SUMS')
         self.event('package-stage', role=guest.role, family=guest.family, candidate=candidate,
-                   package=package.name, sha256=sha(package))
+                   package=package.name, sha256=sha(package),
+                   **({'guest_filename': name} if name != package.name else {}))
         self.fence(guest, 'install', 0 if guest.family == 'debian' else 1, stdin=b'y\n')
         self.installed_payload(guest, candidate)
 
