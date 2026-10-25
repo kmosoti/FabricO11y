@@ -1,5 +1,11 @@
 # Experiments
 
+The [exact-candidate bounded release acceptance report](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-service-release-acceptance-results-01/888e1ac55f4ae56ef43ae9d0b158ca29cec8f8e3)
+records all three full pressure cells with original commands and independent
+grades 0, both fresh owner directions and candidate-compatible CI. The
+[service release ledger](../milestones/service-release-evidence.md) retains the
+explicit B6/B7 deployment deferrals and final publication boundary.
+
 The [primitive composition results](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-primitive-composition-results-01) record the bounded Rust decoder, lifecycle transition and ordered ACK join,
 including rejected variants and limits. Native caller adoption remains pending.
 

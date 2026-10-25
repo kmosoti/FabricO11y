@@ -4,8 +4,9 @@ The [service release ledger](../milestones/service-release-evidence.md) binds th
 current finite acceptance results to product `84a585d`, packaged snapshot
 `34591b7`, exact artifact hashes and actual harness/guide identities. Historical
 rows below keep their original revisions and qualification limits. Both current
-fresh-owner directions completed; bounded pressure remains
-pending; current fast/extended evidence is independently verified, with B6/B7 deployment deferrals recorded separately.
+fresh-owner directions and all three full bounded pressure cells completed;
+current fast/extended evidence is independently verified, with B6/B7 deployment
+deferrals recorded separately. Final bundle and publication remain open.
 
 A map from each product claim to its implementation, checks and remaining limits. Status uses the [evidence states](../QUALIFICATION.md#evidence-states): "Tested" records named automated evidence on the revision or working-tree snapshot identified by its receipt, not a guarantee for every later edit. The [check registry](../../xtask/checks.json) determines which checks run in each profile; fresh fast-check receipts are written under `target/verification/receipts`. Historical records apply only to the sources they name. Semantic mutant IDs refer to [xtask/mutants.json](../../xtask/mutants.json); results are recorded in the [milestone record](../milestones/architecture-foundation.md#semantic-mutants).
 

@@ -35,8 +35,8 @@ Package construction receipts are `alert-presentation-01-deb-a` and
 | B2 Semantics | Complete | Six main cells, four million-record query cells with separate trace fixture, native lifecycle and both complete owner directions. Original exits and independent delivery/query/custody grades are 0; no missing ACKed record, retry duplicate or mismatched graded answer. |
 | B3 Steady service | Complete | `service-campaign-alert-01/all-six-terminal-01`: 10 and 100 identities, seeds `0xA11FA001`–`0xA11FA003`, each 15-second warmup plus 120 measured seconds. All 13 registered gates true, including ACK p99 ≤ 1 s, visibility p99 ≤ 5 s and healthy configuration application ≤ 30 s. |
 | B4 Query | Complete | `query-campaign-alert-01/all-four-terminal-02`: three Segment seeds and one journal-only seed, each 500,000 logs plus 500,000 metric records; separate 1,000-trace/3,000-span fixture. Original and independent grades 0, all registered query kinds p99 ≤ 2 s, before and after restart. |
-| B5 Resources | Complete for the registered finite placements | Main/native/owner records verify cgroup controls, zero project swap, process ownership and cleanup. Registered main server RSS ≤ 2 GiB and real edge RSS ≤ 64 MiB. Pressure still needs its own resource verdicts; no whole-server bound for arbitrary workloads is inferred. |
-| B6 Recovery and pressure | Pending pressure; explicit partial deferral | Exact-product storage/full-Spool/process-kill/rollover/retention and TLS/auth controls are retained. Fresh pressure smoke has all 13 gates true and independent grade 0. Three full pressure cells remain required. The first full pressure attempt failed malformed-probe status checks and stays failed. Four full cross-family campaigns and three 30-minute outages are deferred. |
+| B5 Resources | Complete for the registered finite placements | Main/native/owner/pressure records verify cgroup controls, zero project swap, process ownership and cleanup. Registered main server RSS ≤ 2 GiB and real edge RSS ≤ 64 MiB; each full pressure cell passed its original RSS/no-OOM gates and independent resource-receipt checks. No whole-server bound for arbitrary workloads is inferred. |
+| B6 Recovery and pressure | Complete within the approved alpha boundary; explicit partial deferral | Exact-product storage/full-Spool/process-kill/rollover/retention and TLS/auth controls are retained. All three full pressure cells have original and independent exits 0, all 13 gates true and confirmed cleanup. Each offered 180 seconds of work to 100 identities, ACKed all 18,000 Batches, retained all 200 rejection rounds and covered every measured management slot. The first full pressure attempt stays failed. Four full cross-family campaigns and three 30-minute outages are deferred. |
 | B7 Sustained operation | Deferred, not passed | Owner-approved alpha boundary defers the full 7,200-second R3 soak. Historical or short trials supply no candidate soak credit. |
 | B8 Installation | Complete | `native-compatible-alert-03/actual-ten-terminal-01` and original closeout step 03: ten fresh cells, both native positive lifecycles, two producer refusals and six mutation controls. Original commands/grades 0 and cleanup confirmed. Fedora SELinux enforcing. |
 | B9 Repository and security | Complete for the candidate-compatible code | Hosted fast run `40141551209` (20 checks) and extended run `40141551202` (10 checks) completed, with original command/shutdown and independent native grading exits 0 at CI merge `482b0d6`, tree-equal to harness `ff0eb90`. The 32 focused security executions retain source `07c35b6` with all named Rust/resource/security inputs unchanged at `ff0eb90`. Current affected source and documentation controls exited 0. Final ledger edits retain their own documentation checks. |
@@ -47,6 +47,22 @@ Package construction receipts are `alert-presentation-01-deb-a` and
 
 B6/B7 deferrals are the [owner-approved alpha boundary](release-readiness.md#owner-approved-alpha-release-boundary).
 They are not waived failures, completed trials or deployment qualification.
+
+The [revision-pinned acceptance report](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-service-release-acceptance-results-01/888e1ac55f4ae56ef43ae9d0b158ca29cec8f8e3)
+records the full pressure measurements, original failures, receipt hashes and
+interpretation limits. Its reviewed bytes were read back from the wiki commit.
+
+The full pressure identities are `alert-pressure-a11fa001-02`,
+`alert-pressure-a11fa002-02` and `alert-pressure-a11fa003-02`, on harness
+`ff0eb909783f5da1f3052d91ce2297710812d7ad`. Their unchanged independent delivery
+and companion-custody grades rejected injected missing ACKed recovery; their
+receipt checks rejected missing cleanup, uncapped CPU and incorrect memory.
+The [owner-reviewed replacement preflight](https://github.com/kmosoti/FabricO11y/issues/59#issuecomment-6391331349)
+records all three exact commands and plan SHA256
+`ee04aa107565e2a027ddecaa364054ee6d86f6e92f08a7b00e95ffee13e04742`.
+`pressure-campaign-alert-02/all-three-terminal-01` joins their original command,
+independent grade, resource, source-archive and shutdown receipts. The smoke
+receives no full-cell credit and `alert-pressure-a11fa001-01` remains failed.
 
 ## Tested environments
 
@@ -92,7 +108,15 @@ Successful guest scratch is removed only after original shutdown and independent
 raw evidence grading. Failed runs keep their real exits; private byte-verified
 archives preserve their OS state and credentials. Raw journals, Spools, browser
 profiles, private keys and access backups are controlled evidence and are not
-public release assets. G15 scratch is empty after intact private preservation of six standalone old failed-command receipts; their original exits 120 remain unchanged. Final Blade cleanup and bundle verification remain pending.
+public release assets. G15 scratch is empty after intact private preservation of
+six standalone old failed-command receipts; their original exits 120 remain
+unchanged. The current-candidate owner/pressure scratch and process cleanup join
+exited 0 (`release-cleanup-terminal-01`), and preflight 44 verified the original
+Blade/G15 live-service identities again. Twenty superseded release-owned source
+worktrees were byte-archived and removed with owner/link/content defect controls.
+Immutable inputs, private historical evidence and the active source/review
+workspaces remain counted in the project storage budget. Final bundle verification
+and the owner's publication decision remain separate.
 
 ## Release limits
 
