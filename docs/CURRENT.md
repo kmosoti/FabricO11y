@@ -1,5 +1,19 @@
 # Current project state
 
+The exact candidate is product `84a585d` / packaged snapshot `34591b7`.
+Both complete fresh owner directions now have original and independent
+four-stage query/custody grades0 with confirmed shutdown. Native installation,
+70-row browsers, six main and four million-record query cells are complete.
+Fresh bounded pressure and final bundle closure remain open; the
+[service release ledger](milestones/service-release-evidence.md) records exact
+artifacts, tested environments and explicit B6/B7 deferrals. No deployment
+profile is qualified and publication remains the owner's final decision.
+
+## Earlier caller checkpoints
+
+The following retained checkpoints describe earlier failures and their required
+reruns. Current completion state is in the ledger above; old failures stay failed.
+
 The Debian-server/Fedora-edge owner direction completed with original exit0,
 independent four-checkpoint custody/query grading0 and confirmed cleanup. The
 fresh reversed direction reached upgrade, then the remote worker rejected the
@@ -613,8 +627,8 @@ No current deployment profile is qualified or release tag published.
 ## Implemented
 
 FabricO11y collects, durably forwards, retains and queries Linux telemetry. It is
-usable for bounded development trials; no current deployment profile is qualified
-and no release tag has been produced.
+usable for bounded development trials; no current deployment profile is qualified.
+The service release ledger records candidate acceptance and its explicit limits.
 The [R3 runtime integration](experiments/benchmarks/soak-runtime-protocol.md)
 separates actual offered exposure, native UI continuity, a stopped raw checkpoint
 and independent grading. S1-03 supplies finite measured headroom; FULL admission,
