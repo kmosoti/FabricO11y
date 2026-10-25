@@ -1,5 +1,13 @@
 # Verification matrix
 
+The [service release ledger](../milestones/service-release-evidence.md) binds the
+current finite acceptance results to product `84a585d`, packaged snapshot
+`34591b7`, exact artifact hashes and actual harness/guide identities. Historical
+rows below keep their original revisions and qualification limits. Both current
+fresh-owner directions and all three full bounded pressure cells completed;
+current fast/extended evidence is independently verified, with B6/B7 deployment
+deferrals recorded separately. Final bundle and publication remain open.
+
 A map from each product claim to its implementation, checks and remaining limits. Status uses the [evidence states](../QUALIFICATION.md#evidence-states): "Tested" records named automated evidence on the revision or working-tree snapshot identified by its receipt, not a guarantee for every later edit. The [check registry](../../xtask/checks.json) determines which checks run in each profile; fresh fast-check receipts are written under `target/verification/receipts`. Historical records apply only to the sources they name. Semantic mutant IDs refer to [xtask/mutants.json](../../xtask/mutants.json); results are recorded in the [milestone record](../milestones/architecture-foundation.md#semantic-mutants).
 
 Specification sources: **PC** = [product contract](../PRODUCT-CONTRACT.md), **ADR-n** = [decisions](../decisions/README.md), **RH** = [retained history](../architecture/retained-history.md), **DO**/**QO** = [delivery](../../tools/qualification/DELIVERY_ORACLE.md)/[query](../../tools/qualification/QUERY_ORACLE.md) oracle specifications.
@@ -201,7 +209,7 @@ These are operating-profile claims; none has recorded target-profile qualificati
 | QUAL-FRESH | Freshness | observation to query p99 ≤ 5 s at 1,000 identities | history run 01 under revision 2, four-CPU host (`63bbeac`): p99 ≤ 1.78 s | Measured on `63bbeac` (not target profile) |
 | QUAL-QLAT | Query latency | p99 ≤ 2 s over 1,000,000 records | history run 01 under revision 2, four-CPU host (`63bbeac`): p99 ≤ 481 ms Segments, ≤ 1,515 ms journal-only | Measured on `63bbeac` (not target profile) |
 | QUAL-DRAIN | Outage drain | 30 min buffered, drained ≤ 10 min | outage run 01 (`bb8d06d`, four-CPU host): drain ≤ 99 s, oracle exact | Measured on `bb8d06d` (not target profile) |
-| QUAL-INSTALL | Installation behavior | running-installation acceptance | [Cadence installation checkpoint](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-cadence-results-01/42e7da25ec0db4993b5f8c335b82da3dcf0a2441), product `108945d`, packaged `1cb0c18`, harness `dca07d1`: two fresh Debian 13/Fedora 44 positive lifecycles, two exact producer refusals and all six named package controls completed with original controller/grade exits 0 and confirmed cleanup. Earlier [installation run 03](../experiments/formal/installation-release-run-03.md) retains frozen `a5dbda7a`; [legacy-cgroup run 01](../experiments/formal/installation-acceptance-run-01.md) remains inconclusive | Tested on these exact packages; other release gates remain open; not deployment qualification |
+| QUAL-INSTALL | Installation behavior | running-installation acceptance | Current product `84a585d` / packaged `34591b7`: ten fresh exact-package cells completed with original commands/grades 0 and cleanup; see the [service release ledger](../milestones/service-release-evidence.md). Historical [cadence installation checkpoint](https://github.com/kmosoti/FabricO11y/wiki/Experiment-formal-installation-cadence-results-01/42e7da25ec0db4993b5f8c335b82da3dcf0a2441), product `108945d`, packaged `1cb0c18`, harness `dca07d1`: two fresh Debian 13/Fedora 44 positive lifecycles, two exact producer refusals and all six named package controls completed with original controller/grade exits 0 and confirmed cleanup. Earlier [installation run 03](../experiments/formal/installation-release-run-03.md) retains frozen `a5dbda7a`; [legacy-cgroup run 01](../experiments/formal/installation-acceptance-run-01.md) remains inconclusive | Tested on these exact packages; other release gates remain open; not deployment qualification |
 | QUAL-H | Harness correctness | runner limits, rate oracle | Existing suites plus [console-command admission](../experiments/formal/console-command-admission-run-01.md): initial native HTTP 429 preserved, independent legacy schedule rejected, 50 targeted controls and native successor smoke exited 0. [Console provenance controls](../experiments/formal/console-provenance-protocol.md) at `76d9f2b`: nine primitive, eight adapter and one readiness controls plus legacy suites exited 0; skipped-hash, snapshot-inventory and copy-race failures remain preserved. At `7508a989`, native browser entry composition and a finite real-browser transport diagnostic exercised release ordering and witnessed query cancellation; cancellations receive no HTTP-header credit, while every received response retains all original header checks. The workflow binds both browser calls to the caller-pinned native helper. [R3 exposure controls](../experiments/benchmarks/soak-protocol-r3.md) retain their own execution requirements | Finite harness evidence; current acceptance remains tracked by [#33](https://github.com/kmosoti/FabricO11y/issues/33), with no browser or soak credit from these source controls |
 
 For `QUAL-H`, the [pinned custody caller](../experiments/formal/native-cutoff-adapter-protocol.md)
@@ -219,8 +227,10 @@ from the [continuation](https://github.com/kmosoti/FabricO11y/wiki/Experiment-fo
 The [fresh-owner guide protocol](../experiments/formal/owner-walkthrough-protocol.md)
 also has a [native caller](../../tools/qualification/owner_walkthrough.py) and
 [independent record/query joins](../../tools/qualification/owner_evidence.py).
-These are executable prerequisites, not a new `QUAL-INSTALL` result; complete
-fresh native walkthrough acceptance remains pending.
+The callers alone are prerequisites, not a new `QUAL-INSTALL` result. Both
+complete fresh-owner directions now have original and independent four-stage
+query/custody grades 0 for product `84a585d` / packaged snapshot `34591b7`; see
+the [service release ledger](../milestones/service-release-evidence.md).
 
 The additional CLI self-observation capability is tracked separately in
 [its protocol and findings](../experiments/formal/server-self-observation-findings.md).

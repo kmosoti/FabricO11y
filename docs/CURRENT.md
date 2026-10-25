@@ -1,5 +1,21 @@
 # Current project state
 
+The exact candidate is product `84a585d` / packaged snapshot `34591b7`.
+Both complete fresh owner directions now have original and independent
+four-stage query/custody grades0 with confirmed shutdown. Native installation,
+70-row browsers, six main and four million-record query cells are complete.
+All three full bounded pressure cells also completed with original commands and
+independent grades 0. All twelve required alpha gate groups have evidence; final
+bundle and publication closure remain open. The
+[service release ledger](milestones/service-release-evidence.md) records exact
+artifacts, tested environments and explicit B6/B7 deferrals. No deployment
+profile is qualified and publication remains the owner's final decision.
+
+## Earlier caller checkpoints
+
+The following retained checkpoints describe earlier failures and their required
+reruns. Current completion state is in the ledger above; old failures stay failed.
+
 The Debian-server/Fedora-edge owner direction completed with original exit0,
 independent four-checkpoint custody/query grading0 and confirmed cleanup. The
 fresh reversed direction reached upgrade, then the remote worker rejected the
@@ -613,8 +629,8 @@ No current deployment profile is qualified or release tag published.
 ## Implemented
 
 FabricO11y collects, durably forwards, retains and queries Linux telemetry. It is
-usable for bounded development trials; no current deployment profile is qualified
-and no release tag has been produced.
+usable for bounded development trials; no current deployment profile is qualified.
+The service release ledger records candidate acceptance and its explicit limits.
 The [R3 runtime integration](experiments/benchmarks/soak-runtime-protocol.md)
 separates actual offered exposure, native UI continuity, a stopped raw checkpoint
 and independent grading. S1-03 supplies finite measured headroom; FULL admission,
@@ -921,7 +937,9 @@ The caller now observes the public console page over verified TLS after a
 `Type=exec` start, within the existing phase allocation, before testing the stale
 session exactly once. Certificate/HTTP failures remain terminal, and no login or
 authorization outcome is retried. Native mechanism controls and the fresh reverse
-walkthrough remain required; the earlier failed trial receives no credit.
+walkthrough subsequently exited 0; `alert-owner-fedora-debian-04` has independently
+graded four-stage custody and query evidence. The earlier failed trial receives
+no credit.
 
 
 The first full pressure cell preserved exact18,000-Batch delivery and passed
@@ -933,5 +951,8 @@ credentials remained401. The pressure caller now places all200 probes at
 half-second deadlines with a quarter-second phase, within the registered
 at-least0.2-second spacing and original180-second offered window. The existing
 post-round wait remains, with no refusal retry or changed acceptance outcome.
-Fresh smoke and all three full pressure cells remain required; the original
-failed cell is retained without acceptance credit.
+The fresh smoke and full cells `alert-pressure-a11fa001-02`,
+`alert-pressure-a11fa002-02` and `alert-pressure-a11fa003-02` subsequently completed
+with original commands and independent grades 0. Every full cell offered work for
+180 seconds, retained all 200 rejection rounds and covered every measured
+management slot. The original failed cell retains no acceptance credit.
