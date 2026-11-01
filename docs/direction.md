@@ -17,5 +17,3 @@ control with explicit analytical progress. Forecasts need temporal holdouts.
 
 Prove small semantic kernels with relevant Lean/Aeneas/Verus paths and connect
 proofs to exact Rust code. Measure performance against equivalent baselines.
-No existing proof sketch establishes product correctness. Archived Fabric code
-can be reconsidered only through a new evidence-supported decision.

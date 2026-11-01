@@ -15,3 +15,9 @@ permission from a successful check. Preserve secrets and user-owned data.
 
 Use the existing user installation (currently ~/.cargo/bin/jj); do not require
 a system package or change the global shell PATH for this repository.
+
+Keep commentary brief and focused on outcomes, decisions and material blockers.
+Write project documentation for its readers: product behavior, interfaces, setup
+and contribution procedures. Keep owner-specific preferences, conversation
+history, cleanup receipts and agent process narration out of project docs.
+Put agent operating rules in AGENTS.md and operational records in local artifacts.

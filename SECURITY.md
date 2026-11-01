@@ -6,7 +6,4 @@ Include the exact commit, environment and a synthetic reproducer. Exclude secret
 credentials and real telemetry. If private reporting is unavailable, request a
 private contact without publishing exploit details.
 
-This repository currently contains development tooling, not a deployed telemetry
-product. Archived releases are unsupported.
-Identify the affected commit. Verification is not a sandbox;
-run untrusted candidates in a separately isolated environment without credentials.
+Run untrusted candidates in a separately isolated environment without credentials.

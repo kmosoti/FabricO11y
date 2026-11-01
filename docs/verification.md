@@ -1,15 +1,23 @@
 # Verification
 
-Fast: formatting, compilation, tests and repository integration validation.
-Medium: fast plus Clippy, separate doctests and Cargo dependency-tree inspection.
-Extensive: medium plus disposable Jujutsu preservation/exclusion/rewrite controls.
-No whole-product, Fedora-kernel, security-audit or formal-verification claim follows.
-Dependency-tree inspection is not a vulnerability/license audit. Those integrations
-and controlled model skill evaluations remain explicitly pending.
+| Tier | Checks |
+| --- | --- |
+| Fast | Formatting, compilation, tests and repository configuration |
+| Medium | Fast checks, Clippy, separate doctests and dependency-tree inspection |
+| Extensive | Medium checks, Jujutsu archive/exclusion/rewrite tests and candidate refusal tests |
 
-Candidate capture records exact commit ID, compiler, jj version and source-change
-status. Verification refuses stale captures, materializes the exact commit into an
-owned workspace, checks its diff against the parent, runs medium checks with
-separate build output, rechecks source equality and writes a receipt next to the
-capture. Missing tools and nonzero exits are failures, not fabricated evidence.
-Source is rechecked but not an OS sandbox; untrusted execution needs separate isolation.
+Capture and verify a candidate using an absolute artifact path outside the source tree:
+
+```sh
+cargo xtask candidate capture /tmp/fabric-candidate.txt
+cargo xtask candidate verify /tmp/fabric-candidate.txt
+```
+
+Capture records the commit ID, compiler, Jujutsu version and executable identity.
+Verification rejects stale captures, creates a separate workspace, compares its
+contents with the captured commit and runs medium checks with separate build output.
+It rechecks the source and writes a receipt beside the capture. Existing verification
+directories are preserved and cause verification to stop.
+
+Verification executes candidate code; isolate untrusted candidates without credentials.
+Dependency-tree inspection lists dependencies and does not audit vulnerabilities or licenses.
