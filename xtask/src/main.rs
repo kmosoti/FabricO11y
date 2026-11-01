@@ -4,7 +4,7 @@ use std::{
     process::{Command, ExitCode},
 };
 fn output(cmd: &str, args: &[&str], dir: &Path) -> Result<String, String> {
-    let p = Command::new(if cmd == "jj" { "/usr/bin/jj" } else { cmd })
+    let p = Command::new(cmd)
         .args(args)
         .current_dir(dir)
         .output()
@@ -19,7 +19,7 @@ fn output(cmd: &str, args: &[&str], dir: &Path) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&p.stdout).trim().to_owned())
 }
 fn run(cmd: &str, args: &[&str], dir: &Path) -> Result<(), String> {
-    let mut command = Command::new(if cmd == "jj" { "/usr/bin/jj" } else { cmd });
+    let mut command = Command::new(cmd);
     command.args(args).current_dir(dir);
     let original = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -39,6 +39,23 @@ fn run(cmd: &str, args: &[&str], dir: &Path) -> Result<(), String> {
     }
 }
 fn capture(root: &Path) -> Result<String, String> {
+    use std::os::unix::fs::PermissionsExt;
+    let tool = env::split_paths(&env::var_os("PATH").ok_or("PATH missing")?)
+        .map(|p| p.join("jj"))
+        .find(|p| {
+            p.is_file()
+                && p.metadata()
+                    .is_ok_and(|m| m.permissions().mode() & 0o111 != 0)
+        })
+        .ok_or("jj not found on PATH")?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let identity = output(
+        "sha256sum",
+        &["--", tool.to_str().ok_or("non-UTF8 tool path")?],
+        root,
+    )?;
+
     output("jj", &["util", "snapshot"], root)?;
     let conflicts = output(
         "jj",
@@ -56,14 +73,15 @@ fn capture(root: &Path) -> Result<String, String> {
         return Err("candidate has conflicts".into());
     }
     Ok(format!(
-        "{}\n{}\n{}\n",
+        "{}\n{}\n{}\n{}\n",
         output(
             "jj",
             &["log", "--no-graph", "-r", "@", "-T", "commit_id"],
             root
         )?,
         output("rustc", &["--version", "--verbose"], root)?,
-        output("jj", &["--version"], root)?
+        output("jj", &["--version"], root)?,
+        identity
     ))
 }
 fn validate(root: &Path) -> Result<(), String> {
