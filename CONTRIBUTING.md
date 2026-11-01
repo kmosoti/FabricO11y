@@ -1,7 +1,6 @@
 # Contributing
 
-Use jj, native Cargo and the three check tiers. The first milestone is tooling;
-product increments start after its merge. Do not rewrite or publish archive bookmarks.
+Use jj, native Cargo and the three check tiers. Do not rewrite or publish archive bookmarks.
 
 Configure your own jj identity before publication. `jj util snapshot` captures
 changes; `jj log --no-graph -r @ -T commit_id` identifies the candidate. Check

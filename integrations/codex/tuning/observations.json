@@ -1,5 +1,5 @@
 {
-  "foundation-skill-ablation": {
+  "supplied-method-ablation": {
     "scope": "prompt-level supplied-method ablation; no held-out/native-routing claim",
     "methods": {
       "original": {
@@ -22,7 +22,7 @@
       }
     }
   },
-  "foundation-skill-heldout": {
+  "held-out-wording": {
     "scope": "prompt-level supplied-method ablation; no held-out/native-routing claim",
     "methods": {
       "original": {

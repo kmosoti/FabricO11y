@@ -1,13 +1,13 @@
 # FabricO11y
 
-Fedora-first, Rust-native evidence platform: new development foundation.
+FabricO11y is a planned Fedora-first, Rust-native evidence platform.
 
 The SDK, Spindle, analytical storage and agent API are **not implemented**.
 The former product is preserved locally at jj bookmark `archive/202f8f5c23d04fdad1215b9e59646a4fae5b4c88`;
 dirty local worktrees were subsequently deleted at the owner’s request. No old runtime is reused.
 
 Read [product direction](docs/direction.md), [contributing](CONTRIBUTING.md) and
-[verification](docs/verification.md). Local backlog/ holds work after this foundation merges.
+[verification](docs/verification.md). Local backlog/ holds the product implementation programme.
 
 ```sh
 cargo xtask doctor

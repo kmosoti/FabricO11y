@@ -7,6 +7,6 @@ credentials and real telemetry. If private reporting is unavailable, request a
 private contact without publishing exploit details.
 
 This repository currently contains development tooling, not a deployed telemetry
-product. Archived releases are historical and are not supported by this reset.
-Report against the current foundation commit. Verification is not a sandbox;
+product. Archived releases are unsupported.
+Identify the affected commit. Verification is not a sandbox;
 run untrusted candidates in a separately isolated environment without credentials.

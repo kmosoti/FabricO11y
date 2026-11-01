@@ -17,7 +17,7 @@ These simple tasks do not establish a useful improvement. Retain the installed
 original skill. The shorter candidate is available for follow-up native-routing
 and held-out evaluation; its duplicated front matter is removed in the candidate.
 
-Artifacts: /data/FabricO11y/evidence/foundation-skill-ablation. The runner keeps
+Historical artifact directory: /data/FabricO11y/evidence/foundation-skill-ablation. The runner keeps
 actual exits, elapsed times, usage and raw replies. Before expanding evaluation,
 fix ambiguous grading through explicit multi-label/rationale criteria and add
 held-out variants. Do not silently rewrite historical grades.
