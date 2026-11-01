@@ -172,6 +172,12 @@ fn verify(root: &Path, file: &Path) -> Result<(), String> {
     );
     fs::write(file.with_extension("receipt"), receipt).map_err(|e| e.to_string())?;
     if result.is_ok() {
+        fs::create_dir_all(root.join(".local")).map_err(|e| e.to_string())?;
+        fs::copy(
+            file.with_extension("receipt"),
+            root.join(".local/last-verification"),
+        )
+        .map_err(|e| e.to_string())?;
         output(
             "jj",
             &[
