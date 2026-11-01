@@ -1,7 +1,7 @@
 import tempfile,pathlib,subprocess,shutil
 with tempfile.TemporaryDirectory(prefix='fabric-jj-') as d:
  p=pathlib.Path(d)
- def jj(*a):return subprocess.check_output(['jj','--config','user.name="Fixture"','--config','user.email="fixture@example.invalid"',*a],cwd=p,text=True,stderr=subprocess.DEVNULL).strip()
+ def jj(*a):return subprocess.check_output(['/usr/bin/jj','--config','user.name="Fixture"','--config','user.email="fixture@example.invalid"',*a],cwd=p,text=True,stderr=subprocess.DEVNULL).strip()
  jj('git','init','--colocate')
  with (p/'.git/info/exclude').open('a') as f:f.write('\n/backlog/*\n')
  (p/'backlog').mkdir();(p/'backlog/private').write_text('local')

@@ -4,7 +4,7 @@ use std::{
     process::{Command, ExitCode},
 };
 fn output(cmd: &str, args: &[&str], dir: &Path) -> Result<String, String> {
-    let p = Command::new(cmd)
+    let p = Command::new(if cmd == "jj" { "/usr/bin/jj" } else { cmd })
         .args(args)
         .current_dir(dir)
         .output()
@@ -19,7 +19,7 @@ fn output(cmd: &str, args: &[&str], dir: &Path) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&p.stdout).trim().to_owned())
 }
 fn run(cmd: &str, args: &[&str], dir: &Path) -> Result<(), String> {
-    let mut command = Command::new(cmd);
+    let mut command = Command::new(if cmd == "jj" { "/usr/bin/jj" } else { cmd });
     command.args(args).current_dir(dir);
     let original = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()

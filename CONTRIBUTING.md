@@ -12,3 +12,6 @@ backlog/ is local, excluded using .git/info/exclude. Never force-track it.
 /data/FabricO11y is preferred for artifacts, not required for routine builds.
 A passing check is not publication authorization. Use an explicitly named bookmark
 for any authorized push. Record exact candidate, compiler and checks in PRs.
+
+Fedora system Jujutsu is /usr/bin/jj (RPM jj-cli). If a Cargo-installed jj
+shadows it on PATH, use /usr/bin/jj explicitly. CI uses the same Fedora package.
