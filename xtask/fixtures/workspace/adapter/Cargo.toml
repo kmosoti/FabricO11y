@@ -1,9 +1,0 @@
-[package]
-name = "fx-adapter"
-version = "0.1.0"
-edition = "2024"
-publish = false
-
-[dependencies]
-fx-core = { path = "../core" }
-fx-ports = { path = "../ports" }

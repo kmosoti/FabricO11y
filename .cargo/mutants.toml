@@ -1,5 +1,0 @@
-# cargo-mutants configuration (read by `cargo xtask cargo-mutants`).
-# Kani proof harnesses are checkers compiled only under cfg(kani); mutating
-# them tests nothing in ordinary builds. They have their own mutants
-# (M-KANI-* in xtask/mutants.json).
-exclude_globs = ["crates/fabric-core/src/proofs.rs"]

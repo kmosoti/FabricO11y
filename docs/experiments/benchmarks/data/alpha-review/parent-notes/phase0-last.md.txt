@@ -1,7 +1,0 @@
-**Phase 0 is ready for independent review.** I froze the alpha contract and gates in [docs/ALPHA.md](/home/kmosoti/projects/fabric_o11y/docs/ALPHA.md), added the seeded source and bounded runner, and recorded a fresh FOL2 baseline with a [compact evidence summary](/home/kmosoti/projects/fabric_o11y/docs/experiments/benchmarks/data/alpha-phase0/summary.json).
-
-The runner now rejects nonfinite limits before execution and catches fast-exit disk, duration, and output breaches. Positive controls pass; injected overrate, missing-source, and budget violations fail. Its filesystem limit is a polling check, so it cannot guarantee a hard quota for arbitrary commands.
-
-**Local checks exited 0:** `cargo test --offline --locked --all-features` with 25 integration tests (using the recorded `CARGO_HOME`), 13 runner tests, 4 workload tests, `cargo fmt --all --check`, `bun tools/docs/check.mjs`, and `git diff --check`. The fresh baseline’s three measured write and separate-process verify trials also exited 0. The new Rust CI workflow has not run remotely.
-
-The unconnected FAB1 journal draft remains in place and unqualified. Phase 1 and every fleet gate remain pending. I made no commit, push, or tag.

@@ -1,1 +1,0 @@
-The reported link target now exists. I ran `bun tools/docs/check.mjs`; it exited **0** with “Documentation checks passed.” The hook failure was transient, and I made no documentation edits.

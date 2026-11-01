@@ -1,7 +1,0 @@
-{
-  "omitted": [
-    "lifecycle/events.fol"
-  ],
-  "reason": "Reproducible binary journal omitted; original byte SHA remains in lifecycle/SHA256SUMS.json and all input JSON, command results and source hashes are retained.",
-  "reproduce": "python3 -B tools/bench/run_prototype.py target/prototype-demo"
-}

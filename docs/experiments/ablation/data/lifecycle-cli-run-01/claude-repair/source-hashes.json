@@ -1,9 +1,0 @@
-{
-  "/tmp/fabric-cost/tools/storage-probe/src/bin/common/mod.rs": "fe1c2127ea72430698e9fb1f4da5f918b21e5f6c5529435a919f6e79e003f7cb",
-  "/tmp/fabric-cost/tools/storage-probe/src/bin/receipt-cost.rs": "b227f52b4c4e6f8c9b2f58427774372e4a40402dca54a902200cc542a4fb97c7",
-  "/tmp/fabric-cost/tools/storage-probe/src/bin/sidecar-cost.rs": "37fd986a1a78b71d0e05ef56b56b0efb316ac566fb304a7ef654b8dea01d38b8",
-  "/tmp/fabric-cost/tools/layout-probe/src/bin/layout-cost.rs": "765aa6092ec2f5647357eee7e1373434651bf04a651c70eea3f14de9dc7b225c",
-  "/tmp/fabric-cost/tools/bench/run_research_costs.py": "87e257c7ba17b1c7c04abc29f92be5afcbca7fb19fd32198ce91724d2e5b363c",
-  "/tmp/fabric-cost/tools/bench/test_research_costs.py": "e5ba85bf6e7f3a3fe0b81cdd2616568bef7707e8cabcb4c378a98477eaad2d5f",
-  "/tmp/fabric-cli-b/tools/storage-probe/src/bin/fabric-research.rs": "a75d6e6585649d2c75172085a3e4c7761db4741e22f90198798f7a98628fc2ba"
-}

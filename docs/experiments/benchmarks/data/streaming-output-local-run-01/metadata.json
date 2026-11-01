@@ -1,9 +1,0 @@
-{
-  "baseline_binary_sha256": "47e03830ee1d5ecf7ed53880050e9c33a2bd98ca498a816bbf4ba7dcd158bbea",
-  "candidate_binary_sha256": "efdca8dfb0369ffb884ad6573a0f4d02cee10bfb4401dd4c854570e65463021f",
-  "cpu_affinity": [
-    0,
-    1
-  ],
-  "address_space_limit_bytes": 2147483648
-}

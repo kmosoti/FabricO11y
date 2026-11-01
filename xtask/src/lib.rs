@@ -1,86 +1,9 @@
-//! Repository checks that read Cargo metadata. Each check returns violations
-//! with a stable category code so tests can assert *why* a fixture failed,
-//! not merely that a command exited non-zero.
-
-pub mod browser_bidi_viewport;
-pub mod browser_defect;
-pub mod browser_enter;
-pub mod census;
-pub mod checks;
-pub mod console_source;
-pub mod custody;
-mod digest;
-pub mod evidence;
-pub mod layers;
-pub mod metadata;
-pub mod mutants;
-pub mod preflight;
-pub mod purity;
-pub mod receipts;
-pub mod tool_install;
-
-use serde_json::Value;
-use std::fmt;
-use std::path::Path;
-
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Violation {
-    /// Stable category, e.g. `LAYER_FORBIDDEN_EDGE`.
-    pub code: &'static str,
-    pub subject: String,
-    pub detail: String,
-}
-
-impl Violation {
-    pub fn new(code: &'static str, subject: impl Into<String>, detail: impl Into<String>) -> Self {
-        Self {
-            code,
-            subject: subject.into(),
-            detail: detail.into(),
-        }
-    }
-}
-
-impl fmt::Display for Violation {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} {}: {}", self.code, self.subject, self.detail)
-    }
-}
-
-fn read_json(path: &Path) -> Result<Value, String> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("cannot read {}: {e}", path.display()))?;
-    serde_json::from_str(&text).map_err(|e| format!("{}: invalid JSON: {e}", path.display()))
-}
-
-/// Run the layer gate. `Err` means the check could not run, which is never a pass.
-pub fn check_layers(
-    manifest: &Path,
-    policy: &Path,
-    options: metadata::Options,
-) -> Result<Vec<Violation>, String> {
-    let policy = layers::Policy::parse(&read_json(policy)?)?;
-    let metadata = metadata::load(manifest, options)?;
-    let mut violations = layers::check(&metadata, &policy);
-    violations.sort();
-    violations.dedup();
-    Ok(violations)
-}
-
-/// Run the core-purity gate. `Err` means the check could not run.
-pub fn check_core_purity(
-    manifest: &Path,
-    policy: &Path,
-    options: metadata::Options,
-) -> Result<Vec<Violation>, String> {
-    let policy = purity::Policy::parse(&read_json(policy)?)?;
-    let metadata = metadata::load(manifest, options)?;
-    let mut violations = purity::check(&metadata, &policy);
-    violations.sort();
-    violations.dedup();
-    Ok(violations)
-}
-
-pub fn sha256_hex(bytes: &[u8]) -> String {
-    digest::hex(&digest::sha256(bytes))
+//! Small repository integration predicates.
+/// A concrete Git-backend commit is a complete forty-digit hexadecimal SHA-1.
+/// ```
+/// assert!(xtask::valid_commit(&"a".repeat(40)));
+/// assert!(!xtask::valid_commit("change-id"));
+/// ```
+pub fn valid_commit(id: &str) -> bool {
+    id.len() == 40 && id.bytes().all(|b| b.is_ascii_hexdigit())
 }

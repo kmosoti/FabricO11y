@@ -1,7 +1,0 @@
-[package]
-name = "alpha-log-reader-review"
-version = "0.0.0"
-edition = "2024"
-
-[dependencies]
-libc = "=0.2.189"

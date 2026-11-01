@@ -1,6 +1,0 @@
-# Valid hexagonal fixture workspace. Tests copy it, inject one defect, and
-# assert the stable violation category the gates report.
-[workspace]
-members = ["core", "ports", "app", "adapter", "root"]
-exclude = ["helper", "wrapper", "fake-tokio"]
-resolver = "3"
