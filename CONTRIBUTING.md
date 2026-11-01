@@ -15,3 +15,8 @@ for any authorized push. Record exact candidate, compiler and checks in PRs.
 
 Fedora system Jujutsu is /usr/bin/jj (RPM jj-cli). If a Cargo-installed jj
 shadows it on PATH, use /usr/bin/jj explicitly. CI uses the same Fedora package.
+
+The workstation jj-cli RPM is from Copr aldantanneo/jj-vcs, not standard
+Fedora repositories. CI uses that same provider, restricted to jj-cli, with
+a pinned public-key checksum and RPM signature checking. It does not download
+a standalone executable or install a Cargo copy.
