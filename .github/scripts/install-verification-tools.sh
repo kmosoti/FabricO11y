@@ -7,8 +7,10 @@ repo_root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 dnf -y install curl git tar zstd unzip make gcc gcc-c++ gmp-devel opam bubblewrap time perf
 mkdir -p "$FABRIC_PROOF_TOOLS/downloads"
 fetch() {
-    curl --proto '=https' --tlsv1.2 -fLsS "$1" -o "$FABRIC_PROOF_TOOLS/downloads/$2"
-    printf '%s  %s\n' "$3" "$FABRIC_PROOF_TOOLS/downloads/$2" | sha256sum -c -
+    if ! printf '%s  %s\n' "$3" "$FABRIC_PROOF_TOOLS/downloads/$2" | sha256sum -c - 2>/dev/null; then
+        curl --proto '=https' --tlsv1.2 -fLsS "$1" -o "$FABRIC_PROOF_TOOLS/downloads/$2"
+        printf '%s  %s\n' "$3" "$FABRIC_PROOF_TOOLS/downloads/$2" | sha256sum -c -
+    fi
 }
 fetch https://github.com/leanprover/lean4/releases/download/v4.35.0/lean-4.35.0-linux.tar.zst lean-4.35.0-linux.tar.zst 7289597a44543246c9227b8cae501767e095ce17f6d448b95fc4a8dc97268f6d
 fetch https://github.com/verus-lang/verus/releases/download/release%2F0.2026.10.26.d17fbd0/verus-0.2026.10.26.d17fbd0-x86-linux.zip verus-0.2026.10.26.d17fbd0-x86-linux.zip 361674d05f0c1b2c9c3f4d5bc56a8fb2ab9241ed0cceca27780668c292bb4940
