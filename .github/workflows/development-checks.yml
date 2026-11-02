@@ -24,7 +24,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /github/home/.local/share/fabrico11y/proof-tools
-          key: native-fedora44-d68cae91-${{ runner.arch }}-${{ hashFiles('.github/scripts/install-verification-tools.sh', '.github/scripts/install-toolchain.sh', 'verification/aeneas.opam.lock', 'rust-toolchain.toml') }}
+          key: native-fedora44-d68cae91-${{ runner.arch }}-${{ hashFiles('.github/workflows/development-checks.yml', '.github/scripts/install-verification-tools.sh', '.github/scripts/install-toolchain.sh', 'verification/aeneas.opam.lock', 'rust-toolchain.toml') }}
       - name: Install pinned native verification tools
         run: sh .github/scripts/install-verification-tools.sh
       - name: Initialize candidate workspace
