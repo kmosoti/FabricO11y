@@ -28,3 +28,23 @@ Write project documentation for its readers: product behavior, interfaces, setup
 and contribution procedures. Keep owner-specific preferences, conversation history,
 cleanup receipts and agent process narration out of project docs. Put agent operating
 rules in AGENTS.md and operational records in local artifacts.
+
+For substantive architecture or optimization, write a requirements-only brief
+before selecting a mechanism: observable behavior, invariants, workloads,
+acceptance criteria and uncertainty. Treat current code as a measured baseline.
+Before extensive refinement, implement structurally different candidates and
+record differences in algorithm, representation, ownership and data flow.
+Record a parent, captured concrete source, governing contract digest, expected
+advantage and a falsifying experiment. Retain failed candidates and earlier
+alternatives in explicit local artifact directories; do not commit experiment
+records or backlog. Use `cargo xtask search` for the bounded algorithm suite and
+`cargo xtask candidate` for repository capture and isolated verification.
+
+Evaluate compilation/interface conformance, independent correctness/proofs,
+development workloads, then held-out workloads after selection. Incorrect or
+incomplete candidates cannot enter performance ranking. A changed contract
+creates a new evaluation revision. Candidate changes cannot modify the frozen
+evaluator or weaken acceptance. Compare per-workload latency, throughput, memory
+and setup costs without an arbitrary composite score. Report token/evaluation
+costs and unavailable usage metrics. Choose a search strategy from measured
+quality/cost evidence; do not assume retained alternatives improve this project.

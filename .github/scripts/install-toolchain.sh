@@ -12,3 +12,4 @@ mkdir -p "$HOME/.local/bin"
 tar -xzf /tmp/jj.tar.gz -C "$HOME/.local/bin" ./jj
 "$HOME/.local/bin/jj" --version | grep -Fx 'jj 0.46.0-7d382314f9420b4b8d932245b49c99492c812b9f'
 printf '%s\n' "$HOME/.local/bin" >> "$GITHUB_PATH"
+printf '%s\n' "$HOME/.cargo/bin" >> "$GITHUB_PATH"

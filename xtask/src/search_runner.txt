@@ -1,0 +1,20 @@
+#![forbid(unsafe_code)]
+mod candidate;
+use std::io::Read;
+fn main() {
+    let mut input = String::new(); std::io::stdin().read_to_string(&mut input).unwrap();
+    let mut words = input.split_whitespace();
+    let n: usize = words.next().unwrap().parse().unwrap();
+    let q: usize = words.next().unwrap().parse().unwrap();
+    let k: usize = words.next().unwrap().parse().unwrap();
+    let repeats: usize = words.next().unwrap().parse().unwrap();
+    let data: Vec<u64> = words.by_ref().take(n).map(|s| s.parse().unwrap()).collect();
+    let queries: Vec<u64> = words.take(q).map(|s| s.parse().unwrap()).collect();
+    let mut result = Vec::new();
+    // Setup in solve is deliberately included; parser and process startup are not.
+    for _ in 0..3 { std::hint::black_box(candidate::solve(std::hint::black_box(&data), std::hint::black_box(&queries), std::hint::black_box(k))); }
+    let start = std::time::Instant::now();
+    for _ in 0..repeats { result = std::hint::black_box(candidate::solve(std::hint::black_box(&data), std::hint::black_box(&queries), std::hint::black_box(k))); }
+    eprintln!("compute_ns={}", start.elapsed().as_nanos());
+    for value in result { print!("{value} "); }
+}

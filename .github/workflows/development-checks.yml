@@ -11,6 +11,26 @@ concurrency:
   group: development-checks-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  native-acceptance:
+    runs-on: ubuntu-24.04
+    container:
+      image: registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install Cargo and Jujutsu
+        run: sh .github/scripts/install-toolchain.sh
+      - name: Install pinned native verification tools
+        run: sh .github/scripts/install-verification-tools.sh
+      - name: Initialize candidate workspace
+        run: jj git init --colocate
+      - name: Architecture, tests, proofs and fuzz regressions
+        run: /github/home/.cargo/bin/cargo xtask check --tier acceptance
+      - name: Fuzz smoke campaigns
+        if: github.event_name != 'schedule'
+        run: /github/home/.cargo/bin/cargo xtask fuzz smoke /tmp/fabric-fuzz-smoke
+      - name: Scheduled fuzz campaigns
+        if: github.event_name == 'schedule'
+        run: /github/home/.cargo/bin/cargo xtask fuzz scheduled /tmp/fabric-fuzz-scheduled
   verify:
     runs-on: ubuntu-24.04
     container:

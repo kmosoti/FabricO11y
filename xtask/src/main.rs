@@ -3,6 +3,13 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, ExitCode},
 };
+mod architecture;
+mod evidence;
+mod extraction;
+mod fuzz;
+mod profile;
+mod proof;
+mod search;
 #[cfg(test)]
 mod workflow_tests;
 fn output(cmd: &str, args: &[&str], dir: &Path) -> Result<String, String> {
@@ -93,7 +100,7 @@ fn capture_to(root: &Path, file: &Path) -> Result<(), String> {
     capture(root).and_then(|v| fs::write(file, v).map_err(|e| e.to_string()))
 }
 fn checks(tier: &str, root: &Path) -> Result<(), String> {
-    if !["fast", "medium", "extensive"].contains(&tier) {
+    if !["fast", "medium", "extensive", "acceptance"].contains(&tier) {
         return Err("unknown tier".into());
     }
     run("cargo", &["fmt", "--all", "--", "--check"], root)?;
@@ -127,6 +134,23 @@ fn checks(tier: &str, root: &Path) -> Result<(), String> {
                 "workflow_",
                 "--",
                 "--ignored",
+            ],
+            root,
+        )?;
+    }
+    if tier == "acceptance" {
+        architecture::check(root)?;
+        proof::check("all", root)?;
+        proof::check("selftest", root)?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_nanos();
+        let artifacts = root.join(format!(".local/acceptance-fuzz-{stamp}"));
+        fuzz::cli(
+            &[
+                "replay",
+                artifacts.to_str().ok_or("non-UTF8 artifact path")?,
             ],
             root,
         )?;
@@ -169,7 +193,7 @@ fn verify(root: &Path, file: &Path) -> Result<(), String> {
         {
             return Err("materialization differs".into());
         }
-        checks("medium", &work)?;
+        checks("acceptance", &work)?;
         output("jj", &["util", "snapshot"], &work)?;
         if !output(
             "jj",
@@ -183,6 +207,24 @@ fn verify(root: &Path, file: &Path) -> Result<(), String> {
         if capture(root)? != expected {
             return Err("candidate changed during verification".into());
         }
+        let artifacts = work.join(".local");
+        if artifacts.exists() {
+            let retained = parent.join(format!("evidence-{id}"));
+            if retained.exists() {
+                return Err("preserve existing candidate evidence".into());
+            }
+            fs::rename(artifacts, retained).map_err(|e| e.to_string())?;
+        }
+        output(
+            "jj",
+            &[
+                "workspace",
+                "forget",
+                work.file_name().unwrap().to_str().unwrap(),
+            ],
+            root,
+        )?;
+        fs::remove_dir_all(&work).map_err(|e| e.to_string())?;
         Ok(())
     })();
     let receipt = format!(
@@ -200,41 +242,8 @@ fn verify(root: &Path, file: &Path) -> Result<(), String> {
             root.join(".local/last-verification"),
         )
         .map_err(|e| e.to_string())?;
-        output(
-            "jj",
-            &[
-                "workspace",
-                "forget",
-                work.file_name().unwrap().to_str().unwrap(),
-            ],
-            root,
-        )?;
-        fs::remove_dir_all(&work).map_err(|e| e.to_string())?;
     }
     result
-}
-fn prove(root: &Path) -> Result<(), String> {
-    let lean =
-        env::var("FABRIC_LEAN").map_err(|_| "FABRIC_LEAN must name the pinned Lean binary")?;
-    let verus =
-        env::var("FABRIC_VERUS").map_err(|_| "FABRIC_VERUS must name the pinned Verus binary")?;
-    if !output(&lean, &["--version"], root)?.starts_with("Lean (version 4.35.0,") {
-        return Err("expected Lean 4.35.0".into());
-    }
-    if !output(&verus, &["--version"], root)?.contains("Version: 0.2026.10.26.d17fbd0") {
-        return Err("expected Verus 0.2026.10.26.d17fbd0".into());
-    }
-    let axioms = output(&lean, &["-E", "warning", "proofs/Admission.lean"], root)?;
-    let expected = "'Admission.reserve_preserves_bound' depends on axioms: [propext, Quot.sound]\n'Admission.reserve_rejects_overflow' depends on axioms: [propext, Quot.sound]";
-    if axioms != expected {
-        return Err(format!("unexpected Lean axiom report:\n{axioms}"));
-    }
-    println!("{axioms}");
-    run(
-        &verus,
-        &["--no-cheating", "--num-threads", "2", "proofs/admission.rs"],
-        root,
-    )
 }
 fn main() -> ExitCode {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -255,7 +264,12 @@ fn main() -> ExitCode {
             Ok(())
         }
         ["check", "--tier", tier] => checks(tier, &root),
-        ["prove"] => prove(&root),
+        ["prove"] => proof::check("verus", &root),
+        ["prove", checker] => proof::check(checker, &root),
+        ["architecture"] => architecture::check(&root),
+        ["search", rest @ ..] => search::cli(rest, &root),
+        ["fuzz", rest @ ..] => fuzz::cli(rest, &root),
+        ["profile", rest @ ..] => profile::cli(rest, &root),
         ["candidate", "capture", file] => capture_to(&root, Path::new(file)),
         ["candidate", "verify", file] => verify(&root, Path::new(file)),
         _ => Err(
