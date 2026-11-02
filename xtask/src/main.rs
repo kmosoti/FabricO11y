@@ -3,6 +3,8 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, ExitCode},
 };
+#[cfg(test)]
+mod workflow_tests;
 fn output(cmd: &str, args: &[&str], dir: &Path) -> Result<String, String> {
     let p = Command::new(cmd)
         .args(args)
@@ -84,25 +86,16 @@ fn capture(root: &Path) -> Result<String, String> {
         identity
     ))
 }
-fn validate(root: &Path) -> Result<(), String> {
-    for p in [
-        "AGENTS.md",
-        "README.md",
-        "docs/direction.md",
-        ".agents/skills/jj-workflow/SKILL.md",
-        ".codex/agents/research.toml",
-    ] {
-        if !root.join(p).is_file() {
-            return Err(format!("missing {p}"));
-        }
+fn capture_to(root: &Path, file: &Path) -> Result<(), String> {
+    if !file.is_absolute() || file.starts_with(root) {
+        return Err("capture must be an absolute path outside the source tree".into());
     }
-    run("python3", &["tools/validate.py"], root)
+    capture(root).and_then(|v| fs::write(file, v).map_err(|e| e.to_string()))
 }
 fn checks(tier: &str, root: &Path) -> Result<(), String> {
     if !["fast", "medium", "extensive"].contains(&tier) {
         return Err("unknown tier".into());
     }
-    validate(root)?;
     run("cargo", &["fmt", "--all", "--", "--check"], root)?;
     run("cargo", &["check", "--workspace", "--locked"], root)?;
     run("cargo", &["test", "--workspace", "--locked"], root)?;
@@ -124,8 +117,19 @@ fn checks(tier: &str, root: &Path) -> Result<(), String> {
         run("cargo", &["tree", "--locked"], root)?;
     }
     if tier == "extensive" {
-        run("python3", &["tools/test_jj.py"], root)?;
-        run("python3", &["tools/test_candidate.py"], root)?;
+        run(
+            "cargo",
+            &[
+                "test",
+                "-p",
+                "xtask",
+                "--locked",
+                "workflow_",
+                "--",
+                "--ignored",
+            ],
+            root,
+        )?;
     }
     Ok(())
 }
@@ -228,14 +232,7 @@ fn main() -> ExitCode {
             Ok(())
         }
         ["check", "--tier", tier] => checks(tier, &root),
-        ["candidate", "capture", file] => {
-            let p = Path::new(file);
-            if !p.is_absolute() || p.starts_with(&root) {
-                Err("capture must be an absolute path outside the source tree".into())
-            } else {
-                capture(&root).and_then(|v| fs::write(p, v).map_err(|e| e.to_string()))
-            }
-        }
+        ["candidate", "capture", file] => capture_to(&root, Path::new(file)),
         ["candidate", "verify", file] => verify(&root, Path::new(file)),
         _ => Err(
             "usage: doctor | check --tier fast|medium|extensive | candidate capture|verify FILE"
