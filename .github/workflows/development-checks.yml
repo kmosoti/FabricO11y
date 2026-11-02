@@ -1,6 +1,7 @@
 name: Development checks
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
   schedule:
@@ -19,6 +20,11 @@ jobs:
       - uses: actions/checkout@v5
       - name: Install Cargo and Jujutsu
         run: sh .github/scripts/install-toolchain.sh
+      - name: Restore pinned verification tool installation
+        uses: actions/cache@v4
+        with:
+          path: /github/home/.local/share/fabrico11y/proof-tools
+          key: native-fedora44-d68cae91-${{ runner.arch }}-${{ hashFiles('.github/workflows/development-checks.yml', '.github/scripts/install-verification-tools.sh', '.github/scripts/install-toolchain.sh', 'verification/aeneas.opam.lock', 'rust-toolchain.toml') }}
       - name: Install pinned native verification tools
         run: sh .github/scripts/install-verification-tools.sh
       - name: Initialize candidate workspace
@@ -47,8 +53,6 @@ jobs:
           key: rust-beta7-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
       - name: Record execution environment
         run: cat /etc/os-release && uname -a
-      - name: Fast checks
-        run: /github/home/.cargo/bin/cargo xtask check --tier fast
       - name: Medium checks
         run: /github/home/.cargo/bin/cargo xtask check --tier medium
       - name: Extensive checks
