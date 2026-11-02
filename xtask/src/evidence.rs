@@ -33,6 +33,37 @@ pub fn write<T: Serialize>(path: &Path, value: &T) -> Result<(), String> {
     file.write_all(&serde_json::to_vec_pretty(value).map_err(|e| e.to_string())?)
         .map_err(|e| e.to_string())
 }
+/// Resolve the parent before enforcing the artifact boundary, including symlinks.
+pub fn artifact_path(path: &Path, root: &Path, allow_local: bool) -> Result<PathBuf, String> {
+    if !path.is_absolute() {
+        return Err("artifact paths must be absolute".into());
+    }
+    let root = root.canonicalize().map_err(|e| e.to_string())?;
+    let parent = path
+        .parent()
+        .ok_or("artifact has no parent")?
+        .canonicalize()
+        .map_err(|e| e.to_string())?;
+    let resolved = parent.join(path.file_name().ok_or("artifact has no name")?);
+    if resolved.starts_with(&root) && !(allow_local && resolved.starts_with(root.join(".local"))) {
+        return Err("artifacts must be outside tracked source".into());
+    }
+    Ok(resolved)
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn artifact_boundary_resolves_parent_symlinks() {
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(root.path(), external.path().join("link")).unwrap();
+        assert!(
+            super::artifact_path(&external.path().join("link/result"), root.path(), false).is_err()
+        );
+        assert!(super::artifact_path(&external.path().join("result"), root.path(), false).is_ok());
+    }
+}
 pub fn tools() -> PathBuf {
     std::env::var_os("FABRIC_PROOF_TOOLS")
         .map(PathBuf::from)

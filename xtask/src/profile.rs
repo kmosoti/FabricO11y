@@ -9,7 +9,8 @@ pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
     if !directory.is_absolute() || directory.exists() {
         return Err("use a new absolute artifact directory".into());
     }
-    fs::create_dir_all(directory).map_err(|e| e.to_string())?;
+    let directory = evidence::artifact_path(directory, root, true)?;
+    fs::create_dir(&directory).map_err(|e| e.to_string())?;
     let capture = super::capture(root)?;
     let version = super::output("perf", &["--version"], root)?;
     let mut command = Command::new("perf");

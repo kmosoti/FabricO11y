@@ -11,7 +11,8 @@ pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
     if !out.is_absolute() || out.exists() {
         return Err("use a new absolute artifact directory".into());
     }
-    fs::create_dir_all(out).map_err(|e| e.to_string())?;
+    let out = evidence::artifact_path(out, root, true)?;
+    fs::create_dir(&out).map_err(|e| e.to_string())?;
     let binary = evidence::binary("FABRIC_CARGO_FUZZ", "cargo-fuzz-0.13.2/bin/cargo-fuzz");
     let version = super::output(
         binary.to_str().ok_or("non-UTF8 tool path")?,

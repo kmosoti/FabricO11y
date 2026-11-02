@@ -97,7 +97,15 @@ fn capture_to(root: &Path, file: &Path) -> Result<(), String> {
     if !file.is_absolute() || file.starts_with(root) {
         return Err("capture must be an absolute path outside the source tree".into());
     }
-    capture(root).and_then(|v| fs::write(file, v).map_err(|e| e.to_string()))
+    let file = evidence::artifact_path(file, root, false)?;
+    let capture = capture(root)?;
+    use std::io::Write;
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(file)
+        .and_then(|mut file| file.write_all(capture.as_bytes()))
+        .map_err(|e| e.to_string())
 }
 fn checks(tier: &str, root: &Path) -> Result<(), String> {
     if !["fast", "medium", "extensive", "acceptance"].contains(&tier) {

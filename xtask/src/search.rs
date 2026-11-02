@@ -94,14 +94,12 @@ fn register(manifest: &Path, dir: &Path, root: &Path) -> Result<(), String> {
             return Err("structural choices and falsification experiment required".into());
         }
     }
-    if !dir.is_absolute() || dir.starts_with(root) && !dir.starts_with(root.join(".local")) {
-        return Err("candidate directory must be an absolute local artifact path".into());
-    }
+    let dir = evidence::artifact_path(dir, root, true)?;
     let source = fs::read(&proposal.source).map_err(|e| e.to_string())?;
     if source.len() > 64 * 1024 {
         return Err("candidate exceeds 64 KiB".into());
     }
-    fs::create_dir(dir).map_err(|e| e.to_string())?;
+    fs::create_dir(&dir).map_err(|e| e.to_string())?;
     fs::write(dir.join("candidate.rs"), source).map_err(|e| e.to_string())?;
     proposal.source = PathBuf::from("candidate.rs");
     let record = Candidate {
