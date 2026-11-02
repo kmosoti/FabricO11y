@@ -157,6 +157,21 @@ fn checks(tier: &str, root: &Path) -> Result<(), String> {
         )?;
     }
     if tier == "acceptance" {
+        run(
+            "cargo",
+            &[
+                "test",
+                "-p",
+                "xtask",
+                "--locked",
+                "--test",
+                "collection_programs",
+                "--",
+                "--ignored",
+                "--nocapture",
+            ],
+            root,
+        )?;
         architecture::check(root)?;
         proof::check("all", root)?;
         proof::check("selftest", root)?;

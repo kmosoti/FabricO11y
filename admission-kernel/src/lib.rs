@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 //! Checked arithmetic shared by the executable adapter and proof checkers.
 use vstd::prelude::*;
+pub mod delivery;
 
 verus! {
 pub fn reserve(capacity: usize, used: usize, charge: usize) -> (result: Option<usize>)

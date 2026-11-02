@@ -7,3 +7,6 @@
 pub fn valid_commit(id: &str) -> bool {
     id.len() == 40 && id.bytes().all(|b| b.is_ascii_hexdigit())
 }
+
+/// Shared bounded fixtures for collection verification programs.
+pub mod collection_lab;

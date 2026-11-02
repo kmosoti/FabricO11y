@@ -2,4 +2,4 @@
 [crates]
 admission-kernel = ["vstd"]
 fabric = ["serde", "serde_json", "tempfile", "admission-kernel", "rusqlite", "rustix", "sha2"]
-xtask = ["serde", "serde_json", "tempfile", "toml", "proc-macro2"]
+xtask = ["serde", "serde_json", "tempfile", "toml", "proc-macro2", "fabric"]

@@ -154,8 +154,15 @@ impl Client {
         if state.closed {
             return Admission::Closed;
         }
-        let Some(sequence) = state.accepted.checked_add(1) else {
+        if state.accepted == u64::MAX {
             return Admission::Exhausted;
+        }
+        let Some(sequence) = admission_kernel::delivery::next_sequence(
+            state.accepted,
+            state.confirmed,
+            self.shared.config.slots as u64,
+        ) else {
+            return Admission::Full;
         };
         let Some(mut buffer) = state.free.pop() else {
             return Admission::Full;
@@ -211,7 +218,7 @@ impl Client {
     pub fn flush(&self, deadline: Instant) -> Result<Option<Receipt>, String> {
         let mut state = self.shared.state.lock().map_err(|_| "SDK poisoned")?;
         let target = state.accepted;
-        while state.confirmed < target {
+        while !admission_kernel::delivery::covered(state.confirmed, target) {
             let Some(wait) = deadline.checked_duration_since(Instant::now()) else {
                 return Err(format!(
                     "flush timeout; delivery outcome unknown: {:?}",
@@ -282,7 +289,13 @@ fn deliver(shared: Arc<Shared>) {
             Ok(receipt)
                 if receipt.identity.producer == shared.config.producer
                     && receipt.identity.generation == shared.config.generation
-                    && receipt.identity.sequence == buffer.sequence =>
+                    && receipt.identity.sequence == buffer.sequence
+                    && admission_kernel::delivery::confirm_sequence(
+                        state.accepted,
+                        state.confirmed,
+                        receipt.identity.sequence,
+                    )
+                    .is_some() =>
             {
                 state.confirmed = buffer.sequence;
                 state.last_receipt = Some(receipt);

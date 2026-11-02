@@ -173,4 +173,7 @@ the v2 decoder. Journal capability diagnostics identify absent or inaccessible
 live journals; deterministic fixtures cover cursor handling independently.
 
 Changes to collection must preserve the distinct memory-admission and custody
-outcomes. Kernel proofs do not extend to SDK delivery, SQLite or source adapters.
+outcomes. The SDK calls the verified delivery-frontier arithmetic; this does not
+prove its synchronization adapter, SQLite or source adapters. See
+[collection proofs and resource checks](docs/collection-verification.md) for precise
+proof scope, memory bounds and the two executable verification programs.

@@ -41,3 +41,10 @@ permits `propext` and `Quot.sound`. Verus checks the application crate with
 Positive and deliberately false checker controls distinguish checker success
 from unrelated compilation failure. Native checker acceptance does not prove
 the compiler, extractor or checker implementation correct.
+
+`admission-kernel/src/delivery.rs` supplies three additional executable SDK frontier
+functions checked by Verus. `Collection.lean` adds thirteen named model theorems,
+checked with `cargo xtask prove collection`, including an axiom audit and a rejected
+skipped-receipt mutant. The transaction model assumes atomic storage; it is not a
+proof of SQLite. See [collection verification](../docs/collection-verification.md)
+for resource bounds, executable failure programs and the exact proof boundary.
