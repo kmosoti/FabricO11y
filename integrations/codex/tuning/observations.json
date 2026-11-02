@@ -1,0 +1,52 @@
+{
+  "supplied-method-ablation": {
+    "scope": "prompt-level supplied-method ablation; no held-out/native-routing claim",
+    "methods": {
+      "original": {
+        "correct": 10,
+        "runs": 12,
+        "median_seconds": 3.474763133500005,
+        "median_input_tokens": 19982.0
+      },
+      "tuned": {
+        "correct": 10,
+        "runs": 12,
+        "median_seconds": 4.109547146499949,
+        "median_input_tokens": 18329.0
+      },
+      "none": {
+        "correct": 10,
+        "runs": 12,
+        "median_seconds": 3.5343637330000774,
+        "median_input_tokens": 18105.0
+      }
+    }
+  },
+  "held-out-wording": {
+    "scope": "prompt-level supplied-method ablation; no held-out/native-routing claim",
+    "methods": {
+      "original": {
+        "correct": 6,
+        "runs": 6,
+        "median_seconds": 3.8006402555000705,
+        "median_input_tokens": 19981.5
+      },
+      "tuned": {
+        "correct": 6,
+        "runs": 6,
+        "median_seconds": 3.601242817999946,
+        "median_input_tokens": 18327.5
+      },
+      "none": {
+        "correct": 6,
+        "runs": 6,
+        "median_seconds": 3.4331769039999926,
+        "median_input_tokens": 18104.5
+      }
+    }
+  },
+  "original_sha256": "f2819a2921a6836cf4d12475a9d85da0a6bfe0912ac0d67877e78ba11da6b1ce",
+  "candidate_sha256": "7cccf034b197194a88ca63ce71c8f392b62211d6760d887997bcfd1a8286a34b",
+  "codex_cli": "0.166.0",
+  "decision": "retain shared original; no native routing or universal improvement claim"
+}

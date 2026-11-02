@@ -1,8 +1,0 @@
-Apache_2k        lines 2000  raw   84.6  zstd3   5.4  zstd19   3.6  pq.body   6.7  body×2  13.4  tmpl+vars   6.3  tmpl+typed   7.8  templates   12  perline   89.5 dict  37.6
-HDFS_2k          lines 2000  raw  142.9  zstd3  27.0  zstd19  21.4  pq.body  30.3  body×2  60.5  tmpl+vars  30.2  tmpl+typed  31.3  templates 1017  perline  128.1 dict  53.0
-Hadoop_2k        lines 2000  raw  191.5  zstd3   8.7  zstd19   6.7  pq.body  11.0  body×2  21.9  tmpl+vars  10.6  tmpl+typed  10.6  templates  277  perline  163.9 dict 116.6
-Linux_2k         lines 2000  raw  107.2  zstd3   7.5  zstd19   5.6  pq.body   9.7  body×2  19.4  tmpl+vars   8.5  tmpl+typed  11.2  templates  197  perline  102.8 dict  57.4
-OpenSSH_2k       lines 2000  raw  111.6  zstd3   8.3  zstd19   5.5  pq.body  10.6  body×2  21.1  tmpl+vars   8.9  tmpl+typed   9.2  templates  203  perline  111.4 dict  44.5
-Spark_2k         lines 2000  raw   97.1  zstd3   7.0  zstd19   5.0  pq.body   9.0  body×2  18.0  tmpl+vars   8.3  tmpl+typed   8.5  templates  390  perline   99.2 dict  40.7
-Thunderbird_2k   lines 2000  raw  161.6  zstd3  15.3  zstd19  11.5  pq.body  17.8  body×2  35.6  tmpl+vars  16.8  tmpl+typed  19.0  templates  806  perline  134.8 dict  58.7
-Zookeeper_2k     lines 2000  raw  138.9  zstd3  12.0  zstd19   8.3  pq.body  15.1  body×2  30.2  tmpl+vars  12.9  tmpl+typed  13.5  templates   60  perline  128.3 dict  40.1

@@ -1,6 +1,0 @@
-crates/fabric-app/src/delivery.rs:44:5: replace commit_group -> Vec<Answer> with vec![Default::default()]
-crates/fabric-core/src/strand.rs:26:9: replace SpindleId::as_bytes -> &[u8; 16] with Box::leak(Box::new([0; 16]))
-crates/fabric-core/src/strand.rs:26:9: replace SpindleId::as_bytes -> &[u8; 16] with Box::leak(Box::new([1; 16]))
-crates/fabric-core/src/strand.rs:50:9: replace StrandId::spindle -> SpindleId with Default::default()
-crates/fabric-core/src/delivery.rs:78:5: replace decide_delivery -> DeliveryDecision with Default::default()
-crates/fabric-core/src/delivery.rs:129:9: replace GroupPlan<'a>::decide -> DeliveryDecision with Default::default()

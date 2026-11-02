@@ -1,5 +1,0 @@
-Repaired the phase-0 harness and added regressions for detached descendants, stale results and rate artifacts, temp-file churn, and exact seeded-source integrity. The executed checks and limits are recorded in the [review response](/home/kmosoti/projects/fabric_o11y/docs/experiments/benchmarks/alpha-phase0-review-response.md).
-
-The [alpha contract](/home/kmosoti/projects/fabric_o11y/docs/ALPHA.md) now specifies the accepted phase-5 installation design: two services running as `fabricolly:fabricolly` under `system-fabrico11y.slice`. The [deployment view](/home/kmosoti/projects/fabric_o11y/docs/architecture/deployment.md) marks it as planned; no units or installer are claimed as implemented.
-
-The runner’s 18 tests, workload’s 5 tests, 25 Rust integration tests, formatting check, docs check, and `git diff --check` all exited 0. The run06 baseline was **not rerun**; its summary hash remains `302577fb…e75569a771`. Phase 0 awaits parent independent re-review before phase 1. No commit, push, or tag was made.

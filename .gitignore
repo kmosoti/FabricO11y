@@ -1,8 +1,8 @@
-/target
-/tools/docs/node_modules/
+/target/
+/.jj/
+/.logicgate/
 __pycache__/
-/.local/
-/.claude/worktrees/
 
-# Raw experiment archives belong on DATA; existing tracked fixtures stay tracked.
-docs/experiments/**/data/
+/.local/
+/.claude/
+**/node_modules/

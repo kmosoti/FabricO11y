@@ -1,9 +1,0 @@
-#!/bin/sh
-# Remove keeps configuration, state and the service account. Purge removes
-# state under /var/lib/fabrico11y and configuration under /etc/fabrico11y.
-set -e
-if [ "$1" = purge ]; then
-  rm -rf /var/lib/fabrico11y /etc/fabrico11y
-fi
-systemctl daemon-reload >/dev/null 2>&1 || true
-exit 0

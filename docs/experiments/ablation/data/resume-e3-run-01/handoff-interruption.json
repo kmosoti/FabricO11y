@@ -1,8 +1,0 @@
-{
-  "status": "worker-owned runs ended without a captured full-corpus result after handoff; not counted as pass",
-  "candidate_a_process": 641241,
-  "candidate_b_process": 641261,
-  "detected_utc": "2026-09-27T12:27:48.006661+00:00",
-  "previous_observation": "both running about 44 minutes at ~97% CPU; no final corpus output",
-  "decision": "repeat candidate B full fixed corpus under root-owned process, unchanged workload; A remains unqualified unless original exit recovered"
-}

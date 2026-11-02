@@ -1,4 +1,0 @@
-   Compiling storage-probe v0.1.0 (/tmp/fabric-resume-mutations/tools/storage-probe)
-    Finished `release` profile [optimized] target(s) in 2.98s
-     Running tests/resume_contract.rs (tools/storage-probe/target/release/deps/resume_contract-1181a239de2a5339)
-error: test failed, to rerun pass `--test resume_contract`
