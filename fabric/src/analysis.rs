@@ -20,16 +20,28 @@ pub fn lexical<'a>(records: &'a [Observation], term: &str, limit: usize) -> Vec<
         .collect()
 }
 
-/// Exact cosine similarity; zero vectors and unequal dimensions are excluded.
+/// Floating-point cosine similarity; empty, zero, nonfinite and unequal vectors are excluded.
 pub fn cosine(a: &[f64], b: &[f64]) -> Option<f64> {
     if a.is_empty() || a.len() != b.len() || a.iter().chain(b).any(|n| !n.is_finite()) {
         return None;
     }
-    let dot: f64 = a.iter().zip(b).map(|(x, y)| x * y).sum();
-    let aa: f64 = a.iter().map(|x| x * x).sum();
-    let bb: f64 = b.iter().map(|x| x * x).sum();
+    let scale_a = a.iter().fold(0.0_f64, |scale, x| scale.max(x.abs()));
+    let scale_b = b.iter().fold(0.0_f64, |scale, x| scale.max(x.abs()));
+    if scale_a == 0.0 || scale_b == 0.0 {
+        return None;
+    }
+    // Positive scaling preserves the angle and keeps each squared component in
+    // [0, 1], with at least one unit component in each nonzero vector.
+    let (dot, aa, bb) = a
+        .iter()
+        .zip(b)
+        .fold((0.0, 0.0, 0.0), |(dot, aa, bb), (x, y)| {
+            let x = x / scale_a;
+            let y = y / scale_b;
+            (dot + x * y, aa + x * x, bb + y * y)
+        });
     let value = dot / (aa.sqrt() * bb.sqrt());
-    value.is_finite().then_some(value)
+    value.is_finite().then_some(value.clamp(-1.0, 1.0))
 }
 
 /// Last-value forecast; requires a nonempty, finite history.

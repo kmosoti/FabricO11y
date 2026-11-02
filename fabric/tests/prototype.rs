@@ -85,3 +85,45 @@ fn analytics_are_bounded_and_report_undefined_values() {
     assert_eq!(analysis::forecast(&[2.0, 3.0]), Some(3.0));
     assert_eq!(analysis::forecast(&[]), None);
 }
+
+#[test]
+fn cosine_preserves_angles_across_finite_magnitudes() {
+    let smallest = f64::from_bits(1);
+    for scale in [smallest, 1e-200, 1.0, 1e200, f64::MAX / 4.0] {
+        let vector = [3.0 * scale, 4.0 * scale];
+        let mut observation = sample();
+        observation.vector = vector.to_vec();
+        assert!(observation.validate().is_ok());
+        for (other, expected) in [
+            (vector, 1.0),
+            ([-vector[0], -vector[1]], -1.0),
+            ([-vector[1], vector[0]], 0.0),
+            ([1.0, 0.0], 0.6),
+        ] {
+            let actual = analysis::cosine(&vector, &other).unwrap();
+            assert!(
+                (actual - expected).abs() < 1e-14,
+                "scale={scale}: {actual} != {expected}"
+            );
+            assert!((-1.0..=1.0).contains(&actual));
+            assert_eq!(Some(actual), analysis::cosine(&other, &vector));
+        }
+    }
+    assert_eq!(analysis::cosine(&[1e155], &[1e-155]), Some(1.0));
+    assert_eq!(analysis::cosine(&[f64::MAX], &[smallest]), Some(1.0));
+}
+
+#[test]
+fn cosine_rejects_undefined_inputs() {
+    for (a, b) in [
+        (&[][..], &[][..]),
+        (&[1.0][..], &[1.0, 2.0][..]),
+        (&[0.0, -0.0][..], &[1.0, 2.0][..]),
+        (&[f64::NAN][..], &[1.0][..]),
+        (&[f64::INFINITY][..], &[1.0][..]),
+        (&[f64::NEG_INFINITY][..], &[1.0][..]),
+    ] {
+        assert_eq!(analysis::cosine(a, b), None);
+        assert_eq!(analysis::cosine(b, a), None);
+    }
+}
