@@ -48,3 +48,8 @@ checked with `cargo xtask prove collection`, including an axiom audit and a reje
 skipped-receipt mutant. The transaction model assumes atomic storage; it is not a
 proof of SQLite. See [collection verification](../docs/collection-verification.md)
 for resource bounds, executable failure programs and the exact proof boundary.
+
+`Distributed.lean` checks eighteen named custody-model properties with an axiom
+audit and a rejected conflict-overwrite mutant (`cargo xtask prove distributed`).
+Atomic stable storage and codec refinement are explicit assumptions; see the
+[server evaluation](../docs/fabric-server-evaluation.md).

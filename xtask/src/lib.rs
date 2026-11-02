@@ -10,3 +10,6 @@ pub fn valid_commit(id: &str) -> bool {
 
 /// Shared bounded fixtures for collection verification programs.
 pub mod collection_lab;
+
+/// Experimental representation and distributed custody evaluation.
+pub mod representation;

@@ -24,4 +24,4 @@ pub fn records(seed: u64, case: &str, count: usize) -> Vec<Observation> {
         let o:Observation=serde_json::from_value(v).unwrap();o.validate().unwrap();o
     }).collect()
 }
-pub const CASES: &[&str]=&["metrics","unique","maximum","structured","mixed"];
+pub const CASES: &[&str] = &["metrics", "unique", "maximum", "structured", "mixed"];

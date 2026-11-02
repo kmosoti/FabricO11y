@@ -172,6 +172,20 @@ fn checks(tier: &str, root: &Path) -> Result<(), String> {
             ],
             root,
         )?;
+        run(
+            "cargo",
+            &[
+                "test",
+                "-p",
+                "xtask",
+                "--locked",
+                "--test",
+                "distributed_programs",
+                "--",
+                "--ignored",
+            ],
+            root,
+        )?;
         architecture::check(root)?;
         proof::check("all", root)?;
         proof::check("selftest", root)?;

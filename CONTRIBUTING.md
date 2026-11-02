@@ -177,3 +177,6 @@ outcomes. The SDK calls the verified delivery-frontier arithmetic; this does not
 prove its synchronization adapter, SQLite or source adapters. See
 [collection proofs and resource checks](docs/collection-verification.md) for precise
 proof scope, memory bounds and the two executable verification programs.
+
+See [representation and distributed custody evaluation](docs/fabric-server-evaluation.md)
+for experimental codecs, separate custody seals, reproducible measurements and proof scope.

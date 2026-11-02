@@ -597,6 +597,8 @@ version = "0.1.0"
 dependencies = [
  "fabric",
  "proc-macro2",
+ "rusqlite",
+ "rustix",
  "serde",
  "serde_json",
  "tempfile",

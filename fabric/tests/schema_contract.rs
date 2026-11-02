@@ -29,3 +29,15 @@ fn escaped_delimiters_are_not_nesting_and_extreme_numbers_are_rejected() {
     let deep = "[".repeat(observation::MAX_DEPTH + 1) + &"]".repeat(observation::MAX_DEPTH + 1);
     assert!(observation::decode(deep.as_bytes()).is_err());
 }
+
+#[test]
+fn finite_metric_preserves_exact_float_bits() {
+    let bits = 7405554147052665218u64;
+    let wire = serde_json::json!({"version":2,"registry":"fabrico11y/2","identity":{"producer":"precision","generation":"g","sequence":1},"timestamp_ns":1,"resource":"fixture","data":{"kind":"metric","name":"value","unit":"1","value":f64::from_bits(bits),"metric_type":"gauge","reset":false}});
+    let decoded = fabric::observation::decode(&serde_json::to_vec(&wire).unwrap()).unwrap();
+    if let fabric::observation::Data::Metric { value, .. } = decoded.data {
+        assert_eq!(value.to_bits(), bits);
+    } else {
+        panic!("metric expected");
+    }
+}
