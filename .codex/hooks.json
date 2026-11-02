@@ -1,1 +1,1 @@
-{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"python3 .codex/hooks/context.py","timeout":3,"additionalContextLimit":1200}]}]}}
+{"hooks":{"SessionStart":[{"hooks":[{"type":"command","command":"sh .codex/hooks/context.sh","timeout":3,"additionalContextLimit":1200}]}]}}

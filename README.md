@@ -5,7 +5,7 @@ applications and agent harnesses. The repository currently provides development
 tooling; the SDK, Spindle, analytical storage and agent API are planned.
 
 Read [product direction](docs/direction.md), [contributing](CONTRIBUTING.md) and
-[verification](docs/verification.md).
+[verification](CONTRIBUTING.md#verification).
 
 ```sh
 cargo xtask doctor

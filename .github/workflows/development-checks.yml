@@ -18,7 +18,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install checked toolchain and Jujutsu
-        run: sh tools/ci-setup.sh
+        run: sh .github/scripts/install-toolchain.sh
       - name: Initialize Jujutsu workspace
         run: jj git init --colocate
       - uses: actions/cache@v4
