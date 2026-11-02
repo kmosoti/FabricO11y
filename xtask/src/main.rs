@@ -3,6 +3,14 @@ use std::{
     path::{Path, PathBuf},
     process::{Command, ExitCode},
 };
+mod architecture;
+mod benchmark;
+mod evidence;
+mod extraction;
+mod fuzz;
+mod profile;
+mod proof;
+mod search;
 #[cfg(test)]
 mod workflow_tests;
 fn output(cmd: &str, args: &[&str], dir: &Path) -> Result<String, String> {
@@ -90,13 +98,28 @@ fn capture_to(root: &Path, file: &Path) -> Result<(), String> {
     if !file.is_absolute() || file.starts_with(root) {
         return Err("capture must be an absolute path outside the source tree".into());
     }
-    capture(root).and_then(|v| fs::write(file, v).map_err(|e| e.to_string()))
+    let file = evidence::artifact_path(file, root, false)?;
+    let capture = capture(root)?;
+    use std::io::Write;
+    fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(file)
+        .and_then(|mut file| file.write_all(capture.as_bytes()))
+        .map_err(|e| e.to_string())
 }
 fn checks(tier: &str, root: &Path) -> Result<(), String> {
-    if !["fast", "medium", "extensive"].contains(&tier) {
+    if !["fast", "medium", "extensive", "acceptance"].contains(&tier) {
         return Err("unknown tier".into());
     }
     run("cargo", &["fmt", "--all", "--", "--check"], root)?;
+    if root.join("fuzz/Cargo.toml").is_file() {
+        run(
+            "cargo",
+            &["fmt", "--manifest-path", "fuzz/Cargo.toml", "--", "--check"],
+            root,
+        )?;
+    }
     run("cargo", &["check", "--workspace", "--locked"], root)?;
     run("cargo", &["test", "--workspace", "--locked"], root)?;
     if tier != "fast" {
@@ -127,6 +150,23 @@ fn checks(tier: &str, root: &Path) -> Result<(), String> {
                 "workflow_",
                 "--",
                 "--ignored",
+            ],
+            root,
+        )?;
+    }
+    if tier == "acceptance" {
+        architecture::check(root)?;
+        proof::check("all", root)?;
+        proof::check("selftest", root)?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| e.to_string())?
+            .as_nanos();
+        let artifacts = root.join(format!(".local/acceptance-fuzz-{stamp}"));
+        fuzz::cli(
+            &[
+                "replay",
+                artifacts.to_str().ok_or("non-UTF8 artifact path")?,
             ],
             root,
         )?;
@@ -169,7 +209,7 @@ fn verify(root: &Path, file: &Path) -> Result<(), String> {
         {
             return Err("materialization differs".into());
         }
-        checks("medium", &work)?;
+        checks("acceptance", &work)?;
         output("jj", &["util", "snapshot"], &work)?;
         if !output(
             "jj",
@@ -183,6 +223,24 @@ fn verify(root: &Path, file: &Path) -> Result<(), String> {
         if capture(root)? != expected {
             return Err("candidate changed during verification".into());
         }
+        let artifacts = work.join(".local");
+        if artifacts.exists() {
+            let retained = parent.join(format!("evidence-{id}"));
+            if retained.exists() {
+                return Err("preserve existing candidate evidence".into());
+            }
+            fs::rename(artifacts, retained).map_err(|e| e.to_string())?;
+        }
+        output(
+            "jj",
+            &[
+                "workspace",
+                "forget",
+                work.file_name().unwrap().to_str().unwrap(),
+            ],
+            root,
+        )?;
+        fs::remove_dir_all(&work).map_err(|e| e.to_string())?;
         Ok(())
     })();
     let receipt = format!(
@@ -200,16 +258,6 @@ fn verify(root: &Path, file: &Path) -> Result<(), String> {
             root.join(".local/last-verification"),
         )
         .map_err(|e| e.to_string())?;
-        output(
-            "jj",
-            &[
-                "workspace",
-                "forget",
-                work.file_name().unwrap().to_str().unwrap(),
-            ],
-            root,
-        )?;
-        fs::remove_dir_all(&work).map_err(|e| e.to_string())?;
     }
     result
 }
@@ -232,10 +280,18 @@ fn main() -> ExitCode {
             Ok(())
         }
         ["check", "--tier", tier] => checks(tier, &root),
+        ["prove"] => proof::check("verus", &root),
+        ["prove", checker] => proof::check(checker, &root),
+        ["architecture"] => architecture::check(&root),
+        ["search", rest @ ..] => search::cli(rest, &root),
+        ["fuzz", rest @ ..] => fuzz::cli(rest, &root),
+        ["profile", rest @ ..] => profile::cli(rest, &root),
+        ["benchmark", "compare", rest @ ..] => benchmark::compare(rest),
+        ["benchmark", out] => profile::cli(&["benchmark", out], &root),
         ["candidate", "capture", file] => capture_to(&root, Path::new(file)),
         ["candidate", "verify", file] => verify(&root, Path::new(file)),
         _ => Err(
-            "usage: doctor | check --tier fast|medium|extensive | candidate capture|verify FILE"
+            "usage: doctor | prove | check --tier fast|medium|extensive | candidate capture|verify FILE"
                 .into(),
         ),
     };

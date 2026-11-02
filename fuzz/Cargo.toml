@@ -1,0 +1,37 @@
+[package]
+name = "fabric-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "=0.4.10"
+fabric = { path = "../fabric" }
+serde_json = "1"
+tempfile = "3"
+
+[[bin]]
+name = "admission_sequence"
+path = "fuzz_targets/admission_sequence.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bounded_encoding"
+path = "fuzz_targets/bounded_encoding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "malformed_input"
+path = "fuzz_targets/malformed_input.rs"
+test = false
+doc = false
+bench = false

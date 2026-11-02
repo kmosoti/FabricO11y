@@ -71,6 +71,8 @@ fn workflow_candidate_refusals_preserve_evidence() {
     let file = artifacts.path().join("candidate.txt");
     capture_to(root, &file).unwrap();
     let original = fs::read_to_string(&file).unwrap();
+    assert!(capture_to(root, &file).is_err());
+    assert_eq!(fs::read_to_string(&file).unwrap(), original);
     fs::write(&file, format!("{original}wrong toolchain\n")).unwrap();
     assert!(
         verify(root, &file)

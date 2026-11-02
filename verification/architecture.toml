@@ -1,0 +1,5 @@
+# Direct dependency boundaries, including test dependencies.
+[crates]
+admission-kernel = ["vstd"]
+fabric = ["serde", "serde_json", "tempfile", "admission-kernel"]
+xtask = ["serde", "serde_json", "tempfile", "toml", "proc-macro2"]
