@@ -9,6 +9,9 @@ the prototype does not capture prompts or secrets automatically.
 An SDK admission result reports whether an observation entered a bounded in-memory
 queue. Admission is not durability. Invalid, oversized and full observations are
 rejected and counted. Collection validates again before storing an observation.
+The [concurrent admission API](admission.md) reserves fixed buffers before
+encoding and keeps their capacity charged until consumer leases are dropped.
+Contention, closure, poison and sequence exhaustion are distinct outcomes.
 The store enforces a byte limit, and a successful flush means its file has been
 synchronized locally; it does not promise replication or survive all hardware
 failures. A query sees only records admitted by the store. A failed write or flush

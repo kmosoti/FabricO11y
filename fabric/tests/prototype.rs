@@ -1,6 +1,7 @@
 use fabric::{
+    admission::{Admission, Queue},
     analysis,
-    collection::{Admission, Observation, Queue, durable_append, read_store},
+    collection::{Observation, durable_append, read_store},
 };
 
 fn sample() -> Observation {
@@ -26,10 +27,10 @@ fn service_and_agent_records_survive_reopen_and_can_be_queried() {
     agent.id = "agent-1".into();
     agent.producer = "agent".into();
     agent.kind = "tool".into();
-    let mut queue = Queue::new(4096, 2048);
+    let queue = Queue::new(4096, 2048).unwrap();
     assert_eq!(queue.try_record(&service), Admission::Accepted);
     assert_eq!(queue.try_record(&agent), Admission::Accepted);
-    while let Some(frame) = queue.pop() {
+    while let Some(frame) = queue.try_dequeue().unwrap() {
         durable_append(&path, &frame, 2048, 4096).unwrap();
     }
     let records = read_store(&path, 4096, 2048).unwrap();
@@ -44,17 +45,17 @@ fn service_and_agent_records_survive_reopen_and_can_be_queried() {
 fn queue_reports_rejections_and_bounds_encoded_records() {
     let item = sample();
     let size = serde_json::to_vec(&item).unwrap().len();
-    let mut queue = Queue::new(size, size);
+    let queue = Queue::new(size, size).unwrap();
     assert_eq!(queue.try_record(&item), Admission::Accepted);
     assert_eq!(queue.try_record(&item), Admission::Full);
-    assert!(queue.pop().is_some());
+    assert!(queue.try_dequeue().unwrap().is_some());
     assert_eq!(queue.try_record(&item), Admission::Accepted);
     let mut invalid = item.clone();
     invalid.value = f64::NAN;
     assert_eq!(queue.try_record(&invalid), Admission::Invalid);
-    assert_eq!(queue.rejected(), 2);
+    assert_eq!(queue.rejected().unwrap(), 2);
     assert_eq!(
-        Queue::new(size, size - 1).try_record(&item),
+        Queue::new(size, size - 1).unwrap().try_record(&item),
         Admission::TooLarge
     );
 }

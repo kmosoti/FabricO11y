@@ -219,6 +219,7 @@ fn evaluate(dir: &Path, out: &Path, split: &str, root: &Path) -> Result<(), Stri
     {
         return Err("stale candidate or contract".into());
     }
+    let out = evidence::artifact_path(out, root, true)?;
     if out.exists() {
         return Err("preserve existing evaluation".into());
     }
@@ -237,6 +238,9 @@ fn evaluate(dir: &Path, out: &Path, split: &str, root: &Path) -> Result<(), Stri
     let outcome = (|| {
         fs::copy(dir.join("candidate.rs"), work.path().join("candidate.rs"))
             .map_err(|e| e.to_string())?;
+        if evidence::hash(&work.path().join("candidate.rs"))? != result.source_sha256 {
+            return Err("candidate changed during materialization".into());
+        }
         fs::write(
             work.path().join("main.rs"),
             include_str!("search_runner.txt"),
@@ -387,7 +391,7 @@ fn evaluate(dir: &Path, out: &Path, split: &str, root: &Path) -> Result<(), Stri
         Ok(()) => result.status = "tested".into(),
         Err(e) => result.error = Some(e.clone()),
     }
-    evidence::write(out, &result)?;
+    evidence::write(&out, &result)?;
     outcome
 }
 pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {

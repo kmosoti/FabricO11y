@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::VecDeque,
     fs::OpenOptions,
     io::{Read, Write},
     path::Path,
@@ -35,64 +34,6 @@ impl Observation {
             return Err("collection limit exceeded");
         }
         Ok(())
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum Admission {
-    Accepted,
-    Invalid,
-    TooLarge,
-    Full,
-}
-
-/// Bounds serialized queued bytes, not the caller's allocations or process memory.
-pub struct Queue {
-    max_bytes: usize,
-    max_record: usize,
-    used: usize,
-    rejected: u64,
-    records: VecDeque<Vec<u8>>,
-}
-impl Queue {
-    pub fn new(max_bytes: usize, max_record: usize) -> Self {
-        Self {
-            max_bytes,
-            max_record,
-            used: 0,
-            rejected: 0,
-            records: VecDeque::new(),
-        }
-    }
-    pub fn try_record(&mut self, observation: &Observation) -> Admission {
-        let result = if observation.validate().is_err() {
-            Admission::Invalid
-        } else {
-            match serde_json::to_vec(observation) {
-                Err(_) => Admission::Invalid,
-                Ok(bytes) if bytes.len() > self.max_record => Admission::TooLarge,
-                Ok(bytes) if bytes.len() > self.max_bytes.saturating_sub(self.used) => {
-                    Admission::Full
-                }
-                Ok(bytes) => {
-                    self.used += bytes.len();
-                    self.records.push_back(bytes);
-                    Admission::Accepted
-                }
-            }
-        };
-        if result != Admission::Accepted {
-            self.rejected = self.rejected.saturating_add(1);
-        }
-        result
-    }
-    pub fn rejected(&self) -> u64 {
-        self.rejected
-    }
-    pub fn pop(&mut self) -> Option<Vec<u8>> {
-        let bytes = self.records.pop_front()?;
-        self.used -= bytes.len();
-        Some(bytes)
     }
 }
 

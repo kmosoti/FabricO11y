@@ -1,18 +1,44 @@
 #![no_main]
-use fabric::collection::Observation;
+use fabric::collection::{Observation, read_store};
 use libfuzzer_sys::fuzz_target;
+use std::io::Write;
+fn valid(o: &Observation) -> bool {
+    o.version == 1
+        && !o.id.is_empty()
+        && !o.producer.is_empty()
+        && !o.kind.is_empty()
+        && o.value.is_finite()
+        && o.vector.len() <= 256
+        && o.related.len() <= 256
+        && o.vector.iter().all(|x| x.is_finite())
+}
+fn reference(bytes: &[u8], max_file: usize, max_record: usize) -> Option<Vec<Observation>> {
+    if bytes.len() > max_file || (!bytes.is_empty() && !bytes.ends_with(b"\n")) {
+        return None;
+    }
+    bytes
+        .split(|b| *b == b'\n')
+        .filter(|line| !line.is_empty())
+        .map(|line| {
+            if line.len() > max_record {
+                return None;
+            }
+            let value: Observation = serde_json::from_slice(line).ok()?;
+            if valid(&value) { Some(value) } else { None }
+        })
+        .collect()
+}
 fuzz_target!(|bytes: &[u8]| {
-    if bytes.len() > 65536 { return; }
-    if let Ok(value) = serde_json::from_slice::<Observation>(bytes) {
-        let valid = value.version == 1 && !value.id.is_empty() && !value.producer.is_empty()
-            && !value.kind.is_empty() && value.value.is_finite()
-            && value.vector.len() <= 256 && value.related.len() <= 256
-            && value.vector.iter().all(|x| x.is_finite());
-        assert_eq!(value.validate().is_ok(), valid);
-        if valid {
-            let encoded = serde_json::to_vec(&value).unwrap();
-            let decoded: Observation = serde_json::from_slice(&encoded).unwrap();
-            assert_eq!(decoded, value);
-        }
+    if bytes.len() > 65536 {
+        return;
+    }
+    let mut file = tempfile::NamedTempFile::new().unwrap();
+    file.write_all(bytes).unwrap();
+    let expected = reference(bytes, 4096, 2048);
+    let actual = read_store(file.path(), 4096, 2048);
+    match (expected, actual) {
+        (Some(expected), Ok(actual)) => assert_eq!(actual, expected),
+        (None, Err(_)) => {}
+        _ => panic!("malformed frame handling disagrees with reference"),
     }
 });

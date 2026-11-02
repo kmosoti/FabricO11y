@@ -61,6 +61,12 @@ theorem slot_construction_contract (id capacity : Usize) :
     Slot.new id capacity ⦃ s => SlotValid s ∧ s.id = id ∧ s.capacity = capacity ∧ s.phase = .Free ⦄ := by
   simp [Slot.new, SlotValid]
 
+theorem slot_observers_contract (s : Slot) :
+    (Slot.impl.id s ⦃ id => id = s.id ⦄) ∧
+    (Slot.impl.capacity s ⦃ capacity => capacity = s.capacity ⦄) ∧
+    (Slot.encoded_len s ⦃ len => len = s.len ⦄) := by
+  simp [Slot.impl.id, Slot.impl.capacity, Slot.encoded_len]
+
 theorem slot_reserve_contract (s : Slot) (h : SlotValid s) :
     Slot.reserve s ⦃ r => SlotValid r.2 ∧ r.2.id = s.id ∧ r.2.capacity = s.capacity ∧
       (r.1 = true ↔ s.phase = .Free) ∧ (r.1 = false → r.2 = s) ∧
@@ -80,6 +86,7 @@ theorem slot_publish_contract (s : Slot) (len : Usize) (h : SlotValid s) :
 theorem slot_lease_contract (s : Slot) (h : SlotValid s) :
     Slot.lease s ⦃ r => SlotValid r.2 ∧ r.2.id = s.id ∧ r.2.capacity = s.capacity ∧
       r.2.len = s.len ∧
+      (r.1.isSome = true ↔ s.phase = .Ready) ∧
       (r.1 = none → r.2 = s) ∧
       (∀ len, r.1 = some len → s.phase = .Ready ∧ r.2.phase = .Leased ∧ len = s.len) ⦄ := by
   rcases s with ⟨id, capacity, len, phase⟩
@@ -124,6 +131,7 @@ theorem fifo_dequeue_contract (s : Fifo) (ticket : U64) (h : FifoValid s) :
 #print axioms slot_ownership_conservation
 #print axioms pool_credit_conservation
 #print axioms slot_construction_contract
+#print axioms slot_observers_contract
 #print axioms slot_reserve_contract
 #print axioms slot_publish_contract
 #print axioms slot_lease_contract

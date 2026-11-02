@@ -1,6 +1,6 @@
 # Contributing
 
-Use Rust 1.100.0-beta.7, native Cargo commands and Jujutsu 0.46.0 with a Git
+Use Rust beta-2026-10-18 (1.100.0-beta.7), native Cargo commands and Jujutsu 0.46.0 with a Git
 backend. Initialize an existing Git checkout with `jj git init --colocate` and
 configure your Jujutsu identity before committing.
 
@@ -24,6 +24,7 @@ Run fast checks during iteration and medium checks before submitting changes:
 cargo xtask check --tier fast
 cargo xtask check --tier medium
 cargo xtask check --tier extensive
+cargo xtask check --tier acceptance
 ```
 
 | Tier | Checks |
@@ -131,3 +132,32 @@ tradeoffs and failed alternatives in local artifacts rather than a composite sco
 Status changes append an evidence record; evaluated/rejected/retained/selected
 states preserve earlier records. Retained and selected states require correct
 evaluation evidence for the same source and contract.
+
+## Admission measurements
+
+Capture and verify the current source before measuring it. The benchmark
+requires its matching verification receipt and measures a copied release
+executable under `perf`; compilation is outside the measurement boundary.
+
+```sh
+cargo xtask candidate capture /tmp/fabric-benchmark-source.txt
+cargo xtask candidate verify /tmp/fabric-benchmark-source.txt
+FABRIC_BENCH_RECORDS=20000 cargo xtask benchmark /tmp/fabric-admission-benchmark
+cargo xtask benchmark compare /tmp/baseline-profile /tmp/candidate-profile
+```
+
+The default matrix covers 64/512-byte ASCII text, 8/64 slots and 1/4 producers
+with matching consumer counts, using one warmup and five measured repetitions.
+`FABRIC_BENCH_CASES_FILE` accepts an absolute JSON case-file path; cases contain
+`name`, `text`, `vector_len`, `slots`, `producers` and `consumers`.
+`FABRIC_BENCH_RECORDS` sets successful records per producer per sample. Results include
+throughput, accepted-call and retry-inclusive p99 latency, attempts, setup and
+reserved storage. Inspect each metric separately. A consumer lease retains
+capacity during processing, so consumers and retry policy are part of the workload.
+
+Profiles bind source, acceptance receipt, compiler, executable, contract,
+benchmark driver, case file, resource settings and machine topology. Comparison
+rejects incompatible artifacts. `FABRIC_PROFILE_SECONDS` sets the profile
+timeout (900 seconds by default; zero disables it). Select resource settings
+appropriate to the machine and retain them with the evidence. Performance
+results do not extend the scope of the kernel proofs.

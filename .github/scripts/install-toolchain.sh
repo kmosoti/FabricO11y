@@ -2,7 +2,7 @@
 set -eu
 dnf -y install curl tar gzip git gcc openssl-devel
 curl --proto '=https' --tlsv1.2 -fsS https://sh.rustup.rs -o /tmp/rustup-init.sh
-sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain 1.100.0-beta
+sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain beta-2026-10-18
 . "$HOME/.cargo/env"
 rustup component add rustfmt clippy
 rustc --version --verbose | grep -F 'commit-hash: fd8e211ae301c84a86d13cf52a6d3ce08c589e2e'

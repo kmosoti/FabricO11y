@@ -47,6 +47,7 @@ dependencies = [
 name = "fabric"
 version = "0.1.0"
 dependencies = [
+ "admission-kernel",
  "serde",
  "serde_json",
  "tempfile",

@@ -44,7 +44,16 @@ verus! {
 #[derive(Clone, Copy)]
 pub enum Phase { Free, Reserved, Ready, Leased }
 
-/// A non-cloneable credit that travels with exactly one preallocated buffer.
+/// Admission state for one payload buffer.
+///
+/// The synchronization adapter binds each credit to its payload storage.
+/// ```
+/// let mut slot = admission_kernel::Slot::new(0, 16);
+/// assert!(slot.reserve());
+/// assert!(slot.publish(8));
+/// assert_eq!(slot.lease(), Some(8));
+/// assert!(slot.release());
+/// ```
 /// ```compile_fail
 /// let slot = admission_kernel::Slot::new(0, 16);
 /// let duplicate = slot.clone();
@@ -252,5 +261,36 @@ mod protocol_tests {
         assert!(!exhausted.dequeue(u64::MAX));
         assert_eq!(exhausted.head, u64::MAX);
         assert_eq!(exhausted.next, u64::MAX);
+    }
+
+    #[test]
+    fn exhaustion_preserves_ready_records_and_outstanding_credits() {
+        let mut order = Fifo {
+            head: u64::MAX - 2,
+            next: u64::MAX - 1,
+        };
+        let mut ready = Slot::new(0, 8);
+        assert!(ready.reserve());
+        assert!(ready.publish(5));
+        let mut held = Slot::new(1, 8);
+        assert!(held.reserve());
+        assert!(held.publish(3));
+        assert_eq!(held.lease(), Some(3));
+        let mut last = Slot::new(2, 8);
+        assert!(last.reserve());
+        assert_eq!(order.enqueue(), Some(u64::MAX - 1));
+        assert!(last.publish(6));
+        let mut refused = Slot::new(3, 8);
+        assert!(refused.reserve());
+        assert_eq!(order.enqueue(), None);
+        assert!(refused.cancel());
+        assert!(order.dequeue(u64::MAX - 2));
+        assert_eq!(ready.lease(), Some(5));
+        assert!(order.dequeue(u64::MAX - 1));
+        assert_eq!(last.lease(), Some(6));
+        assert!(held.release());
+        assert!(ready.release());
+        assert!(last.release());
+        assert_eq!(order.enqueue(), None);
     }
 }

@@ -20,6 +20,12 @@ pub fn hash(path: &Path) -> Result<String, String> {
         .ok_or("missing digest")?
         .to_owned())
 }
+pub fn hash_bytes(bytes: &[u8]) -> Result<String, String> {
+    use std::io::Write;
+    let mut file = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
+    file.write_all(bytes).map_err(|e| e.to_string())?;
+    hash(file.path())
+}
 pub fn read<T: DeserializeOwned>(path: &Path) -> Result<T, String> {
     serde_json::from_slice(&fs::read(path).map_err(|e| e.to_string())?).map_err(|e| e.to_string())
 }

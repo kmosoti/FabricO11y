@@ -13,6 +13,9 @@ Ordering identities are monotonically increasing u64 tickets. Exhausted refuses
 admission when the next ticket cannot advance; identities never wrap. Existing
 accepted records and leases remain usable after exhaustion.
 Contended and Full permit callers to retry; neither promises eventual admission.
+Full requires an observation with every slot charged. Failing to find free
+storage during a bounded, non-atomic scan is Contended when a full snapshot cannot
+be established.
 A capacity reservation precedes encoding. Failed encoding restores the reservation
 and does not enqueue a partial record. Invalid observations never enter the queue.
 No producer waits for another producer to finish encoding.
@@ -28,6 +31,11 @@ Outstanding leases remain valid after shutdown and after queue handles are dropp
 Poisoning is terminal for normal operations and yields an explicit error. Cleanup
 may recover poisoned state solely to return owned resources; recovery does not
 resume admissions or clear poison.
+Operations already overlapping a fault may complete before observing it. Calls
+that begin after the terminal fault is observed refuse normal queue operations.
+Unwinding during encoding restores the outstanding reservation before releasing
+its synchronization guard. Unrelated caller panics while holding an immutable
+lease return its storage during cleanup and do not themselves corrupt the queue.
 
 The memory guarantee covers preallocated SDK payload buffers, free/ready metadata
 and queue synchronization state. It excludes caller observations, caller-owned

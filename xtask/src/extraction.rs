@@ -153,6 +153,7 @@ pub fn check(root: &Path) -> Result<(), String> {
                     "slot_ownership_conservation",
                     "pool_credit_conservation",
                     "slot_construction_contract",
+                    "slot_observers_contract",
                     "slot_reserve_contract",
                     "slot_publish_contract",
                     "slot_lease_contract",

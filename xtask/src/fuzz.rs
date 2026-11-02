@@ -23,6 +23,11 @@ pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
         return Err(format!("unexpected cargo-fuzz: {version}"));
     }
     let tool_hash = evidence::hash(&binary)?;
+    let compiler = super::output(
+        "rustup",
+        &["run", NIGHTLY, "rustc", "--version", "--verbose"],
+        root,
+    )?;
     let capture = super::capture(root)?;
     let seconds = match mode {
         "replay" => 0,
@@ -68,16 +73,18 @@ pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
             .stderr(log);
         let start = Instant::now();
         let status = command.status().map_err(|e| e.to_string())?;
+        let unchanged = super::capture(root)? == capture;
         evidence::write(
             &artifacts.join("result.json"),
             &serde_json::json!({
-                "target": target, "mode": mode, "exit": status.code(), "success": status.success(),
+            "target": target, "mode": mode, "exit": status.code(), "success": status.success() && unchanged,
+            "source_unchanged": unchanged, "compiler": compiler,
                 "elapsed_ms": start.elapsed().as_millis(), "seconds": seconds, "workers": 1,
                 "nightly": NIGHTLY, "cargo_fuzz": version, "tool_sha256": tool_hash,
                 "repository_capture": capture,
             }),
         )?;
-        if !status.success() {
+        if !status.success() || !unchanged {
             failures.push(target);
         }
     }

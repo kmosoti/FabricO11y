@@ -4,6 +4,7 @@ use std::{
     process::{Command, ExitCode},
 };
 mod architecture;
+mod benchmark;
 mod evidence;
 mod extraction;
 mod fuzz;
@@ -112,6 +113,13 @@ fn checks(tier: &str, root: &Path) -> Result<(), String> {
         return Err("unknown tier".into());
     }
     run("cargo", &["fmt", "--all", "--", "--check"], root)?;
+    if root.join("fuzz/Cargo.toml").is_file() {
+        run(
+            "cargo",
+            &["fmt", "--manifest-path", "fuzz/Cargo.toml", "--", "--check"],
+            root,
+        )?;
+    }
     run("cargo", &["check", "--workspace", "--locked"], root)?;
     run("cargo", &["test", "--workspace", "--locked"], root)?;
     if tier != "fast" {
@@ -278,6 +286,8 @@ fn main() -> ExitCode {
         ["search", rest @ ..] => search::cli(rest, &root),
         ["fuzz", rest @ ..] => fuzz::cli(rest, &root),
         ["profile", rest @ ..] => profile::cli(rest, &root),
+        ["benchmark", "compare", rest @ ..] => benchmark::compare(rest),
+        ["benchmark", out] => profile::cli(&["benchmark", out], &root),
         ["candidate", "capture", file] => capture_to(&root, Path::new(file)),
         ["candidate", "verify", file] => verify(&root, Path::new(file)),
         _ => Err(
