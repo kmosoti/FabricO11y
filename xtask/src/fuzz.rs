@@ -1,6 +1,11 @@
 use super::evidence;
 use std::{fs, path::Path, process::Command, time::Instant};
-const TARGETS: [&str; 3] = ["admission_sequence", "bounded_encoding", "malformed_input"];
+const TARGETS: [&str; 4] = [
+    "admission_sequence",
+    "bounded_encoding",
+    "malformed_input",
+    "observation_decode",
+];
 const NIGHTLY: &str = "nightly-2026-10-26";
 
 pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {

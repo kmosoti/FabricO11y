@@ -35,3 +35,10 @@ path = "fuzz_targets/malformed_input.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "observation_decode"
+path = "fuzz_targets/observation_decode.rs"
+test = false
+doc = false
+bench = false

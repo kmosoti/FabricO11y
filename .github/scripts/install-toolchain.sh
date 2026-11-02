@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-dnf -y install curl tar gzip git gcc openssl-devel
+dnf -y install curl tar gzip xz git gcc openssl-devel
 curl --proto '=https' --tlsv1.2 -fsS https://sh.rustup.rs -o /tmp/rustup-init.sh
 sh /tmp/rustup-init.sh -y --profile minimal --default-toolchain beta-2026-10-18
 . "$HOME/.cargo/env"

@@ -161,3 +161,16 @@ rejects incompatible artifacts. `FABRIC_PROFILE_SECONDS` sets the profile
 timeout (900 seconds by default; zero disables it). Select resource settings
 appropriate to the machine and retain them with the evidence. Performance
 results do not extend the scope of the kernel proofs.
+
+## Local collection checks
+
+`cargo test -p fabric` includes typed wire fixtures, SDK outage and durable flush,
+retry conflicts, transaction rollback, quotas, file rotation/truncation, framing
+and persistent adapter tests. `cargo xtask registry` validates the pinned Weaver
+registry and checks generated vocabulary/descriptor drift. See
+[registry maintenance](registry/README.md) for setup. Native fuzz replay includes
+the v2 decoder. Journal capability diagnostics identify absent or inaccessible
+live journals; deterministic fixtures cover cursor handling independently.
+
+Changes to collection must preserve the distinct memory-admission and custody
+outcomes. Kernel proofs do not extend to SDK delivery, SQLite or source adapters.

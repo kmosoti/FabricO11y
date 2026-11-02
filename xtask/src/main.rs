@@ -10,6 +10,7 @@ mod extraction;
 mod fuzz;
 mod profile;
 mod proof;
+mod registry;
 mod search;
 #[cfg(test)]
 mod workflow_tests;
@@ -112,6 +113,7 @@ fn checks(tier: &str, root: &Path) -> Result<(), String> {
     if !["fast", "medium", "extensive", "acceptance"].contains(&tier) {
         return Err("unknown tier".into());
     }
+    registry::check(root, false)?;
     run("cargo", &["fmt", "--all", "--", "--check"], root)?;
     if root.join("fuzz/Cargo.toml").is_file() {
         run(
@@ -283,6 +285,8 @@ fn main() -> ExitCode {
         ["prove"] => proof::check("verus", &root),
         ["prove", checker] => proof::check(checker, &root),
         ["architecture"] => architecture::check(&root),
+        ["registry", "check"] => registry::check(&root, false),
+        ["registry", "generate"] => registry::check(&root, true),
         ["search", rest @ ..] => search::cli(rest, &root),
         ["fuzz", rest @ ..] => fuzz::cli(rest, &root),
         ["profile", rest @ ..] => profile::cli(rest, &root),

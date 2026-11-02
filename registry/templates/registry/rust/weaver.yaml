@@ -1,0 +1,9 @@
+templates:
+  - template: vocabulary.rs.j2
+    filter: '.groups[] | select(.id == "registry.fabric")'
+    application_mode: each
+    file_name: vocabulary.rs
+  - template: descriptor.json.j2
+    filter: '.groups[] | select(.id == "registry.fabric")'
+    application_mode: each
+    file_name: descriptor.json

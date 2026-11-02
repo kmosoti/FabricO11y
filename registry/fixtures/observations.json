@@ -1,0 +1,462 @@
+[
+  {
+    "name": "valid_service_request",
+    "valid": true,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "service_request",
+        "service": "api",
+        "operation": "GET",
+        "duration_ns": 1,
+        "status": "ok",
+        "trace_id": null
+      }
+    }
+  },
+  {
+    "name": "valid_agent_run",
+    "valid": true,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "agent_run",
+        "agent": "harness",
+        "run_id": "r",
+        "duration_ns": 1,
+        "status": "error"
+      }
+    }
+  },
+  {
+    "name": "valid_tool_execution",
+    "valid": true,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "tool_execution",
+        "tool": "read",
+        "run_id": "r",
+        "duration_ns": 0,
+        "status": "cancelled"
+      }
+    }
+  },
+  {
+    "name": "valid_log",
+    "valid": true,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "log",
+        "level": "info",
+        "message": "hi"
+      }
+    }
+  },
+  {
+    "name": "valid_json_log",
+    "valid": true,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "json_log",
+        "fields": {
+          "message": "hi",
+          "nested": {
+            "array": [
+              null,
+              true,
+              1
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "valid_event",
+    "valid": true,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "event",
+        "name": "start",
+        "message": "hi"
+      }
+    }
+  },
+  {
+    "name": "valid_metric",
+    "valid": true,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "metric",
+        "name": "bytes",
+        "unit": "By",
+        "value": 1,
+        "metric_type": "counter",
+        "reset": false
+      }
+    }
+  },
+  {
+    "name": "valid_gap",
+    "valid": true,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "gap",
+        "source": "file:app",
+        "reason": "rotation"
+      }
+    }
+  },
+  {
+    "name": "version",
+    "valid": false,
+    "wire": {
+      "version": 3,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "log",
+        "level": "info",
+        "message": "hi"
+      }
+    }
+  },
+  {
+    "name": "registry",
+    "valid": false,
+    "wire": {
+      "version": 2,
+      "registry": "other",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "log",
+        "level": "info",
+        "message": "hi"
+      }
+    }
+  },
+  {
+    "name": "sequence_zero",
+    "valid": false,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 0
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "log",
+        "level": "info",
+        "message": "hi"
+      }
+    }
+  },
+  {
+    "name": "sequence_negative",
+    "valid": false,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": -1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "log",
+        "level": "info",
+        "message": "hi"
+      }
+    }
+  },
+  {
+    "name": "producer_empty",
+    "valid": false,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "log",
+        "level": "info",
+        "message": "hi"
+      }
+    }
+  },
+  {
+    "name": "producer_large",
+    "valid": false,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "log",
+        "level": "info",
+        "message": "hi"
+      }
+    }
+  },
+  {
+    "name": "timestamp_negative",
+    "valid": false,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": -1,
+      "resource": "local",
+      "data": {
+        "kind": "log",
+        "level": "info",
+        "message": "hi"
+      }
+    }
+  },
+  {
+    "name": "unknown_kind",
+    "valid": false,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "unknown",
+        "level": "info",
+        "message": "hi"
+      }
+    }
+  },
+  {
+    "name": "log_empty",
+    "valid": false,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "log",
+        "level": "info",
+        "message": ""
+      }
+    }
+  },
+  {
+    "name": "unknown_level",
+    "valid": false,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "log",
+        "level": "fatal",
+        "message": "hi"
+      }
+    }
+  },
+  {
+    "name": "unknown_field",
+    "valid": false,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "log",
+        "level": "info",
+        "message": "hi"
+      },
+      "extra": 1
+    }
+  },
+  {
+    "name": "missing_identity",
+    "valid": false,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "log",
+        "level": "info",
+        "message": "hi"
+      }
+    }
+  },
+  {
+    "name": "negative_counter",
+    "valid": false,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "metric",
+        "name": "bytes",
+        "unit": "By",
+        "value": -1,
+        "metric_type": "counter",
+        "reset": false
+      }
+    }
+  },
+  {
+    "name": "unsupported_metric",
+    "valid": false,
+    "wire": {
+      "version": 2,
+      "registry": "fabrico11y/2",
+      "identity": {
+        "producer": "fixture",
+        "generation": "generation-1",
+        "sequence": 1
+      },
+      "timestamp_ns": 0,
+      "resource": "local",
+      "data": {
+        "kind": "metric",
+        "name": "bytes",
+        "unit": "By",
+        "value": 1,
+        "metric_type": "histogram",
+        "reset": false
+      }
+    }
+  }
+]

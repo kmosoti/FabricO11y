@@ -1,0 +1,4 @@
+file_format: definition_manifest/2.0
+name: fabrico11y
+schema_url: https://github.com/kmosoti/FabricO11y/schemas/2.0.0
+description: Fabric local observation semantics; not an OTLP transport schema.
