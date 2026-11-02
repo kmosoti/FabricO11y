@@ -1,11 +1,17 @@
 # FabricO11y
 
 FabricO11y is a planned Fedora-first, Rust-native evidence platform for Rust
-applications and agent harnesses. The repository currently provides development
-tooling; the SDK, Spindle, analytical storage and agent API are planned.
+applications and agent harnesses. The repository contains development tooling and
+an early local collection and analysis prototype in the `fabric` crate. Spindle,
+the agent API, and the remaining analytical capabilities are planned.
 
 Read [product direction](docs/direction.md), [contributing](CONTRIBUTING.md) and
 [verification](CONTRIBUTING.md#verification).
+
+The prototype's queue limits serialized bytes, not total process memory. Its file
+writer requires a single writer, does not sync the parent directory, and can leave
+an incomplete tail after an error. It is not a production custody service. See
+the [prototype specification](docs/local-prototype.md) for its intended scope.
 
 ```sh
 cargo xtask doctor
