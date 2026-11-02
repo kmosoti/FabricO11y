@@ -80,17 +80,45 @@ fn negative_controls(root: &Path) -> Result<(), String> {
             &verus,
             "false.rs",
             "use vstd::prelude::*; verus! { pub fn invalid_transition() ensures false {} }",
-            vec!["--no-cheating", "--num-threads", "2"],
+            "use vstd::prelude::*; verus! { pub fn valid_transition() ensures true {} }",
+            vec![
+                "--crate-type",
+                "lib",
+                "--crate-name",
+                "checker_control",
+                "--no-cheating",
+                "--num-threads",
+                "2",
+            ],
         ),
         (
             &lean,
             "False.lean",
             "example : False := by decide",
+            "example : True := by trivial",
             vec!["-E", "warning"],
         ),
     ];
-    for (checker, name, source, arguments) in cases {
+    for (checker, name, source, positive, arguments) in cases {
         let file = work.path().join(name);
+        std::fs::write(&file, positive).map_err(|e| e.to_string())?;
+        let output = Command::new("timeout")
+            .arg("120")
+            .arg(checker)
+            .args(&arguments)
+            .arg(&file)
+            .current_dir(root)
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            return Err(format!(
+                "positive checker control failed: {} {}\n{}{}",
+                checker.display(),
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr),
+            ));
+        }
         std::fs::write(&file, source).map_err(|e| e.to_string())?;
         let output = Command::new("timeout")
             .arg("120")

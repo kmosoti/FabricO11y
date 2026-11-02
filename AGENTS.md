@@ -48,3 +48,8 @@ evaluator or weaken acceptance. Compare per-workload latency, throughput, memory
 and setup costs without an arbitrary composite score. Report token/evaluation
 costs and unavailable usage metrics. Choose a search strategy from measured
 quality/cost evidence; do not assume retained alternatives improve this project.
+
+Use a continuous session by default, with explicit structural alternatives for
+consequential decisions. Escalate to fresh contexts when early assumptions need
+an independent challenge or measured search warrants the additional cost. Retain
+candidate evidence, but do not add branch-revisiting search as a default step.

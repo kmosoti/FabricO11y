@@ -150,11 +150,36 @@ pub fn check(root: &Path) -> Result<(), String> {
                     "reserve_preserves_bound",
                     "reserve_rejects_invalid_state",
                     "reserve_rejects_excess_charge",
+                    "slot_ownership_conservation",
+                    "pool_credit_conservation",
+                    "slot_construction_contract",
+                    "slot_reserve_contract",
+                    "slot_publish_contract",
+                    "slot_lease_contract",
+                    "slot_cancel_contract",
+                    "slot_release_contract",
+                    "fifo_construction_contract",
+                    "fifo_enqueue_contract",
+                    "fifo_dequeue_contract",
                 ] {
-                    let expected = format!(
-                        "'admission_kernel.{property}' depends on axioms: [propext, Classical.choice, Quot.sound]"
-                    );
-                    if !report.lines().any(|line| line == expected) {
+                    let prefix = format!("'admission_kernel.{property}' ");
+                    let allowed = report
+                        .lines()
+                        .find_map(|line| line.strip_prefix(&prefix))
+                        .is_some_and(|suffix| {
+                            suffix == "does not depend on any axioms"
+                                || suffix
+                                    .strip_prefix("depends on axioms: [")
+                                    .and_then(|s| s.strip_suffix(']'))
+                                    .is_some_and(|s| {
+                                        !s.is_empty()
+                                            && s.split(", ").all(|axiom| {
+                                                ["propext", "Classical.choice", "Quot.sound"]
+                                                    .contains(&axiom)
+                                            })
+                                    })
+                        });
+                    if !allowed {
                         return Err(format!("missing property or unexpected axioms: {property}"));
                     }
                 }

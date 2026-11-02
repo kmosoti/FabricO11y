@@ -51,19 +51,6 @@ pub fn artifact_path(path: &Path, root: &Path, allow_local: bool) -> Result<Path
     Ok(resolved)
 }
 
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn artifact_boundary_resolves_parent_symlinks() {
-        let root = tempfile::tempdir().unwrap();
-        let external = tempfile::tempdir().unwrap();
-        std::os::unix::fs::symlink(root.path(), external.path().join("link")).unwrap();
-        assert!(
-            super::artifact_path(&external.path().join("link/result"), root.path(), false).is_err()
-        );
-        assert!(super::artifact_path(&external.path().join("result"), root.path(), false).is_ok());
-    }
-}
 pub fn tools() -> PathBuf {
     std::env::var_os("FABRIC_PROOF_TOOLS")
         .map(PathBuf::from)
@@ -76,4 +63,18 @@ pub fn binary(variable: &str, relative: &str) -> PathBuf {
     std::env::var_os(variable)
         .map(PathBuf::from)
         .unwrap_or_else(|| tools().join(relative))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn artifact_boundary_resolves_parent_symlinks() {
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        std::os::unix::fs::symlink(root.path(), external.path().join("link")).unwrap();
+        assert!(
+            super::artifact_path(&external.path().join("link/result"), root.path(), false).is_err()
+        );
+        assert!(super::artifact_path(&external.path().join("result"), root.path(), false).is_ok());
+    }
 }
