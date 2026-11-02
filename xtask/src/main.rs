@@ -213,6 +213,29 @@ fn verify(root: &Path, file: &Path) -> Result<(), String> {
     }
     result
 }
+fn prove(root: &Path) -> Result<(), String> {
+    let lean =
+        env::var("FABRIC_LEAN").map_err(|_| "FABRIC_LEAN must name the pinned Lean binary")?;
+    let verus =
+        env::var("FABRIC_VERUS").map_err(|_| "FABRIC_VERUS must name the pinned Verus binary")?;
+    if !output(&lean, &["--version"], root)?.starts_with("Lean (version 4.35.0,") {
+        return Err("expected Lean 4.35.0".into());
+    }
+    if !output(&verus, &["--version"], root)?.contains("Version: 0.2026.10.26.d17fbd0") {
+        return Err("expected Verus 0.2026.10.26.d17fbd0".into());
+    }
+    let axioms = output(&lean, &["-E", "warning", "proofs/Admission.lean"], root)?;
+    let expected = "'Admission.reserve_preserves_bound' depends on axioms: [propext, Quot.sound]\n'Admission.reserve_rejects_overflow' depends on axioms: [propext, Quot.sound]";
+    if axioms != expected {
+        return Err(format!("unexpected Lean axiom report:\n{axioms}"));
+    }
+    println!("{axioms}");
+    run(
+        &verus,
+        &["--no-cheating", "--num-threads", "2", "proofs/admission.rs"],
+        root,
+    )
+}
 fn main() -> ExitCode {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -232,10 +255,11 @@ fn main() -> ExitCode {
             Ok(())
         }
         ["check", "--tier", tier] => checks(tier, &root),
+        ["prove"] => prove(&root),
         ["candidate", "capture", file] => capture_to(&root, Path::new(file)),
         ["candidate", "verify", file] => verify(&root, Path::new(file)),
         _ => Err(
-            "usage: doctor | check --tier fast|medium|extensive | candidate capture|verify FILE"
+            "usage: doctor | prove | check --tier fast|medium|extensive | candidate capture|verify FILE"
                 .into(),
         ),
     };
