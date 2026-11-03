@@ -2,7 +2,7 @@ use fabric::spindle::{Config, Daemon, Reply, Request, transport};
 use std::{
     env,
     fs::File,
-    io::Read,
+    io::{Read, Write},
     path::Path,
     time::{Duration, Instant},
 };
@@ -28,24 +28,28 @@ fn export(socket: &str) -> Result<(), String> {
     };
     let mut after = 0;
     while after < boundary {
-        match request(socket, &Request::Read { after, limit: 1 })? {
-            Reply::Records { records } => {
-                if records.is_empty() {
-                    return Err("export frontier unavailable".into());
-                }
-                for (id, observation) in records {
-                    if id > boundary {
-                        return Ok(());
-                    }
-                    after = id;
-                    println!(
-                        "{}",
-                        serde_json::to_string(&observation).map_err(|e| e.to_string())?
-                    )
-                }
+        let records = transport::read_raw(
+            Path::new(socket),
+            after,
+            Instant::now() + Duration::from_secs(2),
+        )?;
+        if records.is_empty() {
+            return Err("export frontier unavailable".into());
+        }
+        for (id, raw) in records {
+            if id > boundary {
+                return Ok(());
             }
-            Reply::Error { error } => return Err(error),
-            _ => return Err("unexpected records reply".into()),
+            if id <= after {
+                return Err("export record order violation".into());
+            }
+            after = id;
+            std::io::stdout()
+                .write_all(&raw)
+                .map_err(|e| e.to_string())?;
+            std::io::stdout()
+                .write_all(b"\n")
+                .map_err(|e| e.to_string())?;
         }
     }
     Ok(())

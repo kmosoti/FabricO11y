@@ -1,5 +1,5 @@
 [workspace]
-members = ["xtask", "fabric", "admission-kernel"]
+members = ["xtask", "fabric", "admission-kernel", "fabric-query", "fabric-mcp", "fabric-server"]
 resolver = "3"
 [workspace.package]
 edition = "2024"

@@ -63,8 +63,16 @@ pub fn check(which: &str, root: &Path) -> Result<(), String> {
         "aeneas" => super::extraction::check(root),
         "collection" => collection(root),
         "distributed" => distributed(root),
+        "custody" => custody(root),
         "all" => {
-            for checker in ["verus", "lean", "collection", "distributed", "aeneas"] {
+            for checker in [
+                "verus",
+                "lean",
+                "collection",
+                "distributed",
+                "custody",
+                "aeneas",
+            ] {
                 check(checker, root)?;
             }
             Ok(())
@@ -317,5 +325,135 @@ fn distributed(root: &Path) -> Result<(), String> {
         ));
     }
     println!("{report}\nConflict-overwrite mutant rejected");
+    Ok(())
+}
+
+fn custody(root: &Path) -> Result<(), String> {
+    let lean = evidence::binary("FABRIC_LEAN", "lean-4.35.0-linux/bin/lean");
+    let executable = lean.to_str().ok_or("non-UTF8 checker")?;
+    if !super::output(executable, &["--version"], root)?.starts_with("Lean (version 4.35.0,") {
+        return Err("unexpected Lean".into());
+    }
+    let report = super::output(executable, &["-E", "warning", "proofs/Custody.lean"], root)?;
+    let names = [
+        "retry_identity_cannot_move_to_new_source",
+        "publish_keeps_binding",
+        "arbitrary_initial_trace_has_no_holes_or_unallocated_ids",
+        "reserve_assigns_fresh_record",
+        "engine_write_other_id",
+        "delayed_exact_retry_preserves_new_bytes",
+        "reservation_preserves_allocation_bound",
+        "step_preserves_allocation_bound",
+        "trace_preserves_allocation_bound",
+        "step_preserves_prefix",
+        "arbitrary_trace_preserves_source_prefix",
+        "existing_binding_immutable",
+        "conflicting_retry_refused",
+        "reservation_precedes_upsert",
+        "unknown_retains_reservation_and_ids",
+        "fresh_id_separates_old",
+        "delayed_packet_preserves_fresh_id",
+        "missing_readback_blocks_publication",
+        "publication_requires_full_readback",
+        "publication_never_skips_source",
+        "step_preserves_binding",
+        "arbitrary_trace_preserves_binding",
+        "shadow_cannot_delete",
+        "gc_requires_matching_confirmation",
+        "expiry_independent_of_metadata",
+        "unauthenticated_lease_refused",
+        "legacy_not_retroactively_expired",
+        "retirement_requires_expiry_and_forwarding",
+        "pending_generation_survives_expiry",
+        "cancellation_retains_credit_until_cleanup",
+    ];
+    if report.lines().count() != names.len() {
+        return Err("unexpected custody axiom audit count".into());
+    }
+    for name in names {
+        let prefix = format!("'Custody.{name}' ");
+        let entries = report
+            .lines()
+            .filter_map(|line| line.strip_prefix(&prefix))
+            .collect::<Vec<_>>();
+        if entries.len() != 1
+            || !(entries[0] == "does not depend on any axioms"
+                || entries[0]
+                    .strip_prefix("depends on axioms: [")
+                    .and_then(|s| s.strip_suffix(']'))
+                    .is_some_and(|s| {
+                        !s.is_empty()
+                            && s.split(", ")
+                                .all(|a| ["propext", "Quot.sound"].contains(&a))
+                    }))
+        {
+            return Err(format!("missing or untrusted custody theorem: {name}"));
+        }
+    }
+    // Independent concrete witnesses distinguish a semantic rejection from a
+    // broken checker, malformed mutation, timeout or unused-variable warning.
+    let original =
+        std::fs::read_to_string(root.join("proofs/Custody.lean")).map_err(|e| e.to_string())?;
+    let definitions = original
+        .split_once("theorem existing_binding_immutable")
+        .ok_or("custody mutation boundary moved")?
+        .0;
+    let controls = r#"
+def controlRecord : Record := ⟨1,7,[1]⟩
+def controlState : State :=
+  {binding := fun key => if key = (0,1) then some controlRecord else none
+   owner := fun key => if key = (0,7) then some (0,1) else none
+   pending := fun _ => true
+   engine := fun _ => none
+   visible := fun _ => false
+   frontier := fun _ => 0
+   allocated := 1}
+theorem conflicting_reservation_control :
+    (reserve controlState (0,1) 7 [2]).binding (0,1) = some controlRecord := by decide
+theorem readback_before_publish_control :
+    (publish controlState (0,1)).visible (0,1) = false := by decide
+end Custody
+"#;
+    let positive = format!("{definitions}{controls}");
+    let temp = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let file = temp.path().join("Controls.lean");
+    std::fs::write(&file, &positive).map_err(|e| e.to_string())?;
+    super::output(
+        executable,
+        &["-E", "warning", file.to_str().ok_or("control path")?],
+        root,
+    )?;
+    let conflict = "  | some _ => s\n";
+    let readback = " ∧ s.engine r.id = some r";
+    if positive.matches(conflict).count() != 1 || positive.matches(readback).count() != 1 {
+        return Err("custody semantic mutation no longer matches exactly".into());
+    }
+    let mutants=[
+        positive.replace(conflict,"  | some old => {s with binding := fun k => if k = key then some {old with identity := identity, bytes := bytes} else s.binding k}\n"),
+        positive.replace(readback,"").replace("  | some r =>\n    if s.pending key","  | some _r =>\n    if s.pending key"),
+    ];
+    for (index, mutant) in mutants.iter().enumerate() {
+        let file = temp.path().join(format!("Mutant{index}.lean"));
+        std::fs::write(&file, mutant).map_err(|e| e.to_string())?;
+        let output = Command::new("timeout")
+            .arg("60")
+            .arg(&lean)
+            .args(["-E", "warning"])
+            .arg(file)
+            .current_dir(root)
+            .output()
+            .map_err(|e| e.to_string())?;
+        let diagnostic = String::from_utf8_lossy(&output.stdout);
+        if output.status.success()
+            || output.status.code() == Some(124)
+            || !diagnostic.contains("decide")
+            || !diagnostic.contains("is false")
+        {
+            return Err(format!(
+                "custody semantic mutant {index} did not fail its witness: {diagnostic}"
+            ));
+        }
+    }
+    println!("{report}\nConflicting-reservation and missing-readback mutants rejected");
     Ok(())
 }

@@ -1,5 +1,8 @@
 # Direct dependency boundaries, including test dependencies.
 [crates]
 admission-kernel = ["vstd"]
-fabric = ["serde", "serde_json", "tempfile", "admission-kernel", "rusqlite", "rustix", "sha2"]
+fabric = ["serde", "serde_json", "tempfile", "admission-kernel", "rusqlite", "rustix", "sha2", "hmac", "schemars"]
+fabric-query = ["fabric", "datafusion", "arrow", "parquet", "tokio", "serde", "serde_json", "sha2", "hmac", "rustix", "tempfile"]
+fabric-mcp = ["fabric", "rmcp", "schemars", "serde", "serde_json", "tokio", "futures", "tokio-util", "tempfile"]
+fabric-server = ["fabric", "fabric-query", "serde", "serde_json", "rusqlite", "sha2", "chrono", "hmac", "reqwest", "rustix", "admission-kernel", "parking_lot", "tempfile"]
 xtask = ["serde", "serde_json", "tempfile", "toml", "proc-macro2", "arrow-array", "arrow-schema", "arrow-ipc", "fabric", "rusqlite", "rustix"]

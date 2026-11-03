@@ -57,6 +57,7 @@ fn config(root: &Path) -> spindle::Config {
         socket: root.join("spindle.sock"),
         storage: root.join("custody"),
         quota_bytes: 2 * 1024 * 1024,
+        forwarding: None,
         max_connections: 8,
         client_timeout_ms: 100,
         files: vec![],

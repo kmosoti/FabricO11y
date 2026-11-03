@@ -1,0 +1,33 @@
+groups:
+  - id: registry.fabric.v3.context
+    type: attribute_group
+    brief: Observation envelope extension for cross-process run correlation.
+    note: All data variants, discriminator values, field bounds and unsigned nanosecond arithmetic retain the immutable fabrico11y/2 definitions. No new data enums are introduced.
+    stability: development
+    attributes:
+      - id: fabric.context.run_id
+        type: string
+        stability: development
+        requirement_level: required
+        brief: Globally unique nonzero lowercase UUID, carried unchanged across processes and origins.
+        note: Required in the v3 context object. AgentRun and ToolExecution data.run_id must equal this value. V2 local run names remain namespaced by origin, producer and generation and do not imply global correlation.
+        examples: [f404b128-2c19-412f-bcd0-823f9c1f1b31]
+  - id: registry.fabric.v3.lease
+    type: attribute_group
+    brief: Authenticated generation lease control metadata; not additional observation data fields.
+    note: Spindle authenticates issued generations with HMAC-SHA256. Expiration remains detectable after generation metadata reclamation. Expired generations refuse new admission and retries, while sealed pending records remain retained and forwardable. Renewal requires a quiescent client; clocks behind the persisted floor fail closed.
+    stability: development
+    attributes:
+      - id: fabric.generation
+        type: string
+        stability: development
+        requirement_level: required
+        brief: Spindle-issued opaque g3 generation lease in the observation identity; at most 128 UTF-8 bytes.
+        note: The token carries a random nonce, expiration and HMAC-SHA256 authentication bound to the producer. Per-generation sequences start at one and advance in order. Memory acceptance, local custody and canonical Fabric custody are distinct acknowledgements.
+        examples: ['g3.<nonce>.<expiration>.<authentication>']
+      - id: fabric.lease.expires_unix_s
+        type: int
+        stability: development
+        requirement_level: required
+        brief: Unsigned expiration timestamp in Unix seconds returned by lease control; normally issued for 86400 seconds.
+        note: This is control-plane metadata, not a new observation field or an OpenTelemetry signed-integer wire conversion. The authenticated expiration is also encoded in the opaque generation string.

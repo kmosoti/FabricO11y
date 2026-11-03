@@ -56,3 +56,21 @@ for resource bounds, executable failure programs and the exact proof boundary.
 audit and a rejected conflict-overwrite mutant (`cargo xtask prove distributed`).
 Atomic stable storage and codec refinement are explicit assumptions; see the
 [server evaluation](../docs/fabric-server-evaluation.md).
+
+`Custody.lean` is an independent two-store protocol model with thirty audited
+properties. It models exact byte lists, persistent source and retry-identity
+bindings, fresh canonical IDs, uncertain upserts and publication after full
+readback. Arbitrary transition traces preserve existing bindings, contiguous
+visible source prefixes and allocation bounds. Additional properties cover
+shadow-mode retention, receipt-scoped reclamation, authenticated lease expiry
+without generation metadata, v2 exemption, generation retirement and cancellation
+credit held until cleanup. Concrete negative controls reject conflict-overwriting
+reservation and publication without readback. Logical bindings retain the original
+bytes as specification state; this does not assert a second physical retained copy.
+Atomic durable operations, receipt provenance, identity encoding, byte-faithful
+runtime readback and the correspondence between cleanup and worker termination
+are explicit refinement assumptions. Natural-number counters do not establish
+Rust overflow handling. Filesystem, SQL engine, crypto, runtime synchronization,
+whole-process memory and global optimality remain outside this model. The v2
+constructor denotes unleased legacy data; rejecting lease-token downgrades remains
+a runtime classification obligation.

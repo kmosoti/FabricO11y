@@ -13,7 +13,13 @@ fn fixture() -> (tempfile::TempDir, Layout, std::path::PathBuf) {
     };
     let bins = temp.path().join("bin");
     fs::create_dir(&bins).unwrap();
-    for name in ["spindle", "fabric-adapter"] {
+    for name in [
+        "spindle",
+        "fabric-adapter",
+        "fabric-server",
+        "fabric-query",
+        "fabric-mcp",
+    ] {
         let path = bins.join(name);
         fs::write(&path, b"fixture executable").unwrap();
         fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();

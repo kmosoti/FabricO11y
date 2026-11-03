@@ -9,6 +9,12 @@ mod coverage;
 mod evidence;
 mod extraction;
 mod fuzz;
+mod investigation_host;
+#[expect(
+    clippy::manual_is_multiple_of,
+    reason = "Keep the independent reference calculation in integer remainder form."
+)]
+mod investigation_lab;
 mod profile;
 mod proof;
 mod registry;
@@ -344,6 +350,8 @@ fn main() -> ExitCode {
         }
         ["check", "--tier", tier] => checks(tier, &root),
         ["collection", ..] => xtask::collection::run(&root, &args[1..]),
+        ["investigation-lab", ..] => investigation_lab::entry(&args[1..]),
+        ["investigation-host", ..] => investigation_host::entry(&args[1..]),
         ["prove"] => proof::check("verus", &root),
         ["prove", checker] => proof::check(checker, &root),
         ["architecture"] => architecture::check(&root),
