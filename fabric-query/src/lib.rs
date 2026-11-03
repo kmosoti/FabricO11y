@@ -43,6 +43,7 @@ const POOL: usize = 256 * 1024 * 1024;
 const SPILL: u64 = 512 * 1024 * 1024;
 const FILE_REQUESTS: usize = 8;
 const METADATA_PREFETCH_BYTES: usize = 8 * 1024;
+const EXECUTION_THREADS: usize = 2;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -579,7 +580,7 @@ impl Projection {
         }
         // Scope-selected files only enter this session; filters precede every aggregate.
         let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
+            .worker_threads(EXECUTION_THREADS)
             .enable_all()
             .build()
             .map_err(err)?;
@@ -704,7 +705,7 @@ impl Projection {
             Arc::new(LimitStore::new(LocalFileSystem::new(), FILE_REQUESTS)),
         );
         let config = SessionConfig::new()
-            .with_target_partitions(1)
+            .with_target_partitions(EXECUTION_THREADS)
             .set_usize("datafusion.execution.meta_fetch_concurrency", FILE_REQUESTS);
         let ctx = SessionContext::new_with_config_rt(config, env);
         if segments.is_empty() {

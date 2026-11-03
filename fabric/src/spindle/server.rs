@@ -392,6 +392,16 @@ impl Daemon {
     }
     fn forward_tick(&mut self) {
         use std::sync::mpsc::TryRecvError;
+        // Confirmed custody can drain while a later forwarding RPC is waiting.
+        // Each invocation still reclaims at most 32; failures retain the existing
+        // retry backoff and do not discharge unconfirmed local payloads.
+        if Instant::now() >= self.next_forward
+            && let Err(error) = self.store.reclaim_confirmed()
+        {
+            self.health.forwarding_error = Some(error);
+            self.next_forward = Instant::now() + Duration::from_millis(100);
+            return;
+        }
         if let Some(worker) = &self.forward_worker {
             match worker.try_recv() {
                 Ok(result) => {
@@ -421,11 +431,6 @@ impl Daemon {
             }
         }
         if Instant::now() < self.next_forward {
-            return;
-        }
-        if let Err(error) = self.store.reclaim_confirmed() {
-            self.health.forwarding_error = Some(error);
-            self.next_forward = Instant::now() + Duration::from_millis(100);
             return;
         }
         let Some(config) = self.config.forwarding.clone() else {
@@ -1115,5 +1120,133 @@ mod connection_accounting_tests {
         assert_eq!(client.read(&mut header).unwrap(), 0);
         assert!(daemon.connections.is_empty());
         assert_eq!(daemon.health.errors, 0);
+    }
+}
+
+#[cfg(test)]
+mod forwarding_reclamation_tests {
+    use super::*;
+    use std::{net::TcpListener, sync::mpsc};
+    fn raw(sequence: u64) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({"version":2,"registry":"fabrico11y/2","identity":{"producer":"gc-forward","generation":"legacy","sequence":sequence},"timestamp_ns":1,"resource":"fixture","data":{"kind":"event","name":"gc","message":"retained exact bytes"}})).unwrap()
+    }
+    #[test]
+    fn confirmed_gc_advances_during_later_blocked_forward_and_admission_remains_usable() {
+        let temp = tempfile::tempdir().unwrap();
+        fs::set_permissions(temp.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let credential = temp.path().join("credential");
+        fs::write(&credential, "fixture-key").unwrap();
+        fs::set_permissions(&credential, fs::Permissions::from_mode(0o600)).unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let config = Config {
+            socket: temp.path().join("socket"),
+            storage: temp.path().join("store"),
+            quota_bytes: 4 * 1024 * 1024,
+            forwarding: Some(super::super::ForwardConfig {
+                endpoint: listener.local_addr().unwrap().to_string(),
+                credential_file: credential,
+                authority: "authority".into(),
+                reclaim_confirmed: true,
+            }),
+            max_connections: 4,
+            client_timeout_ms: 1000,
+            files: vec![],
+            journal: None,
+            host: None,
+        };
+        let mut daemon = Daemon::open(config.clone()).unwrap();
+        daemon.store.begin_connection_batch().unwrap();
+        for sequence in 1..=129 {
+            daemon.store.submit(&raw(sequence), None).unwrap();
+        }
+        daemon.store.commit_connection_batch().unwrap();
+        let origin = daemon.store.origin().to_owned();
+        daemon
+            .store
+            .acknowledge("authority", &origin, 128, 128)
+            .unwrap();
+        assert_eq!(daemon.store.reclaimed().unwrap(), 32);
+
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let remote_origin = origin.clone();
+        let remote = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let bytes =
+                crate::canonical::read_frame(&mut stream, Instant::now() + Duration::from_secs(2))
+                    .unwrap();
+            let request: crate::canonical::Authenticated = serde_json::from_slice(&bytes).unwrap();
+            match request.request {
+                crate::canonical::Request::Ingest { origin, records } => {
+                    assert_eq!(origin, remote_origin);
+                    assert_eq!(records.len(), 1);
+                    assert_eq!(records[0].source_id, 129);
+                    assert_eq!(records[0].raw.as_bytes(), raw(129));
+                }
+                other => panic!("unexpected later forward: {other:?}"),
+            }
+            started_tx.send(()).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            // Close without a receipt: the later request's outcome is unknown.
+            drop(stream);
+        });
+        // Exactly one tick starts the later RPC. Await its actual request without
+        // ticking, so confirmed rows demonstrably remain when the worker blocks.
+        daemon.tick().unwrap();
+        started_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert_eq!(daemon.store.reclaimed().unwrap(), 64);
+        assert!(daemon.forward_worker.is_some());
+        daemon.tick().unwrap();
+        assert_eq!(daemon.store.reclaimed().unwrap(), 96);
+        daemon.tick().unwrap();
+        assert_eq!(daemon.store.reclaimed().unwrap(), 128);
+        assert_eq!(daemon.store.forwarded().unwrap(), 128);
+        assert_eq!(daemon.store.count().unwrap(), 1);
+        assert_eq!(daemon.store.read_raw(128, 1).unwrap()[0], (129, raw(129)));
+        assert!(matches!(
+            daemon.forward_worker.as_ref().unwrap().try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+
+        let path = config.socket.clone();
+        let admission = std::thread::spawn(move || {
+            super::super::transport::submit_bytes(
+                &path,
+                &raw(130),
+                Instant::now() + Duration::from_secs(1),
+            )
+        });
+        let deadline = Instant::now() + Duration::from_secs(1);
+        while !admission.is_finished() {
+            daemon.tick().unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(admission.join().unwrap().unwrap().id, 130);
+        assert_eq!(daemon.store.count().unwrap(), 2);
+        assert_eq!(daemon.store.reclaimed().unwrap(), 128);
+        assert_eq!(daemon.store.forwarded().unwrap(), 128);
+        assert_eq!(daemon.store.read_raw(129, 1).unwrap()[0], (130, raw(130)));
+        assert_eq!(daemon.health.errors, 0);
+        assert_eq!(daemon.health.refusals, 0);
+        release_tx.send(()).unwrap();
+        remote.join().unwrap();
+        assert!(
+            daemon
+                .forward_worker
+                .take()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap()
+                .is_err()
+        );
+        drop(daemon);
+        let store = Store::open(&config.storage, config.quota_bytes).unwrap();
+        assert_eq!(store.highest_record_id().unwrap(), 130);
+        assert_eq!(store.forwarded().unwrap(), 128);
+        assert_eq!(store.reclaimed().unwrap(), 128);
+        assert_eq!(store.count().unwrap(), 2);
+        assert_eq!(store.read_raw(128, 1).unwrap()[0], (129, raw(129)));
+        assert_eq!(store.read_raw(129, 1).unwrap()[0], (130, raw(130)));
     }
 }

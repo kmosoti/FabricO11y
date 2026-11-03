@@ -1696,11 +1696,11 @@ mod forwarding_batch_bounds_tests {
         store
     }
     #[test]
-    fn forwarding_offers_128_contiguous_records_and_acknowledgement_reclaims_only_32() {
+    fn forwarding_offers_512_contiguous_records_and_acknowledgement_reclaims_only_32() {
         let temp = tempfile::tempdir().unwrap();
         let mut store = configured(temp.path());
         store.begin_connection_batch().unwrap();
-        for sequence in 1..=129 {
+        for sequence in 1..=513 {
             assert_eq!(
                 store.submit(&raw(sequence, "small"), None).unwrap().id,
                 sequence
@@ -1708,27 +1708,27 @@ mod forwarding_batch_bounds_tests {
         }
         store.commit_connection_batch().unwrap();
         let offered = store.pending_batch().unwrap();
-        assert_eq!(offered.len(), 128);
+        assert_eq!(offered.len(), 512);
         for (index, record) in offered.iter().enumerate() {
             let expected = index as u64 + 1;
             assert_eq!(record.source_id, expected);
             assert_eq!(record.raw.as_bytes(), raw(expected, "small"));
         }
         let origin = store.origin().to_owned();
-        assert!(store.acknowledge("authority", &origin, 129, 128).is_err());
-        assert!(store.acknowledge("authority", &origin, 129, 129).is_err());
+        assert!(store.acknowledge("authority", &origin, 513, 512).is_err());
+        assert!(store.acknowledge("authority", &origin, 513, 513).is_err());
         assert_eq!(store.forwarded().unwrap(), 0);
         assert_eq!(store.reclaimed().unwrap(), 0);
-        store.acknowledge("authority", &origin, 128, 128).unwrap();
-        assert_eq!(store.forwarded().unwrap(), 128);
+        store.acknowledge("authority", &origin, 512, 512).unwrap();
+        assert_eq!(store.forwarded().unwrap(), 512);
         assert_eq!(store.reclaimed().unwrap(), 32);
-        assert_eq!(store.count().unwrap(), 97);
+        assert_eq!(store.count().unwrap(), 481);
         let next = store.pending_batch().unwrap();
         assert_eq!(next.len(), 1);
-        assert_eq!(next[0].source_id, 129);
+        assert_eq!(next[0].source_id, 513);
         assert!(store.reclaim_confirmed().unwrap());
         assert_eq!(store.reclaimed().unwrap(), 64);
-        assert_eq!(store.read_raw(128, 1).unwrap()[0], (129, raw(129, "small")));
+        assert_eq!(store.read_raw(512, 1).unwrap()[0], (513, raw(513, "small")));
     }
     #[test]
     fn decoded_byte_cap_stops_before_count_cap_and_receipt_cannot_exceed_offer() {

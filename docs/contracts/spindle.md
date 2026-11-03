@@ -44,12 +44,14 @@ canonical confirmed prefix. Operators enable it only after verifying backfill an
 shadow comparison. Each custody directory
 has a persistent random origin and monotonic record IDs; deleting acknowledged
 payloads never resets allocation. Forwarding runs outside the collection poll
-with at most 128 records and 256 KiB of decoded raw payload per batch. A receipt
+with at most 512 records and 256 KiB of decoded raw payload per batch. A receipt
 must match the configured authority, origin and offered prefix before atomic
 payload reclamation when opt-in is enabled. Confirmation and reclamation have
 separate persistent monotonic watermarks. Enabling reclamation after restart also
-reclaims previously confirmed shadow data in bounded batches, without requiring
-new observations. Lost, stale or wrong receipts cannot discharge custody.
+reclaims previously confirmed shadow data in batches of at most 32 records, without
+requiring new observations. Reclamation of the confirmed prefix continues while a
+later forwarding request waits; unconfirmed payloads remain local. Lost, stale or
+wrong receipts cannot discharge custody.
 
 Reclaimed reads and retries resolve original bytes through the canonical receiver.
 Unavailable canonical data produces an explicit error; it never becomes an empty
