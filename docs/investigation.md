@@ -55,8 +55,9 @@ are separate from total process memory. Selected Parquet metadata estimates scan
 work before execution. An exhausted scan or execution budget returns an error;
 partial aggregate totals are never reported as complete. Cancellation retains
 the worker reservation until execution cleanup finishes.
-Queries use one DataFusion execution partition and at most eight concurrent
-local object-store requests, including the initial per-file metadata lookup.
+The single active query uses two runtime worker threads and targets two
+DataFusion execution partitions sharing that pool. It permits at most eight
+concurrent local object-store requests, including the initial per-file metadata lookup.
 The projection supplies its fixed Arrow schema directly to the reader.
 
 The rebuildable projection uses Arrow/Parquet 59 and DataFusion 55 outside the

@@ -10,7 +10,7 @@ use std::{
 
 pub const MAX_FRAME: usize = 1024 * 1024;
 // Forwarding count and decoded-byte caps apply together; reclamation has its own bound.
-pub const MAX_BATCH: usize = 128;
+pub const MAX_BATCH: usize = 512;
 pub const MAX_BATCH_BYTES: usize = 256 * 1024;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

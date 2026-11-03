@@ -24,6 +24,7 @@ use std::{
 };
 const TABLE: &str = "fabric_canonical_v1";
 const RESPONSE_LIMIT: u64 = 1024 * 1024;
+const SQL_FORM_LIMIT: usize = 1024 * 1024;
 const CREATE: &str = "CREATE TABLE IF NOT EXISTS fabric_canonical_v1 (source_time TIMESTAMP(9) TIME INDEX, origin STRING, canonical_id BIGINT UNSIGNED, source_id BIGINT UNSIGNED, producer STRING, generation STRING, identity_sequence BIGINT UNSIGNED, timestamp_ns BIGINT UNSIGNED, run_key STRING INVERTED INDEX, resource_name STRING, kind STRING, activity_name STRING, duration_ns BIGINT UNSIGNED, outcome STRING, registry_name STRING, gap_reason STRING, payload BINARY, PRIMARY KEY(origin))";
 #[derive(Clone)]
 pub struct Greptime {
@@ -174,15 +175,19 @@ impl Greptime {
         if sql.len() > 2 * 1024 * 1024 {
             return Err("native SQL request budget exceeded".into());
         }
-        let remaining = deadline
-            .checked_duration_since(Instant::now())
-            .ok_or("engine deadline")?;
+        let mut request = self.form_request(sql)?;
+        if Self::form_length(&request)? > SQL_FORM_LIMIT {
+            return Err("native SQL form request budget exceeded".into());
+        }
+        check(deadline, cancel)?;
+        *request.timeout_mut() = Some(
+            deadline
+                .checked_duration_since(Instant::now())
+                .ok_or("engine deadline")?,
+        );
         let response = self
             .http
-            .post(&self.endpoint)
-            .timeout(remaining)
-            .form(&[("sql", sql)])
-            .send()
+            .execute(request)
             .map_err(|e| format!("engine request; outcome unknown: {e}"))?;
         let status = response.status();
         let mut bytes = Vec::new();
@@ -234,6 +239,23 @@ impl Greptime {
             })
             .collect()
     }
+    fn form_request(&self, sql: &str) -> Result<reqwest::blocking::Request, String> {
+        self.http
+            .post(&self.endpoint)
+            .form(&[("sql", sql)])
+            .build()
+            .map_err(err)
+    }
+    fn form_length(request: &reqwest::blocking::Request) -> Result<usize, String> {
+        request
+            .body()
+            .and_then(|body| body.as_bytes())
+            .map(<[u8]>::len)
+            .ok_or_else(|| "native SQL form must be buffered".into())
+    }
+    fn encoded_form_length(&self, sql: &str) -> Result<usize, String> {
+        Self::form_length(&self.form_request(sql)?)
+    }
     pub fn get(&self, origin: &str, source_id: u64) -> Result<Option<CanonicalRow>, String> {
         Ok(self
             .get_rows(&[(origin.to_owned(), source_id)])?
@@ -278,9 +300,10 @@ impl Greptime {
     /// Standalone safe entry: refuse conflicting retained bytes before upsert.
     /// Callers still serialize this check/write sequence with other writers.
     pub fn put_rows(&self, rows: &[CanonicalRow]) -> Result<(), String> {
-        let Some(sql) = Self::insert_sql(rows)? else {
+        let statements = self.insert_statements(rows)?;
+        if statements.is_empty() {
             return Ok(());
-        };
+        }
         let keys = rows
             .iter()
             .map(|row| (row.origin.clone(), row.source_id))
@@ -294,24 +317,77 @@ impl Greptime {
                 return Err("engine byte conflict".into());
             }
         }
-        self.execute_insert(&sql)
+        self.execute_inserts(&statements)
     }
     /// Only for the sole writer holding a durable immutable exact-byte reservation.
     /// The caller must reserve both source/canonical IDs before this upsert, retain
     /// that binding on unknown outcomes, and verify full readback before publishing.
     pub(crate) fn write_reserved(&self, rows: &[CanonicalRow]) -> Result<(), String> {
-        let Some(sql) = Self::insert_sql(rows)? else {
-            return Ok(());
-        };
-        self.execute_insert(&sql)
+        self.execute_inserts(&self.insert_statements(rows)?)
     }
-    fn execute_insert(&self, sql: &str) -> Result<(), String> {
-        self.sql(
-            sql,
-            Instant::now() + Duration::from_secs(5),
-            &AtomicBool::new(false),
-        )?;
+    fn execute_inserts(&self, statements: &[String]) -> Result<(), String> {
+        // One write deadline covers all chunks. The caller retains the entire
+        // immutable reservation and verifies ALL rows before any publication.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let cancel = AtomicBool::new(false);
+        for sql in statements {
+            self.sql(sql, deadline, &cancel)?;
+        }
         Ok(())
+    }
+    fn insert_prefix() -> String {
+        format!(
+            "INSERT INTO {TABLE} (source_time,origin,canonical_id,source_id,producer,generation,identity_sequence,timestamp_ns,run_key,resource_name,kind,activity_name,duration_ns,outcome,registry_name,gap_reason,payload) VALUES "
+        )
+    }
+    fn insert_statements(&self, rows: &[CanonicalRow]) -> Result<Vec<String>, String> {
+        // Validate the COMPLETE batch before any network effect, including an
+        // invalid/conflicting final row, then preserve its exact tuple bytes.
+        let tuples = Self::insert_tuples(rows)?;
+        if tuples.is_empty() {
+            return Ok(vec![]);
+        }
+        let prefix = Self::insert_prefix();
+        let overhead = self.encoded_form_length("")?;
+        let prefix_length = self.encoded_form_length(&prefix)?;
+        let comma_length = self.encoded_form_length(",")? - overhead;
+        let mut statements = Vec::new();
+        let mut sql = prefix.clone();
+        let mut encoded = prefix_length;
+        let mut populated = false;
+        for tuple in tuples {
+            // Encoding is additive within the one sql value. Use reqwest's
+            // maintained serializer for bounded components, not a custom form
+            // encoder or quadratic repeated encoding of a growing statement.
+            let cost = self.encoded_form_length(&tuple)? - overhead;
+            if prefix_length
+                .checked_add(cost)
+                .is_none_or(|n| n > SQL_FORM_LIMIT)
+            {
+                return Err("native row exceeds SQL form request budget".into());
+            }
+            let needed = encoded
+                .checked_add(if populated { comma_length } else { 0 })
+                .and_then(|n| n.checked_add(cost))
+                .ok_or("native SQL form size overflow")?;
+            if needed > SQL_FORM_LIMIT {
+                statements.push(sql);
+                sql = prefix.clone();
+                encoded = prefix_length;
+                populated = false;
+            }
+            if populated {
+                sql.push(',');
+                encoded += comma_length;
+            }
+            sql.push_str(&tuple);
+            encoded += cost;
+            populated = true;
+        }
+        if populated {
+            statements.push(sql);
+        }
+        Ok(statements)
     }
     /// Persisted engine tail, including any writes not yet published by control.
     pub(crate) fn highest_canonical_id(&self) -> Result<u64, String> {
@@ -327,7 +403,12 @@ impl Greptime {
             None => Err("engine maximum canonical ID column missing".into()),
         }
     }
+    #[cfg(test)]
     fn insert_sql(rows: &[CanonicalRow]) -> Result<Option<String>, String> {
+        let tuples = Self::insert_tuples(rows)?;
+        Ok((!tuples.is_empty()).then(|| Self::insert_prefix() + &tuples.join(",")))
+    }
+    fn insert_tuples(rows: &[CanonicalRow]) -> Result<Vec<String>, String> {
         if rows.len() > fabric::canonical::MAX_BATCH
             || rows
                 .iter()
@@ -337,7 +418,7 @@ impl Greptime {
             return Err("engine ingestion batch bound".into());
         }
         if rows.is_empty() {
-            return Ok(None);
+            return Ok(vec![]);
         }
         let mut unique = BTreeMap::new();
         let mut inserts = Vec::new();
@@ -376,10 +457,7 @@ impl Greptime {
                 hex(row.raw.as_bytes())
             ));
         }
-        Ok(Some(format!(
-            "INSERT INTO {TABLE} (source_time,origin,canonical_id,source_id,producer,generation,identity_sequence,timestamp_ns,run_key,resource_name,kind,activity_name,duration_ns,outcome,registry_name,gap_reason,payload) VALUES {}",
-            inserts.join(",")
-        )))
+        Ok(inserts)
     }
     fn resolve(
         &self,
@@ -904,6 +982,170 @@ fn typed<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn quoted_batch(maximal_fields: bool) -> Vec<CanonicalRow> {
+        let (identity, resource, name, run) = if maximal_fields {
+            (128, 256, 256, 128)
+        } else {
+            (16, 32, 32, 32)
+        };
+        let mut rows = Vec::new();
+        let mut bytes = 0;
+        for id in 1..=fabric::canonical::MAX_BATCH as u64 {
+            let raw = serde_json::to_string(&json!({
+                "version":2,"registry":"fabrico11y/2",
+                "identity":{"producer":"'".repeat(identity),"generation":"'".repeat(identity),"sequence":id},
+                "timestamp_ns":u64::MAX,"resource":"'".repeat(resource),
+                "data":{"kind":"tool_execution","tool":"'".repeat(name),"run_id":"'".repeat(run),"duration_ns":u64::MAX,"status":"cancelled"}
+            })).unwrap();
+            if bytes + raw.len() > fabric::canonical::MAX_BATCH_BYTES {
+                break;
+            }
+            observation::decode_versioned(raw.as_bytes()).unwrap();
+            bytes += raw.len();
+            rows.push(CanonicalRow {
+                canonical_id: id,
+                source_id: id,
+                origin: "'".repeat(128),
+                raw,
+            });
+        }
+        rows
+    }
+    /// Independent WHATWG form-component byte count, including the fixed sql=.
+    fn independent_form_length(sql: &str) -> usize {
+        4 + sql
+            .as_bytes()
+            .iter()
+            .map(|b| {
+                if b.is_ascii_alphanumeric() || matches!(*b, b'*' | b'-' | b'.' | b'_' | b' ') {
+                    1
+                } else {
+                    3
+                }
+            })
+            .sum::<usize>()
+    }
+    fn local_builder() -> Greptime {
+        Greptime {
+            endpoint: "http://127.0.0.1:1/v1/sql".into(),
+            http: Client::builder().no_proxy().build().unwrap(),
+            cursor_key: [0; 32],
+            authority: Arc::new(Mutex::new(None)),
+        }
+    }
+    #[test]
+    fn native_insert_chunks_fit_actual_form_and_preserve_exact_payloads() {
+        let engine = local_builder();
+        assert!(engine.insert_statements(&[]).unwrap().is_empty());
+        for maximal in [false, true] {
+            let rows = quoted_batch(maximal);
+            let statements = engine.insert_statements(&rows).unwrap();
+            assert!(statements.len() > 1);
+            let mut sizes = Vec::new();
+            for sql in &statements {
+                let request = engine.form_request(sql).unwrap();
+                let size = Greptime::form_length(&request).unwrap();
+                assert_eq!(size, independent_form_length(sql));
+                assert!(size <= SQL_FORM_LIMIT);
+                sizes.push(size);
+            }
+            for row in &rows {
+                let payload = format!("X'{}'", hex(row.raw.as_bytes()));
+                let occurrences: usize = statements
+                    .iter()
+                    .map(|sql| sql.matches(&payload).count())
+                    .sum();
+                assert_eq!(
+                    occurrences, 1,
+                    "each original payload must occur exactly once"
+                );
+            }
+            eprintln!("valid rows={} encoded chunk bytes={sizes:?}", rows.len());
+            let mut invalid = rows.clone();
+            invalid.last_mut().unwrap().raw = "{}".into();
+            let expected = Greptime::insert_tuples(&invalid).unwrap_err();
+            assert_eq!(
+                engine.write_reserved(&invalid).unwrap_err(),
+                expected,
+                "invalid tail must fail before any connection attempt"
+            );
+            let mut conflict = rows[..rows.len() - 1].to_vec();
+            let mut changed = rows[0].clone();
+            changed.raw.push(' ');
+            conflict.push(changed);
+            assert!(
+                engine
+                    .write_reserved(&conflict)
+                    .unwrap_err()
+                    .contains("identity conflict")
+            );
+        }
+        let oversized = "%".repeat(SQL_FORM_LIMIT / 2);
+        assert!(
+            engine
+                .sql(
+                    &oversized,
+                    Instant::now() + Duration::from_secs(1),
+                    &AtomicBool::new(false)
+                )
+                .unwrap_err()
+                .contains("form request budget")
+        );
+    }
+    #[test]
+    fn valid_large_batches_exceed_native_form_envelope() {
+        let client = Client::builder().no_proxy().build().unwrap();
+        for maximal in [false, true] {
+            let rows = quoted_batch(maximal);
+            assert!(rows.len() > 128 && rows.len() <= 512);
+            if !maximal {
+                assert_eq!(rows.len(), 512);
+            }
+            let raw_bytes: usize = rows.iter().map(|r| r.raw.len()).sum();
+            assert!(raw_bytes <= fabric::canonical::MAX_BATCH_BYTES);
+            let forwarded: Vec<_> = rows
+                .iter()
+                .map(|r| fabric::canonical::ForwardRecord {
+                    source_id: r.source_id,
+                    raw: r.raw.clone(),
+                })
+                .collect();
+            let dir = tempfile::tempdir().unwrap();
+            let mut ledger =
+                crate::ledger::Ledger::open(&dir.path().join("ledger"), 8 << 20).unwrap();
+            assert_eq!(
+                ledger.ingest(&rows[0].origin, &forwarded).unwrap(),
+                rows.len() as u64
+            );
+            let request = fabric::canonical::Request::Ingest {
+                origin: rows[0].origin.clone(),
+                records: forwarded,
+            };
+            let frame = serde_json::to_vec(
+                &json!({"credential":"synthetic-boundary-key", "request":request}),
+            )
+            .unwrap();
+            assert!(frame.len() <= 1024 * 1024);
+            let sql = Greptime::insert_sql(&rows).unwrap().unwrap();
+            let request = client
+                .post("http://127.0.0.1:1/v1/sql")
+                .form(&[("sql", sql.as_str())])
+                .build()
+                .unwrap();
+            let encoded = request.body().unwrap().as_bytes().unwrap();
+            assert_eq!(encoded.len(), independent_form_length(&sql));
+            eprintln!(
+                "valid rows={} raw_bytes={raw_bytes} sql_bytes={} encoded_form_bytes={}",
+                rows.len(),
+                sql.len(),
+                encoded.len()
+            );
+            assert!(
+                encoded.len() > 1024 * 1024,
+                "fixture must expose the native envelope boundary"
+            );
+        }
+    }
     #[test]
     fn binary_sql_literals_and_source_time_boundaries_are_exact() {
         assert_eq!(string("a'\\\n"), "CAST(X'61275c0a' AS STRING)");
@@ -1277,6 +1519,33 @@ mod tests {
                 .contains("byte conflict")
         );
         assert_eq!(engine.get_rows(&keys).unwrap(), full);
+        // Exercise the actual pinned HTTP endpoint with a valid public batch
+        // whose unsplit reqwest form exceeds its one-MiB body envelope.
+        let mut quoted = quoted_batch(false);
+        for row in &mut quoted {
+            row.canonical_id = (1u64 << 61) + row.source_id;
+        }
+        assert!(
+            engine
+                .encoded_form_length(&Greptime::insert_sql(&quoted).unwrap().unwrap())
+                .unwrap()
+                > SQL_FORM_LIMIT
+        );
+        engine.write_reserved(&quoted).unwrap();
+        let quoted_keys = quoted
+            .iter()
+            .map(|r| (r.origin.clone(), r.source_id))
+            .collect::<Vec<_>>();
+        assert_eq!(engine.get_rows(&quoted_keys).unwrap(), quoted);
+        let mut conflict = quoted.clone();
+        conflict.last_mut().unwrap().raw.push(' ');
+        assert!(
+            engine
+                .put_rows(&conflict)
+                .unwrap_err()
+                .contains("byte conflict")
+        );
+        assert_eq!(engine.get_rows(&quoted_keys).unwrap(), quoted);
     }
     #[test]
     #[ignore = "requires explicitly configured owned Greptime endpoint and pre-restart witness"]
