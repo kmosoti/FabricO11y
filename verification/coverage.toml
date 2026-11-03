@@ -155,7 +155,7 @@ test = "maximum_batch_retries_keep_exact_bytes_and_conflicts_do_not_advance"
 [[checks]]
 id = "bounded-file-query"
 package = "fabric-query"
-target = "projection"
+target = "file_limits"
 test = "thousand_segments_query_under_low_file_limit"
 
 [[checks]]

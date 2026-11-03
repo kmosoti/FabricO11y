@@ -42,6 +42,7 @@ const RESERVE: u64 = 64 * 1024;
 const POOL: usize = 256 * 1024 * 1024;
 const SPILL: u64 = 512 * 1024 * 1024;
 const FILE_REQUESTS: usize = 8;
+const METADATA_PREFETCH_BYTES: usize = 8 * 1024;
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -716,7 +717,12 @@ impl Projection {
                 .collect::<Vec<_>>();
             let fixed_schema = schema();
             let df = ctx
-                .read_parquet(paths, ParquetReadOptions::default().schema(&fixed_schema))
+                .read_parquet(
+                    paths,
+                    ParquetReadOptions::default()
+                        .schema(&fixed_schema)
+                        .metadata_size_hint(Some(METADATA_PREFETCH_BYTES)),
+                )
                 .await
                 .map_err(err)?;
             ctx.register_table("observations", df.into_view())
