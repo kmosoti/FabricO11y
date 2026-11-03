@@ -825,6 +825,9 @@ impl Store {
         through: u64,
         sent_through: u64,
     ) -> Result<(), String> {
+        if self.connection_batch_active || !self.conn.is_autocommit() {
+            return Err("cannot acknowledge during custody transaction".into());
+        }
         let expected = self.forwarding.as_ref().ok_or("forwarding disabled")?;
         if !admission_kernel::handoff::reclaimable(
             authority == expected.authority,
@@ -851,14 +854,43 @@ impl Store {
             {
                 return Err("canonical acknowledgement exceeds offered contiguous batch".into());
             }
-            self.conn
-                .execute(
-                    "UPDATE custody_state SET value=?1 WHERE key='forwarded'",
-                    [through.to_string()],
-                )
-                .map_err(err)?;
         }
-        self.reclaim_confirmed().map(|_| ())
+        // Confirmation and the first bounded GC share one durability boundary.
+        // Independent GC still drains later batches while forwarding waits.
+        let admission_full = self.admission_full;
+        self.conn
+            .execute_batch("SAVEPOINT canonical_ack")
+            .map_err(err)?;
+        let result = (|| {
+            if through > previous {
+                self.conn
+                    .execute(
+                        "UPDATE custody_state SET value=?1 WHERE key='forwarded'",
+                        [through.to_string()],
+                    )
+                    .map_err(err)?;
+            }
+            self.reclaim_confirmed()?;
+            self.conn
+                .execute_batch("RELEASE canonical_ack")
+                .map_err(err)
+        })();
+        if let Err(error) = result {
+            self.admission_full = admission_full;
+            // SQLite may itself roll back on I/O/full failures. Otherwise undo
+            // both the confirmation and any released inner GC savepoint.
+            if !self.conn.is_autocommit()
+                && let Err(rollback) = self
+                    .conn
+                    .execute_batch("ROLLBACK TO canonical_ack; RELEASE canonical_ack")
+            {
+                return Err(format!(
+                    "{error}; acknowledgement rollback failed: {rollback}"
+                ));
+            }
+            return Err(error);
+        }
+        Ok(())
     }
     /// Highest contiguous payload prefix actually reclaimed, independent of
     /// canonical confirmation during shadow collection.
@@ -876,6 +908,9 @@ impl Store {
     /// Reclaims at most one bounded batch, including previously confirmed shadow
     /// rows after an operator explicitly enables reclamation on restart.
     pub fn reclaim_confirmed(&mut self) -> Result<bool, String> {
+        if self.connection_batch_active {
+            return Err("cannot reclaim during custody connection batch".into());
+        }
         if !self
             .forwarding
             .as_ref()
@@ -888,7 +923,9 @@ impl Store {
         if confirmed <= reclaimed {
             return Ok(false);
         }
-        let tx = self.conn.transaction().map_err(err)?;
+        // Outermost when invoked independently; nested under canonical_ack when
+        // its first batch is reclaimed together with a validated receipt.
+        let tx = self.conn.savepoint().map_err(err)?;
         let rows = {
             let mut statement=tx.prepare("SELECT id,producer,generation,sequence,payload FROM records WHERE id>?1 AND id<=?2 ORDER BY id LIMIT 32").map_err(err)?;
             let rows = statement
@@ -1766,5 +1803,220 @@ mod forwarding_batch_bounds_tests {
         let next = store.pending_batch().unwrap();
         assert_eq!(next[0].source_id, through + 1);
         assert_eq!(next.last().unwrap().source_id, 20);
+    }
+}
+
+#[cfg(test)]
+mod atomic_ack_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    fn raw(sequence: u64) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({"version":2,"registry":"fabrico11y/2","identity":{"producer":"atomic-ack","generation":"legacy","sequence":sequence},"timestamp_ns":1,"resource":"fixture","data":{"kind":"event","name":"ack","message":"original bytes"}})).unwrap()
+    }
+    fn configured(root: &Path) -> Store {
+        let key = root.join("credential");
+        fs::write(&key, "fixture-key").unwrap();
+        fs::set_permissions(&key, fs::Permissions::from_mode(0o600)).unwrap();
+        let mut store = Store::open(&root.join("store"), 2 * MIN_QUOTA).unwrap();
+        store
+            .configure_forwarding(Some(super::super::ForwardConfig {
+                endpoint: "127.0.0.1:9".into(),
+                credential_file: key,
+                authority: "authority".into(),
+                reclaim_confirmed: true,
+            }))
+            .unwrap();
+        store.begin_connection_batch().unwrap();
+        for sequence in 1..=40 {
+            store.submit(&raw(sequence), None).unwrap();
+        }
+        store.commit_connection_batch().unwrap();
+        store
+    }
+    unsafe extern "C" fn committed(context: *mut std::ffi::c_void) -> std::ffi::c_int {
+        // The test declares this counter before Store and unregisters the hook;
+        // its address remains live through every possible connection callback.
+        unsafe { &*context.cast::<AtomicUsize>() }.fetch_add(1, Ordering::SeqCst);
+        0
+    }
+    #[test]
+    fn ack_and_first_gc_have_one_durable_commit() {
+        let commits = AtomicUsize::new(0);
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = configured(temp.path());
+        assert_eq!(
+            store
+                .conn
+                .pragma_query_value(None, "journal_mode", |r| r.get::<_, String>(0))
+                .unwrap(),
+            "delete"
+        );
+        assert_eq!(
+            store
+                .conn
+                .pragma_query_value(None, "synchronous", |r| r.get::<_, u32>(0))
+                .unwrap(),
+            3
+        );
+        unsafe {
+            rusqlite::ffi::sqlite3_commit_hook(
+                store.conn.handle(),
+                Some(committed),
+                (&commits as *const AtomicUsize).cast_mut().cast(),
+            );
+        }
+        let origin = store.origin().to_owned();
+        store.acknowledge("authority", &origin, 40, 40).unwrap();
+        unsafe {
+            rusqlite::ffi::sqlite3_commit_hook(store.conn.handle(), None, std::ptr::null_mut());
+        }
+        assert_eq!(store.forwarded().unwrap(), 40);
+        assert_eq!(store.reclaimed().unwrap(), 32);
+        assert_eq!(store.count().unwrap(), 8);
+        assert_eq!(
+            commits.load(Ordering::SeqCst),
+            1,
+            "ACK and first bounded GC must share one native SQLite commit"
+        );
+    }
+
+    fn failed_ack_is_atomic(fault: &str, expected_error: &str) {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("store");
+        let mut store = configured(temp.path());
+        let config = store.forwarding.clone().unwrap();
+        let origin = store.origin().to_owned();
+        store.conn.execute_batch(fault).unwrap();
+        store.admission_full = true;
+        assert!(
+            store
+                .acknowledge("authority", &origin, 40, 40)
+                .unwrap_err()
+                .contains(expected_error)
+        );
+        assert!(
+            store.admission_full,
+            "failed GC must not clear the admission-full cache"
+        );
+        assert!(store.conn.is_autocommit());
+        assert_eq!(store.forwarded().unwrap(), 0);
+        assert_eq!(store.reclaimed().unwrap(), 0);
+        assert_eq!(store.highest_record_id().unwrap(), 40);
+        assert_eq!(store.count().unwrap(), 40);
+        assert_eq!(
+            store
+                .conn
+                .query_row("SELECT count(*) FROM legacy_retries", [], |r| r
+                    .get::<_, u64>(0))
+                .unwrap(),
+            0
+        );
+        let retry = store.submit(&raw(1), None).unwrap();
+        assert!(retry.duplicate);
+        assert_eq!(retry.id, 1);
+        let mut conflicting = raw(1);
+        conflicting.push(b' ');
+        assert!(
+            store
+                .submit(&conflicting, None)
+                .unwrap_err()
+                .contains("identity conflict")
+        );
+        drop(store);
+
+        let mut store = Store::open(&path, 2 * MIN_QUOTA).unwrap();
+        store.configure_forwarding(Some(config)).unwrap();
+        assert_eq!(store.origin(), origin);
+        assert_eq!(store.forwarded().unwrap(), 0);
+        assert_eq!(store.reclaimed().unwrap(), 0);
+        let pending = store.pending_batch().unwrap();
+        assert_eq!(pending.len(), 40);
+        for (index, row) in pending.iter().enumerate() {
+            assert_eq!(row.source_id, index as u64 + 1);
+            assert_eq!(row.raw.as_bytes(), raw(row.source_id));
+        }
+        store
+            .conn
+            .execute_batch("DROP TRIGGER fail_ack_gc")
+            .unwrap();
+        store.acknowledge("authority", &origin, 40, 40).unwrap();
+        assert_eq!(store.forwarded().unwrap(), 40);
+        assert_eq!(store.reclaimed().unwrap(), 32);
+        assert_eq!(store.count().unwrap(), 8);
+        assert!(store.reclaim_confirmed().unwrap());
+        assert_eq!(store.reclaimed().unwrap(), 40);
+        assert_eq!(store.count().unwrap(), 0);
+        assert_eq!(store.highest_record_id().unwrap(), 40);
+        drop(store);
+        let mut store = Store::open(&path, 2 * MIN_QUOTA).unwrap();
+        assert_eq!(store.origin(), origin);
+        assert_eq!(store.forwarded().unwrap(), 40);
+        assert_eq!(store.reclaimed().unwrap(), 40);
+        assert_eq!(store.submit(&raw(41), None).unwrap().id, 41);
+    }
+    #[test]
+    fn delete_failure_rolls_back_ack_and_retains_exact_retry_after_reopen() {
+        failed_ack_is_atomic(
+            "CREATE TRIGGER fail_ack_gc BEFORE DELETE ON records BEGIN SELECT RAISE(ABORT, 'injected GC delete failure'); END;",
+            "injected GC delete failure",
+        );
+    }
+    #[test]
+    fn outer_release_failure_rolls_back_ack_gc_and_admission_full_cache() {
+        failed_ack_is_atomic(
+            "PRAGMA foreign_keys=ON;
+CREATE TABLE ack_parent(id INTEGER PRIMARY KEY);
+CREATE TABLE ack_child(id INTEGER REFERENCES ack_parent(id) DEFERRABLE INITIALLY DEFERRED);
+CREATE TRIGGER fail_ack_gc AFTER DELETE ON records BEGIN INSERT INTO ack_child VALUES(1); END;",
+            "FOREIGN KEY constraint failed",
+        );
+    }
+    #[test]
+    fn ack_refuses_an_uncommitted_connection_batch() {
+        let temp = tempfile::tempdir().unwrap();
+        let mut store = configured(temp.path());
+        let origin = store.origin().to_owned();
+        store.begin_connection_batch().unwrap();
+        assert!(
+            store
+                .acknowledge("authority", &origin, 40, 40)
+                .unwrap_err()
+                .contains("custody transaction")
+        );
+        assert_eq!(store.forwarded().unwrap(), 0);
+        assert_eq!(store.reclaimed().unwrap(), 0);
+        store.rollback_connection_batch().unwrap();
+        store.acknowledge("authority", &origin, 40, 40).unwrap();
+        assert_eq!(store.reclaimed().unwrap(), 32);
+    }
+    #[test]
+    fn gc_refuses_a_connection_batch_without_clearing_admission_full() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("store");
+        let mut store = configured(temp.path());
+        let config = store.forwarding.clone().unwrap();
+        let origin = store.origin().to_owned();
+        store.acknowledge("authority", &origin, 40, 40).unwrap();
+        store.admission_full = true;
+        store.begin_connection_batch().unwrap();
+        assert!(
+            store
+                .reclaim_confirmed()
+                .unwrap_err()
+                .contains("custody connection batch")
+        );
+        store.rollback_connection_batch().unwrap();
+        assert!(store.admission_full);
+        assert_eq!(store.reclaimed().unwrap(), 32);
+        assert_eq!(store.read_raw(32, 1).unwrap()[0], (33, raw(33)));
+        drop(store);
+        let mut store = Store::open(&path, 2 * MIN_QUOTA).unwrap();
+        store.configure_forwarding(Some(config)).unwrap();
+        assert_eq!(store.forwarded().unwrap(), 40);
+        assert_eq!(store.reclaimed().unwrap(), 32);
+        assert_eq!(store.count().unwrap(), 8);
+        assert!(store.reclaim_confirmed().unwrap());
+        assert_eq!(store.reclaimed().unwrap(), 40);
     }
 }
