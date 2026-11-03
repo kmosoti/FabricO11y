@@ -260,7 +260,7 @@ fn added(before: &[Observation], after: &[Observation]) -> Result<(), String> {
         return Err("smoke exact append/recovery mismatch (requires SDK-only idle service)".into());
     }
     let new = &after[before.len()..];
-    for pair in new.chunks_exact(2) {
+    for pair in new.as_chunks::<2>().0 {
         if !matches!(&pair[0].data, Data::ToolExecution { tool, status: fabric::observation::Outcome::Ok, .. } if tool == "multiply")
             || !matches!(
                 pair[1].data,
