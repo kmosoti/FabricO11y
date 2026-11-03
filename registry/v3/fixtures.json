@@ -1,0 +1,115 @@
+[
+  {
+    "name": "global-context",
+    "valid": true,
+    "wire": {
+      "version": 3,
+      "registry": "fabrico11y/3",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 18446744073709551615,
+      "resource": "fixture",
+      "data": {
+        "kind": "event",
+        "name": "context",
+        "message": "global run"
+      }
+    }
+  },
+  {
+    "name": "context-required",
+    "valid": false,
+    "wire": {
+      "version": 3,
+      "registry": "fabrico11y/3",
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 18446744073709551615,
+      "resource": "fixture",
+      "data": {
+        "kind": "event",
+        "name": "context",
+        "message": "global run"
+      }
+    }
+  },
+  {
+    "name": "local-run-not-global",
+    "valid": false,
+    "wire": {
+      "version": 3,
+      "registry": "fabrico11y/3",
+      "context": {
+        "run_id": "local-run"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 18446744073709551615,
+      "resource": "fixture",
+      "data": {
+        "kind": "event",
+        "name": "context",
+        "message": "global run"
+      }
+    }
+  },
+  {
+    "name": "context-unknown-field",
+    "valid": false,
+    "wire": {
+      "version": 3,
+      "registry": "fabrico11y/3",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31",
+        "activity_id": "unsupported"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 18446744073709551615,
+      "resource": "fixture",
+      "data": {
+        "kind": "event",
+        "name": "context",
+        "message": "global run"
+      }
+    }
+  },
+  {
+    "name": "wrong-registry",
+    "valid": false,
+    "wire": {
+      "version": 3,
+      "registry": "fabrico11y/2",
+      "context": {
+        "run_id": "f404b128-2c19-412f-bcd0-823f9c1f1b31"
+      },
+      "identity": {
+        "producer": "fixture",
+        "generation": "g3.fixture-authentication-checked-at-custody",
+        "sequence": 1
+      },
+      "timestamp_ns": 18446744073709551615,
+      "resource": "fixture",
+      "data": {
+        "kind": "event",
+        "name": "context",
+        "message": "global run"
+      }
+    }
+  }
+]

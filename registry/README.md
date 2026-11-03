@@ -6,8 +6,16 @@ The local wire protocol uses explicit nanosecond timestamps/durations and unsign
 sequence numbers; these are not automatically interchangeable with OTel attribute
 integer representations. Metrics use explicit units (for example `By` for bytes).
 
-Weaver 0.28.0 validates the registry and generates the checked-in Rust vocabulary
-and custody descriptor. Rust types enforce the wire shape; runtime validation
+Weaver 0.28.0 validates both registry revisions. `model/`, `templates/`,
+`vocabulary.rs` and `descriptor.json` are the immutable version 2 contract; checks
+pin their bytes and independently regenerate the artifacts for comparison.
+`v3/model/` defines the global run context and authenticated generation lease
+semantics. Its generated `v3/descriptor.json` extends the exact version 2
+descriptor by digest, and reuses the version 2 data vocabulary without duplicating
+its enums. `cargo xtask registry generate` updates only the version 3 descriptor;
+it refuses any version 2 drift.
+
+The generated descriptors accompany the checked-in Rust vocabulary. Rust types enforce the wire shape; runtime validation
 also checks bounds, finite values, nesting, and identity. The descriptor is
 retained with custody records, and changing it under an existing registry identity
 is rejected on store open. Incompatible evolution requires a new schema identity.

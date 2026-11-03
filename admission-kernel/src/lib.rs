@@ -2,6 +2,7 @@
 //! Checked arithmetic shared by the executable adapter and proof checkers.
 use vstd::prelude::*;
 pub mod delivery;
+pub mod handoff;
 
 verus! {
 pub fn reserve(capacity: usize, used: usize, charge: usize) -> (result: Option<usize>)

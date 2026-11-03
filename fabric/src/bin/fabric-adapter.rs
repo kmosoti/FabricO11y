@@ -8,7 +8,28 @@ fn run() -> Result<(), String> {
     let mut args = env::args().skip(1);
     let socket = PathBuf::from(args.next().ok_or("usage: fabric-adapter SOCKET PRODUCER")?);
     let producer = args.next().ok_or("producer required")?;
-    let client = fabric::sdk::Client::new(fabric::sdk::Config::local(socket, producer)?)?;
+    let config = fabric::sdk::Config::local(socket, producer)?;
+    let context = match args.next().as_deref() {
+        None => None,
+        Some("--run-context") => Some(
+            serde_json::from_str::<fabric::run::RunContext>(
+                &args.next().ok_or("--run-context requires JSON")?,
+            )
+            .map_err(|e| e.to_string())?,
+        ),
+        Some(_) => return Err("usage: fabric-adapter SOCKET PRODUCER [--run-context JSON]".into()),
+    };
+    if args.next().is_some() {
+        return Err("unexpected argument".into());
+    }
+    enum Adapter {
+        Legacy(fabric::sdk::Client),
+        Run(Box<fabric::sdk::RunClient>),
+    }
+    let mut client = match context {
+        Some(context) => Adapter::Run(Box::new(fabric::sdk::RunClient::new(config, context)?)),
+        None => Adapter::Legacy(fabric::sdk::Client::new(config)?),
+    };
     let input = io::stdin();
     let mut input = input.lock();
     let output = io::stdout();
@@ -44,7 +65,10 @@ fn run() -> Result<(), String> {
         let reply = if oversized {
             serde_json::json!({"error":"JSONL line exceeds limit"})
         } else {
-            fabric::sdk::adapter_reply(&client, &line)
+            match &mut client {
+                Adapter::Legacy(client) => fabric::sdk::adapter_reply(client, &line),
+                Adapter::Run(client) => fabric::sdk::run_adapter_reply(client, &line),
+            }
         };
         serde_json::to_writer(&mut output, &reply).map_err(|e| e.to_string())?;
         writeln!(output).map_err(|e| e.to_string())?;
@@ -54,7 +78,11 @@ fn run() -> Result<(), String> {
         }
     }
     // EOF attempts a bounded flush. Failure is visible in a final structured reply.
-    match client.flush(Instant::now() + Duration::from_secs(2)) {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    match match &client {
+        Adapter::Legacy(client) => client.flush(deadline),
+        Adapter::Run(client) => client.flush_local(deadline),
+    } {
         Ok(receipt) => writeln!(output, "{}", serde_json::json!({"eof_receipt":receipt})),
         Err(error) => writeln!(output, "{}", serde_json::json!({"error":error,"at":"eof"})),
     }

@@ -20,7 +20,7 @@ pub fn encode_records(records: &[(u64, Vec<u8>)]) -> Result<Vec<u8>, String> {
     let mut out = Vec::with_capacity(payload_len + RECORD_ENVELOPE_BYTES);
     out.extend_from_slice(PREFIX);
     if let Some((id, bytes)) = records.first() {
-        observation::decode(bytes)?;
+        observation::decode_versioned(bytes)?;
         out.push(b'[');
         out.extend_from_slice(id.to_string().as_bytes());
         out.push(b',');
@@ -30,6 +30,35 @@ pub fn encode_records(records: &[(u64, Vec<u8>)]) -> Result<Vec<u8>, String> {
     out.extend_from_slice(b"]}");
     check_reply(&out)?;
     Ok(out)
+}
+
+/// Decodes the deterministic record envelope while retaining payload bytes.
+pub fn decode_records_raw(bytes: &[u8]) -> Result<Vec<(u64, Vec<u8>)>, String> {
+    check_reply(bytes)?;
+    if let Some(rest) = bytes.strip_prefix(PREFIX) {
+        if rest == b"]}" {
+            return Ok(Vec::new());
+        }
+        let record = rest
+            .strip_prefix(b"[")
+            .and_then(|value| value.strip_suffix(b"]]}"))
+            .ok_or("invalid raw record envelope")?;
+        let comma = record
+            .iter()
+            .position(|b| *b == b',')
+            .ok_or("invalid raw record ID")?;
+        let id = std::str::from_utf8(&record[..comma])
+            .map_err(|e| e.to_string())?
+            .parse::<u64>()
+            .map_err(|e| e.to_string())?;
+        let raw = &record[comma + 1..];
+        observation::decode_versioned(raw)?;
+        return Ok(vec![(id, raw.to_vec())]);
+    }
+    match serde_json::from_slice::<super::Reply>(bytes).map_err(|e| e.to_string())? {
+        super::Reply::Error { error } => Err(error),
+        _ => Err("unexpected raw read response".into()),
+    }
 }
 
 #[cfg(test)]

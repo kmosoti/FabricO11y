@@ -1,0 +1,1 @@
+{"version":3,"registry":"fabrico11y/3","context":{"run_id":"11111111-1111-4111-8111-111111111111"},"identity":{"producer":"a","generation":"g","sequence":1},"timestamp_ns":100,"resource":"service-a","data":{"kind":"agent_run","agent":"harness","run_id":"local","duration_ns":18446744073709551615,"status":"ok"}}

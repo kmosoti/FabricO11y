@@ -7,6 +7,8 @@ license.workspace = true
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
+hmac = "=0.12.1"
+schemars = { version = "1", optional = true }
 admission-kernel = { path = "../admission-kernel" }
 
 [dev-dependencies]
@@ -15,6 +17,9 @@ tempfile = "3"
 [[bench]]
 name = "admission"
 harness = false
+
+[features]
+query-schema = ["dep:schemars"]
 
 [dependencies.rusqlite]
 version = "=0.41.1"

@@ -21,6 +21,7 @@ pub fn config(root: &Path) -> spindle::Config {
         files: vec![],
         journal: None,
         host: None,
+        forwarding: None,
     }
 }
 pub fn observation(sequence: u64) -> Observation {

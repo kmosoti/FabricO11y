@@ -41,3 +41,125 @@ id = "cosine-extremes"
 package = "fabric"
 target = "readback_lifecycle"
 test = "cosine_positive_rescaling_extremes"
+
+[[invariants]]
+id = "canonical-custody"
+requirement = "Canonical batches preserve original bytes and reject conflicting identities atomically; acknowledged payloads survive reopen and remain retriable at quota."
+required = true
+boundaries = ["versioned raw wire", "atomic admission", "durable prefix", "quota", "restart"]
+checks = ["canonical-bytes", "canonical-quota", "sdk-canonical-handoff", "baseline-continuous-read", "maximum-batch-retry"]
+proof_scope = "Golden-byte, quota and real SDK/daemon/receiver lifecycle tests. Custody Lean and executable Verus predicates have separate abstract scopes."
+assumptions = ["Filesystem and device honor synchronization; SHA256 collision resistance for retained point-read digests. Process tests do not simulate physical power loss."]
+
+[[invariants]]
+id = "authorized-investigation"
+requirement = "Queries authorize source scope before aggregation, preserve fixed source snapshots and exact wide statistics, and reject incomplete aggregate scans."
+required = true
+boundaries = ["authenticated receiver", "scope predicate", "projection", "aggregation", "pagination", "budget"]
+checks = ["canonical-scope", "wide-query", "snapshot-query", "query-budget", "query-authority", "projection-failure"]
+proof_scope = "Independent mixed-record oracle and adapter regression tests; no whole database implementation proof. Native Greptime fault/restart and million-record measurements require separately configured trials."
+assumptions = ["Parquet/DataFusion implement their documented typed arithmetic and file semantics; exact tested unsigned extremes are retained."]
+
+[[invariants]]
+id = "bounded-agent-transport"
+requirement = "Agent stdio rejects oversized incomplete input and cancellation retains active capacity until the actual canonical exchange finishes."
+required = true
+boundaries = ["stdio codec", "typed tool dispatch", "canonical cancellation", "worker cleanup"]
+checks = ["mcp-ingress", "mcp-cancellation", "global-context"]
+proof_scope = "Real child-process MCP tests and cross-process SDK context test; arbitrary LLM behavior is outside scope."
+assumptions = ["The OS enforces process and cgroup limits; observed content is data rather than tool authority."]
+
+[[invariants]]
+id = "descriptor-failure-isolation"
+requirement = "Analytical file operations remain bounded as segments grow; temporary descriptor exhaustion preserves the receiver and permits authenticated progress, admission and byte-exact replay after recovery."
+required = true
+boundaries = ["eager file listing", "native file limit", "listener pressure", "recovery", "canonical replay"]
+checks = ["bounded-file-query", "descriptor-recovery"]
+proof_scope = "Native isolated-process descriptor-pressure regressions, not a proof of every resource failure or third-party query implementation."
+assumptions = ["The OS enforces per-process descriptor limits and temporary pressure eventually releases."]
+
+[[checks]]
+id = "canonical-bytes"
+package = "fabric-server"
+target = "custody"
+test = "original_bytes_conflicts_atomic_batches_and_reopen"
+[[checks]]
+id = "canonical-quota"
+package = "fabric-server"
+target = "custody"
+test = "duplicate_retry_still_works_at_quota"
+[[checks]]
+id = "sdk-canonical-handoff"
+package = "fabric-server"
+target = "custody"
+test = "real_sdk_handoff_reclamation_restart_and_remote_read"
+[[checks]]
+id = "canonical-scope"
+package = "fabric-server"
+target = "custody"
+test = "authenticated_origin_scope_precedes_aggregation_and_snapshots"
+[[checks]]
+id = "projection-failure"
+package = "fabric-server"
+target = "custody"
+test = "projection_write_failure_preserves_canonical_admission_and_readback"
+[[checks]]
+id = "wide-query"
+package = "fabric-query"
+target = "projection"
+test = "exact_wide_sums_cross_process_and_scope_before_aggregation"
+[[checks]]
+id = "snapshot-query"
+package = "fabric-query"
+target = "projection"
+test = "snapshot_pages_stable_during_ingest_and_bound_to_scope"
+[[checks]]
+id = "query-budget"
+package = "fabric-query"
+target = "projection"
+test = "budgets_and_cancellation_never_return_partial_totals"
+[[checks]]
+id = "query-authority"
+package = "fabric-query"
+target = "projection"
+test = "canonical_authority_binds_replay_queries_and_cursors"
+[[checks]]
+id = "mcp-ingress"
+package = "fabric-mcp"
+target = "stdio"
+test = "overlong_unterminated_input_is_rejected_before_json_decode"
+[[checks]]
+id = "mcp-cancellation"
+package = "fabric-mcp"
+target = "stdio"
+test = "cancellation_reaches_canonical_and_capacity_waits_for_actual_exchange"
+[[checks]]
+id = "global-context"
+package = "fabric"
+target = "run_context"
+test = "global_context_crosses_rust_and_jsonl_processes_and_renewal_is_quiescent"
+
+
+[[checks]]
+id = "baseline-continuous-read"
+package = "fabric-server"
+target = "custody"
+test = "continuous_ingest_and_prefix_reads_share_baseline_sqlite_connection"
+
+[[checks]]
+id = "maximum-batch-retry"
+package = "fabric-server"
+target = "custody"
+test = "maximum_batch_retries_keep_exact_bytes_and_conflicts_do_not_advance"
+
+[[checks]]
+id = "bounded-file-query"
+package = "fabric-query"
+target = "projection"
+test = "thousand_segments_query_under_low_file_limit"
+
+[[checks]]
+id = "descriptor-recovery"
+package = "fabric-server"
+target = "descriptor_pressure"
+test = "receiver_recovers_after_process_descriptor_exhaustion"

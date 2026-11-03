@@ -1,10 +1,13 @@
-//! Versioned local observation wire contract. New producers write v2 only.
+//! Versioned local observation wire contract. Supports immutable v2 and context-bearing v3.
 use serde::{Deserialize, Serialize};
 
 #[path = "../../registry/vocabulary.rs"]
 pub mod vocabulary;
 
 pub const VERSION: u32 = 2;
+pub const VERSION_V3: u32 = 3;
+pub const REGISTRY_V3: &str = "fabrico11y/3";
+pub const DESCRIPTOR_V3: &str = include_str!("../../registry/v3/descriptor.json");
 pub const MAX_FRAME: usize = 65536;
 pub const MAX_DEPTH: usize = 16;
 pub const REGISTRY: &str = "fabrico11y/2";
@@ -97,14 +100,17 @@ pub enum MetricType {
 fn text(s: &str, max: usize) -> bool {
     !s.is_empty() && s.len() <= max && !s.contains('\0')
 }
+fn valid_identity_resource(identity: &Identity, resource: &str) -> bool {
+    identity.sequence != 0
+        && text(&identity.producer, 128)
+        && text(&identity.generation, 128)
+        && text(resource, 256)
+}
 impl Observation {
     pub fn validate(&self) -> Result<(), String> {
         if self.version != VERSION
             || self.registry != REGISTRY
-            || self.identity.sequence == 0
-            || !text(&self.identity.producer, 128)
-            || !text(&self.identity.generation, 128)
-            || !text(&self.resource, 256)
+            || !valid_identity_resource(&self.identity, &self.resource)
         {
             return Err("invalid envelope".into());
         }
@@ -116,6 +122,15 @@ impl Observation {
     }
 }
 impl Data {
+    pub fn validate_in_context(&self, context: &crate::run::RunContext) -> bool {
+        self.validate()
+            && match self {
+                Self::AgentRun { run_id, .. } | Self::ToolExecution { run_id, .. } => {
+                    run_id == &context.run_id
+                }
+                _ => true,
+            }
+    }
     pub fn validate(&self) -> bool {
         match self {
             Data::ServiceRequest {
@@ -241,5 +256,102 @@ fn valid_json(v: &serde_json::Value, depth: usize, budget: &mut usize, bytes: &m
                 })
         }
         _ => true,
+    }
+}
+
+/// Context-bearing revision; v2's Rust and wire interface remains unchanged.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ObservationV3 {
+    pub version: u32,
+    pub registry: String,
+    pub context: crate::run::RunContext,
+    pub identity: Identity,
+    pub timestamp_ns: u64,
+    pub resource: String,
+    pub data: Data,
+}
+impl ObservationV3 {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.version != VERSION_V3 || self.registry != REGISTRY_V3 {
+            return Err("invalid v3 envelope".into());
+        }
+        self.context.validate()?;
+        if !valid_identity_resource(&self.identity, &self.resource)
+            || !self.data.validate_in_context(&self.context)
+        {
+            return Err("invalid v3 observation fields".into());
+        }
+        Ok(())
+    }
+}
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum StoredObservation {
+    V2(Observation),
+    V3(ObservationV3),
+}
+impl StoredObservation {
+    pub fn registry(&self) -> &str {
+        match self {
+            Self::V2(o) => &o.registry,
+            Self::V3(o) => &o.registry,
+        }
+    }
+    pub fn identity(&self) -> &Identity {
+        match self {
+            Self::V2(o) => &o.identity,
+            Self::V3(o) => &o.identity,
+        }
+    }
+    pub fn context(&self) -> Option<&crate::run::RunContext> {
+        match self {
+            Self::V2(_) => None,
+            Self::V3(o) => Some(&o.context),
+        }
+    }
+    pub fn timestamp_ns(&self) -> u64 {
+        match self {
+            Self::V2(o) => o.timestamp_ns,
+            Self::V3(o) => o.timestamp_ns,
+        }
+    }
+    pub fn data(&self) -> &Data {
+        match self {
+            Self::V2(o) => &o.data,
+            Self::V3(o) => &o.data,
+        }
+    }
+    pub fn resource(&self) -> &str {
+        match self {
+            Self::V2(o) => &o.resource,
+            Self::V3(o) => &o.resource,
+        }
+    }
+    pub fn version(&self) -> u32 {
+        match self {
+            Self::V2(o) => o.version,
+            Self::V3(o) => o.version,
+        }
+    }
+}
+pub fn decode_versioned(bytes: &[u8]) -> Result<StoredObservation, String> {
+    check_json(bytes, MAX_FRAME)?;
+    #[derive(Deserialize)]
+    struct Header {
+        version: u32,
+    }
+    match serde_json::from_slice::<Header>(bytes)
+        .map_err(|e| e.to_string())?
+        .version
+    {
+        VERSION => decode(bytes).map(StoredObservation::V2),
+        VERSION_V3 => {
+            let observation: ObservationV3 =
+                serde_json::from_slice(bytes).map_err(|e| e.to_string())?;
+            observation.validate()?;
+            Ok(StoredObservation::V3(observation))
+        }
+        _ => Err("unsupported observation version".into()),
     }
 }

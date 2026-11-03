@@ -1,7 +1,7 @@
-# Spindle local collection contract, revision 1
+# Spindle collection and handoff contract
 
 Spindle runs as a Fedora user service, accepts bounded length-framed v2 records
-on a private Unix socket and validates peer UID. It explicitly configures text or
+or context-bearing v3 records on a private Unix socket and validates peer UID. It explicitly configures text or
 JSONL file sources, accessible systemd journal sources and host sampling. File
 collection tracks stable file identity and byte offsets, partial lines, rename
 rotation and truncation. Journal collection tracks native cursors and reports
@@ -20,8 +20,10 @@ bytes conflicts. Registry descriptors remain available with stored observations.
 Storage, frame sizes, decode nesting, connections, work per poll and buffers are
 bounded. Storage quotas include database/log overhead and recovery reserve. Full
 storage refuses SDK submissions, pauses replayable sources without cursor advance,
-and reports missed sampling explicitly. No automatic eviction or forwarding is
-permitted. Self status remains readable at full storage. Health exposes ingestion,
+and reports missed sampling explicitly. Explicitly configured canonical forwarding
+confirms canonical custody after a matching durable contiguous acknowledgement.
+Payload reclamation additionally requires explicit opt-in after backfill and shadow
+comparison. Self status remains readable at full storage. Health exposes ingestion,
 refusals, errors, lag, retries, queue/custody/latency/resource measurements without
 feeding its collection into itself. Status, read and export interfaces are local.
 
@@ -33,3 +35,46 @@ identity conflicts, quotas, slow clients, shutdown, missing cursors, file
 rotation/truncation/permissions, metric resets and collection feedback. Measurement
 reports latency, throughput, memory and recovery separately, with development and
 held-out workloads. Unavailable host capabilities remain explicit uncertainty.
+
+
+An optional `forwarding` configuration names a loopback TCP endpoint, a private
+owned credential file and a fixed canonical authority. `reclaim_confirmed` defaults
+to `false`: shadow forwarding retains every local payload while recording the
+canonical confirmed prefix. Operators enable it only after verifying backfill and
+shadow comparison. Each custody directory
+has a persistent random origin and monotonic record IDs; deleting acknowledged
+payloads never resets allocation. Forwarding runs outside the collection poll
+with at most 128 records and 256 KiB of decoded raw payload per batch. A receipt
+must match the configured authority, origin and offered prefix before atomic
+payload reclamation when opt-in is enabled. Confirmation and reclamation have
+separate persistent monotonic watermarks. Enabling reclamation after restart also
+reclaims previously confirmed shadow data in bounded batches, without requiring
+new observations. Lost, stale or wrong receipts cannot discharge custody.
+
+Reclaimed reads and retries resolve original bytes through the canonical receiver.
+Unavailable canonical data produces an explicit error; it never becomes an empty
+page. Remote resolution runs in bounded connection workers so a stalled authority
+does not block independent local custody. Export captures the highest logical
+record ID and emits original payload bytes through that frontier.
+
+At most 128 generation metadata entries are retained. V3 sequences are ordered;
+compact generation frontiers survive until expiry and complete forwarding.
+Expiry verification does not depend on that metadata. V2 retry metadata is never
+expired and remains subject to the storage quota. Database free pages are reused;
+full admission resumes after successful reclamation. The local quota includes
+rollback reserve and metadata as well as payloads. Canonical retention is not
+automatically expired.
+
+
+Shadow reads and exports continue to use local bytes. After reclamation, disabling
+forwarding or changing its bound authority is refused because canonical access is
+required to resolve deleted payloads. Setting `reclaim_confirmed` back to `false`
+stops further reclamation while preserving access to already reclaimed records.
+Health distinguishes `canonical_through` from `reclaimed_through`.
+
+Spindle groups synchronous requests already accepted in one bounded event-loop
+iteration into a durable SQLite commit. Per-request savepoints isolate invalid
+submissions. Receipts and lease replies are published after the outer commit
+succeeds; a failed commit closes queued replies so clients retain unknown outcomes.
+The commit-latency metric measures that durable batch. Idle and waiting iterations
+sleep; successful admission can immediately progress committed replies.

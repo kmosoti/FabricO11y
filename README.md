@@ -4,8 +4,10 @@ FabricO11y is a planned Fedora-first, Rust-native evidence platform for Rust
 applications and agent harnesses. The repository contains development tooling and
 a typed Rust SDK, persistent JSONL adapter, Linux Spindle user service and early
 analysis prototype in the `fabric` crate. Spindle provides bounded local SQLite
-custody for SDK, file, journal and host observations. Further analytical
-capabilities are planned. See [local collection setup](docs/collection.md).
+custody for SDK, file, journal and host observations. Fabric adds canonical
+handoff and source-fenced run, service, tool and evidence queries through Rust,
+CLI and MCP. See [local collection setup](docs/collection.md),
+[canonical custody](docs/canonical-custody.md) and [typed investigations](docs/investigation.md).
 
 Read [product direction](docs/direction.md), [contributing](CONTRIBUTING.md) and
 [verification](CONTRIBUTING.md#verification).

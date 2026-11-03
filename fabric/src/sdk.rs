@@ -48,6 +48,7 @@ pub enum Admission {
     Contended,
     Closed,
     Exhausted,
+    Expired,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct Status {
@@ -78,6 +79,8 @@ struct Shared {
     state: Mutex<State>,
     changed: Condvar,
     config: Config,
+    context: Option<crate::run::RunContext>,
+    expires: Option<u64>,
 }
 /// Dropping closes admission; the detached single worker exits after its bounded I/O.
 /// Pending observations are memory-only until a successful flush. Use flush first.
@@ -86,6 +89,13 @@ pub struct Client {
 }
 impl Client {
     pub fn new(config: Config) -> Result<Self, String> {
+        Self::with_context(config, None, None)
+    }
+    fn with_context(
+        config: Config,
+        context: Option<crate::run::RunContext>,
+        expires: Option<u64>,
+    ) -> Result<Self, String> {
         if observation::reserved_producer(&config.producer) {
             return Err("collector producer namespace is reserved".into());
         }
@@ -136,6 +146,8 @@ impl Client {
             }),
             changed: Condvar::new(),
             config,
+            context,
+            expires,
         });
         let worker = shared.clone();
         thread::Builder::new()
@@ -154,6 +166,13 @@ impl Client {
         if state.closed {
             return Admission::Closed;
         }
+        if self.shared.expires.is_some_and(|expires| {
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(true, |now| now.as_secs() >= expires)
+        }) {
+            return Admission::Expired;
+        }
         if state.accepted == u64::MAX {
             return Admission::Exhausted;
         }
@@ -171,7 +190,11 @@ impl Client {
             buffer.credit.reserve(),
             "free buffer must own a free credit"
         );
-        if !data.validate() {
+        let valid = self.shared.context.as_ref().map_or_else(
+            || data.validate(),
+            |context| data.validate_in_context(context),
+        );
+        if !valid {
             assert!(buffer.credit.cancel());
             state.free.push(buffer);
             return Admission::Invalid;
@@ -184,6 +207,8 @@ impl Client {
         }
         #[derive(Serialize)]
         struct BorrowedObservation<'a> {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            context: Option<&'a crate::run::RunContext>,
             version: u32,
             registry: &'a str,
             identity: BorrowedIdentity<'a>,
@@ -192,8 +217,13 @@ impl Client {
             data: &'a Data,
         }
         let observation = BorrowedObservation {
-            version: 2,
-            registry: observation::REGISTRY,
+            context: self.shared.context.as_ref(),
+            version: if self.shared.context.is_some() { 3 } else { 2 },
+            registry: if self.shared.context.is_some() {
+                observation::REGISTRY_V3
+            } else {
+                observation::REGISTRY
+            },
             identity: BorrowedIdentity {
                 producer: &self.shared.config.producer,
                 generation: &self.shared.config.generation,
@@ -577,5 +607,231 @@ mod ownership_tests {
         assert_eq!(client.status().accepted, 8);
         assert_eq!(client.status().charged_slots, 8);
         client.close();
+    }
+}
+
+/// Context-aware v3 producer. Construction and renewal perform explicit control I/O;
+/// recording retains the bounded, nonblocking admission path.
+pub struct RunClient {
+    client: Client,
+    context: crate::run::RunContext,
+    config: Config,
+    origin: String,
+    authority: Option<String>,
+    fabric_target: Option<u64>,
+}
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FabricReceipt {
+    pub authority: String,
+    pub origin: String,
+    pub through: u64,
+}
+impl RunClient {
+    pub fn new(mut config: Config, context: crate::run::RunContext) -> Result<Self, String> {
+        context.validate()?;
+        if config.slots == 0
+            || config.slots > 4096
+            || config.max_record < 256
+            || config.max_record > observation::MAX_FRAME
+            || config.delivery_timeout.is_zero()
+            || config.delivery_timeout > Duration::from_secs(5)
+            || observation::reserved_producer(&config.producer)
+        {
+            return Err("invalid context client configuration".into());
+        }
+        Observation {
+            version: 2,
+            registry: observation::REGISTRY.into(),
+            identity: Identity {
+                producer: config.producer.clone(),
+                generation: "validation".into(),
+                sequence: 1,
+            },
+            timestamp_ns: 0,
+            resource: config.resource.clone(),
+            data: Data::Event {
+                name: "probe".into(),
+                message: "probe".into(),
+            },
+        }
+        .validate()?;
+        let deadline = Instant::now() + config.delivery_timeout;
+        let (generation, expires) = match transport::request(
+            &config.socket,
+            &Request::Lease {
+                producer: config.producer.clone(),
+            },
+            deadline,
+        )? {
+            Reply::Lease {
+                generation,
+                expires_unix_s,
+            } => (generation, expires_unix_s),
+            Reply::Error { error } => return Err(error),
+            _ => return Err("unexpected lease response".into()),
+        };
+        let (authority, origin) = match transport::request(
+            &config.socket,
+            &Request::FabricProgress,
+            Instant::now() + config.delivery_timeout,
+        )? {
+            Reply::FabricProgress {
+                authority, origin, ..
+            } => (authority, origin),
+            Reply::Error { error } => return Err(error),
+            _ => return Err("unexpected progress response".into()),
+        };
+        config.generation = generation;
+        let client = Client::with_context(config.clone(), Some(context.clone()), Some(expires))?;
+        Ok(Self {
+            client,
+            context,
+            config,
+            origin,
+            authority,
+            fabric_target: None,
+        })
+    }
+    pub fn context(&self) -> &crate::run::RunContext {
+        &self.context
+    }
+    pub fn try_record(&self, data: Data, timestamp_ns: u64) -> Admission {
+        self.client.try_record(data, timestamp_ns)
+    }
+    pub fn status(&self) -> Status {
+        self.client.status()
+    }
+    pub fn flush_local(&self, deadline: Instant) -> Result<Option<Receipt>, String> {
+        self.client.flush(deadline)
+    }
+    pub fn flush_to_fabric(&self, deadline: Instant) -> Result<Option<FabricReceipt>, String> {
+        let receipt = self.flush_local(deadline)?;
+        let target = match (receipt.as_ref().map(|r| r.id), self.fabric_target) {
+            (Some(a), Some(b)) => a.max(b),
+            (Some(a), None) | (None, Some(a)) => a,
+            (None, None) => return Ok(None),
+        };
+        let expected = self
+            .authority
+            .as_ref()
+            .ok_or("canonical forwarding is not configured")?;
+        loop {
+            match transport::request(&self.config.socket, &Request::FabricProgress, deadline)? {
+                Reply::FabricProgress {
+                    authority: Some(authority),
+                    origin,
+                    through,
+                } if &authority == expected && origin == self.origin => {
+                    if through >= target {
+                        return Ok(Some(FabricReceipt {
+                            authority,
+                            origin,
+                            through,
+                        }));
+                    }
+                }
+                Reply::Error { error } => return Err(error),
+                _ => return Err("canonical authority or origin changed".into()),
+            }
+            let remaining = deadline
+                .checked_duration_since(Instant::now())
+                .ok_or("Fabric flush deadline; outcome unknown")?;
+            thread::sleep(remaining.min(Duration::from_millis(10)));
+        }
+    }
+    /// Requires all accepted records to have local custody before replacing the lease.
+    pub fn renew(&mut self) -> Result<(), String> {
+        let status = self.client.status();
+        if status.accepted != status.confirmed || status.charged_slots != 0 {
+            return Err("renewal requires a quiescent client".into());
+        }
+        let previous = self.client.flush(Instant::now())?.map(|receipt| receipt.id);
+        let mut renewed = Self::new(self.config.clone(), self.context.clone())?;
+        renewed.fabric_target = match (self.fabric_target, previous) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (a, None) | (None, a) => a,
+        };
+        *self = renewed;
+        Ok(())
+    }
+    pub fn close(&self) {
+        self.client.close();
+    }
+}
+
+pub fn run_adapter_reply(client: &mut RunClient, bytes: &[u8]) -> serde_json::Value {
+    #[derive(Deserialize)]
+    #[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
+    enum Command {
+        Record { data: Data, timestamp_ns: u64 },
+        Flush { timeout_ms: u64 },
+        FlushToFabric { timeout_ms: u64 },
+        Status,
+        Context,
+        Renew,
+    }
+    match observation::check_json(bytes, observation::MAX_FRAME)
+        .and_then(|()| serde_json::from_slice::<Command>(bytes).map_err(|e| e.to_string()))
+    {
+        Ok(Command::Record { data, timestamp_ns }) => {
+            serde_json::json!({"admission":client.try_record(data,timestamp_ns)})
+        }
+        Ok(Command::Flush { timeout_ms }) => match client
+            .flush_local(Instant::now() + Duration::from_millis(timeout_ms.min(30000)))
+        {
+            Ok(receipt) => serde_json::json!({"receipt":receipt}),
+            Err(error) => serde_json::json!({"error":error}),
+        },
+        Ok(Command::FlushToFabric { timeout_ms }) => match client
+            .flush_to_fabric(Instant::now() + Duration::from_millis(timeout_ms.min(30000)))
+        {
+            Ok(receipt) => serde_json::json!({"fabric_receipt":receipt}),
+            Err(error) => serde_json::json!({"error":error}),
+        },
+        Ok(Command::Status) => serde_json::json!({"status":client.status()}),
+        Ok(Command::Context) => serde_json::json!({"context":client.context()}),
+        Ok(Command::Renew) => match client.renew() {
+            Ok(()) => serde_json::json!({"renewed":true}),
+            Err(error) => serde_json::json!({"error":error}),
+        },
+        Err(error) => serde_json::json!({"error":error}),
+    }
+}
+
+#[cfg(test)]
+mod context_admission_tests {
+    use super::*;
+    #[test]
+    fn mismatched_run_identity_is_refused_before_delivery() {
+        let temp = tempfile::tempdir().unwrap();
+        let config = Config::local(temp.path().join("absent"), "context".into()).unwrap();
+        let context = crate::run::RunContext::new().unwrap();
+        let client = Client::with_context(config, Some(context.clone()), Some(u64::MAX)).unwrap();
+        for tool in [false, true] {
+            let data = if tool {
+                Data::ToolExecution {
+                    tool: "fixture".into(),
+                    run_id: "local-label".into(),
+                    duration_ns: 1,
+                    status: observation::Outcome::Ok,
+                }
+            } else {
+                Data::AgentRun {
+                    agent: "fixture".into(),
+                    run_id: "local-label".into(),
+                    duration_ns: 1,
+                    status: observation::Outcome::Ok,
+                }
+            };
+            loop {
+                let result = client.try_record(data.clone(), 1);
+                if result == Admission::Contended {
+                    continue;
+                }
+                assert_eq!(result, Admission::Invalid);
+                break;
+            }
+        }
+        assert_eq!(client.status().accepted, 0);
     }
 }

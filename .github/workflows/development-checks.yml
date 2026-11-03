@@ -8,6 +8,10 @@ on:
     - cron: '23 4 * * 1'
 permissions:
   contents: read
+env:
+  CARGO_BUILD_JOBS: '2'
+  CARGO_PROFILE_DEV_DEBUG: '0'
+  CARGO_PROFILE_TEST_DEBUG: '0'
 concurrency:
   group: development-checks-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -33,6 +37,9 @@ jobs:
         run: jj git init --colocate
       - name: Architecture, tests, proofs and fuzz regressions
         run: /github/home/.cargo/bin/cargo xtask check --tier acceptance
+      - name: Native engine custody and recovery regressions
+        timeout-minutes: 10
+        run: sh .github/scripts/check-engine.sh
       - name: Fuzz smoke campaigns
         if: github.event_name != 'schedule'
         run: /github/home/.cargo/bin/cargo xtask fuzz smoke /tmp/fabric-fuzz-smoke
@@ -62,7 +69,7 @@ jobs:
       - name: Build release collection executables
         env:
           CARGO_BUILD_JOBS: '2'
-        run: /github/home/.cargo/bin/cargo build --locked --release -p fabric -p xtask --bins --examples
+        run: /github/home/.cargo/bin/cargo build --locked --release --workspace --bins --examples
       - name: Release SDK and Spindle restart smoke
         timeout-minutes: 2
         run: target/release/xtask collection smoke

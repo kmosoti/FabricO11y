@@ -17,7 +17,7 @@ or relocation. Custody is never replaced. Repeating an identical installation is
 safe. Installation does not activate the service.
 
 ```sh
-CARGO_BUILD_JOBS=2 cargo build --release -p fabric --bins --examples
+CARGO_BUILD_JOBS=2 cargo build --release --workspace --bins --examples
 cargo xtask collection smoke
 cargo xtask collection install
 systemctl --user daemon-reload
@@ -90,17 +90,19 @@ frontier and waits for custody through that frontier. A timeout has an unknown
 outcome: retry the same identity and bytes. Drop closes admission immediately;
 pending memory data requires a successful flush before dropping the client.
 
-Wire submissions are a big-endian u32 length followed by raw v2 JSON. Input is
+Wire submissions are a big-endian u32 length followed by original v2 or v3 JSON. Input is
 limited to 64 KiB and 16 nesting levels before owned deserialization. Control
-frames use `command` (`status`, `read`, `stop`). Responses are bounded to input
+frames use `command` (`status`, `read`, `stop`, `lease`, `fabric_progress`). Responses are bounded to input
 size plus 8 KiB; only one read record is returned per request. Every connection has
-an absolute deadline. New SDK generations use the kernel UUID source.
+an absolute deadline. V2 generations use the kernel UUID source; v3 generations
+are authenticated leases issued by Spindle.
 
 SQLite commits the record, retry identity and source checkpoint in one
 transaction. DELETE journaling, synchronous EXTRA, a bounded page count and an
 explicit reserve account for rollback recovery. At least half the configured
 quota is reserved for rollback and metadata overhead. Existing larger databases
-are refused. No automatic eviction, forwarding or retention is performed.
+are refused. Payload reclamation requires an explicitly configured canonical
+authority and a matching durable contiguous receipt. Canonical history is retained.
 Receipts imply a successful local filesystem synchronization, subject to the
 filesystem and storage device honoring that operation; they do not imply remote
 replication. Clear or migrate custody only with the service stopped. Preserve the
@@ -115,8 +117,11 @@ descriptors are retained and compared exactly under their registry ID.
 
 ## Harnesses and adapter
 
-Run `cargo run -p fabric --example agent_harness -- SOCKET`, or
-`FABRIC_ADAPTER=target/debug/fabric-adapter python examples/agent_harness.py SOCKET`.
+Run `cargo run -p fabric --example agent_harness -- SOCKET [GLOBAL_RUN_UUID]`, or
+`python3 fabric/examples/agent_harness.py SOCKET PATH_TO_ADAPTER [GLOBAL_RUN_UUID]`.
+Both examples use v3; passing the same global UUID joins their observations. The
+Python example also waits for Fabric custody and requires configured forwarding.
+The older `examples/agent_harness.py` continues to demonstrate the v2 adapter.
 The [generated tool examples](../examples/generated-tool/README.md) use the same
 client or adapter instance as their harness.
 
@@ -130,3 +135,65 @@ alone is never a durable receipt.
 Executable delivery arithmetic is checked by Verus and linked to the SDK;
 [collection verification](collection-verification.md) distinguishes those guarantees
 from the unverified SQLite, transport, SDK worker and source adapter boundaries.
+
+
+For shared runs, construct `RunContext::new()` once or deserialize the context
+passed by the parent process, then use `RunClient::new(config, context)` in each
+Rust process. Pass the same JSON context to child adapters:
+
+```sh
+fabric-adapter SOCKET PRODUCER --run-context '{"run_id":"f404b128-2c19-412f-bcd0-823f9c1f1b31"}'
+```
+
+Agent-run and tool-execution payloads use that same UUID in `data.run_id`.
+`flush` in context mode confirms local custody; `flush_to_fabric` waits for
+canonical custody. `context` returns the shared identity; `renew` replaces the
+lease only after all accepted records have local custody. Leases normally last
+24 hours. Pending stored records remain forwardable after expiry, while new
+records and retries are refused. The service permits at most 128 retained
+generations and fails lease decisions closed if wall time falls behind its
+persisted clock floor.
+
+Configure canonical forwarding explicitly in the Spindle JSON configuration:
+
+```json
+"forwarding": {
+  "endpoint": "127.0.0.1:48200",
+  "credential_file": "/absolute/private/node-credential",
+  "authority": "fabric-primary",
+  "reclaim_confirmed": false
+}
+```
+
+The endpoint must be a loopback TCP address, usually a local tunnel to the
+receiver. The credential file must be a private owned regular file. The canonical
+receiver must authorize the persistent `status.origin`; its authority binding
+cannot change after configuration. Back up the whole custody directory, including
+its origin, private lease key and allocation state.
+
+Forwarding starts in shadow mode: `reclaim_confirmed` defaults to `false`, so
+matching canonical receipts advance `status.canonical_through` while every local
+payload remains retained. Reads and exports continue to use those local bytes.
+Before enabling reclamation, verify backfill through a captured prefix and
+compare canonical record IDs and original bytes with local data, including
+restart, retry and readback behavior. Check that the canonical authority, origin
+and contiguous prefix match the configured destination. Then set
+`reclaim_confirmed` to `true` and restart Spindle. Previously confirmed records
+become eligible immediately, even if there are no new observations to forward.
+
+Forwarding uses one background worker and bounded batches. Reclamation requires
+both explicit opt-in and matching durable confirmation. The separate
+`status.reclaimed_through` reports actual local payload deletion;
+`status.forwarding_error` exposes handoff or reclamation failures.
+Reads, export and duplicate retries retrieve reclaimed bytes from Fabric through
+bounded remote workers. An unavailable receiver produces an error, never false
+EOF. Export preserves original JSON bytes and its captured logical frontier.
+Without forwarding configuration, the local retention and refusal behavior
+continues unchanged.
+
+
+After any payload has been reclaimed, forwarding cannot be disabled or switched
+to another authority. Roll back further deletion by setting `reclaim_confirmed`
+to `false`, keeping canonical access configured for already reclaimed records.
+Shadow mode can exhaust the local quota while verification is pending; its
+confirmed prefix is preserved and does not imply payload reclamation.

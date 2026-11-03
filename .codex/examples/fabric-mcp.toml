@@ -1,0 +1,7 @@
+# Merge this table into your MCP host configuration after configuring Fabric.
+[mcp_servers.fabric]
+command = "/absolute/path/to/fabric-mcp"
+
+[mcp_servers.fabric.env]
+FABRIC_ENDPOINT = "127.0.0.1:19115"
+FABRIC_CREDENTIAL_FILE = "/absolute/private/path/to/reader.key"

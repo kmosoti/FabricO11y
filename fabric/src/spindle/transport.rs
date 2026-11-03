@@ -77,7 +77,7 @@ fn read_exact(s: &mut UnixStream, mut bytes: &mut [u8], deadline: Instant) -> Re
     }
     Ok(())
 }
-fn exchange(path: &Path, bytes: &[u8], deadline: Instant) -> Result<Reply, String> {
+fn exchange_raw(path: &Path, bytes: &[u8], deadline: Instant) -> Result<Vec<u8>, String> {
     if bytes.len() > MAX_FRAME {
         return Err("frame too large".into());
     }
@@ -93,7 +93,10 @@ fn exchange(path: &Path, bytes: &[u8], deadline: Instant) -> Result<Reply, Strin
     let mut body = vec![0; size];
     read_exact(&mut stream, &mut body, deadline)?;
     super::wire::check_reply(&body)?;
-    serde_json::from_slice(&body).map_err(|e| e.to_string())
+    Ok(body)
+}
+fn exchange(path: &Path, bytes: &[u8], deadline: Instant) -> Result<Reply, String> {
+    serde_json::from_slice(&exchange_raw(path, bytes, deadline)?).map_err(|e| e.to_string())
 }
 pub fn submit_bytes(path: &Path, bytes: &[u8], deadline: Instant) -> Result<Receipt, String> {
     // Submit frames are raw v2 observations; control frames have a command field.
@@ -109,4 +112,14 @@ pub fn request(path: &Path, request: &Request, deadline: Instant) -> Result<Repl
         &serde_json::to_vec(request).map_err(|e| e.to_string())?,
         deadline,
     )
+}
+
+/// Reads one original payload without parsing and reserializing its JSON spelling.
+pub fn read_raw(path: &Path, after: u64, deadline: Instant) -> Result<Vec<(u64, Vec<u8>)>, String> {
+    let bytes = exchange_raw(
+        path,
+        &serde_json::to_vec(&Request::Read { after, limit: 1 }).map_err(|e| e.to_string())?,
+        deadline,
+    )?;
+    super::wire::decode_records_raw(&bytes)
 }

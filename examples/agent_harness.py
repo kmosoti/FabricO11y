@@ -20,9 +20,18 @@ def command(process, request):
 
 
 def record(process, data):
-    response = command(process, {"command": "record", "timestamp_ns": time.time_ns(), "data": data})
-    if "accepted" not in response.get("admission", {}):
-        raise RuntimeError(f"observation refused: {response}")
+    request = {"command": "record", "timestamp_ns": time.time_ns(), "data": data}
+    deadline = time.monotonic() + 2
+    while True:
+        response = command(process, request)
+        admission = response.get("admission")
+        if isinstance(admission, dict) and "accepted" in admission:
+            return
+        if admission not in ("contended", "full"):
+            raise RuntimeError(f"observation refused: {response}")
+        if time.monotonic() >= deadline:
+            raise RuntimeError("observation admission deadline")
+        time.sleep(0.001)
 
 
 def generated_tool(process, run_id):

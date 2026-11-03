@@ -50,6 +50,7 @@ fn lifecycle(raw: Vec<u8>) {
         socket: socket.clone(),
         storage: temp.path().join("custody"),
         quota_bytes: 2 * 1024 * 1024,
+        forwarding: None,
         max_connections: 4,
         client_timeout_ms: 1000,
         files: vec![],
@@ -72,7 +73,10 @@ fn lifecycle(raw: Vec<u8>) {
         match request(&socket, &Request::Read { after: 0, limit: 1 }).unwrap() {
             Reply::Records { records } => {
                 assert_eq!(records.len(), 1);
-                assert_eq!(records[0].1, expected)
+                assert_eq!(
+                    records[0].1,
+                    observation::StoredObservation::V2(expected.clone())
+                )
             }
             r => panic!("{r:?}"),
         }
@@ -99,7 +103,10 @@ fn lifecycle(raw: Vec<u8>) {
     drop(service);
     let _restarted = start(&path, &socket);
     match request(&socket, &Request::Read { after: 0, limit: 1 }).unwrap() {
-        Reply::Records { records } => assert_eq!(records[0].1, expected),
+        Reply::Records { records } => assert_eq!(
+            records[0].1,
+            observation::StoredObservation::V2(expected.clone())
+        ),
         r => panic!("{r:?}"),
     }
     let output = Command::new("timeout")

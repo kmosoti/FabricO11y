@@ -1,7 +1,7 @@
 //! Install and exercise the production local collection executables.
 use crate::collection_lab::OwnedChild;
 use fabric::{
-    observation::{Data, Observation},
+    observation::{self, Data, StoredObservation},
     spindle::{self, Reply, Request},
 };
 use std::{
@@ -140,6 +140,7 @@ pub fn install(layout: &Layout, binaries: &Path) -> Result<(), String> {
         files: vec![],
         journal: None,
         host: None,
+        forwarding: None,
     };
     config.validate()?;
     let unit = format!(
@@ -163,7 +164,13 @@ pub fn install(layout: &Layout, binaries: &Path) -> Result<(), String> {
             0o644,
         ),
     ];
-    for name in ["spindle", "fabric-adapter"] {
+    for name in [
+        "spindle",
+        "fabric-adapter",
+        "fabric-server",
+        "fabric-query",
+        "fabric-mcp",
+    ] {
         let source = binaries.join(name);
         let m = fs::metadata(&source)
             .map_err(|e| format!("{}: {e}; build release binaries first", source.display()))?;
@@ -239,10 +246,10 @@ fn execute(command: &mut Command) -> Result<String, String> {
     }
     Ok(text)
 }
-fn export(binary: &Path, socket: &Path) -> Result<Vec<Observation>, String> {
+fn export(binary: &Path, socket: &Path) -> Result<Vec<StoredObservation>, String> {
     execute(Command::new(binary).arg("export").arg(socket))?
         .lines()
-        .map(|line| serde_json::from_str(line).map_err(error))
+        .map(|line| observation::decode_versioned(line.as_bytes()))
         .collect()
 }
 fn harnesses(root: &Path, binaries: &Path, socket: &Path) -> Result<(), String> {
@@ -255,31 +262,30 @@ fn harnesses(root: &Path, binaries: &Path, socket: &Path) -> Result<(), String> 
     )?;
     Ok(())
 }
-fn added(before: &[Observation], after: &[Observation]) -> Result<(), String> {
+fn added(before: &[StoredObservation], after: &[StoredObservation]) -> Result<(), String> {
     if after.len() != before.len() + 4 || after[..before.len()] != *before {
         return Err("smoke exact append/recovery mismatch (requires SDK-only idle service)".into());
     }
     let new = &after[before.len()..];
     for pair in new.as_chunks::<2>().0 {
-        if !matches!(&pair[0].data, Data::ToolExecution { tool, status: fabric::observation::Outcome::Ok, .. } if tool == "multiply")
+        if !matches!(pair[0].data(), Data::ToolExecution { tool, status: fabric::observation::Outcome::Ok, .. } if tool == "multiply")
             || !matches!(
-                pair[1].data,
+                pair[1].data(),
                 Data::AgentRun {
                     status: fabric::observation::Outcome::Ok,
                     ..
                 }
             )
-            || pair[0].identity.generation != pair[1].identity.generation
-            || pair[0].identity.sequence != 1
-            || pair[1].identity.sequence != 2
+            || pair[0].identity().generation != pair[1].identity().generation
+            || pair[0].identity().sequence != 1
+            || pair[1].identity().sequence != 2
         {
             return Err("harness tool/run identity or outcome mismatch".into());
         }
     }
     let mut identities = std::collections::BTreeSet::new();
     for record in after {
-        record.validate()?;
-        if !identities.insert(serde_json::to_string(&record.identity).map_err(error)?) {
+        if !identities.insert(serde_json::to_string(record.identity()).map_err(error)?) {
             return Err("duplicate exported identity".into());
         }
     }
