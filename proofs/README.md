@@ -3,7 +3,7 @@
 `admission-kernel/src/lib.rs` is executable Rust used by the SDK adapter.
 Verus checks its byte arithmetic, slot transitions and FIFO ticket operations.
 Charon extracts that crate, Aeneas translates it to Lean, and
-`ExtractedAdmission.lean` checks fifteen named properties of the generated
+`ExtractedAdmission.lean` checks sixteen named properties of the generated
 definitions. No Lean FFI is used at runtime.
 
 ```sh
@@ -14,6 +14,9 @@ cargo xtask prove all
 ```
 
 The kernel has private slot identity, capacity, encoded length and phase.
+The production collection SDK embeds this non-Clone slot credit in each payload
+buffer. Free/Reserved/Ready/Leased correspond to free/encoding/queued/in-flight;
+retry changes Leased to Ready without changing identity, capacity or length.
 Transitions preserve identity and capacity, reject invalid operations without
 changing state, and bound encoded length. FIFO operations reject invalid tickets
 and sequence overflow. The extracted conservation property describes the slot
@@ -41,3 +44,15 @@ permits `propext` and `Quot.sound`. Verus checks the application crate with
 Positive and deliberately false checker controls distinguish checker success
 from unrelated compilation failure. Native checker acceptance does not prove
 the compiler, extractor or checker implementation correct.
+
+`admission-kernel/src/delivery.rs` supplies three additional executable SDK frontier
+functions checked by Verus. `Collection.lean` adds thirteen named model theorems,
+checked with `cargo xtask prove collection`, including an axiom audit and a rejected
+skipped-receipt mutant. The transaction model assumes atomic storage; it is not a
+proof of SQLite. See [collection verification](../docs/collection-verification.md)
+for resource bounds, executable failure programs and the exact proof boundary.
+
+`Distributed.lean` checks eighteen named custody-model properties with an axiom
+audit and a rejected conflict-overwrite mutant (`cargo xtask prove distributed`).
+Atomic stable storage and codec refinement are explicit assumptions; see the
+[server evaluation](../docs/fabric-server-evaluation.md).

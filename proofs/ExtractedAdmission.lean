@@ -99,6 +99,13 @@ theorem slot_cancel_contract (s : Slot) (h : SlotValid s) :
   rcases s with ⟨id, capacity, len, phase⟩
   cases phase <;> simp_all [Slot.cancel, SlotValid]
 
+theorem slot_retry_contract (s : Slot) (h : SlotValid s) :
+    Slot.retry s ⦃ r => SlotValid r.2 ∧ r.2.id = s.id ∧ r.2.capacity = s.capacity ∧
+      r.2.len = s.len ∧ (r.1 = true ↔ s.phase = .Leased) ∧
+      (r.1 = false → r.2 = s) ∧ (r.1 = true → r.2.phase = .Ready) ⦄ := by
+  rcases s with ⟨id, capacity, len, phase⟩
+  cases phase <;> simp_all [Slot.retry, SlotValid]
+
 theorem slot_release_contract (s : Slot) (h : SlotValid s) :
     Slot.release s ⦃ r => SlotValid r.2 ∧ r.2.id = s.id ∧ r.2.capacity = s.capacity ∧
       (r.1 = true ↔ s.phase = .Leased) ∧ (r.1 = false → r.2 = s) ∧
@@ -136,6 +143,7 @@ theorem fifo_dequeue_contract (s : Fifo) (ticket : U64) (h : FifoValid s) :
 #print axioms slot_publish_contract
 #print axioms slot_lease_contract
 #print axioms slot_cancel_contract
+#print axioms slot_retry_contract
 #print axioms slot_release_contract
 #print axioms fifo_enqueue_contract
 #print axioms fifo_dequeue_contract

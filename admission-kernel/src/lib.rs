@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 //! Checked arithmetic shared by the executable adapter and proof checkers.
 use vstd::prelude::*;
+pub mod delivery;
 
 verus! {
 pub fn reserve(capacity: usize, used: usize, charge: usize) -> (result: Option<usize>)
@@ -154,6 +155,21 @@ impl Slot {
         } else { false }
     }
 
+    /// Retain the same payload credit when delivery has no matching receipt.
+    pub fn retry(&mut self) -> (result: bool)
+        requires old(self).valid(),
+        ensures final(self).valid(), final(self).identity() == old(self).identity(), final(self).limit() == old(self).limit(),
+            final(self).length() == old(self).length(),
+            result == (old(self).phase() is Leased),
+            result ==> final(self).phase() is Ready,
+            !result ==> *final(self) == *old(self),
+    {
+        if matches!(self.phase, Phase::Leased) {
+            self.phase = Phase::Ready;
+            true
+        } else { false }
+    }
+
     pub fn release(&mut self) -> (result: bool)
         requires old(self).valid(),
         ensures final(self).valid(), final(self).identity() == old(self).identity(), final(self).limit() == old(self).limit(),
@@ -292,5 +308,80 @@ mod protocol_tests {
         assert!(ready.release());
         assert!(last.release());
         assert_eq!(order.enqueue(), None);
+    }
+}
+
+#[cfg(test)]
+mod retry_model_tests {
+    use super::{Phase, Slot};
+
+    // Enumerate operation words against a separate integer-state transition table.
+    // Every invalid operation must preserve identity, capacity, length and phase.
+    #[test]
+    fn slot_transitions_match_independent_table() {
+        for capacity in [0, 8, usize::MAX] {
+            for word in 0..8usize.pow(5) {
+                let mut slot = Slot::new(19, capacity);
+                let (mut phase, mut len) = (0, 0);
+                let mut word = word;
+                for _ in 0..5 {
+                    let operation = word % 8;
+                    word /= 8;
+                    let proposed = match operation {
+                        1 => 0,
+                        2 => capacity,
+                        _ => capacity.saturating_add(1),
+                    };
+                    let accepted = match operation {
+                        0 => phase == 0,
+                        1..=3 => phase == 1 && proposed <= capacity,
+                        4 => phase == 2,
+                        5 => phase == 1,
+                        6 | 7 => phase == 3,
+                        _ => unreachable!(),
+                    };
+                    let actual = match operation {
+                        0 => slot.reserve(),
+                        1..=3 => slot.publish(proposed),
+                        4 => {
+                            let leased = slot.lease();
+                            assert_eq!(leased, accepted.then_some(len));
+                            leased.is_some()
+                        }
+                        5 => slot.cancel(),
+                        6 => slot.release(),
+                        7 => slot.retry(),
+                        _ => unreachable!(),
+                    };
+                    assert_eq!(actual, accepted);
+                    if accepted {
+                        match operation {
+                            0 => phase = 1,
+                            1..=3 => {
+                                phase = 2;
+                                len = proposed;
+                            }
+                            4 => phase = 3,
+                            5 | 6 => {
+                                phase = 0;
+                                len = 0;
+                            }
+                            7 => phase = 2,
+                            _ => unreachable!(),
+                        }
+                    }
+                    assert_eq!(slot.id(), 19);
+                    assert_eq!(slot.capacity(), capacity);
+                    assert_eq!(slot.encoded_len(), len);
+                    let actual_phase = match slot.phase {
+                        Phase::Free => 0,
+                        Phase::Reserved => 1,
+                        Phase::Ready => 2,
+                        Phase::Leased => 3,
+                    };
+                    assert_eq!(actual_phase, phase);
+                }
+            }
+        }
     }
 }

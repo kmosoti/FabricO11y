@@ -1,0 +1,43 @@
+version = 1
+
+[[invariants]]
+id = "acknowledged-readback"
+requirement = "Every acknowledged valid observation remains readable and export cannot stop at a valid record, including after restart."
+required = true
+boundaries = ["raw-wire admission", "durable custody", "reply encoding", "client decoding", "restart", "export progress"]
+checks = ["depth-lifecycle", "normalization-lifecycle", "combined-lifecycle"]
+proof_scope = "Executable lifecycle tests; slot/frontier proofs do not establish serialization or storage implementation correctness."
+assumptions = ["Filesystem/device honors synchronization; process restart does not simulate power loss."]
+
+[[invariants]]
+id = "finite-cosine-stability"
+requirement = "Defined cosine results remain stable under representable positive rescaling across extreme finite magnitudes."
+required = true
+boundaries = ["finite vector validation", "scaled arithmetic", "similarity result"]
+checks = ["cosine-extremes"]
+proof_scope = "Numerical metamorphic tests, not a real-arithmetic or exhaustive floating-point proof."
+assumptions = ["Rescaling preserves finite nonzero input components and the test tolerance accounts for floating-point rounding."]
+
+[[checks]]
+id = "depth-lifecycle"
+package = "fabric"
+target = "readback_lifecycle"
+test = "accepted_depth_boundary_survives_lifecycle"
+
+[[checks]]
+id = "normalization-lifecycle"
+package = "fabric"
+target = "readback_lifecycle"
+test = "compact_numbers_survive_lifecycle"
+
+[[checks]]
+id = "combined-lifecycle"
+package = "fabric"
+target = "readback_lifecycle"
+test = "combined_boundaries_survive_lifecycle"
+
+[[checks]]
+id = "cosine-extremes"
+package = "fabric"
+target = "readback_lifecycle"
+test = "cosine_positive_rescaling_extremes"

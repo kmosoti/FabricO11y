@@ -63,7 +63,14 @@ pub fn check(root: &Path) -> Result<(), String> {
     let work = root.join(format!(".local/extraction-{stamp}"));
     fs::create_dir_all(&work).map_err(|e| e.to_string())?;
     println!("Extraction artifacts: {}", work.display());
-    let before = evidence::hash(&root.join("admission-kernel/src/lib.rs"))?;
+    let sources = [
+        "admission-kernel/src/lib.rs",
+        "admission-kernel/src/delivery.rs",
+    ];
+    let before: std::collections::BTreeMap<_, _> = sources
+        .iter()
+        .map(|p| Ok((*p, evidence::hash(&root.join(p))?)))
+        .collect::<Result<_, String>>()?;
     let properties = evidence::hash(&root.join("proofs/ExtractedAdmission.lean"))?;
     let result = (|| {
         let mut extract = Command::new("timeout");
@@ -158,6 +165,7 @@ pub fn check(root: &Path) -> Result<(), String> {
                     "slot_publish_contract",
                     "slot_lease_contract",
                     "slot_cancel_contract",
+                    "slot_retry_contract",
                     "slot_release_contract",
                     "fifo_construction_contract",
                     "fifo_enqueue_contract",
@@ -189,8 +197,10 @@ pub fn check(root: &Path) -> Result<(), String> {
             fs::write(work.join(format!("{}.log", args.last().unwrap())), report)
                 .map_err(|e| e.to_string())?;
         }
-        if before != evidence::hash(&root.join("admission-kernel/src/lib.rs"))? {
-            return Err("kernel changed during extraction".into());
+        for path in sources {
+            if before[path] != evidence::hash(&root.join(path))? {
+                return Err("kernel changed during extraction".into());
+            }
         }
         if properties != evidence::hash(&root.join("proofs/ExtractedAdmission.lean"))? {
             return Err("properties changed during checking".into());

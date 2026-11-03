@@ -61,13 +61,15 @@ pub fn check(which: &str, root: &Path) -> Result<(), String> {
             Ok(())
         }
         "aeneas" => super::extraction::check(root),
+        "collection" => collection(root),
+        "distributed" => distributed(root),
         "all" => {
-            for checker in ["verus", "lean", "aeneas"] {
+            for checker in ["verus", "lean", "collection", "distributed", "aeneas"] {
                 check(checker, root)?;
             }
             Ok(())
         }
-        _ => Err("expected verus, aeneas, lean, or all".into()),
+        _ => Err("expected verus, aeneas, lean, collection, or all".into()),
     }
 }
 
@@ -150,5 +152,170 @@ fn negative_controls(root: &Path) -> Result<(), String> {
         return Err("missing-tool negative control failed".into());
     }
     println!("Missing checker refused");
+    Ok(())
+}
+
+fn collection(root: &Path) -> Result<(), String> {
+    let lean = evidence::binary("FABRIC_LEAN", "lean-4.35.0-linux/bin/lean");
+    let executable = lean.to_str().ok_or("non-UTF8 path")?;
+    if !super::output(executable, &["--version"], root)?.starts_with("Lean (version 4.35.0,") {
+        return Err("unexpected Lean version".into());
+    }
+    let report = super::output(
+        executable,
+        &["-E", "warning", "proofs/Collection.lean"],
+        root,
+    )?;
+    for property in [
+        "admission_preserves_bound",
+        "full_requires_refusal",
+        "confirmation_preserves_bound",
+        "fixed_frontier_stays_covered",
+        "retained_bytes_bound",
+        "full_payload_attains_bound",
+        "full_records_cost",
+        "lossless_byte_storage_lower_bound",
+        "duplicate_preserves_state",
+        "conflict_preserves_state",
+        "abort_preserves_state",
+        "commit_publishes_both",
+        "receipt_implies_retention",
+    ] {
+        let prefix = format!("'Collection.{property}' ");
+        let valid = report
+            .lines()
+            .find_map(|l| l.strip_prefix(&prefix))
+            .is_some_and(|s| {
+                s == "does not depend on any axioms"
+                    || s.strip_prefix("depends on axioms: [")
+                        .and_then(|s| s.strip_suffix(']'))
+                        .is_some_and(|s| {
+                            !s.is_empty()
+                                && s.split(", ").all(|a| {
+                                    ["propext", "Classical.choice", "Quot.sound"].contains(&a)
+                                })
+                        })
+            });
+        if !valid {
+            return Err(format!(
+                "missing or untrusted collection theorem: {property}"
+            ));
+        }
+    }
+    println!("{report}");
+    // A skipped acknowledgement must fail the executable contract, not just a unit test.
+    let original = std::fs::read_to_string(root.join("admission-kernel/src/delivery.rs"))
+        .map_err(|e| e.to_string())?;
+    let mutant = original.replace("receipt == confirmed + 1", "receipt > confirmed");
+    if mutant == original {
+        return Err("delivery mutation no longer matches".into());
+    }
+    let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let file = dir.path().join("delivery_mutant.rs");
+    std::fs::write(&file, mutant).map_err(|e| e.to_string())?;
+    let verus = evidence::binary("FABRIC_VERUS", &format!("{VERUS}/verus"));
+    let output = Command::new("timeout")
+        .arg("120")
+        .arg(verus)
+        .args(["--crate-type", "lib", "--no-cheating", "--num-threads", "2"])
+        .arg(file)
+        .output()
+        .map_err(|e| e.to_string())?;
+    let diagnostics = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if output.status.success()
+        || output.status.code() == Some(124)
+        || !diagnostics.contains("postcondition not satisfied")
+    {
+        return Err(format!(
+            "skipped-receipt mutant not rejected by proof: {diagnostics}"
+        ));
+    }
+    println!("Skipped-receipt mutant rejected by Verus postcondition");
+    Ok(())
+}
+
+fn distributed(root: &Path) -> Result<(), String> {
+    let lean = evidence::binary("FABRIC_LEAN", "lean-4.35.0-linux/bin/lean");
+    let executable = lean.to_str().ok_or("non-UTF8 checker")?;
+    if !super::output(executable, &["--version"], root)?.starts_with("Lean (version 4.35.0,") {
+        return Err("unexpected Lean".into());
+    }
+    let report = super::output(
+        executable,
+        &["-E", "warning", "proofs/Distributed.lean"],
+        root,
+    )?;
+    for name in [
+        "publish_preserves_existing",
+        "step_preserves_remote",
+        "arbitrary_trace_retains_remote",
+        "lost_ack_can_be_durable",
+        "unknown_ack_does_not_advance",
+        "local_is_not_remote",
+        "publish_retains",
+        "conflict_cannot_overwrite",
+        "duplicates_idempotent",
+        "other_origin_unchanged",
+        "local_custody_survives_handoff",
+        "delivered_empty_server_seals",
+        "frontier_cannot_skip",
+        "frontier_advance",
+        "reclamation_requires_remote",
+        "bounded_enqueue",
+        "full_refuses",
+        "finite_drain",
+    ] {
+        let prefix = format!("'Distributed.{name}' ");
+        let allowed = report
+            .lines()
+            .find_map(|l| l.strip_prefix(&prefix))
+            .is_some_and(|s| {
+                s == "does not depend on any axioms"
+                    || s.strip_prefix("depends on axioms: [")
+                        .and_then(|s| s.strip_suffix(']'))
+                        .is_some_and(|s| {
+                            !s.is_empty()
+                                && s.split(", ").all(|a| {
+                                    ["propext", "Classical.choice", "Quot.sound"].contains(&a)
+                                })
+                        })
+            });
+        if !allowed {
+            return Err(format!("missing or untrusted distributed theorem: {name}"));
+        }
+    }
+    let original =
+        std::fs::read_to_string(root.join("proofs/Distributed.lean")).map_err(|e| e.to_string())?;
+    let mutant = original.replace(
+        "| some _ => store",
+        "| some _ => fun j => if j = k then some p else store j",
+    );
+    if original == mutant {
+        return Err("conflict mutation no longer matches".into());
+    }
+    let temp = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let file = temp.path().join("Mutant.lean");
+    std::fs::write(&file, mutant).map_err(|e| e.to_string())?;
+    let output = Command::new("timeout")
+        .arg("60")
+        .arg(&lean)
+        .args(["-E", "warning"])
+        .arg(file)
+        .output()
+        .map_err(|e| e.to_string())?;
+    let diagnostic = String::from_utf8_lossy(&output.stdout);
+    if output.status.success()
+        || output.status.code() == Some(124)
+        || !diagnostic.contains("unsolved goals")
+    {
+        return Err(format!(
+            "conflict mutant did not fail its theorem: {diagnostic}"
+        ));
+    }
+    println!("{report}\nConflict-overwrite mutant rejected");
     Ok(())
 }

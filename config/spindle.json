@@ -1,0 +1,10 @@
+{
+  "socket": "/run/user/1000/spindle/spindle.sock",
+  "storage": "/home/USER/.local/state/fabrico11y/custody",
+  "quota_bytes": 67108864,
+  "max_connections": 16,
+  "client_timeout_ms": 500,
+  "files": [],
+  "journal": null,
+  "host": {"interval_ms": 10000, "filesystems": ["/home"]}
+}

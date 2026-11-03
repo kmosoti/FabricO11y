@@ -1,0 +1,140 @@
+groups:
+  - id: registry.fabric
+    type: attribute_group
+    brief: Versioned local observations and custody identities.
+    stability: development
+    attributes:
+      - id: fabric.kind
+        stability: development
+        type:
+          members:
+            - {id: service_request, value: service_request, stability: development, brief: A completed service request.}
+            - {id: agent_run, value: agent_run, stability: development, brief: A completed agent run.}
+            - {id: tool_execution, value: tool_execution, stability: development, brief: A completed tool execution.}
+            - {id: log, value: log, stability: development, brief: An explicitly supplied text log.}
+            - {id: json_log, value: json_log, stability: development, brief: A bounded structured application log.}
+            - {id: event, value: event, stability: development, brief: An explicitly supplied named event.}
+            - {id: metric, value: metric, stability: development, brief: A numeric counter or gauge sample.}
+            - {id: gap, value: gap, stability: development, brief: An explicit collection gap or rejection.}
+        brief: Typed payload discriminator.
+        requirement_level: required
+      - id: fabric.producer
+        stability: development
+        type: string
+        brief: Producer name within the local user trust domain; maximum 128 UTF-8 bytes.
+        examples: [my-harness]
+        requirement_level: required
+      - id: fabric.generation
+        stability: development
+        type: string
+        brief: Producer incarnation; maximum 128 UTF-8 bytes; retry identity includes this value.
+        examples: [process-uuid]
+        requirement_level: required
+      - id: fabric.sequence
+        stability: development
+        type: int
+        brief: Positive monotonically increasing unsigned 64-bit producer sequence on the Fabric wire.
+        requirement_level: required
+      - id: fabric.timestamp_ns
+        stability: development
+        type: int
+        brief: Unsigned 64-bit Unix wall-clock timestamp in nanoseconds on the Fabric wire.
+        requirement_level: required
+      - id: fabric.duration_ns
+        stability: development
+        type: int
+        brief: Unsigned 64-bit elapsed duration in nanoseconds on the Fabric wire.
+      - id: fabric.metric_type
+        stability: development
+        type:
+          members:
+            - {id: counter, value: counter, stability: development, brief: Nonnegative cumulative counter; reset marks a new baseline.}
+            - {id: gauge, value: gauge, stability: development, brief: Instantaneous finite numeric value.}
+        brief: Metric sample semantics.
+      - id: fabric.metric_unit
+        stability: development
+        type: string
+        brief: Explicit sample unit; at most 64 UTF-8 bytes. Use UCUM where applicable.
+        examples: [By, ns, '1']
+      - id: fabric.outcome
+        stability: development
+        type:
+          members:
+            - {id: ok, value: ok, stability: development, brief: Operation completed successfully.}
+            - {id: error, value: error, stability: development, brief: Operation failed.}
+            - {id: cancelled, value: cancelled, stability: development, brief: Operation was cancelled.}
+        brief: Completed operation outcome.
+      - id: fabric.resource
+        stability: development
+        type: string
+        brief: Local source resource label; 1 to 256 UTF-8 bytes.
+        examples: [local]
+        requirement_level: required
+      - id: fabric.service
+        stability: development
+        type: string
+        brief: Required service_request service name; 1 to 256 UTF-8 bytes.
+        examples: [api]
+      - id: fabric.operation
+        stability: development
+        type: string
+        brief: Required service_request operation; 1 to 256 UTF-8 bytes.
+        examples: [GET]
+      - id: fabric.agent
+        stability: development
+        type: string
+        brief: Required agent_run agent name; 1 to 256 UTF-8 bytes.
+        examples: [harness]
+      - id: fabric.tool
+        stability: development
+        type: string
+        brief: Required tool_execution tool name; 1 to 256 UTF-8 bytes.
+        examples: [read_file]
+      - id: fabric.run_id
+        stability: development
+        type: string
+        brief: Required agent_run and tool_execution correlation identifier; 1 to 128 UTF-8 bytes.
+        examples: [run-1]
+      - id: fabric.trace_id
+        stability: development
+        type: string
+        brief: Optional service_request correlation identifier; 1 to 128 UTF-8 bytes when present.
+        examples: [trace-1]
+      - id: fabric.level
+        stability: development
+        type:
+          members:
+            - {id: trace, value: trace, stability: development, brief: Trace log.}
+            - {id: debug, value: debug, stability: development, brief: Debug log.}
+            - {id: info, value: info, stability: development, brief: Informational log.}
+            - {id: warn, value: warn, stability: development, brief: Warning log.}
+            - {id: error, value: error, stability: development, brief: Error log.}
+        brief: Required text log severity.
+      - id: fabric.message
+        stability: development
+        type: string
+        brief: Required log or event message; 1 to 32768 UTF-8 bytes without NUL.
+        examples: [tool completed]
+      - id: fabric.name
+        stability: development
+        type: string
+        brief: Required event or metric name; 1 to 256 UTF-8 bytes.
+        examples: [tool.completed]
+      - id: fabric.value
+        stability: development
+        type: double
+        brief: Required finite numeric metric value; counters must be nonnegative.
+      - id: fabric.reset
+        stability: development
+        type: boolean
+        brief: Required metric flag; true establishes a new counter baseline.
+      - id: fabric.gap_source
+        stability: development
+        type: string
+        brief: Required gap source identity; 1 to 256 UTF-8 bytes.
+        examples: [file:app]
+      - id: fabric.gap_reason
+        stability: development
+        type: string
+        brief: Required gap reason; 1 to 4096 UTF-8 bytes.
+        examples: [journal cursor unavailable]

@@ -27,6 +27,8 @@ jobs:
           key: native-fedora44-d68cae91-${{ runner.arch }}-${{ hashFiles('.github/workflows/development-checks.yml', '.github/scripts/install-verification-tools.sh', '.github/scripts/install-toolchain.sh', 'verification/aeneas.opam.lock', 'rust-toolchain.toml') }}
       - name: Install pinned native verification tools
         run: sh .github/scripts/install-verification-tools.sh
+      - name: Install pinned schema checker
+        run: sh .github/scripts/install-schema-tools.sh
       - name: Initialize candidate workspace
         run: jj git init --colocate
       - name: Architecture, tests, proofs and fuzz regressions
@@ -45,6 +47,8 @@ jobs:
       - uses: actions/checkout@v5
       - name: Install checked toolchain and Jujutsu
         run: sh .github/scripts/install-toolchain.sh
+      - name: Install pinned schema checker
+        run: sh .github/scripts/install-schema-tools.sh
       - name: Initialize Jujutsu workspace
         run: jj git init --colocate
       - uses: actions/cache@v4
@@ -55,6 +59,13 @@ jobs:
         run: cat /etc/os-release && uname -a
       - name: Medium checks
         run: /github/home/.cargo/bin/cargo xtask check --tier medium
+      - name: Build release collection executables
+        env:
+          CARGO_BUILD_JOBS: '2'
+        run: /github/home/.cargo/bin/cargo build --locked --release -p fabric -p xtask --bins --examples
+      - name: Release SDK and Spindle restart smoke
+        timeout-minutes: 2
+        run: target/release/xtask collection smoke
       - name: Extensive checks
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: /github/home/.cargo/bin/cargo xtask check --tier extensive

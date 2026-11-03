@@ -5,8 +5,10 @@ Provide time-series/SQL, lexical, semantic and relationship views, with explicit
 coverage, freshness and approximation. Distinguish facts, derived statistics,
 hypotheses and forecasts. Similarity and temporal correlation do not prove causality.
 
-Future schema/SDK work separates bounded memory acceptance from durable submission.
-Spindle revalidates untrusted data and exposes custody and delivery receipts.
+The versioned SDK separates bounded memory acceptance from durable submission.
+Spindle revalidates untrusted data and exposes local custody receipts. Its user
+service collects explicitly configured files, accessible journal entries and host
+metrics into bounded local storage; see [collection](collection.md).
 Finite buffers require explicit refusal, loss or backpressure during long outages.
 
 Evaluate Weaver and OpenTelemetry semantics before creating schema tooling.
