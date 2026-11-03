@@ -4,6 +4,7 @@ pub mod custody;
 mod server;
 pub mod sources;
 pub mod transport;
+pub mod wire;
 use serde::{Deserialize, Serialize};
 pub use server::Daemon;
 use std::path::PathBuf;

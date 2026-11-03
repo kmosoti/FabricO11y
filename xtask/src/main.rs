@@ -5,6 +5,7 @@ use std::{
 };
 mod architecture;
 mod benchmark;
+mod coverage;
 mod evidence;
 mod extraction;
 mod fuzz;
@@ -113,6 +114,7 @@ fn checks(tier: &str, root: &Path) -> Result<(), String> {
     if !["fast", "medium", "extensive", "acceptance"].contains(&tier) {
         return Err("unknown tier".into());
     }
+    coverage::validate(root)?;
     registry::check(root, false)?;
     run("cargo", &["fmt", "--all", "--", "--check"], root)?;
     if root.join("fuzz/Cargo.toml").is_file() {
@@ -157,6 +159,7 @@ fn checks(tier: &str, root: &Path) -> Result<(), String> {
         )?;
     }
     if tier == "acceptance" {
+        coverage::run(root)?;
         run(
             "cargo",
             &[
@@ -204,7 +207,35 @@ fn checks(tier: &str, root: &Path) -> Result<(), String> {
     }
     Ok(())
 }
+fn write_verification_status(root: &Path, receipt: &str) -> Result<(), String> {
+    use std::io::Write;
+    let directory = root.join(".local");
+    fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+    let mut temporary = tempfile::NamedTempFile::new_in(&directory).map_err(|e| e.to_string())?;
+    temporary
+        .write_all(receipt.as_bytes())
+        .map_err(|e| e.to_string())?;
+    temporary.as_file().sync_all().map_err(|e| e.to_string())?;
+    temporary
+        .persist(directory.join("last-verification"))
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
 fn verify(root: &Path, file: &Path) -> Result<(), String> {
+    // Invalidate the prior successful receipt before any fallible capture work.
+    // An interrupted attempt remains non-successful, even before a candidate is known.
+    write_verification_status(root, "coverage=unknown\nresult=in-progress\n")?;
+    let result = verify_candidate(root, file);
+    if let Err(error) = &result {
+        let detail = error.replace('\r', "\\r").replace('\n', "\\n");
+        write_verification_status(
+            root,
+            &format!("coverage=unknown\nresult=failed: {detail}\n"),
+        )?;
+    }
+    result
+}
+fn verify_candidate(root: &Path, file: &Path) -> Result<(), String> {
     let expected = fs::read_to_string(file).map_err(|e| e.to_string())?;
     if capture(root)? != expected {
         return Err("stale candidate or toolchain".into());
@@ -230,7 +261,8 @@ fn verify(root: &Path, file: &Path) -> Result<(), String> {
         ],
         root,
     )?;
-    let result = (|| {
+    let mut coverage_manifest = None;
+    let result: Result<(), String> = (|| {
         if !output(
             "jj",
             &["diff", "--from", id, "--to", "@", "--summary"],
@@ -240,6 +272,7 @@ fn verify(root: &Path, file: &Path) -> Result<(), String> {
         {
             return Err("materialization differs".into());
         }
+        coverage_manifest = Some(coverage::digest(&work)?);
         checks("acceptance", &work)?;
         output("jj", &["util", "snapshot"], &work)?;
         if !output(
@@ -275,21 +308,20 @@ fn verify(root: &Path, file: &Path) -> Result<(), String> {
         Ok(())
     })();
     let receipt = format!(
-        "candidate={id}\nresult={}\n",
+        "candidate={id}\ncoverage_manifest={}\ncoverage={}\nresult={}\n",
+        coverage_manifest.as_deref().unwrap_or("unavailable"),
+        if result.is_ok() {
+            "declared-required-tested"
+        } else {
+            "unknown"
+        },
         match &result {
             Ok(()) => "success".to_owned(),
-            Err(e) => format!("failed: {e}"),
+            Err(e) => format!("failed: {}", e.replace('\r', "\\r").replace('\n', "\\n")),
         }
     );
-    fs::write(file.with_extension("receipt"), receipt).map_err(|e| e.to_string())?;
-    if result.is_ok() {
-        fs::create_dir_all(root.join(".local")).map_err(|e| e.to_string())?;
-        fs::copy(
-            file.with_extension("receipt"),
-            root.join(".local/last-verification"),
-        )
-        .map_err(|e| e.to_string())?;
-    }
+    fs::write(file.with_extension("receipt"), &receipt).map_err(|e| e.to_string())?;
+    write_verification_status(root, &receipt)?;
     result
 }
 fn main() -> ExitCode {
@@ -315,6 +347,8 @@ fn main() -> ExitCode {
         ["prove"] => proof::check("verus", &root),
         ["prove", checker] => proof::check(checker, &root),
         ["architecture"] => architecture::check(&root),
+        ["coverage", "validate"] => coverage::validate(&root),
+        ["coverage", "check"] => coverage::run(&root),
         ["registry", "check"] => registry::check(&root, false),
         ["registry", "generate"] => registry::check(&root, true),
         ["search", rest @ ..] => search::cli(rest, &root),
@@ -325,7 +359,7 @@ fn main() -> ExitCode {
         ["candidate", "capture", file] => capture_to(&root, Path::new(file)),
         ["candidate", "verify", file] => verify(&root, Path::new(file)),
         _ => Err(
-            "usage: doctor | prove | check --tier fast|medium|extensive | candidate capture|verify FILE"
+            "usage: doctor | prove | check --tier fast|medium|extensive | candidate capture|verify FILE | coverage validate|check"
                 .into(),
         ),
     };
@@ -346,5 +380,29 @@ mod tests {
     #[test]
     fn process_failure_retained() {
         assert!(super::output("/usr/bin/false", &[], std::path::Path::new(".")).is_err());
+    }
+    #[test]
+    fn missing_capture_invalidates_previous_success_before_returning() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        super::write_verification_status(root, "candidate=old\nresult=success\n").unwrap();
+        assert!(super::verify(root, &root.join("missing.capture")).is_err());
+        let receipt = std::fs::read_to_string(root.join(".local/last-verification")).unwrap();
+        assert!(receipt.contains("result=failed:"));
+        assert!(receipt.contains("coverage=unknown"));
+        assert!(!receipt.contains("result=success"));
+        assert!(!receipt.contains("candidate=old"));
+    }
+    #[test]
+    fn verification_status_replaces_success_with_in_progress_atomically() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        super::write_verification_status(root, "result=success\n").unwrap();
+        super::write_verification_status(root, "coverage=unknown\nresult=in-progress\n").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(root.join(".local/last-verification")).unwrap(),
+            "coverage=unknown\nresult=in-progress\n"
+        );
+        assert_eq!(std::fs::read_dir(root.join(".local")).unwrap().count(), 1);
     }
 }

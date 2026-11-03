@@ -145,8 +145,7 @@ impl Daemon {
             } else {
                 match connection.progress() {
                     Ok(Some(body)) => {
-                        let reply = self.handle(&body);
-                        connection.output = serde_json::to_vec(&reply).map_err(err)?;
+                        connection.output = self.handle(&body)?;
                         if connection.output.len() > super::MAX_REPLY {
                             connection.output = serde_json::to_vec(&Reply::Error {
                                 error: "response budget exceeded; use a smaller page".into(),
@@ -222,18 +221,20 @@ impl Daemon {
         }
         self.health.clone()
     }
-    fn handle(&mut self, bytes: &[u8]) -> Reply {
+    fn handle(&mut self, bytes: &[u8]) -> Result<Vec<u8>, String> {
         let request = observation::check_json(bytes, observation::MAX_FRAME)
             .and_then(|()| serde_json::from_slice::<serde_json::Value>(bytes).map_err(err));
-        match request {
+        let reply = match request {
             Ok(v) if v.get("command").is_some() => match serde_json::from_value::<Request>(v) {
                 Ok(Request::Status) => Reply::Status {
                     status: self.health(),
                 },
-                Ok(Request::Read { after, limit }) => match self.store.read(after, limit.min(1)) {
-                    Ok(records) => Reply::Records { records },
-                    Err(error) => Reply::Error { error },
-                },
+                Ok(Request::Read { after, limit }) => {
+                    match self.store.read_raw(after, limit.min(1)) {
+                        Ok(records) => return super::wire::encode_records(&records),
+                        Err(error) => Reply::Error { error },
+                    }
+                }
                 Ok(Request::Stop) => {
                     self.stopping = true;
                     Reply::Stopped
@@ -245,9 +246,10 @@ impl Daemon {
                     .is_ok_and(|o| observation::reserved_producer(&o.identity.producer))
                 {
                     self.health.refusals += 1;
-                    return Reply::Error {
+                    return serde_json::to_vec(&Reply::Error {
                         error: "collector producer namespace is reserved".into(),
-                    };
+                    })
+                    .map_err(err);
                 }
                 let start = Instant::now();
                 let result = self.store.submit(bytes, None);
@@ -271,7 +273,8 @@ impl Daemon {
                 self.health.errors += 1;
                 Reply::Error { error }
             }
-        }
+        };
+        serde_json::to_vec(&reply).map_err(err)
     }
     pub fn socket(&self) -> &std::path::Path {
         &self.config.socket

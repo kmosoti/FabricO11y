@@ -200,6 +200,28 @@ CREATE TABLE IF NOT EXISTS registries(name TEXT PRIMARY KEY,descriptor TEXT NOT 
         }
         Ok(total)
     }
+    /// Original validated payload bytes; bounded before allocating SQLite blobs.
+    pub fn read_raw(&self, after: u64, limit: usize) -> Result<Vec<(u64, Vec<u8>)>, String> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id,payload FROM records WHERE id>?1 ORDER BY id LIMIT ?2")
+            .map_err(err)?;
+        let rows = stmt
+            .query_map(params![after, limit.min(1)], |r| {
+                let raw = r.get_ref(1)?.as_blob()?;
+                if raw.len() > crate::observation::MAX_FRAME {
+                    return Err(rusqlite::Error::InvalidQuery);
+                }
+                Ok((r.get::<_, u64>(0)?, raw.to_vec()))
+            })
+            .map_err(err)?;
+        rows.map(|r| {
+            let (id, bytes) = r.map_err(err)?;
+            observation::decode(&bytes)?;
+            Ok((id, bytes))
+        })
+        .collect()
+    }
     pub fn read(&self, after: u64, limit: usize) -> Result<Vec<(u64, Observation)>, String> {
         let mut stmt = self
             .conn

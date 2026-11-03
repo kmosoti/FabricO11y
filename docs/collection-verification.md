@@ -94,3 +94,19 @@ kills do not guarantee every SQLite instruction is interrupted. These are proces
 crashes, not physical power-loss tests. Existing tests additionally inject SQLite
 checkpoint failures and exercise storage quotas, malformed input, lost socket
 acknowledgements, file rotation and truncation.
+
+## Readback coverage
+
+Acknowledgement implies that the supported read/export path can retrieve the
+record, including after restart. Read replies embed the original validated JSON
+bytes; parsing the response permits the three additional envelope levels. The
+single-record envelope budget includes the largest record identifier. Export may
+normalize JSON spelling while preserving observation values.
+
+`readback_lifecycle` tests use raw-wire boundary fixtures, including compact
+exponents, maximum valid depth and combined escaped-string/depth cases. They
+prepopulate custody to cover existing records, retry them through the real CLI
+service, read/export, restart and verify export progress to a following record.
+The `readback_envelope` fuzz target has no exemption for normalization expansion.
+Declared lifecycle coverage and its limitations are recorded in the verification
+coverage manifest and checked by native acceptance.

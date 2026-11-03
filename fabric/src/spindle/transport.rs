@@ -92,7 +92,7 @@ fn exchange(path: &Path, bytes: &[u8], deadline: Instant) -> Result<Reply, Strin
     }
     let mut body = vec![0; size];
     read_exact(&mut stream, &mut body, deadline)?;
-    crate::observation::check_json(&body, super::MAX_REPLY)?;
+    super::wire::check_reply(&body)?;
     serde_json::from_slice(&body).map_err(|e| e.to_string())
 }
 pub fn submit_bytes(path: &Path, bytes: &[u8], deadline: Instant) -> Result<Receipt, String> {

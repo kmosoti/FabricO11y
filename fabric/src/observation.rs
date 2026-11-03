@@ -165,6 +165,9 @@ pub fn decode(bytes: &[u8]) -> Result<Observation, String> {
     Ok(value)
 }
 pub fn check_json(bytes: &[u8], limit: usize) -> Result<(), String> {
+    check_json_depth(bytes, limit, MAX_DEPTH)
+}
+pub fn check_json_depth(bytes: &[u8], limit: usize, max_depth: usize) -> Result<(), String> {
     if bytes.len() > limit {
         return Err("frame too large".into());
     }
@@ -183,7 +186,7 @@ pub fn check_json(bytes: &[u8], limit: usize) -> Result<(), String> {
                 b'"' => quoted = true,
                 b'{' | b'[' => {
                     depth += 1;
-                    if depth > MAX_DEPTH {
+                    if depth > max_depth {
                         return Err("nesting limit".into());
                     }
                 }

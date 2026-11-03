@@ -42,3 +42,10 @@ path = "fuzz_targets/observation_decode.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "readback_envelope"
+path = "fuzz_targets/readback_envelope.rs"
+test = false
+doc = false
+bench = false
