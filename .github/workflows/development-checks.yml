@@ -59,6 +59,13 @@ jobs:
         run: cat /etc/os-release && uname -a
       - name: Medium checks
         run: /github/home/.cargo/bin/cargo xtask check --tier medium
+      - name: Build release collection executables
+        env:
+          CARGO_BUILD_JOBS: '2'
+        run: /github/home/.cargo/bin/cargo build --locked --release -p fabric -p xtask --bins --examples
+      - name: Release SDK and Spindle restart smoke
+        timeout-minutes: 2
+        run: target/release/xtask collection smoke
       - name: Extensive checks
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: /github/home/.cargo/bin/cargo xtask check --tier extensive
