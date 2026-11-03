@@ -39,18 +39,36 @@ receipt-retention properties. Named theorem axiom audits permit only Lean's stan
 
 The transaction model assumes atomic durable publication. It does **not** verify
 SQLite, filesystem synchronization, power-loss behavior, the mutex/worker adapter,
-JSON parsing, Unix transport or source collectors. The existing Aeneas proofs remain
-about the original admission kernel: extracting the new functions does not give
-them additional Aeneas theorem coverage. Verus establishes their executable
-arithmetic properties. Runtime tests connect the SDK and store to the stated
-invariants but are not a formal refinement proof of the entire application.
+JSON parsing, Unix transport or source collectors.
+
+The SDK embeds the non-Clone `Slot` kernel in each payload buffer and calls its
+reserve, cancel, publish, lease, retry and release transitions. Verus and sixteen
+Aeneas/Lean contracts check the slot operations and original admission kernel. The
+new retry contract preserves slot identity, capacity and encoded length while
+returning an in-flight slot to the ready phase. Extraction of the frontier
+functions does not give them Aeneas theorem coverage; Verus establishes their
+executable arithmetic properties. Runtime tests connect the SDK and store to the
+stated invariants but are not a formal refinement proof of the entire application.
+
+An independent integer-state transition table enumerates operation sequences,
+including invalid transitions, against the executable slot kernel. SDK tests
+inspect unique identities across free, ready and in-flight ownership, queue order,
+and charged counts during concurrent outage saturation and rejected encoding. A
+controlled peer sends wrong producer, generation and sequence receipts; each must
+retain its credit and retry identical payload bytes before a matching receipt can
+release it. The kernel proves phase conservation for each slot; tests and Rust
+ownership connect these credits to actual buffers. The whole mutex/worker adapter
+is not formally verified over all thread schedules.
 
 ## Memory bounds and their limits
 
 With `N` SDK slots and `B` bytes per slot, preallocated payload storage is exactly
 `N × B` bytes. Defaults reserve 4 MiB; the largest permitted configuration reserves
 256 MiB. This excludes buffer descriptors, queue metadata, producer inputs, the
-worker stack, transport/reply allocations and allocator overhead. The independent
+worker stack, transport/reply allocations and allocator overhead. Each payload
+buffer also owns bounded slot metadata (identity, capacity, encoded length and
+phase). This adds metadata relative to a bare length field without increasing
+payload reservation; it is not a reduction in total heap usage. The independent
 Rust program checks the configured bound through outage saturation and recovery,
 including concurrent producers. A full-width fixture retains exactly `N × B`
 encoded bytes, attaining the lower bound **for disjoint, uncompressed byte storage**.

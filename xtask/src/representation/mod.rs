@@ -1,5 +1,7 @@
 //! Experimental codecs, intentionally separate from the production wire protocol.
+pub mod arrow;
 pub mod custody;
+pub mod direct;
 pub mod fixtures;
 use fabric::observation::Observation;
 use serde_json::{Map, Number, Value};
@@ -86,14 +88,24 @@ pub enum Codec {
     Json,
     Rows,
     Columns,
+    Direct,
+    Arrow,
 }
 impl Codec {
-    pub const ALL: [Self; 3] = [Self::Json, Self::Rows, Self::Columns];
+    pub const ALL: [Self; 5] = [
+        Self::Json,
+        Self::Rows,
+        Self::Columns,
+        Self::Direct,
+        Self::Arrow,
+    ];
     pub fn name(self) -> &'static str {
         match self {
             Self::Json => "json",
             Self::Rows => "rows",
             Self::Columns => "columns",
+            Self::Direct => "direct",
+            Self::Arrow => "arrow",
         }
     }
 }
@@ -206,17 +218,40 @@ pub fn canonical(records: &[Observation]) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 pub fn encode(codec: Codec, records: &[Observation]) -> Result<Vec<u8>, String> {
-    let raw = canonical(records)?;
+    if matches!(codec, Codec::Direct | Codec::Arrow) {
+        let payload = if codec == Codec::Direct {
+            direct::encode(records)?
+        } else {
+            arrow::encode(records)?
+        };
+        let mut out = payload;
+        out.splice(
+            ..0,
+            MAGIC
+                .iter()
+                .copied()
+                .chain(std::iter::once(if codec == Codec::Direct { 3 } else { 4 })),
+        );
+        if out.len() > MAX_FRAME {
+            return Err("frame limit".into());
+        }
+        return Ok(out);
+    }
+    if codec == Codec::Json {
+        direct::validate(records)?;
+        let mut out = MAGIC.to_vec();
+        out.push(0);
+        serde_json::to_writer(&mut out, records).map_err(|e| e.to_string())?;
+        return Ok(out);
+    }
+    canonical(records)?;
     let mut out = MAGIC.to_vec();
     out.push(match codec {
         Codec::Json => 0,
         Codec::Rows => 1,
         Codec::Columns => 2,
+        Codec::Direct | Codec::Arrow => unreachable!(),
     });
-    if codec == Codec::Json {
-        out.extend_from_slice(&raw);
-        return Ok(out);
-    }
     let values: Vec<Value> = records
         .iter()
         .map(|r| serde_json::to_value(r).unwrap())
@@ -403,6 +438,12 @@ pub fn decode(bytes: &[u8]) -> Result<Vec<Observation>, String> {
         nodes: MAX_INPUT,
     };
     let codec = r.u8()?;
+    if codec == 3 {
+        return direct::decode(&bytes[r.at..]);
+    }
+    if codec == 4 {
+        return arrow::decode(&bytes[r.at..]);
+    }
     let records = if codec == 0 {
         if bytes.len() - r.at > MAX_INPUT {
             return Err("json budget".into());

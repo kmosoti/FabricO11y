@@ -3,7 +3,7 @@
 `admission-kernel/src/lib.rs` is executable Rust used by the SDK adapter.
 Verus checks its byte arithmetic, slot transitions and FIFO ticket operations.
 Charon extracts that crate, Aeneas translates it to Lean, and
-`ExtractedAdmission.lean` checks fifteen named properties of the generated
+`ExtractedAdmission.lean` checks sixteen named properties of the generated
 definitions. No Lean FFI is used at runtime.
 
 ```sh
@@ -14,6 +14,9 @@ cargo xtask prove all
 ```
 
 The kernel has private slot identity, capacity, encoded length and phase.
+The production collection SDK embeds this non-Clone slot credit in each payload
+buffer. Free/Reserved/Ready/Leased correspond to free/encoding/queued/in-flight;
+retry changes Leased to Ready without changing identity, capacity or length.
 Transitions preserve identity and capacity, reject invalid operations without
 changing state, and bound encoded length. FIFO operations reject invalid tickets
 and sequence overflow. The extracted conservation property describes the slot

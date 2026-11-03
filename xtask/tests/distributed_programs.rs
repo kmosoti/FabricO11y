@@ -15,7 +15,7 @@ fn distributed_programs() {
         serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()["passed"],
         true
     );
-    for codec in ["json", "rows", "columns"] {
+    for codec in ["json", "rows", "columns", "direct", "arrow"] {
         for mode in ["compatible", "native"] {
             let out = Command::new("timeout")
                 .args([

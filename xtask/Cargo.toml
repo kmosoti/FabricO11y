@@ -12,6 +12,9 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 tempfile = "3"
 toml = "1"
 proc-macro2 = "1"
+arrow-array = "=60.1.0"
+arrow-schema = "=60.1.0"
+arrow-ipc = { version = "=60.1.0", default-features = false }
 
 fabric = { path = "../fabric" }
 rusqlite = { version = "=0.41.1", features = ["bundled", "fallible_uint"] }

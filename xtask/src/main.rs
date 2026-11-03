@@ -311,6 +311,7 @@ fn main() -> ExitCode {
             Ok(())
         }
         ["check", "--tier", tier] => checks(tier, &root),
+        ["collection", ..] => xtask::collection::run(&root, &args[1..]),
         ["prove"] => proof::check("verus", &root),
         ["prove", checker] => proof::check(checker, &root),
         ["architecture"] => architecture::check(&root),

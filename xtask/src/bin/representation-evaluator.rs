@@ -276,13 +276,26 @@ fn main() {
             codec(&args[5]),
             &args[6],
         ),
-        Some("run") => {
+        Some("run") | Some("arrow-run") => {
+            let arrow_run = args[1] == "arrow-run";
             let held = args.get(2).is_some_and(|s| s == "held-out");
-            let seed = if held { 991 } else { 17 };
+            let seed = if arrow_run {
+                if held { 20261119 } else { 37 }
+            } else if held {
+                991
+            } else {
+                17
+            };
             for case in fixtures::CASES {
                 for batch in [1, if *case == "maximum" { 7 } else { 32 }] {
                     for c in Codec::ALL {
+                        if arrow_run && !matches!(c, Codec::Json | Codec::Direct | Codec::Arrow) {
+                            continue;
+                        }
                         for mode in ["compatible", "native"] {
+                            if arrow_run && mode != "native" {
+                                continue;
+                            }
                             for repetition in 0..6 {
                                 let out = Command::new("timeout")
                                     .args([

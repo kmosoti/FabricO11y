@@ -8,26 +8,39 @@ See the [SDK](contracts/sdk.md) and [collector](contracts/spindle.md) contracts.
 
 ## Install and configure
 
-```sh
-cargo build --release -p fabric --bins
-install -Dm755 target/release/spindle ~/.local/bin/spindle
-install -Dm755 target/release/fabric-adapter ~/.local/bin/fabric-adapter
-install -Dm644 config/spindle.service ~/.config/systemd/user/spindle.service
-install -Dm600 config/spindle.json ~/.config/fabrico11y/spindle.json
-```
-
-Edit every example path and UID before starting. Configuration uses absolute
-paths without environment or tilde expansion. The service creates private runtime
-and state parents. For direct `spindle serve CONFIG`, create those parents first
-with mode 0700. Storage creates exactly one directory below an existing parent and
-synchronizes both directories before accepting submissions.
+Build the production executables and runnable harness, then install for the current
+Linux user. Installation resolves `HOME`, `XDG_RUNTIME_DIR`, `XDG_CONFIG_HOME`
+and `XDG_STATE_HOME` (the latter two default under the home directory), creates
+private collection directories and writes an SDK-only configuration. Existing
+files must match exactly; conflicts report the path and require explicit backup
+or relocation. Custody is never replaced. Repeating an identical installation is
+safe. Installation does not activate the service.
 
 ```sh
+CARGO_BUILD_JOBS=2 cargo build --release -p fabric --bins --examples
+cargo xtask collection smoke
+cargo xtask collection install
 systemctl --user daemon-reload
 systemctl --user enable --now spindle.service
-spindle status /run/user/$(id -u)/spindle/spindle.sock
-spindle export /run/user/$(id -u)/spindle/spindle.sock > observations.jsonl
+~/.local/bin/spindle status "$XDG_RUNTIME_DIR/spindle/spindle.sock"
+cargo xtask collection smoke --socket "$XDG_RUNTIME_DIR/spindle/spindle.sock"
 ```
+
+The isolated smoke starts the actual Spindle executable, runs Rust and Python
+harnesses through the SDK and persistent adapter, checks exact exported records,
+restarts the daemon against the same custody and verifies recovery and continued
+submission. Its processes and storage are temporary. `--socket` checks an existing
+idle SDK-only service by adding four records; it never stops that service or deletes
+its records. For installed-service restart acceptance, export before restarting,
+run `systemctl --user restart spindle.service`, compare the export after restart,
+then run the socket smoke again. A successful smoke is JSON with `passed: true`.
+Use `--bin-dir /absolute/path` to select another built binary directory; it must
+also contain `examples/agent_harness`. Both modes have bounded child deadlines.
+
+Configuration uses absolute paths without environment or tilde expansion. Optional
+collectors require explicit configuration. For direct `spindle serve CONFIG`,
+create private parent directories first. Storage creates exactly one directory
+below an existing parent and synchronizes both directories before submissions.
 
 `status` remains readable at quota exhaustion. `read SOCKET [AFTER]` returns at
 most one record and its increasing local ID; repeat with that ID for pagination.
@@ -114,5 +127,6 @@ EOF triggers one additional flush with a two-second deadline and a structured
 `eof_receipt` or error reply. Diagnostics use stderr. A successful memory admission
 alone is never a durable receipt.
 
-The existing admission kernel proofs remain scoped to the legacy bounded kernel;
-they do not prove SQLite, transport, SDK worker or source adapter correctness.
+Executable delivery arithmetic is checked by Verus and linked to the SDK;
+[collection verification](collection-verification.md) distinguishes those guarantees
+from the unverified SQLite, transport, SDK worker and source adapter boundaries.

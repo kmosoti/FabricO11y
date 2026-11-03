@@ -165,6 +165,7 @@ pub fn check(root: &Path) -> Result<(), String> {
                     "slot_publish_contract",
                     "slot_lease_contract",
                     "slot_cancel_contract",
+                    "slot_retry_contract",
                     "slot_release_contract",
                     "fifo_construction_contract",
                     "fifo_enqueue_contract",
