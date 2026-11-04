@@ -124,13 +124,11 @@ impl Client {
             },
         };
         probe.validate()?;
-        let free = (0..config.slots)
-            .map(|id| Buffer {
-                bytes: vec![0; config.max_record].into_boxed_slice(),
-                credit: admission_kernel::Slot::new(id, config.max_record),
-                sequence: 0,
-            })
-            .collect();
+        let free = Vec::from_fn(config.slots, |id| Buffer {
+            bytes: vec![0; config.max_record].into_boxed_slice(),
+            credit: admission_kernel::Slot::new(id, config.max_record),
+            sequence: 0,
+        });
         let ready = VecDeque::with_capacity(config.slots);
         let shared = Arc::new(Shared {
             state: Mutex::new(State {

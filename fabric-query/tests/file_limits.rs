@@ -41,7 +41,7 @@ fn thousand_segments_query_under_low_file_limit() {
     const CHILD: &str = "FABRIC_QUERY_LOW_FD_CHILD";
     if std::env::var_os(CHILD).as_deref() != Some(std::ffi::OsStr::new("1")) {
         let before = getrlimit(Resource::Nofile);
-        let status = std::process::Command::new(std::env::current_exe().unwrap())
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",
                 "thousand_segments_query_under_low_file_limit",
@@ -49,9 +49,15 @@ fn thousand_segments_query_under_low_file_limit() {
                 "--test-threads=1",
             ])
             .env(CHILD, "1")
-            .status()
+            .output()
             .unwrap();
-        assert!(status.success(), "low-file-limit child failed: {status}");
+        assert!(
+            output.status.success(),
+            "low-file-limit child failed: {}\n{}\n{}",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr),
+        );
         let after = getrlimit(Resource::Nofile);
         assert_eq!(after.current, before.current);
         assert_eq!(after.maximum, before.maximum);

@@ -23,6 +23,9 @@ fn repository() -> TempDir {
             "fixture@example.invalid",
         ],
     );
+    // Verification writes local receipts; keep them out of source snapshots,
+    // just as the real repository's .gitignore does.
+    fs::write(dir.path().join(".git/info/exclude"), "/.local/\n").unwrap();
     dir
 }
 
