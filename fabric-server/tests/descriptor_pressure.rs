@@ -6,7 +6,7 @@ use std::{
     io::Write,
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    process::{Child, Command},
+    process::{Child, Command, Stdio},
     sync::atomic::Ordering,
     thread,
     time::{Duration, Instant},
@@ -73,6 +73,7 @@ fn pressure_child(root: &Path) {
     // Real TCP work queues while accept cannot allocate another descriptor.
     thread::sleep(Duration::from_millis(250));
     drop(held);
+    fs::write(root.join("released"), b"descriptors available").unwrap();
     while !root.join("complete").exists() {
         assert!(Instant::now() < deadline, "parent did not finish recovery");
         thread::sleep(Duration::from_millis(2));
@@ -98,6 +99,9 @@ fn receiver_recovers_after_process_descriptor_exhaustion() {
         Command::new(std::env::current_exe().unwrap())
             .args(["--exact", TEST, "--nocapture"])
             .env(CHILD, dir.path())
+            // Only the parent reports a harness result; child panic diagnostics
+            // still reach stderr and its exit status is checked below.
+            .stdout(Stdio::null())
             .spawn()
             .unwrap(),
     );
@@ -134,6 +138,12 @@ fn receiver_recovers_after_process_descriptor_exhaustion() {
         call(&reader, Request::Progress),
         Response::Progress { .. }
     ));
+    // A descriptor closed by another thread can let Progress finish before
+    // the pressure thread releases its files. Ingest needs recovered capacity.
+    while !dir.path().join("released").exists() {
+        assert!(Instant::now() < deadline, "descriptors were not released");
+        thread::sleep(Duration::from_millis(2));
+    }
     assert!(matches!(
         call(
             &node,

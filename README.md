@@ -26,5 +26,5 @@ cargo xtask check --tier medium
 cargo xtask check --tier extensive
 ```
 
-Requires Jujutsu 0.46.0 with a Git backend and dated Rust beta-2026-10-18 (1.100.0-beta.7)
-(compiler commit fd8e211ae301c84a86d13cf52a6d3ce08c589e2e).
+Requires Jujutsu 0.46.0 with a Git backend and Rust 1.100.0 stable,
+pinned in `rust-toolchain.toml`.

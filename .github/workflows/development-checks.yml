@@ -61,7 +61,7 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: target
-          key: rust-beta7-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: rust-1.100.0-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
       - name: Record execution environment
         run: cat /etc/os-release && uname -a
       - name: Medium checks

@@ -14,6 +14,7 @@ use std::{
     collections::BTreeMap,
     fs,
     io::Write,
+    mem::DropGuard,
     net::{SocketAddr, TcpListener},
     os::unix::fs::{MetadataExt, PermissionsExt},
     path::{Path, PathBuf},
@@ -93,12 +94,6 @@ impl Drop for QueryGuard {
             s.active = false;
             s.id.clear();
         }
-    }
-}
-struct ConnectionGuard(Arc<AtomicUsize>);
-impl Drop for ConnectionGuard {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::SeqCst);
     }
 }
 struct ReadState {
@@ -274,7 +269,9 @@ impl Server {
                         continue;
                     }
                     active.fetch_add(1, Ordering::SeqCst);
-                    let guard = ConnectionGuard(active.clone());
+                    let guard = DropGuard::new(active.clone(), |active| {
+                        active.fetch_sub(1, Ordering::SeqCst);
+                    });
                     let ledger = self.ledger.clone();
                     let projection = self.projection.clone();
                     let auth = self.auth.clone();
