@@ -16,13 +16,21 @@ use std::{
 };
 const RESERVE: u64 = 128 * 1024;
 const COLUMNS: &str = "id,origin,source_id,raw,raw_len,raw_hash";
+/// Explicitly releases `flock` before closing so sibling `fork()`s do not pin `owner.lock`.
+struct ExclusiveLock(File);
+impl Drop for ExclusiveLock {
+    fn drop(&mut self) {
+        let _ = rustix::fs::flock(&self.0, rustix::fs::FlockOperation::Unlock);
+    }
+}
+
 pub struct Ledger {
     conn: Connection,
     dir: PathBuf,
     quota: u64,
     engine: Option<crate::engine::Greptime>,
     pub authority: String,
-    _lock: File,
+    _lock: ExclusiveLock,
 }
 fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
@@ -87,6 +95,7 @@ impl Ledger {
             .map_err(err)?;
         rustix::fs::flock(&lock, rustix::fs::FlockOperation::NonBlockingLockExclusive)
             .map_err(err)?;
+        let lock = ExclusiveLock(lock);
         let conn = Connection::open(dir.join("canonical.sqlite")).map_err(err)?;
         conn.busy_timeout(std::time::Duration::from_millis(100))
             .map_err(err)?;

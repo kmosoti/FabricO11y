@@ -1517,6 +1517,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -3678,6 +3679,8 @@ dependencies = [
  "arrow-ipc",
  "arrow-schema",
  "fabric",
+ "fabric-core",
+ "fabric-server",
  "proc-macro2",
  "rusqlite",
  "rustix",

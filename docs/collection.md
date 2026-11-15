@@ -37,6 +37,29 @@ then run the socket smoke again. A successful smoke is JSON with `passed: true`.
 Use `--bin-dir /absolute/path` to select another built binary directory; it must
 also contain `examples/agent_harness`. Both modes have bounded child deadlines.
 
+## Coupled stack installation (`Spindle` + `fabric-server` + `fabric-daemon`)
+
+For the full production telemetry and canonical custody pipeline, install all three user services inside `fabrico11y.slice` using `install-stack`:
+
+```sh
+cargo build --locked --release --workspace --bins --examples --target-dir /data/cargo-target -j 4
+/data/cargo-target/release/xtask collection smoke --bin-dir /data/cargo-target/release
+/data/cargo-target/release/xtask collection install-stack \
+  --bin-dir /data/cargo-target/release \
+  --data-dir /data/fabrico11y \
+  --tmp-dir /data/tmp \
+  --listen 127.0.0.1:17440
+systemctl --user daemon-reload
+systemctl --user enable --now fabric-server.service spindle.service fabric-daemon.service
+/data/cargo-target/release/xtask collection smoke \
+  --bin-dir /data/cargo-target/release \
+  --socket "$XDG_RUNTIME_DIR/spindle/spindle.sock"
+fabric custody --json
+fabric doctor --json
+```
+
+`install-stack` validates non-`/tmp` paths (including XDG layout paths) and a loopback non-zero `--listen` address, installs the six release executables (`fabric`, `spindle`, `fabric-server`, `fabric-adapter`, `fabric-query`, `fabric-mcp`), provisions distinct `0600` credentials (`spindle-node.token`, `fabric-reader.token`), binds Spindle's persistent `origin` and `fabric-server`'s canonical `authority` inside `server.json` and `spindle.json` (`reclaim_confirmed: false`), and writes rootless-safe systemd user units (`fabrico11y.slice`, `fabric-server.service`, `spindle.service`, `fabric-daemon.service`). `fabric-server.service` and `spindle.service` use `Type=notify` (`READY=1` after socket bind); `fabric-server` and `fabric-daemon` handle `SIGINT`/`SIGTERM` gracefully while `spindle.service` stops gracefully via `ExecStop=spindle stop`, so ordered startup and shutdown work cleanly across all three units. Repeating an identical `install-stack` run is idempotent (both offline and while services hold active custody locks); any conflicting pre-existing file fails preflight before mutating custody state and must be explicitly backed up before retry. Note that `fabrico11y.slice` has no `[Install]` section—enable only the `.service` units, which activate `fabrico11y.slice` automatically via `Slice=fabrico11y.slice`.
+
 Configuration uses absolute paths without environment or tilde expansion. Optional
 collectors require explicit configuration. For direct `spindle serve CONFIG`,
 create private parent directories first. Storage creates exactly one directory

@@ -17,6 +17,8 @@ arrow-schema = "=59.3.2"
 arrow-ipc = { version = "=59.3.2", default-features = false }
 
 fabric = { path = "../fabric" }
+fabric-core = { path = "../fabric-core" }
+fabric-server = { path = "../fabric-server" }
 rusqlite = { version = "=0.41.1", features = ["bundled", "fallible_uint"] }
 rustix = { version = "1", features = ["time", "process"] }
 

@@ -87,11 +87,19 @@ struct Cursor {
     expires: u64,
 }
 
+/// Explicitly releases `flock` before closing so sibling `fork()`s do not pin the lock.
+struct ExclusiveLock(File);
+impl Drop for ExclusiveLock {
+    fn drop(&mut self) {
+        let _ = self.0.unlock();
+    }
+}
+
 pub struct Projection {
     dir: PathBuf,
     quota: u64,
     manifest: Manifest,
-    _lock: File,
+    _lock: ExclusiveLock,
     active: AtomicBool,
     poisoned: bool,
 }
@@ -111,6 +119,7 @@ impl Projection {
             .map_err(err)?;
         lock.try_lock()
             .map_err(|e| format!("projection already open: {e}"))?;
+        let lock = ExclusiveLock(lock);
         let manifest_path = dir.join(MANIFEST);
         let manifest = if let Some(metadata) = regular_metadata(&manifest_path)? {
             if metadata.len() > MAX_MANIFEST_BYTES as u64
