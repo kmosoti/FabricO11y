@@ -440,3 +440,28 @@ fn manifest_nesting_is_bounded_before_deserialization() {
     };
     assert!(error.contains("nesting limit"), "{error}");
 }
+
+#[test]
+fn drop_releases_projection_lock_across_concurrent_subprocess_spawns() {
+    use std::sync::{Arc, atomic::Ordering};
+
+    let dir = private_tempdir();
+    let stop = Arc::new(AtomicBool::new(false));
+    let spawner_stop = Arc::clone(&stop);
+    let spawner = std::thread::spawn(move || {
+        while !spawner_stop.load(Ordering::Relaxed) {
+            assert!(
+                std::process::Command::new("true")
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
+    });
+    for _ in 0..32 {
+        let p = Projection::open(dir.path(), 32 * 1024 * 1024).unwrap();
+        drop(p);
+    }
+    stop.store(true, Ordering::Relaxed);
+    spawner.join().unwrap();
+}

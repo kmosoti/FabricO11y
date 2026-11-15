@@ -1,7 +1,8 @@
 [Unit]
 Description=FabricO11y Converged Host & Agent Telemetry Daemon
-Documentation=file:///home/kmosoti/Projects/moiric/FabricO11y/docs/architecture.md
-After=default.target
+Documentation=https://github.com/kmosoti/FabricO11y
+After=fabric-server.service spindle.service
+Wants=fabric-server.service spindle.service
 
 [Service]
 Type=simple
@@ -9,10 +10,15 @@ Slice=fabrico11y.slice
 KillMode=control-group
 Environment=FABRIC_DATA_DIR=/data/fabrico11y
 Environment=TMPDIR=/data/tmp
-ExecStart=%h/.local/bin/fabric daemon --interval-ms 2000
+ExecStart=%h/.local/bin/fabric --data-dir /data/fabrico11y --tmp-dir /data/tmp daemon --interval-ms 2000 --spindle-socket %t/spindle/spindle.sock
+RuntimeDirectory=fabrico11y
+RuntimeDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=yes
 Restart=on-failure
 RestartSec=3s
-NoNewPrivileges=yes
+TimeoutStopSec=10
+SyslogIdentifier=fabric-daemon
 
 [Install]
 WantedBy=default.target

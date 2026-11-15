@@ -89,12 +89,16 @@ functions and unfinished Lean proofs do not count as verification.
 ```sh
 cargo xtask architecture
 cargo xtask prove verus
+cargo xtask prove smt
+cargo xtask prove telemetry
 cargo xtask prove aeneas
+cargo xtask prove all
 cargo xtask prove selftest
 cargo xtask fuzz replay /data/tmp/fabric-fuzz-replay
 cargo xtask fuzz smoke /data/tmp/fabric-fuzz-smoke
 cargo xtask fuzz scheduled /data/tmp/fabric-fuzz-scheduled
 cargo xtask profile permissions /data/tmp/fabric-perf-permissions
+cargo xtask collection install-stack --bin-dir /data/cargo-target/release --data-dir /data/fabrico11y --tmp-dir /data/tmp --listen 127.0.0.1:17440
 ```
 
 Choose a new absolute artifact directory for each run. Fuzz replay executes the
