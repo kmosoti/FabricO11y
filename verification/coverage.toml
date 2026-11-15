@@ -163,3 +163,41 @@ id = "descriptor-recovery"
 package = "fabric-server"
 target = "descriptor_pressure"
 test = "receiver_recovers_after_process_descriptor_exhaustion"
+
+[[invariants]]
+id = "converged-telemetry-integrity"
+requirement = "Converged telemetry hot-ring headroom, Euclidean 5-minute rollup bucketing, Gorilla delta-of-delta/IEEE-754 XOR roundtripping, and unified SQL literal/operator safety hold across fabric-core and admission-kernel boundaries"
+required = true
+boundaries = ["fabric-core", "admission-kernel"]
+checks = [
+  "gorilla-block-roundtrips-out-of-order-and-nan-bits",
+  "rollup-alignment-euclidean-timestamps",
+  "hot-metric-ring-headroom-matches-verified-kernel",
+  "unified-query-spec-operator-precedence-and-literals",
+]
+proof_scope = "Four fabric-core telemetry_invariants checks directly exercise Gorilla compression roundtripping, Euclidean 5-minute rollup alignment, ring_can_buffer headroom gating, and SQL literal/operator validation. Verus + Charon/Aeneas Lean 4 contracts also cover watermark_advance, disk_needs_eviction, and rss_shedding_decision alongside Z3 QF_BV SMT checks (TelemetrySmt.smt2), 9 Lean 4 theorems (Telemetry.lean, valid over [-9_223_372_036_854_600_000, i64::MAX] before i64::MIN saturation), 3 cargo-fuzz harnesses, unit tests in fabric-store::janitor and fabric-collect::daemon, and end-to-end spindle_unification integration tests; declared coverage checks do not directly trigger post-flush daemon durability, over-quota disk eviction, or active RSS shedding."
+assumptions = ["Operating system kernel /proc and cgroup v2 counters report accurate instantaneous byte counts; storage filesystem honors atomic rename and fsync semantics for Parquet partitions and SQLite/redb commits."]
+
+[[checks]]
+id = "gorilla-block-roundtrips-out-of-order-and-nan-bits"
+package = "fabric-core"
+target = "telemetry_invariants"
+test = "gorilla_block_roundtrips_out_of_order_and_nan_bits"
+
+[[checks]]
+id = "rollup-alignment-euclidean-timestamps"
+package = "fabric-core"
+target = "telemetry_invariants"
+test = "rollup_alignment_is_euclidean_for_negative_and_positive_timestamps"
+
+[[checks]]
+id = "hot-metric-ring-headroom-matches-verified-kernel"
+package = "fabric-core"
+target = "telemetry_invariants"
+test = "hot_metric_ring_headroom_matches_verified_kernel"
+
+[[checks]]
+id = "unified-query-spec-operator-precedence-and-literals"
+package = "fabric-core"
+target = "telemetry_invariants"
+test = "unified_query_spec_operator_precedence_and_numeric_literals"

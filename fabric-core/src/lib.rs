@@ -35,5 +35,6 @@ pub use paths::{
 pub use query_spec::{QueryDomain, UnifiedQuerySpec, build_unified_sql, parse_duration_ms};
 pub use ring::{
     DEFAULT_RING_BUDGET_BYTES, HotMetricRing, ROLLUP_BUCKET_MS, RingStats, align_rollup_bucket_ms,
+    roundtrip_series_block,
 };
 pub use sketch::DDSketch;

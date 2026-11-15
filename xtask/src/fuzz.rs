@@ -1,11 +1,14 @@
 use super::evidence;
 use std::{fs, path::Path, process::Command, time::Instant};
-const TARGETS: [&str; 5] = [
+const TARGETS: [&str; 8] = [
     "admission_sequence",
     "bounded_encoding",
     "malformed_input",
     "observation_decode",
     "readback_envelope",
+    "gorilla_ring_roundtrip",
+    "unified_query_and_ipc",
+    "causal_graph_and_wire",
 ];
 const DEFAULT_NIGHTLY: &str = "nightly-2026-09-17";
 
@@ -48,6 +51,23 @@ pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
         "smoke" => 60,
         _ => 1800,
     };
+    let build_dir = out.join("build");
+    let build_log = fs::File::create(out.join("build.log")).map_err(|e| e.to_string())?;
+    let build_status = Command::new("timeout")
+        .arg("1200")
+        .arg(&binary)
+        .args(["fuzz", "build", "--codegen-units", "16"])
+        .env("RUSTUP_TOOLCHAIN", &nightly)
+        .env("CARGO_BUILD_JOBS", "2")
+        .env("CARGO_TARGET_DIR", &build_dir)
+        .current_dir(root)
+        .stdout(build_log.try_clone().map_err(|e| e.to_string())?)
+        .stderr(build_log)
+        .status()
+        .map_err(|e| e.to_string())?;
+    if !build_status.success() {
+        return Err(format!("cargo-fuzz build failed: {build_status}"));
+    }
     let mut failures = Vec::new();
     for target in TARGETS {
         let artifacts = out.join(target);
@@ -68,7 +88,7 @@ pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
         command
             .arg((seconds + 300).to_string())
             .arg(&binary)
-            .args(["fuzz", "run", target])
+            .args(["fuzz", "run", "--codegen-units", "16", target])
             .arg(&corpus)
             .args(["--", "-max_len=65536", "-rss_limit_mb=2048", "-timeout=10"])
             .arg(format!("-artifact_prefix={}/", artifacts.display()));
@@ -81,7 +101,7 @@ pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
         command
             .env("RUSTUP_TOOLCHAIN", &nightly)
             .env("CARGO_BUILD_JOBS", "2")
-            .env("CARGO_TARGET_DIR", out.join("build"))
+            .env("CARGO_TARGET_DIR", &build_dir)
             .current_dir(root)
             .stdout(log.try_clone().map_err(|e| e.to_string())?)
             .stderr(log);

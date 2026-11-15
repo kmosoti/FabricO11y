@@ -3,6 +3,7 @@
 use vstd::prelude::*;
 pub mod delivery;
 pub mod handoff;
+pub mod telemetry;
 
 verus! {
 pub fn reserve(capacity: usize, used: usize, charge: usize) -> (result: Option<usize>)

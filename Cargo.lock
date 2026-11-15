@@ -1406,6 +1406,7 @@ dependencies = [
 name = "fabric-cli"
 version = "0.1.0"
 dependencies = [
+ "admission-kernel",
  "arrow",
  "chrono",
  "clap",
@@ -1424,6 +1425,7 @@ dependencies = [
 name = "fabric-collect"
 version = "0.1.0"
 dependencies = [
+ "admission-kernel",
  "chrono",
  "fabric",
  "fabric-core",
@@ -1443,6 +1445,7 @@ dependencies = [
 name = "fabric-core"
 version = "0.1.0"
 dependencies = [
+ "admission-kernel",
  "arrow",
  "chrono",
  "proptest",
@@ -1520,6 +1523,7 @@ dependencies = [
 name = "fabric-store"
 version = "0.1.0"
 dependencies = [
+ "admission-kernel",
  "arrow",
  "chrono",
  "fabric-core",
