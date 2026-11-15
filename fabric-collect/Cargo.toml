@@ -11,9 +11,12 @@ fabric-graph = { path = "../fabric-graph" }
 fabric-store = { path = "../fabric-store" }
 parking_lot = "=0.12.5"
 rustix = { version = "1", features = ["fs"] }
+fabric = { path = "../fabric" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "signal"] }
 
 [dev-dependencies]
+fabric-query = { path = "../fabric-query" }
+fabric-server = { path = "../fabric-server" }
 tempfile = "3"

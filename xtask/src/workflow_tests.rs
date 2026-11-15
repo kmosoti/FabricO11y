@@ -7,7 +7,7 @@ fn jj(root: &Path, args: &[&str]) -> String {
 }
 
 fn repository() -> TempDir {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = crate::evidence::non_tmp_tempdir().unwrap();
     jj(dir.path(), &["git", "init", "--colocate"]);
     jj(
         dir.path(),
@@ -70,7 +70,7 @@ fn workflow_candidate_refusals_preserve_evidence() {
     let dir = repository();
     let root = dir.path();
     fs::write(root.join("source"), "candidate").unwrap();
-    let artifacts = tempfile::tempdir().unwrap();
+    let artifacts = crate::evidence::non_tmp_tempdir().unwrap();
     let file = artifacts.path().join("candidate.txt");
     capture_to(root, &file).unwrap();
     let original = fs::read_to_string(&file).unwrap();
@@ -105,7 +105,7 @@ fn workflow_candidate_refusals_preserve_evidence() {
 #[test]
 #[ignore = "extensive: requires Git, Jujutsu and Rust"]
 fn workflow_git_checkout_requires_jj_initialization() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = crate::evidence::non_tmp_tempdir().unwrap();
     let root = dir.path();
     output("git", &["init", "--initial-branch=main"], root).unwrap();
     fs::write(root.join("source"), "candidate").unwrap();

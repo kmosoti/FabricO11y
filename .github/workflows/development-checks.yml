@@ -37,6 +37,12 @@ jobs:
         run: sh .github/scripts/install-schema-tools.sh
       - name: Initialize candidate workspace
         run: jj git init --colocate
+      - uses: actions/cache@v4
+        with:
+          path: target
+          key: native-target-rust-1.100.0-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            native-target-rust-1.100.0-${{ runner.arch }}-
       - name: Architecture, tests, proofs and fuzz regressions
         run: /github/home/.cargo/bin/cargo xtask check --tier acceptance
       - name: Native engine custody and recovery regressions
@@ -64,6 +70,8 @@ jobs:
         with:
           path: target
           key: rust-1.100.0-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            rust-1.100.0-${{ runner.arch }}-
       - name: Record execution environment
         run: cat /etc/os-release && uname -a
       - name: Medium checks

@@ -4,7 +4,7 @@ use std::{
 };
 use xtask::collection::{Layout, install};
 fn fixture() -> (tempfile::TempDir, Layout, std::path::PathBuf) {
-    let temp = tempfile::tempdir().unwrap();
+    let temp = xtask::evidence::non_tmp_tempdir().unwrap();
     let layout = Layout {
         home: temp.path().join("home"),
         runtime: temp.path().join("run"),

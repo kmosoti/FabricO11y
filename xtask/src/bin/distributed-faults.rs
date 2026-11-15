@@ -82,7 +82,7 @@ fn main() {
     let mut cases = Vec::new();
     for codec in Codec::ALL {
         for seed in [17u64, 43, 991] {
-            let root = tempfile::tempdir().unwrap();
+            let root = xtask::evidence::non_tmp_tempdir().unwrap();
             let server = root.path().join("server.sqlite");
             let local = root.path().join("spindle.sqlite");
             let records = fixtures::records(seed, "mixed", 16);

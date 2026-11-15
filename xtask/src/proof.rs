@@ -82,7 +82,7 @@ pub fn check(which: &str, root: &Path) -> Result<(), String> {
 }
 
 fn negative_controls(root: &Path) -> Result<(), String> {
-    let work = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let work = evidence::non_tmp_tempdir()?;
     let verus = evidence::binary("FABRIC_VERUS", &format!("{VERUS}/verus"));
     let lean = evidence::binary("FABRIC_LEAN", "lean-4.35.0-linux/bin/lean");
     let cases = [
@@ -218,7 +218,7 @@ fn collection(root: &Path) -> Result<(), String> {
     if mutant == original {
         return Err("delivery mutation no longer matches".into());
     }
-    let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let dir = evidence::non_tmp_tempdir()?;
     let file = dir.path().join("delivery_mutant.rs");
     std::fs::write(&file, mutant).map_err(|e| e.to_string())?;
     let verus = evidence::binary("FABRIC_VERUS", &format!("{VERUS}/verus"));
@@ -305,7 +305,7 @@ fn distributed(root: &Path) -> Result<(), String> {
     if original == mutant {
         return Err("conflict mutation no longer matches".into());
     }
-    let temp = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let temp = evidence::non_tmp_tempdir()?;
     let file = temp.path().join("Mutant.lean");
     std::fs::write(&file, mutant).map_err(|e| e.to_string())?;
     let output = Command::new("timeout")
@@ -415,7 +415,7 @@ theorem readback_before_publish_control :
 end Custody
 "#;
     let positive = format!("{definitions}{controls}");
-    let temp = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let temp = evidence::non_tmp_tempdir()?;
     let file = temp.path().join("Controls.lean");
     std::fs::write(&file, &positive).map_err(|e| e.to_string())?;
     super::output(

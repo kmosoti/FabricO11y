@@ -53,7 +53,7 @@ fn repository_configuration() {
 }
 
 fn hook_message(receipt: Option<&str>, identity: Option<&str>) -> String {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = xtask::evidence::non_tmp_tempdir().unwrap();
     let hooks = dir.path().join(".codex/hooks");
     fs::create_dir_all(&hooks).unwrap();
     let script = hooks.join("context.sh");

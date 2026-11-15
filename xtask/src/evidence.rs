@@ -20,9 +20,94 @@ pub fn hash(path: &Path) -> Result<String, String> {
         .ok_or("missing digest")?
         .to_owned())
 }
+fn clean_lexical(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for comp in path.components() {
+        match comp {
+            Component::Prefix(p) => out.push(p.as_os_str()),
+            Component::RootDir => out.push(Component::RootDir.as_os_str()),
+            Component::CurDir => {}
+            Component::ParentDir => {
+                if !matches!(
+                    out.components().next_back(),
+                    Some(Component::RootDir) | None
+                ) {
+                    out.pop();
+                }
+            }
+            Component::Normal(part) => out.push(part),
+        }
+    }
+    out
+}
+
+fn is_disallowed_ram_tmp(path: &Path) -> bool {
+    path.as_os_str().is_empty()
+        || path.starts_with("/tmp")
+        || path.starts_with("/dev/shm")
+        || path.starts_with("/run/shm")
+}
+
+pub fn non_tmp_base_dir() -> PathBuf {
+    let probe = |dir: &Path| -> bool {
+        if dir.as_os_str().is_empty() || !dir.is_absolute() {
+            return false;
+        }
+        let cleaned = clean_lexical(dir);
+        if is_disallowed_ram_tmp(&cleaned) {
+            return false;
+        }
+        if !(cleaned.is_dir() || fs::create_dir_all(&cleaned).is_ok()) {
+            return false;
+        }
+        if let Ok(canon) = fs::canonicalize(&cleaned)
+            && is_disallowed_ram_tmp(&canon)
+        {
+            return false;
+        }
+        tempfile::tempfile_in(&cleaned).is_ok()
+    };
+    if let Some(env_dir) = std::env::var_os("TMPDIR")
+        && !env_dir.is_empty()
+    {
+        let p = PathBuf::from(env_dir);
+        if probe(&p) {
+            return clean_lexical(&p);
+        }
+    }
+    let data_tmp = PathBuf::from("/data/tmp");
+    if probe(&data_tmp) {
+        return data_tmp;
+    }
+    if let Some(home) = std::env::var_os("HOME")
+        && !home.is_empty()
+    {
+        let home_tmp = PathBuf::from(home).join(".cache").join("fabrico11y-tmp");
+        if probe(&home_tmp) {
+            return home_tmp;
+        }
+    }
+    let var_tmp = PathBuf::from("/var/tmp");
+    let _ = fs::create_dir_all(&var_tmp);
+    var_tmp
+}
+
+pub fn non_tmp_tempdir() -> Result<tempfile::TempDir, String> {
+    tempfile::tempdir_in(non_tmp_base_dir()).map_err(|e| e.to_string())
+}
+
+pub fn non_tmp_named_tempfile() -> Result<tempfile::NamedTempFile, String> {
+    tempfile::NamedTempFile::new_in(non_tmp_base_dir()).map_err(|e| e.to_string())
+}
+
+pub fn non_tmp_unlinked_file() -> Result<fs::File, String> {
+    tempfile::tempfile_in(non_tmp_base_dir()).map_err(|e| e.to_string())
+}
+
 pub fn hash_bytes(bytes: &[u8]) -> Result<String, String> {
     use std::io::Write;
-    let mut file = tempfile::NamedTempFile::new().map_err(|e| e.to_string())?;
+    let mut file = non_tmp_named_tempfile()?;
     file.write_all(bytes).map_err(|e| e.to_string())?;
     hash(file.path())
 }
@@ -75,8 +160,8 @@ pub fn binary(variable: &str, relative: &str) -> PathBuf {
 mod tests {
     #[test]
     fn artifact_boundary_resolves_parent_symlinks() {
-        let root = tempfile::tempdir().unwrap();
-        let external = tempfile::tempdir().unwrap();
+        let root = super::non_tmp_tempdir().unwrap();
+        let external = super::non_tmp_tempdir().unwrap();
         std::os::unix::fs::symlink(root.path(), external.path().join("link")).unwrap();
         assert!(
             super::artifact_path(&external.path().join("link/result"), root.path(), false).is_err()

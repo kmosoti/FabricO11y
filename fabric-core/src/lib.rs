@@ -5,6 +5,8 @@ pub mod anomaly;
 pub mod arrow_schemas;
 pub mod model;
 pub mod paths;
+pub mod query_spec;
+pub mod ring;
 pub mod sketch;
 
 pub use anomaly::{
@@ -29,5 +31,9 @@ pub use model::{
 pub use paths::{
     DEFAULT_DATA_DIR, DEFAULT_TMP_DIR, PathPolicyError, StorageLayout, normalize_lexical_path,
     validate_non_tmp_path,
+};
+pub use query_spec::{QueryDomain, UnifiedQuerySpec, build_unified_sql, parse_duration_ms};
+pub use ring::{
+    DEFAULT_RING_BUDGET_BYTES, HotMetricRing, ROLLUP_BUCKET_MS, RingStats, align_rollup_bucket_ms,
 };
 pub use sketch::DDSketch;

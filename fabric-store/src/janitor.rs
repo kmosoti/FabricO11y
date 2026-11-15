@@ -258,7 +258,7 @@ fn downsample_metrics_partition(
                 .ok_or("metrics pid column type mismatch")?;
 
             for row in 0..batch.num_rows() {
-                let bucket_ts = (ts.value(row) / 300_000) * 300_000;
+                let bucket_ts = fabric_core::align_rollup_bucket_ms(ts.value(row));
                 let key = DownsampleKey {
                     timestamp_ms: bucket_ts,
                     name: names.value(row).to_owned(),

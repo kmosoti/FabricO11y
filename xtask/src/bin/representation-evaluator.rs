@@ -216,7 +216,7 @@ fn worker(role: &str, path: &Path, mode: &str, c: Codec) {
 }
 fn sample(seed: u64, case: &str, batch: usize, c: Codec, mode: &str) {
     let records = fixtures::records(seed, case, batch);
-    let root = tempfile::tempdir().unwrap();
+    let root = xtask::evidence::non_tmp_tempdir().unwrap();
     let mut spindle = spawn(&[
         "worker",
         "spindle",

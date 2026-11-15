@@ -10,24 +10,25 @@ Pure domain logic, schema contracts, statistical sketches, causal graph traversa
 flowchart TD
     subgraph SansIO["Sans-I/O Core & Formal Verification"]
         AK["admission-kernel (Verus / Charon / Aeneas)"]
-        FC["fabric-core (Models, PathPolicy, DDSketch, EWMA-MAD, Five Pillars, Arrow Schemas)"]
+        FC["fabric-core (Models, PathPolicy, Gorilla HotMetricRing, UnifiedQuerySpec, DDSketch, EWMA-MAD, Five Pillars, Arrow)"]
         FG["fabric-graph (CausalGraph, BFS lineage, ranked blame)"]
         FG --> FC
     end
 
     subgraph StorageAndCollection["Embedded Storage & Linux Sensory Plane"]
-        FS["fabric-store (redb OLTP/Graph, 32 MiB Gorilla Ring, ZSTD Parquet, Janitor)"]
-        COL["fabric-collect (Bounded mpsc try_send, cgroups v2, PSI/zram0, systemd, inotify/fd, SelfGuard)"]
+        FS["fabric-store (redb OLTP/Graph, ZSTD Parquet, Janitor; re-exports HotMetricRing)"]
+        COL["fabric-collect (Bounded mpsc try_send, cgroups v2, PSI/zram0, systemd, inotify/fd, Spindle bridge, SelfGuard)"]
         FS --> FC
         FS --> FG
         COL --> FC
         COL --> FG
         COL --> FS
+        COL --> FAB
     end
 
     subgraph QueryAndCLI["Query Engine & Deterministic CLI"]
         FQ["fabric-query (Preserved Projection + DataFusion/Arrow Unified Engine)"]
-        CLI["fabric-cli ('fabric' binary: --json, --arrow, --table)"]
+        CLI["fabric-cli ('fabric' binary: --json, --arrow, --table, custody)"]
         FQ --> FC
         FQ --> FG
         FQ --> FS
@@ -36,6 +37,7 @@ flowchart TD
         CLI --> FS
         CLI --> COL
         CLI --> FQ
+        CLI --> FAB
     end
 
     subgraph PreservedCustody["Preserved Canonical Custody & Protocol Crates"]
@@ -56,8 +58,8 @@ All collection and query execution obeys hard self-preservation limits:
 
 - **Zero `/tmp` or `/dev/shm` usage:** Enforced statically in `fabric-core::paths::validate_non_tmp_path`, CI scripts, and `fabric doctor --json`.
 - **Single local storage tree (`/data/fabrico11y`):**
-  - `state/catalog.redb` + `state/live_state.json`: live entity registry, adjacency tables (`adj_out`/`adj_in`), unit hygiene records, watermarks, and recent anomalies.
-  - `HotMetricRing` (in RAM): strictly capped at `32 MiB` with Gorilla delta-of-delta + XOR compression and 60s Parquet flushes.
+  - `state/catalog.redb` + `state/live_state.json`: live entity registry, adjacency tables (`adj_out`/`adj_in`), unit hygiene records, watermarks (including `spindle_watermark_id`, persisted strictly **after** all OLAP Parquet domain flushes succeed), and recent anomalies.
+  - `HotMetricRing` (in RAM, Sans-I/O in `fabric-core`): strictly capped at `32 MiB` with modular `wrapping` Gorilla delta-of-delta + XOR compression (preserving `labels_json`), buffer rollback on failed flush, and 60s Parquet flushes.
   - `olap/{metrics,logs,traces,fs_events,edges}/dt=YYYY-MM-DD/*.parquet`: ZSTD-compressed Arrow/Parquet partitions bounded by `RetentionJanitor` (`4 GiB` default cap, >7d downsampling).
 - **Resource confinement (`fabrico11y.slice`):** `MemoryHigh=256M`, `MemoryMax=512M`, `CPUQuota=15%`, `IOWeight=30`, `TasksMax=64`, plus a `200 MiB` RSS self-shedding watchdog inside `fabric-collect`.
 
@@ -65,14 +67,15 @@ All collection and query execution obeys hard self-preservation limits:
 flowchart LR
     K["Kernel Sources (cgroups v2, /proc PSI, zram0, /proc/pid/fd)"] -->|"try_send (drop-with-counter)"| Q["Bounded mpsc Queues"]
     S["Systemd & FS Sources (transient units, inotify, /tmp, ~/.cache, /data/tmp)"] -->|"try_send (drop-with-counter)"| Q
-    I["Optional Local Ingest (Spindle / ingest.sock)"] -->|"try_send (drop-with-counter)"| Q
+    I["Local Ingest & Custody (Spindle custody poll + ingest.sock)"] -->|"bounded enqueue + backpressure"| Q
 
     Q --> PIPE["Daemon Collector Loop + SelfGuard (< 200 MiB Watchdog)"]
     PIPE --> EV["Five Pillars + DDSketch + EwmaMadDetector + CausalGraph"]
 
-    EV --> RING["HotMetricRing (<= 32 MiB Gorilla RAM Ring)"]
+    EV --> RING["HotMetricRing (<= 32 MiB Sans-I/O Gorilla Ring)"]
     EV --> REDB["CatalogStore (redb + live_state.json + daemon.sock)"]
     RING -->|"60s Flush / Atomic Staging"| PQ["ZSTD Parquet Partitions (/data/fabrico11y/olap)"]
+    PQ -->|"advance spindle_watermark_id post-flush"| REDB
     PQ --> JAN["RetentionJanitor (<= 4 GiB Cap + 7d Downsample)"]
 
     REDB --> QENG["fabric-query Unified Engine (DataFusion 64 MiB Pool)"]
@@ -82,6 +85,7 @@ flowchart LR
 
     QENG -->|"snapshot / query / drift / doctor"| OUT["fabric CLI (--json | --arrow | --table)"]
     GRAPH -->|"lineage / blame"| OUT
+    REDB -->|"custody status + server progress"| CUST["fabric custody (--json | --arrow | --table)"]
 ```
 
 ## 3. Two-Branch Stacked Development Workflow & Release Gate

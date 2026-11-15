@@ -95,7 +95,7 @@ fn verify_revision(
     generate: bool,
 ) -> Result<(), String> {
     super::run(binary, &["registry", "check", "-r", model], root)?;
-    let generated = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let generated = super::evidence::non_tmp_tempdir()?;
     super::run(
         binary,
         &[
@@ -157,7 +157,7 @@ mod tests {
     #[test]
     fn rejects_drift_and_invalid_registry() {
         let original = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        let temp = tempfile::tempdir().unwrap();
+        let temp = crate::evidence::non_tmp_tempdir().unwrap();
         copy(&original.join("registry"), &temp.path().join("registry"));
         check(temp.path(), false).unwrap();
         fs::write(temp.path().join("registry/vocabulary.rs"), "// drift\n").unwrap();
@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn v3_artifact_and_valid_model_drift_are_rejected() {
         let original = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        let temp = tempfile::tempdir().unwrap();
+        let temp = crate::evidence::non_tmp_tempdir().unwrap();
         copy(&original.join("registry"), &temp.path().join("registry"));
         let descriptor = temp.path().join("registry/v3/descriptor.json");
         let original_descriptor = fs::read(&descriptor).unwrap();
@@ -222,7 +222,7 @@ mod tests {
     #[test]
     fn explicit_generation_cannot_redefine_v2() {
         let original = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        let temp = tempfile::tempdir().unwrap();
+        let temp = crate::evidence::non_tmp_tempdir().unwrap();
         copy(&original.join("registry"), &temp.path().join("registry"));
         let model = temp.path().join("registry/model/observations.yaml");
         let changed = fs::read_to_string(&model).unwrap().replace(
