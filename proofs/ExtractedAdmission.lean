@@ -148,4 +148,57 @@ theorem fifo_dequeue_contract (s : Fifo) (ticket : U64) (h : FifoValid s) :
 #print axioms fifo_enqueue_contract
 #print axioms fifo_dequeue_contract
 #print axioms fifo_construction_contract
+
+theorem watermark_advance_contract (committed candidate : U64) (flush_succeeded : Bool) :
+    telemetry.watermark_advance committed candidate flush_succeeded ⦃ next =>
+      committed.val ≤ next.val ∧
+      (flush_succeeded = false → next = committed) ∧
+      (flush_succeeded = true ∧ committed.val < candidate.val → next = candidate) ∧
+      (flush_succeeded = true ∧ candidate.val ≤ committed.val → next = committed) ⦄ := by
+  cases flush_succeeded
+  · simp [telemetry.watermark_advance]
+  · by_cases hc : candidate > committed <;> simp [telemetry.watermark_advance, hc] <;> scalar_tac
+
+theorem ring_can_buffer_contract (unflushed_bytes budget_bytes : U64) :
+    telemetry.ring_can_buffer unflushed_bytes budget_bytes ⦃ ok =>
+      let half := budget_bytes.val / 2
+      let unflushed_cap := if half > 2048 then half else 2048
+      let quarter := unflushed_cap / 4
+      let headroom := if quarter > 512 then quarter else 512
+      let limit := unflushed_cap - headroom
+      (ok = true ↔ unflushed_bytes.val < limit) ∧
+      (ok = true → unflushed_bytes.val < unflushed_cap) ⦄ := by
+  unfold telemetry.ring_can_buffer
+  step as ⟨half, hhalf⟩
+  by_cases h1 : half > 2048#u64 <;> simp [h1]
+  · step as ⟨quarter, hquarter⟩
+    by_cases h2 : 512 < quarter.val <;> simp [h2]
+    · step as ⟨limit, hlimit⟩
+      simp at *
+      split_ifs <;> refine ⟨?_, ?_⟩ <;> scalar_tac
+    · step as ⟨limit, hlimit⟩
+      simp at *
+      split_ifs <;> refine ⟨?_, ?_⟩ <;> scalar_tac
+  · step as ⟨quarter, hquarter⟩
+    by_cases h2 : 512 < quarter.val
+    · omega
+    · simp [h2]
+      step as ⟨limit, hlimit⟩
+      simp at *
+      split_ifs <;> refine ⟨?_, ?_⟩ <;> scalar_tac
+
+theorem disk_needs_eviction_contract (total_bytes max_disk_bytes : U64) :
+    telemetry.disk_needs_eviction total_bytes max_disk_bytes ⦃ evict =>
+      evict = true ↔ max_disk_bytes.val < total_bytes.val ⦄ := by
+  simp [telemetry.disk_needs_eviction]
+
+theorem rss_shedding_decision_contract (rss_bytes shed_limit_bytes : U64) :
+    telemetry.rss_shedding_decision rss_bytes shed_limit_bytes ⦃ shed =>
+      shed = true ↔ shed_limit_bytes.val < rss_bytes.val ⦄ := by
+  simp [telemetry.rss_shedding_decision]
+
+#print axioms watermark_advance_contract
+#print axioms ring_can_buffer_contract
+#print axioms disk_needs_eviction_contract
+#print axioms rss_shedding_decision_contract
 end admission_kernel

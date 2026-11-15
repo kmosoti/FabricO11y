@@ -12,14 +12,17 @@ flowchart TD
         AK["admission-kernel (Verus / Charon / Aeneas)"]
         FC["fabric-core (Models, PathPolicy, Gorilla HotMetricRing, UnifiedQuerySpec, DDSketch, EWMA-MAD, Five Pillars, Arrow)"]
         FG["fabric-graph (CausalGraph, BFS lineage, ranked blame)"]
+        FC --> AK
         FG --> FC
     end
 
     subgraph StorageAndCollection["Embedded Storage & Linux Sensory Plane"]
         FS["fabric-store (redb OLTP/Graph, ZSTD Parquet, Janitor; re-exports HotMetricRing)"]
         COL["fabric-collect (Bounded mpsc try_send, cgroups v2, PSI/zram0, systemd, inotify/fd, Spindle bridge, SelfGuard)"]
+        FS --> AK
         FS --> FC
         FS --> FG
+        COL --> AK
         COL --> FC
         COL --> FG
         COL --> FS
@@ -32,6 +35,7 @@ flowchart TD
         FQ --> FC
         FQ --> FG
         FQ --> FS
+        CLI --> AK
         CLI --> FC
         CLI --> FG
         CLI --> FS
@@ -62,6 +66,7 @@ All collection and query execution obeys hard self-preservation limits:
   - `HotMetricRing` (in RAM, Sans-I/O in `fabric-core`): strictly capped at `32 MiB` with modular `wrapping` Gorilla delta-of-delta + XOR compression (preserving `labels_json`), buffer rollback on failed flush, and 60s Parquet flushes.
   - `olap/{metrics,logs,traces,fs_events,edges}/dt=YYYY-MM-DD/*.parquet`: ZSTD-compressed Arrow/Parquet partitions bounded by `RetentionJanitor` (`4 GiB` default cap, >7d downsampling).
 - **Resource confinement (`fabrico11y.slice`):** `MemoryHigh=256M`, `MemoryMax=512M`, `CPUQuota=15%`, `IOWeight=30`, `TasksMax=64`, plus a `200 MiB` RSS self-shedding watchdog inside `fabric-collect`.
+- **Formal proofs & fuzzing (`proofs/`, `fuzz/`):** Verus + Charon/Aeneas Lean 4 (`ExtractedAdmission.lean`), standalone Lean 4 (`Telemetry.lean`), Z3 `QF_BV` SMT (`TelemetrySmt.smt2`), and 8 `cargo-fuzz` targets (`gorilla_ring_roundtrip`, `unified_query_and_ipc`, `causal_graph_and_wire`, plus 5 core custody targets).
 
 ```mermaid
 flowchart LR

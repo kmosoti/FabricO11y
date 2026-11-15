@@ -42,7 +42,10 @@ impl SelfPreservationGuard {
         let cgroup_path = read_self_cgroup_path();
         let fabrico11y_slice_confined = cgroup_path.contains("fabrico11y.slice");
 
-        let shedding = rss_bytes > WATCHDOG_SHEDDING_RSS_BYTES;
+        let shedding = admission_kernel::telemetry::rss_shedding_decision(
+            rss_bytes,
+            WATCHDOG_SHEDDING_RSS_BYTES,
+        );
         self.self_shedding.store(shedding, Ordering::Relaxed);
 
         SelfHealthSummary {

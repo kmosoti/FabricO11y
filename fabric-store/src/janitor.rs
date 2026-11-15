@@ -89,7 +89,10 @@ impl RetentionJanitor {
         }
 
         let mut total_bytes_after = dir_disk_bytes(&self.olap.layout().olap_dir())?;
-        if total_bytes_after > self.config.max_disk_bytes {
+        if admission_kernel::telemetry::disk_needs_eviction(
+            total_bytes_after,
+            self.config.max_disk_bytes,
+        ) {
             let mut candidates: Vec<(NaiveDate, PathBuf)> = Vec::new();
             for &domain in OLAP_DOMAINS {
                 let domain_dir = self.olap.layout().olap_domain_dir(domain);
@@ -102,7 +105,10 @@ impl RetentionJanitor {
             }
             candidates.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
             for (_, part_dir) in candidates {
-                if total_bytes_after <= self.config.max_disk_bytes {
+                if !admission_kernel::telemetry::disk_needs_eviction(
+                    total_bytes_after,
+                    self.config.max_disk_bytes,
+                ) {
                     break;
                 }
                 let part_bytes = dir_disk_bytes(&part_dir)?;

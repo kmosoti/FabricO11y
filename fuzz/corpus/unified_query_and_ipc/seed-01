@@ -1,0 +1,6 @@
+host=fedora-blade
+unit
+avg(value)
+name=memory.current
+slice
+count(*)

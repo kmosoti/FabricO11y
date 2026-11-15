@@ -259,12 +259,19 @@ impl HotMetricRing {
         self.enforce_budget();
     }
 
+    /// Current estimated byte size of queued unflushed metric samples.
+    #[must_use]
+    pub fn unflushed_bytes(&self) -> usize {
+        self.unflushed_bytes
+    }
+
     /// Returns `true` while the unflushed queue maintains 25% headroom below its soft cap.
     #[must_use]
     pub fn can_buffer_unflushed(&self) -> bool {
-        let unflushed_cap = (self.budget_bytes / 2).max(2048);
-        let watermark_limit = unflushed_cap.saturating_sub((unflushed_cap / 4).max(512));
-        self.unflushed_bytes < watermark_limit
+        admission_kernel::telemetry::ring_can_buffer(
+            self.unflushed_bytes as u64,
+            self.budget_bytes as u64,
+        )
     }
 
     fn enforce_budget(&mut self) {
