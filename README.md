@@ -19,12 +19,16 @@ fabric query metrics --since 1h --json
 fabric blame memory --json
 fabric lineage /data/tmp/fabric-synth-load --direction both --json
 fabric drift --pillar lineage --json
+fabric custody --json
 fabric doctor --json
 fabric daemon --interval-ms 2000
 
-# Repository verification
+# Repository verification & coupled production user-stack install
 TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask architecture
 TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask check --tier medium
+TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask prove all
+TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask fuzz smoke /data/tmp/fabric-fuzz-smoke
+TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask collection install-stack --bin-dir /data/cargo-target/release --data-dir /data/fabrico11y --tmp-dir /data/tmp --listen 127.0.0.1:17440
 ```
 
 See [architecture](docs/architecture.md), [product direction](docs/direction.md), [linked knowledge](knowledge/README.md), [contributing](CONTRIBUTING.md), [local collection setup](docs/collection.md), [canonical custody](docs/canonical-custody.md), and [typed investigations](docs/investigation.md).

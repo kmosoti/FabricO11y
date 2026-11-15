@@ -8,6 +8,32 @@ pub mod wire;
 use serde::{Deserialize, Serialize};
 pub use server::Daemon;
 use std::path::PathBuf;
+
+/// Notify `systemd` (`Type=notify`) once the service socket is bound and ready.
+pub fn notify_systemd_ready() {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::linux::net::SocketAddrExt;
+        use std::os::unix::net::{SocketAddr, UnixDatagram};
+        let Some(raw) = std::env::var_os("NOTIFY_SOCKET").filter(|v| !v.is_empty()) else {
+            return;
+        };
+        let Ok(sock) = UnixDatagram::unbound() else {
+            return;
+        };
+        let bytes = raw.as_encoded_bytes();
+        let addr = if let Some(abs) = bytes.strip_prefix(b"@") {
+            SocketAddr::from_abstract_name(abs).ok()
+        } else if bytes.starts_with(b"/") {
+            SocketAddr::from_pathname(std::path::Path::new(&raw)).ok()
+        } else {
+            None
+        };
+        if let Some(addr) = addr {
+            let _ = sock.send_to_addr(b"READY=1\n", &addr);
+        }
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {

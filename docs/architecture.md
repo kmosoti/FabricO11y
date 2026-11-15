@@ -117,3 +117,24 @@ sequenceDiagram
     Develop->>Gate: Open promotion PR (develop -> main)
     Gate-->>Main: Human explicitly approves main-human-approval & merges
 ```
+
+## 4. Production Systemd Stack & Coupled Custody Topology
+
+On `fedora-blade`, `cargo xtask collection install-stack` provisions a coupled rootless user service stack confined inside `fabrico11y.slice` (`MemoryHigh=256M`, `MemoryMax=512M`, `CPUQuota=15%`, `IOWeight=30`, `TasksMax=64`) with explicit `TMPDIR=/data/tmp`, `KillMode=control-group`, and no rootless namespace mounts (`PrivateTmp` / `ProtectSystem=strict`) that fail under SELinux user managers.
+
+```mermaid
+flowchart LR
+    subgraph Slice["fabrico11y.slice (MemoryHigh=256M, MemoryMax=512M, CPUQuota=15%, TasksMax=64)"]
+        SRV["fabric-server.service<br/>(/data/fabrico11y/server/{canonical,projection})"]
+        SPN["spindle.service<br/>($XDG_RUNTIME_DIR/spindle/spindle.sock)"]
+        DMN["fabric-daemon.service<br/>(/data/fabrico11y/{state,olap})"]
+    end
+
+    TOK1["spindle-node.token (0600)"] -->|"authorizes origin"| SRV
+    TOK1 -->|"authenticates forwarding (127.0.0.1:17440)"| SPN
+    TOK2["fabric-reader.token (0600)"] -->|"authorizes canonical reads"| SRV
+    SPN -->|"persistent origin -> canonical authority"| SRV
+    SPN -->|"poll custody records"| DMN
+    DMN -->|"persist spindle_watermark_id post-Parquet flush"| SPN
+    CLI["fabric custody --json & fabric doctor --json"] -->|"inspect socket + HTTP frontier + slice self-health"| Slice
+```

@@ -4,7 +4,6 @@ Before=slices.target
 
 [Slice]
 MemoryAccounting=yes
-CPUAccounting=yes
 IOAccounting=yes
 TasksAccounting=yes
 MemoryHigh=256M

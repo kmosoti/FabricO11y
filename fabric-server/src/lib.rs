@@ -695,11 +695,58 @@ pub fn cli() -> Result<(), String> {
                 return Err("configuration limit".into());
             }
             let server = Server::open(serde_json::from_slice(&bytes).map_err(|e| e.to_string())?)?;
+            let stop = server.stop_handle();
+            let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel::<Result<(), String>>(1);
+            thread::Builder::new()
+                .name("fabric-server-signal".into())
+                .spawn(move || {
+                    let rt = match tokio::runtime::Builder::new_current_thread()
+                        .enable_io()
+                        .build()
+                    {
+                        Ok(rt) => rt,
+                        Err(e) => {
+                            let _ = ready_tx.send(Err(format!("signal runtime error: {e}")));
+                            return;
+                        }
+                    };
+                    rt.block_on(async move {
+                        let mut sigterm = match tokio::signal::unix::signal(
+                            tokio::signal::unix::SignalKind::terminate(),
+                        ) {
+                            Ok(s) => s,
+                            Err(e) => {
+                                let _ = ready_tx.send(Err(format!("sigterm handler error: {e}")));
+                                return;
+                            }
+                        };
+                        let mut sigint = match tokio::signal::unix::signal(
+                            tokio::signal::unix::SignalKind::interrupt(),
+                        ) {
+                            Ok(s) => s,
+                            Err(e) => {
+                                let _ = ready_tx.send(Err(format!("sigint handler error: {e}")));
+                                return;
+                            }
+                        };
+                        let _ = ready_tx.send(Ok(()));
+                        tokio::select! {
+                            _ = sigterm.recv() => {}
+                            _ = sigint.recv() => {}
+                        }
+                        stop.store(true, Ordering::SeqCst);
+                    });
+                })
+                .map_err(|e| format!("signal thread spawn error: {e}"))?;
+            ready_rx
+                .recv()
+                .map_err(|_| "signal thread exited before registering handlers".to_string())??;
             println!(
                 "{}",
                 serde_json::json!({"ready":true,"address":server.address()})
             );
             std::io::stdout().flush().map_err(|e| e.to_string())?;
+            fabric::spindle::notify_systemd_ready();
             server.serve()
         }
         _ => Err("usage: fabric-server serve CONFIG".into()),

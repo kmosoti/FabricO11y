@@ -58,7 +58,22 @@ pub fn non_tmp_base_dir() -> PathBuf {
         if is_disallowed_ram_tmp(&cleaned) {
             return false;
         }
-        if !(cleaned.is_dir() || fs::create_dir_all(&cleaned).is_ok()) {
+        let created_dir = || {
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                fs::DirBuilder::new()
+                    .recursive(true)
+                    .mode(0o700)
+                    .create(&cleaned)
+                    .is_ok()
+            }
+            #[cfg(not(unix))]
+            {
+                fs::create_dir_all(&cleaned).is_ok()
+            }
+        };
+        if !(cleaned.is_dir() || created_dir()) {
             return false;
         }
         if let Ok(canon) = fs::canonicalize(&cleaned)
