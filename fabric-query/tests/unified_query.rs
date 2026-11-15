@@ -123,3 +123,74 @@ async fn unified_query_supports_metrics_logs_units_and_aggregations() {
         Some("fabric-synth-load-test.scope")
     );
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn rejects_symlinked_spill_dir_into_tmp_and_preserves_distinct_spindle_sequences() {
+    use std::os::unix::fs::symlink;
+
+    let dir = non_tmp_dir();
+    let catalog = CatalogStore::open(dir.path()).unwrap();
+    let olap = OlapParquetStore::new(catalog.layout().clone());
+    let now = Utc::now().timestamp_millis();
+
+    // Two Spindle observations in the same millisecond with identical value but distinct sequences.
+    olap.write_metrics(&[MetricPoint {
+        timestamp_ms: now - 500,
+        name: "spindle.counter".into(),
+        value: 42.0,
+        host: "fedora-blade".into(),
+        slice: "spindle".into(),
+        unit: "spindle".into(),
+        pid: None,
+        labels_json: r#"{"producer":1,"generation":1,"sequence":1}"#.into(),
+    }])
+    .unwrap();
+    let live = vec![MetricPoint {
+        timestamp_ms: now - 500,
+        name: "spindle.counter".into(),
+        value: 42.0,
+        host: "fedora-blade".into(),
+        slice: "spindle".into(),
+        unit: "spindle".into(),
+        pid: None,
+        labels_json: r#"{"producer":1,"generation":1,"sequence":2}"#.into(),
+    }];
+    let distinct = execute_unified_query(
+        dir.path(),
+        &UnifiedQuerySpec {
+            domain: QueryDomain::Metrics,
+            since_ms: Some(now - 60_000),
+            agg_specs: vec!["sum:value".into(), "count".into()],
+            limit: 10,
+            ..Default::default()
+        },
+        &live,
+        None,
+    )
+    .await
+    .unwrap();
+    assert_eq!(distinct.rows[0]["count"].as_i64(), Some(2));
+    assert_eq!(distinct.rows[0]["sum_value"].as_f64(), Some(84.0));
+
+    // Pre-existing spill symlink pointing into /tmp must be rejected.
+    fs::remove_dir(catalog.layout().spill_dir()).unwrap();
+    symlink("/tmp/fabrico11y-evil-spill", catalog.layout().spill_dir()).unwrap();
+    let Err(err) = execute_unified_query(
+        dir.path(),
+        &UnifiedQuerySpec {
+            domain: QueryDomain::Metrics,
+            ..Default::default()
+        },
+        &[],
+        None,
+    )
+    .await
+    else {
+        panic!("spill symlink into /tmp must fail");
+    };
+    assert!(
+        err.contains("refusing") || err.contains("/tmp"),
+        "unexpected error: {err}"
+    );
+}

@@ -6,9 +6,8 @@ use fabric_collect::{
     DaemonConfig, DaemonRequest, DaemonResponse, SelfPreservationGuard, query_daemon_socket,
     run_daemon,
 };
-use fabric_core::validate_non_tmp_path;
 use fabric_query::unified::{QueryDomain, UnifiedQuerySpec, execute_unified_query};
-use fabric_store::CatalogStore;
+use fabric_store::{CatalogStore, validate_non_tmp_path_on_disk};
 use std::ffi::OsStr;
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -163,7 +162,7 @@ fn non_tmp_test_root() -> tempfile::TempDir {
         .prefix("su-")
         .tempdir_in(&base)
         .expect("create tempdir");
-    validate_non_tmp_path(dir.path()).expect("tempdir must not be under /tmp");
+    validate_non_tmp_path_on_disk(dir.path()).expect("tempdir must not be under /tmp");
     dir
 }
 

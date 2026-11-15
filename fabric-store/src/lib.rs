@@ -7,9 +7,17 @@
 pub mod catalog;
 pub mod janitor;
 pub mod olap;
+pub mod parquet_guard;
+pub mod paths;
 pub mod ring;
 
 pub use catalog::{CatalogStore, PersistedLiveState};
 pub use janitor::{JanitorConfig, JanitorStats, RetentionJanitor};
-pub use olap::{OLAP_DOMAINS, OlapParquetStore};
+pub use olap::{
+    OLAP_DOMAINS, OlapFlushPlan, OlapParquetStore, PinnedParquetFile, WriterLockGuard,
+    clear_committed_uncommitted, ensure_durable_layout_subdir, ensure_durable_non_tmp_dir,
+    merge_uncommitted_partitions, save_uncommitted_partitions, try_acquire_writer_lock,
+};
+pub use parquet_guard::MAX_PARQUET_FOOTER_SERIALIZED_BYTES;
+pub use paths::{validate_non_tmp_path_on_disk, validated_storage_layout};
 pub use ring::{DEFAULT_RING_BUDGET_BYTES, HotMetricRing, RingStats};

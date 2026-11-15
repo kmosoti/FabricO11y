@@ -58,18 +58,27 @@ pub fn normalize_lexical_path(path: &Path) -> Option<PathBuf> {
     Some(out)
 }
 
-/// Rejects relative paths and paths residing under `/tmp`, `/dev/shm`, or `/run/shm`.
-pub fn validate_non_tmp_path(path: &Path) -> Result<PathBuf, PathPolicyError> {
-    let normalized = normalize_lexical_path(path)
-        .ok_or_else(|| PathPolicyError::NotAbsolute(path.display().to_string()))?;
+/// Checks whether a normalized path resides under a forbidden RAM-backed prefix.
+pub fn check_forbidden_ram_prefix(candidate: &Path) -> Result<(), PathPolicyError> {
     for forbidden in FORBIDDEN_RAM_PREFIXES {
         let forbidden_path = Path::new(forbidden);
-        if normalized == forbidden_path || normalized.starts_with(forbidden_path) {
+        if candidate == forbidden_path || candidate.starts_with(forbidden_path) {
             return Err(PathPolicyError::ForbiddenRamMount(
-                normalized.display().to_string(),
+                candidate.display().to_string(),
             ));
         }
     }
+    Ok(())
+}
+
+/// Pure Sans-I/O path policy check rejecting relative paths and `/tmp`, `/dev/shm`, `/run/shm`.
+///
+/// I/O crates opening or writing user/runtime paths must use
+/// `fabric_store::validate_non_tmp_path_on_disk` to resolve symlinks on disk too.
+pub fn validate_non_tmp_path(path: &Path) -> Result<PathBuf, PathPolicyError> {
+    let normalized = normalize_lexical_path(path)
+        .ok_or_else(|| PathPolicyError::NotAbsolute(path.display().to_string()))?;
+    check_forbidden_ram_prefix(&normalized)?;
     Ok(normalized)
 }
 
@@ -110,12 +119,12 @@ impl StorageLayout {
 
     #[must_use]
     pub fn staging_dir(&self) -> PathBuf {
-        self.state_dir().join("staging")
+        self.data_dir.join("staging")
     }
 
     #[must_use]
     pub fn spill_dir(&self) -> PathBuf {
-        self.state_dir().join("spill")
+        self.data_dir.join("spill")
     }
 
     #[must_use]
@@ -139,6 +148,7 @@ mod tests {
         assert!(validate_non_tmp_path(Path::new("/tmp/fabric-rust-1100")).is_err());
         assert!(validate_non_tmp_path(Path::new("/data/../tmp/foo")).is_err());
         assert!(validate_non_tmp_path(Path::new("/dev/shm/ring")).is_err());
+        assert!(validate_non_tmp_path(Path::new("/run/shm/ring")).is_err());
         assert!(validate_non_tmp_path(Path::new("relative/dir")).is_err());
     }
 

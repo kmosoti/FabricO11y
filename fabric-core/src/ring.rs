@@ -236,7 +236,16 @@ impl HotMetricRing {
         }
     }
 
-    fn push_one(&mut self, pt: &MetricPoint) {
+    /// Inserts metric points into the compressed hot ring only, bypassing the volatile unflushed queue.
+    /// Used when durability is managed separately (e.g., Spindle staging).
+    pub fn push_hot_only(&mut self, points: &[MetricPoint]) {
+        for pt in points {
+            self.insert_into_series(pt);
+            self.enforce_budget();
+        }
+    }
+
+    fn insert_into_series(&mut self, pt: &MetricPoint) {
         let key = SeriesKey::from_point(pt);
         let blocks = self.series.entry(key.clone()).or_default();
         if let Some(last) = blocks.last_mut()
@@ -251,6 +260,10 @@ impl HotMetricRing {
             self.used_bytes = self.used_bytes.saturating_add(added);
             self.series_order.push_back(key);
         }
+    }
+
+    fn push_one(&mut self, pt: &MetricPoint) {
+        self.insert_into_series(pt);
 
         let pt_bytes = metric_point_bytes(pt);
         self.unflushed.push_back(pt.clone());
@@ -541,5 +554,24 @@ mod tests {
             restored.iter().map(|p| p.timestamp_ms).collect::<Vec<_>>(),
             vec![100, 200, 300]
         );
+    }
+
+    #[test]
+    fn push_hot_only_populates_ring_without_queuing_unflushed() {
+        let mut ring = HotMetricRing::with_capacity_bytes(8 * 1024);
+        let pt = MetricPoint {
+            timestamp_ms: 500,
+            name: "spindle.latency_ms".into(),
+            value: 4.5,
+            host: "fedora-blade".into(),
+            slice: "spindle".into(),
+            unit: "spindle.service".into(),
+            pid: None,
+            labels_json: r#"{"source":"spindle"}"#.into(),
+        };
+        ring.push_hot_only(std::slice::from_ref(&pt));
+        assert_eq!(ring.query_since(0), vec![pt]);
+        assert!(ring.drain_unflushed().is_empty());
+        assert_eq!(ring.unflushed_bytes(), 0);
     }
 }
