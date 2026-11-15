@@ -33,4 +33,4 @@ TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask collectio
 
 See [architecture](docs/architecture.md), [product direction](docs/direction.md), [linked knowledge](knowledge/README.md), [contributing](CONTRIBUTING.md), [local collection setup](docs/collection.md), [canonical custody](docs/canonical-custody.md), and [typed investigations](docs/investigation.md).
 
-Requires Jujutsu 0.46.0 with a Git backend and Rust 1.100.0 stable, pinned in [`rust-toolchain.toml`](rust-toolchain.toml).
+Requires Jujutsu 0.46.0 with a Git backend and Rust stable (>= 1.100.0), configured in [`rust-toolchain.toml`](rust-toolchain.toml).

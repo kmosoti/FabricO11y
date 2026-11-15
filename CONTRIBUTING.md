@@ -1,6 +1,6 @@
 # Contributing
 
-Use Rust 1.100.0 stable, native Cargo commands, and Jujutsu 0.46.0 with a Git
+Use stable Rust (>= 1.100.0), native Cargo commands, and Jujutsu 0.46.0 with a Git
 backend. Initialize an existing Git checkout with `jj git init --colocate`,
 configure your Jujutsu identity, and install the commit template before committing:
 

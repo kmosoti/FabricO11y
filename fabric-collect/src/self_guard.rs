@@ -85,8 +85,8 @@ pub fn build_doctor_report_from_summary(
     let fds_ok = summary.open_fds < MAX_OPEN_FDS_BUDGET;
     let tmp_ok = summary.tmp_files_created == 0;
     let slice_ok = summary.fabrico11y_slice_confined;
-    let data_dir_ok = fabric_core::validate_non_tmp_path(Path::new(data_dir)).is_ok();
-    let tmp_dir_ok = fabric_core::validate_non_tmp_path(Path::new(tmp_dir)).is_ok();
+    let data_dir_ok = fabric_store::validate_non_tmp_path_on_disk(Path::new(data_dir)).is_ok();
+    let tmp_dir_ok = fabric_store::validate_non_tmp_path_on_disk(Path::new(tmp_dir)).is_ok();
 
     let checks = vec![
         DoctorCheck {

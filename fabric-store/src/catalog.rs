@@ -2,15 +2,13 @@
 //! paired with lock-free atomic JSON live state snapshots for concurrent CLI reads.
 
 use chrono::Utc;
-use fabric_core::{
-    DriftReport, HostSnapshot, PathPolicyError, SCHEMA_VERSION, StorageLayout,
-    validate_non_tmp_path,
-};
+use fabric_core::{DriftReport, HostSnapshot, SCHEMA_VERSION, StorageLayout};
 use fabric_graph::CausalGraph;
 use redb::{Builder, Database, DatabaseError, ReadableDatabase, TableDefinition};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{ErrorKind, Write};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -46,7 +44,7 @@ pub struct CatalogStore {
 impl CatalogStore {
     /// Initializes storage directories beneath `data_dir` (refusing `/tmp` or `/dev/shm`).
     pub fn open(data_dir: impl AsRef<Path>) -> Result<Self, String> {
-        let layout = StorageLayout::new(data_dir).map_err(|e: PathPolicyError| e.to_string())?;
+        let layout = crate::validated_storage_layout(data_dir)?;
         Self::ensure_layout(&layout)?;
         Ok(Self { layout })
     }
@@ -57,32 +55,109 @@ impl CatalogStore {
     }
 
     fn ensure_layout(layout: &StorageLayout) -> Result<(), String> {
+        crate::olap::reject_symlink_path(layout.data_dir())?;
+        crate::olap::ensure_durable_non_tmp_dir(None, layout.data_dir())?;
         for dir in [
-            layout.data_dir().to_path_buf(),
             layout.state_dir(),
             layout.staging_dir(),
             layout.spill_dir(),
             layout.olap_dir(),
         ] {
-            validate_non_tmp_path(&dir).map_err(|e| e.to_string())?;
-            fs::create_dir_all(&dir)
-                .map_err(|e| format!("failed creating {}: {e}", dir.display()))?;
+            crate::olap::ensure_durable_non_tmp_dir(Some(layout.data_dir()), &dir)?;
         }
-        for domain in ["metrics", "logs", "traces", "fs_events", "edges"] {
+        for domain in crate::olap::OLAP_DOMAINS {
             let domain_dir = layout.olap_domain_dir(domain);
-            fs::create_dir_all(&domain_dir)
-                .map_err(|e| format!("failed creating {}: {e}", domain_dir.display()))?;
+            crate::olap::ensure_durable_non_tmp_dir(Some(layout.data_dir()), &domain_dir)?;
         }
+        crate::olap::reject_symlink_path(&layout.catalog_redb())?;
+        crate::validate_non_tmp_path_on_disk(&layout.catalog_redb()).map_err(|e| e.to_string())?;
+        crate::olap::reject_symlink_path(&layout.live_state_json())?;
+        crate::validate_non_tmp_path_on_disk(&layout.live_state_json())
+            .map_err(|e| e.to_string())?;
         Ok(())
     }
 
     fn open_db_with_retry(&self) -> Result<Database, String> {
-        let db_path = self.layout.catalog_redb();
+        let state_dir =
+            crate::olap::ensure_durable_layout_subdir(&self.layout, &self.layout.state_dir())?;
+        crate::olap::reject_symlinks_below_stop(
+            Some(self.layout.data_dir()),
+            &self.layout.catalog_redb(),
+        )?;
+        let db_path = crate::validate_non_tmp_path_on_disk(&state_dir.join("catalog.redb"))
+            .map_err(|e| e.to_string())?;
         for attempt in 0..OPEN_RETRY_ATTEMPTS {
+            let data_fd = crate::olap::open_anchor_data_dir(&self.layout)?;
+            let state_fd = crate::olap::open_child_dir_nofollow(&data_fd, "state", "state dir")?
+                .ok_or_else(|| format!("missing state dir {}", state_dir.display()))?;
+            let state_fd_meta = state_fd
+                .metadata()
+                .map_err(|e| format!("failed inspecting state fd {}: {e}", state_dir.display()))?;
+            let state_path_meta = fs::symlink_metadata(&state_dir)
+                .map_err(|e| format!("failed inspecting state dir {}: {e}", state_dir.display()))?;
+            if state_path_meta.file_type().is_symlink()
+                || !state_path_meta.is_dir()
+                || state_path_meta.dev() != state_fd_meta.dev()
+                || state_path_meta.ino() != state_fd_meta.ino()
+            {
+                return Err(format!(
+                    "state dir {} changed concurrently during catalog open",
+                    state_dir.display()
+                ));
+            }
+            let proc_path =
+                crate::olap::proc_fd_child_path(&state_fd, "catalog.redb", "catalog.redb")?;
+            let file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .custom_flags(crate::olap::O_NOFOLLOW_FLAG | crate::olap::O_NONBLOCK_FLAG)
+                .open(&proc_path)
+                .map_err(|e| {
+                    if crate::olap::is_eloop_error(&e) {
+                        format!("refusing symlinked catalog.redb {}", db_path.display())
+                    } else {
+                        format!("failed opening catalog.redb {}: {e}", db_path.display())
+                    }
+                })?;
+            let fd_meta = file.metadata().map_err(|e| {
+                format!(
+                    "failed inspecting catalog.redb fd {}: {e}",
+                    db_path.display()
+                )
+            })?;
+            if fd_meta.file_type().is_symlink() {
+                return Err(format!(
+                    "refusing symlinked catalog.redb {}",
+                    db_path.display()
+                ));
+            }
+            if !fd_meta.is_file() {
+                return Err(format!("invalid catalog.redb path {}", db_path.display()));
+            }
+            let proc_meta = fs::symlink_metadata(&proc_path).map_err(|e| {
+                format!("failed inspecting catalog.redb {}: {e}", db_path.display())
+            })?;
+            if proc_meta.file_type().is_symlink()
+                || !proc_meta.is_file()
+                || proc_meta.dev() != fd_meta.dev()
+                || proc_meta.ino() != fd_meta.ino()
+            {
+                return Err(format!(
+                    "catalog.redb {} changed concurrently during open",
+                    db_path.display()
+                ));
+            }
             let mut builder = Builder::new();
             builder.set_cache_size(REDB_CACHE_BYTES);
-            match builder.create(&db_path) {
-                Ok(db) => return Ok(db),
+            match builder.create_file(file) {
+                Ok(db) => {
+                    state_fd.sync_all().map_err(|e| {
+                        format!("failed syncing state dir {}: {e}", state_dir.display())
+                    })?;
+                    return Ok(db);
+                }
                 Err(DatabaseError::DatabaseAlreadyOpen) if attempt + 1 < OPEN_RETRY_ATTEMPTS => {
                     thread::sleep(OPEN_RETRY_DELAY);
                 }
@@ -96,6 +171,97 @@ impl CatalogStore {
         }
         Err(format!(
             "timed out waiting for redb lock on {}",
+            db_path.display()
+        ))
+    }
+
+    pub(crate) fn read_watermark_for_recovery(
+        layout: &StorageLayout,
+        key: &str,
+    ) -> Result<u64, String> {
+        crate::validate_non_tmp_path_on_disk(layout.data_dir()).map_err(|e| e.to_string())?;
+        crate::olap::reject_symlinks_below_stop(Some(layout.data_dir()), &layout.catalog_redb())?;
+        let db_path = crate::validate_non_tmp_path_on_disk(&layout.catalog_redb())
+            .map_err(|e| e.to_string())?;
+        for attempt in 0..OPEN_RETRY_ATTEMPTS {
+            let data_fd = crate::olap::open_anchor_data_dir(layout)?;
+            let Some(state_fd) =
+                crate::olap::open_child_dir_nofollow(&data_fd, "state", "state dir")?
+            else {
+                return Ok(0);
+            };
+            let proc_path =
+                crate::olap::proc_fd_child_path(&state_fd, "catalog.redb", "catalog.redb")?;
+            let file = match OpenOptions::new()
+                .read(true)
+                .write(true)
+                .custom_flags(crate::olap::O_NOFOLLOW_FLAG | crate::olap::O_NONBLOCK_FLAG)
+                .open(&proc_path)
+            {
+                Ok(f) => f,
+                Err(e) if e.kind() == ErrorKind::NotFound => return Ok(0),
+                Err(e) if crate::olap::is_eloop_error(&e) => {
+                    return Err(format!(
+                        "refusing symlinked catalog.redb {}",
+                        db_path.display()
+                    ));
+                }
+                Err(e) => {
+                    return Err(format!(
+                        "failed opening catalog.redb {}: {e}",
+                        db_path.display()
+                    ));
+                }
+            };
+            let fd_meta = file.metadata().map_err(|e| {
+                format!(
+                    "failed inspecting catalog.redb fd {}: {e}",
+                    db_path.display()
+                )
+            })?;
+            if fd_meta.file_type().is_symlink() {
+                return Err(format!(
+                    "refusing symlinked catalog.redb {}",
+                    db_path.display()
+                ));
+            }
+            if !fd_meta.is_file() {
+                return Err(format!(
+                    "obstructing non-file at catalog.redb {}",
+                    db_path.display()
+                ));
+            }
+            if fd_meta.len() == 0 {
+                return Ok(0);
+            }
+            let mut builder = Builder::new();
+            builder.set_cache_size(REDB_CACHE_BYTES);
+            match builder.create_file(file) {
+                Ok(db) => {
+                    let read_txn = db.begin_read().map_err(|e| e.to_string())?;
+                    let Ok(table) = read_txn.open_table(WATERMARKS_TABLE) else {
+                        return Ok(0);
+                    };
+                    let value = table
+                        .get(key)
+                        .map_err(|e| e.to_string())?
+                        .map(|guard| guard.value())
+                        .unwrap_or(0);
+                    return Ok(value);
+                }
+                Err(DatabaseError::DatabaseAlreadyOpen) if attempt + 1 < OPEN_RETRY_ATTEMPTS => {
+                    thread::sleep(OPEN_RETRY_DELAY);
+                }
+                Err(err) => {
+                    return Err(format!(
+                        "failed reading recovery watermark from {}: {err}",
+                        db_path.display()
+                    ));
+                }
+            }
+        }
+        Err(format!(
+            "timed out waiting for redb recovery lock on {}",
             db_path.display()
         ))
     }
@@ -116,6 +282,8 @@ impl CatalogStore {
         let db = self.open_db_with_retry()?;
         let write_txn = db.begin_write().map_err(|e| e.to_string())?;
         {
+            // Live-snapshot tables reflect only active entities/units/edges; replace cleanly each cycle.
+            let _ = write_txn.delete_table(ENTITIES_TABLE);
             let mut entities = write_txn
                 .open_table(ENTITIES_TABLE)
                 .map_err(|e| e.to_string())?;
@@ -126,6 +294,8 @@ impl CatalogStore {
                     .map_err(|e| e.to_string())?;
             }
 
+            let _ = write_txn.delete_table(ADJ_OUT_TABLE);
+            let _ = write_txn.delete_table(ADJ_IN_TABLE);
             let mut adj_out = write_txn
                 .open_table(ADJ_OUT_TABLE)
                 .map_err(|e| e.to_string())?;
@@ -153,6 +323,7 @@ impl CatalogStore {
                     .map_err(|e| e.to_string())?;
             }
 
+            let _ = write_txn.delete_table(UNITS_TABLE);
             let mut units = write_txn
                 .open_table(UNITS_TABLE)
                 .map_err(|e| e.to_string())?;
@@ -218,7 +389,12 @@ impl CatalogStore {
 
     /// Reads a watermark from `catalog.redb` if present.
     pub fn read_watermark(&self, key: &str) -> Result<Option<u64>, String> {
-        if !self.layout.catalog_redb().exists() {
+        crate::validate_non_tmp_path_on_disk(self.layout.data_dir()).map_err(|e| e.to_string())?;
+        crate::olap::reject_symlinks_below_stop(
+            Some(self.layout.data_dir()),
+            &self.layout.catalog_redb(),
+        )?;
+        if !crate::olap::is_regular_file_no_symlink(&self.layout.catalog_redb(), "catalog.redb")? {
             return Ok(None);
         }
         let db = self.open_db_with_retry()?;
@@ -235,16 +411,28 @@ impl CatalogStore {
 
     /// Reads the latest persisted snapshot, drift report, and causal graph.
     pub fn load_live_state(&self) -> Result<Option<PersistedLiveState>, String> {
+        crate::validate_non_tmp_path_on_disk(self.layout.data_dir()).map_err(|e| e.to_string())?;
         let json_path = self.layout.live_state_json();
-        if json_path.is_file() {
-            let raw = fs::read_to_string(&json_path)
-                .map_err(|e| format!("failed reading {}: {e}", json_path.display()))?;
-            let state: PersistedLiveState =
-                serde_json::from_str(&raw).map_err(|e| e.to_string())?;
-            return Ok(Some(state));
+        crate::olap::reject_symlinks_below_stop(Some(self.layout.data_dir()), &json_path)?;
+        crate::olap::reject_symlinks_below_stop(
+            Some(self.layout.data_dir()),
+            &self.layout.catalog_redb(),
+        )?;
+        if crate::olap::is_regular_file_no_symlink(&json_path, "live_state.json")? {
+            let safe_json =
+                crate::validate_non_tmp_path_on_disk(&json_path).map_err(|e| e.to_string())?;
+            if let Some(bytes) = crate::olap::read_non_symlink_bytes_bounded_if_present(
+                &safe_json,
+                "live_state.json",
+                64 * 1024 * 1024,
+            )? {
+                let state: PersistedLiveState =
+                    serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+                return Ok(Some(state));
+            }
         }
 
-        if !self.layout.catalog_redb().exists() {
+        if !crate::olap::is_regular_file_no_symlink(&self.layout.catalog_redb(), "catalog.redb")? {
             return Ok(None);
         }
         let db = self.open_db_with_retry()?;
@@ -281,24 +469,99 @@ impl CatalogStore {
     }
 
     fn write_live_state_atomic(&self, state: &PersistedLiveState) -> Result<(), String> {
+        let staging_dir =
+            crate::olap::ensure_durable_layout_subdir(&self.layout, &self.layout.staging_dir())?;
+        let state_dir =
+            crate::olap::ensure_durable_layout_subdir(&self.layout, &self.layout.state_dir())?;
+        let staging_meta_before = fs::symlink_metadata(&staging_dir).map_err(|e| {
+            format!(
+                "failed inspecting staging dir {}: {e}",
+                staging_dir.display()
+            )
+        })?;
+        let state_meta_before = fs::symlink_metadata(&state_dir)
+            .map_err(|e| format!("failed inspecting state dir {}: {e}", state_dir.display()))?;
+        let live_state_path = self.layout.live_state_json();
+        crate::olap::reject_symlinks_below_stop(Some(self.layout.data_dir()), &live_state_path)?;
+        let validated_live_state =
+            crate::validate_non_tmp_path_on_disk(&live_state_path).map_err(|e| e.to_string())?;
+
         let stamp = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_err(|e| e.to_string())?
             .as_nanos();
-        let tmp_file = self
-            .layout
-            .staging_dir()
-            .join(format!("live_state.{}.{stamp}.json", std::process::id()));
+        let tmp_file = staging_dir.join(format!("live_state.{}.{stamp}.json", std::process::id()));
         let bytes = serde_json::to_vec(state).map_err(|e| e.to_string())?;
-        let mut f = OpenOptions::new()
-            .create_new(true)
-            .write(true)
-            .open(&tmp_file)
-            .map_err(|e| format!("failed creating {}: {e}", tmp_file.display()))?;
-        f.write_all(&bytes).map_err(|e| e.to_string())?;
-        f.sync_all().map_err(|e| e.to_string())?;
-        fs::rename(&tmp_file, self.layout.live_state_json())
-            .map_err(|e| format!("failed renaming live state: {e}"))?;
+        {
+            let mut f = OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&tmp_file)
+                .map_err(|e| format!("failed creating {}: {e}", tmp_file.display()))?;
+            if let Err(e) = f.write_all(&bytes).and_then(|()| f.sync_all()) {
+                drop(f);
+                let _ = fs::remove_file(&tmp_file);
+                return Err(e.to_string());
+            }
+        }
+        let dir_identity_check = || -> Result<(), String> {
+            let staging_meta_now = fs::symlink_metadata(&staging_dir).map_err(|e| {
+                format!(
+                    "failed re-inspecting staging dir {}: {e}",
+                    staging_dir.display()
+                )
+            })?;
+            let state_meta_now = fs::symlink_metadata(&state_dir).map_err(|e| {
+                format!(
+                    "failed re-inspecting state dir {}: {e}",
+                    state_dir.display()
+                )
+            })?;
+            if staging_meta_now.file_type().is_symlink()
+                || !staging_meta_now.is_dir()
+                || staging_meta_now.dev() != staging_meta_before.dev()
+                || staging_meta_now.ino() != staging_meta_before.ino()
+            {
+                return Err(format!(
+                    "staging dir {} changed concurrently during live state write",
+                    staging_dir.display()
+                ));
+            }
+            if state_meta_now.file_type().is_symlink()
+                || !state_meta_now.is_dir()
+                || state_meta_now.dev() != state_meta_before.dev()
+                || state_meta_now.ino() != state_meta_before.ino()
+            {
+                return Err(format!(
+                    "state dir {} changed concurrently during live state write",
+                    state_dir.display()
+                ));
+            }
+            Ok(())
+        };
+        if let Err(e) =
+            crate::olap::reject_symlinks_below_stop(Some(self.layout.data_dir()), &live_state_path)
+                .and_then(|()| {
+                    crate::olap::reject_symlinks_below_stop(
+                        Some(self.layout.data_dir()),
+                        &self.layout.staging_dir(),
+                    )
+                })
+                .and_then(|()| {
+                    crate::validate_non_tmp_path_on_disk(&live_state_path)
+                        .map_err(|err| err.to_string())
+                })
+                .and_then(|_| dir_identity_check())
+        {
+            let _ = fs::remove_file(&tmp_file);
+            return Err(e);
+        }
+        if let Err(e) = fs::rename(&tmp_file, &validated_live_state) {
+            let _ = fs::remove_file(&tmp_file);
+            return Err(format!("failed renaming live state: {e}"));
+        }
+        dir_identity_check()?;
+        crate::olap::sync_directory(&state_dir)?;
         Ok(())
     }
 }
@@ -350,5 +613,133 @@ mod tests {
         );
         let loaded = store.load_live_state().unwrap().unwrap();
         assert_eq!(loaded.snapshot.hostname, "fedora-blade");
+    }
+
+    #[test]
+    fn commit_cycle_prunes_stale_units_and_entities() {
+        let dir = non_tmp_dir();
+        let store = CatalogStore::open(dir.path()).unwrap();
+
+        let snap1 = HostSnapshot {
+            timestamp_unix_ms: 1_700_000_000_000,
+            hostname: "fedora-blade".into(),
+            units: vec![fabric_core::UnitRecord {
+                name: "ephemeral-1.scope".into(),
+                manager: "user".into(),
+                slice: "agent.slice".into(),
+                active_state: "failed".into(),
+                sub_state: "failed".into(),
+                transient: true,
+                main_pid: Some(12345),
+                memory_current_bytes: 1024,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let drift1 = evaluate_five_pillars(&snap1, &Default::default(), None);
+        let graph1 = CausalGraph::from_snapshot(&snap1, &drift1.findings);
+        store.commit_cycle(&snap1, &drift1, &graph1).unwrap();
+
+        {
+            let db = store.open_db_with_retry().unwrap();
+            let rtxn = db.begin_read().unwrap();
+            assert!(
+                rtxn.open_table(UNITS_TABLE)
+                    .unwrap()
+                    .get("ephemeral-1.scope")
+                    .unwrap()
+                    .is_some()
+            );
+            assert!(
+                rtxn.open_table(ENTITIES_TABLE)
+                    .unwrap()
+                    .get("unit:ephemeral-1.scope")
+                    .unwrap()
+                    .is_some()
+            );
+        }
+
+        let snap2 = HostSnapshot {
+            timestamp_unix_ms: 1_700_000_002_000,
+            hostname: "fedora-blade".into(),
+            ..Default::default()
+        };
+        let drift2 = evaluate_five_pillars(&snap2, &Default::default(), None);
+        let graph2 = CausalGraph::from_snapshot(&snap2, &drift2.findings);
+        store.commit_cycle(&snap2, &drift2, &graph2).unwrap();
+
+        let db = store.open_db_with_retry().unwrap();
+        let rtxn = db.begin_read().unwrap();
+        assert!(
+            rtxn.open_table(UNITS_TABLE)
+                .unwrap()
+                .get("ephemeral-1.scope")
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            rtxn.open_table(ENTITIES_TABLE)
+                .unwrap()
+                .get("unit:ephemeral-1.scope")
+                .unwrap()
+                .is_none()
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rejects_symlinked_catalog_redb_and_live_state_into_tmp() {
+        use std::os::unix::fs::symlink;
+
+        let dir = non_tmp_dir();
+        let layout = StorageLayout::new(dir.path()).unwrap();
+        fs::create_dir_all(layout.state_dir()).unwrap();
+        symlink("/tmp/fabrico11y-evil-catalog.redb", layout.catalog_redb()).unwrap();
+
+        let Err(err) = CatalogStore::open(dir.path()) else {
+            panic!("symlinked catalog.redb into /tmp must be rejected");
+        };
+        assert!(
+            err.contains("refusing") || err.contains("/tmp"),
+            "unexpected error: {err}"
+        );
+
+        fs::remove_file(layout.catalog_redb()).unwrap();
+        symlink("/tmp/fabrico11y-evil-live.json", layout.live_state_json()).unwrap();
+        let Err(err) = CatalogStore::open(dir.path()) else {
+            panic!("symlinked live_state.json into /tmp must be rejected");
+        };
+        assert!(
+            err.contains("refusing") || err.contains("/tmp"),
+            "unexpected error: {err}"
+        );
+
+        fs::remove_file(layout.live_state_json()).unwrap();
+        let store = CatalogStore::open(dir.path()).unwrap();
+        fs::remove_dir_all(layout.staging_dir()).unwrap();
+        let evil_staging = std::path::PathBuf::from(format!(
+            "/tmp/fabrico11y-evil-staging-{}",
+            std::process::id()
+        ));
+        symlink(&evil_staging, layout.staging_dir()).unwrap();
+
+        let snap = HostSnapshot {
+            timestamp_unix_ms: 1_700_000_003_000,
+            hostname: "fedora-blade".into(),
+            ..Default::default()
+        };
+        let drift = evaluate_five_pillars(&snap, &Default::default(), None);
+        let graph = CausalGraph::from_snapshot(&snap, &drift.findings);
+        let err = store
+            .commit_cycle(&snap, &drift, &graph)
+            .expect_err("post-open symlinked staging dir into /tmp must be rejected");
+        assert!(
+            err.contains("symlink") || err.contains("refusing") || err.contains("/tmp"),
+            "unexpected error: {err}"
+        );
+        assert!(
+            !evil_staging.exists(),
+            "commit_cycle must never create or write inside symlinked /tmp staging dir"
+        );
     }
 }

@@ -10,9 +10,91 @@ use fabric_core::{LogRecord, MetricPoint, TraceSpanRecord};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, BufReader};
 use tokio::net::UnixListener;
+use tokio::sync::Semaphore;
+
+const MAX_INGEST_LINE_BYTES: usize = 64 * 1024;
+const MAX_CONCURRENT_INGEST_CONNS: usize = 12;
+const INGEST_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Cancellation-safe accumulator state for [`read_bounded_line_cancel_safe`].
+#[derive(Debug, Default)]
+pub(crate) struct BoundedLineState {
+    buf: Vec<u8>,
+    overlong: bool,
+    saw_any: bool,
+}
+
+/// Cancellation-safe bounded line reader whose partial frame buffer lives in `state`.
+/// Returns `Ok(None)` on clean EOF with no buffered bytes, `Ok(Some(None))` when a line exceeded
+/// `max_bytes` (drained to `\n`), or `Ok(Some(Some(line)))` for a valid bounded line.
+pub(crate) async fn read_bounded_line_cancel_safe<R: AsyncBufRead + Unpin>(
+    reader: &mut R,
+    state: &mut BoundedLineState,
+    max_bytes: usize,
+) -> std::io::Result<Option<Option<String>>> {
+    loop {
+        let chunk = reader.fill_buf().await?;
+        if chunk.is_empty() {
+            let finished = std::mem::take(state);
+            if !finished.saw_any {
+                return Ok(None);
+            }
+            if finished.overlong {
+                return Ok(Some(None));
+            }
+            let line = String::from_utf8(finished.buf)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            return Ok(Some(Some(line)));
+        }
+        state.saw_any = true;
+        if let Some(pos) = chunk.iter().position(|&b| b == b'\n') {
+            if !state.overlong {
+                if state.buf.len().saturating_add(pos) > max_bytes {
+                    state.overlong = true;
+                    state.buf.clear();
+                } else {
+                    state.buf.extend_from_slice(&chunk[..pos]);
+                }
+            }
+            reader.consume(pos + 1);
+            let mut finished = std::mem::take(state);
+            if finished.overlong {
+                return Ok(Some(None));
+            }
+            if finished.buf.last() == Some(&b'\r') {
+                finished.buf.pop();
+            }
+            let line = String::from_utf8(finished.buf)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            return Ok(Some(Some(line)));
+        }
+        let len = chunk.len();
+        if !state.overlong {
+            if state.buf.len().saturating_add(len) > max_bytes {
+                state.overlong = true;
+                state.buf.clear();
+            } else {
+                state.buf.extend_from_slice(chunk);
+            }
+        }
+        reader.consume(len);
+    }
+}
+
+/// Reads one newline-delimited frame without allocating more than `max_bytes` before `\n`.
+/// Returns `Ok(None)` on EOF, `Ok(Some(None))` when a line exceeded `max_bytes` (drained to `\n`),
+/// or `Ok(Some(Some(line)))` for a valid bounded line.
+pub(crate) async fn read_bounded_line<R: AsyncBufRead + Unpin>(
+    reader: &mut R,
+    max_bytes: usize,
+) -> std::io::Result<Option<Option<String>>> {
+    let mut state = BoundedLineState::default();
+    read_bounded_line_cancel_safe(reader, &mut state, max_bytes).await
+}
 
 /// Envelope accepted on `ingest.sock` as newline-delimited JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -352,6 +434,20 @@ pub async fn serve_ingest_socket(
     traces_q: BoundedTelemetryQueue<TraceSpanRecord>,
     default_host: String,
 ) -> Result<(), String> {
+    let (_tx, rx) = tokio::sync::watch::channel(false);
+    serve_ingest_socket_until_shutdown(sock_path, metrics_q, logs_q, traces_q, default_host, rx)
+        .await
+}
+
+/// Spawns the background local OTLP/Spindle ingest listener and drains connection tasks on shutdown.
+pub async fn serve_ingest_socket_until_shutdown(
+    sock_path: &Path,
+    metrics_q: BoundedTelemetryQueue<MetricPoint>,
+    logs_q: BoundedTelemetryQueue<LogRecord>,
+    traces_q: BoundedTelemetryQueue<TraceSpanRecord>,
+    default_host: String,
+    mut shutdown_rx: tokio::sync::watch::Receiver<bool>,
+) -> Result<(), String> {
     if let Some(parent) = sock_path.parent() {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -360,22 +456,49 @@ pub async fn serve_ingest_socket(
     }
     let listener = UnixListener::bind(sock_path)
         .map_err(|e| format!("failed binding {}: {e}", sock_path.display()))?;
+    let permits = Arc::new(Semaphore::new(MAX_CONCURRENT_INGEST_CONNS));
+    let mut conn_tasks = tokio::task::JoinSet::new();
 
     loop {
-        let Ok((stream, _)) = listener.accept().await else {
-            continue;
+        while conn_tasks.try_join_next().is_some() {}
+        if *shutdown_rx.borrow() {
+            break;
+        }
+        let permit = tokio::select! {
+            biased;
+            _ = shutdown_rx.changed() => break,
+            res = permits.clone().acquire_owned() => match res {
+                Ok(p) => p,
+                Err(_) => break,
+            }
+        };
+        let stream = tokio::select! {
+            biased;
+            _ = shutdown_rx.changed() => {
+                drop(permit);
+                break;
+            }
+            res = listener.accept() => match res {
+                Ok((s, _)) => s,
+                Err(_) => {
+                    drop(permit);
+                    continue;
+                }
+            }
         };
         let mq = metrics_q.clone();
         let lq = logs_q.clone();
         let tq = traces_q.clone();
         let host = default_host.clone();
-        tokio::spawn(async move {
-            let mut reader = BufReader::new(stream).lines();
-            while let Ok(Some(line)) = reader.next_line().await {
-                if line.len() > 64 * 1024 || line.trim().is_empty() {
-                    continue;
+        let mut conn_shutdown = shutdown_rx.clone();
+        conn_tasks.spawn(async move {
+            let _permit = permit;
+            let mut reader = BufReader::with_capacity(8192, stream);
+            let emit_line = |line: &str| {
+                if line.trim().is_empty() {
+                    return;
                 }
-                if let Ok(env) = parse_ingest_line(&line, &host) {
+                if let Ok(env) = parse_ingest_line(line, &host) {
                     match env {
                         IngestEnvelope::Metric(mut pt) => {
                             if pt.timestamp_ms <= 0 {
@@ -397,15 +520,87 @@ pub async fn serve_ingest_socket(
                         }
                     }
                 }
+            };
+            let mut shutting_down = false;
+            let mut line_state = BoundedLineState::default();
+            loop {
+                if *conn_shutdown.borrow() {
+                    shutting_down = true;
+                    break;
+                }
+                let maybe_line = tokio::select! {
+                    _ = conn_shutdown.changed() => {
+                        shutting_down = true;
+                        break;
+                    }
+                    res = tokio::time::timeout(
+                        INGEST_IDLE_TIMEOUT,
+                        read_bounded_line_cancel_safe(
+                            &mut reader,
+                            &mut line_state,
+                            MAX_INGEST_LINE_BYTES,
+                        ),
+                    ) => match res {
+                        Ok(Ok(Some(line))) => line,
+                        _ => break,
+                    }
+                };
+                if let Some(line) = maybe_line {
+                    emit_line(&line);
+                }
+            }
+            if shutting_down {
+                let drain_deadline =
+                    tokio::time::Instant::now() + tokio::time::Duration::from_millis(150);
+                let mut drained = 0usize;
+                while drained < 1024 {
+                    let remaining =
+                        drain_deadline.saturating_duration_since(tokio::time::Instant::now());
+                    if remaining.is_zero() {
+                        break;
+                    }
+                    let step_timeout = remaining.min(tokio::time::Duration::from_millis(20));
+                    match tokio::time::timeout(
+                        step_timeout,
+                        read_bounded_line_cancel_safe(
+                            &mut reader,
+                            &mut line_state,
+                            MAX_INGEST_LINE_BYTES,
+                        ),
+                    )
+                    .await
+                    {
+                        Ok(Ok(Some(Some(line)))) => {
+                            emit_line(&line);
+                            drained += 1;
+                        }
+                        Ok(Ok(Some(None))) => {
+                            drained += 1;
+                        }
+                        Ok(Ok(None)) | Ok(Err(_)) | Err(_) => break,
+                    }
+                }
             }
         });
     }
+    drop(listener);
+    let drain_deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(250);
+    while tokio::time::timeout_at(drain_deadline, conn_tasks.join_next())
+        .await
+        .ok()
+        .flatten()
+        .is_some()
+    {}
+    conn_tasks.abort_all();
+    while conn_tasks.join_next().await.is_some() {}
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use fabric::observation::{Data, Identity, Observation, Outcome, REGISTRY, VERSION};
+    use tokio::io::AsyncWriteExt;
 
     fn sample_obs_bytes(seq: u64) -> Vec<u8> {
         let obs = Observation {
@@ -505,5 +700,159 @@ mod tests {
             other => panic!("expected decode error log, got {other:?}"),
         }
         let _ = Outcome::Ok;
+    }
+
+    #[tokio::test]
+    async fn ingest_socket_drains_overlong_frame_and_accepts_subsequent_line() {
+        use tokio::io::AsyncWriteExt;
+
+        let base = std::env::var_os("TMPDIR")
+            .filter(|s| !s.is_empty())
+            .map(std::path::PathBuf::from)
+            .filter(|p| !p.starts_with("/tmp") && !p.starts_with("/dev/shm"))
+            .unwrap_or_else(|| std::path::PathBuf::from("/var/tmp"));
+        fs::create_dir_all(&base).unwrap();
+        let dir = tempfile::Builder::new()
+            .prefix("spindle-bridge-")
+            .tempdir_in(&base)
+            .unwrap();
+        let sock = dir.path().join("ingest.sock");
+
+        let (mq, mut metrics_rx, _) = BoundedTelemetryQueue::new(16);
+        let (lq, _, _) = BoundedTelemetryQueue::new(16);
+        let (tq, _, _) = BoundedTelemetryQueue::new(16);
+
+        let sock_srv = sock.clone();
+        let server = tokio::spawn(async move {
+            let _ = serve_ingest_socket(&sock_srv, mq, lq, tq, "fedora-blade".into()).await;
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !sock.exists() && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let mut client = tokio::net::UnixStream::connect(&sock).await.unwrap();
+        let mut overlong = vec![b'x'; 200 * 1024];
+        overlong.push(b'\n');
+        client.write_all(&overlong).await.unwrap();
+
+        let valid = serde_json::to_vec(&IngestEnvelope::Metric(MetricPoint {
+            timestamp_ms: 1_700_000_000_123,
+            name: "post.overlong".into(),
+            value: 42.0,
+            host: "fedora-blade".into(),
+            slice: "spindle".into(),
+            unit: "spindle.service".into(),
+            pid: None,
+            labels_json: "{}".into(),
+        }))
+        .unwrap();
+        client.write_all(&valid).await.unwrap();
+        client.write_all(b"\n").await.unwrap();
+        client.flush().await.unwrap();
+
+        let received = tokio::time::timeout(Duration::from_secs(3), metrics_rx.recv())
+            .await
+            .expect("valid metric after overlong frame must not time out")
+            .expect("channel open");
+        assert_eq!(received.name, "post.overlong");
+        assert_eq!(received.value, 42.0);
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn serve_ingest_socket_until_shutdown_drains_accepted_connections_and_stops() {
+        let base = std::env::var_os("TMPDIR")
+            .filter(|s| !s.is_empty())
+            .map(std::path::PathBuf::from)
+            .filter(|p| !p.starts_with("/tmp") && !p.starts_with("/dev/shm"))
+            .unwrap_or_else(|| {
+                std::path::PathBuf::from(std::env::var("HOME").expect("HOME set"))
+                    .join(".cache")
+                    .join("fabrico11y-tmp")
+            });
+        fs::create_dir_all(&base).unwrap();
+        let dir = tempfile::Builder::new()
+            .prefix("spindle-bridge-shutdown-")
+            .tempdir_in(&base)
+            .unwrap();
+        let sock = dir.path().join("ingest.sock");
+
+        let (mq, mut metrics_rx, _) = BoundedTelemetryQueue::new(16);
+        let (lq, _, _) = BoundedTelemetryQueue::new(16);
+        let (tq, _, _) = BoundedTelemetryQueue::new(16);
+        let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+
+        let sock_srv = sock.clone();
+        let mut server = tokio::spawn(async move {
+            serve_ingest_socket_until_shutdown(
+                &sock_srv,
+                mq,
+                lq,
+                tq,
+                "fedora-blade".into(),
+                shutdown_rx,
+            )
+            .await
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while !sock.exists() && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        let mut client = tokio::net::UnixStream::connect(&sock).await.unwrap();
+        let handshake = serde_json::to_vec(&IngestEnvelope::Metric(MetricPoint {
+            timestamp_ms: 1_700_000_000_123,
+            name: "shutdown.handshake".into(),
+            value: 1.0,
+            host: "fedora-blade".into(),
+            slice: "spindle".into(),
+            unit: "spindle.service".into(),
+            pid: None,
+            labels_json: "{}".into(),
+        }))
+        .unwrap();
+        // Write handshake + partial prefix of next frame (no newline yet) so the server
+        // consumes the prefix into BoundedLineState and awaits more bytes when shutdown fires.
+        let valid = serde_json::to_vec(&IngestEnvelope::Metric(MetricPoint {
+            timestamp_ms: 1_700_000_000_456,
+            name: "shutdown.drain".into(),
+            value: 7.0,
+            host: "fedora-blade".into(),
+            slice: "spindle".into(),
+            unit: "spindle.service".into(),
+            pid: None,
+            labels_json: "{}".into(),
+        }))
+        .unwrap();
+        let split = valid.len() / 2;
+        client.write_all(&handshake).await.unwrap();
+        client.write_all(b"\n").await.unwrap();
+        client.write_all(&valid[..split]).await.unwrap();
+        client.flush().await.unwrap();
+
+        let ack = tokio::time::timeout(Duration::from_secs(2), metrics_rx.recv())
+            .await
+            .expect("handshake metric confirms connection accepted")
+            .expect("channel open");
+        assert_eq!(ack.name, "shutdown.handshake");
+
+        // Let the connection task consume `valid[..split]` and park mid-frame before shutdown.
+        tokio::time::sleep(Duration::from_millis(15)).await;
+        shutdown_tx.send(true).unwrap();
+        client.write_all(&valid[split..]).await.unwrap();
+        client.write_all(b"\n").await.unwrap();
+        client.flush().await.unwrap();
+
+        let res = tokio::time::timeout(Duration::from_secs(2), &mut server)
+            .await
+            .expect("ingest server and active connection tasks must shut down promptly")
+            .expect("task join");
+        assert!(res.is_ok());
+        let drained = metrics_rx
+            .try_recv()
+            .expect("split pre-shutdown frame must finish draining before abort");
+        assert_eq!(drained.name, "shutdown.drain");
+        drop(client);
     }
 }

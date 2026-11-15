@@ -5,13 +5,16 @@ use fabric::{
     spindle::{self, Reply, Request},
 };
 use std::{
-    env, fs,
+    collections::VecDeque,
+    env,
+    ffi::OsString,
+    fs,
     io::Read,
     os::unix::{
         fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt},
         process::CommandExt,
     },
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     process::{Command, Stdio},
     time::{Duration, Instant},
 };
@@ -897,6 +900,67 @@ fn resolve_stack_identities(
     Ok((origin, authority))
 }
 /// Install coupled `fabric-server`, `spindle`, and `fabric-daemon` into `fabrico11y.slice`.
+fn validate_host_path_no_tmp(path: &Path) -> Result<PathBuf, String> {
+    fabric_core::validate_non_tmp_path(path).map_err(error)?;
+    let mut resolved_parts: Vec<OsString> = Vec::new();
+    let mut remaining: VecDeque<OsString> = path
+        .components()
+        .filter_map(|c| match c {
+            Component::Normal(s) => Some(s.to_os_string()),
+            Component::ParentDir => Some(OsString::from("..")),
+            Component::RootDir | Component::CurDir | Component::Prefix(_) => None,
+        })
+        .collect();
+    let mut hops = 0usize;
+    while let Some(seg) = remaining.pop_front() {
+        if seg == "." {
+            continue;
+        }
+        if seg == ".." {
+            let _ = resolved_parts.pop();
+            continue;
+        }
+        resolved_parts.push(seg);
+        let mut candidate = PathBuf::from("/");
+        for part in &resolved_parts {
+            candidate.push(part);
+        }
+        fabric_core::validate_non_tmp_path(&candidate).map_err(error)?;
+        if let Ok(meta) = fs::symlink_metadata(&candidate)
+            && meta.file_type().is_symlink()
+        {
+            hops += 1;
+            if hops > 40 {
+                return Err(format!(
+                    "symlink loop exceeded 40 hops while checking {}",
+                    path.display()
+                ));
+            }
+            let target = fs::read_link(&candidate).map_err(error)?;
+            let _ = resolved_parts.pop();
+            if target.is_absolute() {
+                resolved_parts.clear();
+            }
+            let parts: Vec<OsString> = target
+                .components()
+                .filter_map(|c| match c {
+                    Component::Normal(s) => Some(s.to_os_string()),
+                    Component::ParentDir => Some(OsString::from("..")),
+                    Component::RootDir | Component::CurDir | Component::Prefix(_) => None,
+                })
+                .collect();
+            for p in parts.into_iter().rev() {
+                remaining.push_front(p);
+            }
+        }
+    }
+    let mut resolved = PathBuf::from("/");
+    for part in resolved_parts {
+        resolved.push(part);
+    }
+    fabric_core::validate_non_tmp_path(&resolved).map_err(error)
+}
+
 pub fn install_stack(
     layout: &Layout,
     binaries: &Path,
@@ -910,7 +974,7 @@ pub fn install_stack(
         &layout.config,
         &layout.state,
     ] {
-        fabric_core::validate_non_tmp_path(path).map_err(error)?;
+        validate_host_path_no_tmp(path)?;
         owned_path(path)?;
     }
     let addr: std::net::SocketAddr = options

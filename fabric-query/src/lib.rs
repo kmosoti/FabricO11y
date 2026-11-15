@@ -229,8 +229,10 @@ impl Projection {
         }
         let mut next = self.manifest.clone();
         next.authority = Some(authority.into());
-        if let Err(e) = self.publish(&next) {
-            self.poisoned = true;
+        if let Err((e, post_rename_uncertain)) = self.publish_checked(&next) {
+            if post_rename_uncertain {
+                self.poisoned = true;
+            }
             return Err(e);
         }
         self.manifest = next;
@@ -297,6 +299,8 @@ impl Projection {
         }
         let mut next = self.manifest.clone();
         let mut staged = Vec::new();
+        let mut created_staging: Option<PathBuf> = None;
+        let mut post_rename_uncertain = false;
         let transaction = (|| {
             for (_, mut group) in grouped {
                 group.sort_by(|a, b| {
@@ -315,6 +319,7 @@ impl Projection {
                     .mode(0o600)
                     .open(&staging)
                     .map_err(err)?;
+                created_staging = Some(staging.clone());
                 {
                     let committed_metadata =
                         fs::metadata(self.dir.join(MANIFEST)).map_err(err)?.len();
@@ -357,6 +362,7 @@ impl Projection {
                 }
                 let hash = file_digest(&staging)?;
                 fs::rename(&staging, self.dir.join(&file)).map_err(err)?;
+                created_staging = None;
                 staged.push(file.clone());
                 next.segments.push(Segment {
                     file,
@@ -383,32 +389,51 @@ impl Projection {
                 });
             }
             next.progress = progress;
-            self.publish(&next)
+            self.publish_checked(&next).map_err(|(e, post_rename)| {
+                post_rename_uncertain = post_rename;
+                e
+            })
         })();
         if let Err(e) = transaction {
-            self.poisoned = true;
+            if post_rename_uncertain {
+                self.poisoned = true;
+            } else {
+                if let Some(staging) = created_staging {
+                    let _ = fs::remove_file(staging);
+                }
+                for file in staged {
+                    let _ = fs::remove_file(self.dir.join(file));
+                }
+            }
             return Err(e);
         }
         self.manifest = next;
         Ok(self.progress())
     }
     fn publish(&self, manifest: &Manifest) -> Result<()> {
-        let old_size =
-            regular_metadata(&self.dir.join(MANIFEST))?.map_or(0, |metadata| metadata.len());
+        self.publish_checked(manifest).map_err(|(e, _)| e)
+    }
+    fn publish_checked(&self, manifest: &Manifest) -> std::result::Result<(), (String, bool)> {
+        let fail_pre = |e: String| (e, false);
+        let old_size = regular_metadata(&self.dir.join(MANIFEST))
+            .map_err(&fail_pre)?
+            .map_or(0, |metadata| metadata.len());
         let fixed = manifest
             .segments
             .iter()
             .try_fold(RESERVE + old_size, |total, segment| {
                 total
                     .checked_add(segment.bytes)
-                    .ok_or("projection size overflow")
-            })?;
+                    .ok_or_else(|| "projection size overflow".to_owned())
+            })
+            .map_err(&fail_pre)?;
         let available = self
             .quota
             .checked_sub(fixed)
-            .ok_or("projection quota exhausted")?;
+            .ok_or_else(|| "projection quota exhausted".to_owned())
+            .map_err(&fail_pre)?;
         let limit = available.min(MAX_MANIFEST_BYTES as u64) as usize;
-        let digest = manifest_digest(manifest, limit)?;
+        let digest = manifest_digest(manifest, limit).map_err(&fail_pre)?;
         #[derive(Serialize)]
         struct EnvelopeRef<'a> {
             digest: &'a str,
@@ -420,20 +445,37 @@ impl Projection {
                 manifest,
             },
             limit,
-        )?;
+        )
+        .map_err(&fail_pre)?;
         let temp = self.dir.join("staging-manifest");
-        regular_metadata(&temp)?;
+        regular_metadata(&temp).map_err(&fail_pre)?;
         let mut file = OpenOptions::new()
             .create(true)
             .truncate(true)
             .write(true)
             .mode(0o600)
             .open(&temp)
-            .map_err(err)?;
-        file.write_all(&bytes).map_err(err)?;
-        file.sync_all().map_err(err)?;
-        fs::rename(temp, self.dir.join(MANIFEST)).map_err(err)?;
-        File::open(&self.dir).map_err(err)?.sync_all().map_err(err)
+            .map_err(err)
+            .map_err(&fail_pre)?;
+        if let Err(e) = file
+            .write_all(&bytes)
+            .and_then(|()| file.sync_all())
+            .map_err(err)
+        {
+            drop(file);
+            let _ = fs::remove_file(&temp);
+            return Err((e, false));
+        }
+        drop(file);
+        let dir_file = File::open(&self.dir).map_err(err).map_err(|e| {
+            let _ = fs::remove_file(&temp);
+            (e, false)
+        })?;
+        fs::rename(&temp, self.dir.join(MANIFEST)).map_err(|e| {
+            let _ = fs::remove_file(&temp);
+            (err(e), false)
+        })?;
+        dir_file.sync_all().map_err(|e| (err(e), true))
     }
     fn resolve(&self, mut request: QueryRequest) -> Result<(QueryRequest, u64)> {
         if self.poisoned {

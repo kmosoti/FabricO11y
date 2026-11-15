@@ -18,13 +18,13 @@ use fabric_core::arrow_schemas::{
 };
 use fabric_core::{
     BlameReport, BlameResource, CliEnvelope, DEFAULT_DATA_DIR, DEFAULT_TMP_DIR, DoctorReport,
-    DriftReport, HostSnapshot, PillarKind, StorageLayout, validate_non_tmp_path,
+    DriftReport, HostSnapshot, PillarKind, StorageLayout,
 };
 use fabric_graph::{Direction, LineageSubgraph, lineage_to_record_batch};
 use fabric_query::unified::{
     QueryDomain, UnifiedQuerySpec, execute_unified_query, parse_duration_ms,
 };
-use fabric_store::CatalogStore;
+use fabric_store::{CatalogStore, validate_non_tmp_path_on_disk, validated_storage_layout};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::io::{IsTerminal, Write};
@@ -52,8 +52,8 @@ struct Cli {
     data_dir: PathBuf,
 
     /// Non-tmpfs temporary scratch directory.
-    #[arg(long, env = "TMPDIR", default_value = DEFAULT_TMP_DIR, global = true)]
-    tmp_dir: PathBuf,
+    #[arg(long, env = "FABRIC_TMP_DIR", global = true)]
+    tmp_dir: Option<PathBuf>,
 
     /// Emit structured versioned JSON (default when stdout is not a TTY).
     #[arg(long, global = true, conflicts_with_all = ["arrow", "table"])]
@@ -181,6 +181,19 @@ async fn main() {
     }
 }
 
+fn resolve_cli_tmp_dir(explicit: Option<&Path>) -> Result<PathBuf, String> {
+    if let Some(dir) = explicit {
+        return validate_non_tmp_path_on_disk(dir).map_err(|e| e.to_string());
+    }
+    if let Some(raw) = std::env::var_os("TMPDIR")
+        && !raw.is_empty()
+        && let Ok(valid) = validate_non_tmp_path_on_disk(Path::new(&raw))
+    {
+        return Ok(valid);
+    }
+    validate_non_tmp_path_on_disk(Path::new(DEFAULT_TMP_DIR)).map_err(|e| e.to_string())
+}
+
 async fn run() -> Result<(), String> {
     let cli = Cli::parse();
     let format = if cli.json {
@@ -193,14 +206,8 @@ async fn run() -> Result<(), String> {
         OutputFormat::Json
     };
 
-    let tmp_dir = if cli.tmp_dir.starts_with("/tmp") || cli.tmp_dir.starts_with("/dev/shm") {
-        PathBuf::from(DEFAULT_TMP_DIR)
-    } else {
-        cli.tmp_dir.clone()
-    };
-    validate_non_tmp_path(&cli.data_dir).map_err(|e| e.to_string())?;
-    validate_non_tmp_path(&tmp_dir).map_err(|e| e.to_string())?;
-    let layout = StorageLayout::new(&cli.data_dir).map_err(|e| e.to_string())?;
+    let tmp_dir = resolve_cli_tmp_dir(cli.tmp_dir.as_deref())?;
+    let layout = validated_storage_layout(&cli.data_dir)?;
 
     match &cli.command {
         Commands::Snapshot => {
@@ -221,7 +228,11 @@ async fn run() -> Result<(), String> {
         Commands::Query(args) => {
             let domain = args.domain.parse::<QueryDomain>()?;
             let since_ms = match &args.since {
-                Some(raw) => Some(Utc::now().timestamp_millis() - parse_duration_ms(raw)?),
+                Some(raw) => Some(
+                    Utc::now()
+                        .timestamp_millis()
+                        .saturating_sub(parse_duration_ms(raw)?),
+                ),
                 None => None,
             };
             let spec = UnifiedQuerySpec {
@@ -345,18 +356,20 @@ async fn run() -> Result<(), String> {
         Commands::Daemon(args) => {
             let cli_spindle_sock = non_empty_path(args.spindle_socket.clone());
             if let Some(ref sock) = cli_spindle_sock {
-                validate_non_tmp_path(sock).map_err(|e| e.to_string())?;
+                validate_non_tmp_path_on_disk(sock).map_err(|e| e.to_string())?;
             }
             if args.once {
-                let mut state = collect_once(layout.data_dir(), &tmp_dir)?;
                 let catalog = CatalogStore::open(layout.data_dir())?;
+                let _writer_lock = fabric_store::try_acquire_writer_lock(catalog.layout())?;
+                let state = collect_once(catalog.layout().data_dir(), &tmp_dir)?;
                 let olap = fabric_store::OlapParquetStore::new(catalog.layout().clone());
                 let spindle_sock = cli_spindle_sock.or_else(default_spindle_socket);
                 let mut pending_wm: Option<u64> = None;
+                let mut spindle_metrics = Vec::new();
                 let mut extra_logs = Vec::new();
                 let mut extra_traces = Vec::new();
                 if let Some(ref sock) = spindle_sock {
-                    validate_non_tmp_path(sock).map_err(|e| e.to_string())?;
+                    validate_non_tmp_path_on_disk(sock).map_err(|e| e.to_string())?;
                     if sock.exists() {
                         let after_id = catalog.read_watermark("spindle_watermark_id")?.unwrap_or(0);
                         let sock_owned = sock.clone();
@@ -376,7 +389,7 @@ async fn run() -> Result<(), String> {
                                     if pt.timestamp_ms <= 0 {
                                         pt.timestamp_ms = now_ms;
                                     }
-                                    state.metrics.push(pt);
+                                    spindle_metrics.push(pt);
                                 }
                                 IngestEnvelope::Log(mut log) => {
                                     if log.timestamp_ms <= 0 {
@@ -398,21 +411,35 @@ async fn run() -> Result<(), String> {
                     }
                 }
                 catalog.commit_cycle(&state.snapshot, &state.drift, &state.graph)?;
-                let _ = olap.write_metrics(&state.metrics)?;
-                let _ = olap.write_logs(&extra_logs)?;
-                let _ = olap.write_traces(&extra_traces)?;
-                let _ = olap.write_fs_events(&state.fs_events)?;
-                let _ = olap.write_edges(
-                    &state
-                        .graph
-                        .to_edge_records(state.snapshot.timestamp_unix_ms),
-                )?;
+                let edges = state
+                    .graph
+                    .to_edge_records(state.snapshot.timestamp_unix_ms);
+                let mut volatile_plan =
+                    olap.plan_flush(&state.metrics, &[], &[], &state.fs_events, &edges)?;
+                olap.execute_flush_plan(&mut volatile_plan)?;
+                if !spindle_metrics.is_empty()
+                    || !extra_logs.is_empty()
+                    || !extra_traces.is_empty()
+                    || pending_wm.is_some()
+                {
+                    let mut spindle_plan = olap
+                        .plan_flush(&spindle_metrics, &extra_logs, &extra_traces, &[], &[])?
+                        .with_spindle_watermark(pending_wm);
+                    olap.execute_flush_plan(&mut spindle_plan)?;
+                }
+                let mut committed_wm = None;
                 if let Some(wm) = pending_wm {
                     let committed = catalog.read_watermark("spindle_watermark_id")?.unwrap_or(0);
                     let next_wm =
                         admission_kernel::telemetry::watermark_advance(committed, wm, true);
                     catalog.set_watermark("spindle_watermark_id", next_wm)?;
+                    committed_wm = Some(next_wm);
                 }
+                fabric_store::clear_committed_uncommitted(
+                    catalog.layout(),
+                    committed_wm,
+                    &std::collections::BTreeSet::new(),
+                )?;
                 return emit_json("daemon_once", &state.snapshot.self_health);
             }
             let mut daemon_config = DaemonConfig {
@@ -888,7 +915,7 @@ fn fetch_custody_status(
         .or_else(|| non_empty_path(spindle_hint.socket))
         .or_else(default_spindle_socket);
     if let Some(ref sock) = spindle_sock {
-        validate_non_tmp_path(sock).map_err(|e| e.to_string())?;
+        validate_non_tmp_path_on_disk(sock).map_err(|e| e.to_string())?;
     }
 
     let raw_endpoint = non_empty_str(args.server_endpoint.clone())
@@ -1110,5 +1137,21 @@ fn print_custody_table(report: &CustodyStatusReport) {
     );
     if let Some(err) = &report.catalog_error {
         println!("  catalog_error={err}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn explicit_tmp_dir_under_ramfs_is_rejected_not_rewritten() {
+        assert!(resolve_cli_tmp_dir(Some(Path::new("/tmp/bad"))).is_err());
+        assert!(resolve_cli_tmp_dir(Some(Path::new("/dev/shm/bad"))).is_err());
+        assert_eq!(
+            resolve_cli_tmp_dir(Some(Path::new("/data/tmp"))).unwrap(),
+            PathBuf::from("/data/tmp")
+        );
+        assert!(resolve_cli_tmp_dir(None).is_ok());
     }
 }
