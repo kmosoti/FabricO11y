@@ -225,17 +225,30 @@ impl Server {
                         .checkpoint;
                     // Baseline SQLite work shares one connection. This guard ends
                     // before Parquet publication; native HTTP uses separate reads.
-                    let rows = replay_ledger.lock().map_err(|_| "canonical lock")?.replay(
+                    let rows = match replay_ledger.lock().map_err(|_| "canonical lock")?.replay(
                         checkpoint,
                         8192,
                         8 * 1024 * 1024,
-                    )?;
+                    ) {
+                        Ok(rows) => rows,
+                        Err(err) if retry_projector_pressure(&err) => {
+                            thread::sleep(Duration::from_millis(25));
+                            continue;
+                        }
+                        Err(err) => return Err(err),
+                    };
                     let full = rows.len() == 8192;
-                    if !rows.is_empty() {
-                        projection
+                    if !rows.is_empty()
+                        && let Err(err) = projection
                             .lock()
                             .map_err(|_| "projection lock")?
-                            .apply(&rows)?;
+                            .apply(&rows)
+                    {
+                        if retry_projector_pressure(&err) {
+                            thread::sleep(Duration::from_millis(25));
+                            continue;
+                        }
+                        return Err(err);
                     }
                     if !full {
                         last = Instant::now();
@@ -352,6 +365,16 @@ fn retry_accept(error: &std::io::Error) -> bool {
     ) || [Errno::MFILE, Errno::NFILE, Errno::NOBUFS, Errno::NOMEM]
         .iter()
         .any(|errno| error.raw_os_error() == Some(errno.raw_os_error()))
+}
+fn retry_projector_pressure(error: &str) -> bool {
+    use rustix::io::Errno;
+    error == "unable to open database file"
+        || [Errno::MFILE, Errno::NFILE, Errno::NOBUFS, Errno::NOMEM]
+            .iter()
+            .any(|errno| {
+                let msg = std::io::Error::from_raw_os_error(errno.raw_os_error()).to_string();
+                error.contains(&msg)
+            })
 }
 // FIFO admission prevents a hot writer from repeatedly bypassing a waiting
 // read. The inner standard mutex retains poisoning after a storage panic.
