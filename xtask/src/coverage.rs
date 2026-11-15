@@ -128,6 +128,23 @@ struct Execution {
     test: String,
     status: &'static str,
 }
+fn configure_cargo_env(command: &mut Command, root: &Path) -> Result<(), String> {
+    command
+        .env("CARGO_TERM_COLOR", "never")
+        .env("RUST_TEST_NOCAPTURE", "0")
+        .current_dir(root);
+    let original = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
+    if root != original {
+        command.env(
+            "CARGO_TARGET_DIR",
+            root.parent()
+                .ok_or("source parent")?
+                .join("candidate-build"),
+        );
+    }
+    Ok(())
+}
+
 pub fn run(root: &Path) -> Result<(), String> {
     let report_path = root.join(".local/coverage.json");
     match fs::remove_file(&report_path) {
@@ -137,36 +154,48 @@ pub fn run(root: &Path) -> Result<(), String> {
     }
     let manifest = load(root)?;
     let digest = digest(root)?;
+
+    // Pre-compile deduplicated (package, test_target) binaries before applying the
+    // 120s per-test execution timeout so cold Arrow/DataFusion builds do not starve tests.
+    let mut build_targets = BTreeSet::new();
+    for check in &manifest.checks {
+        build_targets.insert((check.package.as_str(), check.target.as_str()));
+    }
+    for (package, target) in build_targets {
+        let mut build = Command::new("timeout");
+        build.args([
+            "600", "cargo", "test", "--locked", "-p", package, "--test", target, "--no-run",
+        ]);
+        configure_cargo_env(&mut build, root)?;
+        let output = build.output().map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            return Err(format!(
+                "coverage prebuild {package}/{target} failed: {}\n{}\n{}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            ));
+        }
+    }
+
     let mut results = Vec::new();
     for check in &manifest.checks {
         let mut command = Command::new("timeout");
-        command
-            .args([
-                "120",
-                "cargo",
-                "test",
-                "--locked",
-                "-p",
-                &check.package,
-                "--test",
-                &check.target,
-                &check.test,
-                "--",
-                "--exact",
-                "--test-threads=1",
-            ])
-            .env("CARGO_TERM_COLOR", "never")
-            .env("RUST_TEST_NOCAPTURE", "0")
-            .current_dir(root);
-        let original = Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap();
-        if root != original {
-            command.env(
-                "CARGO_TARGET_DIR",
-                root.parent()
-                    .ok_or("source parent")?
-                    .join("candidate-build"),
-            );
-        }
+        command.args([
+            "120",
+            "cargo",
+            "test",
+            "--locked",
+            "-p",
+            &check.package,
+            "--test",
+            &check.target,
+            &check.test,
+            "--",
+            "--exact",
+            "--test-threads=1",
+        ]);
+        configure_cargo_env(&mut command, root)?;
         let output = command.output().map_err(|e| e.to_string())?;
         if !output.status.success()
             || !passed_exact_test(&String::from_utf8_lossy(&output.stdout), &check.test)
@@ -298,7 +327,7 @@ mod tests {
     #[test]
     fn hook_distinguishes_snapshot_coverage_and_unchecked_working_files() {
         use std::os::unix::fs::PermissionsExt;
-        let temp = tempfile::tempdir().unwrap();
+        let temp = super::super::evidence::non_tmp_tempdir().unwrap();
         let root = temp.path();
         for p in [".codex/hooks", ".local", "verification", "bin"] {
             fs::create_dir_all(root.join(p)).unwrap();

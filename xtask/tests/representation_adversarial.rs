@@ -99,7 +99,7 @@ fn dictionary_overflow_stays_lossless() {
 }
 #[test]
 fn transactional_conflict_rolls_back_entire_batch() {
-    let dir = tempfile::tempdir().unwrap();
+    let dir = xtask::evidence::non_tmp_tempdir().unwrap();
     let mut store = r::custody::Store::open(&dir.path().join("db"), 8).unwrap();
     let records = fixtures::records(17, "mixed", 3);
     store.commit("o", &records[..1], Codec::Rows).unwrap();

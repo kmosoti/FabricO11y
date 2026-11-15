@@ -172,6 +172,25 @@ fn read_self_rss_bytes() -> u64 {
     resident_pages.saturating_mul(page_size_bytes())
 }
 
+fn is_readonly_directory_fd(fd_path: &Path) -> bool {
+    if !fs::metadata(fd_path).is_ok_and(|m| m.is_dir()) {
+        return false;
+    }
+    let Some(name) = fd_path.file_name() else {
+        return false;
+    };
+    let info_path = Path::new("/proc/self/fdinfo").join(name);
+    let Ok(info) = fs::read_to_string(info_path) else {
+        return false;
+    };
+    for line in info.lines() {
+        if let Some(raw_flags) = line.strip_prefix("flags:") {
+            return u64::from_str_radix(raw_flags.trim(), 8).is_ok_and(|flags| (flags & 0o3) == 0);
+        }
+    }
+    false
+}
+
 fn inspect_self_fds() -> (u32, u32) {
     let Ok(entries) = fs::read_dir("/proc/self/fd") else {
         return (0, 0);
@@ -180,12 +199,14 @@ fn inspect_self_fds() -> (u32, u32) {
     let mut tmp_count = 0u32;
     for entry in entries.flatten() {
         count = count.saturating_add(1);
-        if let Ok(target) = fs::read_link(entry.path()) {
+        let fd_path = entry.path();
+        if let Ok(target) = fs::read_link(&fd_path) {
             let s = target.to_string_lossy();
-            if s.starts_with("/tmp/")
+            if (s.starts_with("/tmp/")
                 || s == "/tmp"
                 || s.starts_with("/dev/shm/")
-                || s == "/dev/shm"
+                || s == "/dev/shm")
+                && !is_readonly_directory_fd(&fd_path)
             {
                 tmp_count = tmp_count.saturating_add(1);
             }
@@ -203,4 +224,15 @@ fn read_self_cgroup_path() -> String {
         .and_then(|line| line.splitn(3, ':').nth(2))
         .unwrap_or("unknown")
         .to_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn readonly_tmp_dir_scan_does_not_flag_tmp_files_created() {
+        let _dir = fs::read_dir("/tmp").ok();
+        assert_eq!(inspect_self_fds().1, 0);
+    }
 }

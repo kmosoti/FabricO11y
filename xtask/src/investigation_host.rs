@@ -1207,7 +1207,7 @@ mod tests {
     use super::*;
     #[test]
     fn preparation_is_private_four_origin_and_refuses_reuse() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = crate::evidence::non_tmp_tempdir().unwrap();
         let root = temp.path().canonicalize().unwrap().join("trial");
         let args = vec![
             "--root".into(),
@@ -1239,7 +1239,7 @@ mod tests {
     }
     #[test]
     fn public_or_symlink_trial_roots_are_refused_without_adopting_files() {
-        let temp = tempfile::tempdir().unwrap();
+        let temp = crate::evidence::non_tmp_tempdir().unwrap();
         let base = temp.path().canonicalize().unwrap();
         let public = base.join("public");
         fs::create_dir(&public).unwrap();

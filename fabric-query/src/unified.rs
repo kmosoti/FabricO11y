@@ -19,122 +19,16 @@ use fabric_core::arrow_schemas::{
     agents_to_record_batch, fs_churn_to_record_batch, metrics_to_record_batch,
     units_to_record_batch,
 };
+pub use fabric_core::query_spec::{
+    QueryDomain, UnifiedQuerySpec, build_unified_sql, parse_duration_ms,
+};
 use fabric_core::{HostSnapshot, MetricPoint, StorageLayout};
 use fabric_store::OlapParquetStore;
-use serde::{Deserialize, Serialize};
-use std::fmt;
 use std::path::Path;
-use std::str::FromStr;
 use std::sync::Arc;
 
 const UNIFIED_POOL_BYTES: usize = 64 * 1024 * 1024;
 const UNIFIED_SPILL_BYTES: u64 = 256 * 1024 * 1024;
-
-/// Telemetry domain selectable via `fabric query <domain>`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum QueryDomain {
-    Metrics,
-    Logs,
-    Traces,
-    Units,
-    Fs,
-    Agents,
-}
-
-impl fmt::Display for QueryDomain {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let s = match self {
-            Self::Metrics => "metrics",
-            Self::Logs => "logs",
-            Self::Traces => "traces",
-            Self::Units => "units",
-            Self::Fs => "fs",
-            Self::Agents => "agents",
-        };
-        f.write_str(s)
-    }
-}
-
-impl FromStr for QueryDomain {
-    type Err = String;
-
-    fn from_str(raw: &str) -> Result<Self, Self::Err> {
-        match raw.trim().to_ascii_lowercase().as_str() {
-            "metrics" | "metric" => Ok(Self::Metrics),
-            "logs" | "log" => Ok(Self::Logs),
-            "traces" | "trace" => Ok(Self::Traces),
-            "units" | "unit" => Ok(Self::Units),
-            "fs" | "fs_events" | "filesystem" => Ok(Self::Fs),
-            "agents" | "agent" => Ok(Self::Agents),
-            other => Err(format!(
-                "unknown query domain '{other}' (expected metrics, logs, traces, units, fs, or agents)"
-            )),
-        }
-    }
-}
-
-/// Parses human durations (`30s`, `5m`, `1h`, `7d`, `500ms`) into milliseconds.
-pub fn parse_duration_ms(raw: &str) -> Result<i64, String> {
-    let trimmed = raw.trim();
-    if let Some(num) = trimmed.strip_suffix("ms") {
-        let v: i64 = num
-            .parse()
-            .map_err(|_| format!("invalid duration: {raw}"))?;
-        return Ok(v.max(0));
-    }
-    if let Some(num) = trimmed.strip_suffix('s') {
-        let v: i64 = num
-            .parse()
-            .map_err(|_| format!("invalid duration: {raw}"))?;
-        return Ok(v.saturating_mul(1000).max(0));
-    }
-    if let Some(num) = trimmed.strip_suffix('m') {
-        let v: i64 = num
-            .parse()
-            .map_err(|_| format!("invalid duration: {raw}"))?;
-        return Ok(v.saturating_mul(60_000).max(0));
-    }
-    if let Some(num) = trimmed.strip_suffix('h') {
-        let v: i64 = num
-            .parse()
-            .map_err(|_| format!("invalid duration: {raw}"))?;
-        return Ok(v.saturating_mul(3_600_000).max(0));
-    }
-    if let Some(num) = trimmed.strip_suffix('d') {
-        let v: i64 = num
-            .parse()
-            .map_err(|_| format!("invalid duration: {raw}"))?;
-        return Ok(v.saturating_mul(86_400_000).max(0));
-    }
-    Err(format!(
-        "invalid duration '{raw}' (expected suffix ms, s, m, h, or d)"
-    ))
-}
-
-/// Request specification for `execute_unified_query`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UnifiedQuerySpec {
-    pub domain: QueryDomain,
-    pub since_ms: Option<i64>,
-    pub where_clauses: Vec<String>,
-    pub group_by: Vec<String>,
-    pub agg_specs: Vec<String>,
-    pub limit: usize,
-}
-
-impl Default for UnifiedQuerySpec {
-    fn default() -> Self {
-        Self {
-            domain: QueryDomain::Metrics,
-            since_ms: None,
-            where_clauses: Vec::new(),
-            group_by: Vec::new(),
-            agg_specs: Vec::new(),
-            limit: 200,
-        }
-    }
-}
 
 /// Output returned by `execute_unified_query` in both JSON and Arrow forms.
 #[derive(Debug, Clone)]
@@ -210,7 +104,7 @@ pub async fn execute_unified_query(
         }
     };
 
-    let sql = build_query_sql(spec, default_order)?;
+    let sql = build_unified_sql(spec, default_order)?;
     let df = ctx
         .sql(&sql)
         .await
@@ -350,142 +244,6 @@ async fn register_fs_table(
         }
     }
     Ok(())
-}
-
-fn build_query_sql(spec: &UnifiedQuerySpec, default_order: Option<&str>) -> Result<String, String> {
-    let mut predicates = Vec::new();
-    if let Some(since_ms) = spec.since_ms
-        && matches!(
-            spec.domain,
-            QueryDomain::Metrics | QueryDomain::Logs | QueryDomain::Traces | QueryDomain::Fs
-        )
-    {
-        predicates.push(format!("timestamp_ms >= {since_ms}"));
-    }
-    for raw in &spec.where_clauses {
-        predicates.push(parse_where_predicate(raw)?);
-    }
-
-    let where_sql = if predicates.is_empty() {
-        String::new()
-    } else {
-        format!(" WHERE {}", predicates.join(" AND "))
-    };
-
-    for col in &spec.group_by {
-        validate_ident(col)?;
-    }
-
-    let limit = spec.limit.clamp(1, 5000);
-    if !spec.group_by.is_empty() || !spec.agg_specs.is_empty() {
-        let mut select_items = Vec::new();
-        for col in &spec.group_by {
-            select_items.push(col.clone());
-        }
-        if spec.agg_specs.is_empty() {
-            select_items.push("COUNT(*) AS count".into());
-        } else {
-            for raw_agg in &spec.agg_specs {
-                select_items.push(parse_agg_expr(raw_agg)?);
-            }
-        }
-        let group_sql = if spec.group_by.is_empty() {
-            String::new()
-        } else {
-            format!(" GROUP BY {}", spec.group_by.join(", "))
-        };
-        let order_sql = if spec.group_by.is_empty() {
-            String::new()
-        } else {
-            format!(" ORDER BY {}", spec.group_by.join(", "))
-        };
-        Ok(format!(
-            "SELECT {} FROM t{where_sql}{group_sql}{order_sql} LIMIT {limit}",
-            select_items.join(", ")
-        ))
-    } else {
-        let order_sql = default_order
-            .map(|o| format!(" ORDER BY {o}"))
-            .unwrap_or_default();
-        Ok(format!(
-            "SELECT * FROM t{where_sql}{order_sql} LIMIT {limit}"
-        ))
-    }
-}
-
-fn validate_ident(name: &str) -> Result<(), String> {
-    if name.is_empty() || !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
-        return Err(format!("invalid column identifier '{name}'"));
-    }
-    Ok(())
-}
-
-fn quote_sql_str(val: &str) -> String {
-    format!("'{}'", val.replace('\'', "''"))
-}
-
-fn parse_where_predicate(raw: &str) -> Result<String, String> {
-    let trimmed = raw.trim();
-    for (op_str, sql_op) in [
-        ("!=", "!="),
-        (">=", ">="),
-        ("<=", "<="),
-        ("=", "="),
-        (">", ">"),
-        ("<", "<"),
-        ("~", "LIKE"),
-    ] {
-        if let Some((left, right)) = trimmed.split_once(op_str) {
-            let col = left.trim();
-            validate_ident(col)?;
-            let val = right.trim();
-            if sql_op == "LIKE" {
-                let escaped = val.replace('\'', "''");
-                return Ok(format!("CAST({col} AS VARCHAR) LIKE '%{escaped}%'"));
-            }
-            if let Ok(num) = val.parse::<f64>()
-                && (op_str == ">"
-                    || op_str == ">="
-                    || op_str == "<"
-                    || op_str == "<="
-                    || val
-                        .chars()
-                        .all(|c| c.is_ascii_digit() || c == '-' || c == '.'))
-            {
-                return Ok(format!("{col} {sql_op} {num}"));
-            }
-            return Ok(format!("{col} {sql_op} {}", quote_sql_str(val)));
-        }
-    }
-    Err(format!(
-        "invalid --where clause '{raw}' (expected col=val, col!=val, col>num, or col~substr)"
-    ))
-}
-
-fn parse_agg_expr(raw: &str) -> Result<String, String> {
-    let trimmed = raw.trim();
-    if trimmed.eq_ignore_ascii_case("count") || trimmed.eq_ignore_ascii_case("count(*)") {
-        return Ok("COUNT(*) AS count".into());
-    }
-    let normalized = trimmed
-        .strip_suffix(')')
-        .and_then(|s| s.split_once('('))
-        .or_else(|| trimmed.split_once(':'));
-    let Some((func, col)) = normalized else {
-        return Err(format!(
-            "invalid --agg spec '{raw}' (expected count, sum:col, avg:col, min:col, or max:col)"
-        ));
-    };
-    let col = col.trim();
-    validate_ident(col)?;
-    match func.trim().to_ascii_lowercase().as_str() {
-        "sum" => Ok(format!("SUM({col}) AS sum_{col}")),
-        "min" => Ok(format!("MIN({col}) AS min_{col}")),
-        "max" => Ok(format!("MAX({col}) AS max_{col}")),
-        "avg" => Ok(format!("AVG({col}) AS avg_{col}")),
-        "count" => Ok(format!("COUNT({col}) AS count_{col}")),
-        other => Err(format!("unsupported aggregate '{other}'")),
-    }
 }
 
 fn batches_to_json_rows(batches: &[RecordBatch]) -> Result<Vec<serde_json::Value>, String> {

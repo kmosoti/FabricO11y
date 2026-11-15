@@ -23,7 +23,6 @@ if [ ! -d "$FABRIC_PROOF_TOOLS/verus-0.2026.10.26.d17fbd0" ]; then
 fi
 rustup toolchain install 1.99.1 --profile minimal
 rustup toolchain install nightly-2026-09-17 --profile minimal --component rustc-dev,rust-src,llvm-tools-preview
-rustup toolchain install nightly-2026-10-26 --profile minimal --component rust-src
 cargo install cargo-fuzz --version '=0.13.2' --locked --root "$FABRIC_PROOF_TOOLS/cargo-fuzz-0.13.2" --jobs 2
 # Sources and transitive OCaml packages are pinned separately from application Cargo.
 aeneas_dir="$FABRIC_PROOF_TOOLS/aeneas-ab34bd2"

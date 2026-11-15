@@ -234,7 +234,7 @@ fn evaluate(dir: &Path, out: &Path, split: &str, root: &Path) -> Result<(), Stri
         error: None,
         measurements: Vec::new(),
     };
-    let work = tempfile::tempdir().map_err(|e| e.to_string())?;
+    let work = evidence::non_tmp_tempdir()?;
     let outcome = (|| {
         fs::copy(dir.join("candidate.rs"), work.path().join("candidate.rs"))
             .map_err(|e| e.to_string())?;
@@ -451,7 +451,7 @@ pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
 mod tests {
     #[test]
     fn failed_results_cannot_enter_performance_comparison() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::evidence::non_tmp_tempdir().unwrap();
         let file = dir.path().join("failed.json");
         let record = super::Evaluation {
             task: "membership".into(),
@@ -471,7 +471,7 @@ mod tests {
 
     #[test]
     fn stale_source_is_rejected_before_execution() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = crate::evidence::non_tmp_tempdir().unwrap();
         std::fs::write(dir.path().join("candidate.rs"), "changed source").unwrap();
         let proposal = super::Proposal {
             task: "membership".into(),
