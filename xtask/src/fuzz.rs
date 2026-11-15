@@ -7,7 +7,14 @@ const TARGETS: [&str; 5] = [
     "observation_decode",
     "readback_envelope",
 ];
-const NIGHTLY: &str = "nightly-2026-10-26";
+const DEFAULT_NIGHTLY: &str = "nightly-2026-09-17";
+
+fn fuzz_nightly() -> String {
+    std::env::var("FABRIC_FUZZ_NIGHTLY")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| DEFAULT_NIGHTLY.to_owned())
+}
 
 pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
     let (mode, out) = match args {
@@ -29,9 +36,10 @@ pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
         return Err(format!("unexpected cargo-fuzz: {version}"));
     }
     let tool_hash = evidence::hash(&binary)?;
+    let nightly = fuzz_nightly();
     let compiler = super::output(
         "rustup",
-        &["run", NIGHTLY, "rustc", "--version", "--verbose"],
+        &["run", &nightly, "rustc", "--version", "--verbose"],
         root,
     )?;
     let capture = super::capture(root)?;
@@ -71,7 +79,7 @@ pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
         }
         // One worker keeps campaigns within the initial two-worker ceiling.
         command
-            .env("RUSTUP_TOOLCHAIN", NIGHTLY)
+            .env("RUSTUP_TOOLCHAIN", &nightly)
             .env("CARGO_BUILD_JOBS", "2")
             .env("CARGO_TARGET_DIR", out.join("build"))
             .current_dir(root)
@@ -86,7 +94,7 @@ pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
             "target": target, "mode": mode, "exit": status.code(), "success": status.success() && unchanged,
             "source_unchanged": unchanged, "compiler": compiler,
                 "elapsed_ms": start.elapsed().as_millis(), "seconds": seconds, "workers": 1,
-                "nightly": NIGHTLY, "cargo_fuzz": version, "tool_sha256": tool_hash,
+                "nightly": nightly, "cargo_fuzz": version, "tool_sha256": tool_hash,
                 "repository_capture": capture,
             }),
         )?;

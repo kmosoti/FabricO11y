@@ -205,8 +205,8 @@ pub fn install(layout: &Layout, binaries: &Path) -> Result<(), String> {
     Ok(())
 }
 fn execute(command: &mut Command) -> Result<String, String> {
-    let output = tempfile::tempfile().map_err(error)?;
-    let diagnostics = tempfile::tempfile().map_err(error)?;
+    let output = crate::evidence::non_tmp_unlinked_file()?;
+    let diagnostics = crate::evidence::non_tmp_unlinked_file()?;
     command
         .stdin(Stdio::null())
         .stdout(output.try_clone().map_err(error)?)
@@ -305,7 +305,7 @@ pub fn smoke(root: &Path, binaries: &Path, socket: Option<&Path>) -> Result<(), 
         );
         return Ok(());
     }
-    let temp = tempfile::tempdir().map_err(error)?;
+    let temp = crate::evidence::non_tmp_tempdir()?;
     let config = crate::collection_lab::config(temp.path());
     let mut daemon = crate::collection_lab::daemon(&spindle, &config, temp.path());
     harnesses(root, binaries, &config.socket)?;

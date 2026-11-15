@@ -34,7 +34,7 @@ fn main() {
         (8, 4096, 4, "full-width"),
         (17, 2048, 3, "sequence-width"),
     ] {
-        let root = tempfile::tempdir().unwrap();
+        let root = xtask::evidence::non_tmp_tempdir().unwrap();
         let mut cfg = config(root.path());
         cfg.client_timeout_ms = 1000;
         let before = rss_bytes();

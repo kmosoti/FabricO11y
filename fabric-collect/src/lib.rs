@@ -12,6 +12,11 @@ pub mod systemd;
 pub use channel::BoundedTelemetryQueue;
 pub use daemon::{
     CollectedState, DaemonConfig, DaemonRequest, DaemonResponse, collect_once,
-    default_daemon_socket, default_ingest_socket, query_running_daemon, run_daemon,
+    default_daemon_socket, default_ingest_socket, default_spindle_socket, query_daemon_socket,
+    query_running_daemon, run_daemon,
 };
 pub use self_guard::SelfPreservationGuard;
+pub use spindle_bridge::{
+    IngestEnvelope, observation_to_telemetry, parse_ingest_line, poll_spindle_custody,
+    poll_spindle_custody_records,
+};

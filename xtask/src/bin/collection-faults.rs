@@ -60,7 +60,7 @@ fn main() {
         ("timed", 70),
         ("timed", 150),
     ] {
-        let root = tempfile::tempdir().unwrap();
+        let root = xtask::evidence::non_tmp_tempdir().unwrap();
         let path = root.path().join("store");
         let mut child = OwnedChild(
             Command::new(std::env::current_exe().unwrap())

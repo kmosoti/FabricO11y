@@ -6,7 +6,7 @@ use std::{
 mod architecture;
 mod benchmark;
 mod coverage;
-mod evidence;
+use xtask::evidence;
 mod extraction;
 mod fuzz;
 mod investigation_host;
@@ -391,7 +391,7 @@ mod tests {
     }
     #[test]
     fn missing_capture_invalidates_previous_success_before_returning() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::evidence::non_tmp_tempdir().unwrap();
         let root = directory.path();
         super::write_verification_status(root, "candidate=old\nresult=success\n").unwrap();
         assert!(super::verify(root, &root.join("missing.capture")).is_err());
@@ -403,7 +403,7 @@ mod tests {
     }
     #[test]
     fn verification_status_replaces_success_with_in_progress_atomically() {
-        let directory = tempfile::tempdir().unwrap();
+        let directory = crate::evidence::non_tmp_tempdir().unwrap();
         let root = directory.path();
         super::write_verification_status(root, "result=success\n").unwrap();
         super::write_verification_status(root, "coverage=unknown\nresult=in-progress\n").unwrap();
