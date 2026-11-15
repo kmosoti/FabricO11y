@@ -490,7 +490,13 @@ impl DaemonRuntime {
             return Err(err);
         }
         if let Some(wm) = watermark {
-            self.catalog.set_watermark("spindle_watermark_id", wm)?;
+            let committed = self
+                .catalog
+                .read_watermark("spindle_watermark_id")?
+                .unwrap_or(0);
+            let next_wm = admission_kernel::telemetry::watermark_advance(committed, wm, true);
+            self.catalog
+                .set_watermark("spindle_watermark_id", next_wm)?;
             let mut pending_wm = self.pending_spindle_watermark.write();
             if *pending_wm == Some(wm) {
                 *pending_wm = None;

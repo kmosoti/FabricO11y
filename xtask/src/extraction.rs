@@ -66,6 +66,7 @@ pub fn check(root: &Path) -> Result<(), String> {
     let sources = [
         "admission-kernel/src/lib.rs",
         "admission-kernel/src/delivery.rs",
+        "admission-kernel/src/telemetry.rs",
     ];
     let before: std::collections::BTreeMap<_, _> = sources
         .iter()
@@ -170,6 +171,10 @@ pub fn check(root: &Path) -> Result<(), String> {
                     "fifo_construction_contract",
                     "fifo_enqueue_contract",
                     "fifo_dequeue_contract",
+                    "watermark_advance_contract",
+                    "ring_can_buffer_contract",
+                    "disk_needs_eviction_contract",
+                    "rss_shedding_decision_contract",
                 ] {
                     let prefix = format!("'admission_kernel.{property}' ");
                     let allowed = report

@@ -5,6 +5,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+admission-kernel = { path = "../admission-kernel" }
 arrow = { version = "=59.2.0", default-features = false, features = ["ipc"] }
 chrono = "=0.4.45"
 serde = { version = "1", features = ["derive"] }

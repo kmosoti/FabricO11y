@@ -369,7 +369,8 @@ async fn run() -> Result<(), String> {
                         let now_ms = Utc::now().timestamp_millis();
                         let mut next_wm = after_id;
                         for (id, env) in records {
-                            next_wm = next_wm.max(id);
+                            next_wm =
+                                admission_kernel::telemetry::watermark_advance(next_wm, id, true);
                             match env {
                                 IngestEnvelope::Metric(mut pt) => {
                                     if pt.timestamp_ms <= 0 {
@@ -407,7 +408,10 @@ async fn run() -> Result<(), String> {
                         .to_edge_records(state.snapshot.timestamp_unix_ms),
                 )?;
                 if let Some(wm) = pending_wm {
-                    catalog.set_watermark("spindle_watermark_id", wm)?;
+                    let committed = catalog.read_watermark("spindle_watermark_id")?.unwrap_or(0);
+                    let next_wm =
+                        admission_kernel::telemetry::watermark_advance(committed, wm, true);
+                    catalog.set_watermark("spindle_watermark_id", next_wm)?;
                 }
                 return emit_json("daemon_once", &state.snapshot.self_health);
             }

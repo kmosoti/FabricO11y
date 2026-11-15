@@ -3,12 +3,14 @@
 `admission-kernel/src/lib.rs` is executable Rust used by the SDK adapter.
 Verus checks its byte arithmetic, slot transitions and FIFO ticket operations.
 Charon extracts that crate, Aeneas translates it to Lean, and
-`ExtractedAdmission.lean` checks sixteen named properties of the generated
+`ExtractedAdmission.lean` checks twenty named properties of the generated
 definitions. No Lean FFI is used at runtime.
 
 ```sh
 cargo xtask prove verus
 cargo xtask prove aeneas
+cargo xtask prove smt
+cargo xtask prove telemetry
 cargo xtask prove selftest
 cargo xtask prove all
 ```
@@ -74,3 +76,18 @@ Rust overflow handling. Filesystem, SQL engine, crypto, runtime synchronization,
 whole-process memory and global optimality remain outside this model. The v2
 constructor denotes unleased legacy data; rejecting lease-token downgrades remains
 a runtime classification obligation.
+
+`admission-kernel/src/telemetry.rs` adds Verus-specified executable predicates
+(`watermark_advance`, `ring_can_buffer`, `disk_needs_eviction`, and
+`rss_shedding_decision`) extracted through Charon/Aeneas and proved in
+`ExtractedAdmission.lean`. `TelemetrySmt.smt2` (`cargo xtask prove smt`) checks
+64-bit Z3 `QF_BV` ZigZag bijection, modular Gorilla timestamp delta-of-delta
+roundtripping, IEEE-754 XOR zero-trimming, and watermark monotonicity alongside a
+saturating-delta mutant negative control. `Telemetry.lean` (`cargo xtask prove telemetry`)
+checks nine Lean 4 theorems over Gorilla streams, Euclidean 5-minute rollup
+alignment, and watermark traces alongside a premature-advance mutant control.
+Unbounded `Int` proofs in `Telemetry.lean` model `align_rollup_bucket_ms` for
+`ts >= -9_223_372_036_854_600_000` (`i64` timestamps whose aligned bucket fits in
+`i64`; `[i64::MIN, -9_223_372_036_854_600_001]` saturates to `i64::MIN`).
+Filesystem `fsync`/atomic rename durability and kernel `/proc`/cgroup sampling
+accuracy remain explicit runtime assumptions.

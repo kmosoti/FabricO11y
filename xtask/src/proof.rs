@@ -64,6 +64,8 @@ pub fn check(which: &str, root: &Path) -> Result<(), String> {
         "collection" => collection(root),
         "distributed" => distributed(root),
         "custody" => custody(root),
+        "smt" => smt(root),
+        "telemetry" => telemetry(root),
         "all" => {
             for checker in [
                 "verus",
@@ -71,13 +73,15 @@ pub fn check(which: &str, root: &Path) -> Result<(), String> {
                 "collection",
                 "distributed",
                 "custody",
+                "smt",
+                "telemetry",
                 "aeneas",
             ] {
                 check(checker, root)?;
             }
             Ok(())
         }
-        _ => Err("expected verus, aeneas, lean, collection, or all".into()),
+        _ => Err("expected verus, aeneas, lean, collection, distributed, custody, smt, telemetry, or all".into()),
     }
 }
 
@@ -455,5 +459,133 @@ end Custody
         }
     }
     println!("{report}\nConflicting-reservation and missing-readback mutants rejected");
+    Ok(())
+}
+
+fn smt(root: &Path) -> Result<(), String> {
+    let verus = evidence::binary("FABRIC_VERUS", &format!("{VERUS}/verus"));
+    let parent = verus.parent().ok_or("invalid Verus path")?;
+    let z3 = parent.join("z3");
+    let z3_str = z3.to_str().ok_or("non-UTF8 Z3 path")?;
+    if super::output(z3_str, &["--version"], root)? != "Z3 version 4.16.0 - 64 bit" {
+        return Err("unexpected Z3 version".into());
+    }
+    println!("Z3 SHA256: {}", evidence::hash(&z3)?);
+    let report = super::output(z3_str, &["-smt2", "proofs/TelemetrySmt.smt2"], root)?;
+    let results: Vec<&str> = report
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .collect();
+    if results != ["unsat", "unsat", "unsat", "unsat"] {
+        return Err(format!("unexpected Z3 SMT output: {report}"));
+    }
+    let original = std::fs::read_to_string(root.join("proofs/TelemetrySmt.smt2"))
+        .map_err(|e| e.to_string())?;
+    let needle = "(define-fun enc_d1 () (_ BitVec 64) (bvsub t1 t0))";
+    if original.matches(needle).count() != 1 {
+        return Err("SMT Gorilla mutant boundary no longer matches".into());
+    }
+    let mutant = original.replace(
+        needle,
+        "(define-fun enc_d1 () (_ BitVec 64) (ite (bvuge t1 t0) (bvsub t1 t0) #x0000000000000000))",
+    );
+    let temp = evidence::non_tmp_tempdir()?;
+    let file = temp.path().join("TelemetrySmtMutant.smt2");
+    std::fs::write(&file, mutant).map_err(|e| e.to_string())?;
+    let mutant_out = Command::new("timeout")
+        .arg("60")
+        .arg(&z3)
+        .args(["-smt2"])
+        .arg(&file)
+        .current_dir(root)
+        .output()
+        .map_err(|e| e.to_string())?;
+    let stdout = String::from_utf8_lossy(&mutant_out.stdout);
+    if !mutant_out.status.success() || !stdout.lines().any(|line| line.trim() == "sat") {
+        return Err(format!("SMT Gorilla mutant did not yield sat: {stdout}"));
+    }
+    println!(
+        "TelemetrySmt.smt2: 4/4 QF_BV properties unsat; saturating-delta mutant rejected (sat)"
+    );
+    Ok(())
+}
+
+fn telemetry(root: &Path) -> Result<(), String> {
+    let lean = evidence::binary("FABRIC_LEAN", "lean-4.35.0-linux/bin/lean");
+    let executable = lean.to_str().ok_or("non-UTF8 checker")?;
+    if !super::output(executable, &["--version"], root)?.starts_with("Lean (version 4.35.0,") {
+        return Err("unexpected Lean version".into());
+    }
+    let report = super::output(
+        executable,
+        &["-E", "warning", "proofs/Telemetry.lean"],
+        root,
+    )?;
+    let names = [
+        "gorilla_step_roundtrip",
+        "gorilla_stream_roundtrip",
+        "rollup_bucket_aligned",
+        "rollup_bucket_residual_bounds",
+        "rollup_bucket_idempotent",
+        "rollup_bucket_monotone",
+        "watermark_failed_flush_unchanged",
+        "watermark_step_monotone",
+        "watermark_trace_monotone",
+    ];
+    if report.lines().count() != names.len() {
+        return Err(format!("unexpected Telemetry axiom audit count: {report}"));
+    }
+    for name in names {
+        let prefix = format!("'Telemetry.{name}' ");
+        let entries: Vec<&str> = report
+            .lines()
+            .filter_map(|line| line.strip_prefix(&prefix))
+            .collect();
+        if entries.len() != 1
+            || !(entries[0] == "does not depend on any axioms"
+                || entries[0]
+                    .strip_prefix("depends on axioms: [")
+                    .and_then(|s| s.strip_suffix(']'))
+                    .is_some_and(|s| {
+                        !s.is_empty()
+                            && s.split(", ").all(|axiom| {
+                                ["propext", "Classical.choice", "Quot.sound"].contains(&axiom)
+                            })
+                    }))
+        {
+            return Err(format!("missing or untrusted telemetry theorem: {name}"));
+        }
+    }
+    let original =
+        std::fs::read_to_string(root.join("proofs/Telemetry.lean")).map_err(|e| e.to_string())?;
+    let needle = "  if flushOk && decide (candidate > committed) then candidate else committed";
+    if original.matches(needle).count() != 1 {
+        return Err("Telemetry Lean mutant boundary no longer matches".into());
+    }
+    let mutant = original.replace(needle, "  candidate");
+    let temp = evidence::non_tmp_tempdir()?;
+    let file = temp.path().join("TelemetryMutant.lean");
+    std::fs::write(&file, mutant).map_err(|e| e.to_string())?;
+    let output = Command::new("timeout")
+        .arg("60")
+        .arg(&lean)
+        .args(["-E", "warning"])
+        .arg(&file)
+        .current_dir(root)
+        .output()
+        .map_err(|e| e.to_string())?;
+    let diagnostic = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    if output.status.success() || output.status.code() == Some(124) || !diagnostic.contains("error")
+    {
+        return Err(format!(
+            "telemetry failed-flush mutant was not rejected: {diagnostic}"
+        ));
+    }
+    println!("{report}\nTelemetry failed-flush mutant rejected");
     Ok(())
 }

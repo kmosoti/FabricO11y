@@ -10,6 +10,9 @@ cargo-fuzz = true
 [workspace]
 
 [dependencies]
+arrow = { version = "=59.2.0", default-features = false, features = ["ipc"] }
+fabric-core = { path = "../fabric-core" }
+fabric-graph = { path = "../fabric-graph" }
 libfuzzer-sys = "=0.4.10"
 fabric = { path = "../fabric" }
 serde_json = "1"
@@ -46,6 +49,27 @@ bench = false
 [[bin]]
 name = "readback_envelope"
 path = "fuzz_targets/readback_envelope.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gorilla_ring_roundtrip"
+path = "fuzz_targets/gorilla_ring_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "unified_query_and_ipc"
+path = "fuzz_targets/unified_query_and_ipc.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "causal_graph_and_wire"
+path = "fuzz_targets/causal_graph_and_wire.rs"
 test = false
 doc = false
 bench = false
