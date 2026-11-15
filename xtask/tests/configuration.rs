@@ -12,6 +12,11 @@ fn repository_configuration() {
         "README.md",
         "CONTRIBUTING.md",
         "docs/direction.md",
+        "docs/architecture.md",
+        "knowledge/README.md",
+        ".github/.gitmessage",
+        ".github/pull_request_template.md",
+        ".github/workflows/main-human-gate.yml",
     ] {
         assert!(root().join(file).is_file(), "missing {file}");
     }

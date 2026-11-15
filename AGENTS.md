@@ -1,55 +1,29 @@
-# FabricO11y development
+# FabricO11y Development Rules
 
-Read README.md and docs/direction.md. Product work is queued in local backlog/.
-Use Rust for repository utilities and tests in xtask. Keep CI bootstrap scripts
-under .github and agent configuration under .codex. Prefer maintained native tools
-over new frameworks.
+Read [README.md](README.md), [docs/architecture.md](docs/architecture.md), [docs/direction.md](docs/direction.md), and [knowledge/README.md](knowledge/README.md). Use Rust 1.100.0 (Edition 2024) for all product code and repository utilities under `xtask`, CI bootstrap scripts under `.github`, and agent configuration under `.codex`. Prefer pure-Rust crates without unnecessary C toolchain dependencies or external DB sidecars.
 
-Use the existing user-installed jj from PATH with its Git backend for snapshots,
-commits and bookmarks. Do not require a system package or change the global shell
-PATH. Keep archive/* bookmarks local and backlog/ untracked.
+## Branches, Jujutsu Stacks, and Review Gates
 
-Inspect status and conflicts before changes. Snapshot before capturing a concrete
-commit ID; change IDs do not identify verified source. A new Jujutsu workspace
-creates a working commit: compare its contents with the captured parent.
-Rewrites invalidate receipts. Use cargo xtask candidate for capture and verification.
-Publish only an explicitly authorized bookmark. Successful verification does not
-grant publication permission. Preserve secrets and user-owned data.
+- Use the existing user-installed `jj` from `PATH` with its colocated Git backend for snapshots, atomic commits, and stacked bookmarks (`stack/<topic>/01-...`). Configure `git config commit.template .github/.gitmessage`.
+- **Two-branch model:**
+  - `develop`: day-to-day agent integration branch fed by linear `jj` stacks after CI (`development-checks.yml`) and independent review (prefer an alternative model family or a fresh independent standard/medium-reasoning reviewer context).
+  - `main`: human-gated release branch promoted strictly from `develop` via PR and protected by the `main-release` GitHub Environment ([`.github/workflows/main-human-gate.yml`](.github/workflows/main-human-gate.yml)).
+- **Hard publication constraints:** Never push directly to `main`, never merge into `main`, never approve `main-release`, and never rewrite verified commits without updating verification receipts. Keep `archive/*` and `stack/*` bookmarks local unless explicitly asked to publish.
 
-Use native Cargo and checker commands. Choose and record resource settings for
-expensive work; no mandatory launcher or fixed memory, swap or time ceiling applies.
-Skills guide procedures; LogicGate coordinates supported evidence; native tools
-establish results. Report commands, exits, assumptions and unavailable capabilities.
-Keep specification changes separate from implementation.
+## Storage Routing, Zero `/tmp`, and Self-Preservation
 
-Name files, workflows and components by their responsibility, not a temporary
-phase. Keep commentary brief and focused on outcomes, decisions and material blockers.
-Write project documentation for its readers: product behavior, interfaces, setup
-and contribution procedures. Keep owner-specific preferences, conversation history,
-cleanup receipts and agent process narration out of project docs. Put agent operating
-rules in AGENTS.md and operational records in local artifacts.
+- **Zero `/tmp` or `/dev/shm` usage:** Fedora mounts `/tmp` as RAM-backed `tmpfs`. Never write build caches, test directories, scratch files, or runtime telemetry state under `/tmp` or `/dev/shm`. Always route:
+  - `CARGO_BUILD_TARGET_DIR=/data/cargo-target`
+  - `TMPDIR=/data/tmp`
+  - `FABRIC_DATA_DIR=/data/fabrico11y`
+- **Zero UI scope:** Never reintroduce `fabric-view`, HTML/JS/CSS dashboards, or web UI servers. All operator and agent consumption goes through the deterministic `fabric` CLI (`--json`, `--arrow`, `--table`).
+- **Slice confinement:** Daemon/collection tests and resident `fabric daemon` runs operate inside `fabrico11y.slice` (`MemoryHigh=256M`, `MemoryMax=512M`, `CPUQuota=15%`, `IOWeight=30`, `TasksMax=64`), keeping RSS `< 100 MiB` (`< 200 MiB` self-shedding ceiling) and open FDs `< 64`.
+- **Transient systemd test units:** Whenever invoking `systemd-run` for tests or agent tools, always pass `--collect` (`CollectMode=inactive-or-failed`) so finished or failed units never leak in `systemd --user` RAM.
 
-For substantive architecture or optimization, write a requirements-only brief
-before selecting a mechanism: observable behavior, invariants, workloads,
-acceptance criteria and uncertainty. Treat current code as a measured baseline.
-Before extensive refinement, implement structurally different candidates and
-record differences in algorithm, representation, ownership and data flow.
-Record a parent, captured concrete source, governing contract digest, expected
-advantage and a falsifying experiment. Retain failed candidates and earlier
-alternatives in explicit local artifact directories; do not commit experiment
-records or backlog. Use `cargo xtask search` for the bounded algorithm suite and
-`cargo xtask candidate` for repository capture and isolated verification.
+## Architecture & Sans-I/O Separation
 
-Evaluate compilation/interface conformance, independent correctness/proofs,
-development workloads, then held-out workloads after selection. Incorrect or
-incomplete candidates cannot enter performance ranking. A changed contract
-creates a new evaluation revision. Candidate changes cannot modify the frozen
-evaluator or weaken acceptance. Compare per-workload latency, throughput, memory
-and setup costs without an arbitrary composite score. Report token/evaluation
-costs and unavailable usage metrics. Choose a search strategy from measured
-quality/cost evidence; do not assume retained alternatives improve this project.
-
-Use a continuous session by default, with explicit structural alternatives for
-consequential decisions. Escalate to fresh contexts when early assumptions need
-an independent challenge or measured search warrants the additional cost. Retain
-candidate evidence, but do not add branch-revisiting search as a default step.
+- `admission-kernel`, `fabric-core`, and `fabric-graph` are strictly **Sans-I/O**: zero filesystem, socket, environment, or async runtime calls.
+- `fabric-store`, `fabric-collect`, `fabric-query`, and `fabric-cli` isolate storage (`redb`, `HotMetricRing`, ZSTD `Parquet`), Linux sysfs/`/proc`/cgroup/`inotify` probes, DataFusion analytical planning, and CLI serialization.
+- Preserved crates (`fabric`, `fabric-server`, `fabric-mcp`) and checked-in Weaver (`registry/`) / Verus-Charon-Aeneas proofs must keep passing every `cargo xtask` check. Update [`verification/architecture.toml`](verification/architecture.toml) whenever workspace crates or direct dependencies change.
+- Update [`docs/architecture.md`](docs/architecture.md) (with current Mermaid diagrams) and [`knowledge/`](knowledge/README.md) (`added_by: agent`, `human_ratified: false` unless explicitly ratified by a human) whenever architecture, storage, or workflow contracts change.
+- Keep `AGENTS.md` focused on operating rules, `docs/` focused on stable architecture and usage contracts, and `knowledge/` focused on dated decisions, empirical observations, and research.

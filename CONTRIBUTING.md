@@ -1,20 +1,27 @@
 # Contributing
 
-Use Rust 1.100.0 stable, native Cargo commands and Jujutsu 0.46.0 with a Git
-backend. Initialize an existing Git checkout with `jj git init --colocate` and
-configure your Jujutsu identity before committing.
+Use Rust 1.100.0 stable, native Cargo commands, and Jujutsu 0.46.0 with a Git
+backend. Initialize an existing Git checkout with `jj git init --colocate`,
+configure your Jujutsu identity, and install the commit template before committing:
+
+```sh
+git config commit.template .github/.gitmessage
+```
 
 Write repository utilities and tests in Rust under `xtask`. Keep CI bootstrap
-scripts under `.github`.
+scripts under `.github` and linked architecture rationale under `knowledge/`.
+
+## Two-Branch Stacked Workflow
+
+- **`develop` (day-to-day integration):** Develop atomic linear commits on stacked Jujutsu bookmarks (`stack/<topic>/01-...`). Before landing onto `develop`, PRs must pass `development-checks.yml`, include focused Mermaid diagrams in [`docs/architecture.md`](docs/architecture.md) when boundaries/dataflows change, and receive an independent standard/medium-reasoning review (preferring an alternative model family). Rebase-only linear history is required.
+- **`main` (human-gated release):** Updated exclusively by promotion PRs from `develop`, gated by `.github/workflows/main-human-gate.yml` (`main-release` environment). Autonomous agents never merge into `main` or approve `main-release`.
+- **Storage discipline:** Export `TMPDIR=/data/tmp`, `CARGO_BUILD_TARGET_DIR=/data/cargo-target`, and `FABRIC_DATA_DIR=/data/fabrico11y` locally (or `/var/tmp/...` in ephemeral containers) — never write scratch or target artifacts to RAM-backed `/tmp`.
 
 ## Changes
 
-Follow the product constraints in [the direction document](docs/direction.md).
-Keep changes focused, preserve existing behavior unless the change requires
-otherwise, and make errors and resource limits explicit. Add tests for meaningful
-behavior and failure cases, and keep specification changes separate from their
-implementation. Update project documentation when setup, behavior or contribution
-procedures change.
+Follow the product constraints in [the direction document](docs/direction.md) and
+[architecture specification](docs/architecture.md).
+Keep changes focused, preserve existing behavior and Sans-I/O boundaries (`admission-kernel`, `fabric-core`, `fabric-graph`), make errors and resource limits explicit, and keep UI/frontend scope out of the repository. Update `knowledge/` records (`added_by: agent`, `human_ratified: false`) alongside code changes.
 
 ## Verification
 
@@ -42,8 +49,8 @@ and scheduled CI jobs.
 Capture and verify a candidate using an absolute artifact path outside the source tree:
 
 ```sh
-cargo xtask candidate capture /tmp/fabric-candidate.txt
-cargo xtask candidate verify /tmp/fabric-candidate.txt
+TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask candidate capture /data/tmp/fabric-candidate.txt
+TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask candidate verify /data/tmp/fabric-candidate.txt
 ```
 
 Capture records the commit ID, compiler, Jujutsu version and executable identity.
@@ -84,10 +91,10 @@ cargo xtask architecture
 cargo xtask prove verus
 cargo xtask prove aeneas
 cargo xtask prove selftest
-cargo xtask fuzz replay /tmp/fabric-fuzz-replay
-cargo xtask fuzz smoke /tmp/fabric-fuzz-smoke
-cargo xtask fuzz scheduled /tmp/fabric-fuzz-scheduled
-cargo xtask profile permissions /tmp/fabric-perf-permissions
+cargo xtask fuzz replay /data/tmp/fabric-fuzz-replay
+cargo xtask fuzz smoke /data/tmp/fabric-fuzz-smoke
+cargo xtask fuzz scheduled /data/tmp/fabric-fuzz-scheduled
+cargo xtask profile permissions /data/tmp/fabric-perf-permissions
 ```
 
 Choose a new absolute artifact directory for each run. Fuzz replay executes the
@@ -112,11 +119,11 @@ Create a JSON manifest with `task` (membership, topk or intervals), `strategy`
 `falsification`. Structural choices and the falsification experiment are required.
 
 ```sh
-cargo xtask search register /tmp/proposal.json /tmp/fabric-algorithm
-cargo xtask search evaluate /tmp/fabric-algorithm /tmp/development.json development
-cargo xtask search evaluate /tmp/fabric-algorithm /tmp/final.json heldout
-cargo xtask search compare /tmp/baseline.json /tmp/final.json
-cargo xtask search status /tmp/fabric-algorithm selected /tmp/final.json
+cargo xtask search register /data/tmp/proposal.json /data/tmp/fabric-algorithm
+cargo xtask search evaluate /data/tmp/fabric-algorithm /data/tmp/development.json development
+cargo xtask search evaluate /data/tmp/fabric-algorithm /data/tmp/final.json heldout
+cargo xtask search compare /data/tmp/baseline.json /data/tmp/final.json
+cargo xtask search status /data/tmp/fabric-algorithm selected /data/tmp/final.json
 ```
 
 Registration captures repository identity and immutable source/contract digests.
@@ -140,10 +147,10 @@ requires its matching verification receipt and measures a copied release
 executable under `perf`; compilation is outside the measurement boundary.
 
 ```sh
-cargo xtask candidate capture /tmp/fabric-benchmark-source.txt
-cargo xtask candidate verify /tmp/fabric-benchmark-source.txt
-FABRIC_BENCH_RECORDS=20000 cargo xtask benchmark /tmp/fabric-admission-benchmark
-cargo xtask benchmark compare /tmp/baseline-profile /tmp/candidate-profile
+cargo xtask candidate capture /data/tmp/fabric-benchmark-source.txt
+cargo xtask candidate verify /data/tmp/fabric-benchmark-source.txt
+FABRIC_BENCH_RECORDS=20000 cargo xtask benchmark /data/tmp/fabric-admission-benchmark
+cargo xtask benchmark compare /data/tmp/baseline-profile /data/tmp/candidate-profile
 ```
 
 The default matrix covers 64/512-byte ASCII text, 8/64 slots and 1/4 producers

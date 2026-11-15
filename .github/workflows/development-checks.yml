@@ -1,8 +1,9 @@
 name: Development checks
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
+    branches: [main, develop]
   workflow_dispatch:
   schedule:
     - cron: '23 4 * * 1'
@@ -12,6 +13,7 @@ env:
   CARGO_BUILD_JOBS: '2'
   CARGO_PROFILE_DEV_DEBUG: '0'
   CARGO_PROFILE_TEST_DEBUG: '0'
+  TMPDIR: /var/tmp
 concurrency:
   group: development-checks-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -42,10 +44,10 @@ jobs:
         run: sh .github/scripts/check-engine.sh
       - name: Fuzz smoke campaigns
         if: github.event_name != 'schedule'
-        run: /github/home/.cargo/bin/cargo xtask fuzz smoke /tmp/fabric-fuzz-smoke
+        run: /github/home/.cargo/bin/cargo xtask fuzz smoke /var/tmp/fabric-fuzz-smoke
       - name: Scheduled fuzz campaigns
         if: github.event_name == 'schedule'
-        run: /github/home/.cargo/bin/cargo xtask fuzz scheduled /tmp/fabric-fuzz-scheduled
+        run: /github/home/.cargo/bin/cargo xtask fuzz scheduled /var/tmp/fabric-fuzz-scheduled
   verify:
     runs-on: ubuntu-24.04
     container:
