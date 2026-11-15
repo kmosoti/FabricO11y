@@ -11,7 +11,7 @@ if [ ! -x "$engine_binary" ]; then
 fi
 printf '%s  %s\n' a7ca4d5ee33bf7605dc69a7be46ae3ad34c5fba27d14edacf780af285dad179d "$engine_binary" | sha256sum -c -
 "$engine_binary" --version | grep -Fx 'version: 1.2.1'
-engine_trial=$(mktemp -d /tmp/fabric-engine-XXXXXXXX)
+engine_trial=$(mktemp -d "${TMPDIR:-/var/tmp}/fabric-engine-XXXXXXXX")
 engine_pid=''
 cleanup() {
   engine_status=$?

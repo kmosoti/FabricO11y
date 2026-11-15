@@ -1,30 +1,32 @@
 # FabricO11y
 
-FabricO11y is a planned Fedora-first, Rust-native evidence platform for Rust
-applications and agent harnesses. The repository contains development tooling and
-a typed Rust SDK, persistent JSONL adapter, Linux Spindle user service and early
-analysis prototype in the `fabric` crate. Spindle provides bounded local SQLite
-custody for SDK, file, journal and host observations. Fabric adds canonical
-handoff and source-fenced run, service, tool and evidence queries through Rust,
-CLI and MCP. See [local collection setup](docs/collection.md),
-[canonical custody](docs/canonical-custody.md) and [typed investigations](docs/investigation.md).
+`FabricO11y` is a **CLI-first, zero-UI Fedora/Linux host, agent, and OTLP telemetry sensory plane** backed by a pure-Rust converged storage and causal attribution engine. It tracks cgroup v2 resource pressure, PSI stalls, `zram0`/swap saturation, systemd transient unit hygiene (`--collect` leaks), high-churn filesystem paths (`/tmp`, `/data/tmp`, `~/.cache`, `target/`), optional GPU sysfs metrics, and OTLP/Spindle envelopes inside a single bounded daemon and deterministic `fabric` CLI.
 
-Read [product direction](docs/direction.md), [contributing](CONTRIBUTING.md) and
-[verification](CONTRIBUTING.md#verification).
+## Converged Engine & CLI (`fabric`)
 
-The prototype's concurrent queue reserves fixed payload buffers before encoding
-and retains capacity through consumer leases. See [admission](docs/admission.md)
-for memory accounting, contention and shutdown behavior. Its file
-writer requires a single writer, does not sync the parent directory, and can leave
-an incomplete tail after an error. It is not a production custody service. See
-the [prototype specification](docs/local-prototype.md) for its intended scope.
+All data lives locally under `FABRIC_DATA_DIR` (default `/data/fabrico11y`) with **zero external database containers** and **zero `/tmp` or `/dev/shm` usage**:
+
+- **`fabric-core` & `fabric-graph` (Sans-I/O):** Domain models, non-`/tmp` path enforcement, `DDSketch` quantiles, `EwmaMadDetector`, Five Data Observability Pillars (`Freshness`, `Volume`, `Schema`, `Distribution`, `Lineage`), causal graph BFS (`lineage`), and ranked resource attribution (`blame`).
+- **`fabric-store`:** Embedded `redb` ACID catalog + adjacency graph (`catalog.redb`), `32 MiB` Gorilla delta/XOR `HotMetricRing`, ZSTD-compressed date-partitioned Arrow/Parquet OLAP store, and `4 GiB` `RetentionJanitor`.
+- **`fabric-collect`:** Bounded `tokio` async collectors (`try_send` drop-with-counter) confined to `fabrico11y.slice` (`MemoryHigh=256M`, `MemoryMax=512M`, `CPUQuota=15%`, `IOWeight=30`, `TasksMax=64`) with a `200 MiB` RSS self-shedding watchdog.
+- **`fabric-query` & `fabric-cli` (`fabric`):** DataFusion/Arrow unified queries and machine-readable CLI subcommands (`--json`, `--arrow`, `--table`).
+- **Preserved Formal & Canonical Crates:** `admission-kernel` (Verus/Charon/Aeneas/Lean), `fabric` SDK + Spindle custody, `fabric-server` canonical receiver, and `fabric-mcp` stdio server.
 
 ```sh
-cargo xtask doctor
-cargo xtask check --tier fast
-cargo xtask check --tier medium
-cargo xtask check --tier extensive
+# Deterministic host + agent + OTLP CLI
+fabric snapshot --json
+fabric query metrics --since 1h --json
+fabric blame memory --json
+fabric lineage /data/tmp/fabric-synth-load --direction both --json
+fabric drift --pillar lineage --json
+fabric doctor --json
+fabric daemon --interval-ms 2000
+
+# Repository verification
+TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask architecture
+TMPDIR=/data/tmp CARGO_BUILD_TARGET_DIR=/data/cargo-target cargo xtask check --tier medium
 ```
 
-Requires Jujutsu 0.46.0 with a Git backend and Rust 1.100.0 stable,
-pinned in `rust-toolchain.toml`.
+See [architecture](docs/architecture.md), [product direction](docs/direction.md), [linked knowledge](knowledge/README.md), [contributing](CONTRIBUTING.md), [local collection setup](docs/collection.md), [canonical custody](docs/canonical-custody.md), and [typed investigations](docs/investigation.md).
+
+Requires Jujutsu 0.46.0 with a Git backend and Rust 1.100.0 stable, pinned in [`rust-toolchain.toml`](rust-toolchain.toml).
