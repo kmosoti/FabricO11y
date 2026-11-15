@@ -628,11 +628,7 @@ impl Greptime {
             })
             .collect::<Result<Vec<_>, _>>()?;
         let page_limit = if matches!(request.operation, Operation::Evidence) {
-            u64::from(request.budgets.rows).min(
-                (u64::from(request.budgets.output_bytes)
-                    / (2 * observation::MAX_FRAME as u64 + 2048))
-                    .max(1),
-            )
+            evidence_page_limit(request.budgets.rows, request.budgets.output_bytes)
         } else {
             u64::from(request.budgets.rows)
         };
@@ -977,6 +973,17 @@ fn typed<'a>(
         }),
         gap,
     ))
+}
+
+fn evidence_page_limit(rows_budget: u32, output_bytes_budget: u32) -> u64 {
+    const EVIDENCE_JSON_RESERVE: u64 = 32 * 1024;
+    const WORST_CASE_HEX_ROW_BYTES: u64 = 2 * observation::MAX_FRAME as u64 + 4096;
+    let max_sql_fetch_rows =
+        ((RESPONSE_LIMIT - EVIDENCE_JSON_RESERVE) / WORST_CASE_HEX_ROW_BYTES).max(2);
+    let max_page_limit = max_sql_fetch_rows - 1;
+    u64::from(rows_budget)
+        .min((u64::from(output_bytes_budget) / (2 * observation::MAX_FRAME as u64 + 2048)).max(1))
+        .min(max_page_limit)
 }
 
 #[cfg(test)]
@@ -1568,5 +1575,18 @@ mod tests {
             serde_json::to_value(expected).unwrap(),
             serde_json::to_value(actual).unwrap()
         );
+    }
+
+    #[test]
+    fn evidence_page_limit_stays_within_greptime_response_limit() {
+        let page = evidence_page_limit(10_000, RESPONSE_LIMIT as u32);
+        assert_eq!(page, 6);
+        let sql_fetch_rows = page + 1;
+        assert!(
+            sql_fetch_rows * (2 * observation::MAX_FRAME as u64 + 4096) + 32 * 1024
+                <= RESPONSE_LIMIT
+        );
+        assert_eq!(evidence_page_limit(2, RESPONSE_LIMIT as u32), 2);
+        assert_eq!(evidence_page_limit(100, 2048), 1);
     }
 }

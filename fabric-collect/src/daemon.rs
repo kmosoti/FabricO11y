@@ -7,18 +7,21 @@ use crate::host::{
     read_gpu_stats, read_hostname, read_memory_snapshot, read_mount_usages, read_psi_metrics,
 };
 use crate::self_guard::{SelfPreservationGuard, build_doctor_report_from_summary};
-use crate::spindle_bridge::{IngestEnvelope, poll_spindle_custody_records, serve_ingest_socket};
+use crate::spindle_bridge::{
+    IngestEnvelope, poll_spindle_custody_records, read_bounded_line,
+    serve_ingest_socket_until_shutdown,
+};
 use crate::systemd::collect_unit_records;
 use chrono::Utc;
 use fabric_core::{
     BlameReport, BlameResource, DDSketch, DEFAULT_TMP_DIR, DriftContext, DriftReport,
     EwmaMadDetector, FsEventRecord, HostSnapshot, LogRecord, MetricPoint, PillarKind,
-    SCHEMA_VERSION, StorageLayout, TraceSpanRecord, evaluate_five_pillars, validate_non_tmp_path,
+    SCHEMA_VERSION, StorageLayout, TraceSpanRecord, evaluate_five_pillars,
 };
 use fabric_graph::{CausalGraph, Direction, LineageSubgraph};
 use fabric_store::{
     CatalogStore, DEFAULT_RING_BUDGET_BYTES, HotMetricRing, JanitorConfig, OlapParquetStore,
-    RetentionJanitor,
+    RetentionJanitor, validate_non_tmp_path_on_disk,
 };
 use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
@@ -29,8 +32,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as TokioBufReader};
+use tokio::io::{AsyncWriteExt, BufReader as TokioBufReader};
 use tokio::net::UnixListener;
+use tokio::sync::Semaphore;
+
+const MAX_SPINDLE_STAGED_ITEMS: usize = 1024;
+const MAX_SPINDLE_STAGED_BYTES: usize = 4 * 1024 * 1024;
+const MAX_CONCURRENT_RPC_CONNS: usize = 12;
+const RPC_LINE_LIMIT_BYTES: usize = 64 * 1024;
+const RPC_IO_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Configuration for running `fabric daemon`.
 #[derive(Debug, Clone)]
@@ -127,59 +137,203 @@ pub fn default_spindle_socket() -> Option<PathBuf> {
         && !raw.is_empty()
     {
         let path = PathBuf::from(raw);
-        if validate_non_tmp_path(&path).is_ok() {
-            return Some(path);
+        if let Ok(resolved) = validate_non_tmp_path_on_disk(&path) {
+            return Some(resolved);
         }
     }
     if let Some(xdg) = std::env::var_os("XDG_RUNTIME_DIR") {
         let path = PathBuf::from(xdg).join("spindle").join("spindle.sock");
-        if validate_non_tmp_path(&path).is_ok() {
-            return Some(path);
+        if let Ok(resolved) = validate_non_tmp_path_on_disk(&path) {
+            return Some(resolved);
         }
     }
     None
 }
 
-fn enqueue_envelope(
-    env: IngestEnvelope,
-    extra_metrics: &mut Vec<MetricPoint>,
-    runtime: &DaemonRuntime,
-) -> bool {
-    let now_ms = Utc::now().timestamp_millis();
+fn metric_approx_bytes(m: &MetricPoint) -> usize {
+    std::mem::size_of::<MetricPoint>()
+        + m.name.len()
+        + m.host.len()
+        + m.slice.len()
+        + m.unit.len()
+        + m.labels_json.len()
+}
+
+fn log_approx_bytes(l: &LogRecord) -> usize {
+    std::mem::size_of::<LogRecord>()
+        + l.level.len()
+        + l.source.len()
+        + l.unit.len()
+        + l.message.len()
+        + l.attributes_json.len()
+}
+
+fn trace_approx_bytes(t: &TraceSpanRecord) -> usize {
+    std::mem::size_of::<TraceSpanRecord>()
+        + t.trace_id.len()
+        + t.span_id.len()
+        + t.parent_span_id.as_ref().map_or(0, String::len)
+        + t.name.len()
+        + t.service.len()
+        + t.status.len()
+        + t.attributes_json.len()
+}
+
+fn envelope_approx_bytes(env: &IngestEnvelope) -> usize {
     match env {
-        IngestEnvelope::Metric(mut pt) => {
-            if extra_metrics.len() >= 4096 || !runtime.ring.read().can_buffer_unflushed() {
-                return false;
-            }
-            if pt.timestamp_ms <= 0 {
-                pt.timestamp_ms = now_ms;
-            }
-            extra_metrics.push(pt);
-            true
-        }
-        IngestEnvelope::Log(mut log) => {
-            let mut logs = runtime.pending_logs.write();
-            if logs.len() >= 1024 {
-                return false;
-            }
-            if log.timestamp_ms <= 0 {
-                log.timestamp_ms = now_ms;
-            }
-            logs.push(log);
-            true
-        }
-        IngestEnvelope::Trace(mut span) => {
-            let mut traces = runtime.pending_traces.write();
-            if traces.len() >= 1024 {
-                return false;
-            }
-            if span.timestamp_ms <= 0 {
-                span.timestamp_ms = now_ms;
-            }
-            traces.push(span);
-            true
+        IngestEnvelope::Metric(m) => metric_approx_bytes(m),
+        IngestEnvelope::Log(l) => log_approx_bytes(l),
+        IngestEnvelope::Trace(t) => trace_approx_bytes(t),
+    }
+}
+
+type PendingOlapPlan = (fabric_store::OlapFlushPlan, Option<u64>, usize, usize);
+
+#[derive(Default)]
+struct SpindleStaging {
+    metrics: Vec<MetricPoint>,
+    logs: Vec<LogRecord>,
+    traces: Vec<TraceSpanRecord>,
+    max_accepted_id: Option<u64>,
+    pending_plan: Option<PendingOlapPlan>,
+    pending_volatile_plan: Option<fabric_store::OlapFlushPlan>,
+    inflight_items: usize,
+    staged_bytes: usize,
+    inflight_bytes: usize,
+    deferred_watermark: Option<u64>,
+    uncommitted_partitions: std::collections::BTreeSet<(&'static str, chrono::NaiveDate)>,
+}
+
+impl SpindleStaging {
+    fn total_len(&self) -> usize {
+        self.metrics.len() + self.logs.len() + self.traces.len()
+    }
+
+    fn pending_items(&self) -> usize {
+        self.pending_plan.as_ref().map_or(0, |p| p.2)
+    }
+
+    fn pending_bytes(&self) -> usize {
+        self.pending_plan.as_ref().map_or(0, |p| p.3)
+    }
+
+    fn pending_or_staged_items(&self) -> usize {
+        self.total_len().saturating_add(self.pending_items())
+    }
+
+    #[cfg(test)]
+    fn effective_watermark(&self) -> Option<u64> {
+        let pending_wm = self.pending_plan.as_ref().and_then(|p| p.1);
+        match (self.max_accepted_id, pending_wm) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (a, b) => a.or(b),
         }
     }
+
+    fn recompute_bytes(&mut self) {
+        self.staged_bytes = self.metrics.iter().map(metric_approx_bytes).sum::<usize>()
+            + self.logs.iter().map(log_approx_bytes).sum::<usize>()
+            + self.traces.iter().map(trace_approx_bytes).sum::<usize>();
+    }
+
+    fn take_pending_plan(&mut self) -> Option<PendingOlapPlan> {
+        let pending = self.pending_plan.take()?;
+        self.inflight_items = self.inflight_items.saturating_add(pending.2);
+        self.inflight_bytes = self.inflight_bytes.saturating_add(pending.3);
+        Some(pending)
+    }
+
+    fn take_for_flush(&mut self) -> Self {
+        let taken = Self {
+            metrics: std::mem::take(&mut self.metrics),
+            logs: std::mem::take(&mut self.logs),
+            traces: std::mem::take(&mut self.traces),
+            max_accepted_id: self.max_accepted_id.take(),
+            pending_plan: None,
+            pending_volatile_plan: None,
+            inflight_items: 0,
+            staged_bytes: self.staged_bytes,
+            inflight_bytes: 0,
+            deferred_watermark: None,
+            uncommitted_partitions: std::collections::BTreeSet::new(),
+        };
+        self.inflight_items = self.inflight_items.saturating_add(taken.total_len());
+        self.inflight_bytes = self.inflight_bytes.saturating_add(self.staged_bytes);
+        self.staged_bytes = 0;
+        taken
+    }
+
+    fn restore_front(&mut self, mut older: SpindleStaging) {
+        if !older.metrics.is_empty() {
+            older.metrics.append(&mut self.metrics);
+            self.metrics = older.metrics;
+        }
+        if !older.logs.is_empty() {
+            older.logs.append(&mut self.logs);
+            self.logs = older.logs;
+        }
+        if !older.traces.is_empty() {
+            older.traces.append(&mut self.traces);
+            self.traces = older.traces;
+        }
+        self.max_accepted_id = match (self.max_accepted_id, older.max_accepted_id) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            (a, b) => a.or(b),
+        };
+        self.recompute_bytes();
+    }
+}
+
+fn enqueue_spindle_record(id: u64, env: IngestEnvelope, runtime: &DaemonRuntime) -> bool {
+    let now_ms = Utc::now().timestamp_millis();
+    let item_bytes = envelope_approx_bytes(&env);
+    let mut hot_metric: Option<MetricPoint> = None;
+    {
+        let mut staging = runtime.spindle_staging.lock();
+        if staging
+            .pending_or_staged_items()
+            .saturating_add(staging.inflight_items)
+            >= MAX_SPINDLE_STAGED_ITEMS
+            || staging
+                .staged_bytes
+                .saturating_add(staging.pending_bytes())
+                .saturating_add(staging.inflight_bytes)
+                .saturating_add(item_bytes)
+                > MAX_SPINDLE_STAGED_BYTES
+        {
+            return false;
+        }
+        match env {
+            IngestEnvelope::Metric(mut pt) => {
+                if pt.timestamp_ms <= 0 {
+                    pt.timestamp_ms = now_ms;
+                }
+                hot_metric = Some(pt.clone());
+                staging.metrics.push(pt);
+            }
+            IngestEnvelope::Log(mut log) => {
+                if log.timestamp_ms <= 0 {
+                    log.timestamp_ms = now_ms;
+                }
+                staging.logs.push(log);
+            }
+            IngestEnvelope::Trace(mut span) => {
+                if span.timestamp_ms <= 0 {
+                    span.timestamp_ms = now_ms;
+                }
+                staging.traces.push(span);
+            }
+        }
+        staging.staged_bytes = staging.staged_bytes.saturating_add(item_bytes);
+        staging.max_accepted_id = Some(staging.max_accepted_id.map_or(id, |prev| prev.max(id)));
+    }
+    if let Some(pt) = hot_metric {
+        runtime
+            .ring
+            .write()
+            .push_hot_only(std::slice::from_ref(&pt));
+    }
+    true
 }
 
 fn runtime_socket_path(layout: &StorageLayout, name: &str) -> PathBuf {
@@ -187,16 +341,16 @@ fn runtime_socket_path(layout: &StorageLayout, name: &str) -> PathBuf {
         && !rt_env.is_empty()
     {
         let dir = PathBuf::from(rt_env);
-        if validate_non_tmp_path(&dir).is_ok() {
-            return dir.join(name);
+        if let Ok(resolved) = validate_non_tmp_path_on_disk(&dir) {
+            return resolved.join(name);
         }
     }
     if layout.data_dir() == Path::new(fabric_core::DEFAULT_DATA_DIR)
         && let Some(xdg) = std::env::var_os("XDG_RUNTIME_DIR")
     {
         let dir = PathBuf::from(xdg).join("fabrico11y");
-        if validate_non_tmp_path(&dir).is_ok() {
-            return dir.join(name);
+        if let Ok(resolved) = validate_non_tmp_path_on_disk(&dir) {
+            return resolved.join(name);
         }
     }
     layout.state_dir().join(name)
@@ -229,8 +383,8 @@ pub fn query_running_daemon(layout: &StorageLayout, req: &DaemonRequest) -> Opti
 
 /// Performs a single deterministic collection cycle without starting the resident daemon.
 pub fn collect_once(data_dir: &Path, tmp_dir: &Path) -> Result<CollectedState, String> {
-    validate_non_tmp_path(data_dir).map_err(|e| e.to_string())?;
-    validate_non_tmp_path(tmp_dir).map_err(|e| e.to_string())?;
+    let data_dir = validate_non_tmp_path_on_disk(data_dir).map_err(|e| e.to_string())?;
+    let tmp_dir = validate_non_tmp_path_on_disk(tmp_dir).map_err(|e| e.to_string())?;
     let dropped = Arc::new(AtomicU64::new(0));
     let guard = SelfPreservationGuard::new(
         data_dir.to_string_lossy().into_owned(),
@@ -420,6 +574,7 @@ struct DaemonRuntime {
     catalog: CatalogStore,
     olap: OlapParquetStore,
     janitor: RetentionJanitor,
+    _writer_lock: fabric_store::WriterLockGuard,
     flush_lock: Mutex<()>,
     ring: RwLock<HotMetricRing>,
     latest: RwLock<Option<CollectedState>>,
@@ -427,7 +582,7 @@ struct DaemonRuntime {
     pending_traces: RwLock<Vec<TraceSpanRecord>>,
     pending_fs_events: RwLock<Vec<FsEventRecord>>,
     polled_spindle_cursor: AtomicU64,
-    pending_spindle_watermark: RwLock<Option<u64>>,
+    spindle_staging: Mutex<SpindleStaging>,
     last_spindle_error: RwLock<Option<String>>,
     overflow_dropped: Arc<AtomicU64>,
     guard: SelfPreservationGuard,
@@ -454,55 +609,304 @@ fn restore_bounded_queue<T>(
 }
 
 impl DaemonRuntime {
-    fn flush_to_olap(&self) -> Result<usize, String> {
-        let _flush_guard = self.flush_lock.lock();
-        let watermark = *self.pending_spindle_watermark.read();
-        let metrics = self.ring.write().drain_unflushed();
-        let logs = std::mem::take(&mut *self.pending_logs.write());
-        let traces = std::mem::take(&mut *self.pending_traces.write());
-        let fs_events = std::mem::take(&mut *self.pending_fs_events.write());
-        let edges = self
-            .latest
-            .read()
-            .as_ref()
-            .map(|s| s.graph.to_edge_records(s.snapshot.timestamp_unix_ms))
-            .unwrap_or_default();
-
-        let total = metrics.len() + logs.len() + traces.len() + fs_events.len() + edges.len();
-        let write_res = (|| -> Result<(), String> {
-            let _ = self.olap.write_metrics(&metrics)?;
-            let _ = self.olap.write_logs(&logs)?;
-            let _ = self.olap.write_traces(&traces)?;
-            let _ = self.olap.write_fs_events(&fs_events)?;
-            let _ = self.olap.write_edges(&edges)?;
-            Ok(())
-        })();
-        if let Err(err) = write_res {
-            self.ring.write().restore_unflushed(metrics);
-            restore_bounded_queue(&self.pending_logs, logs, 1024, &self.overflow_dropped);
-            restore_bounded_queue(&self.pending_traces, traces, 1024, &self.overflow_dropped);
-            restore_bounded_queue(
-                &self.pending_fs_events,
-                fs_events,
-                2048,
-                &self.overflow_dropped,
-            );
-            return Err(err);
+    fn protected_partition_set(
+        &self,
+    ) -> std::collections::BTreeSet<(&'static str, chrono::NaiveDate)> {
+        let staging = self.spindle_staging.lock();
+        let mut set = staging.uncommitted_partitions.clone();
+        if let Some((plan, _, _, _)) = staging.pending_plan.as_ref() {
+            set.extend(plan.uncommitted_partitions().iter().copied());
         }
-        if let Some(wm) = watermark {
+        if let Some(vplan) = staging.pending_volatile_plan.as_ref() {
+            set.extend(vplan.uncommitted_partitions().iter().copied());
+        }
+        set
+    }
+
+    fn merge_persisted_uncommitted(&self) {
+        let owned = self.protected_partition_set();
+        let borrowed: std::collections::BTreeSet<(&str, chrono::NaiveDate)> = owned
+            .iter()
+            .map(|&(domain, day)| (domain as &str, day))
+            .collect();
+        let _ = fabric_store::merge_uncommitted_partitions(self.olap.layout(), &borrowed);
+    }
+
+    fn clear_persisted_uncommitted(&self, committed_wm: Option<u64>) {
+        let owned = self.protected_partition_set();
+        let borrowed: std::collections::BTreeSet<(&str, chrono::NaiveDate)> = owned
+            .iter()
+            .map(|&(domain, day)| (domain as &str, day))
+            .collect();
+        let _ =
+            fabric_store::clear_committed_uncommitted(self.olap.layout(), committed_wm, &borrowed);
+    }
+
+    fn store_failed_plan(
+        &self,
+        plan: fabric_store::OlapFlushPlan,
+        wm: Option<u64>,
+        items: usize,
+        bytes: usize,
+    ) {
+        let mut staging = self.spindle_staging.lock();
+        staging.inflight_items = staging.inflight_items.saturating_sub(items);
+        staging.inflight_bytes = staging.inflight_bytes.saturating_sub(bytes);
+        staging.pending_plan = Some((plan, wm, items, bytes));
+    }
+
+    fn finish_inflight_and_commit_watermark(
+        &self,
+        items: usize,
+        bytes: usize,
+        wm: Option<u64>,
+        batch_partitions: &std::collections::BTreeSet<(&'static str, chrono::NaiveDate)>,
+    ) -> Result<(), String> {
+        let target_wm = {
+            let mut staging = self.spindle_staging.lock();
+            staging.inflight_items = staging.inflight_items.saturating_sub(items);
+            staging.inflight_bytes = staging.inflight_bytes.saturating_sub(bytes);
+            if let Some(w) = wm {
+                staging.deferred_watermark =
+                    Some(staging.deferred_watermark.map_or(w, |prev| prev.max(w)));
+            }
+            if wm.is_some() || staging.deferred_watermark.is_some() {
+                staging
+                    .uncommitted_partitions
+                    .extend(batch_partitions.iter().copied());
+            }
+            staging.deferred_watermark
+        };
+        if let Some(target) = target_wm {
+            self.merge_persisted_uncommitted();
             let committed = self
                 .catalog
                 .read_watermark("spindle_watermark_id")?
                 .unwrap_or(0);
-            let next_wm = admission_kernel::telemetry::watermark_advance(committed, wm, true);
+            let next_wm = admission_kernel::telemetry::watermark_advance(committed, target, true);
             self.catalog
                 .set_watermark("spindle_watermark_id", next_wm)?;
-            let mut pending_wm = self.pending_spindle_watermark.write();
-            if *pending_wm == Some(wm) {
-                *pending_wm = None;
+            let mut staging = self.spindle_staging.lock();
+            if staging
+                .deferred_watermark
+                .is_some_and(|pending| pending <= target)
+            {
+                staging.deferred_watermark = None;
+                staging.uncommitted_partitions.clear();
+            }
+            drop(staging);
+            self.clear_persisted_uncommitted(Some(next_wm));
+        } else {
+            self.clear_persisted_uncommitted(None);
+        }
+        Ok(())
+    }
+
+    fn flush_to_olap(&self) -> Result<usize, String> {
+        let _flush_guard = self.flush_lock.lock();
+        let mut flushed_total = 0usize;
+        struct SpindleCommitReceipt {
+            items: usize,
+            bytes: usize,
+            watermark: Option<u64>,
+            partitions: std::collections::BTreeSet<(&'static str, chrono::NaiveDate)>,
+        }
+        let mut spindle_commits: Vec<SpindleCommitReceipt> = Vec::new();
+
+        let mut spindle_err: Option<String> = None;
+
+        // Phase 1: Flush replayable Spindle custody records in watermark-tagged plans only.
+        let pending = self.spindle_staging.lock().take_pending_plan();
+        if let Some((mut pending_plan, pending_wm, pending_items, pending_bytes)) = pending {
+            let rows_before = pending_plan.total_rows();
+            if let Err(err) = self.olap.execute_flush_plan(&mut pending_plan) {
+                self.store_failed_plan(pending_plan, pending_wm, pending_items, pending_bytes);
+                spindle_err = Some(err);
+            } else {
+                flushed_total = flushed_total.saturating_add(rows_before);
+                spindle_commits.push(SpindleCommitReceipt {
+                    items: pending_items,
+                    bytes: pending_bytes,
+                    watermark: pending_wm,
+                    partitions: pending_plan.uncommitted_partitions().clone(),
+                });
             }
         }
-        Ok(total)
+
+        if spindle_err.is_none() {
+            let staged = self.spindle_staging.lock().take_for_flush();
+            let staged_items = staged.total_len();
+            let staged_bytes = staged.staged_bytes;
+            let watermark = staged.max_accepted_id;
+            if staged_items > 0 || watermark.is_some() {
+                match self
+                    .olap
+                    .plan_flush(&staged.metrics, &staged.logs, &staged.traces, &[], &[])
+                {
+                    Ok(plan) => {
+                        let mut splan = plan.with_spindle_watermark(watermark);
+                        if let Err(err) = self.olap.execute_flush_plan(&mut splan) {
+                            self.store_failed_plan(splan, watermark, staged_items, staged_bytes);
+                            spindle_err = Some(err);
+                        } else {
+                            flushed_total = flushed_total.saturating_add(staged_items);
+                            spindle_commits.push(SpindleCommitReceipt {
+                                items: staged_items,
+                                bytes: staged_bytes,
+                                watermark,
+                                partitions: splan.uncommitted_partitions().clone(),
+                            });
+                        }
+                    }
+                    Err(err) => {
+                        let mut restored = SpindleStaging {
+                            metrics: staged.metrics,
+                            logs: staged.logs,
+                            traces: staged.traces,
+                            max_accepted_id: watermark,
+                            ..SpindleStaging::default()
+                        };
+                        restored.recompute_bytes();
+                        let mut staging = self.spindle_staging.lock();
+                        staging.inflight_items =
+                            staging.inflight_items.saturating_sub(staged_items);
+                        staging.inflight_bytes =
+                            staging.inflight_bytes.saturating_sub(staged_bytes);
+                        staging.restore_front(restored);
+                        spindle_err = Some(err);
+                    }
+                }
+            }
+        }
+
+        // Phase 2: Flush non-replayable volatile host/socket telemetry without Spindle rollback watermarks.
+        let vol_res: Result<usize, String> = (|| {
+            let mut vol_flushed = 0usize;
+            let pending_vol = self.spindle_staging.lock().pending_volatile_plan.take();
+            if let Some(mut vplan) = pending_vol {
+                let rows_before = vplan.total_rows();
+                if let Err(err) = self.olap.execute_flush_plan(&mut vplan) {
+                    self.spindle_staging.lock().pending_volatile_plan = Some(vplan);
+                    return Err(err);
+                }
+                vol_flushed = vol_flushed.saturating_add(rows_before);
+            }
+
+            let volatile_metrics = self.ring.write().drain_unflushed();
+            let volatile_logs = std::mem::take(&mut *self.pending_logs.write());
+            let volatile_traces = std::mem::take(&mut *self.pending_traces.write());
+            let fs_events = std::mem::take(&mut *self.pending_fs_events.write());
+            let edges = self
+                .latest
+                .read()
+                .as_ref()
+                .map(|s| s.graph.to_edge_records(s.snapshot.timestamp_unix_ms))
+                .unwrap_or_default();
+
+            let vbatch = volatile_metrics.len()
+                + volatile_logs.len()
+                + volatile_traces.len()
+                + fs_events.len()
+                + edges.len();
+            if vbatch > 0 {
+                let mut vplan = match self.olap.plan_flush(
+                    &volatile_metrics,
+                    &volatile_logs,
+                    &volatile_traces,
+                    &fs_events,
+                    &edges,
+                ) {
+                    Ok(plan) => plan,
+                    Err(err) => {
+                        self.ring.write().restore_unflushed(volatile_metrics);
+                        restore_bounded_queue(
+                            &self.pending_logs,
+                            volatile_logs,
+                            1024,
+                            &self.overflow_dropped,
+                        );
+                        restore_bounded_queue(
+                            &self.pending_traces,
+                            volatile_traces,
+                            1024,
+                            &self.overflow_dropped,
+                        );
+                        restore_bounded_queue(
+                            &self.pending_fs_events,
+                            fs_events,
+                            2048,
+                            &self.overflow_dropped,
+                        );
+                        return Err(err);
+                    }
+                };
+                if let Err(err) = self.olap.execute_flush_plan(&mut vplan) {
+                    self.spindle_staging.lock().pending_volatile_plan = Some(vplan);
+                    return Err(err);
+                }
+                vol_flushed = vol_flushed.saturating_add(vbatch);
+            }
+            Ok(vol_flushed)
+        })();
+
+        // Phase 3: Advance Spindle watermark for committed Spindle batches before propagating volatile errors.
+        if !spindle_commits.is_empty() {
+            let mut total_items = 0usize;
+            let mut total_bytes = 0usize;
+            let mut max_wm: Option<u64> = None;
+            let mut all_parts = std::collections::BTreeSet::new();
+            for SpindleCommitReceipt {
+                items,
+                bytes,
+                watermark: wm,
+                partitions: parts,
+            } in spindle_commits
+            {
+                total_items = total_items.saturating_add(items);
+                total_bytes = total_bytes.saturating_add(bytes);
+                if let Some(w) = wm {
+                    max_wm = Some(max_wm.map_or(w, |prev| prev.max(w)));
+                }
+                all_parts.extend(parts);
+            }
+            self.finish_inflight_and_commit_watermark(
+                total_items,
+                total_bytes,
+                max_wm,
+                &all_parts,
+            )?;
+        } else if self.spindle_staging.lock().deferred_watermark.is_some() {
+            self.finish_inflight_and_commit_watermark(
+                0,
+                0,
+                None,
+                &std::collections::BTreeSet::new(),
+            )?;
+        } else if vol_res.is_ok() && spindle_err.is_none() {
+            let committed = self
+                .catalog
+                .read_watermark("spindle_watermark_id")
+                .ok()
+                .flatten();
+            self.clear_persisted_uncommitted(committed);
+        }
+
+        if let Some(err) = spindle_err {
+            return Err(err);
+        }
+        let vol_rows = vol_res?;
+        Ok(flushed_total.saturating_add(vol_rows))
+    }
+
+    fn run_janitor_pass(&self) -> Result<fabric_store::JanitorStats, String> {
+        let _flush_guard = self.flush_lock.lock();
+        self.merge_persisted_uncommitted();
+        let protected_owned = self.protected_partition_set();
+        let protected: std::collections::BTreeSet<(&str, chrono::NaiveDate)> = protected_owned
+            .iter()
+            .map(|&(domain, day)| (domain as &str, day))
+            .collect();
+        self.janitor.run_pass_excluding(None, &protected)
     }
 
     fn handle_rpc(&self, req: DaemonRequest) -> DaemonResponse {
@@ -598,19 +1002,24 @@ impl DaemonRuntime {
 }
 
 /// Runs the bounded converged telemetry daemon until SIGINT/SIGTERM or `max_ticks`.
-pub async fn run_daemon(config: DaemonConfig) -> Result<(), String> {
-    validate_non_tmp_path(&config.data_dir).map_err(|e| e.to_string())?;
-    validate_non_tmp_path(&config.tmp_dir).map_err(|e| e.to_string())?;
-    if let Some(ref sock) = config.spindle_socket {
-        validate_non_tmp_path(sock).map_err(|e| e.to_string())?;
-    }
-    if let Some(ref rt_dir) = config.runtime_dir {
-        validate_non_tmp_path(rt_dir).map_err(|e| e.to_string())?;
-    }
+pub async fn run_daemon(mut config: DaemonConfig) -> Result<(), String> {
+    config.data_dir = validate_non_tmp_path_on_disk(&config.data_dir).map_err(|e| e.to_string())?;
+    config.tmp_dir = validate_non_tmp_path_on_disk(&config.tmp_dir).map_err(|e| e.to_string())?;
+    config.spindle_socket = config
+        .spindle_socket
+        .take()
+        .map(|s| validate_non_tmp_path_on_disk(&s).map_err(|e| e.to_string()))
+        .transpose()?;
+    config.runtime_dir = config
+        .runtime_dir
+        .take()
+        .map(|d| validate_non_tmp_path_on_disk(&d).map_err(|e| e.to_string()))
+        .transpose()?;
 
     let catalog = CatalogStore::open(&config.data_dir)?;
-    let initial_spindle_watermark = catalog.read_watermark("spindle_watermark_id")?.unwrap_or(0);
     let layout = catalog.layout().clone();
+    let writer_lock = fabric_store::try_acquire_writer_lock(&layout)?;
+    let initial_spindle_watermark = catalog.read_watermark("spindle_watermark_id")?.unwrap_or(0);
     let olap = OlapParquetStore::new(layout.clone());
     let janitor = RetentionJanitor::new(
         olap.clone(),
@@ -638,6 +1047,7 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<(), String> {
         catalog,
         olap,
         janitor,
+        _writer_lock: writer_lock,
         flush_lock: Mutex::new(()),
         ring: RwLock::new(HotMetricRing::with_capacity_bytes(config.ring_budget_bytes)),
         latest: RwLock::new(None),
@@ -645,7 +1055,7 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<(), String> {
         pending_traces: RwLock::new(Vec::new()),
         pending_fs_events: RwLock::new(Vec::new()),
         polled_spindle_cursor: AtomicU64::new(initial_spindle_watermark),
-        pending_spindle_watermark: RwLock::new(None),
+        spindle_staging: Mutex::new(SpindleStaging::default()),
         last_spindle_error: RwLock::new(None),
         overflow_dropped: overflow_dropped.clone(),
         guard,
@@ -664,37 +1074,77 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<(), String> {
     let rpc_listener = UnixListener::bind(&daemon_sock)
         .map_err(|e| format!("failed binding {}: {e}", daemon_sock.display()))?;
     let rpc_runtime = runtime.clone();
+    let rpc_permits = Arc::new(Semaphore::new(MAX_CONCURRENT_RPC_CONNS));
+    let (shutdown_tx, mut shutdown_rx) = tokio::sync::watch::channel(false);
     let rpc_task = tokio::spawn(async move {
+        let mut conn_tasks = tokio::task::JoinSet::new();
         loop {
-            let Ok((stream, _)) = rpc_listener.accept().await else {
-                continue;
+            while conn_tasks.try_join_next().is_some() {}
+            if *shutdown_rx.borrow() {
+                break;
+            }
+            let permit = tokio::select! {
+                biased;
+                _ = shutdown_rx.changed() => break,
+                res = rpc_permits.clone().acquire_owned() => match res {
+                    Ok(p) => p,
+                    Err(_) => break,
+                }
+            };
+            let stream = tokio::select! {
+                biased;
+                _ = shutdown_rx.changed() => {
+                    drop(permit);
+                    break;
+                }
+                res = rpc_listener.accept() => match res {
+                    Ok((s, _)) => s,
+                    Err(_) => {
+                        drop(permit);
+                        continue;
+                    }
+                }
             };
             let rt = rpc_runtime.clone();
-            tokio::spawn(async move {
+            conn_tasks.spawn(async move {
+                let _permit = permit;
                 let (reader, mut writer) = stream.into_split();
-                let mut lines = TokioBufReader::new(reader).lines();
-                if let Ok(Some(line)) = lines.next_line().await {
-                    let reply = match serde_json::from_str::<DaemonRequest>(line.trim()) {
-                        Ok(req) => rt.handle_rpc(req),
-                        Err(e) => DaemonResponse::Error {
-                            message: e.to_string(),
-                        },
-                    };
-                    let mut bytes = match serde_json::to_vec(&reply) {
-                        Ok(b) => b,
-                        Err(e) => serde_json::to_vec(&DaemonResponse::Error {
-                            message: format!("serialize daemon reply failed: {e}"),
-                        })
-                        .unwrap_or_default(),
-                    };
-                    if !bytes.is_empty() {
-                        bytes.push(b'\n');
-                        let _ = writer.write_all(&bytes).await;
-                        let _ = writer.shutdown().await;
+                let mut reader = TokioBufReader::with_capacity(8192, reader);
+                let reply = match tokio::time::timeout(
+                    RPC_IO_TIMEOUT,
+                    read_bounded_line(&mut reader, RPC_LINE_LIMIT_BYTES),
+                )
+                .await
+                {
+                    Ok(Ok(Some(Some(line)))) => {
+                        match serde_json::from_str::<DaemonRequest>(line.trim()) {
+                            Ok(req) => rt.handle_rpc(req),
+                            Err(e) => DaemonResponse::Error {
+                                message: e.to_string(),
+                            },
+                        }
                     }
+                    Ok(Ok(Some(None))) => DaemonResponse::Error {
+                        message: format!("rpc request exceeds {RPC_LINE_LIMIT_BYTES} byte limit"),
+                    },
+                    _ => return,
+                };
+                let mut bytes = match serde_json::to_vec(&reply) {
+                    Ok(b) => b,
+                    Err(e) => serde_json::to_vec(&DaemonResponse::Error {
+                        message: format!("serialize daemon reply failed: {e}"),
+                    })
+                    .unwrap_or_default(),
+                };
+                if !bytes.is_empty() {
+                    bytes.push(b'\n');
+                    let _ = tokio::time::timeout(RPC_IO_TIMEOUT, writer.write_all(&bytes)).await;
+                    let _ = tokio::time::timeout(RPC_IO_TIMEOUT, writer.shutdown()).await;
                 }
             });
         }
+        conn_tasks.abort_all();
+        while conn_tasks.join_next().await.is_some() {}
     });
 
     let ingest_host = read_hostname();
@@ -704,8 +1154,17 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<(), String> {
         .map_or_else(|| default_ingest_socket(&layout), |d| d.join("ingest.sock"));
     let ingest_sock_cleanup = ingest_sock.clone();
     let serve_host = ingest_host.clone();
+    let ingest_shutdown_rx = shutdown_tx.subscribe();
     let ingest_task = tokio::spawn(async move {
-        let _ = serve_ingest_socket(&ingest_sock, metrics_q, logs_q, traces_q, serve_host).await;
+        let _ = serve_ingest_socket_until_shutdown(
+            &ingest_sock,
+            metrics_q,
+            logs_q,
+            traces_q,
+            serve_host,
+            ingest_shutdown_rx,
+        )
+        .await;
     });
 
     let mut fs_tracker = FsChurnTracker::new();
@@ -727,37 +1186,20 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<(), String> {
                 tick_count += 1;
 
                 // Drain bounded queues.
-                let mut extra_metrics = Vec::new();
-                while let Ok(m) = metrics_rx.try_recv() {
-                    if extra_metrics.len() < 4096 {
-                        extra_metrics.push(m);
-                    } else {
-                        dropped_m.fetch_add(1, Ordering::Relaxed);
-                    }
-                }
-                {
-                    let mut logs = runtime.pending_logs.write();
-                    while let Ok(l) = logs_rx.try_recv() {
-                        if logs.len() < 1024 {
-                            logs.push(l);
-                        } else {
-                            dropped_l.fetch_add(1, Ordering::Relaxed);
-                        }
-                    }
-                }
-                {
-                    let mut traces = runtime.pending_traces.write();
-                    while let Ok(t) = traces_rx.try_recv() {
-                        if traces.len() < 1024 {
-                            traces.push(t);
-                        } else {
-                            dropped_t.fetch_add(1, Ordering::Relaxed);
-                        }
-                    }
-                }
+                let extra_metrics = drain_telemetry_queues(
+                    &mut metrics_rx,
+                    &mut logs_rx,
+                    &mut traces_rx,
+                    &runtime.pending_logs,
+                    &runtime.pending_traces,
+                    &dropped_m,
+                    &dropped_l,
+                    &dropped_t,
+                    &overflow_dropped,
+                    &total_dropped,
+                );
 
                 let mut spindle_backpressure = false;
-                let mut newly_accepted_wm: Option<u64> = None;
                 if let Some(ref spindle_sock) = config.spindle_socket
                     && spindle_sock.exists()
                 {
@@ -773,8 +1215,8 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<(), String> {
                             *runtime.last_spindle_error.write() = None;
                             let mut accepted_cursor = after_id;
                             for (id, env) in records {
-                                if enqueue_envelope(env, &mut extra_metrics, &runtime) {
-                                    accepted_cursor = id;
+                                if enqueue_spindle_record(id, env, &runtime) {
+                                    accepted_cursor = accepted_cursor.max(id);
                                 } else {
                                     spindle_backpressure = true;
                                     break;
@@ -784,7 +1226,6 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<(), String> {
                                 runtime
                                     .polled_spindle_cursor
                                     .store(accepted_cursor, Ordering::Release);
-                                newly_accepted_wm = Some(accepted_cursor);
                             }
                         }
                         Ok(Err(err)) => {
@@ -796,19 +1237,10 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<(), String> {
                     }
                 }
 
-                let drops = dropped_m.load(Ordering::Relaxed)
-                    + dropped_l.load(Ordering::Relaxed)
-                    + dropped_t.load(Ordering::Relaxed)
-                    + overflow_dropped.load(Ordering::Relaxed);
-                total_dropped.store(drops, Ordering::Relaxed);
-
                 let mut state = run_collect_cycle(&runtime.guard, &mut fs_tracker, &mut vol_detector, &mut sketch);
                 state.metrics.extend(extra_metrics);
 
                 runtime.ring.write().push_batch(&state.metrics);
-                if let Some(wm) = newly_accepted_wm {
-                    *runtime.pending_spindle_watermark.write() = Some(wm);
-                }
                 {
                     let mut fsev = runtime.pending_fs_events.write();
                     if fsev.len() < 2048 {
@@ -829,7 +1261,7 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<(), String> {
                     if let Err(err) = runtime.flush_to_olap() {
                         *runtime.last_spindle_error.write() = Some(format!("olap flush failed: {err}"));
                     }
-                    let _ = runtime.janitor.run_pass(None);
+                    let _ = runtime.run_janitor_pass();
                     last_flush = std::time::Instant::now();
                 }
 
@@ -840,13 +1272,79 @@ pub async fn run_daemon(config: DaemonConfig) -> Result<(), String> {
         }
     }
 
+    let _ = shutdown_tx.send(true);
+    let _ = rpc_task.await;
+    let _ = ingest_task.await;
+    let tail_metrics = drain_telemetry_queues(
+        &mut metrics_rx,
+        &mut logs_rx,
+        &mut traces_rx,
+        &runtime.pending_logs,
+        &runtime.pending_traces,
+        &dropped_m,
+        &dropped_l,
+        &dropped_t,
+        &overflow_dropped,
+        &total_dropped,
+    );
+    if !tail_metrics.is_empty() {
+        runtime.ring.write().push_batch(&tail_metrics);
+    }
     let final_flush = runtime.flush_to_olap();
-    let _ = runtime.janitor.run_pass(None);
-    rpc_task.abort();
-    ingest_task.abort();
+    let _ = runtime.run_janitor_pass();
     let _ = fs::remove_file(&daemon_sock);
     let _ = fs::remove_file(&ingest_sock_cleanup);
+    drop(runtime);
     final_flush.map(|_| ())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn drain_telemetry_queues(
+    metrics_rx: &mut tokio::sync::mpsc::Receiver<MetricPoint>,
+    logs_rx: &mut tokio::sync::mpsc::Receiver<LogRecord>,
+    traces_rx: &mut tokio::sync::mpsc::Receiver<TraceSpanRecord>,
+    pending_logs: &RwLock<Vec<LogRecord>>,
+    pending_traces: &RwLock<Vec<TraceSpanRecord>>,
+    dropped_m: &AtomicU64,
+    dropped_l: &AtomicU64,
+    dropped_t: &AtomicU64,
+    overflow_dropped: &AtomicU64,
+    total_dropped: &AtomicU64,
+) -> Vec<MetricPoint> {
+    let mut extra_metrics = Vec::new();
+    while let Ok(m) = metrics_rx.try_recv() {
+        if extra_metrics.len() < 4096 {
+            extra_metrics.push(m);
+        } else {
+            dropped_m.fetch_add(1, Ordering::Relaxed);
+        }
+    }
+    {
+        let mut logs = pending_logs.write();
+        while let Ok(l) = logs_rx.try_recv() {
+            if logs.len() < 1024 {
+                logs.push(l);
+            } else {
+                dropped_l.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+    {
+        let mut traces = pending_traces.write();
+        while let Ok(t) = traces_rx.try_recv() {
+            if traces.len() < 1024 {
+                traces.push(t);
+            } else {
+                dropped_t.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+    let drops = dropped_m.load(Ordering::Relaxed)
+        + dropped_l.load(Ordering::Relaxed)
+        + dropped_t.load(Ordering::Relaxed)
+        + overflow_dropped.load(Ordering::Relaxed);
+    total_dropped.store(drops, Ordering::Relaxed);
+    extra_metrics
 }
 
 #[cfg(test)]
@@ -882,6 +1380,7 @@ mod tests {
             tmp_dir.to_string_lossy().into_owned(),
             Arc::new(AtomicU64::new(0)),
         );
+        let olap_for_verify = olap.clone();
         let runtime = DaemonRuntime {
             start_instant: std::time::Instant::now(),
             config: DaemonConfig {
@@ -892,36 +1391,84 @@ mod tests {
             catalog,
             olap,
             janitor,
+            _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
             flush_lock: Mutex::new(()),
-            ring: RwLock::new(HotMetricRing::with_capacity_bytes(64 * 1024)),
+            ring: RwLock::new(HotMetricRing::with_capacity_bytes(4096)),
             latest: RwLock::new(None),
             pending_logs: RwLock::new(Vec::new()),
             pending_traces: RwLock::new(Vec::new()),
             pending_fs_events: RwLock::new(Vec::new()),
-            polled_spindle_cursor: AtomicU64::new(5),
-            pending_spindle_watermark: RwLock::new(Some(5)),
+            polled_spindle_cursor: AtomicU64::new(0),
+            spindle_staging: Mutex::new(SpindleStaging::default()),
             last_spindle_error: RwLock::new(None),
             overflow_dropped: Arc::new(AtomicU64::new(0)),
             guard,
         };
 
-        let mut extra_metrics = Vec::new();
-        assert!(enqueue_envelope(
-            IngestEnvelope::Metric(MetricPoint {
-                timestamp_ms: 0,
-                name: "test.metric".into(),
-                value: 7.0,
+        // Stage metric, log, and trace Spindle records with IDs 1..=6.
+        for id in 1..=2 {
+            assert!(enqueue_spindle_record(
+                id,
+                IngestEnvelope::Metric(MetricPoint {
+                    timestamp_ms: 0,
+                    name: format!("spindle.metric.{id}"),
+                    value: id as f64,
+                    host: "h".into(),
+                    slice: "spindle".into(),
+                    unit: "svc".into(),
+                    pid: None,
+                    labels_json: r#"{"k":"v"}"#.into(),
+                }),
+                &runtime,
+            ));
+        }
+        for id in 3..=4 {
+            assert!(enqueue_spindle_record(
+                id,
+                IngestEnvelope::Log(LogRecord {
+                    timestamp_ms: 0,
+                    level: "info".into(),
+                    source: "spindle".into(),
+                    unit: "svc".into(),
+                    message: format!("spindle-log-{id}"),
+                    attributes_json: "{}".into(),
+                }),
+                &runtime,
+            ));
+        }
+        for id in 5..=6 {
+            assert!(enqueue_spindle_record(
+                id,
+                IngestEnvelope::Trace(TraceSpanRecord {
+                    timestamp_ms: 0,
+                    trace_id: format!("t-{id}"),
+                    span_id: format!("s-{id}"),
+                    parent_span_id: None,
+                    name: "op".into(),
+                    service: "spindle".into(),
+                    duration_ms: 1.0,
+                    status: "ok".into(),
+                    attributes_json: "{}".into(),
+                }),
+                &runtime,
+            ));
+        }
+
+        // Churn volatile host metrics beyond ring_budget_bytes (4096) to prove
+        // volatile ring eviction never drops staged Spindle records or logs.
+        let churn: Vec<MetricPoint> = (0..250)
+            .map(|i| MetricPoint {
+                timestamp_ms: 1_700_000_000_000 + i,
+                name: format!("volatile.host.{i}"),
+                value: i as f64,
                 host: "h".into(),
-                slice: "spindle".into(),
-                unit: "svc".into(),
-                pid: None,
-                labels_json: r#"{"k":"v"}"#.into(),
-            }),
-            &mut extra_metrics,
-            &runtime,
-        ));
-        assert!(extra_metrics[0].timestamp_ms > 0);
-        runtime.ring.write().push_batch(&extra_metrics);
+                slice: "agent.slice".into(),
+                unit: "agent.service".into(),
+                pid: Some(i as u32),
+                labels_json: "{}".into(),
+            })
+            .collect();
+        runtime.ring.write().push_batch(&churn);
 
         // Force Parquet write failure by obstructing olap/metrics with a regular file.
         let metrics_dir = layout.olap_domain_dir("metrics");
@@ -942,20 +1489,339 @@ mod tests {
                 .expect("read watermark after failed flush"),
             None
         );
-        assert_eq!(*runtime.pending_spindle_watermark.read(), Some(5));
+        {
+            let staging = runtime.spindle_staging.lock();
+            assert!(staging.pending_plan.is_some());
+            assert_eq!(staging.effective_watermark(), Some(6));
+            assert_eq!(staging.pending_or_staged_items(), 6);
+        }
 
-        // Remove obstruction and flush again; watermark must advance only now.
+        // Remove obstruction and flush again; watermark must advance only now and all 6 Spindle records persist.
         fs::remove_file(&metrics_dir).expect("remove obstructing file");
         fs::create_dir_all(&metrics_dir).expect("recreate metrics dir");
-        assert_eq!(runtime.flush_to_olap().expect("retry flush cleanly"), 1);
+        assert!(runtime.flush_to_olap().expect("retry flush cleanly") >= 6);
         assert_eq!(
             runtime
                 .catalog
                 .read_watermark("spindle_watermark_id")
                 .expect("read watermark after successful flush"),
-            Some(5)
+            Some(6)
         );
-        assert_eq!(*runtime.pending_spindle_watermark.read(), None);
+        {
+            let staging = runtime.spindle_staging.lock();
+            assert!(staging.pending_plan.is_none());
+            assert_eq!(staging.total_len(), 0);
+        }
+        assert_eq!(
+            olap_for_verify
+                .list_parquet_files("logs", None)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            olap_for_verify
+                .list_parquet_files("traces", None)
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn inflight_staging_bound_and_deferred_watermark_retry_hold() {
+        let base = std::env::var_os("TMPDIR")
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+            .filter(|p| !p.starts_with("/tmp") && !p.starts_with("/dev/shm"))
+            .unwrap_or_else(|| {
+                PathBuf::from(std::env::var("HOME").expect("HOME set"))
+                    .join(".cache")
+                    .join("fabrico11y-tmp")
+            });
+        fs::create_dir_all(&base).expect("create non-tmp base");
+        let root = tempfile::Builder::new()
+            .prefix("daemon-deferred-")
+            .tempdir_in(&base)
+            .expect("tempdir");
+        let data_dir = root.path().join("data");
+        let tmp_dir = root.path().join("tmp");
+        fs::create_dir_all(&tmp_dir).expect("create tmp dir");
+
+        let catalog = CatalogStore::open(&data_dir).expect("open catalog");
+        let layout = catalog.layout().clone();
+        let olap = OlapParquetStore::new(layout.clone());
+        let janitor = RetentionJanitor::new(olap.clone(), JanitorConfig::default());
+        let guard = SelfPreservationGuard::new(
+            data_dir.to_string_lossy().into_owned(),
+            tmp_dir.to_string_lossy().into_owned(),
+            Arc::new(AtomicU64::new(0)),
+        );
+        let runtime = DaemonRuntime {
+            start_instant: std::time::Instant::now(),
+            config: DaemonConfig {
+                data_dir: data_dir.clone(),
+                tmp_dir,
+                ..Default::default()
+            },
+            catalog,
+            olap,
+            janitor,
+            _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
+            flush_lock: Mutex::new(()),
+            ring: RwLock::new(HotMetricRing::with_capacity_bytes(4096)),
+            latest: RwLock::new(None),
+            pending_logs: RwLock::new(Vec::new()),
+            pending_traces: RwLock::new(Vec::new()),
+            pending_fs_events: RwLock::new(Vec::new()),
+            polled_spindle_cursor: AtomicU64::new(0),
+            spindle_staging: Mutex::new(SpindleStaging::default()),
+            last_spindle_error: RwLock::new(None),
+            overflow_dropped: Arc::new(AtomicU64::new(0)),
+            guard,
+        };
+
+        // 1. Inflight items count against MAX_SPINDLE_STAGED_ITEMS so restore never exceeds cap.
+        runtime.spindle_staging.lock().inflight_items = MAX_SPINDLE_STAGED_ITEMS - 2;
+        for id in 1..=5 {
+            let accepted = enqueue_spindle_record(
+                id,
+                IngestEnvelope::Log(LogRecord {
+                    timestamp_ms: 0,
+                    level: "info".into(),
+                    source: "spindle".into(),
+                    unit: "svc".into(),
+                    message: format!("msg-{id}"),
+                    attributes_json: "{}".into(),
+                }),
+                &runtime,
+            );
+            assert_eq!(accepted, id <= 2);
+        }
+        assert_eq!(runtime.spindle_staging.lock().total_len(), 2);
+        runtime.spindle_staging.lock().inflight_items = 0;
+
+        // 2. If OLAP write succeeds and catalog watermark persistence fails transiently,
+        // deferred_watermark is preserved and committed on the next flush even with 0 new records.
+        assert!(enqueue_spindle_record(
+            42,
+            IngestEnvelope::Log(LogRecord {
+                timestamp_ms: 0,
+                level: "info".into(),
+                source: "spindle".into(),
+                unit: "svc".into(),
+                message: "wm-retry".into(),
+                attributes_json: "{}".into(),
+            }),
+            &runtime,
+        ));
+        // Seed initial watermark so `catalog.redb` exists on disk, then obstruct it.
+        runtime
+            .catalog
+            .set_watermark("spindle_watermark_id", 1)
+            .expect("seed initial watermark");
+        let catalog_path = layout.catalog_redb();
+        let catalog_backup = catalog_path.with_extension("redb.bak");
+        fs::rename(&catalog_path, &catalog_backup).expect("move catalog aside");
+        fs::create_dir_all(&catalog_path).expect("obstruct catalog.redb with dir");
+
+        assert!(
+            runtime.flush_to_olap().is_err(),
+            "watermark commit failure must return Err while keeping deferred watermark"
+        );
+        assert_eq!(runtime.spindle_staging.lock().deferred_watermark, Some(42));
+        assert_eq!(runtime.spindle_staging.lock().total_len(), 0);
+
+        fs::remove_dir(&catalog_path).expect("remove obstructing dir");
+        fs::rename(&catalog_backup, &catalog_path).expect("restore catalog");
+
+        // Flush again with zero new records queued; deferred watermark must now commit cleanly.
+        assert_eq!(runtime.flush_to_olap().expect("retry watermark commit"), 0);
+        assert_eq!(runtime.spindle_staging.lock().deferred_watermark, None);
+        assert_eq!(
+            runtime
+                .catalog
+                .read_watermark("spindle_watermark_id")
+                .expect("read committed watermark"),
+            Some(42)
+        );
+    }
+
+    #[test]
+    fn staged_byte_budget_and_partial_flush_recovery_hold() {
+        let base = std::env::var_os("TMPDIR")
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+            .filter(|p| !p.starts_with("/tmp") && !p.starts_with("/dev/shm"))
+            .unwrap_or_else(|| {
+                PathBuf::from(std::env::var("HOME").expect("HOME set"))
+                    .join(".cache")
+                    .join("fabrico11y-tmp")
+            });
+        fs::create_dir_all(&base).expect("create non-tmp base");
+        let root = tempfile::Builder::new()
+            .prefix("daemon-bytecap-")
+            .tempdir_in(&base)
+            .expect("tempdir");
+        let data_dir = root.path().join("data");
+        let tmp_dir = root.path().join("tmp");
+        fs::create_dir_all(&tmp_dir).expect("create tmp dir");
+
+        let catalog = CatalogStore::open(&data_dir).expect("open catalog");
+        let layout = catalog.layout().clone();
+        let olap = OlapParquetStore::new(layout.clone());
+        let janitor = RetentionJanitor::new(olap.clone(), JanitorConfig::default());
+        let guard = SelfPreservationGuard::new(
+            data_dir.to_string_lossy().into_owned(),
+            tmp_dir.to_string_lossy().into_owned(),
+            Arc::new(AtomicU64::new(0)),
+        );
+        let runtime = DaemonRuntime {
+            start_instant: std::time::Instant::now(),
+            config: DaemonConfig {
+                data_dir,
+                tmp_dir,
+                ..Default::default()
+            },
+            catalog,
+            olap,
+            janitor,
+            _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
+            flush_lock: Mutex::new(()),
+            ring: RwLock::new(HotMetricRing::with_capacity_bytes(4096)),
+            latest: RwLock::new(None),
+            pending_logs: RwLock::new(Vec::new()),
+            pending_traces: RwLock::new(Vec::new()),
+            pending_fs_events: RwLock::new(Vec::new()),
+            polled_spindle_cursor: AtomicU64::new(0),
+            spindle_staging: Mutex::new(SpindleStaging::default()),
+            last_spindle_error: RwLock::new(None),
+            overflow_dropped: Arc::new(AtomicU64::new(0)),
+            guard,
+        };
+
+        // 1. Byte cap (4 MiB) rejects large records well before item count limit (1024).
+        let big_payload = "x".repeat(900 * 1024);
+        let mut accepted = 0usize;
+        for id in 1..=8_u64 {
+            if enqueue_spindle_record(
+                id,
+                IngestEnvelope::Log(LogRecord {
+                    timestamp_ms: 1_700_000_000_000,
+                    level: "info".into(),
+                    source: "spindle".into(),
+                    unit: "svc".into(),
+                    message: big_payload.clone(),
+                    attributes_json: "{}".into(),
+                }),
+                &runtime,
+            ) {
+                accepted += 1;
+            }
+        }
+        assert_eq!(accepted, 4);
+        {
+            let mut staging = runtime.spindle_staging.lock();
+            assert!(staging.staged_bytes <= MAX_SPINDLE_STAGED_BYTES);
+            *staging = SpindleStaging::default();
+        }
+
+        // 2. Intra-domain multi-day partial OLAP failure (day1 succeeds, day2 fails):
+        // persisted dt=day1 must not duplicate and watermark remains withheld until day2 & logs flush.
+        assert!(enqueue_spindle_record(
+            10,
+            IngestEnvelope::Metric(MetricPoint {
+                timestamp_ms: 1_700_000_000_100, // 2023-11-14
+                name: "partial.day1".into(),
+                value: 7.0,
+                host: "h".into(),
+                slice: "spindle".into(),
+                unit: "svc".into(),
+                pid: None,
+                labels_json: r#"{"sequence":10}"#.into(),
+            }),
+            &runtime,
+        ));
+        assert!(enqueue_spindle_record(
+            11,
+            IngestEnvelope::Metric(MetricPoint {
+                timestamp_ms: 1_700_086_400_100, // 2023-11-15
+                name: "partial.day2".into(),
+                value: 8.0,
+                host: "h".into(),
+                slice: "spindle".into(),
+                unit: "svc".into(),
+                pid: None,
+                labels_json: r#"{"sequence":11}"#.into(),
+            }),
+            &runtime,
+        ));
+        assert!(enqueue_spindle_record(
+            12,
+            IngestEnvelope::Log(LogRecord {
+                timestamp_ms: 1_700_000_000_200,
+                level: "info".into(),
+                source: "spindle".into(),
+                unit: "svc".into(),
+                message: "partial.log".into(),
+                attributes_json: "{}".into(),
+            }),
+            &runtime,
+        ));
+
+        let day2_dir = layout.olap_domain_dir("metrics").join("dt=2023-11-15");
+        fs::create_dir_all(day2_dir.parent().expect("metrics dir")).expect("create metrics dir");
+        fs::write(&day2_dir, b"obstruct").expect("obstruct dt=day2");
+
+        assert!(runtime.flush_to_olap().is_err());
+        assert_eq!(
+            runtime
+                .olap
+                .list_parquet_files("metrics", None)
+                .unwrap()
+                .len(),
+            1,
+            "dt=day1 metrics persisted prior to dt=day2 failure"
+        );
+        {
+            let staging = runtime.spindle_staging.lock();
+            assert!(staging.pending_plan.is_some());
+            assert_eq!(staging.inflight_items, 0);
+            assert_eq!(staging.inflight_bytes, 0);
+            assert_eq!(staging.effective_watermark(), Some(12));
+            assert!(staging.pending_bytes() > 0);
+        }
+        assert_eq!(
+            runtime
+                .catalog
+                .read_watermark("spindle_watermark_id")
+                .unwrap(),
+            None
+        );
+
+        fs::remove_file(&day2_dir).expect("remove dt=day2 obstruction");
+        runtime.flush_to_olap().expect("retry remaining day & logs");
+        assert_eq!(
+            runtime
+                .olap
+                .list_parquet_files("metrics", None)
+                .unwrap()
+                .len(),
+            2,
+            "dt=day1 must not be duplicated on retry"
+        );
+        assert_eq!(
+            runtime.olap.list_parquet_files("logs", None).unwrap().len(),
+            1
+        );
+        assert!(runtime.spindle_staging.lock().pending_plan.is_none());
+        assert_eq!(
+            runtime
+                .catalog
+                .read_watermark("spindle_watermark_id")
+                .unwrap(),
+            Some(12)
+        );
     }
 
     #[test]
@@ -1046,5 +1912,676 @@ mod tests {
                 _ => {}
             }
         }
+    }
+
+    #[test]
+    fn uncommitted_partitions_stay_protected_across_partial_flush_and_deferred_watermark() {
+        let base = std::env::var_os("TMPDIR")
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+            .filter(|p| !p.starts_with("/tmp") && !p.starts_with("/dev/shm"))
+            .unwrap_or_else(|| {
+                PathBuf::from(std::env::var("HOME").expect("HOME set"))
+                    .join(".cache")
+                    .join("fabrico11y-tmp")
+            });
+        fs::create_dir_all(&base).expect("create non-tmp base");
+        let root = tempfile::Builder::new()
+            .prefix("daemon-uncommitted-")
+            .tempdir_in(&base)
+            .expect("tempdir");
+        let data_dir = root.path().join("data");
+        let tmp_dir = root.path().join("tmp");
+        fs::create_dir_all(&tmp_dir).expect("create tmp dir");
+
+        let catalog = CatalogStore::open(&data_dir).expect("open catalog");
+        let layout = catalog.layout().clone();
+        let olap = OlapParquetStore::new(layout.clone());
+        let janitor = RetentionJanitor::new(
+            olap.clone(),
+            JanitorConfig {
+                max_disk_bytes: 1,
+                ..Default::default()
+            },
+        );
+        let guard = SelfPreservationGuard::new(
+            data_dir.to_string_lossy().into_owned(),
+            tmp_dir.to_string_lossy().into_owned(),
+            Arc::new(AtomicU64::new(0)),
+        );
+        let runtime = DaemonRuntime {
+            start_instant: std::time::Instant::now(),
+            config: DaemonConfig {
+                data_dir,
+                tmp_dir,
+                max_disk_bytes: 1,
+                ..Default::default()
+            },
+            catalog,
+            olap,
+            janitor,
+            _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
+            flush_lock: Mutex::new(()),
+            ring: RwLock::new(HotMetricRing::with_capacity_bytes(4096)),
+            latest: RwLock::new(None),
+            pending_logs: RwLock::new(Vec::new()),
+            pending_traces: RwLock::new(Vec::new()),
+            pending_fs_events: RwLock::new(Vec::new()),
+            polled_spindle_cursor: AtomicU64::new(0),
+            spindle_staging: Mutex::new(SpindleStaging::default()),
+            last_spindle_error: RwLock::new(None),
+            overflow_dropped: Arc::new(AtomicU64::new(0)),
+            guard,
+        };
+
+        assert!(enqueue_spindle_record(
+            10,
+            IngestEnvelope::Metric(MetricPoint {
+                timestamp_ms: 1_700_000_000_100, // 2023-11-14
+                name: "protect.day1".into(),
+                value: 1.0,
+                host: "h".into(),
+                slice: "spindle".into(),
+                unit: "svc".into(),
+                pid: None,
+                labels_json: r#"{"sequence":10}"#.into(),
+            }),
+            &runtime,
+        ));
+        assert!(enqueue_spindle_record(
+            11,
+            IngestEnvelope::Metric(MetricPoint {
+                timestamp_ms: 1_700_086_400_100, // 2023-11-15
+                name: "protect.day2".into(),
+                value: 2.0,
+                host: "h".into(),
+                slice: "spindle".into(),
+                unit: "svc".into(),
+                pid: None,
+                labels_json: r#"{"sequence":11}"#.into(),
+            }),
+            &runtime,
+        ));
+
+        let day2_dir = layout.olap_domain_dir("metrics").join("dt=2023-11-15");
+        fs::write(&day2_dir, b"obstruct").expect("obstruct dt=day2");
+        assert!(runtime.flush_to_olap().is_err());
+        assert_eq!(
+            runtime
+                .olap
+                .list_parquet_files("metrics", None)
+                .unwrap()
+                .len(),
+            1
+        );
+
+        // Even under 1-byte disk quota, already-published day1 stays protected while pending_plan is active,
+        // both for in-process maintenance and for an external janitor pass with no explicit exclusions.
+        let stats1 = runtime
+            .run_janitor_pass()
+            .expect("janitor during partial flush");
+        assert_eq!(stats1.evicted_partitions, 0);
+        let external_janitor = RetentionJanitor::new(
+            runtime.olap.clone(),
+            JanitorConfig {
+                max_disk_bytes: 1,
+                ..Default::default()
+            },
+        );
+        let ext_stats1 = external_janitor
+            .run_pass(None)
+            .expect("external janitor during partial flush");
+        assert_eq!(ext_stats1.evicted_partitions, 0);
+        assert_eq!(
+            runtime
+                .olap
+                .list_parquet_files("metrics", None)
+                .unwrap()
+                .len(),
+            1
+        );
+
+        // Unblock day2 OLAP write, but obstruct catalog.redb so pending_plan finishes while watermark fails.
+        fs::remove_file(&day2_dir).expect("remove dt=day2 obstruction");
+        assert!(!layout.catalog_redb().exists());
+        fs::create_dir_all(layout.catalog_redb()).expect("obstruct catalog.redb");
+        assert!(runtime.flush_to_olap().is_err());
+        assert_eq!(
+            runtime
+                .olap
+                .list_parquet_files("metrics", None)
+                .unwrap()
+                .len(),
+            2
+        );
+        {
+            let staging = runtime.spindle_staging.lock();
+            assert!(staging.pending_plan.is_none());
+            assert_eq!(staging.deferred_watermark, Some(11));
+            assert_eq!(staging.uncommitted_partitions.len(), 2);
+        }
+
+        // Both day1 and day2 must still remain protected while deferred_watermark is uncommitted.
+        let stats2 = runtime
+            .run_janitor_pass()
+            .expect("janitor during deferred watermark");
+        assert_eq!(stats2.evicted_partitions, 0);
+        let ext_stats2 = external_janitor
+            .run_pass(None)
+            .expect("external janitor during deferred watermark");
+        assert_eq!(ext_stats2.evicted_partitions, 0);
+        assert_eq!(
+            runtime
+                .olap
+                .list_parquet_files("metrics", None)
+                .unwrap()
+                .len(),
+            2
+        );
+
+        // Unblock catalog.redb so watermark commits and protection lifts.
+        fs::remove_dir(layout.catalog_redb()).expect("remove catalog.redb obstruction");
+        runtime
+            .flush_to_olap()
+            .expect("commit deferred watermark after recovery");
+        assert_eq!(
+            runtime
+                .catalog
+                .read_watermark("spindle_watermark_id")
+                .unwrap(),
+            Some(11)
+        );
+        {
+            let staging = runtime.spindle_staging.lock();
+            assert!(staging.deferred_watermark.is_none());
+            assert!(staging.uncommitted_partitions.is_empty());
+        }
+
+        let stats3 = runtime
+            .run_janitor_pass()
+            .expect("janitor evicts once watermark committed");
+        assert_eq!(stats3.evicted_partitions, 2);
+        assert!(
+            runtime
+                .olap
+                .list_parquet_files("metrics", None)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn daemon_shutdown_drains_queued_ingest_records_into_final_flush() {
+        let base = std::env::var_os("TMPDIR")
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+            .filter(|p| !p.starts_with("/tmp") && !p.starts_with("/dev/shm"))
+            .unwrap_or_else(|| {
+                PathBuf::from(std::env::var("HOME").expect("HOME set"))
+                    .join(".cache")
+                    .join("fabrico11y-tmp")
+            });
+        fs::create_dir_all(&base).expect("create non-tmp base");
+        let root = tempfile::Builder::new()
+            .prefix("daemon-shutdown-drain-")
+            .tempdir_in(&base)
+            .expect("tempdir");
+
+        // 1. drain_telemetry_queues + flush_to_olap persists buffered metrics/logs/traces to OLAP Parquet.
+        let data_dir = root.path().join("drain-data");
+        let tmp_dir = root.path().join("drain-tmp");
+        fs::create_dir_all(&tmp_dir).expect("create drain tmp dir");
+        let catalog = CatalogStore::open(&data_dir).expect("open catalog");
+        let layout = catalog.layout().clone();
+        let olap = OlapParquetStore::new(layout.clone());
+        let janitor = RetentionJanitor::new(olap.clone(), JanitorConfig::default());
+        let overflow_dropped = Arc::new(AtomicU64::new(0));
+        let guard = SelfPreservationGuard::new(
+            data_dir.to_string_lossy().into_owned(),
+            tmp_dir.to_string_lossy().into_owned(),
+            Arc::clone(&overflow_dropped),
+        );
+        let runtime = DaemonRuntime {
+            start_instant: std::time::Instant::now(),
+            config: DaemonConfig {
+                data_dir: data_dir.clone(),
+                tmp_dir: tmp_dir.clone(),
+                spindle_socket: None,
+                ..Default::default()
+            },
+            catalog,
+            olap,
+            janitor,
+            _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
+            flush_lock: Mutex::new(()),
+            ring: RwLock::new(HotMetricRing::with_capacity_bytes(65_536)),
+            latest: RwLock::new(None),
+            pending_logs: RwLock::new(Vec::new()),
+            pending_traces: RwLock::new(Vec::new()),
+            pending_fs_events: RwLock::new(Vec::new()),
+            polled_spindle_cursor: AtomicU64::new(0),
+            spindle_staging: Mutex::new(SpindleStaging::default()),
+            last_spindle_error: RwLock::new(None),
+            overflow_dropped: Arc::clone(&overflow_dropped),
+            guard,
+        };
+
+        let (mq, mut metrics_rx, dropped_m) = BoundedTelemetryQueue::<MetricPoint>::new(8);
+        let (lq, mut logs_rx, dropped_l) = BoundedTelemetryQueue::<LogRecord>::new(8);
+        let (tq, mut traces_rx, dropped_t) = BoundedTelemetryQueue::<TraceSpanRecord>::new(8);
+        let total_dropped = Arc::new(AtomicU64::new(0));
+        assert!(mq.try_emit(MetricPoint {
+            timestamp_ms: 1_700_000_000_100,
+            name: "drain.metric".into(),
+            value: 42.0,
+            host: "test-host".into(),
+            slice: "agent.slice".into(),
+            unit: "svc".into(),
+            pid: Some(1234),
+            labels_json: "{}".into(),
+        }));
+        assert!(lq.try_emit(LogRecord {
+            timestamp_ms: 1_700_000_000_200,
+            level: "info".into(),
+            source: "ingest".into(),
+            unit: "svc".into(),
+            message: "tail log".into(),
+            attributes_json: "{}".into(),
+        }));
+        assert!(tq.try_emit(TraceSpanRecord {
+            timestamp_ms: 1_700_000_000_300,
+            trace_id: "0123456789abcdef0123456789abcdef".into(),
+            span_id: "0123456789abcdef".into(),
+            parent_span_id: None,
+            name: "tail.span".into(),
+            service: "svc".into(),
+            duration_ms: 3.5,
+            status: "ok".into(),
+            attributes_json: "{}".into(),
+        }));
+
+        let tail_metrics = drain_telemetry_queues(
+            &mut metrics_rx,
+            &mut logs_rx,
+            &mut traces_rx,
+            &runtime.pending_logs,
+            &runtime.pending_traces,
+            &dropped_m,
+            &dropped_l,
+            &dropped_t,
+            &overflow_dropped,
+            &total_dropped,
+        );
+        assert_eq!(tail_metrics.len(), 1);
+        assert_eq!(total_dropped.load(std::sync::atomic::Ordering::Relaxed), 0);
+        assert_eq!(
+            overflow_dropped.load(std::sync::atomic::Ordering::Relaxed),
+            0
+        );
+        runtime.ring.write().push_batch(&tail_metrics);
+        runtime
+            .flush_to_olap()
+            .expect("final flush writes drained records");
+        assert_eq!(
+            runtime
+                .olap
+                .list_parquet_files("metrics", None)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            runtime.olap.list_parquet_files("logs", None).unwrap().len(),
+            1
+        );
+        assert_eq!(
+            runtime
+                .olap
+                .list_parquet_files("traces", None)
+                .unwrap()
+                .len(),
+            1
+        );
+        drop(runtime);
+
+        // 2. run_daemon shuts down cleanly via max_ticks even while an idle ingest.sock client remains open.
+        let daemon_root = root.path().join("run-daemon");
+        let daemon_data = daemon_root.join("data");
+        let daemon_tmp = daemon_root.join("tmp");
+        let daemon_runtime = daemon_root.join("runtime");
+        fs::create_dir_all(&daemon_tmp).expect("create daemon tmp dir");
+        fs::create_dir_all(&daemon_runtime).expect("create daemon runtime dir");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&daemon_runtime, fs::Permissions::from_mode(0o700))
+                .expect("chmod 700 daemon runtime");
+        }
+        let ingest_sock = daemon_runtime.join("ingest.sock");
+        let daemon_task = tokio::spawn(run_daemon(DaemonConfig {
+            data_dir: daemon_data,
+            tmp_dir: daemon_tmp,
+            interval_ms: 250,
+            max_ticks: Some(2),
+            spindle_socket: None,
+            runtime_dir: Some(daemon_runtime),
+            ..Default::default()
+        }));
+
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        let idle_client = loop {
+            match tokio::net::UnixStream::connect(&ingest_sock).await {
+                Ok(stream) => break stream,
+                Err(_) if !daemon_task.is_finished() && tokio::time::Instant::now() < deadline => {
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+                Err(err) => {
+                    panic!("failed connecting idle ingest client before daemon exit: {err}")
+                }
+            }
+        };
+
+        let res = tokio::time::timeout(std::time::Duration::from_secs(15), daemon_task)
+            .await
+            .expect("run_daemon must shut down cleanly without hanging on idle ingest client")
+            .expect("daemon join");
+        res.expect("run_daemon exits cleanly");
+        drop(idle_client);
+        assert!(!ingest_sock.exists(), "ingest.sock removed on shutdown");
+    }
+
+    #[test]
+    fn crash_before_watermark_rolls_back_spindle_without_deleting_volatile_telemetry() {
+        let base = std::env::var_os("TMPDIR")
+            .and_then(|s| s.into_string().ok())
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+            .filter(|p| !p.starts_with("/tmp") && !p.starts_with("/dev/shm"))
+            .unwrap_or_else(|| {
+                PathBuf::from(std::env::var("HOME").expect("HOME set"))
+                    .join(".cache")
+                    .join("fabrico11y-tmp")
+            });
+        fs::create_dir_all(&base).expect("create non-tmp base");
+        let root = tempfile::Builder::new()
+            .prefix("daemon-spindle-volatile-isolation-")
+            .tempdir_in(&base)
+            .expect("tempdir");
+        let data_dir = root.path().join("data");
+        let tmp_dir = root.path().join("tmp");
+        fs::create_dir_all(&tmp_dir).expect("create tmp dir");
+
+        let catalog = CatalogStore::open(&data_dir).expect("open catalog");
+        let layout = catalog.layout().clone();
+        let olap = OlapParquetStore::new(layout.clone());
+        let janitor = RetentionJanitor::new(olap.clone(), JanitorConfig::default());
+        let guard = SelfPreservationGuard::new(
+            data_dir.to_string_lossy().into_owned(),
+            tmp_dir.to_string_lossy().into_owned(),
+            Arc::new(AtomicU64::new(0)),
+        );
+        let runtime = DaemonRuntime {
+            start_instant: std::time::Instant::now(),
+            config: DaemonConfig {
+                data_dir,
+                tmp_dir,
+                spindle_socket: None,
+                ..Default::default()
+            },
+            catalog,
+            olap,
+            janitor,
+            _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
+            flush_lock: Mutex::new(()),
+            ring: RwLock::new(HotMetricRing::with_capacity_bytes(65_536)),
+            latest: RwLock::new(None),
+            pending_logs: RwLock::new(Vec::new()),
+            pending_traces: RwLock::new(Vec::new()),
+            pending_fs_events: RwLock::new(Vec::new()),
+            polled_spindle_cursor: AtomicU64::new(0),
+            spindle_staging: Mutex::new(SpindleStaging::default()),
+            last_spindle_error: RwLock::new(None),
+            overflow_dropped: Arc::new(AtomicU64::new(0)),
+            guard,
+        };
+
+        let ts_ms = 1_700_000_000_100i64;
+        runtime.ring.write().push_batch(&[MetricPoint {
+            timestamp_ms: ts_ms,
+            name: "volatile.cpu".into(),
+            value: 12.5,
+            host: "fedora-blade".into(),
+            slice: "agent.slice".into(),
+            unit: "agent.service".into(),
+            pid: Some(1001),
+            labels_json: "{}".into(),
+        }]);
+        runtime.pending_logs.write().push(LogRecord {
+            timestamp_ms: ts_ms,
+            level: "info".into(),
+            source: "journal".into(),
+            unit: "agent.service".into(),
+            message: "volatile log".into(),
+            attributes_json: "{}".into(),
+        });
+        assert!(enqueue_spindle_record(
+            77,
+            IngestEnvelope::Metric(MetricPoint {
+                timestamp_ms: ts_ms,
+                name: "spindle.latency".into(),
+                value: 3.25,
+                host: "fedora-blade".into(),
+                slice: "spindle".into(),
+                unit: "spindle.service".into(),
+                pid: Some(1002),
+                labels_json: "{}".into(),
+            }),
+            &runtime,
+        ));
+        assert!(enqueue_spindle_record(
+            77,
+            IngestEnvelope::Log(LogRecord {
+                timestamp_ms: ts_ms,
+                level: "info".into(),
+                source: "spindle".into(),
+                unit: "spindle.service".into(),
+                message: "spindle log".into(),
+                attributes_json: "{}".into(),
+            }),
+            &runtime,
+        ));
+
+        // Obstruct catalog.redb so both OLAP plans publish their Parquet files while Spindle's
+        // watermark commit fails, simulating a writer crash right before watermark durability.
+        assert!(!layout.catalog_redb().exists());
+        fs::create_dir_all(layout.catalog_redb()).expect("obstruct catalog.redb");
+        assert!(
+            runtime.flush_to_olap().is_err(),
+            "flush_to_olap must fail when catalog watermark persistence is obstructed"
+        );
+
+        let before_m = runtime
+            .olap
+            .list_parquet_files("metrics", None)
+            .expect("list metrics before crash recovery");
+        let before_l = runtime
+            .olap
+            .list_parquet_files("logs", None)
+            .expect("list logs before crash recovery");
+        assert_eq!(
+            before_m.len(),
+            2,
+            "expected separate volatile + spindle metrics files"
+        );
+        assert_eq!(
+            before_l.len(),
+            2,
+            "expected separate volatile + spindle logs files"
+        );
+
+        fs::remove_dir(layout.catalog_redb()).expect("remove catalog obstruction");
+        drop(runtime);
+
+        // Next writer startup runs uncommitted Spindle crash recovery: Spindle files roll back,
+        // while volatile host/socket files published without a Spindle watermark stay intact.
+        let recovered_lock =
+            fabric_store::try_acquire_writer_lock(&layout).expect("re-acquire writer lock");
+        let olap_after = OlapParquetStore::new(layout.clone());
+        let after_m = olap_after
+            .list_parquet_files("metrics", None)
+            .expect("list metrics after recovery");
+        let after_l = olap_after
+            .list_parquet_files("logs", None)
+            .expect("list logs after recovery");
+        assert_eq!(
+            after_m.len(),
+            1,
+            "only volatile metrics file should survive"
+        );
+        assert_eq!(after_l.len(), 1, "only volatile logs file should survive");
+        assert!(before_m.contains(&after_m[0]));
+        assert!(before_l.contains(&after_l[0]));
+        drop(recovered_lock);
+    }
+
+    #[test]
+    fn pending_retry_receipt_commits_and_releases_inflight_when_new_batch_fails() {
+        let base = std::env::var_os("TMPDIR")
+            .and_then(|s| s.into_string().ok())
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+            .filter(|p| !p.starts_with("/tmp") && !p.starts_with("/dev/shm"))
+            .unwrap_or_else(|| {
+                PathBuf::from(std::env::var("HOME").expect("HOME set"))
+                    .join(".cache")
+                    .join("fabrico11y-tmp")
+            });
+        fs::create_dir_all(&base).expect("create non-tmp base");
+        let root = tempfile::Builder::new()
+            .prefix("daemon-retry-receipt-")
+            .tempdir_in(&base)
+            .expect("tempdir");
+        let data_dir = root.path().join("data");
+        let tmp_dir = root.path().join("tmp");
+        fs::create_dir_all(&tmp_dir).expect("create tmp dir");
+
+        let catalog = CatalogStore::open(&data_dir).expect("open catalog");
+        let layout = catalog.layout().clone();
+        let olap = OlapParquetStore::new(layout.clone());
+        let janitor = RetentionJanitor::new(olap.clone(), JanitorConfig::default());
+        let guard = SelfPreservationGuard::new(
+            data_dir.to_string_lossy().into_owned(),
+            tmp_dir.to_string_lossy().into_owned(),
+            Arc::new(AtomicU64::new(0)),
+        );
+        let runtime = DaemonRuntime {
+            start_instant: std::time::Instant::now(),
+            config: DaemonConfig {
+                data_dir,
+                tmp_dir,
+                spindle_socket: None,
+                ..Default::default()
+            },
+            catalog,
+            olap,
+            janitor,
+            _writer_lock: fabric_store::try_acquire_writer_lock(&layout).expect("writer lock"),
+            flush_lock: Mutex::new(()),
+            ring: RwLock::new(HotMetricRing::with_capacity_bytes(65_536)),
+            latest: RwLock::new(None),
+            pending_logs: RwLock::new(Vec::new()),
+            pending_traces: RwLock::new(Vec::new()),
+            pending_fs_events: RwLock::new(Vec::new()),
+            polled_spindle_cursor: AtomicU64::new(0),
+            spindle_staging: Mutex::new(SpindleStaging::default()),
+            last_spindle_error: RwLock::new(None),
+            overflow_dropped: Arc::new(AtomicU64::new(0)),
+            guard,
+        };
+
+        let metrics_domain_dir = layout.olap_domain_dir("metrics");
+        fs::create_dir_all(&metrics_domain_dir).expect("create metrics dir");
+
+        // 1. Fail Spindle batch id=50 on day1 (2023-07-22) so it parks in pending_plan.
+        let day1_ms = 1_690_000_000_000i64;
+        assert!(enqueue_spindle_record(
+            50,
+            IngestEnvelope::Metric(MetricPoint {
+                timestamp_ms: day1_ms,
+                name: "spindle.retry.day1".into(),
+                value: 1.0,
+                host: "fedora-blade".into(),
+                slice: "spindle".into(),
+                unit: "spindle.service".into(),
+                pid: Some(2001),
+                labels_json: "{}".into(),
+            }),
+            &runtime,
+        ));
+        let day1_part = metrics_domain_dir.join("dt=2023-07-22");
+        fs::write(&day1_part, b"obstruct-day1").expect("obstruct day1");
+        assert!(runtime.flush_to_olap().is_err());
+        assert!(runtime.spindle_staging.lock().pending_plan.is_some());
+
+        // 2. Unblock day1, enqueue batch id=60 on day2 (2023-11-14) and obstruct day2.
+        // Retried day1 batch MUST fold its receipt (releasing inflight accounting and committing wm=50)
+        // even though newly staged day2 fails execute_flush_plan.
+        fs::remove_file(&day1_part).expect("unblock day1");
+        let day2_ms = 1_700_000_000_000i64;
+        assert!(enqueue_spindle_record(
+            60,
+            IngestEnvelope::Metric(MetricPoint {
+                timestamp_ms: day2_ms,
+                name: "spindle.new.day2".into(),
+                value: 2.0,
+                host: "fedora-blade".into(),
+                slice: "spindle".into(),
+                unit: "spindle.service".into(),
+                pid: Some(2002),
+                labels_json: "{}".into(),
+            }),
+            &runtime,
+        ));
+        let day2_part = metrics_domain_dir.join("dt=2023-11-14");
+        fs::write(&day2_part, b"obstruct-day2").expect("obstruct day2");
+        assert!(runtime.flush_to_olap().is_err());
+
+        {
+            let staging = runtime.spindle_staging.lock();
+            assert_eq!(staging.inflight_items, 0);
+            assert_eq!(staging.inflight_bytes, 0);
+            assert_eq!(
+                staging.pending_plan.as_ref().and_then(|p| p.1),
+                Some(60),
+                "day2 batch must remain parked for retry"
+            );
+        }
+        assert_eq!(
+            runtime
+                .catalog
+                .read_watermark("spindle_watermark_id")
+                .expect("read committed watermark"),
+            Some(50)
+        );
+
+        // 3. Unblock day2 and confirm retry commits wm=60 cleanly with both Parquet files present.
+        fs::remove_file(&day2_part).expect("unblock day2");
+        runtime.flush_to_olap().expect("retry day2 flush succeeds");
+        assert_eq!(
+            runtime
+                .catalog
+                .read_watermark("spindle_watermark_id")
+                .expect("read final watermark"),
+            Some(60)
+        );
+        assert_eq!(runtime.spindle_staging.lock().inflight_items, 0);
+        assert_eq!(
+            runtime
+                .olap
+                .list_parquet_files("metrics", None)
+                .expect("list final metrics files")
+                .len(),
+            2
+        );
     }
 }

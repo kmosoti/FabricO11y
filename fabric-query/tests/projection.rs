@@ -465,3 +465,24 @@ fn drop_releases_projection_lock_across_concurrent_subprocess_spawns() {
     stop.store(true, Ordering::Relaxed);
     spawner.join().unwrap();
 }
+
+#[test]
+fn pre_rename_apply_failure_does_not_poison_projection() {
+    let dir = private_tempdir();
+    let mut p = Projection::open(dir.path(), 32 * 1024 * 1024).unwrap();
+    let collision = dir.path().join("staging-segment-1-0.parquet");
+    std::fs::write(&collision, b"pre-existing collision fixture").unwrap();
+
+    assert!(p.apply(&records()[..1]).is_err());
+    assert!(
+        collision.is_file(),
+        "pre-existing staging collision file must not be removed"
+    );
+    assert_eq!(p.progress().checkpoint, 0);
+
+    std::fs::remove_file(&collision).unwrap();
+    let progress = p
+        .apply(&records()[..1])
+        .expect("projection must recover cleanly without reopen after pre-rename error");
+    assert_eq!(progress.checkpoint, 1);
+}

@@ -1,17 +1,17 @@
 name: Main Branch Human Gate
 
 on:
-  pull_request:
+  push:
     branches:
-      - main
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
+      - develop
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: main-release-gate
+  cancel-in-progress: true
 
 jobs:
   main-human-approval:
@@ -19,9 +19,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: main-release
     steps:
-      - name: Verify human release approval for main
+      - name: Verify human release approval for develop promotion
         env:
-          RELEASE_HEAD_REF: ${{ github.head_ref }}
-          RELEASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          RELEASE_REF: ${{ github.ref }}
+          RELEASE_HEAD_SHA: ${{ github.sha }}
         run: |
-          echo "Human reviewer approved promotion of $RELEASE_HEAD_REF ($RELEASE_HEAD_SHA) into main."
+          if [ "$RELEASE_REF" != "refs/heads/develop" ]; then
+            echo "::error::Only refs/heads/develop may deploy to main-release, got $RELEASE_REF"
+            exit 1
+          fi
+          echo "Human reviewer approved promotion of develop ($RELEASE_HEAD_SHA) into main."
