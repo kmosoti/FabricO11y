@@ -1,0 +1,18 @@
+[Unit]
+Description=FabricO11y Converged Host & Agent Telemetry Daemon
+Documentation=file:///home/kmosoti/Projects/moiric/FabricO11y/docs/architecture.md
+After=default.target
+
+[Service]
+Type=simple
+Slice=fabrico11y.slice
+KillMode=control-group
+Environment=FABRIC_DATA_DIR=/data/fabrico11y
+Environment=TMPDIR=/data/tmp
+ExecStart=%h/.local/bin/fabric daemon --interval-ms 2000
+Restart=on-failure
+RestartSec=3s
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

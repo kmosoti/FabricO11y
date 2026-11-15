@@ -1,0 +1,14 @@
+[package]
+name = "fabric-graph"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+arrow = { version = "=59.2.0", default-features = false, features = ["ipc"] }
+fabric-core = { path = "../fabric-core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+proptest = "=1.11.0"

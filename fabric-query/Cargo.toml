@@ -5,10 +5,14 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+chrono = "=0.4.45"
 fabric = { path = "../fabric" }
+fabric-core = { path = "../fabric-core" }
+fabric-graph = { path = "../fabric-graph" }
+fabric-store = { path = "../fabric-store" }
 datafusion = { version = "=55.0.0", default-features = false, features = ["parquet", "sql"] }
-arrow = { version = "=59.2.0", default-features = false }
-parquet = { version = "=59.2.0", default-features = false, features = ["arrow", "snap"] }
+arrow = { version = "=59.2.0", default-features = false, features = ["ipc"] }
+parquet = { version = "=59.2.0", default-features = false, features = ["arrow", "snap", "zstd"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "sync"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
