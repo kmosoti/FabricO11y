@@ -253,15 +253,42 @@ pub fn poll_spindle_custody_records(
     max_records: usize,
     default_host: &str,
 ) -> Result<Vec<(u64, IngestEnvelope)>, String> {
+    let overall_deadline = Instant::now() + Duration::from_millis(250);
+    poll_spindle_custody_records_with(
+        after_id,
+        max_records,
+        default_host,
+        overall_deadline,
+        &mut |cursor, deadline| read_raw(spindle_sock, cursor, deadline),
+    )
+}
+
+fn poll_spindle_custody_records_with<F>(
+    after_id: u64,
+    max_records: usize,
+    default_host: &str,
+    overall_deadline: Instant,
+    read_batch: &mut F,
+) -> Result<Vec<(u64, IngestEnvelope)>, String>
+where
+    F: FnMut(u64, Instant) -> Result<Vec<(u64, Vec<u8>)>, String>,
+{
     let mut cursor = after_id;
     let mut out = Vec::new();
     if max_records == 0 {
         return Ok(out);
     }
 
-    let overall_deadline = Instant::now() + Duration::from_millis(250);
     while out.len() < max_records && Instant::now() < overall_deadline {
-        let batch = read_raw(spindle_sock, cursor, overall_deadline)?;
+        let batch = match read_batch(cursor, overall_deadline) {
+            Ok(batch) => batch,
+            Err(err) => {
+                if out.is_empty() {
+                    return Err(err);
+                }
+                break;
+            }
+        };
         if batch.is_empty() {
             break;
         }
@@ -372,5 +399,111 @@ pub async fn serve_ingest_socket(
                 }
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use fabric::observation::{Data, Identity, Observation, Outcome, REGISTRY, VERSION};
+
+    fn sample_obs_bytes(seq: u64) -> Vec<u8> {
+        let obs = Observation {
+            version: VERSION,
+            registry: REGISTRY.to_owned(),
+            identity: Identity {
+                producer: "test-producer".to_owned(),
+                generation: "gen-1".to_owned(),
+                sequence: seq,
+            },
+            timestamp_ns: 0,
+            resource: "test.service".to_owned(),
+            data: Data::Event {
+                name: "ok".to_owned(),
+                message: "hello".to_owned(),
+            },
+        };
+        serde_json::to_vec(&obs).expect("serialize test observation")
+    }
+
+    #[test]
+    fn poll_preserves_completed_prefix_when_later_read_times_out() {
+        let mut calls = 0usize;
+        let mut reader = |cursor: u64, _deadline: Instant| -> Result<Vec<(u64, Vec<u8>)>, String> {
+            calls += 1;
+            match calls {
+                1 => {
+                    assert_eq!(cursor, 4);
+                    Ok(vec![(5, sample_obs_bytes(5))])
+                }
+                2 => {
+                    assert_eq!(cursor, 5);
+                    Err("read deadline expired".to_owned())
+                }
+                _ => Ok(Vec::new()),
+            }
+        };
+        let recs = poll_spindle_custody_records_with(
+            4,
+            64,
+            "fedora-blade",
+            Instant::now() + Duration::from_secs(1),
+            &mut reader,
+        )
+        .expect("completed prefix must survive subsequent budget timeout");
+        assert_eq!(recs.len(), 1);
+        assert_eq!(recs[0].0, 5);
+        assert!(matches!(recs[0].1, IngestEnvelope::Log(_)));
+    }
+
+    #[test]
+    fn poll_returns_error_when_first_read_fails_without_progress() {
+        let mut reader =
+            |_cursor: u64, _deadline: Instant| -> Result<Vec<(u64, Vec<u8>)>, String> {
+                Err("spindle socket unreachable".to_owned())
+            };
+        let err = poll_spindle_custody_records_with(
+            0,
+            64,
+            "fedora-blade",
+            Instant::now() + Duration::from_secs(1),
+            &mut reader,
+        )
+        .expect_err("error without progress must propagate");
+        assert!(err.contains("spindle socket unreachable"));
+    }
+
+    #[test]
+    fn poll_zero_timestamp_and_decode_error_are_both_preserved() {
+        let mut calls = 0usize;
+        let mut reader = |cursor: u64, _deadline: Instant| -> Result<Vec<(u64, Vec<u8>)>, String> {
+            calls += 1;
+            match calls {
+                1 => Ok(vec![(cursor + 1, sample_obs_bytes(1))]),
+                2 => Ok(vec![(cursor + 1, b"not-valid-observation".to_vec())]),
+                _ => Ok(Vec::new()),
+            }
+        };
+        let recs = poll_spindle_custody_records_with(
+            0,
+            64,
+            "fedora-blade",
+            Instant::now() + Duration::from_secs(1),
+            &mut reader,
+        )
+        .expect("decode failure converts to explicit error log");
+        assert_eq!(recs.len(), 2);
+        match &recs[0].1 {
+            IngestEnvelope::Log(l) => assert_eq!(l.timestamp_ms, 0),
+            other => panic!("expected log record, got {other:?}"),
+        }
+        match &recs[1].1 {
+            IngestEnvelope::Log(l) => {
+                assert_eq!(l.level, "error");
+                assert!(l.message.contains("failed to decode spindle record 2"));
+            }
+            other => panic!("expected decode error log, got {other:?}"),
+        }
+        let _ = Outcome::Ok;
     }
 }
