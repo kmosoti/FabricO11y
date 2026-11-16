@@ -113,37 +113,6 @@ Unavailable counters are recorded as failures with diagnostics. Proof results an
 performance measurements are separate evidence. Native checks establish results;
 LogicGate integration requires an explicit revision of its evidence contract.
 
-## Algorithm candidate evaluation
-
-The bounded task contract is in `verification/search-contract.md`; competent
-baselines and inefficient starters live under `xtask/fixtures/search/`.
-Create a JSON manifest with `task` (membership, topk or intervals), `strategy`
-(serial, fresh, retained or baseline), `trial`, `family`, `rationale`, optional
-`parent` with `parent_source_sha256`, `source`, `algorithm`, `representation`, `ownership`, `data_flow` and
-`falsification`. Structural choices and the falsification experiment are required.
-
-```sh
-cargo xtask search register /data/tmp/proposal.json /data/tmp/fabric-algorithm
-cargo xtask search evaluate /data/tmp/fabric-algorithm /data/tmp/development.json development
-cargo xtask search evaluate /data/tmp/fabric-algorithm /data/tmp/final.json heldout
-cargo xtask search compare /data/tmp/baseline.json /data/tmp/final.json
-cargo xtask search status /data/tmp/fabric-algorithm selected /data/tmp/final.json
-```
-
-Registration captures repository identity and immutable source/contract digests.
-Compilation and execution run in Bubblewrap without host credentials or network.
-The contract prohibits candidate I/O, environment inspection and unsafe code;
-this is an evaluation boundary, not a complete sandbox for hostile native code.
-Hold final cases away from development sessions and select before final evaluation.
-Changing candidate source or the contract invalidates registration. Comparison
-rejects failed results and mismatched evaluator, compiler, contract, task or split.
-The first comparison result is the explicit baseline. Inspect per-workload timing
-ratios and resident memory, including preprocessing and output allocation. Keep
-tradeoffs and failed alternatives in local artifacts rather than a composite score.
-Status changes append an evidence record; evaluated/rejected/retained/selected
-states preserve earlier records. Retained and selected states require correct
-evaluation evidence for the same source and contract.
-
 ## Admission measurements
 
 Capture and verify the current source before measuring it. The benchmark

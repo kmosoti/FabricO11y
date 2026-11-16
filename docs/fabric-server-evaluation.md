@@ -79,11 +79,7 @@ the whole process including fixtures/readback/reporting; native SQLite allocatio
 are excluded. `/proc` peak RSS includes native allocations and is reported per role.
 Peak RSS values must not be summed and described as a simultaneous aggregate peak.
 
-`representation-report INPUT.jsonl ...` requires five measured samples per group,
-uses the matching JSON baseline, reports independent medians and ratios, and suppresses
-instrumented timing comparisons. It also reports a one-hop CPU/transfer break-even
-bandwidth where both added CPU and saved bytes are positive; this serial cost model
-is not a throughput or energy prediction. Setup and shutdown are outside ingest timing;
+Setup and shutdown are outside ingest timing;
 encoding, validation, durable commit and receipt exchange are inside it. Readback,
 projection and recovery are measured after seals. Input batches are preformed.
 
