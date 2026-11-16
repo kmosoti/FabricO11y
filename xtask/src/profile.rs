@@ -67,6 +67,7 @@ pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
     let budget: u64 = std::env::var("FABRIC_PROFILE_SECONDS")
         .map(|s| s.parse().map_err(|_| "invalid FABRIC_PROFILE_SECONDS"))
         .unwrap_or(Ok(if *mode == "benchmark" { 900 } else { 30 }))?;
+    let build_jobs = super::fuzz::env_positive_u64("CARGO_BUILD_JOBS", 4)?;
     let mut executable_sha256 = None;
     let mut driver_sha256 = None;
     let mut cases_sha256 = None;
@@ -100,7 +101,7 @@ pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
                 "--message-format=json",
                 "--locked",
             ])
-            .env("CARGO_BUILD_JOBS", "2")
+            .env("CARGO_BUILD_JOBS", build_jobs.to_string())
             .current_dir(root)
             .output()
             .map_err(|e| e.to_string())?;
@@ -166,7 +167,7 @@ pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
         .into_iter()
         .map(|key| (key, std::env::var(key).ok()))
         .collect();
-        build_configuration = serde_json::json!({"profile":"bench", "jobs":2,
+        build_configuration = serde_json::json!({"profile":"bench", "jobs": build_jobs,
             "environment_sha256":evidence::hash_bytes(&serde_json::to_vec(&settings).map_err(|e|e.to_string())?)?});
         command.arg(frozen);
     }
@@ -195,7 +196,7 @@ pub fn cli(args: &[&str], root: &Path) -> Result<(), String> {
         "build_configuration":build_configuration,
         "contract_sha256":if *mode == "benchmark" { Some(evidence::hash(&root.join("verification/admission-contract.md"))?) } else { None },
             "measurement_boundary": "perf covers the benchmark process including warmup, fixtures, construction, retries and reporting; compilation excluded; stdout separates warmed operation samples and construction",
-            "counters": "task-clock,cycles,instructions", "build_jobs": 2,
+            "counters": "task-clock,cycles,instructions", "build_jobs": build_jobs,
             "time_budget_seconds": budget,
             "os": super::output("uname", &["-a"], root)?,
             "hardware": super::output("lscpu", &[], root)?,

@@ -1,0 +1,20 @@
+name: Save trusted CI cache
+description: Save only from successful develop pushes; PRs never publish executable caches.
+inputs:
+  key:
+    required: true
+    description: Exact key from restore-ci-cache
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache/save@v4
+      if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+      with:
+        path: |
+          /github/home/.cargo/registry
+          /github/home/.cargo/git/db
+          /github/home/.local/share/fabrico11y/schema-tools
+          /github/home/.local/share/fabrico11y/engine-tools
+          target
+          /github/home/.cache/fabrico11y-fuzz-target
+        key: ${{ inputs.key }}
