@@ -9,7 +9,6 @@ use tokio::sync::mpsc;
 pub struct BoundedTelemetryQueue<T> {
     tx: mpsc::Sender<T>,
     dropped: Arc<AtomicU64>,
-    capacity: usize,
 }
 
 impl<T> BoundedTelemetryQueue<T> {
@@ -23,7 +22,6 @@ impl<T> BoundedTelemetryQueue<T> {
             Self {
                 tx,
                 dropped: dropped.clone(),
-                capacity: cap,
             },
             rx,
             dropped,
@@ -40,16 +38,6 @@ impl<T> BoundedTelemetryQueue<T> {
             }
             Err(mpsc::error::TrySendError::Closed(_)) => false,
         }
-    }
-
-    #[must_use]
-    pub fn dropped_total(&self) -> u64 {
-        self.dropped.load(Ordering::Relaxed)
-    }
-
-    #[must_use]
-    pub const fn capacity(&self) -> usize {
-        self.capacity
     }
 }
 

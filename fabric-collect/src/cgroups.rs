@@ -76,7 +76,7 @@ pub fn walk_cgroups_and_processes() -> CgroupWalkResult {
         .collect();
     ordered_pids.sort_by_key(|x| (x.0, x.1));
 
-    for (_, pid, slice, unit, cg_path) in ordered_pids.into_iter().take(MAX_PIDS_SCANNED()) {
+    for (_, pid, slice, unit, cg_path) in ordered_pids.into_iter().take(MAX_PIDS_PER_COLLECT) {
         if let Some(sample) = read_process_sample(pid, slice, unit, cg_path) {
             processes.push(sample);
         }
@@ -90,15 +90,6 @@ pub fn walk_cgroups_and_processes() -> CgroupWalkResult {
         processes,
         agents,
     }
-}
-
-const fn max_pids() -> usize {
-    MAX_PIDS_PER_COLLECT
-}
-
-#[allow(non_snake_case)]
-fn MAX_PIDS_SCANNED() -> usize {
-    max_pids()
 }
 
 fn read_slice_summary(slice_name: &str, dir: &Path) -> SliceSummary {

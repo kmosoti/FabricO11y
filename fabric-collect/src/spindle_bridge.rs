@@ -410,22 +410,6 @@ where
     Ok(out)
 }
 
-/// Incrementally polls committed custody records from `spindle.sock` strictly after `after_id`.
-pub fn poll_spindle_custody(
-    spindle_sock: &Path,
-    after_id: u64,
-    max_records: usize,
-    default_host: &str,
-) -> Result<(u64, Vec<IngestEnvelope>), String> {
-    let records = poll_spindle_custody_records(spindle_sock, after_id, max_records, default_host)?;
-    let next_cursor = records
-        .last()
-        .map(|(id, _)| (*id).max(after_id))
-        .unwrap_or(after_id);
-    let envelopes = records.into_iter().map(|(_, env)| env).collect();
-    Ok((next_cursor, envelopes))
-}
-
 /// Spawns the background local OTLP/Spindle ingest listener using bounded `try_emit`.
 pub async fn serve_ingest_socket(
     sock_path: &Path,
@@ -599,7 +583,7 @@ pub async fn serve_ingest_socket_until_shutdown(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fabric::observation::{Data, Identity, Observation, Outcome, REGISTRY, VERSION};
+    use fabric::observation::{Data, Identity, Observation, REGISTRY, VERSION};
     use tokio::io::AsyncWriteExt;
 
     fn sample_obs_bytes(seq: u64) -> Vec<u8> {
@@ -699,7 +683,6 @@ mod tests {
             }
             other => panic!("expected decode error log, got {other:?}"),
         }
-        let _ = Outcome::Ok;
     }
 
     #[tokio::test]

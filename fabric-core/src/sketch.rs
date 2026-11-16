@@ -15,7 +15,6 @@ pub struct DDSketch {
     count: u64,
     min: f64,
     max: f64,
-    sum: f64,
     bins: BTreeMap<i32, u64>,
 }
 
@@ -41,7 +40,6 @@ impl DDSketch {
             count: 0,
             min: f64::INFINITY,
             max: f64::NEG_INFINITY,
-            sum: 0.0,
             bins: BTreeMap::new(),
         }
     }
@@ -52,7 +50,6 @@ impl DDSketch {
             return;
         }
         self.count = self.count.saturating_add(1);
-        self.sum += value;
         if value < self.min {
             self.min = value;
         }
@@ -69,33 +66,6 @@ impl DDSketch {
         }
         let idx = self.bucket_index(value);
         *self.bins.entry(idx).or_insert(0) += 1;
-        self.enforce_bin_limit();
-    }
-
-    /// Merges another sketch with matching parameters into `self`.
-    pub fn merge(&mut self, other: &Self) {
-        if other.count == 0 {
-            return;
-        }
-        if self.count == 0 {
-            self.min = other.min;
-            self.max = other.max;
-        } else {
-            self.min = self.min.min(other.min);
-            self.max = self.max.max(other.max);
-        }
-        self.count = self.count.saturating_add(other.count);
-        self.zero_count = self.zero_count.saturating_add(other.zero_count);
-        self.negative_count = self.negative_count.saturating_add(other.negative_count);
-        self.sum += other.sum;
-        for (&idx, &freq) in &other.bins {
-            let bucket = if (self.alpha - other.alpha).abs() < 1e-9 {
-                idx
-            } else {
-                self.bucket_index(other.bucket_value(idx))
-            };
-            *self.bins.entry(bucket).or_insert(0) += freq;
-        }
         self.enforce_bin_limit();
     }
 
@@ -159,11 +129,6 @@ impl DDSketch {
     #[must_use]
     pub fn max(&self) -> Option<f64> {
         (self.count > 0).then_some(self.max)
-    }
-
-    #[must_use]
-    pub fn mean(&self) -> Option<f64> {
-        (self.count > 0).then_some(self.sum / (self.count as f64))
     }
 
     fn bucket_index(&self, value: f64) -> i32 {

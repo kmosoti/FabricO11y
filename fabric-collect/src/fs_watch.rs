@@ -5,7 +5,7 @@ use chrono::Utc;
 use fabric_core::{FsChurnEntry, FsEventRecord, MountUsage, ProcessSample};
 use rustix::fs::inotify;
 use rustix::io::Errno;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fs;
 use std::mem::MaybeUninit;
 use std::os::fd::OwnedFd;
@@ -98,15 +98,6 @@ impl FsChurnTracker {
         let now_ms = Utc::now().timestamp_millis();
         let mut events = self.drain_inotify_events(now_ms, mounts, processes);
         let mut entries: BTreeMap<String, FsChurnEntry> = BTreeMap::new();
-
-        // Collect extra candidate roots directly touched by live processes under /tmp or /data/tmp.
-        let mut scan_targets: Vec<(PathBuf, usize)> = Vec::new();
-        let mut seen_paths = BTreeSet::new();
-        for root in &self.watch_roots {
-            if seen_paths.insert(root.clone()) {
-                scan_targets.push((root.clone(), 0));
-            }
-        }
 
         for root in &self.watch_roots {
             let Ok(read_dir) = fs::read_dir(root) else {
