@@ -1,0 +1,29 @@
+name: Restore trusted CI cache
+description: Restore dependency, tool, build, and fuzz target caches by profile, container digest, arch, and lockfiles.
+inputs:
+  profile:
+    required: true
+    description: CI job profile (verify or native-acceptance)
+outputs:
+  key:
+    description: Primary key used for a later trusted save
+    value: ${{ steps.cache.outputs.cache-primary-key }}
+  hit:
+    description: Exact key restored
+    value: ${{ steps.cache.outputs.cache-hit }}
+runs:
+  using: composite
+  steps:
+    - id: cache
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          /github/home/.cargo/registry
+          /github/home/.cargo/git/db
+          /github/home/.local/share/fabrico11y/schema-tools
+          /github/home/.local/share/fabrico11y/engine-tools
+          target
+          /github/home/.cache/fabrico11y-fuzz-target
+        key: ci-v1-${{ inputs.profile }}-fedora44-d68cae91-${{ runner.arch }}-${{ hashFiles('rust-toolchain.toml', 'Cargo.lock', 'fuzz/Cargo.lock', '.github/scripts/*.sh') }}
+        restore-keys: |
+          ci-v1-${{ inputs.profile }}-fedora44-d68cae91-${{ runner.arch }}-
