@@ -30,8 +30,9 @@ use datafusion::physical_plan::{
 use datafusion::prelude::{SessionConfig, SessionContext};
 use fabric_core::arrow_schemas::{
     AGENTS_SCHEMA, FS_EVENTS_SCHEMA, LOGS_SCHEMA, METRICS_SCHEMA, TRACES_SCHEMA, UNITS_SCHEMA,
-    agents_to_record_batch, fs_churn_to_record_batch, metrics_to_record_batch,
-    units_to_record_batch,
+    agents_to_record_batch, estimate_agents_batch_peak_bytes, estimate_fs_churn_batch_peak_bytes,
+    estimate_metrics_batch_peak_bytes, estimate_units_batch_peak_bytes, fs_churn_to_record_batch,
+    metrics_to_record_batch, retained_record_batch_bytes, units_to_record_batch,
 };
 pub use fabric_core::query_spec::{
     QueryDomain, UnifiedQuerySpec, build_unified_sql, parse_duration_ms,
@@ -45,7 +46,11 @@ use fabric_store::parquet_guard::{
     validate_flat_compatible_parquet_schema, validate_non_nested_parquet_file_metadata,
     validate_parquet_metadata_invariants, validate_projected_row_group_pages,
 };
-use fabric_store::{OlapParquetStore, PinnedParquetFile, validated_storage_layout};
+use fabric_store::{
+    MAX_SNAPSHOT_METADATA_BYTES, MAX_SNAPSHOT_PARQUET_FILES, OlapParquetStore, PinnedParquetFile,
+    snapshot_partitions_retained_heap_bytes, snapshot_retained_heap_bytes,
+    validated_storage_layout,
+};
 use parquet::arrow::ProjectionMask;
 use parquet::arrow::arrow_reader::{ArrowReaderMetadata, ParquetRecordBatchReaderBuilder};
 use parquet::arrow::push_decoder::PushBuffers;
@@ -284,6 +289,9 @@ async fn execute_unified_query_once(
 
     let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(UNIFIED_POOL_BYTES));
     let mut live_input_res = MemoryConsumer::new("UnifiedQueryLiveInput").register(&pool);
+    let snapshot_budget = Arc::new(SnapshotBudgetGuard::new(
+        MemoryConsumer::new("UnifiedQuerySnapshot").register(&pool),
+    ));
     let result_budget = Arc::new(ResultBudgetState::new(
         MemoryConsumer::new("UnifiedQueryResult").register(&pool),
         MAX_UNIFIED_QUERY_RESULT_BYTES,
@@ -309,16 +317,31 @@ async fn execute_unified_query_once(
                 spec.since_ms,
                 live_metrics,
                 &mut live_input_res,
+                &snapshot_budget,
             )
             .await?;
             Some("timestamp_ms DESC")
         }
         QueryDomain::Logs => {
-            register_parquet_or_empty(&ctx, &olap, "logs", spec.since_ms, LOGS_SCHEMA.clone())?;
+            register_parquet_or_empty(
+                &ctx,
+                &olap,
+                "logs",
+                spec.since_ms,
+                LOGS_SCHEMA.clone(),
+                &snapshot_budget,
+            )?;
             Some("timestamp_ms DESC")
         }
         QueryDomain::Traces => {
-            register_parquet_or_empty(&ctx, &olap, "traces", spec.since_ms, TRACES_SCHEMA.clone())?;
+            register_parquet_or_empty(
+                &ctx,
+                &olap,
+                "traces",
+                spec.since_ms,
+                TRACES_SCHEMA.clone(),
+                &snapshot_budget,
+            )?;
             Some("timestamp_ms DESC")
         }
         QueryDomain::Fs => {
@@ -328,29 +351,44 @@ async fn execute_unified_query_once(
                 spec.since_ms,
                 live_snapshot,
                 &mut live_input_res,
+                &snapshot_budget,
             )
             .await?;
             Some("size_bytes DESC, timestamp_ms DESC")
         }
         QueryDomain::Units => {
             let batch = match live_snapshot {
-                Some(snap) => units_to_record_batch(&snap.units)?,
-                None => RecordBatch::new_empty(UNITS_SCHEMA.clone()),
+                Some(snap) if !snap.units.is_empty() => {
+                    let peak_bytes = estimate_units_batch_peak_bytes(&snap.units);
+                    live_input_res
+                        .try_resize(peak_bytes)
+                        .map_err(|e| e.to_string())?;
+                    let batch = units_to_record_batch(&snap.units)?;
+                    live_input_res
+                        .try_resize(retained_record_batch_bytes(&batch))
+                        .map_err(|e| e.to_string())?;
+                    batch
+                }
+                _ => RecordBatch::new_empty(UNITS_SCHEMA.clone()),
             };
-            live_input_res
-                .try_grow(batch.get_array_memory_size())
-                .map_err(|e| e.to_string())?;
             ctx.register_batch("t", batch).map_err(|e| e.to_string())?;
             Some("memory_current_bytes DESC, name ASC")
         }
         QueryDomain::Agents => {
             let batch = match live_snapshot {
-                Some(snap) => agents_to_record_batch(&snap.agents)?,
-                None => RecordBatch::new_empty(AGENTS_SCHEMA.clone()),
+                Some(snap) if !snap.agents.is_empty() => {
+                    let peak_bytes = estimate_agents_batch_peak_bytes(&snap.agents);
+                    live_input_res
+                        .try_resize(peak_bytes)
+                        .map_err(|e| e.to_string())?;
+                    let batch = agents_to_record_batch(&snap.agents)?;
+                    live_input_res
+                        .try_resize(retained_record_batch_bytes(&batch))
+                        .map_err(|e| e.to_string())?;
+                    batch
+                }
+                _ => RecordBatch::new_empty(AGENTS_SCHEMA.clone()),
             };
-            live_input_res
-                .try_grow(batch.get_array_memory_size())
-                .map_err(|e| e.to_string())?;
             ctx.register_batch("t", batch).map_err(|e| e.to_string())?;
             Some("rss_bytes DESC, session_id ASC")
         }
@@ -395,6 +433,7 @@ async fn execute_unified_query_once(
         .map_err(|e| e.to_string())?;
     drop(ctx);
     drop(live_input_res);
+    drop(snapshot_budget);
     let rows = batches_to_json_rows_bounded(&batches, MAX_UNIFIED_QUERY_RESULT_BYTES)?;
     drop(result_budget);
 
@@ -772,9 +811,37 @@ fn build_projected_batch(
 }
 
 #[derive(Debug)]
+struct SnapshotBudgetGuard {
+    reservation: Mutex<MemoryReservation>,
+}
+
+impl SnapshotBudgetGuard {
+    fn new(reservation: MemoryReservation) -> Self {
+        Self {
+            reservation: Mutex::new(reservation),
+        }
+    }
+
+    fn try_resize(&self, bytes: usize) -> Result<(), String> {
+        let guard = self
+            .reservation
+            .lock()
+            .map_err(|_| "UnifiedQuerySnapshot budget mutex poisoned".to_owned())?;
+        guard.try_resize(bytes).map_err(|e| e.to_string())
+    }
+
+    fn free(&self) {
+        if let Ok(guard) = self.reservation.lock() {
+            guard.free();
+        }
+    }
+}
+
+#[derive(Debug)]
 struct PinnedParquetTable {
     schema: SchemaRef,
-    partitions: Vec<Vec<PinnedParquetFile>>,
+    partitions: Arc<[Arc<[PinnedParquetFile]>]>,
+    snapshot_budget: Option<Arc<SnapshotBudgetGuard>>,
 }
 
 impl TableProvider for PinnedParquetTable {
@@ -806,11 +873,12 @@ impl TableProvider for PinnedParquetTable {
         'life3: 'async_trait,
         Self: 'async_trait,
     {
-        let plan = PinnedParquetExec::try_new(
+        let plan = PinnedParquetExec::try_new_with_budget(
             Arc::clone(&self.schema),
-            self.partitions.clone(),
+            Arc::clone(&self.partitions),
             projection.cloned(),
             limit,
+            self.snapshot_budget.clone(),
         );
         Box::pin(async move { plan.map(|exec| Arc::new(exec) as Arc<dyn ExecutionPlan>) })
     }
@@ -821,17 +889,29 @@ struct PinnedParquetExec {
     full_schema: SchemaRef,
     projected_schema: SchemaRef,
     projection: Option<Vec<usize>>,
-    partitions: Vec<Vec<PinnedParquetFile>>,
+    partitions: Arc<[Arc<[PinnedParquetFile]>]>,
     limit: Option<usize>,
     properties: Arc<PlanProperties>,
+    snapshot_budget: Option<Arc<SnapshotBudgetGuard>>,
 }
 
 impl PinnedParquetExec {
+    #[cfg(test)]
     fn try_new(
         full_schema: SchemaRef,
-        partitions: Vec<Vec<PinnedParquetFile>>,
+        partitions: Arc<[Arc<[PinnedParquetFile]>]>,
         projection: Option<Vec<usize>>,
         limit: Option<usize>,
+    ) -> datafusion::common::Result<Self> {
+        Self::try_new_with_budget(full_schema, partitions, projection, limit, None)
+    }
+
+    fn try_new_with_budget(
+        full_schema: SchemaRef,
+        partitions: Arc<[Arc<[PinnedParquetFile]>]>,
+        projection: Option<Vec<usize>>,
+        limit: Option<usize>,
+        snapshot_budget: Option<Arc<SnapshotBudgetGuard>>,
     ) -> datafusion::common::Result<Self> {
         let projected_schema = match projection.as_ref() {
             Some(indices) => Arc::new(full_schema.project(indices)?),
@@ -850,6 +930,7 @@ impl PinnedParquetExec {
             partitions,
             limit,
             properties,
+            snapshot_budget,
         })
     }
 }
@@ -922,7 +1003,7 @@ impl ExecutionPlan for PinnedParquetExec {
         partition: usize,
         context: Arc<TaskContext>,
     ) -> datafusion::common::Result<SendableRecordBatchStream> {
-        let Some(files) = self.partitions.get(partition).cloned() else {
+        let Some(files) = self.partitions.get(partition).map(Arc::clone) else {
             return Err(DataFusionError::Internal(format!(
                 "PinnedParquetExec partition {partition} out of range ({})",
                 self.partitions.len()
@@ -932,6 +1013,7 @@ impl ExecutionPlan for PinnedParquetExec {
         let projected_schema = Arc::clone(&self.projected_schema);
         let projection = self.projection.clone();
         let limit = self.limit;
+        let snapshot_budget = self.snapshot_budget.clone();
 
         let (raw_tx, mut raw_rx) = tokio::sync::mpsc::channel::<
             datafusion::common::Result<(RecordBatch, MemoryReservation)>,
@@ -970,9 +1052,10 @@ impl ExecutionPlan for PinnedParquetExec {
         });
 
         builder.spawn_blocking(move || {
+            let _snapshot_budget = snapshot_budget;
             let mut remaining_limit = limit;
 
-            for pinned in files {
+            for pinned in files.iter() {
                 if remaining_limit == Some(0) || raw_tx.is_closed() {
                     break;
                 }
@@ -1209,18 +1292,93 @@ impl ExecutionPlan for PinnedParquetExec {
     }
 }
 
+fn discover_bounded_snapshot(
+    olap: &OlapParquetStore,
+    domain: &str,
+    since_ms: Option<i64>,
+    snapshot_budget: &Arc<SnapshotBudgetGuard>,
+) -> Result<Vec<PinnedParquetFile>, String> {
+    snapshot_budget.try_resize(MAX_SNAPSHOT_METADATA_BYTES)?;
+    match olap.snapshot_pinned_parquet_files_bounded(
+        domain,
+        since_ms,
+        MAX_SNAPSHOT_PARQUET_FILES,
+        MAX_SNAPSHOT_METADATA_BYTES,
+    ) {
+        Ok(files) => Ok(files),
+        Err(err) => {
+            snapshot_budget.free();
+            Err(err)
+        }
+    }
+}
+
+#[cfg(test)]
 fn register_pinned_parquet_table(
     ctx: &SessionContext,
     table_name: &str,
     schema: SchemaRef,
     files: Vec<PinnedParquetFile>,
 ) -> Result<(), String> {
+    register_pinned_parquet_table_with_budget(ctx, table_name, schema, files, None)
+}
+
+fn register_pinned_parquet_table_with_budget(
+    ctx: &SessionContext,
+    table_name: &str,
+    schema: SchemaRef,
+    files: Vec<PinnedParquetFile>,
+    snapshot_budget: Option<&Arc<SnapshotBudgetGuard>>,
+) -> Result<(), String> {
     let mid = files.len().div_ceil(2).max(1);
-    let partitions: Vec<Vec<PinnedParquetFile>> = files
-        .chunks(mid)
-        .map(<[PinnedParquetFile]>::to_vec)
-        .collect();
-    let table = PinnedParquetTable { schema, partitions };
+    let num_chunks = if files.len() > mid {
+        2
+    } else {
+        usize::from(!files.is_empty())
+    };
+    if let Some(budget) = snapshot_budget {
+        let retained_files_bytes = snapshot_retained_heap_bytes(&files);
+        let conversion_peak_bytes = retained_files_bytes
+            .saturating_add(
+                files
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<PinnedParquetFile>()),
+            )
+            .saturating_add(
+                files
+                    .len()
+                    .saturating_mul(std::mem::size_of::<PinnedParquetFile>()),
+            )
+            .saturating_add(
+                num_chunks.saturating_mul(std::mem::size_of::<Arc<[PinnedParquetFile]>>() + 16),
+            )
+            .saturating_add(16);
+        if let Err(err) = budget.try_resize(conversion_peak_bytes.max(MAX_SNAPSHOT_METADATA_BYTES))
+        {
+            budget.free();
+            return Err(err);
+        }
+    }
+    let mut partitions_vec = Vec::with_capacity(num_chunks);
+    let mut iter = files.into_iter();
+    while iter.len() > 0 {
+        let chunk: Arc<[PinnedParquetFile]> = iter.by_ref().take(mid).collect();
+        partitions_vec.push(chunk);
+    }
+    let partitions: Arc<[Arc<[PinnedParquetFile]>]> = Arc::from(partitions_vec);
+    drop(iter);
+    if let Some(budget) = snapshot_budget {
+        let retained_bytes = snapshot_partitions_retained_heap_bytes(&partitions);
+        if let Err(err) = budget.try_resize(retained_bytes) {
+            budget.free();
+            return Err(err);
+        }
+    }
+    let table = PinnedParquetTable {
+        schema,
+        partitions,
+        snapshot_budget: snapshot_budget.map(Arc::clone),
+    };
     ctx.register_table(table_name, Arc::new(table))
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -1232,13 +1390,15 @@ fn register_parquet_or_empty(
     domain: &str,
     since_ms: Option<i64>,
     schema: SchemaRef,
+    snapshot_budget: &Arc<SnapshotBudgetGuard>,
 ) -> Result<(), String> {
-    let files = olap.snapshot_pinned_parquet_files(domain, since_ms)?;
+    let files = discover_bounded_snapshot(olap, domain, since_ms, snapshot_budget)?;
     if files.is_empty() {
+        snapshot_budget.free();
         ctx.register_batch("t", RecordBatch::new_empty(schema))
             .map_err(|e| e.to_string())?;
     } else {
-        register_pinned_parquet_table(ctx, "t", schema, files)?;
+        register_pinned_parquet_table_with_budget(ctx, "t", schema, files, Some(snapshot_budget))?;
     }
     Ok(())
 }
@@ -1250,27 +1410,36 @@ async fn register_parquet_with_optional_live(
     since_ms: Option<i64>,
     schema: SchemaRef,
     live_batch: Option<RecordBatch>,
-    live_input_res: &mut MemoryReservation,
+    snapshot_budget: &Arc<SnapshotBudgetGuard>,
 ) -> Result<(), String> {
-    if let Some(ref batch) = live_batch {
-        live_input_res
-            .try_grow(batch.get_array_memory_size())
-            .map_err(|e| e.to_string())?;
-    }
-    let files = olap.snapshot_pinned_parquet_files(domain, since_ms)?;
+    let files = discover_bounded_snapshot(olap, domain, since_ms, snapshot_budget)?;
     match (files.is_empty(), live_batch) {
         (true, None) => {
+            snapshot_budget.free();
             ctx.register_batch("t", RecordBatch::new_empty(schema))
                 .map_err(|e| e.to_string())?;
         }
         (true, Some(batch)) => {
+            snapshot_budget.free();
             ctx.register_batch("t", batch).map_err(|e| e.to_string())?;
         }
         (false, None) => {
-            register_pinned_parquet_table(ctx, "t", schema, files)?;
+            register_pinned_parquet_table_with_budget(
+                ctx,
+                "t",
+                schema,
+                files,
+                Some(snapshot_budget),
+            )?;
         }
         (false, Some(batch)) => {
-            register_pinned_parquet_table(ctx, "t_pq", schema, files)?;
+            register_pinned_parquet_table_with_budget(
+                ctx,
+                "t_pq",
+                schema,
+                files,
+                Some(snapshot_budget),
+            )?;
             ctx.register_batch("t_live", batch)
                 .map_err(|e| e.to_string())?;
             let union_df = ctx
@@ -1290,10 +1459,21 @@ async fn register_metrics_table(
     since_ms: Option<i64>,
     live_metrics: &[MetricPoint],
     live_input_res: &mut MemoryReservation,
+    snapshot_budget: &Arc<SnapshotBudgetGuard>,
 ) -> Result<(), String> {
-    let live_batch = (!live_metrics.is_empty())
-        .then(|| metrics_to_record_batch(live_metrics))
-        .transpose()?;
+    let live_batch = if live_metrics.is_empty() {
+        None
+    } else {
+        let peak_bytes = estimate_metrics_batch_peak_bytes(live_metrics);
+        live_input_res
+            .try_resize(peak_bytes)
+            .map_err(|e| e.to_string())?;
+        let batch = metrics_to_record_batch(live_metrics)?;
+        live_input_res
+            .try_resize(retained_record_batch_bytes(&batch))
+            .map_err(|e| e.to_string())?;
+        Some(batch)
+    };
     register_parquet_with_optional_live(
         ctx,
         olap,
@@ -1301,7 +1481,7 @@ async fn register_metrics_table(
         since_ms,
         METRICS_SCHEMA.clone(),
         live_batch,
-        live_input_res,
+        snapshot_budget,
     )
     .await
 }
@@ -1312,11 +1492,22 @@ async fn register_fs_table(
     since_ms: Option<i64>,
     live_snapshot: Option<&HostSnapshot>,
     live_input_res: &mut MemoryReservation,
+    snapshot_budget: &Arc<SnapshotBudgetGuard>,
 ) -> Result<(), String> {
-    let live_batch = live_snapshot
-        .filter(|s| !s.fs_churn.is_empty())
-        .map(|s| fs_churn_to_record_batch(s.timestamp_unix_ms, &s.fs_churn))
-        .transpose()?;
+    let live_batch = match live_snapshot.filter(|s| !s.fs_churn.is_empty()) {
+        Some(s) => {
+            let peak_bytes = estimate_fs_churn_batch_peak_bytes(&s.fs_churn);
+            live_input_res
+                .try_resize(peak_bytes)
+                .map_err(|e| e.to_string())?;
+            let batch = fs_churn_to_record_batch(s.timestamp_unix_ms, &s.fs_churn)?;
+            live_input_res
+                .try_resize(retained_record_batch_bytes(&batch))
+                .map_err(|e| e.to_string())?;
+            Some(batch)
+        }
+        None => None,
+    };
     register_parquet_with_optional_live(
         ctx,
         olap,
@@ -1324,7 +1515,7 @@ async fn register_fs_table(
         since_ms,
         FS_EVENTS_SCHEMA.clone(),
         live_batch,
-        live_input_res,
+        snapshot_budget,
     )
     .await
 }
@@ -1717,8 +1908,13 @@ mod tests {
             SessionConfig::new().with_target_partitions(1),
             ch_env,
         );
-        let exec = PinnedParquetExec::try_new(METRICS_SCHEMA.clone(), vec![ch_pinned], None, None)
-            .unwrap();
+        let exec = PinnedParquetExec::try_new(
+            METRICS_SCHEMA.clone(),
+            Arc::from([Arc::from(ch_pinned)]),
+            None,
+            None,
+        )
+        .unwrap();
         let stream = exec.execute(0, ch_ctx.task_ctx()).unwrap();
         for _ in 0..80 {
             let cur = pool.reserved();
@@ -2141,7 +2337,7 @@ mod tests {
         );
         let exec = PinnedParquetExec::try_new(
             METRICS_SCHEMA.clone(),
-            vec![meta_pinned],
+            Arc::from([Arc::from(meta_pinned)]),
             Some(vec![1]),
             None,
         )
@@ -3830,7 +4026,9 @@ mod tests {
         );
         let exec_toctou = PinnedParquetExec::try_new(
             METRICS_SCHEMA.clone(),
-            vec![olap.snapshot_pinned_parquet_files("metrics", None).unwrap()],
+            Arc::from([Arc::from(
+                olap.snapshot_pinned_parquet_files("metrics", None).unwrap(),
+            )]),
             Some(vec![1]),
             None,
         )
@@ -6327,9 +6525,7 @@ mod tests {
         .await
         .expect_err("40 x 520 KiB log rows (~40 MiB retained) must reject under 32 MiB result cap");
         assert!(
-            over_budget_err.contains("exceeds maximum retained budget")
-                || over_budget_err.contains("Failed to allocate additional")
-                || over_budget_err.contains("Resources exhausted"),
+            over_budget_err.contains("exceeds maximum retained budget"),
             "unexpected over-budget unified query err: {over_budget_err}"
         );
 
@@ -6349,5 +6545,601 @@ mod tests {
         .await
         .expect("2 x 520 KiB log rows (~2.1 MiB retained) must succeed cleanly");
         assert_eq!(under_budget_ok.row_count, 2);
+    }
+
+    #[tokio::test]
+    async fn round24_bounded_pinned_snapshot_and_live_input_pre_reservation_reject_cleanly() {
+        use fabric_core::{AgentSessionRecord, FsChurnEntry, UnitRecord};
+
+        // 1. (#164.1) Bounded pinned parquet snapshot discovery & Arc-shared metadata accounting.
+        let dir = non_tmp_dir();
+        let cat = fabric_store::CatalogStore::open(dir.path()).unwrap();
+        let olap = OlapParquetStore::new(cat.layout().clone());
+        let day1 = 1_700_000_000_000_i64;
+        let day2 = day1 + 86_400_000_i64;
+        for (idx, ts) in [day1, day1 + 1000, day2, day2 + 1000]
+            .into_iter()
+            .enumerate()
+        {
+            olap.write_metrics(&[MetricPoint {
+                timestamp_ms: ts,
+                name: format!("r24.m.{idx}"),
+                value: idx as f64,
+                host: "h".into(),
+                slice: "agent.slice".into(),
+                unit: "u".into(),
+                pid: Some(idx as u32 + 1),
+                labels_json: "{}".into(),
+            }])
+            .unwrap();
+        }
+
+        let pinned = olap
+            .snapshot_pinned_parquet_files_bounded(
+                "metrics",
+                None,
+                MAX_SNAPSHOT_PARQUET_FILES,
+                MAX_SNAPSHOT_METADATA_BYTES,
+            )
+            .unwrap();
+        assert_eq!(pinned.len(), 4);
+        assert!(pinned[0].retained_heap_bytes() > 0);
+        let cloned = pinned[0].clone();
+        assert_eq!(
+            pinned[0].file_name().as_ptr(),
+            cloned.file_name().as_ptr(),
+            "PinnedParquetFile clones must share Arc<str> storage"
+        );
+        assert_eq!(
+            pinned[0]
+                .display_path()
+                .as_os_str()
+                .as_encoded_bytes()
+                .as_ptr(),
+            cloned
+                .display_path()
+                .as_os_str()
+                .as_encoded_bytes()
+                .as_ptr(),
+            "PinnedParquetFile clones must share Arc<Path> storage"
+        );
+        let exact_bytes = fabric_store::snapshot_retained_heap_bytes(&pinned);
+        assert!(exact_bytes > 0 && exact_bytes < MAX_SNAPSHOT_METADATA_BYTES);
+
+        let count_err = olap
+            .snapshot_pinned_parquet_files_bounded("metrics", None, 3, MAX_SNAPSHOT_METADATA_BYTES)
+            .expect_err("4 files must reject when max_files == 3");
+        assert!(
+            count_err.contains("file count exceeds limit"),
+            "unexpected max_files err: {count_err}"
+        );
+
+        let bytes_err = olap
+            .snapshot_pinned_parquet_files_bounded("metrics", None, 100, exact_bytes - 1)
+            .expect_err("snapshot must reject when max_bytes == exact_bytes - 1");
+        assert!(
+            bytes_err.contains("metadata"),
+            "unexpected max_bytes err: {bytes_err}"
+        );
+        assert_eq!(
+            olap.snapshot_pinned_parquet_files_bounded("metrics", None, 100, exact_bytes + 512)
+                .unwrap()
+                .len(),
+            4
+        );
+
+        // UnifiedQuerySnapshot pre-reserves MAX_SNAPSHOT_METADATA_BYTES (4 MiB) before discovery,
+        // keeps 4 MiB reserved through partition-slice creation, shrinks after register, and
+        // ties reservation lifetime to PinnedParquetTable/PinnedParquetExec/blocking readers.
+        let pool: Arc<dyn MemoryPool> = Arc::new(GreedyMemoryPool::new(UNIFIED_POOL_BYTES));
+        let pressure_res = MemoryConsumer::new("Pressure").register(&pool);
+        pressure_res
+            .try_grow(UNIFIED_POOL_BYTES - MAX_SNAPSHOT_METADATA_BYTES + 1024)
+            .unwrap();
+        let snap_budget = Arc::new(SnapshotBudgetGuard::new(
+            MemoryConsumer::new("UnifiedQuerySnapshot").register(&pool),
+        ));
+        let pre_err = discover_bounded_snapshot(&olap, "metrics", None, &snap_budget)
+            .expect_err("UnifiedQuerySnapshot 4 MiB pre-reservation must reject with 1 KiB short");
+        assert!(
+            pre_err.contains("Failed to allocate additional"),
+            "unexpected pre-reserve err: {pre_err}"
+        );
+        assert_eq!(
+            pool.reserved(),
+            UNIFIED_POOL_BYTES - MAX_SNAPSHOT_METADATA_BYTES + 1024
+        );
+
+        pressure_res.shrink(1024);
+        assert_eq!(
+            pool.reserved(),
+            UNIFIED_POOL_BYTES - MAX_SNAPSHOT_METADATA_BYTES
+        );
+        let discovered = discover_bounded_snapshot(&olap, "metrics", None, &snap_budget)
+            .expect("UnifiedQuerySnapshot must succeed with exact 4 MiB headroom");
+        assert_eq!(discovered.len(), 4);
+        assert_eq!(
+            pool.reserved(),
+            UNIFIED_POOL_BYTES,
+            "UnifiedQuerySnapshot must hold full 4 MiB across partition slice conversion"
+        );
+        let snap_env = RuntimeEnvBuilder::new()
+            .with_memory_pool(Arc::clone(&pool))
+            .build_arc()
+            .unwrap();
+        let snap_ctx = SessionContext::new_with_config_rt(
+            SessionConfig::new().with_target_partitions(2),
+            snap_env,
+        );
+        register_pinned_parquet_table_with_budget(
+            &snap_ctx,
+            "t",
+            METRICS_SCHEMA.clone(),
+            discovered,
+            Some(&snap_budget),
+        )
+        .unwrap();
+        let retained_after_register = pool
+            .reserved()
+            .saturating_sub(UNIFIED_POOL_BYTES - MAX_SNAPSHOT_METADATA_BYTES);
+        assert!(
+            retained_after_register >= exact_bytes
+                && retained_after_register < MAX_SNAPSHOT_METADATA_BYTES,
+            "UnifiedQuerySnapshot must shrink after partition conversion to retained bytes ({retained_after_register})"
+        );
+        // Execute and drop outer snap_budget while stream is still held; reservation stays
+        // pinned until stream drops and the blocking reader exits (mid-stream cancel/drop).
+        let df = snap_ctx.sql("SELECT timestamp_ms FROM t").await.unwrap();
+        let stream = df.execute_stream().await.unwrap();
+        drop(snap_budget);
+        drop(snap_ctx);
+        assert!(
+            pool.reserved() >= (UNIFIED_POOL_BYTES - MAX_SNAPSHOT_METADATA_BYTES) + exact_bytes,
+            "UnifiedQuerySnapshot must remain reserved while stream/blocking reader may hold files"
+        );
+        drop(stream);
+        tokio::task::yield_now().await;
+        for _ in 0..40 {
+            if pool.reserved() == UNIFIED_POOL_BYTES - MAX_SNAPSHOT_METADATA_BYTES {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+        assert_eq!(
+            pool.reserved(),
+            UNIFIED_POOL_BYTES - MAX_SNAPSHOT_METADATA_BYTES
+        );
+
+        // Adversarial .replace-intent.json rejection tests: >16 inputs, duplicate input_ids keys,
+        // >256 B replacement/staged_source, and exhausted intent parse budget before decoding.
+        let bad_intent_dir = non_tmp_dir();
+        let bad_intent_cat = fabric_store::CatalogStore::open(bad_intent_dir.path()).unwrap();
+        let bad_intent_olap = OlapParquetStore::new(bad_intent_cat.layout().clone());
+        let bad_intent_part = bad_intent_cat
+            .layout()
+            .olap_domain_dir("metrics")
+            .join("dt=2023-11-14");
+        fs::create_dir_all(&bad_intent_part).unwrap();
+        let many_inputs: Vec<String> = (0..17).map(|i| format!("part-{i}.parquet")).collect();
+        let craft_intent = serde_json::json!({
+            "replacement": "part-rep.parquet",
+            "inputs": many_inputs,
+        });
+        fs::write(
+            bad_intent_part.join(".replace-intent.json"),
+            serde_json::to_vec(&craft_intent).unwrap(),
+        )
+        .unwrap();
+        let intent_err = bad_intent_olap
+            .snapshot_pinned_parquet_files_bounded(
+                "metrics",
+                None,
+                MAX_SNAPSHOT_PARQUET_FILES,
+                MAX_SNAPSHOT_METADATA_BYTES,
+            )
+            .expect_err("17-input replace intent must reject during bounded serde parse");
+        assert!(
+            intent_err.contains("input count exceeds limit"),
+            "unexpected replace intent err: {intent_err}"
+        );
+
+        let dup_keys_json = br#"{"replacement":"part-rep.parquet","inputs":["part-a.parquet"],"input_ids":{"part-a.parquet":{"dev":1,"ino":1},"part-a.parquet":{"dev":1,"ino":2}}}"#;
+        fs::write(bad_intent_part.join(".replace-intent.json"), dup_keys_json).unwrap();
+        let dup_err = bad_intent_olap
+            .snapshot_pinned_parquet_files_bounded(
+                "metrics",
+                None,
+                MAX_SNAPSHOT_PARQUET_FILES,
+                MAX_SNAPSHOT_METADATA_BYTES,
+            )
+            .expect_err("duplicate keys in input_ids must reject during serde parse");
+        assert!(
+            dup_err.contains("duplicate key"),
+            "unexpected duplicate key err: {dup_err}"
+        );
+
+        let long_name = format!("{}.parquet", "r".repeat(260));
+        let long_rep_json = serde_json::json!({
+            "replacement": long_name,
+            "inputs": ["part-a.parquet"],
+        });
+        fs::write(
+            bad_intent_part.join(".replace-intent.json"),
+            serde_json::to_vec(&long_rep_json).unwrap(),
+        )
+        .unwrap();
+        let long_rep_err = bad_intent_olap
+            .snapshot_pinned_parquet_files_bounded(
+                "metrics",
+                None,
+                MAX_SNAPSHOT_PARQUET_FILES,
+                MAX_SNAPSHOT_METADATA_BYTES,
+            )
+            .expect_err(">256 B replacement filename must reject during serde parse");
+        assert!(
+            long_rep_err.contains("exceeds 256 bytes"),
+            "unexpected long replacement err: {long_rep_err}"
+        );
+
+        let long_staged_json = serde_json::json!({
+            "replacement": "part-rep.parquet",
+            "inputs": ["part-a.parquet"],
+            "staged_source": format!(".replace-source-{}.staged", "s".repeat(260)),
+        });
+        fs::write(
+            bad_intent_part.join(".replace-intent.json"),
+            serde_json::to_vec(&long_staged_json).unwrap(),
+        )
+        .unwrap();
+        let long_staged_err = bad_intent_olap
+            .snapshot_pinned_parquet_files_bounded(
+                "metrics",
+                None,
+                MAX_SNAPSHOT_PARQUET_FILES,
+                MAX_SNAPSHOT_METADATA_BYTES,
+            )
+            .expect_err(">256 B staged_source filename must reject during serde parse");
+        assert!(
+            long_staged_err.contains("exceeds 256 bytes"),
+            "unexpected long staged_source err: {long_staged_err}"
+        );
+
+        let valid_intent_json = serde_json::json!({
+            "replacement": "part-rep.parquet",
+            "inputs": ["part-a.parquet"],
+        });
+        fs::write(
+            bad_intent_part.join(".replace-intent.json"),
+            serde_json::to_vec(&valid_intent_json).unwrap(),
+        )
+        .unwrap();
+        let budget_err = bad_intent_olap
+            .snapshot_pinned_parquet_files_bounded(
+                "metrics",
+                None,
+                MAX_SNAPSHOT_PARQUET_FILES,
+                4 * 1024,
+            )
+            .expect_err("replace intent must reject pre-read when budget < raw + decoded reserve");
+        assert!(
+            budget_err.contains("replace intent parse budget exceeds"),
+            "unexpected intent parse budget err: {budget_err}"
+        );
+
+        // >64 partitions exercises SnapshotAnchorTracker overflow accounting cleanly.
+        let many_part_dir = non_tmp_dir();
+        let many_part_cat = fabric_store::CatalogStore::open(many_part_dir.path()).unwrap();
+        let many_part_olap = OlapParquetStore::new(many_part_cat.layout().clone());
+        for d in 0..70_i64 {
+            many_part_olap
+                .write_metrics(&[MetricPoint {
+                    timestamp_ms: day1 + d * 86_400_000_i64,
+                    name: format!("p70.{d}"),
+                    value: d as f64,
+                    host: "h".into(),
+                    slice: "s".into(),
+                    unit: "u".into(),
+                    pid: None,
+                    labels_json: "{}".into(),
+                }])
+                .unwrap();
+        }
+        let many_pinned = many_part_olap
+            .snapshot_pinned_parquet_files_bounded(
+                "metrics",
+                None,
+                MAX_SNAPSHOT_PARQUET_FILES,
+                MAX_SNAPSHOT_METADATA_BYTES,
+            )
+            .unwrap();
+        assert_eq!(many_pinned.len(), 70);
+        let many_exact = snapshot_retained_heap_bytes(&many_pinned);
+        assert!(
+            many_part_olap
+                .snapshot_pinned_parquet_files_bounded("metrics", None, 100, many_exact - 1)
+                .is_err()
+        );
+
+        // Error during bounded discovery releases UnifiedQuerySnapshot cleanly.
+        let sym_dir = non_tmp_dir();
+        let sym_cat = fabric_store::CatalogStore::open(sym_dir.path()).unwrap();
+        let sym_olap = OlapParquetStore::new(sym_cat.layout().clone());
+        let sym_part = sym_cat
+            .layout()
+            .olap_domain_dir("metrics")
+            .join("dt=2023-11-14");
+        fs::create_dir_all(&sym_part).unwrap();
+        let outside = non_tmp_dir();
+        let fake_target = outside.path().join("target.parquet");
+        fs::write(&fake_target, b"PAR1").unwrap();
+        symlink(&fake_target, sym_part.join("evil.parquet")).unwrap();
+        let err_snap_budget = Arc::new(SnapshotBudgetGuard::new(
+            MemoryConsumer::new("UnifiedQuerySnapshot").register(&pool),
+        ));
+        let sym_err = discover_bounded_snapshot(&sym_olap, "metrics", None, &err_snap_budget)
+            .expect_err("symlinked parquet must fail discovery");
+        assert!(sym_err.contains("symlink"), "unexpected sym err: {sym_err}");
+        assert_eq!(
+            pool.reserved(),
+            UNIFIED_POOL_BYTES - MAX_SNAPSHOT_METADATA_BYTES,
+            "failed discovery must release UnifiedQuerySnapshot reservation"
+        );
+        drop(pressure_res);
+
+        // 2. (#165.1) Live-input peak estimators bound Arrow builders & pre-reserve before build.
+        let sample_metrics = vec![MetricPoint {
+            timestamp_ms: day1,
+            name: "cpu.util".into(),
+            value: 0.75,
+            host: "node-1".into(),
+            slice: "agent.slice".into(),
+            unit: "worker.service".into(),
+            pid: Some(77),
+            labels_json: r#"{"k":"v"}"#.into(),
+        }];
+        let m_batch = metrics_to_record_batch(&sample_metrics).unwrap();
+        assert!(
+            estimate_metrics_batch_peak_bytes(&sample_metrics)
+                >= retained_record_batch_bytes(&m_batch)
+        );
+
+        let sample_fs = vec![FsChurnEntry {
+            path: "/data/tmp/a".into(),
+            mount_point: "/data".into(),
+            size_bytes: 123,
+            recent_delta_bytes: -5,
+            file_count: 1,
+            unlinked_open_fds: 2,
+            mtime_unix_ms: 0,
+            owner_pid: None,
+            owner_comm: None,
+            owner_unit: Some("u.service".into()),
+            owner_slice: None,
+            ..Default::default()
+        }];
+        let f_batch = fs_churn_to_record_batch(day1, &sample_fs).unwrap();
+        assert!(
+            estimate_fs_churn_batch_peak_bytes(&sample_fs) >= retained_record_batch_bytes(&f_batch)
+        );
+
+        let sample_units = vec![UnitRecord {
+            name: "u.service".into(),
+            manager: "user".into(),
+            slice: "agent.slice".into(),
+            active_state: "active".into(),
+            sub_state: "running".into(),
+            transient: true,
+            collect_mode_enabled: false,
+            orphaned_reason: Some("orphan".into()),
+            main_pid: Some(42),
+            memory_current_bytes: 1024,
+            cpu_usage_usec: 55,
+            populated: true,
+        }];
+        let u_batch = units_to_record_batch(&sample_units).unwrap();
+        assert!(
+            estimate_units_batch_peak_bytes(&sample_units) >= retained_record_batch_bytes(&u_batch)
+        );
+
+        let sample_agents = vec![
+            AgentSessionRecord {
+                session_id: "s1".into(),
+                agent_name: "codex".into(),
+                slice: "agent.slice".into(),
+                unit: Some("codex.scope".into()),
+                pids: vec![1, 2],
+                rss_bytes: 4096,
+                write_bytes: 512,
+                touched_paths: vec!["/data/a".into(), "/data/b".into()],
+            },
+            AgentSessionRecord {
+                session_id: "s2".into(),
+                agent_name: "claude".into(),
+                slice: "agent.slice".into(),
+                unit: None,
+                pids: vec![],
+                rss_bytes: 0,
+                write_bytes: 0,
+                touched_paths: vec![],
+            },
+        ];
+        let a_batch = agents_to_record_batch(&sample_agents).unwrap();
+        assert!(
+            estimate_agents_batch_peak_bytes(&sample_agents)
+                >= retained_record_batch_bytes(&a_batch)
+        );
+        let touched_col = a_batch
+            .column(7)
+            .as_any()
+            .downcast_ref::<StringArray>()
+            .unwrap();
+        assert_eq!(touched_col.value(0), "/data/a;/data/b");
+        assert_eq!(touched_col.value(1), "");
+
+        // Tight-pool UnifiedQueryLiveInput pre-reservation rejects before batch construction,
+        // and 61 MiB live input + 4 MiB UnifiedQuerySnapshot rejects cleanly inside 64 MiB pool.
+        let giant_65m = "x".repeat(65 * 1024 * 1024);
+        let err_metrics = execute_unified_query(
+            dir.path(),
+            &UnifiedQuerySpec {
+                domain: QueryDomain::Metrics,
+                since_ms: None,
+                where_clauses: Vec::new(),
+                group_by: Vec::new(),
+                agg_specs: Vec::new(),
+                limit: 10,
+            },
+            &[MetricPoint {
+                timestamp_ms: day1,
+                name: giant_65m,
+                value: 1.0,
+                host: "h".into(),
+                slice: "s".into(),
+                unit: "u".into(),
+                pid: None,
+                labels_json: "{}".into(),
+            }],
+            None,
+        )
+        .await
+        .expect_err("65 MiB live MetricPoint must reject in UnifiedQueryLiveInput pre-reservation");
+        assert!(
+            err_metrics.contains("Failed to allocate additional"),
+            "unexpected oversized live metrics err: {err_metrics}"
+        );
+
+        let snap_fs = HostSnapshot {
+            timestamp_unix_ms: day1,
+            fs_churn: vec![FsChurnEntry {
+                path: "p".repeat(65 * 1024 * 1024),
+                mount_point: "/data".into(),
+                size_bytes: 1,
+                recent_delta_bytes: 0,
+                file_count: 1,
+                unlinked_open_fds: 0,
+                mtime_unix_ms: day1,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let err_fs = execute_unified_query(
+            dir.path(),
+            &UnifiedQuerySpec {
+                domain: QueryDomain::Fs,
+                since_ms: None,
+                where_clauses: Vec::new(),
+                group_by: Vec::new(),
+                agg_specs: Vec::new(),
+                limit: 10,
+            },
+            &[],
+            Some(&snap_fs),
+        )
+        .await
+        .expect_err(
+            "65 MiB live FsChurnEntry must reject in UnifiedQueryLiveInput pre-reservation",
+        );
+        drop(snap_fs);
+        assert!(
+            err_fs.contains("Failed to allocate additional"),
+            "unexpected oversized live fs err: {err_fs}"
+        );
+
+        let snap_units = HostSnapshot {
+            timestamp_unix_ms: day1,
+            units: vec![UnitRecord {
+                name: "u.service".into(),
+                orphaned_reason: Some("o".repeat(65 * 1024 * 1024)),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let err_units = execute_unified_query(
+            dir.path(),
+            &UnifiedQuerySpec {
+                domain: QueryDomain::Units,
+                since_ms: None,
+                where_clauses: Vec::new(),
+                group_by: Vec::new(),
+                agg_specs: Vec::new(),
+                limit: 10,
+            },
+            &[],
+            Some(&snap_units),
+        )
+        .await
+        .expect_err("65 MiB live UnitRecord must reject in UnifiedQueryLiveInput pre-reservation");
+        drop(snap_units);
+        assert!(
+            err_units.contains("Failed to allocate additional"),
+            "unexpected oversized live units err: {err_units}"
+        );
+
+        let snap_agents = HostSnapshot {
+            timestamp_unix_ms: day1,
+            agents: vec![AgentSessionRecord {
+                session_id: "s1".into(),
+                agent_name: "codex".into(),
+                slice: "agent.slice".into(),
+                touched_paths: vec!["a".repeat(65 * 1024 * 1024)],
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let err_agents = execute_unified_query(
+            dir.path(),
+            &UnifiedQuerySpec {
+                domain: QueryDomain::Agents,
+                since_ms: None,
+                where_clauses: Vec::new(),
+                group_by: Vec::new(),
+                agg_specs: Vec::new(),
+                limit: 10,
+            },
+            &[],
+            Some(&snap_agents),
+        )
+        .await
+        .expect_err(
+            "65 MiB live AgentSessionRecord must reject in UnifiedQueryLiveInput pre-reservation",
+        );
+        drop(snap_agents);
+        assert!(
+            err_agents.contains("Failed to allocate additional"),
+            "unexpected oversized live agents err: {err_agents}"
+        );
+
+        // 61 MiB live metric fits in UnifiedQueryLiveInput, leaving 3 MiB < 4 MiB
+        // UnifiedQuerySnapshot pre-reservation so combined snapshot discovery rejects cleanly.
+        let err_combined = execute_unified_query(
+            dir.path(),
+            &UnifiedQuerySpec {
+                domain: QueryDomain::Metrics,
+                since_ms: None,
+                where_clauses: Vec::new(),
+                group_by: Vec::new(),
+                agg_specs: Vec::new(),
+                limit: 10,
+            },
+            &[MetricPoint {
+                timestamp_ms: day1,
+                name: "m".repeat(61 * 1024 * 1024),
+                value: 1.0,
+                host: "h".into(),
+                slice: "s".into(),
+                unit: "u".into(),
+                pid: None,
+                labels_json: "{}".into(),
+            }],
+            None,
+        )
+        .await
+        .expect_err(
+            "61 MiB live input + 4 MiB snapshot pre-reservation must reject on 64 MiB pool",
+        );
+        assert!(
+            err_combined.contains("Failed to allocate additional"),
+            "unexpected combined pool pressure err: {err_combined}"
+        );
     }
 }

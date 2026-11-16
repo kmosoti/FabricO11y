@@ -14,9 +14,11 @@ pub mod ring;
 pub use catalog::{CatalogStore, PersistedLiveState};
 pub use janitor::{JanitorConfig, JanitorStats, RetentionJanitor};
 pub use olap::{
-    OLAP_DOMAINS, OlapFlushPlan, OlapParquetStore, PinnedParquetFile, WriterLockGuard,
-    clear_committed_uncommitted, ensure_durable_layout_subdir, ensure_durable_non_tmp_dir,
-    merge_uncommitted_partitions, save_uncommitted_partitions, try_acquire_writer_lock,
+    MAX_SNAPSHOT_METADATA_BYTES, MAX_SNAPSHOT_PARQUET_FILES, OLAP_DOMAINS, OlapFlushPlan,
+    OlapParquetStore, PinnedParquetFile, WriterLockGuard, clear_committed_uncommitted,
+    ensure_durable_layout_subdir, ensure_durable_non_tmp_dir, merge_uncommitted_partitions,
+    save_uncommitted_partitions, snapshot_partitions_retained_heap_bytes,
+    snapshot_retained_heap_bytes, try_acquire_writer_lock,
 };
 pub use parquet_guard::MAX_PARQUET_FOOTER_SERIALIZED_BYTES;
 pub use paths::{validate_non_tmp_path_on_disk, validated_storage_layout};
