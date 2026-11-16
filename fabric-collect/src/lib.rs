@@ -17,6 +17,5 @@ pub use daemon::{
 };
 pub use self_guard::SelfPreservationGuard;
 pub use spindle_bridge::{
-    IngestEnvelope, observation_to_telemetry, parse_ingest_line, poll_spindle_custody,
-    poll_spindle_custody_records,
+    IngestEnvelope, observation_to_telemetry, parse_ingest_line, poll_spindle_custody_records,
 };

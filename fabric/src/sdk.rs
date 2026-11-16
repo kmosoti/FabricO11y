@@ -384,14 +384,6 @@ pub fn adapter_reply(client: &Client, bytes: &[u8]) -> serde_json::Value {
         Err(e) => serde_json::json!({"error":e}),
     }
 }
-// Keep transport command types part of the public SDK protocol surface.
-pub fn remote_status(socket: &std::path::Path) -> Result<Reply, String> {
-    transport::request(
-        socket,
-        &Request::Status,
-        Instant::now() + Duration::from_secs(2),
-    )
-}
 
 #[cfg(test)]
 mod ownership_tests {
