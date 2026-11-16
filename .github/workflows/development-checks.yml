@@ -1,48 +1,54 @@
 name: Development checks
 on:
-  push:
-    branches: [main, develop]
   pull_request:
-    branches: [main, develop]
+  push:
+    branches: [develop]
   workflow_dispatch:
   schedule:
     - cron: '23 4 * * 1'
 permissions:
   contents: read
 env:
-  CARGO_BUILD_JOBS: '2'
+  CARGO_BUILD_JOBS: '4'
+  CARGO_INCREMENTAL: '0'
   CARGO_PROFILE_DEV_DEBUG: '0'
   CARGO_PROFILE_TEST_DEBUG: '0'
+  LEAN_NUM_THREADS: '4'
   TMPDIR: /var/tmp
+  FABRIC_FUZZ_TARGET_DIR: /github/home/.cache/fabrico11y-fuzz-target
 concurrency:
-  group: development-checks-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: development-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   native-acceptance:
     runs-on: ubuntu-24.04
+    timeout-minutes: 300
     container:
       image: registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/restore-ci-cache
+        id: ci-cache
+        with:
+          profile: native-acceptance
       - name: Install Cargo and Jujutsu
         run: sh .github/scripts/install-toolchain.sh
       - name: Restore pinned verification tool installation
-        uses: actions/cache@v4
+        id: proof-tools-cache
+        uses: actions/cache/restore@v4
         with:
           path: /github/home/.local/share/fabrico11y/proof-tools
-          key: native-fedora44-d68cae91-${{ runner.arch }}-${{ hashFiles('.github/workflows/development-checks.yml', '.github/scripts/install-verification-tools.sh', '.github/scripts/install-toolchain.sh', 'verification/aeneas.opam.lock', 'rust-toolchain.toml') }}
+          key: native-fedora44-d68cae91-${{ runner.arch }}-${{ hashFiles('.github/scripts/install-verification-tools.sh', '.github/scripts/install-toolchain.sh', 'verification/aeneas.opam.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            native-fedora44-d68cae91-${{ runner.arch }}-
       - name: Install pinned native verification tools
         run: sh .github/scripts/install-verification-tools.sh
       - name: Install pinned schema checker
         run: sh .github/scripts/install-schema-tools.sh
       - name: Initialize candidate workspace
         run: jj git init --colocate
-      - uses: actions/cache@v4
-        with:
-          path: target
-          key: native-target-rust-1.100.0-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: |
-            native-target-rust-1.100.0-${{ runner.arch }}-
       - name: Architecture, tests, proofs and fuzz regressions
         run: /github/home/.cargo/bin/cargo xtask check --tier acceptance
       - name: Native engine custody and recovery regressions
@@ -50,35 +56,47 @@ jobs:
         run: sh .github/scripts/check-engine.sh
       - name: Fuzz smoke campaigns
         if: github.event_name != 'schedule'
+        env:
+          FABRIC_FUZZ_SMOKE_SECONDS: ${{ github.event_name == 'pull_request' && '15' || '60' }}
         run: /github/home/.cargo/bin/cargo xtask fuzz smoke /var/tmp/fabric-fuzz-smoke
       - name: Scheduled fuzz campaigns
         if: github.event_name == 'schedule'
         run: /github/home/.cargo/bin/cargo xtask fuzz scheduled /var/tmp/fabric-fuzz-scheduled
+      - name: Save trusted verification tool cache
+        uses: actions/cache/save@v4
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/develop' && steps.proof-tools-cache.outputs.cache-hit != 'true'
+        with:
+          path: /github/home/.local/share/fabrico11y/proof-tools
+          key: ${{ steps.proof-tools-cache.outputs.cache-primary-key }}
+      - name: Save trusted CI cache
+        uses: ./.github/actions/save-ci-cache
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/develop' && steps.ci-cache.outputs.hit != 'true'
+        with:
+          key: ${{ steps.ci-cache.outputs.key }}
   verify:
     runs-on: ubuntu-24.04
+    timeout-minutes: 45
     container:
       image: registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733
     steps:
       - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/restore-ci-cache
+        id: ci-cache
+        with:
+          profile: verify
       - name: Install checked toolchain and Jujutsu
         run: sh .github/scripts/install-toolchain.sh
       - name: Install pinned schema checker
         run: sh .github/scripts/install-schema-tools.sh
       - name: Initialize Jujutsu workspace
         run: jj git init --colocate
-      - uses: actions/cache@v4
-        with:
-          path: target
-          key: rust-1.100.0-${{ runner.arch }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: |
-            rust-1.100.0-${{ runner.arch }}-
       - name: Record execution environment
         run: cat /etc/os-release && uname -a
       - name: Medium checks
         run: /github/home/.cargo/bin/cargo xtask check --tier medium
       - name: Build release collection executables
-        env:
-          CARGO_BUILD_JOBS: '2'
         run: /github/home/.cargo/bin/cargo build --locked --release --workspace --bins --examples
       - name: Release SDK and Spindle restart smoke
         timeout-minutes: 2
@@ -86,3 +104,8 @@ jobs:
       - name: Extensive checks
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: /github/home/.cargo/bin/cargo xtask check --tier extensive
+      - name: Save trusted CI cache
+        uses: ./.github/actions/save-ci-cache
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/develop' && steps.ci-cache.outputs.hit != 'true'
+        with:
+          key: ${{ steps.ci-cache.outputs.key }}

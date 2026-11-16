@@ -73,6 +73,8 @@ pub fn check(root: &Path) -> Result<(), String> {
         .map(|p| Ok((*p, evidence::hash(&root.join(p))?)))
         .collect::<Result<_, String>>()?;
     let properties = evidence::hash(&root.join("proofs/ExtractedAdmission.lean"))?;
+    let cargo_jobs = super::fuzz::env_positive_u64("CARGO_BUILD_JOBS", 4)?.to_string();
+    let lean_threads = super::fuzz::env_positive_u64("LEAN_NUM_THREADS", 4)?.to_string();
     let result = (|| {
         let mut extract = Command::new("timeout");
         extract
@@ -90,7 +92,7 @@ pub fn check(root: &Path) -> Result<(), String> {
             .arg(work.join("admission_kernel.llbc"))
             .args(["--", "--package", "admission-kernel", "--locked"])
             .env("RUSTUP_TOOLCHAIN", "nightly-2026-09-17")
-            .env("CARGO_BUILD_JOBS", "2")
+            .env("CARGO_BUILD_JOBS", &cargo_jobs)
             .env("CARGO_TARGET_DIR", work.join("target"))
             .current_dir(root);
         fs::write(work.join("charon.log"), execute(extract)?).map_err(|e| e.to_string())?;
@@ -147,7 +149,7 @@ pub fn check(root: &Path) -> Result<(), String> {
                 .arg(&lean)
                 .args(&args)
                 .env("LEAN_PATH", &paths)
-                .env("LEAN_NUM_THREADS", "2")
+                .env("LEAN_NUM_THREADS", &lean_threads)
                 .current_dir(&work);
             let report = execute(check)?;
             if report.contains("sorryAx") {

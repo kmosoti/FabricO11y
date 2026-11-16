@@ -1,31 +1,60 @@
 name: Main Branch Human Gate
 
 on:
-  push:
+  pull_request:
     branches:
-      - develop
-  workflow_dispatch:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
 
 permissions:
   contents: read
 
 concurrency:
-  group: main-release-gate
+  group: main-human-gate-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
-  main-human-approval:
-    name: main-human-approval
-    runs-on: ubuntu-latest
-    environment: main-release
+  verify-promotion-source:
+    name: verify-promotion-source
+    if: github.event.pull_request.base.ref == 'main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
-      - name: Verify human release approval for develop promotion
+      - name: Enforce promotion only from same-repo develop branch
         env:
-          RELEASE_REF: ${{ github.ref }}
-          RELEASE_HEAD_SHA: ${{ github.sha }}
+          BASE_REF: ${{ github.base_ref }}
+          RELEASE_HEAD_REF: ${{ github.head_ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          BASE_REPO: ${{ github.repository }}
         run: |
-          if [ "$RELEASE_REF" != "refs/heads/develop" ]; then
-            echo "::error::Only refs/heads/develop may deploy to main-release, got $RELEASE_REF"
+          if [ "$BASE_REF" != "main" ]; then
+            echo "::error::Promotion check only permits base branch main, got $BASE_REF"
             exit 1
           fi
-          echo "Human reviewer approved promotion of develop ($RELEASE_HEAD_SHA) into main."
+          if [ "$HEAD_REPO" != "$BASE_REPO" ]; then
+            echo "::error::PRs into main must originate from $BASE_REPO, got $HEAD_REPO"
+            exit 1
+          fi
+          if [ "$RELEASE_HEAD_REF" != "develop" ]; then
+            echo "::error::Only the develop branch may promote into main, got $RELEASE_HEAD_REF"
+            exit 1
+          fi
+
+  main-human-approval:
+    name: main-human-approval
+    if: github.event.pull_request.base.ref == 'main'
+    needs: [verify-promotion-source]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    environment: main-release
+    steps:
+      - name: Verify human release approval for main
+        env:
+          RELEASE_HEAD_REF: ${{ github.head_ref }}
+          RELEASE_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          echo "Human reviewer approved promotion of $RELEASE_HEAD_REF ($RELEASE_HEAD_SHA) into main."
