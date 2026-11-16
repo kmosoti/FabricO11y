@@ -9,7 +9,7 @@ binary rows, and Apache Arrow IPC with equivalent bounded batches and native bat
 custody. `arrow-run held-out` uses a separate fixed seed. Each configuration has
 one warmup and five measured samples in fresh processes. Build with
 `--features allocation-metrics` for a separate allocation campaign; do not use its
-timing numbers. The existing representation report consumes the JSONL outputs.
+timing numbers (`representation-evaluator` emits structured JSONL samples).
 
 The direct encoders stream validation without allocating a full-batch JSON value
 tree. Arrow uses seven UTF-8 columns, six unsigned integer columns and one Float64
