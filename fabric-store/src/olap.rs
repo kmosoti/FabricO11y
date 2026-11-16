@@ -68,11 +68,21 @@ const REPLACE_EPOCH_FILE: &str = ".replace-epoch";
 const REPLACED_INPUTS_FILE: &str = ".replaced-inputs.json";
 const UNCOMMITTED_PARTITIONS_FILE: &str = ".uncommitted-partitions.json";
 const MAX_UNCOMMITTED_PARTITIONS_BYTES: u64 = 4 * 1024 * 1024;
-const MAX_REPLACE_INTENT_BYTES: u64 = 4 * 1024 * 1024;
+const MAX_REPLACE_INTENT_BYTES: u64 = 64 * 1024;
 const MAX_REPLACED_INPUTS_BYTES: u64 = 4 * 1024 * 1024;
 const MAX_REPLACED_INPUT_RECORDS: usize = 16_384;
 const MAX_REPLACE_EPOCH_BYTES: u64 = 64;
 pub(crate) const MAX_REPLACE_FAN_IN_FILES: usize = 16;
+const MAX_REPLACE_INTENT_INPUTS: usize = MAX_REPLACE_FAN_IN_FILES;
+const MAX_REPLACE_INTENT_FILENAME_BYTES: usize = 256;
+const MAX_REPLACE_INTENT_SHA256_BYTES: usize = 128;
+const MAX_REPLACE_INTENT_DECODED_BYTES: usize = 20 * 1024;
+const ARC_HEADER_BYTES: usize = 2 * std::mem::size_of::<usize>();
+
+/// Default maximum number of pinned Parquet files returned in one snapshot.
+pub const MAX_SNAPSHOT_PARQUET_FILES: usize = 16_384;
+/// Default maximum retained metadata heap bytes returned in one snapshot (`4 MiB`).
+pub const MAX_SNAPSHOT_METADATA_BYTES: usize = 4 * 1024 * 1024;
 
 const SHA256_K: [u32; 64] = [
     0x428a_2f98,
@@ -316,13 +326,108 @@ pub(crate) fn sha256_bytes_hex(bytes: &[u8]) -> String {
     hasher.finish_hex()
 }
 
+fn deserialize_bounded_str_max<'de, D>(
+    deserializer: D,
+    max_len: usize,
+    label: &'static str,
+) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct BoundedStrVisitor {
+        max_len: usize,
+        label: &'static str,
+    }
+    impl<'de> serde::de::Visitor<'de> for BoundedStrVisitor {
+        type Value = String;
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "a string of at most {} bytes", self.max_len)
+        }
+        fn visit_borrowed_str<E: serde::de::Error>(self, v: &'de str) -> Result<Self::Value, E> {
+            if v.len() > self.max_len {
+                return Err(E::custom(format!(
+                    "{} exceeds {} bytes",
+                    self.label, self.max_len
+                )));
+            }
+            Ok(v.to_owned())
+        }
+        fn visit_str<E: serde::de::Error>(self, v: &str) -> Result<Self::Value, E> {
+            if v.len() > self.max_len {
+                return Err(E::custom(format!(
+                    "{} exceeds {} bytes",
+                    self.label, self.max_len
+                )));
+            }
+            Ok(v.to_owned())
+        }
+        fn visit_string<E: serde::de::Error>(self, v: String) -> Result<Self::Value, E> {
+            if v.len() > self.max_len {
+                return Err(E::custom(format!(
+                    "{} exceeds {} bytes",
+                    self.label, self.max_len
+                )));
+            }
+            Ok(v)
+        }
+    }
+    deserializer.deserialize_str(BoundedStrVisitor { max_len, label })
+}
+
+struct BoundedFilename(String);
+
+impl<'de> serde::Deserialize<'de> for BoundedFilename {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        deserialize_bounded_str_max(
+            deserializer,
+            MAX_REPLACE_INTENT_FILENAME_BYTES,
+            "replace intent filename",
+        )
+        .map(Self)
+    }
+}
+
+fn deserialize_bounded_filename<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    BoundedFilename::deserialize(deserializer).map(|b| b.0)
+}
+
+fn deserialize_bounded_optional_filename<'de, D>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Option::<BoundedFilename>::deserialize(deserializer).map(|opt| opt.map(|b| b.0))
+}
+
+fn deserialize_bounded_optional_sha256<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct BoundedSha(String);
+    impl<'de> serde::Deserialize<'de> for BoundedSha {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            deserialize_bounded_str_max(
+                deserializer,
+                MAX_REPLACE_INTENT_SHA256_BYTES,
+                "file identity sha256",
+            )
+            .map(Self)
+        }
+    }
+    Option::<BoundedSha>::deserialize(deserializer).map(|opt| opt.map(|b| b.0))
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct FileIdentity {
     pub dev: u64,
     pub ino: u64,
     #[serde(default)]
     pub len: Option<u64>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_bounded_optional_sha256")]
     pub sha256: Option<String>,
 }
 
@@ -349,18 +454,148 @@ fn verify_open_file_matches_identity(
     Ok(true)
 }
 
+fn deserialize_bounded_intent_inputs<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = Vec<String>;
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "a sequence of at most {MAX_REPLACE_INTENT_INPUTS} bounded filenames"
+            )
+        }
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::SeqAccess<'de>,
+        {
+            let cap = seq.size_hint().unwrap_or(0).min(MAX_REPLACE_INTENT_INPUTS);
+            let mut out = Vec::with_capacity(cap);
+            let mut seen = 0_usize;
+            while let Some(item) = seq.next_element::<BoundedFilename>()? {
+                seen = seen.saturating_add(1);
+                if seen > MAX_REPLACE_INTENT_INPUTS {
+                    return Err(serde::de::Error::custom(format!(
+                        "replace intent input count exceeds limit {MAX_REPLACE_INTENT_INPUTS}"
+                    )));
+                }
+                if out.iter().any(|existing| existing == &item.0) {
+                    return Err(serde::de::Error::custom(format!(
+                        "duplicate entry '{}' in replace intent inputs",
+                        item.0
+                    )));
+                }
+                out.push(item.0);
+            }
+            Ok(out)
+        }
+    }
+    deserializer.deserialize_seq(Visitor)
+}
+
+fn deserialize_bounded_intent_input_ids<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<String, FileIdentity>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct Visitor;
+    impl<'de> serde::de::Visitor<'de> for Visitor {
+        type Value = BTreeMap<String, FileIdentity>;
+        fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(
+                f,
+                "a map of at most {MAX_REPLACE_INTENT_INPUTS} bounded input identities"
+            )
+        }
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: serde::de::MapAccess<'de>,
+        {
+            let mut out = BTreeMap::new();
+            let mut seen = 0_usize;
+            while let Some(k) = map.next_key::<BoundedFilename>()? {
+                seen = seen.saturating_add(1);
+                if seen > MAX_REPLACE_INTENT_INPUTS {
+                    return Err(serde::de::Error::custom(format!(
+                        "replace intent input_ids count exceeds limit {MAX_REPLACE_INTENT_INPUTS}"
+                    )));
+                }
+                if out.contains_key(&k.0) {
+                    return Err(serde::de::Error::custom(format!(
+                        "duplicate key '{}' in replace intent input_ids",
+                        k.0
+                    )));
+                }
+                let v = map.next_value::<FileIdentity>()?;
+                out.insert(k.0, v);
+            }
+            Ok(out)
+        }
+    }
+    deserializer.deserialize_map(Visitor)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct ReplaceIntent {
+    #[serde(deserialize_with = "deserialize_bounded_filename")]
     replacement: String,
     #[serde(default)]
     replacement_id: Option<FileIdentity>,
+    #[serde(deserialize_with = "deserialize_bounded_intent_inputs")]
     inputs: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_bounded_intent_input_ids")]
     input_ids: BTreeMap<String, FileIdentity>,
     #[serde(default)]
     poisoned: bool,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_bounded_optional_filename")]
     staged_source: Option<String>,
+}
+
+fn btree_nodes_bytes<K, V>(len: usize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    // Rust std BTree allocates nodes of 11 (K, V) slots + 12 edge pointers (B = 6).
+    let entry_bytes = std::mem::size_of::<K>().saturating_add(std::mem::size_of::<V>());
+    let node_bytes = 64_usize
+        .saturating_add(11_usize.saturating_mul(entry_bytes))
+        .saturating_add(12_usize.saturating_mul(std::mem::size_of::<usize>()));
+    let node_count = len.div_ceil(5).saturating_add(1);
+    node_count.saturating_mul(node_bytes)
+}
+
+impl ReplaceIntent {
+    fn retained_heap_bytes(&self) -> usize {
+        let mut total = std::mem::size_of::<Self>()
+            .saturating_add(self.replacement.capacity())
+            .saturating_add(
+                self.replacement_id
+                    .as_ref()
+                    .and_then(|id| id.sha256.as_ref())
+                    .map_or(0, String::capacity),
+            )
+            .saturating_add(
+                self.inputs
+                    .capacity()
+                    .saturating_mul(std::mem::size_of::<String>()),
+            )
+            .saturating_add(self.staged_source.as_ref().map_or(0, String::capacity))
+            .saturating_add(btree_nodes_bytes::<String, FileIdentity>(
+                self.input_ids.len(),
+            ));
+        for input in &self.inputs {
+            total = total.saturating_add(input.capacity());
+        }
+        for (k, v) in &self.input_ids {
+            total = total
+                .saturating_add(k.capacity())
+                .saturating_add(v.sha256.as_ref().map_or(0, String::capacity));
+        }
+        total
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Ord, PartialOrd, Eq, PartialEq)]
@@ -696,17 +931,35 @@ pub(crate) fn unlink_regular_file_in_dir_if_present(
     unlink_regular_file_matching_identity_in_dir(dir_fd, filename, None, label)
 }
 
+fn arc_alloc_bytes(payload_bytes: usize) -> usize {
+    ARC_HEADER_BYTES
+        .saturating_add(payload_bytes)
+        .next_multiple_of(std::mem::size_of::<usize>())
+}
+
+fn arc_file_heap_bytes() -> usize {
+    arc_alloc_bytes(std::mem::size_of::<File>())
+}
+
+#[derive(Debug)]
+pub(crate) struct PinnedDomainPartition {
+    domain_dir_fd: Arc<File>,
+    part_name: Arc<str>,
+    part_dev: u64,
+    part_ino: u64,
+}
+
+impl PinnedDomainPartition {
+    fn retained_heap_bytes(&self) -> usize {
+        arc_alloc_bytes(std::mem::size_of::<Self>())
+            .saturating_add(arc_alloc_bytes(self.part_name.len()))
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum PinnedDirAnchor {
-    Domain {
-        domain_dir_fd: Arc<File>,
-        part_name: String,
-        part_dev: u64,
-        part_ino: u64,
-    },
-    Partition {
-        part_dir_fd: Arc<File>,
-    },
+    Domain(Arc<PinnedDomainPartition>),
+    Partition { part_dir_fd: Arc<File> },
 }
 
 #[derive(Debug, Clone)]
@@ -719,17 +972,138 @@ pub(crate) struct PinnedAuxiliaryFile {
     pub _file: Arc<File>,
 }
 
-/// Pinned Parquet partition entry anchored by a verified domain or partition descriptor.
 #[derive(Debug, Clone)]
-pub struct PinnedParquetFile {
+struct PinnedParquetFileInner {
     anchor: PinnedDirAnchor,
-    file_name: String,
-    display_path: PathBuf,
+    file_name: Arc<str>,
+    display_path: Arc<Path>,
     dev: u64,
     ino: u64,
     len: u64,
-    sha256: Option<String>,
+    sha256: Option<Arc<str>>,
     _retained_fd: Option<Arc<File>>,
+}
+
+/// Pinned Parquet partition entry anchored by a verified domain or partition descriptor.
+#[derive(Debug, Clone)]
+pub struct PinnedParquetFile {
+    inner: Arc<PinnedParquetFileInner>,
+}
+
+struct SnapshotAnchorTracker {
+    part_stack: [usize; 64],
+    part_stack_len: usize,
+    part_overflow: Option<Vec<usize>>,
+    fd_stack: [usize; 8],
+    fd_stack_len: usize,
+    fd_overflow: Option<Vec<usize>>,
+}
+
+impl SnapshotAnchorTracker {
+    fn new() -> Self {
+        Self {
+            part_stack: [0; 64],
+            part_stack_len: 0,
+            part_overflow: None,
+            fd_stack: [0; 8],
+            fd_stack_len: 0,
+            fd_overflow: None,
+        }
+    }
+
+    fn insert_part(&mut self, ptr: usize) -> bool {
+        if self.part_stack[..self.part_stack_len].contains(&ptr) {
+            return false;
+        }
+        if self.part_stack_len < self.part_stack.len() {
+            self.part_stack[self.part_stack_len] = ptr;
+            self.part_stack_len += 1;
+            return true;
+        }
+        let overflow = self.part_overflow.get_or_insert_with(Vec::new);
+        if overflow.contains(&ptr) {
+            return false;
+        }
+        overflow.push(ptr);
+        true
+    }
+
+    fn insert_fd(&mut self, ptr: usize) -> bool {
+        if self.fd_stack[..self.fd_stack_len].contains(&ptr) {
+            return false;
+        }
+        if self.fd_stack_len < self.fd_stack.len() {
+            self.fd_stack[self.fd_stack_len] = ptr;
+            self.fd_stack_len += 1;
+            return true;
+        }
+        let overflow = self.fd_overflow.get_or_insert_with(Vec::new);
+        if overflow.contains(&ptr) {
+            return false;
+        }
+        overflow.push(ptr);
+        true
+    }
+
+    fn account_anchor(&mut self, anchor: &PinnedDirAnchor) -> usize {
+        match anchor {
+            PinnedDirAnchor::Domain(part) => {
+                let mut bytes = 0_usize;
+                if self.insert_part(Arc::as_ptr(part) as usize) {
+                    bytes = bytes.saturating_add(part.retained_heap_bytes());
+                }
+                if self.insert_fd(Arc::as_ptr(&part.domain_dir_fd) as usize) {
+                    bytes = bytes.saturating_add(arc_file_heap_bytes());
+                }
+                bytes
+            }
+            PinnedDirAnchor::Partition { part_dir_fd } => {
+                if self.insert_fd(Arc::as_ptr(part_dir_fd) as usize) {
+                    arc_file_heap_bytes()
+                } else {
+                    0
+                }
+            }
+        }
+    }
+}
+
+/// Returns the total retained heap bytes across `files`, counting each shared
+/// per-partition domain anchor and directory `Arc<File>` once.
+#[must_use]
+pub fn snapshot_retained_heap_bytes(files: &[PinnedParquetFile]) -> usize {
+    let mut tracker = SnapshotAnchorTracker::new();
+    let mut total = 0_usize;
+    for file in files {
+        total = total
+            .saturating_add(file.retained_heap_bytes())
+            .saturating_add(tracker.account_anchor(&file.inner.anchor));
+    }
+    total
+}
+
+/// Returns the total retained heap bytes across partitioned `Arc<[Arc<[PinnedParquetFile]>]>`
+/// slices, including outer/inner slice headers, shared anchors, and `Arc<File>` handles.
+#[must_use]
+pub fn snapshot_partitions_retained_heap_bytes(partitions: &[Arc<[PinnedParquetFile]>]) -> usize {
+    if partitions.is_empty() {
+        return 0;
+    }
+    let mut tracker = SnapshotAnchorTracker::new();
+    let mut total = arc_alloc_bytes(
+        partitions
+            .len()
+            .saturating_mul(std::mem::size_of::<Arc<[PinnedParquetFile]>>()),
+    );
+    for chunk in partitions {
+        total = total.saturating_add(ARC_HEADER_BYTES);
+        for file in chunk.iter() {
+            total = total
+                .saturating_add(file.retained_heap_bytes())
+                .saturating_add(tracker.account_anchor(&file.inner.anchor));
+        }
+    }
+    total
 }
 
 impl PinnedParquetFile {
@@ -745,92 +1119,125 @@ impl PinnedParquetFile {
         file: Arc<File>,
     ) -> Self {
         Self {
-            anchor: PinnedDirAnchor::Partition { part_dir_fd },
-            file_name,
-            display_path,
-            dev,
-            ino,
-            len,
-            sha256,
-            _retained_fd: Some(file),
+            inner: Arc::new(PinnedParquetFileInner {
+                anchor: PinnedDirAnchor::Partition { part_dir_fd },
+                file_name: Arc::from(file_name),
+                display_path: Arc::from(display_path.into_boxed_path()),
+                dev,
+                ino,
+                len,
+                sha256: sha256.map(Arc::from),
+                _retained_fd: Some(file),
+            }),
         }
+    }
+
+    fn estimate_retained_heap_bytes(
+        file_name_len: usize,
+        display_path_len: usize,
+        sha256_len: Option<usize>,
+        has_retained_fd: bool,
+    ) -> usize {
+        std::mem::size_of::<Self>()
+            .saturating_add(arc_alloc_bytes(
+                std::mem::size_of::<PinnedParquetFileInner>(),
+            ))
+            .saturating_add(arc_alloc_bytes(file_name_len))
+            .saturating_add(arc_alloc_bytes(display_path_len))
+            .saturating_add(sha256_len.map_or(0, arc_alloc_bytes))
+            .saturating_add(if has_retained_fd {
+                arc_file_heap_bytes()
+            } else {
+                0
+            })
+    }
+
+    /// Returns the exact per-entry retained heap byte footprint.
+    #[must_use]
+    pub fn retained_heap_bytes(&self) -> usize {
+        Self::estimate_retained_heap_bytes(
+            self.inner.file_name.len(),
+            self.inner.display_path.as_os_str().len(),
+            self.inner.sha256.as_deref().map(str::len),
+            self.inner._retained_fd.is_some(),
+        )
     }
 
     /// Returns the display path for diagnostics and sorting.
     #[must_use]
     pub fn display_path(&self) -> &Path {
-        &self.display_path
+        &self.inner.display_path
     }
 
     /// Returns the validated filename inside the pinned partition directory.
     #[must_use]
     pub fn file_name(&self) -> &str {
-        &self.file_name
+        &self.inner.file_name
     }
 
     pub(crate) fn file_identity(&self) -> FileIdentity {
         FileIdentity {
-            dev: self.dev,
-            ino: self.ino,
-            len: Some(self.len),
-            sha256: self.sha256.clone(),
+            dev: self.inner.dev,
+            ino: self.inner.ino,
+            len: Some(self.inner.len),
+            sha256: self.inner.sha256.as_deref().map(str::to_owned),
         }
     }
 
     /// Opens the pinned Parquet file non-blockingly without following symlinks and verifies
     /// `(dev, ino, len)` and optional `sha256` identity against the snapshot.
     pub fn open_verified(&self) -> Result<File, String> {
-        let opened = match &self.anchor {
-            PinnedDirAnchor::Domain {
-                domain_dir_fd,
-                part_name,
-                part_dev,
-                part_ino,
-            } => {
+        let opened = match &self.inner.anchor {
+            PinnedDirAnchor::Domain(part) => {
                 let Some(part_fd) =
-                    open_child_dir_nofollow(domain_dir_fd, part_name, "partition dir")?
+                    open_child_dir_nofollow(&part.domain_dir_fd, &part.part_name, "partition dir")?
                 else {
                     return Err(format!(
                         "NotFound: partition dir for {} disappeared during open",
-                        self.display_path.display()
+                        self.inner.display_path.display()
                     ));
                 };
                 let part_meta = part_fd.metadata().map_err(|e| {
                     format!(
                         "failed inspecting partition dir for {}: {e}",
-                        self.display_path.display()
+                        self.inner.display_path.display()
                     )
                 })?;
-                if part_meta.dev() != *part_dev || part_meta.ino() != *part_ino {
+                if part_meta.dev() != part.part_dev || part_meta.ino() != part.part_ino {
                     return Err(format!(
                         "partition dir for {} changed concurrently during open",
-                        self.display_path.display()
+                        self.inner.display_path.display()
                     ));
                 }
-                open_regular_file_in_dir_nofollow(&part_fd, &self.file_name, "parquet file")?
+                open_regular_file_in_dir_nofollow(&part_fd, &self.inner.file_name, "parquet file")?
             }
-            PinnedDirAnchor::Partition { part_dir_fd } => {
-                open_regular_file_in_dir_nofollow(part_dir_fd, &self.file_name, "parquet file")?
-            }
+            PinnedDirAnchor::Partition { part_dir_fd } => open_regular_file_in_dir_nofollow(
+                part_dir_fd,
+                &self.inner.file_name,
+                "parquet file",
+            )?,
         };
         match opened {
             None => Err(format!(
                 "NotFound: parquet file {} disappeared during open",
-                self.display_path.display()
+                self.inner.display_path.display()
             )),
             Some((file, meta)) => {
-                if meta.dev() != self.dev || meta.ino() != self.ino || meta.len() != self.len {
+                if meta.dev() != self.inner.dev
+                    || meta.ino() != self.inner.ino
+                    || meta.len() != self.inner.len
+                {
                     return Err(format!(
                         "parquet file {} changed concurrently during open",
-                        self.display_path.display()
+                        self.inner.display_path.display()
                     ));
                 }
-                if let Some(ref exp_sha) = self.sha256 {
+                if let Some(ref exp_sha) = self.inner.sha256 {
                     let (actual_len, actual_sha) = sha256_regular_file(&file)?;
-                    if actual_len != self.len || &actual_sha != exp_sha {
+                    if actual_len != self.inner.len || actual_sha.as_str() != exp_sha.as_ref() {
                         return Err(format!(
                             "parquet file {} content digest changed concurrently during open",
-                            self.display_path.display()
+                            self.inner.display_path.display()
                         ));
                     }
                 }
@@ -1817,7 +2224,10 @@ pub(crate) fn read_non_symlink_bytes_in_dir_bounded_if_present(
             fd_meta.len()
         ));
     }
-    let mut bytes = Vec::new();
+    let pre_cap = usize::try_from(fd_meta.len().min(max_bytes))
+        .unwrap_or(0)
+        .saturating_add(1);
+    let mut bytes = Vec::with_capacity(pre_cap);
     file.take(max_bytes.saturating_add(1))
         .read_to_end(&mut bytes)
         .map_err(|e| format!("failed reading {label} {filename}: {e}"))?;
@@ -1854,18 +2264,71 @@ fn load_replace_intent_on_fd(
     part_fd: &File,
     display_part_dir: &Path,
 ) -> Result<Option<ReplaceIntent>, String> {
-    let Some(bytes) = read_non_symlink_bytes_in_dir_bounded_if_present(
-        part_fd,
-        REPLACE_INTENT_FILE,
-        "replace intent",
-        MAX_REPLACE_INTENT_BYTES,
-    )?
+    Ok(
+        load_replace_intent_on_fd_measured(part_fd, display_part_dir, usize::MAX)?
+            .map(|(intent, _)| intent),
+    )
+}
+
+fn load_replace_intent_on_fd_measured(
+    part_fd: &File,
+    display_part_dir: &Path,
+    available_budget: usize,
+) -> Result<Option<(ReplaceIntent, usize)>, String> {
+    let Some((file, fd_meta)) =
+        open_regular_file_in_dir_nofollow(part_fd, REPLACE_INTENT_FILE, "replace intent")?
     else {
         return Ok(None);
     };
+    if fd_meta.len() > MAX_REPLACE_INTENT_BYTES {
+        return Err(format!(
+            "replace intent {REPLACE_INTENT_FILE} size {} exceeds {MAX_REPLACE_INTENT_BYTES} bytes",
+            fd_meta.len()
+        ));
+    }
+    let file_bytes = usize::try_from(fd_meta.len())
+        .map_err(|_| format!("replace intent {REPLACE_INTENT_FILE} size overflows usize"))?;
+    let pre_cap = file_bytes.saturating_add(1);
+    let worst_parse_peak = pre_cap
+        .checked_mul(3)
+        .and_then(|raw| raw.checked_add(MAX_REPLACE_INTENT_DECODED_BYTES));
+    if worst_parse_peak.is_none_or(|need| need > available_budget) {
+        return Err(format!(
+            "Resources exhausted: replace intent parse budget exceeds available {available_budget} bytes in {}",
+            display_part_dir.display()
+        ));
+    }
+    let mut bytes = Vec::with_capacity(pre_cap);
+    file.take(u64::try_from(pre_cap).unwrap_or(u64::MAX))
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("failed reading replace intent {REPLACE_INTENT_FILE}: {e}"))?;
+    if bytes.len() != file_bytes {
+        return Err(format!(
+            "replace intent {REPLACE_INTENT_FILE} changed concurrently during open (expected {file_bytes} bytes, got {})",
+            bytes.len()
+        ));
+    }
+    if bytes.len() as u64 > MAX_REPLACE_INTENT_BYTES {
+        return Err(format!(
+            "replace intent {REPLACE_INTENT_FILE} read size {} exceeds {MAX_REPLACE_INTENT_BYTES} bytes",
+            bytes.len()
+        ));
+    }
+    let raw_cap = bytes.capacity();
+    if raw_cap
+        .saturating_mul(3)
+        .saturating_add(MAX_REPLACE_INTENT_DECODED_BYTES)
+        > available_budget
+    {
+        return Err(format!(
+            "Resources exhausted: replace intent buffer {raw_cap} + decoded peak exceeds available {available_budget} bytes in {}",
+            display_part_dir.display()
+        ));
+    }
     let intent_display = display_part_dir.join(REPLACE_INTENT_FILE);
     let intent: ReplaceIntent = serde_json::from_slice(&bytes)
         .map_err(|e| format!("corrupt {}: {e}", intent_display.display()))?;
+    drop(bytes);
     validate_parquet_filename(&intent.replacement, "replace intent replacement")?;
     for input in &intent.inputs {
         validate_replace_input_filename(input, "replace intent input")?;
@@ -1876,7 +2339,15 @@ fn load_replace_intent_on_fd(
     if let Some(ref staged_src) = intent.staged_source {
         validate_staged_source_filename(staged_src, "replace intent staged source")?;
     }
-    Ok(Some(intent))
+    let retained = intent.retained_heap_bytes();
+    let parse_peak = raw_cap.saturating_mul(3).saturating_add(retained);
+    if parse_peak > available_budget {
+        return Err(format!(
+            "Resources exhausted: replace intent parse memory exceeds available {available_budget} bytes in {}",
+            display_part_dir.display()
+        ));
+    }
+    Ok(Some((intent, parse_peak)))
 }
 
 fn load_replace_epoch_on_fd(
@@ -1990,10 +2461,11 @@ pub(crate) fn advance_replace_epoch_on_fd(
     Ok(next_epoch)
 }
 
-fn uncommitted_intent_superseded_on_fd(
+fn uncommitted_intent_superseded_on_fd_with_budget(
     part_fd: &File,
     display_part_dir: &Path,
     intent: &ReplaceIntent,
+    available_budget: usize,
 ) -> Result<bool, String> {
     match open_regular_file_in_dir_nofollow(part_fd, &intent.replacement, "replacement parquet") {
         Ok(Some(_)) => return Ok(true),
@@ -2001,8 +2473,8 @@ fn uncommitted_intent_superseded_on_fd(
         Err(e) if is_concurrent_open_change(&e) => return Ok(true),
         Err(e) => return Err(e),
     }
-    match load_replace_intent_on_fd(part_fd, display_part_dir) {
-        Ok(cur) if cur.as_ref() != Some(intent) => Ok(true),
+    match load_replace_intent_on_fd_measured(part_fd, display_part_dir, available_budget) {
+        Ok(cur) if cur.as_ref().map(|(i, _)| i) != Some(intent) => Ok(true),
         Ok(_) => Ok(false),
         Err(e) if is_concurrent_open_change(&e) => Ok(true),
         Err(e) => Err(e),
@@ -2013,6 +2485,20 @@ fn verify_uncommitted_intent_inputs_on_fd(
     part_fd: &File,
     display_part_dir: &Path,
     intent: &ReplaceIntent,
+) -> Result<bool, String> {
+    verify_uncommitted_intent_inputs_on_fd_with_budget(
+        part_fd,
+        display_part_dir,
+        intent,
+        usize::MAX,
+    )
+}
+
+fn verify_uncommitted_intent_inputs_on_fd_with_budget(
+    part_fd: &File,
+    display_part_dir: &Path,
+    intent: &ReplaceIntent,
+    available_budget: usize,
 ) -> Result<bool, String> {
     if let Some(ref src_name) = intent.staged_source {
         let opened_src = match open_regular_file_in_dir_nofollow(
@@ -2025,7 +2511,12 @@ fn verify_uncommitted_intent_inputs_on_fd(
             Err(e) => return Err(e),
         };
         let Some((src_f, src_meta)) = opened_src else {
-            if uncommitted_intent_superseded_on_fd(part_fd, display_part_dir, intent)? {
+            if uncommitted_intent_superseded_on_fd_with_budget(
+                part_fd,
+                display_part_dir,
+                intent,
+                available_budget,
+            )? {
                 return Ok(false);
             }
             return Err(format!(
@@ -2054,7 +2545,12 @@ fn verify_uncommitted_intent_inputs_on_fd(
             Err(e) => return Err(e),
         };
         let Some((in_f, in_meta)) = opened else {
-            if uncommitted_intent_superseded_on_fd(part_fd, display_part_dir, intent)? {
+            if uncommitted_intent_superseded_on_fd_with_budget(
+                part_fd,
+                display_part_dir,
+                intent,
+                available_budget,
+            )? {
                 return Ok(false);
             }
             return Err(format!(
@@ -3257,7 +3753,7 @@ impl OlapParquetStore {
 
     fn pinned_parquet_num_rows(pinned: &PinnedParquetFile) -> Result<usize, String> {
         let file = pinned.open_verified()?;
-        Self::verified_file_num_rows(&file, &pinned.display_path)
+        Self::verified_file_num_rows(&file, pinned.display_path())
     }
 
     pub(crate) fn compact_parquet_files_unlocked(
@@ -3351,15 +3847,15 @@ impl OlapParquetStore {
                 if idx == 0 {
                     take_count = 1;
                     chunk_rows = rows;
-                    chunk_bytes = pinned.len;
-                    if rows >= max_file_rows || pinned.len >= max_sealed_bytes {
+                    chunk_bytes = pinned.inner.len;
+                    if rows >= max_file_rows || pinned.inner.len >= max_sealed_bytes {
                         break;
                     }
                 } else if chunk_rows.saturating_add(rows) <= max_file_rows
-                    && chunk_bytes.saturating_add(pinned.len) <= max_group_bytes
+                    && chunk_bytes.saturating_add(pinned.inner.len) <= max_group_bytes
                 {
                     chunk_rows = chunk_rows.saturating_add(rows);
-                    chunk_bytes = chunk_bytes.saturating_add(pinned.len);
+                    chunk_bytes = chunk_bytes.saturating_add(pinned.inner.len);
                     take_count += 1;
                 } else {
                     break;
@@ -3582,23 +4078,26 @@ impl OlapParquetStore {
         let mut seen_names = BTreeSet::new();
         for p in validated_inputs {
             let exp_id = p.file_identity();
-            let Some((in_f, in_meta)) =
-                open_regular_file_in_dir_nofollow(&part_fd, &p.file_name, "replacement input")?
+            let Some((in_f, in_meta)) = open_regular_file_in_dir_nofollow(
+                &part_fd,
+                &p.inner.file_name,
+                "replacement input",
+            )?
             else {
                 return Err(format!(
                     "replacement input {} disappeared during cutover",
-                    p.display_path.display()
+                    p.inner.display_path.display()
                 ));
             };
             if !verify_open_file_matches_identity(&in_f, &in_meta, &exp_id)? {
                 return Err(format!(
                     "replacement input {} changed concurrently during cutover",
-                    p.display_path.display()
+                    p.inner.display_path.display()
                 ));
             }
-            if seen_names.insert(p.file_name.clone()) {
-                input_names.push(p.file_name.clone());
-                input_ids.insert(p.file_name.clone(), exp_id);
+            if seen_names.insert(p.inner.file_name.to_string()) {
+                input_names.push(p.inner.file_name.to_string());
+                input_ids.insert(p.inner.file_name.to_string(), exp_id);
             }
         }
         for aux in extra_remove {
@@ -3951,11 +4450,30 @@ impl OlapParquetStore {
     }
 
     /// Discovers and descriptor-pins Parquet files for `domain`, pruning `dt=YYYY-MM-DD`
-    /// directories older than `since_ms` while retaining only the single domain directory FD.
+    /// directories older than `since_ms` while retaining only the single domain directory FD
+    /// and enforcing default snapshot count and metadata byte bounds.
     pub fn snapshot_pinned_parquet_files(
         &self,
         domain: &str,
         since_ms: Option<i64>,
+    ) -> Result<Vec<PinnedParquetFile>, String> {
+        self.snapshot_pinned_parquet_files_bounded(
+            domain,
+            since_ms,
+            MAX_SNAPSHOT_PARQUET_FILES,
+            MAX_SNAPSHOT_METADATA_BYTES,
+        )
+    }
+
+    /// Discovers and descriptor-pins Parquet files for `domain`, pruning `dt=YYYY-MM-DD`
+    /// directories older than `since_ms` while incrementally enforcing `max_files` and
+    /// `max_bytes` during `O_DIRECTORY | O_NOFOLLOW` iteration before growing unbounded buffers.
+    pub fn snapshot_pinned_parquet_files_bounded(
+        &self,
+        domain: &str,
+        since_ms: Option<i64>,
+        max_files: usize,
+        max_bytes: usize,
     ) -> Result<Vec<PinnedParquetFile>, String> {
         let domain = validate_olap_domain(domain)?;
         let Some(data_fd) = open_anchor_data_dir_if_exists(&self.layout)? else {
@@ -3978,26 +4496,23 @@ impl OlapParquetStore {
         let domain_fd = Arc::new(domain_fd);
         let min_day = since_ms.map(day_from_ms);
         let domain_dir = self.layout.olap_domain_dir(domain);
-        let dir_names: Vec<String> = fs::read_dir(proc_fd_dir_path(&domain_fd))
-            .map_err(|e| e.to_string())?
-            .map(|res| {
-                let entry = res.map_err(|e| e.to_string())?;
-                Ok(entry.file_name().to_str().map(str::to_owned))
-            })
-            .collect::<Result<Vec<Option<String>>, String>>()?
-            .into_iter()
-            .flatten()
-            .collect();
         let mut files = Vec::new();
+        let mut total_bytes = 0_usize;
+        let mut non_empty_partitions = 0_usize;
 
-        for name in dir_names {
+        for dir_res in fs::read_dir(proc_fd_dir_path(&domain_fd)).map_err(|e| e.to_string())? {
+            let dir_entry = dir_res.map_err(|e| e.to_string())?;
+            let dir_name_os = dir_entry.file_name();
+            let Some(name) = dir_name_os.to_str() else {
+                continue;
+            };
             let Some(date_str) = name.strip_prefix("dt=") else {
                 continue;
             };
             let Ok(day) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") else {
                 continue;
             };
-            let part_fd = match open_child_dir_nofollow(&domain_fd, &name, "partition dir") {
+            let part_fd = match open_child_dir_nofollow(&domain_fd, name, "partition dir") {
                 Ok(Some(fd)) => fd,
                 Ok(None) => continue,
                 Err(e) if e.starts_with("non-directory ") => continue,
@@ -4011,18 +4526,36 @@ impl OlapParquetStore {
             let part_meta = part_fd
                 .metadata()
                 .map_err(|e| format!("failed inspecting partition dir {name}: {e}"))?;
-            let anchor = PinnedDirAnchor::Domain {
+            let part_anchor = Arc::new(PinnedDomainPartition {
                 domain_dir_fd: Arc::clone(&domain_fd),
-                part_name: name.clone(),
+                part_name: Arc::from(name),
                 part_dev: part_meta.dev(),
                 part_ino: part_meta.ino(),
-            };
-            let part_dir = domain_dir.join(&name);
-            let mut partition_files =
-                list_partition_parquet_snapshot_on_fd(&part_fd, &anchor, &part_dir, 6)?;
-            files.append(&mut partition_files);
+            });
+            let anchor_bytes = part_anchor.retained_heap_bytes();
+            let anchor = PinnedDirAnchor::Domain(part_anchor);
+            let part_dir = domain_dir.join(name);
+            let (mut partition_files, partition_bytes) =
+                list_partition_parquet_snapshot_on_fd_bounded(
+                    &part_fd,
+                    &anchor,
+                    &part_dir,
+                    6,
+                    files.len(),
+                    files.capacity(),
+                    non_empty_partitions,
+                    total_bytes,
+                    anchor_bytes,
+                    max_files,
+                    max_bytes,
+                )?;
+            if !partition_files.is_empty() {
+                non_empty_partitions = non_empty_partitions.saturating_add(1);
+                total_bytes = total_bytes.saturating_add(partition_bytes);
+                files.append(&mut partition_files);
+            }
         }
-        files.sort_by(|a, b| a.display_path.cmp(&b.display_path));
+        files.sort_by(|a, b| a.inner.display_path.cmp(&b.inner.display_path));
         Ok(files)
     }
 
@@ -4035,9 +4568,19 @@ impl OlapParquetStore {
         Ok(self
             .snapshot_pinned_parquet_files(domain, since_ms)?
             .into_iter()
-            .map(|p| p.display_path)
+            .map(|p| p.inner.display_path.to_path_buf())
             .collect())
     }
+}
+
+fn intent_filter_overhead(entries_len: usize, intent: &ReplaceIntent) -> usize {
+    let kept_vec = entries_len.saturating_mul(std::mem::size_of::<PinnedParquetFile>());
+    let set_nodes = if intent.inputs.is_empty() {
+        0
+    } else {
+        btree_nodes_bytes::<&str, ()>(intent.inputs.len()).max(1024)
+    };
+    kept_vec.saturating_add(set_nodes)
 }
 
 fn apply_superseded_intent_filter_on_fd(
@@ -4054,20 +4597,23 @@ fn apply_superseded_intent_filter_on_fd(
         .collect();
     let mut kept = Vec::with_capacity(entries.len());
     for p in entries.iter() {
-        if !superseded.contains(p.file_name.as_str()) {
+        if !superseded.contains(p.inner.file_name.as_ref()) {
             kept.push(p.clone());
             continue;
         }
-        let Some(exp_in) = intent.input_ids.get(&p.file_name) else {
+        let Some(exp_in) = intent.input_ids.get(p.inner.file_name.as_ref()) else {
             // Legacy intent without input_ids: suppress by filename once replacement is verified.
             continue;
         };
-        let opened =
-            match open_regular_file_in_dir_nofollow(part_fd, &p.file_name, "superseded parquet") {
-                Ok(res) => res,
-                Err(e) if is_concurrent_open_change(&e) => return Ok(false),
-                Err(e) => return Err(e),
-            };
+        let opened = match open_regular_file_in_dir_nofollow(
+            part_fd,
+            &p.inner.file_name,
+            "superseded parquet",
+        ) {
+            Ok(res) => res,
+            Err(e) if is_concurrent_open_change(&e) => return Ok(false),
+            Err(e) => return Err(e),
+        };
         let Some((in_f, in_meta)) = opened else {
             return Ok(false);
         };
@@ -4076,7 +4622,7 @@ fn apply_superseded_intent_filter_on_fd(
         } else if !verify_open_file_matches_identity(&in_f, &in_meta, exp_in)? {
             return Err(format!(
                 "superseded parquet {} failed digest verification against replace intent",
-                display_part_dir.join(&p.file_name).display()
+                display_part_dir.join(p.inner.file_name.as_ref()).display()
             ));
         }
     }
@@ -4089,26 +4635,26 @@ fn all_parquet_entries_live_on_fd(
     entries: &[PinnedParquetFile],
 ) -> Result<bool, String> {
     for entry in entries {
-        let child_proc = proc_fd_child_path(part_fd, &entry.file_name, "parquet file")?;
+        let child_proc = proc_fd_child_path(part_fd, &entry.inner.file_name, "parquet file")?;
         match fs::symlink_metadata(&child_proc) {
             Err(e) if e.kind() == ErrorKind::NotFound => return Ok(false),
             Err(e) => {
                 return Err(format!(
                     "failed inspecting parquet file {}: {e}",
-                    entry.display_path.display()
+                    entry.inner.display_path.display()
                 ));
             }
             Ok(meta) if meta.file_type().is_symlink() => {
                 return Err(format!(
                     "refusing symlinked parquet file {}",
-                    entry.display_path.display()
+                    entry.inner.display_path.display()
                 ));
             }
             Ok(meta) => {
                 if !meta.is_file()
-                    || meta.dev() != entry.dev
-                    || meta.ino() != entry.ino
-                    || meta.len() != entry.len
+                    || meta.dev() != entry.inner.dev
+                    || meta.ino() != entry.inner.ino
+                    || meta.len() != entry.inner.len
                 {
                     return Ok(false);
                 }
@@ -4146,7 +4692,10 @@ fn list_partition_parquet_snapshot_with_attempts(
     };
     let pinned =
         list_partition_parquet_snapshot_on_fd(part_dir_fd, &anchor, part_dir, max_attempts)?;
-    Ok(pinned.into_iter().map(|p| p.display_path).collect())
+    Ok(pinned
+        .into_iter()
+        .map(|p| p.inner.display_path.to_path_buf())
+        .collect())
 }
 
 pub(crate) fn list_partition_parquet_snapshot_on_fd(
@@ -4155,53 +4704,192 @@ pub(crate) fn list_partition_parquet_snapshot_on_fd(
     display_part_dir: &Path,
     max_attempts: usize,
 ) -> Result<Vec<PinnedParquetFile>, String> {
+    let (entries, _) = list_partition_parquet_snapshot_on_fd_bounded(
+        part_fd,
+        anchor,
+        display_part_dir,
+        max_attempts,
+        0,
+        0,
+        0,
+        0,
+        0,
+        MAX_SNAPSHOT_PARQUET_FILES,
+        MAX_SNAPSHOT_METADATA_BYTES,
+    )?;
+    Ok(entries)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn list_partition_parquet_snapshot_on_fd_bounded(
+    part_fd: &File,
+    anchor: &PinnedDirAnchor,
+    display_part_dir: &Path,
+    max_attempts: usize,
+    base_files: usize,
+    files_cap: usize,
+    non_empty_partitions: usize,
+    base_bytes: usize,
+    anchor_bytes: usize,
+    max_files: usize,
+    max_bytes: usize,
+) -> Result<(Vec<PinnedParquetFile>, usize), String> {
+    let slot_bytes = std::mem::size_of::<PinnedParquetFile>();
+    let overflow_parts = non_empty_partitions.saturating_add(1).saturating_sub(64);
+    let tracker_overflow_bytes = if overflow_parts == 0 {
+        0
+    } else {
+        overflow_parts
+            .max(4)
+            .checked_next_power_of_two()
+            .unwrap_or(usize::MAX)
+            .saturating_mul(std::mem::size_of::<usize>())
+    };
+    let domain_fd_bytes = if base_files == 0 && matches!(anchor, PinnedDirAnchor::Domain(_)) {
+        arc_file_heap_bytes()
+    } else {
+        0
+    };
     for _attempt in 0..max_attempts {
         let epoch_before = match load_replace_epoch_on_fd(part_fd, display_part_dir) {
             Ok(v) => v,
             Err(e) if is_concurrent_open_change(&e) => continue,
             Err(e) => return Err(e),
         };
-        let intent_before = match load_replace_intent_on_fd(part_fd, display_part_dir) {
-            Ok(v) => v,
-            Err(e) if is_concurrent_open_change(&e) => continue,
-            Err(e) => return Err(e),
-        };
+        let files_spare_bytes = files_cap
+            .saturating_sub(base_files)
+            .saturating_mul(slot_bytes);
+        let intent_before_budget = max_bytes
+            .saturating_sub(base_bytes)
+            .saturating_sub(files_spare_bytes)
+            .saturating_sub(tracker_overflow_bytes);
+        let (intent_before, intent_before_retained, intent_before_peak) =
+            match load_replace_intent_on_fd_measured(
+                part_fd,
+                display_part_dir,
+                intent_before_budget,
+            ) {
+                Ok(Some((intent, peak))) => {
+                    let retained = intent.retained_heap_bytes();
+                    (Some(intent), retained, peak)
+                }
+                Ok(None) => (None, 0, 0),
+                Err(e) if is_concurrent_open_change(&e) => continue,
+                Err(e) => return Err(e),
+            };
+        if base_bytes
+            .saturating_add(files_spare_bytes)
+            .saturating_add(tracker_overflow_bytes)
+            .saturating_add(intent_before_peak)
+            > max_bytes
+        {
+            return Err(format!(
+                "Resources exhausted: pinned parquet snapshot metadata + replace intent exceeds limit {max_bytes} bytes in {}",
+                display_part_dir.display()
+            ));
+        }
+
         let mut entries = Vec::new();
+        let mut entries_bytes = 0_usize;
         let mut saw_missing = false;
         for part in fs::read_dir(proc_fd_dir_path(part_fd)).map_err(|e| e.to_string())? {
             let part = part.map_err(|e| e.to_string())?;
-            let Some(file_name) = part.file_name().to_str().map(str::to_owned) else {
+            let file_name_os = part.file_name();
+            let Some(file_name) = file_name_os.to_str() else {
                 continue;
             };
-            if Path::new(&file_name)
+            if Path::new(file_name)
                 .extension()
                 .is_some_and(|ext| ext == "parquet")
             {
-                validate_parquet_filename(&file_name, "parquet file")?;
-                let child_proc = proc_fd_child_path(part_fd, &file_name, "parquet file")?;
+                validate_parquet_filename(file_name, "parquet file")?;
+                let child_proc = proc_fd_child_path(part_fd, file_name, "parquet file")?;
                 match fs::symlink_metadata(&child_proc) {
                     Ok(meta) => {
                         if meta.file_type().is_symlink() {
                             return Err(format!(
                                 "refusing symlinked parquet file {}",
-                                display_part_dir.join(&file_name).display()
+                                display_part_dir.join(file_name).display()
                             ));
                         }
                         if meta.is_file() {
+                            let next_files = base_files
+                                .checked_add(entries.len())
+                                .and_then(|n| n.checked_add(1));
+                            let Some(total_count) = next_files.filter(|&n| n <= max_files) else {
+                                return Err(format!(
+                                    "Resources exhausted: pinned parquet snapshot file count exceeds limit {max_files} in {}",
+                                    display_part_dir.display()
+                                ));
+                            };
+                            let display_path = display_part_dir.join(file_name);
+                            let entry_bytes = PinnedParquetFile::estimate_retained_heap_bytes(
+                                file_name.len(),
+                                display_path.as_os_str().len(),
+                                None,
+                                false,
+                            );
+                            let extra_anchor = if entries.is_empty() {
+                                anchor_bytes.saturating_add(domain_fd_bytes)
+                            } else {
+                                0
+                            };
+                            let next_entries_len = entries.len().saturating_add(1);
+                            let entries_next_cap = if entries.len() == entries.capacity() {
+                                entries.len().saturating_mul(2).max(4)
+                            } else {
+                                entries.capacity()
+                            };
+                            let files_next_cap = if total_count > files_cap {
+                                total_count.next_power_of_two()
+                            } else {
+                                files_cap
+                            };
+                            let concurrent_vec_overhead = files_next_cap
+                                .saturating_add(entries_next_cap)
+                                .saturating_sub(total_count)
+                                .saturating_mul(slot_bytes);
+                            let sort_and_tracker_overhead = files_next_cap
+                                .saturating_mul(slot_bytes)
+                                .saturating_add(tracker_overflow_bytes);
+                            let filter_overhead = intent_before.as_ref().map_or(0, |intent| {
+                                intent_filter_overhead(next_entries_len, intent)
+                            });
+                            let container_overhead = concurrent_vec_overhead
+                                .saturating_add(filter_overhead)
+                                .max(sort_and_tracker_overhead);
+                            let added_bytes = extra_anchor.checked_add(entry_bytes);
+                            let next_bytes = added_bytes.and_then(|d| {
+                                base_bytes
+                                    .checked_add(entries_bytes)?
+                                    .checked_add(d)?
+                                    .checked_add(container_overhead)?
+                                    .checked_add(intent_before_retained)
+                            });
+                            if next_bytes.is_none_or(|b| b > max_bytes) {
+                                return Err(format!(
+                                    "Resources exhausted: pinned parquet snapshot metadata exceeds limit {max_bytes} bytes in {}",
+                                    display_part_dir.display()
+                                ));
+                            }
+                            entries_bytes =
+                                entries_bytes.saturating_add(added_bytes.unwrap_or(usize::MAX));
                             entries.push(PinnedParquetFile {
-                                anchor: anchor.clone(),
-                                display_path: display_part_dir.join(&file_name),
-                                file_name,
-                                dev: meta.dev(),
-                                ino: meta.ino(),
-                                len: meta.len(),
-                                sha256: None,
-                                _retained_fd: None,
+                                inner: Arc::new(PinnedParquetFileInner {
+                                    anchor: anchor.clone(),
+                                    file_name: Arc::from(file_name),
+                                    display_path: Arc::from(display_path.into_boxed_path()),
+                                    dev: meta.dev(),
+                                    ino: meta.ino(),
+                                    len: meta.len(),
+                                    sha256: None,
+                                    _retained_fd: None,
+                                }),
                             });
                         } else {
                             return Err(format!(
                                 "non-regular parquet file {}",
-                                display_part_dir.join(&file_name).display()
+                                display_part_dir.join(file_name).display()
                             ));
                         }
                     }
@@ -4211,17 +4899,55 @@ pub(crate) fn list_partition_parquet_snapshot_on_fd(
                     Err(e) => {
                         return Err(format!(
                             "failed inspecting parquet file {}: {e}",
-                            display_part_dir.join(&file_name).display()
+                            display_part_dir.join(file_name).display()
                         ));
                     }
                 }
             }
         }
-        let intent_after = match load_replace_intent_on_fd(part_fd, display_part_dir) {
-            Ok(v) => v,
-            Err(e) if is_concurrent_open_change(&e) => continue,
-            Err(e) => return Err(e),
+        let total_count = base_files.saturating_add(entries.len());
+        let files_next_cap = if total_count > files_cap {
+            total_count.next_power_of_two()
+        } else {
+            files_cap
         };
+        let active_container_overhead = files_next_cap
+            .saturating_add(entries.capacity())
+            .saturating_sub(total_count)
+            .saturating_mul(slot_bytes)
+            .max(
+                files_next_cap
+                    .saturating_mul(slot_bytes)
+                    .saturating_add(tracker_overflow_bytes),
+            );
+        let intent_after_budget = max_bytes
+            .saturating_sub(base_bytes)
+            .saturating_sub(entries_bytes)
+            .saturating_sub(active_container_overhead)
+            .saturating_sub(intent_before_retained);
+        let (intent_after, intent_after_retained, intent_after_peak) =
+            match load_replace_intent_on_fd_measured(part_fd, display_part_dir, intent_after_budget)
+            {
+                Ok(Some((intent, peak))) => {
+                    let retained = intent.retained_heap_bytes();
+                    (Some(intent), retained, peak)
+                }
+                Ok(None) => (None, 0, 0),
+                Err(e) if is_concurrent_open_change(&e) => continue,
+                Err(e) => return Err(e),
+            };
+        if base_bytes
+            .saturating_add(entries_bytes)
+            .saturating_add(active_container_overhead)
+            .saturating_add(intent_before_retained)
+            .saturating_add(intent_after_peak)
+            > max_bytes
+        {
+            return Err(format!(
+                "Resources exhausted: pinned parquet snapshot metadata + replace intent exceeds limit {max_bytes} bytes in {}",
+                display_part_dir.display()
+            ));
+        }
         let epoch_after = match load_replace_epoch_on_fd(part_fd, display_part_dir) {
             Ok(v) => v,
             Err(e) if is_concurrent_open_change(&e) => continue,
@@ -4230,6 +4956,7 @@ pub(crate) fn list_partition_parquet_snapshot_on_fd(
 
         let same_epoch = epoch_before == epoch_after;
         let same_intent = intent_before == intent_after;
+        drop(intent_before);
 
         if same_epoch && same_intent && !saw_missing {
             match intent_after.as_ref() {
@@ -4241,14 +4968,21 @@ pub(crate) fn list_partition_parquet_snapshot_on_fd(
                             Err(e) if is_concurrent_open_change(&e) => continue,
                             Err(e) => return Err(e),
                         };
-                        let still_none = match load_replace_intent_on_fd(part_fd, display_part_dir)
-                        {
-                            Ok(v) => v.is_none(),
+                        let stable_intent_budget = max_bytes
+                            .saturating_sub(base_bytes)
+                            .saturating_sub(entries_bytes)
+                            .saturating_sub(active_container_overhead);
+                        let still_none = match load_replace_intent_on_fd_measured(
+                            part_fd,
+                            display_part_dir,
+                            stable_intent_budget,
+                        ) {
+                            Ok(opt) => opt.is_none(),
                             Err(e) if is_concurrent_open_change(&e) => continue,
                             Err(e) => return Err(e),
                         };
                         if stable_epoch && still_none {
-                            return Ok(entries);
+                            return Ok((entries, entries_bytes));
                         }
                     }
                 }
@@ -4270,15 +5004,14 @@ pub(crate) fn list_partition_parquet_snapshot_on_fd(
                     };
                     match rep_opened {
                         Some((rep_f, rep_meta)) => {
-                            let Some(rep_idx) = entries
-                                .iter()
-                                .position(|p| p.file_name == intent.replacement)
-                            else {
+                            let Some(rep_idx) = entries.iter().position(|p| {
+                                p.inner.file_name.as_ref() == intent.replacement.as_str()
+                            }) else {
                                 continue;
                             };
-                            if entries[rep_idx].dev != rep_meta.dev()
-                                || entries[rep_idx].ino != rep_meta.ino()
-                                || entries[rep_idx].len != rep_meta.len()
+                            if entries[rep_idx].inner.dev != rep_meta.dev()
+                                || entries[rep_idx].inner.ino != rep_meta.ino()
+                                || entries[rep_idx].inner.len != rep_meta.len()
                             {
                                 continue;
                             }
@@ -4289,7 +5022,27 @@ pub(crate) fn list_partition_parquet_snapshot_on_fd(
                                         display_part_dir.join(&intent.replacement).display()
                                     ));
                                 }
-                                entries[rep_idx].sha256 = exp_rep.sha256.clone();
+                                if let Some(ref sha) = exp_rep.sha256 {
+                                    let old_bytes = entries[rep_idx].retained_heap_bytes();
+                                    Arc::make_mut(&mut entries[rep_idx].inner).sha256 =
+                                        Some(Arc::from(sha.as_str()));
+                                    let new_bytes = entries[rep_idx].retained_heap_bytes();
+                                    entries_bytes = entries_bytes
+                                        .saturating_sub(old_bytes)
+                                        .saturating_add(new_bytes);
+                                }
+                            }
+                            let filter_overhead = intent_filter_overhead(entries.len(), intent);
+                            let total_with_filter = base_bytes
+                                .checked_add(entries_bytes)
+                                .and_then(|b| b.checked_add(active_container_overhead))
+                                .and_then(|b| b.checked_add(filter_overhead))
+                                .and_then(|b| b.checked_add(intent_after_retained));
+                            if total_with_filter.is_none_or(|b| b > max_bytes) {
+                                return Err(format!(
+                                    "Resources exhausted: pinned parquet snapshot metadata exceeds limit {max_bytes} bytes in {}",
+                                    display_part_dir.display()
+                                ));
                             }
                             if !apply_superseded_intent_filter_on_fd(
                                 part_fd,
@@ -4299,19 +5052,43 @@ pub(crate) fn list_partition_parquet_snapshot_on_fd(
                             )? {
                                 continue;
                             }
+                            entries_bytes = if entries.is_empty() {
+                                0
+                            } else {
+                                anchor_bytes.saturating_add(domain_fd_bytes).saturating_add(
+                                    entries
+                                        .iter()
+                                        .map(PinnedParquetFile::retained_heap_bytes)
+                                        .fold(0_usize, usize::saturating_add),
+                                )
+                            };
                             if all_parquet_entries_live_on_fd(part_fd, &entries)? {
-                                return Ok(entries);
+                                return Ok((entries, entries_bytes));
                             }
                         }
                         None => {
-                            if entries.iter().any(|p| p.file_name == intent.replacement) {
+                            if entries
+                                .iter()
+                                .any(|p| p.inner.file_name.as_ref() == intent.replacement.as_str())
+                            {
                                 continue;
                             }
-                            let inputs_check = verify_uncommitted_intent_inputs_on_fd(
+                            let stable_intent_budget = max_bytes
+                                .saturating_sub(base_bytes)
+                                .saturating_sub(entries_bytes)
+                                .saturating_sub(active_container_overhead)
+                                .saturating_sub(intent_after_retained);
+                            let inputs_check = verify_uncommitted_intent_inputs_on_fd_with_budget(
                                 part_fd,
                                 display_part_dir,
                                 intent,
+                                stable_intent_budget,
                             );
+                            if let Err(ref err) = inputs_check
+                                && err.starts_with("Resources exhausted:")
+                            {
+                                return Err(err.clone());
+                            }
                             if all_parquet_entries_live_on_fd(part_fd, &entries)? {
                                 let stable_epoch =
                                     match load_replace_epoch_on_fd(part_fd, display_part_dir) {
@@ -4319,15 +5096,18 @@ pub(crate) fn list_partition_parquet_snapshot_on_fd(
                                         Err(e) if is_concurrent_open_change(&e) => continue,
                                         Err(e) => return Err(e),
                                     };
-                                let stable_intent =
-                                    match load_replace_intent_on_fd(part_fd, display_part_dir) {
-                                        Ok(v) => v.as_ref() == Some(intent),
-                                        Err(e) if is_concurrent_open_change(&e) => continue,
-                                        Err(e) => return Err(e),
-                                    };
+                                let stable_intent = match load_replace_intent_on_fd_measured(
+                                    part_fd,
+                                    display_part_dir,
+                                    stable_intent_budget,
+                                ) {
+                                    Ok(v) => v.map(|(i, _)| i).as_ref() == Some(intent),
+                                    Err(e) if is_concurrent_open_change(&e) => continue,
+                                    Err(e) => return Err(e),
+                                };
                                 if stable_epoch && stable_intent {
                                     match inputs_check {
-                                        Ok(true) => return Ok(entries),
+                                        Ok(true) => return Ok((entries, entries_bytes)),
                                         Ok(false) => continue,
                                         Err(err) => return Err(err),
                                     }
@@ -6400,5 +7180,194 @@ mod tests {
             "output cap must abort compaction staging without publishing oversized file"
         );
         assert!(p1.is_file() && p2.is_file());
+    }
+
+    #[test]
+    fn round24_intent_serde_bounds_and_retained_accounting() {
+        let dir = non_tmp_dir();
+        let layout = StorageLayout::new(dir.path()).unwrap();
+        let olap = OlapParquetStore::new(layout.clone());
+        let part_dir = layout.olap_domain_dir("metrics").join("dt=2023-11-14");
+        fs::create_dir_all(&part_dir).unwrap();
+
+        let part_fd = open_standalone_dir_nofollow(&part_dir, "partition dir")
+            .unwrap()
+            .unwrap();
+
+        // 1. Valid escaped filenames (e.g., quotes permitted by validate_single_normal_filename)
+        //    round-trip within the 3 * pre_cap + MAX_REPLACE_INTENT_DECODED_BYTES parse budget.
+        let escaped_intent = ReplaceIntent {
+            replacement: "part-\"quoted\".parquet".to_owned(),
+            replacement_id: None,
+            inputs: vec!["part-\"quoted\"-in.parquet".to_owned()],
+            input_ids: BTreeMap::new(),
+            poisoned: false,
+            staged_source: None,
+        };
+        let escaped_json = serde_json::to_vec(&escaped_intent).unwrap();
+        assert!(escaped_json.contains(&b'\\'));
+        fs::write(part_dir.join(REPLACE_INTENT_FILE), &escaped_json).unwrap();
+        let escaped_pre_cap = escaped_json.len() + 1;
+        let (parsed_escaped, _) = load_replace_intent_on_fd_measured(
+            &part_fd,
+            &part_dir,
+            escaped_pre_cap * 3 + MAX_REPLACE_INTENT_DECODED_BYTES,
+        )
+        .unwrap()
+        .expect(
+            "escaped filename replace intent must deserialize within 3 * pre_cap + 20 KiB budget",
+        );
+        assert_eq!(parsed_escaped, escaped_intent);
+
+        // 2. Duplicate entries in `inputs` reject during bounded serde parse.
+        let dup_inputs =
+            br#"{"replacement":"part-rep.parquet","inputs":["part-a.parquet","part-a.parquet"]}"#;
+        fs::write(part_dir.join(REPLACE_INTENT_FILE), dup_inputs).unwrap();
+        let dup_err = olap
+            .snapshot_pinned_parquet_files_bounded(
+                "metrics",
+                None,
+                MAX_SNAPSHOT_PARQUET_FILES,
+                MAX_SNAPSHOT_METADATA_BYTES,
+            )
+            .expect_err("duplicate inputs entry must reject during serde parse");
+        assert!(
+            dup_err.contains("duplicate entry"),
+            "unexpected duplicate inputs err: {dup_err}"
+        );
+
+        // 3. Sparse BTreeMap node accounting, synthetic max-size deserialization,
+        //    and 3 * pre_cap + MAX_REPLACE_INTENT_DECODED_BYTES peak enforcement.
+        let single_entry_intent = ReplaceIntent {
+            replacement: "part-rep.parquet".to_owned(),
+            replacement_id: None,
+            inputs: vec!["part-a.parquet".to_owned()],
+            input_ids: BTreeMap::from([(
+                "part-a.parquet".to_owned(),
+                FileIdentity {
+                    dev: 1,
+                    ino: 2,
+                    len: Some(128),
+                    sha256: None,
+                },
+            )]),
+            poisoned: false,
+            staged_source: None,
+        };
+        assert!(
+            single_entry_intent.retained_heap_bytes() >= 1024,
+            "sparse single-entry BTreeMap must account full node allocation, got {}",
+            single_entry_intent.retained_heap_bytes()
+        );
+        assert!(
+            intent_filter_overhead(0, &single_entry_intent) >= 1024,
+            "sparse single-entry BTreeSet filter_overhead must include node allocation"
+        );
+        let max_entries_intent = ReplaceIntent {
+            replacement: format!(
+                "{}.parquet",
+                "r".repeat(MAX_REPLACE_INTENT_FILENAME_BYTES - ".parquet".len())
+            ),
+            replacement_id: Some(FileIdentity {
+                dev: 1,
+                ino: 2,
+                len: Some(1024),
+                sha256: Some("a".repeat(MAX_REPLACE_INTENT_SHA256_BYTES)),
+            }),
+            inputs: (0..MAX_REPLACE_INTENT_INPUTS)
+                .map(|i| {
+                    format!(
+                        "{i:02}{}.parquet",
+                        "i".repeat(MAX_REPLACE_INTENT_FILENAME_BYTES - 2 - ".parquet".len())
+                    )
+                })
+                .collect(),
+            input_ids: (0..MAX_REPLACE_INTENT_INPUTS)
+                .map(|i| {
+                    (
+                        format!(
+                            "{i:02}{}.parquet",
+                            "k".repeat(MAX_REPLACE_INTENT_FILENAME_BYTES - 2 - ".parquet".len())
+                        ),
+                        FileIdentity {
+                            dev: 1,
+                            ino: i as u64,
+                            len: Some(512),
+                            sha256: Some("b".repeat(MAX_REPLACE_INTENT_SHA256_BYTES)),
+                        },
+                    )
+                })
+                .collect(),
+            poisoned: false,
+            staged_source: Some(format!(
+                ".replace-source-{}.staged",
+                "s".repeat(MAX_REPLACE_INTENT_FILENAME_BYTES - ".replace-source-.staged".len())
+            )),
+        };
+        let max_json = serde_json::to_vec(&max_entries_intent).unwrap();
+        fs::write(part_dir.join(REPLACE_INTENT_FILE), &max_json).unwrap();
+        let max_pre_cap = max_json.len() + 1;
+        let (parsed_max, _) = load_replace_intent_on_fd_measured(
+            &part_fd,
+            &part_dir,
+            max_pre_cap * 3 + MAX_REPLACE_INTENT_DECODED_BYTES,
+        )
+        .unwrap()
+        .expect("max-size ReplaceIntent must deserialize within 3 * pre_cap + 20 KiB budget");
+        assert_eq!(parsed_max, max_entries_intent);
+        assert!(
+            parsed_max.retained_heap_bytes() <= MAX_REPLACE_INTENT_DECODED_BYTES,
+            "deserialized max ReplaceIntent retained bytes {} exceeded MAX_REPLACE_INTENT_DECODED_BYTES {}",
+            parsed_max.retained_heap_bytes(),
+            MAX_REPLACE_INTENT_DECODED_BYTES
+        );
+
+        // Large 32 KiB+ escaped key causes serde_json's internal scratch Vec to double up to
+        // 2 * file_bytes (~65 KiB): verify 2 * pre_cap rejects pre-read while 3 * pre_cap passes.
+        let large_escaped_key_json = format!(
+            r#"{{"{}\"":"ignored","replacement":"part-rep.parquet","inputs":["part-a.parquet"]}}"#,
+            "x".repeat(32 * 1024)
+        );
+        assert!(large_escaped_key_json.len() > 32 * 1024);
+        fs::write(
+            part_dir.join(REPLACE_INTENT_FILE),
+            large_escaped_key_json.as_bytes(),
+        )
+        .unwrap();
+        let escaped_key_pre_cap = large_escaped_key_json.len() + 1;
+        let doubled_scratch_short_budget =
+            escaped_key_pre_cap * 2 + MAX_REPLACE_INTENT_DECODED_BYTES;
+        let tight_err = load_replace_intent_on_fd_measured(
+            &part_fd,
+            &part_dir,
+            doubled_scratch_short_budget,
+        )
+        .expect_err("3 * pre_cap + MAX_REPLACE_INTENT_DECODED_BYTES must reject when budget only covers 2 * pre_cap");
+        assert!(
+            tight_err.contains("replace intent parse budget exceeds"),
+            "unexpected tight budget err: {tight_err}"
+        );
+        let (parsed_escaped_key, _) = load_replace_intent_on_fd_measured(
+            &part_fd,
+            &part_dir,
+            escaped_key_pre_cap * 3 + MAX_REPLACE_INTENT_DECODED_BYTES,
+        )
+        .unwrap()
+        .expect("32 KiB+ escaped-key intent must succeed under 3 * pre_cap + 20 KiB budget");
+        assert_eq!(parsed_escaped_key.replacement, "part-rep.parquet");
+
+        // Reload check inside uncommitted_intent_superseded_on_fd_with_budget respects the caller
+        // memory budget instead of falling back to usize::MAX when staged_source/inputs vanish.
+        let reload_budget_err = verify_uncommitted_intent_inputs_on_fd_with_budget(
+            &part_fd,
+            &part_dir,
+            &parsed_escaped_key,
+            doubled_scratch_short_budget,
+        )
+        .expect_err("superseded reload under tight budget must reject before reading intent");
+        assert!(
+            reload_budget_err.contains("replace intent parse budget exceeds"),
+            "unexpected superseded reload err: {reload_budget_err}"
+        );
     }
 }
