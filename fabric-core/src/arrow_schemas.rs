@@ -5,11 +5,59 @@ use crate::model::{
     AgentSessionRecord, BlameReport, DoctorReport, FsChurnEntry, FsEventRecord, GraphEdgeRecord,
     HostSnapshot, LogRecord, MetricPoint, TraceSpanRecord, UnitRecord,
 };
-use arrow::array::{BooleanArray, Float64Array, Int64Array, StringArray, UInt32Array, UInt64Array};
+use arrow::array::{
+    BooleanArray, BooleanBuilder, Float64Array, Float64Builder, Int64Array, Int64Builder,
+    StringArray, StringBuilder, UInt32Array, UInt32Builder, UInt64Array, UInt64Builder,
+};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use arrow::ipc::writer::StreamWriter;
 use arrow::record_batch::RecordBatch;
+use std::fmt::Write as _;
 use std::sync::{Arc, LazyLock};
+
+const LIVE_ARRAY_STRUCT_OVERHEAD_BYTES: usize = 256;
+const RECORD_BATCH_BASE_OVERHEAD_BYTES: usize = 128;
+const RECORD_BATCH_COL_REF_OVERHEAD_BYTES: usize = 64;
+
+/// Estimates retained heap footprint for an Arrow `RecordBatch` including
+/// `RecordBatch`, `Arc<dyn Array>`, schema ref, and array buffer memory.
+#[must_use]
+pub fn retained_record_batch_bytes(batch: &RecordBatch) -> usize {
+    batch
+        .get_array_memory_size()
+        .saturating_add(RECORD_BATCH_BASE_OVERHEAD_BYTES)
+        .saturating_add(
+            batch
+                .num_columns()
+                .saturating_mul(RECORD_BATCH_COL_REF_OVERHEAD_BYTES),
+        )
+}
+
+fn null_bitmap_bytes(rows: usize) -> usize {
+    if rows == 0 {
+        0
+    } else {
+        rows.div_ceil(8).next_multiple_of(64)
+    }
+}
+
+fn utf8_column_bytes(rows: usize, data_bytes: usize, nullable: bool) -> usize {
+    let offsets = rows.saturating_add(1).saturating_mul(4);
+    let nulls = if nullable { null_bitmap_bytes(rows) } else { 0 };
+    offsets
+        .saturating_add(data_bytes)
+        .saturating_add(nulls)
+        .saturating_add(LIVE_ARRAY_STRUCT_OVERHEAD_BYTES)
+}
+
+fn checked_utf8_capacity(total_bytes: usize, column: &str) -> Result<usize, String> {
+    if i32::try_from(total_bytes).is_err() {
+        return Err(format!(
+            "Arrow Utf8 column '{column}' byte length {total_bytes} exceeds i32::MAX"
+        ));
+    }
+    Ok(total_bytes)
+}
 
 /// Canonical OLAP Arrow schema for host and OTLP metric points.
 pub static METRICS_SCHEMA: LazyLock<SchemaRef> = LazyLock::new(|| {
@@ -205,34 +253,93 @@ pub fn encode_batches_to_ipc_stream(
     Ok(bytes)
 }
 
+/// Estimates peak Arrow allocation bytes for [`metrics_to_record_batch`].
+#[must_use]
+pub fn estimate_metrics_batch_peak_bytes(rows: &[MetricPoint]) -> usize {
+    let n = rows.len();
+    let mut name_bytes = 0_usize;
+    let mut host_bytes = 0_usize;
+    let mut slice_bytes = 0_usize;
+    let mut unit_bytes = 0_usize;
+    let mut labels_bytes = 0_usize;
+    for r in rows {
+        name_bytes = name_bytes.saturating_add(r.name.len());
+        host_bytes = host_bytes.saturating_add(r.host.len());
+        slice_bytes = slice_bytes.saturating_add(r.slice.len());
+        unit_bytes = unit_bytes.saturating_add(r.unit.len());
+        labels_bytes = labels_bytes.saturating_add(r.labels_json.len());
+    }
+    let timestamp_col = n
+        .saturating_mul(8)
+        .saturating_add(LIVE_ARRAY_STRUCT_OVERHEAD_BYTES);
+    let value_col = n
+        .saturating_mul(8)
+        .saturating_add(LIVE_ARRAY_STRUCT_OVERHEAD_BYTES);
+    let pid_col = n
+        .saturating_mul(4)
+        .saturating_add(null_bitmap_bytes(n))
+        .saturating_add(LIVE_ARRAY_STRUCT_OVERHEAD_BYTES);
+
+    timestamp_col
+        .saturating_add(utf8_column_bytes(n, name_bytes, false))
+        .saturating_add(value_col)
+        .saturating_add(utf8_column_bytes(n, host_bytes, false))
+        .saturating_add(utf8_column_bytes(n, slice_bytes, false))
+        .saturating_add(utf8_column_bytes(n, unit_bytes, false))
+        .saturating_add(pid_col)
+        .saturating_add(utf8_column_bytes(n, labels_bytes, false))
+        .saturating_add(RECORD_BATCH_BASE_OVERHEAD_BYTES)
+}
+
 /// Converts metric points into an Arrow `RecordBatch`.
 pub fn metrics_to_record_batch(rows: &[MetricPoint]) -> Result<RecordBatch, String> {
+    let n = rows.len();
+    let mut name_bytes = 0_usize;
+    let mut host_bytes = 0_usize;
+    let mut slice_bytes = 0_usize;
+    let mut unit_bytes = 0_usize;
+    let mut labels_bytes = 0_usize;
+    for r in rows {
+        name_bytes = name_bytes.saturating_add(r.name.len());
+        host_bytes = host_bytes.saturating_add(r.host.len());
+        slice_bytes = slice_bytes.saturating_add(r.slice.len());
+        unit_bytes = unit_bytes.saturating_add(r.unit.len());
+        labels_bytes = labels_bytes.saturating_add(r.labels_json.len());
+    }
+
+    let mut ts_b = Int64Builder::with_capacity(n);
+    let mut name_b = StringBuilder::with_capacity(n, checked_utf8_capacity(name_bytes, "name")?);
+    let mut val_b = Float64Builder::with_capacity(n);
+    let mut host_b = StringBuilder::with_capacity(n, checked_utf8_capacity(host_bytes, "host")?);
+    let mut slice_b = StringBuilder::with_capacity(n, checked_utf8_capacity(slice_bytes, "slice")?);
+    let mut unit_b = StringBuilder::with_capacity(n, checked_utf8_capacity(unit_bytes, "unit")?);
+    let mut pid_b = UInt32Builder::with_capacity(n);
+    let mut labels_b =
+        StringBuilder::with_capacity(n, checked_utf8_capacity(labels_bytes, "labels_json")?);
+
+    for r in rows {
+        ts_b.append_value(r.timestamp_ms);
+        name_b.append_value(&r.name);
+        val_b.append_value(r.value);
+        host_b.append_value(&r.host);
+        slice_b.append_value(&r.slice);
+        unit_b.append_value(&r.unit);
+        pid_b.append_option(r.pid);
+        labels_b.append_value(&r.labels_json);
+    }
+
     let schema = METRICS_SCHEMA.clone();
     RecordBatch::try_new(
         schema,
         vec![
-            Arc::new(Int64Array::from_iter_values(
-                rows.iter().map(|r| r.timestamp_ms),
-            )),
-            Arc::new(StringArray::from_iter_values(
-                rows.iter().map(|r| r.name.as_str()),
-            )),
-            Arc::new(Float64Array::from_iter_values(rows.iter().map(|r| r.value))),
-            Arc::new(StringArray::from_iter_values(
-                rows.iter().map(|r| r.host.as_str()),
-            )),
-            Arc::new(StringArray::from_iter_values(
-                rows.iter().map(|r| r.slice.as_str()),
-            )),
-            Arc::new(StringArray::from_iter_values(
-                rows.iter().map(|r| r.unit.as_str()),
-            )),
-            Arc::new(UInt32Array::from(
-                rows.iter().map(|r| r.pid).collect::<Vec<_>>(),
-            )),
-            Arc::new(StringArray::from_iter_values(
-                rows.iter().map(|r| r.labels_json.as_str()),
-            )),
+            Arc::new(ts_b.finish()),
+            Arc::new(name_b.finish()),
+            Arc::new(val_b.finish()),
+            Arc::new(host_b.finish()),
+            Arc::new(slice_b.finish()),
+            Arc::new(unit_b.finish()),
+            Arc::new(pid_b.finish()),
+            Arc::new(labels_b.finish()),
         ],
     )
     .map_err(|e| e.to_string())
@@ -331,9 +438,7 @@ pub fn fs_events_to_record_batch(rows: &[FsEventRecord]) -> Result<RecordBatch, 
             Arc::new(Int64Array::from_iter_values(
                 rows.iter().map(|r| r.delta_bytes),
             )),
-            Arc::new(UInt32Array::from(
-                rows.iter().map(|r| r.owner_pid).collect::<Vec<_>>(),
-            )),
+            Arc::new(UInt32Array::from_iter(rows.iter().map(|r| r.owner_pid))),
             Arc::new(StringArray::from_iter_values(
                 rows.iter().map(|r| r.owner_unit.as_str()),
             )),
@@ -345,34 +450,124 @@ pub fn fs_events_to_record_batch(rows: &[FsEventRecord]) -> Result<RecordBatch, 
     .map_err(|e| e.to_string())
 }
 
+/// Estimates peak Arrow allocation bytes for [`fs_churn_to_record_batch`].
+#[must_use]
+pub fn estimate_fs_churn_batch_peak_bytes(rows: &[FsChurnEntry]) -> usize {
+    let n = rows.len();
+    let mut path_bytes = 0_usize;
+    let mut mount_bytes = 0_usize;
+    let mut kind_bytes = 0_usize;
+    let mut unit_bytes = 0_usize;
+    let mut slice_bytes = 0_usize;
+    for entry in rows {
+        path_bytes = path_bytes.saturating_add(entry.path.len());
+        mount_bytes = mount_bytes.saturating_add(entry.mount_point.len());
+        kind_bytes = kind_bytes.saturating_add(if entry.unlinked_open_fds > 0 {
+            "unlinked_open_fd".len()
+        } else {
+            "churn".len()
+        });
+        unit_bytes = unit_bytes.saturating_add(entry.owner_unit.as_deref().map_or(0, str::len));
+        slice_bytes = slice_bytes.saturating_add(entry.owner_slice.as_deref().map_or(0, str::len));
+    }
+    let timestamp_col = n
+        .saturating_mul(8)
+        .saturating_add(LIVE_ARRAY_STRUCT_OVERHEAD_BYTES);
+    let size_col = n
+        .saturating_mul(8)
+        .saturating_add(LIVE_ARRAY_STRUCT_OVERHEAD_BYTES);
+    let delta_col = n
+        .saturating_mul(8)
+        .saturating_add(LIVE_ARRAY_STRUCT_OVERHEAD_BYTES);
+    let pid_col = n
+        .saturating_mul(4)
+        .saturating_add(null_bitmap_bytes(n))
+        .saturating_add(LIVE_ARRAY_STRUCT_OVERHEAD_BYTES);
+
+    timestamp_col
+        .saturating_add(utf8_column_bytes(n, path_bytes, false))
+        .saturating_add(utf8_column_bytes(n, mount_bytes, false))
+        .saturating_add(utf8_column_bytes(n, kind_bytes, false))
+        .saturating_add(size_col)
+        .saturating_add(delta_col)
+        .saturating_add(pid_col)
+        .saturating_add(utf8_column_bytes(n, unit_bytes, false))
+        .saturating_add(utf8_column_bytes(n, slice_bytes, false))
+        .saturating_add(RECORD_BATCH_BASE_OVERHEAD_BYTES)
+}
+
 /// Converts `FsChurnEntry` records into an `FS_EVENTS_SCHEMA` Arrow `RecordBatch`.
 pub fn fs_churn_to_record_batch(
     timestamp_ms: i64,
     rows: &[FsChurnEntry],
 ) -> Result<RecordBatch, String> {
-    let events: Vec<FsEventRecord> = rows
-        .iter()
-        .map(|entry| FsEventRecord {
-            timestamp_ms: if entry.mtime_unix_ms > 0 {
-                entry.mtime_unix_ms
-            } else {
-                timestamp_ms
-            },
-            path: entry.path.clone(),
-            mount_point: entry.mount_point.clone(),
-            event_kind: if entry.unlinked_open_fds > 0 {
-                "unlinked_open_fd".into()
-            } else {
-                "churn".into()
-            },
-            size_bytes: entry.size_bytes,
-            delta_bytes: entry.recent_delta_bytes,
-            owner_pid: entry.owner_pid,
-            owner_unit: entry.owner_unit.clone().unwrap_or_default(),
-            owner_slice: entry.owner_slice.clone().unwrap_or_default(),
-        })
-        .collect();
-    fs_events_to_record_batch(&events)
+    let n = rows.len();
+    let mut path_bytes = 0_usize;
+    let mut mount_bytes = 0_usize;
+    let mut kind_bytes = 0_usize;
+    let mut unit_bytes = 0_usize;
+    let mut slice_bytes = 0_usize;
+    for entry in rows {
+        path_bytes = path_bytes.saturating_add(entry.path.len());
+        mount_bytes = mount_bytes.saturating_add(entry.mount_point.len());
+        kind_bytes = kind_bytes.saturating_add(if entry.unlinked_open_fds > 0 {
+            "unlinked_open_fd".len()
+        } else {
+            "churn".len()
+        });
+        unit_bytes = unit_bytes.saturating_add(entry.owner_unit.as_deref().map_or(0, str::len));
+        slice_bytes = slice_bytes.saturating_add(entry.owner_slice.as_deref().map_or(0, str::len));
+    }
+
+    let mut ts_b = Int64Builder::with_capacity(n);
+    let mut path_b = StringBuilder::with_capacity(n, checked_utf8_capacity(path_bytes, "path")?);
+    let mut mount_b =
+        StringBuilder::with_capacity(n, checked_utf8_capacity(mount_bytes, "mount_point")?);
+    let mut kind_b =
+        StringBuilder::with_capacity(n, checked_utf8_capacity(kind_bytes, "event_kind")?);
+    let mut size_b = UInt64Builder::with_capacity(n);
+    let mut delta_b = Int64Builder::with_capacity(n);
+    let mut pid_b = UInt32Builder::with_capacity(n);
+    let mut unit_b =
+        StringBuilder::with_capacity(n, checked_utf8_capacity(unit_bytes, "owner_unit")?);
+    let mut slice_b =
+        StringBuilder::with_capacity(n, checked_utf8_capacity(slice_bytes, "owner_slice")?);
+
+    for entry in rows {
+        ts_b.append_value(if entry.mtime_unix_ms > 0 {
+            entry.mtime_unix_ms
+        } else {
+            timestamp_ms
+        });
+        path_b.append_value(&entry.path);
+        mount_b.append_value(&entry.mount_point);
+        kind_b.append_value(if entry.unlinked_open_fds > 0 {
+            "unlinked_open_fd"
+        } else {
+            "churn"
+        });
+        size_b.append_value(entry.size_bytes);
+        delta_b.append_value(entry.recent_delta_bytes);
+        pid_b.append_option(entry.owner_pid);
+        unit_b.append_value(entry.owner_unit.as_deref().unwrap_or(""));
+        slice_b.append_value(entry.owner_slice.as_deref().unwrap_or(""));
+    }
+
+    RecordBatch::try_new(
+        FS_EVENTS_SCHEMA.clone(),
+        vec![
+            Arc::new(ts_b.finish()),
+            Arc::new(path_b.finish()),
+            Arc::new(mount_b.finish()),
+            Arc::new(kind_b.finish()),
+            Arc::new(size_b.finish()),
+            Arc::new(delta_b.finish()),
+            Arc::new(pid_b.finish()),
+            Arc::new(unit_b.finish()),
+            Arc::new(slice_b.finish()),
+        ],
+    )
+    .map_err(|e| e.to_string())
 }
 
 /// Converts causal graph edges into an Arrow `RecordBatch`.
@@ -410,86 +605,217 @@ pub fn graph_edges_to_record_batch(rows: &[GraphEdgeRecord]) -> Result<RecordBat
     .map_err(|e| e.to_string())
 }
 
+/// Estimates peak Arrow allocation bytes for [`units_to_record_batch`].
+#[must_use]
+pub fn estimate_units_batch_peak_bytes(rows: &[UnitRecord]) -> usize {
+    let n = rows.len();
+    let mut name_bytes = 0_usize;
+    let mut manager_bytes = 0_usize;
+    let mut slice_bytes = 0_usize;
+    let mut active_bytes = 0_usize;
+    let mut sub_bytes = 0_usize;
+    let mut orphan_bytes = 0_usize;
+    for r in rows {
+        name_bytes = name_bytes.saturating_add(r.name.len());
+        manager_bytes = manager_bytes.saturating_add(r.manager.len());
+        slice_bytes = slice_bytes.saturating_add(r.slice.len());
+        active_bytes = active_bytes.saturating_add(r.active_state.len());
+        sub_bytes = sub_bytes.saturating_add(r.sub_state.len());
+        orphan_bytes =
+            orphan_bytes.saturating_add(r.orphaned_reason.as_deref().map_or(0, str::len));
+    }
+    let bool_col = null_bitmap_bytes(n).saturating_add(LIVE_ARRAY_STRUCT_OVERHEAD_BYTES);
+    let pid_col = n
+        .saturating_mul(4)
+        .saturating_add(null_bitmap_bytes(n))
+        .saturating_add(LIVE_ARRAY_STRUCT_OVERHEAD_BYTES);
+    let u64_col = n
+        .saturating_mul(8)
+        .saturating_add(LIVE_ARRAY_STRUCT_OVERHEAD_BYTES);
+
+    utf8_column_bytes(n, name_bytes, false)
+        .saturating_add(utf8_column_bytes(n, manager_bytes, false))
+        .saturating_add(utf8_column_bytes(n, slice_bytes, false))
+        .saturating_add(utf8_column_bytes(n, active_bytes, false))
+        .saturating_add(utf8_column_bytes(n, sub_bytes, false))
+        .saturating_add(bool_col.saturating_mul(3))
+        .saturating_add(utf8_column_bytes(n, orphan_bytes, true))
+        .saturating_add(pid_col)
+        .saturating_add(u64_col.saturating_mul(2))
+        .saturating_add(RECORD_BATCH_BASE_OVERHEAD_BYTES)
+}
+
 /// Converts unit hygiene records into an Arrow `RecordBatch`.
 pub fn units_to_record_batch(rows: &[UnitRecord]) -> Result<RecordBatch, String> {
+    let n = rows.len();
+    let mut name_bytes = 0_usize;
+    let mut manager_bytes = 0_usize;
+    let mut slice_bytes = 0_usize;
+    let mut active_bytes = 0_usize;
+    let mut sub_bytes = 0_usize;
+    let mut orphan_bytes = 0_usize;
+    for r in rows {
+        name_bytes = name_bytes.saturating_add(r.name.len());
+        manager_bytes = manager_bytes.saturating_add(r.manager.len());
+        slice_bytes = slice_bytes.saturating_add(r.slice.len());
+        active_bytes = active_bytes.saturating_add(r.active_state.len());
+        sub_bytes = sub_bytes.saturating_add(r.sub_state.len());
+        orphan_bytes =
+            orphan_bytes.saturating_add(r.orphaned_reason.as_deref().map_or(0, str::len));
+    }
+
+    let mut name_b = StringBuilder::with_capacity(n, checked_utf8_capacity(name_bytes, "name")?);
+    let mut manager_b =
+        StringBuilder::with_capacity(n, checked_utf8_capacity(manager_bytes, "manager")?);
+    let mut slice_b = StringBuilder::with_capacity(n, checked_utf8_capacity(slice_bytes, "slice")?);
+    let mut active_b =
+        StringBuilder::with_capacity(n, checked_utf8_capacity(active_bytes, "active_state")?);
+    let mut sub_b = StringBuilder::with_capacity(n, checked_utf8_capacity(sub_bytes, "sub_state")?);
+    let mut transient_b = BooleanBuilder::with_capacity(n);
+    let mut collect_b = BooleanBuilder::with_capacity(n);
+    let mut orphan_b =
+        StringBuilder::with_capacity(n, checked_utf8_capacity(orphan_bytes, "orphaned_reason")?);
+    let mut pid_b = UInt32Builder::with_capacity(n);
+    let mut mem_b = UInt64Builder::with_capacity(n);
+    let mut cpu_b = UInt64Builder::with_capacity(n);
+    let mut pop_b = BooleanBuilder::with_capacity(n);
+
+    for r in rows {
+        name_b.append_value(&r.name);
+        manager_b.append_value(&r.manager);
+        slice_b.append_value(&r.slice);
+        active_b.append_value(&r.active_state);
+        sub_b.append_value(&r.sub_state);
+        transient_b.append_value(r.transient);
+        collect_b.append_value(r.collect_mode_enabled);
+        orphan_b.append_option(r.orphaned_reason.as_deref());
+        pid_b.append_option(r.main_pid);
+        mem_b.append_value(r.memory_current_bytes);
+        cpu_b.append_value(r.cpu_usage_usec);
+        pop_b.append_value(r.populated);
+    }
+
     let schema = UNITS_SCHEMA.clone();
     RecordBatch::try_new(
         schema,
         vec![
-            Arc::new(StringArray::from_iter_values(
-                rows.iter().map(|r| r.name.as_str()),
-            )),
-            Arc::new(StringArray::from_iter_values(
-                rows.iter().map(|r| r.manager.as_str()),
-            )),
-            Arc::new(StringArray::from_iter_values(
-                rows.iter().map(|r| r.slice.as_str()),
-            )),
-            Arc::new(StringArray::from_iter_values(
-                rows.iter().map(|r| r.active_state.as_str()),
-            )),
-            Arc::new(StringArray::from_iter_values(
-                rows.iter().map(|r| r.sub_state.as_str()),
-            )),
-            Arc::new(BooleanArray::from_iter(
-                rows.iter().map(|r| Some(r.transient)),
-            )),
-            Arc::new(BooleanArray::from_iter(
-                rows.iter().map(|r| Some(r.collect_mode_enabled)),
-            )),
-            Arc::new(StringArray::from(
-                rows.iter()
-                    .map(|r| r.orphaned_reason.as_deref())
-                    .collect::<Vec<_>>(),
-            )),
-            Arc::new(UInt32Array::from(
-                rows.iter().map(|r| r.main_pid).collect::<Vec<_>>(),
-            )),
-            Arc::new(UInt64Array::from_iter_values(
-                rows.iter().map(|r| r.memory_current_bytes),
-            )),
-            Arc::new(UInt64Array::from_iter_values(
-                rows.iter().map(|r| r.cpu_usage_usec),
-            )),
-            Arc::new(BooleanArray::from_iter(
-                rows.iter().map(|r| Some(r.populated)),
-            )),
+            Arc::new(name_b.finish()),
+            Arc::new(manager_b.finish()),
+            Arc::new(slice_b.finish()),
+            Arc::new(active_b.finish()),
+            Arc::new(sub_b.finish()),
+            Arc::new(transient_b.finish()),
+            Arc::new(collect_b.finish()),
+            Arc::new(orphan_b.finish()),
+            Arc::new(pid_b.finish()),
+            Arc::new(mem_b.finish()),
+            Arc::new(cpu_b.finish()),
+            Arc::new(pop_b.finish()),
         ],
     )
     .map_err(|e| e.to_string())
 }
 
+fn agent_touched_paths_joined_len(paths: &[String]) -> usize {
+    if paths.is_empty() {
+        0
+    } else {
+        paths
+            .iter()
+            .map(String::len)
+            .fold(0_usize, usize::saturating_add)
+            .saturating_add(paths.len() - 1)
+    }
+}
+
+/// Estimates peak Arrow allocation bytes for [`agents_to_record_batch`].
+#[must_use]
+pub fn estimate_agents_batch_peak_bytes(rows: &[AgentSessionRecord]) -> usize {
+    let n = rows.len();
+    let mut session_bytes = 0_usize;
+    let mut agent_bytes = 0_usize;
+    let mut slice_bytes = 0_usize;
+    let mut unit_bytes = 0_usize;
+    let mut touched_bytes = 0_usize;
+    for r in rows {
+        session_bytes = session_bytes.saturating_add(r.session_id.len());
+        agent_bytes = agent_bytes.saturating_add(r.agent_name.len());
+        slice_bytes = slice_bytes.saturating_add(r.slice.len());
+        unit_bytes = unit_bytes.saturating_add(r.unit.as_deref().map_or(0, str::len));
+        touched_bytes =
+            touched_bytes.saturating_add(agent_touched_paths_joined_len(&r.touched_paths));
+    }
+    let u64_col = n
+        .saturating_mul(8)
+        .saturating_add(LIVE_ARRAY_STRUCT_OVERHEAD_BYTES);
+
+    utf8_column_bytes(n, session_bytes, false)
+        .saturating_add(utf8_column_bytes(n, agent_bytes, false))
+        .saturating_add(utf8_column_bytes(n, slice_bytes, false))
+        .saturating_add(utf8_column_bytes(n, unit_bytes, true))
+        .saturating_add(u64_col.saturating_mul(3))
+        .saturating_add(utf8_column_bytes(n, touched_bytes, false))
+        .saturating_add(RECORD_BATCH_BASE_OVERHEAD_BYTES)
+}
+
 /// Converts agent session summaries into an Arrow `RecordBatch`.
 pub fn agents_to_record_batch(rows: &[AgentSessionRecord]) -> Result<RecordBatch, String> {
+    let n = rows.len();
+    let mut session_bytes = 0_usize;
+    let mut agent_bytes = 0_usize;
+    let mut slice_bytes = 0_usize;
+    let mut unit_bytes = 0_usize;
+    let mut touched_bytes = 0_usize;
+    for r in rows {
+        session_bytes = session_bytes.saturating_add(r.session_id.len());
+        agent_bytes = agent_bytes.saturating_add(r.agent_name.len());
+        slice_bytes = slice_bytes.saturating_add(r.slice.len());
+        unit_bytes = unit_bytes.saturating_add(r.unit.as_deref().map_or(0, str::len));
+        touched_bytes =
+            touched_bytes.saturating_add(agent_touched_paths_joined_len(&r.touched_paths));
+    }
+
+    let mut session_b =
+        StringBuilder::with_capacity(n, checked_utf8_capacity(session_bytes, "session_id")?);
+    let mut agent_b =
+        StringBuilder::with_capacity(n, checked_utf8_capacity(agent_bytes, "agent_name")?);
+    let mut slice_b = StringBuilder::with_capacity(n, checked_utf8_capacity(slice_bytes, "slice")?);
+    let mut unit_b = StringBuilder::with_capacity(n, checked_utf8_capacity(unit_bytes, "unit")?);
+    let mut pid_cnt_b = UInt64Builder::with_capacity(n);
+    let mut rss_b = UInt64Builder::with_capacity(n);
+    let mut write_b = UInt64Builder::with_capacity(n);
+    let mut touched_b =
+        StringBuilder::with_capacity(n, checked_utf8_capacity(touched_bytes, "touched_paths")?);
+
+    for r in rows {
+        session_b.append_value(&r.session_id);
+        agent_b.append_value(&r.agent_name);
+        slice_b.append_value(&r.slice);
+        unit_b.append_option(r.unit.as_deref());
+        pid_cnt_b.append_value(r.pids.len() as u64);
+        rss_b.append_value(r.rss_bytes);
+        write_b.append_value(r.write_bytes);
+        for (idx, path) in r.touched_paths.iter().enumerate() {
+            if idx > 0 {
+                touched_b.write_str(";").map_err(|e| e.to_string())?;
+            }
+            touched_b.write_str(path).map_err(|e| e.to_string())?;
+        }
+        touched_b.append_value("");
+    }
+
     let schema = AGENTS_SCHEMA.clone();
-    let paths_joined: Vec<String> = rows.iter().map(|r| r.touched_paths.join(";")).collect();
     RecordBatch::try_new(
         schema,
         vec![
-            Arc::new(StringArray::from_iter_values(
-                rows.iter().map(|r| r.session_id.as_str()),
-            )),
-            Arc::new(StringArray::from_iter_values(
-                rows.iter().map(|r| r.agent_name.as_str()),
-            )),
-            Arc::new(StringArray::from_iter_values(
-                rows.iter().map(|r| r.slice.as_str()),
-            )),
-            Arc::new(StringArray::from(
-                rows.iter().map(|r| r.unit.as_deref()).collect::<Vec<_>>(),
-            )),
-            Arc::new(UInt64Array::from_iter_values(
-                rows.iter().map(|r| r.pids.len() as u64),
-            )),
-            Arc::new(UInt64Array::from_iter_values(
-                rows.iter().map(|r| r.rss_bytes),
-            )),
-            Arc::new(UInt64Array::from_iter_values(
-                rows.iter().map(|r| r.write_bytes),
-            )),
-            Arc::new(StringArray::from_iter_values(
-                paths_joined.iter().map(String::as_str),
-            )),
+            Arc::new(session_b.finish()),
+            Arc::new(agent_b.finish()),
+            Arc::new(slice_b.finish()),
+            Arc::new(unit_b.finish()),
+            Arc::new(pid_cnt_b.finish()),
+            Arc::new(rss_b.finish()),
+            Arc::new(write_b.finish()),
+            Arc::new(touched_b.finish()),
         ],
     )
     .map_err(|e| e.to_string())
