@@ -188,7 +188,6 @@ theorem elastic_can_admit_contract (leased owned : U64) :
     telemetry.elastic_can_admit leased owned ⦃ admitted =>
       admitted = true ↔ owned.val + 1 ≤ leased.val ⦄ := by
   simp [telemetry.elastic_can_admit]
-  omega
 
 private theorem u64_saturating_sub_val (x y : U64) :
     (core.num.U64.saturating_sub x y).val = x.val - y.val := by
