@@ -16,7 +16,7 @@ pub use channel::BoundedTelemetryQueue;
 pub use daemon::{
     CollectedState, DaemonConfig, DaemonRequest, DaemonResponse, collect_once,
     default_daemon_socket, default_ingest_socket, default_spindle_socket, query_daemon_socket,
-    query_running_daemon, run_daemon, run_spindle_only_daemon,
+    query_running_daemon, query_running_doctor, run_daemon, run_spindle_only_daemon,
 };
 pub use host_export::{configured_host_export_node, is_forwarded_host_signal};
 pub use self_guard::SelfPreservationGuard;
