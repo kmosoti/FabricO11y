@@ -1,79 +1,14 @@
-//! Linux observations for the verified elastic memory policy.
+//! Collector budget policy over shared Linux resource observations.
 
 use admission_kernel::telemetry::elastic_spendable;
+use fabric::resources::process_memory;
 use fabric_core::DEFAULT_RING_BUDGET_BYTES;
-use std::{
-    fs,
-    path::{Component, Path},
-};
-
-const CGROUP_ROOT: &str = "/sys/fs/cgroup";
-const PROCESS_CGROUP: &str = "/proc/self/cgroup";
 
 /// The configured hot cache budget and the Linux limit used to derive it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RingBudget {
     pub budget_bytes: usize,
     pub cgroup_limit_bytes: Option<u64>,
-}
-
-#[derive(Default)]
-struct MemoryInputs {
-    limit: Option<u64>,
-    pressured: bool,
-}
-
-fn number(path: &Path) -> Option<u64> {
-    fs::read_to_string(path).ok()?.trim().parse().ok()
-}
-
-// Inactive file pages can be reclaimed by the kernel under pressure.
-fn inactive_file_bytes(directory: &Path) -> u64 {
-    fs::read_to_string(directory.join("memory.stat"))
-        .ok()
-        .and_then(|stat| {
-            stat.lines()
-                .find_map(|line| line.strip_prefix("inactive_file "))
-                .and_then(|bytes| bytes.trim().parse().ok())
-        })
-        .unwrap_or(0)
-}
-
-fn memory_inputs(root: &Path, membership: &str) -> MemoryInputs {
-    let Some(path) = membership.lines().find_map(|line| line.strip_prefix("0::")) else {
-        return MemoryInputs::default();
-    };
-    let path = Path::new(path);
-    let Ok(relative) = path.strip_prefix("/") else {
-        return MemoryInputs::default();
-    };
-    if relative
-        .components()
-        .any(|part| part == Component::ParentDir)
-    {
-        return MemoryInputs::default();
-    }
-    let mut inputs = MemoryInputs::default();
-    for directory in relative.ancestors().take(32) {
-        let directory = root.join(directory);
-        let limit = ["memory.high", "memory.max"]
-            .iter()
-            .filter_map(|file| number(&directory.join(file)))
-            .min();
-        if let Some(limit) = limit {
-            inputs.limit = Some(inputs.limit.map_or(limit, |prior| prior.min(limit)));
-            if let Some(current) = number(&directory.join("memory.current")) {
-                let working_set = current.saturating_sub(inactive_file_bytes(&directory));
-                inputs.pressured |= working_set > 0 && working_set >= elastic_spendable(limit);
-            }
-        }
-    }
-    inputs
-}
-
-fn process_memory() -> MemoryInputs {
-    let membership = fs::read_to_string(PROCESS_CGROUP).unwrap_or_default();
-    memory_inputs(Path::new(CGROUP_ROOT), &membership)
 }
 
 fn ring_budget(limit: Option<u64>) -> RingBudget {
@@ -89,7 +24,7 @@ fn ring_budget(limit: Option<u64>) -> RingBudget {
 /// Allocate one eighth of spendable cgroup memory to the optional hot ring.
 #[must_use]
 pub fn automatic_ring_budget() -> RingBudget {
-    ring_budget(process_memory().limit)
+    ring_budget(process_memory().limit_bytes)
 }
 
 pub(crate) fn cgroup_memory_pressure() -> bool {
@@ -99,37 +34,6 @@ pub(crate) fn cgroup_memory_pressure() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn resolves_ancestor_limits_and_pressure_separately() {
-        let temp = tempfile::tempdir().unwrap();
-        let root = temp.path();
-        fs::create_dir_all(root.join("slice/service")).unwrap();
-        for (file, value) in [
-            ("memory.max", "max"),
-            ("slice/memory.high", "67108864"),
-            ("slice/memory.max", "134217728"),
-            ("slice/memory.current", "50331648"),
-            ("slice/service/memory.max", "268435456"),
-            ("slice/service/memory.current", "2097152"),
-        ] {
-            fs::write(root.join(file), value).unwrap();
-        }
-        let inputs = memory_inputs(root, "0::/slice/service\n");
-        assert!(inputs.pressured);
-        assert_eq!(inputs.limit, Some(64 * 1024 * 1024));
-        assert_eq!(ring_budget(inputs.limit).budget_bytes, 6 * 1024 * 1024);
-        fs::write(root.join("slice/memory.current"), "50331647").unwrap();
-        assert!(!memory_inputs(root, "0::/slice/service").pressured);
-        fs::write(root.join("slice/memory.current"), "65000000").unwrap();
-        fs::write(
-            root.join("slice/memory.stat"),
-            "anon 8388608\ninactive_file 40000000\n",
-        )
-        .unwrap();
-        assert!(!memory_inputs(root, "0::/slice/service").pressured);
-        assert_eq!(memory_inputs(root, "0::/../slice").limit, None);
-    }
 
     #[test]
     fn missing_and_extreme_limits_have_repeatable_defaults() {

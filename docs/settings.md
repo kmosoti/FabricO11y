@@ -67,3 +67,11 @@ then falls back to the corresponding JSON file if the TOML file is absent.
 Explicit endpoint and credential switches keep priority. Use the service
 configuration actually passed by your units so discovery reports those values.
 Each input file is capped at 64 KiB and must resolve to a regular file.
+
+When a receiver profile is discovered, `receiver_resources` previews the
+connection cap and pressure inputs in both output formats. Its
+`settings_process` scope refers to the process running `fabric settings`.
+The installed receiver can have different systemd limits. Its startup readiness
+record contains the actual effective cap and the descriptor and cgroup inputs
+used by that process. Inspect the readiness record in the receiver unit's
+journal. Optional inputs are omitted in TOML and have a null value in JSON.
