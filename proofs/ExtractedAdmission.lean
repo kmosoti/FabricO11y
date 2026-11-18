@@ -159,6 +159,21 @@ theorem watermark_advance_contract (committed candidate : U64) (flush_succeeded 
   · simp [telemetry.watermark_advance]
   · by_cases hc : candidate > committed <;> simp [telemetry.watermark_advance, hc] <;> scalar_tac
 
+theorem projection_frontier_contract (committed first last : U64)
+    (origin_matches flush_succeeded : Bool) :
+    telemetry.projection_frontier_advance committed first last origin_matches flush_succeeded ⦃ next =>
+      let published := origin_matches = true ∧ flush_succeeded = true ∧
+        first.val = committed.val + 1 ∧ first.val ≤ last.val
+      committed.val ≤ next.val ∧
+        (published → next = last) ∧ (¬ published → next = committed) ⦄ := by
+  unfold telemetry.projection_frontier_advance
+  step*
+
+theorem projection_aborted_unchanged
+    (committed first last : U64) (origin_matches : Bool) :
+    telemetry.projection_frontier_advance committed first last origin_matches false = ok committed := by
+  cases origin_matches <;> simp [telemetry.projection_frontier_advance]
+
 theorem ring_can_buffer_contract (unflushed_bytes budget_bytes : U64) :
     telemetry.ring_can_buffer unflushed_bytes budget_bytes ⦃ ok =>
       let half := budget_bytes.val / 2
@@ -198,6 +213,8 @@ theorem rss_shedding_decision_contract (rss_bytes shed_limit_bytes : U64) :
   simp [telemetry.rss_shedding_decision]
 
 #print axioms watermark_advance_contract
+#print axioms projection_frontier_contract
+#print axioms projection_aborted_unchanged
 #print axioms ring_can_buffer_contract
 #print axioms disk_needs_eviction_contract
 #print axioms rss_shedding_decision_contract

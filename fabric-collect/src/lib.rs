@@ -7,6 +7,7 @@ pub mod fs_watch;
 pub mod host;
 pub mod self_guard;
 pub mod spindle_bridge;
+mod spindle_range;
 pub mod systemd;
 
 pub use channel::BoundedTelemetryQueue;
@@ -20,3 +21,4 @@ pub use spindle_bridge::{
     IngestEnvelope, SpindleProjectionPoll, observation_to_telemetry, parse_ingest_line,
     poll_spindle_custody_records, poll_spindle_projection_records,
 };
+pub use spindle_range::SpindleProjectionRange;

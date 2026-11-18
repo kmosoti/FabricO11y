@@ -11,6 +11,7 @@ use crate::spindle_bridge::{
     IngestEnvelope, poll_spindle_projection_records, read_bounded_line,
     serve_ingest_socket_until_shutdown,
 };
+use crate::spindle_range::SpindleProjectionRange;
 use crate::systemd::collect_unit_records;
 use chrono::Utc;
 use fabric_core::{
@@ -187,12 +188,17 @@ fn envelope_approx_bytes(env: &IngestEnvelope) -> usize {
     }
 }
 
-type PendingOlapPlan = (fabric_store::OlapFlushPlan, Option<u64>, usize, usize);
+type PendingOlapPlan = (
+    fabric_store::OlapFlushPlan,
+    SpindleProjectionRange,
+    usize,
+    usize,
+);
 type SpindleRow<T> = (Option<SpindleProvenance>, T);
 
-fn spindle_provenance_bytes(provenance: &Option<SpindleProvenance>) -> usize {
+fn spindle_provenance_bytes(provenance: Option<&SpindleProvenance>) -> usize {
     std::mem::size_of::<Option<SpindleProvenance>>()
-        + provenance.as_ref().map_or(0, |key| {
+        + provenance.map_or(0, |key| {
             let allocated =
                 key.origin.capacity() + key.producer.capacity() + key.generation.capacity();
             let text_bytes = key.origin.len() + key.producer.len() + key.generation.len();
@@ -206,13 +212,13 @@ struct SpindleStaging {
     metrics: Vec<SpindleRow<MetricPoint>>,
     logs: Vec<SpindleRow<LogRecord>>,
     traces: Vec<SpindleRow<TraceSpanRecord>>,
-    max_accepted_id: Option<u64>,
+    range: Option<SpindleProjectionRange>,
     pending_plan: Option<PendingOlapPlan>,
     pending_volatile_plan: Option<fabric_store::OlapFlushPlan>,
     inflight_items: usize,
     staged_bytes: usize,
     inflight_bytes: usize,
-    deferred_watermark: Option<u64>,
+    deferred_range: Option<SpindleProjectionRange>,
     uncommitted_partitions: std::collections::BTreeSet<(&'static str, chrono::NaiveDate)>,
 }
 
@@ -235,28 +241,27 @@ impl SpindleStaging {
 
     #[cfg(test)]
     fn effective_watermark(&self) -> Option<u64> {
-        let pending_wm = self.pending_plan.as_ref().and_then(|p| p.1);
-        match (self.max_accepted_id, pending_wm) {
-            (Some(a), Some(b)) => Some(a.max(b)),
-            (a, b) => a.or(b),
-        }
+        self.range
+            .as_ref()
+            .or_else(|| self.pending_plan.as_ref().map(|p| &p.1))
+            .map(SpindleProjectionRange::last_id)
     }
 
     fn recompute_bytes(&mut self) {
         self.staged_bytes = self
             .metrics
             .iter()
-            .map(|(key, row)| spindle_provenance_bytes(key) + metric_approx_bytes(row))
+            .map(|(key, row)| spindle_provenance_bytes(key.as_ref()) + metric_approx_bytes(row))
             .sum::<usize>()
             + self
                 .logs
                 .iter()
-                .map(|(key, row)| spindle_provenance_bytes(key) + log_approx_bytes(row))
+                .map(|(key, row)| spindle_provenance_bytes(key.as_ref()) + log_approx_bytes(row))
                 .sum::<usize>()
             + self
                 .traces
                 .iter()
-                .map(|(key, row)| spindle_provenance_bytes(key) + trace_approx_bytes(row))
+                .map(|(key, row)| spindle_provenance_bytes(key.as_ref()) + trace_approx_bytes(row))
                 .sum::<usize>();
     }
 
@@ -272,13 +277,13 @@ impl SpindleStaging {
             metrics: std::mem::take(&mut self.metrics),
             logs: std::mem::take(&mut self.logs),
             traces: std::mem::take(&mut self.traces),
-            max_accepted_id: self.max_accepted_id.take(),
+            range: self.range.take(),
             pending_plan: None,
             pending_volatile_plan: None,
             inflight_items: 0,
             staged_bytes: self.staged_bytes,
             inflight_bytes: 0,
-            deferred_watermark: None,
+            deferred_range: None,
             uncommitted_partitions: std::collections::BTreeSet::new(),
         };
         self.inflight_items = self.inflight_items.saturating_add(taken.total_len());
@@ -287,7 +292,8 @@ impl SpindleStaging {
         taken
     }
 
-    fn restore_front(&mut self, mut older: SpindleStaging) {
+    fn restore_front(&mut self, mut older: SpindleStaging) -> Result<(), String> {
+        SpindleProjectionRange::append(&mut older.range, self.range.take())?;
         if !older.metrics.is_empty() {
             older.metrics.append(&mut self.metrics);
             self.metrics = older.metrics;
@@ -300,11 +306,9 @@ impl SpindleStaging {
             older.traces.append(&mut self.traces);
             self.traces = older.traces;
         }
-        self.max_accepted_id = match (self.max_accepted_id, older.max_accepted_id) {
-            (Some(a), Some(b)) => Some(a.max(b)),
-            (a, b) => a.or(b),
-        };
+        self.range = older.range;
         self.recompute_bytes();
+        Ok(())
     }
 }
 
@@ -313,10 +317,8 @@ fn enqueue_spindle_record(
     env: IngestEnvelope,
     runtime: &DaemonRuntime,
 ) -> bool {
-    let id = key.record_id;
-    let provenance = Some(key);
     let now_ms = Utc::now().timestamp_millis();
-    let item_bytes = envelope_approx_bytes(&env) + spindle_provenance_bytes(&provenance);
+    let item_bytes = envelope_approx_bytes(&env) + spindle_provenance_bytes(Some(&key));
     let mut hot_metric: Option<MetricPoint> = None;
     {
         let mut staging = runtime.spindle_staging.lock();
@@ -333,6 +335,10 @@ fn enqueue_spindle_record(
         {
             return false;
         }
+        if SpindleProjectionRange::include(&mut staging.range, &key).is_err() {
+            return false;
+        }
+        let provenance = Some(key);
         match env {
             IngestEnvelope::Metric(mut pt) => {
                 if pt.timestamp_ms <= 0 {
@@ -355,7 +361,6 @@ fn enqueue_spindle_record(
             }
         }
         staging.staged_bytes = staging.staged_bytes.saturating_add(item_bytes);
-        staging.max_accepted_id = Some(staging.max_accepted_id.map_or(id, |prev| prev.max(id)));
     }
     if let Some(pt) = hot_metric {
         runtime
@@ -368,6 +373,10 @@ fn enqueue_spindle_record(
 
 #[cfg(test)]
 fn enqueue_test_spindle_record(id: u64, env: IngestEnvelope, runtime: &DaemonRuntime) -> bool {
+    runtime
+        .catalog
+        .bind_spindle_projection("test-origin")
+        .expect("bind authenticated test origin");
     enqueue_spindle_record(
         SpindleProvenance {
             origin: "test-origin".into(),
@@ -690,55 +699,42 @@ impl DaemonRuntime {
     fn store_failed_plan(
         &self,
         plan: fabric_store::OlapFlushPlan,
-        wm: Option<u64>,
+        range: SpindleProjectionRange,
         items: usize,
         bytes: usize,
     ) {
         let mut staging = self.spindle_staging.lock();
         staging.inflight_items = staging.inflight_items.saturating_sub(items);
         staging.inflight_bytes = staging.inflight_bytes.saturating_sub(bytes);
-        staging.pending_plan = Some((plan, wm, items, bytes));
+        staging.pending_plan = Some((plan, range, items, bytes));
     }
 
     fn finish_inflight_and_commit_watermark(
         &self,
         items: usize,
         bytes: usize,
-        wm: Option<u64>,
+        range: Option<SpindleProjectionRange>,
         batch_partitions: &std::collections::BTreeSet<(&'static str, chrono::NaiveDate)>,
     ) -> Result<(), String> {
-        let target_wm = {
+        let published = {
             let mut staging = self.spindle_staging.lock();
             staging.inflight_items = staging.inflight_items.saturating_sub(items);
             staging.inflight_bytes = staging.inflight_bytes.saturating_sub(bytes);
-            if let Some(w) = wm {
-                staging.deferred_watermark =
-                    Some(staging.deferred_watermark.map_or(w, |prev| prev.max(w)));
-            }
-            if wm.is_some() || staging.deferred_watermark.is_some() {
+            if range.is_some() || staging.deferred_range.is_some() {
                 staging
                     .uncommitted_partitions
                     .extend(batch_partitions.iter().copied());
             }
-            staging.deferred_watermark
+            SpindleProjectionRange::append(&mut staging.deferred_range, range)?;
+            staging.deferred_range.clone()
         };
-        if let Some(target) = target_wm {
+        if let Some(published) = published {
             self.merge_persisted_uncommitted();
-            let committed = self
-                .catalog
-                .read_watermark("spindle_watermark_id")?
-                .unwrap_or(0);
-            let next_wm = admission_kernel::telemetry::watermark_advance(committed, target, true);
-            self.catalog
-                .set_watermark("spindle_watermark_id", next_wm)?;
+            let next_wm = published.commit_published(&self.catalog)?;
             let mut staging = self.spindle_staging.lock();
-            if staging
-                .deferred_watermark
-                .is_some_and(|pending| pending <= target)
-            {
-                staging.deferred_watermark = None;
-                staging.uncommitted_partitions.clear();
-            }
+            // flush_lock keeps the deferred range unchanged during catalog persistence.
+            staging.deferred_range = None;
+            staging.uncommitted_partitions.clear();
             drop(staging);
             self.clear_persisted_uncommitted(Some(next_wm));
         } else {
@@ -753,7 +749,7 @@ impl DaemonRuntime {
         struct SpindleCommitReceipt {
             items: usize,
             bytes: usize,
-            watermark: Option<u64>,
+            range: SpindleProjectionRange,
             partitions: std::collections::BTreeSet<(&'static str, chrono::NaiveDate)>,
         }
         let mut spindle_commits: Vec<SpindleCommitReceipt> = Vec::new();
@@ -762,17 +758,17 @@ impl DaemonRuntime {
 
         // Phase 1: Flush replayable Spindle custody records in watermark-tagged plans only.
         let pending = self.spindle_staging.lock().take_pending_plan();
-        if let Some((mut pending_plan, pending_wm, pending_items, pending_bytes)) = pending {
+        if let Some((mut pending_plan, range, pending_items, pending_bytes)) = pending {
             let rows_before = pending_plan.total_rows();
             if let Err(err) = self.olap.execute_flush_plan(&mut pending_plan) {
-                self.store_failed_plan(pending_plan, pending_wm, pending_items, pending_bytes);
+                self.store_failed_plan(pending_plan, range, pending_items, pending_bytes);
                 spindle_err = Some(err);
             } else {
                 flushed_total = flushed_total.saturating_add(rows_before);
                 spindle_commits.push(SpindleCommitReceipt {
                     items: pending_items,
                     bytes: pending_bytes,
-                    watermark: pending_wm,
+                    range,
                     partitions: pending_plan.uncommitted_partitions().clone(),
                 });
             }
@@ -782,23 +778,22 @@ impl DaemonRuntime {
             let staged = self.spindle_staging.lock().take_for_flush();
             let staged_items = staged.total_len();
             let staged_bytes = staged.staged_bytes;
-            let watermark = staged.max_accepted_id;
-            if staged_items > 0 || watermark.is_some() {
+            if let Some(range) = staged.range {
                 match self
                     .olap
                     .plan_spindle_flush(&staged.metrics, &staged.logs, &staged.traces)
                 {
                     Ok(plan) => {
-                        let mut splan = plan.with_spindle_watermark(watermark);
+                        let mut splan = plan.with_spindle_watermark(Some(range.last_id()));
                         if let Err(err) = self.olap.execute_flush_plan(&mut splan) {
-                            self.store_failed_plan(splan, watermark, staged_items, staged_bytes);
+                            self.store_failed_plan(splan, range, staged_items, staged_bytes);
                             spindle_err = Some(err);
                         } else {
                             flushed_total = flushed_total.saturating_add(staged_items);
                             spindle_commits.push(SpindleCommitReceipt {
                                 items: staged_items,
                                 bytes: staged_bytes,
-                                watermark,
+                                range,
                                 partitions: splan.uncommitted_partitions().clone(),
                             });
                         }
@@ -808,7 +803,7 @@ impl DaemonRuntime {
                             metrics: staged.metrics,
                             logs: staged.logs,
                             traces: staged.traces,
-                            max_accepted_id: watermark,
+                            range: Some(range),
                             ..SpindleStaging::default()
                         };
                         restored.recompute_bytes();
@@ -817,7 +812,7 @@ impl DaemonRuntime {
                             staging.inflight_items.saturating_sub(staged_items);
                         staging.inflight_bytes =
                             staging.inflight_bytes.saturating_sub(staged_bytes);
-                        staging.restore_front(restored);
+                        staging.restore_front(restored)?;
                         spindle_err = Some(err);
                     }
                 }
@@ -898,29 +893,27 @@ impl DaemonRuntime {
         if !spindle_commits.is_empty() {
             let mut total_items = 0usize;
             let mut total_bytes = 0usize;
-            let mut max_wm: Option<u64> = None;
+            let mut published_range = None;
             let mut all_parts = std::collections::BTreeSet::new();
             for SpindleCommitReceipt {
                 items,
                 bytes,
-                watermark: wm,
+                range,
                 partitions: parts,
             } in spindle_commits
             {
                 total_items = total_items.saturating_add(items);
                 total_bytes = total_bytes.saturating_add(bytes);
-                if let Some(w) = wm {
-                    max_wm = Some(max_wm.map_or(w, |prev| prev.max(w)));
-                }
+                SpindleProjectionRange::append(&mut published_range, Some(range))?;
                 all_parts.extend(parts);
             }
             self.finish_inflight_and_commit_watermark(
                 total_items,
                 total_bytes,
-                max_wm,
+                published_range,
                 &all_parts,
             )?;
-        } else if self.spindle_staging.lock().deferred_watermark.is_some() {
+        } else if self.spindle_staging.lock().deferred_range.is_some() {
             self.finish_inflight_and_commit_watermark(
                 0,
                 0,
@@ -1687,7 +1680,7 @@ mod tests {
         // 2. If OLAP write succeeds and catalog watermark persistence fails transiently,
         // deferred_watermark is preserved and committed on the next flush even with 0 new records.
         assert!(enqueue_test_spindle_record(
-            42,
+            3,
             IngestEnvelope::Log(LogRecord {
                 timestamp_ms: 0,
                 level: "info".into(),
@@ -1701,7 +1694,7 @@ mod tests {
         // Seed initial watermark so `catalog.redb` exists on disk, then obstruct it.
         runtime
             .catalog
-            .set_watermark("spindle_watermark_id", 1)
+            .set_watermark("spindle_watermark_id", 0)
             .expect("seed initial watermark");
         let catalog_path = layout.catalog_redb();
         let catalog_backup = catalog_path.with_extension("redb.bak");
@@ -1712,7 +1705,15 @@ mod tests {
             runtime.flush_to_olap().is_err(),
             "watermark commit failure must return Err while keeping deferred watermark"
         );
-        assert_eq!(runtime.spindle_staging.lock().deferred_watermark, Some(42));
+        assert_eq!(
+            runtime
+                .spindle_staging
+                .lock()
+                .deferred_range
+                .as_ref()
+                .map(SpindleProjectionRange::last_id),
+            Some(3)
+        );
         assert_eq!(runtime.spindle_staging.lock().total_len(), 0);
 
         fs::remove_dir(&catalog_path).expect("remove obstructing dir");
@@ -1720,13 +1721,13 @@ mod tests {
 
         // Flush again with zero new records queued; deferred watermark must now commit cleanly.
         assert_eq!(runtime.flush_to_olap().expect("retry watermark commit"), 0);
-        assert_eq!(runtime.spindle_staging.lock().deferred_watermark, None);
+        assert_eq!(runtime.spindle_staging.lock().deferred_range, None);
         assert_eq!(
             runtime
                 .catalog
                 .read_watermark("spindle_watermark_id")
                 .expect("read committed watermark"),
-            Some(42)
+            Some(3)
         );
     }
 
@@ -1812,7 +1813,7 @@ mod tests {
         // 2. Intra-domain multi-day partial OLAP failure (day1 succeeds, day2 fails):
         // persisted dt=day1 must not duplicate and watermark remains withheld until day2 & logs flush.
         assert!(enqueue_test_spindle_record(
-            10,
+            1,
             IngestEnvelope::Metric(MetricPoint {
                 timestamp_ms: 1_700_000_000_100, // 2023-11-14
                 name: "partial.day1".into(),
@@ -1826,7 +1827,7 @@ mod tests {
             &runtime,
         ));
         assert!(enqueue_test_spindle_record(
-            11,
+            2,
             IngestEnvelope::Metric(MetricPoint {
                 timestamp_ms: 1_700_086_400_100, // 2023-11-15
                 name: "partial.day2".into(),
@@ -1840,7 +1841,7 @@ mod tests {
             &runtime,
         ));
         assert!(enqueue_test_spindle_record(
-            12,
+            3,
             IngestEnvelope::Log(LogRecord {
                 timestamp_ms: 1_700_000_000_200,
                 level: "info".into(),
@@ -1871,7 +1872,7 @@ mod tests {
             assert!(staging.pending_plan.is_some());
             assert_eq!(staging.inflight_items, 0);
             assert_eq!(staging.inflight_bytes, 0);
-            assert_eq!(staging.effective_watermark(), Some(12));
+            assert_eq!(staging.effective_watermark(), Some(3));
             assert!(staging.pending_bytes() > 0);
         }
         assert_eq!(
@@ -1903,7 +1904,7 @@ mod tests {
                 .catalog
                 .read_watermark("spindle_watermark_id")
                 .unwrap(),
-            Some(12)
+            Some(3)
         );
     }
 
@@ -2057,6 +2058,10 @@ mod tests {
             guard,
         };
 
+        runtime
+            .catalog
+            .set_watermark("spindle_watermark_id", 9)
+            .expect("seed retained prefix");
         assert!(enqueue_test_spindle_record(
             10,
             IngestEnvelope::Metric(MetricPoint {
@@ -2126,7 +2131,8 @@ mod tests {
 
         // Unblock day2 OLAP write, but obstruct catalog.redb so pending_plan finishes while watermark fails.
         fs::remove_file(&day2_dir).expect("remove dt=day2 obstruction");
-        assert!(!layout.catalog_redb().exists());
+        let catalog_backup = layout.catalog_redb().with_extension("redb.bak");
+        fs::rename(layout.catalog_redb(), &catalog_backup).expect("move catalog aside");
         fs::create_dir_all(layout.catalog_redb()).expect("obstruct catalog.redb");
         assert!(runtime.flush_to_olap().is_err());
         assert_eq!(
@@ -2140,7 +2146,13 @@ mod tests {
         {
             let staging = runtime.spindle_staging.lock();
             assert!(staging.pending_plan.is_none());
-            assert_eq!(staging.deferred_watermark, Some(11));
+            assert_eq!(
+                staging
+                    .deferred_range
+                    .as_ref()
+                    .map(SpindleProjectionRange::last_id),
+                Some(11)
+            );
             assert_eq!(staging.uncommitted_partitions.len(), 2);
         }
 
@@ -2164,6 +2176,7 @@ mod tests {
 
         // Unblock catalog.redb so watermark commits and protection lifts.
         fs::remove_dir(layout.catalog_redb()).expect("remove catalog.redb obstruction");
+        fs::rename(&catalog_backup, layout.catalog_redb()).expect("restore catalog binding");
         runtime
             .flush_to_olap()
             .expect("commit deferred watermark after recovery");
@@ -2176,7 +2189,7 @@ mod tests {
         );
         {
             let staging = runtime.spindle_staging.lock();
-            assert!(staging.deferred_watermark.is_none());
+            assert!(staging.deferred_range.is_none());
             assert!(staging.uncommitted_partitions.is_empty());
         }
 
@@ -2448,7 +2461,7 @@ mod tests {
             attributes_json: "{}".into(),
         });
         assert!(enqueue_test_spindle_record(
-            77,
+            1,
             IngestEnvelope::Metric(MetricPoint {
                 timestamp_ms: ts_ms,
                 name: "spindle.latency".into(),
@@ -2462,7 +2475,7 @@ mod tests {
             &runtime,
         ));
         assert!(enqueue_test_spindle_record(
-            77,
+            2,
             IngestEnvelope::Log(LogRecord {
                 timestamp_ms: ts_ms,
                 level: "info".into(),
@@ -2476,7 +2489,8 @@ mod tests {
 
         // Obstruct catalog.redb so both OLAP plans publish their Parquet files while Spindle's
         // watermark commit fails, simulating a writer crash right before watermark durability.
-        assert!(!layout.catalog_redb().exists());
+        let catalog_backup = layout.catalog_redb().with_extension("redb.bak");
+        fs::rename(layout.catalog_redb(), &catalog_backup).expect("move catalog aside");
         fs::create_dir_all(layout.catalog_redb()).expect("obstruct catalog.redb");
         assert!(
             runtime.flush_to_olap().is_err(),
@@ -2503,6 +2517,7 @@ mod tests {
         );
 
         fs::remove_dir(layout.catalog_redb()).expect("remove catalog obstruction");
+        fs::rename(&catalog_backup, layout.catalog_redb()).expect("restore catalog binding");
         drop(runtime);
 
         // Next writer startup runs uncommitted Spindle crash recovery: Spindle files roll back,
@@ -2585,6 +2600,11 @@ mod tests {
         let metrics_domain_dir = layout.olap_domain_dir("metrics");
         fs::create_dir_all(&metrics_domain_dir).expect("create metrics dir");
 
+        runtime
+            .catalog
+            .set_watermark("spindle_watermark_id", 49)
+            .expect("seed retained prefix");
+
         // 1. Fail Spindle batch id=50 on day1 (2023-07-22) so it parks in pending_plan.
         let day1_ms = 1_690_000_000_000i64;
         assert!(enqueue_test_spindle_record(
@@ -2606,13 +2626,13 @@ mod tests {
         assert!(runtime.flush_to_olap().is_err());
         assert!(runtime.spindle_staging.lock().pending_plan.is_some());
 
-        // 2. Unblock day1, enqueue batch id=60 on day2 (2023-11-14) and obstruct day2.
+        // 2. Unblock day1, enqueue batch id=51 on day2 (2023-11-14) and obstruct day2.
         // Retried day1 batch MUST fold its receipt (releasing inflight accounting and committing wm=50)
         // even though newly staged day2 fails execute_flush_plan.
         fs::remove_file(&day1_part).expect("unblock day1");
         let day2_ms = 1_700_000_000_000i64;
         assert!(enqueue_test_spindle_record(
-            60,
+            51,
             IngestEnvelope::Metric(MetricPoint {
                 timestamp_ms: day2_ms,
                 name: "spindle.new.day2".into(),
@@ -2634,8 +2654,8 @@ mod tests {
             assert_eq!(staging.inflight_items, 0);
             assert_eq!(staging.inflight_bytes, 0);
             assert_eq!(
-                staging.pending_plan.as_ref().and_then(|p| p.1),
-                Some(60),
+                staging.pending_plan.as_ref().map(|p| p.1.last_id()),
+                Some(51),
                 "day2 batch must remain parked for retry"
             );
         }
@@ -2647,7 +2667,7 @@ mod tests {
             Some(50)
         );
 
-        // 3. Unblock day2 and confirm retry commits wm=60 cleanly with both Parquet files present.
+        // 3. Unblock day2 and confirm retry commits wm=51 cleanly with both Parquet files present.
         fs::remove_file(&day2_part).expect("unblock day2");
         runtime.flush_to_olap().expect("retry day2 flush succeeds");
         assert_eq!(
@@ -2655,7 +2675,7 @@ mod tests {
                 .catalog
                 .read_watermark("spindle_watermark_id")
                 .expect("read final watermark"),
-            Some(60)
+            Some(51)
         );
         assert_eq!(runtime.spindle_staging.lock().inflight_items, 0);
         assert_eq!(
