@@ -6,11 +6,11 @@ license.workspace = true
 
 [dependencies]
 admission-kernel = { path = "../admission-kernel" }
-chrono = "=0.4.45"
+chrono.workspace = true
 fabric-core = { path = "../fabric-core" }
 fabric-graph = { path = "../fabric-graph" }
 fabric-store = { path = "../fabric-store" }
-parking_lot = "=0.12.5"
+parking_lot.workspace = true
 rustix = { version = "1", features = ["fs"] }
 fabric = { path = "../fabric" }
 serde = { version = "1", features = ["derive"] }
