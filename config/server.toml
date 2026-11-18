@@ -1,0 +1,12 @@
+version = 1
+listen = "127.0.0.1:17440"
+storage = "/data/fabrico11y/server/canonical"
+projection = "/data/fabrico11y/server/projection"
+quota_bytes = 2147483648
+projection_quota_bytes = 2147483648
+reader_credential_file = "/data/fabrico11y/credentials/reader.token"
+max_connections = 16
+
+[[nodes]]
+origin = "REPLACE_WITH_SPINDLE_ORIGIN"
+credential_file = "/data/fabrico11y/credentials/node.token"

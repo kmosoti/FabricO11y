@@ -148,7 +148,7 @@ fn socket(args: &Args) -> Result<PathBuf, String> {
         return fabric_store::validate_non_tmp_path_on_disk(&path).map_err(|err| err.to_string());
     }
     let configured = if let Some(dir) = super::fabrico11y_config_dir() {
-        super::read_optional_json::<super::SpindleFileConfigHint>(&dir.join("spindle.json"))?.socket
+        super::read_service_hint::<super::SpindleFileConfigHint>(&dir, "spindle")?.socket
     } else {
         None
     };
@@ -302,17 +302,14 @@ fn canonical_connection(args: &Args) -> Result<fabric::query::Client, &'static s
     );
     if let Some(dir) = config_dir {
         if endpoint.is_none() {
-            endpoint = super::read_optional_json::<super::SpindleFileConfigHint>(
-                &dir.join("spindle.json"),
-            )
-            .ok()
-            .and_then(|spindle| spindle.forwarding)
-            .and_then(|forwarding| super::non_empty_str(forwarding.endpoint));
+            endpoint = super::read_service_hint::<super::SpindleFileConfigHint>(&dir, "spindle")
+                .map_err(|_| "canonical_configuration_unavailable")?
+                .forwarding
+                .and_then(|forwarding| super::non_empty_str(forwarding.endpoint));
         }
         if endpoint.is_none() || credential.is_none() {
-            let server =
-                super::read_optional_json::<super::ServerFileConfigHint>(&dir.join("server.json"))
-                    .map_err(|_| "canonical_configuration_unavailable")?;
+            let server = super::read_service_hint::<super::ServerFileConfigHint>(&dir, "server")
+                .map_err(|_| "canonical_configuration_unavailable")?;
             endpoint = endpoint.or_else(|| super::non_empty_str(server.listen));
             credential =
                 credential.or_else(|| super::non_empty_path(server.reader_credential_file));
