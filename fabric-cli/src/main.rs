@@ -10,7 +10,7 @@ use fabric::spindle::{Reply as SpindleReply, Request as SpindleRequest, transpor
 use fabric_collect::{
     CollectedState, DaemonConfig, DaemonRequest, DaemonResponse, IngestEnvelope,
     SelfPreservationGuard, collect_once, default_spindle_socket, poll_spindle_projection_records,
-    query_running_daemon, run_daemon,
+    query_running_daemon, run_daemon, run_spindle_only_daemon,
 };
 use fabric_core::arrow_schemas::{
     blame_to_record_batch, doctor_to_record_batch, drift_to_record_batch,
@@ -162,6 +162,9 @@ struct DaemonArgs {
     /// Run a single collection & persistence cycle and exit.
     #[arg(long)]
     once: bool,
+    /// Project from a dedicated Spindle socket without collecting host or ingest data.
+    #[arg(long, requires = "spindle_socket", conflicts_with = "once")]
+    spindle_only: bool,
     /// Stop automatically after N ticks.
     #[arg(long)]
     max_ticks: Option<u64>,
@@ -367,6 +370,9 @@ async fn run() -> Result<(), String> {
         }
         Commands::Daemon(args) => {
             let cli_spindle_sock = non_empty_path(args.spindle_socket.clone());
+            if args.spindle_only && cli_spindle_sock.is_none() {
+                return Err("Spindle-only projection requires a nonempty Spindle socket".into());
+            }
             if let Some(ref sock) = cli_spindle_sock {
                 validate_non_tmp_path_on_disk(sock).map_err(|e| e.to_string())?;
             }
@@ -489,7 +495,11 @@ async fn run() -> Result<(), String> {
             if let Some(spindle_sock) = cli_spindle_sock {
                 daemon_config.spindle_socket = Some(spindle_sock);
             }
-            run_daemon(daemon_config).await
+            if args.spindle_only {
+                run_spindle_only_daemon(daemon_config).await
+            } else {
+                run_daemon(daemon_config).await
+            }
         }
     }
 }

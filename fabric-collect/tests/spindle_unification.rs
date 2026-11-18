@@ -4,7 +4,7 @@ use fabric::sdk::{Admission, Client, Config as SdkConfig};
 use fabric::spindle::{self, ForwardConfig, Reply, Request, transport};
 use fabric_collect::{
     DaemonConfig, DaemonRequest, DaemonResponse, SelfPreservationGuard, query_daemon_socket,
-    run_daemon,
+    run_daemon, run_spindle_only_daemon,
 };
 use fabric_core::SpindleProvenance;
 use fabric_query::probe_spindle_projection;
@@ -673,6 +673,75 @@ fn spindle_forwards_to_server_and_unifies_into_collector_olap() {
             "OLAP metric lost labels_json: {labels}"
         );
     });
+
+    // Project the same source into an independent read model without running a
+    // second set of host probes or opening a general ingest endpoint.
+    let spindle_only_data = root.join("solo");
+    let spindle_only_layout = validated_storage_layout(&spindle_only_data).unwrap();
+    let spindle_only_socket = spindle_only_layout.state_dir().join("daemon.sock");
+    rt.block_on(async {
+        let task = tokio::spawn(run_spindle_only_daemon(DaemonConfig {
+            data_dir: spindle_only_data.clone(),
+            tmp_dir: collector_tmp.clone(),
+            interval_ms: 250,
+            max_ticks: Some(6),
+            ring_budget_bytes: 2 * 1024 * 1024,
+            max_disk_bytes: 64 * 1024 * 1024,
+            spindle_socket: Some(spindle_sock.clone()),
+            runtime_dir: None,
+        }));
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if matches!(
+                query_daemon_socket(&spindle_only_socket, &DaemonRequest::Ping),
+                Some(DaemonResponse::Pong { .. })
+            ) {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "Spindle-only RPC never became ready"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(!spindle_only_layout.state_dir().join("ingest.sock").exists());
+        task.await
+            .expect("join Spindle-only daemon")
+            .expect("run Spindle-only mode");
+        assert!(
+            !spindle_only_socket.exists(),
+            "Spindle-only RPC socket leaked"
+        );
+
+        let rows = execute_unified_query(
+            &spindle_only_data,
+            &UnifiedQuerySpec {
+                domain: QueryDomain::Metrics,
+                since_ms: None,
+                where_clauses: vec![],
+                group_by: vec![],
+                agg_specs: vec![],
+                limit: 50,
+            },
+            &[],
+            None,
+        )
+        .await
+        .expect("query isolated Spindle-only metrics");
+        assert_eq!(rows.row_count, 1, "mode collected unrelated host metrics");
+        assert_eq!(rows.rows[0]["name"], "custom.tokens_per_sec");
+        assert!(
+            probe_spindle_projection(
+                &spindle_only_layout,
+                QueryDomain::Metrics,
+                metric_timestamp,
+                &metric_key,
+            )
+            .await
+            .expect("verify committed evidence in Spindle-only mode")
+        );
+    });
+    assert!(!spindle_only_layout.live_state_json().exists());
 
     let final_health = self_guard.inspect_summary();
     assert_eq!(final_health.tmp_files_created, 0);
