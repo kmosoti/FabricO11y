@@ -3,7 +3,7 @@
 Use `fabric settings` to inspect resolved collector settings as TOML without
 starting services or creating telemetry storage. Use `--json` for the
 versioned CLI envelope. The report identifies command-line values, environment
-values, profile values, defaults, and missing inputs. Discovered service
+values, profile values, automatic settings, defaults, and missing inputs. Discovered service
 settings show credential file references and do not open credential files.
 
 ```sh
@@ -31,10 +31,12 @@ flag ahead of its environment variable, then the profile, then the fallback.
 | `spindle_socket` | `--spindle-socket` | `SPINDLE_SOCKET` | `$XDG_RUNTIME_DIR/spindle/spindle.sock` when available |
 | `interval_ms` | `--interval-ms` | | 2,000 milliseconds |
 | `max_ticks` | `--max-ticks` | | Run until shutdown |
-| `ring_budget_bytes` | `--ring-budget-bytes` | | Collector default |
+| `ring_budget_bytes` | `--ring-budget-bytes` | | [Automatic collector budget](collection.md#elastic-collector-memory) |
 | `max_disk_bytes` | `--max-disk-bytes` | | 4,294,967,296 bytes |
 
 The resident collector enforces a minimum interval of 250 milliseconds.
+The report's `ring_budget` table gives the automatically calculated byte
+budget and the effective cgroup limit used as input when available.
 An explicit hot ring budget is a byte count from 4,096 through 33,554,432.
 The disk budget is a positive byte count within the TOML signed integer
 range. Use absolute data and socket paths outside `/tmp` and `/dev/shm`.
