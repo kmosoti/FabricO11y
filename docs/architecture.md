@@ -129,25 +129,29 @@ sequenceDiagram
     Gate-->>Main: Human explicitly approves main-human-approval & merges
 ```
 
-## 4. Production Systemd Stack & Coupled Custody Topology
+## 4. Single-Host and Distributed Deployment
 
-On `fedora-blade`, `cargo xtask collection install-stack` provisions a coupled rootless user service stack confined inside `fabrico11y.slice` (`MemoryHigh=256M`, `MemoryMax=512M`, `CPUQuota=15%`, `IOWeight=30`, `TasksMax=64`) with explicit `TMPDIR=/data/tmp`, `KillMode=control-group`, and no rootless namespace mounts (`PrivateTmp` / `ProtectSystem=strict`) that fail under SELinux user managers.
+`cargo xtask collection install-stack` provisions a co-located rootless user service stack confined inside `fabrico11y.slice` (`MemoryHigh=256M`, `MemoryMax=512M`, `CPUQuota=15%`, `IOWeight=30`, `TasksMax=64`) with explicit `TMPDIR=/data/tmp` and `KillMode=control-group`. Its units omit rootless namespace mounts (`PrivateTmp` and `ProtectSystem=strict`) that fail under SELinux user managers.
+
+The local Spindle and collector path can run without a receiver. A fleet runs the same local path on each host and forwards multiple persistent origins to one canonical authority. Both ends of a remote handoff use loopback listeners and the tunnel supplies the authenticated cross-host transport. The receiver's original-byte ledger and rebuildable analytical projection report separate per-origin progress. See [local collection](collection.md#choose-a-deployment) and [multi-host setup](canonical-custody.md#connect-multiple-hosts).
 
 ```mermaid
 flowchart LR
-    subgraph Slice["fabrico11y.slice (MemoryHigh=256M, MemoryMax=512M, CPUQuota=15%, TasksMax=64)"]
-        SRV["fabric-server.service<br/>(/data/fabrico11y/server/{canonical,projection})"]
-        SPN["spindle.service<br/>($XDG_RUNTIME_DIR/spindle/spindle.sock)"]
-        DMN["fabric-daemon.service<br/>(/data/fabrico11y/{state,olap})"]
+    subgraph HostA["Host A · fabrico11y.slice"]
+        SpindleA["Spindle local custody · origin A"] -->|"Private Unix socket"| CollectorA["Local collector and Parquet"]
+        CollectorA --> LocalA["fabric query"]
     end
-
-    TOK1["spindle-node.token (0600)"] -->|"authorizes origin"| SRV
-    TOK1 -->|"authenticates forwarding (127.0.0.1:17440)"| SPN
-    TOK2["fabric-reader.token (0600)"] -->|"authorizes canonical reads"| SRV
-    SPN -->|"persistent origin -> canonical authority"| SRV
-    SPN -->|"poll custody records"| DMN
-    DMN -->|"persist spindle_watermark_id post-Parquet flush"| SPN
-    CLI["fabric custody --json & fabric doctor --json"] -->|"inspect socket + HTTP frontier + slice self-health"| Slice
+    subgraph HostB["Host B · fabrico11y.slice"]
+        SpindleB["Spindle local custody · origin B"] -->|"Private Unix socket"| CollectorB["Local collector and Parquet"]
+        CollectorB --> LocalB["fabric query"]
+    end
+    subgraph Receiver["One Fabric Server authority"]
+        Server["Loopback receiver"] --> Ledger["Canonical ledger · per-origin custody"]
+        Ledger --> Projection["Canonical projection · per-origin visibility"]
+    end
+    SpindleA -->|"Optional tunnel · credential A"| Server
+    SpindleB -->|"Optional tunnel · credential B"| Server
+    Projection -->|"Reader credential · source-fenced query"| Query["fabric-query or fabric-mcp"]
 ```
 
 ## Service self-telemetry custody
