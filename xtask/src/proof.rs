@@ -159,6 +159,48 @@ fn negative_controls(root: &Path) -> Result<(), String> {
         }
         println!("{name}: false property rejected ({})", output.status);
     }
+    let frontier_source = std::fs::read_to_string(root.join("admission-kernel/src/telemetry.rs"))
+        .map_err(|e| e.to_string())?;
+    let commit_gate = "if origin_matches && flush_succeeded && first > committed";
+    if frontier_source.matches(commit_gate).count() != 1 {
+        return Err("projection frontier commit gate mutation no longer matches".into());
+    }
+    let mutant = work.path().join("frontier-mutant.rs");
+    std::fs::write(
+        &mutant,
+        frontier_source.replace(commit_gate, "if origin_matches && first > committed"),
+    )
+    .map_err(|e| e.to_string())?;
+    let output = Command::new("timeout")
+        .arg("120")
+        .arg(&verus)
+        .args([
+            "--crate-type",
+            "lib",
+            "--crate-name",
+            "projection_frontier_control",
+            "--no-cheating",
+            "--num-threads",
+            "2",
+        ])
+        .arg(&mutant)
+        .current_dir(work.path())
+        .output()
+        .map_err(|e| e.to_string())?;
+    let diagnostics = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+    if output.status.code() != Some(1)
+        || !diagnostics.contains("postcondition not satisfied")
+        || !diagnostics.contains("frontier-mutant.rs")
+    {
+        return Err(format!(
+            "projection frontier partial-publication mutant not rejected by contract: {diagnostics}"
+        ));
+    }
+    println!("Projection frontier partial-publication mutant rejected by Verus postcondition");
     let missing = work.path().join("missing-checker");
     if Command::new(missing).status().is_ok() {
         return Err("missing-tool negative control failed".into());

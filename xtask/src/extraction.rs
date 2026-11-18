@@ -174,6 +174,8 @@ pub fn check(root: &Path) -> Result<(), String> {
                     "fifo_enqueue_contract",
                     "fifo_dequeue_contract",
                     "watermark_advance_contract",
+                    "projection_frontier_contract",
+                    "projection_aborted_unchanged",
                     "ring_can_buffer_contract",
                     "disk_needs_eviction_contract",
                     "rss_shedding_decision_contract",
