@@ -163,18 +163,25 @@ in_container() {
 
 toolchain() {
   if [[ "$PAIR_WARM" == true ]]; then
-    [[ "$APPLICATION_HIT" == true ]]
+    if [[ "$APPLICATION_HIT" != true ]]; then
+      printf '%s did not restore its exact application cache\n' "$PAIR_ROLE" >&2
+      return 1
+    fi
     finish application_restore
-    sudo -n test -d "$host_workspace/target"
+    if ! sudo -n test -d "$host_workspace/target"; then
+      printf '%s application archive lacks target/\n' "$PAIR_ROLE" >&2
+      return 1
+    fi
     if [[ "$PAIR_SMOKE" == false ]]; then
-      if [[ "$PAIR_PROFILE" == verify ]]; then
-        sudo -n test -x "$host_workspace/target/release/xtask"
-        sudo -n test -d "$host_workspace/target/release/.fingerprint"
-      else
-        sudo -n test -x "$host_workspace/target/debug/xtask"
-        sudo -n test -d "$host_workspace/target/debug/.fingerprint"
-        sudo -n test -d "$host_home/.cache/fabrico11y-fuzz-target"
+      local profile=release
+      if [[ "$PAIR_PROFILE" == native-acceptance ]]; then
+        profile=debug
+        if ! sudo -n test -d "$host_home/.cache/fabrico11y-fuzz-target"; then
+          printf '%s application archive lacks native fuzz artifacts\n' "$PAIR_ROLE" >&2
+          return 1
+        fi
       fi
+      sudo -n bash .github/scripts/ci-image-paired-witness.sh cargo "$host_workspace/target/$profile"
     fi
     printf 'true\n' > "$evidence/application-hit"
   fi
@@ -188,14 +195,20 @@ toolchain() {
 
 verification() {
   if [[ "$PAIR_WARM" == true && "$PAIR_ROLE" == baseline && "$PAIR_PROFILE" == native-acceptance ]]; then
-    [[ "$PROOF_HIT" == true ]]
-    finish proof_restore
-    printf 'true\n' > "$evidence/proof-hit"
-    sudo -n test -d "$GITHUB_WORKSPACE/$proof_path"
-    if [[ "$PAIR_SMOKE" == false ]]; then
-      sudo -n test -s "$GITHUB_WORKSPACE/$proof_path/opam-root/.aeneas-build-v1"
-      sudo -n test -x "$GITHUB_WORKSPACE/$proof_path/aeneas-ab34bd2/src/_build/default/main.exe"
+    if [[ "$PROOF_HIT" != true ]]; then
+      printf 'baseline did not restore its exact proof cache\n' >&2
+      return 1
     fi
+    finish proof_restore
+    if ! sudo -n test -d "$GITHUB_WORKSPACE/$proof_path"; then
+      printf 'baseline proof archive lacks the proof-tool directory\n' >&2
+      return 1
+    fi
+    if [[ "$PAIR_SMOKE" == false ]]; then
+      sudo -n bash .github/scripts/ci-image-paired-witness.sh proof "$GITHUB_WORKSPACE/$proof_path" \
+        "$host_workspace/verification/aeneas.opam.lock"
+    fi
+    printf 'true\n' > "$evidence/proof-hit"
   fi
   if [[ "$PAIR_SMOKE" == true ]]; then
     measure smoke_fixture in_container 0 sh -s "$PAIR_WARM" "$PAIR_PROFILE" "$PAIR_ROLE" \
