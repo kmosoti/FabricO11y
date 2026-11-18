@@ -198,6 +198,9 @@ toolchain() {
 }
 
 check_compiler_seed() {
+  local provenance="$evidence/compiler-seed-revision"
+  in_container 0 cat "${seeded_release%/*}/provenance/revision" > "$provenance"
+  bash .github/scripts/ci-image-paired-seed.sh revision "$provenance" "$PAIR_REVISION"
   in_container 0 "$seeded_release" --preflight | tee "$evidence/compiler-seed-preflight.log"
   grep -Fxq 'compiler-seed ready' "$evidence/compiler-seed-preflight.log"
 }
@@ -208,12 +211,7 @@ measure_seeded_release() {
   # The container writes its statistics as root and the runner owns the artifact.
   # shellcheck disable=SC2024
   sudo -n cat -- "$host_temp/$stats_name" > "$evidence/$stats_name"
-  jq -e --argjson warm "$PAIR_WARM" '
-    .version == "0.19.0" and .effective_cache_mode == "ReadOnly" and
-    .stats.cache_writes == 0 and
-    ((.stats.cache_errors.counts | type == "object" and length == 0)) and
-    ((.stats.cache_hits.counts.Rust // 0) | type == "number" and . >= 0 and ($warm or . > 0))
-  ' "$evidence/$stats_name"
+  bash .github/scripts/ci-image-paired-seed.sh hits "$evidence/$stats_name" "$PAIR_WARM"
 }
 
 verification() {

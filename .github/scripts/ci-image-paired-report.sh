@@ -84,11 +84,13 @@ for state in cold warm; do
       fi
     done
     if [[ "$VARIANT" == common-seeded ]]; then
+      bash .github/scripts/ci-image-paired-seed.sh revision \
+        "$entry/candidate/compiler-seed-revision" "$REVISION"
       grep -Fxq 'compiler-seed ready' "$entry/candidate/compiler-seed-preflight.log"
       time_ms "$entry/candidate" compiler_seed_preflight >/dev/null
       if [[ "$smoke" == false ]]; then
-        hits=$(jq -er '(.stats.cache_hits.counts.Rust // 0) | select(type == "number" and . >= 0)' \
-          "$entry/candidate/compiler-seed-stats.json")
+        hits=$(bash .github/scripts/ci-image-paired-seed.sh hits \
+          "$entry/candidate/compiler-seed-stats.json" "$warm")
         printf '%s pair %s candidate Rust compiler cache hits: %s\n' "$state" "$sample" "$hits"
       fi
     fi
