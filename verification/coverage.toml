@@ -228,3 +228,18 @@ id = "canonical-receipt-readiness"
 package = "fabric-cli"
 target = "projection_ready"
 test = "canonical_receipt_uses_the_authenticated_receiver_without_local_storage"
+
+[[invariants]]
+id = "effective-collector-settings"
+requirement = "The settings command exposes the applied precedence and reproducible hot cache budget without creating storage."
+required = true
+boundaries = ["CLI overrides", "versioned collector TOML", "observed cgroup memory inputs"]
+checks = ["effective-toml-settings"]
+proof_scope = "Budget and ownership arithmetic is checked on extracted Rust. Effective settings and filesystem behavior are checked through the CLI."
+assumptions = ["The service is launched inside the cgroup whose effective settings are being inspected."]
+
+[[checks]]
+id = "effective-toml-settings"
+package = "fabric-cli"
+target = "settings"
+test = "settings_emit_toml_and_report_daemon_sources"
