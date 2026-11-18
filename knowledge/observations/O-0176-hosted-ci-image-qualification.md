@@ -91,3 +91,24 @@ The run was cancelled after that failure. It has no qualified warm timing.
 
 See [the qualification procedure](../../docs/ci-images.md#compare-on-matched-hosted-vms)
 for the full workload and timing criteria.
+## Alpha.2 matched comparisons
+
+The native and seeded common candidates published from `b8f1cddd9831` each
+passed three cold and three warm matched pairs. The measured workload includes
+anonymous OCI transfer, startup, source preparation, applicable cache restores,
+and the checks. It excludes daemon provisioning and cache saves. Times are in
+seconds.
+
+| Profile | Cold baseline median | Cold candidate median | Warm baseline maximum | Warm candidate median |
+| --- | ---: | ---: | ---: | ---: |
+| Native acceptance | 2496.13 | 1656.11 | 795.93 | 719.09 |
+| Seeded verify | 1234.39 | 1210.79 | 129.15 | 108.80 |
+
+The common cold improvement was 23.60 seconds in this cohort. The warm
+results apply to exact-source cache restores. Ordinary PRs with new source
+commits can reuse dependency downloads and use the compiler seed when its
+inputs match.
+
+The [native trial](https://github.com/kmosoti/FabricO11y/actions/runs/44465624718)
+and [seeded trial](https://github.com/kmosoti/FabricO11y/actions/runs/44484088120)
+retain the environment, phase times, and exact cache receipts.

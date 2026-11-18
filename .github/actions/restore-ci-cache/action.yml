@@ -39,32 +39,26 @@ runs:
         PROFILE: ${{ inputs.profile }}
         BUILD_IMAGE: ${{ inputs.image }}
         BUILD_PLATFORM: ${{ runner.os }}-${{ runner.arch }}
-        SOURCE_TOOLS: ${{ hashFiles('.github/scripts/install-schema-tools.sh', '.github/scripts/install-engine-tools.sh') }}
+        SOURCE_INPUTS: ${{ hashFiles('Cargo.lock', 'fuzz/Cargo.lock', '.cargo/**') }}
         BUILD_INPUTS: ${{ hashFiles('**/Cargo.toml', '**/build.rs', 'Cargo.lock', 'fuzz/Cargo.lock', 'rust-toolchain.toml', '.cargo/**', '.github/scripts/*.sh', '.github/actions/restore-ci-cache/action.yml', '.github/actions/save-ci-cache/action.yml', '.github/workflows/development-checks.yml', 'verification/aeneas.opam.lock') }}
       run: |
         set -euo pipefail
         [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
-        [[ "$BUILD_IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]
+        [[ "$BUILD_IMAGE" =~ ^ghcr[.]io/kmosoti/fabrico11y-ci@sha256:[0-9a-f]{64}$ ]]
         [[ "$BUILD_INPUTS" =~ ^[0-9a-f]{64}$ ]]
         case "$PROFILE" in verify|native-acceptance) ;; *) exit 1 ;; esac
         case "$LAYER" in sources|compiled) ;; *) exit 1 ;; esac
         platform=$(printf '%s\0' "$PROFILE" "$BUILD_PLATFORM" "$BUILD_IMAGE" | sha256sum)
         if [[ "$LAYER" == sources ]]; then
-          [[ "$SOURCE_TOOLS" =~ ^[0-9a-f]{64}$ ]]
-          source_scope=$(printf '%s\0' "${platform%% *}" "$SOURCE_TOOLS" | sha256sum)
-          prefix="ci-v2-sources-$PROFILE-${source_scope%% *}-"
-          printf 'sources-prefix=%s\nsources-key=%s%s\n' "$prefix" "$prefix" "$BUILD_INPUTS" >> "$GITHUB_OUTPUT"
+          [[ "$SOURCE_INPUTS" =~ ^[0-9a-f]{64}$ ]]
+          prefix="ci-v3-sources-$PROFILE-${platform%% *}-"
+          printf 'sources-prefix=%s\nsources-key=%s%s\n' "$prefix" "$prefix" "$SOURCE_INPUTS" >> "$GITHUB_OUTPUT"
           exit 0
         fi
 
-        checkout=archive
-        if [[ -e .git ]]; then
-          checkout=git
-          git_config=(git -c "safe.directory=$GITHUB_WORKSPACE")
-          [[ "$("${git_config[@]}" rev-parse HEAD)" == "$GITHUB_SHA" ]]
-          worktree_status=$("${git_config[@]}" status --porcelain)
-          [[ -z "$worktree_status" ]]
-        fi
+        [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+        worktree_status=$(git status --porcelain)
+        [[ -z "$worktree_status" ]]
         rustc_identity=$(rustc +1.100.0 -vV)
         cargo_identity=$(cargo +1.100.0 -vV)
         native_packages=$(rpm -q gcc binutils glibc openssl-devel)
@@ -97,7 +91,7 @@ runs:
         print(hashlib.sha256(json.dumps(values, sort_keys=True).encode()).hexdigest())
         PY
         )
-        compatibility=$(printf '%s\0' "${platform%% *}" "$BUILD_INPUTS" "$GITHUB_WORKSPACE" "$checkout" \
+        compatibility=$(printf '%s\0' "${platform%% *}" "$BUILD_INPUTS" "$GITHUB_WORKSPACE" git-archive-mtimes \
           "$rustc_identity" "$cargo_identity" "$native_compilers" "$native_packages" \
           "$global_config" "$compiler_environment" | sha256sum)
         printf 'compatibility=%s\n' "${compatibility%% *}" >> "$GITHUB_OUTPUT"
@@ -109,8 +103,6 @@ runs:
         path: |
           /github/home/.cargo/registry
           /github/home/.cargo/git/db
-          /github/home/.local/share/fabrico11y/schema-tools
-          /github/home/.local/share/fabrico11y/engine-tools
         key: ${{ steps.policy.outputs.sources-key }}
         restore-keys: ${{ steps.policy.outputs.sources-prefix }}
 
@@ -121,16 +113,14 @@ runs:
         CACHE_HOME: /github/home
       run: |
         # A failed extraction can leave incomplete cache paths without a key.
-        rm -rf -- "${CACHE_HOME:?}/.cargo/registry" "$CACHE_HOME/.cargo/git/db" \
-          "$CACHE_HOME/.local/share/fabrico11y/schema-tools" \
-          "$CACHE_HOME/.local/share/fabrico11y/engine-tools"
+        rm -rf -- "${CACHE_HOME:?}/.cargo/registry" "$CACHE_HOME/.cargo/git/db"
 
     - id: cache
       if: inputs.layer == 'compiled'
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: target
-        key: ci-v2-target-${{ inputs.profile }}-${{ steps.policy.outputs.compatibility }}-${{ github.sha }}
+        key: ci-v3-target-${{ inputs.profile }}-${{ steps.policy.outputs.compatibility }}-${{ github.sha }}
 
     - name: Discard Cargo artifacts without an exact source match
       if: inputs.layer == 'compiled' && steps.cache.outputs.cache-hit != 'true'
@@ -145,25 +135,25 @@ runs:
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: /github/home/.cache/fabrico11y-fuzz-target
-        key: ci-v2-fuzz-${{ steps.policy.outputs.compatibility }}-${{ github.sha }}
+        key: ci-v3-fuzz-${{ steps.policy.outputs.compatibility }}-${{ github.sha }}
 
     - name: Discard fuzz artifacts without an exact source match
       if: inputs.layer == 'compiled' && inputs.profile == 'native-acceptance' && steps.fuzz.outputs.cache-hit != 'true'
       shell: bash
-      run: rm -rf -- /github/home/.cache/fabrico11y-fuzz-target
+      env:
+        CACHE_HOME: /github/home
+      run: |
+        rm -rf -- "${CACHE_HOME:?}/.cache/fabrico11y-fuzz-target"
 
     - name: Reapply commit mtimes after an exact artifact restore
       if: steps.cache.outputs.cache-hit == 'true' || steps.fuzz.outputs.cache-hit == 'true'
       shell: bash
       run: |
         set -euo pipefail
-        # Checkout's REST path already preserves the pinned archive timestamps.
-        if [[ -e .git ]]; then
-          git_config=(git -c "safe.directory=$GITHUB_WORKSPACE")
-          [[ "$("${git_config[@]}" rev-parse HEAD)" == "$GITHUB_SHA" ]]
-          worktree_status=$("${git_config[@]}" status --porcelain)
-          [[ -z "$worktree_status" ]]
-          "${git_config[@]}" archive --format=tar "$GITHUB_SHA" | tar -xf -
-          worktree_status=$("${git_config[@]}" status --porcelain)
-          [[ -z "$worktree_status" ]]
-        fi
+        # Match the commit archive's timestamps without replacing the Git checkout.
+        [[ "$(git rev-parse HEAD)" == "$GITHUB_SHA" ]]
+        worktree_status=$(git status --porcelain)
+        [[ -z "$worktree_status" ]]
+        git archive --format=tar "$GITHUB_SHA" | tar -xf - --no-same-owner
+        worktree_status=$(git status --porcelain)
+        [[ -z "$worktree_status" ]]

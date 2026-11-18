@@ -150,16 +150,21 @@ from tool-only results and use the same cold and warm timing gates.
 
 ## Adopt or revert
 
-Use the validated `ghcr.io/kmosoti/fabrico11y-ci@sha256:…` digests in a separate
-reviewed workflow change. Keep version checks as preflight. Remove application
-job tool installs and proof-tool archives from Actions cache only once the
-digests are in use. Keep the native engine version and checksum validation.
-Key compiled artifacts to the image digest, compiler, architecture, build
-profile and flags, and lockfiles. Cargo sources and build artifacts have
-different lifecycles and can use distinct keys.
+The development workflow runs `verify` in the qualified common compiler-seed
+image and `native-acceptance` in the qualified native image. Both jobs check
+the installed tools and source pins before restoring Cargo caches. The native
+job verifies the installed engine version and checksum. The common job uses
+the seed for compatible release builds and runs Cargo directly when the
+checkout's seed policy changes. Neither job downloads the baked tools.
 
-For a future tool-pin change, run the required jobs with the Fedora bootstrap
-path while reviewing that change. The trusted publisher can produce the new
-image digests after the pins reach `develop`. Then qualify and adopt the digests
-in a follow-up. If tooling or build measurements regress, restore the previous
-workflow revision. Release promotion remains governed by the main human gate.
+Dependency source archives can be reused across source revisions. Keys for
+compiled artifacts and fuzz outputs include the image digest, compiler,
+architecture, build inputs, flags and exact source commit. Only successful
+`develop` pushes save caches. The qualification report and measured scope
+are recorded in [O-0176](../knowledge/observations/O-0176-hosted-ci-image-qualification.md).
+
+For a future tool-pin change, restore the Fedora bootstrap job definitions
+and their matching cache actions in the same PR as the pin change. Keep the
+two required checks. The trusted publisher produces new image digests after
+the pins reach `develop`. Qualify them before the follow-up adoption. Use
+the same coordinated revert if the pinned images regress.
