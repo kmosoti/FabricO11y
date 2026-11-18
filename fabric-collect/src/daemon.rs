@@ -6,6 +6,7 @@ use crate::fs_watch::FsChurnTracker;
 use crate::host::{
     read_gpu_stats, read_hostname, read_memory_snapshot, read_mount_usages, read_psi_metrics,
 };
+use crate::host_export::{HostExporter, configured_host_export_node, is_forwarded_host_signal};
 use crate::self_guard::{SelfPreservationGuard, build_doctor_report_from_summary};
 use crate::spindle_bridge::{
     IngestEnvelope, poll_spindle_projection_records, read_bounded_line,
@@ -1074,6 +1075,16 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
             .map(|d| validate_non_tmp_path_on_disk(&d).map_err(|e| e.to_string()))
             .transpose()?;
     }
+    let export_node = if spindle_only {
+        None
+    } else {
+        configured_host_export_node()?
+    };
+    let mut host_exporter = export_node
+        .as_deref()
+        .map(|node| HostExporter::new(config.spindle_socket.as_deref(), node))
+        .transpose()?;
+
     let catalog = CatalogStore::open(&config.data_dir)?;
     let layout = catalog.layout().clone();
     if spindle_only {
@@ -1282,12 +1293,21 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
                             let mut accepted_cursor = after_id;
                             for (key, env) in poll.records {
                                 let id = key.record_id;
-                                if enqueue_spindle_record(key, env, &runtime) {
-                                    accepted_cursor = id;
-                                } else {
+                                if is_forwarded_host_signal(&key, &env, export_node.as_deref()) {
+                                    let included = SpindleProjectionRange::include(
+                                        &mut runtime.spindle_staging.lock().range,
+                                        &key,
+                                    );
+                                    if let Err(error) = included {
+                                        *runtime.last_spindle_error.write() = Some(error);
+                                        spindle_backpressure = true;
+                                        break;
+                                    }
+                                } else if !enqueue_spindle_record(key, env, &runtime) {
                                     spindle_backpressure = true;
                                     break;
                                 }
+                                accepted_cursor = id;
                             }
                             if accepted_cursor > after_id {
                                 runtime
@@ -1306,6 +1326,9 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
 
                 if !spindle_only {
                     let mut state = run_collect_cycle(&runtime.guard, &mut fs_tracker, &mut vol_detector, &mut sketch);
+                    if let Some(exporter) = host_exporter.as_mut() {
+                        exporter.collect(&mut state);
+                    }
                     state.metrics.extend(extra_metrics);
 
                     runtime.ring.write().push_batch(&state.metrics);
@@ -1342,6 +1365,7 @@ async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result
     }
 
     let _ = shutdown_tx.send(true);
+    drop(host_exporter);
     let _ = rpc_task.await;
     let ingest_sock = if let Some((socket, task)) = ingest {
         let _ = task.await;

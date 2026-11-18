@@ -9,8 +9,9 @@ use fabric::canonical::{self, Request as CanonicalRequest, Response as Canonical
 use fabric::spindle::{Reply as SpindleReply, Request as SpindleRequest, transport};
 use fabric_collect::{
     CollectedState, DaemonConfig, DaemonRequest, DaemonResponse, IngestEnvelope,
-    SelfPreservationGuard, collect_once, default_spindle_socket, poll_spindle_projection_records,
-    query_running_daemon, run_daemon, run_spindle_only_daemon,
+    SelfPreservationGuard, collect_once, configured_host_export_node, default_spindle_socket,
+    is_forwarded_host_signal, poll_spindle_projection_records, query_running_daemon, run_daemon,
+    run_spindle_only_daemon,
 };
 use fabric_core::arrow_schemas::{
     blame_to_record_batch, doctor_to_record_batch, drift_to_record_batch,
@@ -377,6 +378,7 @@ async fn run() -> Result<(), String> {
                 validate_non_tmp_path_on_disk(sock).map_err(|e| e.to_string())?;
             }
             if args.once {
+                let export_node = configured_host_export_node()?;
                 let catalog = CatalogStore::open(layout.data_dir())?;
                 let _writer_lock = fabric_store::try_acquire_writer_lock(catalog.layout())?;
                 let state = collect_once(catalog.layout().data_dir(), &tmp_dir)?;
@@ -422,6 +424,9 @@ async fn run() -> Result<(), String> {
                                 &mut spindle_range,
                                 &provenance,
                             )?;
+                            if is_forwarded_host_signal(&provenance, &env, export_node.as_deref()) {
+                                continue;
+                            }
                             match env {
                                 IngestEnvelope::Metric(mut pt) => {
                                     if pt.timestamp_ms <= 0 {

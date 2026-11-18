@@ -130,6 +130,50 @@ generation includes the boot ID. Missed or partially collected intervals are
 reported as gaps on recovery and never backfilled. Polling bounds source work;
 health is maintained in memory and does not recursively collect itself.
 
+### Export selected host signals to Fabric Server
+
+The resident collector can send summaries from its existing Linux snapshots
+through local Spindle custody. Set a stable, unique node name on each host. The
+name is used in the canonical resource filter alongside the authenticated
+Spindle origin.
+
+```ini
+# systemctl --user edit fabric-daemon.service
+[Service]
+Environment=FABRIC_HOST_EXPORT_NODE=node-a
+```
+
+After restarting the collector, the exporter creates at most 20 observations
+per 30 seconds. The export includes CPU, memory and I/O pressure,
+available memory and used swap, CPU and memory for configured cgroup slices,
+systemd state counts, and path-free filesystem churn totals. Individual
+processes, file paths, and unit names stay local. Cgroup CPU totals are
+counters with reset markers on their first observed value and when they
+decrease.
+
+Configure Spindle forwarding separately. The authenticated origin identifies the
+source when a display hostname is duplicated. Reserve the `fabric.host-export`
+producer name for this exporter. With the [investigation environment](investigation.md)
+configured, use the origin from `spindle status` to query the raw samples.
+
+```sh
+fabric-query query <<'JSON'
+{"version":1,"query_id":"host-node-a","scope":["SPINDLE_ORIGIN"],"filter":{"resource":"host/node-a"},"operation":{"operation":"evidence"}}
+JSON
+```
+
+The exporter leaves host collection running through outages. Its SDK queue
+holds at most 40 observations and retries the same bytes on an uncertain local
+submission. New samples can be dropped before Spindle custody when the queue
+saturates. The local metrics
+`fabric.host_export.dropped_total` and
+`fabric.host_export.submit_retries_total` expose that pressure. Only samples
+accepted into Spindle have a durability guarantee. The collector keeps its
+original local observations and skips export copies for its configured node
+when reading local Spindle custody. Let that local cursor catch up before
+changing or removing the exporter node name if you want to avoid projecting
+copies already queued under the old name.
+
 ## Admission and custody
 
 `try_record` reserves one preallocated payload slot and performs bounded validation
