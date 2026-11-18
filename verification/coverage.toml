@@ -78,6 +78,15 @@ checks = ["bounded-file-query", "descriptor-recovery"]
 proof_scope = "Native isolated-process descriptor-pressure regressions, not a proof of every resource failure or third-party query implementation."
 assumptions = ["The OS enforces per-process descriptor limits and temporary pressure eventually releases."]
 
+[[invariants]]
+id = "receiver-pressure-leases"
+requirement = "Sampled pressure defers new analytical work, an owned authenticated frame can commit during pressure, and a restart replays the exact committed row into the projection."
+required = true
+boundaries = ["Linux resource sampling", "connection ownership", "canonical SQLite commit", "process restart", "Parquet projection"]
+checks = ["receiver-pressure-restart"]
+proof_scope = "Real receiver child processes and stores under a finite descriptor limit. Cgroup working-set pressure uses the same process fixture with an explicit memory load."
+assumptions = ["The caller supplies a confined cgroup for the optional memory-pressure run."]
+
 [[checks]]
 id = "canonical-bytes"
 package = "fabric-server"
@@ -163,6 +172,12 @@ id = "descriptor-recovery"
 package = "fabric-server"
 target = "descriptor_pressure"
 test = "receiver_recovers_after_process_descriptor_exhaustion"
+
+[[checks]]
+id = "receiver-pressure-restart"
+package = "fabric-server"
+target = "descriptor_pressure"
+test = "receiver_preserves_owned_ingest_and_replays_after_pressure_restart"
 
 [[invariants]]
 id = "converged-telemetry-integrity"

@@ -69,4 +69,44 @@ fn settings_emit_toml_and_report_daemon_sources() {
     );
     assert_eq!(override_report["data"]["daemon"]["ring_budget_bytes"], 4096);
     assert!(!Path::new(&absent).exists());
+
+    let service_dir =
+        std::env::temp_dir().join(format!("fabric-settings-receiver-{}", std::process::id()));
+    let config_dir = service_dir.join("fabrico11y");
+    std::fs::create_dir_all(&config_dir).unwrap();
+    std::fs::write(
+        config_dir.join("server.toml"),
+        "version = 1\nmax_connections = 7\n",
+    )
+    .unwrap();
+    let output = command
+        .env("XDG_CONFIG_HOME", &service_dir)
+        .output()
+        .unwrap();
+    std::fs::remove_dir_all(&service_dir).unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let json: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    let resources = &json["data"]["receiver_resources"];
+    assert_eq!(resources["scope"], "settings_process");
+    assert_eq!(resources["configured_connection_limit"], 7);
+    let expected_cap = if let Some(soft_limit) = resources["descriptors"]["soft_limit"].as_u64() {
+        assert_eq!(
+            resources["connection_limit_source"],
+            "rlimit_nofile_and_proc_fd"
+        );
+        let open = resources["descriptors"]["open_descriptors"]
+            .as_u64()
+            .unwrap();
+        (soft_limit - soft_limit.div_ceil(4))
+            .saturating_sub(open)
+            .clamp(1, 7)
+    } else {
+        assert_eq!(resources["connection_limit_source"], "configured");
+        7
+    };
+    assert_eq!(resources["connection_limit"], expected_cap);
 }

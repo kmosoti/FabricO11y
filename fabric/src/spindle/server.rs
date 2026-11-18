@@ -251,7 +251,7 @@ impl Daemon {
         let files = config.files.iter().cloned().map(FileSource::new).collect();
         let journal = config.journal.clone().map(JournalSource::new);
         let host = config.host.clone().map(HostSource::new);
-        let connection_limit = connection_limit(config.max_connections);
+        let connection_limit = crate::resources::connection_limit(config.max_connections);
         let connections = Vec::with_capacity(connection_limit);
         Ok(Self {
             config,
@@ -301,7 +301,10 @@ impl Daemon {
             for _ in 0..self.connection_limit {
                 match self.listener.accept() {
                     Ok((stream, _)) => {
-                        if self.connections.len() >= self.connection_limit {
+                        if !admission_kernel::telemetry::elastic_can_admit(
+                            self.connection_limit as u64,
+                            self.connections.len() as u64,
+                        ) {
                             self.health.refusals += 1;
                             continue;
                         }
@@ -791,29 +794,13 @@ impl Connection {
     }
 }
 
-fn connection_limit(configured: usize) -> usize {
-    let limit = rustix::process::getrlimit(rustix::process::Resource::Nofile);
-    match (limit.current, fs::read_dir("/proc/self/fd")) {
-        (Some(limit), Ok(open)) => {
-            let spendable = admission_kernel::telemetry::elastic_spendable(limit);
-            // Including the enumerator itself reserves room for one accept in flight.
-            let available = spendable.saturating_sub(open.count() as u64);
-            configured.min(usize::try_from(available.max(1)).unwrap_or(usize::MAX))
-        }
-        _ => configured,
-    }
-}
-
 fn transient_accept_pressure(error: &std::io::Error) -> bool {
-    use rustix::io::Errno;
     matches!(
         error.kind(),
         std::io::ErrorKind::WouldBlock
             | std::io::ErrorKind::Interrupted
             | std::io::ErrorKind::ConnectionAborted
-    ) || [Errno::MFILE, Errno::NFILE, Errno::NOBUFS, Errno::NOMEM]
-        .iter()
-        .any(|errno| error.raw_os_error() == Some(errno.raw_os_error()))
+    ) || crate::resources::is_resource_error(error)
 }
 
 #[cfg(test)]

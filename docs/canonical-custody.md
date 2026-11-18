@@ -88,6 +88,28 @@ and the receiver's canonical projection may advance independently. A canonical
 acknowledgment establishes custody. Query evidence comes from the projection
 serving the requested snapshot.
 
+## Resource pressure
+
+Fabric Server bounds connections by the configured cap and the
+[startup descriptor budget](collection.md#elastic-collector-memory).
+It samples descriptors and cgroup v2 working-set bytes about every 100 ms.
+Descriptor pressure starts at the spendable count or a resource error during
+sampling. Memory pressure starts at the spendable limit for the working set
+of the service cgroup or an ancestor. Missing cgroup limits or usage provide
+no signal. The configured ceilings and request deadlines still apply.
+
+During pressure, the server defers new analytical plans, queries, exact
+projection-readiness checks, and background Parquet replay batches. It returns
+a retryable error for plans and queries and reports projection evidence as
+unavailable on a deferred readiness check. Work already admitted keeps its
+lease through execution and response cleanup or completion of the projection
+batch. Cancellation remains available to authorized readers and leaves the
+query slot occupied until that cleanup. The server continues to accept
+canonical custody and authenticated readback within the effective connection
+cap. Once pressure clears, the Parquet projector resumes at its committed
+checkpoint. Greptime-backed custody, including pending writes and verification,
+continues under the existing backend contract.
+
 ## Storage, verification, and recovery
 
 The SQLite mode stores canonical bytes in a synchronous transactional database.
