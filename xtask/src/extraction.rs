@@ -1,7 +1,7 @@
 use super::evidence;
 use std::{
     fs,
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
     time::{SystemTime, UNIX_EPOCH},
 };
@@ -21,8 +21,7 @@ fn execute(mut command: Command) -> Result<String, String> {
     Ok(report)
 }
 
-pub fn check(root: &Path) -> Result<(), String> {
-    let source = evidence::tools().join(SOURCE);
+pub(super) fn checker_binaries() -> [(&'static str, PathBuf); 2] {
     let charon = evidence::binary(
         "FABRIC_CHARON",
         &format!("{SOURCE}/charon/charon/target/release/charon"),
@@ -31,7 +30,13 @@ pub fn check(root: &Path) -> Result<(), String> {
         "FABRIC_AENEAS",
         &format!("{SOURCE}/src/_build/default/main.exe"),
     );
-    let lean = evidence::binary("FABRIC_LEAN", "lean-4.35.0-linux/bin/lean");
+    [("charon", charon), ("aeneas", aeneas)]
+}
+
+pub fn check(root: &Path) -> Result<(), String> {
+    let source = evidence::tools().join(SOURCE);
+    let [(_, charon), (_, aeneas)] = checker_binaries();
+    let lean = super::proof::lean_binary();
     let lake = lean.parent().ok_or("missing Lean directory")?.join("lake");
     for binary in [&charon, &aeneas, &lean, &lake] {
         println!("{} SHA256 {}", binary.display(), evidence::hash(binary)?);

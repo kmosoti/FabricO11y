@@ -1,0 +1,109 @@
+{
+  "schema": 1,
+  "topics": [
+    {
+      "id": "local",
+      "title": "Single-host observability",
+      "summary": "Inspect current Linux host and agent observations from the local collector without connecting to a receiver.",
+      "scenarios": [
+        {
+          "description": "Read a locally collected metric",
+          "command": "fabric query metrics --since 1h --json",
+          "expected": "The JSON envelope identifies the metrics domain and reports rows within the lookback window, subject to local retention.",
+          "checks": [
+            "gorilla-block-roundtrips-out-of-order-and-nan-bits",
+            "hot-metric-ring-headroom-matches-verified-kernel",
+            "unified-query-spec-operator-precedence-and-literals"
+          ]
+        }
+      ],
+      "documentation": ["docs/collection.md", "docs/architecture.md"],
+      "proofs": [
+        {
+          "kind": "extracted_rust",
+          "path": "proofs/ExtractedAdmission.lean",
+          "theorem": "admission_kernel.watermark_advance_contract",
+          "checker": "aeneas",
+          "scope": "The extracted watermark helper is monotone and preserves the committed value when the caller reports a failed flush.",
+          "assumptions": "The caller supplies a truthful flush result. Filesystem durability and the daemon's observation of flush outcomes require runtime evidence."
+        },
+        {
+          "kind": "independent_model",
+          "path": "proofs/Telemetry.lean",
+          "theorem": "Telemetry.watermark_trace_monotone",
+          "checker": "telemetry",
+          "scope": "The independent natural-number watermark model is monotone over a trace of candidate flushes.",
+          "assumptions": "The model takes abstract flush outcomes as inputs and does not model Parquet publication."
+        }
+      ]
+    },
+    {
+      "id": "custody",
+      "title": "Spindle and canonical custody",
+      "summary": "Inspect durable local Spindle and optional receiver custody. Each contiguous receiver frontier belongs to one configured origin.",
+      "scenarios": [
+        {
+          "description": "Compare the Spindle, receiver, and collector frontiers",
+          "command": "fabric custody --json",
+          "expected": "The response reports which stores can be reached and their known progress. A custody acknowledgment does not establish query visibility.",
+          "checks": [
+            "combined-lifecycle",
+            "sdk-canonical-handoff",
+            "canonical-bytes",
+            "maximum-batch-retry"
+          ]
+        }
+      ],
+      "documentation": ["docs/collection.md", "docs/canonical-custody.md"],
+      "proofs": [
+        {
+          "kind": "independent_model",
+          "path": "proofs/Custody.lean",
+          "theorem": "Custody.publication_requires_full_readback",
+          "checker": "custody",
+          "scope": "Publication in the independent custody model requires successful full byte readback.",
+          "assumptions": "The model uses abstract storage and message operations. Receiver durability and actual retry behavior require integration tests."
+        }
+      ]
+    },
+    {
+      "id": "fleet",
+      "title": "Distributed observability",
+      "summary": "Follow multiple Spindle origins forwarding to one authenticated canonical receiver and compare their separate progress.",
+      "scenarios": [
+        {
+          "description": "Inspect known origin frontiers at the configured authority",
+          "command": "fabric-query progress",
+          "expected": "The receiver returns its authority and a prefix per authorized origin. Configure FABRIC_ENDPOINT and FABRIC_CREDENTIAL_FILE first.",
+          "checks": ["sdk-canonical-handoff", "canonical-scope", "query-authority"]
+        }
+      ],
+      "documentation": ["docs/canonical-custody.md", "docs/investigation.md"],
+      "proofs": [
+        {
+          "kind": "independent_model",
+          "path": "proofs/Custody.lean",
+          "theorem": "Custody.arbitrary_trace_preserves_source_prefix",
+          "checker": "custody",
+          "scope": "The independent custody model preserves a contiguous source prefix over arbitrary modeled event traces.",
+          "assumptions": "The result covers modeled events. It does not establish deployment availability or bound network delay."
+        }
+      ]
+    },
+    {
+      "id": "query",
+      "title": "Source-fenced receiver queries",
+      "summary": "Use the typed receiver API for source-scoped queries with a bounded snapshot, budget, and coverage report.",
+      "scenarios": [
+        {
+          "description": "Read original evidence for a known authorized canonical record",
+          "command": "fabric-query evidence <canonical-id>",
+          "expected": "A configured receiver returns the original JSON for an authorized record or an explicit error.",
+          "checks": ["canonical-scope", "snapshot-query", "query-budget", "query-authority"]
+        }
+      ],
+      "documentation": ["docs/investigation.md", "docs/fabric-server-evaluation.md"],
+      "proofs": []
+    }
+  ]
+}

@@ -34,6 +34,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
 use std::time::{Duration, Instant};
 
+mod guide;
 mod projection_ready;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -76,6 +77,8 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Look up features, tested scenarios, and scoped proof references offline.
+    Guide(guide::GuideArgs),
     /// Capture or inspect the latest live host, slice, cgroup, unit, and storage snapshot.
     Snapshot,
     /// Query historical ZSTD Parquet + hot RAM ring/live state via DataFusion.
@@ -221,11 +224,18 @@ async fn run() -> Result<(), String> {
         OutputFormat::Json
     };
 
+    if let Commands::Guide(args) = &cli.command {
+        return guide::run(args, format);
+    }
     let tmp_dir = resolve_cli_tmp_dir(cli.tmp_dir.as_deref())?;
     let layout = validated_storage_layout(&cli.data_dir)?;
 
     match &cli.command {
-        Commands::ProjectionReady(_) => unreachable!(),
+        Commands::Guide(_) | Commands::ProjectionReady(_) => {
+            unreachable!(
+                "offline guide and projection readiness dispatch before storage resolution"
+            )
+        }
         Commands::Snapshot => {
             let snap = fetch_snapshot(&layout, &tmp_dir)?;
             match format {
