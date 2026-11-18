@@ -361,7 +361,6 @@ impl Server {
                     let worker = thread::Builder::new().spawn(move || {
                         let _connection_lease = guard;
                         let mut socket = socket;
-                        let mut query_lease = None;
                         let request = canonical::read_frame(
                             &mut socket,
                             Instant::now() + Duration::from_secs(2),
@@ -369,35 +368,21 @@ impl Server {
                         .and_then(|b| {
                             serde_json::from_slice::<Authenticated>(&b).map_err(|e| e.to_string())
                         });
-                        let response = match request {
-                            Ok(req) => handle(
-                                req,
-                                &ledger,
-                                &projection,
-                                &auth,
-                                &projection_error,
-                                &reads,
-                                &mut query_lease,
-                            ),
-                            Err(e) => Err(e),
-                        }
-                        .unwrap_or_else(|error| Response::Error { error });
-                        let body = serde_json::to_vec(&response).and_then(|b| {
-                            if b.len() <= canonical::MAX_FRAME {
-                                Ok(b)
-                            } else {
-                                serde_json::to_vec(&Response::Error {
-                                    error: "response byte limit".into(),
-                                })
-                            }
-                        });
-                        if let Ok(body) = body {
-                            let _ = canonical::write_frame(
-                                &mut socket,
-                                &body,
-                                Instant::now() + Duration::from_secs(2),
-                            );
-                        }
+                        respond(
+                            request,
+                            &ledger,
+                            &projection,
+                            &auth,
+                            &projection_error,
+                            &reads,
+                            |body| {
+                                let _ = canonical::write_frame(
+                                    &mut socket,
+                                    body,
+                                    Instant::now() + Duration::from_secs(2),
+                                );
+                            },
+                        );
                     });
                     match worker {
                         Ok(worker) => workers.push(worker),
@@ -647,6 +632,44 @@ fn receipt_readiness(
         );
     }
     report
+}
+
+fn respond(
+    request: Result<Authenticated, String>,
+    ledger: &Arc<Mutex<Ledger>>,
+    projection: &Arc<Mutex<Projection>>,
+    auth: &Auth,
+    projection_error: &Mutex<Option<String>>,
+    reads: &ReadState,
+    write: impl FnOnce(&[u8]),
+) {
+    // The query lease covers execution, encoding, the write attempt and response cleanup.
+    let mut query_lease = None;
+    let response = request
+        .and_then(|req| {
+            handle(
+                req,
+                ledger,
+                projection,
+                auth,
+                projection_error,
+                reads,
+                &mut query_lease,
+            )
+        })
+        .unwrap_or_else(|error| Response::Error { error });
+    let body = serde_json::to_vec(&response).and_then(|body| {
+        if body.len() <= canonical::MAX_FRAME {
+            Ok(body)
+        } else {
+            serde_json::to_vec(&Response::Error {
+                error: "response byte limit".into(),
+            })
+        }
+    });
+    if let Ok(body) = body {
+        write(&body);
+    }
 }
 
 fn handle(
@@ -1070,33 +1093,71 @@ mod receipt_tests {
     }
 
     #[test]
-    fn pressure_keeps_live_query_lease_until_cleanup() {
+    fn pressure_keeps_live_query_lease_through_response_write() {
         let (_root, server) = fixture();
-        let mut lease = None;
-        let cancel = reserve(&server.reads, "one", &mut lease).unwrap();
-        server.reads.pressure.store(true, Ordering::Release);
-        assert!(matches!(
-            call(
-                &server,
-                "reader",
-                Request::Cancel {
-                    query_id: "one".into()
-                }
-            ),
-            Ok(Response::Cancelled { .. })
-        ));
-        assert!(cancel.load(Ordering::Acquire));
-        assert_eq!(
-            reserve(&server.reads, "two", &mut None).unwrap_err(),
-            "query busy"
+        let request = Request::Plan {
+            request: QueryRequest {
+                version: fabric::query::API_VERSION,
+                query_id: "one".into(),
+                authority: None,
+                scope: vec!["alpha".into()],
+                snapshot: Default::default(),
+                filter: Default::default(),
+                operation: fabric::query::Operation::Evidence,
+                budgets: Default::default(),
+                cursor: None,
+            },
+        };
+        let mut wrote = false;
+        respond(
+            Ok(Authenticated {
+                credential: "canonical-test-credential-reader".into(),
+                request,
+            }),
+            &server.ledger,
+            &server.projection,
+            &server.auth,
+            &server.projection_error,
+            &server.reads,
+            |body| {
+                wrote = true;
+                assert!(matches!(
+                    serde_json::from_slice(body),
+                    Ok(Response::Plan { .. })
+                ));
+                server.reads.pressure.store(true, Ordering::Release);
+                assert!(matches!(
+                    call(
+                        &server,
+                        "reader",
+                        Request::Cancel {
+                            query_id: "one".into()
+                        }
+                    ),
+                    Ok(Response::Cancelled { .. })
+                ));
+                assert!(
+                    server
+                        .reads
+                        .queries
+                        .lock()
+                        .unwrap()
+                        .cancel
+                        .load(Ordering::Acquire)
+                );
+                assert_eq!(
+                    reserve(&server.reads, "two", &mut None).unwrap_err(),
+                    "query busy"
+                );
+            },
         );
-        drop(lease.take());
+        assert!(wrote);
         assert_eq!(
             reserve(&server.reads, "two", &mut None).unwrap_err(),
             "analytical work deferred by resource pressure"
         );
         server.reads.pressure.store(false, Ordering::Release);
-        assert!(reserve(&server.reads, "two", &mut lease).is_ok());
+        assert!(reserve(&server.reads, "two", &mut None).is_ok());
     }
 
     #[test]
