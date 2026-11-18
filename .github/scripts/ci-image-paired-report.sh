@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=.github/scripts/ci-image-paired-settings.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/ci-image-paired-settings.sh"
+
 root=$1
+states=(cold warm)
+cache_run_id=$GITHUB_RUN_ID
+cache_attempt=$GITHUB_RUN_ATTEMPT
 samples=3
 smoke=false
 if [[ "$MODE" == smoke ]]; then
@@ -9,7 +15,17 @@ if [[ "$MODE" == smoke ]]; then
   samples=1
 fi
 
-if [[ "$COLD_RESULT" != success || "$WARM_RESULT" != success ]]; then
+if [[ "$MODE" == warm-diagnostic ]]; then
+  states=(warm-diagnostic)
+  samples=1
+  cache_run_id=${SEED_RUN_ID:?}
+  cache_attempt=${SEED_ATTEMPT:?}
+  if [[ "$WARM_RESULT" != success ]]; then
+    printf 'Warm diagnostic from run %s attempt %s incomplete (%s).\n' \
+      "$cache_run_id" "$cache_attempt" "$WARM_RESULT" | tee -a "$GITHUB_STEP_SUMMARY"
+    exit 1
+  fi
+elif [[ "$COLD_RESULT" != success || "$WARM_RESULT" != success ]]; then
   printf 'Paired qualification incomplete (cold=%s, warm=%s).\n' "$COLD_RESULT" "$WARM_RESULT" |
     tee -a "$GITHUB_STEP_SUMMARY"
   exit 1
@@ -36,28 +52,33 @@ assert_pull() {
 
 {
   printf '## %s paired CI image %s\n\n' "$PROFILE" "$MODE"
+  if [[ "$MODE" == warm-diagnostic ]]; then
+    printf 'One warm pair using the cold-pair-1 caches from run %s attempt %s.\n\n' "$cache_run_id" "$cache_attempt"
+  fi
   printf '| State | Pair | First role | Hosted image | Baseline (ms) | Candidate (ms) | Candidate − baseline (ms) |\n'
   printf '| --- | ---: | --- | --- | ---: | ---: | ---: |\n'
 } >> "$GITHUB_STEP_SUMMARY"
 
-for state in cold warm; do
+for state in "${states[@]}"; do
   warm=false
-  if [[ "$state" == warm ]]; then
+  if [[ "$state" == warm* ]]; then
     warm=true
   fi
   for ((sample=1; sample <= samples; sample++)); do
     entry="$root/ci-image-pair-$GITHUB_RUN_ATTEMPT-$state-$sample"
     first=baseline
     second=candidate
-    if [[ "$state:$sample" == cold:2 || "$state:$sample" == warm:1 || "$state:$sample" == warm:3 ]]; then
+    if [[ "$state:$sample" == cold:2 || "$state:$sample" == warm:1 || "$state:$sample" == warm:3 || "$state:$sample" == warm-diagnostic:1 ]]; then
       first=candidate
       second=baseline
     fi
     jq -e --arg revision "$REVISION" --arg candidate "$CANDIDATE" --arg profile "$PROFILE" \
       --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" --arg first "$first" --arg second "$second" \
+      --arg cache_run "$cache_run_id" --arg cache_attempt "$cache_attempt" --arg baseline "$paired_baseline" \
       --argjson warm "$warm" --argjson sample "$sample" --argjson smoke "$smoke" '
       .revision == $revision and .candidate == $candidate and .profile == $profile and
       .run_id == $run and .attempt == $attempt and .first == $first and .second == $second and
+      .baseline == $baseline and .cache_run_id == $cache_run and .cache_attempt == $cache_attempt and
       .warm == $warm and .smoke == $smoke and .number == $sample and
       (.image_os | length > 0) and (.image_version | length > 0)
     ' "$entry/pair.json" >/dev/null
@@ -72,9 +93,9 @@ for state in cold warm; do
       assert_pull "$lane"
       image=$(jq -er --arg role "$role" '.[$role]' "$entry/pair.json")
       grep -Fqx "Digest: ${image#*@}" "$lane/pull.log"
-      grep -Fqx "ci-image-pair-v1-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$PROFILE-X64-$role-${image#*@sha256:}-$REVISION" \
-        "$lane/cache-key"
-      if [[ "$state" == warm ]]; then
+      key=$(paired_cache_key "$cache_run_id" "$cache_attempt" "$PROFILE" "$role" "$image" "$REVISION")
+      grep -Fqx "$key" "$lane/cache-key"
+      if [[ "$warm" == true ]]; then
         grep -Fxq true "$lane/application-hit"
         time_ms "$lane" application_restore >/dev/null
         if [[ "$role:$PROFILE" == baseline:native-acceptance ]]; then
@@ -91,6 +112,11 @@ for state in cold warm; do
     printf '%s %s %s\n' "$baseline_ms" "$candidate_ms" "$((candidate_ms - baseline_ms))" >> "$root/$state.tsv"
   done
 done
+
+if [[ "$MODE" == warm-diagnostic ]]; then
+  printf '\nThis single pair reports timings and exact cache restoration. The qualification gate requires three cold pairs and three warm pairs.\n' >> "$GITHUB_STEP_SUMMARY"
+  exit 0
+fi
 
 if [[ "$smoke" == true ]]; then
   printf '\nPassed the isolated pull and exact cache round trip. Full workloads did not run.\n' >> "$GITHUB_STEP_SUMMARY"

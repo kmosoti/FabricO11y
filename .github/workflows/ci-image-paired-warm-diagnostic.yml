@@ -1,0 +1,79 @@
+name: Paired CI image warm diagnostic
+
+on:
+  push:
+    branches: ['ci/tool-image-paired-qualification/**']
+    paths:
+      - '.github/ci-images/paired-warm-diagnostic.json'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: paired-ci-image-warm-diagnostic
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    if: github.repository == 'kmosoti/FabricO11y'
+    permissions:
+      actions: read
+      contents: read
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      revision: ${{ steps.plan.outputs.revision }}
+      profile: ${{ steps.plan.outputs.profile }}
+      candidate: ${{ steps.plan.outputs.candidate }}
+      seed_run_id: ${{ steps.plan.outputs.seed_run_id }}
+      seed_attempt: ${{ steps.plan.outputs.seed_attempt }}
+      seed_source: ${{ steps.plan.outputs.seed_source }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - name: Verify the original cold pair and exact caches
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PAIR_PLAN: .github/ci-images/paired-warm-diagnostic.json
+        run: bash .github/scripts/ci-image-paired-plan.sh
+
+  diagnostic:
+    needs: plan
+    uses: ./.github/workflows/ci-image-paired-trial.yml
+    with:
+      revision: ${{ needs.plan.outputs.revision }}
+      profile: ${{ needs.plan.outputs.profile }}
+      candidate: ${{ needs.plan.outputs.candidate }}
+      seed-run-id: ${{ needs.plan.outputs.seed_run_id }}
+      seed-attempt: ${{ needs.plan.outputs.seed_attempt }}
+      seed-source: ${{ needs.plan.outputs.seed_source }}
+      smoke: false
+      warm: true
+      sample: 1
+
+  report:
+    needs: [plan, diagnostic]
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      PROFILE: ${{ needs.plan.outputs.profile }}
+      REVISION: ${{ needs.plan.outputs.revision }}
+      CANDIDATE: ${{ needs.plan.outputs.candidate }}
+      SEED_RUN_ID: ${{ needs.plan.outputs.seed_run_id }}
+      SEED_ATTEMPT: ${{ needs.plan.outputs.seed_attempt }}
+      MODE: warm-diagnostic
+      WARM_RESULT: ${{ needs.diagnostic.result }}
+    steps:
+      - uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: needs.diagnostic.result == 'success'
+        with:
+          pattern: ci-image-pair-${{ github.run_attempt }}-warm-diagnostic-1
+          path: ${{ runner.temp }}/paired-ci-evidence
+      - name: Report this warm pair
+        run: bash .github/scripts/ci-image-paired-report.sh "$RUNNER_TEMP/paired-ci-evidence"

@@ -187,3 +187,17 @@ path while reviewing that change. The trusted publisher can produce the new
 image digests after the pins reach `develop`. Then qualify and adopt the digests
 in a follow-up. If tooling or build measurements regress, restore the previous
 workflow revision. Release promotion remains governed by the main human gate.
+
+### Diagnose a warm pair using an existing seed
+
+To repeat one warm measurement, add `.github/ci-images/paired-warm-diagnostic.json`
+on the original qualification branch with the same `revision`, `profile`, and
+`candidate`. Set `mode` to `warm-diagnostic`, `seed_run_id` to the original run
+ID, and `seed_attempt` to its attempt number. Use strings for both identifiers.
+
+The diagnostic verifies the original plan, successful cold pair 1, its evidence
+artifact, and the exact per-role cache entries on that branch. Native diagnostics
+also require the baseline proof cache. It runs one warm pair with the candidate
+first and reports its timings separately. Qualification still requires its own
+three cold and three warm pairs. Keep the seed artifact and caches for as long
+as you need to run the diagnostic.

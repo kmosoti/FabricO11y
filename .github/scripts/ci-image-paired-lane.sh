@@ -4,7 +4,10 @@ set -euo pipefail
 run_root="$RUNNER_TEMP/fabric-ci-pair"
 workspace=/__w/FabricO11y/FabricO11y
 product_root="$GITHUB_WORKSPACE/.paired-product"
-baseline=registry.fedoraproject.org/fedora@sha256:d68cae9185777603262e0a7094f792ffed9326b22e1a03e2d2a1731fc3f94733
+# shellcheck source=.github/scripts/ci-image-paired-settings.sh
+source "$(dirname -- "${BASH_SOURCE[0]}")/ci-image-paired-settings.sh"
+cache_run_id=${PAIR_SEED_RUN_ID:-$GITHUB_RUN_ID}
+cache_attempt=${PAIR_SEED_ATTEMPT:-$GITHUB_RUN_ATTEMPT}
 timeout_seconds=2700
 if [[ "$PAIR_PROFILE" == native-acceptance ]]; then
   timeout_seconds=18000
@@ -15,7 +18,7 @@ source "$(dirname -- "${BASH_SOURCE[0]}")/ci-image-paired-store.sh"
 
 select_role() {
   case "$1" in
-    baseline) image=$baseline ;;
+    baseline) image=$paired_baseline ;;
     candidate) image=$PAIR_CANDIDATE ;;
     *) echo "Invalid lane role: $1" >&2; exit 1 ;;
   esac
@@ -61,6 +64,11 @@ prepare() {
   [[ "$PAIR_SAMPLE" =~ ^[123]$ ]]
   [[ "$PAIR_WARM" == true || "$PAIR_WARM" == false ]]
   [[ "$PAIR_SMOKE" == true || "$PAIR_SMOKE" == false ]]
+  if [[ -n "${PAIR_SEED_RUN_ID:-}${PAIR_SEED_ATTEMPT:-}${PAIR_SEED_SOURCE:-}" ]]; then
+    [[ "$PAIR_WARM:$PAIR_SMOKE:$PAIR_SAMPLE" == true:false:1 ]]
+    [[ "$PAIR_SEED_RUN_ID" =~ ^[1-9][0-9]*$ && "$PAIR_SEED_ATTEMPT" =~ ^[1-9][0-9]*$ &&
+      "$PAIR_SEED_SOURCE" =~ ^[0-9a-f]{64}$ ]]
+  fi
   [[ ! -e "$run_root" && ! -e "$product_root" ]]
 
   mkdir -p "$run_root/evidence" "$run_root/anonymous" "$run_root/archive-bin"
@@ -76,11 +84,12 @@ prepare() {
   fi
   printf 'first=%s\nsecond=%s\n' "$first" "$second" >> "$GITHUB_OUTPUT"
   jq -n --arg revision "$PAIR_REVISION" --arg profile "$PAIR_PROFILE" --arg candidate "$PAIR_CANDIDATE" \
-    --arg baseline "$baseline" --arg first "$first" --arg second "$second" \
+    --arg baseline "$paired_baseline" --arg first "$first" --arg second "$second" \
     --arg image_os "${ImageOS:?Hosted runner did not expose ImageOS}" \
     --arg image_version "${ImageVersion:?Hosted runner did not expose ImageVersion}" \
     --argjson number "$PAIR_SAMPLE" --argjson warm "$PAIR_WARM" --argjson smoke "$PAIR_SMOKE" \
     --arg run_id "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" \
+    --arg cache_run_id "$cache_run_id" --arg cache_attempt "$cache_attempt" \
     '$ARGS.named' > "$run_root/evidence/pair.json"
   {
     uname -a
@@ -104,7 +113,8 @@ prepare() {
 
 start() {
   mkdir -p "$evidence"
-  local key="ci-image-pair-v1-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT-$PAIR_PROFILE-X64-$PAIR_ROLE-${image#*@sha256:}-$PAIR_REVISION"
+  local key
+  key=$(paired_cache_key "$cache_run_id" "$cache_attempt" "$PAIR_PROFILE" "$PAIR_ROLE" "$image" "$PAIR_REVISION")
   {
     printf 'key=%s\nproof_path=%s\n' "$key" "$proof_path"
     printf 'application_paths<<PATHS\n'
@@ -131,6 +141,10 @@ materialize_source() {
   gzip -d "$archive"
   [[ "$(git get-tar-commit-id < "${archive%.gz}")" == "$PAIR_REVISION" ]]
   sha256sum < "${archive%.gz}" | cut -d ' ' -f 1 > "$evidence/source.sha256"
+  if [[ -n "${PAIR_SEED_SOURCE:-}" && "$(<"$evidence/source.sha256")" != "$PAIR_SEED_SOURCE" ]]; then
+    printf '%s source archive digest differs from the original cold pair\n' "$PAIR_ROLE" >&2
+    return 1
+  fi
   tar --extract --file "${archive%.gz}" --directory "$host_workspace" --strip-components=1 --no-same-owner
   rm -- "${archive%.gz}"
   finish source
@@ -163,18 +177,25 @@ in_container() {
 
 toolchain() {
   if [[ "$PAIR_WARM" == true ]]; then
-    [[ "$APPLICATION_HIT" == true ]]
+    if [[ "$APPLICATION_HIT" != true ]]; then
+      printf '%s did not restore its exact application cache\n' "$PAIR_ROLE" >&2
+      return 1
+    fi
     finish application_restore
-    sudo -n test -d "$host_workspace/target"
+    if ! sudo -n test -d "$host_workspace/target"; then
+      printf '%s application archive lacks target/\n' "$PAIR_ROLE" >&2
+      return 1
+    fi
     if [[ "$PAIR_SMOKE" == false ]]; then
-      if [[ "$PAIR_PROFILE" == verify ]]; then
-        sudo -n test -x "$host_workspace/target/release/xtask"
-        sudo -n test -d "$host_workspace/target/release/.fingerprint"
-      else
-        sudo -n test -x "$host_workspace/target/debug/xtask"
-        sudo -n test -d "$host_workspace/target/debug/.fingerprint"
-        sudo -n test -d "$host_home/.cache/fabrico11y-fuzz-target"
+      local profile=release
+      if [[ "$PAIR_PROFILE" == native-acceptance ]]; then
+        profile=debug
+        if ! sudo -n test -d "$host_home/.cache/fabrico11y-fuzz-target"; then
+          printf '%s application archive lacks native fuzz artifacts\n' "$PAIR_ROLE" >&2
+          return 1
+        fi
       fi
+      sudo -n bash .github/scripts/ci-image-paired-witness.sh cargo "$host_workspace/target/$profile"
     fi
     printf 'true\n' > "$evidence/application-hit"
   fi
@@ -188,14 +209,20 @@ toolchain() {
 
 verification() {
   if [[ "$PAIR_WARM" == true && "$PAIR_ROLE" == baseline && "$PAIR_PROFILE" == native-acceptance ]]; then
-    [[ "$PROOF_HIT" == true ]]
-    finish proof_restore
-    printf 'true\n' > "$evidence/proof-hit"
-    sudo -n test -d "$GITHUB_WORKSPACE/$proof_path"
-    if [[ "$PAIR_SMOKE" == false ]]; then
-      sudo -n test -s "$GITHUB_WORKSPACE/$proof_path/opam-root/.aeneas-build-v1"
-      sudo -n test -x "$GITHUB_WORKSPACE/$proof_path/aeneas-ab34bd2/src/_build/default/main.exe"
+    if [[ "$PROOF_HIT" != true ]]; then
+      printf 'baseline did not restore its exact proof cache\n' >&2
+      return 1
     fi
+    finish proof_restore
+    if ! sudo -n test -d "$GITHUB_WORKSPACE/$proof_path"; then
+      printf 'baseline proof archive lacks the proof-tool directory\n' >&2
+      return 1
+    fi
+    if [[ "$PAIR_SMOKE" == false ]]; then
+      sudo -n bash .github/scripts/ci-image-paired-witness.sh proof "$GITHUB_WORKSPACE/$proof_path" \
+        "$host_workspace/verification/aeneas.opam.lock"
+    fi
+    printf 'true\n' > "$evidence/proof-hit"
   fi
   if [[ "$PAIR_SMOKE" == true ]]; then
     measure smoke_fixture in_container 0 sh -s "$PAIR_WARM" "$PAIR_PROFILE" "$PAIR_ROLE" \
