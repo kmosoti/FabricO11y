@@ -1,0 +1,9 @@
+version = 1
+
+[daemon]
+data_dir = "/data/fabrico11y"
+tmp_dir = "/data/tmp"
+interval_ms = 2000
+max_disk_bytes = 4294967296
+# Omit ring_budget_bytes to use the collector default.
+# spindle_socket = "/run/user/1000/spindle/spindle.sock"

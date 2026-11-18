@@ -1,0 +1,10 @@
+version = 1
+socket = "/run/user/1000/spindle/spindle.sock"
+storage = "/data/fabrico11y/spindle"
+quota_bytes = 67108864
+max_connections = 16
+client_timeout_ms = 500
+
+[host]
+interval_ms = 10000
+filesystems = ["/home"]
