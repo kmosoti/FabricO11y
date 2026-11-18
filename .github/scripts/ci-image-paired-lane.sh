@@ -166,6 +166,16 @@ toolchain() {
     [[ "$APPLICATION_HIT" == true ]]
     finish application_restore
     sudo -n test -d "$host_workspace/target"
+    if [[ "$PAIR_SMOKE" == false ]]; then
+      if [[ "$PAIR_PROFILE" == verify ]]; then
+        sudo -n test -x "$host_workspace/target/release/xtask"
+        sudo -n test -d "$host_workspace/target/release/.fingerprint"
+      else
+        sudo -n test -x "$host_workspace/target/debug/xtask"
+        sudo -n test -d "$host_workspace/target/debug/.fingerprint"
+        sudo -n test -d "$host_home/.cache/fabrico11y-fuzz-target"
+      fi
+    fi
     printf 'true\n' > "$evidence/application-hit"
   fi
   if [[ "$PAIR_ROLE" == baseline && "$PAIR_SMOKE" == false ]]; then
@@ -184,6 +194,7 @@ verification() {
     sudo -n test -d "$GITHUB_WORKSPACE/$proof_path"
     if [[ "$PAIR_SMOKE" == false ]]; then
       sudo -n test -s "$GITHUB_WORKSPACE/$proof_path/opam-root/.aeneas-build-v1"
+      sudo -n test -x "$GITHUB_WORKSPACE/$proof_path/aeneas-ab34bd2/src/_build/default/main.exe"
     fi
   fi
   if [[ "$PAIR_SMOKE" == true ]]; then
@@ -219,7 +230,7 @@ verification() {
     fi
   fi
   finish workload
-  df -PK "$host_workspace" > "$evidence/disk-after.tsv"
+  df -Pk "$host_workspace" > "$evidence/disk-after.tsv"
 }
 
 case "$1" in
@@ -229,7 +240,7 @@ case "$1" in
       select_role "$PAIR_ROLE"
       cleanup_daemon
     done
-    df -PK "$GITHUB_WORKSPACE"
+    df -Pk "$GITHUB_WORKSPACE"
     ;;
   *)
     select_role "$PAIR_ROLE"
