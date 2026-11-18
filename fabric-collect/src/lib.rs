@@ -13,7 +13,7 @@ pub use channel::BoundedTelemetryQueue;
 pub use daemon::{
     CollectedState, DaemonConfig, DaemonRequest, DaemonResponse, collect_once,
     default_daemon_socket, default_ingest_socket, default_spindle_socket, query_daemon_socket,
-    query_running_daemon, run_daemon,
+    query_running_daemon, run_daemon, run_spindle_only_daemon,
 };
 pub use self_guard::SelfPreservationGuard;
 pub use spindle_bridge::{

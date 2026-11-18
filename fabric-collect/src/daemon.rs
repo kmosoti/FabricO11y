@@ -1047,7 +1047,19 @@ impl DaemonRuntime {
 }
 
 /// Runs the bounded converged telemetry daemon until SIGINT/SIGTERM or `max_ticks`.
-pub async fn run_daemon(mut config: DaemonConfig) -> Result<(), String> {
+pub async fn run_daemon(config: DaemonConfig) -> Result<(), String> {
+    run_daemon_mode(config, false).await
+}
+
+/// Projects a dedicated Spindle origin into a separate data directory.
+///
+/// The daemon exposes query RPC under that directory's state path. It skips host
+/// collection and the general ingest socket.
+pub async fn run_spindle_only_daemon(config: DaemonConfig) -> Result<(), String> {
+    run_daemon_mode(config, true).await
+}
+
+async fn run_daemon_mode(mut config: DaemonConfig, spindle_only: bool) -> Result<(), String> {
     config.data_dir = validate_non_tmp_path_on_disk(&config.data_dir).map_err(|e| e.to_string())?;
     config.tmp_dir = validate_non_tmp_path_on_disk(&config.tmp_dir).map_err(|e| e.to_string())?;
     config.spindle_socket = config
@@ -1055,14 +1067,26 @@ pub async fn run_daemon(mut config: DaemonConfig) -> Result<(), String> {
         .take()
         .map(|s| validate_non_tmp_path_on_disk(&s).map_err(|e| e.to_string()))
         .transpose()?;
-    config.runtime_dir = config
-        .runtime_dir
-        .take()
-        .map(|d| validate_non_tmp_path_on_disk(&d).map_err(|e| e.to_string()))
-        .transpose()?;
-
+    if spindle_only {
+        if config.data_dir == Path::new(fabric_core::DEFAULT_DATA_DIR) {
+            return Err("Spindle-only projection requires a separate data directory".into());
+        }
+        if config.spindle_socket.is_none() {
+            return Err("Spindle-only projection requires a Spindle socket".into());
+        }
+    } else {
+        config.runtime_dir = config
+            .runtime_dir
+            .take()
+            .map(|d| validate_non_tmp_path_on_disk(&d).map_err(|e| e.to_string()))
+            .transpose()?;
+    }
     let catalog = CatalogStore::open(&config.data_dir)?;
     let layout = catalog.layout().clone();
+    if spindle_only {
+        // Tie the RPC to the same isolated data and writer lock as this origin.
+        config.runtime_dir = Some(layout.state_dir());
+    }
     let writer_lock = fabric_store::try_acquire_writer_lock(&layout)?;
     let initial_spindle_watermark = catalog.read_watermark("spindle_watermark_id")?.unwrap_or(0);
     let olap = OlapParquetStore::new(layout.clone());
@@ -1193,23 +1217,26 @@ pub async fn run_daemon(mut config: DaemonConfig) -> Result<(), String> {
     });
 
     let ingest_host = read_hostname();
-    let ingest_sock = config
-        .runtime_dir
-        .as_ref()
-        .map_or_else(|| default_ingest_socket(&layout), |d| d.join("ingest.sock"));
-    let ingest_sock_cleanup = ingest_sock.clone();
-    let serve_host = ingest_host.clone();
-    let ingest_shutdown_rx = shutdown_tx.subscribe();
-    let ingest_task = tokio::spawn(async move {
-        let _ = serve_ingest_socket_until_shutdown(
-            &ingest_sock,
-            metrics_q,
-            logs_q,
-            traces_q,
-            serve_host,
-            ingest_shutdown_rx,
-        )
-        .await;
+    let ingest = (!spindle_only).then(|| {
+        let ingest_sock = config
+            .runtime_dir
+            .as_ref()
+            .map_or_else(|| default_ingest_socket(&layout), |d| d.join("ingest.sock"));
+        let socket_for_cleanup = ingest_sock.clone();
+        let serve_host = ingest_host.clone();
+        let ingest_shutdown_rx = shutdown_tx.subscribe();
+        let task = tokio::spawn(async move {
+            let _ = serve_ingest_socket_until_shutdown(
+                &ingest_sock,
+                metrics_q,
+                logs_q,
+                traces_q,
+                serve_host,
+                ingest_shutdown_rx,
+            )
+            .await;
+        });
+        (socket_for_cleanup, task)
     });
 
     let mut fs_tracker = FsChurnTracker::new();
@@ -1284,19 +1311,21 @@ pub async fn run_daemon(mut config: DaemonConfig) -> Result<(), String> {
                     }
                 }
 
-                let mut state = run_collect_cycle(&runtime.guard, &mut fs_tracker, &mut vol_detector, &mut sketch);
-                state.metrics.extend(extra_metrics);
+                if !spindle_only {
+                    let mut state = run_collect_cycle(&runtime.guard, &mut fs_tracker, &mut vol_detector, &mut sketch);
+                    state.metrics.extend(extra_metrics);
 
-                runtime.ring.write().push_batch(&state.metrics);
-                {
-                    let mut fsev = runtime.pending_fs_events.write();
-                    if fsev.len() < 2048 {
-                        fsev.extend(state.fs_events.iter().cloned());
+                    runtime.ring.write().push_batch(&state.metrics);
+                    {
+                        let mut fsev = runtime.pending_fs_events.write();
+                        if fsev.len() < 2048 {
+                            fsev.extend(state.fs_events.iter().cloned());
+                        }
                     }
-                }
 
-                let _ = runtime.catalog.commit_cycle(&state.snapshot, &state.drift, &state.graph);
-                *runtime.latest.write() = Some(state);
+                    let _ = runtime.catalog.commit_cycle(&state.snapshot, &state.drift, &state.graph);
+                    *runtime.latest.write() = Some(state);
+                }
 
                 // Self-shedding check, Spindle backpressure, or 60s flush cadence.
                 let force_shed = runtime.guard.is_shedding();
@@ -1321,7 +1350,12 @@ pub async fn run_daemon(mut config: DaemonConfig) -> Result<(), String> {
 
     let _ = shutdown_tx.send(true);
     let _ = rpc_task.await;
-    let _ = ingest_task.await;
+    let ingest_sock = if let Some((socket, task)) = ingest {
+        let _ = task.await;
+        Some(socket)
+    } else {
+        None
+    };
     let tail_metrics = drain_telemetry_queues(
         &mut metrics_rx,
         &mut logs_rx,
@@ -1340,7 +1374,9 @@ pub async fn run_daemon(mut config: DaemonConfig) -> Result<(), String> {
     let final_flush = runtime.flush_to_olap();
     let _ = runtime.run_janitor_pass();
     let _ = fs::remove_file(&daemon_sock);
-    let _ = fs::remove_file(&ingest_sock_cleanup);
+    if let Some(ingest_sock) = ingest_sock {
+        let _ = fs::remove_file(&ingest_sock);
+    }
     drop(runtime);
     final_flush.map(|_| ())
 }
