@@ -336,6 +336,12 @@ again once pressure clears. The cgroup headroom formula is a policy for the
 collector's optional work. It cannot reserve kernel memory for competing
 processes.
 
+At startup Spindle uses the process's soft descriptor limit, when known, to
+reserve a quarter of the descriptors rounded up. It subtracts the observed
+open descriptors from the remaining capacity and caps admission at the
+smaller of that result (with a minimum of one) and `max_connections`.
+This leaves room for normal storage and connection turnover when the
+descriptor limit permits it. `spindle status` reports `connection_limit`.
 On transient accept pressure, Spindle services its existing connections
 before trying to accept again. Replies and deadlines release the occupied
 descriptors. Receiver admission and projection already retry transient
