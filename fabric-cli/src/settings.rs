@@ -30,6 +30,12 @@ struct CollectorFields {
     max_disk_bytes: Option<u64>,
 }
 
+impl Profile {
+    pub(super) fn spindle_socket(&self) -> Option<PathBuf> {
+        self.daemon.spindle_socket.clone()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(super) enum Source {
