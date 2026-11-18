@@ -77,6 +77,9 @@ flowchart LR
 
     Q --> PIPE["Daemon Collector Loop + SelfGuard (< 200 MiB Watchdog)"]
     PIPE --> EV["Five Pillars + DDSketch + EwmaMadDetector + CausalGraph"]
+    PIPE -->|"Optional host summaries; bounded queue"| HOSTEX["Host exporter"]
+    HOSTEX -->|"Local custody; then configured forwarding"| SPHOST["Spindle"]
+    SPHOST -->|"Origin-scoped fleet evidence"| AUTH["Fabric Server canonical authority"]
 
     EV --> RING["HotMetricRing (<= 32 MiB Sans-I/O Gorilla Ring)"]
     EV --> REDB["CatalogStore (redb + live_state.json + daemon.sock)"]
@@ -103,6 +106,11 @@ public query schema omits this field. Compaction retains raw provenance and metr
 rollups discard it. The readiness check reads the catalog and the queryable raw
 row within one deadline. Results describe that observation at the time of the
 read. Retention can subsequently remove the evidence.
+
+The opt-in host exporter reuses the local snapshot. A full export queue can drop
+new batches without blocking collection. Local projection advances over exported
+copies for the configured node because its existing observations already cover
+those host signals.
 
 ## 3. Two-Branch Stacked Development Workflow & Release Gate
 
