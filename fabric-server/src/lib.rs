@@ -135,8 +135,7 @@ impl Server {
             .parse()
             .map_err(|_| "invalid listen address")?;
         if !address.ip().is_loopback()
-            || config.max_connections == 0
-            || config.max_connections > 32
+            || !(1..=resources::MAX_RECEIVER_CONNECTIONS).contains(&config.max_connections)
             || config.nodes.is_empty()
             || config.nodes.len() > 32
             || !config.storage.is_absolute()

@@ -54,7 +54,7 @@ fn memory_inputs(root: &Path, membership: &str) -> MemoryPressure {
         return MemoryPressure::default();
     }
     let mut inputs = MemoryPressure::default();
-    for directory in relative.ancestors().take(32) {
+    for directory in relative.ancestors() {
         let directory = root.join(directory);
         let limit = ["memory.high", "memory.max"]
             .iter()
@@ -86,6 +86,7 @@ pub fn process_memory() -> MemoryPressure {
 }
 
 pub const DEFAULT_RECEIVER_CONNECTIONS: usize = 16;
+pub const MAX_RECEIVER_CONNECTIONS: usize = 32;
 pub const RECEIVER_PRESSURE_SAMPLE_MS: u64 = 100;
 
 #[derive(Serialize)]
@@ -116,19 +117,27 @@ fn descriptor_budget() -> io::Result<Option<DescriptorBudget>> {
     }))
 }
 
-/// Keep a minimum of one connection trial even with no observed headroom.
-fn connection_cap(configured: usize, descriptors: Option<&DescriptorBudget>) -> usize {
-    descriptors.map_or(configured, |budget| {
-        let available = budget
-            .spendable
-            .saturating_sub(budget.open_descriptors)
-            .max(1);
-        configured.min(usize::try_from(available).unwrap_or(usize::MAX))
-    })
+/// Keep a single connection trial if the descriptor budget is exhausted.
+fn connection_cap(
+    configured: usize,
+    sample: &io::Result<Option<DescriptorBudget>>,
+) -> (usize, &'static str) {
+    match sample {
+        Ok(Some(budget)) => {
+            let available = budget
+                .spendable
+                .saturating_sub(budget.open_descriptors)
+                .max(1);
+            let cap = configured.min(usize::try_from(available).unwrap_or(usize::MAX));
+            (cap, "rlimit_nofile_and_proc_fd")
+        }
+        Err(error) if is_resource_error(error) => (configured.min(1), "descriptor_resource_error"),
+        _ => (configured, "configured"),
+    }
 }
 
 pub fn connection_limit(configured: usize) -> usize {
-    connection_cap(configured, descriptor_budget().ok().flatten().as_ref())
+    connection_cap(configured, &descriptor_budget()).0
 }
 
 /// Linux cannot safely lend more descriptors to optional work at this boundary.
@@ -162,17 +171,14 @@ pub fn receiver_resources(configured: usize) -> ReceiverResources {
         Err(error) if is_resource_error(error) => (Some(true), "descriptor_resource_error"),
         _ => (None, "missing"),
     };
+    let (connection_limit, connection_limit_source) = connection_cap(configured, &sample);
     let descriptors = sample.ok().flatten();
     let memory = process_memory();
     let memory_sampled = memory.sample.is_some();
     ReceiverResources {
         configured_connection_limit: configured,
-        connection_limit: connection_cap(configured, descriptors.as_ref()),
-        connection_limit_source: if descriptors.is_some() {
-            "rlimit_nofile_and_proc_fd"
-        } else {
-            "configured"
-        },
+        connection_limit,
+        connection_limit_source,
         descriptors,
         descriptor_pressure,
         descriptor_pressure_source,
@@ -198,6 +204,31 @@ pub fn is_resource_error(error: &io::Error) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn known_descriptor_exhaustion_keeps_only_one_trial() {
+        let exhausted = Err(rustix::io::Errno::MFILE.into());
+        assert_eq!(
+            connection_cap(32, &exhausted),
+            (1, "descriptor_resource_error")
+        );
+        let missing = Err(rustix::io::Errno::NOENT.into());
+        assert_eq!(connection_cap(32, &missing), (32, "configured"));
+        assert_eq!(connection_cap(32, &Ok(None)), (32, "configured"));
+    }
+
+    #[test]
+    fn reads_limits_above_deep_cgroup_descendants() {
+        let temp = tempfile::tempdir().unwrap();
+        let relative = format!("slice/{}service", "child/".repeat(40));
+        let root = temp.path();
+        fs::create_dir_all(root.join(&relative)).unwrap();
+        fs::write(root.join("slice/memory.max"), "400").unwrap();
+        fs::write(root.join("slice/memory.current"), "300").unwrap();
+        let inputs = memory_inputs(root, &format!("0::/{relative}"));
+        assert_eq!(inputs.limit_bytes, Some(400));
+        assert!(inputs.pressured);
+    }
 
     #[test]
     fn resolves_ancestor_limits_and_pressure_separately() {

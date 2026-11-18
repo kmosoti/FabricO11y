@@ -343,7 +343,8 @@ At startup Spindle and Fabric Server reserve a quarter of the process's soft
 including the directory scan itself, from the spendable count and cap admission
 at the smaller of that result (with a minimum of one) and `max_connections`.
 When the soft limit or descriptor count is unavailable, the configured cap still
-bounds admission. `spindle status` and the `fabric-server serve` readiness record
+bounds admission. A resource error while reading the descriptor count allows a
+single connection trial. `spindle status` and the `fabric-server serve` readiness record
 report the effective `connection_limit`.
 
 On transient accept pressure, Spindle services its existing connections
